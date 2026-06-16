@@ -1,17 +1,10 @@
-/**
- * DomainModel для MeetingReport (Фаза E §7).
- *
- * См. `frontend-rules`: ApiDto (`src/api/meeting-reports.api`) →
- * DomainModel (этот файл) → UiModel (компоненты вкладки «Отчёты»).
- */
-
 import type {
   AvailableTemplateApi,
   MeetingReportStatusApi,
   ReportDetailApi,
   ReportKindApi,
   ReportListItemApi,
-} from '@/api/meeting-reports.api';
+} from "@/api/meeting-reports.api";
 
 export type ReportStatus = MeetingReportStatusApi;
 export type ReportKind = ReportKindApi;
@@ -24,7 +17,6 @@ export interface ReportListItemDomain {
   templateName: string;
   status: ReportStatus;
   outputPreview: string | null;
-  /** ISO -> Date. */
   createdAt: Date;
   completedAt: Date | null;
   llmCostUsd: number | null;
@@ -39,14 +31,16 @@ export interface ReportDetailDomain extends ReportListItemDomain {
 
 export interface AvailableTemplateDomain {
   id: string;
-  scope: 'system' | 'org';
+  scope: "system" | "org";
   name: string;
   description: string | null;
   meetingType: string | null;
   taskType: string;
 }
 
-export function reportListItemFromApi(api: ReportListItemApi): ReportListItemDomain {
+export function reportListItemFromApi(
+  api: ReportListItemApi,
+): ReportListItemDomain {
   return {
     kind: api.kind,
     id: api.id,
@@ -84,23 +78,21 @@ export function availableTemplateFromApi(
   };
 }
 
-/** Человеческий русский label статуса для UI. */
 export function reportStatusLabel(status: ReportStatus): string {
   switch (status) {
-    case 'pending':
-      return 'В очереди';
-    case 'running':
-      return 'Подготовка отчёта…';
-    case 'ready':
-      return 'Готов';
-    case 'failed':
-      return 'Не удалось сгенерировать';
-    case 'archived':
-      return 'В архиве';
+    case "pending":
+      return "В очереди";
+    case "running":
+      return "Подготовка отчёта…";
+    case "ready":
+      return "Готов";
+    case "failed":
+      return "Не удалось сгенерировать";
+    case "archived":
+      return "В архиве";
   }
 }
 
-/** Есть ли в списке хоть один отчёт в работе → нужно polling. */
 export function hasInProgress(items: ReportListItemDomain[]): boolean {
-  return items.some((r) => r.status === 'pending' || r.status === 'running');
+  return items.some((r) => r.status === "pending" || r.status === "running");
 }

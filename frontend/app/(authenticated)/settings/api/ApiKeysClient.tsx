@@ -1,22 +1,22 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Copy, ExternalLink, Loader2, Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Copy, ExternalLink, Loader2, Plus, Trash2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   apiKeysApi,
   type ApiKeyApi,
   type ApiKeyScope,
   type CreateApiKeyApiResponse,
-} from '@/api/api-keys.api';
-import { toast } from 'sonner';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/api/api-keys.api";
+import { toast } from "sonner";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -24,15 +24,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '—';
+  if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ru", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 }
 
 export function ApiKeysClient() {
@@ -40,7 +44,9 @@ export function ApiKeysClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [createdKey, setCreatedKey] = useState<CreateApiKeyApiResponse | null>(null);
+  const [createdKey, setCreatedKey] = useState<CreateApiKeyApiResponse | null>(
+    null,
+  );
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchKeys = useCallback(async () => {
@@ -50,7 +56,7 @@ export function ApiKeysClient() {
       const res = await apiKeysApi.list();
       setKeys(res.items);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить ключи'));
+      setError(humanizeApiError(e, "Не удалось загрузить ключи"));
     } finally {
       setLoading(false);
     }
@@ -62,18 +68,18 @@ export function ApiKeysClient() {
 
   const handleRevoke = async (id: string) => {
     const ok = await ask({
-      title: 'Отозвать ключ?',
-      description: 'Все запросы с ним будут отклоняться.',
-      confirmLabel: 'Отозвать',
+      title: "Отозвать ключ?",
+      description: "Все запросы с ним будут отклоняться.",
+      confirmLabel: "Отозвать",
       destructive: true,
     });
     if (!ok) return;
     try {
       await apiKeysApi.revoke(id);
       setKeys((prev) => prev.filter((k) => k.id !== id));
-      toast.success('Ключ отозван');
+      toast.success("Ключ отозван");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось отозвать'));
+      toast.error(humanizeApiError(e, "Не удалось отозвать"));
     }
   };
 
@@ -123,7 +129,9 @@ export function ApiKeysClient() {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-fg-primary">{k.name}</span>
+                  <span className="text-sm font-medium text-fg-primary">
+                    {k.name}
+                  </span>
                   <code className="rounded bg-bg-overlay px-1.5 py-0.5 font-mono text-[11px] text-fg-secondary">
                     {k.prefix}…
                   </code>
@@ -135,7 +143,9 @@ export function ApiKeysClient() {
                     </Badge>
                   ))}
                   <span>· создан {formatDate(k.createdAt)}</span>
-                  <span>· последнее использование {formatDate(k.lastUsedAt)}</span>
+                  <span>
+                    · последнее использование {formatDate(k.lastUsedAt)}
+                  </span>
                 </div>
               </div>
               <Button
@@ -151,12 +161,17 @@ export function ApiKeysClient() {
         </ul>
       </QueryGate>
 
-      {/* Документация */}
+      {}
       <div className="mt-8 rounded-lg border border-border-subtle bg-bg-card p-4">
-        <h2 className="text-sm font-semibold text-fg-primary">Документация Public REST API</h2>
+        <h2 className="text-sm font-semibold text-fg-primary">
+          Документация Public REST API
+        </h2>
         <p className="mt-1 text-xs text-fg-secondary">
-          Используйте API-ключ как Bearer-token в заголовке{' '}
-          <code className="rounded bg-bg-overlay px-1 py-0.5 font-mono">Authorization</code>.
+          Используйте API-ключ как Bearer-token в заголовке{" "}
+          <code className="rounded bg-bg-overlay px-1 py-0.5 font-mono">
+            Authorization
+          </code>
+          .
         </p>
         <a
           href="/api/public/v1/docs"
@@ -196,14 +211,14 @@ function CreateKeyDialog({
   onClose: () => void;
   onCreated: (res: CreateApiKeyApiResponse) => void;
 }) {
-  const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<ApiKeyScope[]>(['read']);
+  const [name, setName] = useState("");
+  const [scopes, setScopes] = useState<ApiKeyScope[]>(["read"]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setName('');
-      setScopes(['read']);
+      setName("");
+      setScopes(["read"]);
     }
   }, [open]);
 
@@ -220,7 +235,7 @@ function CreateKeyDialog({
       const res = await apiKeysApi.create({ name: name.trim(), scopes });
       onCreated(res);
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось создать'));
+      toast.error(humanizeApiError(e, "Не удалось создать"));
     } finally {
       setSubmitting(false);
     }
@@ -249,19 +264,23 @@ function CreateKeyDialog({
             <div className="space-y-2">
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <Checkbox
-                  checked={scopes.includes('read')}
-                  onCheckedChange={() => toggleScope('read')}
+                  checked={scopes.includes("read")}
+                  onCheckedChange={() => toggleScope("read")}
                 />
                 <span className="text-fg-primary">read</span>
-                <span className="text-xs text-fg-tertiary">— чтение встреч, задач, тегов</span>
+                <span className="text-xs text-fg-tertiary">
+                  — чтение встреч, задач, тегов
+                </span>
               </label>
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <Checkbox
-                  checked={scopes.includes('write')}
-                  onCheckedChange={() => toggleScope('write')}
+                  checked={scopes.includes("write")}
+                  onCheckedChange={() => toggleScope("write")}
                 />
                 <span className="text-fg-primary">write</span>
-                <span className="text-xs text-fg-tertiary">— изменение задач, тегов</span>
+                <span className="text-xs text-fg-tertiary">
+                  — изменение задач, тегов
+                </span>
               </label>
             </div>
           </div>
@@ -295,8 +314,8 @@ function CreatedKeyDialog({
   const handleCopy = () => {
     if (!result) return;
     void navigator.clipboard.writeText(result.rawKey).then(
-      () => toast.success('Скопировано'),
-      () => toast.error('Не удалось скопировать'),
+      () => toast.success("Скопировано"),
+      () => toast.error("Не удалось скопировать"),
     );
   };
 
@@ -306,8 +325,8 @@ function CreatedKeyDialog({
         <DialogHeader>
           <DialogTitle>Ключ создан</DialogTitle>
           <DialogDescription>
-            Это единственный раз, когда вы видите ключ целиком. Сохраните его сейчас —
-            восстановить позже невозможно.
+            Это единственный раз, когда вы видите ключ целиком. Сохраните его
+            сейчас — восстановить позже невозможно.
           </DialogDescription>
         </DialogHeader>
         {result && (
@@ -322,7 +341,10 @@ function CreatedKeyDialog({
               </Button>
             </div>
             <p className="text-xs text-fg-tertiary">
-              Передавайте как Bearer-token: <code className="font-mono">Authorization: Bearer {result.prefix}…</code>
+              Передавайте как Bearer-token:{" "}
+              <code className="font-mono">
+                Authorization: Bearer {result.prefix}…
+              </code>
             </p>
           </div>
         )}

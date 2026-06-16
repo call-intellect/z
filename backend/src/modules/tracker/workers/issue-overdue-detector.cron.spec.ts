@@ -100,14 +100,11 @@ describe('IssueOverdueDetectorCron', () => {
   });
 
   it('ошибка emit/update одной задачи не валит обработку остальных', async () => {
-    issueFindMany.mockResolvedValueOnce([
-      overdueIssue,
-      { ...overdueIssue, id: 'i2' },
-    ]);
+    issueFindMany.mockResolvedValueOnce([overdueIssue, { ...overdueIssue, id: 'i2' }]);
     issueUpdate.mockRejectedValueOnce(new Error('boom'));
     const result = await cron.run();
     expect(result.scanned).toBe(2);
-    expect(result.emitted).toBe(1); // первая упала, вторая прошла
+    expect(result.emitted).toBe(1);
     expect(emitOverdue).toHaveBeenCalledTimes(2);
   });
 });

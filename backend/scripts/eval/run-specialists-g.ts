@@ -1,21 +1,3 @@
-/**
- * Variant Г — 8 специалистов с ОБЩИМ КЭШИРУЕМЫМ ПРЕФИКСОМ.
- *
- * Главное отличие от A:
- *   - У всех 8 вызовов ОДИН И ТОТ ЖЕ system prompt (роль + все блоки встречи).
- *   - Разный только user (специфика задачи + tool name).
- *   - DeepSeek кэширует общую часть → 2-й и далее вызовы стоят в 100+ раз меньше.
- *
- * Усиление промптов (по сравнению с A):
- *   - Жёсткое требование заполнять rationale, alternatives, mitigationSuggestion.
- *   - Подсказка: «соседние блоки видны в общем контексте — используй их для глубины».
- *
- * 8 специалистов (без 3-4 карточника — он multi-meeting):
- *   3-1 regulations, 3-2 knowledge-clone, 3-3 decisions, 3-5 insights,
- *   3-6 ideas, 3-7 skill-trait, 3-8 helpfulness, 3-9 experiments.
- *
- * Запуск: cd backend && bun run scripts/eval/run-specialists-g.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -27,8 +9,14 @@ const PRICE_OUT = 0.87 / 1_000_000;
 const MAX_TOKENS = 16000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const FIXTURE_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json');
-const REPORT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/reports/variant-g.json');
+const FIXTURE_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json',
+);
+const REPORT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/specialists-experiment/reports/variant-g.json',
+);
 
 interface MeetingBlock {
   id: string;
@@ -57,7 +45,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── общий кэшируемый префикс ────────────────────────────────────────────────
 function buildCachePrefix(blocks: MeetingBlock[], meetingTitle: string): string {
   const blocksContext = blocks
     .map(
@@ -86,7 +73,6 @@ function buildCachePrefix(blocks: MeetingBlock[], meetingTitle: string): string 
   ].join('\n');
 }
 
-// ── tool-схемы (как в run-specialists.ts, для совместимости с judge) ────────
 const DECISION_ITEM = {
   type: 'object',
   required: ['sourceBlockId', 'statement', 'confidence'],
@@ -121,7 +107,16 @@ const INSIGHT_ITEM = {
     severity: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
     causeCategory: {
       type: 'string',
-      enum: ['process_gap', 'tooling', 'role_skill', 'communication', 'priority', 'resource_constraint', 'external', 'unknown'],
+      enum: [
+        'process_gap',
+        'tooling',
+        'role_skill',
+        'communication',
+        'priority',
+        'resource_constraint',
+        'external',
+        'unknown',
+      ],
     },
     mitigationSuggestion: { type: ['string', 'null'] },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
@@ -186,12 +181,25 @@ const SKILL_TRAIT_ITEM = {
 };
 const HELPFULNESS_TRAIT_ITEM = {
   type: 'object',
-  required: ['sourceBlockId', 'traitType', 'helperUserHint', 'topicHint', 'intensity', 'confidence'],
+  required: [
+    'sourceBlockId',
+    'traitType',
+    'helperUserHint',
+    'topicHint',
+    'intensity',
+    'confidence',
+  ],
   properties: {
     sourceBlockId: { type: 'string' },
     traitType: {
       type: 'string',
-      enum: ['help_provided', 'proactive_hint', 'mentoring', 'emotional_support', 'constructive_feedback'],
+      enum: [
+        'help_provided',
+        'proactive_hint',
+        'mentoring',
+        'emotional_support',
+        'constructive_feedback',
+      ],
     },
     helperUserHint: { type: 'string' },
     recipientUserHint: { type: ['string', 'null'] },
@@ -202,7 +210,6 @@ const HELPFULNESS_TRAIT_ITEM = {
   },
 };
 
-// ── задачи специалистов ─────────────────────────────────────────────────────
 interface SpecialistTask {
   step: string;
   targetSignals: string[];
@@ -388,7 +395,6 @@ Confidence: low (1-2 наблюдения), medium (3-5), high (6+).
   },
 ];
 
-// ── вызов ────────────────────────────────────────────────────────────────────
 interface CallReport {
   step: string;
   ok: boolean;
@@ -403,10 +409,7 @@ interface CallReport {
   output?: unknown;
 }
 
-async function callSpecialist(
-  cachePrefix: string,
-  task: SpecialistTask,
-): Promise<CallReport> {
+async function callSpecialist(cachePrefix: string, task: SpecialistTask): Promise<CallReport> {
   console.log(`  → ${task.step}…`);
   const start = Date.now();
   let usage: {
@@ -439,7 +442,10 @@ async function callSpecialist(
       tool_choice: 'auto',
     } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
       choices: Array<{
-        message?: { content?: string | null; tool_calls?: Array<{ function: { arguments: string } }> };
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ function: { arguments: string } }>;
+        };
       }>;
       usage?: typeof usage;
     };
@@ -502,15 +508,14 @@ async function main(): Promise<void> {
   console.log(`  блоков всего: ${fixture.blocks.length}`);
 
   const cachePrefix = buildCachePrefix(fixture.blocks, fixture.meetingTitle);
-  console.log(`  общий префикс: ${cachePrefix.length} знаков (≈${Math.round(cachePrefix.length / 4)} токенов)`);
+  console.log(
+    `  общий префикс: ${cachePrefix.length} знаков (≈${Math.round(cachePrefix.length / 4)} токенов)`,
+  );
 
-  // Warm-up: первый вызов "греет" кэш. Делаем 3-3 первым (большой батч,
-  // максимальный шанс на быстрое прогревание).
   console.log('\n→ warm-up (первый вызов — заполняет кэш):');
   const firstTask = TASKS.find((t) => t.step === '3-3 decisions')!;
   const firstReport = await callSpecialist(cachePrefix, firstTask);
 
-  // Остальные 7 параллельно — должны получить кэш-хит.
   console.log('\n→ параллельно: 7 остальных специалистов (ожидается cache hit ≥90%):');
   const restTasks = TASKS.filter((t) => t.step !== firstTask.step);
   const totalStart = Date.now();
@@ -528,8 +533,12 @@ async function main(): Promise<void> {
 
   console.log('\n=== Итоги ===');
   console.log(`  вызовов: ${allReports.length}  (упало: ${fails})`);
-  console.log(`  суммарное время: ${firstReport.ms + totalMs} мс (warm-up ${firstReport.ms} + остальные параллельно ${totalMs})`);
-  console.log(`  токены: вход=${tokensIn} (кэш=${cached}, ${(avgCacheHit * 100).toFixed(0)}% средн.) выход=${tokensOut}`);
+  console.log(
+    `  суммарное время: ${firstReport.ms + totalMs} мс (warm-up ${firstReport.ms} + остальные параллельно ${totalMs})`,
+  );
+  console.log(
+    `  токены: вход=${tokensIn} (кэш=${cached}, ${(avgCacheHit * 100).toFixed(0)}% средн.) выход=${tokensOut}`,
+  );
   console.log(`  стоимость:     $${costUsd.toFixed(4)}`);
   console.log(`  сущностей всего: ${entities}`);
 

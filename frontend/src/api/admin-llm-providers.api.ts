@@ -1,15 +1,12 @@
-/**
- * SBA α-10 wave 3 — API-клиент для admin LLM providers registry.
- */
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminLlmProviderApi,
   AdminLlmProviderListApi,
   CreateLlmProviderRequest,
   SmokeTestResultApi,
   UpdateLlmProviderRequest,
-} from '@/domain/admin-llm-provider';
+} from "@/domain/admin-llm-provider";
 
 export const adminLlmProvidersApi = {
   list: (req: { includeInactive?: boolean } = {}) =>
@@ -21,7 +18,7 @@ export const adminLlmProvidersApi = {
     apiClient.get<AdminLlmProviderApi>(`/api/v1/admin/llm-providers/${id}`),
 
   create: (body: CreateLlmProviderRequest) =>
-    apiClient.post<AdminLlmProviderApi>('/api/v1/admin/llm-providers', body),
+    apiClient.post<AdminLlmProviderApi>("/api/v1/admin/llm-providers", body),
 
   update: (id: string, body: UpdateLlmProviderRequest) =>
     apiClient.patch<AdminLlmProviderApi>(

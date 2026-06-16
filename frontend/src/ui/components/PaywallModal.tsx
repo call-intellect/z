@@ -1,45 +1,35 @@
-'use client';
+"use client";
 
-/**
- * PaywallModal — модальное окно оплаты подписки.
- *
- * Открывается автоматически при получении 403 `subscription_required` от
- * бэкенда (через subscription:required event → SubscriptionContext).
- * Также может быть открыт программно через `useSubscription().showPaywallModal()`.
- *
- * Контент: заголовок, список включённых возможностей, цена (месяц/год),
- * две CTA-кнопки → /settings/subscription.
- *
- * ТЗ: plans/tz/2026-05-28-paywall-no-trial.md §4.2.
- */
+import Link from "next/link";
+import { Lock, Check, CreditCard } from "lucide-react";
 
-import Link from 'next/link';
-import { Lock, Check, CreditCard } from 'lucide-react';
-
-import { useSubscription } from '@/hooks/useSubscription';
+import { useSubscription } from "@/hooks/useSubscription";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
 
 const FEATURES = [
-  '150 видеовстреч в месяц',
-  '31 место для пользователей',
-  'Безлимитные проекты и задачи',
-  'Отчёты Коры и граф знаний',
-  'Клоны сотрудников',
-  'Все интеграции',
+  "150 видеовстреч в месяц",
+  "31 место для пользователей",
+  "Безлимитные проекты и задачи",
+  "Отчёты Коры и граф знаний",
+  "Клоны сотрудников",
+  "Все интеграции",
 ];
 
 export function PaywallModal() {
   const { isPaywallModalOpen, hidePaywallModal } = useSubscription();
 
   return (
-    <Dialog open={isPaywallModalOpen} onOpenChange={(open) => !open && hidePaywallModal()}>
+    <Dialog
+      open={isPaywallModalOpen}
+      onOpenChange={(open) => !open && hidePaywallModal()}
+    >
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -62,7 +52,10 @@ export function PaywallModal() {
             </h3>
             <ul className="space-y-1.5" data-testid="paywall-features">
               {FEATURES.map((f) => (
-                <li key={f} className="flex items-center gap-2 text-sm text-fg-secondary">
+                <li
+                  key={f}
+                  className="flex items-center gap-2 text-sm text-fg-secondary"
+                >
                   <Check size={16} className="shrink-0 text-success" />
                   {f}
                 </li>
@@ -81,13 +74,19 @@ export function PaywallModal() {
 
           <div className="space-y-2">
             <Button asChild size="default" className="w-full">
-              <Link href="/settings/subscription" data-testid="paywall-card-btn">
+              <Link
+                href="/settings/subscription"
+                data-testid="paywall-card-btn"
+              >
                 <CreditCard size={16} />
                 Оплатить картой
               </Link>
             </Button>
             <Button asChild variant="outline" size="default" className="w-full">
-              <Link href="/settings/subscription" data-testid="paywall-invoice-btn">
+              <Link
+                href="/settings/subscription"
+                data-testid="paywall-invoice-btn"
+              >
                 Безналичный расчёт
               </Link>
             </Button>

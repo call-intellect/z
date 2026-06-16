@@ -1,15 +1,5 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
-import {
-  type ActivityFeedItem,
-  type ActivityFeedSubscription,
-  Prisma,
-} from '@prisma/client';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { type ActivityFeedItem, type ActivityFeedSubscription, Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -33,11 +23,6 @@ import type {
 } from '../dto/activity-feed.dto';
 import { ActivityFeedGateway } from '../gateways/activity-feed.gateway';
 
-/**
- * Входные данные publish() — единая точка эмита события в ленту.
- * Все агенты (Probe / Insights Radar / Decisions Registry / Issue / Ideas /
- * Curation) и системные крон-сервисы используют этот метод.
- */
 export interface PublishFeedItemInput {
   tenantId: string;
 
@@ -70,18 +55,9 @@ export interface PublishFeedItemInput {
 
   expiresAt?: Date | null;
 
-  /**
-   * Начальный статус. По умолчанию `emitted`. Можно передать `delivered`,
-   * если канал уже подтвердил доставку синхронно.
-   */
   initialStatus?: FeedStatusDto;
 }
 
-/**
- * Внутренняя форма JSON-поля `reactions`. Goose-mode: всегда нормализуем
- * к `{ thanks: string[], votes: string[] }` — даже если в БД null или
- * legacy-формат.
- */
 interface ReactionsPayload {
   thanks: string[];
   votes: string[];
@@ -89,31 +65,6 @@ interface ReactionsPayload {
 
 const DEFAULT_REACTIONS: ReactionsPayload = { thanks: [], votes: [] };
 
-/**
- * ActivityFeedService (Wave 2 Поток D, 2026-05-24).
- *
- * Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md
- *
- * Что делает:
- *   - `publish()`           — единая точка эмита, вызывается из всех агентов
- *                             и системных cron'ов. После create — emit
- *                             WebSocket event `feed.new_item` в нужные rooms.
- *   - `getFeed()`           — query с tenantId-scope, фильтрами и пагинацией.
- *                             Visibility-фильтр работает per-user (см. §6 RBAC).
- *   - `markSeen` / `markDelivered` / `markResponded` / `markActioned` /
- *     `dismiss`             — переходы по статусной FSM. Идемпотентны.
- *   - `react()`             — atomic update JSON-поля reactions
- *                             (thanks / votes), per-user, дедуп по userId.
- *   - `expire()`            — выставляет status='expired' для просроченных
- *                             probe-вопросов. Вызывается из FeedExpireCron.
- *
- * Метрики: `feed_items_emitted_total`, `feed_items_actioned_total`,
- * `feed_reactions_total`, `feed_items_expired_total`.
- *
- * Multi-tenancy: все методы требуют `tenantId`. RBAC-проверки делает
- * контроллер; сервис проверяет только tenant-scope + visibility-фильтр
- * для read-операций.
- */
 @Injectable()
 export class ActivityFeedService {
   private readonly logger = new Logger(ActivityFeedService.name);
@@ -122,17 +73,10 @@ export class ActivityFeedService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    /**
-     * Gateway — Optional, потому что юнит-тестам сервиса не требуется
-     * полная NestJS lifecycle для WebSocketServer. В production gateway
-     * всегда присутствует (он провайдер того же модуля).
-     */
     @Optional()
     @Inject(ActivityFeedGateway)
     private readonly gateway: ActivityFeedGateway | null = null,
   ) {}
-
-  // ─────────────────────────── publish ─────────────────────────────────
 
   async publish(input: PublishFeedItemInput): Promise<FeedItemDto> {
     const severity: FeedSeverityDto = input.severity ?? 'normal';
@@ -163,7 +107,6 @@ export class ActivityFeedService {
         goalId: input.goalId ?? null,
         reactions: { thanks: [], votes: [] } as unknown as Prisma.InputJsonValue,
         expiresAt: input.expiresAt ?? null,
-        // emittedAt — default(now())
         deliveredAt: status === 'delivered' ? new Date() : null,
       },
     });
@@ -179,14 +122,10 @@ export class ActivityFeedService {
     return dto;
   }
 
-  // ─────────────────────────── getFeed ─────────────────────────────────
-
   async getFeed(args: {
     tenantId: string;
     userId: string;
-    /** Команды, в которых состоит пользователь (для visibility='team'). */
     userTeamIds: string[];
-    /** Роли пользователя (для visibility='role'). */
     userRoleIds: string[];
     query: ListFeedQuery;
   }): Promise<ListFeedResponseDto> {
@@ -202,10 +141,6 @@ export class ActivityFeedService {
     if (q.projectId) where.projectId = q.projectId;
     if (q.goalId) where.goalId = q.goalId;
     if (q.sourceAgentName) where.sourceAgentName = q.sourceAgentName;
-    // Фильтр «адресовано конкретному пользователю» (см. DTO §viewedUserId).
-    // Применяется ДО visibility-фильтра — это обычный WHERE-критерий, поверх
-    // которого ещё может срабатывать `scopedToMe`. Используется секцией
-    // «Вопросы AI этому человеку» на карточке сотрудника (`PersonPulseClient`).
     if (q.viewedUserId) where.targetUserId = q.viewedUserId;
 
     if (q.emittedFrom || q.emittedTo) {
@@ -214,17 +149,6 @@ export class ActivityFeedService {
       if (q.emittedTo) where.emittedAt.lte = new Date(q.emittedTo);
     }
 
-    // ── Visibility-фильтр per-user (Sub-ТЗ §6 RBAC) ────────────────────
-    //
-    // 'public_org' — видят все members tenant'а.
-    // 'team'       — пользователь должен быть в команде (`teamId IN userTeamIds`
-    //                ИЛИ visibilityScope.teamIds пересекается с userTeamIds).
-    // 'role'       — visibilityScope.roleIds пересекается с userRoleIds.
-    // 'private'    — `targetUserId === userId` ИЛИ visibilityScope.userIds
-    //                включает userId.
-    //
-    // Также любой `sourceUserId === userId` всегда виден автору
-    // (системные кнопки «мои публикации»).
     if (q.scopedToMe) {
       const visibilityOr: Prisma.ActivityFeedItemWhereInput[] = [
         { visibility: 'public_org' },
@@ -238,12 +162,6 @@ export class ActivityFeedService {
           teamId: { in: args.userTeamIds },
         });
       }
-      // visibilityScope-based фильтры — `Json contains` через @> работает
-      // в Postgres, но Prisma JSON-фильтр поддерживает только path/equals.
-      // Применяем грубую выборку (visibility='role'/'private' с
-      // visibilityScope set) + post-фильтр на уровне сервиса. Это даёт
-      // корректные результаты в обмен на потенциальный over-fetch на
-      // редких типах. На MVP допустимо; в Wave 3 — переезд на raw SQL.
       where.OR = visibilityOr;
     }
 
@@ -276,12 +194,7 @@ export class ActivityFeedService {
     };
   }
 
-  // ─────────────────────────── status FSM ──────────────────────────────
-
-  async markDelivered(args: {
-    tenantId: string;
-    itemId: string;
-  }): Promise<FeedItemDto> {
+  async markDelivered(args: { tenantId: string; itemId: string }): Promise<FeedItemDto> {
     return this.transition(args, {
       next: 'delivered',
       timestampField: 'deliveredAt',
@@ -289,15 +202,10 @@ export class ActivityFeedService {
     });
   }
 
-  async markSeen(args: {
-    tenantId: string;
-    itemId: string;
-    userId: string;
-  }): Promise<FeedItemDto> {
+  async markSeen(args: { tenantId: string; itemId: string; userId: string }): Promise<FeedItemDto> {
     return this.transition(args, {
       next: 'seen',
       timestampField: 'seenAt',
-      // seen можно из любого до-responded состояния (включая повторное seen).
       allowedFrom: ['emitted', 'delivered', 'seen'],
     });
   }
@@ -326,11 +234,7 @@ export class ActivityFeedService {
     });
   }
 
-  async dismiss(args: {
-    tenantId: string;
-    itemId: string;
-    userId: string;
-  }): Promise<FeedItemDto> {
+  async dismiss(args: { tenantId: string; itemId: string; userId: string }): Promise<FeedItemDto> {
     return this.transition(args, {
       next: 'dismissed',
       timestampField: null,
@@ -338,12 +242,6 @@ export class ActivityFeedService {
     });
   }
 
-  // ─────────────────────────── react ──────────────────────────────────
-
-  /**
-   * Атомарная реакция пользователя на запись (thanks / vote). Дедуп по
-   * userId внутри типа реакции (повторное нажатие — no-op).
-   */
   async react(args: {
     tenantId: string;
     itemId: string;
@@ -367,7 +265,6 @@ export class ActivityFeedService {
       const current = this.normalizeReactions(item.reactions);
       const key = args.reaction === 'thanks' ? 'thanks' : 'votes';
       if (current[key].includes(args.userId)) {
-        // Идемпотентно: пользователь уже среагировал — просто возвращаем.
         return this.toDto(item);
       }
       const next: ReactionsPayload = {
@@ -399,21 +296,9 @@ export class ActivityFeedService {
     });
   }
 
-  // ─────────────────────────── expire ──────────────────────────────────
-
-  /**
-   * Выставляет status='expired' для записей, у которых:
-   *   - expiresAt < now AND
-   *   - status NOT IN ('responded', 'actioned', 'expired', 'dismissed')
-   *
-   * Возвращает количество обновлённых записей. Вызывается из FeedExpireCron
-   * и допустимо к вызову вручную (admin / тесты).
-   */
   async expire(args: { now?: Date } = {}): Promise<{ updated: number }> {
     const now = args.now ?? new Date();
 
-    // Собираем кандидатов перед массовым updateMany — нужны их id для
-    // эмита WS-events и для накопления метрик с правильным feedType.
     const candidates = await this.prisma.activityFeedItem.findMany({
       where: {
         expiresAt: { lt: now, not: null },
@@ -453,11 +338,7 @@ export class ActivityFeedService {
     return { updated: result.count };
   }
 
-  // ─────────────────────────── subscriptions ────────────────────────────
-
-  async listSubscriptions(args: {
-    userId: string;
-  }): Promise<FeedSubscriptionDto[]> {
+  async listSubscriptions(args: { userId: string }): Promise<FeedSubscriptionDto[]> {
     const rows = await this.prisma.activityFeedSubscription.findMany({
       where: { userId: args.userId },
       orderBy: { createdAt: 'asc' },
@@ -523,30 +404,17 @@ export class ActivityFeedService {
     return this.toSubscriptionDto(updated);
   }
 
-  async deleteSubscription(args: {
-    userId: string;
-    feedType: FeedTypeDto;
-  }): Promise<{ ok: true }> {
+  async deleteSubscription(args: { userId: string; feedType: FeedTypeDto }): Promise<{ ok: true }> {
     await this.prisma.activityFeedSubscription
       .delete({
         where: {
           userId_feedType: { userId: args.userId, feedType: args.feedType },
         },
       })
-      .catch(() => {
-        // 404 → возвращаем 200 — идемпотентно (UI может дважды нажать «отписаться»).
-      });
+      .catch(() => {});
     return { ok: true };
   }
 
-  // ─────────────────────────── internals ────────────────────────────────
-
-  /**
-   * Общий FSM-переход. Если current status уже = next — no-op (идемпотентно).
-   * Если current ∉ allowedFrom — no-op (защита от backward transitions
-   * `expired → seen` и т.п.). Метрика и WS-event эмитятся только при
-   * фактическом изменении.
-   */
   private async transition(
     args: { tenantId: string; itemId: string; userId?: string },
     spec: {
@@ -569,11 +437,9 @@ export class ActivityFeedService {
     }
 
     if (item.status === spec.next) {
-      // Идемпотентно — current уже целевой.
       return this.toDto(item);
     }
     if (!spec.allowedFrom.includes(item.status as FeedStatusDto)) {
-      // Запрещённый backward-переход — no-op (не throw, лента толерантна).
       this.logger.debug(
         {
           itemId: item.id,
@@ -602,8 +468,7 @@ export class ActivityFeedService {
     });
 
     const dto = this.toDto(updated);
-    const evtName =
-      spec.next === 'dismissed' ? 'feed.item_dismissed' : 'feed.item_updated';
+    const evtName = spec.next === 'dismissed' ? 'feed.item_dismissed' : 'feed.item_updated';
     const payload =
       spec.next === 'dismissed'
         ? {
@@ -612,17 +477,9 @@ export class ActivityFeedService {
           }
         : {
             item: dto,
-            changedFields: [
-              'status',
-              ...(spec.timestampField ? [spec.timestampField] : []),
-            ],
+            changedFields: ['status', ...(spec.timestampField ? [spec.timestampField] : [])],
           };
-    this.emitWsEvent(
-      evtName,
-      payload,
-      this.roomsForItem(updated),
-      updated.tenantId,
-    );
+    this.emitWsEvent(evtName, payload, this.roomsForItem(updated), updated.tenantId);
     return dto;
   }
 
@@ -636,17 +493,13 @@ export class ActivityFeedService {
     const scope = this.parseScope(item.visibilityScope);
     if (item.visibility === 'team') {
       if (item.teamId && ctx.userTeamIds.includes(item.teamId)) return true;
-      if (
-        scope?.teamIds?.some((t) => ctx.userTeamIds.includes(t))
-      ) {
+      if (scope?.teamIds?.some((t) => ctx.userTeamIds.includes(t))) {
         return true;
       }
       return false;
     }
     if (item.visibility === 'role') {
-      return Boolean(
-        scope?.roleIds?.some((r) => ctx.userRoleIds.includes(r)),
-      );
+      return Boolean(scope?.roleIds?.some((r) => ctx.userRoleIds.includes(r)));
     }
     if (item.visibility === 'private') {
       return Boolean(scope?.userIds?.includes(ctx.userId));
@@ -658,10 +511,7 @@ export class ActivityFeedService {
     const rooms: string[] = [this.tenantRoom(item.tenantId)];
     if (item.teamId) rooms.push(this.teamRoom(item.teamId));
     if (item.targetUserId) rooms.push(this.userRoom(item.targetUserId));
-    if (
-      item.sourceUserId &&
-      item.sourceUserId !== item.targetUserId
-    ) {
+    if (item.sourceUserId && item.sourceUserId !== item.targetUserId) {
       rooms.push(this.userRoom(item.sourceUserId));
     }
     return rooms;
@@ -686,8 +536,7 @@ export class ActivityFeedService {
     if (!this.gateway) return;
     const tenantId =
       tenantIdOverride ??
-      (typeof (payload['item'] as FeedItemDto | undefined)?.tenantId ===
-        'string'
+      (typeof (payload['item'] as FeedItemDto | undefined)?.tenantId === 'string'
         ? (payload['item'] as FeedItemDto).tenantId
         : '');
     const event = {
@@ -699,15 +548,12 @@ export class ActivityFeedService {
     try {
       this.gateway.emitToRooms(rooms, type, event);
     } catch (e) {
-      // Никогда не валим бизнес-транзакцию из-за фоновой публикации.
       this.logger.warn(
         { err: e instanceof Error ? e.message : String(e), type },
         'ActivityFeedService.emitWsEvent — ошибка эмита WS',
       );
     }
   }
-
-  // ─────────────────────────── mappers ──────────────────────────────────
 
   private toDto(row: ActivityFeedItem): FeedItemDto {
     return {
@@ -741,9 +587,7 @@ export class ActivityFeedService {
     };
   }
 
-  private toSubscriptionDto(
-    row: ActivityFeedSubscription,
-  ): FeedSubscriptionDto {
+  private toSubscriptionDto(row: ActivityFeedSubscription): FeedSubscriptionDto {
     const filters =
       typeof row.filters === 'object' && row.filters !== null
         ? (row.filters as unknown as SubscriptionFiltersDto)

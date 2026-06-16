@@ -1,15 +1,15 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   curationApi,
   type CurationDecisionTypeApi,
   type CurationItemStatusApi,
   type CurationLevelApi,
-} from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   completenessCardTypeLabel,
   completenessSlotNameLabel,
@@ -17,7 +17,7 @@ import {
   mapCompletenessSlot,
   type CompletenessParentCardType,
   type CompletenessSlot,
-} from '@/domain/completeness-slot';
+} from "@/domain/completeness-slot";
 import {
   conflictResolutionLabel,
   conflictStatusLabel,
@@ -30,19 +30,19 @@ import {
   type ConflictItem,
   type CurationItem,
   type CurationItemDetail,
-} from '@/domain/curation';
-import { resourceTypeRu } from '@/domain/resource-type';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { ReadablePayload } from '@/ui/readable-payload';
+} from "@/domain/curation";
+import { resourceTypeRu } from "@/domain/resource-type";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { ReadablePayload } from "@/ui/readable-payload";
 
 const COMPLETENESS_CARD_TYPES_BY_RESOURCE: Partial<
   Record<string, CompletenessParentCardType>
 > = {
-  regulation: 'regulation',
-  process: 'process',
-  role: 'role',
-  company_profile: 'company_profile',
+  regulation: "regulation",
+  process: "process",
+  role: "role",
+  company_profile: "company_profile",
 };
 
 import {
@@ -50,28 +50,25 @@ import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-const LEVEL_OPTIONS: Array<{ value: CurationLevelApi | ''; label: string }> = [
-  { value: '', label: 'Любой уровень' },
-  { value: 'light', label: 'Простая' },
-  { value: 'deep', label: 'Подробная' },
+const LEVEL_OPTIONS: Array<{ value: CurationLevelApi | ""; label: string }> = [
+  { value: "", label: "Любой уровень" },
+  { value: "light", label: "Простая" },
+  { value: "deep", label: "Подробная" },
 ];
 
-const STATUS_OPTIONS: Array<{ value: CurationItemStatusApi | ''; label: string }> = [
-  { value: '', label: 'Любой статус' },
-  { value: 'pending', label: 'На проверке' },
-  { value: 'decided', label: 'Решена' },
-  { value: 'expired', label: 'Просрочена' },
-  { value: 'cancelled', label: 'Отменена' },
+const STATUS_OPTIONS: Array<{
+  value: CurationItemStatusApi | "";
+  label: string;
+}> = [
+  { value: "", label: "Любой статус" },
+  { value: "pending", label: "На проверке" },
+  { value: "decided", label: "Решена" },
+  { value: "expired", label: "Просрочена" },
+  { value: "cancelled", label: "Отменена" },
 ];
 
-/**
- * `/curation` — Master-detail UI Слоя 4 (SBA α-4).
- *
- * Левая колонка — фильтры + список CurationItem. Правая — детальная страница
- * выбранной карточки с payload'ом, провенансом и кнопками decision.
- */
 export function CurationQueueClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
@@ -96,12 +93,11 @@ function CurationQueueContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  /// SBA α-4 wave 2 — счётчик открытых CompletenessSlot по всей Org (для виджета хедера).
   const [openSlotsTotal, setOpenSlotsTotal] = useState<number | null>(null);
 
-  const [level, setLevel] = useState<CurationLevelApi | ''>('');
-  const [status, setStatus] = useState<CurationItemStatusApi | ''>('pending');
-  const [resourceType, setResourceType] = useState('');
+  const [level, setLevel] = useState<CurationLevelApi | "">("");
+  const [status, setStatus] = useState<CurationItemStatusApi | "">("pending");
+  const [resourceType, setResourceType] = useState("");
   const [assignedToMe, setAssignedToMe] = useState(false);
 
   const filters = useMemo(
@@ -134,44 +130,38 @@ function CurationQueueContent() {
         setDetail(null);
       }
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Не удалось загрузить очередь'));
+        setError(humanizeApiError(e, "Не удалось загрузить очередь"));
       }
     } finally {
       setIsLoading(false);
     }
   }, [filters]);
 
-  const loadDetail = useCallback(
-    async (id: string) => {
-      try {
-        const apiDetail = await curationApi.getItem(id);
-        const mapped = mapCurationItemDetail(apiDetail);
-        setDetail(mapped);
-        // Подтянуть связанные конфликты (опц.).
-        if (mapped.relatedConflictIds.length > 0) {
-          try {
-            const list = await curationApi.listConflicts({ status: 'open' });
-            const set = new Set(mapped.relatedConflictIds);
-            setRelatedConflicts(
-              list.items.map(mapConflictItem).filter((c) => set.has(c.id)),
-            );
-          } catch {
-            setRelatedConflicts([]);
-          }
-        } else {
+  const loadDetail = useCallback(async (id: string) => {
+    try {
+      const apiDetail = await curationApi.getItem(id);
+      const mapped = mapCurationItemDetail(apiDetail);
+      setDetail(mapped);
+      if (mapped.relatedConflictIds.length > 0) {
+        try {
+          const list = await curationApi.listConflicts({ status: "open" });
+          const set = new Set(mapped.relatedConflictIds);
+          setRelatedConflicts(
+            list.items.map(mapConflictItem).filter((c) => set.has(c.id)),
+          );
+        } catch {
           setRelatedConflicts([]);
         }
-      } catch (e) {
-        setError(
-          humanizeApiError(e, 'Не удалось загрузить детали'),
-        );
+      } else {
+        setRelatedConflicts([]);
       }
-    },
-    [],
-  );
+    } catch (e) {
+      setError(humanizeApiError(e, "Не удалось загрузить детали"));
+    }
+  }, []);
 
   useEffect(() => {
     void loadQueue();
@@ -186,13 +176,12 @@ function CurationQueueContent() {
     }
   }, [selectedId, loadDetail]);
 
-  // SBA α-4 wave 2 — счётчик открытых слотов (для виджета в хедере).
   useEffect(() => {
     let active = true;
     void (async () => {
       try {
         const res = await curationApi.listCompletenessSlots({
-          status: 'open',
+          status: "open",
           take: 1,
         });
         if (active) setOpenSlotsTotal(res.totalCount);
@@ -218,7 +207,7 @@ function CurationQueueContent() {
           Очередь карточек на проверке. Всего: {total}.
           {openSlotsTotal !== null && (
             <>
-              {' '}
+              {" "}
               <span className="ml-2 inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/5 px-2 py-0.5 text-xs">
                 Незаполненных слотов: {openSlotsTotal}
               </span>
@@ -228,13 +217,15 @@ function CurationQueueContent() {
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[420px,1fr]">
-        {/* Master: фильтры + список */}
+        {}
         <section className="space-y-4">
           <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-card p-4">
             <div className="flex flex-wrap gap-2">
               <select
                 value={level}
-                onChange={(e) => setLevel(e.target.value as CurationLevelApi | '')}
+                onChange={(e) =>
+                  setLevel(e.target.value as CurationLevelApi | "")
+                }
                 className="rounded-md border border-border-subtle bg-bg-input px-2 py-1 text-sm"
               >
                 {LEVEL_OPTIONS.map((o) => (
@@ -246,7 +237,7 @@ function CurationQueueContent() {
               <select
                 value={status}
                 onChange={(e) =>
-                  setStatus(e.target.value as CurationItemStatusApi | '')
+                  setStatus(e.target.value as CurationItemStatusApi | "")
                 }
                 className="rounded-md border border-border-subtle bg-bg-input px-2 py-1 text-sm"
               >
@@ -286,11 +277,15 @@ function CurationQueueContent() {
                     type="button"
                     onClick={() => setSelectedId(it.id)}
                     className={`flex w-full flex-col gap-1 px-4 py-3 text-left transition ${
-                      selectedId === it.id ? 'bg-bg-hover' : 'hover:bg-bg-hover/50'
+                      selectedId === it.id
+                        ? "bg-bg-hover"
+                        : "hover:bg-bg-hover/50"
                     }`}
                   >
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">{resourceTypeRu(it.resourceType)}</span>
+                      <span className="font-medium">
+                        {resourceTypeRu(it.resourceType)}
+                      </span>
                       <span className="text-xs text-fg-tertiary">
                         {curationLevelLabel(it.level)}
                       </span>
@@ -300,7 +295,9 @@ function CurationQueueContent() {
                       {it.confidence !== null && (
                         <span>{(it.confidence * 100).toFixed(0)}%</span>
                       )}
-                      {it.isStale && <span className="text-warning">устаревшая</span>}
+                      {it.isStale && (
+                        <span className="text-warning">устаревшая</span>
+                      )}
                     </div>
                   </button>
                 </li>
@@ -309,7 +306,7 @@ function CurationQueueContent() {
           )}
         </section>
 
-        {/* Detail */}
+        {}
         <section>
           {detail ? (
             <CurationDetailPanel
@@ -346,9 +343,9 @@ function CurationDetailPanel({
   onAfterConflictResolved: () => void;
 }) {
   const [decisionType, setDecisionType] =
-    useState<CurationDecisionTypeApi>('approve');
-  const [reasoning, setReasoning] = useState('');
-  const [payloadText, setPayloadText] = useState('');
+    useState<CurationDecisionTypeApi>("approve");
+  const [reasoning, setReasoning] = useState("");
+  const [payloadText, setPayloadText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -361,7 +358,7 @@ function CurationDetailPanel({
         try {
           payload = JSON.parse(payloadText) as Record<string, unknown>;
         } catch {
-          setError('Поле «правки» должно быть валидным JSON-объектом');
+          setError("Поле «правки» должно быть валидным JSON-объектом");
           setSubmitting(false);
           return;
         }
@@ -373,19 +370,19 @@ function CurationDetailPanel({
       });
       onAfterDecide();
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось сохранить решение'));
+      setError(humanizeApiError(e, "Не удалось сохранить решение"));
     } finally {
       setSubmitting(false);
     }
   }, [decisionType, item.id, onAfterDecide, payloadText, reasoning]);
 
-  const isPending = item.status === 'pending';
+  const isPending = item.status === "pending";
   const canEdit = isPending;
   const requiresReasoning =
-    item.level === 'deep' ||
-    decisionType === 'split' ||
-    decisionType === 'merge' ||
-    decisionType === 'supersede';
+    item.level === "deep" ||
+    decisionType === "split" ||
+    decisionType === "merge" ||
+    decisionType === "supersede";
 
   return (
     <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-6">
@@ -400,15 +397,17 @@ function CurationDetailPanel({
           {item.confidence !== null && (
             <span>уверенность {(item.confidence * 100).toFixed(0)}%</span>
           )}
-          <span>создана {item.createdAt.toLocaleString('ru-RU')}</span>
+          <span>создана {item.createdAt.toLocaleString("ru-RU")}</span>
           {item.expiresAt && (
-            <span>истекает {item.expiresAt.toLocaleString('ru-RU')}</span>
+            <span>истекает {item.expiresAt.toLocaleString("ru-RU")}</span>
           )}
         </div>
       </header>
 
       <section>
-        <h3 className="mb-1 text-sm font-medium">Предлагается канонизировать</h3>
+        <h3 className="mb-1 text-sm font-medium">
+          Предлагается канонизировать
+        </h3>
         <ReadablePayload value={item.proposedPayload} />
       </section>
 
@@ -417,12 +416,13 @@ function CurationDetailPanel({
         <ReadablePayload value={item.triageReason} />
       </section>
 
-      {/* SBA α-4 wave 2 — Вкладка «Полнота карточки». Показывается только для
-          4 нормативных типов (regulation/process/role/company_profile). */}
+      {}
       {COMPLETENESS_CARD_TYPES_BY_RESOURCE[item.resourceType] && (
         <CompletenessPanel
           cardType={
-            COMPLETENESS_CARD_TYPES_BY_RESOURCE[item.resourceType] as CompletenessParentCardType
+            COMPLETENESS_CARD_TYPES_BY_RESOURCE[
+              item.resourceType
+            ] as CompletenessParentCardType
           }
           cardId={item.resourceId}
         />
@@ -457,11 +457,13 @@ function CurationDetailPanel({
                     {curationDecisionLabel(d.decisionType)}
                   </span>
                   <span className="text-xs text-fg-tertiary">
-                    {d.createdAt.toLocaleString('ru-RU')}
+                    {d.createdAt.toLocaleString("ru-RU")}
                   </span>
                 </div>
                 {d.reasoning && (
-                  <p className="mt-1 text-xs text-fg-secondary">{d.reasoning}</p>
+                  <p className="mt-1 text-xs text-fg-secondary">
+                    {d.reasoning}
+                  </p>
                 )}
               </li>
             ))}
@@ -475,12 +477,12 @@ function CurationDetailPanel({
           <div className="flex flex-wrap gap-2">
             {(
               [
-                'approve',
-                'approve_with_edits',
-                'reject',
-                'split',
-                'merge',
-                'supersede',
+                "approve",
+                "approve_with_edits",
+                "reject",
+                "split",
+                "merge",
+                "supersede",
               ] as const
             ).map((t) => (
               <button
@@ -489,8 +491,8 @@ function CurationDetailPanel({
                 onClick={() => setDecisionType(t)}
                 className={`rounded-md border px-3 py-1 text-xs ${
                   decisionType === t
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-border-subtle hover:bg-bg-hover'
+                    ? "border-accent bg-accent/10 text-accent"
+                    : "border-border-subtle hover:bg-bg-hover"
                 }`}
               >
                 {curationDecisionLabel(t)}
@@ -498,10 +500,10 @@ function CurationDetailPanel({
             ))}
           </div>
 
-          {(decisionType === 'approve_with_edits' ||
-            decisionType === 'split' ||
-            decisionType === 'merge' ||
-            decisionType === 'supersede') && (
+          {(decisionType === "approve_with_edits" ||
+            decisionType === "split" ||
+            decisionType === "merge" ||
+            decisionType === "supersede") && (
             <div>
               <label className="mb-1 block text-xs text-fg-tertiary">
                 Правки (JSON-объект)
@@ -518,7 +520,7 @@ function CurationDetailPanel({
 
           <div>
             <label className="mb-1 block text-xs text-fg-tertiary">
-              Обоснование {requiresReasoning ? '(обязательно)' : '(опц.)'}
+              Обоснование {requiresReasoning ? "(обязательно)" : "(опц.)"}
             </label>
             <textarea
               value={reasoning}
@@ -533,7 +535,7 @@ function CurationDetailPanel({
 
           <div className="flex justify-end">
             <Button onClick={submit} disabled={submitting}>
-              {submitting ? 'Сохраняем…' : 'Сохранить решение'}
+              {submitting ? "Сохраняем…" : "Сохранить решение"}
             </Button>
           </div>
         </section>
@@ -550,18 +552,18 @@ function ConflictRow({
   onResolved: () => void;
 }) {
   const [resolution, setResolution] = useState<
-    'accept_new' | 'keep_old' | 'merge' | 'evolving'
-  >('accept_new');
-  const [existingValidUntil, setExistingValidUntil] = useState('');
-  const [newValidFrom, setNewValidFrom] = useState('');
-  const [reasoning, setReasoning] = useState('');
+    "accept_new" | "keep_old" | "merge" | "evolving"
+  >("accept_new");
+  const [existingValidUntil, setExistingValidUntil] = useState("");
+  const [newValidFrom, setNewValidFrom] = useState("");
+  const [reasoning, setReasoning] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = useCallback(async () => {
-    if (resolution === 'evolving' && (!existingValidUntil || !newValidFrom)) {
+    if (resolution === "evolving" && (!existingValidUntil || !newValidFrom)) {
       setError(
-        'Для типа «Эволюция» обязательны обе даты: «старое действовало до» и «новое действует с»',
+        "Для типа «Эволюция» обязательны обе даты: «старое действовало до» и «новое действует с»",
       );
       return;
     }
@@ -571,7 +573,7 @@ function ConflictRow({
       await curationApi.resolveConflict(conflict.id, {
         resolution,
         evolvingMeta:
-          resolution === 'evolving'
+          resolution === "evolving"
             ? {
                 existingValidUntil: new Date(existingValidUntil).toISOString(),
                 newValidFrom: new Date(newValidFrom).toISOString(),
@@ -581,7 +583,7 @@ function ConflictRow({
       });
       onResolved();
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось разрешить конфликт'));
+      setError(humanizeApiError(e, "Не удалось разрешить конфликт"));
     } finally {
       setSubmitting(false);
     }
@@ -598,7 +600,8 @@ function ConflictRow({
     <li className="space-y-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium">
-          {resourceTypeRu(conflict.resourceType)}: {conflict.existingId} ↔ {conflict.newId}
+          {resourceTypeRu(conflict.resourceType)}: {conflict.existingId} ↔{" "}
+          {conflict.newId}
         </span>
         <span className="text-xs">{conflictStatusLabel(conflict.status)}</span>
       </div>
@@ -606,22 +609,22 @@ function ConflictRow({
         {conflict.relationType} · обнаружен: {conflict.detectedBy}
       </div>
       <div className="flex flex-wrap gap-2">
-        {(['accept_new', 'keep_old', 'merge', 'evolving'] as const).map((r) => (
+        {(["accept_new", "keep_old", "merge", "evolving"] as const).map((r) => (
           <button
             key={r}
             type="button"
             onClick={() => setResolution(r)}
             className={`rounded-md border px-2 py-0.5 text-xs ${
               resolution === r
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border-subtle'
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-subtle"
             }`}
           >
             {conflictResolutionLabel(r)}
           </button>
         ))}
       </div>
-      {resolution === 'evolving' && (
+      {resolution === "evolving" && (
         <div className="grid grid-cols-2 gap-2">
           <label className="text-xs text-fg-tertiary">
             Старое действовало до
@@ -653,17 +656,13 @@ function ConflictRow({
       {error && <p className="text-xs text-danger">{error}</p>}
       <div className="flex justify-end">
         <Button size="sm" onClick={submit} disabled={submitting}>
-          {submitting ? 'Сохраняем…' : 'Разрешить'}
+          {submitting ? "Сохраняем…" : "Разрешить"}
         </Button>
       </div>
     </li>
   );
 }
 
-/**
- * SBA α-4 wave 2 — секция «Полнота карточки».
- * Показывается только для 4 нормативных типов (regulation/process/role/company_profile).
- */
 function CompletenessPanel({
   cardType,
   cardId,
@@ -686,9 +685,7 @@ function CompletenessPanel({
       });
       setSlots(res.items.map(mapCompletenessSlot));
     } catch (e) {
-      setError(
-        humanizeApiError(e, 'Не удалось загрузить слоты'),
-      );
+      setError(humanizeApiError(e, "Не удалось загрузить слоты"));
     } finally {
       setIsLoading(false);
     }
@@ -698,8 +695,8 @@ function CompletenessPanel({
     void load();
   }, [load]);
 
-  const open = slots.filter((s) => s.status === 'open');
-  const filled = slots.filter((s) => s.status === 'filled');
+  const open = slots.filter((s) => s.status === "open");
+  const filled = slots.filter((s) => s.status === "filled");
 
   const onMarkFilled = useCallback(
     async (slotId: string) => {
@@ -710,7 +707,7 @@ function CompletenessPanel({
         setError(
           e instanceof ApiError
             ? e.message
-            : 'Не удалось пометить слот заполненным',
+            : "Не удалось пометить слот заполненным",
         );
       }
     },
@@ -728,8 +725,8 @@ function CompletenessPanel({
         <p className="text-xs text-danger">{error}</p>
       ) : slots.length === 0 ? (
         <p className="text-xs text-fg-tertiary">
-          Слоты для этой карточки ещё не сгенерированы. После ближайшего
-          прохода сканера полноты — появятся здесь.
+          Слоты для этой карточки ещё не сгенерированы. После ближайшего прохода
+          сканера полноты — появятся здесь.
         </p>
       ) : (
         <div className="space-y-3">
@@ -749,9 +746,9 @@ function CompletenessPanel({
                         {completenessSlotNameLabel(s.slotName)}
                       </div>
                       <div className="text-xs text-fg-tertiary">
-                        {s.slotKind === 'required'
-                          ? 'обязательный'
-                          : 'желательный'}{' '}
+                        {s.slotKind === "required"
+                          ? "обязательный"
+                          : "желательный"}{" "}
                         · {completenessSlotStatusLabel(s.status)}
                       </div>
                     </div>
@@ -781,7 +778,7 @@ function CompletenessPanel({
                     {completenessSlotNameLabel(s.slotName)}
                     {s.filledAt && (
                       <span className="ml-2 text-fg-tertiary">
-                        · {s.filledAt.toLocaleString('ru-RU')}
+                        · {s.filledAt.toLocaleString("ru-RU")}
                       </span>
                     )}
                   </li>

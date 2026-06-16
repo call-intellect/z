@@ -2,10 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { IdeaStatusAutoAdvanceService } from './idea-status-auto-advance.service';
 
-/**
- * TZ-1 Фаза 4.A (daily-value-engine) — unit-тест авто-продвижения статуса идеи
- * при закрытии связанной задачи. Mock Prisma/specialist36/cfg/metrics.
- */
 describe('IdeaStatusAutoAdvanceService', () => {
   function build(opts: {
     issue?: { id: string; goalId: string | null } | null;
@@ -116,8 +112,6 @@ describe('IdeaStatusAutoAdvanceService', () => {
   });
 
   it('shipped идея в выборке → исключена (changeStatus не вызывается для неё)', async () => {
-    // findMany уже фильтрует terminal-статусы, но проверим nextIdeaStatusOnTaskClose
-    // защиту: даже если shipped просочился, не двигаем.
     const { svc, specialist36 } = build({
       issue: { id: 'iss-1', goalId: 'g-1' },
       ideas: [{ id: 'idea-1', status: 'shipped' }],

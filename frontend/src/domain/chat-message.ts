@@ -1,4 +1,4 @@
-import type { ChatCitationApi, ChatMessageApi } from '@/api/chat.api';
+import type { ChatCitationApi, ChatMessageApi } from "@/api/chat.api";
 
 export type ChatCitationDomain = {
   meetingId: string;
@@ -11,13 +11,11 @@ export type ChatCitationDomain = {
 
 export type ChatMessageDomain = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   citations: ChatCitationDomain[];
   createdAt: Date;
-  /** UI-only: помечен после неудачной отправки. */
   failed?: boolean;
-  /** UI-only: индикатор «думает...». */
   pending?: boolean;
 };
 

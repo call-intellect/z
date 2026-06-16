@@ -20,33 +20,18 @@ import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
 import { AdminIncidentsService } from './admin-incidents.service';
-import {
-  CreateIncidentRuleSchema,
-  type CreateIncidentRuleDto,
-} from './dto/admin-incidents.dto';
+import { CreateIncidentRuleSchema, type CreateIncidentRuleDto } from './dto/admin-incidents.dto';
 
-/**
- * Admin-redesign Фаза 1 — `AdminIncidentsController`.
- *
- * UI Z-Admin «Пульс → Инциденты»: что прямо сейчас сломано + список
- * очередей с failed-job'ами + MVP-stub правил.
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`.
- */
 @ApiTags('admin-incidents')
 @Controller('api/v1/admin/incidents')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminIncidentsController {
-  constructor(
-    @Inject(AdminIncidentsService) private readonly svc: AdminIncidentsService,
-  ) {}
+  constructor(@Inject(AdminIncidentsService) private readonly svc: AdminIncidentsService) {}
 
   @Get()
   @ApiOperation({
-    summary:
-      'Текущие инциденты: failed-jobs по всем известным BullMQ-очередям.',
+    summary: 'Текущие инциденты: failed-jobs по всем известным BullMQ-очередям.',
   })
   async list() {
     return this.svc.listIncidents();
@@ -54,8 +39,7 @@ export class AdminIncidentsController {
 
   @Get('queues')
   @ApiOperation({
-    summary:
-      'Список BullMQ-очередей с counts и последними 3 failed-job\'ами на каждую.',
+    summary: "Список BullMQ-очередей с counts и последними 3 failed-job'ами на каждую.",
   })
   async queues() {
     return this.svc.listIncidents();

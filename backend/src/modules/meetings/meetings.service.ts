@@ -41,9 +41,6 @@ import { assertTransition } from './fsm/meeting-fsm';
 import { MeetingVisibilityService } from './meeting-visibility.service';
 import { MeetingsRepository } from './meetings.repository';
 
-/**
- * Вход «приглашённый» — общий для создания встречи и «допригласить» (B5).
- */
 type InviteeInput = {
   userId?: string | null;
   personId?: string | null;
@@ -51,10 +48,6 @@ type InviteeInput = {
   sendVia?: ('email' | 'telegram')[];
 };
 
-/**
- * Отложенная доставка приглашения (накапливается внутри транзакции,
- * отправляется side-effect'ом ПОСЛЕ коммита).
- */
 type PendingInvite = {
   inviteToken: string;
   sendVia: ('email' | 'telegram')[];
@@ -63,18 +56,6 @@ type PendingInvite = {
   name: string;
 };
 
-/**
- * Бизнес-сервис встреч.
- *
- * Главные сценарии (Фаза 2):
- *   - `createFromCrossmark` — создание встречи через Crossmark API:
- *      ► upsert хоста, создание Meeting + Participant-host в одной транзакции,
- *      ► выдача deep-link JWT (TTL = `cfg.auth.deepLinkTtlSeconds`).
- *   - `getForCrossmark` / `getForUser` / `list` — чтение.
- *   - `cancelScheduled` — `scheduled → failed (cancelled_by_partner)`.
- *   - `getAccess` — определить роль пользователя для страницы встречи (host/guest/none).
- *     НЕ создаёт `Participant` — это делает `/join` (Фаза 2.4).
- */
 @Injectable()
 export class MeetingsService {
   private readonly logger = new Logger(MeetingsService.name);
@@ -88,21 +69,12 @@ export class MeetingsService {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
     @Inject(MeetingsBalanceService)
     private readonly meetingsBalance: MeetingsBalanceService,
-    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — доставка приглашений.
-    // MailService и ConversationalService — @Global, цикла нет (ни Mail, ни
-    // Conversational не зависят от Meetings).
     @Inject(MailService) private readonly mail: MailService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
     @Inject(MeetingVisibilityService) private readonly visibility: MeetingVisibilityService,
   ) {}
 
-  /**
-   * CRIT-3: для каждого Meeting обязателен tenantId (Org). Резолвим default-Org
-   * владельца — сначала owned (персональный), иначе первый по joinedAt
-   * Membership. На каждого активного юзера такой Org гарантирован через
-   * `backfill-orgs-fase0.ts` / signup-flow. Если Org нет — отказ.
-   */
   private async resolveDefaultTenant(
     userId: string,
     tx?: Prisma.TransactionClient,
@@ -123,20 +95,6 @@ export class MeetingsService {
     throw new NotAuthorizedError('no_org_for_user');
   }
 
-  /**
-   * ТЗ 2026-05-27 (billing) Фаза 3: списываем 1 встречу из накопительного
-   * MeetingsBalance вместо старой месячной квоты meetings_per_month.
-   *
-   * Разрешение tenantId: только если у юзера ровно одна Org-membership
-   * (то же поведение, что было у checkMeetingsMonthlyQuota — не пытаемся
-   * угадывать когда membership'ов несколько; в этом случае пользователь
-   * шлёт явный X-Org-Id и логика проверки уходит в Controller/Guard
-   * — на которые это место не имеет доступа).
-   *
-   * При недостатке баланса — ForbiddenException (бизнес-блок). При инфра-
-   * сбоях — fail-open: лучше дать встречу бесплатно, чем заблокировать
-   * клиента из-за упавшего Redis/PG (унаследовано от старой квоты).
-   */
   private async consumeMeetingFromBalance(userId: string): Promise<void> {
     const memberships = await this.prisma.membership.findMany({
       where: { userId, org: { deletedAt: null } },
@@ -148,12 +106,9 @@ export class MeetingsService {
     try {
       await this.meetingsBalance.consume(tenantId, 1);
     } catch (err) {
-      // ForbiddenException — это HttpException про недостаток баланса,
-      // пробрасываем; остальное (БД упала и т.п.) — fail-open.
       if (
         err instanceof Error &&
-        (err.name === 'ForbiddenException' ||
-          (err as { status?: number }).status === 403)
+        (err.name === 'ForbiddenException' || (err as { status?: number }).status === 403)
       ) {
         throw err;
       }
@@ -165,27 +120,15 @@ export class MeetingsService {
     }
   }
 
-  /**
-   * Pre-seed одного приглашённого внутри транзакции (ТЗ 2026-06-04 Фаза 2.1 +
-   * B5 2026-06-06). Создаёт `Participant` со статусом 'invited' и персональным
-   * `inviteToken`, резолвит имя/email для доставки. Возвращает `PendingInvite`
-   * для последующей доставки или `null`, если приглашённый — сам хост.
-   *
-   * Логика byte-identical с прежним инлайн-циклом в `createForUser` — это
-   * чистый вынос для переиспользования в `addInvitees`.
-   */
   private async seedInviteeInTx(
     tx: Prisma.TransactionClient,
     meetingId: string,
     invitee: InviteeInput,
     hostUserId: string,
   ): Promise<PendingInvite | null> {
-    // Хост уже добавлен отдельно — не дублируем его как приглашённого.
     if (invitee.userId && invitee.userId === hostUserId) return null;
 
     let resolvedName: string;
-    // ТЗ 2026-06-04 Фаза 3 — резолвим email для доставки: явный
-    // invitee.email приоритетен, иначе берём из User.
     let resolvedEmail: string | null = invitee.email ?? null;
     if (invitee.userId) {
       const u = await tx.user.findUnique({
@@ -229,8 +172,6 @@ export class MeetingsService {
     };
   }
 
-  // ────────────────────────── создание ──────────────────────────────────
-
   async createFromCrossmark(
     input: {
       host: { externalId: string; email: string; name: string };
@@ -240,13 +181,10 @@ export class MeetingsService {
     },
     _partnerId: string,
   ): Promise<CreatedMeetingResult> {
-    // 1. upsert юзера (отдельная транзакция).
     const user = await this.users.upsertFromCrossmark(input.host);
 
-    // 2. ULID — детерминирован по времени, отсортирован, безопасен для public URL.
     const meetingId = ulid();
 
-    // 3. транзакция: Meeting + host-Participant.
     await this.prisma.$transaction(async (tx) => {
       const tenantId = await this.resolveDefaultTenant(user.id, tx);
       await this.meetings.create(
@@ -273,30 +211,18 @@ export class MeetingsService {
       });
     });
 
-    // 4. deep-link JWT.
     const deepLinkJwt = this.jwt.signDeepLink({ sub: user.id, meetingId });
     const url = `${this.cfg.auth.publicFrontendUrl}/m/${meetingId}?t=${deepLinkJwt}`;
     const expiresAt = new Date(Date.now() + this.cfg.auth.deepLinkTtlSeconds * 1000);
 
-    // 5. метрики.
     this.metrics.incMeetingCreated(input.type);
     this.metrics.incCrossmarkApiRequest('POST /meetings', 201);
 
-    this.logger.log(
-      `Создана встреча ${meetingId} (тип=${input.type}, owner=${user.id})`,
-    );
+    this.logger.log(`Создана встреча ${meetingId} (тип=${input.type}, owner=${user.id})`);
 
     return { meetingId, deepLink: url, expiresAt };
   }
 
-  /**
-   * Создание встречи под уже залогиненного пользователя (Фаза 7.5).
-   * Возврат — сама встреча, без deep-link (хост уже в cookie).
-   *
-   * Если передан `cardId` — встреча создаётся уже привязанной к карточке
-   * (главный сценарий «Запланировать встречу» с карточки). Owner-проверка
-   * карточки внутри транзакции; при невалидной/чужой/удалённой — `NotAuthorizedError`.
-   */
   async createForUser(
     input: {
       type: MeetingType;
@@ -310,29 +236,22 @@ export class MeetingsService {
         email?: string | null;
         sendVia?: ('email' | 'telegram')[];
       }>;
-      /** ТЗ 2026-06-06 knowledge-access (Ф7A) — закрытость встречи. */
       closedGroupKind?: 'leadership' | 'council' | 'personal' | null;
     },
     userId: string,
   ): Promise<Meeting> {
-    // ТЗ 2026-05-27 (billing) Фаза 3: накопительный MeetingsBalance вместо
-    // месячной квоты meetings_per_month.
     await this.consumeMeetingFromBalance(userId);
 
     const meetingId = ulid();
     let created!: Meeting;
-    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — собираем приглашённых для
-    // доставки ПОСЛЕ транзакции (доставка — side-effect, не часть БД-транзакции).
     const pendingInvites: PendingInvite[] = [];
     let hostName = '';
 
     await this.prisma.$transaction(async (tx) => {
-      // Подтверждаем что пользователь существует — иначе FK упадёт менее наглядно.
       const user = await tx.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotAuthorizedError('user_not_found');
       hostName = user.name;
 
-      // Если cardId задан — проверяем владение и не-удалённость.
       let resolvedCardId: string | null = null;
       if (input.cardId) {
         const card = await tx.card.findUnique({
@@ -372,17 +291,11 @@ export class MeetingsService {
         },
       });
 
-      // Pre-seed приглашённых (ТЗ 2026-06-04, Фаза 2.1). Создаём
-      // Participant'ов со статусом 'invited' и персональным inviteToken —
-      // identity сотрудника протягивается до диаризации/графа ещё до входа.
-      // Доставка приглашений (email/Telegram) — Фаза 3, здесь только pre-seed.
       for (const invitee of input.invitees ?? []) {
         const pi = await this.seedInviteeInTx(tx, meetingId, invitee, userId);
         if (pi) pendingInvites.push(pi);
       }
 
-      // Денормализация счётчиков карточки. Делается в той же транзакции —
-      // консистентно. Без recountMeetings: дешевле прибавить +1.
       if (resolvedCardId) {
         await tx.card.update({
           where: { id: resolvedCardId },
@@ -396,14 +309,11 @@ export class MeetingsService {
 
     this.metrics.incMeetingCreated(input.type);
 
-    // Side-effect онбординг v2: первая встреча → firstMeetingCreatedAt
     void this.prisma.org.updateMany({
       where: { id: created.tenantId, firstMeetingCreatedAt: null },
       data: { firstMeetingCreatedAt: new Date() },
     });
 
-    // ТЗ 2026-06-04 (meeting-identity) Фаза 3 — доставка приглашений
-    // (side-effect, best-effort: сбой доставки не должен валить создание встречи).
     if (pendingInvites.length > 0) {
       void this.deliverMeetingInvites({
         meetingId,
@@ -417,20 +327,6 @@ export class MeetingsService {
     return created;
   }
 
-  /**
-   * ТЗ 2026-06-04 (meeting-identity) Фаза 3.1–3.3 — доставка приглашений на
-   * встречу по выбранным каналам. Строит персональную join-ссылку
-   * `${publicFrontendUrl}/m/<meetingId>?inv=<inviteToken>` (переход проставляет
-   * identity участника — Фаза 3.1) и отправляет:
-   *   - email (`sendVia` ⊇ 'email' и есть адрес) — через MailService.sendMeetingInvite
-   *     напрямую (в т.ч. внешним адресам без User — sendNotification их не умеет);
-   *   - telegram (`sendVia` ⊇ 'telegram' и есть userId) — через
-   *     ConversationalService.sendNotification(eventType='meeting.invite') с каскадом
-   *     telegram_bot → email_smtp → in_app (встроен в sendNotification).
-   *
-   * Best-effort: каждое приглашение в своём try/catch — сбой одного канала не
-   * срывает остальные и не валит создание встречи.
-   */
   private async deliverMeetingInvites(args: {
     meetingId: string;
     tenantId: string;
@@ -448,8 +344,6 @@ export class MeetingsService {
     for (const invite of args.invites) {
       const joinUrl = `${baseUrl}/m/${args.meetingId}?inv=${invite.inviteToken}`;
 
-      // Email: явный канал 'email' и есть адрес. Внешние (без userId) — тоже
-      // сюда, т.к. ConversationalService не доставляет незарегистрированным.
       if (invite.sendVia.includes('email') && invite.email) {
         try {
           await this.mail.sendMeetingInvite({
@@ -469,8 +363,6 @@ export class MeetingsService {
         }
       }
 
-      // Telegram: канал 'telegram' и есть userId (зарегистрированный сотрудник).
-      // Каскад на email_smtp/in_app встроен в sendNotification.
       if (invite.sendVia.includes('telegram') && invite.userId) {
         try {
           await this.conversational.sendNotification({
@@ -498,24 +390,6 @@ export class MeetingsService {
     }
   }
 
-  /**
-   * Calendar MVP Polish (2026-05-25, Фаза P1) — создание LiveKit-комнаты
-   * под событие пользовательского календаря (`POST /api/v1/events` с
-   * `kind=meeting`).
-   *
-   * Отличия от `createForUser`:
-   *   - не плодит ULID → используется ULID самого Event (для трассировки
-   *     event ↔ meeting через одинаковый префикс времени);
-   *   - tenantId приходит готовым (рассчитан в EventsService из CurrentOrg),
-   *     не пытаемся резолвить «дефолт» — это сценарий конкретной Org.
-   *   - не привязывается к Card (карточка человека из CRM) — это календарь;
-   *   - возвращает {meetingId, joinUrl} — joinUrl сохраняется в Event.metadata
-   *     и отдаётся клиенту, чтобы показать кнопку «Войти во встречу».
-   *
-   * roomName = meetingId (как везде; ULID годится для public URL).
-   * type — нейтральный `team` (нет специального `calendar_event` в enum;
-   * `MeetingType` остаётся для совместимости с AI-промптами по типу).
-   */
   async createForCalendarEvent(args: {
     tenantId: string;
     ownerUserId: string;
@@ -563,23 +437,6 @@ export class MeetingsService {
     return { meetingId, joinUrl };
   }
 
-  /**
-   * Calendar MVP Polish (2026-05-25, Фаза P1) — отмена «запланированной»
-   * комнаты при удалении/отмене события календаря.
-   *
-   * Отличается от `cancelScheduled(id, partnerId)` (Crossmark, выше тем,
-   * что:
-   *   - не привязан к partner-контексту;
-   *   - идемпотентен (если уже отменена/удалена — no-op, не валит);
-   *   - не падает на FSM-несовпадении (event может быть удалён уже после
-   *     начала встречи — тогда не отменяем status, только лог);
-   *   - принимает `reason` (event_deleted | event_cancelled) — пишется
-   *     в `failureReason`.
-   *
-   * НЕ останавливает активный Egress напрямую — RecordingsService.stop
-   * требует hostUserId; webhook room_finished подберёт сам, когда комната
-   * закроется по таймауту неактивности. Просто пишем warning для трассировки.
-   */
   async cancelScheduledForCalendarEvent(args: {
     meetingId: string;
     reason: 'event_deleted' | 'event_cancelled';
@@ -594,11 +451,8 @@ export class MeetingsService {
       return;
     }
     if (meeting.deletedAt !== null) {
-      // Уже удалена — идемпотентно.
       return;
     }
-    // Если встреча уже активна / завершена — статус не трогаем, только soft-delete,
-    // чтобы не сломать FSM (FSM запрещает active → failed без явного перехода).
     if (meeting.status === 'scheduled') {
       try {
         await this.meetings.updateStatus(meetingId, 'failed', {
@@ -614,21 +468,15 @@ export class MeetingsService {
         );
       }
     } else {
-      // active / *_processing / ready / failed — soft-delete без смены статуса.
       this.logger.warn(
         { meetingId, status: meeting.status, reason },
         'cancelScheduledForCalendarEvent: встреча уже не scheduled — только soft-delete',
       );
-      // Проверим активную запись для трассировки (Egress останавливать не пробуем —
-      // нет userId хоста в контракте, webhook room_finished подберёт сам).
       const recording = await this.prisma.recording.findUnique({
         where: { meetingId },
         select: { status: true, compositeEgressId: true },
       });
-      if (
-        recording?.status === 'requested' ||
-        recording?.status === 'recording'
-      ) {
+      if (recording?.status === 'requested' || recording?.status === 'recording') {
         this.logger.warn(
           {
             meetingId,
@@ -643,12 +491,8 @@ export class MeetingsService {
       where: { id: meetingId },
       data: { deletedAt: new Date() },
     });
-    this.logger.log(
-      `Calendar Meeting ${meetingId} отменён (reason=${reason})`,
-    );
+    this.logger.log(`Calendar Meeting ${meetingId} отменён (reason=${reason})`);
   }
-
-  // ────────────────────────── чтение ─────────────────────────────────────
 
   async getForCrossmark(id: string): Promise<MeetingPublicDto> {
     const meeting = await this.meetings.findByIdWithOwner(id);
@@ -663,14 +507,6 @@ export class MeetingsService {
     return meeting;
   }
 
-  /**
-   * Host-only гейт для МУТАЦИЙ встречи (rename participant, setClosedGroupKind,
-   * retry-ai/regenerate в контроллере). Раньше эти места переиспользовали
-   * `getForUser` ради owner-проверки, но после перевода `getForUser` на предикат
-   * «Кому видно» (ТЗ meeting-visibility Ф3) чтение видно не только хосту —
-   * поэтому host-only действия проверяют владельца напрямую. Публичный: вызывается
-   * и из контроллера (retry-ai). Возвращает встречу для дальнейшего использования.
-   */
   async assertMeetingHost(
     meetingId: string,
     userId: string,
@@ -681,14 +517,16 @@ export class MeetingsService {
     return meeting;
   }
 
-  /** ТЗ Ф4 — текущий режим «Кому видно» (host-only). */
   async getMeetingVisibility(meetingId: string, userId: string) {
     const meeting = await this.assertMeetingHost(meetingId, userId);
     return this.visibility.getVisibility(meeting);
   }
 
-  /** ТЗ Ф4 — задать «Кому видно» (host-only). */
-  async setMeetingVisibility(meetingId: string, userId: string, dto: SetVisibilityBody): Promise<void> {
+  async setMeetingVisibility(
+    meetingId: string,
+    userId: string,
+    dto: SetVisibilityBody,
+  ): Promise<void> {
     const meeting = await this.assertMeetingHost(meetingId, userId);
     await this.visibility.setVisibility(meeting, userId, dto);
   }
@@ -707,11 +545,12 @@ export class MeetingsService {
       cardId?: string;
     },
   ): Promise<Paginated<Meeting>> {
-    // tenantId из X-Org-Id (TenantMiddleware → @CurrentOrg). Fallback — единственный
-    // membership пользователя (продукт: один user = одна Org). Нет Org → пусто.
     let tid = tenantId;
     if (!tid) {
-      const m = await this.prisma.membership.findFirst({ where: { userId }, select: { orgId: true } });
+      const m = await this.prisma.membership.findFirst({
+        where: { userId },
+        select: { orgId: true },
+      });
       tid = m?.orgId ?? undefined;
     }
     if (!tid) return { items: [], total: 0, page: filters.page, limit: filters.limit };
@@ -721,11 +560,6 @@ export class MeetingsService {
     return { items, total, page: filters.page, limit: filters.limit };
   }
 
-  /**
-   * Определить роль пользователя на встрече БЕЗ создания Participant.
-   * `userId === null` → роль `none` (если только нет какого-то «публичного»
-   * статуса; в MVP его нет).
-   */
   async getAccess(meetingId: string, userId: string | null): Promise<AccessInfo> {
     const meeting = await this.meetings.findByIdWithParticipants(meetingId);
     if (!meeting) throw new MeetingNotFoundError(meetingId);
@@ -759,24 +593,6 @@ export class MeetingsService {
     };
   }
 
-  // ────────────────────────── мутации ────────────────────────────────────
-
-  /**
-   * Партнёр может отменить встречу, пока она `scheduled`.
-   * После — встреча идёт через FSM (active/completed) — отмена тут невалидна.
-   */
-  /**
-   * Zoom-модель: хост переименовывает гостя после встречи (commercial-reliability
-   * pack, 2026-05-30, Фаза 3). Только незарегистрированных участников — у
-   * пользователей с аккаунтом имя берётся из `User.name`.
-   *
-   * Защита:
-   *   - `getForUser` бросит `NotAuthorizedError`, если actor не хост встречи;
-   *   - `participantId` проверяется в рамках `meetingId` (защита от
-   *     path-traversal: «попытка переименовать чужого participant'а через
-   *     URL чужой встречи»);
-   *   - `isRegisteredUser=true` → `ParticipantRenameForbiddenError`.
-   */
   async renameParticipant(args: {
     meetingId: string;
     participantId: string;
@@ -810,12 +626,6 @@ export class MeetingsService {
     return updated;
   }
 
-  /**
-   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — пометить закрытость встречи
-   * постфактум. Доступ: только хост (через `getForUser`, который бросит
-   * `NotAuthorizedError('not_meeting_host')` или `MeetingNotFoundError`).
-   * null = открыто; 'leadership' | 'council' | 'personal'.
-   */
   async setClosedGroupKind(
     meetingId: string,
     closedGroupKind: 'leadership' | 'council' | 'personal' | null,
@@ -834,12 +644,6 @@ export class MeetingsService {
     return updated;
   }
 
-  /**
-   * B5 (2026-06-06) — допригласить участников ПОСЛЕ создания / во время встречи.
-   * Доступ: только хост. Разрешено только для joinable-встречи (scheduled|active).
-   * Идемпотентность: повтор того же userId/personId = no-op (email-only не
-   * дедупится — Participant не хранит email).
-   */
   async addInvitees(
     meetingId: string,
     invitees: InviteeInput[],
@@ -909,11 +713,6 @@ export class MeetingsService {
     return { added: pendingInvites.length, skipped };
   }
 
-  /**
-   * Soft-delete встречи (workspace M3a). Хост-only. Помечает `deletedAt`,
-   * списки автоматически фильтруют по `deletedAt: null` (см. репозиторий).
-   * Идемпотентно: повторный вызов на уже удалённой возвращает без ошибки.
-   */
   async softDelete(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.meetings.findById(meetingId);
     if (!meeting) throw new MeetingNotFoundError(meetingId);
@@ -921,7 +720,6 @@ export class MeetingsService {
       throw new NotAuthorizedError('not_meeting_host');
     }
     if (meeting.deletedAt !== null) {
-      // Уже удалена — no-op, не валим.
       return;
     }
     await this.prisma.meeting.update({
@@ -935,13 +733,9 @@ export class MeetingsService {
     const meeting = await this.meetings.findById(id);
     if (!meeting) throw new MeetingNotFoundError(id);
 
-    // FSM проверит scheduled → failed; на любом другом исходном статусе — 409.
     assertTransition(meeting.status, 'failed');
 
-    // Дополнительно ограничим: отменять можно только из scheduled.
     if (meeting.status !== 'scheduled') {
-      // Этот if не сработает после assertTransition(scheduled→failed),
-      // но защищает на случай если в FSM откроют другие переходы в failed.
       throw new NotAuthorizedError('cancel_only_scheduled');
     }
 
@@ -952,17 +746,6 @@ export class MeetingsService {
     this.logger.log(`Встреча ${id} отменена партнёром`);
   }
 
-  /**
-   * Универсальный FSM-переход. Используется webhook-обработчиком и host-controls.
-   *
-   * Семантика:
-   *   1. В транзакции читаем текущий статус.
-   *   2. `assertTransition(from, to)` — бросит `InvalidFsmTransitionError` на запрет.
-   *   3. Обновляем `status` + опциональные поля (startedAt/endedAt/failureReason).
-   *   4. Записываем `MeetingEvent` (event_type = `fsm:<from>->to>`).
-   *
-   * Возвращаем обновлённую встречу.
-   */
   async transitionStatus(
     meetingId: string,
     toStatus: MeetingStatus,
@@ -985,9 +768,7 @@ export class MeetingsService {
           status: toStatus,
           ...(extras.startedAt !== undefined ? { startedAt: extras.startedAt } : {}),
           ...(extras.endedAt !== undefined ? { endedAt: extras.endedAt } : {}),
-          ...(extras.failureReason !== undefined
-            ? { failureReason: extras.failureReason }
-            : {}),
+          ...(extras.failureReason !== undefined ? { failureReason: extras.failureReason } : {}),
         },
       });
 
@@ -1007,18 +788,6 @@ export class MeetingsService {
     });
   }
 
-  // ────────────────────────── result page (Фаза 7.6) ─────────────────────
-
-  /**
-   * Полные данные result-страницы для host'а.
-   *
-   * Возвращает:
-   *   - meeting + participants
-   *   - aiResult (если есть; иначе null — ещё в процессе)
-   *   - recording info (БЕЗ presigned URL — отдельный endpoint /recording/download)
-   *   - transcript info (есть/нет mergedJson)
-   *   - флаг `aiReady` (для удобства фронта).
-   */
   async getResult(
     meetingId: string,
     userId: string,
@@ -1042,11 +811,6 @@ export class MeetingsService {
       role: 'host' | 'guest';
       joinedAt: string | null;
       leftAt: string | null;
-      /**
-       * Commercial-reliability pack (Фаза 3 — Zoom-модель): нужно UI чтобы
-       * показать «карандашик» переименования только для гостей. У
-       * зарегистрированных имя из User.name и редактируется в профиле.
-       */
       isRegisteredUser: boolean;
     }>;
     aiResult: {
@@ -1057,10 +821,6 @@ export class MeetingsService {
       tasks: unknown;
       modelUsed: string;
       createdAt: string;
-      /**
-       * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для
-       * пользовательского UI (`MeetingReportFastWorker`).
-       */
       summaryFast: string | null;
       summaryFastModel: string | null;
       summaryFastGeneratedAt: string | null;
@@ -1104,32 +864,21 @@ export class MeetingsService {
         cardId: meeting.cardId ?? null,
         visibilityScope: meeting.visibilityScope,
       },
-      participants: meeting.participants
-        .filter(isPresentParticipant)
-        .map((p: Participant) => ({
-          id: p.id,
-          name: p.name,
-          role: p.role,
-          joinedAt: p.joinedAt?.toISOString() ?? null,
-          leftAt: p.leftAt?.toISOString() ?? null,
-          isRegisteredUser: p.isRegisteredUser,
-        })),
-      aiResult: meeting.aiResult
-        ? this.toAiResultDto(meeting.aiResult)
-        : null,
-      recording: meeting.recording
-        ? this.toRecordingDto(meeting.recording)
-        : null,
-      transcript: meeting.transcript
-        ? this.toTranscriptDto(meeting.transcript)
-        : null,
+      participants: meeting.participants.filter(isPresentParticipant).map((p: Participant) => ({
+        id: p.id,
+        name: p.name,
+        role: p.role,
+        joinedAt: p.joinedAt?.toISOString() ?? null,
+        leftAt: p.leftAt?.toISOString() ?? null,
+        isRegisteredUser: p.isRegisteredUser,
+      })),
+      aiResult: meeting.aiResult ? this.toAiResultDto(meeting.aiResult) : null,
+      recording: meeting.recording ? this.toRecordingDto(meeting.recording) : null,
+      transcript: meeting.transcript ? this.toTranscriptDto(meeting.transcript) : null,
       aiReady: meeting.status === 'ai_ready',
     };
   }
 
-  /**
-   * Краткий статус для polling'а result-страницы. Не нагружает БД участниками/AI.
-   */
   async getResultStatus(
     meetingId: string,
     userId: string,
@@ -1143,10 +892,6 @@ export class MeetingsService {
     return { stage: meeting.status, failureReason: meeting.failureReason ?? null };
   }
 
-  /**
-   * Данные транскрипта (turns + roomChat) из БД. Только для host'а.
-   * Если transcript.turns ещё нет — 404.
-   */
   async getTranscript(
     meetingId: string,
     userId: string,
@@ -1157,7 +902,9 @@ export class MeetingsService {
   }> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
-      include: { transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } } },
+      include: {
+        transcript: { select: { turns: true, roomChat: true, totalDurationSeconds: true } },
+      },
     });
     if (!meeting) throw new MeetingNotFoundError(meetingId);
     await this.visibility.assertCanView(meetingId, userId);
@@ -1166,16 +913,21 @@ export class MeetingsService {
       throw new MeetingNotFoundError(`transcript:${meetingId}`);
     }
 
-    const turns = t.turns as Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
-    const roomChat = (t.roomChat as Array<{ sentAt: string; authorName: string; content: string }> | null) ?? undefined;
+    const turns = t.turns as Array<{
+      speaker: string;
+      text: string;
+      startSec: number;
+      endSec: number;
+    }>;
+    const roomChat =
+      (t.roomChat as Array<{ sentAt: string; authorName: string; content: string }> | null) ??
+      undefined;
     return {
       turns,
       ...(roomChat && roomChat.length > 0 ? { roomChat } : {}),
       durationSeconds: t.totalDurationSeconds ?? null,
     };
   }
-
-  // ────────────────────────── helpers ────────────────────────────────────
 
   private toAiResultDto(r: AiResult): {
     summary: string;
@@ -1197,7 +949,6 @@ export class MeetingsService {
       tasks: r.tasks ?? null,
       modelUsed: r.modelUsed,
       createdAt: r.createdAt.toISOString(),
-      // ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для UI.
       summaryFast: r.summaryFast ?? null,
       summaryFastModel: r.summaryFastModel ?? null,
       summaryFastGeneratedAt: r.summaryFastGeneratedAt?.toISOString() ?? null,

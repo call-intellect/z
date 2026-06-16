@@ -1,22 +1,3 @@
-/**
- * seed-support-contour-group.ts — идемпотентный сид закрытого контура
- * поддержки (синглтон-группа). ТЗ 2026-06-09 support-desk-clone, Ф1/Ф2.
- *
- * Создаёт `KnowledgeGroup(kind='support', refId=null, isClosed=true,
- * name='Контур поддержки')` в вендор-Org. Членство (галочка «сотрудник
- * поддержки») управляется отдельно через KnowledgeGroupMember (Ф2 admin-API).
- *
- * Вендор-Org читается из AdminSetting `support.vendor_org_id`. Не задано →
- * no-op (параметр владельца).
- *
- * Идемпотентность: findFirst по (tenantId, kind='support', refId=null) перед
- * create; повторный прогон = без дублей (есть и unique-constraint
- * @@unique([tenantId, kind, refId])).
- *
- * Запуск:
- *   bun run scripts/seed-support-contour-group.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();

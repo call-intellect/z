@@ -1,32 +1,11 @@
-'use client';
+"use client";
 
-/**
- * MainEmptyState — полно-страничный empty-state для «своей пустой Org» в
- * DEMO-режиме. Заменяет Hero + Tabs целиком (правило 3 матрицы ЭТЗ
- * `2026-06-01-main-screen-umbrella.md`). Не показывается в эталонной Org
- * (там работа через эталонный demo_observer flow).
- *
- * Подключается в `DirectorDashboardClient` (Шаг В.1 зонтика) условием:
- *   isOwnOrg && subscriptionStatus === 'DEMO' && noData
- *
- * Источник: ТЗ demo-shared-org-model.md §5.6.
- */
-
-import Link from 'next/link';
-import { ArrowRight, Building2, Sparkles } from 'lucide-react';
+import Link from "next/link";
+import { ArrowRight, Building2, Sparkles } from "lucide-react";
 
 export type MainEmptyStateProps = {
-  /** Если true — показать CTA «Вернуться в демо» (есть membership к эталону). */
   canReturnToDemo?: boolean;
-  /** Колбэк для возврата в эталон — обычно дергает org-switcher. */
   onReturnToDemo?: () => void;
-  /**
-   * Прогресс настройки компании (Шаг В.3 зонтика).
-   * Если задан и `completed < total` — между текстом и CTA выводится
-   * компактная секция «Настройка компании · N/M» с прогресс-баром и
-   * CTA-ссылкой на онбординг. Предполагается, что вызывающая сторона
-   * НЕ передаёт props если пользователь — обычный member (только owner/admin).
-   */
   setupProgress?: { completed: number; total: number };
 };
 
@@ -42,7 +21,10 @@ export function MainEmptyState({
   const pct = showProgress
     ? Math.max(
         0,
-        Math.min(100, Math.round((setupProgress!.completed / setupProgress!.total) * 100)),
+        Math.min(
+          100,
+          Math.round((setupProgress!.completed / setupProgress!.total) * 100),
+        ),
       )
     : 0;
 
@@ -63,7 +45,8 @@ export function MainEmptyState({
           <div className="mb-6 rounded-xl border border-accent/30 bg-accent/5 p-4 text-left">
             <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-accent">
               <Sparkles size={14} />
-              Настройка компании · {setupProgress!.completed}/{setupProgress!.total}
+              Настройка компании · {setupProgress!.completed}/
+              {setupProgress!.total}
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-bg-overlay/60">
               <div

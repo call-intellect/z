@@ -1,20 +1,5 @@
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи.
- *
- * taskType `meeting-title` — генерит короткое осмысленное название встречи
- * (3–7 слов, по-русски) из типа встречи + первых реплик транскрипта. Вызывается
- * из `MeetingTitleService.generateMeetingTitle` ПОСЛЕ готовности транскрипта,
- * только если текущий `Meeting.title` — плейсхолдер (см. `meeting-title.util.ts`).
- *
- * Совместимость с prompt caching: SYSTEM полностью статичен (стабильный кэш-
- * префикс на DeepSeek/OpenAI-proxy), все переменные данные — в USER и в конце.
- */
-
-/** Сколько первых реплик транскрипта подаём в промпт (по сути встречи хватает). */
 export const MEETING_TITLE_MAX_TURNS = 15;
-/** Жёсткий потолок символов на склейку реплик (страховка от длинных turn'ов). */
 export const MEETING_TITLE_MAX_CHARS = 1500;
-/** maxTokens для вызова — название короткое, токенов нужно немного. */
 export const MEETING_TITLE_MAX_TOKENS = 24;
 
 export const MEETING_TITLE_SYSTEM_PROMPT = `Ты даёшь короткое название встречи.
@@ -32,10 +17,6 @@ export const MEETING_TITLE_SYSTEM_PROMPT = `Ты даёшь короткое н�
 
 Отвечай ОДНОЙ строкой — только название, без пояснений.`;
 
-/**
- * USER-секция: тип встречи + первые реплики транскрипта. Переменные данные
- * идут в конце (после статичной инструкции) — это и есть cache-friendly хвост.
- */
 export const MEETING_TITLE_USER_PROMPT = (args: {
   meetingType: string;
   transcriptExcerpt: string;

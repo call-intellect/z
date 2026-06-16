@@ -14,17 +14,6 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 
-/**
- * REST `/api/v1/team-templates` — публичные шаблоны команд.
- *
- * Read-only список + чтение по slug. Seed системных шаблонов
- * (10 + 5 опц.: sales / development / installation / marketing / management
- * / customer_support / hr / finance / operations / product / ...) —
- * `backend/scripts/seed-team-templates.ts`.
- *
- * `POST /projects/from-template` — реализован в `ProjectsController`
- * (см. `backend/src/modules/tracker/controllers/projects.controller.ts`).
- */
 @ApiTags('tracker / team-templates')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -52,7 +41,6 @@ export class TeamTemplatesController {
         error: { code: 'tenant_required', message: 'Организация не определена' },
       });
     }
-    // Системные (tenantId=null) + Org-specific.
     const rows = await this.prisma.teamTemplate.findMany({
       where: {
         isPublic: true,
@@ -94,7 +82,6 @@ export class TeamTemplatesController {
         error: { code: 'tenant_required', message: 'Организация не определена' },
       });
     }
-    // Сначала ищем Org-specific, потом системный (tenantId=null).
     const row =
       (await this.prisma.teamTemplate.findUnique({
         where: { tenantId_slug: { tenantId, slug } },
@@ -118,5 +105,4 @@ export class TeamTemplatesController {
       definition: row.definition,
     };
   }
-
 }

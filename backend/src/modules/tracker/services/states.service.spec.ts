@@ -5,14 +5,6 @@ import type { ListStatesQuery } from '../dto/states/list-states-query.dto';
 
 import { StatesService } from './states.service';
 
-/**
- * StatesService unit-тесты. Mocked Prisma. Покрываем:
- *   1. findAll без фильтров → передаёт только tenantId, маппит DTO.
- *   2. findAll с projectId → projectId попадает в where.
- *   3. findAll с category → category попадает в where.
- *   4. Tenant isolation — StatesService всегда подмешивает tenantId.
- */
-
 interface FakeIssueState {
   id: string;
   tenantId: string;
@@ -91,7 +83,6 @@ describe('StatesService.findAll', () => {
     await svc.findAll('t2', { projectId: 'p1' });
     const callArg = findMany.mock.calls[0]?.[0] as { where: Record<string, unknown> };
     expect(callArg.where).toMatchObject({ tenantId: 't2' });
-    // Никаких глобальных fall-through по другим tenant'ам.
     expect(callArg.where).not.toHaveProperty('OR');
   });
 });

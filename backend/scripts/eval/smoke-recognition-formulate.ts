@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `recognition-formulate` на DeepSeek-V4-Pro.
- * Промпт из backend/src/modules/recognition/prompts/recognition-formulate.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-recognition-formulate.ts
- */
 import {
   client,
   computeCost,

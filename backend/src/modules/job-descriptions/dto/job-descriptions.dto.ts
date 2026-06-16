@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля JobDescription (Фаза 0a — declared-форма должности).
- */
-
 const ContentSchema = z
   .string({ error: 'Содержимое инструкции обязательно' })
   .trim()
@@ -15,9 +11,7 @@ export const ListJobDescriptionsQuerySchema = z.object({
   includeDeleted: z.coerce.boolean().optional().default(false),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
-export type ListJobDescriptionsQuery = z.infer<
-  typeof ListJobDescriptionsQuerySchema
->;
+export type ListJobDescriptionsQuery = z.infer<typeof ListJobDescriptionsQuerySchema>;
 
 export const CreateJobDescriptionSchema = z.object({
   roleId: z.string().min(1, 'roleId обязателен'),
@@ -31,10 +25,9 @@ export const UpdateJobDescriptionSchema = z
     contentMd: ContentSchema.optional(),
     sourceDocumentId: z.string().min(1).nullable().optional(),
   })
-  .refine(
-    (data) => Object.values(data).some((v) => v !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
+  .refine((data) => Object.values(data).some((v) => v !== undefined), {
+    message: 'Хотя бы одно поле должно быть указано',
+  });
 export type UpdateJobDescriptionDto = z.infer<typeof UpdateJobDescriptionSchema>;
 
 export const BatchCreateJobDescriptionsSchema = z.object({
@@ -43,9 +36,7 @@ export const BatchCreateJobDescriptionsSchema = z.object({
     .min(1)
     .max(50, 'За один запрос можно создать не более 50 должностных инструкций'),
 });
-export type BatchCreateJobDescriptionsDto = z.infer<
-  typeof BatchCreateJobDescriptionsSchema
->;
+export type BatchCreateJobDescriptionsDto = z.infer<typeof BatchCreateJobDescriptionsSchema>;
 
 export interface JobDescriptionListItemDto {
   id: string;

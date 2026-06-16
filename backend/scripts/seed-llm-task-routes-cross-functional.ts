@@ -1,26 +1,3 @@
-/**
- * SBA γ-3 — Seed маршрутов LLM для taskType `cross-functional-friction-summary`.
- *
- * Используется CrossFunctionalFrictionAggregatorCron для опционального
- * LLM-обогащения description'а отчёта (description + recommendedAction).
- * На MVP-итерации генерация description'а делается без LLM (см. cron),
- * этот taskType зарегистрирован под последующее расширение.
- *
- * Тройная цепочка primary/secondary/tertiary. Источник —
- * `docs/reference/llm-models-playbook.md` §2.2 (короткое аналитическое
- * summary с low-stakes) + verified-карта
- * `second-brain/01_projects/llm-providers-verified.md` (smoke 2026-05-21).
- *
- * Цепочка:
- *   primary   — deepseek         deepseek-chat       (короткий summary, дешёвый)
- *   secondary — openai-via-proxy gpt-5.4-mini        (резерв)
- *   tertiary  — ollama           qwen3:30b           (локальный fallback)
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-cross-functional.ts
- *   bun run scripts/seed-llm-task-routes-cross-functional.ts --update-existing
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -41,8 +18,7 @@ interface TaskRouteSeed {
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'cross-functional-friction-summary',
-    playbookSection:
-      '§2.2 short analytical summary + γ-3 sub-TZ §9',
+    playbookSection: '§2.2 short analytical summary + γ-3 sub-TZ §9',
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
@@ -95,17 +71,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -130,9 +102,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

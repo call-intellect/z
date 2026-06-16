@@ -5,16 +5,6 @@ import type { CardSpecialistRegistry } from '../services/card-specialist-registr
 
 import { IssueCardHandler } from './issue-card-handler.service';
 
-/**
- * Tracker Phase 3 part C — юнит-тест IssueCardHandler.
- *
- * Покрытие:
- *  - getCitations возвращает структуру с identifier/title/stateId/completedAt.
- *  - getCitations пустой blockIds → [] без запросов в БД.
- *  - formatForChat включает статус/приоритет/дедлайн в карточку.
- *  - onModuleInit регистрирует handler в registry.
- *  - getCardsForQuery с overlap-фильтром даёт correct confidence boost.
- */
 describe('IssueCardHandler', () => {
   let prisma: PrismaService;
   let registry: CardSpecialistRegistry;

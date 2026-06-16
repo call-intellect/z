@@ -1,21 +1,13 @@
-'use client';
+"use client";
 
-import { motion } from 'motion/react';
-import { Play } from 'lucide-react';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { motion } from "motion/react";
+import { Play } from "lucide-react";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * Главная фишка визуальной идентичности — glass-card с mint-границей
- * для AI-цитат. См. дизайн-документ §custom-patterns.
- */
 export type AiCitationProps = {
-  /** Стартовая позиция в записи в миллисекундах. */
   startMs?: number;
-  /** Имя говорящего. */
   speakerName: string;
-  /** Текст цитаты. */
   text: string;
-  /** Колбэк при клике (обычно — seek в плеере). */
   onClick?: () => void;
   className?: string;
 };
@@ -26,8 +18,8 @@ function fmtTime(ms: number): string {
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return h > 0
-    ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-    : `${m}:${sec.toString().padStart(2, '0')}`;
+    ? `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`
+    : `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
 export function AiCitation({
@@ -37,28 +29,28 @@ export function AiCitation({
   onClick,
   className,
 }: AiCitationProps) {
-  const interactive = typeof onClick === 'function';
-  const Comp: 'div' | 'button' = interactive ? 'button' : 'div';
+  const interactive = typeof onClick === "function";
+  const Comp: "div" | "button" = interactive ? "button" : "div";
 
   return (
     <motion.div
       whileHover={interactive ? { scale: 1.015 } : undefined}
-      transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-      className={cn('group block w-full', className)}
+      transition={{ type: "spring", stiffness: 400, damping: 28 }}
+      className={cn("group block w-full", className)}
     >
       <Comp
-        type={interactive ? 'button' : undefined}
+        type={interactive ? "button" : undefined}
         onClick={onClick}
         className={cn(
-          'block w-full rounded-md border border-accent-border bg-accent-muted p-3 text-left',
-          'backdrop-blur-glass',
-          'transition-shadow duration-200',
+          "block w-full rounded-md border border-accent-border bg-accent-muted p-3 text-left",
+          "backdrop-blur-glass",
+          "transition-shadow duration-200",
           interactive &&
-            'hover:shadow-glow-mint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+            "hover:shadow-glow-mint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
         )}
       >
         <div className="mb-2 flex items-center gap-2 text-xs">
-          {typeof startMs === 'number' && (
+          {typeof startMs === "number" && (
             <span className="font-mono text-accent">{fmtTime(startMs)}</span>
           )}
           <span className="text-fg-secondary">{speakerName}</span>

@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -35,22 +32,6 @@ import {
 } from './dto/cross-functional.dto';
 import { CrossFunctionalFrictionService } from './services/cross-functional-friction.service';
 
-/**
- * SBA γ-3 — REST API CrossFunctional.
- *
- *   GET    /api/v1/processes/cross-functional             — список cross-functional ProcessTemplate
- *   GET    /api/v1/processes/cross-functional/:id/friction
- *                                                          — friction-отчёты по шаблону
- *   POST   /api/v1/processes/cross-functional/friction/:id/resolve
- *                                                          — закрыть отчёт
- *
- * RBAC ResourceType:
- *   - `process_template_cross_functional` — read (employee, coo, admin / owner);
- *     resolve — только admin/owner (action='write').
- *
- * Используется существующий `process_template`-ресурс RBAC: cross-functional
- * — лишь подвид того же ресурса (см. §10 sub-ТЗ). Action 'write' для resolve.
- */
 @ApiTags('processes')
 @Controller('api/v1/processes/cross-functional')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -102,8 +83,7 @@ export class CrossFunctionalController {
 
   @Post('friction/:id/resolve')
   @ApiOperation({
-    summary:
-      'Закрыть friction-отчёт (resolvedByUserId = CurrentUser, resolvedAt = now)',
+    summary: 'Закрыть friction-отчёт (resolvedByUserId = CurrentUser, resolvedAt = now)',
   })
   async resolveFriction(
     @Param('id') id: string,
@@ -120,8 +100,6 @@ export class CrossFunctionalController {
       resolvedByUserId: user.id,
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -140,8 +118,7 @@ export class CrossFunctionalController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Недостаточно прав для просмотра сквозных процессов компании',
+          message: 'Недостаточно прав для просмотра сквозных процессов компании',
         },
       });
     }
@@ -159,8 +136,7 @@ export class CrossFunctionalController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Только admin/owner могут закрывать отчёты cross-functional friction',
+          message: 'Только admin/owner могут закрывать отчёты cross-functional friction',
         },
       });
     }

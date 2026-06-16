@@ -1,10 +1,3 @@
-/**
- * Доменная модель глобального обзора OrgEntitlement для Z-Admin Фаза 4.
- *
- * Контракт: backend `AdminEntitlementsService` (`/admin/orgs/entitlements`
- * + `/admin/orgs/:id/entitlements/*`).
- */
-
 export type EntitlementOverviewItemApi = {
   tenantId: string;
   orgName: string;
@@ -40,7 +33,7 @@ export type ResolvedEntitlementsApi = {
 
 export type EntitlementOverviewItemDomain = Omit<
   EntitlementOverviewItemApi,
-  'updatedAt'
+  "updatedAt"
 > & {
   updatedAt: Date;
 };

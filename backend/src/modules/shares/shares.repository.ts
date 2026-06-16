@@ -8,16 +8,9 @@ import {
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Все запросы share/highlight-share + просмотры. Учёт просмотра — не транзакция:
- * `viewCount` — приблизительный, и переинкремент на гонке нас устроит
- * (ничего не зависит от строгой точности счётчика).
- */
 @Injectable()
 export class SharesRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  // ─────────────────────────── meeting share ────────────────────────────
 
   findById(id: string): Promise<MeetingShare | null> {
     return this.prisma.meetingShare.findUnique({ where: { id } });
@@ -95,8 +88,6 @@ export class SharesRepository {
         }),
       );
     } else {
-      // Без инкремента счётчика — но lastViewedAt всё равно обновим,
-      // чтобы admin видел свежий просмотр.
       ops.push(
         this.prisma.meetingShare.update({
           where: { id: shareId },
@@ -114,14 +105,23 @@ export class SharesRepository {
     });
   }
 
-  // ─────────────────────────── highlight share ──────────────────────────
-
   findHighlightShareById(id: string): Promise<HighlightShare | null> {
     return this.prisma.highlightShare.findUnique({ where: { id } });
   }
 
-  findHighlightShareByToken(token: string): Promise<
-    (HighlightShare & { highlight: { id: string; title: string; description: string | null; renderStatus: string; renderedMp4Key: string | null } }) | null
+  findHighlightShareByToken(
+    token: string,
+  ): Promise<
+    | (HighlightShare & {
+        highlight: {
+          id: string;
+          title: string;
+          description: string | null;
+          renderStatus: string;
+          renderedMp4Key: string | null;
+        };
+      })
+    | null
   > {
     return this.prisma.highlightShare.findUnique({
       where: { token },
@@ -172,14 +172,9 @@ export class SharesRepository {
     });
   }
 
-  /** Универсально: для тестов и сервисов, чтобы можно было замокать. */
   get raw(): PrismaService {
     return this.prisma;
   }
 
-  /**
-   * Тип `MeetingShareView` экспортируем для удобства потребителей.
-   */
-   
   __types?: Prisma.MeetingShareViewWhereInput;
 }

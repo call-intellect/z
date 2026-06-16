@@ -1,26 +1,14 @@
-/**
- * Unit-тесты `ForceStatusDialog` (ТЗ admin-subscription-ui-v2 Фаза 3).
- *
- * Кейсы:
- *   1. submit disabled пока не выбран новый статус (== current).
- *   2. submit disabled пока reason <3 ИЛИ чекбокс не отмечен.
- *   3. submit включается когда: статус сменён + reason ≥3 + checkbox ✓.
- *   4. Успешный API → toast.success + onSuccess.
- */
-import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi, beforeEach, beforeAll } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-import { ForceStatusDialog } from './ForceStatusDialog';
+import { ForceStatusDialog } from "./ForceStatusDialog";
 
-// jsdom не реализует ResizeObserver и pointer-capture API — Radix Select их
-// требует. Без полифилов рендер диалога с Select падает на mount/click.
-// Минимальные заглушки.
 beforeAll(() => {
   const g = globalThis as unknown as {
     ResizeObserver?: unknown;
   };
-  if (typeof g.ResizeObserver === 'undefined') {
+  if (typeof g.ResizeObserver === "undefined") {
     g.ResizeObserver = class {
       observe() {}
       unobserve() {}
@@ -33,23 +21,23 @@ beforeAll(() => {
     setPointerCapture?: (id: number) => void;
     scrollIntoView?: () => void;
   };
-  if (typeof proto.hasPointerCapture !== 'function') {
+  if (typeof proto.hasPointerCapture !== "function") {
     proto.hasPointerCapture = () => false;
   }
-  if (typeof proto.releasePointerCapture !== 'function') {
+  if (typeof proto.releasePointerCapture !== "function") {
     proto.releasePointerCapture = () => {};
   }
-  if (typeof proto.setPointerCapture !== 'function') {
+  if (typeof proto.setPointerCapture !== "function") {
     proto.setPointerCapture = () => {};
   }
-  if (typeof proto.scrollIntoView !== 'function') {
+  if (typeof proto.scrollIntoView !== "function") {
     proto.scrollIntoView = () => {};
   }
 });
 
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
-vi.mock('sonner', () => ({
+vi.mock("sonner", () => ({
   toast: {
     success: (...args: unknown[]) => toastSuccess(...args),
     error: (...args: unknown[]) => toastError(...args),
@@ -57,7 +45,7 @@ vi.mock('sonner', () => ({
 }));
 
 const adminForceStatus = vi.fn();
-vi.mock('@/api/billing.api', () => ({
+vi.mock("@/api/billing.api", () => ({
   billingApi: {
     adminForceStatus: (...args: unknown[]) => adminForceStatus(...args),
   },
@@ -79,69 +67,67 @@ function setup(overrides?: Partial<Parameters<typeof ForceStatusDialog>[0]>) {
   return { onOpenChange, onSuccess, ...utils };
 }
 
-describe('ForceStatusDialog', () => {
+describe("ForceStatusDialog", () => {
   beforeEach(() => {
     adminForceStatus.mockReset();
     toastSuccess.mockReset();
     toastError.mockReset();
   });
 
-  it('submit disabled пока статус не изменён (даже с reason и checkbox)', async () => {
+  it("submit disabled пока статус не изменён (даже с reason и checkbox)", async () => {
     const user = userEvent.setup();
-    setup({ currentStatus: 'ACTIVE' });
+    setup({ currentStatus: "ACTIVE" });
 
-    await user.type(screen.getByLabelText(/Причина/i), 'обоснование');
+    await user.type(screen.getByLabelText(/Причина/i), "обоснование");
     await user.click(
-      screen.getByRole('checkbox', {
+      screen.getByRole("checkbox", {
         name: /Я понимаю, что обхожу FSM/i,
       }),
     );
 
-    // newStatus === currentStatus → submit disabled.
     expect(
-      screen.getByRole('button', { name: 'Сменить статус' }),
+      screen.getByRole("button", { name: "Сменить статус" }),
     ).toBeDisabled();
   });
 
-  it('submit disabled без checkbox даже с reason ≥3 и сменой статуса', async () => {
+  it("submit disabled без checkbox даже с reason ≥3 и сменой статуса", async () => {
     const user = userEvent.setup();
-    setup({ currentStatus: 'ACTIVE' });
+    setup({ currentStatus: "ACTIVE" });
 
-    // Меняем статус через Radix Select trigger.
     await user.click(
-      screen.getByRole('combobox', { name: /Новый статус подписки/i }),
+      screen.getByRole("combobox", { name: /Новый статус подписки/i }),
     );
-    await user.click(screen.getByRole('option', { name: /Приостановлена/i }));
-    await user.type(screen.getByLabelText(/Причина/i), 'обоснование длинное');
+    await user.click(screen.getByRole("option", { name: /Приостановлена/i }));
+    await user.type(screen.getByLabelText(/Причина/i), "обоснование длинное");
 
     expect(
-      screen.getByRole('button', { name: 'Сменить статус' }),
+      screen.getByRole("button", { name: "Сменить статус" }),
     ).toBeDisabled();
   });
 
-  it('успешный submit: статус + reason ≥3 + checkbox → API + onSuccess', async () => {
+  it("успешный submit: статус + reason ≥3 + checkbox → API + onSuccess", async () => {
     const user = userEvent.setup();
-    adminForceStatus.mockResolvedValue({ status: 'SUSPENDED' });
-    const { onSuccess } = setup({ currentStatus: 'ACTIVE' });
+    adminForceStatus.mockResolvedValue({ status: "SUSPENDED" });
+    const { onSuccess } = setup({ currentStatus: "ACTIVE" });
 
     await user.click(
-      screen.getByRole('combobox', { name: /Новый статус подписки/i }),
+      screen.getByRole("combobox", { name: /Новый статус подписки/i }),
     );
-    await user.click(screen.getByRole('option', { name: /Приостановлена/i }));
-    await user.type(screen.getByLabelText(/Причина/i), '  тикет 999  ');
+    await user.click(screen.getByRole("option", { name: /Приостановлена/i }));
+    await user.type(screen.getByLabelText(/Причина/i), "  тикет 999  ");
     await user.click(
-      screen.getByRole('checkbox', {
+      screen.getByRole("checkbox", {
         name: /Я понимаю, что обхожу FSM/i,
       }),
     );
 
-    const submit = screen.getByRole('button', { name: 'Сменить статус' });
+    const submit = screen.getByRole("button", { name: "Сменить статус" });
     expect(submit).toBeEnabled();
     await user.click(submit);
 
-    expect(adminForceStatus).toHaveBeenCalledWith('org-1', {
-      newStatus: 'SUSPENDED',
-      reason: 'тикет 999',
+    expect(adminForceStatus).toHaveBeenCalledWith("org-1", {
+      newStatus: "SUSPENDED",
+      reason: "тикет 999",
     });
     expect(onSuccess).toHaveBeenCalledTimes(1);
     expect(toastSuccess).toHaveBeenCalled();

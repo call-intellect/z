@@ -9,15 +9,7 @@ import type {
   CurationItemStatusApi,
   CurationLevelApi,
   CurationSettingsApi,
-} from '@/api/curation.api';
-
-/**
- * Domain-модели Слоя 4 (SBA α-4). Перевод ApiDto → DomainModel:
- *   - даты приводятся к `Date`;
- *   - перечисления оставляем строковыми (TypeScript-литералы), но даём
- *     русские лейблы через хелперы;
- *   - вычисляемые флаги для UI (isPending, isStale).
- */
+} from "@/api/curation.api";
 
 export type CurationLevel = CurationLevelApi;
 export type CurationItemStatus = CurationItemStatusApi;
@@ -26,35 +18,35 @@ export type ConflictStatus = ConflictStatusApi;
 export type ConflictResolution = ConflictResolutionApi;
 
 const LEVEL_LABEL: Record<CurationLevel, string> = {
-  light: 'Простая проверка',
-  deep: 'Подробная проверка',
+  light: "Простая проверка",
+  deep: "Подробная проверка",
 };
 const STATUS_LABEL: Record<CurationItemStatus, string> = {
-  pending: 'На проверке',
-  decided: 'Решение принято',
-  expired: 'Просрочена',
-  cancelled: 'Отменена',
+  pending: "На проверке",
+  decided: "Решение принято",
+  expired: "Просрочена",
+  cancelled: "Отменена",
 };
 const DECISION_LABEL: Record<CurationDecisionType, string> = {
-  approve: 'Одобрить',
-  reject: 'Отклонить',
-  approve_with_edits: 'Одобрить с правками',
-  split: 'Разделить',
-  merge: 'Объединить',
-  supersede: 'Заменить',
-  merge_categories: 'Слить категории',
-  escalate: 'Передать другому',
+  approve: "Одобрить",
+  reject: "Отклонить",
+  approve_with_edits: "Одобрить с правками",
+  split: "Разделить",
+  merge: "Объединить",
+  supersede: "Заменить",
+  merge_categories: "Слить категории",
+  escalate: "Передать другому",
 };
 const CONFLICT_STATUS_LABEL: Record<ConflictStatus, string> = {
-  open: 'Открыт',
-  resolved: 'Разрешён',
-  dismissed: 'Отклонён',
+  open: "Открыт",
+  resolved: "Разрешён",
+  dismissed: "Отклонён",
 };
 const CONFLICT_RESOLUTION_LABEL: Record<ConflictResolution, string> = {
-  accept_new: 'Принять новую',
-  keep_old: 'Сохранить старую',
-  merge: 'Объединить',
-  evolving: 'Эволюция',
+  accept_new: "Принять новую",
+  keep_old: "Сохранить старую",
+  merge: "Объединить",
+  evolving: "Эволюция",
 };
 
 export function curationLevelLabel(level: CurationLevel): string {
@@ -73,22 +65,19 @@ export function conflictResolutionLabel(r: ConflictResolution): string {
   return CONFLICT_RESOLUTION_LABEL[r] ?? r;
 }
 
-/**
- * RU-подпись характера связи конфликта. Значения приходят из block-linker
- * (enum IdeaBlockLinkType); на практике для конфликта это почти всегда
- * `contradicts`. Неизвестное — нейтральная подпись, НЕ сырой код.
- */
 const CONFLICT_RELATION_LABEL: Record<string, string> = {
-  contradicts: 'Противоречие',
-  develops: 'Развитие',
-  causes: 'Причина',
-  consequences_of: 'Следствие',
-  shares_topic: 'Общая тема',
-  shares_entity: 'Общая сущность',
-  question_answered_by: 'Ответ на вопрос',
+  contradicts: "Противоречие",
+  develops: "Развитие",
+  causes: "Причина",
+  consequences_of: "Следствие",
+  shares_topic: "Общая тема",
+  shares_entity: "Общая сущность",
+  question_answered_by: "Ответ на вопрос",
 };
 export function conflictRelationLabel(relationType: string): string {
-  return CONFLICT_RELATION_LABEL[relationType.toLowerCase()] ?? 'Связь карточек';
+  return (
+    CONFLICT_RELATION_LABEL[relationType.toLowerCase()] ?? "Связь карточек"
+  );
 }
 
 export interface CurationItem {
@@ -105,9 +94,7 @@ export interface CurationItem {
   createdAt: Date;
   decidedAt: Date | null;
   expiresAt: Date | null;
-  /** Уверенность (если фигурирует в triageReason.confidence). */
   confidence: number | null;
-  /** Это карточка-stale (`triageReason.reason === 'stale'`). */
   isStale: boolean;
 }
 
@@ -156,8 +143,8 @@ export interface CurationSettings {
 
 export function mapCurationItem(api: CurationItemApi): CurationItem {
   const reason = api.triageReason ?? {};
-  const conf = typeof reason.confidence === 'number' ? reason.confidence : null;
-  const isStale = reason.reason === 'stale';
+  const conf = typeof reason.confidence === "number" ? reason.confidence : null;
+  const isStale = reason.reason === "stale";
   return {
     id: api.id,
     tenantId: api.tenantId,
@@ -177,7 +164,9 @@ export function mapCurationItem(api: CurationItemApi): CurationItem {
   };
 }
 
-export function mapCurationDecision(api: CurationDecisionApi): CurationDecision {
+export function mapCurationDecision(
+  api: CurationDecisionApi,
+): CurationDecision {
   return {
     id: api.id,
     curationItemId: api.curationItemId,
@@ -200,13 +189,13 @@ export function mapCurationItemDetail(
 }
 
 export function mapConflictItem(api: ConflictItemApi): ConflictItem {
-  let evolvingMeta: ConflictItem['evolvingMeta'] = null;
+  let evolvingMeta: ConflictItem["evolvingMeta"] = null;
   if (api.evolvingMeta) {
     const m = api.evolvingMeta as Record<string, unknown>;
     evolvingMeta = {
       existingValidUntil:
-        typeof m.existingValidUntil === 'string' ? m.existingValidUntil : null,
-      newValidFrom: typeof m.newValidFrom === 'string' ? m.newValidFrom : null,
+        typeof m.existingValidUntil === "string" ? m.existingValidUntil : null,
+      newValidFrom: typeof m.newValidFrom === "string" ? m.newValidFrom : null,
     };
   }
   return {
@@ -228,7 +217,9 @@ export function mapConflictItem(api: ConflictItemApi): ConflictItem {
   };
 }
 
-export function mapCurationSettings(api: CurationSettingsApi): CurationSettings {
+export function mapCurationSettings(
+  api: CurationSettingsApi,
+): CurationSettings {
   return {
     autoThreshold: api.autoThreshold,
     deepReviewThreshold: api.deepReviewThreshold,

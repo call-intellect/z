@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -11,46 +11,31 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-} from 'recharts';
+} from "recharts";
 
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-import { AdminEmpty } from '../../AdminStateViews';
+import { AdminEmpty } from "../../AdminStateViews";
 
-type WeekRange = '4w' | '12w' | '26w';
+type WeekRange = "4w" | "12w" | "26w";
 
 const WEEK_RANGE_LABELS: Record<WeekRange, string> = {
-  '4w': 'За 4 недели',
-  '12w': 'За 12 недель',
-  '26w': 'За 26 недель',
+  "4w": "За 4 недели",
+  "12w": "За 12 недель",
+  "26w": "За 26 недель",
 };
 
-/**
- * Аналитика встреч. Endpoint backend готовится в Фазе 7 редизайна —
- * `GET /api/v1/admin/analytics/meetings`. Пока показываем UI-каркас
- * с recharts-плейсхолдерами и явное предупреждение.
- *
- * Когда бэкенд появится — заменить `placeholderTypeData` / `placeholderDurationData`
- * на данные из `useAdminQuery(adminMeetingsAnalyticsApi.overview(...))`.
- */
 export function MeetingsAnalyticsClient() {
-  const [range, setRange] = useState<WeekRange>('12w');
+  const [range, setRange] = useState<WeekRange>("12w");
 
-  // TODO Фаза 7: данные ниже — placeholder только для отображения каркаса.
-  // Заменить на реальный API-вызов после релиза бэкенда.
   const placeholderTypeData: Array<{ type: string; count: number }> = [];
   const placeholderDurationData: Array<{ week: string; avgMin: number }> = [];
 
@@ -59,17 +44,14 @@ export function MeetingsAnalyticsClient() {
       title="Встречи"
       description="Длительность, типы встреч, кол-во участников, retention использования. Все числа — read-only, для управления используйте раздел «Все встречи»."
       actions={
-        <Select
-          value={range}
-          onValueChange={(v) => setRange(v as WeekRange)}
-        >
+        <Select value={range} onValueChange={(v) => setRange(v as WeekRange)}>
           <SelectTrigger className="w-[160px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="4w">{WEEK_RANGE_LABELS['4w']}</SelectItem>
-            <SelectItem value="12w">{WEEK_RANGE_LABELS['12w']}</SelectItem>
-            <SelectItem value="26w">{WEEK_RANGE_LABELS['26w']}</SelectItem>
+            <SelectItem value="4w">{WEEK_RANGE_LABELS["4w"]}</SelectItem>
+            <SelectItem value="12w">{WEEK_RANGE_LABELS["12w"]}</SelectItem>
+            <SelectItem value="26w">{WEEK_RANGE_LABELS["26w"]}</SelectItem>
           </SelectContent>
         </Select>
       }

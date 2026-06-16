@@ -10,10 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -21,16 +18,6 @@ import { RbacService } from '../../rbac/rbac.service';
 import type { ToggleThanksResponseDto } from '../dto/recognition.dto';
 import { CommentsThanksService } from '../services/comments-thanks.service';
 
-/**
- * Wave 2 — Comments Thanks REST API.
- *
- *   POST  /api/v1/issues/comments/:id/thanks  — toggle «спасибо».
- *   GET   /api/v1/issues/comments/:id/thanks  — текущее состояние.
- *
- * Изолировано от `tracker/comments.controller.ts` (см. ТЗ §4), чтобы не ломать
- * существующую функциональность. Ресурс RBAC — `issue` (комментарий = дочерний
- * ресурс задачи; для write-action достаточно canWrite на 'issue').
- */
 @ApiTags('recognition / comments-thanks')
 @ApiBearerAuth()
 @Controller('api/v1/issues/comments')

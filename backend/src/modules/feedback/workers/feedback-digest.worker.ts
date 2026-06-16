@@ -1,20 +1,3 @@
-/**
- * FeedbackDigestWorker — consumer BullMQ-очереди `core.feedback-digest`.
- *
- * На каждый job (cron 01:00 UTC или ручной из админки) дёргает
- * `FeedbackDigestService.runDigest()`. Сам worker «тонкий» — всю бизнес-
- * логику держит сервис, чтобы её можно было unit-тестить без BullMQ.
- *
- * Concurrency=1: одновременный запуск двух прогонов не имеет смысла
- * (Redis-lock внутри `runDigest` всё равно их сериализует). Один процессор
- * на инстанс — проще и предсказуемее.
- *
- * Создание Worker'а — стандартный паттерн Z (`new Worker(...)` в
- * `onModuleInit`, см. `RecognitionFormulateWorker` / `BlockIngestWorker`).
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md §«BullMQ-воркер».
- */
-
 import {
   Inject,
   Injectable,
@@ -28,10 +11,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { FeedbackDigestService } from '../services/feedback-digest.service';
 
-import {
-  FEEDBACK_DIGEST_QUEUE_NAME,
-  type FeedbackDigestJobData,
-} from './feedback-digest.queue';
+import { FEEDBACK_DIGEST_QUEUE_NAME, type FeedbackDigestJobData } from './feedback-digest.queue';
 
 @Injectable()
 export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
@@ -69,9 +49,7 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
         'feedback-digest job failed',
       );
     });
-    this.logger.debug(
-      `FeedbackDigestWorker запущен (${FEEDBACK_DIGEST_QUEUE_NAME})`,
-    );
+    this.logger.debug(`FeedbackDigestWorker запущен (${FEEDBACK_DIGEST_QUEUE_NAME})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -90,14 +68,8 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<FeedbackDigestJobData>): Promise<void> {
     const triggeredBy = job.data.triggeredBy ?? 'unknown';
-    this.logger.debug(
-      { jobId: job.id, triggeredBy },
-      'feedback-digest: starting run',
-    );
+    this.logger.debug({ jobId: job.id, triggeredBy }, 'feedback-digest: starting run');
     const result = await this.digest.runDigest();
-    this.logger.debug(
-      { jobId: job.id, triggeredBy, ...result },
-      'feedback-digest: run finished',
-    );
+    this.logger.debug({ jobId: job.id, triggeredBy, ...result }, 'feedback-digest: run finished');
   }
 }

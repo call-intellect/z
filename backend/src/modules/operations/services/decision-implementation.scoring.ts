@@ -1,23 +1,7 @@
-/**
- * TZ-1 Фаза 3.B (daily-value-engine) — чистая логика контролёра внедрения
- * решений. Без зависимостей от Prisma/NestJS (unit-тестируется без БД).
- */
-
-export type DecisionImplementationStatus =
-  | 'not_started'
-  | 'in_progress'
-  | 'done'
-  | 'stalled';
+export type DecisionImplementationStatus = 'not_started' | 'in_progress' | 'done' | 'stalled';
 
 export const DEFAULT_DECISION_STALE_DAYS = 21;
 
-/**
- * Решение «застряло» (stalled), если:
- *   - старше `staleDays` (по `decidedAt` ИЛИ `createdAt`),
- *   - под ним 0 связанных задач (`linkedTaskCount === 0`),
- *   - нет фактических результатов (`hasOutcomes === false`).
- * Чистая функция.
- */
 export function isDecisionStalled(args: {
   ageDays: number;
   linkedTaskCount: number;
@@ -29,13 +13,6 @@ export function isDecisionStalled(args: {
   return safeNonNeg(args.ageDays) >= safeNonNeg(args.staleDays);
 }
 
-/**
- * Статус внедрения решения. Чистая функция.
- *   - `done`        — есть actualOutcomes.
- *   - `stalled`     — застряло (см. isDecisionStalled).
- *   - `in_progress` — есть связанные задачи (но ещё нет outcomes).
- *   - `not_started` — нет ни задач, ни outcomes, и ещё не stalled.
- */
 export function classifyImplementationStatus(args: {
   ageDays: number;
   linkedTaskCount: number;
@@ -57,15 +34,11 @@ export function classifyImplementationStatus(args: {
   return 'not_started';
 }
 
-/**
- * Агрегат пропускной способности решений: доля доведённых до actualOutcomes.
- * `throughputPercent` округляется до 1 знака. При `total === 0` → 0.
- * Чистая функция (несущая метрика витрины Ф5, Р7).
- */
-export function computeDecisionThroughput(args: {
+export function computeDecisionThroughput(args: { total: number; doneWithOutcomes: number }): {
   total: number;
   doneWithOutcomes: number;
-}): { total: number; doneWithOutcomes: number; throughputPercent: number } {
+  throughputPercent: number;
+} {
   const total = safeNonNeg(args.total);
   const done = Math.min(safeNonNeg(args.doneWithOutcomes), total);
   const pct = total > 0 ? (done / total) * 100 : 0;
@@ -76,16 +49,7 @@ export function computeDecisionThroughput(args: {
   };
 }
 
-/**
- * % доведения одного решения по его статусу внедрения (для построчного списка
- * витрины Ф5). `done` → 100, `in_progress` → 50, `stalled`/`not_started` → 0.
- * Грубая шкала «по статусу» — точного % на отдельное решение нет (Р7: count
- * месяца идёт В ПАРЕ с агрегатным throughput из computeDecisionThroughput).
- * Чистая функция.
- */
-export function decisionThroughputPercentForStatus(
-  status: DecisionImplementationStatus,
-): number {
+export function decisionThroughputPercentForStatus(status: DecisionImplementationStatus): number {
   switch (status) {
     case 'done':
       return 100;
@@ -96,13 +60,7 @@ export function decisionThroughputPercentForStatus(
   }
 }
 
-/**
- * Порядок сортировки списка решений месяца: внедрённые (done) → в работе
- * (in_progress) → застрявшие (stalled) → не начатые (not_started). Чистая.
- */
-export function decisionStatusSortRank(
-  status: DecisionImplementationStatus,
-): number {
+export function decisionStatusSortRank(status: DecisionImplementationStatus): number {
   switch (status) {
     case 'done':
       return 0;

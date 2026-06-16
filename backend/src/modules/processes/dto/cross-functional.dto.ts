@@ -1,21 +1,7 @@
-/**
- * SBA γ-3 — DTO для REST `/api/v1/processes/cross-functional/*`.
- * Все user-facing строки — на русском.
- */
 import { z } from 'zod';
 
-// ─────────────────────────── enums ──────────────────────────────────
-
-export const CrossFunctionalSeveritySchema = z.enum([
-  'low',
-  'medium',
-  'high',
-]);
-export type CrossFunctionalSeverityDto = z.infer<
-  typeof CrossFunctionalSeveritySchema
->;
-
-// ─────────────────────────── list cross-functional templates ────────
+export const CrossFunctionalSeveritySchema = z.enum(['low', 'medium', 'high']);
+export type CrossFunctionalSeverityDto = z.infer<typeof CrossFunctionalSeveritySchema>;
 
 export const ListCrossFunctionalProcessesQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
@@ -34,9 +20,7 @@ export interface CrossFunctionalProcessListItemDto {
   scope: string | null;
   status: string;
   isCrossFunctional: boolean;
-  /// 0..1; NULL до первого пересчёта детектором.
   crossFunctionalScore: number | null;
-  /// Активные (не resolved) friction-отчёты по шаблону.
   activeFrictionCount: number;
   updatedAt: string;
   createdAt: string;
@@ -50,10 +34,7 @@ export interface ListCrossFunctionalProcessesResponse {
   totalPages: number;
 }
 
-// ─────────────────────────── list friction reports ──────────────────
-
 export const ListCrossFunctionalFrictionQuerySchema = z.object({
-  /// По умолчанию показываем только активные. ?includeResolved=true даёт all.
   includeResolved: z.coerce.boolean().optional().default(false),
 });
 export type ListCrossFunctionalFrictionQuery = z.infer<
@@ -78,13 +59,6 @@ export interface ListCrossFunctionalFrictionResponse {
   items: CrossFunctionalFrictionReportDto[];
 }
 
-// ─────────────────────────── resolve ────────────────────────────────
-
-/**
- * Resolve body пуст: `resolvedByUserId` берётся из CurrentUser (см.
- * `CrossFunctionalController.resolveFriction`). Тело DTO оставлено для будущих
- * полей (например, `closingNote`).
- */
 export const ResolveCrossFunctionalFrictionBodySchema = z.object({
   closingNote: z.string().trim().max(500).optional(),
 });

@@ -11,23 +11,6 @@ import type { AiQueueService } from '../ai-queue.service';
 
 import { MergeWorker } from './merge.worker';
 
-/**
- * Юнит-тесты `MergeWorker.process` сфокусированы на producer'е новой
- * цепочки `meeting-report-fast` (ТЗ 2026-05-25, Фаза 4):
- *
- *  - при `MEETING_REPORT_FAST_ENABLED=true` после merge'а транскрипта
- *    `CoreQueueService.enqueueMeetingReportFast(meetingId)` вызывается
- *    параллельно с legacy `enqueueAnalyze`/`enqueueBehaviorMetrics`;
- *  - при `MEETING_REPORT_FAST_ENABLED=false` producer пропускается
- *    (kill-switch); legacy enqueue'ы продолжают работать.
- *
- * Тестируем оба пути: "happy path" (turns ещё не склеены — выполняем merge)
- * и идемпотентный (turns уже в БД — сразу analyze).
- *
- * BullMQ Worker сам не запускаем — `onModuleInit` пропускаем, дёргаем
- * приватный `process` через cast.
- */
-
 interface Mocks {
   prisma: PrismaService;
   meetings: MeetingsService;
@@ -41,10 +24,6 @@ interface Mocks {
 }
 
 function buildBaseMocks(opts: { meetingId: string }): Mocks {
-  // Возвращаем встречу с уже склеенными `turns` — идемпотентный путь:
-  // `MergeWorker` уходит к analyze/behavior-metrics/meeting-report-fast
-  // без обращения к word-merger'у. Это покрывает интересующий нас producer
-  // и не тащит зависимости (`mergeWordTimestamps` / `loadRoomChatForMerge`).
   const meetingFindUnique = vi.fn(async () => ({
     id: opts.meetingId,
     type: 'sales',
@@ -103,8 +82,6 @@ function buildCfg(opts: {
   meetingReportFastEnabled: boolean;
   includeRoomChatInAi?: boolean;
 }): TypedConfigService {
-  // Минимально достаточный shape — поля используются `MergeWorker` и
-  // `loadRoomChatForMerge` (последний читает `cfg.aiFeatures.includeRoomChat`).
   return {
     ai: { vox: { model: 'v3_rnnt' } },
     aiFeatures: { includeRoomChat: opts.includeRoomChatInAi === true },
@@ -116,11 +93,6 @@ function buildCfg(opts: {
 }
 
 describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25, Фаза 4)', () => {
-  // Тестируем producer'а на идемпотентном пути (`turns` уже в БД) — он короче,
-  // не лезет в `mergeWordTimestamps`/`loadRoomChatForMerge`, и при этом
-  // покрывает все 4 ветки логики `maybeEnqueueMeetingReportFast`. Happy path
-  // дополнительно покрыт интеграционными тестами AI-pipeline.
-
   it('идемпотентный путь: turns уже в БД, флаг=true — enqueueMeetingReportFast вызывается параллельно с analyze', async () => {
     const meetingId = 'm-fast-2';
     const m = buildBaseMocks({ meetingId });
@@ -172,7 +144,6 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
     });
 
     expect(enqueueMeetingReportFast).not.toHaveBeenCalled();
-    // Legacy цепочка не сломана.
     expect(m.enqueueAnalyze).toHaveBeenCalledWith(meetingId);
     expect(m.enqueueBehaviorMetrics).toHaveBeenCalledWith(meetingId);
   });
@@ -182,16 +153,7 @@ describe('MergeWorker.process — producer meeting-report-fast (ТЗ 2026-05-25,
     const m = buildBaseMocks({ meetingId });
     const cfg = buildCfg({ meetingReportFastEnabled: true });
 
-    // Передаём worker без coreQueue (имитация старой DI-конфигурации).
-    const worker = new MergeWorker(
-      m.redis,
-      m.prisma,
-      m.queue,
-      m.meetings,
-      m.metrics,
-      cfg,
-      m.s3,
-    );
+    const worker = new MergeWorker(m.redis, m.prisma, m.queue, m.meetings, m.metrics, cfg, m.s3);
 
     await expect(
       (worker as unknown as { process: (j: unknown) => Promise<void> }).process({
@@ -267,18 +229,12 @@ describe('MergeWorker.onJobFailed (Фаза 11: развязка записи о
       'ai_failed',
       expect.objectContaining({ failureReason: 'merge: merge boom' }),
     );
-    expect(transitionStatus).not.toHaveBeenCalledWith(
-      meetingId,
-      'failed',
-      expect.anything(),
-    );
+    expect(transitionStatus).not.toHaveBeenCalledWith(meetingId, 'failed', expect.anything());
     expect(m.metrics.incMeetingFailed).toHaveBeenCalledWith('merge');
   });
 });
 
 describe('MergeWorker.process — посегментная переплётка (ASR ТЗ 2026-06-11, Ф3)', () => {
-  // Happy-path (turns=null): строим perTrack из сегментов и проверяем реальный
-  // выход mergeWordTimestamps, перехватывая turns, переданные в transcript.update.
   function runWithTracks(
     tracks: Array<{
       speakerName: string;
@@ -294,16 +250,17 @@ describe('MergeWorker.process — посегментная переплётка 
     getDuration: () => number;
   } {
     const base = new Date('2026-06-11T10:00:00.000Z');
-    let capturedTurns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> = [];
+    let capturedTurns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> =
+      [];
     let capturedDuration = 0;
 
     const meetingFindUnique = vi.fn(async () => ({
       id: 'm-seg',
       type: 'sales',
-      status: 'transcription_ready', // не transcription_processing → без transitionStatus
+      status: 'transcription_ready',
       tenantId: 'org-1',
       transcript: {
-        turns: null, // happy-path: ещё не склеено
+        turns: null,
         mergedS3Url: 's3://x/merged.json',
         tracks: tracks.map((t, i) => ({
           words: t.words ?? [],
@@ -381,8 +338,8 @@ describe('MergeWorker.process — посегментная переплётка 
         speakerName: 'Alice',
         segments: [
           { startSec: 0, endSec: 5, text: 'A1' },
-          { startSec: 1, endSec: 1, text: 'bad' }, // endSec<=startSec
-          { startSec: 0, endSec: 1, text: '   ' }, // пустой текст
+          { startSec: 1, endSec: 1, text: 'bad' },
+          { startSec: 0, endSec: 1, text: '   ' },
         ],
       },
     ]);

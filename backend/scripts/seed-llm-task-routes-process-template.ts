@@ -1,27 +1,3 @@
-/**
- * SBA α-7 wave 2 — Seed маршрутов LLM для taskType `process-template-extract`
- * (Specialist 3.1 ProcessTemplate detector).
- *
- * Тройная цепочка primary/secondary/tertiary. Источник —
- * `docs/reference/llm-models-playbook.md` §2.1 (block-distill complexity)
- * + verified-карта `second-brain/01_projects/llm-providers-verified.md`
- * (smoke 2026-05-21).
- *
- * Цепочка:
- *   primary   — deepseek         deepseek-v4-flash  (структурированный JSON, дешевый, быстрый)
- *   secondary — openai-via-proxy gpt-5.4-mini       (резерв при downtime DeepSeek)
- *   tertiary  — ollama           qwen3:30b          (локальный fallback, internal-only)
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-process-template.ts
- *   bun run scripts/seed-llm-task-routes-process-template.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - `editedByAdmin=true` → НЕ перезаписываем (даже с `--update-existing`).
- *   - Без флага — пропускаем все существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -42,8 +18,7 @@ interface TaskRouteSeed {
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'process-template-extract',
-    playbookSection:
-      '§2.1 block-distill (structured extraction batch) + α-7 wave 2 sub-TZ §9',
+    playbookSection: '§2.1 block-distill (structured extraction batch) + α-7 wave 2 sub-TZ §9',
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
       {
@@ -96,17 +71,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -131,9 +102,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

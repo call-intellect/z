@@ -2,15 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { TemporalProbeService } from './temporal-probe.service';
 
-/**
- * W2.4 KC-Temporal (2026-05-25) — unit-тесты `TemporalProbeService.runForOrg`.
- *
- * Тестируем:
- *   1) Расхождение есть → probe эмитится через ProbeService.suggest.
- *   2) Расхождения нет (свежий блок такой же trustedAnswer) → probe НЕ эмитится.
- *   3) Нет свежего блока вообще → probe НЕ эмитится.
- */
-
 function makeService(args: {
   staleBlocks: Array<{
     id: string;
@@ -20,7 +11,6 @@ function makeService(args: {
     validFrom: Date;
     entities: Array<{ entityId: string }>;
   }>;
-  /** Map staleId -> fresh block or null. */
   freshBy: Map<string, { id: string; name: string; trustedAnswer: string; validFrom: Date } | null>;
   memberships: Array<{ userId: string }>;
   probeSuggest: ReturnType<typeof vi.fn>;
@@ -63,9 +53,7 @@ function makeService(args: {
 
 describe('TemporalProbeService.runForOrg', () => {
   it('есть расхождение → emit probe.suggest с reason=temporal.fact_stale_contradiction', async () => {
-    const suggestMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true, probeEventId: 'pe_1' });
+    const suggestMock = vi.fn().mockResolvedValue({ ok: true, probeEventId: 'pe_1' });
     const svc = makeService({
       staleBlocks: [
         {
@@ -121,7 +109,7 @@ describe('TemporalProbeService.runForOrg', () => {
           {
             id: 'b_new',
             name: 'CEO X',
-            trustedAnswer: 'иван  ', // та же сущность, normalize схлопнёт.
+            trustedAnswer: 'иван  ',
             validFrom: new Date(),
           },
         ],

@@ -1,27 +1,13 @@
-/**
- * Судья через KIE + Claude Opus 4.7.
- *
- * Сравнивает Variant A и Б на одной фикстуре. Метки маскируются как X/Y,
- * чтобы исключить позиционную предвзятость. Claude через KIE не имеет
- * tools-API в нашем стеке — просим вернуть строго JSON в тексте.
- *
- * Запуск: cd backend && bun run scripts/eval/judge-kie-claude.ts <fixture-id>
- *   default: fixture-01-pilot
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 
 const FIXTURE_ID = process.argv[2] ?? 'fixture-01-pilot';
 const MODEL = process.env.JUDGE_MODEL ?? 'claude-opus-4-7';
 
-// KIE → Claude Opus 4.7: input $1.425/M, output $7.150/M
-// (Anthropic raw: $5/$25, скидка ~71.5%).
 const PRICE_IN_PER_TOKEN = 1.425 / 1_000_000;
 const PRICE_OUT_PER_TOKEN = 7.15 / 1_000_000;
 
-const FIXTURE_PATH = path.resolve(
-  `test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/sales-merge-experiment/fixtures/${FIXTURE_ID}.json`);
 const A_PATH = path.resolve(
   `test/eval/sales-merge-experiment/reports/${FIXTURE_ID}-variant-a.json`,
 );
@@ -36,17 +22,13 @@ const RAW_PATH = path.resolve(
 );
 
 const KIE_API_KEY = process.env.KIE_API_KEY;
-const KIE_BASE_URL = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(
-  /\/+$/,
-  '',
-);
+const KIE_BASE_URL = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/+$/, '');
 
 if (!KIE_API_KEY) {
   console.error('✗ KIE_API_KEY не задан в backend/.env');
   process.exit(1);
 }
 
-// ── нормализация выходов ────────────────────────────────────────────────────
 interface NormalizedOutput {
   chapters: Array<{ title: string; summary: string; startMs?: number; endMs?: number }>;
   tasks: Array<{
@@ -65,7 +47,9 @@ interface NormalizedOutput {
   };
 }
 
-function normalizeA(aReport: { steps: Array<{ step: string; output?: unknown }> }): NormalizedOutput {
+function normalizeA(aReport: {
+  steps: Array<{ step: string; output?: unknown }>;
+}): NormalizedOutput {
   const findStep = (key: string): unknown =>
     aReport.steps.find((s) => s.step.includes(key))?.output;
   const chaptersOut = findStep('chapters-v2') as { chapters?: NormalizedOutput['chapters'] };
@@ -102,7 +86,6 @@ function normalizeB(bReport: { output: unknown }): NormalizedOutput {
   };
 }
 
-// ── промпт судьи ─────────────────────────────────────────────────────────────
 const JUDGE_INSTRUCTIONS = `Ты — независимый эксперт-аналитик деловых встреч. Тебе дают:
 1. Транскрипт продажной встречи (сырой текст).
 2. Список ожидаемых фактов (которые ДОЛЖНЫ быть в выводе хорошего анализа).
@@ -130,7 +113,6 @@ const JUDGE_INSTRUCTIONS = `Ты — независимый эксперт-ан�
   "reasoning": "2-3 предложения общего вывода"
 }`;
 
-// ── KIE Claude вызов ─────────────────────────────────────────────────────────
 async function callClaudeViaKie(prompt: string): Promise<{
   text: string;
   inputTokens: number;
@@ -174,9 +156,7 @@ async function callClaudeViaKie(prompt: string): Promise<{
   };
 }
 
-// ── парсинг JSON из Claude-ответа ───────────────────────────────────────────
 function extractJson(text: string): unknown {
-  // Claude иногда оборачивает в ```json ... ```; убираем
   let cleaned = text.trim();
   const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
   if (fenceMatch && fenceMatch[1]) {
@@ -185,7 +165,6 @@ function extractJson(text: string): unknown {
   return JSON.parse(cleaned);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log(`=== Судья (KIE+${MODEL}): ${FIXTURE_ID} ===\n`);
 
@@ -236,13 +215,11 @@ ${JSON.stringify(yOutput, null, 2)}
     process.exit(1);
   }
   const judgeCostUsd =
-    result.inputTokens * PRICE_IN_PER_TOKEN +
-    result.outputTokens * PRICE_OUT_PER_TOKEN;
+    result.inputTokens * PRICE_IN_PER_TOKEN + result.outputTokens * PRICE_OUT_PER_TOKEN;
   console.log(
     `  ✓ ${result.ms} мс | вход=${result.inputTokens} выход=${result.outputTokens} | $${judgeCostUsd.toFixed(4)}\n`,
   );
 
-  // Сохранить raw на случай парс-ошибки
   await fs.writeFile(
     RAW_PATH,
     JSON.stringify({ model: MODEL, ...result, xLabel, yLabel }, null, 2),
@@ -265,16 +242,18 @@ ${JSON.stringify(yOutput, null, 2)}
     process.exit(1);
   }
 
-  // ── размаскирование ────────────────────────────────────────────────────────
   const scoreFor = (label: 'A' | 'B', crit: { score_x: number; score_y: number }): number =>
     label === xLabel ? crit.score_x : crit.score_y;
   const explainNormalized = (text: string): string =>
-    text.replace(/\bВариант X\b/g, `Вариант ${xLabel}`).replace(/\bВариант Y\b/g, `Вариант ${yLabel}`).replace(/\bX:\s/g, `${xLabel}: `).replace(/\bY:\s/g, `${yLabel}: `);
+    text
+      .replace(/\bВариант X\b/g, `Вариант ${xLabel}`)
+      .replace(/\bВариант Y\b/g, `Вариант ${yLabel}`)
+      .replace(/\bX:\s/g, `${xLabel}: `)
+      .replace(/\bY:\s/g, `${yLabel}: `);
   const reasoningNorm = explainNormalized(j.reasoning);
   const winnerReal =
     j.winner_overall === 'tie' ? 'tie' : j.winner_overall === 'X' ? xLabel : yLabel;
 
-  // ── SUMMARY-{fixture}.md ───────────────────────────────────────────────────
   const md = `# Сравнение Variant A vs Б — ${FIXTURE_ID}
 
 Дата: ${new Date().toISOString()}
@@ -327,7 +306,9 @@ ${JSON.stringify(yOutput, null, 2)}
   await fs.writeFile(SUMMARY_PATH, md, 'utf-8');
   console.log(`=== Итог ===`);
   console.log(`  Победитель: ${winnerReal === 'tie' ? 'ничья' : `Variant ${winnerReal}`}`);
-  console.log(`  A=${scoreFor('A', j.chapters) + scoreFor('A', j.tasks) + scoreFor('A', j.summary) + scoreFor('A', j.quality_score)} / Б=${scoreFor('B', j.chapters) + scoreFor('B', j.tasks) + scoreFor('B', j.summary) + scoreFor('B', j.quality_score)} (из 20)`);
+  console.log(
+    `  A=${scoreFor('A', j.chapters) + scoreFor('A', j.tasks) + scoreFor('A', j.summary) + scoreFor('A', j.quality_score)} / Б=${scoreFor('B', j.chapters) + scoreFor('B', j.tasks) + scoreFor('B', j.summary) + scoreFor('B', j.quality_score)} (из 20)`,
+  );
   console.log(`  Резоны: ${reasoningNorm}`);
   console.log(`\n✓ отчёт: ${SUMMARY_PATH}`);
 }

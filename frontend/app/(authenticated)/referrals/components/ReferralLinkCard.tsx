@@ -1,39 +1,24 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { CheckCircle2, Copy, LinkIcon } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { useMemo, useState } from "react";
+import { CheckCircle2, Copy, LinkIcon } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 
-import { buildReferralUrl, type ReferralDomain } from '@/domain/referral';
-import { GRAD, glass } from '@/ui/components/dashboard/modern';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+import { buildReferralUrl, type ReferralDomain } from "@/domain/referral";
+import { GRAD, glass } from "@/ui/components/dashboard/modern";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
 interface Props {
   referral: ReferralDomain;
-  /** Дополнительная подсказка под ссылкой (для состояния B — «нет данных»). */
   hint?: string | null;
 }
 
-/**
- * ReferralLinkCard — карточка партнёрской ссылки (ТЗ §8.1 B/C).
- *
- * Главное действие — копирование URL. Параллельно — QR-код (через
- * `qrcode.react` / `QRCodeSVG`, ~3 KB), чтобы можно было показать на
- * экране и сразу зашерить мобильному.
- *
- * Origin берётся из `window.location.origin` — это безопасно, так как
- * компонент `'use client'`. В SSR-fallback ставим `https://app.kora.app`.
- *
- * Редизайн B10: стеклянная обёртка `glass()`. QR лежит на сплошной светлой
- * плашке (`var(--bg-card)`) с белым модулем-фоном, чтобы код оставался
- * читаемым на градиентной подложке в обеих темах.
- */
 export function ReferralLinkCard({ referral, hint }: Props) {
   const origin =
-    typeof window !== 'undefined'
+    typeof window !== "undefined"
       ? window.location.origin
-      : 'https://app.kora.app';
+      : "https://app.kora.app";
   const url = useMemo(
     () => buildReferralUrl(referral.slug, origin),
     [referral.slug, origin],
@@ -46,9 +31,8 @@ export function ReferralLinkCard({ referral, hint }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      // Браузер заблокировал clipboard API — fallback на select-all.
       const input = document.getElementById(
-        'referral-url-input',
+        "referral-url-input",
       ) as HTMLInputElement | null;
       input?.select();
     }
@@ -59,16 +43,19 @@ export function ReferralLinkCard({ referral, hint }: Props) {
       <header className="flex items-center gap-2.5">
         <span
           className="grid h-8 w-8 place-items-center rounded-xl"
-          style={{ background: GRAD.blue, color: 'oklch(0.99 0.005 280)' }}
+          style={{ background: GRAD.blue, color: "oklch(0.99 0.005 280)" }}
           aria-hidden="true"
         >
           <LinkIcon className="h-4 w-4" />
         </span>
         <div>
-          <h2 className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+          <h2
+            className="text-[15px] font-semibold"
+            style={{ color: "var(--text-primary)" }}
+          >
             Твоя партнёрская ссылка
           </h2>
-          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
             Поделись ей — клики и оплаты попадают тебе автоматически.
           </p>
         </div>
@@ -107,9 +94,9 @@ export function ReferralLinkCard({ referral, hint }: Props) {
             <p
               className="rounded-xl px-3 py-2 text-sm"
               style={{
-                background: 'var(--surface-inset)',
-                border: '1px solid var(--border-inset)',
-                color: 'var(--text-secondary)',
+                background: "var(--surface-inset)",
+                border: "1px solid var(--border-inset)",
+                color: "var(--text-secondary)",
               }}
             >
               {hint}
@@ -121,8 +108,8 @@ export function ReferralLinkCard({ referral, hint }: Props) {
           <div
             className="rounded-2xl p-3"
             style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-inset)',
+              background: "var(--bg-card)",
+              border: "1px solid var(--border-inset)",
             }}
             aria-label="QR-код партнёрской ссылки"
           >

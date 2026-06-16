@@ -16,30 +16,15 @@ import {
 
 export interface ExtractTasksInput {
   meetingId: string;
-  /** tenantId: Org встречи. */
   tenantId: string | null;
   meeting: { id: string; type: string; title: string };
   dialog: DialogTurn[];
   jobId?: string | null;
   userId?: string;
-  /**
-   * Минимальный confidence: ниже — отбрасываем. Дефолт 0.5.
-   */
   minConfidence?: number;
-  /**
-   * ТЗ 2026-05-25 hard-participant-identification — список участников встречи
-   * с userId/fullName. Если непустой, LLM получит блок «Участники этой встречи»
-   * и сможет вернуть `assigneeUserId` для каждой задачи.
-   */
   participants?: readonly AiParticipantContext[];
 }
 
-/**
- * Извлекает action items со структурой `Task` (с привязкой к фрагменту,
- * цитатой и confidence).
- *
- * НЕ пишет в БД — это `tasks-extract.worker`.
- */
 @Injectable()
 export class TaskExtractionService {
   private readonly logger = new Logger(TaskExtractionService.name);
@@ -60,21 +45,10 @@ export class TaskExtractionService {
       dialog: input.dialog,
       ...(participants.length > 0 ? { participants } : {}),
     });
-    // ТЗ 2026-05-25 hard-participant-identification (gap закрыт):
-    // JSON Schema собирается динамически — когда передан непустой список
-    // participants, в схему включается поле `assigneeUserId` (nullable string).
-    // На strict-провайдерах (OpenAI/DeepSeek) LLM теперь может вернуть это
-    // поле через `json_schema strict`. Без participants — поведение
-    // идентично прежнему (legacy schema без поля).
     const responseSchema = buildTasksStructuredJsonSchema(
       participants.length > 0 ? participants : null,
     );
-    const minConfidence =
-      input.minConfidence ?? TaskExtractionService.DEFAULT_MIN_CONFIDENCE;
-    // A2-AI: вход — сырой транскрипт встречи. Оборачиваем user в маркеры
-    // данных + ASR-нота. Сервис без TypedConfigService — глобальный kill-switch
-    // здесь не гейтит (enabled по умолчанию true). Делаем один раз ДО цикла,
-    // чтобы маркеры обрамляли только транскрипт, а ретрай-добавка шла снаружи.
+    const minConfidence = input.minConfidence ?? TaskExtractionService.DEFAULT_MIN_CONFIDENCE;
     const guarded = applyInputGuards(prompt.system, prompt.user, {
       injection: true,
       asr: true,
@@ -93,13 +67,7 @@ export class TaskExtractionService {
         tenantId: input.tenantId,
         meetingId: input.meetingId,
         ...(input.userId !== undefined ? { userId: input.userId } : {}),
-        ...(input.jobId !== undefined && input.jobId !== null
-          ? { jobId: input.jobId }
-          : {}),
-        // T7-F6: strict JSON Schema. Wrapper `{ tasks: [...] }` нужен потому,
-        // что DeepSeek/OpenAI strict требуют object на верхнем уровне.
-        // Если провайдер не поддерживает (Ollama / KIE) — LlmRouter перейдёт
-        // на следующего.
+        ...(input.jobId !== undefined && input.jobId !== null ? { jobId: input.jobId } : {}),
         responseFormat: {
           type: 'json_schema',
           name: 'tasks_structured_response',
@@ -122,8 +90,6 @@ export class TaskExtractionService {
         );
         continue;
       }
-      // T7-F6: гибко принимаем и { tasks: [...] } (новый формат), и голый
-      // массив (legacy, если провайдер игнорирует schema).
       const wrappedResult = TasksStructuredResponseSchema.safeParse(parsed.data);
       const validated = wrappedResult.success
         ? { success: true as const, data: wrappedResult.data.tasks }

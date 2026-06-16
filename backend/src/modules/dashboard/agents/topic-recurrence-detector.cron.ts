@@ -4,40 +4,17 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Pulse Wave 6 §6.2 — Topic-Recurrence-Detector cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.2.
- *
- * Weekly (`@Cron('0 5 * * 1')`, понедельник 05:00 UTC). Для каждой Org:
- *   1. Загружает `Theme` с `lastSignalAt > now-90d` (status='active').
- *   2. Для каждой Theme считает упоминания (`ThemeIdeaBlock.block.createdAt`
- *      в окне) и число distinct RawEvent'ов (proxy «в скольких разных встречах
- *      обсуждалось»).
- *   3. Проверяет — есть ли implemented `Decision` (status='approved' или
- *      'implemented'), у которого `sourceBlockIds` пересекается с блоками
- *      темы. Если нет — это «обсуждаем по кругу».
- *   4. Сохраняет `RecurringTopic` для Theme с `mentionCount >= 5` и
- *      `hasImplementedDecision = false`.
- *
- * Без LLM — чистая SQL-агрегация.
- * Best-effort: ошибка по одной Org не валит остальных.
- */
 @Injectable()
 export class TopicRecurrenceDetectorCron {
   private readonly logger = new Logger(TopicRecurrenceDetectorCron.name);
   private static readonly WINDOW_DAYS = 90;
-  private static readonly WINDOW_MS =
-    TopicRecurrenceDetectorCron.WINDOW_DAYS * 24 * 3600 * 1000;
-  /** Минимум упоминаний, чтобы Theme попал в snapshot. */
+  private static readonly WINDOW_MS = TopicRecurrenceDetectorCron.WINDOW_DAYS * 24 * 3600 * 1000;
   private static readonly MIN_MENTIONS = 5;
-  /** Сколько блоков сохранить в blockIdsJson (для drill-down). */
   private static readonly BLOCK_IDS_LIMIT = 50;
   private static readonly MAX_ORGS_PER_RUN = 5_000;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Weekly Mon 05:00 UTC. */
   @Cron('0 5 * * 1')
   async run(): Promise<void> {
     try {
@@ -56,9 +33,7 @@ export class TopicRecurrenceDetectorCron {
     errors: number;
   }> {
     const now = new Date();
-    const windowStart = new Date(
-      now.getTime() - TopicRecurrenceDetectorCron.WINDOW_MS,
-    );
+    const windowStart = new Date(now.getTime() - TopicRecurrenceDetectorCron.WINDOW_MS);
 
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -108,7 +83,6 @@ export class TopicRecurrenceDetectorCron {
 
     let created = 0;
     for (const theme of themes) {
-      // Все блоки темы за окно — мы считаем упоминания/встречи только по этим.
       const themeBlocks = await this.prisma.themeIdeaBlock.findMany({
         where: {
           themeId: theme.id,
@@ -131,9 +105,6 @@ export class TopicRecurrenceDetectorCron {
       const mentionCount = themeBlocks.length;
       if (mentionCount < TopicRecurrenceDetectorCron.MIN_MENTIONS) continue;
 
-      // meetingCount: уникальные rawEventId через evidence — proxy «обсуждалось
-      // в N разных источниках». RawEvent чаще всего соответствует Meeting,
-      // но также может быть чат-сообщением — для §6.2 этого достаточно.
       const meetingIds = new Set<string>();
       const blockIds: string[] = [];
       for (const tb of themeBlocks) {
@@ -144,8 +115,6 @@ export class TopicRecurrenceDetectorCron {
       }
       const meetingCount = meetingIds.size;
 
-      // Implemented Decision: status IN ('approved','implemented'),
-      // sourceBlockIds пересекается с блоками темы.
       const hasImplementedDecision = await this.hasImplementedDecision({
         tenantId,
         blockIds,
@@ -173,10 +142,6 @@ export class TopicRecurrenceDetectorCron {
     return created;
   }
 
-  /**
-   * Decision считается implemented если status IN ('approved','implemented')
-   * И sourceBlockIds (массив cuid) пересекается хотя бы с одним блоком темы.
-   */
   private async hasImplementedDecision(args: {
     tenantId: string;
     blockIds: string[];

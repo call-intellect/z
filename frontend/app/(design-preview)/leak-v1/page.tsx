@@ -1,17 +1,10 @@
-'use client';
+"use client";
 
-import { motion } from 'motion/react';
+import { motion } from "motion/react";
 
-import { fadeIn, slideUp } from '@/ui/motion';
-import { PreviewSwitcher } from '../leak-shared';
+import { fadeIn, slideUp } from "@/ui/motion";
+import { PreviewSwitcher } from "../leak-shared";
 
-/**
- * Дизайн-preview — секция «дырки в выручке», вариант 1: **Манифест**.
- *
- * Чистая типографика без иконок и карточек: один большой statement
- * с italic+accent на ключевой фразе, тонкие accent-хайрлайны вместо
- * картинок. Самый «лаконичный» вариант.
- */
 export default function LeakV1Page() {
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-bg-base text-fg-primary">
@@ -20,13 +13,13 @@ export default function LeakV1Page() {
         className="pointer-events-none fixed inset-0 -z-0"
         style={{
           background:
-            'radial-gradient(circle at 18% 8%, rgba(94,234,212,0.12), transparent 55%), radial-gradient(circle at 85% 78%, rgba(94,234,212,0.07), transparent 60%)',
+            "radial-gradient(circle at 18% 8%, rgba(94,234,212,0.12), transparent 55%), radial-gradient(circle at 85% 78%, rgba(94,234,212,0.07), transparent 60%)",
         }}
       />
 
       <PreviewSwitcher current="v1" />
 
-      {/* Сам блок — то, что предлагается вставить в главную сразу после Hero */}
+      {}
       <section className="relative z-10 mx-auto flex max-w-5xl flex-col items-center px-6 py-32 text-center md:px-10 md:py-40">
         <motion.div
           variants={fadeIn}
@@ -45,10 +38,10 @@ export default function LeakV1Page() {
           animate="animate"
           className="max-w-5xl text-4xl font-semibold tracking-tight md:text-7xl"
         >
-          Найди дырки, через которые{' '}
+          Найди дырки, через которые{" "}
           <span className="font-medium italic text-accent">
             утекает выручка
-          </span>{' '}
+          </span>{" "}
           твоей компании.
         </motion.h2>
 

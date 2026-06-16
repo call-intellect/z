@@ -1,45 +1,15 @@
 import { z } from 'zod';
 
-/**
- * SBA α-8 wave 4 — DTO модуля Role Map.
- *
- * Нормализованная карта должности (поверх wave-2 моделей):
- *   - ResponsibilityElement (outcome/function/activity)
- *   - AuthorityBoundary (allowed/requires_approval/forbidden)
- *   - RequiredKnowledge (mandatory/preferred/nice_to_have)
- *   - DecisionPolicy
- *   - Interaction (reports_to/collaborates_with/...)
- *
- * Совокупный «карта» строится `RoleMapBuilderService.getMap(roleId)` и
- * возвращается через `GET /api/v1/roles/:id/map`.
- *
- * См. plans/tz/2026-05-23-sba-alpha-8-wave4-role-map-worker-rest-ui.md §7.
- */
-
-// ─────────────────────────── enums ────────────────────────────────
-
 export const RESPONSIBILITY_KINDS = ['outcome', 'function', 'activity'] as const;
 export type ResponsibilityKind = (typeof RESPONSIBILITY_KINDS)[number];
 
-export const AUTHORITY_KINDS = [
-  'allowed',
-  'requires_approval',
-  'forbidden',
-] as const;
+export const AUTHORITY_KINDS = ['allowed', 'requires_approval', 'forbidden'] as const;
 export type AuthorityKind = (typeof AUTHORITY_KINDS)[number];
 
-export const KNOWLEDGE_IMPORTANCE = [
-  'mandatory',
-  'preferred',
-  'nice_to_have',
-] as const;
+export const KNOWLEDGE_IMPORTANCE = ['mandatory', 'preferred', 'nice_to_have'] as const;
 export type KnowledgeImportance = (typeof KNOWLEDGE_IMPORTANCE)[number];
 
-export const KNOWLEDGE_LEVELS = [
-  'beginner',
-  'intermediate',
-  'expert',
-] as const;
+export const KNOWLEDGE_LEVELS = ['beginner', 'intermediate', 'expert'] as const;
 export type KnowledgeLevel = (typeof KNOWLEDGE_LEVELS)[number];
 
 export const INTERACTION_KINDS = [
@@ -56,15 +26,8 @@ export const INTERACTION_KINDS = [
 ] as const;
 export type InteractionKind = (typeof INTERACTION_KINDS)[number];
 
-export const INTERACTION_FREQUENCIES = [
-  'daily',
-  'weekly',
-  'monthly',
-  'ad_hoc',
-] as const;
+export const INTERACTION_FREQUENCIES = ['daily', 'weekly', 'monthly', 'ad_hoc'] as const;
 export type InteractionFrequency = (typeof INTERACTION_FREQUENCIES)[number];
-
-// ─────────────────────────── ResponsibilityElement ────────────────
 
 export const CreateResponsibilityElementSchema = z.object({
   parentId: z.string().min(1).nullable().optional(),
@@ -75,18 +38,13 @@ export const CreateResponsibilityElementSchema = z.object({
   confidence: z.coerce.number().min(0).max(1).optional(),
   sourceBlockIds: z.array(z.string().min(1)).max(50).optional(),
 });
-export type CreateResponsibilityElementDto = z.infer<
-  typeof CreateResponsibilityElementSchema
->;
+export type CreateResponsibilityElementDto = z.infer<typeof CreateResponsibilityElementSchema>;
 
-export const UpdateResponsibilityElementSchema =
-  CreateResponsibilityElementSchema.partial().refine(
-    (v) => Object.values(v).some((x) => x !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
-export type UpdateResponsibilityElementDto = z.infer<
-  typeof UpdateResponsibilityElementSchema
->;
+export const UpdateResponsibilityElementSchema = CreateResponsibilityElementSchema.partial().refine(
+  (v) => Object.values(v).some((x) => x !== undefined),
+  { message: 'Хотя бы одно поле должно быть указано' },
+);
+export type UpdateResponsibilityElementDto = z.infer<typeof UpdateResponsibilityElementSchema>;
 
 export interface ResponsibilityElementDto {
   id: string;
@@ -103,8 +61,6 @@ export interface ResponsibilityElementDto {
   updatedAt: string;
 }
 
-// ─────────────────────────── AuthorityBoundary ────────────────────
-
 export const CreateAuthorityBoundarySchema = z.object({
   kind: z.enum(AUTHORITY_KINDS),
   scope: z.string().min(1).max(4000),
@@ -113,18 +69,13 @@ export const CreateAuthorityBoundarySchema = z.object({
   confidence: z.coerce.number().min(0).max(1).optional(),
   sourceBlockIds: z.array(z.string().min(1)).max(50).optional(),
 });
-export type CreateAuthorityBoundaryDto = z.infer<
-  typeof CreateAuthorityBoundarySchema
->;
+export type CreateAuthorityBoundaryDto = z.infer<typeof CreateAuthorityBoundarySchema>;
 
-export const UpdateAuthorityBoundarySchema =
-  CreateAuthorityBoundarySchema.partial().refine(
-    (v) => Object.values(v).some((x) => x !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
-export type UpdateAuthorityBoundaryDto = z.infer<
-  typeof UpdateAuthorityBoundarySchema
->;
+export const UpdateAuthorityBoundarySchema = CreateAuthorityBoundarySchema.partial().refine(
+  (v) => Object.values(v).some((x) => x !== undefined),
+  { message: 'Хотя бы одно поле должно быть указано' },
+);
+export type UpdateAuthorityBoundaryDto = z.infer<typeof UpdateAuthorityBoundarySchema>;
 
 export interface AuthorityBoundaryDto {
   id: string;
@@ -141,8 +92,6 @@ export interface AuthorityBoundaryDto {
   updatedAt: string;
 }
 
-// ─────────────────────────── RequiredKnowledge ────────────────────
-
 export const CreateRequiredKnowledgeSchema = z.object({
   topic: z.string().min(1).max(300),
   description: z.string().max(4000).nullable().optional(),
@@ -151,18 +100,13 @@ export const CreateRequiredKnowledgeSchema = z.object({
   confidence: z.coerce.number().min(0).max(1).optional(),
   sourceBlockIds: z.array(z.string().min(1)).max(50).optional(),
 });
-export type CreateRequiredKnowledgeDto = z.infer<
-  typeof CreateRequiredKnowledgeSchema
->;
+export type CreateRequiredKnowledgeDto = z.infer<typeof CreateRequiredKnowledgeSchema>;
 
-export const UpdateRequiredKnowledgeSchema =
-  CreateRequiredKnowledgeSchema.partial().refine(
-    (v) => Object.values(v).some((x) => x !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
-export type UpdateRequiredKnowledgeDto = z.infer<
-  typeof UpdateRequiredKnowledgeSchema
->;
+export const UpdateRequiredKnowledgeSchema = CreateRequiredKnowledgeSchema.partial().refine(
+  (v) => Object.values(v).some((x) => x !== undefined),
+  { message: 'Хотя бы одно поле должно быть указано' },
+);
+export type UpdateRequiredKnowledgeDto = z.infer<typeof UpdateRequiredKnowledgeSchema>;
 
 export interface RequiredKnowledgeDto {
   id: string;
@@ -178,8 +122,6 @@ export interface RequiredKnowledgeDto {
   updatedAt: string;
 }
 
-// ─────────────────────────── DecisionPolicy ───────────────────────
-
 export const CreateDecisionPolicySchema = z.object({
   name: z.string().min(1).max(300),
   conditionDescription: z.string().max(4000).nullable().optional(),
@@ -188,18 +130,13 @@ export const CreateDecisionPolicySchema = z.object({
   confidence: z.coerce.number().min(0).max(1).optional(),
   sourceBlockIds: z.array(z.string().min(1)).max(50).optional(),
 });
-export type CreateDecisionPolicyDto = z.infer<
-  typeof CreateDecisionPolicySchema
->;
+export type CreateDecisionPolicyDto = z.infer<typeof CreateDecisionPolicySchema>;
 
-export const UpdateDecisionPolicySchema =
-  CreateDecisionPolicySchema.partial().refine(
-    (v) => Object.values(v).some((x) => x !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
-export type UpdateDecisionPolicyDto = z.infer<
-  typeof UpdateDecisionPolicySchema
->;
+export const UpdateDecisionPolicySchema = CreateDecisionPolicySchema.partial().refine(
+  (v) => Object.values(v).some((x) => x !== undefined),
+  { message: 'Хотя бы одно поле должно быть указано' },
+);
+export type UpdateDecisionPolicyDto = z.infer<typeof UpdateDecisionPolicySchema>;
 
 export interface DecisionPolicyDto {
   id: string;
@@ -214,8 +151,6 @@ export interface DecisionPolicyDto {
   createdAt: string;
   updatedAt: string;
 }
-
-// ─────────────────────────── Interaction ──────────────────────────
 
 export const CreateInteractionSchema = z
   .object({
@@ -234,8 +169,7 @@ export const CreateInteractionSchema = z
       Boolean(v.counterpartDepartmentId) ||
       Boolean(v.counterpartExternal),
     {
-      message:
-        'Должен быть указан хотя бы один counterpart: roleId, departmentId или external',
+      message: 'Должен быть указан хотя бы один counterpart: roleId, departmentId или external',
     },
   );
 export type CreateInteractionDto = z.infer<typeof CreateInteractionSchema>;
@@ -274,8 +208,6 @@ export interface InteractionDto {
   updatedAt: string;
 }
 
-// ─────────────────────────── Role Map / Maturity ──────────────────
-
 export interface RoleMapDto {
   role: {
     id: string;
@@ -289,7 +221,6 @@ export interface RoleMapDto {
   knowledge: RequiredKnowledgeDto[];
   decisions: DecisionPolicyDto[];
   interactions: InteractionDto[];
-  /** Метрики, привязанные к роли (KPI). */
   metrics: Array<{
     id: string;
     name: string;
@@ -297,14 +228,8 @@ export interface RoleMapDto {
     targetValue: number | null;
     currentValue: number | null;
   }>;
-  /**
-   * Сборная completeness (0..1) — взвешенная по 9 слотам Role Map.
-   * Источник — RoleProfile.completeness, иначе локальная эвристика по
-   * заполненности нормализованных таблиц.
-   */
   completeness: number;
   maturityScore: number | null;
-  /** Количество элементов по категории (для иконографики UI). */
   counts: {
     responsibilities: number;
     authority: number;
@@ -313,11 +238,8 @@ export interface RoleMapDto {
     interactions: number;
     metrics: number;
   };
-  /** Краткое summary из RoleProfile.summaryCache — backward-compat для UI. */
   summaryCache: unknown;
-  /** Когда последний раз агентом перестраивалась карта (RoleProfile.builtAt). */
   builtAt: string | null;
-  /** Признак, что данные ещё не «созрели» (форминг). */
   isForming: boolean;
 }
 
@@ -332,7 +254,6 @@ export interface RoleMaturityDto {
     value: number;
     weight: number;
   }>;
-  /** Сводка по категориям: сколько и каких элементов заполнено. */
   perCategory: {
     responsibilities: number;
     authority: number;

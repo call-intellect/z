@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   createContext,
@@ -9,8 +9,8 @@ import {
   useRef,
   useState,
   type ReactNode,
-} from 'react';
-import { useRouter } from 'next/navigation';
+} from "react";
+import { useRouter } from "next/navigation";
 import {
   Building2,
   Calendar,
@@ -21,8 +21,8 @@ import {
   Search,
   Users,
   type LucideIcon,
-} from 'lucide-react';
-import { Command as CommandPrimitive } from 'cmdk';
+} from "lucide-react";
+import { Command as CommandPrimitive } from "cmdk";
 
 import {
   CommandEmpty,
@@ -30,48 +30,40 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/ui/shadcn/command';
-import { Dialog, DialogContent } from '@/ui/shadcn/dialog';
-import { apiClient } from '@/api/api-client';
+} from "@/ui/shadcn/command";
+import { Dialog, DialogContent } from "@/ui/shadcn/dialog";
+import { apiClient } from "@/api/api-client";
 import {
   ADMIN_NAV_FLAT,
   ADMIN_NAV_SECTIONS,
-} from '@app/(admin)/admin/navigation';
-import { LLM_TASK_TYPES } from '@/api/admin-llm-routes.api';
+} from "@app/(admin)/admin/navigation";
+import { LLM_TASK_TYPES } from "@/api/admin-llm-routes.api";
 
-// ─────────────────────────────────────── типы action ─────────────────
-
-/**
- * Регистрируемое снаружи действие. Команды раздела регистрируют свои
- * «быстрые действия» через `registerActions()` — палитра показывает их в
- * секции «Быстрые действия».
- */
 export type AdminPaletteAction = {
   id: string;
   label: string;
   hint?: string;
   icon?: LucideIcon;
-  /** Срабатывает при выборе. После — палитра закрывается. */
   perform: () => void | Promise<void>;
-  /** Если true — перед запуском показать confirm с текстом. */
   confirmText?: string;
 };
-
-// ─────────────────────────────────── Provider/Context ────────────────
 
 type PaletteContextValue = {
   isOpen: boolean;
   open: () => void;
   close: () => void;
   toggle: () => void;
-  /** Зарегистрировать набор действий. Возвращает unregister(). */
   registerActions: (actions: AdminPaletteAction[]) => () => void;
   actions: AdminPaletteAction[];
 };
 
 const PaletteContext = createContext<PaletteContextValue | null>(null);
 
-export function AdminCommandPaletteProvider({ children }: { children: ReactNode }) {
+export function AdminCommandPaletteProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [actions, setActions] = useState<AdminPaletteAction[]>([]);
   const groupsRef = useRef<Map<symbol, AdminPaletteAction[]>>(new Map());
@@ -90,7 +82,7 @@ export function AdminCommandPaletteProvider({ children }: { children: ReactNode 
 
   const registerActions = useCallback(
     (next: AdminPaletteAction[]) => {
-      const token = Symbol('palette-actions');
+      const token = Symbol("palette-actions");
       groupsRef.current.set(token, next);
       recompute();
       return () => {
@@ -101,19 +93,16 @@ export function AdminCommandPaletteProvider({ children }: { children: ReactNode 
     [recompute],
   );
 
-  // Глобальный Cmd+K / Ctrl+K. Игнорируем, если фокус в инпуте редактирования
-  // — пользователь может нажать ⌘K в textarea и не ждать палитру (но это
-  // редкий кейс; cmdk сам не клейтает фокус — оставляем обычное поведение).
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       const isPaletteShortcut =
-        (e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K');
+        (e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K");
       if (!isPaletteShortcut) return;
       e.preventDefault();
       setIsOpen((v) => !v);
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   const value = useMemo<PaletteContextValue>(
@@ -133,13 +122,11 @@ export function useAdminCommandPalette(): PaletteContextValue {
   const ctx = useContext(PaletteContext);
   if (!ctx) {
     throw new Error(
-      'useAdminCommandPalette должен использоваться внутри <AdminCommandPaletteProvider>',
+      "useAdminCommandPalette должен использоваться внутри <AdminCommandPaletteProvider>",
     );
   }
   return ctx;
 }
-
-// ─────────────────────────────────────── палитра ─────────────────────
 
 type AdminSearchHit = {
   id: string;
@@ -154,32 +141,28 @@ type AdminSearchResponse = {
   meetings?: AdminSearchHit[];
 };
 
-/**
- * Внутренний компонент палитры. Не экспортируем — открывается только через
- * `useAdminCommandPalette().open()`.
- */
 function AdminCommandPalette() {
   const router = useRouter();
   const { isOpen, close, actions } = useAdminCommandPalette();
 
-  const [query, setQuery] = useState('');
-  const [serverHits, setServerHits] = useState<AdminSearchResponse | null>(null);
+  const [query, setQuery] = useState("");
+  const [serverHits, setServerHits] = useState<AdminSearchResponse | null>(
+    null,
+  );
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverLoading, setServerLoading] = useState(false);
 
   const trimmed = query.trim();
 
-  // Сброс состояния при закрытии.
   useEffect(() => {
     if (!isOpen) {
-      setQuery('');
+      setQuery("");
       setServerHits(null);
       setServerError(null);
       setServerLoading(false);
     }
   }, [isOpen]);
 
-  // Server-side поиск (debounce 200ms) — orgs/users/meetings.
   useEffect(() => {
     if (!isOpen || trimmed.length < 2) {
       setServerHits(null);
@@ -191,9 +174,7 @@ function AdminCommandPalette() {
     setServerError(null);
     const timer = window.setTimeout(async () => {
       try {
-        // Бэкенд эндпоинта `/admin/search` ещё нет (создаётся в этой же
-        // фазе на backend-стороне). При 404 — мягкое скрытие секции.
-        const params = new URLSearchParams({ q: trimmed, limit: '5' });
+        const params = new URLSearchParams({ q: trimmed, limit: "5" });
         const result = await apiClient.get<AdminSearchResponse>(
           `/api/v1/admin/search?${params.toString()}`,
         );
@@ -201,9 +182,8 @@ function AdminCommandPalette() {
         setServerHits(result);
       } catch (err) {
         if (cancelled) return;
-        // Молча: эндпоинта может ещё не быть на бэкенде — это нормально.
         setServerHits(null);
-        setServerError(err instanceof Error ? err.message : 'Ошибка поиска');
+        setServerError(err instanceof Error ? err.message : "Ошибка поиска");
       } finally {
         if (!cancelled) setServerLoading(false);
       }
@@ -231,14 +211,11 @@ function AdminCommandPalette() {
       close();
       try {
         await action.perform();
-      } catch {
-        // Ошибки выполнения остаются на ответственности action.perform.
-      }
+      } catch {}
     },
     [close],
   );
 
-  // Локальная фильтрация по нав-разделам и taskType — без сети.
   const matchedNav = useMemo(() => {
     if (trimmed.length === 0) return ADMIN_NAV_FLAT.slice(0, 8);
     const q = trimmed.toLowerCase();
@@ -265,7 +242,7 @@ function AdminCommandPalette() {
       .filter(
         (a) =>
           a.label.toLowerCase().includes(q) ||
-          (a.hint ?? '').toLowerCase().includes(q),
+          (a.hint ?? "").toLowerCase().includes(q),
       )
       .slice(0, 8);
   }, [actions, trimmed]);
@@ -328,7 +305,7 @@ function AdminCommandPalette() {
                     <PaletteRow
                       icon={a.icon ?? Layers}
                       title={a.label}
-                      subtitle={a.hint ?? 'действие'}
+                      subtitle={a.hint ?? "действие"}
                     />
                   </CommandItem>
                 ))}
@@ -372,7 +349,7 @@ function AdminCommandPalette() {
                     <PaletteRow
                       icon={Building2}
                       title={o.label}
-                      subtitle={o.hint ?? 'организация'}
+                      subtitle={o.hint ?? "организация"}
                     />
                   </CommandItem>
                 ))}
@@ -390,7 +367,7 @@ function AdminCommandPalette() {
                     <PaletteRow
                       icon={Users}
                       title={u.label}
-                      subtitle={u.hint ?? 'пользователь'}
+                      subtitle={u.hint ?? "пользователь"}
                     />
                   </CommandItem>
                 ))}
@@ -408,7 +385,7 @@ function AdminCommandPalette() {
                     <PaletteRow
                       icon={Calendar}
                       title={m.label}
-                      subtitle={m.hint ?? 'встреча'}
+                      subtitle={m.hint ?? "встреча"}
                     />
                   </CommandItem>
                 ))}
@@ -423,9 +400,7 @@ function AdminCommandPalette() {
                     <CommandItem
                       key={`section-${section.key}`}
                       value={`section-${section.key}`}
-                      onSelect={() =>
-                        setQuery(section.label.toLowerCase())
-                      }
+                      onSelect={() => setQuery(section.label.toLowerCase())}
                     >
                       <PaletteRow
                         icon={Icon}
@@ -469,8 +444,6 @@ function AdminCommandPalette() {
   );
 }
 
-// ───────────────────────────────────── вспомогательные ───────────────
-
 function PaletteRow({
   icon: Icon,
   title,
@@ -491,8 +464,8 @@ function PaletteRow({
         <span
           className={
             mono
-              ? 'truncate font-mono text-sm text-fg-primary'
-              : 'truncate text-sm text-fg-primary'
+              ? "truncate font-mono text-sm text-fg-primary"
+              : "truncate text-sm text-fg-primary"
           }
         >
           {title}

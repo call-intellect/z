@@ -1,14 +1,3 @@
-/**
- * Agents v2 Фаза B1 (2026-05-30) — AutoRule extract prompt snapshot.
- *
- * Property test для `AUTORULE_EXTRACT_JSON_SCHEMA`:
- *   - required = [rule, ruleType, confidence, examples, reasoning];
- *   - additionalProperties=false (strict);
- *   - rule ≤ 200, examples 1..3, ruleType ∈ {must_do, must_not_do, tone, structure};
- *   - SCHEMA_NAME = autorule_extract_v1;
- *   - SYSTEM cache-friendly (без runtime-переменных);
- *   - USER кладёт переменные в конец, упоминает schema name.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -52,12 +41,7 @@ describe('autorule-extract prompt — JSON Schema strict', () => {
       string,
       Record<string, unknown>
     >;
-    expect(props.ruleType?.enum).toEqual([
-      'must_do',
-      'must_not_do',
-      'tone',
-      'structure',
-    ]);
+    expect(props.ruleType?.enum).toEqual(['must_do', 'must_not_do', 'tone', 'structure']);
   });
 
   it('confidence ∈ [0, 1]', () => {

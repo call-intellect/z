@@ -1,50 +1,42 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import useSWR from 'swr';
-import { ArrowLeft, Loader2, Users } from 'lucide-react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useState } from "react";
+import useSWR from "swr";
+import { ArrowLeft, Loader2, Users } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   bitrixApi,
   type BitrixPersonOptionApi,
   type BitrixUserApi,
-} from '@/api/bitrix.api';
-import { bitrixLinkModeLabel } from '@/domain/bitrix';
-import { TierGate } from '@/ui/components/TierGate';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/api/bitrix.api";
+import { bitrixLinkModeLabel } from "@/domain/bitrix";
+import { TierGate } from "@/ui/components/TierGate";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-/**
- * `/company-admin/sources/bitrix/managers` — ручное сопоставление сотрудников
- * Bitrix24 с людьми (Person) Коры. ТЗ 2026-06-17 bitrix24-source-sync, Ф5.
- *
- * Контракт: `GET /bitrix/integration/users` (сотрудники + кандидаты Person),
- * `PATCH /bitrix/integration/users/:externalId/link` (link/unlink/create).
- */
-
-const NONE_VALUE = '__none__';
-const CREATE_VALUE = '__create__';
+const NONE_VALUE = "__none__";
+const CREATE_VALUE = "__create__";
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
 function linkModeBadgeVariant(
-  mode: BitrixUserApi['linkMode'],
-): 'default' | 'secondary' | 'outline' {
-  if (mode === 'manual') return 'default';
-  if (mode === 'auto') return 'secondary';
-  return 'outline';
+  mode: BitrixUserApi["linkMode"],
+): "default" | "secondary" | "outline" {
+  if (mode === "manual") return "default";
+  if (mode === "auto") return "secondary";
+  return "outline";
 }
 
 export function BitrixManagersClient() {
@@ -56,7 +48,7 @@ export function BitrixManagersClient() {
 }
 
 function BitrixManagersContent() {
-  const { data, error, isLoading, mutate } = useSWR(['bitrix-users'], () =>
+  const { data, error, isLoading, mutate } = useSWR(["bitrix-users"], () =>
     bitrixApi.listUsers(),
   );
 
@@ -94,7 +86,7 @@ function BitrixManagersContent() {
 
       {error && !isLoading && (
         <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {errMessage(error, 'Не удалось загрузить сотрудников')}
+          {errMessage(error, "Не удалось загрузить сотрудников")}
         </div>
       )}
 
@@ -102,13 +94,13 @@ function BitrixManagersContent() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-sm text-fg-secondary">
-              Сотрудников нет — синхронизируйте их на{' '}
+              Сотрудников нет — синхронизируйте их на{" "}
               <Link
                 href="/company-admin/sources/bitrix"
                 className="text-accent hover:underline"
               >
                 странице интеграции
-              </Link>{' '}
+              </Link>{" "}
               (кнопка «Сотрудники»).
             </p>
           </CardContent>
@@ -151,23 +143,23 @@ function UserRow({
     setSaving(true);
     try {
       if (value === CREATE_VALUE) {
-        await bitrixApi.linkUser(user.externalId, 'create');
-        toast.success('Сотрудник создан и связан');
+        await bitrixApi.linkUser(user.externalId, "create");
+        toast.success("Сотрудник создан и связан");
       } else if (value === NONE_VALUE) {
-        await bitrixApi.linkUser(user.externalId, 'unlink');
-        toast.success('Связь снята');
+        await bitrixApi.linkUser(user.externalId, "unlink");
+        toast.success("Связь снята");
       } else {
-        await bitrixApi.linkUser(user.externalId, 'link', value);
-        toast.success('Связь обновлена');
+        await bitrixApi.linkUser(user.externalId, "link", value);
+        toast.success("Связь обновлена");
       }
       onLinked();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'bitrix_user_not_found') {
-        toast.error('Сотрудник Bitrix24 не найден');
-      } else if (e instanceof ApiError && e.code === 'person_not_found') {
-        toast.error('Сотрудник (Person) не найден');
+      if (e instanceof ApiError && e.code === "bitrix_user_not_found") {
+        toast.error("Сотрудник Bitrix24 не найден");
+      } else if (e instanceof ApiError && e.code === "person_not_found") {
+        toast.error("Сотрудник (Person) не найден");
       } else {
-        toast.error(errMessage(e, 'Не удалось обновить связь'));
+        toast.error(errMessage(e, "Не удалось обновить связь"));
       }
     } finally {
       setSaving(false);
@@ -193,8 +185,8 @@ function UserRow({
           )}
         </div>
         <div className="mt-0.5 truncate text-xs text-fg-tertiary">
-          {user.email ?? '—'}
-          {user.position ? ` · ${user.position}` : ''}
+          {user.email ?? "—"}
+          {user.position ? ` · ${user.position}` : ""}
         </div>
         {user.linkedPersonName && (
           <div className="mt-0.5 truncate text-xs text-fg-secondary">
@@ -203,7 +195,7 @@ function UserRow({
         )}
       </div>
 
-      {/* Единый селект: связать с человеком / не связывать / создать нового */}
+      {}
       <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
         <Select
           value={user.linkedPersonId ?? NONE_VALUE}
@@ -217,7 +209,7 @@ function UserRow({
             <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>
             {personOptions.map((p) => (
               <SelectItem key={p.id} value={p.id}>
-                {p.name?.trim() || p.email || '(без имени)'}
+                {p.name?.trim() || p.email || "(без имени)"}
               </SelectItem>
             ))}
             <SelectItem value={CREATE_VALUE}>
@@ -225,7 +217,9 @@ function UserRow({
             </SelectItem>
           </SelectContent>
         </Select>
-        {saving && <Loader2 size={16} className="animate-spin text-fg-tertiary" />}
+        {saving && (
+          <Loader2 size={16} className="animate-spin text-fg-tertiary" />
+        )}
       </div>
     </div>
   );

@@ -1,26 +1,3 @@
-/**
- * Ф6 agent-chain-overhaul (2026-06-07) — вернуть цепочку отчёта на DeepSeek (кэш).
- *
- * Корень (доказано эмпирикой, plans/analysis/2026-06-07-llm-cache-chain-verification.md §4 К1):
- * на проде taskType `summary` / `report-by-type` / legacy `tasks` ушли на MiniMax
- * (`MiniMax-M2.5`) — кэш 0% (MiniMax требует ручной `cache_control:'ephemeral'`
- * и имеет более высокий порог), хотя план изначально «везде DeepSeek».
- * DeepSeek кэширует 81–99% БЕЗ ручного cache_control.
- *
- * Этот patch ПРИНУДИТЕЛЬНО (всегда update, не skip) выставляет глобальные
- * (tenantId=null) маршруты этих trёх taskType на DeepSeek с диверсными
- * fallback'ами. Идемпотентно: повторный прогон = тот же результат.
- *
- *   summary        → deepseek-v4-flash (дешёвая сводка)
- *   report-by-type → deepseek-v4-pro   (структурный отчёт, capable — как meeting-report-fast)
- *   tasks          → deepseek-v4-flash (legacy извлечение задач)
- *
- * НЕ трогает per-tenant маршруты (только tenantId=null глобальные).
- * НЕ трогает summary-v2 (он остаётся как есть — Ф5 консолидирует summary отдельно).
- *
- * Запуск (прод): docker compose exec backend bun run scripts/patch-llm-routes-report-chain-deepseek.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -56,7 +33,6 @@ const PATCHES: RoutePatch[] = [
 ];
 
 async function main(): Promise<void> {
-   
   console.log('=== patch-llm-routes-report-chain-deepseek START ===');
   let created = 0;
   let updated = 0;
@@ -75,7 +51,7 @@ async function main(): Promise<void> {
         },
       });
       created++;
-       
+
       console.log(`[created] ${patch.taskType} → ${patch.providers[0]?.model}`);
     } else {
       await prisma.llmTaskRoute.update({
@@ -86,20 +62,20 @@ async function main(): Promise<void> {
         },
       });
       updated++;
-       
-      console.log(`[updated] ${patch.taskType} → ${patch.providers[0]?.model} (был ${JSON.stringify(existing.providers)})`);
+
+      console.log(
+        `[updated] ${patch.taskType} → ${patch.providers[0]?.model} (был ${JSON.stringify(existing.providers)})`,
+      );
     }
   }
 
-   
   console.log(`created: ${created}, updated: ${updated}`);
-   
+
   console.log('=== patch-llm-routes-report-chain-deepseek DONE ===');
 }
 
 main()
   .catch((err) => {
-     
     console.error('patch-llm-routes-report-chain-deepseek FAILED:', err);
     process.exit(1);
   })

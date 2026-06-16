@@ -1,14 +1,3 @@
-/**
- * Snapshot-тест сборки промта `recognition-formulate.prompt.ts`.
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `RECOGNITION_FORMULATE_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок этических правил Recognition Agent);
- *   - текст user, который собирает `RECOGNITION_FORMULATE_USER_TEMPLATE`
- *     для типичных типов благодарностей.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

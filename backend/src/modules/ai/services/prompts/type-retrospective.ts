@@ -13,39 +13,20 @@ import {
   withToolInstructions,
 } from './common';
 
-/**
- * Промпт для типа встречи `retrospective` — командная ретроспектива
- * (по итогам спринта/проекта/инцидента). См. enum MeetingType в schema.prisma.
- *
- * CRIT-2 (2026-05-24): до этого `retrospective` fallback'ился на
- * `team.buildPrompt` в `prompts/index.ts`. Это плохой fallback: ретро —
- * это формат «что работало / что не работало / action items», а не оперативка.
- *
- * См. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-2.
- */
 export const TOOL_NAME = 'extract_retrospective';
 
 const MOOD_VALUES = ['positive', 'mixed', 'negative', 'unknown'] as const;
 
 export const SCHEMA = z
   .object({
-    /** Что работало хорошо — практики, процессы, решения, которые стоит сохранить. */
     what_worked: z.array(z.string()),
-    /** Что не работало — болевые точки, неэффективные процессы, повторяющиеся проблемы. */
     what_did_not_work: z.array(z.string()),
-    /** Action items с ответственными и сроками (как в team-промпте). */
     action_items: z.array(TaskItemSchema),
-    /** Эксперименты, которые команда решила попробовать в следующем цикле. */
     experiments: z.array(z.string()),
-    /** Благодарности / признание заслуг участников команды. */
     kudos: z.array(z.string()),
-    /** Общее настроение команды по итогам обсуждения. */
     team_mood: z.enum(MOOD_VALUES),
-    /** Краткое summary настроения (1-2 предложения) или null. */
     mood_notes: z.string().nullable(),
-    /** Повторяющиеся проблемы (всплывают снова / «как всегда»). */
     recurring_problems: z.array(z.string()).optional(),
-    /** Заметка о полноте и надёжности входных данных или null. */
     data_quality: z.string().nullable().optional(),
   })
   .strict();

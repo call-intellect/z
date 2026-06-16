@@ -1,23 +1,17 @@
-'use client';
-
-/**
- * Tracker Project Overview — распределение задач по статусам.
- *
- * Простой stacked-bar + список 5 категорий с цветными точками.
- */
+"use client";
 
 import {
   stateCategoryLabel,
   type OverviewStateBucketApi,
   type OverviewStateCategoryApi,
-} from '@/domain/tracker/overview';
+} from "@/domain/tracker/overview";
 
 const CATEGORY_COLOR: Record<OverviewStateCategoryApi, string> = {
-  backlog: 'bg-chip-sand-bg',
-  unstarted: 'bg-chip-info-bg',
-  started: 'bg-chip-lavender-bg',
-  completed: 'bg-chip-success-bg',
-  cancelled: 'bg-chip-danger-bg',
+  backlog: "bg-chip-sand-bg",
+  unstarted: "bg-chip-info-bg",
+  started: "bg-chip-lavender-bg",
+  completed: "bg-chip-success-bg",
+  cancelled: "bg-chip-danger-bg",
 };
 
 export function StatesDistributionWidget({
@@ -29,7 +23,9 @@ export function StatesDistributionWidget({
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-elevated p-4">
-      <h3 className="text-sm font-medium text-fg-primary">Распределение по статусам</h3>
+      <h3 className="text-sm font-medium text-fg-primary">
+        Распределение по статусам
+      </h3>
 
       {total === 0 ? (
         <p className="mt-2 text-sm text-fg-tertiary">Задач пока нет.</p>
@@ -54,7 +50,9 @@ export function StatesDistributionWidget({
                 <span
                   className={`inline-block h-2 w-2 shrink-0 rounded-full ${CATEGORY_COLOR[b.category]}`}
                 />
-                <span className="truncate">{stateCategoryLabel(b.category)}</span>
+                <span className="truncate">
+                  {stateCategoryLabel(b.category)}
+                </span>
                 <span className="ml-auto tabular-nums text-fg-tertiary">
                   {b.count}
                 </span>

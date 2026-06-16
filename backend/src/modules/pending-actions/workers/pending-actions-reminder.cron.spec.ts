@@ -9,15 +9,6 @@ import type { PendingActionsService } from '../services/pending-actions.service'
 
 import { PendingActionsReminderCron } from './pending-actions-reminder.cron';
 
-/**
- * Unit-тесты `PendingActionsReminderCron` (Action Center B3):
- *   - гейт по слот-часам: вне слота → skip (без Redis/getCount/sendNotification);
- *   - total=0 → не шлёт (result=empty);
- *   - dedup: SET NX вернул null → result=dedup, без getCount;
- *   - quietHours / disabledUntil → skip;
- *   - total>0 в слот → sendNotification с preferredChannelKinds=['telegram_bot'].
- */
-
 interface PrismaMock {
   channelBinding: { findMany: ReturnType<typeof vi.fn> };
   person: { findMany: ReturnType<typeof vi.fn> };
@@ -60,13 +51,6 @@ function makePending(
   } as unknown as PendingActionsService;
 }
 
-/**
- * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
- * (9/9/12/5/3, как в проде после Autonomy W0 Ф0.1) → единственный слот [9]:
- * одна сводка в день в 09:00. Через `overrides` отдельные тесты расширяют
- * окно (например reminderWindowEndHour=21 + reminderStepHours=3 → старое
- * поведение [9,12,15,18,21]).
- */
 function makeCfg(
   overrides: Partial<{
     reminderWindowStartHour: number;
@@ -123,11 +107,7 @@ function makeCron(
   return { cron, prisma, redis, metrics, conv, pending, cfg };
 }
 
-const makeBindingRow = (
-  userId: string,
-  tenantId: string | null,
-  preferences: unknown = null,
-) => ({
+const makeBindingRow = (userId: string, tenantId: string | null, preferences: unknown = null) => ({
   id: `binding-${userId}`,
   userId,
   channelId: 'channel-1',
@@ -142,9 +122,7 @@ const makeBindingRow = (
   },
 });
 
-// 2026-05-24T06:00:00Z = 09:00 Europe/Moscow (слот-час 9).
 const NOW_AT_MSK_9 = new Date(Date.UTC(2026, 4, 24, 6, 0, 0));
-// 2026-05-24T07:00:00Z = 10:00 Europe/Moscow (НЕ слот-час).
 const NOW_AT_MSK_10 = new Date(Date.UTC(2026, 4, 24, 7, 0, 0));
 
 describe('PendingActionsReminderCron', () => {
@@ -154,24 +132,19 @@ describe('PendingActionsReminderCron', () => {
 
   it('дефолтные крутилки (9/9/12): 09:00 MSK — слот-час → обрабатывается', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
     const { cron, redis } = makeCron({ prisma });
     const stats = await cron.run(NOW_AT_MSK_9);
-    // 09:00 ∈ [9] → не skippedSlot; дошли до Redis dedup.
     expect(stats.skippedSlot).toBe(0);
     expect(redis.client.set).toHaveBeenCalled();
   });
 
   it('Ф0.1 (W0): дефолты {9,9,12} → слот ровно один (9:00); 12:00 MSK — skippedSlot, 09:00 MSK — отправка', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValue([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValue([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValue([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -180,15 +153,12 @@ describe('PendingActionsReminderCron', () => {
       [{ severity: 'normal', title: 'X' }],
     );
     const { cron, redis, conv } = makeCron({ prisma, pending });
-    // 2026-05-24T09:00:00Z = 12:00 Europe/Moscow — при старых дефолтах (9/21/3)
-    // был слотом, при новых (9/9/12) — НЕ слот (единственный слот — 9:00).
     const nowAtMsk12 = new Date(Date.UTC(2026, 4, 24, 9, 0, 0));
     const statsAt12 = await cron.run(nowAtMsk12);
     expect(statsAt12.skippedSlot).toBe(1);
     expect(statsAt12.sent).toBe(0);
     expect(redis.client.set).not.toHaveBeenCalled();
     expect(conv.sendNotification).not.toHaveBeenCalled();
-    // 09:00 MSK — единственный слот дня → сводка уходит.
     const statsAt9 = await cron.run(NOW_AT_MSK_9);
     expect(statsAt9.skippedSlot).toBe(0);
     expect(statsAt9.sent).toBe(1);
@@ -197,14 +167,10 @@ describe('PendingActionsReminderCron', () => {
 
   it('крутилки end=21/step=6 → слоты [9,15,21]; 12:00 MSK → skippedSlot', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
-    // 2026-05-24T09:00:00Z = 12:00 Europe/Moscow — слот-час при step=3, но НЕ
-    // при step=6 (слоты [9,15,21]).
     const nowAtMsk12 = new Date(Date.UTC(2026, 4, 24, 9, 0, 0));
     const { cron, redis, conv } = makeCron({
       prisma,
@@ -217,7 +183,7 @@ describe('PendingActionsReminderCron', () => {
     expect(conv.sendNotification).not.toHaveBeenCalled();
   });
 
-  it('нет binding\'ов → candidates=0', async () => {
+  it("нет binding'ов → candidates=0", async () => {
     const { cron } = makeCron();
     const stats = await cron.run(NOW_AT_MSK_9);
     expect(stats.candidates).toBe(0);
@@ -225,9 +191,7 @@ describe('PendingActionsReminderCron', () => {
 
   it('вне слот-часа (10:00 MSK) → skippedSlot, без Redis/getCount/send', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -242,9 +206,7 @@ describe('PendingActionsReminderCron', () => {
 
   it('total=0 → result=empty, без sendNotification', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -261,9 +223,7 @@ describe('PendingActionsReminderCron', () => {
 
   it('dedup: SET NX вернул null → result=dedup, без getCount', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -278,7 +238,6 @@ describe('PendingActionsReminderCron', () => {
       tenantTop: expect.any(String),
       result: 'dedup',
     });
-    // Ключ содержит локальную дату И слот-час.
     const setCall = vi.mocked(redis.client.set).mock.calls[0];
     expect(setCall?.[0]).toContain('pending_reminder:user-1:org-1:2026-05-24:9');
   });
@@ -301,7 +260,6 @@ describe('PendingActionsReminderCron', () => {
 
   it('quietHours охватывает локальное время → skippedQuiet', async () => {
     const prisma = makePrisma();
-    // 09:00 MSK попадает в окно 08:00-10:00.
     prisma.channelBinding.findMany.mockResolvedValueOnce([
       makeBindingRow('user-1', 'org-1', { quietHours: '08:00-10:00' }),
     ]);
@@ -317,9 +275,7 @@ describe('PendingActionsReminderCron', () => {
 
   it('total>0 в слот → sendNotification с preferredChannelKinds=[telegram_bot] + urgentCount', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -342,9 +298,10 @@ describe('PendingActionsReminderCron', () => {
         critical: false,
       }),
     );
-    // Тело содержит total и срочный маркер.
-    const payload = vi.mocked(conv.sendNotification).mock.calls[0]?.[0]
-      .payload as { title: string; body: string };
+    const payload = vi.mocked(conv.sendNotification).mock.calls[0]?.[0].payload as {
+      title: string;
+      body: string;
+    };
     expect(payload.body).toContain('Ждёт вашего подтверждения: 3');
     expect(payload.body).toContain('🔴');
     expect(metrics.incPendingReminderSent).toHaveBeenCalledWith({
@@ -355,12 +312,8 @@ describe('PendingActionsReminderCron', () => {
 
   it('глобальный канал (tenantId=null) → tenantId резолвится через membership', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', null),
-    ]);
-    prisma.membership.findMany.mockResolvedValueOnce([
-      { userId: 'user-1', orgId: 'org-9' },
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', null)]);
+    prisma.membership.findMany.mockResolvedValueOnce([{ userId: 'user-1', orgId: 'org-9' }]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-9', timezone: 'Europe/Moscow' },
     ]);
@@ -378,9 +331,7 @@ describe('PendingActionsReminderCron', () => {
 
   it('sendNotification упал → result=error, не throw', async () => {
     const prisma = makePrisma();
-    prisma.channelBinding.findMany.mockResolvedValueOnce([
-      makeBindingRow('user-1', 'org-1'),
-    ]);
+    prisma.channelBinding.findMany.mockResolvedValueOnce([makeBindingRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);

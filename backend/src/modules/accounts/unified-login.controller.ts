@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  HttpStatus,
-  Inject,
-  Post,
-  Req,
-  Res,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Inject, Post, Req, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
@@ -23,24 +14,6 @@ import { LoginInvalidError } from './exceptions/accounts-errors';
 
 const SESSION_COOKIE = 'z_session';
 
-/**
- * Единый логин для обычных пользователей и супер-админов.
- *
- *   POST /api/v1/auth/login  { email, password }
- *
- * Пробует по очереди:
- *   1) standalone-аккаунт (argon2id, AccountsService.login);
- *   2) admin-аккаунт (bcrypt, AdminLoginService.login).
- * Любой неуспех — единый `LoginInvalidError` (защита от user-enumeration:
- * каждый путь сам тратит время на фейковый verify своего типа хеша).
- *
- * Оба пути выставляют один и тот же cookie `z_session`, который валидирует
- * `CookieAuthGuard`. Фронт по `{ isSuperAdmin, role }` решает редирект
- * (супер-админ → доступен `/admin`, иначе `/dashboard`).
- *
- * Старые эндпоинты `/accounts/login` и `/auth/admin-login` пока сохранены
- * (deprecated, обратная совместимость) — см. plans/tz/2026-05-29-unified-login.md.
- */
 @ApiExcludeController()
 @Controller('api/v1/auth')
 export class UnifiedLoginController {
@@ -64,12 +37,10 @@ export class UnifiedLoginController {
     mustChangePassword: boolean;
   }> {
     const meta = {
-      userAgent:
-        typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
+      userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       ip: req.ip ?? null,
     };
 
-    // 1) Standalone-аккаунт (argon2id).
     try {
       const r = await this.accounts.login(body, meta);
       this.setSession(res, r.token);
@@ -83,7 +54,6 @@ export class UnifiedLoginController {
       if (!(err instanceof LoginInvalidError)) throw err;
     }
 
-    // 2) Admin-аккаунт (bcrypt, role='admin').
     try {
       const r = await this.adminLogin.login(body.email, body.password);
       this.setSession(res, r.sessionToken);
@@ -94,17 +64,11 @@ export class UnifiedLoginController {
         mustChangePassword: r.user.mustChangePassword,
       };
     } catch (err) {
-      // Любой провал admin-пути → единая ошибка логина (без user-enumeration).
       if (err instanceof NotAuthorizedError) throw new LoginInvalidError();
       throw err;
     }
   }
 
-  /**
-   * Единый cookie для обоих путей. Domain — `cookieStandaloneDomain ?? cookieDomain`
-   * (как у /accounts/login): в проде это родительский домен, покрывающий и app,
-   * и admin-поддомен, поэтому admin-сессия валидна на `/admin`.
-   */
   private setSession(res: Response, token: string): void {
     res.cookie(SESSION_COOKIE, token, {
       domain: this.cfg.auth.cookieStandaloneDomain ?? this.cfg.auth.cookieDomain,

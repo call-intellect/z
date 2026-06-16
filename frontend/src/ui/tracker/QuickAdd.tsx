@@ -1,26 +1,21 @@
-'use client';
+"use client";
 
-/**
- * QuickAdd — inline-форма «+ Задача» внизу колонки канбана.
- * Одно поле (title), Enter создаёт задачу, Esc сворачивает форму.
- */
-
-import { useState, useRef, useEffect } from 'react';
-import { Plus, Loader2 } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { humanizeApiError } from '@/api/api-error';
+import { useState, useRef, useEffect } from "react";
+import { Plus, Loader2 } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { humanizeApiError } from "@/api/api-error";
 
 export function QuickAdd({
   onSubmit,
-  placeholder = 'Что нужно сделать?',
-  buttonLabel = 'Задача',
+  placeholder = "Что нужно сделать?",
+  buttonLabel = "Задача",
 }: {
   onSubmit: (title: string) => Promise<void>;
   placeholder?: string;
   buttonLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -36,10 +31,9 @@ export function QuickAdd({
     setError(null);
     try {
       await onSubmit(title);
-      setValue('');
-      // Оставляем форму открытой для быстрого ввода следующей.
+      setValue("");
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось создать задачу'));
+      setError(humanizeApiError(e, "Не удалось создать задачу"));
     } finally {
       setSubmitting(false);
     }
@@ -68,12 +62,12 @@ export function QuickAdd({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === "Enter") {
             e.preventDefault();
             void handleSubmit();
-          } else if (e.key === 'Escape') {
+          } else if (e.key === "Escape") {
             setOpen(false);
-            setValue('');
+            setValue("");
             setError(null);
           }
         }}
@@ -81,14 +75,14 @@ export function QuickAdd({
         disabled={submitting}
         className="w-full bg-transparent text-sm text-fg-primary placeholder:text-fg-tertiary focus:outline-none"
       />
-      {error && (
-        <div className="mt-1 text-[11px] text-danger">{error}</div>
-      )}
+      {error && <div className="mt-1 text-[11px] text-danger">{error}</div>}
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-[11px] text-fg-tertiary">
           Enter — создать · Esc — отмена
         </span>
-        {submitting && <Loader2 size={14} className="animate-spin text-fg-tertiary" />}
+        {submitting && (
+          <Loader2 size={14} className="animate-spin text-fg-tertiary" />
+        )}
       </div>
     </div>
   );

@@ -19,10 +19,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TypedConfigService } from '../../common/config/index';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -50,27 +47,6 @@ import {
 import { EventsService } from './services/events.service';
 import { FindFreeSlotService } from './services/find-free-slot.service';
 
-/**
- * REST API событий графа знаний + Calendar MVP (2026-05-25).
- *
- * Чтение (Org-scope):
- *   GET    /api/v1/events                — list (фильтры kind/from/to/q)
- *   GET    /api/v1/events/:id            — by id
- *
- * Запись (Calendar MVP):
- *   POST   /api/v1/events                — create
- *   PATCH  /api/v1/events/:id            — partial update
- *   DELETE /api/v1/events/:id            — soft delete
- *   POST   /api/v1/events/:id/rsvp       — RSVP участника
- *   POST   /api/v1/events/find-free-slot — поиск общего слота
- *
- * Календарь:
- *   GET    /api/v1/me/calendar           — мой календарь
- *   GET    /api/v1/users/:userId/calendar — чужой календарь
- *
- * RBAC: ресурс `event_card` — owner/admin: read/write/delete; manager: read.
- * Plus app-level checks: для update/delete — owner OR organizer.
- */
 @ApiTags('events')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -83,8 +59,6 @@ export class EventsController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
-
-  // ─────────────────────────── reads ───────────────────────────────────
 
   @Get('events')
   @ApiOperation({ summary: 'Список событий Org (с фильтрами по kind/from/to)' })
@@ -109,8 +83,6 @@ export class EventsController {
     await this.requireRead(user.id, t);
     return this.events.getById({ tenantId: t, id });
   }
-
-  // ─────────────────────────── writes (Calendar MVP) ───────────────────
 
   @Post('events')
   @ApiOperation({
@@ -204,12 +176,9 @@ export class EventsController {
     });
   }
 
-  // ─────────────────────────── calendar ────────────────────────────────
-
   @Get('me/calendar')
   @ApiOperation({
-    summary:
-      'Мой календарь (события + дедлайны задач). Опц. ?projectId= — фильтр по проекту (P3).',
+    summary: 'Мой календарь (события + дедлайны задач). Опц. ?projectId= — фильтр по проекту (P3).',
   })
   async myCalendar(
     @Query(new ZodValidationPipe(MyCalendarQuerySchema)) q: MyCalendarQuery,
@@ -226,13 +195,6 @@ export class EventsController {
     });
   }
 
-  // ─────────────────────────── ICS-feed token ──────────────────────────
-
-  /**
-   * Сгенерировать персональную ссылку на ICS-feed. Если токен уже есть —
-   * возвращает существующую ссылку (не перевыпускаем без явного `DELETE`).
-   * Адрес фида: `{publicHostUrl}/api/v1/calendar/{userId}.ics?token={token}`.
-   */
   @Post('me/calendar/feed/generate')
   @ApiOperation({
     summary: 'Сгенерировать ссылку на ICS-подписку моего календаря',
@@ -257,17 +219,11 @@ export class EventsController {
     return { url };
   }
 
-  /**
-   * Удалить токен ICS-подписки (для перевыпуска). После этого старая ссылка
-   * перестаёт работать; новая получается через `POST /me/calendar/feed/generate`.
-   */
   @Delete('me/calendar/feed')
   @ApiOperation({
     summary: 'Удалить токен ICS-подписки (для перевыпуска ссылки)',
   })
-  async revokeCalendarFeedToken(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ ok: true }> {
+  async revokeCalendarFeedToken(@CurrentUser() user: CurrentUserPayload): Promise<{ ok: true }> {
     await this.prisma.user.update({
       where: { id: user.id },
       data: { calendarFeedToken: null },
@@ -288,7 +244,6 @@ export class EventsController {
   ): Promise<CalendarResponseDto> {
     const t = this.requireTenant(tenantId);
     if (user.id !== userId) {
-      // RBAC чек: read события чужого пользователя.
       await this.requireRead(user.id, t);
     }
     return this.events.getUserCalendar({
@@ -300,8 +255,6 @@ export class EventsController {
       ...(q.projectId ? { projectId: q.projectId } : {}),
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

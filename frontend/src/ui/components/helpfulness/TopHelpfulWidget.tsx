@@ -1,44 +1,25 @@
-'use client';
+"use client";
 
-/**
- * `<TopHelpfulWidget />` — мини-блок «Помощники недели» (Specialist 3.8).
- *
- * Источник: `/api/v1/admin/helpfulness/team-map` (admin-only) — мы намеренно
- * НЕ показываем рейтинг «лучших» обычным пользователям. Виджет рендерится
- * только если у текущего пользователя есть права (owner/admin) — иначе
- * молча отдаём `null`, чтобы не мигать пустотой.
- *
- * Берёт top-3 по lastWeekHelpCount, имена + темы экспертизы. Никаких «худших»
- * (по ТЗ — рейтингов нет, есть только подсветка позитива).
- *
- * Использование (на дашборде руководителя):
- *   <TopHelpfulWidget orgId={currentOrgId} />
- */
+import Link from "next/link";
+import useSWR from "swr";
+import { Sparkles, Users } from "lucide-react";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { Sparkles, Users } from 'lucide-react';
-
-import { helpfulnessApi } from '@/api/helpfulness.api';
-import { useAuth } from '@/contexts/auth-context';
-import { mapTeamMap, type TeamHelperRow } from '@/domain/helpfulness';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { helpfulnessApi } from "@/api/helpfulness.api";
+import { useAuth } from "@/contexts/auth-context";
+import { mapTeamMap, type TeamHelperRow } from "@/domain/helpfulness";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 type Props = {
-  /** orgId — для cache-ключа SWR; права проверяются на бэке (403 → null). */
   orgId: string | null;
-  /** Лимит строк (по умолчанию 3). */
   limit?: number;
 };
 
 export function TopHelpfulWidget({ orgId, limit = 3 }: Props) {
   const { currentOrgRole } = useAuth();
-  const canSee =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canSee = currentOrgRole === "owner" || currentOrgRole === "admin";
 
-  const swrKey =
-    canSee && orgId ? ['helpfulness/team-map', orgId] : null;
+  const swrKey = canSee && orgId ? ["helpfulness/team-map", orgId] : null;
 
   const { data, error, isLoading } = useSWR(
     swrKey,
@@ -102,12 +83,12 @@ export function TopHelpfulWidget({ orgId, limit = 3 }: Props) {
                   <div className="flex items-center gap-1.5 text-fg-primary">
                     <Users size={12} className="shrink-0 text-fg-tertiary" />
                     <span className="truncate font-medium">
-                      {row.name ?? 'Без имени'}
+                      {row.name ?? "Без имени"}
                     </span>
                   </div>
                   {row.topTopics.length > 0 && (
                     <p className="truncate text-xs text-fg-tertiary">
-                      {row.topTopics.slice(0, 2).join(' · ')}
+                      {row.topTopics.slice(0, 2).join(" · ")}
                     </p>
                   )}
                 </div>

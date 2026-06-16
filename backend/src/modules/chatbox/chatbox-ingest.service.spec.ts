@@ -4,31 +4,15 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import type { IngestService } from '../ingest/ingest.service';
 
-import {
-  ChatboxIngestService,
-  renderTranscript,
-} from './chatbox-ingest.service';
+import { ChatboxIngestService, renderTranscript } from './chatbox-ingest.service';
 
-/**
- * Детерминированные unit-тесты ChatboxIngestService: Prisma / IngestService /
- * LlmRouterService полностью замоканы, БД/сети/LLM нет.
- *
- * Проверяем:
- *  - renderTranscript: роли (Клиент/Менеджер), не-TEXT → [<contentType>].
- *  - generateSummary (посуточный rollup, 2026-06-17): JSON {daySummary,
- *    rollingSummary} → возвращает daySummary + персистит rollingSummary на чат;
- *    ошибка LLM/битый JSON → null (best-effort).
- *  - ingestSession: открытая сессия → null (ingest НЕ вызван); закрытая →
- *    ingest.ingest вызван с dataClass='sensitive', sourceExternalId=sessionId,
- *    payload содержит fullText + kind; сессия обновлена rawEventId.
- *  - upsertSource: source отсутствует → create(type='chatbox').
- */
-
-function makeService(over: {
-  prisma?: Partial<Record<string, unknown>>;
-  ingest?: Partial<IngestService>;
-  llm?: Partial<LlmRouterService>;
-} = {}): {
+function makeService(
+  over: {
+    prisma?: Partial<Record<string, unknown>>;
+    ingest?: Partial<IngestService>;
+    llm?: Partial<LlmRouterService>;
+  } = {},
+): {
   service: ChatboxIngestService;
   prisma: any;
   ingest: any;
@@ -97,7 +81,6 @@ describe('ChatboxIngestService.generateSummary', () => {
         validate: expect.any(Function),
       }),
     );
-    // Накопительное саммари записано на чат.
     expect(prisma.chatboxChat.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'c1', tenantId: 't1' },
@@ -206,8 +189,6 @@ describe('ChatboxIngestService.ingestSession', () => {
         sourceId: 'src1',
         sourceExternalId: 's1',
         dataClass: 'sensitive',
-        // стабильный occurredAt = startedAt (не endedAt) — idempotencyKey не
-        // должен меняться при дозаполнении сессии (иначе дубль RawEvent)
         occurredAt: new Date('2026-06-04T12:00:00.000Z'),
         payload: expect.objectContaining({
           kind: 'chatbox_chat_session',
@@ -271,21 +252,18 @@ describe('ChatboxIngestService.ingestSession', () => {
 
     const payload = (ingest.ingest.mock.calls[0]![0] as { payload: any }).payload;
     expect(payload.transcript.turns).toHaveLength(2);
-    // turn клиента — authorPersonId=null (не сотрудник)
     expect(payload.transcript.turns[0]).toMatchObject({
       speaker: 'Клиент [Arsenii]',
       text: 'У меня вопрос по цене',
       startSec: 0,
       authorPersonId: null,
     });
-    // turn менеджера — authorPersonId = responsible.personId
     expect(payload.transcript.turns[1]).toMatchObject({
       speaker: 'Менеджер [Никита]',
       text: 'Скидку дам, если оплатите сегодня',
       startSec: 1,
       authorPersonId: 'p-manager',
     });
-    // fullText (back-compat) сохранён
     expect(payload.fullText).toContain('Клиент [Arsenii]: У меня вопрос по цене');
     expect(payload.fullText).toContain('Менеджер [Никита]: Скидку дам');
   });

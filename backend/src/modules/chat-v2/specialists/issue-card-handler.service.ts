@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -12,22 +7,6 @@ import {
   CardSpecialistRegistry,
 } from '../services/card-specialist-registry.service';
 
-/**
- * Tracker Phase 3 part C (Wave 3, 2026-05-24) — обработчик `CardSpecialistRegistry`
- * для задач трекера. Регистрируется как 'issue'.
- *
- * Контракт:
- *   - `getCardsForQuery` (CardSpecialistHandler) — основной API, который
- *     дергает `ChatV2OrchestrationService` при синтезе ответа: возвращает Issue,
- *     у которых `Issue.sourceBlockIds` пересекаются с candidateBlockIds
- *     retrieval'а chat-v2 (паттерн как у Specialist31/34CardHandler).
- *   - `getCitations(blockIds)` — public helper для будущего ChatV2RetrievalService
- *     (расширенный retrieval): возвращает структуру для построения цитат.
- *   - `formatForChat(issue)` — public helper: рендерит карточку задачи как
- *     короткую строку для prompt'а.
- *
- * Tenant isolation — обязательно во всех запросах. На любую ошибку — `[]`.
- */
 @Injectable()
 export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(IssueCardHandler.name);
@@ -47,14 +26,6 @@ export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
     );
   }
 
-  /**
-   * Возвращает Issue-карточки, релевантные query. Берём те, у которых
-   * `sourceBlockIds` пересекаются с `candidateBlockIds` retrieval'а (тот же
-   * паттерн что в Specialist31/34CardHandler).
-   *
-   * confidence считаем из Issue.confidence (если задача создана AI с
-   * рейтингом уверенности) + бонус за overlap.
-   */
   async getCardsForQuery(args: {
     tenantId: string;
     query: string;
@@ -98,12 +69,9 @@ export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
       for (const i of issues) {
         const overlap = i.sourceBlockIds.filter((b) => blockSet.has(b)).length;
         const base =
-          i.confidence !== null
-            ? Number(i.confidence)
-            : IssueCardHandler.DEFAULT_CONFIDENCE;
+          i.confidence !== null ? Number(i.confidence) : IssueCardHandler.DEFAULT_CONFIDENCE;
         const final = Math.min(1, base + Math.min(0.1, overlap * 0.02));
-        const text =
-          i.descriptionStripped ?? i.description ?? '(без описания)';
+        const text = i.descriptionStripped ?? i.description ?? '(без описания)';
         candidates.push({
           result: {
             id: i.id,
@@ -130,15 +98,6 @@ export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
     }
   }
 
-  /**
-   * Public helper: получить структуру цитат для списка blockId'ов.
-   * Используется при формировании ответа chat-v2: после retrieval по
-   * candidateBlockIds можем поднять Issue, которые ссылаются на них.
-   *
-   * Контракт: для каждого Issue, у которого `sourceBlockIds` пересекается
-   * хотя бы с одним из переданных `blockIds`, возвращаем `IssueCitation`.
-   * tenantId обязателен для cross-tenant защиты.
-   */
   async getCitations(args: {
     tenantId: string;
     blockIds: readonly string[];
@@ -190,12 +149,6 @@ export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
     }
   }
 
-  /**
-   * Public helper: форматирует Issue как короткую карточку для prompt'а.
-   * Не делает дополнительных запросов — рендерит то, что передано.
-   *
-   *   "📋 KORA-123 — Завершить релиз v2 (статус: В работе, дедлайн: 2026-06-01, приоритет: high)"
-   */
   formatForChat(args: {
     identifier: string;
     title: string;
@@ -222,10 +175,6 @@ export class IssueCardHandler implements OnModuleInit, CardSpecialistHandler {
   }
 }
 
-/**
- * Структура цитаты Issue, отдаваемая в `getCitations`. Используется фронтом
- * для рендера ссылок «Источник: KORA-123».
- */
 export interface IssueCitation {
   id: string;
   identifier: string;

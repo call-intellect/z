@@ -7,26 +7,17 @@ import type { RbacService } from '../rbac/rbac.service';
 import { CapabilitiesService } from './capabilities.service';
 import { CAPABILITIES } from './dto/capability-override.dto';
 
-/**
- * ТЗ «Команда + доступы» Фаза 5 — спецификация CapabilitiesService.
- *
- * Конструктор: new CapabilitiesService(prisma, rbac).
- *
- * Замоканы:
- *   - prisma.employeeCapabilityOverride { findMany, upsert, deleteMany }
- *   - prisma.membership { findUnique }
- *   - rbac { loadContext }
- *
- * findMany возвращает уже отфильтрованный набор (фильтры активности
- * имитируются на стороне теста — проверяем маппинг capability→effect).
- */
-
 const ORG = 'org_1';
 const ACTOR = 'actor_1';
 const TARGET = 'target_1';
 
 const ownerCtx = { role: 'owner', visibility: 'open', isSuperAdmin: false, fetchedAt: Date.now() };
-const managerCtx = { role: 'manager', visibility: 'open', isSuperAdmin: false, fetchedAt: Date.now() };
+const managerCtx = {
+  role: 'manager',
+  visibility: 'open',
+  isSuperAdmin: false,
+  fetchedAt: Date.now(),
+};
 
 describe('CapabilitiesService (Фаза 5)', () => {
   let prisma: {
@@ -58,7 +49,6 @@ describe('CapabilitiesService (Фаза 5)', () => {
 
   describe('getEffectiveOverrides', () => {
     it('возвращает только активные override как map capability→effect', async () => {
-      // findMany уже отфильтровал истёкшие/отозванные — возвращает активные.
       prisma.employeeCapabilityOverride.findMany.mockResolvedValue([
         { capability: 'memory:regulations', effect: 'allow' },
         { capability: 'feature:graph', effect: 'deny' },
@@ -70,7 +60,6 @@ describe('CapabilitiesService (Фаза 5)', () => {
         'memory:regulations': 'allow',
         'feature:graph': 'deny',
       });
-      // запрос отфильтровал revokedAt=null и expiresAt null/в будущем
       const findArg = prisma.employeeCapabilityOverride.findMany.mock.calls[0]?.[0];
       expect(findArg?.where.revokedAt).toBeNull();
       expect(findArg?.where.OR).toEqual([

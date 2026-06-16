@@ -8,10 +8,6 @@ import { WebhookSigner } from '../services/webhook-signer.service';
 
 import { WebhookDeliveryWorker } from './webhook-delivery.worker';
 
-/**
- * Юнит-тест worker'а. Не запускаем BullMQ — вызываем приватный `process`
- * напрямую, чтобы изолировать логику от Redis.
- */
 describe('WebhookDeliveryWorker — process', () => {
   let prisma: PrismaService;
   let redis: RedisService;
@@ -40,7 +36,6 @@ describe('WebhookDeliveryWorker — process', () => {
     worker = new WebhookDeliveryWorker(redis, prisma, signer, metrics);
 
     fetchMock = vi.fn();
-    // node fetch — глобал.
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -115,7 +110,7 @@ describe('WebhookDeliveryWorker — process', () => {
       headers: new Headers(),
     });
 
-    const job = makeJob(1); // вторая попытка
+    const job = makeJob(1);
     // @ts-expect-error — приватный метод.
     await expect(worker.process(job)).rejects.toThrow(/HTTP 500/);
 

@@ -1,20 +1,11 @@
-/**
- * diag-routes.ts — read-only дамп реальных LLM-маршрутов (LlmTaskRoute) из прода.
- *
- * Зачем: diag.ts не умеет показывать карту taskType→модель. Этот скрипт логинится
- * тем же бот-аккаунтом и GET'ит /api/v1/admin/ai-models (SuperAdminGuard), печатает
- * по каждому taskType фактические primary/secondary/tertiary провайдер:модель.
- *
- * Запуск:
- *   bun run --env-file=c:/work/z/.env c:/work/z/backend/scripts/diag-routes.ts
- *   ... --json   → сырой JSON
- */
 const BASE = (process.env.DIAG_API_BASE ?? 'https://meet.crossmark.ru').replace(/\/+$/, '');
 const EMAIL = process.env.DIAG_ADMIN_EMAIL ?? '';
 const PASSWORD = process.env.DIAG_ADMIN_PASSWORD ?? '';
 
 if (!EMAIL || !PASSWORD) {
-  process.stderr.write('\n✗ Нет DIAG_ADMIN_EMAIL/DIAG_ADMIN_PASSWORD (запускай с --env-file=c:/work/z/.env)\n');
+  process.stderr.write(
+    '\n✗ Нет DIAG_ADMIN_EMAIL/DIAG_ADMIN_PASSWORD (запускай с --env-file=c:/work/z/.env)\n',
+  );
   process.exit(1);
 }
 
@@ -46,7 +37,9 @@ async function main(): Promise<void> {
     headers: { accept: 'application/json', cookie },
   });
   if (!res.ok) {
-    process.stderr.write(`\n✗ ${res.status} на /admin/ai-models: ${(await res.text()).slice(0, 300)}\n`);
+    process.stderr.write(
+      `\n✗ ${res.status} на /admin/ai-models: ${(await res.text()).slice(0, 300)}\n`,
+    );
     process.exit(1);
   }
   const data = (await res.json()) as { items?: Array<Record<string, any>> };
@@ -57,10 +50,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  const fmt = (t: any): string => (t && t.providerName ? `${t.providerName}:${t.model ?? '—'}` : '—');
+  const fmt = (t: any): string =>
+    t && t.providerName ? `${t.providerName}:${t.model ?? '—'}` : '—';
   process.stdout.write(`Всего taskType-маршрутов: ${items.length}\n\n`);
   process.stdout.write(`taskType | primary | secondary | tertiary\n`);
-  for (const it of items.slice().sort((a, b) => String(a.taskType).localeCompare(String(b.taskType)))) {
+  for (const it of items
+    .slice()
+    .sort((a, b) => String(a.taskType).localeCompare(String(b.taskType)))) {
     process.stdout.write(
       `${it.taskType} | ${fmt(it.primary)} | ${fmt(it.secondary)} | ${fmt(it.tertiary)}\n`,
     );

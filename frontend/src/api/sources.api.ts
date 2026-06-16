@@ -1,20 +1,12 @@
-import { apiClient } from './api-client';
-import { orgHeaders, buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { orgHeaders, buildQuery } from "./admin-helpers";
 import type {
   SourceApi,
   SourceListApi,
   SourceTestResultApi,
   SourceTypeApi,
   DataClass,
-} from '@/domain/source';
-
-/**
- * API-клиент модуля sources (Фаза 10 knowledge-core).
- *
- * Контракт: `backend/src/modules/sources/sources.controller.ts`.
- * Все эндпоинты под `CookieAuthGuard + TenantGuard` — обязателен заголовок
- * `X-Org-Id` (через `orgHeaders(orgId)`).
- */
+} from "@/domain/source";
 
 export type SourceCreateRequest = {
   type: SourceTypeApi;
@@ -38,13 +30,12 @@ export const sourcesApi = {
     ),
 
   get: (orgId: string, id: string) =>
-    apiClient.get<SourceApi>(
-      `/api/v1/sources/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.get<SourceApi>(`/api/v1/sources/${encodeURIComponent(id)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
   create: (orgId: string, body: SourceCreateRequest) =>
-    apiClient.post<SourceApi>('/api/v1/sources', body, {
+    apiClient.post<SourceApi>("/api/v1/sources", body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -56,12 +47,10 @@ export const sourcesApi = {
     ),
 
   remove: (orgId: string, id: string) =>
-    apiClient.del<{ ok: true }>(
-      `/api/v1/sources/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.del<{ ok: true }>(`/api/v1/sources/${encodeURIComponent(id)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
-  // Полное удаление источника + его RawEvent (необратимо).
   purge: (orgId: string, id: string) =>
     apiClient.del<{ ok: true; deletedRawEvents: number }>(
       `/api/v1/sources/${encodeURIComponent(id)}/purge`,

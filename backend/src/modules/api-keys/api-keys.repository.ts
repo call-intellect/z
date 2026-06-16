@@ -44,11 +44,6 @@ export class ApiKeysRepository {
     return this.prisma.apiKey.findUnique({ where: { hashedKey } });
   }
 
-  /**
-   * Поиск активных ingest-ключей по префиксу (`zik_<10>`). Может вернуть
-   * несколько записей при коллизии префикса — caller сверяет hashedKey.
-   * Используется `IngestTokenGuard` в Фазе 10.
-   */
   findActiveByPrefix(prefix: string): Promise<ApiKey[]> {
     return this.prisma.apiKey.findMany({
       where: { prefix, revokedAt: null },
@@ -67,7 +62,6 @@ export class ApiKeysRepository {
     });
   }
 
-  /** Fire-and-forget: ошибка не критична. */
   async touchLastUsed(id: string): Promise<void> {
     await this.prisma.apiKey.update({
       where: { id },

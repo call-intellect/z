@@ -1,22 +1,5 @@
-/**
- * Доменная модель для админ-аналитики Concierge / AI-чат (Фаза 2 редизайна).
- *
- * Контракт: backend `GET /api/v1/admin/analytics/concierge/{overview,top-queries,no-answer}`.
- * Бэкенд отдаёт ПЛОСКИЕ объекты — типы ниже синхронизированы с фактическим
- * ответом `ConciergeAnalyticsService` (см.
- * backend/src/modules/admin/analytics/concierge-analytics.service.ts).
- *
- * Слой: ApiDto → DomainModel (Date).
- */
+import type { AdminPeriod } from "./admin-usage";
 
-import type { AdminPeriod } from './admin-usage';
-
-// ─── Overview ───────────────────────────────────────────────────────────────
-
-/**
- * Фактический ПЛОСКИЙ ответ бэка `/overview`.
- * `noAnswerRate` / `avgLatencyMs` — nullable (нет данных за период / нет поля).
- */
 export type AdminConciergeOverviewApi = {
   period: AdminPeriod;
   from: string;
@@ -32,10 +15,6 @@ export type AdminConciergeOverviewApi = {
   };
 };
 
-/**
- * Доменная модель. `from/to` → `Date`. Для удобства компонента собираем
- * `totals` из плоских полей (но без обращения к недоставленным значениям).
- */
 export type AdminConciergeOverviewDomain = {
   period: { from: Date; to: Date; kind: AdminPeriod };
   totals: {
@@ -45,7 +24,7 @@ export type AdminConciergeOverviewDomain = {
     avgLatencyMs: number | null;
     activeUsers: number;
   };
-  notes: AdminConciergeOverviewApi['notes'];
+  notes: AdminConciergeOverviewApi["notes"];
 };
 
 export function adminConciergeOverviewFromApi(
@@ -68,9 +47,6 @@ export function adminConciergeOverviewFromApi(
   };
 }
 
-// ─── Top queries ────────────────────────────────────────────────────────────
-
-/** Фактический ответ бэка `/top-queries` — только `{ query, count }`. */
 export type AdminConciergeTopQueryApi = {
   query: string;
   count: number;
@@ -88,12 +64,6 @@ export function adminConciergeTopQueriesFromApi(
   return api;
 }
 
-// ─── No-answer feed ─────────────────────────────────────────────────────────
-
-/**
- * Фактический ответ бэка `/no-answer`. Ключ строки — `messageId` (НЕ `id`);
- * полей `tenantName`/`reason` бэк не отдаёт.
- */
 export type AdminConciergeNoAnswerRowApi = {
   messageId: string;
   conversationId: string;
@@ -111,7 +81,7 @@ export type AdminConciergeNoAnswerApi = {
 
 export type AdminConciergeNoAnswerRowDomain = Omit<
   AdminConciergeNoAnswerRowApi,
-  'createdAt'
+  "createdAt"
 > & {
   createdAt: Date;
 };

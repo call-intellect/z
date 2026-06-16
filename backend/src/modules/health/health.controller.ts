@@ -10,12 +10,6 @@ import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 
-/**
- * Версия читается из package.json один раз на старте.
- * Резолвится через `process.cwd()` — оба режима (`bun run dev`,
- * `node dist/main.js`) запускаются из корня backend-а.
- * При неудаче (например, тесты из другой директории) — fallback `'0.0.0'`.
- */
 const APP_VERSION: string = (() => {
   try {
     const pkgPath = resolve(process.cwd(), 'package.json');
@@ -56,10 +50,6 @@ export class HealthController {
     private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Простой liveness — возвращает `status: ok` и версию из package.json.
-   * Не делает никаких внешних проверок.
-   */
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Liveness — версия и статус приложения' })
@@ -67,9 +57,6 @@ export class HealthController {
     return { status: 'ok', version: APP_VERSION };
   }
 
-  /**
-   * Чистый liveness — без зависимостей, для k8s liveness-probe в будущем.
-   */
   @Get('live')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Liveness probe (без проверок)' })
@@ -77,10 +64,6 @@ export class HealthController {
     return { status: 'ok' };
   }
 
-  /**
-   * Readiness — проверяет Postgres, Redis и LiveKit.
-   * Если хоть одна проверка упала — отвечаем 503 + `{ ok:false, checks }`.
-   */
   @Get('ready')
   @ApiOperation({ summary: 'Readiness — проверка Postgres / Redis / LiveKit' })
   async ready(@Res({ passthrough: true }) res: Response): Promise<ReadyResponse> {
@@ -99,8 +82,6 @@ export class HealthController {
 
     return { ok: allOk, checks };
   }
-
-  // ────────────────────── checks ───────────────────────────────────────
 
   private async checkPostgres(): Promise<CheckResult> {
     try {
@@ -149,7 +130,6 @@ export class HealthController {
 
   private errMessage(err: unknown): string {
     if (err instanceof Error) {
-      // Не пускаем переводы строк / кавычки в ответ — оставляем компактно.
       return err.message.replace(/[\r\n"]/g, ' ').slice(0, 200);
     }
     return String(err).slice(0, 200);

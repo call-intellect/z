@@ -15,10 +15,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -62,32 +59,6 @@ import { DecisionPointService } from './services/decision-point.service';
 import { ProcessHandoffService } from './services/process-handoff.service';
 import { ProcessTemplateService } from './services/process-template.service';
 
-/**
- * REST API ProcessTemplate (SBA α-7 wave 2).
- *
- *   GET    /api/v1/processes/templates                  — список
- *   POST   /api/v1/processes/templates                  — создать draft
- *   GET    /api/v1/processes/templates/:id              — детальная карточка
- *   PATCH  /api/v1/processes/templates/:id              — обновить мета
- *   DELETE /api/v1/processes/templates/:id              — soft delete (archived)
- *   POST   /api/v1/processes/templates/:id/versions     — новая version (immutable)
- *   GET    /api/v1/processes/templates/:id/versions     — история версий
- *   POST   /api/v1/processes/templates/:id/versions/:vid/activate — активация
- *
- *   GET    /api/v1/processes/decision-points?templateId=…
- *   POST   /api/v1/processes/decision-points
- *   PATCH  /api/v1/processes/decision-points/:id
- *   DELETE /api/v1/processes/decision-points/:id
- *
- *   GET    /api/v1/processes/handoffs?sourceTemplateId=&targetTemplateId=&kind=
- *   POST   /api/v1/processes/handoffs
- *   PATCH  /api/v1/processes/handoffs/:id
- *   DELETE /api/v1/processes/handoffs/:id
- *
- *   POST   /api/v1/processes/extract                    — admin-trigger async job
- *
- * RBAC: ResourceType `process_template`. TenantGuard скоупит по tenantId.
- */
 @ApiTags('processes')
 @Controller('api/v1/processes')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -102,8 +73,6 @@ export class ProcessesController {
     @Inject(CoreQueueService) private readonly queue: CoreQueueService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ─────────────────────────── templates ────────────────────────────
 
   @Get('templates')
   @ApiOperation({
@@ -224,8 +193,6 @@ export class ProcessesController {
     });
   }
 
-  // ─────────────────────────── decision points ──────────────────────
-
   @Get('decision-points')
   @ApiOperation({ summary: 'Список DecisionPoint (фильтр по templateId)' })
   async listDecisionPoints(
@@ -277,8 +244,6 @@ export class ProcessesController {
     await this.requireDelete(user.id, t);
     return this.decisionPoints.delete({ tenantId: t, id });
   }
-
-  // ─────────────────────────── handoffs ─────────────────────────────
 
   @Get('handoffs')
   @ApiOperation({
@@ -334,12 +299,9 @@ export class ProcessesController {
     return this.handoffs.delete({ tenantId: t, id });
   }
 
-  // ─────────────────────────── extract trigger ──────────────────────
-
   @Post('extract')
   @ApiOperation({
-    summary:
-      'Принудительно запустить ProcessTemplate-extraction по списку blockIds (admin-only)',
+    summary: 'Принудительно запустить ProcessTemplate-extraction по списку blockIds (admin-only)',
   })
   async extract(
     @Body(new ZodValidationPipe(ExtractProcessTemplateBodySchema))
@@ -349,8 +311,6 @@ export class ProcessesController {
   ): Promise<ExtractProcessTemplateResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    // Публикуем jobs в `core.specialist-routing` jobName='3-1-process-detector'
-    // (по одной на каждый blockId — worker сам соберёт батч).
     const jobIds: string[] = [];
     for (const blockId of body.blockIds) {
       const res = await this.queue.enqueueSpecialistRouting({
@@ -367,8 +327,6 @@ export class ProcessesController {
       blockIdsCount: body.blockIds.length,
     };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

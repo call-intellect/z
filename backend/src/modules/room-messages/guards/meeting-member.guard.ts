@@ -12,19 +12,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { JwtService } from '../../auth/services/jwt.service';
 import { ParticipantsService } from '../../participants/participants.service';
 
-/**
- * Guard для room-chat endpoints: пускает и зарегистрированного юзера
- * (cookie `z_session`), и гостя (cookie `guest_session_<meetingId>`).
- *
- *   - Если есть `z_session` — валидируем session JWT, проверяем UserSession
- *     для standalone-сессий, кладём `req.user = { id, email, role, jti? }`.
- *   - Если есть `guest_session_<meetingId>` — валидируем guest JWT, поднимаем
- *     Participant, кладём `req.user = { id: '', livekitIdentity, name }`.
- *   - Если нет ни одной валидной cookie — 401.
- *
- * Доменная проверка участия (является ли user участником встречи) делается
- * в сервисе — гард только устанавливает `req.user`.
- */
 const SESSION_COOKIE = 'z_session';
 
 @Injectable()
@@ -40,7 +27,6 @@ export class MeetingMemberGuard implements CanActivate {
     const request = ctx.switchToHttp().getRequest<Request>();
     const meetingId = this.extractMeetingId(request);
 
-    // 1. Сначала пробуем session cookie.
     const sessionToken = this.readCookie(request, SESSION_COOKIE);
     if (sessionToken) {
       try {
@@ -69,12 +55,10 @@ export class MeetingMemberGuard implements CanActivate {
         return true;
       } catch (error) {
         if (error instanceof UnauthorizedException) throw error;
-        // Битый/просроченный session JWT — продолжаем пробовать guest.
         this.logger.debug({ err: error }, 'session JWT invalid, fallback to guest');
       }
     }
 
-    // 2. Гостевая cookie — её имя зависит от meetingId.
     if (!meetingId) {
       throw new UnauthorizedException({
         ok: false,
@@ -125,7 +109,6 @@ export class MeetingMemberGuard implements CanActivate {
   }
 
   private extractMeetingId(req: Request): string | null {
-    // Express заполняет params только после маршрутизации; в guard'е они уже доступны.
     const params = req.params as Record<string, string | undefined>;
     return params['meetingId'] ?? params['id'] ?? null;
   }

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
+import Link from "next/link";
 import {
   ChevronDown,
   ChevronLeft,
@@ -12,13 +12,13 @@ import {
   Send,
   Sparkles,
   Video,
-} from 'lucide-react';
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
-import useSWR from 'swr';
+} from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { chatboxApi } from '@/api/chatbox.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { chatboxApi } from "@/api/chatbox.api";
 import {
   chatboxAnalysisStatusLabel,
   chatboxChannelTypeBadgeClass,
@@ -28,31 +28,29 @@ import {
   mapMessage,
   type ChatboxMessageView,
   type ChatboxSessionView,
-} from '@/domain/chatbox';
-import { TierGate } from '@/ui/components/TierGate';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/domain/chatbox";
+import { TierGate } from "@/ui/components/TierGate";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const MESSAGES_PAGE = 20;
 
 function formatTime(d: Date | null): string {
-  if (!d) return '';
-  return d.toLocaleString('ru-RU');
+  if (!d) return "";
+  return d.toLocaleString("ru-RU");
 }
 
-/** Точная пометка отправителя по типу из ChatBox. */
 const SENDER_TYPE_LABEL: Record<string, string> = {
-  CLIENT: 'Клиент',
-  USER: 'Менеджер',
-  ASSISTANT: 'ИИ-бот',
-  QUALITY_CONTROL: 'Контроль качества',
+  CLIENT: "Клиент",
+  USER: "Менеджер",
+  ASSISTANT: "ИИ-бот",
+  QUALITY_CONTROL: "Контроль качества",
 };
 function senderTypeLabel(type: string): string {
-  return SENDER_TYPE_LABEL[type] ?? 'Сотрудник';
+  return SENDER_TYPE_LABEL[type] ?? "Сотрудник";
 }
 
-/** Собрать переписку в текст и скачать .txt. */
 function exportConversation(
   clientName: string,
   messages: ChatboxMessageView[],
@@ -64,14 +62,14 @@ function exportConversation(
     const body = m.text ?? `[${m.contentType}]`;
     return `[${formatTime(m.externalCreatedAt)}] ${who}:\n${body}\n`;
   });
-  const header = `Переписка с «${clientName || 'Без имени'}»\nЭкспорт из Коры\n${'='.repeat(40)}\n\n`;
-  const blob = new Blob([header + lines.join('\n')], {
-    type: 'text/plain;charset=utf-8',
+  const header = `Переписка с «${clientName || "Без имени"}»\nЭкспорт из Коры\n${"=".repeat(40)}\n\n`;
+  const blob = new Blob([header + lines.join("\n")], {
+    type: "text/plain;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const a = document.createElement("a");
   a.href = url;
-  a.download = `chat-${clientName || 'export'}.txt`.replace(/\s+/g, '_');
+  a.download = `chat-${clientName || "export"}.txt`.replace(/\s+/g, "_");
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -87,32 +85,29 @@ export function ChatDetailClient({ chatId }: { chatId: string }) {
 }
 
 function ChatDetailContent({ chatId }: { chatId: string }) {
-  // Тумблер AI-анализа org — чтобы не врать «обработка…», когда анализ выключен.
-  const integrationSwr = useSWR(['chatbox-integration-mini'], () =>
+  const integrationSwr = useSWR(["chatbox-integration-mini"], () =>
     chatboxApi.getIntegration(),
   );
   const analysisEnabled = integrationSwr.data?.analysisEnabled ?? false;
 
   const chatSwr = useSWR(
-    ['chatbox-chat', chatId],
+    ["chatbox-chat", chatId],
     async () => {
       const api = await chatboxApi.getChat(chatId);
       return mapChatDetail(api);
     },
     {
-      // Живой прогресс: поллим, пока реально что-то обрабатывается —
-      // есть 'analyzing', либо анализ ВКЛючён и есть 'pending' (крон подхватит).
       refreshInterval: (data) => {
         const ss = data?.sessions ?? [];
-        if (ss.some((s) => s.analysisStatus === 'analyzing')) return 3000;
-        if (analysisEnabled && ss.some((s) => s.analysisStatus === 'pending'))
+        if (ss.some((s) => s.analysisStatus === "analyzing")) return 3000;
+        if (analysisEnabled && ss.some((s) => s.analysisStatus === "pending"))
           return 5000;
         return 0;
       },
     },
   );
 
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [messages, setMessages] = useState<ChatboxMessageView[]>([]);
   const [msgLoading, setMsgLoading] = useState(true);
@@ -129,7 +124,6 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     });
   }, []);
 
-  // Первая загрузка: последние MESSAGES_PAGE сообщений (desc → reverse), скролл вниз.
   useEffect(() => {
     let cancelled = false;
     setMsgLoading(true);
@@ -139,7 +133,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         const res = await chatboxApi.listMessages(chatId, {
           limit: MESSAGES_PAGE,
           offset: 0,
-          order: 'desc',
+          order: "desc",
         });
         if (cancelled) return;
         const items = res.items.map(mapMessage).reverse();
@@ -157,7 +151,6 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     };
   }, [chatId, scrollToBottom]);
 
-  // Подгрузка older при скролле вверх (lazy-load, как в Telegram).
   const loadOlder = useCallback(async () => {
     if (loadingMoreRef.current || !hasMore) return;
     loadingMoreRef.current = true;
@@ -168,18 +161,16 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       const res = await chatboxApi.listMessages(chatId, {
         limit: MESSAGES_PAGE,
         offset: messages.length,
-        order: 'desc',
+        order: "desc",
       });
       const older = res.items.map(mapMessage).reverse();
       setMessages((cur) => [...older, ...cur]);
       setHasMore(res.total > messages.length + older.length);
-      // Сохранить позицию скролла после prepend (контент «не прыгает»).
       requestAnimationFrame(() => {
         const cur = scrollRef.current;
         if (cur) cur.scrollTop = cur.scrollHeight - prevHeight;
       });
     } catch {
-      /* older-страница не критична — тихо */
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
@@ -197,24 +188,23 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     setSubmitting(true);
     try {
       await chatboxApi.sendMessage(chatId, text);
-      toast.success('Отправлено');
-      setDraft('');
-      // Перезагрузить последнюю страницу + скролл вниз.
+      toast.success("Отправлено");
+      setDraft("");
       const res = await chatboxApi.listMessages(chatId, {
         limit: MESSAGES_PAGE,
         offset: 0,
-        order: 'desc',
+        order: "desc",
       });
       setMessages(res.items.map(mapMessage).reverse());
       setHasMore(res.total > res.items.length);
       scrollToBottom();
     } catch (e) {
       const msg =
-        e instanceof ApiError && e.code === 'chatbox_send_failed'
-          ? 'Не удалось отправить'
+        e instanceof ApiError && e.code === "chatbox_send_failed"
+          ? "Не удалось отправить"
           : e instanceof ApiError
             ? e.message
-            : 'Не удалось отправить';
+            : "Не удалось отправить";
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -229,23 +219,18 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
       toast.success(
         res.enqueued > 0
           ? `Анализ запущен: ${res.enqueued} сессий`
-          : 'Нет закрытых сессий для анализа',
+          : "Нет закрытых сессий для анализа",
       );
-      // Мост до момента, когда воркер пометит сессии 'analyzing' (тогда поллинг
-      // chatSwr подхватит прогресс сам).
       void chatSwr.mutate();
       setTimeout(() => void chatSwr.mutate(), 2500);
       setTimeout(() => void chatSwr.mutate(), 6000);
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось запустить анализ'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось запустить анализ"));
     } finally {
       setAnalyzing(false);
     }
   }, [chatId, chatSwr]);
 
-  // --- Состояния загрузки/ошибок детали ---
   if (chatSwr.isLoading && !chatSwr.data && !chatSwr.error) {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-6">
@@ -260,13 +245,13 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
   }
 
   if (chatSwr.error) {
-    const code = chatSwr.error instanceof ApiError ? chatSwr.error.code : '';
+    const code = chatSwr.error instanceof ApiError ? chatSwr.error.code : "";
     const title =
-      code === 'forbidden_conversation_access'
-        ? 'Нет доступа к переписке'
-        : code === 'chatbox_chat_not_found' || code === 'http_404'
-          ? 'Чат не найден'
-          : 'Не удалось загрузить чат';
+      code === "forbidden_conversation_access"
+        ? "Нет доступа к переписке"
+        : code === "chatbox_chat_not_found" || code === "http_404"
+          ? "Чат не найден"
+          : "Не удалось загрузить чат";
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-6">
         <BackLink />
@@ -290,7 +275,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
       <BackLink />
 
-      {/* Шапка */}
+      {}
       <header className="mb-4 mt-3 rounded-lg border border-border-subtle bg-bg-card p-4">
         <div className="flex flex-wrap items-center gap-2">
           <span
@@ -301,7 +286,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
             {chatboxChannelTypeLabel(chat.channelType)}
           </span>
           <h1 className="text-lg font-semibold text-fg-primary">
-            {chat.clientName || 'Без имени'}
+            {chat.clientName || "Без имени"}
           </h1>
           <span className="rounded-full border border-border-subtle bg-bg-overlay px-2 py-0.5 text-xs text-fg-secondary">
             {chatboxChatStatusLabel(chat.status)}
@@ -318,10 +303,10 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
           </Button>
         </div>
         <div className="mt-1 text-xs text-fg-tertiary">
-          Ответственный: {chat.responsibleName ?? '—'}
+          Ответственный: {chat.responsibleName ?? "—"}
         </div>
 
-        {/* Один клиент в разных мессенджерах */}
+        {}
         {chat.messengerIdentities.length > 0 && (
           <div className="mt-3">
             <div className="mb-1 text-xs uppercase tracking-wide text-fg-tertiary">
@@ -344,7 +329,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         )}
       </header>
 
-      {/* AI-анализ диалога (summary сессий + прогресс) */}
+      {}
       <AnalysisPanel
         sessions={chat.sessions}
         analysisEnabled={analysisEnabled}
@@ -352,13 +337,13 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         onAnalyze={() => void handleAnalyze()}
       />
 
-      {/* Лента сообщений — свой скролл; вверх подгружаем older (Telegram-style) */}
+      {}
       <div
         ref={scrollRef}
         onScroll={onScroll}
         className="mb-4 flex h-[60vh] min-h-[280px] flex-col space-y-3 overflow-y-auto rounded-lg border border-border-subtle bg-bg-card p-4"
       >
-        {/* Индикатор подгрузки старых сообщений сверху */}
+        {}
         {hasMore && (
           <div className="flex justify-center py-1 text-xs text-fg-tertiary">
             {loadingMore ? (
@@ -383,7 +368,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
           <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
             {msgError instanceof ApiError
               ? msgError.message
-              : 'Не удалось загрузить сообщения'}
+              : "Не удалось загрузить сообщения"}
           </div>
         )}
 
@@ -395,8 +380,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
 
         {messages.map((m, idx) => {
           const prev = messages[idx - 1];
-          const newSession =
-            idx > 0 && prev && prev.sessionId !== m.sessionId;
+          const newSession = idx > 0 && prev && prev.sessionId !== m.sessionId;
           return (
             <Fragment key={m.id}>
               {newSession && <SessionDivider />}
@@ -406,7 +390,7 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
         })}
       </div>
 
-      {/* Ответ менеджера */}
+      {}
       <div className="rounded-lg border border-border-subtle bg-bg-card p-3">
         <Textarea
           value={draft}
@@ -437,7 +421,12 @@ function ChatDetailContent({ chatId }: { chatId: string }) {
 
 function BackLink() {
   return (
-    <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+    <Button
+      asChild
+      variant="ghost"
+      size="sm"
+      className="gap-1 text-fg-tertiary"
+    >
       <Link href="/chats">
         <ChevronLeft size={16} /> К списку чатов
       </Link>
@@ -455,14 +444,13 @@ function SessionDivider() {
   );
 }
 
-// ─────────────────────────── AI-анализ диалога ──────────────────────────
-
 function sessionPeriod(s: ChatboxSessionView): string {
-  const f = (d: Date | null): string => (d ? d.toLocaleDateString('ru-RU') : '');
+  const f = (d: Date | null): string =>
+    d ? d.toLocaleDateString("ru-RU") : "";
   const from = f(s.startedAt);
   const to = f(s.endedAt);
   if (from && to && from !== to) return `${from} — ${to}`;
-  return from || to || '';
+  return from || to || "";
 }
 
 function SessionStatusBadge({
@@ -472,16 +460,18 @@ function SessionStatusBadge({
   status: string;
   analysisEnabled: boolean;
 }) {
-  const pendingIdle = status === 'pending' && !analysisEnabled;
-  const label = pendingIdle ? 'Не анализир.' : chatboxAnalysisStatusLabel(status);
+  const pendingIdle = status === "pending" && !analysisEnabled;
+  const label = pendingIdle
+    ? "Не анализир."
+    : chatboxAnalysisStatusLabel(status);
   const cls =
-    status === 'done'
-      ? 'bg-success/10 text-success'
-      : status === 'failed'
-        ? 'bg-danger/10 text-danger'
-        : status === 'analyzing'
-          ? 'bg-info/10 text-info'
-          : 'bg-bg-card text-fg-secondary';
+    status === "done"
+      ? "bg-success/10 text-success"
+      : status === "failed"
+        ? "bg-danger/10 text-danger"
+        : status === "analyzing"
+          ? "bg-info/10 text-info"
+          : "bg-bg-card text-fg-secondary";
   return (
     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}>
       {label}
@@ -502,13 +492,12 @@ function AnalysisPanel({
 }) {
   const [open, setOpen] = useState(false);
   const total = sessions.length;
-  const done = sessions.filter((s) => s.analysisStatus === 'done').length;
-  // Реально обрабатывается, только если есть 'analyzing' либо анализ ВКЛ и есть pending.
+  const done = sessions.filter((s) => s.analysisStatus === "done").length;
   const processing =
-    sessions.some((s) => s.analysisStatus === 'analyzing') ||
-    (analysisEnabled && sessions.some((s) => s.analysisStatus === 'pending'));
+    sessions.some((s) => s.analysisStatus === "analyzing") ||
+    (analysisEnabled && sessions.some((s) => s.analysisStatus === "pending"));
   const unanalyzed = sessions.filter(
-    (s) => s.analysisStatus === 'pending' || s.analysisStatus === 'failed',
+    (s) => s.analysisStatus === "pending" || s.analysisStatus === "failed",
   ).length;
 
   if (total === 0) {
@@ -549,20 +538,20 @@ function AnalysisPanel({
         <ChevronDown
           size={16}
           className={`ml-auto shrink-0 text-fg-tertiary transition-transform ${
-            open ? 'rotate-180' : ''
+            open ? "rotate-180" : ""
           }`}
         />
       </button>
 
       {open && (
         <div className="max-h-[40vh] space-y-3 overflow-y-auto border-t border-border-subtle p-4">
-          {/* Ручной запуск анализа */}
+          {}
           {unanalyzed > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border-subtle bg-bg-overlay p-3">
               <span className="text-xs text-fg-secondary">
                 {unanalyzed} сессий без анализа.
                 {!analysisEnabled &&
-                  ' Авто-анализ выключен — запустите вручную или включите тумблер в настройках.'}
+                  " Авто-анализ выключен — запустите вручную или включите тумблер в настройках."}
               </span>
               <Button
                 variant="outline"
@@ -604,15 +593,15 @@ function AnalysisPanel({
                 </p>
               ) : (
                 <p className="text-xs text-fg-tertiary">
-                  {s.analysisStatus === 'failed'
-                    ? 'Анализ не удался — повторите запуск.'
-                    : s.analysisStatus === 'analyzing'
-                      ? 'Анализируется…'
-                      : s.analysisStatus === 'done'
-                        ? 'Резюме пустое.'
+                  {s.analysisStatus === "failed"
+                    ? "Анализ не удался — повторите запуск."
+                    : s.analysisStatus === "analyzing"
+                      ? "Анализируется…"
+                      : s.analysisStatus === "done"
+                        ? "Резюме пустое."
                         : analysisEnabled
-                          ? 'В очереди на анализ…'
-                          : 'Не анализировалось.'}
+                          ? "В очереди на анализ…"
+                          : "Не анализировалось."}
                 </p>
               )}
             </div>
@@ -624,34 +613,34 @@ function AnalysisPanel({
 }
 
 const NON_TEXT_LABELS: Record<string, string> = {
-  IMAGE: 'Изображение',
-  AUDIO: 'Аудио',
-  VOICE: 'Голосовое',
-  VIDEO: 'Видео',
-  VIDEO_NOTE: 'Видеосообщение',
-  FILE: 'Файл',
-  COMMAND: 'Команда',
+  IMAGE: "Изображение",
+  AUDIO: "Аудио",
+  VOICE: "Голосовое",
+  VIDEO: "Видео",
+  VIDEO_NOTE: "Видеосообщение",
+  FILE: "Файл",
+  COMMAND: "Команда",
 };
 
 function attachmentOf(
   m: ChatboxMessageView,
 ): { url: string | null; label: string; icon: typeof Mic } | null {
   switch (m.contentType) {
-    case 'IMAGE':
+    case "IMAGE":
       return { url: m.imageUrl, label: NON_TEXT_LABELS.IMAGE, icon: ImageIcon };
-    case 'VOICE':
+    case "VOICE":
       return { url: m.audioUrl, label: NON_TEXT_LABELS.VOICE, icon: Mic };
-    case 'AUDIO':
+    case "AUDIO":
       return { url: m.audioUrl, label: NON_TEXT_LABELS.AUDIO, icon: Mic };
-    case 'VIDEO':
+    case "VIDEO":
       return { url: m.videoUrl, label: NON_TEXT_LABELS.VIDEO, icon: Video };
-    case 'VIDEO_NOTE':
+    case "VIDEO_NOTE":
       return {
         url: m.videoUrl,
         label: NON_TEXT_LABELS.VIDEO_NOTE,
         icon: Video,
       };
-    case 'FILE':
+    case "FILE":
       return { url: m.fileUrl, label: NON_TEXT_LABELS.FILE, icon: FileText };
     default:
       return null;
@@ -691,14 +680,13 @@ function ImagePreview({ url }: { url: string }) {
   );
 }
 
-/** Рендер медиа сообщения: картинка → превью, голос/аудио/видео → плеер, файл → ссылка. */
 function MessageAttachment({ message }: { message: ChatboxMessageView }) {
   const ct = message.contentType;
 
-  if (ct === 'IMAGE' && message.imageUrl) {
+  if (ct === "IMAGE" && message.imageUrl) {
     return <ImagePreview url={message.imageUrl} />;
   }
-  if ((ct === 'VOICE' || ct === 'AUDIO') && message.audioUrl) {
+  if ((ct === "VOICE" || ct === "AUDIO") && message.audioUrl) {
     return (
       <audio
         controls
@@ -708,7 +696,7 @@ function MessageAttachment({ message }: { message: ChatboxMessageView }) {
       />
     );
   }
-  if ((ct === 'VIDEO' || ct === 'VIDEO_NOTE') && message.videoUrl) {
+  if ((ct === "VIDEO" || ct === "VIDEO_NOTE") && message.videoUrl) {
     return (
       <video
         controls
@@ -719,7 +707,6 @@ function MessageAttachment({ message }: { message: ChatboxMessageView }) {
     );
   }
 
-  // FILE / нет url → иконка + ссылка-метка.
   const att = attachmentOf(message);
   if (!att) return null;
   return (
@@ -742,20 +729,22 @@ function MessageAttachment({ message }: { message: ChatboxMessageView }) {
 }
 
 function MessageBubble({ message }: { message: ChatboxMessageView }) {
-  // Сообщения, отправленные из Коры, всегда менеджерские.
-  const isManager = message.isOutboundFromKora || message.senderRole === 'manager';
+  const isManager =
+    message.isOutboundFromKora || message.senderRole === "manager";
 
   const bubbleClass = isManager
-    ? 'bg-accent text-accent-fg'
-    : 'border border-border-subtle bg-bg-overlay text-fg-primary';
-  const metaClass = isManager ? 'text-accent-fg/70' : 'text-fg-tertiary';
+    ? "bg-accent text-accent-fg"
+    : "border border-border-subtle bg-bg-overlay text-fg-primary";
+  const metaClass = isManager ? "text-accent-fg/70" : "text-fg-tertiary";
   const badgeClass = isManager
-    ? 'bg-accent-fg/15 text-accent-fg'
-    : 'bg-bg-card text-fg-secondary';
+    ? "bg-accent-fg/15 text-accent-fg"
+    : "bg-bg-card text-fg-secondary";
 
   return (
-    <div className={`flex ${isManager ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass}`}>
+    <div className={`flex ${isManager ? "justify-end" : "justify-start"}`}>
+      <div
+        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${bubbleClass}`}
+      >
         <div className="mb-1 flex items-center gap-1.5">
           {message.senderPersonId ? (
             <Link

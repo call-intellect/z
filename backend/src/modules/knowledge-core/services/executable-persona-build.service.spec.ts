@@ -1,16 +1,3 @@
-/**
- * Clones=Roles Ф5 (2026-05-25) — unit-проверка, что `buildForRole`
- * прокидывает `dataClass='internal'` в Prisma create.
- *
- * TZ clone-method ИНТ.1 (2026-06-12) — persona-compile v2: секционная сборка
- * из слоёв метода (values/motivations/RolePrinciple/PracticeSkill/markers).
- * Добавлены тесты на наполнение/деградацию секций, layer-фильтр выборки,
- * union процедур role+person и устойчивость к битому steps-Json.
- *
- * Не покрываем полный pipeline (LLM, embeddings, метрики) — это
- * integration-test scope.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -20,12 +7,6 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import type { DataClassPolicyService } from './dataclass-policy.service';
 import { ExecutablePersonaBuildService } from './executable-persona-build.service';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Фабрика моков (ИНТ.1): prisma-база отвечает пустыми массивами на все новые
-// запросы v2 (skillTrait по layer / rolePrinciple / practiceSkill /
-// appointment) — каждый тест переопределяет нужные delegates через spread.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const makeCreateSpy = () =>
   vi.fn(async (q: { data: Record<string, unknown> }) => ({
@@ -56,8 +37,6 @@ function makePrismaBase(args: {
     $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
       cb({
         executablePersona: {
-          // Раздел 7 — buildForRole внутри транзакции читает prevActive +
-          // lastForVersion. По умолчанию нет ни active, ни прежних версий.
           findFirst: vi.fn(async () => null),
           updateMany: args.updateManySpy,
           create: args.createSpy,
@@ -95,7 +74,6 @@ function makeService(prisma: unknown) {
   const cfg = {
     persona: { minTraits: 3, roleAggMinPersons: 1 },
     aiFeatures: { promptInjectionGuardEnabled: false },
-    // buildForProfile читает cfg.dataClassPolicy.enforcement (W4.1/W4.2).
     dataClassPolicy: { enforcement: 'off' },
   };
   const svc = new ExecutablePersonaBuildService(
@@ -108,11 +86,8 @@ function makeService(prisma: unknown) {
   return { svc, llm, metrics, dataClassPolicy };
 }
 
-/** userMessage первого вызова llm.call (guard выключен в cfg → raw template). */
 function getUserMessage(llm: { call: ReturnType<typeof vi.fn> }): string {
-  const arg = llm.call.mock.calls[0]?.[0] as
-    | { userMessage: string }
-    | undefined;
+  const arg = llm.call.mock.calls[0]?.[0] as { userMessage: string } | undefined;
   if (!arg) throw new Error('llm.call не был вызван');
   return arg.userMessage;
 }
@@ -130,7 +105,6 @@ const makeSkillTraitRow = (
   ...over,
 });
 
-/** Профиль для buildForProfile: 3 skill-черты, employee, active. */
 const makeProfileRow = () => ({
   id: 'sp-1',
   status: 'active',
@@ -159,7 +133,6 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
           { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
         ]),
       },
-      // Раздел 7 — единственный текущий носитель (findFirst, не агрегация findMany).
       skillProfile: {
         findFirst: vi.fn(async () => ({
           id: 'sp-A',
@@ -183,28 +156,27 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
 
     expect(result).not.toBeNull();
     expect(createSpy).toHaveBeenCalledTimes(1);
-    const createArg = (createSpy.mock.calls[0] as unknown as [
-      {
-        data: {
-          scope: string;
-          scopeRefId: string;
-          currentBearerPersonId: string;
-          roleVersion: number;
-          publicName: string;
-          dataClassAudit?: unknown;
-        };
-      },
-    ])[0];
+    const createArg = (
+      createSpy.mock.calls[0] as unknown as [
+        {
+          data: {
+            scope: string;
+            scopeRefId: string;
+            currentBearerPersonId: string;
+            roleVersion: number;
+            publicName: string;
+            dataClassAudit?: unknown;
+          };
+        },
+      ]
+    )[0];
     expect(createArg.data.scope).toBe('role');
     expect(createArg.data.scopeRefId).toBe('role-1');
-    // Раздел 7 — клон строится из носителя person-A; версионные поля проставлены.
     expect(createArg.data.currentBearerPersonId).toBe('person-A');
     expect(createArg.data.roleVersion).toBe(1);
     expect(createArg.data.publicName).toContain('Клон');
-    // dataClassAudit JSON содержит результат derive (kind='executable_persona').
     expect(createArg.data.dataClassAudit).toBeDefined();
 
-    // derive должен быть вызван с правильным kind.
     expect(dataClassPolicy.derive).toHaveBeenCalledWith(
       expect.objectContaining({
         context: expect.objectContaining({ kind: 'executable_persona' }),
@@ -227,7 +199,6 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
           id: 'sp-A',
           person: { name: 'A', relationship: 'employee' },
           traits: [
-            // два варианта одного концепта — представитель с max observationCount (3)
             makeSkillTraitRow('shared-hi', {
               observationCount: 3,
               conceptId: 'concept-1',
@@ -237,12 +208,10 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
               observationCount: 1,
               conceptId: 'concept-1',
             }),
-            // уникальный концепт
             makeSkillTraitRow('uniq-1', {
               observationCount: 2,
               conceptId: 'concept-2',
             }),
-            // без conceptId — не схлопывается
             makeSkillTraitRow('uniq-null', {
               confidence: 'low',
               observationCount: 1,
@@ -264,20 +233,19 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     expect(result).not.toBeNull();
     expect(createSpy).toHaveBeenCalledTimes(1);
 
-    const createArg = (createSpy.mock.calls[0] as unknown as [
-      { data: { includedTraitIds: string[]; builtFromTraitsCount: number } },
-    ])[0];
+    const createArg = (
+      createSpy.mock.calls[0] as unknown as [
+        { data: { includedTraitIds: string[]; builtFromTraitsCount: number } },
+      ]
+    )[0];
     const includedIds = createArg.data.includedTraitIds;
 
-    // concept-1 представлен РОВНО одной чертой — shared-hi (max observationCount=3).
     const sharedIds = includedIds.filter((id) => id.startsWith('shared-'));
     expect(sharedIds).toEqual(['shared-hi']);
 
-    // Остальные (другой conceptId + null) — на месте.
     expect(includedIds).toContain('uniq-1');
-    expect(includedIds).toContain('uniq-null'); // conceptId=null, не схлопнут
+    expect(includedIds).toContain('uniq-null');
 
-    // Итог: 1 (shared) + 2 (uniq) = 3 черты, без дублей по concept-1.
     expect(includedIds).toHaveLength(3);
     expect(createArg.data.builtFromTraitsCount).toBe(3);
 
@@ -314,8 +282,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
             return [
               makeSkillTraitRow('mark-1', {
                 category: 'варианты',
-                statement:
-                  'перед рекомендацией перечисляет варианты и критерий',
+                statement: 'перед рекомендацией перечисляет варианты и критерий',
               }),
             ];
           }
@@ -328,8 +295,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
           {
             id: 'rp-1',
             situation: 'срыв срока',
-            statement:
-              'сначала эскалирует владельцу с 2 вариантами, потом режет scope',
+            statement: 'сначала эскалирует владельцу с 2 вариантами, потом режет scope',
             observationCount: 4,
             confidence: 'high',
           },
@@ -364,11 +330,9 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     expect(userMessage).toContain('Когда:');
     expect(userMessage).toContain('Маркеры процесса');
 
-    // includedTraitIds — skill-черты + values/motivations/markers
-    // (RolePrinciple/PracticeSkill ids НЕ попадают — это не SkillTrait).
-    const createArg = (createSpy.mock.calls[0] as unknown as [
-      { data: { includedTraitIds: string[] } },
-    ])[0];
+    const createArg = (
+      createSpy.mock.calls[0] as unknown as [{ data: { includedTraitIds: string[] } }]
+    )[0];
     expect(createArg.data.includedTraitIds).toEqual(
       expect.arrayContaining(['skill-1', 'val-1', 'mot-1', 'mark-1']),
     );
@@ -411,8 +375,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     const { svc } = makeService(prisma);
     await svc.buildForProfile({ profileId: 'sp-1' });
 
-    const findUniqueArg = prisma.skillProfile.findUnique.mock
-      .calls[0]?.[0] as unknown as {
+    const findUniqueArg = prisma.skillProfile.findUnique.mock.calls[0]?.[0] as unknown as {
       include: { traits: { where: Record<string, unknown> } };
     };
     expect(findUniqueArg.include.traits.where).toMatchObject({
@@ -420,13 +383,10 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
       layer: 'skill',
     });
 
-    // Отдельные запросы по слоям value/motivation/process_marker.
     const layerQueries = prisma.skillTrait.findMany.mock.calls.map(
       (c) => (c[0] as { where: { layer: string } }).where.layer,
     );
-    expect(layerQueries).toEqual(
-      expect.arrayContaining(['value', 'motivation', 'process_marker']),
-    );
+    expect(layerQueries).toEqual(expect.arrayContaining(['value', 'motivation', 'process_marker']));
   });
 
   it('buildForRole: practiceSkills — union scope role + person носителя; values из профиля носителя (Раздел 7)', async () => {
@@ -443,11 +403,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
         findFirst: vi.fn(async () => ({
           id: 'sp-A',
           person: { name: 'A', relationship: 'employee' },
-          traits: [
-            makeSkillTraitRow('t1'),
-            makeSkillTraitRow('t2'),
-            makeSkillTraitRow('t3'),
-          ],
+          traits: [makeSkillTraitRow('t1'), makeSkillTraitRow('t2'), makeSkillTraitRow('t3')],
         })),
       },
       skillTrait: {
@@ -489,24 +445,21 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
 
     expect(result).not.toBeNull();
 
-    // Раздел 7 — union процедур: scope='role' (roleId) + scope='person' носителя person-A.
-    const psArg = prisma.practiceSkill.findMany.mock
-      .calls[0]?.[0] as unknown as { where: { OR: unknown[] } };
+    const psArg = prisma.practiceSkill.findMany.mock.calls[0]?.[0] as unknown as {
+      where: { OR: unknown[] };
+    };
     expect(psArg.where.OR).toEqual([
       { scope: 'role', scopeRefId: 'role-1' },
       { scope: 'person', scopeRefId: 'person-A' },
     ]);
 
-    // values из профиля носителя попали в userMessage + аудит.
     const userMessage = getUserMessage(llm);
     expect(userMessage).toContain('Ценности из проявленных выборов (2)');
     expect(userMessage).toContain('Процедуры');
-    const createArg = (createSpy.mock.calls[0] as unknown as [
-      { data: { includedTraitIds: string[] } },
-    ])[0];
-    expect(createArg.data.includedTraitIds).toEqual(
-      expect.arrayContaining(['val-A', 'val-B']),
-    );
+    const createArg = (
+      createSpy.mock.calls[0] as unknown as [{ data: { includedTraitIds: string[] } }]
+    )[0];
+    expect(createArg.data.includedTraitIds).toEqual(expect.arrayContaining(['val-A', 'val-B']));
   });
 
   it('битый steps-Json у PracticeSkill → скилл пропущен, сборка не падает', async () => {
@@ -540,7 +493,6 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     const userMessage = getUserMessage(llm);
     expect(userMessage).toContain('валидный-скилл-триггер');
     expect(userMessage).not.toContain('битый-скилл-триггер');
-    // Счётчик в заголовке блока — только валидные скиллы.
     expect(userMessage).toContain('Процедуры (1)');
   });
 });

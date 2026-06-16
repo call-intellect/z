@@ -1,9 +1,3 @@
-/**
- * DTO для PATCH /api/v1/admin/feedback/topics/:id — переименование блока.
- *
- * См. plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
- */
-
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 

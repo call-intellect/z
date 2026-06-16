@@ -5,12 +5,6 @@ import type { CreateProjectDto } from '../dto/projects/create-project.dto';
 
 import { ProjectsService } from './projects.service';
 
-/**
- * D2 (ТЗ 2026-06-11) — серверная автогенерация slug/identifier. Тонкий тест на
- * ветку «не переданы → генерим из name»; полный collision-харнесс утилит уже
- * покрыт `translit.spec.ts`.
- */
-
 const baseDto: CreateProjectDto = {
   name: 'Маркетинг',
   network: 0,
@@ -56,8 +50,8 @@ describe('ProjectsService.create — автогенерация slug/identifier 
       mockProject(args.data),
     );
     const topFindUnique = vi.fn();
-    const txFindUnique = vi.fn(async () => null); // generateProjectSlug — нет коллизии
-    const txFindFirst = vi.fn(async () => null); // generateProjectIdentifier — нет коллизии
+    const txFindUnique = vi.fn(async () => null);
+    const txFindFirst = vi.fn(async () => null);
     const tx = {
       project: {
         create: createSpy,

@@ -7,28 +7,6 @@ import type { ProcessTemplateDefinitionDto } from '../dto/processes.dto';
 
 import { resolveProcessTenantTop } from './tenant-top';
 
-/**
- * SBA γ-3 — CrossFunctionalDetectorService.
- *
- * Триггерится при `ProcessTemplate.create/update` (см. вызовы из
- * `ProcessTemplateService`). По текущей `currentVersion.definitionJson`:
- *   1. Собирает все `ownerRoleId` шагов;
- *   2. Резолвит `Role.departmentId` → набор уникальных Department.id;
- *   3. Считает `crossFunctionalScore = unique_departments / total_steps`
- *      (Decimal(4,3), clamp 0..1);
- *   4. Если `score ≥ CROSS_FUNCTIONAL_SCORE_THRESHOLD` (default 0.5) —
- *      выставляет `isCrossFunctional=true`, иначе `false`.
- *
- * Best-effort: не бросает наружу — упавший пересчёт не валит транзакцию
- * caller'а. Возвращает `{ score, isCrossFunctional, uniqueDepartments }`
- * для тестов и метрик.
- *
- * Если в шагах нет ownerRoleId или не получилось зарезолвить Department —
- * score = 0, isCrossFunctional = false.
- *
- * Мастер-флаг `CROSS_FUNCTIONAL_DETECTOR_ENABLED` отключает пересчёт целиком
- * (для аварийной остановки в проде).
- */
 @Injectable()
 export class CrossFunctionalDetectorService {
   private readonly logger = new Logger(CrossFunctionalDetectorService.name);
@@ -38,11 +16,6 @@ export class CrossFunctionalDetectorService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Чистый расчёт без БД: на входе массив step-owner role-id + map role→department.
-   * Используется в unit-тестах. `recalculateAndPersist` оборачивает её
-   * подгрузкой данных и UPDATE'ом.
-   */
   compute(args: {
     steps: ReadonlyArray<{ ownerRoleId?: string | null }>;
     roleToDepartment: ReadonlyMap<string, string | null>;
@@ -79,15 +52,7 @@ export class CrossFunctionalDetectorService {
     };
   }
 
-  /**
-   * Подгружает `currentVersion.definitionJson` шаблона, резолвит Role→Department
-   * и UPDATE'ит `ProcessTemplate.isCrossFunctional / crossFunctionalScore`.
-   * Идемпотентно. Не бросает.
-   */
-  async recalculateAndPersist(args: {
-    tenantId: string;
-    templateId: string;
-  }): Promise<{
+  async recalculateAndPersist(args: { tenantId: string; templateId: string }): Promise<{
     score: number;
     isCrossFunctional: boolean;
     uniqueDepartments: number;
@@ -156,9 +121,6 @@ export class CrossFunctionalDetectorService {
         },
       });
 
-      // Best-effort метрика-гейдж активных cross-functional process'ов
-      // обновляется cron'ом — здесь не пересчитываем (cardinality-safe).
-
       return { ...result, skipped: false };
     } catch (err) {
       this.logger.warn(
@@ -180,11 +142,7 @@ export class CrossFunctionalDetectorService {
     }
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async loadDefinition(
-    versionId: string,
-  ): Promise<ProcessTemplateDefinitionDto | null> {
+  private async loadDefinition(versionId: string): Promise<ProcessTemplateDefinitionDto | null> {
     const v = await this.prisma.processTemplateVersion.findUnique({
       where: { id: versionId },
       select: { definitionJson: true },
@@ -216,8 +174,7 @@ export class CrossFunctionalDetectorService {
     return {
       name,
       order,
-      ownerRoleId:
-        typeof r.ownerRoleId === 'string' ? r.ownerRoleId : undefined,
+      ownerRoleId: typeof r.ownerRoleId === 'string' ? r.ownerRoleId : undefined,
     };
   }
 }

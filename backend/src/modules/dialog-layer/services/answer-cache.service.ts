@@ -7,18 +7,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../utils/tenant-top';
 
-/**
- * SBA α-5 dialog-layer — AnswerCache.
- *
- * Хранит финальный ответ (markdown + citations + uncertaintyNote) под
- * ключом `dlg:ans:{tenantId}:{userId}:{hash(standalone+scope+validAt)}`.
- * Hit = 0 LLM calls — самая большая экономия в pipeline.
- *
- * TTL — настраивается через ENV (default 24h). Инвалидация — событием
- * CardVersion.create через CacheInvalidationService (она бьёт обоим кэшам
- * SCAN-pattern'ом по cardId, не точечно — pessimistic OK для α-5).
- */
-
 export interface AnswerCacheKeyArgs {
   tenantId: string;
   userId: string;
@@ -35,11 +23,6 @@ export interface AnswerCacheEntry {
   mode: string;
   usedBlockIds: string[];
   cachedAt: string;
-  /**
-   * M-1 (2026-06-12) — derived класс данных ответа (см. ChatAnswer.dataClass).
-   * Опционален: старые записи кэша его не имеют — читатель консервативно
-   * трактует отсутствие как 'sensitive'.
-   */
   dataClass?: string;
 }
 
@@ -56,10 +39,6 @@ export class AnswerCacheService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Сборка cache-ключа. tenantId+userId — обязательная часть префикса
-   * (multi-tenancy + user-bound кэш: чужие ответы не утекут).
-   */
   buildKey(args: AnswerCacheKeyArgs): string {
     const payload = [
       args.standaloneQuestion.trim().toLowerCase(),
@@ -101,24 +80,11 @@ export class AnswerCacheService {
     }
   }
 
-  /**
-   * Инвалидация по pattern `dlg:ans:{tenantId}:*`. Используется
-   * CacheInvalidationService при CardVersion.create — pessimistic flush
-   * всего tenant'а.
-   *
-   * Возвращает число удалённых ключей.
-   */
   async invalidateTenant(tenantId: string): Promise<number> {
     const pattern = `${KEY_PREFIX}:${tenantId}:*`;
     return this.scanAndDelete(pattern);
   }
 
-  /**
-   * Инвалидация по conversationId — НЕ применима для AnswerCache (ключ
-   * не содержит conversationId, см. ТЗ §7 — clear-cache бьёт по
-   * conversationId через RetrievalCache + AnswerCache по user'у диалога).
-   * Здесь — narrow flush по (tenantId, userId).
-   */
   async invalidateUser(tenantId: string, userId: string): Promise<number> {
     const pattern = `${KEY_PREFIX}:${tenantId}:${userId}:*`;
     return this.scanAndDelete(pattern);
@@ -129,13 +95,7 @@ export class AnswerCacheService {
     let deleted = 0;
     try {
       do {
-        const [next, keys] = await this.redis.client.scan(
-          cursor,
-          'MATCH',
-          pattern,
-          'COUNT',
-          500,
-        );
+        const [next, keys] = await this.redis.client.scan(cursor, 'MATCH', pattern, 'COUNT', 500);
         cursor = next;
         if (keys.length > 0) {
           deleted += await this.redis.client.del(...keys);

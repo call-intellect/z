@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, type Label } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -22,21 +16,13 @@ export interface LabelResponseDto {
   color: string;
 }
 
-/**
- * LabelsService — метки задач (per-project или глобальные на уровне Org).
- * Доступ: admin / project_manager на write; member на read.
- */
 @Injectable()
 export class LabelsService {
   private readonly logger = new Logger(LabelsService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Создать метку. projectId=null → глобальная. */
-  async create(
-    dto: CreateLabelDto,
-    tenantId: string,
-  ): Promise<LabelResponseDto> {
+  async create(dto: CreateLabelDto, tenantId: string): Promise<LabelResponseDto> {
     try {
       const created = await this.prisma.label.create({
         data: {
@@ -48,10 +34,7 @@ export class LabelsService {
       });
       return this.toResponse(created);
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: { code: 'label_exists', message: 'Метка уже существует' },
@@ -61,11 +44,7 @@ export class LabelsService {
     }
   }
 
-  /** Список меток tenant'а. Фильтр по projectId (null = только глобальные). */
-  async findAll(
-    tenantId: string,
-    query: ListLabelsQuery,
-  ): Promise<LabelResponseDto[]> {
+  async findAll(tenantId: string, query: ListLabelsQuery): Promise<LabelResponseDto[]> {
     const where: Prisma.LabelWhereInput = { tenantId };
     if (query.projectId !== undefined) {
       where.OR = [{ projectId: query.projectId }, { projectId: null }];
@@ -77,12 +56,7 @@ export class LabelsService {
     return rows.map((r) => this.toResponse(r));
   }
 
-  /** PATCH метки. */
-  async update(
-    id: string,
-    dto: UpdateLabelDto,
-    tenantId: string,
-  ): Promise<LabelResponseDto> {
+  async update(id: string, dto: UpdateLabelDto, tenantId: string): Promise<LabelResponseDto> {
     await this.requireLabel(id, tenantId);
     const updated = await this.prisma.label.update({
       where: { id },
@@ -94,7 +68,6 @@ export class LabelsService {
     return this.toResponse(updated);
   }
 
-  /** Удалить метку. Cascade убирает IssueLabel автоматически. */
   async delete(id: string, tenantId: string): Promise<{ ok: true }> {
     await this.requireLabel(id, tenantId);
     await this.prisma.label.delete({ where: { id } });

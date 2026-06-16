@@ -1,12 +1,3 @@
-/**
- * Unit-тесты `WeeklyPerPersonController` (ТЗ-D Фаза 4).
- *
- * Проверяют коды ошибок гвардов-хелперов (мок svc + rbac):
- *   - нет user в req → 403 no_user;
- *   - нет tenant → 400 tenant_required;
- *   - rbac.canViewOperationsDashboard=false → 403 forbidden_role;
- *   - happy path → делегирует в svc.compute с параметрами query.
- */
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,9 +15,11 @@ const QUERY: WeeklyPerPersonQuery = {
   sort: 'reliability',
 };
 
-function buildController(opts: {
-  canView?: boolean;
-} = {}): {
+function buildController(
+  opts: {
+    canView?: boolean;
+  } = {},
+): {
   controller: WeeklyPerPersonController;
   compute: ReturnType<typeof vi.fn>;
   canViewOperationsDashboard: ReturnType<typeof vi.fn>;
@@ -60,23 +53,23 @@ describe('WeeklyPerPersonController', () => {
 
   it('нет user → ForbiddenException(no_user)', async () => {
     const { controller } = buildController();
-    await expect(
-      controller.get('t-1', reqWithUser(undefined), QUERY),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.get('t-1', reqWithUser(undefined), QUERY)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('нет tenant → BadRequestException(tenant_required)', async () => {
     const { controller } = buildController();
-    await expect(
-      controller.get(undefined, reqWithUser('u-1'), QUERY),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.get(undefined, reqWithUser('u-1'), QUERY)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('rbac.canViewOperationsDashboard=false → ForbiddenException(forbidden_role)', async () => {
     const { controller } = buildController({ canView: false });
-    await expect(
-      controller.get('t-1', reqWithUser('u-1'), QUERY),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.get('t-1', reqWithUser('u-1'), QUERY)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('happy path → делегирует в svc.compute с параметрами query', async () => {

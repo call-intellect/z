@@ -1,23 +1,10 @@
-/**
- * DomainModel канала «Ваши предложения».
- *
- * Слой ApiDto → DomainModel: компонент работает только с FeedbackMessage
- * и FeedbackLimit (Date-объекты, готовые для форматирования).
- *
- * Фаза 3 ТЗ user-feedback-with-ai-clustering.
- *
- * Поле `status` оставлено расширяемым: в Фазе 2 продукта планируется
- * показывать пользователю «получено / учтено / в работе / отклонено».
- * Пока маппер всегда возвращает `'received'`.
- */
-
 import type {
   FeedbackLimitApi,
   FeedbackMessageApi,
   FeedbackMessagesListApi,
-} from '../api/feedback.api';
+} from "../api/feedback.api";
 
-export type FeedbackStatus = 'received';
+export type FeedbackStatus = "received";
 
 export interface FeedbackMessage {
   id: string;
@@ -46,7 +33,7 @@ export function toFeedbackMessage(dto: FeedbackMessageApi): FeedbackMessage {
     text: dto.text,
     createdAt: new Date(dto.createdAt),
     processed: dto.processedAt !== null,
-    status: 'received',
+    status: "received",
   };
 }
 

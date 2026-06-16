@@ -1,27 +1,13 @@
-/**
- * Доменная модель для admin usage (Z-Admin + Org-Admin, Фаза 7).
- *
- * Контракт: backend `AdminUsageService.AdminDashboardResult`,
- * `AdminUsersUsageRow`, `AdminCallLogItem`, `AdminCallDetail`,
- * `AdminFunctionUsageRow`.
- *
- * Слой: ApiDto (raw, дата = string) → DomainModel (Date / нормализованные поля).
- */
-
-// ─── Period ─────────────────────────────────────────────────────────────────
-
-export type AdminPeriod = 'day' | 'week' | 'month' | 'custom';
+export type AdminPeriod = "day" | "week" | "month" | "custom";
 
 export const ADMIN_PERIOD_LABELS: Record<AdminPeriod, string> = {
-  day: 'За сутки',
-  week: 'За неделю',
-  month: 'За месяц',
-  custom: 'Свой период',
+  day: "За сутки",
+  week: "За неделю",
+  month: "За месяц",
+  custom: "Свой период",
 };
 
-export type AdminScope = 'global' | 'org';
-
-// ─── Dashboard ──────────────────────────────────────────────────────────────
+export type AdminScope = "global" | "org";
 
 export type AdminDashboardApi = {
   scope: AdminScope;
@@ -97,8 +83,6 @@ export function adminDashboardFromApi(
   };
 }
 
-// ─── Users usage ────────────────────────────────────────────────────────────
-
 export type AdminUsersUsageRowApi = {
   userId: string;
   userEmail: string;
@@ -131,8 +115,6 @@ export function adminUsersUsageFromApi(
   };
 }
 
-// ─── Calls log ──────────────────────────────────────────────────────────────
-
 export type AdminCallLogItemApi = {
   id: string;
   createdAt: string;
@@ -156,7 +138,7 @@ export type AdminCallLogItemApi = {
   sourceRef: { type: string; id: string } | null;
 };
 
-export type AdminCallLogItemDomain = Omit<AdminCallLogItemApi, 'createdAt'> & {
+export type AdminCallLogItemDomain = Omit<AdminCallLogItemApi, "createdAt"> & {
   createdAt: Date;
 };
 
@@ -185,8 +167,6 @@ export function adminCallsLogFromApi(
   };
 }
 
-// ─── Call details ───────────────────────────────────────────────────────────
-
 export type AdminCallDetailApi = AdminCallLogItemApi & {
   requestPreview: string | null;
   responsePreview: string | null;
@@ -206,8 +186,6 @@ export function adminCallDetailFromApi(
     responsePreview: api.responsePreview,
   };
 }
-
-// ─── Functions usage ────────────────────────────────────────────────────────
 
 export type AdminFunctionUsageRowApi = {
   taskType: string;
@@ -242,10 +220,8 @@ export function adminFunctionsUsageFromApi(
   return { items: api.items };
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
 export function formatUsd(value: number): string {
-  if (value === 0) return '$0';
+  if (value === 0) return "$0";
   if (value < 0.01) return `$${value.toFixed(4)}`;
   if (value < 1) return `$${value.toFixed(3)}`;
   return `$${value.toFixed(2)}`;

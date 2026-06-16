@@ -1,28 +1,3 @@
-/**
- * TZ clone-method ВАЛ.1 (2026-06-12) — поведенческая валидация persona
- * v1-vs-v2 (закрывает R10).
- *
- * LLM-промпт `persona-behavior-judge` — строгий судья поведенческой верности
- * клона роли. Еженедельный cron (`PersonaLayerValidationCron`) на реальных
- * кейсах роли (reasoning-блок с trustedAnswer = реальный ход) сравнивает два
- * ответа клона: A — persona v1 (baseline «только черты»), B — persona v2
- * (все слои метода). Результат — только метрика
- * `clone_persona_layer_score{variant}` + лог; НИЧЕГО не блокирует и не
- * меняет (persona v2 уже активна по Ship-On — это наблюдение прод-качества,
- * никаких human-approval-гейтов).
- *
- * Главные инварианты судьи:
- *   - Оценивается ТОЛЬКО ПОВЕДЕНЧЕСКИЙ ХОД (шаги, порядок, критерии,
- *     развилки) — НЕ самоописания характера, НЕ стиль/длина/вежливость.
- *   - Запрет добра за уверенность: уверенный, но неверный ход = низкий
- *     score; честный отказ при реально существовавшем ходе = 0.3
- *     (лучше выдумки, хуже попадания).
- *
- * Cache-friendly (second-brain/02_architecture/llm-cache-status.md):
- * SYSTEM статичен, все переменные данные (роль + кейс + два ответа) — в
- * КОНЦЕ user-сообщения.
- */
-
 export const PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT = [
   'Ты — строгий судья поведенческой верности клона роли. Тебе дают реальный КЕЙС (ситуация + реальный ход, который выбрала роль) и ДВА ответа клона (A и B) на вопрос «как поступишь в этой ситуации».',
   'Оцени КАЖДЫЙ ответ: насколько его ПОВЕДЕНЧЕСКИЙ ХОД (последовательность действий, критерии, развилки) совпадает с реальным ходом роли. Отвечай строго в формате JSON по предоставленной схеме.',
@@ -78,11 +53,6 @@ export const PERSONA_BEHAVIOR_JUDGE_USER_TEMPLATE = (args: {
     args.answerB.slice(0, 2_000),
   ].join('\n');
 
-/**
- * JSON Schema strict для `persona-behavior-judge`. Поддерживается DeepSeek
- * V4 (через tool-путь) и OpenAI Responses API; провайдер без поддержки
- * бросает `LlmFormatNotSupportedError` — роутер идёт к следующему в цепочке.
- */
 export const PERSONA_BEHAVIOR_JUDGE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,

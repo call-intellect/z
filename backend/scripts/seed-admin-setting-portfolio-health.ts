@@ -1,31 +1,3 @@
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — Seed AdminSetting для здоровья портфеля
- * целей.
- *
- * Регистрирует ключи динамической конфигурации:
- *   - `portfolio.health.threshold_healthy` (int, default 60) — порог «здоров».
- *   - `portfolio.health.threshold_warning` (int, default 40) — порог «внимание».
- *   - `portfolio.health.weight_achieved` (int 0..100, default 100) — балл статуса achieved.
- *   - `portfolio.health.weight_on_track` (int 0..100, default 80) — балл on_track.
- *   - `portfolio.health.weight_at_risk` (int 0..100, default 40) — балл at_risk.
- *   - `portfolio.health.weight_stalled` (int 0..100, default 0) — балл stalled.
- *   - `portfolio.health.weight_dropped` (int 0..100, default 0) — балл dropped.
- *   - `operations.portfolio_health.enabled` (boolean, default true) —
- *     kill-switch недельного снимка портфеля + эндпоинта. ON (Ship-On).
- *
- * Веса заданы в шкале 0..100 (баллы статуса); формула здоровья считает
- * взвешенное среднее баллов по живым целям (см. portfolio-health.scoring.ts).
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-portfolio-health.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -68,8 +40,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'portfolio_health',
     severity: 'medium',
-    description:
-      'Балл статуса «достигнуто» в здоровье портфеля (шкала 0..100). По умолчанию 100.',
+    description: 'Балл статуса «достигнуто» в здоровье портфеля (шкала 0..100). По умолчанию 100.',
   },
   {
     key: 'portfolio.health.weight_on_track',
@@ -77,8 +48,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'portfolio_health',
     severity: 'medium',
-    description:
-      'Балл статуса «в графике» в здоровье портфеля (шкала 0..100). По умолчанию 80.',
+    description: 'Балл статуса «в графике» в здоровье портфеля (шкала 0..100). По умолчанию 80.',
   },
   {
     key: 'portfolio.health.weight_at_risk',
@@ -86,8 +56,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'portfolio_health',
     severity: 'medium',
-    description:
-      'Балл статуса «под риском» в здоровье портфеля (шкала 0..100). По умолчанию 40.',
+    description: 'Балл статуса «под риском» в здоровье портфеля (шкала 0..100). По умолчанию 40.',
   },
   {
     key: 'portfolio.health.weight_stalled',
@@ -95,8 +64,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'portfolio_health',
     severity: 'medium',
-    description:
-      'Балл статуса «застряло» в здоровье портфеля (шкала 0..100). По умолчанию 0.',
+    description: 'Балл статуса «застряло» в здоровье портфеля (шкала 0..100). По умолчанию 0.',
   },
   {
     key: 'portfolio.health.weight_dropped',
@@ -104,8 +72,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'portfolio_health',
     severity: 'low',
-    description:
-      'Балл статуса «брошено» в здоровье портфеля (шкала 0..100). По умолчанию 0.',
+    description: 'Балл статуса «брошено» в здоровье портфеля (шкала 0..100). По умолчанию 0.',
   },
   {
     key: 'operations.portfolio_health.enabled',
@@ -147,7 +114,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

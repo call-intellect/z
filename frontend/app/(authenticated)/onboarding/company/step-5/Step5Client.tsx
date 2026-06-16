@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Building2,
@@ -9,22 +9,14 @@ import {
   FileText,
   IdCard,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { structureApi, type StructureSummaryApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { structureApi, type StructureSummaryApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * Шаг 5 — Готово. Показываем сводку (Departments / Roles / Persons /
- * Documents) и кнопку «Открыть дашборд».
- *
- * `GET /api/v1/structure/summary` может быть ещё не готов — в этом случае
- * рендерим заглушку «Сводка появится после готовности backend» и просто
- * даём кнопку «Открыть дашборд».
- */
 export function Step5Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
@@ -45,9 +37,7 @@ export function Step5Client() {
       })
       .catch((e) => {
         if (cancelled) return;
-        setSummaryError(
-          humanizeApiError(e, 'Не удалось загрузить сводку.'),
-        );
+        setSummaryError(humanizeApiError(e, "Не удалось загрузить сводку."));
         setLoading(false);
       });
     return () => {
@@ -98,13 +88,13 @@ export function Step5Client() {
           </>
         ) : (
           <div className="col-span-full rounded-md border border-dashed border-border-subtle p-4 text-sm text-fg-tertiary">
-            {summaryError ?? 'Сводка появится позже.'}
+            {summaryError ?? "Сводка появится позже."}
           </div>
         )}
       </div>
 
       <div className="mt-8 flex justify-center">
-        <Button size="lg" onClick={() => router.push('/dashboard')}>
+        <Button size="lg" onClick={() => router.push("/dashboard")}>
           Открыть дашборд <ArrowRight size={16} className="ml-1" />
         </Button>
       </div>

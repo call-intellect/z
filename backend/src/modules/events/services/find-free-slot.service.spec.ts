@@ -6,16 +6,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { EventsService } from './events.service';
 import { FindFreeSlotService } from './find-free-slot.service';
 
-/**
- * Юнит-тесты FindFreeSlotService — Calendar MVP (2026-05-25).
- *
- * Покрывают:
- *   1. Пустые busy-окна → возвращает первый working-hours слот (Пн 9:00 UTC+3).
- *   2. Один user полностью занят первые 3 дня → слот ищется на 4-й.
- *   3. Несколько user'ов с непересекающимися окнами → слот в общем gap'е.
- *   4. workingHoursOnly=false → слот может быть в любое время суток.
- *   5. Слот не найден за withinDays → found=false.
- */
 describe('FindFreeSlotService', () => {
   let svc: FindFreeSlotService;
   let prisma: PrismaService;
@@ -28,15 +18,12 @@ describe('FindFreeSlotService', () => {
   let incFreeSlot: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    // Фиксируем «сейчас» — понедельник 2026-06-01 06:00 UTC (= 09:00 Москва).
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-01T06:00:00Z'));
 
     fetchBusyMock = vi.fn();
     personFindFirst = vi.fn().mockResolvedValue(null);
-    membershipFindFirst = vi
-      .fn()
-      .mockResolvedValue({ org: { timezone: 'Europe/Moscow' } });
+    membershipFindFirst = vi.fn().mockResolvedValue({ org: { timezone: 'Europe/Moscow' } });
 
     prisma = {
       person: { findFirst: personFindFirst },
@@ -64,7 +51,6 @@ describe('FindFreeSlotService', () => {
       workingHoursOnly: true,
     });
     expect(r.found).toBe(true);
-    // Понедельник 09:00 Москва = 06:00 UTC (это совпадает с now → слот сразу).
     expect(r.slotStartAt).toBe('2026-06-01T06:00:00.000Z');
     expect(r.slotEndAt).toBe('2026-06-01T07:00:00.000Z');
     expect(incFreeSlot).toHaveBeenCalledWith({ tenant: 't-1', found: true });
@@ -84,7 +70,6 @@ describe('FindFreeSlotService', () => {
       workingHoursOnly: true,
     });
     expect(r.found).toBe(true);
-    // Слот должен быть на вт 2026-06-02 09:00 Москва = 06:00 UTC.
     expect(r.slotStartAt).toBe('2026-06-02T06:00:00.000Z');
   });
 
@@ -112,13 +97,11 @@ describe('FindFreeSlotService', () => {
       workingHoursOnly: true,
     });
     expect(r.found).toBe(true);
-    // Общий free gap: 08:00-08:30 UTC.
     expect(r.slotStartAt).toBe('2026-06-01T08:00:00.000Z');
     expect(r.slotEndAt).toBe('2026-06-01T08:30:00.000Z');
   });
 
   it('workingHoursOnly=false → может быть в любое время', async () => {
-    // Утро понедельника всё занято — пусть свободно только полночь.
     fetchBusyMock.mockResolvedValue([
       {
         start: new Date('2026-06-01T06:00:00Z'),
@@ -132,13 +115,11 @@ describe('FindFreeSlotService', () => {
       workingHoursOnly: false,
     });
     expect(r.found).toBe(true);
-    // Первый свободный момент: 19:00 UTC (после busy).
     expect(r.slotStartAt).toBe('2026-06-01T19:00:00.000Z');
     expect(r.slotEndAt).toBe('2026-06-01T20:00:00.000Z');
   });
 
   it('не найдено за withinDays → found=false', async () => {
-    // Целиком занят весь горизонт.
     fetchBusyMock.mockResolvedValue([
       {
         start: new Date('2026-06-01T00:00:00Z'),

@@ -1,15 +1,3 @@
-/**
- * Unit-тесты промпта `feedback.cluster` (ТЗ 2026-05-25 user-feedback,
- * Фаза 4):
- *   - Zod-схема валидирует «хороший» выход модели.
- *   - Zod-схема отбраковывает мусор (bad tempId, missing fields).
- *   - validateFeedbackClusterReferences ловит ссылки на несуществующие
- *     existingTopic / messageId / tempId.
- *   - User template включает все сообщения и existingTopics во входной JSON.
- *   - taskType / promptKey / schemaName совпадают с теми, что
- *     зарегистрированы в `LlmTaskType` / `ALL_LLM_TASK_TYPES`.
- */
-
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -65,8 +53,7 @@ const FIXTURE_OUTPUT_VALID: FeedbackClusterOutput = {
     {
       tempId: 'new_1',
       title: 'Запрос тёмной темы',
-      description:
-        'Пользователи хотят добавить тёмную (dark) тему оформления интерфейса.',
+      description: 'Пользователи хотят добавить тёмную (dark) тему оформления интерфейса.',
     },
   ],
   assignments: [
@@ -111,10 +98,7 @@ describe('feedback.cluster — константы', () => {
   });
 
   it('JSON schema требует newTopics + assignments', () => {
-    expect(FEEDBACK_CLUSTER_JSON_SCHEMA.required).toEqual([
-      'newTopics',
-      'assignments',
-    ]);
+    expect(FEEDBACK_CLUSTER_JSON_SCHEMA.required).toEqual(['newTopics', 'assignments']);
   });
 });
 
@@ -138,9 +122,7 @@ describe('feedback.cluster — Zod-схема', () => {
 
   it('отбрасывает tempId без префикса new_', () => {
     const bad = {
-      newTopics: [
-        { tempId: 'topic_x', title: 'X', description: 'Y' },
-      ],
+      newTopics: [{ tempId: 'topic_x', title: 'X', description: 'Y' }],
       assignments: [],
     };
     const parsed = FeedbackClusterOutputSchema.safeParse(bad);
@@ -148,12 +130,8 @@ describe('feedback.cluster — Zod-схема', () => {
   });
 
   it('требует обязательные поля newTopics + assignments', () => {
-    expect(
-      FeedbackClusterOutputSchema.safeParse({ newTopics: [] }).success,
-    ).toBe(false);
-    expect(
-      FeedbackClusterOutputSchema.safeParse({ assignments: [] }).success,
-    ).toBe(false);
+    expect(FeedbackClusterOutputSchema.safeParse({ newTopics: [] }).success).toBe(false);
+    expect(FeedbackClusterOutputSchema.safeParse({ assignments: [] }).success).toBe(false);
   });
 
   it('отбрасывает пустую строку в topicRef', () => {
@@ -172,10 +150,7 @@ describe('feedback.cluster — Zod-схема', () => {
 
 describe('feedback.cluster — validateFeedbackClusterReferences', () => {
   it('пропускает корректный ответ', () => {
-    const result = validateFeedbackClusterReferences(
-      FIXTURE_OUTPUT_VALID,
-      FIXTURE_INPUT,
-    );
+    const result = validateFeedbackClusterReferences(FIXTURE_OUTPUT_VALID, FIXTURE_INPUT);
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
   });
@@ -239,9 +214,7 @@ describe('feedback.cluster — validateFeedbackClusterReferences', () => {
 
   it('разрешает topicRef на свежесозданный newTopic в этом же ответе', () => {
     const ok: FeedbackClusterOutput = {
-      newTopics: [
-        { tempId: 'new_42', title: 'Новая тема', description: 'desc' },
-      ],
+      newTopics: [{ tempId: 'new_42', title: 'Новая тема', description: 'desc' }],
       assignments: [
         {
           messageId: 'msg_1',

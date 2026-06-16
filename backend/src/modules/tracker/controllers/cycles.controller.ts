@@ -13,19 +13,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  CreateCycleSchema,
-  type CreateCycleDto,
-} from '../dto/cycles/create-cycle.dto';
+import { CreateCycleSchema, type CreateCycleDto } from '../dto/cycles/create-cycle.dto';
 import type { SprintDailyDigestDto } from '../dto/cycles/cycle-daily.dto';
 import type { SprintDashboardDto } from '../dto/cycles/cycle-dashboard.dto';
 import type { SprintWeeklyDigestDto } from '../dto/cycles/cycle-weekly.dto';
@@ -39,10 +33,7 @@ import {
   type StartMeetingForCycleDto,
   type StartMeetingForCycleResponseDto,
 } from '../dto/cycles/start-meeting-for-cycle.dto';
-import {
-  UpdateCycleSchema,
-  type UpdateCycleDto,
-} from '../dto/cycles/update-cycle.dto';
+import { UpdateCycleSchema, type UpdateCycleDto } from '../dto/cycles/update-cycle.dto';
 import type { ListIssuesResponse } from '../dto/issues/issue-response.dto';
 import type {
   ListSprintHintsResponseDto,
@@ -53,10 +44,6 @@ import { CyclesService } from '../services/cycles.service';
 import { SprintAnalystService } from '../services/sprint-analyst.service';
 import { SprintHintsService } from '../services/sprint-hints.service';
 
-/**
- * REST `/api/v1/projects/:projectId/cycles` + `/cycles/:id` — циклы трекера.
- * RBAC ResourceType='cycle' (read: project_member; write/delete/complete: admin/owner).
- */
 @ApiTags('tracker / cycles')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -150,8 +137,6 @@ export class CyclesController {
     return this.svc.findIssues(id, t);
   }
 
-  // ── Sprints (2026-05-27) — дашборд / встреча / подсказки ─────────────
-
   @Get('cycles/:id/dashboard')
   @ApiOperation({ summary: 'Дашборд спринта (агрегированные данные)' })
   async dashboard(
@@ -161,7 +146,6 @@ export class CyclesController {
   ): Promise<SprintDashboardDto> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    // Сначала проверим существование/tenant — выбросит 404 если нет.
     await this.svc.requireCycle(id, t);
     return this.analyst.getSprintDashboard({ cycleId: id, tenantId: t });
   }
@@ -183,8 +167,7 @@ export class CyclesController {
 
   @Get('cycles/:id/dashboard/weekly')
   @ApiOperation({
-    summary:
-      'Pulse §5.2 — Weekly digest спринта (recap гипотезы, velocity, обучения, forecast)',
+    summary: 'Pulse §5.2 — Weekly digest спринта (recap гипотезы, velocity, обучения, forecast)',
   })
   async weeklyDigest(
     @Param('id') id: string,
@@ -231,8 +214,6 @@ export class CyclesController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     await this.svc.requireCycle(id, t);
-    // Status можно прокинуть как ?status= через @Query — но MVP отдаёт все
-    // active (фильтр-логика на фронте). При необходимости расширим.
     return this.hints.listByCycle({
       cycleId: id,
       tenantId: t,

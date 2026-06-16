@@ -1,23 +1,3 @@
-/**
- * Sprints (2026-05-28) §1.2/§1.3 — юнит-тесты SprintsService.
- *
- * Покрытие:
- *   list:
- *     - фильтры status (active/completed/upcoming/all);
- *     - фильтр scopeKind (customer/vendor/person/department/org);
- *     - поиск q (по name / project.name / project.identifier);
- *     - сортировка по hints (critical-первые);
- *     - сортировка по progress (asc/desc);
- *     - маркер isDeleted для удалённой Card/Person/Department/Vendor;
- *     - пагинация (totalPages);
- *     - tenantId isolation (через WHERE).
- *   quickCreate:
- *     - scope='customer' / 'vendor' / 'person' / 'department' / 'org' / 'project';
- *     - валидация: refId обязателен для scope с реф-сущностью;
- *     - 404 если refId не существует / другой tenant;
- *     - slug-collision → throw ConflictException;
- *     - transaction rollback (создание Cycle падает — Project не создаётся).
- */
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -42,14 +22,12 @@ interface RawCycleRow {
     departmentId: string | null;
     customerCard: { id: string; name: string; deletedAt: Date | null } | null;
     vendor: { id: string; name: string; deletedAt: Date | null } | null;
-    subjectPerson:
-      | {
-          id: string;
-          name: string;
-          deletedAt: Date | null;
-          appointments: Array<{ role: { id: string; name: string } | null }>;
-        }
-      | null;
+    subjectPerson: {
+      id: string;
+      name: string;
+      deletedAt: Date | null;
+      appointments: Array<{ role: { id: string; name: string } | null }>;
+    } | null;
     department: { id: string; name: string; deletedAt: Date | null } | null;
   };
 }
@@ -82,10 +60,7 @@ function buildCycleRow(overrides: Partial<RawCycleRow> = {}): RawCycleRow {
   };
 }
 
-/** Извлекаем where из первого вызова mocked findMany c явным cast'ом. */
-function whereFromCall(
-  mockFn: ReturnType<typeof vi.fn>,
-): Record<string, unknown> {
+function whereFromCall(mockFn: ReturnType<typeof vi.fn>): Record<string, unknown> {
   const arg = mockFn.mock.calls[0]?.[0] as { where?: Record<string, unknown> } | undefined;
   return arg?.where ?? {};
 }
@@ -100,21 +75,26 @@ function buildListPrismaStub(opts: {
   meetingByCycle?: Map<string, number>;
 }) {
   const total = opts.total ?? opts.cycles.length;
-  const issueTotalGroup = Array.from(opts.issueTotalByCycle ?? []).map(
-    ([cycleId, count]) => ({ cycleId, _count: { _all: count } }),
-  );
-  const issueDoneGroup = Array.from(opts.issueDoneByCycle ?? []).map(
-    ([cycleId, count]) => ({ cycleId, _count: { _all: count } }),
-  );
-  const hintActiveGroup = Array.from(opts.hintActiveByCycle ?? []).map(
-    ([cycleId, count]) => ({ cycleId, _count: { _all: count } }),
-  );
-  const hintCriticalGroup = Array.from(opts.hintCriticalByCycle ?? []).map(
-    ([cycleId, count]) => ({ cycleId, _count: { _all: count } }),
-  );
-  const meetingGroup = Array.from(opts.meetingByCycle ?? []).map(
-    ([linkedCycleId, count]) => ({ linkedCycleId, _count: { _all: count } }),
-  );
+  const issueTotalGroup = Array.from(opts.issueTotalByCycle ?? []).map(([cycleId, count]) => ({
+    cycleId,
+    _count: { _all: count },
+  }));
+  const issueDoneGroup = Array.from(opts.issueDoneByCycle ?? []).map(([cycleId, count]) => ({
+    cycleId,
+    _count: { _all: count },
+  }));
+  const hintActiveGroup = Array.from(opts.hintActiveByCycle ?? []).map(([cycleId, count]) => ({
+    cycleId,
+    _count: { _all: count },
+  }));
+  const hintCriticalGroup = Array.from(opts.hintCriticalByCycle ?? []).map(([cycleId, count]) => ({
+    cycleId,
+    _count: { _all: count },
+  }));
+  const meetingGroup = Array.from(opts.meetingByCycle ?? []).map(([linkedCycleId, count]) => ({
+    linkedCycleId,
+    _count: { _all: count },
+  }));
   return {
     cycle: {
       count: vi.fn(async () => total),
@@ -122,8 +102,6 @@ function buildListPrismaStub(opts: {
     },
     issue: {
       groupBy: vi.fn(async (args: { where: { state?: unknown } }) => {
-        // Возвращаем done-группы если есть фильтр по state.category='completed',
-        // иначе total-группы.
         const isDone = args.where.state !== undefined;
         return isDone ? issueDoneGroup : issueTotalGroup;
       }),
@@ -396,7 +374,6 @@ describe('SprintsService.list — сортировка и пагинация', (
         limit: 20,
       },
     });
-    // c-c имеет 2 critical → первый. Среди оставшихся c-b active=5 > c-a active=1.
     expect(res.items.map((i) => i.id)).toEqual(['c-c', 'c-b', 'c-a']);
   });
 
@@ -560,33 +537,34 @@ describe('SprintsService.list — scope mapping (label + isDeleted)', () => {
   });
 });
 
-// ────────────────────────── quickCreate ───────────────────────────────
-
 function buildQuickCreatePrismaStub(opts: {
   customerCard?: { id: string; name: string; tenantId: string; deletedAt: Date | null } | null;
   vendor?: { id: string; name: string; tenantId: string; deletedAt: Date | null } | null;
   person?: { id: string; name: string; tenantId: string; deletedAt: Date | null } | null;
   department?: { id: string; name: string; tenantId: string; deletedAt: Date | null } | null;
-  existingProject?: { id: string; identifier: string; slug: string; tenantId: string; deletedAt: Date | null } | null;
+  existingProject?: {
+    id: string;
+    identifier: string;
+    slug: string;
+    tenantId: string;
+    deletedAt: Date | null;
+  } | null;
   projectFindUnique?: () => Promise<unknown>;
   projectFindFirst?: () => Promise<unknown>;
   txProjectCreate?: () => Promise<{ id: string; identifier: string; slug: string }>;
   txCycleCreate?: () => Promise<{ id: string }>;
   failOnCycleCreate?: boolean;
 }) {
-  // root-level calls (вне $transaction): card.findFirst / vendor.findFirst / etc.
   const cardFindFirst = vi.fn(async () => opts.customerCard ?? null);
   const vendorFindFirst = vi.fn(async () => opts.vendor ?? null);
   const personFindFirst = vi.fn(async () => opts.person ?? null);
   const departmentFindFirst = vi.fn(async () => opts.department ?? null);
   const projectFindFirstRoot = vi.fn(async () => opts.existingProject ?? null);
 
-  // tx-level calls.
   const txProjectFindUnique = vi.fn(opts.projectFindUnique ?? (async () => null));
   const txProjectFindFirst = vi.fn(opts.projectFindFirst ?? (async () => null));
   const txProjectCreate = vi.fn(
-    opts.txProjectCreate ??
-      (async () => ({ id: 'p-new', identifier: 'NEW', slug: 'klient-alfa' })),
+    opts.txProjectCreate ?? (async () => ({ id: 'p-new', identifier: 'NEW', slug: 'klient-alfa' })),
   );
   const txProjectUpdate = vi.fn(async () => undefined);
   const txIssueStateCreateMany = vi.fn(async () => [
@@ -603,10 +581,6 @@ function buildQuickCreatePrismaStub(opts: {
       : (opts.txCycleCreate ?? (async () => ({ id: 'c-new' }))),
   );
 
-  // audit 2026-05-29: после quickCreate сервис выставляет
-  // Org.firstSprintCreatedAt через `prisma.org.updateMany(...).catch(...)`
-  // (fire-and-forget). Тестам это поведение не важно — но Prisma-стаб должен
-  // содержать `org.updateMany`, иначе падает с TypeError.
   const orgUpdateMany = vi.fn(async () => ({ count: 1 }));
 
   return {
@@ -917,7 +891,6 @@ describe('SprintsService.quickCreate — ошибки', () => {
   });
 
   it('slug_collision внутри транзакции → ConflictException', async () => {
-    // Симулируем коллизию: txProject.findUnique всегда возвращает existing.
     const { prisma } = buildQuickCreatePrismaStub({
       department: { id: 'd-1', name: 'Marketing', tenantId: 'org-1', deletedAt: null },
       projectFindUnique: async () => ({ id: 'existing-conflicting' }),
@@ -959,9 +932,6 @@ describe('SprintsService.quickCreate — ошибки', () => {
         },
       }),
     ).rejects.toThrow('cycle create failed');
-    // Project.create ВЫЗВАН (мы стабим прямо в tx), но реальная транзакция
-    // откатит. Здесь мы проверяем, что callback transaction'а ВЫЗВАН (это и
-    // есть atomicity-контракт).
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(spies.txCycleCreate).toHaveBeenCalled();
   });

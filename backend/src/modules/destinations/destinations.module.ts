@@ -10,14 +10,6 @@ import { SenderFactory } from './senders/sender.factory';
 import { SlackWebhookSender } from './senders/slack-webhook.sender';
 import { TelegramBotSender } from './senders/telegram-bot.sender';
 
-/**
- * Глобальный destinations-модуль.
- *
- * Экспортирует:
- *   - `DestinationsService` (для проверки ownership при send из других модулей)
- *   - `SenderFactory` (на случай прямой отправки)
- *   - `IntegrationDestinationsSenderService` (M3b может инжектить вместо стаба)
- */
 @Global()
 @Module({
   controllers: [DestinationsController],
@@ -31,10 +23,6 @@ import { TelegramBotSender } from './senders/telegram-bot.sender';
     GenericWebhookSender,
     IntegrationDestinationsSenderService,
   ],
-  exports: [
-    DestinationsService,
-    SenderFactory,
-    IntegrationDestinationsSenderService,
-  ],
+  exports: [DestinationsService, SenderFactory, IntegrationDestinationsSenderService],
 })
 export class DestinationsModule {}

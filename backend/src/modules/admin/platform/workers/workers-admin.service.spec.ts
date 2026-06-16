@@ -1,13 +1,3 @@
-/**
- * Admin-redesign Фаза 8 — unit-тесты `WorkersAdminService`.
- *
- * Покрываем:
- *   1) listQueues() — собирает counts + isPaused по объединённому списку имён.
- *   2) getQueueDetail() — отдает recentFailed/recentCompleted + processingRate.
- *   3) retryFailed() — вызывает Queue.retryJobs и возвращает count.
- *   4) deleteFailedJob() — 404 если job не найден.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RedisService } from '../../../../common/redis/redis.service';
@@ -56,10 +46,7 @@ vi.mock('bullmq', () => {
     async getFailed(_start: number, _end: number): Promise<FailedJobShape[]> {
       return queueData.get(this.name)?.failed ?? [];
     }
-    async getCompleted(
-      _start: number,
-      _end: number,
-    ): Promise<CompletedJobShape[]> {
+    async getCompleted(_start: number, _end: number): Promise<CompletedJobShape[]> {
       return queueData.get(this.name)?.completed ?? [];
     }
     async isPaused(): Promise<boolean> {
@@ -78,9 +65,7 @@ vi.mock('bullmq', () => {
       id: string;
       remove: () => Promise<void>;
     } | null> {
-      const found = queueData
-        .get(this.name)
-        ?.failed.find((j) => j.id === jobId);
+      const found = queueData.get(this.name)?.failed.find((j) => j.id === jobId);
       if (!found) return null;
       return {
         id: found.id,
@@ -126,7 +111,6 @@ describe('WorkersAdminService', () => {
     expect(first?.counts.failed).toBe(5);
     expect(first?.counts.waiting).toBe(3);
     expect(first?.isPaused).toBe(true);
-    // 404-логика: имя не из known — сюда не попадает
     expect(list.every((q) => names.includes(q.name))).toBe(true);
   });
 
@@ -210,9 +194,7 @@ describe('WorkersAdminService', () => {
       completed: [],
       isPaused: false,
     });
-    await expect(
-      svc.deleteFailedJob(known, 'nope'),
-    ).rejects.toThrow();
+    await expect(svc.deleteFailedJob(known, 'nope')).rejects.toThrow();
   });
 
   it('deleteFailedJob(): удаляет существующий failed job', async () => {

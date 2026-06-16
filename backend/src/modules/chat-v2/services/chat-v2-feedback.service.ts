@@ -1,10 +1,4 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -17,21 +11,6 @@ import {
   type ChatUsageStats,
 } from './chat-usage-stats.scoring';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — ChatV2FeedbackService.
- *
- * Несущая часть value-recap: оценка «помог ли ответ» (палец вверх/вниз) на
- * сообщениях AI-чата + агрегатор метрики чата (`getChatUsageStats`).
- *
- *   - upsert/clear фидбека по (messageId, userId) с проверкой владения беседой
- *     (channel-agnostic: оценка собирается и из web, и из Telegram/in_app).
- *   - `getChatUsageStats(tenantId, from, to)` — asked/answered/
- *     answeredWithCitation (grounding-proxy, type-guard массива citations) +
- *     rated/helpedUp + helped-rate (скрыт при rated<min) + дедуп ретраев <30с.
- *
- * Честность (Р6/Р7): helped-rate = helpedUp/rated (НЕ /answered);
- * answeredWithCitation — grounding-proxy, НЕ «дефлекция».
- */
 @Injectable()
 export class ChatV2FeedbackService {
   private readonly logger = new Logger(ChatV2FeedbackService.name);
@@ -43,16 +22,6 @@ export class ChatV2FeedbackService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ──────────────────────────── feedback (write) ──────────────────────
-
-  /**
-   * Поставить/обновить оценку assistant-сообщения. Идемпотентно по
-   * (messageId, userId) — повторный вызов перезаписывает. Проверяет:
-   *   - kill-switch `chat_v2.feedback.enabled`;
-   *   - сообщение существует, принадлежит беседе той же Org;
-   *   - беседа принадлежит пользователю (владение);
-   *   - оценивается только assistant-сообщение (на user-сообщение нельзя).
-   */
   async setFeedback(args: {
     tenantId: string;
     userId: string;
@@ -83,7 +52,6 @@ export class ChatV2FeedbackService {
     return { messageId: args.messageId, helpful: args.helpful };
   }
 
-  /** Снять оценку сообщения (вернуть в NULL). Проверяет владение. */
   async clearFeedback(args: {
     tenantId: string;
     userId: string;
@@ -102,43 +70,26 @@ export class ChatV2FeedbackService {
     return { messageId: args.messageId, cleared: true };
   }
 
-  // ──────────────────────────── usage stats (read) ────────────────────
-
-  /**
-   * Агрегатор метрики чата за окно. `scope='self'` ограничивает по
-   * `conversation.userId`; `scope='org'` — по всей Org. Type-guard citations
-   * (jsonb_typeof='array' AND jsonb_array_length>0). Дедуп user-ретраев <Nс.
-   *
-   * Используется и эндпоинтом `/chat-v2/usage-stats`, и `ValueRecapService`.
-   */
   async getChatUsageStats(args: {
     tenantId: string;
     from: Date;
     to: Date;
     scope?: 'self' | 'org';
-    /** Обязателен при scope='self'. */
     userId?: string | null;
   }): Promise<ChatUsageStats> {
     const minRated = await this.resolveMinRated();
     const retryDedupSeconds = await this.resolveRetryDedupSeconds();
     const scope = args.scope ?? 'org';
 
-    // Фильтр по владельцу беседы для self-scope (через join к conversation).
     const selfUserId = scope === 'self' ? (args.userId ?? null) : null;
     if (scope === 'self' && !selfUserId) {
-      // self-scope без userId → пустая статистика (не светим чужое).
       return buildChatUsageStats(
         { asked: 0, answered: 0, answeredWithCitation: 0, rated: 0, helpedUp: 0 },
         minRated,
       );
     }
 
-    // Один проход $queryRaw: type-guard citations + дедуп ретраев в SQL.
-    // Дедуп: user-сообщения одного диалога в окне < retryDedupSeconds друг от
-    // друга считаются ОДНИМ вопросом (берём первое; lag по createdAt).
-    const userFilter = selfUserId
-      ? Prisma.sql`AND c."userId" = ${selfUserId}`
-      : Prisma.empty;
+    const userFilter = selfUserId ? Prisma.sql`AND c."userId" = ${selfUserId}` : Prisma.empty;
 
     type CountRow = {
       asked: bigint | number;
@@ -209,7 +160,6 @@ export class ChatV2FeedbackService {
       helpedUp: toNum(row?.helped_up),
     };
 
-    // Метрики (по итогам агрегации, без cardinality-взрыва).
     this.metrics.setChatAnsweredWithCitation({
       mode: scope,
       value: raw.answeredWithCitation,
@@ -218,12 +168,6 @@ export class ChatV2FeedbackService {
     return buildChatUsageStats(raw, minRated);
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
-  /**
-   * Проверка владения: сообщение → беседа (той же Org) → пользователь-владелец.
-   * 404 (а не 403), чтобы не разглашать существование чужого сообщения.
-   */
   private async assertMessageOwnership(args: {
     tenantId: string;
     userId: string;
@@ -293,9 +237,7 @@ export class ChatV2FeedbackService {
       'CHAT_V2_FEEDBACK_RETRY_DEDUP_SECONDS',
       30,
     );
-    return typeof v === 'number' && Number.isFinite(v) && v >= 0
-      ? Math.floor(v)
-      : 30;
+    return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 30;
   }
 }
 

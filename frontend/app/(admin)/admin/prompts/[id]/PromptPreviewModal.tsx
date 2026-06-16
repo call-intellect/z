@@ -1,38 +1,31 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.2 — `PromptPreviewModal` — модалка предпросмотра шаблона.
- *
- * Выбор demo-встречи + кнопка «Сгенерировать предпросмотр» + результат
- * в виде collapsible/accordion-блока с meta (стоимость, длительность, модель).
- */
-
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
 import {
   adminPromptTemplatesApi,
   DEMO_MEETING_KEYS,
   type DemoMeetingKey,
   type PreviewResultApi,
-} from '@/api/admin-prompt-templates.api';
-import { DEMO_MEETING_LABEL } from '@/domain/admin-prompt-template';
-import { ApiError } from '@/api/api-error';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-prompt-templates.api";
+import { DEMO_MEETING_LABEL } from "@/domain/admin-prompt-template";
+import { ApiError } from "@/api/api-error";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 export function PromptPreviewModal({
   open,
@@ -45,8 +38,7 @@ export function PromptPreviewModal({
   templateId: string;
   activeVersionId: string | null;
 }) {
-
-  const [meetingKey, setMeetingKey] = useState<DemoMeetingKey>('demo-sales');
+  const [meetingKey, setMeetingKey] = useState<DemoMeetingKey>("demo-sales");
   const [useDraft, setUseDraft] = useState(false);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<PreviewResultApi | null>(null);
@@ -57,13 +49,11 @@ export function PromptPreviewModal({
     try {
       const res = await adminPromptTemplatesApi.preview(templateId, {
         demoMeetingKey: meetingKey,
-        // useDraft=true → не передаём versionId, сервис подберёт последнюю
-        // (на A.2 это может быть та же активная; в A.3 «draft» обретёт смысл).
         ...(!useDraft && activeVersionId ? { versionId: activeVersionId } : {}),
       });
       setResult(res);
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Предпросмотр не удался';
+      const msg = e instanceof ApiError ? e.message : "Предпросмотр не удался";
       toast.error(msg);
     } finally {
       setRunning(false);
@@ -114,14 +104,24 @@ export function PromptPreviewModal({
             <div className="space-y-3 rounded-lg border border-border-subtle bg-bg-subtle p-4">
               <div className="flex flex-wrap items-center gap-4 text-xs text-fg-secondary">
                 <span>
-                  Модель: <span className="font-mono text-fg-primary">{result.modelUsed}</span>
+                  Модель:{" "}
+                  <span className="font-mono text-fg-primary">
+                    {result.modelUsed}
+                  </span>
                 </span>
                 <span>
-                  Длительность: <span className="font-mono">{result.durationMs} мс</span>
+                  Длительность:{" "}
+                  <span className="font-mono">{result.durationMs} мс</span>
                 </span>
                 <span>
-                  Стоимость:{' '}
-                  <span className={result.costOverBudget ? 'font-mono text-danger' : 'font-mono'}>
+                  Стоимость:{" "}
+                  <span
+                    className={
+                      result.costOverBudget
+                        ? "font-mono text-danger"
+                        : "font-mono"
+                    }
+                  >
                     ${result.costUsd.toFixed(5)}
                   </span>
                   {result.costOverBudget && (
@@ -129,11 +129,15 @@ export function PromptPreviewModal({
                   )}
                 </span>
                 <span>
-                  Токены: <span className="font-mono">{result.inputTokens}</span> →{' '}
+                  Токены:{" "}
+                  <span className="font-mono">{result.inputTokens}</span> →{" "}
                   <span className="font-mono">{result.outputTokens}</span>
                 </span>
               </div>
-              <details className="rounded border border-border-subtle bg-bg-card" open>
+              <details
+                className="rounded border border-border-subtle bg-bg-card"
+                open
+              >
                 <summary className="cursor-pointer p-2 text-sm font-medium text-fg-primary">
                   Ответ ИИ
                 </summary>

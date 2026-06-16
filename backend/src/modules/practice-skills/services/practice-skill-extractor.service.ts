@@ -14,30 +14,6 @@ import {
   type PracticeSkillExtractBlock,
 } from '../prompts/practice-skill-extract.prompt';
 
-/**
- * Agents v2 Фаза C1 (2026-05-30) — PracticeSkillExtractorService.
- *
- * Для каждого `SkillTraitConcept` с ≥`cfg.practiceSkills.minTraitsForExtract`
- * активных trait'ов:
- *   1. Собирает контекст: concept name + statements of traits + reasoning-блоки
- *      employee'я (по SkillTrait.sourceBlockIds, signalType ∈ {reasoning,
- *      rationale, decision_basis}).
- *   2. Зовёт LLM `practice-skill-extract` (DeepSeek V4 Pro) → draft PracticeSkill
- *      либо `skill=null`.
- *   3. Embedding `trigger` через KnowledgeEmbeddingService.
- *   4. KNN-check (cosine ≥ `knnDedupThreshold`) — если есть дубль, update
- *      examples/derived* вместо create.
- *   5. Создаёт PracticeSkill(status='shadow', trafficShare=shadowTrafficShare).
- *
- * Scope извлечения:
- *   - Для `concept`-первой версии — scope='person' с `scopeRefId=personId`
- *     (берётся из SkillProfile employee'я).
- *   - Role/Org-skill'ы извлекаются ОТДЕЛЬНО (на старте Фазы C1 — нет, только
- *     person-skill'ы; role-агрегация — задел Фазы C2+).
- *
- * Идемпотентность: вызов для одного `(tenantId, conceptId, personId)` повторно
- * найдёт existing skill через KNN и сделает update (не создаст дубль).
- */
 @Injectable()
 export class PracticeSkillExtractorService {
   private readonly logger = new Logger(PracticeSkillExtractorService.name);
@@ -52,16 +28,7 @@ export class PracticeSkillExtractorService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главный entry-point. Вызывается из `PracticeSkillExtractWorker` (по
-   * событию `skill-trait-concept.normalized`) и из admin-эндпоинта для ручного
-   * запуска. Возвращает массив (созданных или обновлённых) skill'ов — может
-   * быть пустым.
-   */
-  async extractForConcept(args: {
-    tenantId: string;
-    conceptId: string;
-  }): Promise<PracticeSkill[]> {
+  async extractForConcept(args: { tenantId: string; conceptId: string }): Promise<PracticeSkill[]> {
     const concept = await this.prisma.skillTraitConcept.findUnique({
       where: { id: args.conceptId },
       select: {
@@ -81,7 +48,6 @@ export class PracticeSkillExtractorService {
       return [];
     }
 
-    // 1) Загружаем активные trait'ы, сгруппированные по personId.
     const traits = await this.prisma.skillTrait.findMany({
       where: { conceptId: concept.id, status: 'active' },
       select: {
@@ -94,7 +60,6 @@ export class PracticeSkillExtractorService {
     });
     if (traits.length === 0) return [];
 
-    // Загружаем profileId → personId.
     const profileIds = [...new Set(traits.map((t) => t.profileId))];
     const profiles = await this.prisma.skillProfile.findMany({
       where: { id: { in: profileIds } },
@@ -102,7 +67,6 @@ export class PracticeSkillExtractorService {
     });
     const profileToPerson = new Map(profiles.map((p) => [p.id, p.personId]));
 
-    // Группировка traits по personId.
     const byPerson = new Map<string, typeof traits>();
     for (const t of traits) {
       const personId = profileToPerson.get(t.profileId);
@@ -136,11 +100,6 @@ export class PracticeSkillExtractorService {
     return created;
   }
 
-  /**
-   * Извлечение одного skill'а для конкретного (concept, person). Возвращает
-   * либо созданный/обновлённый skill, либо null (если LLM вернул skill=null
-   * или confidence слишком низкий).
-   */
   async extractForPerson(args: {
     tenantId: string;
     conceptId: string;
@@ -152,7 +111,6 @@ export class PracticeSkillExtractorService {
       sourceBlockIds: string[];
     }>;
   }): Promise<PracticeSkill | null> {
-    // 2) Reasoning-блоки.
     const blockIds = [...new Set(args.personTraits.flatMap((t) => t.sourceBlockIds))];
     if (blockIds.length === 0) {
       this.logger.debug(
@@ -186,7 +144,6 @@ export class PracticeSkillExtractorService {
       text: b.trustedAnswer ?? b.name,
     }));
 
-    // 3) LLM call.
     const llmResult = await this.llm.call({
       taskType: 'practice-skill-extract',
       systemPrompt: PRACTICE_SKILL_EXTRACT_SYSTEM_PROMPT,
@@ -225,13 +182,10 @@ export class PracticeSkillExtractorService {
       return null;
     }
     if (parsed.confidence < 0.7) {
-      this.logger.debug(
-        `practice-skill-extract: low confidence ${parsed.confidence} — skip`,
-      );
+      this.logger.debug(`practice-skill-extract: low confidence ${parsed.confidence} — skip`);
       return null;
     }
 
-    // 4) Embedding trigger'а.
     let triggerEmbedding: number[] | null;
     try {
       triggerEmbedding = await this.embedder.embedQuery(parsed.skill.trigger);
@@ -242,7 +196,6 @@ export class PracticeSkillExtractorService {
       triggerEmbedding = null;
     }
 
-    // 5) KNN dedup. Если есть похожий — update existing.
     if (triggerEmbedding) {
       const existing = await this.findSimilarSkill({
         tenantId: args.tenantId,
@@ -266,7 +219,6 @@ export class PracticeSkillExtractorService {
       }
     }
 
-    // 6) Create.
     const examples = blocks.slice(0, 3).map((b) => ({
       episodeBlockId: b.id,
       outcome: 'pending',
@@ -307,16 +259,6 @@ export class PracticeSkillExtractorService {
     return created;
   }
 
-  // ─────────────────────── helpers ───────────────────────
-
-  /**
-   * KNN search через pgvector cosine distance. Возвращает existing skill,
-   * если cosine ≥ threshold, иначе null.
-   *
-   * `archived` и `deprecated` НЕ исключаем — если pattern совпал, обновлять
-   * полезнее, чем создавать новый дубль рядом со старым архивом
-   * (расхождение скорее всего ошибка extractor'а, а не реальный новый skill).
-   */
   private async findSimilarSkill(args: {
     tenantId: string;
     scope: 'person' | 'role' | 'org';
@@ -326,9 +268,7 @@ export class PracticeSkillExtractorService {
   }): Promise<{ id: string; dist: number } | null> {
     const minDistance = 1 - args.threshold;
     try {
-      const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ id: string; dist: number }>
-      >(
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; dist: number }>>(
         `SELECT id, ("triggerEmbedding" <=> $1::vector) AS dist
            FROM "practice_skills"
           WHERE "triggerEmbedding" IS NOT NULL
@@ -355,11 +295,6 @@ export class PracticeSkillExtractorService {
     }
   }
 
-  /**
-   * Сливает draft в существующий skill: добавляет conceptIds/traitIds в
-   * derivedFrom*, мерджит examples (до 5), увеличивает version. Сами шаги
-   * НЕ перезаписываем — это могло бы испортить уже валидированную процедуру.
-   */
   private async mergeIntoExisting(args: {
     existingId: string;
     draft: PracticeSkillDraftFields;
@@ -381,17 +316,12 @@ export class PracticeSkillExtractorService {
       data: {
         derivedFromConceptIds: conceptIds,
         derivedFromTraitIds: traitIds,
-        derivedFromEpisodeCount:
-          existing.derivedFromEpisodeCount + args.episodeCount,
+        derivedFromEpisodeCount: existing.derivedFromEpisodeCount + args.episodeCount,
         version: existing.version + 1,
       },
     });
   }
 }
-
-// ───────────────────────────────────────────────────────────────────────
-// Helpers / types
-// ───────────────────────────────────────────────────────────────────────
 
 interface PracticeSkillDraftFields {
   trigger: string;
@@ -430,29 +360,20 @@ function parseDraft(raw: string): PracticeSkillExtractDraft {
   const reasoning = typeof obj.reasoning === 'string' ? obj.reasoning : '';
   const stepsRaw = Array.isArray(obj.steps) ? obj.steps : [];
   const steps = stepsRaw
-    .filter(
-      (s): s is Record<string, unknown> => !!s && typeof s === 'object',
-    )
+    .filter((s): s is Record<string, unknown> => !!s && typeof s === 'object')
     .map((s, i) => {
-      const order =
-        typeof s.order === 'number' && Number.isInteger(s.order)
-          ? s.order
-          : i + 1;
+      const order = typeof s.order === 'number' && Number.isInteger(s.order) ? s.order : i + 1;
       const action = typeof s.action === 'string' ? s.action.trim() : '';
       const emotionalRegister =
         typeof s.emotionalRegister === 'string' ? s.emotionalRegister : undefined;
       const redFlags = Array.isArray(s.redFlags)
-        ? (s.redFlags as unknown[])
-            .filter((v): v is string => typeof v === 'string')
-            .slice(0, 5)
+        ? (s.redFlags as unknown[]).filter((v): v is string => typeof v === 'string').slice(0, 5)
         : undefined;
       return { order, action, emotionalRegister, redFlags };
     })
     .filter((s) => s.action.length > 0);
   const redFlags = Array.isArray(obj.redFlags)
-    ? (obj.redFlags as unknown[])
-        .filter((v): v is string => typeof v === 'string')
-        .slice(0, 8)
+    ? (obj.redFlags as unknown[]).filter((v): v is string => typeof v === 'string').slice(0, 8)
     : [];
 
   if (trigger.length < 10 || steps.length < 2) {

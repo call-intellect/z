@@ -7,32 +7,15 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { TABLES_QUEUE_NAMES, type TableEnrichJobData } from '../queues';
 import { TableEnrichService } from '../services/table-enrich.service';
 
-/** Дефолт throttle (code-fallback; источник правды — AdminSetting). */
 const DEFAULT_MAX_CONCURRENT_PER_ORG = 100;
-/** TTL счётчика in-flight на случай зависшего job'а (защита от утечки). */
 const INFLIGHT_TTL_SEC = 1800;
 
-/**
- * Worker очереди `tables.enrich` (Smart-tables Фаза 3 — Event-to-Cells).
- *
- * Регистрируется in-process в `WorkersModule` (как TableSyncWorker). На каждый
- * job:
- *   1. Throttle per-Org: Redis incr `table:enrich:jobs:<tenantId>`; если выше
- *      лимита — decr + skip (job завершается; повторный enrich придёт со
- *      следующей встречей, либо ретраем по backoff).
- *   2. Вызывает `TableEnrichService.enrichFromEvent`.
- *   3. В finally — decr счётчика.
- *
- * Concurrency=4: enrich идемпотентен (кэш по TableCellProvenance), разные
- * встречи не конфликтуют.
- */
 @Injectable()
 export class TableEnrichWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableEnrichWorker.name);
@@ -88,7 +71,6 @@ export class TableEnrichWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const inFlight = await this.redis.client.incr(counterKey);
       acquired = true;
-      // expire ставим только когда счётчик «свежий» (=1) — защита от утечки.
       if (inFlight === 1) {
         await this.redis.client.expire(counterKey, INFLIGHT_TTL_SEC);
       }

@@ -16,31 +16,6 @@ import { Specialist38HelpfulnessService } from './services/specialist-3-8-helpfu
 import { Specialist38ProbeService } from './services/specialist-3-8-probe.service';
 import { Specialist38HelpfulnessWorker } from './workers/specialist-3-8-helpfulness.worker';
 
-/**
- * SBA Wave 2 — Specialist 3.8 (Helpfulness Agent) module.
- *
- * Контракт:
- *   - @Global() — чтобы worker'ы и cron'ы могли инжектить сервис без явного
- *     import'а; контроллеры тоже доступны (если AppModule подключит).
- *   - Зависимости:
- *     - PrismaModule (common, обычно глобален).
- *     - ProbeModule — для probe-trigger'ов.
- *     - RbacModule — для контроллеров.
- *     - LlmRouterService (AiModule), KnowledgeEmbeddingService
- *       (KnowledgeCoreModule) — глобальные.
- *     - RecognitionService (RecognitionModule @Global, опциональный) —
- *       Wave 2 A1 bridge: HelpfulnessApiService.approveSpotlight enqueue
- *       Recognition type='thanks_helpfulness'. Инжектится через
- *       @Optional() @Inject(RecognitionService) — приложение продолжает
- *       работать, если RecognitionModule выключен/не подключён.
- *
- * AppModule должен подключить этот модуль (см. README модуля и отчёт).
- *
- * TODO (sub-ТЗ §«Privacy & Ethics»):
- *   - Эндпоинт `/api/v1/me/settings/privacy` (opt-out) — Sprint 4.
- *   - Frontend: 4 страницы + 3 виджета — отдельный фронт-агент.
- *   - Seed LLM task routes для 3-х новых taskType — patch script отдельно.
- */
 @Global()
 @Module({
   imports: [PrismaModule, ProbeModule, RbacModule],
@@ -60,9 +35,6 @@ import { Specialist38HelpfulnessWorker } from './workers/specialist-3-8-helpfuln
     Specialist38HelpfulnessService,
     Specialist38ProbeService,
     HelpfulnessApiService,
-    // Ф2 МТЗ — экспорт handler'а, чтобы единый SpecialistRoutingDispatcherWorker
-    // (в WorkersModule) мог инжектить его через DI. Модуль @Global, поэтому
-    // дополнительного import'а в WorkersModule не нужно.
     Specialist38HelpfulnessWorker,
   ],
 })

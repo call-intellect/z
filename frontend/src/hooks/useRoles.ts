@@ -1,20 +1,13 @@
-'use client';
+"use client";
 
-/**
- * useRoles — SWR-хук списка должностей (бизнес-ролей) организации.
- *
- * Backend: `GET /api/v1/roles` (SBA α-0c).
- *
- * Опционально фильтруем по `departmentId`.
- */
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
 import {
   rolesDomainApi,
   type ListRolesQuery,
   type RoleDomainApi,
-} from '@/api/structure.api';
+} from "@/api/structure.api";
 
 export function useRoles(
   orgId: string | null | undefined,
@@ -25,14 +18,12 @@ export function useRoles(
   error: unknown;
   mutate: () => Promise<unknown>;
 } {
-  const key = orgId
-    ? ['roles.list', orgId, query.departmentId ?? null]
-    : null;
+  const key = orgId ? ["roles.list", orgId, query.departmentId ?? null] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId required');
+      if (!orgId) throw new Error("orgId required");
       return rolesDomainApi.list(orgId, query);
     },
     { revalidateOnFocus: false },

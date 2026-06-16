@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { RequireEntitlement } from '../entitlements/require-entitlement.decorator';
@@ -53,23 +50,6 @@ import {
 import { GoalKeyResultsService } from './services/goal-key-results.service';
 import { GoalsService } from './services/goals.service';
 
-/**
- * REST API целей компании (Фаза 9 knowledge-core):
- *   - GET    /api/v1/goals?status=&limit=        — список (read).
- *   - GET    /api/v1/goals/:id                   — деталка + timeline (read).
- *   - POST   /api/v1/goals                       — создать (write — owner only).
- *   - PATCH  /api/v1/goals/:id                   — обновить (write).
- *   - DELETE /api/v1/goals/:id                   — soft-archive (delete).
- *   - POST   /api/v1/goals/:id/themes            — привязать темы (write).
- *   - DELETE /api/v1/goals/:id/themes/:themeId   — отвязать тему (write).
- *
- * RBAC ресурс — `goal`. policy.csv:
- *   - owner — read/write/delete.
- *   - admin/manager — read.
- *   - super_admin — bypass.
- *
- * Endpoint `POST /:id/recompute` добавляется на Шаге 5.
- */
 @ApiTags('goals')
 @Controller('api/v1/goals')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -142,8 +122,7 @@ export class GoalsController {
   @Patch(':id/priority')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'ТЗ-2 Ф6.A — проставить MoSCoW-приоритет цели (must/should/could/wont или null)',
+    summary: 'ТЗ-2 Ф6.A — проставить MoSCoW-приоритет цели (must/should/could/wont или null)',
   })
   async setPriority(
     @Param('id') id: string,
@@ -178,8 +157,7 @@ export class GoalsController {
   @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary:
-      'Заменить цель новой версией («передумали»); старая уходит в историю (validUntil)',
+    summary: 'Заменить цель новой версией («передумали»); старая уходит в историю (validUntil)',
   })
   async supersede(
     @Param('id') id: string,
@@ -196,8 +174,6 @@ export class GoalsController {
       body,
     });
   }
-
-  // ─────────────────────────── Key Results (KR) ─────────────────────
 
   @Post(':id/key-results')
   @RequireSubscription()
@@ -348,8 +324,6 @@ export class GoalsController {
     });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -394,8 +368,6 @@ export class GoalsController {
       });
     }
   }
-
-  // ── RBAC для KR (ресурс goal_key_result) ──
 
   private async requireKrWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'goal_key_result');

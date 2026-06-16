@@ -2,19 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Specialist36Service } from './specialist-3-6-ideas.service';
 
-/**
- * Ф1 idea direct-path dedup (2026-06-08) — unit-тест guard'а Specialist 3.6.
- *
- * Покрывает развилку «Idea уже материализована из этого блока» ПЕРЕД KNN:
- *   - prisma.idea.findFirst вернул существующую Idea (block-ingest direct-path
- *     ИЛИ прошлый прогон при ретрае джоба) → updateExistingIdea отрабатывает
- *     (prisma.idea.update вызван), prisma.idea.create НЕ вызван, лог 'merged'
- *     c reason='source_block_dedup'.
- *
- * Конструируем сервис напрямую с замоканными зависимостями (паттерн
- * goal-theme-linker.service.spec.ts) — без NestJS Test-модуля.
- */
-
 const TENANT = 'org-1';
 const BLOCK_ID = 'block-1';
 const IDEA_ID = 'idea-existing-1';
@@ -110,14 +97,11 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
-    // guard ушёл в updateExistingIdea → idea.update вызван…
     expect(m.prisma.idea.update).toHaveBeenCalledTimes(1);
     expect(m.prisma.idea.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: IDEA_ID } }),
     );
-    // …дубль НЕ создан.
     expect(m.prisma.idea.create).not.toHaveBeenCalled();
-    // лог 'merged' c reason='source_block_dedup'.
     expect(m.logs.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'merged',
@@ -134,13 +118,7 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
     m.prisma.ideaBlock.findUnique.mockResolvedValue(block());
     m.prisma.idea.findFirst.mockResolvedValue(null);
 
-    // findMatchingIdea использует embedder/llm — для этого теста достаточно,
-    // что guard НЕ вызвал update/merged до обращения к KNN. Ловим исключение
-    // дальше по цепочке (embedder не замокан) и проверяем, что в guard-ветку
-    // НЕ зашли.
-    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }).catch(() => {
-      /* downstream KNN-путь не предмет этого теста */
-    });
+    await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID }).catch(() => {});
 
     expect(m.prisma.idea.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -150,7 +128,6 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
         }),
       }),
     );
-    // в guard-ветку (merged) НЕ заходили.
     expect(m.logs.write).not.toHaveBeenCalledWith(
       expect.objectContaining({
         details: expect.objectContaining({ reason: 'source_block_dedup' }),

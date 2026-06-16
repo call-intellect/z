@@ -1,22 +1,3 @@
-/**
- * Query Understanding (ТЗ 2026-06-14, Приложение B) — промпт извлекателя плана
- * для QueryPlanExtractorService (taskType `dialog-extract-plan`, схема
- * `dialog_extract_plan_v2`).
- *
- * Главное отличие от v1: на вход — ТРИ самодостаточных формулировки одного
- * запроса (выход модуля понимания запроса), а не один сырой вопрос. Извлекатель
- * собирает по ним ОБЪЕДИНЁННЫЙ план: условие включается, если явно есть хотя бы
- * в одной формулировке.
- *
- * CACHE-FRIENDLY (см. second-brain/02_architecture/llm-cache-status.md):
- * SYSTEM-промпт СТАБИЛЬНЫЙ — внутри НЕТ даты. Дата и таймзона уходят в
- * USER-часть (buildExtractPlanUserPrompt), формулировки — в самом конце. Правка
- * SYSTEM инвалидирует prompt cache (flash кэширует SYSTEM с hit ≈99%).
- *
- * T7-F6: JSON Schema strict для DeepSeek/OpenAI. Ollama выдаст
- * LlmFormatNotSupportedError → LlmRouter перейдёт на следующего провайдера.
- */
-
 export const EXTRACT_PLAN_SYSTEM_PROMPT = `Ты — анализатор структуры запроса в Коре, памяти компании. Кора хранит
 знания компании графом: встречи, решения, задачи, договорённости, риски,
 люди. Тебе дают ТРИ формулировки ОДНОГО запроса сотрудника. Твоя задача —
@@ -126,14 +107,6 @@ confidence — уверенность в собранном плане, 0..1.
 Отвечай СТРОГО в JSON, без markdown, без пояснений. Все поля обязательны:
 {"periodExpr":"<токен>","periodDays":<число|null>,"signalTypes":[...],"themeBranches":[...],"entityHints":[...],"personScope":<bool>,"aggregation":<bool>,"needsAction":<bool>,"activeNow":<bool>,"confidence":<0..1>}`;
 
-/**
- * Полный список значений SignalType (зеркало enum в schema.prisma /
- * @prisma/client). Хардкод в схеме нужен для strict json_schema (provider
- * требует явный enum). При изменении SignalType — обновить здесь вручную;
- * сервис дополнительно санитизирует ответ по runtime-`Object.values($Enums.SignalType)`,
- * так что рассинхрон не приведёт к невалидным данным, только к чуть менее
- * точной подсказке модели.
- */
 const SIGNAL_TYPE_ENUM = [
   'fact',
   'pain',
@@ -208,11 +181,6 @@ const THEME_BRANCH_ENUM = [
   'legal',
 ] as const;
 
-/**
- * JSON Schema для `responseFormat: json_schema strict`. Все поля обязательны,
- * `additionalProperties: false`. Хардкод (не через z.toJSONSchema) —
- * читается проще и порядок enum стабилен (важно для prompt cache).
- */
 export const EXTRACT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -275,18 +243,11 @@ export const EXTRACT_PLAN_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-/**
- * USER-часть: дата + таймзона + три формулировки запроса. Cache-safe —
- * переменная часть в конце, SYSTEM не трогаем. Нумеруем столько строк, сколько
- * есть (обычно 3; меньше — если расширитель отдал меньше).
- */
 export function buildExtractPlanUserPrompt(args: {
   questions: string[];
   todayIso: string;
   orgTimezone: string;
 }): string {
-  const numbered = args.questions
-    .map((q, i) => `${i + 1}. ${q}`)
-    .join('\n');
+  const numbered = args.questions.map((q, i) => `${i + 1}. ${q}`).join('\n');
   return `Сегодня: ${args.todayIso}. Таймзона компании: ${args.orgTimezone}.\n\nТри формулировки запроса:\n${numbered}\n\nПлан:`;
 }

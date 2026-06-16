@@ -14,10 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -46,13 +43,6 @@ import type {
 } from '../services/intake.service';
 import { IntakeService } from '../services/intake.service';
 
-/**
- * REST `/api/v1/intake` — входящие задачи (inbox перед триажем).
- * RBAC ResourceType='intake_issue' (read/write: admin/owner/coo).
- *
- * TODO Sprint 2: `Idempotency-Key` middleware на POST /intake (защита от
- * двойных webhook-доставок от внешних адаптеров).
- */
 @ApiTags('tracker / intake')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -72,8 +62,6 @@ export class IntakeController {
   ): Promise<ListIntakeResponse> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    // A4 (2026-06-14): передаём userId — findAll исключает из pending-вида
-    // карточки, отложенные этим пользователем в очереди /actions (snooze-зеркало).
     return this.svc.findAll(t, query, user.id);
   }
 
@@ -104,12 +92,6 @@ export class IntakeController {
     return this.svc.update(id, body, t, user.id);
   }
 
-  /**
-   * Редизайн кабинета Ф5а (2026-06-13) — «следующий шаг отчёта → кандидат в
-   * задачу». Создаёт IntakeIssue (source='meeting') из текста next-step отчёта.
-   * Сама задача появится после триажа (accept). Идемпотентно по (meetingId +
-   * text). RBAC — write на intake_issue.
-   */
   @Post('meetings/:meetingId/next-steps/to-intake')
   @RequireSubscription()
   @ApiOperation({
@@ -127,7 +109,6 @@ export class IntakeController {
       meetingId,
       text: body.text,
       description: body.description ?? null,
-      // A10 — явный провенанс от FE (если знает), иначе backend резолвит по встрече.
       sourceBlockIds: body.sourceBlockIds ?? null,
       tenantId: t,
     });

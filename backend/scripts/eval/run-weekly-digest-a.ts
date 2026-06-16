@@ -1,11 +1,3 @@
-/**
- * Гипотеза 1, Variant A — текущая архитектура: код агрегирует, LLM пишет markdown.
- *
- * Источник промпта: backend/src/modules/operations/prompts/weekly-digest.prompt.ts
- * (захардкожен в скрипт для воспроизводимости эксперимента).
- *
- * Запуск: cd backend && bun run scripts/eval/run-weekly-digest-a.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -16,9 +8,18 @@ const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const AGGREGATE_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/week-aggregate.json');
-const REPORT_JSON = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.json');
-const REPORT_MD = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.md');
+const AGGREGATE_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/week-aggregate.json',
+);
+const REPORT_JSON = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.json',
+);
+const REPORT_MD = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.md',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -29,7 +30,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── system-промпт (копия текущего из weekly-digest.prompt.ts) ────────────────
 const SYSTEM_PROMPT = [
   'Ты — аналитик операционного директора. На вход — агрегат показателей компании за прошедшую неделю.',
   'Твоя задача — собрать связный комментарий из 5-7 коротких разделов в формате Markdown:',
@@ -51,7 +51,6 @@ const SYSTEM_PROMPT = [
   '  - Длина — 250-600 слов.',
 ].join('\n');
 
-// ── сборка user-сообщения (копия buildWeeklyDigestUserMessage) ──────────────
 interface Aggregate {
   weekStart: string;
   weekEnd: string;
@@ -129,14 +128,17 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1) + '…';
 }
 
-// ── основной прогон ─────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log('=== Variant A — weekly-digest: код агрегирует, LLM пишет markdown ===');
   const raw = JSON.parse(await fs.readFile(AGGREGATE_PATH, 'utf-8'));
   const agg: Aggregate = raw.aggregate;
   const userMessage = buildUserMessage(agg);
-  console.log(`  агрегат: ${agg.totalCheckIns} чек-инов, ${agg.topBlockers.length} блокеров, ${agg.topInsights.length} инсайтов`);
-  console.log(`  вход (user-msg): ${userMessage.length} знаков (≈${Math.round(userMessage.length / 4)} токенов)`);
+  console.log(
+    `  агрегат: ${agg.totalCheckIns} чек-инов, ${agg.topBlockers.length} блокеров, ${agg.topInsights.length} инсайтов`,
+  );
+  console.log(
+    `  вход (user-msg): ${userMessage.length} знаков (≈${Math.round(userMessage.length / 4)} токенов)`,
+  );
   console.log('  → запрос…');
 
   const start = Date.now();
@@ -158,7 +160,6 @@ async function main(): Promise<void> {
         { role: 'user', content: userMessage },
       ],
       max_tokens: 4000,
-      // Никаких tools/response_format — выход свободный markdown.
     } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
       choices: Array<{ message?: { content?: string | null } }>;
       usage?: typeof usage;

@@ -1,46 +1,17 @@
-'use client';
+"use client";
 
-/**
- * IssueSubtasks — блок «Подзадачи N/M» в карточке задачи.
- *
- * Контракт ТЗ: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"Frontend".
- *
- * Содержит:
- *   - Заголовок «Подзадачи N/M» с тонкой полоской прогресса (mint).
- *   - Список прямых детей (`useIssueChildren`). Чекбокс ставит/снимает
- *     completed-статус через PATCH /issues/:id (transitionState проще,
- *     но для MVP используем PATCH stateId — backend сам ставит completedAt
- *     и эмитит status_changed).
- *   - Inline-add внизу: «+ Подзадача» → Enter создаёт, Shift+Enter откроет
- *     полную форму (drawer пока заглушен toast'ом — фуллформа в отдельном
- *     ТЗ tracker-drawer; здесь делаем skeleton-вариант).
- *
- * Smart defaults при создании: priority='none', sortOrder=max+1, assignees
- * — текущий пользователь (берётся из контекста auth).
- *
- * Mobile: блок виден сразу. Toggle «свернуть» пока не делаем (контейнер
- * сам компактный — заголовок + до 6 строк + поле ввода).
- */
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Plus, ListChecks } from "lucide-react";
 
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
-import { Plus, ListChecks } from 'lucide-react';
+import { issuesApi } from "@/api/tracker/issues.api";
+import type { Issue, IssueChild } from "@/domain/tracker";
+import { dueDateLabel } from "@/domain/tracker";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { issuesApi } from '@/api/tracker/issues.api';
-import type { Issue, IssueChild } from '@/domain/tracker';
-import { dueDateLabel } from '@/domain/tracker';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { AssigneeAvatarGroup } from "./AssigneeAvatar";
+import { useIssueChildren } from "@/hooks/tracker/useIssueChildren";
 
-import { AssigneeAvatarGroup } from './AssigneeAvatar';
-import { useIssueChildren } from '@/hooks/tracker/useIssueChildren';
-
-/**
- * @param issue текущая задача (родитель).
- * @param orgId текущая Org id.
- * @param currentUserId id текущего пользователя — для smart defaults assignees.
- * @param onDrawer callback на «открыть drawer создания» (Shift+Enter). Если
- *   не передан — Shift+Enter ведёт себя как Enter (создаёт inline).
- */
 export function IssueSubtasks({
   issue,
   orgId,
@@ -56,12 +27,9 @@ export function IssueSubtasks({
     orgId,
     issue.id,
   );
-  const [newTitle, setNewTitle] = useState('');
+  const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
 
-  // Tracker UI правило: глубина >2 запрещена.
-  // Если текущая задача сама — подзадача (issue.parentId !== null), мы
-  // не показываем блок «Подзадачи». 3-й уровень backend отвергнет с 400.
   if (issue.parentId !== null) {
     return null;
   }
@@ -75,7 +43,7 @@ export function IssueSubtasks({
     if (!title) return;
     if (openDrawer && onDrawer) {
       onDrawer(title);
-      setNewTitle('');
+      setNewTitle("");
       return;
     }
     setCreating(true);
@@ -83,10 +51,10 @@ export function IssueSubtasks({
       await issuesApi.create(orgId, issue.projectId, {
         title,
         parentId: issue.id,
-        priority: 'none',
+        priority: "none",
         assigneeUserIds: currentUserId ? [currentUserId] : [],
       });
-      setNewTitle('');
+      setNewTitle("");
       await mutate();
     } finally {
       setCreating(false);
@@ -148,26 +116,6 @@ export function IssueSubtasks({
   );
 }
 
-/**
- * Одна строка подзадачи. Чекбокс справа: для started/unstarted/backlog —
- * пустой; для completed — отмечен. Клик переключает статус через PATCH:
- *   - если completed → передаём stateId=null, чтобы вернуть в дефолтное
- *     состояние; backend сам уберёт completedAt в update().
- *   - если НЕ completed → находим первый completed-state в проекте через
- *     отдельный fetch было бы избыточно; используем семантику бэка:
- *     PATCH stateId=null и затем POST /issues/:id/transitions — тоже
- *     слишком много для UI. На MVP делаем так: для перехода в completed
- *     вызываем transition по stateId ребёнка же — но самого state у нас
- *     нет. Поэтому используем pragmatic путь: если ребёнок имеет stateId,
- *     а пользователь хочет «отметить выполненной», открываем карточку.
- *     Здесь мы НЕ делаем magic-переход — это место для будущего
- *     `IssueQuickToggle`. На текущем шаге чекбокс read-only визуально
- *     отражает completedAt; клик ведёт на полную карточку (там есть
- *     transitionState button).
- *
- * Это сознательное сужение — иначе нужен fetch states проекта (1 лишний
- * запрос на блок). См. план: «mark-done из чекбокса» — отдельный полишинг.
- */
 function SubtaskRow({
   child,
   orgId: _orgId,
@@ -182,19 +130,19 @@ function SubtaskRow({
   return (
     <li
       className={cn(
-        'flex items-center gap-2 rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm',
-        child.isCompleted && 'opacity-70',
+        "flex items-center gap-2 rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm",
+        child.isCompleted && "opacity-70",
       )}
     >
-      {/* Визуальный чекбокс — без mutation (см. комментарий компонента). */}
+      {}
       <span
         className={cn(
-          'inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+          "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border",
           child.isCompleted
-            ? 'border-accent bg-accent text-white'
-            : 'border-border-subtle bg-bg-elevated',
+            ? "border-accent bg-accent text-white"
+            : "border-border-subtle bg-bg-elevated",
         )}
-        aria-label={child.isCompleted ? 'Выполнена' : 'Не выполнена'}
+        aria-label={child.isCompleted ? "Выполнена" : "Не выполнена"}
         role="img"
       >
         {child.isCompleted ? (
@@ -215,8 +163,8 @@ function SubtaskRow({
       <Link
         href={`/issues/${encodeURIComponent(child.id)}`}
         className={cn(
-          'min-w-0 flex-1 truncate text-fg-primary hover:underline',
-          child.isCompleted && 'line-through text-fg-secondary',
+          "min-w-0 flex-1 truncate text-fg-primary hover:underline",
+          child.isCompleted && "line-through text-fg-secondary",
         )}
       >
         {child.title}
@@ -225,8 +173,8 @@ function SubtaskRow({
       {due ? (
         <span
           className={cn(
-            'shrink-0 text-[11px]',
-            child.isOverdue ? 'text-danger' : 'text-fg-tertiary',
+            "shrink-0 text-[11px]",
+            child.isOverdue ? "text-danger" : "text-fg-tertiary",
           )}
         >
           {due}
@@ -246,7 +194,6 @@ function SubtaskInput({
   value: string;
   onChange: (v: string) => void;
   disabled: boolean;
-  /** openDrawer — пришёл ли Shift+Enter (расширенная форма) или обычный Enter. */
   onSubmit: (openDrawer: boolean) => void;
   canOpenDrawer: boolean;
 }) {
@@ -258,16 +205,16 @@ function SubtaskInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key !== 'Enter') return;
+          if (e.key !== "Enter") return;
           e.preventDefault();
           onSubmit(canOpenDrawer && e.shiftKey);
         }}
         disabled={disabled}
         placeholder="Подзадача — Enter создаст, Shift+Enter откроет форму"
         className={cn(
-          'min-w-0 flex-1 rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm text-fg-primary placeholder:text-fg-tertiary',
-          'focus:outline-none focus:ring-2 focus:ring-accent',
-          disabled && 'opacity-60',
+          "min-w-0 flex-1 rounded-md border border-border-subtle bg-bg-card px-2 py-1.5 text-sm text-fg-primary placeholder:text-fg-tertiary",
+          "focus:outline-none focus:ring-2 focus:ring-accent",
+          disabled && "opacity-60",
         )}
       />
     </div>

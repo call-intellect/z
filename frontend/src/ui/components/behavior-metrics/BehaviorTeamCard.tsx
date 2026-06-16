@@ -1,27 +1,17 @@
-'use client';
+"use client";
 
-/**
- * Карточка «Поведение команды» на org-дашборде (Фаза B §9.2).
- *
- * Загружает Org-aggregate за последние 30 дней (по умолчанию).
- * Показывает топ-3 доминирующих спикеров, средний % тишины,
- * краткое описание тренда.
- *
- * Доступ — owner / admin (бэк отдаёт 403 для других).
- */
+import { useMemo, type JSX } from "react";
+import useSWR from "swr";
 
-import { useMemo, type JSX } from 'react';
-import useSWR from 'swr';
-
-import { behaviorMetricsApi } from '@/api/behavior-metrics.api';
+import { behaviorMetricsApi } from "@/api/behavior-metrics.api";
 import {
   behaviorOrgAggregateFromApi,
   type BehaviorOrgAggregateDomain,
-} from '@/domain/behavior-metrics';
+} from "@/domain/behavior-metrics";
 
 export function BehaviorTeamCard(): JSX.Element {
   const swr = useSWR(
-    ['behavior-metrics', 'org-aggregate', '30d'],
+    ["behavior-metrics", "org-aggregate", "30d"],
     () => behaviorMetricsApi.getOrgAggregate({}),
     { revalidateOnFocus: false },
   );
@@ -37,7 +27,9 @@ export function BehaviorTeamCard(): JSX.Element {
         data-testid="behavior-team-card-loading"
         className="rounded-2xl border border-border-subtle bg-bg-card p-6"
       >
-        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <h3 className="text-base font-semibold text-fg-primary">
+          Поведение команды
+        </h3>
         <p className="mt-2 text-sm text-fg-secondary">Загружаем…</p>
       </section>
     );
@@ -49,7 +41,9 @@ export function BehaviorTeamCard(): JSX.Element {
         data-testid="behavior-team-card-error"
         className="rounded-2xl border border-chip-warning-bg bg-chip-warning-bg p-6"
       >
-        <h3 className="text-base font-semibold text-chip-warning-fg">Поведение команды</h3>
+        <h3 className="text-base font-semibold text-chip-warning-fg">
+          Поведение команды
+        </h3>
         <p className="mt-2 text-sm text-chip-warning-fg">
           Не удалось загрузить агрегированные метрики.
         </p>
@@ -60,7 +54,9 @@ export function BehaviorTeamCard(): JSX.Element {
   if (data.meetingsCount === 0) {
     return (
       <section className="rounded-2xl border border-border-subtle bg-bg-card p-6">
-        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <h3 className="text-base font-semibold text-fg-primary">
+          Поведение команды
+        </h3>
         <p className="mt-2 text-sm text-fg-secondary">
           За выбранный период встреч с метриками поведения пока нет.
         </p>
@@ -75,7 +71,9 @@ export function BehaviorTeamCard(): JSX.Element {
   return (
     <section className="rounded-2xl border border-border-subtle bg-bg-card p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-fg-primary">Поведение команды</h3>
+        <h3 className="text-base font-semibold text-fg-primary">
+          Поведение команды
+        </h3>
         <span className="text-xs text-fg-secondary">за 30 дней</span>
       </div>
 
@@ -88,7 +86,9 @@ export function BehaviorTeamCard(): JSX.Element {
       </div>
 
       <div>
-        <div className="text-sm font-medium text-fg-primary">Топ доминирующих</div>
+        <div className="text-sm font-medium text-fg-primary">
+          Топ доминирующих
+        </div>
         <ol className="mt-2 space-y-1">
           {top3.map((p, i) => (
             <li

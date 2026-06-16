@@ -14,25 +14,12 @@ import {
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { OnboardingService } from '../../onboarding/onboarding.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
-/**
- * Z-Admin: управление демо-кабинетом «ТехноСтрим» для любой Org.
- *
- *   GET  /api/v1/admin/demo/orgs          — список Org (+ статус демо, владелец)
- *   POST /api/v1/admin/demo/orgs/:id/seed — залить демо (от имени owner'а Org)
- *   POST /api/v1/admin/demo/orgs/:id/reset — сбросить демо
- *
- * Только super-admin. Переиспользует OnboardingService — ту же логику, что
- * `/onboarding/demo-choice` и CLI `seed-demo-workspace.ts`.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/demo')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -70,28 +57,14 @@ export class AdminDemoController {
         name: o.name,
         isReferenceDemo: o.isReferenceDemo,
         demoSeededAt: o.demoWorkspaceSeededAt,
-        owner: o.owner
-          ? { id: o.owner.id, email: o.owner.email, name: o.owner.name }
-          : null,
+        owner: o.owner ? { id: o.owner.id, email: o.owner.email, name: o.owner.name } : null,
       })),
     };
   }
 
-  /**
-   * ТЗ 2026-06-01-demo-shared-org-model §5.5 — safety-эндпоинт: помечает Org
-   * эталонной демо-Org (`isReferenceDemo=true`). Разрешено максимум ОДИН раз:
-   * если в БД уже есть Org с этим флагом — 409 'reference_already_exists'.
-   *
-   * Основной путь создания эталона — patch-скрипт
-   * `patch-create-reference-demo-org.ts` (поднимает Org, сидит, помечает).
-   * Этот эндпоинт — резерв для случаев, когда эталон нужно пересоздать
-   * руками или перепривязать к существующей Org.
-   */
   @Post('orgs/:orgId/mark-reference')
   @HttpCode(HttpStatus.OK)
-  async markReference(
-    @Param('orgId') orgId: string,
-  ): Promise<{ ok: true }> {
+  async markReference(@Param('orgId') orgId: string): Promise<{ ok: true }> {
     const target = await this.prisma.org.findFirst({
       where: { id: orgId, deletedAt: null },
       select: { id: true, isReferenceDemo: true },
@@ -127,9 +100,7 @@ export class AdminDemoController {
 
   @Post('orgs/:orgId/seed')
   @HttpCode(HttpStatus.OK)
-  async seed(
-    @Param('orgId') orgId: string,
-  ): Promise<{ ok: true; stats: Record<string, number> }> {
+  async seed(@Param('orgId') orgId: string): Promise<{ ok: true; stats: Record<string, number> }> {
     const org = await this.prisma.org.findFirst({
       where: { id: orgId, deletedAt: null },
       select: { id: true, ownerId: true },
@@ -140,7 +111,6 @@ export class AdminDemoController {
         error: { code: 'org_not_found', message: 'Org не найдена' },
       });
     }
-    // Демо создаётся от имени владельца Org (а не текущего super-admin).
     return this.onboarding.seedDemoWorkspace({ orgId: org.id, userId: org.ownerId });
   }
 
@@ -160,7 +130,6 @@ export class AdminDemoController {
         error: { code: 'org_not_found', message: 'Org не найдена' },
       });
     }
-    // audit Б3 — actorUserId логируется в OnboardingService для post-mortem.
     return this.onboarding.resetDemoWorkspace({ orgId: org.id, actorUserId: user.id });
   }
 }

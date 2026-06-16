@@ -12,24 +12,6 @@ import type { ToggleThanksResponseDto } from '../dto/recognition.dto';
 
 import { RecognitionService } from './recognition.service';
 
-/**
- * Wave 2 — CommentsThanksService.
- *
- * Реализует toggle-логику «спасибо за комментарий»:
- *   - POST /api/v1/issues/comments/:id/thanks → toggle (добавить или убрать
- *     текущего user'а в `IssueComment.thanksUserIds`). Идемпотентно: повторный
- *     POST не дублирует.
- *
- *   - При ДОБАВЛЕНИИ (а не убирании) enqueue Recognition type='thanks_comment'
- *     для автора комментария. jobId идемпотентен → повторный thanks/unthanks
- *     не создаст дубль Recognition.
- *
- *   - Самому себе «спасибо» НЕ засчитывается (не enqueue Recognition); в массив
- *     thanksUserIds попадает (UX-выбор — пусть видит, что toggled), но
- *     thanksReceived не растёт.
- *
- *   - НЕ переиспользует `CommentsService` (tracker) — изолирована.
- */
 @Injectable()
 export class CommentsThanksService {
   private readonly logger = new Logger(CommentsThanksService.name);
@@ -51,7 +33,6 @@ export class CommentsThanksService {
         error: { code: 'comment_id_required', message: 'commentId обязателен' },
       });
     }
-    // Найти комментарий + проверить tenant scope через Issue.
     const comment = await this.prisma.issueComment.findUnique({
       where: { id: commentId },
       include: { issue: { select: { tenantId: true } } },
@@ -63,18 +44,13 @@ export class CommentsThanksService {
       });
     }
     if (comment.issue.tenantId !== tenantId) {
-      // cross-tenant — отвечаем 404, как и tracker/comments.service.ts.
       throw new NotFoundException({
         ok: false,
         error: { code: 'comment_not_found', message: 'Комментарий не найден' },
       });
     }
-    // Защита от self-thanks: блокируем «спасибо» себе самому (можно
-    // нажать toggle на свой комментарий, но не повышаем thanksReceived).
     const isSelf = comment.authorId === userId;
 
-    // Toggle в одной транзакции с защитой от гонок (читаем актуальное
-    // thanksUserIds внутри транзакции).
     const result = await this.prisma.$transaction(async (tx) => {
       const fresh = await tx.issueComment.findUnique({
         where: { id: commentId },
@@ -97,7 +73,6 @@ export class CommentsThanksService {
       return { added: !has, count: next.length, thankedByMe: !has };
     });
 
-    // Enqueue Recognition только на ДОБАВЛЕНИИ и не для self-thanks.
     if (result.added && !isSelf) {
       try {
         await this.recognition.enqueueFormulate({
@@ -111,8 +86,6 @@ export class CommentsThanksService {
           contextPayload: { commentId },
         });
       } catch (err) {
-        // Запись «спасибо» в массиве уже произошла; Recognition не сложилась —
-        // логируем, но не падаем (UI получит обновлённый count корректно).
         this.logger.warn(
           {
             commentId,
@@ -129,10 +102,6 @@ export class CommentsThanksService {
     };
   }
 
-  /**
-   * Read-only — вспомогательно для UI, чтобы получить state без toggle.
-   * Используется в `GET /api/v1/issues/comments/:id/thanks`.
-   */
   async readState(
     commentId: string,
     tenantId: string,
@@ -161,7 +130,6 @@ export class CommentsThanksService {
     };
   }
 
-  /** Утилита для тестов: гарантированный requireWrite-проверщик. */
   ensureUser(userId: string | undefined): string {
     if (!userId) {
       throw new ForbiddenException({

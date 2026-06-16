@@ -8,15 +8,6 @@ import type { GoalsPulseService } from '../services/goals-pulse.service';
 
 import { GoalsPulseCron } from './goals-pulse.cron';
 
-/**
- * Goals OKR v2 (Фаза 4) — unit-тесты GoalsPulseCron.
- *
- *   - runOnce: doставка ролям owner/coo через eventType 'goals.pulse' c
- *     корректным payload (digestId/isoWeek/actionUrl), deliveredAt проставлен;
- *   - runOnce: при deliverToTelegram=false — генерация без доставки;
- *   - runOnce: уже существующий digest → не плодит (skippedAlreadyExists).
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 const DIGEST = {
@@ -84,7 +75,7 @@ function build(over: {
 }
 
 describe('GoalsPulseCron', () => {
-  const NOW = new Date('2026-06-01T06:00:00.000Z'); // понедельник
+  const NOW = new Date('2026-06-01T06:00:00.000Z');
 
   it('runOnce: deliverToTelegram=true → шлёт goals.pulse owner/coo + markDelivered', async () => {
     const { cron, sendNotification, getOrGenerate, markDelivered } = build({});

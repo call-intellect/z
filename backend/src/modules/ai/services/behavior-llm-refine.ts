@@ -1,21 +1,3 @@
-/**
- * BehaviorLlmRefine (Фаза B.2).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §7.
- *
- * Опциональный шаг после `BehaviorMetricsCalculator` — отправляет в LLM
- * batched список кандидатов (вопросы + filler'ы), получает per-id булевы
- * решения и корректирует per-participant метрики (`questionCount`,
- * `fillerWordsCount`).
- *
- * Под feature-flag `BEHAVIOR_METRICS_LLM_REFINE_ENABLED`. По умолчанию false.
- *
- * Промпт берётся через `PromptResolverService` (когда A.1 поддержит
- * `behavior-refine` taskType) — а пока используется code-fallback из
- * `services/prompts/behavior-refine.ts`. Это нормально по ТЗ B §7.2:
- * «через registry — sub-TZ A зависимость мягкая; до A.1 можно код-fallback».
- */
-
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -57,11 +39,8 @@ export interface BehaviorLlmRefineParams {
   meetingId: string;
   tenantId: string;
   segments: BehaviorDiarizationSegment[];
-  /** Сегменты per-speaker (по тому же `speakerKey`, что использует калькулятор). */
   speakerKeyByParticipantId: Map<string, string>;
-  /** Inverted: speakerKey → displayName + participantId|null (для гостей). */
   speakerKeyToParticipantId: Map<string, string | null>;
-  /** Результат калькулятора, который будем уточнять. */
   baseResult: BehaviorCalculatorResult;
 }
 
@@ -77,20 +56,7 @@ export class BehaviorLlmRefineService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Если feature-flag выключен — возвращаем baseResult как есть.
-   * Иначе:
-   *   1. Собираем кандидатов (questions + fillers) по сегментам с привязкой
-   *      к speakerKey.
-   *   2. Вызываем LLM (через LlmRouter, taskType='behavior-refine').
-   *   3. Применяем булевы решения: пересчитываем `questionCount` и
-   *      `fillerWordsCount` per participant.
-   *
-   * На любую ошибку — лог warn + возврат baseResult (graceful degrade).
-   */
-  async refine(
-    params: BehaviorLlmRefineParams,
-  ): Promise<BehaviorCalculatorResult> {
+  async refine(params: BehaviorLlmRefineParams): Promise<BehaviorCalculatorResult> {
     if (!this.cfg.aiFeatures.behaviorMetricsLlmRefine) {
       return params.baseResult;
     }
@@ -100,7 +66,6 @@ export class BehaviorLlmRefineService {
       return params.baseResult;
     }
 
-    // Лимит per-вызов: бьём на батчи, но обычно одна встреча укладывается.
     const trimmed: BehaviorRefineInput = {
       questions: candidates.questions.slice(0, BEHAVIOR_REFINE_MAX_QUESTIONS_PER_CALL),
       fillers: candidates.fillers.slice(0, BEHAVIOR_REFINE_MAX_FILLERS_PER_CALL),
@@ -157,7 +122,6 @@ export class BehaviorLlmRefineService {
 interface CollectedCandidates {
   questions: BehaviorRefineQuestionCandidate[];
   fillers: BehaviorRefineFillerCandidate[];
-  /** id кандидата → participantId|null (для применения решений). */
   ownership: Map<string, string | null>;
 }
 
@@ -172,9 +136,6 @@ function collectCandidates(params: BehaviorLlmRefineParams): CollectedCandidates
     const text = s.text ?? '';
     if (!text) return;
 
-    // Questions: каждое предложение, оканчивающееся на «?», — кандидат.
-    // Также добавляем длинные сегменты без «?» (≥4 слов), чтобы LLM нашла
-    // риторические/без-пунктуационные. Лимит: не более 3 candidates per segment.
     const sentences = text.split(/(?<=[.!?…])\s+/).filter((s) => s.trim().length > 0);
     let added = 0;
     sentences.forEach((sent, sIdx) => {
@@ -187,15 +148,12 @@ function collectCandidates(params: BehaviorLlmRefineParams): CollectedCandidates
       added += 1;
     });
 
-    // Fillers: для каждого filler-слова из словаря — отдельный кандидат
-    // на каждое вхождение. Контекст — само предложение.
     for (const word of FILLER_WORDS_RU) {
       const re = fillerRegex(word);
       let m: RegExpExecArray | null;
       let wIdx = 0;
       while ((m = re.exec(text.toLowerCase())) !== null) {
         const id = `f:${idx}:${wIdx}:${word}`;
-        // Контекст — окно ±50 символов вокруг матча.
         const start = Math.max(0, m.index - 50);
         const end = Math.min(text.length, m.index + word.length + 50);
         fillers.push({ id, word, context: text.slice(start, end) });
@@ -212,12 +170,7 @@ function parseDecisions(text: string): BehaviorRefineOutput | null {
   if (!text) return null;
   try {
     const parsed = JSON.parse(text);
-    if (
-      parsed &&
-      typeof parsed === 'object' &&
-      parsed.questions &&
-      parsed.fillers
-    ) {
+    if (parsed && typeof parsed === 'object' && parsed.questions && parsed.fillers) {
       return parsed as BehaviorRefineOutput;
     }
     return null;
@@ -231,8 +184,6 @@ function applyDecisions(
   candidates: CollectedCandidates,
   decisions: BehaviorRefineOutput,
 ): BehaviorCalculatorResult {
-  // Считаем для каждого participantId|null новые значения questionCount /
-  // fillerWordsCount исходя из положительных решений LLM.
   const newQuestions = new Map<string | null, number>();
   const newFillers = new Map<string | null, number>();
 
@@ -246,14 +197,11 @@ function applyDecisions(
   for (const f of candidates.fillers) {
     const owner = candidates.ownership.get(f.id) ?? null;
     const decision = decisions.fillers?.[f.id];
-    // Дефолт для пропущенного: считаем валидным (это filler).
     const accept = typeof decision === 'boolean' ? decision : true;
     if (!accept) continue;
     newFillers.set(owner, (newFillers.get(owner) ?? 0) + 1);
   }
 
-  // Перезаписываем per-participant. Если LLM ничего не вернула про
-  // participantId — оставляем базовые значения (на всякий случай).
   const updated = base.participants.map((p) => {
     const q = newQuestions.has(p.participantId)
       ? newQuestions.get(p.participantId)!

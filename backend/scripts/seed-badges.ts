@@ -1,13 +1,3 @@
-/**
- * Wave 2 — Seed 5 базовых Badge.
- *
- * Запуск:
- *   cd backend && bun run scripts/seed-badges.ts
- *
- * Идемпотентность (skill `safe-seed-rules`): по `slug` (unique). Если запись
- * существует — не перезаписываем (админ мог поменять name/description/condition).
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

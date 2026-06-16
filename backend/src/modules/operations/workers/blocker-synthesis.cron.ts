@@ -8,19 +8,6 @@ import { BlockerSynthesisService } from '../services/blocker-synthesis.service';
 
 import { yesterdayInMoscow } from './operations-daily-digest.cron';
 
-/**
- * TZ-1 Фаза 3.A (daily-value-engine) — BlockerSynthesisCron.
- *
- * Глобальный `@Cron('0 22 * * *')` (после вечернего окна чек-инов): раз в день
- * обходит активные Org → `BlockerSynthesisService.computeForTenant` (накопление
- * блокеров за окно, статусы new|recurring|resolved, бизнес-удар, мост хроники в
- * Insight). Идемпотентность — upsert по (tenantId, clusterKey).
- *
- * Master-flag `operations.blocker_synthesis.enabled` (kill-switch, ON по
- * умолчанию). False → cron тикает, но сразу выходит.
- *
- * Метрики: `blocker_synthesis_recurring_total{status}` (в сервисе).
- */
 @Injectable()
 export class BlockerSynthesisCron {
   private readonly logger = new Logger(BlockerSynthesisCron.name);
@@ -40,9 +27,7 @@ export class BlockerSynthesisCron {
       true,
     );
     if (!enabled) {
-      this.logger.debug(
-        'blocker-synthesis.cron: operations.blocker_synthesis.enabled=false, skip',
-      );
+      this.logger.debug('blocker-synthesis.cron: operations.blocker_synthesis.enabled=false, skip');
       return;
     }
     try {
@@ -56,7 +41,6 @@ export class BlockerSynthesisCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     orgsProcessed: number;
     newClusters: number;

@@ -1,9 +1,4 @@
-import { apiClient } from './api-client';
-
-/**
- * API DTO для модуля tags.
- * Источник правды — backend/src/modules/tags/.
- */
+import { apiClient } from "./api-client";
 
 export type TagApi = {
   id: string;

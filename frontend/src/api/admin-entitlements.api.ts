@@ -1,22 +1,13 @@
-/**
- * API-клиент для глобального обзора OrgEntitlement — Z-Admin Фаза 4.
- *
- * Контракт сервера: `backend/src/modules/admin/entitlements/entitlements.controller.ts`
- * (префикс `/api/v1/admin/orgs`).
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   EntitlementOverviewApi,
   ResolvedEntitlementsApi,
   UpsertEntitlementRequest,
-} from '@/domain/admin-entitlement';
+} from "@/domain/admin-entitlement";
 
 export type ListEntitlementsRequest = {
-  /** По умолчанию `true` — только Org с override'ами. */
   hasOverrides?: boolean;
-  /** Опц. фильтр по конкретному tier. */
   plan?: string;
   cursor?: string;
   limit?: number;

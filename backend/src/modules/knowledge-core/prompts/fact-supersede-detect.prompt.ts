@@ -1,54 +1,28 @@
-/**
- * KC-Temporal W1.2 (2026-05-25) — `fact-supersede-detect` LLM-арбитр.
- *
- * Контекст: после канонизации нового factual-блока (signalType ∈
- * BITEMPORAL_FACT_SIGNAL_TYPES) `FactSupersedeService` берёт top-K
- * cosine-кандидатов того же tenant'а / signalType / с открытым окном
- * (`validUntil IS NULL`) и спрашивает LLM:
- *
- *   - `unrelated`  — новый блок и кандидат говорят о разных вещах.
- *   - `extends`    — новый блок дополняет существующий, оба продолжают быть верными.
- *   - `contradicts` — оба остаются открытыми, но фактически противоречат
- *                    (закрытие не делаем, создаём `IdeaBlockLink(contradicts)`).
- *   - `supersedes` — новый блок ЗАМЕНЯЕТ старый (старый перестаёт быть
- *                    верным). Закрытие: `old.validUntil=now`, supersede-link,
- *                    ConflictItem (`suggestedResolution='evolving'`).
- *
- * Контракт verdict-only: confidence в схеме — для аудита и потенциального
- * порога; на текущей фазе caller её ИГНОРИРУЕТ (kill-switch верхнего уровня
- * — `BITEMPORAL_SUPERSEDE_ENABLED`). Дешёвый арбитр: ≤700 input + ≤300 output.
- */
-
 import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 
-export const FACT_SUPERSEDE_DETECT_SCHEMA_NAME =
-  'fact_supersede_detect_v1';
+export const FACT_SUPERSEDE_DETECT_SCHEMA_NAME = 'fact_supersede_detect_v1';
 
-// A9 (2026-06-10): здесь `confidence` — КРИТИЧЕСКИЙ сигнал: при verdict
-// "supersedes" мы закрываем старый bitemporal-факт (validUntil=now) и создаём
-// supersede-ребро графа, при "contradicts" — contradicts-ребро. Это вес/основание
-// решения о графе, поэтому SYSTEM завершается единой шкалой уверенности
-// (`withConfidenceCalibration`, дописывается в КОНЕЦ → cache-friendly).
-// Согласуется с правилом «будь консервативен» в теле промпта.
-export const FACT_SUPERSEDE_DETECT_SYSTEM_PROMPT = withConfidenceCalibration([
-  'Ты — knowledge-арбитр памяти компании. Тебе дают новый factual-блок и top-K похожих существующих блоков того же типа (signalType) той же организации.',
-  'Реши, как новый блок соотносится с каждым из существующих, и выбери ОДИН verdict для всей группы. Целевой кандидат указывай через `targetBlockId` (id из переданного списка).',
-  '',
-  'Возможные verdicts:',
-  '- "unrelated" — нет совпадений по сути ни с одним кандидатом. `targetBlockId` не указывай.',
-  '- "extends" — новый блок дополняет один из кандидатов (та же сущность/тема, новые детали), оба остаются верными. Укажи `targetBlockId` дополняемого блока.',
-  '- "contradicts" — новый и один из кандидатов противоречат друг другу, но НЕ ясно, кто из них теперь верен (старый блок ещё может быть актуален). Укажи `targetBlockId` противоречащего блока.',
-  '- "supersedes" — новый блок ЯВНО заменяет один из кандидатов: содержательно другая логика, явное изменение факта или обещания (например, «срок сдачи теперь 1 декабря, а не 15 ноября»). Старый блок перестаёт быть верным. Укажи `targetBlockId`.',
-  '',
-  'Будь консервативен:',
-  '- "supersedes" — только если очевидно, что новый блок отменяет старый. Если сомнение — выбирай "contradicts".',
-  '- "extends" — только если оба блока про одну и ту же сущность и не конфликтуют по фактам.',
-  '- При неопределённости — "unrelated". Лучше пропустить закрытие, чем ошибочно закрыть верный блок.',
-  '',
-  '`confidence` — твоя уверенность в verdict (0.0..1.0). `reason` — кратко (1-3 предложения) почему ты выбрал именно этот verdict, на русском.',
-  '',
-  'Отвечай строго в формате JSON по схеме fact_supersede_detect_v1.',
-].join('\n'));
+export const FACT_SUPERSEDE_DETECT_SYSTEM_PROMPT = withConfidenceCalibration(
+  [
+    'Ты — knowledge-арбитр памяти компании. Тебе дают новый factual-блок и top-K похожих существующих блоков того же типа (signalType) той же организации.',
+    'Реши, как новый блок соотносится с каждым из существующих, и выбери ОДИН verdict для всей группы. Целевой кандидат указывай через `targetBlockId` (id из переданного списка).',
+    '',
+    'Возможные verdicts:',
+    '- "unrelated" — нет совпадений по сути ни с одним кандидатом. `targetBlockId` не указывай.',
+    '- "extends" — новый блок дополняет один из кандидатов (та же сущность/тема, новые детали), оба остаются верными. Укажи `targetBlockId` дополняемого блока.',
+    '- "contradicts" — новый и один из кандидатов противоречат друг другу, но НЕ ясно, кто из них теперь верен (старый блок ещё может быть актуален). Укажи `targetBlockId` противоречащего блока.',
+    '- "supersedes" — новый блок ЯВНО заменяет один из кандидатов: содержательно другая логика, явное изменение факта или обещания (например, «срок сдачи теперь 1 декабря, а не 15 ноября»). Старый блок перестаёт быть верным. Укажи `targetBlockId`.',
+    '',
+    'Будь консервативен:',
+    '- "supersedes" — только если очевидно, что новый блок отменяет старый. Если сомнение — выбирай "contradicts".',
+    '- "extends" — только если оба блока про одну и ту же сущность и не конфликтуют по фактам.',
+    '- При неопределённости — "unrelated". Лучше пропустить закрытие, чем ошибочно закрыть верный блок.',
+    '',
+    '`confidence` — твоя уверенность в verdict (0.0..1.0). `reason` — кратко (1-3 предложения) почему ты выбрал именно этот verdict, на русском.',
+    '',
+    'Отвечай строго в формате JSON по схеме fact_supersede_detect_v1.',
+  ].join('\n'),
+);
 
 export interface FactSupersedeDetectCandidate {
   id: string;
@@ -57,7 +31,6 @@ export interface FactSupersedeDetectCandidate {
   trustedAnswer: string;
   signalType: string;
   validFrom: string | null;
-  /** Краткая цитата-первоисточник (1-2 предложения), если известна. */
   evidenceQuote?: string | null;
 }
 
@@ -83,9 +56,7 @@ export const FACT_SUPERSEDE_DETECT_USER_TEMPLATE = (args: {
     `  criticalQuestion: ${args.newBlock.criticalQuestion}`,
     `  trustedAnswer: ${args.newBlock.trustedAnswer}`,
     `  validFrom: ${args.newBlock.validFrom ?? '(не указано)'}`,
-    args.newBlock.evidenceQuote
-      ? `  evidenceQuote: ${args.newBlock.evidenceQuote}`
-      : '',
+    args.newBlock.evidenceQuote ? `  evidenceQuote: ${args.newBlock.evidenceQuote}` : '',
   ]
     .filter((s) => s.length > 0)
     .join('\n');
@@ -99,9 +70,7 @@ export const FACT_SUPERSEDE_DETECT_USER_TEMPLATE = (args: {
             `  criticalQuestion: ${c.criticalQuestion}`,
             `  trustedAnswer: ${c.trustedAnswer}`,
             `  validFrom: ${c.validFrom ?? '(не указано)'}`,
-            c.evidenceQuote
-              ? `  evidenceQuote: ${c.evidenceQuote}`
-              : '',
+            c.evidenceQuote ? `  evidenceQuote: ${c.evidenceQuote}` : '',
           ]
             .filter((s) => s.length > 0)
             .join('\n');
@@ -130,11 +99,7 @@ export const FACT_SUPERSEDE_DETECT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export type FactSupersedeVerdict =
-  | 'unrelated'
-  | 'extends'
-  | 'contradicts'
-  | 'supersedes';
+export type FactSupersedeVerdict = 'unrelated' | 'extends' | 'contradicts' | 'supersedes';
 
 export interface FactSupersedeDetectResponse {
   verdict: FactSupersedeVerdict;

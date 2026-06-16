@@ -1,25 +1,3 @@
-/**
- * ТЗ-2 Ф5 (daily-value-dashboards) — Seed AdminSetting для виджетов ежедневной
- * ценности в `/me` (self-эндпоинты `GET /api/v1/me/ideas`, `/me/recognitions`).
- *
- * Регистрирует kill-switch (редактируется super_admin'ом в админке,
- * code-fallback `true` в самом контроллере):
- *
- *   - `me.daily_value_widgets.enabled` (bool, default true) — kill-switch (ON).
- *     Гейтит self-эндпоинты `/me/ideas` (судьба моих идей) и `/me/recognitions`
- *     (полученные признания), питающие 4 виджета ежедневной ценности в `/me`.
- *     OFF → эндпоинты отдают пустой ответ (graceful 200).
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-me-widgets.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -78,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

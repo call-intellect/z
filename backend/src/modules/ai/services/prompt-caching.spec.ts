@@ -17,21 +17,6 @@ import type { MinimaxService } from './minimax.service';
 import type { OllamaService } from './ollama.service';
 import type { OpenAiProxyService } from './openai-proxy.service';
 
-/**
- * T7-F3 — prompt caching distribution tests.
- *
- * Покрытие:
- *   1. `buildUserContent` корректно превращает `{text, cacheControl: 'ephemeral'}`
- *      в Anthropic content-блок с `cache_control: { type: 'ephemeral' }`.
- *   2. `buildSystemBlocks` уже покрыт тестами в anthropic.service; здесь проверяем
- *      что user-блок имеет тот же контракт.
- *   3. `LlmRouterService.dispatch` гарантированно ставит `cacheControl: 'ephemeral'`
- *      на system message → провайдер видит флаг даже если caller не выставил.
- *   4. `LlmFallbackService.complete` тоже теперь делает это (parity с router).
- *   5. `LlmCompleteOutput.cachedTokens` и `cacheCreationTokens` пробрасываются
- *      через router в `AiUsageLogService.record`.
- */
-
 describe('prompt caching: buildUserContent / buildSystemBlocks', () => {
   it('buildUserContent: string → string (legacy)', () => {
     expect(buildUserContent('hello')).toBe('hello');
@@ -76,7 +61,6 @@ describe('prompt caching: buildUserContent / buildSystemBlocks', () => {
 
 describe('LlmRouterService.dispatch: cacheControl на system всегда выставляется', () => {
   it('даже если caller передал systemPrompt как строку — провайдер получает {cacheControl: "ephemeral"}', async () => {
-    // Spy на anthropic.complete — проверим, что input.system.cacheControl === 'ephemeral'.
     let capturedInput: LlmCompleteInput | null = null;
     const anthropicComplete = vi.fn(async (input: LlmCompleteInput) => {
       capturedInput = input;
@@ -152,8 +136,8 @@ describe('LlmRouterService.dispatch: cacheControl на system всегда вы�
       text: 'ok',
       inputTokens: 1000,
       outputTokens: 100,
-      cachedTokens: 800, // cache hit
-      cacheCreationTokens: 200, // cache write
+      cachedTokens: 800,
+      cacheCreationTokens: 200,
       model: 'claude-sonnet-4-6',
       provider: 'anthropic' as const,
     }));
@@ -231,7 +215,6 @@ describe('LlmFallbackService.complete: cacheControl на system выставля
     } as unknown as MinimaxService;
     const openai = { complete: vi.fn() } as unknown as OpenAiProxyService;
     const deepseek = { complete: vi.fn() } as unknown as DeepSeekService;
-    // Ветка minimax (kill-switch-откат): MiniMax — основной, DeepSeek не зовётся.
     const cfg = {
       ai: { mainReport: { primary: 'minimax' } },
     } as unknown as TypedConfigService;
@@ -245,14 +228,10 @@ describe('LlmFallbackService.complete: cacheControl на system выставля
 
     expect(captured).not.toBeNull();
     expect(captured!.system.cacheControl).toBe('ephemeral');
-    expect(captured!.system.text).toBe('sys prompt'); // не изменили текст
+    expect(captured!.system.text).toBe('sys prompt');
   });
 
   it('caller уже передал system.cacheControl → не перезаписываем', async () => {
-    // Edge case: если caller сам решил НЕ кешировать (для каких-то A/B-тестов),
-    // эта семантика сейчас невыразима (тип `'ephemeral'` единственный), но
-    // защищаем сценарий «caller явно поставил ephemeral» — проверяем что
-    // не наслаиваем второй раз (тип всё равно тот же).
     let captured: LlmCompleteInput | null = null;
     const minimax = {
       complete: vi.fn(async (input: LlmCompleteInput) => {

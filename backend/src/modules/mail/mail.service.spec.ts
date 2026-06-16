@@ -13,17 +13,6 @@ vi.mock('nodemailer', () => {
   };
 });
 
-/**
- * Юнит-тесты MailService.
- *
- * Стратегия:
- *   - nodemailer.createTransport — мок (vi.mock), возвращаем фейковый
- *     transporter с sendMail = vi.fn().
- *   - В DRY-RUN режиме — sendMail НЕ должен вызываться, шаблон рендерится
- *     корректно.
- *   - В обычном режиме — sendMail вызывается с правильными from/to/subject/text.
- */
-
 interface MockTransporter {
   sendMail: ReturnType<typeof vi.fn>;
 }

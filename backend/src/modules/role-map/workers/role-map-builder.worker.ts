@@ -7,16 +7,12 @@ import {
 } from '@nestjs/common';
 import { type Job } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
@@ -35,46 +31,13 @@ import { ResponsibilityElementService } from '../services/responsibility-element
 import { RoleMapBuilderService } from '../services/role-map-builder.service';
 import { resolveRoleMapTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA α-8 wave 4 — RoleMapBuilderWorker (handler `core.specialist-routing`,
- * jobName=`3-8-role-map-builder`).
- *
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch` для блоков
- * signalType ∈ {expertise, competence, methodology_step}. Маршрутизацию по
- * jobName делает диспетчер.
- *
- * Дебаунс — батч-окно per role:
- *   - Каждый job push'ит blockId в Redis-list `rolemap:batch:<tenantId>:<roleId>`.
- *   - SET sinceKey NX EX = `cfg.roleMap.batchTimeoutSeconds`.
- *   - При накоплении ≥ batchSize (5 на старте) — flush сейчас.
- *   - Иначе таймер (worker сам опрашивает раз в 30s) flush'ит просроченные.
- *     Таймер живёт в onModuleInit (Worker'а у класса больше нет — единственный
- *     Worker очереди в `SpecialistRoutingDispatcherWorker`).
- *
- * Kill-switch `ROLE_MAP_BUILDER_ENABLED` (default true): при false `handle`
- * сразу выходит, а таймер не запускается — поведение как раньше (раньше Worker
- * не поднимался вовсе).
- *
- * Идемпотентность: jobId = `3-8-role-map-builder_<blockId>` (см.
- * `CoreQueueService.enqueueSpecialistRouting`). RouterService на стороне
- * dispatch'а гарантирует, что один блок не диспатчится дважды.
- *
- * Auto-extract threshold: confidence ≥ 0.7 → upsert; ниже — пропуск (куратор
- * review через α-4 curation).
- *
- * Метрики:
- *   - role_map_builder_runs_total{tenant_top, result}
- *   - role_map_extract_duration_seconds histogram
- */
 @Injectable()
 export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoleMapBuilderWorker.name);
   private timer: NodeJS.Timeout | null = null;
 
   static readonly SPECIALIST_NAME = '3-8-role-map-builder';
-  /** Минимальный confidence для авто-upsert. Ниже — игнорируем. */
   static readonly AUTO_EXTRACT_MIN_CONFIDENCE = 0.7;
-  /** Размер батча (после стольких блоков per role — flush). */
   static readonly BATCH_SIZE = 5;
   private static readonly RELEVANT_SIGNALS = new Set([
     'expertise',
@@ -106,9 +69,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     private readonly builder: RoleMapBuilderService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -124,8 +84,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-    // Worker очереди живёт централизованно в SpecialistRoutingDispatcherWorker;
-    // здесь — только таймер flush'а просроченных батчей.
     this.timer = setInterval(() => {
       void this.flushExpiredBatches().catch((err) => {
         this.logger.debug(
@@ -146,15 +104,10 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── consumer ─────────────────────────────
-
   async handle(job: Job<SpecialistRoutingJobData>): Promise<void> {
     if (!this.cfg.roleMap.builderEnabled) return;
-    await this.pipe.job(
-      SystemLogPipeline.KNOWLEDGE_GRAPH,
-      'role-map.builder',
-      job,
-      () => this.process(job),
+    await this.pipe.job(SystemLogPipeline.KNOWLEDGE_GRAPH, 'role-map.builder', job, () =>
+      this.process(job),
     );
   }
 
@@ -168,7 +121,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Проверим, что block ещё canonical и привязан к roleId.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: blockId },
       select: {
@@ -201,7 +153,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (!block.roleId || !block.roleRelevant) {
-      // Блок не привязан к роли — вне области специалиста по role-map.
       this.metrics.incCoreSpecialistSkipped({
         specialist: RoleMapBuilderWorker.SPECIALIST_NAME,
         reason: 'signal_out_of_scope',
@@ -222,13 +173,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
         await this.redis.client.expire(listKey, ttlSec);
         await this.redis.client.expire(setKey, ttlSec);
       }
-      await this.redis.client.set(
-        sinceKey,
-        String(Date.now()),
-        'EX',
-        ttlSec,
-        'NX',
-      );
+      await this.redis.client.set(sinceKey, String(Date.now()), 'EX', ttlSec, 'NX');
     } catch (err) {
       this.logger.warn(
         {
@@ -248,21 +193,13 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── timer flush ──────────────────────────
-
   private async flushExpiredBatches(): Promise<void> {
     const pattern = `rolemap:since:*`;
     let cursor = '0';
     const expired: Array<{ tenantId: string; roleId: string }> = [];
     const timeoutMs = this.cfg.roleMap.batchTimeoutSeconds * 1000;
     do {
-      const [next, keys] = await this.redis.client.scan(
-        cursor,
-        'MATCH',
-        pattern,
-        'COUNT',
-        100,
-      );
+      const [next, keys] = await this.redis.client.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
       cursor = next;
       for (const key of keys) {
         const sinceRaw = await this.redis.client.get(key);
@@ -270,7 +207,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
         const since = Number(sinceRaw);
         if (!Number.isFinite(since)) continue;
         if (Date.now() - since < timeoutMs) continue;
-        // ключ: rolemap:since:<tenantId>:<roleId>
         const tail = key.substring('rolemap:since:'.length);
         const sep = tail.lastIndexOf(':');
         if (sep <= 0) continue;
@@ -296,12 +232,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── flush + extract ──────────────────────
-
-  private async flushBatch(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<void> {
+  private async flushBatch(args: { tenantId: string; roleId: string }): Promise<void> {
     const listKey = this.listKey(args.tenantId, args.roleId);
     const setKey = this.setKey(args.tenantId, args.roleId);
     const sinceKey = this.sinceKey(args.tenantId, args.roleId);
@@ -321,8 +252,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       'role-map-builder: flush batch',
     );
 
-    let outcome: 'built' | 'skipped_below_threshold' | 'llm_error' | 'db_error' =
-      'built';
+    let outcome: 'built' | 'skipped_below_threshold' | 'llm_error' | 'db_error' = 'built';
 
     const role = await this.prisma.role.findUnique({
       where: { id: args.roleId },
@@ -353,7 +283,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       take: 50,
     });
     if (blocks.length < 2) {
-      // мало блоков для нормальной экстракции — отложим, recomputeCompleteness
       this.metrics.incRoleMapBuilderRun({
         tenantTop,
         result: 'skipped_below_threshold',
@@ -365,7 +294,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // known roles / depts (top 50) для approverRoleId / counterpart resolve.
     const [knownRoles, knownDepts] = await Promise.all([
       this.prisma.role.findMany({
         where: { tenantId: args.tenantId, deletedAt: null },
@@ -399,7 +327,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     const stop = this.metrics.startRoleMapExtractTimer();
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (role + блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     let parsedRaw: unknown;
     try {
@@ -445,7 +372,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     const knownDeptIds = new Set(knownDepts.map((d) => d.id));
 
     try {
-      // Responsibilities.
       for (const r of parsed.responsibilities ?? []) {
         if (!r?.name || !r.kind) continue;
         if ((r.confidence ?? 0) < RoleMapBuilderWorker.AUTO_EXTRACT_MIN_CONFIDENCE) continue;
@@ -459,14 +385,11 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
           confidence: r.confidence ?? null,
         });
       }
-      // Authority.
       for (const a of parsed.authority ?? []) {
         if (!a?.scope || !a.kind) continue;
         if ((a.confidence ?? 0) < RoleMapBuilderWorker.AUTO_EXTRACT_MIN_CONFIDENCE) continue;
         const approverRoleId =
-          a.approverRoleId && knownRoleIds.has(a.approverRoleId)
-            ? a.approverRoleId
-            : null;
+          a.approverRoleId && knownRoleIds.has(a.approverRoleId) ? a.approverRoleId : null;
         await this.authority.upsertByScope({
           tenantId: args.tenantId,
           roleId: args.roleId,
@@ -481,7 +404,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
           confidence: a.confidence ?? null,
         });
       }
-      // Knowledge.
       for (const k of parsed.knowledge ?? []) {
         if (!k?.topic || !k.importance) continue;
         if ((k.confidence ?? 0) < RoleMapBuilderWorker.AUTO_EXTRACT_MIN_CONFIDENCE) continue;
@@ -496,7 +418,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
           confidence: k.confidence ?? null,
         });
       }
-      // Decision policies.
       for (const d of parsed.decision_policies ?? []) {
         if (!d?.name || !d.ruleDescription) continue;
         if ((d.confidence ?? 0) < RoleMapBuilderWorker.AUTO_EXTRACT_MIN_CONFIDENCE) continue;
@@ -510,24 +431,17 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
           confidence: d.confidence ?? null,
         });
       }
-      // Interactions.
       for (const i of parsed.interactions ?? []) {
         if (!i?.kind) continue;
         if ((i.confidence ?? 0) < RoleMapBuilderWorker.AUTO_EXTRACT_MIN_CONFIDENCE) continue;
         const counterpartRoleId =
-          i.counterpartRoleId && knownRoleIds.has(i.counterpartRoleId)
-            ? i.counterpartRoleId
-            : null;
+          i.counterpartRoleId && knownRoleIds.has(i.counterpartRoleId) ? i.counterpartRoleId : null;
         const counterpartDepartmentId =
           i.counterpartDepartmentId && knownDeptIds.has(i.counterpartDepartmentId)
             ? i.counterpartDepartmentId
             : null;
         const counterpartExternal = i.counterpartExternal ?? null;
-        if (
-          !counterpartRoleId &&
-          !counterpartDepartmentId &&
-          !counterpartExternal
-        ) {
+        if (!counterpartRoleId && !counterpartDepartmentId && !counterpartExternal) {
           continue;
         }
         await this.interactions.upsertByCounterpart({
@@ -557,7 +471,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
 
     this.metrics.incRoleMapBuilderRun({ tenantTop, result: outcome });
 
-    // После upsert'ов — пересчёт completeness.
     try {
       await this.builder.recomputeCompleteness({
         tenantId: args.tenantId,
@@ -575,8 +488,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── keys ─────────────────────────────────
-
   private listKey(tenantId: string, roleId: string): string {
     return `rolemap:batch:${tenantId}:${roleId}`;
   }
@@ -587,8 +498,6 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     return `rolemap:since:${tenantId}:${roleId}`;
   }
 }
-
-// ─────────────────────────── types ────────────────────────────────
 
 interface ExtractedRoleMap {
   responsibilities: Array<{
@@ -633,10 +542,6 @@ interface ExtractedRoleMap {
   }>;
 }
 
-/**
- * Фильтрует evidence — оставляет только blockId'и из батча
- * (LLM иногда галлюцинирует id'ы соседних блоков). Capped 5.
- */
 function filterValidEvidence(
   evidence: string[] | undefined | null,
   validBlockIds: string[],

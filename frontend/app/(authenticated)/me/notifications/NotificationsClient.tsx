@@ -1,10 +1,17 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import useSWR, { mutate } from 'swr';
-import { Loader2, Send, X, MessageSquarePlus, MessageSquare, Sparkles } from 'lucide-react';
+import { useEffect, useState } from "react";
+import useSWR, { mutate } from "swr";
+import {
+  Loader2,
+  Send,
+  X,
+  MessageSquarePlus,
+  MessageSquare,
+  Sparkles,
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   createFreeNote,
   dismissNotification,
@@ -12,77 +19,75 @@ import {
   listMyNotifications,
   markNotificationRead,
   respondToNotification,
-} from '@/api/conversational.api';
+} from "@/api/conversational.api";
 import {
   dismissProactiveNotification,
   listMyProactiveNotifications,
-} from '@/api/proactive.api';
+} from "@/api/proactive.api";
 import {
   mapNotification,
   mapNotificationDetail,
   type Notification,
-} from '@/domain/conversational';
+} from "@/domain/conversational";
 import {
   mapProactiveNotification,
   type ProactiveNotification,
-} from '@/domain/proactive';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { ProbeAnswerInput } from '@/ui/components/probe/ProbeAnswerInput';
-import { ReadablePayload } from '@/ui/readable-payload';
+} from "@/domain/proactive";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { ProbeAnswerInput } from "@/ui/components/probe/ProbeAnswerInput";
+import { ReadablePayload } from "@/ui/readable-payload";
 
-type Filter = 'unread' | 'pending_response' | 'all';
-type Tab = 'inbox' | 'proactive';
+type Filter = "unread" | "pending_response" | "all";
+type Tab = "inbox" | "proactive";
 
 const FILTER_LABELS: Record<Filter, string> = {
-  unread: 'Непрочитанные',
-  pending_response: 'Ждут ответа',
-  all: 'Все',
+  unread: "Непрочитанные",
+  pending_response: "Ждут ответа",
+  all: "Все",
 };
 
 const TAB_LABELS: Record<Tab, string> = {
-  inbox: 'Входящие',
-  proactive: 'Проактивные',
+  inbox: "Входящие",
+  proactive: "Проактивные",
 };
 
 export function NotificationsClient() {
   const { currentOrgId, isLoading } = useAuth();
-  const [tab, setTab] = useState<Tab>('inbox');
-  const [filter, setFilter] = useState<Filter>('unread');
+  const [tab, setTab] = useState<Tab>("inbox");
+  const [filter, setFilter] = useState<Filter>("unread");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Deep-link из /actions «Вопрос Коры» (actionUrl=/me/notifications?id=<id>):
-  // сразу раскрываем конкретное уведомление и показываем его среди всех
-  // (а не только среди непрочитанных), чтобы ответить на нужный вопрос.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const id = new URLSearchParams(window.location.search).get('id');
+    if (typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("id");
     if (id) {
       setSelectedId(id);
-      setFilter('all');
-      setTab('inbox');
+      setFilter("all");
+      setTab("inbox");
     }
   }, []);
 
   const listKey = currentOrgId
-    ? ['my-notifications', currentOrgId, filter]
+    ? ["my-notifications", currentOrgId, filter]
     : null;
-  const { data: listData, error: listError, isLoading: listLoading } = useSWR(
-    listKey,
-    async () => {
-      const res = await listMyNotifications(currentOrgId!, { status: filter });
-      return res.items.map(mapNotification);
-    },
-  );
+  const {
+    data: listData,
+    error: listError,
+    isLoading: listLoading,
+  } = useSWR(listKey, async () => {
+    const res = await listMyNotifications(currentOrgId!, { status: filter });
+    return res.items.map(mapNotification);
+  });
 
   const detailKey =
     currentOrgId && selectedId
-      ? ['my-notification', currentOrgId, selectedId]
+      ? ["my-notification", currentOrgId, selectedId]
       : null;
   const { data: detail, isLoading: detailLoading } = useSWR(
     detailKey,
@@ -118,26 +123,24 @@ export function NotificationsClient() {
         {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
           <Button
             key={t}
-            variant={tab === t ? 'default' : 'ghost'}
+            variant={tab === t ? "default" : "ghost"}
             size="sm"
             onClick={() => setTab(t)}
           >
-            {t === 'proactive' && <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+            {t === "proactive" && <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
             {TAB_LABELS[t]}
           </Button>
         ))}
       </div>
 
-      {tab === 'proactive' && (
-        <ProactivePanel orgId={currentOrgId} />
-      )}
+      {tab === "proactive" && <ProactivePanel orgId={currentOrgId} />}
 
-      {tab === 'inbox' && (
+      {tab === "inbox" && (
         <div className="flex flex-wrap gap-2">
           {(Object.keys(FILTER_LABELS) as Filter[]).map((f) => (
             <Button
               key={f}
-              variant={filter === f ? 'default' : 'outline'}
+              variant={filter === f ? "default" : "outline"}
               size="sm"
               onClick={() => setFilter(f)}
             >
@@ -147,71 +150,75 @@ export function NotificationsClient() {
         </div>
       )}
 
-      {tab === 'inbox' && (
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr]">
-        <div className="space-y-2">
-          {listLoading && (
-            <>
-              <Skeleton className="h-20 w-full" />
-              <Skeleton className="h-20 w-full" />
-            </>
-          )}
-          {listError instanceof Error && (
-            <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm">
-              Ошибка: {listError.message}
-            </div>
-          )}
-          {!listLoading && listData && listData.length === 0 && (
-            <Card>
-              <CardContent className="p-4 text-sm text-muted-foreground">
-                Пока тихо — уведомлений в этом фильтре нет.
-              </CardContent>
-            </Card>
-          )}
-          {listData?.map((n) => (
-            <NotificationRow
-              key={n.id}
-              n={n}
-              active={selectedId === n.id}
-              onClick={() => {
-                setSelectedId(n.id);
-                if (n.status === 'queued' || n.status === 'delivered' || n.status === 'sent_partial') {
-                  void markNotificationRead(n.id).then(() => mutate(listKey));
-                }
-              }}
-            />
-          ))}
-        </div>
+      {tab === "inbox" && (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_2fr]">
+          <div className="space-y-2">
+            {listLoading && (
+              <>
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </>
+            )}
+            {listError instanceof Error && (
+              <div className="rounded-md border border-destructive bg-destructive/10 p-3 text-sm">
+                Ошибка: {listError.message}
+              </div>
+            )}
+            {!listLoading && listData && listData.length === 0 && (
+              <Card>
+                <CardContent className="p-4 text-sm text-muted-foreground">
+                  Пока тихо — уведомлений в этом фильтре нет.
+                </CardContent>
+              </Card>
+            )}
+            {listData?.map((n) => (
+              <NotificationRow
+                key={n.id}
+                n={n}
+                active={selectedId === n.id}
+                onClick={() => {
+                  setSelectedId(n.id);
+                  if (
+                    n.status === "queued" ||
+                    n.status === "delivered" ||
+                    n.status === "sent_partial"
+                  ) {
+                    void markNotificationRead(n.id).then(() => mutate(listKey));
+                  }
+                }}
+              />
+            ))}
+          </div>
 
-        <div>
-          {!selectedId && (
-            <Card>
-              <CardContent className="p-6 text-sm text-muted-foreground">
-                Выберите уведомление слева, чтобы открыть детали.
-              </CardContent>
-            </Card>
-          )}
-          {selectedId && detailLoading && (
-            <Card>
-              <CardContent className="p-6">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </CardContent>
-            </Card>
-          )}
-          {detail && (
-            <NotificationDetail
-              n={detail}
-              onChanged={async () => {
-                await mutate(detailKey);
-                await mutate(listKey);
-              }}
-            />
-          )}
+          <div>
+            {!selectedId && (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">
+                  Выберите уведомление слева, чтобы открыть детали.
+                </CardContent>
+              </Card>
+            )}
+            {selectedId && detailLoading && (
+              <Card>
+                <CardContent className="p-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </CardContent>
+              </Card>
+            )}
+            {detail && (
+              <NotificationDetail
+                n={detail}
+                onChanged={async () => {
+                  await mutate(detailKey);
+                  await mutate(listKey);
+                }}
+              />
+            )}
+          </div>
         </div>
-      </div>
       )}
 
-      {tab === 'inbox' && (
+      {tab === "inbox" && (
         <FreeNoteCard orgId={currentOrgId} onCreated={() => mutate(listKey)} />
       )}
     </section>
@@ -232,7 +239,7 @@ function NotificationRow({
       type="button"
       onClick={onClick}
       className={`block w-full rounded-md border p-3 text-left transition hover:bg-muted ${
-        active ? 'border-primary bg-muted' : 'border-border'
+        active ? "border-primary bg-muted" : "border-border"
       }`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -244,7 +251,7 @@ function NotificationRow({
         )}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
-        {n.statusLabel} · {n.createdAt.toLocaleString('ru-RU')}
+        {n.statusLabel} · {n.createdAt.toLocaleString("ru-RU")}
       </div>
     </button>
   );
@@ -257,12 +264,11 @@ function NotificationDetail({
   n: ReturnType<typeof mapNotificationDetail>;
   onChanged: () => Promise<void>;
 }) {
-  const [responseText, setResponseText] = useState('');
-  const [busy, setBusy] = useState<'respond' | 'dismiss' | null>(null);
+  const [responseText, setResponseText] = useState("");
+  const [busy, setBusy] = useState<"respond" | "dismiss" | null>(null);
 
   const payload = n.payload as {
     question?: string;
-    /** Agents v2 Фаза 0.2 — сама строка вопроса, сформулированная LLM. */
     formulatedQuestion?: string;
     context?: string;
     summary?: string;
@@ -271,49 +277,52 @@ function NotificationDetail({
     body?: string;
   };
 
-  // Для probe.question рендерим компонент свободного ввода без inline-кнопок
-  // (правило [[probe-no-buttons-text-voice-only]]). Старый textarea остаётся
-  // для остальных типов уведомлений, где ответ — это просто текст.
-  const isProbeQuestion = n.eventType === 'probe.question';
+  const isProbeQuestion = n.eventType === "probe.question";
   const probeQuestion =
-    payload.formulatedQuestion?.trim() || payload.question?.trim() || '';
+    payload.formulatedQuestion?.trim() || payload.question?.trim() || "";
 
   async function handleRespond() {
     if (!responseText.trim()) return;
-    setBusy('respond');
+    setBusy("respond");
     try {
       await respondToNotification(n.id, { text: responseText.trim() });
-      setResponseText('');
+      setResponseText("");
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+      if (e instanceof ApiError)
+        toast.error(
+          `Не удалось отправить ответ: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
     } finally {
       setBusy(null);
     }
   }
 
   async function handleProbeSubmit(answer: string): Promise<void> {
-    setBusy('respond');
+    setBusy("respond");
     try {
-      // Backend `ProbeResponseHandler.extractResponseText` принимает любой из
-      // ключей `text|response|body|answer` — посылаем `response` как явный
-      // probe-ответ (ТЗ §«Probe без кнопок» / Frontend §Phase 0.3).
       await respondToNotification(n.id, { response: answer });
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить ответ: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+      if (e instanceof ApiError)
+        toast.error(
+          `Не удалось отправить ответ: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
     } finally {
       setBusy(null);
     }
   }
 
   async function handleDismiss() {
-    setBusy('dismiss');
+    setBusy("dismiss");
     try {
       await dismissNotification(n.id);
       await onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось пропустить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+      if (e instanceof ApiError)
+        toast.error(
+          `Не удалось пропустить: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
     } finally {
       setBusy(null);
     }
@@ -328,22 +337,21 @@ function NotificationDetail({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
-        {/* Для probe.question вопрос рендерим внутри ProbeAnswerInput ниже,
-            тут не дублируем. Для остальных типов — обычный блок «Вопрос». */}
+        {}
         {!isProbeQuestion && payload.question && (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Вопрос</div>
+            <div className="text-xs uppercase text-muted-foreground">
+              Вопрос
+            </div>
             <p className="whitespace-pre-wrap">{payload.question}</p>
           </div>
         )}
-        {/* probe.question: человеческий вопрос рендерит ProbeAnswerInput ниже;
-            «контекстные» блоки (context/summary/title) для него — это сырой
-            payload.message (латиница-имена классов + cuid), дублирование и
-            протечка → прячем. Для остальных типов уведомлений контекст
-            содержателен — гард строго по isProbeQuestion. */}
+        {}
         {!isProbeQuestion && payload.context && (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Контекст</div>
+            <div className="text-xs uppercase text-muted-foreground">
+              Контекст
+            </div>
             <p className="whitespace-pre-wrap">{payload.context}</p>
           </div>
         )}
@@ -357,7 +365,9 @@ function NotificationDetail({
         )}
         {!isProbeQuestion && payload.title && (
           <div>
-            <div className="text-xs uppercase text-muted-foreground">Заголовок</div>
+            <div className="text-xs uppercase text-muted-foreground">
+              Заголовок
+            </div>
             <p className="whitespace-pre-wrap font-medium">{payload.title}</p>
           </div>
         )}
@@ -368,7 +378,7 @@ function NotificationDetail({
             <ProbeAnswerInput
               question={probeQuestion}
               onSubmit={handleProbeSubmit}
-              isSubmitting={busy === 'respond'}
+              isSubmitting={busy === "respond"}
               voiceEnabled={true}
             />
             <div>
@@ -376,9 +386,9 @@ function NotificationDetail({
                 size="sm"
                 variant="outline"
                 onClick={handleDismiss}
-                disabled={busy === 'dismiss'}
+                disabled={busy === "dismiss"}
               >
-                {busy === 'dismiss' ? (
+                {busy === "dismiss" ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <X className="mr-2 h-4 w-4" />
@@ -404,9 +414,9 @@ function NotificationDetail({
               <Button
                 size="sm"
                 onClick={handleRespond}
-                disabled={busy === 'respond' || !responseText.trim()}
+                disabled={busy === "respond" || !responseText.trim()}
               >
-                {busy === 'respond' ? (
+                {busy === "respond" ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="mr-2 h-4 w-4" />
@@ -417,9 +427,9 @@ function NotificationDetail({
                 size="sm"
                 variant="outline"
                 onClick={handleDismiss}
-                disabled={busy === 'dismiss'}
+                disabled={busy === "dismiss"}
               >
-                {busy === 'dismiss' ? (
+                {busy === "dismiss" ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <X className="mr-2 h-4 w-4" />
@@ -433,12 +443,12 @@ function NotificationDetail({
         {n.responsePayload && (
           <div>
             <div className="text-xs uppercase text-muted-foreground">
-              Ваш ответ ({n.respondedAt?.toLocaleString('ru-RU') ?? '—'})
+              Ваш ответ ({n.respondedAt?.toLocaleString("ru-RU") ?? "—"})
             </div>
             {(() => {
               const rp = n.responsePayload as Record<string, unknown>;
               const raw = rp.response ?? rp.text ?? rp.value;
-              const answerText = typeof raw === 'string' ? raw.trim() : '';
+              const answerText = typeof raw === "string" ? raw.trim() : "";
               return answerText ? (
                 <p className="whitespace-pre-wrap text-sm">{answerText}</p>
               ) : (
@@ -456,7 +466,7 @@ function NotificationDetail({
                 <span>
                   {d.status} · попыток: {d.attempts}
                 </span>
-                <span>{d.attemptedAt.toLocaleString('ru-RU')}</span>
+                <span>{d.attemptedAt.toLocaleString("ru-RU")}</span>
               </li>
             ))}
           </ul>
@@ -473,7 +483,7 @@ function FreeNoteCard({
   orgId: string;
   onCreated: () => Promise<unknown> | void;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function handleSubmit() {
@@ -481,11 +491,14 @@ function FreeNoteCard({
     setBusy(true);
     try {
       await createFreeNote(orgId, text.trim());
-      setText('');
+      setText("");
       await onCreated();
-      toast.success('Заметка отправлена в память компании.');
+      toast.success("Заметка отправлена в память компании.");
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось отправить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+      if (e instanceof ApiError)
+        toast.error(
+          `Не удалось отправить: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
     } finally {
       setBusy(false);
     }
@@ -501,8 +514,8 @@ function FreeNoteCard({
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p className="text-muted-foreground">
-          Поделитесь мыслью, идеей, фактом или сигналом — Кора добавит это в граф
-          знаний компании.
+          Поделитесь мыслью, идеей, фактом или сигналом — Кора добавит это в
+          граф знаний компании.
         </p>
         <Textarea
           rows={3}
@@ -527,23 +540,16 @@ function FreeNoteCard({
   );
 }
 
-/**
- * SBA δ-2 — панель проактивных уведомлений. Кора сама заметила вещи и
- * подсветила их. Каждую можно «Скрыть».
- */
 function ProactivePanel({ orgId }: { orgId: string }) {
   const [includeDismissed, setIncludeDismissed] = useState(false);
-  const listKey = ['my-proactive-notifications', orgId, includeDismissed];
-  const { data, isLoading, error } = useSWR(
-    listKey,
-    async () => {
-      const res = await listMyProactiveNotifications(orgId, {
-        includeDismissed,
-        limit: 100,
-      });
-      return res.items.map(mapProactiveNotification);
-    },
-  );
+  const listKey = ["my-proactive-notifications", orgId, includeDismissed];
+  const { data, isLoading, error } = useSWR(listKey, async () => {
+    const res = await listMyProactiveNotifications(orgId, {
+      includeDismissed,
+      limit: 100,
+    });
+    return res.items.map(mapProactiveNotification);
+  });
 
   return (
     <div className="space-y-3">
@@ -556,7 +562,7 @@ function ProactivePanel({ orgId }: { orgId: string }) {
           size="sm"
           onClick={() => setIncludeDismissed((v) => !v)}
         >
-          {includeDismissed ? 'Скрыть отклонённые' : 'Показать отклонённые'}
+          {includeDismissed ? "Скрыть отклонённые" : "Показать отклонённые"}
         </Button>
       </div>
 
@@ -607,21 +613,24 @@ function ProactiveRow({
       await dismissProactiveNotification(orgId, item.id);
       onChanged();
     } catch (e) {
-      if (e instanceof ApiError) toast.error(`Не удалось скрыть: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+      if (e instanceof ApiError)
+        toast.error(
+          `Не удалось скрыть: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
     } finally {
       setBusy(false);
     }
   }
 
-  const severityVariant: 'default' | 'secondary' | 'warning' | 'danger' =
-    item.severity === 'high'
-      ? 'danger'
-      : item.severity === 'medium'
-        ? 'warning'
-        : 'secondary';
+  const severityVariant: "default" | "secondary" | "warning" | "danger" =
+    item.severity === "high"
+      ? "danger"
+      : item.severity === "medium"
+        ? "warning"
+        : "secondary";
 
   return (
-    <Card className={item.dismissedAt ? 'opacity-60' : undefined}>
+    <Card className={item.dismissedAt ? "opacity-60" : undefined}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-2 text-sm">
           <span className="flex items-center gap-2">
@@ -658,8 +667,8 @@ function ProactiveRow({
             </Button>
           )}
           <span className="ml-auto text-xs text-muted-foreground">
-            {item.emittedAt.toLocaleString('ru-RU')}
-            {item.dismissedAt && ' · скрыто'}
+            {item.emittedAt.toLocaleString("ru-RU")}
+            {item.dismissedAt && " · скрыто"}
           </span>
         </div>
       </CardContent>

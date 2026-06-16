@@ -10,20 +10,6 @@ import { GraphDiagnosticsController } from './controllers/graph-diagnostics.cont
 import { KnowledgeCoreModule } from './knowledge-core.module';
 import { KnowledgeSnapshotModule } from './snapshot.module';
 
-/**
- * HTTP-слой knowledge-core: только контроллеры (поиск/блоки/сущности/граф/темы).
- *
- * Вынесен из `KnowledgeCoreModule` (сервисы, @Global), чтобы worker-процесс мог
- * импортировать сервисы без HTTP-контроллеров и их guard'ов. Сервисы контроллеры
- * получают из @Global `KnowledgeCoreModule`; auth-guard'ы (CookieAuthGuard/TenantGuard)
- * — из глобальных модулей HTTP-приложения.
- *
- * Импортируется только в `app.module` (HTTP).
- *
- * KC-Temporal W1.3 (2026-05-25): `KnowledgeSnapshotModule` отдельным
- * под-модулем, чтобы изолировать snapshot-контроллер/сервис от потенциальных
- * merge-конфликтов с параллельными агентами.
- */
 @Module({
   imports: [KnowledgeCoreModule, KnowledgeSnapshotModule],
   controllers: [
@@ -32,14 +18,7 @@ import { KnowledgeSnapshotModule } from './snapshot.module';
     KnowledgeEntitiesController,
     KnowledgeGraphController,
     KnowledgeThemesController,
-    // Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.7) — REST
-    // финального отчёта спринта: GET /cycles/:id/review +
-    // POST /cycles/:id/review/regenerate. Контроллер живёт здесь, потому что
-    // SprintReviewService инжектит CurationService + LlmRouterService.
     SprintReviewController,
-    // Agent-chain overhaul Фаза 0a (2026-06-07) — платформенный (SUPER_ADMIN)
-    // read-only эндпоинт наблюдаемости материализации графа из встречи.
-    // GraphMaterializationService берётся из @Global KnowledgeCoreModule.
     GraphDiagnosticsController,
   ],
 })

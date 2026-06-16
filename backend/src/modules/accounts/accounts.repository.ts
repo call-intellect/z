@@ -1,32 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  Prisma,
-  User,
-  UserVerificationToken,
-  VerificationPurpose,
-} from '@prisma/client';
+import type { Prisma, User, UserVerificationToken, VerificationPurpose } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Тонкая обёртка над Prisma для standalone-таблиц (User-standalone, UserSession,
- * UserVerificationToken). Бизнес-логика — в `AccountsService`.
- */
 @Injectable()
 export class AccountsRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Найти standalone-аккаунт по email. Учитывает `signupSource='standalone'`,
-   * чтобы не путать с Crossmark-аккаунтом того же email (они уникальны
-   * по `(email, signupSource)`).
-   *
-   * Email нормализуется снаружи — здесь точное равенство.
-   */
-  findStandaloneByEmail(
-    email: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<User | null> {
+  findStandaloneByEmail(email: string, tx?: Prisma.TransactionClient): Promise<User | null> {
     const client = tx ?? this.prisma;
     return client.user.findUnique({
       where: {
@@ -38,11 +19,6 @@ export class AccountsRepository {
     });
   }
 
-  /**
-   * Найти любой аккаунт по email (case-insensitive), независимо от signupSource.
-   * Используется в логине, чтобы вернуть правильный код ошибки если на email
-   * только админ-аккаунт.
-   */
   findAnyByEmailCaseInsensitive(email: string): Promise<User[]> {
     return this.prisma.user.findMany({
       where: {
@@ -56,11 +32,6 @@ export class AccountsRepository {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
-  /**
-   * upsert по `(email, signupSource='standalone')`. Если standalone-юзер
-   * с таким email уже есть — возвращает его (с обновлёнными полями).
-   * Если нет — создаёт нового.
-   */
   async upsertStandalone(
     input: {
       email: string;
@@ -132,8 +103,6 @@ export class AccountsRepository {
     });
   }
 
-  // ─────────────── verification tokens ────────────────
-
   createVerificationToken(
     input: {
       userId: string;
@@ -158,14 +127,7 @@ export class AccountsRepository {
     });
   }
 
-  /**
-   * β-9 (2026-05-25) — поиск verification-токена ТОЛЬКО по hash, без purpose.
-   * Используется magic-link consume (purpose='magic_link') — caller сам
-   * проверяет purpose в результате, чтобы вернуть один общий error code.
-   */
-  findVerificationTokenByHash(
-    tokenHash: string,
-  ): Promise<UserVerificationToken | null> {
+  findVerificationTokenByHash(tokenHash: string): Promise<UserVerificationToken | null> {
     return this.prisma.userVerificationToken.findUnique({
       where: { tokenHash },
     });

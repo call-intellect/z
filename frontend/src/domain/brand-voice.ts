@@ -1,58 +1,46 @@
-/**
- * SBA β-7 — доменная модель BrandVoiceProfile.
- *
- * Слой UiModel: дата как Date, добавлены display-метки, отсортированные
- * списки tone-осей по убыванию.
- */
-
 import type {
   BrandVoiceProfileApi,
   BrandVoiceTabooApi,
   BrandVoiceValueApi,
-} from '@/api/brand-voice.api';
+} from "@/api/brand-voice.api";
 
-/** Русские метки 10 осей тона (соответствуют backend BRAND_VOICE_TONE_DIMENSIONS). */
 export const BRAND_VOICE_TONE_LABEL: Record<string, string> = {
-  formal: 'Формальность',
-  technical: 'Техничность',
-  casual: 'Непринуждённость',
-  energetic: 'Энергичность',
-  authoritative: 'Авторитетность',
-  friendly: 'Дружелюбность',
-  playful: 'Игривость',
-  minimalist: 'Минимализм',
-  expressive: 'Выразительность',
-  inclusive: 'Инклюзивность',
+  formal: "Формальность",
+  technical: "Техничность",
+  casual: "Непринуждённость",
+  energetic: "Энергичность",
+  authoritative: "Авторитетность",
+  friendly: "Дружелюбность",
+  playful: "Игривость",
+  minimalist: "Минимализм",
+  expressive: "Выразительность",
+  inclusive: "Инклюзивность",
 };
 
-/**
- * Метки статуса артефакта brand-corpus (= `DocumentStatus` backend).
- * Неизвестный код → человеческий фолбэк через `replaceAll`.
- */
 const BRAND_VOICE_ARTIFACT_STATUS_LABEL: Record<string, string> = {
-  uploaded: 'Загружен',
-  parsing: 'Разбираем',
-  parsed: 'Разобран',
-  blocks_extracted: 'Проиндексирован',
-  failed: 'Ошибка',
+  uploaded: "Загружен",
+  parsing: "Разбираем",
+  parsed: "Разобран",
+  blocks_extracted: "Проиндексирован",
+  failed: "Ошибка",
 };
 
 export function brandVoiceArtifactStatusLabel(status: string): string {
-  return BRAND_VOICE_ARTIFACT_STATUS_LABEL[status] ?? status.replaceAll('_', ' ');
+  return (
+    BRAND_VOICE_ARTIFACT_STATUS_LABEL[status] ?? status.replaceAll("_", " ")
+  );
 }
 
 export interface ToneAxisDomain {
   key: string;
   label: string;
   value: number;
-  /** 0..100. */
   percent: number;
 }
 
 export interface BrandVoiceProfileDomain {
   id: string;
   tenantId: string;
-  /** Отсортированный по убыванию список осей. */
   tone: ToneAxisDomain[];
   values: BrandVoiceValueApi[];
   taboos: BrandVoiceTabooApi[];
@@ -61,7 +49,6 @@ export interface BrandVoiceProfileDomain {
   lastBuiltAt: Date | null;
   builderAgentVersion: string | null;
   completeness: number;
-  /** 0..100. */
   completenessPercent: number;
   corpusSize: number;
   belowCorpusThreshold: boolean;
@@ -76,7 +63,7 @@ export function toBrandVoiceProfileDomain(
     ? Object.entries(api.tone)
         .filter(
           (e): e is [string, number] =>
-            typeof e[1] === 'number' && Number.isFinite(e[1]),
+            typeof e[1] === "number" && Number.isFinite(e[1]),
         )
         .map(([key, value]) => ({
           key,

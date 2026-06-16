@@ -1,28 +1,3 @@
-/**
- * TZ clone-method Э0.1 (2026-06-12) — пост-LLM grounding-гейт + журнал
- * `CloneQueryLog`.
- *
- * Тестируем legacy-путь `askPerson` (cfg.cloneV2 отсутствует → isCloneV2Enabled
- * = false) с переопределением приватных методов через any-cast — паттерн
- * соседнего `clones.service.spec.ts`:
- *   - canAccessPersonClone / loadPersonSubgraph / assertTopicDensity /
- *     persistMessage — vi.fn-заглушки;
- *   - parseCitations / isUngrounded / persistUngroundedRefusal / logCloneQuery
- *     — РЕАЛЬНЫЕ (предмет теста).
- *
- * Кейсы:
- *   1. ответ LLM без цитат + флаг ON → программный отказ 'ungrounded';
- *   2. ответ с валидной [BLOCK:id]-цитатой → обычный ответ + журнал grounded;
- *   3. kill-switch OFF → ответ без цитат проходит как раньше;
- *   4. topic_starved-путь → журнал с refusalReason='topic_starved';
- *   5. падение prisma.cloneQueryLog.create НЕ валит ответ (best-effort);
- *   6. listQueryLog фильтрует по tenantId и мапит DTO;
- *   7. v2-путь (cfg.cloneV2.enabled=true), mode='judgmental', 0 цитат →
- *      НЕ refused, text = LLM-текст (гейт применим только к factual);
- *   8. контраст хелпера: isUngrounded([], 'judgmental')=false /
- *      isUngrounded([], 'factual')=true при включённом флаге.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -57,21 +32,14 @@ function cloneBlock(id: string) {
   };
 }
 
-/**
- * Собирает ClonesService для прогона legacy `askPerson` с управляемыми:
- * текстом LLM-ответа, флагом grounding-гейта, исходом topic-density и
- * поведением prisma.cloneQueryLog.create.
- */
 function buildAskService(opts?: {
   groundingEnabled?: boolean;
   llmText?: string;
   topicRefused?: boolean;
   cloneQueryLogCreate?: ReturnType<typeof vi.fn>;
-  /** true → cfg.cloneV2.enabled=true и askPerson уходит в askPersonV2. */
   cloneV2Enabled?: boolean;
 }) {
-  const cloneQueryLogCreate =
-    opts?.cloneQueryLogCreate ?? vi.fn(async () => ({ id: 'log-1' }));
+  const cloneQueryLogCreate = opts?.cloneQueryLogCreate ?? vi.fn(async () => ({ id: 'log-1' }));
 
   const prisma = {
     skillProfile: {
@@ -132,9 +100,6 @@ function buildAskService(opts?: {
     incCloneAskRefused,
   } as unknown as BusinessMetricsService;
 
-  // Порядок аргументов конструктора (см. clones.service.spec): prisma,
-  // aiChatQuota, cfg, llm, metrics, personaBuilder, personaVersioning, rbac,
-  // accessResolver, embedder, dialog.
   const svc = new ClonesService(
     prisma,
     aiChatQuota,
@@ -149,7 +114,6 @@ function buildAskService(opts?: {
     undefined as never,
   );
 
-  // Приватные методы вне предмета теста — заглушки через any-cast.
   const anySvc = svc as unknown as Record<string, unknown>;
   anySvc.canAccessPersonClone = vi.fn(async () => ({ allowed: true }));
   anySvc.loadPersonSubgraph = vi.fn(async () => ({
@@ -219,7 +183,6 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
       reason: 'ungrounded',
     });
     expect(mocks.incCloneAsk).toHaveBeenCalledWith({ scope: 'person' });
-    // В ChatV2 сохранён программный отказ, а не текст модели.
     expect(mocks.persistMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         answer: ClonesService.UNGROUNDED_REFUSAL_TEXT,
@@ -229,7 +192,6 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
         }),
       }),
     );
-    // Журнал: ungrounded-отказ.
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -255,9 +217,7 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
     expect(res.refused).toBeFalsy();
     expect(res.text).toContain('Опираюсь на опыт');
     expect(res.citations.length).toBeGreaterThan(0);
-    expect(res.citations[0]).toEqual(
-      expect.objectContaining({ blockId: 'b1' }),
-    );
+    expect(res.citations[0]).toEqual(expect.objectContaining({ blockId: 'b1' }));
     expect(mocks.incCloneAskRefused).not.toHaveBeenCalled();
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -281,7 +241,6 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
     expect(res.refused).toBeFalsy();
     expect(res.text).toBe('Ответ без цитат при выключенном гейте.');
     expect(mocks.incCloneAskRefused).not.toHaveBeenCalled();
-    // Журнал всё равно пишется: ответ без опоры = answeredGrounded false.
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -300,7 +259,6 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
     expect(res.refused).toBe(true);
     expect(res.refusalReason).toBe('topic_starved');
     expect(res.text).toBe(ClonesService.TOPIC_STARVED_REFUSAL_TEXT);
-    // LLM не вызывался — отказ ДО модели.
     expect(mocks.llmCall).not.toHaveBeenCalled();
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -329,12 +287,6 @@ describe('ClonesService Э0.1 — пост-LLM grounding-гейт', () => {
 });
 
 describe('ClonesService Э0.1 — judgmental-режим НЕ попадает под grounding-гейт', () => {
-  // ОБОСНОВАНИЕ: CLONE_RESPOND_SYSTEM_PROMPT_JUDGMENTAL (правило 2,
-  // knowledge-core/prompts/clone-respond.prompt.ts) прямо запрещает модели
-  // писать [BLOCK:id] в тексте ответа → в judgmental parseCitations почти
-  // всегда даёт 0 цитат. Это норма режима, а не пробел знаний: гейт
-  // isUngrounded применим только к factual; анти-deepfake в judgmental
-  // держится topic-density ДО LLM + правилами SYSTEM п.4/6.
   it('v2-путь (askPersonV2), mode=judgmental, 0 цитат → НЕ refused, text = LLM-текст', async () => {
     const llmText = 'Рассуждение по аналогии без единой цитаты-опоры.';
     const { svc, mocks } = buildAskService({
@@ -343,36 +295,30 @@ describe('ClonesService Э0.1 — judgmental-режим НЕ попадает п
       llmText,
     });
     const anySvc = svc as unknown as Record<string, unknown>;
-    // v2-RBAC идёт через RbacService (в конструкторе undefined) — подменяем.
     anySvc.rbac = {
       canAccessPersonClone: vi.fn(async () => ({ allowed: true })),
     };
-    // dialog-layer: intent='exploratory' → intentToMode → 'judgmental'.
     anySvc.runDialogLayer = vi.fn(async () => ({
       standaloneQuestion: QUESTION,
       intent: 'exploratory',
       queries: [QUESTION],
       confidence: 0.9,
     }));
-    // PracticeSkill retrieval/usage — вне предмета теста.
     anySvc.retrievePracticeSkills = vi.fn(async () => []);
     anySvc.recordPracticeSkillUsages = vi.fn(async () => undefined);
 
     const res = await ask(svc);
 
-    // Главная поведенческая проверка: judgmental + 0 citations ≠ отказ.
     expect(res.refused).toBeFalsy();
     expect(res.text).toBe(llmText);
     expect(res.citations).toEqual([]);
     expect(mocks.incCloneAskRefused).not.toHaveBeenCalled();
-    // В ChatV2 сохранён именно LLM-текст, режим зафиксирован в llmMeta.
     expect(mocks.persistMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         answer: llmText,
         llmMeta: expect.objectContaining({ mode: 'judgmental', cloneV2: true }),
       }),
     );
-    // Журнал успешного ответа: без опоры (answeredGrounded=false), но БЕЗ отказа.
     expect(mocks.cloneQueryLogCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -387,16 +333,11 @@ describe('ClonesService Э0.1 — judgmental-режим НЕ попадает п
     const { svc } = buildAskService({ groundingEnabled: true });
     const isUngrounded = (
       svc as unknown as {
-        isUngrounded: (
-          citations: unknown[],
-          mode: 'factual' | 'judgmental',
-        ) => boolean;
+        isUngrounded: (citations: unknown[], mode: 'factual' | 'judgmental') => boolean;
       }
     ).isUngrounded.bind(svc);
 
-    // judgmental: 0 цитат — норма (SYSTEM запрещает [BLOCK:id] в тексте).
     expect(isUngrounded([], 'judgmental')).toBe(false);
-    // factual: 0 цитат при включённом флаге — ungrounded.
     expect(isUngrounded([], 'factual')).toBe(true);
   });
 });
@@ -451,9 +392,7 @@ describe('ClonesService Э0.1 — listQueryLog (журнал владельца)
         skip: 0,
       }),
     );
-    expect(count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { tenantId: TENANT_ID } }),
-    );
+    expect(count).toHaveBeenCalledWith(expect.objectContaining({ where: { tenantId: TENANT_ID } }));
     expect(res.total).toBe(1);
     expect(res.items).toEqual([
       {

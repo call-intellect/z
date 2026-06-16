@@ -14,27 +14,6 @@ import {
   type ChatV2Stage,
 } from '../../knowledge-core/services/chat-v2.service';
 
-/**
- * SBA α-5 — SynthesisService.
- *
- * Обёртка над `ChatV2Service` из knowledge-core. Назначение:
- *   1) ТЗ 2026-06-15 — `mode` БОЛЬШЕ НЕ выбирает текст системного промпта:
- *      графовый ответ всегда идёт на единый промпт-ответчик
- *      (BASE_SYSTEM_PROMPT в knowledge-core). Override используется только
- *      для brand-voice (clone_style + scope=org). Отдельные движки
- *      (ClonesService.askPerson, brand-voice) остаются как ранний возврат /
- *      override и не зависят от текста режима. На postprocessing `mode` ещё
- *      влияет (uncertaintyNote для synthetic).
- *   2) Передать history + summary — knowledge-core ChatV2Service кладёт их
- *      в конец USER (cache-friendly).
- *   3) Собрать retrievalMeta / llmMeta для записи в ChatV2Message.
- *   4) Для mode='synthetic' — если в Org есть открытые ConflictItem,
- *      релевантные к найденным блокам, добавить uncertaintyNote.
- *
- * Сам retrieval + LLM call делает knowledge-core ChatV2Service (см.
- * `chat-v2.service.ts:ask`). Этот сервис ничего не дублирует.
- */
-
 export interface SynthesisInput {
   tenantId: string;
   userId: string;
@@ -43,43 +22,15 @@ export interface SynthesisInput {
   scope: ChatV2Scope;
   scopeRefId: string | null;
   history: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>;
-  /**
-   * SBA α-5 dialog-layer — заранее посчитанный standalone-вопрос (после
-   * Contextualizer + confidence fallback). Если null — используем question.
-   */
   standaloneQuestion?: string | null;
-  /**
-   * SBA α-5 dialog-layer — массив запросов для retrieval (multi-query
-   * expansion).
-   */
   queries?: ReadonlyArray<string>;
-  /** SBA α-5 dialog-layer — temporal queries. */
   validAt?: Date | null;
-  /** Query Understanding Волна 1 — резолвнутые структурные фильтры (Ф3 consume). */
   structuralFilters?: StructuralRetrievalFilters | null;
-  /**
-   * ЧАСТЬ B (ТЗ 2026-06-15 §7) — обогащённое понимание для параллельной ветки
-   * умных таблиц (выбор таблицы + entity-bridge). Все опциональны: нет → ветка
-   * таблиц не запускается. entityIds берётся из structuralFilters.entityIds в
-   * оркестраторе; entityHints/aggregation — из queryPlan.filters.
-   */
   tableEntityHints?: ReadonlyArray<string>;
   tableEntityIds?: ReadonlyArray<string>;
   tableAggregation?: boolean;
-  /** SBA α-5 dialog-layer — сжатая старая часть диалога. */
   conversationSummary?: string | null;
-  /** SBA α-5 dialog-layer — intent (для metrics / mode-prompt routing). */
-  intent?:
-    | 'factual'
-    | 'exploratory'
-    | 'analytical'
-    | 'clone_roleplay'
-    | null;
-  /**
-   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
-   * Прозрачно пробрасывается в knowledge-core ChatV2Service.ask (стадии
-   * 'searching'/'writing'). Дефолт undefined = текущее поведение.
-   */
+  intent?: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay' | null;
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -88,14 +39,7 @@ export interface SynthesisResult {
   citations: ChatV2Citation[];
   retrievalMeta: Record<string, unknown>;
   llmMeta: Record<string, unknown>;
-  /** Если есть подсказка про противоречия — короткий текст для UI. */
   uncertaintyNote: string | null;
-  /**
-   * M-1 (2026-06-12) — derived класс данных ответа (из knowledge-core
-   * ChatV2Output.dataClass). Для clone-пути (ClonesService.askPerson)
-   * derived класс недоступен — консервативно 'sensitive' (личный корпус
-   * сотрудника).
-   */
   dataClass: DataClass;
 }
 
@@ -109,37 +53,20 @@ export class SynthesisService {
     private readonly chatV2: KnowledgeCoreChatV2Service,
     @Inject(RetrievalCacheService)
     private readonly retrievalCache: RetrievalCacheService,
-    @Optional() @Inject(ClonesService)
+    @Optional()
+    @Inject(ClonesService)
     private readonly clones?: ClonesService,
-    /**
-     * SBA β-7 — Brand Voice Curator. При mode='clone_style' AND scope='org'
-     * (без scopeRefId) подмешиваем BrandVoiceProfile в systemPrompt. Если
-     * модуль не подключён (тесты / частичная сборка), деградируем до
-     * обычного clone_style fallback.
-     */
-    @Optional() @Inject(BrandVoiceService)
+    @Optional()
+    @Inject(BrandVoiceService)
     private readonly brandVoice?: BrandVoiceService,
   ) {}
 
   async synthesize(input: SynthesisInput): Promise<SynthesisResult> {
-    // SBA γ-1 — mode='clone_style' с scope='card' и scopeRefId=personId →
-    // делегируем ClonesService.askPerson. Цитаты + текст приходят оттуда.
-    // Сохранение в ChatV2Message происходит на стороне ChatV2OrchestrationService
-    // (как и для других mode), поэтому отсюда возвращаем «результат как
-    // если бы был обычный synthesize».
-    if (
-      input.mode === 'clone_style' &&
-      input.scope === 'card' &&
-      input.scopeRefId &&
-      this.clones
-    ) {
+    if (input.mode === 'clone_style' && input.scope === 'card' && input.scopeRefId && this.clones) {
       try {
         const cloneResult = await this.clones.askPerson({
           tenantId: input.tenantId,
           requesterUserId: input.userId,
-          // scopeRefId для clone_style — это personId, т.к. UI/диспетчер
-          // ставит personId в scope='card'. Если в будущем понадобится
-          // role-clone через synthesize — переключим через scopeRefKind.
           personId: input.scopeRefId,
           question: input.question,
         });
@@ -156,8 +83,6 @@ export class SynthesisService {
           retrievalMeta: { mode: 'clone_style', usedBlockIds: [] },
           llmMeta: { mode: 'clone_style' },
           uncertaintyNote: null,
-          // M-1 — askPerson не возвращает derived класс; ответ построен на
-          // личном корпусе сотрудника → консервативно 'sensitive'.
           dataClass: 'sensitive',
         };
       } catch (err) {
@@ -173,15 +98,6 @@ export class SynthesisService {
 
     const knowledgeScope = this.mapScope(input.scope);
 
-    // SBA α-5 dialog-layer:
-    //  - standaloneQuestion (если есть) → используется как основной query
-    //    и как ключ RetrievalCache.
-    //  - queries[] (если есть) → multi-query expansion в retrieval.
-    //  - validAt → temporal-фильтр.
-    //  - mode → текст системного промпта НЕ выбирает (ТЗ 2026-06-15): единый
-    //    промпт-ответчик; override только для brand-voice (clone_style+org).
-    //  - RetrievalCache lookup ДО fetchCandidates: hit → передаём
-    //    `precomputedBlockIds` в knowledge-core и пропускаем retrieval.
     const effectiveQuery = input.standaloneQuestion ?? input.question;
     const validAtIso = input.validAt ? input.validAt.toISOString() : null;
     const cacheKeyArgs = {
@@ -192,18 +108,8 @@ export class SynthesisService {
       validAt: validAtIso,
     } as const;
     const cachedRetrieval = await this.retrievalCache.get(cacheKeyArgs);
-    // ТЗ 2026-06-15 — `mode` БОЛЬШЕ НЕ выбирает текст системного промпта:
-    // графовый ответ идёт на единый промпт (override=null → knowledge-core
-    // ChatV2Service подставит BASE_SYSTEM_PROMPT). Override остаётся только
-    // для brand-voice (clone_style + scope=org) — это отдельный движок «голос
-    // компании», а не «режим письма».
     let systemPromptOverride: string | null = null;
 
-    // SBA β-7 — clone_style scope='org' (без scopeRefId) → company-level
-    // brand voice. Подмешиваем BrandVoiceProfile в системный промпт, чтобы
-    // LLM генерировал ответ в фирменном tone/values/taboos. Если профиль
-    // пустой (corpus ниже порога) или сервис не подключён — оставляем
-    // единый промпт (override=null).
     if (
       input.mode === 'clone_style' &&
       input.scope === 'org' &&
@@ -238,19 +144,15 @@ export class SynthesisService {
       queries: input.queries ?? undefined,
       validAt: input.validAt ?? null,
       structuralFilters: input.structuralFilters ?? null,
-      // ЧАСТЬ B (ТЗ 2026-06-15 §7) — проброс обогащённого понимания для
-      // параллельной ветки умных таблиц.
       tableEntityHints: input.tableEntityHints,
       tableEntityIds: input.tableEntityIds,
       tableAggregation: input.tableAggregation,
       intent: input.intent ?? undefined,
       systemPromptOverride,
       precomputedBlockIds: cachedRetrieval?.blockIds,
-      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE).
       onStage: input.onStage,
     });
 
-    // Сохраняем blockIds в RetrievalCache (если был miss).
     if (!cachedRetrieval && result.usedBlockIds.length > 0) {
       await this.retrievalCache.set(cacheKeyArgs, {
         blockIds: result.usedBlockIds,
@@ -267,10 +169,6 @@ export class SynthesisService {
       outputTokens: result.outputTokens,
     };
 
-    // Uncertainty note: только для synthetic mode + если есть открытые
-    // конфликты в Org. Простая эвристика без проверки overlap'а конкретных
-    // блоков (TODO в β: связать ConflictItem с usedBlockIds через cardId
-    // → blockIds). На α-5 — общая подсказка.
     let uncertaintyNote: string | null = null;
     if (input.mode === 'synthetic' && result.usedBlockIds.length > 0) {
       const openConflicts = await this.prisma.conflictItem.count({
@@ -281,9 +179,6 @@ export class SynthesisService {
       }
     }
 
-    // ТЗ 2026-06-15 — clone_style без подходящего движка (не card+personId для
-    // askPerson и не org+brand-voice) сведён к обычному графовому ответу на
-    // едином промпте: «режима письма» больше нет, добавочной пометки нет.
     return {
       text: result.message,
       citations: result.citations,
@@ -294,15 +189,6 @@ export class SynthesisService {
     };
   }
 
-  /**
-   * Маппинг scope нашей α-5 модели → scope knowledge-core ChatV2Service.
-   * - 'personal' пока маппится в 'org' (нет персонального индекса блоков
-   *   до γ-1).
-   * - 'issue' (Wave 2 polish T6-6b) маппится в 'card', чтобы переиспользовать
-   *   существующий card-retrieval. Сам Issue подтягивается отдельно через
-   *   `IssueCardHandler` (CardSpecialistRegistry), для него scopeRefId
-   *   остаётся issueId без изменений.
-   */
   private mapScope(scope: ChatV2Scope): KnowledgeChatV2Scope {
     if (scope === 'personal') return 'org';
     if (scope === 'issue') return 'card';
@@ -310,34 +196,14 @@ export class SynthesisService {
   }
 }
 
-// ─────────────────────────── SBA β-7 helpers ──────────────────────────
-
-/**
- * Структура BrandVoiceProfile из BrandVoiceService.getOrCreate(). Сокращённая
- * — берём только нужные секции для инжекции в systemPrompt.
- */
 interface BrandVoiceProfileForPrompt {
   tone: Record<string, number> | null;
-  values:
-    | Array<{ value: string; weight: number }>
-    | null;
-  taboos:
-    | Array<{ phrase: string; alternative?: string; reason: string }>
-    | null;
+  values: Array<{ value: string; weight: number }> | null;
+  taboos: Array<{ phrase: string; alternative?: string; reason: string }> | null;
   belowCorpusThreshold: boolean;
 }
 
-/**
- * SBA β-7 — собирает системный промпт для chat-v2 в режиме «голос компании»
- * (mode='clone_style', scope='org'). При пустом профиле / корпус ниже
- * порога — возвращает null (caller оставляет override=null → единый
- * промпт-ответчик, ТЗ 2026-06-15).
- */
-function buildClonedCompanyPrompt(
-  profile: BrandVoiceProfileForPrompt,
-): string | null {
-  // Если профиль пустой (корпус ниже порога ИЛИ extract ещё не отработал) —
-  // дегрейдим до единого промпта-ответчика (override=null у caller).
+function buildClonedCompanyPrompt(profile: BrandVoiceProfileForPrompt): string | null {
   if (
     profile.belowCorpusThreshold ||
     (profile.tone === null && profile.values === null && profile.taboos === null)
@@ -388,7 +254,6 @@ function buildClonedCompanyPrompt(
   return lines.join('\n');
 }
 
-/** Русские лейблы для 10 канонических осей тона. */
 const TONE_LABEL_RU: Record<string, string> = {
   formal: 'формальность',
   technical: 'техничность',

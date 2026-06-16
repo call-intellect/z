@@ -1,16 +1,3 @@
-/**
- * Юнит-тесты решения `decide` (patch-enable-shipped-flags, Ship-On Ф3).
- *
- * Покрытие матрицы:
- *   - запись отсутствует → skip-absent;
- *   - value=false + updatedBy=null → update (включаем);
- *   - value=true → skip-already-true;
- *   - updatedBy != null (правил админ) → skip-admin-edited (override уважаем);
- *   - не-boolean seed-значение → skip (защитная ветка).
- *
- * Плюс end-to-end-проверка `patchEnableShippedFlags` на мок-prisma:
- * идемпотентность (повтор → 0 updated).
- */
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -51,15 +38,11 @@ describe('decide', () => {
   });
 });
 
-/** Мок-prisma.adminSetting с управляемым ответом findUnique по ключу. */
 function buildPrisma(byKey: Record<string, ExistingSetting | null>) {
   const update = vi.fn(async () => ({}));
   const prisma = {
     adminSetting: {
-      findUnique: vi.fn(
-        async (args: { where: { key: string } }) =>
-          byKey[args.where.key] ?? null,
-      ),
+      findUnique: vi.fn(async (args: { where: { key: string } }) => byKey[args.where.key] ?? null),
       update,
     },
   };
@@ -74,9 +57,7 @@ describe('patchEnableShippedFlags', () => {
       'knowledge.curationAutotuneEnabled': { value: false, updatedBy: null },
     });
 
-    const stats = await patchEnableShippedFlags(
-      prisma as unknown as PrismaClient,
-    );
+    const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
     expect(stats.updated).toBe(3);
     expect(prisma.adminSetting.update).toHaveBeenCalledTimes(3);
@@ -89,9 +70,7 @@ describe('patchEnableShippedFlags', () => {
       'knowledge.curationAutotuneEnabled': { value: true, updatedBy: null },
     });
 
-    const stats = await patchEnableShippedFlags(
-      prisma as unknown as PrismaClient,
-    );
+    const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
     expect(stats.updated).toBe(0);
     expect(stats.skippedAlreadyTrue).toBe(3);
@@ -105,9 +84,7 @@ describe('patchEnableShippedFlags', () => {
       'knowledge.curationAutotuneEnabled': { value: false, updatedBy: null },
     });
 
-    const stats = await patchEnableShippedFlags(
-      prisma as unknown as PrismaClient,
-    );
+    const stats = await patchEnableShippedFlags(prisma as unknown as PrismaClient);
 
     expect(stats.updated).toBe(1);
     expect(stats.skippedAdminEdited).toBe(1);

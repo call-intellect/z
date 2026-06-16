@@ -1,18 +1,3 @@
-/**
- * SBA α-10 wave 3 — Seed для LlmProvider + LlmModel (default-набор).
- *
- * Safe-seed-rules (см. docs skill `safe-seed-rules`):
- *   - НЕ перезаписывает уже существующие записи (lookup по unique key).
- *   - Защищает admin-edited (заметку «admin edited» trackim через updatedAt
- *     != createdAt — на wave 3 проверяем по факту существования; в гамма-фазе
- *     заведём отдельный флаг `seedManagedBy`).
- *   - apiKeyEncrypted НИКОГДА не пишется из seed'а — оставляем NULL,
- *     админ заводит ключ через UI (`/admin/llm/providers/[id]`).
- *
- * Запуск:
- *   bun run scripts/seed-default-llm-providers-and-models.ts
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
@@ -71,12 +56,6 @@ const PROVIDERS: ProviderSeed[] = [
     protocolKind: 'anthropic-messages',
     capability: 'internal',
   },
-  // ТЗ 2026-05-24-kie-grsai-llm-router-integration §3.
-  // KIE — мульти-формат hub (Claude/GPT/Gemini под одним host'ом). KieService
-  // внутри сам диспатчит по префиксу модели; для реестра здесь — один LlmProvider.
-  // protocolKind='custom-http' — потому что три разных URL-формата под одним
-  // baseUrl, ни один стандартный адаптер не покрывает; вызовы идут через
-  // выделенный KieService, а не через LlmProtocolAdapterRegistry.
   {
     name: 'kie',
     displayName: 'KIE (api.kie.ai — Claude/GPT/Gemini hub)',
@@ -84,9 +63,6 @@ const PROVIDERS: ProviderSeed[] = [
     protocolKind: 'custom-http',
     capability: 'internal',
   },
-  // GRSAI — Gemini через наш прокси (proxy.agent-lia.ru/grsai/...). Под капотом
-  // OpenAI chat/completions, но обязательный SSE — потому отдельный GrsaiService,
-  // не openai-chat адаптер.
   {
     name: 'grsai',
     displayName: 'GRSAI (Gemini через proxy.agent-lia.ru)',
@@ -149,9 +125,6 @@ const MODELS: ModelSeed[] = [
     contextWindow: 200_000,
     category: 'reasoning',
   },
-  // ТЗ 2026-05-24-kie-grsai-llm-router-integration §3:
-  // verified-каналы из smoke-llm-providers.ts. Цены — в model-prices.ts.
-  // KIE: Claude / GPT / Gemini под одним host'ом; диспатч по префиксу model.
   {
     providerName: 'kie',
     modelKey: 'claude-opus-4-7',
@@ -166,8 +139,7 @@ const MODELS: ModelSeed[] = [
     displayName: 'GPT-5.4 (через KIE)',
     contextWindow: 200_000,
     category: 'flagship',
-    notes:
-      'KIE GPT-format → /codex/v1/responses (OpenAI Responses-style). Цена TBD.',
+    notes: 'KIE GPT-format → /codex/v1/responses (OpenAI Responses-style). Цена TBD.',
   },
   {
     providerName: 'kie',
@@ -194,7 +166,6 @@ const MODELS: ModelSeed[] = [
     notes:
       'KIE Gemini-format → /${model}/v1/chat/completions. Кандидат на A/B с deepseek-v4-flash. Цена TBD.',
   },
-  // GRSAI: Gemini через прокси (OpenAI chat/completions SSE).
   {
     providerName: 'grsai',
     modelKey: 'gemini-3-pro',
@@ -222,7 +193,6 @@ async function main(): Promise<void> {
   let modelsInserted = 0;
   let modelsSkipped = 0;
 
-  // 1. Providers — по unique `name`.
   for (const p of PROVIDERS) {
     const exists = await prisma.llmProvider.findUnique({
       where: { name: p.name },
@@ -245,16 +215,13 @@ async function main(): Promise<void> {
     providersInserted++;
   }
 
-  // 2. Models — по unique (providerId, modelKey).
   for (const m of MODELS) {
     const provider = await prisma.llmProvider.findUnique({
       where: { name: m.providerName },
     });
     if (!provider) {
       // eslint-disable-next-line no-console
-      console.warn(
-        `Пропускаю модель ${m.modelKey}: provider ${m.providerName} не найден`,
-      );
+      console.warn(`Пропускаю модель ${m.modelKey}: provider ${m.providerName} не найден`);
       continue;
     }
     const exists = await prisma.llmModel.findFirst({

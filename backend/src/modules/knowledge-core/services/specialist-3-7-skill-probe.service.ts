@@ -4,10 +4,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ProbeService } from '../../probe/probe.service';
 import {
   CDM_CASE_INTERVIEW_JSON_SCHEMA,
@@ -18,57 +15,17 @@ import {
 
 import { resolveProbeRecipients } from './probe-recipient.util';
 
-/**
- * SBA γ-1 — Specialist37ProbeService.
- *
- * 3 probe-trigger'а специалиста 3.7 (SkillProfile):
- *
- *   1. `skill.profile_starved` — Person.relationship='employee' > 3 мес,
- *      reasoning-блоков < SKILL_MIN_OBSERVATIONS за последние 3 мес → probe
- *      direct manager'у (или admin fallback). «У сотрудника X не накапливается
- *      информация о принимаемых решениях — это нормально для роли?».
- *
- *   2. `skill.contradicting_traits` — новый trait противоречит существующему
- *      high-confidence trait того же профиля → probe direct manager'у.
- *      Вызывается из Specialist37Service после insert'а нового trait'а.
- *
- *   3. `skill.cdm_interview` (TZ clone-method Э3.1, R8) — CDM-интервью
- *      носителя: по свежему реальному кейсу (reasoning-блоку) LLM формулирует
- *      один не наводящий вопрос ретроспективного разбора (Critical Decision
- *      Method), адресат — САМ носитель. Ответ попадает в граф как
- *      high-priority reasoning (см. ProbeResponseHandler / SegmentBuilder).
- *
- * Best-effort: один упавший probe не валит остальные.
- */
 @Injectable()
 export class Specialist37ProbeService {
   private readonly logger = new Logger(Specialist37ProbeService.name);
 
   static readonly SPECIALIST_NAME = '3-7-skill';
-  /** TZ clone-method Э3.1 — reason CDM-интервью носителя. */
   static readonly CDM_INTERVIEW_REASON = 'skill.cdm_interview';
-  /** Месяцев в employee, после которых проверяем starved-профиль. */
   private static readonly STARVED_MIN_TENURE_MONTHS = 3;
-  /** Окно для подсчёта свежих reasoning-блоков. */
   private static readonly STARVED_FRESH_WINDOW_MONTHS = 3;
-  /** Э3.1 — окно «свежего кейса» для CDM-вопроса (дней). */
   private static readonly CDM_CASE_WINDOW_DAYS = 30;
-  /** Э3.1 — сколько последних reasoning-блоков идёт в кейс (top-цитаты). */
   private static readonly CDM_MAX_CASE_BLOCKS = 3;
-  /**
-   * Б21 — статусы ProbeEvent, означающие, что вопрос РЕАЛЬНО ушёл получателю
-   * (pending = поставлен в доставку, dispatched = доставлен). Бюджет и cooldown
-   * CDM считаем только по ним. Недоставочные статусы (dropped_dedup,
-   * dropped_rate_limit, dropped_cold_start, dropped_dataclass_gate,
-   * dropped_low_value, queued_digest, routed_to_digest, suppressed_stale,
-   * expired) в бюджет/cooldown НЕ входят — иначе deferrable-CDM при исчерпанном
-   * бюджете получателя копит queued_digest-строки и реальный вопрос не задаётся
-   * никогда.
-   */
-  private static readonly CDM_DELIVERED_STATUSES = [
-    'pending',
-    'dispatched',
-  ] as const;
+  private static readonly CDM_DELIVERED_STATUSES = ['pending', 'dispatched'] as const;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -77,20 +34,16 @@ export class Specialist37ProbeService {
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
   ) {}
 
-  /**
-   * Главный вход — вызывается из Specialist37Service.rebuildProfile в конце.
-   * Проверяет trigger'ы для конкретного профиля.
-   */
   async checkAndEmitProbes(args: {
     tenantId: string;
     profileId: string;
     personId: string;
     personName: string;
-    /** Э3.1 — Entity{type=person} носителя (Person.entityId), для выборки кейсов. */
     entityId?: string | null;
   }): Promise<void> {
     try {
@@ -104,7 +57,6 @@ export class Specialist37ProbeService {
         'specialist-3-7-probe.checkProfileStarved: упал — skip',
       );
     }
-    // TZ clone-method Э3.1 — CDM-интервью носителя (best-effort, как starved).
     try {
       await this.checkCdmInterview({
         tenantId: args.tenantId,
@@ -124,12 +76,6 @@ export class Specialist37ProbeService {
     }
   }
 
-  /**
-   * Probe: новый trait противоречит существующему high-confidence trait.
-   * Вызывается вручную из Specialist37Service при KNN-merge verdict='supersedes'
-   * или при явном конфликте формулировок (в γ-1 — placeholder, тонкая логика
-   * детекта противоречий — γ+).
-   */
   async emitContradictingTraits(args: {
     tenantId: string;
     profileId: string;
@@ -158,8 +104,6 @@ export class Specialist37ProbeService {
     });
   }
 
-  // ─────────────────────── triggers ───────────────────────
-
   private async checkProfileStarved(args: {
     tenantId: string;
     profileId: string;
@@ -172,21 +116,13 @@ export class Specialist37ProbeService {
     });
     if (!person || person.relationship !== 'employee') return;
 
-    const tenureMs =
-      Specialist37ProbeService.STARVED_MIN_TENURE_MONTHS * 30 * 24 * 60 * 60 * 1000;
+    const tenureMs = Specialist37ProbeService.STARVED_MIN_TENURE_MONTHS * 30 * 24 * 60 * 60 * 1000;
     if (Date.now() - person.createdAt.getTime() < tenureMs) return;
 
     if (!person.entityId) return;
 
-    // Считаем свежие reasoning-блоки.
     const freshSince = new Date(
-      Date.now() -
-        Specialist37ProbeService.STARVED_FRESH_WINDOW_MONTHS *
-          30 *
-          24 *
-          60 *
-          60 *
-          1000,
+      Date.now() - Specialist37ProbeService.STARVED_FRESH_WINDOW_MONTHS * 30 * 24 * 60 * 60 * 1000,
     );
     const freshCount = await this.prisma.ideaBlockEntity.count({
       where: {
@@ -200,8 +136,6 @@ export class Specialist37ProbeService {
         },
       },
     });
-    // Порог — общий SKILL_MIN_OBSERVATIONS (default 5).
-    // Если меньше — пинаем direct manager'а.
     if (freshCount >= 5) return;
 
     const recipients = await this.findRecipients({
@@ -222,28 +156,6 @@ export class Specialist37ProbeService {
     });
   }
 
-  /**
-   * TZ clone-method Э3.1 (R8) — CDM-интервью носителя роли.
-   *
-   * Кора сама задаёт носителю до `knowledge.cdmInterviewMaxQuestions`
-   * (default 5) не наводящих вопросов по его РЕАЛЬНЫМ свежим кейсам
-   * (Critical Decision Method: «почему выбрали этот вариант», «что
-   * насторожило», «какие альтернативы отвергли»). Ответ (текст/голос —
-   * голос транскрибируется probe-системой) попадает в граф как
-   * высокоприоритетный reasoning-источник и кормит детекторы Э1/Э2.
-   *
-   * Гейты:
-   *   - kill-switch `cfg.skill.cdmInterviewEnabled` (ON);
-   *   - адресат — САМ носитель (subject): нужен Person.userId, иначе skip
-   *     (CDM-вопрос менеджеру не адресуем — отвечает только носитель);
-   *   - лимит вопросов на профиль (привязка — JSON-path по
-   *     payload.contextCardId: отдельной колонки у ProbeEvent нет);
-   *   - cooldown `knowledge.cdmInterviewCooldownDays` (default 7) — иначе
-   *     все вопросы ушли бы за один день;
-   *   - нет свежих reasoning-кейсов за 30 дней → skip.
-   *
-   * Best-effort: ошибка LLM → skip с warn (не валит rebuild).
-   */
   async checkCdmInterview(args: {
     tenantId: string;
     profileId: string;
@@ -254,7 +166,6 @@ export class Specialist37ProbeService {
     if (!this.cfg.skill.cdmInterviewEnabled) return;
     if (!this.probeService) return;
 
-    // Адресат — сам носитель: без userId спросить некого.
     const person = await this.prisma.person.findUnique({
       where: { id: args.personId },
       select: { userId: true, entityId: true },
@@ -263,7 +174,6 @@ export class Specialist37ProbeService {
     const entityId = args.entityId ?? person.entityId;
     if (!entityId) return;
 
-    // Лимит вопросов на профиль.
     const maxQuestions = await this.cfg.getDynamic<number>(
       'knowledge.cdmInterviewMaxQuestions',
       undefined,
@@ -273,14 +183,12 @@ export class Specialist37ProbeService {
       where: {
         tenantId: args.tenantId,
         reason: Specialist37ProbeService.CDM_INTERVIEW_REASON,
-        // Б21 — только реально доставленные probe тратят бюджет вопросов.
         status: { in: [...Specialist37ProbeService.CDM_DELIVERED_STATUSES] },
         payload: { path: ['contextCardId'], equals: args.profileId },
       },
     });
     if (asked >= maxQuestions) return;
 
-    // Cooldown: не чаще 1 вопроса в N дней на носителя.
     const cooldownDays = await this.cfg.getDynamic<number>(
       'knowledge.cdmInterviewCooldownDays',
       undefined,
@@ -290,7 +198,6 @@ export class Specialist37ProbeService {
       where: {
         tenantId: args.tenantId,
         reason: Specialist37ProbeService.CDM_INTERVIEW_REASON,
-        // Б21 — cooldown отсчитываем от реально доставленного вопроса.
         status: { in: [...Specialist37ProbeService.CDM_DELIVERED_STATUSES] },
         payload: { path: ['contextCardId'], equals: args.profileId },
       },
@@ -299,20 +206,17 @@ export class Specialist37ProbeService {
     });
     if (
       lastAsked &&
-      Date.now() - lastAsked.createdAt.getTime() <
-        cooldownDays * 24 * 60 * 60 * 1000
+      Date.now() - lastAsked.createdAt.getTime() < cooldownDays * 24 * 60 * 60 * 1000
     ) {
       return;
     }
 
-    // Самый свежий кейс носителя — top-цитаты последних reasoning-блоков.
     const caseQuotes = await this.loadFreshCaseQuotes({
       tenantId: args.tenantId,
       entityId,
     });
     if (caseQuotes.length === 0) return;
 
-    // LLM cdm-case-interview → один не наводящий вопрос (best-effort).
     const question = await this.formulateCdmQuestion({
       tenantId: args.tenantId,
       profileId: args.profileId,
@@ -337,19 +241,12 @@ export class Specialist37ProbeService {
     });
   }
 
-  /**
-   * Э3.1 — top-цитаты последних reasoning-блоков носителя за
-   * CDM_CASE_WINDOW_DAYS (паттерн выборки subject-reasoning как в
-   * Specialist37Service.loadSubjectReasoningBlocks, но без embeddings —
-   * хватает 1–3 последних блоков и их quotes).
-   */
   private async loadFreshCaseQuotes(args: {
     tenantId: string;
     entityId: string;
   }): Promise<Array<{ quote: string; observedAt: string }>> {
     const since = new Date(
-      Date.now() -
-        Specialist37ProbeService.CDM_CASE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - Specialist37ProbeService.CDM_CASE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
@@ -388,11 +285,6 @@ export class Specialist37ProbeService {
       .filter((q) => q.quote.length > 0);
   }
 
-  /**
-   * Э3.1 — LLM `cdm-case-interview` (json_schema strict). Возвращает null
-   * при провале LLM / пустом ответе (skip, best-effort). Injection-guard —
-   * как в Specialist37Service (цитаты исходно из транскриптов).
-   */
   private async formulateCdmQuestion(args: {
     tenantId: string;
     profileId: string;
@@ -423,10 +315,7 @@ export class Specialist37ProbeService {
         dataClass: 'internal',
       });
       const parsed = JSON.parse(result.text) as { question?: unknown };
-      if (
-        typeof parsed.question === 'string' &&
-        parsed.question.trim().length > 0
-      ) {
+      if (typeof parsed.question === 'string' && parsed.question.trim().length > 0) {
         return parsed.question.trim().slice(0, 500);
       }
       this.logger.warn(
@@ -446,25 +335,7 @@ export class Specialist37ProbeService {
     }
   }
 
-  // ─────────────────────── recipients ───────────────────────
-
-  /**
-   * Находит получателей probe.
-   *
-   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — переадресация:
-   *   1. Глава primary-отдела сотрудника (`Department.headPersonId`), если
-   *      это не сам субъект.
-   *   2. Fallback — owner/admin Org.
-   *
-   * (До Фазы 3 здесь искались manager'ы по `Membership.role='manager'` в том
-   * же отделе. С появлением явного `Department.headPersonId` это поле стало
-   * единственным источником истины — оно editable из админки и не зависит
-   * от RBAC-роли в Z.)
-   */
-  private async findRecipients(args: {
-    tenantId: string;
-    personId: string;
-  }): Promise<string[]> {
+  private async findRecipients(args: { tenantId: string; personId: string }): Promise<string[]> {
     try {
       return await resolveProbeRecipients({
         prisma: this.prisma,
@@ -484,8 +355,6 @@ export class Specialist37ProbeService {
     }
   }
 
-  // ─────────────────────── emit ───────────────────────
-
   private async emit(args: {
     tenantId: string;
     profileId: string;
@@ -493,12 +362,9 @@ export class Specialist37ProbeService {
     message: string;
     recipients: readonly string[];
     suggestedActions?: readonly string[];
-    /** Э3.1 — готовый вопрос (dispatcher отдаёт его КАК ЕСТЬ для CDM). */
     suggestedQuestion?: string;
-    /** Override человеческого title карточки (default — message.slice(0,100)). */
     contextCardTitle?: string;
     actionUrl?: string;
-    /** Override priorityHint (default 0.5). */
     priorityHint?: number;
   }): Promise<void> {
     if (!this.probeService) {
@@ -515,9 +381,7 @@ export class Specialist37ProbeService {
         reason: args.reason,
         payload: {
           message: args.message,
-          suggestedActions: args.suggestedActions
-            ? [...args.suggestedActions]
-            : undefined,
+          suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
           suggestedQuestion: args.suggestedQuestion,
           contextCardId: args.profileId,
           contextCardKind: 'skill_profile',

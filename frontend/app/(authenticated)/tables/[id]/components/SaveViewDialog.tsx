@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import {
   VIEW_VISIBILITY_LABEL_RU,
   type TableViewDomain,
   type TableViewVisibility,
-} from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -16,24 +16,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-import { useTableStore } from '../store/tableStore';
+import { useTableStore } from "../store/tableStore";
 
-/**
- * Диалог «Сохранить как новый вид» (Фаза 3).
- *
- * Поля:
- *   - Название (input, 1–100 символов).
- *   - Видимость (radio): Только мне / Всей команде / Публичная ссылка.
- *
- * При submit вызывает `saveCurrentAsView(name, visibility)`. Конфиг
- * (hiddenProps / propOrder / rowHeight) берётся из `draftConfig` в store.
- *
- * Копи — только русский.
- */
 export function SaveViewDialog({
   open,
   onOpenChange,
@@ -47,14 +35,13 @@ export function SaveViewDialog({
   const isMutating = useTableStore((s) => s.isMutating);
   const mutationError = useTableStore((s) => s.mutationError);
 
-  const [name, setName] = useState('');
-  const [visibility, setVisibility] = useState<TableViewVisibility>('personal');
+  const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<TableViewVisibility>("personal");
 
-  // При открытии — ресет полей.
   useEffect(() => {
     if (open) {
-      setName('');
-      setVisibility('personal');
+      setName("");
+      setVisibility("personal");
     }
   }, [open]);
 
@@ -104,9 +91,7 @@ export function SaveViewDialog({
               aria-label="Кому виден вид"
               className="space-y-2"
             >
-              {(
-                ['personal', 'shared', 'public'] as const
-              ).map((v) => (
+              {(["personal", "shared", "public"] as const).map((v) => (
                 <label
                   key={v}
                   htmlFor={`view-visibility-${v}`}
@@ -126,11 +111,11 @@ export function SaveViewDialog({
                       {VIEW_VISIBILITY_LABEL_RU[v]}
                     </span>
                     <span className="block text-xs text-fg-secondary">
-                      {v === 'personal'
-                        ? 'Видите только вы. Другие участники не увидят этот вид в списке.'
-                        : v === 'shared'
-                          ? 'Вид виден всем участникам организации. Они смогут открыть его по ссылке.'
-                          : 'Доступ по ссылке всем, включая людей вне организации (Фаза 14 — полноценная анонимная ссылка).'}
+                      {v === "personal"
+                        ? "Видите только вы. Другие участники не увидят этот вид в списке."
+                        : v === "shared"
+                          ? "Вид виден всем участникам организации. Они смогут открыть его по ссылке."
+                          : "Доступ по ссылке всем, включая людей вне организации (Фаза 14 — полноценная анонимная ссылка)."}
                     </span>
                   </span>
                 </label>

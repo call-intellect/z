@@ -1,32 +1,8 @@
-/**
- * Фаза A.4 — Seed дефолтных цепочек моделей для всех `LlmTaskType`-ов.
- *
- * Источник: `docs/reference/llm-models-playbook.md` §2.1 «Дефолтная маршрутизация
- * taskType → primary → fallback (2026-05)». Расширено taskType'ами competitor-parity
- * (sub-TZ B/C/D/E): `behavior-refine`, `meeting-quality-score`, `transcript-clean-refine`
- * и т.п.
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются.
- *   - Если для taskType уже есть хотя бы одна запись в `LlmTaskRouteChange` —
- *     считаем, что админ менял маршрут вручную: пропускаем (нужен `--force`).
- *   - С флагом `--force` — переписываем ВСЁ (для CI или ручной починки).
- *
- * Запуск (Docker должен быть запущен для prisma push, у нас сейчас выключен):
- *   bun run scripts/seed-llm-task-routes-default.ts
- *   bun run scripts/seed-llm-task-routes-default.ts --force
- *
- * Совместимость: одна нормализованная запись = ОДИН провайдер + tier + priority.
- * Старая JSON-форма `providers` остаётся `null` в новых записях. Legacy-записи
- * (с `providers JSON`) роутер продолжает понимать через fallback.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
-/** Один уровень цепочки. */
 interface TierEntry {
   tier: LlmRouteTier;
   providerName: string;
@@ -34,22 +10,14 @@ interface TierEntry {
   priority?: number;
 }
 
-/** Цепочка для одного taskType. Минимум 1 уровень, максимум — сколько нужно. */
 interface TaskRouteSeed {
   taskType: string;
-  /** Группа для отображения в `/admin/ai-models` (knowledge-core / ai-pipeline / competitor-parity). */
   group: 'ai-pipeline' | 'knowledge-core' | 'competitor-parity';
-  /** Раздел playbook'а, на который ссылается комментарий рядом с цепочкой. */
   playbookSection: string;
   chain: TierEntry[];
 }
 
-// Цепочки выровнены под playbook §2.1. Согласно §11 — Anthropic в дефолтных
-// цепочках НЕ присутствует (super_admin может добавить вручную). Tertiary с
-// 2026-06-05 — kie:gemini-3.1-pro (универсальный fallback); ollama убран из
-// дефолтных кодовых цепочек (остаётся опц. локальный safety-net через UI/БД).
 const ROUTES: TaskRouteSeed[] = [
-  // ─── AI-pipeline встреч (legacy taskType'ы) ───
   {
     taskType: 'summary',
     group: 'ai-pipeline',
@@ -151,7 +119,6 @@ const ROUTES: TaskRouteSeed[] = [
     ],
   },
 
-  // ─── Knowledge-core ───
   {
     taskType: 'block-ingest',
     group: 'knowledge-core',
@@ -312,9 +279,6 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
-  // TZ-1 Фаза 1 (daily-value-engine) — Радар клиентов под риском.
-  // ТОЛЬКО финальная формулировка подсказки (агрегация — SQL/TS, без LLM) →
-  // дешёвая задача, primary deepseek-v4-flash. Без ₽-оценок (Р6).
   {
     taskType: 'customer-risk-digest',
     group: 'knowledge-core',
@@ -325,9 +289,6 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
-  // TZ-1 Фаза 2 (daily-value-engine) — движок рядового «Твой день».
-  // ТОЛЬКО «1 подсказка дня» (бриф структурный, «кто знает X» — embeddings) →
-  // дешёвая задача, primary deepseek-v4-flash. Без выдуманных фактов/₽.
   {
     taskType: 'personal-brief-hint',
     group: 'knowledge-core',
@@ -338,9 +299,6 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
-  // TZ-1 Фаза 3.A (daily-value-engine) — накопительный синтез блокеров.
-  // ТОЛЬКО финальный абзац-сводка (кластеризация/статусы/импакт — SQL/TS +
-  // embeddings) → дешёвая задача, primary deepseek-v4-flash. Без выдуманных ₽.
   {
     taskType: 'blocker-synthesis-summary',
     group: 'knowledge-core',
@@ -351,10 +309,6 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
-  // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.
-  // ТОЛЬКО человекочитаемая сводка поверх посчитанных твёрдых цифр (счётчики/
-  // дельта — SQL/TS, без LLM) → дешёвая задача, primary deepseek-v4-flash.
-  // Без выдуманных рублей; soft-цифры помечаются «оценка» (Р6).
   {
     taskType: 'value-recap-narrative',
     group: 'knowledge-core',
@@ -365,13 +319,6 @@ const ROUTES: TaskRouteSeed[] = [
       { tier: 'tertiary', providerName: 'kie', model: 'gemini-3.1-pro' },
     ],
   },
-  // ТЗ-4 Ф10 (manual-document-upload) — document-attribution-suggest.
-  // Дешёвый классификатор атрибуции документа (docType + тема) → primary
-  // deepseek-v4-flash (как theme-classify/table-*). JSON object, человек
-  // подтверждает (авто-применения нет, Р3). За kill-switch
-  // `documents.ai_attribution.enabled` (DEFAULT ON), но маршрут должен
-  // существовать, иначе при первом вызове он поедет по аварийному
-  // DEFAULT_FALLBACK_CHAIN.
   {
     taskType: 'document-attribution-suggest',
     group: 'knowledge-core',
@@ -383,10 +330,6 @@ const ROUTES: TaskRouteSeed[] = [
     ],
   },
 
-  // ─── Competitor-parity (Фазы B/C/D/E) ───
-  // Резервируем taskType'ы заранее, чтобы /admin/ai-models был готов к ним
-  // (по правилу зонтика §3.7: каждый sub-TZ регистрирует свои taskType'ы в этом
-  // seed-файле, или PR не проходит ревью).
   {
     taskType: 'transcript-clean-refine',
     group: 'competitor-parity',
@@ -431,8 +374,6 @@ async function applySeedForTask(
   force: boolean,
   stats: SeedStats,
 ): Promise<void> {
-  // Защита от перезаписи: если есть LlmTaskRouteChange для taskType — админ
-  // уже менял цепочку. Без --force ничего не делаем.
   if (!force) {
     const auditCount = await prisma.llmTaskRouteChange.count({
       where: { taskType: seed.taskType, tenantId: null },
@@ -534,6 +475,4 @@ main()
     await prisma.$disconnect();
   });
 
-// Экспортируем массив для тестов (unit-test проверяет, что 28+ taskType'ов
-// и у каждого 3 tier'а).
 export { ROUTES };

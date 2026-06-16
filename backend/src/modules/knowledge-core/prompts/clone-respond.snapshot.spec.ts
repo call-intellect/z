@@ -1,26 +1,3 @@
-/**
- * Snapshot-тест сборки промта `clone-respond.prompt.ts`.
- *
- * Фаза 1 «clone reliability hardening» — DoD 1.5.
- * Clones=Roles Фаза 6 (2026-05-25) — добавлен тест на `buildCloneRespondSystemPrompt`
- * с подстановкой `{{roleName}}` / `{{bearerName}}`.
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `CLONE_RESPOND_SYSTEM_PROMPT_BASE` (constant — guard от
- *     случайных правок жёстких правил формулировок: пункт 6 анти-deepfake
- *     должен быть стабилен, иначе плывёт ожидаемая фраза-отказ);
- *   - сборку `CLONE_RESPOND_USER_TEMPLATE` для типичного входа
- *     (3 reasoning-блока, summary профиля знаний, 2 решения);
- *   - финальный системный промпт после `buildCloneRespondSystemPrompt`
- *     (factual / judgmental) — теперь СТАБИЛЕН (без переменных данных).
- *
- * F1 cache-friendly (2026-06-10, Кластер 7-B/A8): `roleName` / `bearerName` /
- * `personaPrompt` переехали из SYSTEM в user (`CLONE_RESPOND_USER_TEMPLATE`,
- * блоки `── КЛОН ДОЛЖНОСТИ ──` / `── PERSONA PROMPT ──`) — поэтому SYSTEM
- * больше не зависит от роли/носителя, кэш стабилен.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -77,7 +54,6 @@ describe('clone-respond — snapshot сборки промта', () => {
 
   it('buildCloneRespondSystemPrompt(factual) — стабильный SYSTEM без переменных данных', () => {
     const sys = buildCloneRespondSystemPrompt({ mode: 'factual' });
-    // SYSTEM больше НЕ содержит роли/носителя/persona — они в user.
     expect(sys).not.toContain('Маркетолог');
     expect(sys).not.toContain('Анна Петрова');
     expect(sys).not.toContain('{{roleName}}');

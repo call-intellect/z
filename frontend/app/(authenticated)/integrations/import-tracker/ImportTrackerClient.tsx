@@ -1,22 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/integrations/import-tracker` — миграционный wizard
- * (Wave 3 / Tracker Phase 5).
- *
- * Точка входа: выбор источника (Trello / Битрикс24 / Я.Трекер).
- *   - Trello       — live wizard на 4 шага (Подключение → Доски → Маппинг → Preview),
- *                    live-логика inline в этом файле.
- *   - Битрикс24    — отдельный wizard `./Bitrix24Wizard.tsx` (4 шага: webhook → группы → маппинг → preview).
- *   - Яндекс Трекер — отдельный wizard `./YandexTrackerWizard.tsx` (4 шага: OAuth → очереди → маппинг → preview).
- *
- * Общие хелперы и шаги для Bitrix24/Я.Трекер — в `./_shared.tsx`.
- *
- * RBAC: только owner / admin Org (бэкенд проверяет `import_tracker:write`).
- */
-
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -28,29 +13,27 @@ import {
   Loader2,
   Sparkles,
   Upload,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { importsApi, type UserMappings } from '@/api/tracker/imports.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { ApiError } from "@/api/api-error";
+import { importsApi, type UserMappings } from "@/api/tracker/imports.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-import { Bitrix24Wizard } from './Bitrix24Wizard';
-import { YandexTrackerWizard } from './YandexTrackerWizard';
-
-// ─── Сырая структура Trello JSON-export (минимум полей, нужный wizard'у) ────
+import { Bitrix24Wizard } from "./Bitrix24Wizard";
+import { YandexTrackerWizard } from "./YandexTrackerWizard";
 
 interface TrelloMemberRaw {
   id?: string;
@@ -85,7 +68,6 @@ interface TrelloBoardRaw {
 
 interface TrelloExportRaw {
   boards?: TrelloBoardRaw[];
-  // Однодосочный экспорт — поля плоско в корне (один board).
   id?: string;
   name?: string;
   lists?: TrelloListRaw[];
@@ -93,8 +75,6 @@ interface TrelloExportRaw {
   members?: TrelloMemberRaw[];
   actions?: TrelloActionRaw[];
 }
-
-// ─── Распарсенная сводка для wizard'а ───────────────────────────────────────
 
 interface ParsedBoard {
   id: string;
@@ -105,17 +85,15 @@ interface ParsedBoard {
 }
 
 interface ParsedTrelloExport {
-  /** Исходный объект — отправим как jsonContent на бэкенд. */
   raw: Record<string, unknown>;
   boards: ParsedBoard[];
-  /** Email'ы members'ов из выбранных досок. */
   memberEmails: string[];
 }
 
-type WizardStep = 'upload' | 'boards' | 'mapping' | 'preview';
+type WizardStep = "upload" | "boards" | "mapping" | "preview";
 
 interface SourceCard {
-  id: 'trello' | 'bitrix24' | 'yandex_tracker';
+  id: "trello" | "bitrix24" | "yandex_tracker";
   label: string;
   emoji: string;
   description: string;
@@ -124,38 +102,35 @@ interface SourceCard {
 
 const SOURCES: SourceCard[] = [
   {
-    id: 'bitrix24',
-    label: 'Битрикс24',
-    emoji: '🟦',
+    id: "bitrix24",
+    label: "Битрикс24",
+    emoji: "🟦",
     description:
-      'REST API через входящий webhook URL. Полная поддержка задач, групп, комментариев.',
+      "REST API через входящий webhook URL. Полная поддержка задач, групп, комментариев.",
     available: true,
   },
   {
-    id: 'trello',
-    label: 'Trello',
-    emoji: '🟩',
+    id: "trello",
+    label: "Trello",
+    emoji: "🟩",
     description:
-      'Импорт из JSON-export файла (Настройки доски → Печать и экспорт).',
+      "Импорт из JSON-export файла (Настройки доски → Печать и экспорт).",
     available: true,
   },
   {
-    id: 'yandex_tracker',
-    label: 'Яндекс Трекер',
-    emoji: '🟧',
+    id: "yandex_tracker",
+    label: "Яндекс Трекер",
+    emoji: "🟧",
     description:
-      'OAuth-токен Яндекс ID. Перенос очередей, задач, комментариев, связей.',
+      "OAuth-токен Яндекс ID. Перенос очередей, задач, комментариев, связей.",
     available: true,
   },
 ];
 
-// ─── Парсинг Trello JSON ────────────────────────────────────────────────────
-
 function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
-  if (!raw || typeof raw !== 'object') return null;
+  if (!raw || typeof raw !== "object") return null;
   const obj = raw as TrelloExportRaw;
 
-  // Trello отдаёт два формата: одиночная доска (поля плоско) или мульти-board.
   const boardsArr: TrelloBoardRaw[] = Array.isArray(obj.boards)
     ? obj.boards
     : obj.id && obj.name
@@ -167,14 +142,13 @@ function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
   const actions = Array.isArray(obj.actions) ? obj.actions : [];
   const members = Array.isArray(obj.members) ? obj.members : [];
 
-  // Если одиночный board — у cards могут не быть idBoard. Заполним эвристикой.
   const inferredBoardId =
     boardsArr.length === 1 && boardsArr[0] ? boardsArr[0].id : null;
 
   const cardsByBoard = new Map<string, TrelloCardRaw[]>();
   for (const c of cards) {
     if (c.closed) continue;
-    const bid = c.idBoard ?? inferredBoardId ?? '';
+    const bid = c.idBoard ?? inferredBoardId ?? "";
     if (!bid) continue;
     const list = cardsByBoard.get(bid);
     if (list) list.push(c);
@@ -183,8 +157,8 @@ function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
 
   const commentsByBoard = new Map<string, number>();
   for (const a of actions) {
-    if (a.type !== 'commentCard') continue;
-    const bid = a.data?.card?.idBoard ?? inferredBoardId ?? '';
+    if (a.type !== "commentCard") continue;
+    const bid = a.data?.card?.idBoard ?? inferredBoardId ?? "";
     if (!bid) continue;
     commentsByBoard.set(bid, (commentsByBoard.get(bid) ?? 0) + 1);
   }
@@ -196,7 +170,8 @@ function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
     .map((b) => {
       const cs = cardsByBoard.get(b.id) ?? [];
       const attachmentsCount = cs.reduce(
-        (sum, c) => sum + (Array.isArray(c.attachments) ? c.attachments.length : 0),
+        (sum, c) =>
+          sum + (Array.isArray(c.attachments) ? c.attachments.length : 0),
         0,
       );
       return {
@@ -211,7 +186,7 @@ function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
   const memberEmails = Array.from(
     new Set(
       members
-        .map((m) => (m.email ?? '').trim().toLowerCase())
+        .map((m) => (m.email ?? "").trim().toLowerCase())
         .filter((e): e is string => e.length > 0),
     ),
   );
@@ -223,18 +198,13 @@ function parseTrelloExport(raw: unknown): ParsedTrelloExport | null {
   };
 }
 
-// ─── UserMapping decision per email ─────────────────────────────────────────
-
-type MappingDecision = 'unmatched' | 'invite' | 'skip';
-
-// ─── Главный клиент ─────────────────────────────────────────────────────────
+type MappingDecision = "unmatched" | "invite" | "skip";
 
 export function ImportTrackerClient() {
   const { currentOrgId, currentOrgRole } = useAuth();
-  const isPrivileged =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const isPrivileged = currentOrgRole === "owner" || currentOrgRole === "admin";
 
-  const [activeSource, setActiveSource] = useState<SourceCard['id'] | null>(
+  const [activeSource, setActiveSource] = useState<SourceCard["id"] | null>(
     null,
   );
 
@@ -262,7 +232,7 @@ export function ImportTrackerClient() {
     );
   }
 
-  if (activeSource === 'trello') {
+  if (activeSource === "trello") {
     return (
       <Shell>
         <TrelloWizard
@@ -273,7 +243,7 @@ export function ImportTrackerClient() {
     );
   }
 
-  if (activeSource === 'bitrix24') {
+  if (activeSource === "bitrix24") {
     return (
       <Shell>
         <Bitrix24Wizard
@@ -284,7 +254,7 @@ export function ImportTrackerClient() {
     );
   }
 
-  if (activeSource === 'yandex_tracker') {
+  if (activeSource === "yandex_tracker") {
     return (
       <Shell>
         <YandexTrackerWizard
@@ -308,8 +278,6 @@ export function ImportTrackerClient() {
   );
 }
 
-// ─── Shell (общий обёрточный layout) ────────────────────────────────────────
-
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto w-full max-w-5xl p-4 md:p-6">
@@ -326,8 +294,6 @@ function Shell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
-
-// ─── Шаг 0: выбор источника ─────────────────────────────────────────────────
 
 function SourcePicker({ onPick }: { onPick: (src: SourceCard) => void }) {
   return (
@@ -354,7 +320,7 @@ function SourcePicker({ onPick }: { onPick: (src: SourceCard) => void }) {
           <div className="mt-4">
             <Button
               size="sm"
-              variant={src.available ? 'default' : 'outline'}
+              variant={src.available ? "default" : "outline"}
               disabled={!src.available}
               onClick={() => onPick(src)}
               className="w-full"
@@ -364,7 +330,7 @@ function SourcePicker({ onPick }: { onPick: (src: SourceCard) => void }) {
                   Подключить <ArrowRight size={14} />
                 </>
               ) : (
-                'Скоро'
+                "Скоро"
               )}
             </Button>
           </div>
@@ -373,8 +339,6 @@ function SourcePicker({ onPick }: { onPick: (src: SourceCard) => void }) {
     </div>
   );
 }
-
-// ─── Trello wizard (4 шага) ─────────────────────────────────────────────────
 
 function TrelloWizard({
   orgId,
@@ -385,7 +349,7 @@ function TrelloWizard({
 }) {
   const router = useRouter();
 
-  const [step, setStep] = useState<WizardStep>('upload');
+  const [step, setStep] = useState<WizardStep>("upload");
   const [parsed, setParsed] = useState<ParsedTrelloExport | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [selectedBoardIds, setSelectedBoardIds] = useState<Set<string>>(
@@ -396,7 +360,6 @@ function TrelloWizard({
   );
   const [submitting, setSubmitting] = useState(false);
 
-  // Сводка по выбранным board'ам.
   const summary = useMemo(() => {
     if (!parsed) return { boards: 0, cards: 0, attachments: 0, comments: 0 };
     const sel = parsed.boards.filter((b) => selectedBoardIds.has(b.id));
@@ -408,7 +371,6 @@ function TrelloWizard({
     };
   }, [parsed, selectedBoardIds]);
 
-  // ── Шаг 1: загрузка файла ─────────────────────────────────────────
   const handleFile = async (file: File) => {
     setParseError(null);
     try {
@@ -417,36 +379,34 @@ function TrelloWizard({
       const out = parseTrelloExport(json);
       if (!out || out.boards.length === 0) {
         setParseError(
-          'Не удалось распознать JSON. Убедитесь, что это экспорт из Trello (формат «JSON»).',
+          "Не удалось распознать JSON. Убедитесь, что это экспорт из Trello (формат «JSON»).",
         );
         return;
       }
       setParsed(out);
-      // По умолчанию выбираем все board'ы.
       setSelectedBoardIds(new Set(out.boards.map((b) => b.id)));
-      // По умолчанию все unmatched email'ы — игнорировать.
       const dec: Record<string, MappingDecision> = {};
       for (const email of out.memberEmails) {
-        dec[email] = 'unmatched';
+        dec[email] = "unmatched";
       }
       setDecisions(dec);
-      setStep('boards');
+      setStep("boards");
     } catch {
       setParseError(
-        'Файл не похож на валидный JSON. Попробуйте экспортировать доску заново.',
+        "Файл не похож на валидный JSON. Попробуйте экспортировать доску заново.",
       );
     }
   };
 
   const goNext = () => {
-    if (step === 'upload') setStep('boards');
-    else if (step === 'boards') setStep('mapping');
-    else if (step === 'mapping') setStep('preview');
+    if (step === "upload") setStep("boards");
+    else if (step === "boards") setStep("mapping");
+    else if (step === "mapping") setStep("preview");
   };
   const goBack = () => {
-    if (step === 'preview') setStep('mapping');
-    else if (step === 'mapping') setStep('boards');
-    else if (step === 'boards') setStep('upload');
+    if (step === "preview") setStep("mapping");
+    else if (step === "mapping") setStep("boards");
+    else if (step === "boards") setStep("upload");
     else onCancel();
   };
 
@@ -455,22 +415,15 @@ function TrelloWizard({
     ? parsed.memberEmails.every((e) => decisions[e] !== undefined)
     : false;
 
-  // ── Шаг 4: запуск импорта ─────────────────────────────────────────
   const handleStart = async () => {
     if (!parsed) return;
     const userMappings: UserMappings = {};
     for (const [email, decision] of Object.entries(decisions)) {
-      if (decision === 'invite') {
-        // Backend ждёт email → ourUserId. Для invite-by-email мы не знаем
-        // конечного userId сейчас; backend сам подхватит после регистрации.
-        // По схеме DTO значение должно быть string (ourUserId) ИЛИ null.
-        // Wave 3 part 1: invite-flow ещё не реализован — записываем null,
-        // чтобы worker записал email в unmatched (для логов админа).
+      if (decision === "invite") {
         userMappings[email] = null;
-      } else if (decision === 'skip') {
+      } else if (decision === "skip") {
         userMappings[email] = null;
       }
-      // unmatched — пропускаем ключ, чтобы попал в ImportLog.unmatchedJson.
     }
 
     setSubmitting(true);
@@ -480,12 +433,14 @@ function TrelloWizard({
         selectedBoardIds: Array.from(selectedBoardIds),
         userMappings,
       });
-      toast.success('Импорт запущен');
+      toast.success("Импорт запущен");
       router.push(`/integrations/import-tracker/${res.importLogId}`);
     } catch (e) {
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось запустить импорт. Попробуйте ещё раз.');
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось запустить импорт. Попробуйте ещё раз.",
+      );
       setSubmitting(false);
     }
   };
@@ -494,7 +449,7 @@ function TrelloWizard({
     <div className="space-y-6">
       <WizardSteps current={step} />
 
-      {step === 'upload' && (
+      {step === "upload" && (
         <UploadStep
           onFile={(f) => void handleFile(f)}
           error={parseError}
@@ -502,7 +457,7 @@ function TrelloWizard({
         />
       )}
 
-      {step === 'boards' && parsed && (
+      {step === "boards" && parsed && (
         <BoardsStep
           parsed={parsed}
           selected={selectedBoardIds}
@@ -524,7 +479,7 @@ function TrelloWizard({
         />
       )}
 
-      {step === 'mapping' && parsed && (
+      {step === "mapping" && parsed && (
         <MappingStep
           emails={parsed.memberEmails}
           decisions={decisions}
@@ -537,7 +492,7 @@ function TrelloWizard({
         />
       )}
 
-      {step === 'preview' && parsed && (
+      {step === "preview" && parsed && (
         <PreviewStep
           summary={summary}
           decisions={decisions}
@@ -551,15 +506,13 @@ function TrelloWizard({
   );
 }
 
-// ─── Step indicator ─────────────────────────────────────────────────────────
-
 function WizardSteps({ current }: { current: WizardStep }) {
-  const order: WizardStep[] = ['upload', 'boards', 'mapping', 'preview'];
+  const order: WizardStep[] = ["upload", "boards", "mapping", "preview"];
   const labels: Record<WizardStep, string> = {
-    upload: '1. Подключение',
-    boards: '2. Доски',
-    mapping: '3. Сопоставление',
-    preview: '4. Подтверждение',
+    upload: "1. Подключение",
+    boards: "2. Доски",
+    mapping: "3. Сопоставление",
+    preview: "4. Подтверждение",
   };
   const idx = order.indexOf(current);
   return (
@@ -572,10 +525,10 @@ function WizardSteps({ current }: { current: WizardStep }) {
             key={s}
             className={
               active
-                ? 'rounded-full bg-accent/10 px-3 py-1 text-accent'
+                ? "rounded-full bg-accent/10 px-3 py-1 text-accent"
                 : done
-                  ? 'rounded-full bg-bg-overlay px-3 py-1 text-fg-secondary'
-                  : 'rounded-full bg-bg-overlay px-3 py-1'
+                  ? "rounded-full bg-bg-overlay px-3 py-1 text-fg-secondary"
+                  : "rounded-full bg-bg-overlay px-3 py-1"
             }
           >
             {labels[s]}
@@ -585,8 +538,6 @@ function WizardSteps({ current }: { current: WizardStep }) {
     </ol>
   );
 }
-
-// ─── Step 1: Upload ─────────────────────────────────────────────────────────
 
 function UploadStep({
   onFile,
@@ -634,8 +585,7 @@ function UploadStep({
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) onFile(f);
-              // Сбрасываем value, чтобы повторный выбор того же файла триггерил onChange.
-              e.target.value = '';
+              e.target.value = "";
             }}
           />
         </label>
@@ -655,8 +605,6 @@ function UploadStep({
     </Card>
   );
 }
-
-// ─── Step 2: Boards ─────────────────────────────────────────────────────────
 
 function BoardsStep({
   parsed,
@@ -707,10 +655,10 @@ function BoardsStep({
               <li key={b.id}>
                 <label
                   className={
-                    'flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ' +
+                    "flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors " +
                     (isSel
-                      ? 'border-accent/40 bg-accent/5'
-                      : 'border-border-subtle bg-bg-card hover:border-accent/30')
+                      ? "border-accent/40 bg-accent/5"
+                      : "border-border-subtle bg-bg-card hover:border-accent/30")
                   }
                 >
                   <Checkbox
@@ -723,7 +671,8 @@ function BoardsStep({
                       {b.name}
                     </div>
                     <div className="mt-0.5 text-xs text-fg-tertiary">
-                      Карточек: {b.cardsCount} · Комментариев: {b.commentsCount} · Вложений: {b.attachmentsCount}
+                      Карточек: {b.cardsCount} · Комментариев: {b.commentsCount}{" "}
+                      · Вложений: {b.attachmentsCount}
                     </div>
                   </div>
                 </label>
@@ -744,8 +693,6 @@ function BoardsStep({
     </Card>
   );
 }
-
-// ─── Step 3: Mapping ────────────────────────────────────────────────────────
 
 function MappingStep({
   emails,
@@ -793,8 +740,8 @@ function MappingStep({
           Шаг 3: Сопоставление пользователей
         </h2>
         <p className="mt-1 text-sm text-fg-secondary">
-          Найдено {emails.length} email-адресов в выгрузке. Для каждого выберите,
-          что делать. Если email совпадает с нашим пользователем — он
+          Найдено {emails.length} email-адресов в выгрузке. Для каждого
+          выберите, что делать. Если email совпадает с нашим пользователем — он
           автоматически станет исполнителем.
         </p>
 
@@ -813,10 +760,8 @@ function MappingStep({
                 </div>
               </div>
               <Select
-                value={decisions[email] ?? 'unmatched'}
-                onValueChange={(v) =>
-                  setDecision(email, v as MappingDecision)
-                }
+                value={decisions[email] ?? "unmatched"}
+                onValueChange={(v) => setDecision(email, v as MappingDecision)}
               >
                 <SelectTrigger className="w-full sm:w-64">
                   <SelectValue />
@@ -840,10 +785,10 @@ function MappingStep({
         <div className="mt-4 flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 p-3 text-xs text-warn">
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <p>
-            «Пригласить по email» в этом релизе сохраняет адрес в журнале
-            «не сопоставлено» — отдельно вы сможете отправить приглашения из
-            раздела «Команда». Исполнители будут проставлены задним числом
-            после того, как пользователь зарегистрируется.
+            «Пригласить по email» в этом релизе сохраняет адрес в журнале «не
+            сопоставлено» — отдельно вы сможете отправить приглашения из раздела
+            «Команда». Исполнители будут проставлены задним числом после того,
+            как пользователь зарегистрируется.
           </p>
         </div>
 
@@ -860,8 +805,6 @@ function MappingStep({
   );
 }
 
-// ─── Step 4: Preview ────────────────────────────────────────────────────────
-
 function PreviewStep({
   summary,
   decisions,
@@ -870,15 +813,20 @@ function PreviewStep({
   onStart,
   submitting,
 }: {
-  summary: { boards: number; cards: number; attachments: number; comments: number };
+  summary: {
+    boards: number;
+    cards: number;
+    attachments: number;
+    comments: number;
+  };
   decisions: Record<string, MappingDecision>;
   emailsTotal: number;
   onBack: () => void;
   onStart: () => void;
   submitting: boolean;
 }) {
-  const invites = Object.values(decisions).filter((d) => d === 'invite').length;
-  const skips = Object.values(decisions).filter((d) => d === 'skip').length;
+  const invites = Object.values(decisions).filter((d) => d === "invite").length;
+  const skips = Object.values(decisions).filter((d) => d === "skip").length;
   const unmatched = emailsTotal - invites - skips;
 
   return (
@@ -893,14 +841,18 @@ function PreviewStep({
               Шаг 4: Подтверждение
             </h2>
             <p className="mt-1 text-sm text-fg-secondary">
-              Сейчас будет создано столько сущностей. После старта импорт
-              нельзя поставить на паузу, но можно отменить.
+              Сейчас будет создано столько сущностей. После старта импорт нельзя
+              поставить на паузу, но можно отменить.
             </p>
           </div>
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <SummaryTile icon={<ClipboardList size={16} />} label="Доски → Проекты" value={summary.boards} />
+          <SummaryTile
+            icon={<ClipboardList size={16} />}
+            label="Доски → Проекты"
+            value={summary.boards}
+          />
           <SummaryTile label="Карточки → Задачи" value={summary.cards} />
           <SummaryTile label="Комментарии" value={summary.comments} />
           <SummaryTile label="Вложения" value={summary.attachments} />
@@ -911,17 +863,23 @@ function PreviewStep({
             Пользователи из выгрузки
           </div>
           <ul className="space-y-1 text-fg-secondary">
-            <li>Будет приглашено по email: <b>{invites}</b></li>
-            <li>Игнорировано: <b>{skips}</b></li>
-            <li>Останется в журнале «не сопоставлено»: <b>{unmatched}</b></li>
+            <li>
+              Будет приглашено по email: <b>{invites}</b>
+            </li>
+            <li>
+              Игнорировано: <b>{skips}</b>
+            </li>
+            <li>
+              Останется в журнале «не сопоставлено»: <b>{unmatched}</b>
+            </li>
           </ul>
         </div>
 
         <div className="mt-4 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
           <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
-            Импорт идемпотентен: если запустить повторно тот же экспорт — мы
-            не создадим дубли. Уже импортированные задачи будут пропущены.
+            Импорт идемпотентен: если запустить повторно тот же экспорт — мы не
+            создадим дубли. Уже импортированные задачи будут пропущены.
           </p>
         </div>
 

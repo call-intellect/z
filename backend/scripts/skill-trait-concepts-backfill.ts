@@ -1,23 +1,3 @@
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — бэкфилл SkillTraitConcept.
- *
- * Что делает:
- *   1. Поднимает NestJS-приложение (минимальный AppModule) — нужны
- *      SkillTraitConceptService + KnowledgeEmbeddingService + LlmRouter.
- *   2. Для каждой Org проходит по всем активным SkillTrait без conceptId,
- *      вызывает SkillTraitConceptService.findOrCreateConcept,
- *      проставляет SkillTrait.conceptId.
- *   3. После прохода — один раз запускает cron-нормализатор вручную
- *      (SkillTraitConceptNormalizerCron.runOnce), чтобы слить накопившиеся
- *      дубли.
- *
- * Идемпотентность: повторный запуск не создаёт лишних концептов (для
- * trait'ов с уже проставленным conceptId — пропуск).
- *
- * Запуск (из backend/):
- *   bun run scripts/skill-trait-concepts-backfill.ts
- */
-
 /* eslint-disable no-console */
 
 import { NestFactory } from '@nestjs/core';
@@ -75,8 +55,6 @@ async function main(): Promise<void> {
       let reusedInOrg = 0;
       for (const t of traits) {
         try {
-          // findOrCreateConcept сама делает поиск + инкремент traitCount.
-          // Мы здесь только связываем trait → concept.
           const beforeCount = await prisma.skillTraitConcept.count({
             where: { tenantId: org.id, status: 'active' },
           });

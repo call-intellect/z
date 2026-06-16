@@ -1,19 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  OperationsDailyDigestCron,
-  yesterdayInMoscow,
-} from './operations-daily-digest.cron';
+import { OperationsDailyDigestCron, yesterdayInMoscow } from './operations-daily-digest.cron';
 
-/**
- * SBA β-8.3 — OperationsDailyDigestCron unit-тесты.
- *
- *   - yesterdayInMoscow: вычисляет дату вчера в МСК.
- *   - runOnce: идемпотентность (повторный запуск не создаёт второй дайджест).
- *   - run: мастер-тумблер `operations.daily_digest.enabled=false` → no-op.
- *   - runOnce: deliverToTelegram=false → не шлёт уведомлений.
- *   - runOnce: deliverToTelegram=true → шлёт coo + owner, не admin.
- */
 describe('OperationsDailyDigestCron', () => {
   function buildCron(overrides: {
     orgs: Array<{ id: string }>;
@@ -27,12 +15,9 @@ describe('OperationsDailyDigestCron', () => {
         findMany: vi.fn().mockResolvedValue(overrides.orgs),
       },
       membership: {
-        findMany: vi.fn().mockResolvedValue(
-          overrides.memberships ?? [
-            { userId: 'u_coo' },
-            { userId: 'u_owner' },
-          ],
-        ),
+        findMany: vi
+          .fn()
+          .mockResolvedValue(overrides.memberships ?? [{ userId: 'u_coo' }, { userId: 'u_owner' }]),
       },
     };
     const cfg = {
@@ -61,9 +46,7 @@ describe('OperationsDailyDigestCron', () => {
         createdAt: '2026-05-25T01:00:00Z',
       }),
       markDelivered: vi.fn().mockResolvedValue(undefined),
-      // Action Center B3 — персональный блок «Ждёт подтверждения».
       buildPendingActionsLine: vi.fn().mockResolvedValue(null),
-      // TZ-1 Ф1 — строка «Клиенты под риском» (best-effort).
       buildCustomersAtRiskLine: vi.fn().mockResolvedValue(null),
     };
     const conversational = {
@@ -86,8 +69,6 @@ describe('OperationsDailyDigestCron', () => {
   }
 
   it('yesterdayInMoscow: для 25 мая 01:00 МСК (= 24 мая 22:00 UTC) даёт 24 мая', () => {
-    // cron срабатывает в 22:00 UTC 24 мая = 01:00 МСК 25 мая;
-    // отчёт — за вчерашние сутки в МСК, т.е. за 24 мая.
     const now = new Date('2026-05-24T22:00:00Z');
     expect(yesterdayInMoscow(now)).toBe('2026-05-24');
   });
@@ -112,7 +93,6 @@ describe('OperationsDailyDigestCron', () => {
     const now = new Date('2026-05-24T22:00:00Z');
     const stats = await cron.runOnce({ now, deliverToTelegram: true });
     expect(stats.digestsGenerated).toBe(1);
-    // 2 нотификации (coo + owner).
     expect(conversational.sendNotification).toHaveBeenCalledTimes(2);
     expect(stats.notificationsSent).toBe(2);
     expect(digestService.markDelivered).toHaveBeenCalledOnce();
@@ -143,7 +123,7 @@ describe('OperationsDailyDigestCron', () => {
         metrics: {},
         sources: {},
         llmTaskRouteId: null,
-        deliveredAt: '2026-05-25T01:30:00Z', // уже доставлен
+        deliveredAt: '2026-05-25T01:30:00Z',
         createdAt: '2026-05-25T01:00:00Z',
       },
     });
@@ -152,7 +132,6 @@ describe('OperationsDailyDigestCron', () => {
     expect(stats.digestsSkippedAlreadyExists).toBe(1);
     expect(stats.digestsGenerated).toBe(0);
     expect(digestService.getOrGenerate).not.toHaveBeenCalled();
-    // alreadyDelivered != null → повторно не шлём.
     expect(stats.notificationsSent).toBe(0);
   });
 

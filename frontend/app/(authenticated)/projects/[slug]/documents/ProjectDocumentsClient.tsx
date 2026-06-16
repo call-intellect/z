@@ -1,22 +1,9 @@
-'use client';
+"use client";
 
-/**
- * `/projects/[slug]/documents` — список документов проекта + блок «Связанные карточки».
- *
- * Поведение по ТЗ plans/tz/2026-05-27-tracker-project-documents.md:
- *   - pinned документы — сверху, иконка пина
- *   - inline-создание: заголовок → Enter → переход в редактор `/documents/[docId]`
- *   - контекстное меню Pin/Удалить/Дублировать
- *   - блок «Связанные карточки» — collapsed по умолчанию
- *
- * Drag-n-drop сортировки в MVP-волне не реализован — sortOrder обновляется
- * через PATCH (см. TODO ниже), но UI делает только pin/unpin.
- */
-
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronRight,
@@ -27,36 +14,36 @@ import {
   PinOff,
   Plus,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useProjectDocuments } from '@/hooks/tracker/useProjectDocuments';
-import { useProjectLinkedCards } from '@/hooks/tracker/useProjectLinkedCards';
-import { projectDocumentsApi } from '@/api/tracker/project-documents.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useProjectDocuments } from "@/hooks/tracker/useProjectDocuments";
+import { useProjectLinkedCards } from "@/hooks/tracker/useProjectLinkedCards";
+import { projectDocumentsApi } from "@/api/tracker/project-documents.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   type LinkedCard,
   linkedCardKindLabel,
   type ProjectDocumentSummary,
-} from '@/domain/tracker';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/tracker";
+import { Button } from "@/ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { Input } from '@/ui/shadcn/input';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dropdown-menu";
+import { Input } from "@/ui/shadcn/input";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const RELATIVE_DAY_MS = 1000 * 60 * 60 * 24;
 function formatRelative(d: Date): string {
   const diffDays = Math.floor((Date.now() - d.getTime()) / RELATIVE_DAY_MS);
-  if (diffDays < 1) return 'сегодня';
-  if (diffDays < 2) return 'вчера';
+  if (diffDays < 1) return "сегодня";
+  if (diffDays < 2) return "вчера";
   if (diffDays < 7) return `${diffDays} дн. назад`;
-  return d.toLocaleDateString('ru-RU');
+  return d.toLocaleDateString("ru-RU");
 }
 
 export function ProjectDocumentsClient({ slug }: { slug: string }) {
@@ -74,7 +61,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
   } = useProjectDocuments(currentOrgId, project?.id);
 
   const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
+  const [newTitle, setNewTitle] = useState("");
   const [busy, setBusy] = useState(false);
   const [linkedExpanded, setLinkedExpanded] = useState(false);
 
@@ -111,23 +98,25 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
     if (!currentOrgId || !project) return;
     const title = newTitle.trim();
     if (!title) {
-      toast.error('Введите название документа');
+      toast.error("Введите название документа");
       return;
     }
     setBusy(true);
     try {
-      const created = await projectDocumentsApi.create(currentOrgId, project.id, {
-        title,
-      });
-      setNewTitle('');
+      const created = await projectDocumentsApi.create(
+        currentOrgId,
+        project.id,
+        {
+          title,
+        },
+      );
+      setNewTitle("");
       setCreating(false);
       await mutateDocs();
       router.push(`/projects/${slug}/documents/${created.id}`);
     } catch (err) {
       const msg =
-        err instanceof ApiError
-          ? err.message
-          : 'Не удалось создать документ';
+        err instanceof ApiError ? err.message : "Не удалось создать документ";
       toast.error(msg);
     } finally {
       setBusy(false);
@@ -142,8 +131,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
       });
       await mutateDocs();
     } catch (err) {
-      const msg =
-        humanizeApiError(err, 'Не удалось закрепить документ');
+      const msg = humanizeApiError(err, "Не удалось закрепить документ");
       toast.error(msg);
     }
   };
@@ -155,10 +143,9 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
     try {
       await projectDocumentsApi.remove(currentOrgId, doc.id);
       await mutateDocs();
-      toast.success('Документ удалён');
+      toast.success("Документ удалён");
     } catch (err) {
-      const msg =
-        humanizeApiError(err, 'Не удалось удалить документ');
+      const msg = humanizeApiError(err, "Не удалось удалить документ");
       toast.error(msg);
     }
   };
@@ -173,7 +160,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
       const msg =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось дублировать документ';
+          : "Не удалось дублировать документ";
       toast.error(msg);
     }
   };
@@ -208,8 +195,8 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
               placeholder="Название документа"
               disabled={busy}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setNewTitle('');
+                if (e.key === "Escape") {
+                  setNewTitle("");
                   setCreating(false);
                 }
               }}
@@ -221,7 +208,7 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
               type="button"
               variant="ghost"
               onClick={() => {
-                setNewTitle('');
+                setNewTitle("");
                 setCreating(false);
               }}
               disabled={busy}
@@ -243,8 +230,8 @@ export function ProjectDocumentsClient({ slug }: { slug: string }) {
             <li key={doc.id}>
               <div
                 className={cn(
-                  'group flex items-start gap-3 rounded-md border border-border-subtle bg-bg-elevated px-4 py-3 transition-colors',
-                  doc.pinned && 'border-accent/60',
+                  "group flex items-start gap-3 rounded-md border border-border-subtle bg-bg-elevated px-4 py-3 transition-colors",
+                  doc.pinned && "border-accent/60",
                 )}
               >
                 <Link
@@ -414,8 +401,8 @@ function LinkedCardRow({ card }: { card: LinkedCard }) {
         <span className="truncate text-sm text-fg-primary">{card.name}</span>
         <span className="text-xs text-fg-tertiary">
           {linkedCardKindLabel(card.kind)}
-          {card.contactName ? ` · ${card.contactName}` : ''}
-          {' · '}
+          {card.contactName ? ` · ${card.contactName}` : ""}
+          {" · "}
           {card.meetingCount} встреч
         </span>
       </div>

@@ -1,17 +1,3 @@
-/**
- * SBA β-8.1 — промпт `operations-weekly-digest`.
- *
- * Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §9.
- *
- * Задача: на вход — структурированный агрегат недели (доли green/yellow/red,
- * топ-блокеры, топ-инсайты, цели, висящие решения). На выход — связный
- * markdown-комментарий из 5-7 коротких разделов для операционного директора.
- *
- * Code-fallback (без PromptRegistry) — как `dashboard-summary` (sub-ТЗ §9).
- *
- * Версия промпта — `prompt-v1`.
- */
-
 export const WEEKLY_DIGEST_PROMPT_VERSION = 'prompt-v1';
 
 export interface WeeklyDigestAggregates {
@@ -31,10 +17,6 @@ export interface WeeklyDigestAggregates {
     failedDelta: number;
   };
   hangingDecisions: Array<{ statement: string; ageDays: number }>;
-  /**
-   * TZ-1 Ф4.A (daily-value-engine) — топ идей недели. Опускается из секции,
-   * если пусто (не пишем «нет идей»).
-   */
   topIdeas?: Array<{
     statement: string;
     status: string;
@@ -63,9 +45,6 @@ export const WEEKLY_DIGEST_SYSTEM_PROMPT = [
   '  - Длина — 250-600 слов.',
 ].join('\n');
 
-/**
- * Сборка user-сообщения: компактная сериализация агрегатов.
- */
 export function buildWeeklyDigestUserMessage(agg: WeeklyDigestAggregates): string {
   const lines: string[] = [];
   lines.push(`Период: ${agg.weekStart} — ${agg.weekEnd}.`);
@@ -88,9 +67,7 @@ export function buildWeeklyDigestUserMessage(agg: WeeklyDigestAggregates): strin
     lines.push('');
     lines.push('Главные сигналы (топ-3 по динамике):');
     for (const i of agg.topInsights.slice(0, 3)) {
-      lines.push(
-        `  - [${i.kind}, динамика ${i.dynamicLabel}] ${truncate(i.statement, 200)}.`,
-      );
+      lines.push(`  - [${i.kind}, динамика ${i.dynamicLabel}] ${truncate(i.statement, 200)}.`);
     }
   }
 
@@ -138,10 +115,6 @@ function truncate(s: string, max: number): string {
   return s.slice(0, max - 1) + '…';
 }
 
-/**
- * «Сухой» вариант комментария при провале LLM. Используется fallback'ом
- * в WeeklyDigestService — структура остаётся, текст — компактная сводка.
- */
 export function buildFallbackDigestMarkdown(agg: WeeklyDigestAggregates): string {
   const lines: string[] = [];
   lines.push(`# Недельная сводка ${agg.weekStart} — ${agg.weekEnd}`);

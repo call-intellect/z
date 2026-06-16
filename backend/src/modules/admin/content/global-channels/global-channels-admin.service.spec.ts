@@ -1,20 +1,5 @@
-/**
- * Admin-redesign Фаза 5 — unit-тесты `GlobalChannelsAdminService`.
- *
- * Покрываем:
- *   1) list(): возвращает только tenantId=null + subscribersCount.
- *   2) create(): шифрует secrets через CryptoService; ответ не содержит plain.
- *   3) update(): partial-update сохраняет ранее зашифрованные секреты.
- *   4) softDelete(): status → global_disabled; 404 для tenantId≠null.
- */
-
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import {
-  ChannelDirection,
-  ChannelKind,
-  ChannelStatus,
-  DataClass,
-} from '@prisma/client';
+import { ChannelDirection, ChannelKind, ChannelStatus, DataClass } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CryptoService } from '../../../../common/crypto/crypto.service';
@@ -56,16 +41,8 @@ function buildPrisma(state: {
     return state.rows.find((r) => r.id === where.id) ?? null;
   });
   const findFirst = vi.fn(
-    async ({
-      where,
-    }: {
-      where: { tenantId: string | null; kind: ChannelKind };
-    }) => {
-      return (
-        state.rows.find(
-          (r) => r.tenantId === where.tenantId && r.kind === where.kind,
-        ) ?? null
-      );
+    async ({ where }: { where: { tenantId: string | null; kind: ChannelKind } }) => {
+      return state.rows.find((r) => r.tenantId === where.tenantId && r.kind === where.kind) ?? null;
     },
   );
   const create = vi.fn(async ({ data }: { data: Partial<ChannelRow> }) => {
@@ -85,13 +62,7 @@ function buildPrisma(state: {
     return row;
   });
   const update = vi.fn(
-    async ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: Partial<ChannelRow>;
-    }) => {
+    async ({ where, data }: { where: { id: string }; data: Partial<ChannelRow> }) => {
       const r = state.rows.find((x) => x.id === where.id);
       if (!r) throw new Error('not found');
       Object.assign(r, data, { updatedAt: new Date() });
@@ -110,7 +81,9 @@ function buildPrisma(state: {
 }
 
 function buildCrypto(): CryptoService {
-  const encrypt = vi.fn((plain: string) => `gcm:v1:iv:tag:${Buffer.from(plain).toString('base64')}`);
+  const encrypt = vi.fn(
+    (plain: string) => `gcm:v1:iv:tag:${Buffer.from(plain).toString('base64')}`,
+  );
   const decrypt = vi.fn();
   return { encrypt, decrypt } as unknown as CryptoService;
 }
@@ -154,7 +127,6 @@ describe('GlobalChannelsAdminService', () => {
     expect(res.items.length).toBe(1);
     expect(res.items[0]?.id).toBe('c-1');
     expect(res.items[0]?.subscribersCount).toBe(42);
-    // Секрет не должен присутствовать.
     expect((res.items[0]?.config as Record<string, unknown>).botTokenEnc).toBeUndefined();
     expect((res.items[0]?.config as Record<string, unknown>).botUsername).toBe('@kora_bot');
   });
@@ -177,16 +149,14 @@ describe('GlobalChannelsAdminService', () => {
       'user-1',
     );
     expect(created.id).toBeDefined();
-    expect(created.config.botTokenEnc).toBeUndefined(); // секреты вырезаны из ответа
+    expect(created.config.botTokenEnc).toBeUndefined();
     expect(created.config.botUsername).toBe('@kora_bot');
-    // Проверяем, что в БД лежит зашифрованный токен.
     const stored = state.rows[0]?.config as Record<string, unknown>;
     expect(stored.botTokenEnc).toBeDefined();
     expect(typeof stored.botTokenEnc).toBe('string');
     expect(stored.botTokenEnc).not.toBe('super-secret-token');
     expect(crypto.encrypt).toHaveBeenCalledWith('super-secret-token');
 
-    // Повторный create того же kind — 400.
     await expect(
       svc.create(
         {
@@ -213,17 +183,9 @@ describe('GlobalChannelsAdminService', () => {
       ],
       bindingsByChannel: { 'c-1': 5 },
     };
-    const svc = new GlobalChannelsAdminService(
-      buildPrisma(state),
-      buildCrypto(),
-    );
+    const svc = new GlobalChannelsAdminService(buildPrisma(state), buildCrypto());
 
-    // Меняем только public-config — секрет должен остаться.
-    const upd = await svc.update(
-      'c-1',
-      { config: { botUsername: '@new_bot' } },
-      'user-1',
-    );
+    const upd = await svc.update('c-1', { config: { botUsername: '@new_bot' } }, 'user-1');
     expect(upd.config.botUsername).toBe('@new_bot');
     expect(upd.subscribersCount).toBe(5);
     expect((state.rows[0]?.config as Record<string, unknown>).botTokenEnc).toBe(
@@ -239,18 +201,12 @@ describe('GlobalChannelsAdminService', () => {
       ],
       bindingsByChannel: {} as Record<string, number>,
     };
-    const svc = new GlobalChannelsAdminService(
-      buildPrisma(state),
-      buildCrypto(),
-    );
+    const svc = new GlobalChannelsAdminService(buildPrisma(state), buildCrypto());
 
     const res = await svc.softDelete('c-1', 'user-1');
     expect(res.ok).toBe(true);
     expect(state.rows[0]?.status).toBe(ChannelStatus.global_disabled);
 
-    // Per-tenant канал — 404 на admin endpoint глобальных.
-    await expect(svc.softDelete('c-2', 'user-1')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.softDelete('c-2', 'user-1')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

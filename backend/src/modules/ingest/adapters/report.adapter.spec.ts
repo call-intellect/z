@@ -6,17 +6,6 @@ import type { IngestService } from '../ingest.service';
 
 import { ReportIngestAdapter } from './report.adapter';
 
-/**
- * Юнит-тесты ReportIngestAdapter (Фаза 2 «отчёт встречи → граф»,
- * ТЗ 2026-06-11-report-to-graph-phase2.md §2.1, §4).
- *
- * Покрытие:
- *   1. Нет встречи / нет tenantId → null (best-effort, не бросает).
- *   2. Пустой отчёт (нет фактов И нет summary) → null (RawEvent НЕ создаём).
- *   3. sourceExternalId = 'report_<id>', occurredAt = endedAt (стабилен),
- *      dataClass='internal', payload.kind='meeting_report'.
- *   4. Lazy upsert Source(type=meeting_report).
- */
 describe('ReportIngestAdapter', () => {
   let prisma: PrismaService;
   let ingest: IngestService;
@@ -53,9 +42,7 @@ describe('ReportIngestAdapter', () => {
     chapterFindMany = vi.fn().mockResolvedValue([]);
     sourceFindUnique = vi.fn().mockResolvedValue(fakeSource);
     sourceCreate = vi.fn().mockResolvedValue(fakeSource);
-    ingestFn = vi
-      .fn()
-      .mockResolvedValue({ rawEvent: fakeRawEvent, idempotent: false });
+    ingestFn = vi.fn().mockResolvedValue({ rawEvent: fakeRawEvent, idempotent: false });
 
     prisma = {
       meeting: { findUnique: meetingFindUnique },
@@ -103,9 +90,6 @@ describe('ReportIngestAdapter', () => {
   });
 
   it('главы есть, но summary+факты пусты → RawEvent СОЗДАЁТСЯ (главы — узлы графа, не теряем)', async () => {
-    // Регресс-тест на находку ревью Фазы 2: гард не должен игнорировать
-    // chapters.length. Схема fast-отчёта допускает пустой summary при непустых
-    // главах; маппер «team» без нужных полей → reportFacts=[].
     meetingFindUnique.mockResolvedValue({
       id: 'm1',
       tenantId: 'org_1',
@@ -116,9 +100,7 @@ describe('ReportIngestAdapter', () => {
       createdAt: endedAt,
       aiResult: { summaryFast: '', structuredData: { discussed: [] } },
     });
-    chapterFindMany.mockResolvedValue([
-      { title: 'Вступление', summary: 'Повестка встречи' },
-    ]);
+    chapterFindMany.mockResolvedValue([{ title: 'Вступление', summary: 'Повестка встречи' }]);
     const res = await adapter.ingestReport('m1');
     expect(res).not.toBeNull();
     expect(ingestFn).toHaveBeenCalledTimes(1);
@@ -145,9 +127,7 @@ describe('ReportIngestAdapter', () => {
         },
       },
     });
-    chapterFindMany.mockResolvedValue([
-      { title: 'Обсуждение', summary: 'Поговорили' },
-    ]);
+    chapterFindMany.mockResolvedValue([{ title: 'Обсуждение', summary: 'Поговорили' }]);
 
     const res = await adapter.ingestReport('m1');
 
@@ -156,19 +136,14 @@ describe('ReportIngestAdapter', () => {
     const arg = ingestFn.mock.calls[0]![0];
     expect(arg.tenantId).toBe('org_1');
     expect(arg.sourceId).toBe('src_report_1');
-    // Суффикс report_ ОБЯЗАТЕЛЕН (иначе конфликт с транскриптным RawEvent).
     expect(arg.sourceExternalId).toBe('report_m1');
-    // occurredAt = endedAt (СТАБИЛЕН), не now/generatedAt.
     expect(arg.occurredAt).toBe(endedAt);
     expect(arg.dataClass).toBe('internal');
     expect(arg.payload.kind).toBe('meeting_report');
     expect(arg.payload.meetingId).toBe('m1');
     expect(arg.payload.meetingType).toBe('team');
     expect(arg.payload.reportSummaryMarkdown).toBe('Итоги: договорились о релизе');
-    expect(arg.payload.chapters).toEqual([
-      { title: 'Обсуждение', summary: 'Поговорили' },
-    ]);
-    // Факты разложены гранулярно.
+    expect(arg.payload.chapters).toEqual([{ title: 'Обсуждение', summary: 'Поговорили' }]);
     expect(arg.payload.reportFacts).toContainEqual({
       reportKind: 'decision',
       text: 'Релиз 15 июня',
@@ -184,7 +159,7 @@ describe('ReportIngestAdapter', () => {
     meetingFindUnique.mockResolvedValue({
       id: 'm1',
       tenantId: 'org_1',
-      type: 'interview', // тип вне whitelist → структурных фактов нет
+      type: 'interview',
       title: 'Интервью',
       startedAt: null,
       endedAt,

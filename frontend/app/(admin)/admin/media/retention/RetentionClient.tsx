@@ -1,35 +1,21 @@
-'use client';
+"use client";
 
-/**
- * `/admin/media/retention` — настройки сроков хранения. Фаза 7 редизайна.
- *
- * Контракт UI:
- *   - AdminSection + таблица: тип / дни / описание / автор / время / действия.
- *   - Кнопка «Изменить» открывает диалог: input дней + textarea reason ≥ 10
- *     (severity='high'). Перед сохранением — кнопка «Предпросмотр», которая
- *     зовёт GET /preview?days=Y и показывает количество затронутых объектов
- *     + сэмпл идентификаторов.
- *   - Save → PATCH /admin/media/retention/:type { days, reason }.
- *
- * Все строки на русском. При отсутствии бэкенда (404) — AdminEmpty.
- */
+import { useCallback, useEffect, useState } from "react";
+import { Eye, Loader2, Pencil } from "lucide-react";
+import { toast } from "sonner";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Eye, Loader2, Pencil } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminRetentionApi } from '@/api/admin-retention.api';
-import { ApiError } from '@/api/api-error';
+import { adminRetentionApi } from "@/api/admin-retention.api";
+import { ApiError } from "@/api/api-error";
 import {
   retentionPolicyFromApi,
   retentionPreviewFromApi,
   RETENTION_TYPE_LABELS,
   type RetentionPolicyDomain,
   type RetentionPreviewDomain,
-} from '@/domain/admin-retention';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-retention";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -37,23 +23,23 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const MIN_REASON_LENGTH = 10;
 
 export function RetentionClient() {
-  const q = useAdminQuery('admin-retention-list', async () => {
+  const q = useAdminQuery("admin-retention-list", async () => {
     const res = await adminRetentionApi.list();
     return res.map(retentionPolicyFromApi);
   });
@@ -64,8 +50,8 @@ export function RetentionClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Записи и медиа' },
-        { label: 'Сроки хранения' },
+        { label: "Записи и медиа" },
+        { label: "Сроки хранения" },
       ]}
       title="Сроки хранения"
       description="Сколько дней хранить записи встреч, журналы доступа и доставки webhook. Изменение фиксируется в журнале super_admin (требуется причина не короче 10 символов)."
@@ -88,10 +74,7 @@ export function RetentionClient() {
         />
       ) : null}
       {!q.isLoading && q.data && q.data.length > 0 ? (
-        <RetentionTable
-          policies={q.data}
-          onEdit={(p) => setEditing(p)}
-        />
+        <RetentionTable policies={q.data} onEdit={(p) => setEditing(p)} />
       ) : null}
 
       <EditDialog
@@ -104,8 +87,6 @@ export function RetentionClient() {
     </AdminSection>
   );
 }
-
-// ─────────────────────────── Таблица ───────────────────────────
 
 function RetentionTable({
   policies,
@@ -143,15 +124,13 @@ function RetentionTable({
                   </span>
                 </div>
               </td>
-              <td className="px-3 py-2 text-sm font-semibold">
-                {p.days}
-              </td>
+              <td className="px-3 py-2 text-sm font-semibold">{p.days}</td>
               <td className="px-3 py-2 text-xs text-fg-secondary">
-                {p.description ?? '—'}
+                {p.description ?? "—"}
               </td>
-              <td className="px-3 py-2 text-xs">{p.updatedBy ?? '—'}</td>
+              <td className="px-3 py-2 text-xs">{p.updatedBy ?? "—"}</td>
               <td className="px-3 py-2 text-xs text-fg-tertiary">
-                {p.updatedAt.toLocaleString('ru-RU')}
+                {p.updatedAt.toLocaleString("ru-RU")}
               </td>
               <td className="px-3 py-2 text-right">
                 <Button
@@ -172,8 +151,6 @@ function RetentionTable({
   );
 }
 
-// ─────────────────────────── Диалог редактирования ───────────────────────────
-
 function EditDialog({
   policy,
   onClose,
@@ -182,7 +159,7 @@ function EditDialog({
   onClose: (saved: boolean) => void;
 }) {
   const [days, setDays] = useState<number>(policy?.days ?? 0);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<RetentionPreviewDomain | null>(null);
@@ -191,7 +168,7 @@ function EditDialog({
   const open = policy !== null;
 
   const reset = useCallback(() => {
-    setReason('');
+    setReason("");
     setError(null);
     setPreview(null);
     setPreviewLoading(false);
@@ -208,13 +185,10 @@ function EditDialog({
     [saving, reset, onClose],
   );
 
-  // При открытии диалога — синхронизируем days с текущим значением policy,
-  // чтобы поле всегда отражало серверное значение (а не залипшее с прошлого
-  // редактирования).
   useEffect(() => {
     if (policy) {
       setDays(policy.days);
-      setReason('');
+      setReason("");
       setError(null);
       setPreview(null);
     }
@@ -234,7 +208,7 @@ function EditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось получить предпросмотр';
+            : "Не удалось получить предпросмотр";
       setError(msg);
     } finally {
       setPreviewLoading(false);
@@ -252,7 +226,7 @@ function EditDialog({
       return;
     }
     if (!Number.isFinite(days) || days < 1) {
-      setError('Срок должен быть положительным целым числом дней.');
+      setError("Срок должен быть положительным целым числом дней.");
       return;
     }
     setSaving(true);
@@ -267,7 +241,7 @@ function EditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -397,17 +371,18 @@ function PreviewBlock({ preview }: { preview: RetentionPreviewDomain }) {
     <div
       className={
         isShrinking
-          ? 'rounded-md border border-warning/40 bg-warning/5 p-3 text-xs'
-          : 'rounded-md border border-border-subtle bg-bg-overlay p-3 text-xs'
+          ? "rounded-md border border-warning/40 bg-warning/5 p-3 text-xs"
+          : "rounded-md border border-border-subtle bg-bg-overlay p-3 text-xs"
       }
     >
       <p className="text-fg-primary">
-        При изменении с <span className="font-semibold">{preview.currentDays}</span>{' '}
-        дней на <span className="font-semibold">{preview.newDays}</span> дней
-        будет удалено{' '}
-        <Badge variant={isShrinking ? 'danger' : 'secondary'}>
+        При изменении с{" "}
+        <span className="font-semibold">{preview.currentDays}</span> дней на{" "}
+        <span className="font-semibold">{preview.newDays}</span> дней будет
+        удалено{" "}
+        <Badge variant={isShrinking ? "danger" : "secondary"}>
           {preview.affectedCount}
-        </Badge>{' '}
+        </Badge>{" "}
         объектов.
       </p>
       {preview.warning ? (
@@ -431,5 +406,4 @@ function PreviewBlock({ preview }: { preview: RetentionPreviewDomain }) {
   );
 }
 
-// Сохраняем для возможного использования снаружи.
 export { RETENTION_TYPE_LABELS };

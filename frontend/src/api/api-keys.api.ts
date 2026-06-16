@@ -1,12 +1,6 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для Public API ключей юзера. Контракт — `backend/src/modules/api-keys/`.
- *
- * `rawKey` отдаётся бэкендом ТОЛЬКО при создании. После — юзер видит лишь `prefix`.
- */
-
-export type ApiKeyScope = 'read' | 'write';
+export type ApiKeyScope = "read" | "write";
 
 export type ApiKeyApi = {
   id: string;
@@ -34,10 +28,10 @@ export type CreateApiKeyApiResponse = {
 };
 
 export const apiKeysApi = {
-  list: () => apiClient.get<ApiKeysListApiResponse>('/api/v1/api-keys'),
+  list: () => apiClient.get<ApiKeysListApiResponse>("/api/v1/api-keys"),
 
   create: (body: CreateApiKeyRequest) =>
-    apiClient.post<CreateApiKeyApiResponse>('/api/v1/api-keys', body),
+    apiClient.post<CreateApiKeyApiResponse>("/api/v1/api-keys", body),
 
   revoke: (id: string) =>
     apiClient.del<void>(`/api/v1/api-keys/${encodeURIComponent(id)}`),

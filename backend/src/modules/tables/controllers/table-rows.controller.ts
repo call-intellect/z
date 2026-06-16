@@ -14,18 +14,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -44,20 +36,6 @@ import {
 import { TableRowsService } from '../services/table-rows.service';
 import { TablesService } from '../services/tables.service';
 
-/**
- * Smart Tables — REST CRUD строк (`TableRow`).
- *
- *   GET    /api/v1/tables/:tableId/rows                    — список (paginated)
- *   POST   /api/v1/tables/:tableId/rows                    — создать строку
- *   GET    /api/v1/tables/:tableId/rows/:rowId             — карточка строки
- *   PATCH  /api/v1/tables/:tableId/rows/:rowId             — обновить
- *   POST   /api/v1/tables/:tableId/rows/:rowId/archive     — в архив (soft)
- *   POST   /api/v1/tables/:tableId/rows/:rowId/unarchive   — из архива
- *   DELETE /api/v1/tables/:tableId/rows/:rowId             — hard-delete
- *
- * RBAC: ресурс `table` (строки — содержимое таблицы; отдельного RBAC-ресурса
- * не плодим, чтобы не было риска прокола при добавлении views).
- */
 @ApiTags('tables')
 @ApiBearerAuth()
 @Controller('api/v1/tables/:tableId/rows')
@@ -119,7 +97,6 @@ export class TableRowsController {
   ): Promise<RowViewDto> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    // Проверка что строка действительно в этой таблице (защита от ошибок client'а).
     const row = await this.rows.findById({ tenantId: t, rowId });
     if (row.tableId !== tableId) {
       throw new BadRequestException({
@@ -216,8 +193,6 @@ export class TableRowsController {
     return this.rows.hardDelete({ tenantId: t, rowId });
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -243,12 +218,7 @@ export class TableRowsController {
     tenantId: string,
     ownerUserId?: string,
   ): Promise<void> {
-    const ok = await this.rbac.canWrite(
-      userId,
-      tenantId,
-      'table',
-      ownerUserId ?? null,
-    );
+    const ok = await this.rbac.canWrite(userId, tenantId, 'table', ownerUserId ?? null);
     if (!ok) {
       throw new ForbiddenException({
         ok: false,

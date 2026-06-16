@@ -1,12 +1,3 @@
-/**
- * Диагностический пробник: какие форматы вывода работают на DeepSeek-V4-Pro,
- * с thinking-режимом и без него.
- *
- * Один и тот же микро-запрос ("извлеки 3 факта в JSON"), 8 вариантов
- * комбинаций (response_format × tools × thinking).
- *
- * Запуск: cd backend && bun run scripts/eval/probe-deepseek-formats.ts
- */
 import OpenAI from 'openai';
 
 if (!process.env.DEEPSEEK_API_KEY) {
@@ -57,14 +48,10 @@ interface ProbeResult {
   error?: string;
 }
 
-// DeepSeek-V4-Pro со скидкой 75% (постоянная).
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-async function probe(
-  variant: string,
-  params: Record<string, unknown>,
-): Promise<ProbeResult> {
+async function probe(variant: string, params: Record<string, unknown>): Promise<ProbeResult> {
   const start = Date.now();
   try {
     const resp = (await client.chat.completions.create({
@@ -133,14 +120,11 @@ async function probe(
 async function main(): Promise<void> {
   console.log(`=== DeepSeek-V4-Pro probe: что работает ===\n`);
   const variants: Array<{ name: string; params: Record<string, unknown> }> = [
-    // 1. Без response_format — просто текст
     { name: 'A. plain text (без response_format, без tools)', params: {} },
-    // 2. json_object — мягкий режим
     {
       name: 'B. response_format=json_object',
       params: { response_format: { type: 'json_object' } },
     },
-    // 3. json_schema strict — известно что падает с thinking
     {
       name: 'C. response_format=json_schema STRICT',
       params: {
@@ -150,7 +134,6 @@ async function main(): Promise<void> {
         },
       },
     },
-    // 4. json_schema без strict
     {
       name: 'D. response_format=json_schema (strict=false)',
       params: {
@@ -160,17 +143,14 @@ async function main(): Promise<void> {
         },
       },
     },
-    // 5. tools + tool_choice=auto (модель сама решает)
     {
       name: 'E. tools + tool_choice=auto',
       params: { tools: [EXTRACT_TOOL], tool_choice: 'auto' },
     },
-    // 6. tools + tool_choice=required (любой tool)
     {
       name: 'F. tools + tool_choice=required',
       params: { tools: [EXTRACT_TOOL], tool_choice: 'required' },
     },
-    // 7. tools + forced конкретный
     {
       name: 'G. tools + tool_choice=forced(submit_facts)',
       params: {
@@ -181,7 +161,6 @@ async function main(): Promise<void> {
         },
       },
     },
-    // 8. plain text + reasoning effort=low (попытка минимизировать thinking)
     {
       name: 'H. reasoning.effort=low + json_object',
       params: {
@@ -200,46 +179,35 @@ async function main(): Promise<void> {
       : r.parsedOk
         ? '✓ JSON OK'
         : '~ ответ есть, но JSON.parse / shape failed';
-    console.log(
-      ` ${tag} | ${r.ms} мс | вход=${r.tokensIn} выход=${r.tokensOut}`,
-    );
+    console.log(` ${tag} | ${r.ms} мс | вход=${r.tokensIn} выход=${r.tokensOut}`);
     if (r.error) console.log(`     ошибка: ${r.error}`);
-    if (r.ok && r.outputPreview)
-      console.log(`     превью: ${r.outputPreview}`);
+    if (r.ok && r.outputPreview) console.log(`     превью: ${r.outputPreview}`);
     results.push(r);
   }
 
-  // ── сводка ────────────────────────────────────────────────────────────────
   console.log('\n=== Сводка ===');
   const wOK = results.filter((r) => r.parsedOk).length;
   const wPartial = results.filter((r) => r.ok && !r.parsedOk).length;
   const wFail = results.filter((r) => !r.ok).length;
-  console.log(`  валидный JSON: ${wOK}  | ответ без валидного JSON: ${wPartial}  | API-ошибка: ${wFail}`);
-  console.log(`  суммарно ms:   ${results.reduce((s, r) => s + r.ms, 0)}`);
   console.log(
-    `  суммарно $:    ${results.reduce((s, r) => s + r.costUsd, 0).toFixed(4)}`,
+    `  валидный JSON: ${wOK}  | ответ без валидного JSON: ${wPartial}  | API-ошибка: ${wFail}`,
   );
+  console.log(`  суммарно ms:   ${results.reduce((s, r) => s + r.ms, 0)}`);
+  console.log(`  суммарно $:    ${results.reduce((s, r) => s + r.costUsd, 0).toFixed(4)}`);
 
   console.log('\n— что работает (вернули валидный JSON по схеме):');
   for (const r of results) {
     if (r.parsedOk)
-      console.log(
-        `  ✓ ${r.variant.padEnd(50)} ${r.ms} мс / ${r.tokensOut} токенов выход`,
-      );
+      console.log(`  ✓ ${r.variant.padEnd(50)} ${r.ms} мс / ${r.tokensOut} токенов выход`);
   }
   console.log('\n— что упало:');
   for (const r of results) {
-    if (!r.ok)
-      console.log(
-        `  ✗ ${r.variant.padEnd(50)} ${r.error?.slice(0, 80) ?? ''}`,
-      );
+    if (!r.ok) console.log(`  ✗ ${r.variant.padEnd(50)} ${r.error?.slice(0, 80) ?? ''}`);
   }
   console.log('\n— что прошло, но JSON битый/неполный:');
   for (const r of results) {
     if (r.ok && !r.parsedOk)
-      console.log(
-        `  ~ ${r.variant.padEnd(50)} превью: ${r.outputPreview.slice(0, 60)}`,
-      );
+      console.log(`  ~ ${r.variant.padEnd(50)} превью: ${r.outputPreview.slice(0, 60)}`);
   }
 }
 

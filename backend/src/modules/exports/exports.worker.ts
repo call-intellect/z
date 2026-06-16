@@ -9,7 +9,6 @@ import {
 import type { Export } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -56,9 +55,7 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<ExportJobData>(
       EXPORT_QUEUE,
       async (job) =>
-        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'exports', job, () =>
-          this.process(job),
-        ),
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'exports', job, () => this.process(job)),
       {
         connection: this.redis.client,
         concurrency: 2,
@@ -77,7 +74,6 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для unit-тестов и manual-trigger. */
   async process(job: Job<ExportJobData>): Promise<void> {
     const exp = await this.repo.findById(job.data.exportId);
     if (!exp) {
@@ -98,7 +94,6 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
         completedAt: new Date(),
       });
       this.metrics?.incExportCompleted({ type: exp.type, status: 'ready' });
-      // Webhook export.completed.
       void this.webhooks
         .dispatch({
           event: 'export.completed',
@@ -141,7 +136,6 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     const [aiResult, chapters, tasks, transcript] = await Promise.all([
       this.prisma.aiResult.findUnique({ where: { meetingId } }),
       this.prisma.meetingChapter.findMany({ where: { meetingId }, orderBy: { startMs: 'asc' } }),
-      // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
       this.actionItems.listForMeeting({ meetingId, tenantId: meeting.tenantId ?? '' }),
       this.prisma.transcript.findUnique({ where: { meetingId } }),
     ]);
@@ -164,7 +158,6 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     const [aiResult, chapters, tasks] = await Promise.all([
       this.prisma.aiResult.findUnique({ where: { meetingId } }),
       this.prisma.meetingChapter.findMany({ where: { meetingId }, orderBy: { startMs: 'asc' } }),
-      // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
       this.actionItems.listForMeeting({ meetingId, tenantId: meeting.tenantId ?? '' }),
     ]);
     const buf = await this.docx.build({ meeting, aiResult, chapters, tasks });
@@ -172,8 +165,7 @@ export class ExportsWorker implements OnModuleInit, OnModuleDestroy {
     await this.s3.putObject({
       key,
       body: buf,
-      contentType:
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     });
     return key;
   }

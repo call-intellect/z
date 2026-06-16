@@ -5,29 +5,8 @@ import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * W2.4 KC-Temporal (2026-05-25) — `TemporalProbeService`.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.4.
- *
- * Активная дочистка фактов:
- *   - находим «древние» canonical IdeaBlock'и (signalType ∈ factSignalTypes,
- *     validUntil IS NULL, validFrom < now - 90д);
- *   - для каждой entity, в которой древний блок выступает subject (через
- *     IdeaBlockEntity), ищем «свежий» блок (validFrom > now - 30д) с тем же
- *     signalType, который про эту же entity;
- *   - если такой свежий блок есть И его trustedAnswer отличается от древнего —
- *     эмитим probe `temporal.fact_stale_contradiction`.
- *
- * Лимит — `cfg.temporalProbe.limitPerOrg=50` probe на Org за проход.
- * Эскалация — отдельный шаг `escalateUnanswered()`, который вызывается
- * этим же сервисом из cron'а.
- */
-
-/** Поле IdeaBlockEntity.role (string-union). subject — основной субъект факта. */
 const SUBJECT_ROLE = 'subject';
 
-/** Окна (в днях). */
 const STALE_AGE_DAYS = 90;
 const FRESH_AGE_DAYS = 30;
 
@@ -41,10 +20,6 @@ export class TemporalProbeService {
     @Inject(ProbeService) private readonly probe: ProbeService,
   ) {}
 
-  /**
-   * Главный entry-point — вызывается cron'ом. Запускает проверку для всех
-   * Org. Внутри per-Org изоляция: одна Org не валит другую.
-   */
   async runAllOrgs(): Promise<{
     scannedOrgs: number;
     probesEmitted: number;
@@ -74,10 +49,6 @@ export class TemporalProbeService {
     return { scannedOrgs: orgs.length, probesEmitted, skippedDedup };
   }
 
-  /**
-   * Проверка одной Org. Возвращает statistics. Не пробрасывает ошибки
-   * вверх — caller (cron) сам решает, нужно ли логировать.
-   */
   async runForOrg(tenantId: string): Promise<{
     probesEmitted: number;
     skippedDedup: number;
@@ -93,7 +64,6 @@ export class TemporalProbeService {
     const staleCutoff = daysAgo(now, STALE_AGE_DAYS);
     const freshCutoff = daysAgo(now, FRESH_AGE_DAYS);
 
-    // 1. Кандидаты — «древние» открытые блоки.
     const stale = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -113,7 +83,7 @@ export class TemporalProbeService {
           select: { entityId: true },
         },
       },
-      take: limit * 2, // запас, чтобы после фильтрации хватило до limit'а.
+      take: limit * 2,
     });
 
     let probesEmitted = 0;
@@ -124,11 +94,9 @@ export class TemporalProbeService {
       if (probesEmitted >= limit) break;
       const subjectEntityIds = staleBlock.entities.map((e) => e.entityId);
       if (subjectEntityIds.length === 0) {
-        // Без явного subject — резервный путь: любая entity на блоке.
         continue;
       }
 
-      // 2. Свежий блок про ту же entity того же signalType.
       const freshBlock = await this.prisma.ideaBlock.findFirst({
         where: {
           tenantId,
@@ -147,15 +115,10 @@ export class TemporalProbeService {
         orderBy: { validFrom: 'desc' },
       });
       if (!freshBlock) continue;
-      // Trivial-equal — нет смысла спрашивать.
-      if (
-        normalize(freshBlock.trustedAnswer) ===
-        normalize(staleBlock.trustedAnswer)
-      ) {
+      if (normalize(freshBlock.trustedAnswer) === normalize(staleBlock.trustedAnswer)) {
         continue;
       }
 
-      // 3. Probe.
       const question = this.formulateQuestion({
         subject: staleBlock.name,
         oldAnswer: staleBlock.trustedAnswer,
@@ -184,11 +147,6 @@ export class TemporalProbeService {
     return { probesEmitted, skippedDedup };
   }
 
-  /**
-   * Эскалация: probes из reason='temporal.fact_stale_contradiction',
-   * созданные > `escalateAfterWeeks` назад и без ответа — переоформляем как
-   * новый probe для owner'а (in_app). Best-effort.
-   */
   async escalateUnanswered(): Promise<{ escalated: number }> {
     const weeks = Math.max(1, this.cfg.temporalProbe.escalateAfterWeeks);
     const cutoff = daysAgo(new Date(), weeks * 7);
@@ -240,7 +198,6 @@ export class TemporalProbeService {
     return { escalated };
   }
 
-  /** Кандидаты-получатели: owner Org + admin'ы. */
   private async findOwnerCandidates(tenantId: string): Promise<string[]> {
     const memberships = await this.prisma.membership.findMany({
       where: {
@@ -270,8 +227,6 @@ export class TemporalProbeService {
     return `«${args.subject}» — раньше было: «${old}», сейчас: «${fresh}». Что верно?`;
   }
 }
-
-// ─────────────────────────── helpers ───────────────────────────
 
 function daysAgo(now: Date, days: number): Date {
   const d = new Date(now.getTime());

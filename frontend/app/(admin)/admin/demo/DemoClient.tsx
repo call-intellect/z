@@ -1,27 +1,18 @@
-'use client';
+"use client";
 
-/**
- * DemoClient — `/admin/demo` (Z-Admin).
- *
- * Super-admin создаёт/сбрасывает демо-кабинет «ТехноСтрим» для любой Org,
- * без логина под owner'ом и без CLI. Бэк — `AdminDemoController`
- * (`/api/v1/admin/demo/*`), переиспользует `OnboardingService`.
- */
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { useCallback, useEffect, useState } from 'react';
-import { toast } from 'sonner';
-
-import { adminDemoApi, type AdminDemoOrgApi } from '@/api/admin-demo.api';
-import { ApiError } from '@/api/api-error';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { adminDemoApi, type AdminDemoOrgApi } from "@/api/admin-demo.api";
+import { ApiError } from "@/api/api-error";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 export function DemoClient() {
   const [orgs, setOrgs] = useState<AdminDemoOrgApi[] | null>(null);
   const [loading, setLoading] = useState(true);
-  /** orgId, по которому сейчас идёт операция (seed/reset). */
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -31,7 +22,9 @@ export function DemoClient() {
       setOrgs(res.orgs);
     } catch (err) {
       toast.error(
-        err instanceof ApiError ? err.message : 'Не удалось загрузить список Org.',
+        err instanceof ApiError
+          ? err.message
+          : "Не удалось загрузить список Org.",
       );
       setOrgs([]);
     } finally {
@@ -53,7 +46,7 @@ export function DemoClient() {
         await load();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось залить демо.',
+          err instanceof ApiError ? err.message : "Не удалось залить демо.",
         );
       } finally {
         setBusyId(null);
@@ -78,7 +71,7 @@ export function DemoClient() {
         await load();
       } catch (err) {
         toast.error(
-          err instanceof ApiError ? err.message : 'Не удалось сбросить демо.',
+          err instanceof ApiError ? err.message : "Не удалось сбросить демо.",
         );
       } finally {
         setBusyId(null);
@@ -106,13 +99,9 @@ export function DemoClient() {
             const seeded = org.demoSeededAt !== null;
             const busy = busyId === org.id;
             const isReference = org.isReferenceDemo;
-            // Демо больше не копируется в каждую Org. Эталон один, остальные Org
-            // получают доступ к нему через membership demo_observer (см. ТЗ
-            // demo-shared-org-model.md). Поэтому seed/reset включены только для
-            // эталонной Org.
             const actionsDisabled = !isReference;
             const disabledTitle = actionsDisabled
-              ? 'Демо больше не копируется в каждую Org. Эталон один (выделен бейджем).'
+              ? "Демо больше не копируется в каждую Org. Эталон один (выделен бейджем)."
               : undefined;
             return (
               <li
@@ -132,7 +121,7 @@ export function DemoClient() {
                     ) : null}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-fg-secondary">
-                    Владелец: {org.owner ? org.owner.email : '—'}
+                    Владелец: {org.owner ? org.owner.email : "—"}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -142,7 +131,11 @@ export function DemoClient() {
                     disabled={busy || actionsDisabled}
                     title={disabledTitle}
                   >
-                    {busy ? 'Заливаем…' : seeded ? 'Перезалить демо' : 'Создать демо'}
+                    {busy
+                      ? "Заливаем…"
+                      : seeded
+                        ? "Перезалить демо"
+                        : "Создать демо"}
                   </Button>
                   {seeded ? (
                     <Button

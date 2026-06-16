@@ -1,13 +1,3 @@
-/**
- * SBA α-9 wave 3 — seed-данные FunctionalDomain.
- *
- * Источник правды для BASE_FUNCTIONAL_DOMAINS — sub-TZ §2.
- * Per-industry-надстройки — основа в коде, дополнена разумным контентом
- * (см. SaaS / Девелопер / Ритейл / Производство / B2B-услуги).
- *
- * Дублируется в `scripts/seed-functional-domains.ts` через import (DRY).
- */
-
 export interface BaseDomainSeed {
   name: string;
   slug: string;
@@ -17,7 +7,6 @@ export interface BaseDomainSeed {
 }
 
 export interface IndustryDomainSeed extends BaseDomainSeed {
-  /** Slug базового домена, к которому подвешиваем дочку (null = root). */
   parentSlug?: string | null;
 }
 
@@ -80,18 +69,9 @@ export const BASE_FUNCTIONAL_DOMAINS: ReadonlyArray<BaseDomainSeed> = [
   },
 ];
 
-export type IndustrySlug =
-  | 'saas'
-  | 'developer'
-  | 'retail'
-  | 'manufacturing'
-  | 'b2b_services';
+export type IndustrySlug = 'saas' | 'developer' | 'retail' | 'manufacturing' | 'b2b_services';
 
-export const INDUSTRY_DOMAIN_TEMPLATES: Record<
-  IndustrySlug,
-  ReadonlyArray<IndustryDomainSeed>
-> = {
-  // ─── SaaS ─────────────────────────────────────────────────────────
+export const INDUSTRY_DOMAIN_TEMPLATES: Record<IndustrySlug, ReadonlyArray<IndustryDomainSeed>> = {
   saas: [
     {
       name: 'Customer success',
@@ -134,7 +114,6 @@ export const INDUSTRY_DOMAIN_TEMPLATES: Record<
       order: 21,
     },
   ],
-  // ─── Девелопер (строительство недвижимости) ────────────────────────
   developer: [
     {
       name: 'Земельный банк',
@@ -177,7 +156,6 @@ export const INDUSTRY_DOMAIN_TEMPLATES: Record<
       order: 52,
     },
   ],
-  // ─── Ритейл ────────────────────────────────────────────────────────
   retail: [
     {
       name: 'Закупки и категорийный менеджмент',
@@ -220,7 +198,6 @@ export const INDUSTRY_DOMAIN_TEMPLATES: Record<
       order: 12,
     },
   ],
-  // ─── Производство ─────────────────────────────────────────────────
   manufacturing: [
     {
       name: 'Цех и производство',
@@ -263,7 +240,6 @@ export const INDUSTRY_DOMAIN_TEMPLATES: Record<
       order: 61,
     },
   ],
-  // ─── B2B-услуги (агентство / консалтинг / интегратор) ─────────────
   b2b_services: [
     {
       name: 'Проектное управление',

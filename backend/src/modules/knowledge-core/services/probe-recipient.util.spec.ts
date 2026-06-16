@@ -4,16 +4,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { resolveProbeRecipients } from './probe-recipient.util';
 
-/**
- * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — unit-тесты выбора
- * получателей probe (3 сценария из §3.5 DoD) при флаге OFF (старое
- * поведение).
- *
- * Cabinet-leftovers §3 (2026-06-11) — само-подтверждение субъектом за
- * kill-switch `PROBE_SUBJECT_ADDRESSING_ENABLED`. Новые ON-кейсы внизу:
- * субъект первым, затем глава, затем admins; дедуп; subject без userId.
- */
-
 interface MockSubject {
   userId: string | null;
   primaryDepartmentId: string | null;
@@ -57,15 +47,14 @@ describe('resolveProbeRecipients — старое поведение (флаг O
     });
 
     expect(recipients).toEqual(['user-head']);
-    // admins не запрашиваются, потому что глава отдела найден.
-    expect((prisma.membership as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany)
-      .not.toHaveBeenCalled();
+    expect(
+      (prisma.membership as unknown as { findMany: ReturnType<typeof vi.fn> }).findMany,
+    ).not.toHaveBeenCalled();
   });
 
   it('сценарий 2: глава отдела совпадает с субъектом (probe про самого главу) → fallback к admin/owner', async () => {
     const prisma = buildPrismaMock({
       subject: { userId: 'user-same', primaryDepartmentId: 'dept-1' },
-      // headPerson.userId === subject.userId — нельзя слать самому себе.
       dept: { headPerson: { id: 'person-head', userId: 'user-same' } },
       admins: [{ userId: 'user-admin-1' }, { userId: 'user-admin-2' }],
     });
@@ -77,7 +66,6 @@ describe('resolveProbeRecipients — старое поведение (флаг O
       subjectAddressingEnabled: false,
     });
 
-    // Сам субъект исключается из списка admin'ов; остальные admin'ы — получатели.
     expect(recipients.sort()).toEqual(['user-admin-1', 'user-admin-2']);
   });
 
@@ -109,7 +97,6 @@ describe('resolveProbeRecipients — старое поведение (флаг O
       prisma,
       tenantId: 'org-1',
       subjectPersonId: 'person-subject',
-      // subjectAddressingEnabled опущен — должно вести себя как OFF.
     });
 
     expect(recipients).toEqual(['user-head']);
@@ -132,13 +119,7 @@ describe('resolveProbeRecipients — само-подтверждение суб�
       subjectAddressingEnabled: true,
     });
 
-    expect(recipients).toEqual([
-      'user-subject',
-      'user-head',
-      'user-admin-1',
-      'user-admin-2',
-    ]);
-    // субъект — первый получатель (само-подтверждение).
+    expect(recipients).toEqual(['user-subject', 'user-head', 'user-admin-1', 'user-admin-2']);
     expect(recipients[0]).toBe('user-subject');
   });
 
@@ -156,7 +137,6 @@ describe('resolveProbeRecipients — само-подтверждение суб�
       subjectAddressingEnabled: true,
     });
 
-    // субъект первым; admin-дубль самого субъекта отброшен.
     expect(recipients).toEqual(['user-subject', 'user-admin-1']);
     expect(recipients[0]).toBe('user-subject');
   });
@@ -175,7 +155,6 @@ describe('resolveProbeRecipients — само-подтверждение суб�
       subjectAddressingEnabled: true,
     });
 
-    // subject.userId отсутствует → список начинается с главы, затем admins.
     expect(recipients).toEqual(['user-head', 'user-admin-1']);
     expect(recipients[0]).toBe('user-head');
   });
@@ -183,7 +162,6 @@ describe('resolveProbeRecipients — само-подтверждение суб�
   it('ON + дедуп: subject.userId совпадает с admin → не дублируется (subject первым)', async () => {
     const prisma = buildPrismaMock({
       subject: { userId: 'user-subject', primaryDepartmentId: null },
-      // нет primaryDepartmentId → глава не ищется.
       admins: [{ userId: 'user-subject' }, { userId: 'user-admin-1' }],
     });
 
@@ -194,7 +172,6 @@ describe('resolveProbeRecipients — само-подтверждение суб�
       subjectAddressingEnabled: true,
     });
 
-    // user-subject один раз (как само-подтверждение), admin-дубль отброшен.
     expect(recipients).toEqual(['user-subject', 'user-admin-1']);
     expect(recipients.filter((r) => r === 'user-subject')).toHaveLength(1);
   });
@@ -202,7 +179,6 @@ describe('resolveProbeRecipients — само-подтверждение суб�
   it('ON + глава == субъект: глава не дублирует субъекта, дальше admins', async () => {
     const prisma = buildPrismaMock({
       subject: { userId: 'user-same', primaryDepartmentId: 'dept-1' },
-      // headPerson.userId === subject.userId → headUserId не выставляется.
       dept: { headPerson: { id: 'person-head', userId: 'user-same' } },
       admins: [{ userId: 'user-admin-1' }],
     });

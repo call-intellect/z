@@ -1,15 +1,3 @@
-/**
- * KC-Temporal W1.3 (2026-05-25) — unit-тесты `SnapshotService`.
- *
- * Мокаем PrismaService — проверяем поведение bi-temporal-фильтра, truncation,
- * подгрузку evidence/entities. Полный e2e с реальной БД покроет integration-spec
- * на этапе W1.6 (acceptance suite).
- *
- * DoD из ТЗ §W1.3:
- *   - Контрактный тест: `snapshot(at=now)` ≡ выборка без temporal-фильтра.
- *   - `snapshot(at=block.createdAt - 1s)` НЕ возвращает блок.
- *   - `limit` соблюдается, `truncated=true` при превышении.
- */
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -23,13 +11,7 @@ import type {
 
 import { SnapshotService } from './snapshot.service';
 
-/**
- * Ф4 (knowledge-access) — фабрики DI-заглушек. По умолчанию режим гейта `off`,
- * поэтому accessResolver/metrics НЕ должны вызываться (поведение байт-в-байт).
- */
-function makeCfg(
-  enforcement: 'off' | 'shadow' | 'enforce' = 'off',
-): TypedConfigService {
+function makeCfg(enforcement: 'off' | 'shadow' | 'enforce' = 'off'): TypedConfigService {
   return {
     knowledgeAccess: { enforcement },
   } as unknown as TypedConfigService;
@@ -74,7 +56,6 @@ function makeMetrics(): {
   return { metrics, shadowSpy };
 }
 
-/** Конструктор сервиса со стандартными off-заглушками (для legacy-тестов). */
 function makeService(prisma: PrismaService): SnapshotService {
   return new SnapshotService(
     prisma,
@@ -83,7 +64,6 @@ function makeService(prisma: PrismaService): SnapshotService {
     makeMetrics().metrics,
   );
 }
-
 
 interface FakeBlock {
   id: string;
@@ -159,12 +139,6 @@ function makeLink(overrides: Partial<FakeLink> = {}): FakeLink {
   };
 }
 
-/**
- * Лёгкий fake PrismaService: имитирует `findMany` по in-memory массивам
- * + применяет нужные нам фильтры (tenantId, status, validFrom/Until,
- * signalType, entities.some, OR for links). Не претендует на полноту —
- * только то, что использует `SnapshotService.buildBlockWhere/buildLinkWhere`.
- */
 function buildFakePrisma(opts: {
   blocks: FakeBlock[];
   links: FakeLink[];
@@ -203,7 +177,6 @@ function buildFakePrisma(opts: {
           if (w.signalType?.in) {
             if (!w.signalType.in.includes(b.signalType)) return false;
           }
-          // Bi-temporal AND: [{OR validFrom null|<=at}, {OR validUntil null|>at}]
           if (Array.isArray(w.AND)) {
             const at = extractAt(w.AND);
             if (at) {
@@ -243,8 +216,7 @@ function buildFakePrisma(opts: {
               if (cond.fromEntityId) ids.add(cond.fromEntityId);
               if (cond.toEntityId) ids.add(cond.toEntityId);
             }
-            const touches =
-              ids.has(l.fromEntityId) || ids.has(l.toEntityId);
+            const touches = ids.has(l.fromEntityId) || ids.has(l.toEntityId);
             if (!touches) return false;
           }
           return true;
@@ -261,16 +233,13 @@ function buildFakePrisma(opts: {
     ideaBlockEntity: {
       findMany: vi.fn(async (args: { where?: any }) => {
         const ids: string[] = args?.where?.blockId?.in ?? [];
-        return (opts.blockEntities ?? []).filter((r) =>
-          ids.includes(r.blockId),
-        );
+        return (opts.blockEntities ?? []).filter((r) => ids.includes(r.blockId));
       }),
     },
   } as unknown as PrismaService;
 }
 
 function extractAt(and: any[]): Date | null {
-  // ищем `{ OR: [{ validFrom: null }, { validFrom: { lte: Date } }] }`
   for (const clause of and) {
     if (clause?.OR) {
       for (const sub of clause.OR) {
@@ -364,9 +333,7 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
   });
 
   it('limit соблюдается, truncated=true при превышении', async () => {
-    const blocks = Array.from({ length: 5 }, (_, i) =>
-      makeBlock({ id: `b-${i}` }),
-    );
+    const blocks = Array.from({ length: 5 }, (_, i) => makeBlock({ id: `b-${i}` }));
     const prisma = buildFakePrisma({ blocks, links: [] });
     const svc = makeService(prisma);
 
@@ -382,9 +349,7 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
   });
 
   it('truncated=false если block ровно limit', async () => {
-    const blocks = Array.from({ length: 3 }, (_, i) =>
-      makeBlock({ id: `b-${i}` }),
-    );
+    const blocks = Array.from({ length: 3 }, (_, i) => makeBlock({ id: `b-${i}` }));
     const prisma = buildFakePrisma({ blocks, links: [] });
     const svc = makeService(prisma);
 
@@ -484,13 +449,7 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
   });
 
   it('контракт: at=now ≡ выборка без temporal-фильтра (все активные блоки tenant)', async () => {
-    // Все три блока — активные (validUntil null), значит на любом at должны
-    // вернуться все. Это инвариант «snapshot(now) == текущий стейт».
-    const blocks = [
-      makeBlock({ id: 'b-a' }),
-      makeBlock({ id: 'b-b' }),
-      makeBlock({ id: 'b-c' }),
-    ];
+    const blocks = [makeBlock({ id: 'b-a' }), makeBlock({ id: 'b-b' }), makeBlock({ id: 'b-c' })];
     const prisma = buildFakePrisma({ blocks, links: [] });
     const svc = makeService(prisma);
 
@@ -502,11 +461,7 @@ describe('SnapshotService.getSnapshot — bi-temporal-срез', () => {
     });
 
     expect(res.blocks).toHaveLength(3);
-    expect(res.blocks.map((x) => x.block.id).sort()).toEqual([
-      'b-a',
-      'b-b',
-      'b-c',
-    ]);
+    expect(res.blocks.map((x) => x.block.id).sort()).toEqual(['b-a', 'b-b', 'b-c']);
   });
 });
 
@@ -523,15 +478,12 @@ describe('SnapshotService — Ф4 гейт доступа (knowledge-access)', (
 
     expect(resolveSpy).not.toHaveBeenCalled();
     expect(shadowSpy).not.toHaveBeenCalled();
-    // where.AND содержит ровно 2 bi-temporal-условия, без access-gate.
     expect(findManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           tenantId: 't-A',
           status: 'canonical',
-          AND: expect.not.arrayContaining([
-            expect.objectContaining({ blockAccessGate: true }),
-          ]),
+          AND: expect.not.arrayContaining([expect.objectContaining({ blockAccessGate: true })]),
         }),
       }),
     );
@@ -552,9 +504,7 @@ describe('SnapshotService — Ф4 гейт доступа (knowledge-access)', (
     expect(findManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          AND: expect.arrayContaining([
-            expect.objectContaining({ blockAccessGate: true }),
-          ]),
+          AND: expect.arrayContaining([expect.objectContaining({ blockAccessGate: true })]),
         }),
       }),
     );
@@ -582,9 +532,7 @@ describe('SnapshotService — Ф4 гейт доступа (knowledge-access)', (
     expect(findManySpy).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          AND: expect.not.arrayContaining([
-            expect.objectContaining({ blockAccessGate: true }),
-          ]),
+          AND: expect.not.arrayContaining([expect.objectContaining({ blockAccessGate: true })]),
         }),
       }),
     );
@@ -611,7 +559,6 @@ describe('SnapshotService — Ф4 гейт доступа (knowledge-access)', (
       limit: 100,
     });
 
-    // Выдача НЕ меняется (блок остаётся).
     expect(res.blocks).toHaveLength(1);
     expect(partitionSpy).toHaveBeenCalled();
     expect(shadowSpy).toHaveBeenCalledWith({ surface: 'snapshot' }, 1);

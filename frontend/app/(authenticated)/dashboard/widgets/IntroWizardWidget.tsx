@@ -1,39 +1,21 @@
-'use client';
+"use client";
 
-/**
- * `IntroWizardWidget` — онбординг-плашка между Hero и Tabs.
- *
- * 4 состояния (см. ТЗ `2026-06-01-dashboard-main-tabs-restructure.md` Фаза 5):
- *   1. role=member → null.
- *   2. setupCompletedAt + ≤30 дней → компактная плашка «✅ Компания
- *      настроена · N дн. назад».
- *   3. setupCompletedAt + >30 дней → null.
- *   4. setupCompletedAt=null:
- *      - localStorage `dashboard.onboardingDeferredUntil` > now() → null.
- *      - иначе полный блок с прогрессом N/6 + CTA «Пройти знакомство» +
- *        кнопка «Отложить на неделю».
- *
- * 6 шагов прогресса (по полям Org):
- *   welcomeCompletedAt → companyInfoCompletedAt → departmentsCompletedAt →
- *   rolesCompletedAt → teamInvitedAt → (firstMeetingCreatedAt OR firstSprintCreatedAt).
- */
+import Link from "next/link";
+import { ArrowRight, CheckCircle2, Clock, Sparkles } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import useSWR from "swr";
 
-import Link from 'next/link';
-import { ArrowRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
-import useSWR from 'swr';
+import { orgsApi } from "@/api/orgs.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
 
-import { orgsApi } from '@/api/orgs.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-
-const DEFER_LS_KEY = 'dashboard.onboardingDeferredUntil';
-const SHOW_AFTER_DEFER_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+const DEFER_LS_KEY = "dashboard.onboardingDeferredUntil";
+const SHOW_AFTER_DEFER_MS = 7 * 24 * 60 * 60 * 1000;
 const COMPACT_TTL_DAYS = 30;
 const TOTAL_STEPS = 6;
 
 function readDeferredUntil(): number | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(DEFER_LS_KEY);
     if (!raw) return null;
@@ -45,13 +27,11 @@ function readDeferredUntil(): number | null {
 }
 
 function writeDeferredUntil(ts: number | null): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     if (ts == null) window.localStorage.removeItem(DEFER_LS_KEY);
     else window.localStorage.setItem(DEFER_LS_KEY, String(ts));
-  } catch {
-    // silent — privacy mode и т.п.
-  }
+  } catch {}
 }
 
 function daysAgo(iso: string): number {
@@ -90,7 +70,7 @@ export function IntroWizardWidget() {
   }, []);
 
   const swr = useSWR(
-    currentOrgId ? ['intro-wizard-org', currentOrgId] : null,
+    currentOrgId ? ["intro-wizard-org", currentOrgId] : null,
     () => orgsApi.byId(currentOrgId!),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -101,14 +81,12 @@ export function IntroWizardWidget() {
     setDeferredUntil(ts);
   }, []);
 
-  // ── Role-gate. ───────────────────────────────────────────────────
   if (!currentOrgRole) return null;
-  if (currentOrgRole !== 'owner' && currentOrgRole !== 'admin') return null;
+  if (currentOrgRole !== "owner" && currentOrgRole !== "admin") return null;
 
   if (!swr.data) return null;
   const org = swr.data.org as OrgProgressFields;
 
-  // ── Состояние 1: setupCompletedAt — компактная или null. ─────────
   if (org.setupCompletedAt) {
     const dn = daysAgo(org.setupCompletedAt);
     if (dn > COMPACT_TTL_DAYS) return null;
@@ -121,10 +99,8 @@ export function IntroWizardWidget() {
     );
   }
 
-  // ── Состояние 2: отложено пользователем. ─────────────────────────
   if (deferredUntil && deferredUntil > Date.now()) return null;
 
-  // ── Состояние 3: полный блок прогресса. ──────────────────────────
   const completed = countCompleted(org);
 
   return (
@@ -142,7 +118,7 @@ export function IntroWizardWidget() {
             Добавьте отделы, должности и сотрудников — после этого Кора начнёт
             собирать карты должностей и подсказывать «кто за что отвечает».
           </p>
-          {/* Прогресс-бар */}
+          {}
           <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-bg-overlay/60">
             <div
               className="h-full bg-accent transition-all"

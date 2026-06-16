@@ -1,26 +1,26 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { AlertCircle, ArrowLeft, Award, Loader2 } from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { AlertCircle, ArrowLeft, Award, Loader2 } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   roleMapApi,
   type RoleMapApi,
   type RoleMaturityApi,
-} from '@/api/role-map.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Progress } from '@/ui/shadcn/progress';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { RoleMapGrid } from '@/ui/components/role-map/RoleMapCards';
+} from "@/api/role-map.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Progress } from "@/ui/shadcn/progress";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { RoleMapGrid } from "@/ui/components/role-map/RoleMapCards";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 export function RoleMapClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();
@@ -37,10 +37,10 @@ export function RoleMapClient({ roleId }: { roleId: string }) {
 }
 
 function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
-  const mapSwr = useSWR(['role-map', orgId, roleId], () =>
+  const mapSwr = useSWR(["role-map", orgId, roleId], () =>
     roleMapApi.getMap(orgId, roleId),
   );
-  const maturitySwr = useSWR(['role-maturity', orgId, roleId], () =>
+  const maturitySwr = useSWR(["role-maturity", orgId, roleId], () =>
     roleMapApi.getMaturity(orgId, roleId),
   );
 
@@ -61,7 +61,8 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   if (mapSwr.error) {
     if (
       mapSwr.error instanceof ApiError &&
-      (mapSwr.error.code === 'http_404' || mapSwr.error.code === 'role_not_found')
+      (mapSwr.error.code === "http_404" ||
+        mapSwr.error.code === "role_not_found")
     ) {
       return (
         <div className="mx-auto w-full max-w-6xl px-6 py-8">
@@ -78,7 +79,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
           message={
             mapSwr.error instanceof Error
               ? mapSwr.error.message
-              : 'Не удалось загрузить карту'
+              : "Не удалось загрузить карту"
           }
           onRetry={() => void mapSwr.mutate()}
         />
@@ -102,7 +103,10 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
 
       <MissionSection map={map} />
 
-      <RoleMapGrid map={map} className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2" />
+      <RoleMapGrid
+        map={map}
+        className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2"
+      />
 
       <CompletenessBreakdownSection
         maturity={maturitySwr.data ?? null}
@@ -111,8 +115,6 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
     </div>
   );
 }
-
-// ─────────────────────────── Header ─────────────────────────────────
 
 function Header({
   map,
@@ -134,7 +136,7 @@ function Header({
           <p className="mt-1 text-sm text-fg-secondary">
             {map.role.departmentName
               ? `Отдел: ${map.role.departmentName}`
-              : 'Без отдела'}
+              : "Без отдела"}
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -146,7 +148,7 @@ function Header({
           )}
           {map.builtAt && (
             <span className="text-xs text-fg-tertiary">
-              Собрана: {new Date(map.builtAt).toLocaleString('ru-RU')}
+              Собрана: {new Date(map.builtAt).toLocaleString("ru-RU")}
             </span>
           )}
         </div>
@@ -156,7 +158,9 @@ function Header({
         <div>
           <div className="mb-1 flex items-center justify-between text-xs text-fg-tertiary">
             <span>Полнота карты (9 слотов)</span>
-            <span className="font-medium text-fg-primary">{completenessPct}%</span>
+            <span className="font-medium text-fg-primary">
+              {completenessPct}%
+            </span>
           </div>
           <Progress value={completenessPct} />
         </div>
@@ -164,7 +168,7 @@ function Header({
           <div className="mb-1 flex items-center justify-between text-xs text-fg-tertiary">
             <span>Зрелость роли</span>
             <span className="font-medium text-fg-primary">
-              {maturityPct === null ? '—' : `${maturityPct}%`}
+              {maturityPct === null ? "—" : `${maturityPct}%`}
             </span>
           </div>
           <Progress value={maturityPct ?? 0} />
@@ -177,8 +181,6 @@ function Header({
     </header>
   );
 }
-
-// ─────────────────────────── Mission ────────────────────────────────
 
 function MissionSection({ map }: { map: RoleMapApi }) {
   if (!map.role.missionStatement) {
@@ -198,8 +200,6 @@ function MissionSection({ map }: { map: RoleMapApi }) {
     </section>
   );
 }
-
-// ─────────────────────────── Completeness breakdown ─────────────────
 
 function CompletenessBreakdownSection({
   maturity,

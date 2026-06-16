@@ -25,18 +25,6 @@ import {
 } from '../dto/weekly-digest.dto';
 import { WeeklyDigestService } from '../services/weekly-digest.service';
 
-/**
- * SBA β-8.1 — `/api/v1/dashboard/operations/weekly-digest`.
- *
- * Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §7.
- *
- *   GET /?weekStart=YYYY-MM-DD — отдать сохранённый дайджест или 404.
- *     Доступ: coo / owner / admin / super_admin (через
- *     `RbacService.canViewOperationsDashboard`).
- *   POST /generate?weekStart=YYYY-MM-DD — принудительная пере-генерация
- *     (для отладки и админа). Доступ: admin / owner / super_admin
- *     (через `canManageOperationsWeekly`).
- */
 @ApiTags('dashboard-operations-weekly')
 @Controller('api/v1/dashboard/operations/weekly-digest')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -76,8 +64,7 @@ export class WeeklyDigestController {
 
   @Post('generate')
   @ApiOperation({
-    summary:
-      'Принудительно пересобрать недельный дайджест (admin/owner; для отладки)',
+    summary: 'Принудительно пересобрать недельный дайджест (admin/owner; для отладки)',
   })
   async generate(
     @CurrentOrg() tenantId: string | undefined,
@@ -129,11 +116,7 @@ export class WeeklyDigestController {
     }
   }
 
-  private async requireWriteAccess(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
-    // Принудительная регенерация — только admin/owner/super_admin (не coo).
+  private async requireWriteAccess(userId: string, tenantId: string): Promise<void> {
     const ctx = await this.rbac.loadContext(userId, tenantId);
     if (!ctx) {
       throw new ForbiddenException({
@@ -153,10 +136,6 @@ export class WeeklyDigestController {
   }
 }
 
-/**
- * Сдвиг даты YYYY-MM-DD на N дней. Используем UTC, чтобы не зависеть от
- * локали машины.
- */
 function addDaysToDateLocal(dateLocal: string, days: number): string {
   const d = new Date(`${dateLocal}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);

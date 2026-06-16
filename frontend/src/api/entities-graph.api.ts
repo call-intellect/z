@@ -1,26 +1,9 @@
-/**
- * API-клиент для entity-graph (G.3 KC-Temporal, 2026-05-25).
- *
- * Эндпоинты:
- *   - `GET  /api/v1/knowledge/entities/:id/graph?depth=1..3` — entity-centric
- *     граф с rich-edge атрибутами и top-3 evidence на ребро.
- *   - `POST /api/v1/knowledge/entities/:id/mark-wrong` — пометить ребро или
- *     сущность как «неверную» (попадает в LlmPreferenceSample через
- *     `CurationService.recordDecision({decisionType:'mark_as_misleading'})`).
- *
- * Защита — cookie + TenantGuard. RBAC — entity:read (для GET) и entity:write
- * (для POST). Используется страницей `/entities/[id]/graph`.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
-
-// ─────────────────────── Response shapes ────────────────────────────────
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
 export interface EntityGraphNodeApi {
   id: string;
-  type: 'entity';
-  /** Семантический type сущности (person / client / project / ...). */
+  type: "entity";
   entityType: string;
   name: string;
   depth: number;
@@ -48,7 +31,7 @@ export interface EntityGraphEdgeApi {
 export interface EntityGraphResultApi {
   center: {
     id: string;
-    type: 'entity';
+    type: "entity";
     entityType: string;
     name: string;
   };
@@ -57,17 +40,12 @@ export interface EntityGraphResultApi {
   truncated: boolean;
 }
 
-// ─────────────────────── Request shapes ─────────────────────────────────
-
 export interface GetEntityGraphRequestApi {
-  /** Глубина обхода: 1..3. По умолчанию — 2. */
   depth?: number;
 }
 
 export interface MarkEntityWrongRequestApi {
-  /** id ребра (EntityLink.id). Передавать ровно одно: edgeId или nodeId. */
   edgeId?: string;
-  /** id узла (Entity.id). */
   nodeId?: string;
   reason?: string;
   taskType?: string;
@@ -79,15 +57,7 @@ export interface MarkEntityWrongResponseApi {
   curationDecisionId: string;
 }
 
-// ─────────────────────── Client ─────────────────────────────────────────
-
 export const entitiesGraphApi = {
-  /**
-   * G.3 — entity-centric граф «что система знает про X».
-   *
-   * Лимит nodes — 100, evidence per edge — 3 (top по recency).
-   * При обрезании по лимиту — `truncated=true`.
-   */
   getGraph: (
     orgId: string,
     entityId: string,
@@ -98,10 +68,6 @@ export const entitiesGraphApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * G.3 — отметить ребро / узел как «неверный». Передавать ровно один из
-   * `edgeId` / `nodeId`. Без них — backend вернёт 400.
-   */
   markWrong: (
     orgId: string,
     entityId: string,

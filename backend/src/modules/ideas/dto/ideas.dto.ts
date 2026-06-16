@@ -14,8 +14,6 @@ export const IdeaStatusSchema = z.enum([
 export type IdeaKindDto = z.infer<typeof IdeaKindSchema>;
 export type IdeaStatusDto = z.infer<typeof IdeaStatusSchema>;
 
-// ────────────── List ──────────────
-
 export const ListIdeasQuerySchema = z
   .object({
     kind: IdeaKindSchema.optional(),
@@ -49,13 +47,6 @@ export interface ListIdeasResponse {
   limit: number;
 }
 
-// ────────────── Top (Ф4.A — лента идей, виджет дашборда) ──────────────
-
-/**
- * TZ-1 Фаза 4.A (daily-value-engine) — `GET /api/v1/ideas/top?limit=`.
- * Топ идей по ре-ранку (weight + свежесть lastDiscussedAt + связь с целью).
- * Сделано по образцу `GET /insights/top` (виджет Director Dashboard).
- */
 export const TopIdeasQuerySchema = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(10),
@@ -66,8 +57,6 @@ export type TopIdeasQuery = z.infer<typeof TopIdeasQuerySchema>;
 export interface TopIdeasResponse {
   items: IdeaListItemDto[];
 }
-
-// ────────────── Detail ──────────────
 
 export interface IdeaSupporterDto {
   kind: 'person' | 'customer';
@@ -86,8 +75,6 @@ export interface IdeaDetailDto extends IdeaListItemDto {
   dataClass: string;
 }
 
-// ────────────── Status change ──────────────
-
 export const ChangeIdeaStatusBodySchema = z
   .object({
     newStatus: IdeaStatusSchema,
@@ -96,20 +83,12 @@ export const ChangeIdeaStatusBodySchema = z
   .strict();
 export type ChangeIdeaStatusBody = z.infer<typeof ChangeIdeaStatusBodySchema>;
 
-// ────────────── Link idea → goal (Goals OKR v2, Фаза 5) ──────────────
-
-/**
- * Goals OKR v2 (Фаза 5, мост к гипотезам). Привязать идею к цели —
- * «эта гипотеза двигает цель X». `goalId = null` — отвязать.
- */
 export const LinkIdeaGoalSchema = z
   .object({
     goalId: z.string().min(1).nullable(),
   })
   .strict();
 export type LinkIdeaGoalBody = z.infer<typeof LinkIdeaGoalSchema>;
-
-// ────────────── My Ideas ──────────────
 
 export const MyIdeasQuerySchema = z
   .object({
@@ -119,8 +98,6 @@ export const MyIdeasQuerySchema = z
   })
   .strict();
 export type MyIdeasQuery = z.infer<typeof MyIdeasQuerySchema>;
-
-// ────────────── Clusters ──────────────
 
 export const ListIdeaClustersQuerySchema = z
   .object({

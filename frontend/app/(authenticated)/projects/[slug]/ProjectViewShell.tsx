@@ -1,48 +1,76 @@
-'use client';
+"use client";
 
-/**
- * ProjectViewShell — общий header + табы для всех страниц одного проекта.
- * Используется на /board, /list, /calendar, /gantt, /cycles, /intake, /settings.
- */
-
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
-import { cn } from '@/ui/shadcn/lib/utils';
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import type { ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/ui/shadcn/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { projectShortLabel, type Project } from '@/domain/tracker';
-import { useTour } from '@/ui/tour';
+} from "@/ui/shadcn/dropdown-menu";
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { projectShortLabel, type Project } from "@/domain/tracker";
+import { useTour } from "@/ui/tour";
 
 interface Tab {
   href: string;
   label: string;
   show?: (p: Project) => boolean;
-  group: 'primary' | 'secondary';
+  group: "primary" | "secondary";
 }
 
 function buildTabs(slug: string): Tab[] {
-  // A4 (2026-06-06): primary на виду, остальное под «Ещё ▾».
   return [
-    { href: `/projects/${slug}/overview`, label: 'Обзор', group: 'primary' },
-    { href: `/projects/${slug}/board`, label: 'Доска', group: 'primary' },
-    { href: `/projects/${slug}/list`, label: 'Список', group: 'primary' },
-    { href: `/projects/${slug}/calendar`, label: 'Календарь', group: 'primary' },
-    { href: `/projects/${slug}/cycles`, label: 'Спринты', show: (p) => p.cycleViewEnabled, group: 'primary' },
-    { href: `/projects/${slug}/settings`, label: 'Настройки', group: 'primary' },
-    // secondary — под «Ещё ▾»
-    { href: `/projects/${slug}/documents`, label: 'Документы', group: 'secondary' },
-    { href: `/projects/${slug}/integrations`, label: 'Приложения', group: 'secondary' },
-    { href: `/projects/${slug}/workload`, label: 'Загруженность', group: 'secondary' },
-    { href: `/projects/${slug}/intake`, label: 'Входящие', show: (p) => p.intakeViewEnabled, group: 'secondary' },
-    { href: `/projects/${slug}/gantt`, label: 'Гант', show: (p) => p.gantViewEnabled, group: 'secondary' },
+    { href: `/projects/${slug}/overview`, label: "Обзор", group: "primary" },
+    { href: `/projects/${slug}/board`, label: "Доска", group: "primary" },
+    { href: `/projects/${slug}/list`, label: "Список", group: "primary" },
+    {
+      href: `/projects/${slug}/calendar`,
+      label: "Календарь",
+      group: "primary",
+    },
+    {
+      href: `/projects/${slug}/cycles`,
+      label: "Спринты",
+      show: (p) => p.cycleViewEnabled,
+      group: "primary",
+    },
+    {
+      href: `/projects/${slug}/settings`,
+      label: "Настройки",
+      group: "primary",
+    },
+    {
+      href: `/projects/${slug}/documents`,
+      label: "Документы",
+      group: "secondary",
+    },
+    {
+      href: `/projects/${slug}/integrations`,
+      label: "Приложения",
+      group: "secondary",
+    },
+    {
+      href: `/projects/${slug}/workload`,
+      label: "Загруженность",
+      group: "secondary",
+    },
+    {
+      href: `/projects/${slug}/intake`,
+      label: "Входящие",
+      show: (p) => p.intakeViewEnabled,
+      group: "secondary",
+    },
+    {
+      href: `/projects/${slug}/gantt`,
+      label: "Гант",
+      show: (p) => p.gantViewEnabled,
+      group: "secondary",
+    },
   ];
 }
 
@@ -53,19 +81,17 @@ export function ProjectViewShell({
   slug: string;
   children: ReactNode;
 }) {
-  const pathname = usePathname() ?? '';
+  const pathname = usePathname() ?? "";
   const { currentOrgId } = useAuth();
   const { project, isLoading, error } = useProjectBySlug(currentOrgId, slug);
 
-  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «project» при первом
-  // открытии любой страницы проекта. Если уже завершён/пропущен — no-op.
-  useTour('project');
+  useTour("project");
 
   const visibleTabs = buildTabs(slug).filter(
     (t) => !t.show || (project && t.show(project)),
   );
-  const primaryTabs = visibleTabs.filter((t) => t.group === 'primary');
-  const secondaryTabs = visibleTabs.filter((t) => t.group === 'secondary');
+  const primaryTabs = visibleTabs.filter((t) => t.group === "primary");
+  const secondaryTabs = visibleTabs.filter((t) => t.group === "secondary");
   const activeSecondary = secondaryTabs.some((t) => t.href === pathname);
 
   return (
@@ -87,19 +113,19 @@ export function ProjectViewShell({
           <nav className="-mb-3 flex items-center gap-1 overflow-x-auto">
             {primaryTabs.map((tab) => {
               const active = pathname === tab.href;
-              const isOverview = tab.label === 'Обзор';
+              const isOverview = tab.label === "Обзор";
               return (
                 <Link
                   key={tab.href}
                   href={tab.href}
                   className={cn(
-                    'whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
+                    "whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors",
                     active
-                      ? 'border-accent text-accent'
-                      : 'border-transparent text-fg-tertiary hover:text-fg-secondary',
+                      ? "border-accent text-accent"
+                      : "border-transparent text-fg-tertiary hover:text-fg-secondary",
                   )}
                   {...(isOverview
-                    ? { 'data-tour-target': 'project.overview-tab' }
+                    ? { "data-tour-target": "project.overview-tab" }
                     : {})}
                 >
                   {tab.label}
@@ -113,10 +139,10 @@ export function ProjectViewShell({
                   <button
                     type="button"
                     className={cn(
-                      'inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors',
+                      "inline-flex items-center gap-1 whitespace-nowrap border-b-2 px-3 py-2 text-sm transition-colors",
                       activeSecondary
-                        ? 'border-accent text-accent'
-                        : 'border-transparent text-fg-tertiary hover:text-fg-secondary',
+                        ? "border-accent text-accent"
+                        : "border-transparent text-fg-tertiary hover:text-fg-secondary",
                     )}
                   >
                     Ещё
@@ -129,8 +155,8 @@ export function ProjectViewShell({
                       <Link
                         href={tab.href}
                         className={cn(
-                          'w-full cursor-pointer',
-                          pathname === tab.href && 'text-accent',
+                          "w-full cursor-pointer",
+                          pathname === tab.href && "text-accent",
                         )}
                       >
                         {tab.label}

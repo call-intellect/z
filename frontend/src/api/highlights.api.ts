@@ -1,11 +1,11 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для модуля highlights (клипы из встречи).
- * Источник правды — backend/src/modules/highlights/.
- */
-
-export type HighlightRenderStatus = 'none' | 'queued' | 'processing' | 'ready' | 'failed';
+export type HighlightRenderStatus =
+  | "none"
+  | "queued"
+  | "processing"
+  | "ready"
+  | "failed";
 
 export type HighlightApi = {
   id: string;

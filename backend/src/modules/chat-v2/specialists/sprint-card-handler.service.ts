@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -12,21 +7,8 @@ import {
   CardSpecialistRegistry,
 } from '../services/card-specialist-registry.service';
 
-/**
- * Sprints (2026-05-27) — Specialist 3-13 card handler.
- *
- * Регистрируется в `CardSpecialistRegistry` chat-v2. На запросы вида
- * «покажи проблемы спринта по проекту X / отделу Y / сотруднику Z»
- * возвращает релевантные спринты (`Cycle`), ранжируя их по:
- *   1. overlap встреч спринта (`Meeting.linkedCycleId`) с candidateBlockIds,
- *   2. количеству активных `SprintHint` (больше = горячее).
- *
- * Контракт: не бросает — на любую ошибку возвращает `[]`.
- */
 @Injectable()
-export class SprintCardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class SprintCardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(SprintCardHandler.name);
   static readonly SPECIALIST_NAME = '3-13-sprint';
 
@@ -38,9 +20,7 @@ export class SprintCardHandler
 
   onModuleInit(): void {
     this.registry.register(SprintCardHandler.SPECIALIST_NAME, this);
-    this.logger.log(
-      `SprintCardHandler зарегистрирован как '${SprintCardHandler.SPECIALIST_NAME}'`,
-    );
+    this.logger.log(`SprintCardHandler зарегистрирован как '${SprintCardHandler.SPECIALIST_NAME}'`);
   }
 
   async getCardsForQuery(args: {
@@ -52,7 +32,6 @@ export class SprintCardHandler
     try {
       if (args.limit <= 0) return [];
 
-      // 1) Активные спринты tenant'а (completedAt IS NULL).
       const activeCycles = await this.prisma.cycle.findMany({
         where: { tenantId: args.tenantId, completedAt: null },
         orderBy: [{ startDate: 'desc' }],
@@ -76,11 +55,6 @@ export class SprintCardHandler
       });
       if (activeCycles.length === 0) return [];
 
-      // 2) Overlap candidateBlockIds с issue.sourceBlockIds задач активных
-      // циклов. Проще и корректнее, чем тянуть граф через RawEvent — `Issue.
-      // sourceBlockIds` уже содержит все блоки, на которых построена задача
-      // (создание через AI / привязка к встрече). Это даёт качество ранжирования
-      // не хуже, чем по meeting'у, за один JOIN.
       const cycleIds = activeCycles.map((c) => c.id);
       const blockIds = args.candidateBlockIds.slice(0, 200);
       const blockSet = new Set<string>(blockIds);
@@ -101,14 +75,10 @@ export class SprintCardHandler
           for (const b of i.sourceBlockIds) {
             if (blockSet.has(b)) cnt++;
           }
-          overlapByCycle.set(
-            i.cycleId,
-            (overlapByCycle.get(i.cycleId) ?? 0) + cnt,
-          );
+          overlapByCycle.set(i.cycleId, (overlapByCycle.get(i.cycleId) ?? 0) + cnt);
         }
       }
 
-      // 3) Активные SprintHint per cycle (счётчик для боoster'а).
       const hintCounts = await this.prisma.sprintHint.groupBy({
         by: ['cycleId'],
         where: {
@@ -123,7 +93,6 @@ export class SprintCardHandler
         hintCountByCycle.set(r.cycleId, r._count._all);
       }
 
-      // 4) Скоринг.
       const queryLc = args.query.trim().toLowerCase();
       const candidates = activeCycles
         .map((c) => {

@@ -1,10 +1,3 @@
-/**
- * Юнит-тесты guard-веток `PersonsService.create({ linkUserId })`
- * (ТЗ «Команда + доступы» Фаза 2 — привязка карточки к участнику).
- *
- * Обе ветки кидают ДО `$transaction`, поэтому транзакцию мокать не нужно —
- * достаточно `membership.findUnique` и `person.findFirst`.
- */
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 

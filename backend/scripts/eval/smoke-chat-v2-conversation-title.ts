@@ -1,11 +1,3 @@
-/**
- * Smoke-тест taskType=chat-v2-conversation-title.
- * Источник промпта: backend/src/modules/chat-v2/prompts/chat-v2-conversation-title.prompt.ts
- *
- * Выход — короткая строка-заголовок. plain text.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-chat-v2-conversation-title.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -20,9 +12,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,

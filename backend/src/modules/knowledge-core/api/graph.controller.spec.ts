@@ -1,14 +1,3 @@
-/**
- * Integration spec для KnowledgeGraphController (Phase F.2).
- *
- * Реальный Postgres из docker-compose.dev.yml.
- *
- * Покрытие:
- *   - GET /graph/neighbors?nodeType=block — happy path (root block + соседи).
- *   - GET /graph/neighbors?nodeType=entity — happy.
- *   - 403 cross-tenant: запрос узла другой Org → NotFoundException.
- *   - 403 forbidden, 404 not_found, Zod 400 (depth > 3 / неизвестный nodeType).
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -96,8 +85,6 @@ describe('KnowledgeGraphController (integration)', () => {
     const res = await ctrl.neighbors(q, userA, f.orgAId);
     expect(res.rootNode.id).toBe(f.blockAId);
     expect(res.rootNode.type).toBe('block');
-    // У нашего фикстурного блока должна быть как минимум одна entity-связь
-    // (через IdeaBlockEntity → entityA).
     expect(res.nodes.find((n) => n.id === f.entityAId)).toBeDefined();
   });
 
@@ -115,7 +102,6 @@ describe('KnowledgeGraphController (integration)', () => {
     const res = await ctrl.neighbors(q, userA, f.orgAId);
     expect(res.rootNode.id).toBe(f.entityAId);
     expect(res.rootNode.type).toBe('entity');
-    // Должен подтянуть блок-mention.
     expect(res.nodes.find((n) => n.id === f.blockAId)).toBeDefined();
   });
 
@@ -130,9 +116,7 @@ describe('KnowledgeGraphController (integration)', () => {
       id: f.blockAId,
       depth: 1,
     });
-    await expect(ctrl.neighbors(q, userB, f.orgBId)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(ctrl.neighbors(q, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('403 forbidden если canRead=false', async (testCtx) => {
@@ -146,9 +130,7 @@ describe('KnowledgeGraphController (integration)', () => {
       id: f.blockAId,
       depth: 1,
     });
-    await expect(ctrl.neighbors(q, userA, f.orgAId)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.neighbors(q, userA, f.orgAId)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required (X-Org-Id не передан)', async (testCtx) => {
@@ -162,9 +144,7 @@ describe('KnowledgeGraphController (integration)', () => {
       id: f.blockAId,
       depth: 1,
     });
-    await expect(ctrl.neighbors(q, userA, undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.neighbors(q, userA, undefined)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('404 на несуществующий узел', async (testCtx) => {
@@ -178,9 +158,7 @@ describe('KnowledgeGraphController (integration)', () => {
       id: `${PREFIX}-no-node`,
       depth: 1,
     });
-    await expect(ctrl.neighbors(q, userA, f.orgAId)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(ctrl.neighbors(q, userA, f.orgAId)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('Zod-400: depth > 3 отклоняется', () => {
@@ -202,13 +180,6 @@ describe('KnowledgeGraphController (integration)', () => {
   });
 });
 
-// ──────────────── Ф4 knowledge-access — гейт BFS-графа (unit) ────────────────
-//
-// Юнит-тесты (без БД): мокаем prisma/resolver/cfg/metrics. Сценарий: root
-// block B0 имеет блок-ссылку на B1 (block-node) и упоминание сущности E1.
-// При enforce доступ к B1 отказан → B1-узел и block-link к нему убраны;
-// entity-узел E1 НЕ гейтится. Метрики проверяем.
-
 const GATE_USER: CurrentUserPayload = {
   id: 'graph-gate-user',
   email: 'gate@test',
@@ -229,9 +200,7 @@ function gateResolver(opts: {
   partitionSpy: ReturnType<typeof vi.fn>;
 } {
   const resolveSpy = vi.fn(async () => opts.ctx);
-  const partitionSpy = vi.fn(
-    async () => opts.partition ?? { accessible: [], denied: 0 },
-  );
+  const partitionSpy = vi.fn(async () => opts.partition ?? { accessible: [], denied: 0 });
   const resolver = {
     resolveAccessibleGroups: resolveSpy,
     partitionBlockIdsByAccess: partitionSpy,
@@ -264,7 +233,6 @@ function graphPrisma(): PrismaService {
     },
     ideaBlockLink: {
       findMany: vi.fn(async (args: { where?: { fromBlockId?: string } }) => {
-        // from-direction (fromBlockId=B0) → ссылка на B1; to-direction → пусто.
         if (args?.where && 'fromBlockId' in args.where) {
           return [
             {
@@ -281,9 +249,7 @@ function graphPrisma(): PrismaService {
       }),
     },
     ideaBlockEntity: {
-      findMany: vi.fn(async () => [
-        { entity: { id: 'E1', canonicalName: 'E1' } },
-      ]),
+      findMany: vi.fn(async () => [{ entity: { id: 'E1', canonicalName: 'E1' } }]),
     },
   } as unknown as PrismaService;
 }
@@ -320,7 +286,6 @@ describe('KnowledgeGraphController.neighbors — Ф4 гейт (unit)', () => {
     };
     const { resolver, partitionSpy } = gateResolver({
       ctx,
-      // block-узлы [B0, B1]; B0 (root) доступен, B1 — нет.
       partition: { accessible: ['B0'], denied: 1 },
     });
     const { metrics, incDenied } = gateMetrics();
@@ -334,14 +299,11 @@ describe('KnowledgeGraphController.neighbors — Ф4 гейт (unit)', () => {
     const res = await ctrl.neighbors(Q, GATE_USER, TENANT);
     expect(partitionSpy).toHaveBeenCalled();
     const ids = res.nodes.map((n) => n.id);
-    expect(ids).not.toContain('B1'); // недоступный block-узел убран
-    expect(ids).toContain('E1'); // entity-узел не гейтится
-    // block-link B0→B1 удалён (конец B1 отсутствует); block-entity B0→E1 остался.
+    expect(ids).not.toContain('B1');
+    expect(ids).toContain('E1');
     const hasBlockLink = res.edges.some((e) => e.type === 'block-link');
     expect(hasBlockLink).toBe(false);
-    const hasBlockEntity = res.edges.some(
-      (e) => e.type === 'block-entity' && e.to === 'E1',
-    );
+    const hasBlockEntity = res.edges.some((e) => e.type === 'block-entity' && e.to === 'E1');
     expect(hasBlockEntity).toBe(true);
     expect(incDenied).toHaveBeenCalledWith({ surface: 'graph' }, 1);
   });

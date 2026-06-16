@@ -1,21 +1,8 @@
-/**
- * MockAdapter — фиксированные данные для dev/sandbox.
- *
- * Возвращает заранее известные ИНН реальных компаний (Сбер, Точка) и
- * `null` для всех остальных. Используется когда `INN_LOOKUP_PROVIDER=mock`
- * (по умолчанию). На MVP, sandbox-режиме Точки и без `DADATA_API_KEY`
- * это позволяет полностью пройти UX-сценарий регистрации/реферала.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §8.
- */
-
 import { Injectable } from '@nestjs/common';
 
 import type { InnLookupAdapter, InnLookupResult } from './inn-lookup.adapter';
 
-/** Анонимизированные dev-фикстуры. */
 const FIXTURES: Record<string, InnLookupResult> = {
-  // ПАО Сбербанк
   '7707083893': {
     source: 'mock',
     payerType: 'legal_entity',
@@ -28,7 +15,6 @@ const FIXTURES: Record<string, InnLookupResult> = {
     bankBik: null,
     bankAccount: null,
   },
-  // АО «Точка»
   '9721194461': {
     source: 'mock',
     payerType: 'legal_entity',
@@ -41,7 +27,6 @@ const FIXTURES: Record<string, InnLookupResult> = {
     bankBik: '044525104',
     bankAccount: null,
   },
-  // ИП-фикстура для проверки payerType='individual_entrepreneur'
   '500100732259': {
     source: 'mock',
     payerType: 'individual_entrepreneur',

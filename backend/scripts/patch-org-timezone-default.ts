@@ -1,21 +1,3 @@
-/**
- * SBA β-8.1 — Patch: проставить `Org.timezone = 'Europe/Moscow'` для всех
- * Org с timezone IS NULL.
- *
- * Зачем: новая колонка `Org.timezone` (sub-ТЗ §5) имеет
- * `@default("Europe/Moscow")`, но default применяется только к новым INSERT'ам.
- * Существующие Org'и в проде остаются с NULL, что ломает
- * `OperationsWeeklyDigestCron` (он фильтрует Org по локальному часу/дню).
- *
- * Запуск:
- *   bun run scripts/patch-org-timezone-default.ts
- *   bun run scripts/patch-org-timezone-default.ts --dry-run
- *
- * Идемпотентность: повторный запуск — no-op (где timezone уже не NULL).
- *
- * Safe-seed-rules: НЕ перезаписываем существующие timezone — только NULL → дефолт.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { isColumnNullable } from './_lib/schema-guards';
@@ -27,17 +9,11 @@ const DEFAULT_TIMEZONE = 'Europe/Moscow';
 async function main(): Promise<void> {
   const dryRun = process.argv.includes('--dry-run');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== patch-org-timezone-default START (dryRun=${dryRun}) ===`,
-  );
+  console.log(`=== patch-org-timezone-default START (dryRun=${dryRun}) ===`);
 
-  // Guard: если Org.timezone уже NOT NULL (cleanup-миграция применена) —
-  // типизированный where:{timezone:null} упал бы Prisma 7-валидацией.
   if (!(await isColumnNullable(prisma, 'Org', 'timezone'))) {
     // eslint-disable-next-line no-console
-    console.log(
-      'Org.timezone уже NOT NULL — дефолт проставлен ранее, обновление не требуется.',
-    );
+    console.log('Org.timezone уже NOT NULL — дефолт проставлен ранее, обновление не требуется.');
     return;
   }
 
@@ -66,9 +42,7 @@ async function main(): Promise<void> {
     data: { timezone: DEFAULT_TIMEZONE },
   });
   // eslint-disable-next-line no-console
-  console.log(
-    `[update] Обновлено Org: ${result.count} (timezone → '${DEFAULT_TIMEZONE}')`,
-  );
+  console.log(`[update] Обновлено Org: ${result.count} (timezone → '${DEFAULT_TIMEZONE}')`);
 
   // eslint-disable-next-line no-console
   console.log('=== patch-org-timezone-default DONE ===');

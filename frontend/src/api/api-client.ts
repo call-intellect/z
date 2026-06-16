@@ -1,5 +1,5 @@
-import { nanoid } from 'nanoid';
-import { ApiError, httpStatusFallbackRu } from './api-error';
+import { nanoid } from "nanoid";
+import { ApiError, httpStatusFallbackRu } from "./api-error";
 
 type GetOpts = { signal?: AbortSignal; headers?: Record<string, string> };
 type PostOpts = {
@@ -25,18 +25,8 @@ type BackendErrorPayload = {
   };
 };
 
-const AUTH_EXPIRED_EVENT = 'auth:expired';
+const AUTH_EXPIRED_EVENT = "auth:expired";
 
-/**
- * Текущая Org пользователя — добавляется в `X-Org-Id` по умолчанию ко всем
- * запросам. Нужна глобальным `SubscriptionGuard`/`EntitlementGuard` на бэке:
- * они — global APP_GUARD и выполняются ДО controller-scoped `CookieAuthGuard`,
- * поэтому tenant резолвят ТОЛЬКО из заголовка (req.user ещё не выставлен,
- * single-org fallback недоступен). Без X-Org-Id мутирующие @RequireSubscription
- * эндпоинты (создание/завершение встречи, регенерация отчёта и т.д.) падают с
- * 403 tenant_required. Синхронизируется из auth-context (`setApiClientOrgId`).
- * Явный per-call `X-Org-Id` (admin cross-org вызовы) имеет приоритет.
- */
 let defaultOrgId: string | null = null;
 
 export function setApiClientOrgId(orgId: string | null): void {
@@ -48,7 +38,7 @@ export function getApiClientOrgId(): string | null {
 }
 
 function emitAuthExpired(): void {
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
   }
 }
@@ -65,8 +55,6 @@ async function parseError(res: Response, requestId: string): Promise<ApiError> {
     body = null;
   }
   const err = body?.error;
-  // ВАЖНО: фолбэк message — РУССКАЯ фраза, а не «HTTP 500». Эта строка всплывает
-  // в тостах/баннерах по всему кабинету; технический код остаётся в `code`.
   return new ApiError({
     code: err?.code ?? `http_${res.status}`,
     message: err?.message ?? httpStatusFallbackRu(res.status),
@@ -79,14 +67,14 @@ export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
   async get<T>(path: string, opts?: GetOpts): Promise<T> {
-    return this.request<T>('GET', path, undefined, {
+    return this.request<T>("GET", path, undefined, {
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });
   }
 
   async post<T>(path: string, body?: unknown, opts?: PostOpts): Promise<T> {
-    return this.request<T>('POST', path, body, {
+    return this.request<T>("POST", path, body, {
       ...(opts?.idempotencyKey !== undefined
         ? { idempotencyKey: opts.idempotencyKey }
         : {}),
@@ -96,28 +84,28 @@ export class ApiClient {
   }
 
   async patch<T>(path: string, body?: unknown, opts?: PatchOpts): Promise<T> {
-    return this.request<T>('PATCH', path, body, {
+    return this.request<T>("PATCH", path, body, {
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });
   }
 
   async put<T>(path: string, body?: unknown, opts?: PutOpts): Promise<T> {
-    return this.request<T>('PUT', path, body, {
+    return this.request<T>("PUT", path, body, {
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });
   }
 
   async del<T>(path: string, opts?: DelOpts): Promise<T> {
-    return this.request<T>('DELETE', path, opts?.body, {
+    return this.request<T>("DELETE", path, opts?.body, {
       ...(opts?.signal !== undefined ? { signal: opts.signal } : {}),
       ...(opts?.headers !== undefined ? { headers: opts.headers } : {}),
     });
   }
 
   private async request<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
     path: string,
     body?: unknown,
     opts?: {
@@ -126,17 +114,17 @@ export class ApiClient {
       headers?: Record<string, string>;
     },
   ): Promise<T> {
-    const url = this.baseUrl.replace(/\/+$/, '') + path;
+    const url = this.baseUrl.replace(/\/+$/, "") + path;
     const requestId = nanoid(12);
     const headers: Record<string, string> = {
-      'X-Request-Id': requestId,
-      Accept: 'application/json',
+      "X-Request-Id": requestId,
+      Accept: "application/json",
     };
     if (body !== undefined) {
-      headers['Content-Type'] = 'application/json';
+      headers["Content-Type"] = "application/json";
     }
     if (opts?.idempotencyKey) {
-      headers['Idempotency-Key'] = opts.idempotencyKey;
+      headers["Idempotency-Key"] = opts.idempotencyKey;
     }
     if (opts?.headers) {
       for (const [k, v] of Object.entries(opts.headers)) {
@@ -144,17 +132,16 @@ export class ApiClient {
       }
     }
 
-    // X-Org-Id по умолчанию (текущая Org). Явный per-call заголовок не перетираем.
     const hasExplicitOrg = Object.keys(headers).some(
-      (k) => k.toLowerCase() === 'x-org-id',
+      (k) => k.toLowerCase() === "x-org-id",
     );
     if (!hasExplicitOrg && defaultOrgId) {
-      headers['X-Org-Id'] = defaultOrgId;
+      headers["X-Org-Id"] = defaultOrgId;
     }
 
     const init: RequestInit = {
       method,
-      credentials: 'include',
+      credentials: "include",
       headers,
       signal: opts?.signal,
     };
@@ -162,8 +149,7 @@ export class ApiClient {
       init.body = JSON.stringify(body);
     }
 
-    // Retry для GET 5xx: 2 попытки с backoff 1s, 3s.
-    const maxAttempts = method === 'GET' ? 3 : 1;
+    const maxAttempts = method === "GET" ? 3 : 1;
     const backoffs = [1000, 3000];
 
     let lastError: unknown;
@@ -174,33 +160,26 @@ export class ApiClient {
         if (res.status === 401) {
           emitAuthExpired();
           throw new ApiError({
-            code: 'unauthorized',
-            message: 'Сессия истекла. Войдите снова.',
+            code: "unauthorized",
+            message: "Сессия истекла. Войдите снова.",
             requestId,
           });
         }
         if (res.status === 403) {
           const parsed = await parseError(res, requestId);
-          // Пэйвол: глобальный SubscriptionGuard на бэке бросает 403 с кодом
-          // `subscription_demo` (никогда не платили) или `subscription_expired`
-          // (подписка закончилась); легаси-код `subscription_required` тоже
-          // поддерживаем. На любой из них поднимаем единый эвент →
-          // SubscriptionContext открывает PaywallModal, чтобы пользователь
-          // видел понятное объяснение, а не «нажал — ничего не происходит».
-          // Контракт кодов: backend/src/modules/billing/guards/subscription.guard.ts.
           if (
-            parsed.code === 'subscription_required' ||
-            parsed.code === 'subscription_demo' ||
-            parsed.code === 'subscription_expired'
+            parsed.code === "subscription_required" ||
+            parsed.code === "subscription_demo" ||
+            parsed.code === "subscription_expired"
           ) {
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('subscription:required'));
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("subscription:required"));
             }
           }
           throw parsed;
         }
 
-        if (res.status >= 500 && method === 'GET' && attempt < maxAttempts) {
+        if (res.status >= 500 && method === "GET" && attempt < maxAttempts) {
           await sleep(backoffs[attempt - 1] ?? 3000);
           continue;
         }
@@ -209,7 +188,6 @@ export class ApiClient {
           throw await parseError(res, requestId);
         }
 
-        // 204 No Content
         if (res.status === 204) {
           return undefined as T;
         }
@@ -222,36 +200,37 @@ export class ApiClient {
           return JSON.parse(text) as T;
         } catch {
           throw new ApiError({
-            code: 'invalid_response',
-            message: 'Сервер вернул некорректный JSON.',
+            code: "invalid_response",
+            message: "Сервер вернул некорректный JSON.",
             requestId,
           });
         }
       } catch (e) {
         lastError = e;
-        // ApiError из ветки 5xx-уже-обработан или из not-ok — не ретраим (кроме того что уже сделали).
         if (e instanceof ApiError) throw e;
-        // Сетевая ошибка fetch — для GET ретраим.
-        if (method === 'GET' && attempt < maxAttempts) {
+        if (method === "GET" && attempt < maxAttempts) {
           await sleep(backoffs[attempt - 1] ?? 3000);
           continue;
         }
-        if (e instanceof Error && e.name === 'AbortError') {
+        if (e instanceof Error && e.name === "AbortError") {
           throw e;
         }
         throw new ApiError({
-          code: 'network_error',
-          message: 'Ошибка сети. Проверьте подключение.',
+          code: "network_error",
+          message: "Ошибка сети. Проверьте подключение.",
           requestId,
         });
       }
     }
-    // Сюда теоретически не доходим, но TS требует.
     throw lastError instanceof Error
       ? lastError
-      : new ApiError({ code: 'unknown', message: 'Неизвестная ошибка.', requestId });
+      : new ApiError({
+          code: "unknown",
+          message: "Неизвестная ошибка.",
+          requestId,
+        });
   }
 }
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 export const apiClient = new ApiClient(baseUrl);

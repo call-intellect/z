@@ -28,7 +28,6 @@ function mkCron(opts: {
   cron: ContributionSnapshotCron;
   prisma: MockPrisma;
 } {
-  // idea.count вызывается дважды: in_progress + shipped
   let ideaCountCall = 0;
   let recogCountCall = 0;
   const prisma: MockPrisma = {
@@ -38,17 +37,13 @@ function mkCron(opts: {
     idea: {
       count: vi.fn().mockImplementation(async () => {
         ideaCountCall += 1;
-        return ideaCountCall === 1
-          ? opts.ideasInDev ?? 0
-          : opts.ideasShipped ?? 0;
+        return ideaCountCall === 1 ? (opts.ideasInDev ?? 0) : (opts.ideasShipped ?? 0);
       }),
     },
     recognition: {
       count: vi.fn().mockImplementation(async () => {
         recogCountCall += 1;
-        return recogCountCall === 1
-          ? opts.thanksTotal ?? 0
-          : opts.thanksWeek ?? 0;
+        return recogCountCall === 1 ? (opts.thanksTotal ?? 0) : (opts.thanksWeek ?? 0);
       }),
     },
     issueComment: {
@@ -82,7 +77,7 @@ describe('ContributionSnapshotCron', () => {
 
   it('агрегирует helpfulComments как сумму длин thanksUserIds', async () => {
     const { cron, prisma } = mkCron({
-      helpfulCounts: [3, 2, 5], // итого 10
+      helpfulCounts: [3, 2, 5],
     });
     await cron.recomputeOne('u-1');
     const call = prisma.contributionSnapshot.upsert.mock.calls[0]?.[0] as {
@@ -102,7 +97,6 @@ describe('ContributionSnapshotCron', () => {
     };
     expect(call.create.currentCheckinStreak).toBe(5);
     expect(call.create.longestCheckinStreak).toBe(12);
-    // update не трогает streak (это поле обновляет StreakDetectorCron).
     expect(call.update.currentCheckinStreak).toBeUndefined();
     expect(call.update.longestCheckinStreak).toBeUndefined();
   });

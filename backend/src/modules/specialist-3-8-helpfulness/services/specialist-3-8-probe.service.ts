@@ -3,27 +3,6 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * SBA Wave 2 — Specialist38ProbeService.
- *
- * 4 probe-trigger'а Specialist 3.8 Helpfulness:
- *
- *   1. `helpfulness.new_expertise_helper_detected` — у helper'а появилась
- *      новая тема (topicHint), которой не было в expertiseTopics. Recipient —
- *      руководитель команды + member'ы команды (опционально).
- *   2. `helpfulness.unrecognized_high_contributor` — у helper'а ≥20 trait'ов
- *      за 30 дней, но 0 Recognition. Recipient — руководитель.
- *   3. `helpfulness.mentor_emerging` — у helper'а ≥5 mentoring-trait'ов за 14
- *      дней. Recipient — руководитель.
- *   4. `helpfulness.question_chain_unanswered` (PRIVATE) — у user'а ≥3
- *      question_unanswered за неделю. Recipient — ТОЛЬКО админ + руководитель.
- *      ⚠ Никогда не публично.
- *
- * Все эмиссии через `ProbeService.suggest` (dedup + rate-limit + cold-start
- * встроены). Probe-service Optional — если в тестах нет, skip.
- *
- * Контракт: сервис НЕ должен бросать — один упавший probe не валит остальные.
- */
 @Injectable()
 export class Specialist38ProbeService {
   private readonly logger = new Logger(Specialist38ProbeService.name);
@@ -37,10 +16,6 @@ export class Specialist38ProbeService {
     private readonly probeService?: ProbeService,
   ) {}
 
-  /**
-   * Запускается из cron'а (см. HelpfulnessProbeCron). Для каждого активного
-   * tenantId проверяет все 4 trigger'а.
-   */
   async runAllChecks(args: { tenantId: string }): Promise<{
     emitted: number;
     skipped: number;
@@ -71,15 +46,7 @@ export class Specialist38ProbeService {
     return { emitted, skipped };
   }
 
-  // ─────────────────────────── triggers ─────────────────────────────────
-
-  /**
-   * `new_expertise_helper_detected` — за последние 7 дней появился новый
-   * topicHint, которого не было в SocialContributionProfile.expertiseTopics.
-   */
-  private async checkNewExpertiseHelper(args: {
-    tenantId: string;
-  }): Promise<number> {
+  private async checkNewExpertiseHelper(args: { tenantId: string }): Promise<number> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400 * 1000);
     const recentTraits = await this.prisma.helpfulnessTrait.findMany({
       where: {
@@ -102,7 +69,6 @@ export class Specialist38ProbeService {
     });
     if (recentTraits.length === 0) return 0;
 
-    // Группируем по helperUserId.
     const byHelper = new Map<string, Set<string>>();
     for (const t of recentTraits) {
       if (!t.topicHint) continue;
@@ -121,9 +87,7 @@ export class Specialist38ProbeService {
         },
         select: { expertiseTopics: true },
       });
-      const oldSet = new Set(
-        (profile?.expertiseTopics ?? []).map((t) => t.toLowerCase()),
-      );
+      const oldSet = new Set((profile?.expertiseTopics ?? []).map((t) => t.toLowerCase()));
       const trulyNew = [...newTopics].filter((t) => !oldSet.has(t));
       if (trulyNew.length === 0) continue;
 
@@ -147,17 +111,9 @@ export class Specialist38ProbeService {
     return emitted;
   }
 
-  /**
-   * `unrecognized_high_contributor` — у helper'а ≥20 active trait'ов за 30
-   * дней + 0 Recognition. Recipient — руководитель.
-   */
-  private async checkUnrecognizedHighContributor(args: {
-    tenantId: string;
-  }): Promise<number> {
+  private async checkUnrecognizedHighContributor(args: { tenantId: string }): Promise<number> {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400 * 1000);
-    const grouped = await this.prisma.$queryRaw<
-      Array<{ helperUserId: string; cnt: bigint }>
-    >`
+    const grouped = await this.prisma.$queryRaw<Array<{ helperUserId: string; cnt: bigint }>>`
       SELECT "helperUserId", COUNT(*)::bigint AS cnt
       FROM "HelpfulnessTrait"
       WHERE "tenantId" = ${args.tenantId}
@@ -205,12 +161,7 @@ export class Specialist38ProbeService {
     return emitted;
   }
 
-  /**
-   * `mentor_emerging` — у helper'а ≥5 mentoring-trait'ов за 14 дней.
-   */
-  private async checkMentorEmerging(args: {
-    tenantId: string;
-  }): Promise<number> {
+  private async checkMentorEmerging(args: { tenantId: string }): Promise<number> {
     const fourteenDaysAgo = new Date(Date.now() - 14 * 86400 * 1000);
     const grouped = await this.prisma.$queryRaw<
       Array<{ helperUserId: string; topicHint: string | null; cnt: bigint }>
@@ -249,16 +200,9 @@ export class Specialist38ProbeService {
     return emitted;
   }
 
-  /**
-   * ⚠ PRIVATE — `question_chain_unanswered`. У user'а ≥3 question_unanswered
-   * за неделю. Recipient — ТОЛЬКО админ + руководитель (никогда публично).
-   */
-  private async checkQuestionChainUnanswered(args: {
-    tenantId: string;
-  }): Promise<number> {
+  private async checkQuestionChainUnanswered(args: { tenantId: string }): Promise<number> {
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400 * 1000);
 
-    // recipientUserId — это «кому не ответили». Группируем по recipientUserId.
     const grouped = await this.prisma.$queryRaw<
       Array<{ recipientUserId: string | null; cnt: bigint }>
     >`
@@ -284,8 +228,6 @@ export class Specialist38ProbeService {
         userId: targetUserId,
       });
 
-      // ⚠ ВАЖНО: recipientCandidates — ТОЛЬКО админы + руководитель команды
-      //          этого user'а. Никаких general member'ов.
       const adminRecipients = await this.findAdminAndManagerRecipients({
         tenantId: args.tenantId,
         targetUserId,
@@ -303,8 +245,6 @@ export class Specialist38ProbeService {
     }
     return emitted;
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private async emit(args: {
     tenantId: string;
@@ -336,10 +276,6 @@ export class Specialist38ProbeService {
     return 'ok' in res && res.ok;
   }
 
-  /**
-   * Находит recipient'ов для нотификации про user'а: его руководитель +
-   * org admin'ы. Для public-friendly probe'ов.
-   */
   private async findRecipientsForUser(args: {
     tenantId: string;
     userId: string;
@@ -347,10 +283,6 @@ export class Specialist38ProbeService {
     return this.findAdminAndManagerRecipients(args);
   }
 
-  /**
-   * Восстанавливает админов Org + руководителя команды (department head).
-   * Для PRIVATE-trigger'а (question_chain_unanswered) — ровно этот список.
-   */
   private async findAdminAndManagerRecipients(args: {
     tenantId: string;
     targetUserId?: string;
@@ -359,7 +291,6 @@ export class Specialist38ProbeService {
     const userId = args.targetUserId ?? args.userId;
     const recipients = new Set<string>();
 
-    // Org admins/owners — через Membership.
     try {
       const memberships = await this.prisma.membership.findMany({
         where: {
@@ -379,12 +310,6 @@ export class Specialist38ProbeService {
       );
     }
 
-    // TODO(team-lead-resolver): для строгой адресации руководителю КОМАНДЫ
-    // нужен `Department.headPersonId` или похожий резолвер «кто руководит
-    // отделом». На текущей схеме его нет — используем только admin/owner.
-    // Когда появится — добавить через Person → primaryDepartmentId → ?.
-
-    // Исключаем самого user'а из получателей.
     if (userId) recipients.delete(userId);
     return [...recipients];
   }

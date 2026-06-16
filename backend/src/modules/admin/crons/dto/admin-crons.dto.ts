@@ -1,11 +1,3 @@
-/**
- * Admin-redesign Фаза 0 — DTO для `CronManagerController`.
- *
- * `expression` — стандартный cron-выражение в формате `node-cron` (5 или 6
- * полей). Здесь валидируем только базовый формат — Nest сам кинет понятную
- * ошибку при попытке создать CronJob с некорректным выражением.
- */
-
 import { z } from 'zod';
 
 const CronExpressionRegex = /^(\S+\s+){4,5}\S+$/;
@@ -27,9 +19,6 @@ export const UpdateCronScheduleSchema = z
   });
 export type UpdateCronScheduleDto = z.infer<typeof UpdateCronScheduleSchema>;
 
-/**
- * История запусков cron'а: `limit` от 1 до 500, по умолчанию 20.
- */
 export const CronHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(20),
 });

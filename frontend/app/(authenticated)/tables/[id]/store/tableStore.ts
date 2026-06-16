@@ -1,32 +1,9 @@
-/**
- * Zustand-store страницы Smart Table (Фаза 1).
- *
- * Хранит локальные draft-копии table/properties/rows и синхронизирует их с
- * backend через `tablesApi`. Cell-updates дебаунсятся (500 мс), чтобы не
- * слать PATCH на каждое нажатие клавиши.
- *
- * Принципы:
- *   1. UI пишет в store → store optimistic-обновляет state → store шлёт
- *      запрос на backend → при ошибке откатывает + toast.
- *   2. Hydrate один раз через `init({tableId, orgId})` в TableClient.
- *   3. Drag&drop порядков использует фракционный `order`:
- *      между соседями o1, o2 → новый = (o1 + o2) / 2.
- *      В начало — firstOrder - 1, в конец — lastOrder + 1.
- *
- * Что НЕ делает store: data-fetching (это SWR на верхнем уровне для loading-
- * состояния). store берёт уже загруженные данные через `hydrate(...)`.
- */
+import { toast } from "sonner";
+import { create } from "zustand";
 
-import { toast } from 'sonner';
-import { create } from 'zustand';
-
-import { ApiError } from '@/api/api-error';
-import {
-  tableProvenanceApi,
-  tableViewsApi,
-  tablesApi,
-} from '@/api/tables.api';
-import type { TablePropTypeApi } from '@/api/types/tables';
+import { ApiError } from "@/api/api-error";
+import { tableProvenanceApi, tableViewsApi, tablesApi } from "@/api/tables.api";
+import type { TablePropTypeApi } from "@/api/types/tables";
 import {
   applyFilters,
   cellProvenanceFromApi,
@@ -44,9 +21,7 @@ import {
   type TableViewConfig,
   type TableViewDomain,
   type TableViewVisibility,
-} from '@/domain/table';
-
-// ─────────────────────────── debounce helper ─────────────────────────────
+} from "@/domain/table";
 
 const CELL_DEBOUNCE_MS = 500;
 
@@ -56,10 +31,7 @@ interface PendingCellPatch {
   timer: ReturnType<typeof setTimeout>;
 }
 
-// ─────────────────────────── state ───────────────────────────────────────
-
 export interface TableStoreState {
-  /** Контекст текущей таблицы (после init). */
   orgId: string | null;
   tableId: string | null;
 
@@ -67,11 +39,9 @@ export interface TableStoreState {
   properties: TablePropertyDomain[];
   rows: TableRowDomain[];
 
-  /** Локальная ошибка mutation (отдельно от SWR-ошибки загрузки). */
   mutationError: string | null;
   isMutating: boolean;
 
-  // ─── lifecycle ─────────────────────────────────────────────────────
   hydrate: (input: {
     orgId: string;
     tableId: string;
@@ -81,17 +51,11 @@ export interface TableStoreState {
   }) => void;
   reset: () => void;
 
-  // ─── mutations ──────────────────────────────────────────────────────
   updateCell: (
     rowId: string,
     propertyId: string,
     value: unknown,
   ) => Promise<void>;
-  /**
-   * Обновить `pageContent` строки (rich-text карточки, Фаза 2).
-   * Debounce 500ms — store optimistic-обновляет state и шлёт один PATCH
-   * после последнего изменения.
-   */
   updatePageContent: (
     rowId: string,
     pageContentJson: Record<string, unknown> | null,
@@ -103,81 +67,38 @@ export interface TableStoreState {
   ) => Promise<TablePropertyDomain | null>;
   deleteRow: (rowId: string) => Promise<void>;
   deleteColumn: (propertyId: string) => Promise<void>;
-  reorderColumn: (
-    propertyId: string,
-    newIndex: number,
-  ) => Promise<void>;
+  reorderColumn: (propertyId: string, newIndex: number) => Promise<void>;
   reorderRow: (rowId: string, newIndex: number) => Promise<void>;
 
-  // ─── Saved Views (Фаза 3) ────────────────────────────────────────
-  /** Все доступные пользователю виды (свои personal + shared/public). */
   views: TableViewDomain[];
-  /** Активный view (из URL `?view=...`). null = «без вида / Все колонки». */
   currentView: TableViewDomain | null;
-  /** Локальный draft-конфиг: hiddenProps, propOrder, rowHeight. */
   draftConfig: TableViewConfig;
-  /** true, если draftConfig отличается от config'а текущего вида. */
   hasUnsavedChanges: boolean;
-  /** Положить список доступных видов (SWR → store). */
   setViews: (views: TableViewDomain[]) => void;
-  /** Применить view по id (или сбросить если null). */
   applyView: (viewId: string | null) => void;
-  /** Локально скрыть колонку (мутация draftConfig). */
   setHiddenProperty: (propertyId: string, hidden: boolean) => void;
-  /** Локально изменить порядок колонок (draft). */
   setDraftPropOrder: (propertyIds: string[]) => void;
-  /** Локально сменить плотность строк. */
-  setRowHeight: (rowHeight: 'compact' | 'default' | 'tall') => void;
-  /**
-   * Локально задать условия фильтра (NL Saved Views, Фаза 5). Передаётся
-   * результат `semanticFilter` или пустой массив для сброса. Выставляет
-   * `hasUnsavedChanges`, грид перерисуется через `selectVisibleRows`.
-   */
+  setRowHeight: (rowHeight: "compact" | "default" | "tall") => void;
   setDraftFilters: (filters: TableFilterCondition[]) => void;
-  /** Очистить фильтры (сброс среза до полного набора строк). */
   clearDraftFilters: () => void;
-  /** Сохранить текущий draft как новый вид. */
   saveCurrentAsView: (
     name: string,
     visibility: TableViewVisibility,
   ) => Promise<TableViewDomain | null>;
-  /** Сохранить изменения в текущий активный вид. */
   saveChangesToCurrentView: () => Promise<TableViewDomain | null>;
-  /** Удалить вид. Если был активный — сбросить currentView. */
   deleteView: (viewId: string) => Promise<void>;
 
-  // ─── Pending-patches + provenance (Фаза 3, Event-to-Cells) ─────────
-  /** Правки ячеек, ожидающие подтверждения (вся таблица). */
   pendingPatches: PendingPatchDomain[];
-  /** Кол-во pending-правок (для бейджа в шапке). */
   pendingCount: number;
-  /** Загрузить очередь подтверждений (вызывается при загрузке таблицы). */
   loadPendingPatches: () => Promise<void>;
-  /** Принять одну правку: применить proposedValue в ячейку + убрать из очереди. */
   approvePatch: (patchId: string) => Promise<void>;
-  /** Отклонить одну правку: убрать из очереди без изменения ячейки. */
   rejectPatch: (patchId: string) => Promise<void>;
-  /** Принять все pending-правки разом. */
   approveAllPatches: () => Promise<void>;
-  /** Отклонить все pending-правки разом. */
   rejectAllPatches: () => Promise<void>;
-  /**
-   * Загрузить провенансы строки (источники авто-правок ячеек).
-   * Не кладёт в store — возвращает напрямую (карточка строки держит локально).
-   * Скрывает откатанные записи (rolledBackAt != null).
-   */
   loadRowProvenance: (rowId: string) => Promise<CellProvenanceDomain[]>;
-  /** Откатить авто-правку ячейки (восстановить previousValue). */
   undoCellProvenance: (provenanceId: string) => Promise<boolean>;
-  /**
-   * Локально записать значение ячейки в store БЕЗ PATCH на backend.
-   * Нужно после undo провенанса: backend уже восстановил previousValue в
-   * cells, поэтому повторный PATCH не нужен — только синхронизация состояния.
-   */
   setRowCellLocal: (rowId: string, propertyId: string, value: unknown) => void;
 }
-
-// ─────────────────────────── module-level debounce-bucket ────────────────
 
 const pending: Map<string, PendingCellPatch> = new Map();
 
@@ -187,24 +108,16 @@ interface PendingPageContent {
   timer: ReturnType<typeof setTimeout>;
 }
 
-/** Отдельный bucket для pageContent — не смешиваем с cells, чтобы PATCH'и
- *  по rich-text не задерживали PATCH'и по ячейкам и наоборот. */
 const pendingPageContent: Map<string, PendingPageContent> = new Map();
 
 const PAGE_CONTENT_DEBOUNCE_MS = 500;
 
-/**
- * Грейсфул-обработка 422 `table_cell_readonly` (Smart-tables Фаза 2).
- * Возвращает true, если это именно read-only-ошибка (тогда вызывающий код
- * откатывает оптимистичное обновление и не пишет mutationError-баннер —
- * сообщение уже показано тостом).
- */
 function isReadonlyCellError(e: unknown): boolean {
-  return e instanceof ApiError && e.code === 'table_cell_readonly';
+  return e instanceof ApiError && e.code === "table_cell_readonly";
 }
 
 const READONLY_TOAST =
-  'Эту ячейку нельзя изменить вручную — значение приходит из памяти компании';
+  "Эту ячейку нельзя изменить вручную — значение приходит из памяти компании";
 
 function clearPendingFor(rowId: string): void {
   const p = pending.get(rowId);
@@ -219,8 +132,6 @@ function clearPendingFor(rowId: string): void {
   }
 }
 
-// ─────────────────────────── Saved Views helpers ─────────────────────────
-
 function cloneConfig(c: TableViewConfig): TableViewConfig {
   return {
     hiddenProps: c.hiddenProps ? [...c.hiddenProps] : undefined,
@@ -232,11 +143,6 @@ function cloneConfig(c: TableViewConfig): TableViewConfig {
   };
 }
 
-/**
- * Сравнение draftConfig и applied-config по нормализованному JSON.
- * `undefined`/пустой массив/пустой объект приравниваются — это позволяет
- * сравнить «свежий» pristine view с draft'ом, в котором поля просто `undefined`.
- */
 function hasDiff(a: TableViewConfig, b: TableViewConfig): boolean {
   return normalize(a) !== normalize(b);
 }
@@ -253,8 +159,6 @@ function normalize(c: TableViewConfig): string {
   if (c.groupBy) o.groupBy = c.groupBy;
   return JSON.stringify(o);
 }
-
-// ─────────────────────────── store ───────────────────────────────────────
 
 export const useTableStore = create<TableStoreState>((set, get) => ({
   orgId: null,
@@ -304,10 +208,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     });
   },
 
-  // ─── Saved Views (Фаза 3) ─────────────────────────────────────────
   setViews: (views) => {
     set({ views });
-    // Если currentView пропал — сбросим.
     const cv = get().currentView;
     if (cv && !views.find((v) => v.id === cv.id)) {
       set({ currentView: null, draftConfig: {}, hasUnsavedChanges: false });
@@ -322,7 +224,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     }
     const v = views.find((x) => x.id === viewId);
     if (!v) {
-      // Vid id не найден среди доступных — игнорим, остаёмся «без вида».
       set({ currentView: null, draftConfig: {}, hasUnsavedChanges: false });
       return;
     }
@@ -394,7 +295,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     try {
       const created = await tableViewsApi.create(orgId, tableId, {
         name,
-        type: 'grid',
+        type: "grid",
         config: tableViewConfigToApi(draftConfig),
         visibility,
       });
@@ -411,7 +312,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось сохранить вид',
+          e instanceof Error ? e.message : "Не удалось сохранить вид",
       });
       return null;
     }
@@ -443,7 +344,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
         mutationError:
           e instanceof Error
             ? e.message
-            : 'Не удалось сохранить изменения в виде',
+            : "Не удалось сохранить изменения в виде",
       });
       return null;
     }
@@ -468,27 +369,22 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось удалить вид',
+          e instanceof Error ? e.message : "Не удалось удалить вид",
       });
     }
   },
 
-  // ─── updateCell с debounce ────────────────────────────────────────
   updateCell: async (rowId, propertyId, value) => {
     const { orgId, tableId, rows } = get();
     if (!orgId || !tableId) return;
 
-    // Optimistic.
     const prev = rows.find((r) => r.id === rowId);
     if (!prev) return;
     const nextCells = { ...prev.cells, [propertyId]: value };
     set({
-      rows: rows.map((r) =>
-        r.id === rowId ? { ...r, cells: nextCells } : r,
-      ),
+      rows: rows.map((r) => (r.id === rowId ? { ...r, cells: nextCells } : r)),
     });
 
-    // Debounce per-row: накапливаем cells, в финале — один PATCH.
     const existing = pending.get(rowId);
     if (existing) clearTimeout(existing.timer);
     const accumulated = existing
@@ -508,8 +404,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             rows: get().rows.map((r) => (r.id === rowId ? domain : r)),
           });
         } catch (e) {
-          // Read-only ячейка (значение из памяти компании): откатываем
-          // оптимистичное изменение и показываем понятный тост, без баннера.
           if (isReadonlyCellError(e)) {
             toast.error(READONLY_TOAST);
             set({
@@ -523,7 +417,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             mutationError:
               e instanceof Error
                 ? e.message
-                : 'Не удалось сохранить изменение ячейки',
+                : "Не удалось сохранить изменение ячейки",
           });
         }
       })();
@@ -531,7 +425,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     pending.set(rowId, { rowId, cells: accumulated, timer });
   },
 
-  // ─── updatePageContent с debounce ──────────────────────────────────
   updatePageContent: async (rowId, pageContentJson) => {
     const { orgId, tableId, rows } = get();
     if (!orgId || !tableId) return;
@@ -539,7 +432,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     const prev = rows.find((r) => r.id === rowId);
     if (!prev) return;
 
-    // Optimistic.
     set({
       rows: rows.map((r) =>
         r.id === rowId ? { ...r, pageContent: pageContentJson } : r,
@@ -566,7 +458,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             mutationError:
               e instanceof Error
                 ? e.message
-                : 'Не удалось сохранить содержимое',
+                : "Не удалось сохранить содержимое",
           });
         }
       })();
@@ -578,7 +470,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     });
   },
 
-  // ─── addRow в конец ─────────────────────────────────────────────────
   addRow: async () => {
     const { orgId, tableId, rows } = get();
     if (!orgId || !tableId) return null;
@@ -596,13 +487,12 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось добавить строку',
+          e instanceof Error ? e.message : "Не удалось добавить строку",
       });
       return null;
     }
   },
 
-  // ─── addColumn в конец ─────────────────────────────────────────────
   addColumn: async (type, name) => {
     const { orgId, tableId, properties } = get();
     if (!orgId || !tableId) return null;
@@ -627,13 +517,12 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось создать колонку',
+          e instanceof Error ? e.message : "Не удалось создать колонку",
       });
       return null;
     }
   },
 
-  // ─── deleteRow ──────────────────────────────────────────────────────
   deleteRow: async (rowId) => {
     const { orgId, tableId, rows } = get();
     if (!orgId || !tableId) return;
@@ -641,25 +530,22 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     set({
       isMutating: true,
       mutationError: null,
-      rows: rows.filter((r) => r.id !== rowId), // optimistic
+      rows: rows.filter((r) => r.id !== rowId),
     });
     try {
-      // Backend: hard-delete только архивная, поэтому сначала archive.
       await tablesApi.archiveRow(orgId, tableId, rowId);
       set({ isMutating: false });
     } catch (e) {
-      // Откат: добавляем строку обратно.
       const removed = rows.find((r) => r.id === rowId);
       if (removed) set({ rows: [...get().rows, removed] });
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось удалить строку',
+          e instanceof Error ? e.message : "Не удалось удалить строку",
       });
     }
   },
 
-  // ─── deleteColumn ───────────────────────────────────────────────────
   deleteColumn: async (propertyId) => {
     const { orgId, tableId, properties } = get();
     if (!orgId || !tableId) return;
@@ -677,12 +563,11 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         isMutating: false,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось удалить колонку',
+          e instanceof Error ? e.message : "Не удалось удалить колонку",
       });
     }
   },
 
-  // ─── reorderColumn через фракционный order ─────────────────────────
   reorderColumn: async (propertyId, newIndex) => {
     const { orgId, tableId, properties } = get();
     if (!orgId || !tableId) return;
@@ -690,12 +575,11 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     const oldIndex = sorted.findIndex((p) => p.id === propertyId);
     if (oldIndex === -1 || oldIndex === newIndex) return;
 
-    // Считаем новый order: middle между соседями по newIndex (учитывая, что
-    // мы «вынимаем» элемент из oldIndex).
     const without = sorted.filter((_, i) => i !== oldIndex);
     const insertAt = Math.max(0, Math.min(newIndex, without.length));
     const prevOrder = insertAt > 0 ? without[insertAt - 1]!.order : null;
-    const nextOrder = insertAt < without.length ? without[insertAt]!.order : null;
+    const nextOrder =
+      insertAt < without.length ? without[insertAt]!.order : null;
     let newOrder: number;
     if (prevOrder === null && nextOrder !== null) newOrder = nextOrder - 1;
     else if (prevOrder !== null && nextOrder === null) newOrder = prevOrder + 1;
@@ -703,7 +587,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       newOrder = (prevOrder + nextOrder) / 2;
     else newOrder = 0;
 
-    // Optimistic.
     const updatedLocal = properties.map((p) =>
       p.id === propertyId ? { ...p, order: newOrder } : p,
     );
@@ -726,18 +609,16 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
           .sort((a, b) => a.order - b.order),
       });
     } catch (e) {
-      // Откат к старому порядку.
       set({
         properties,
         mutationError:
           e instanceof Error
             ? e.message
-            : 'Не удалось изменить порядок колонок',
+            : "Не удалось изменить порядок колонок",
       });
     }
   },
 
-  // ─── reorderRow через фракционный order ────────────────────────────
   reorderRow: async (rowId, newIndex) => {
     const { orgId, tableId, rows } = get();
     if (!orgId || !tableId) return;
@@ -748,7 +629,8 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     const without = sorted.filter((_, i) => i !== oldIndex);
     const insertAt = Math.max(0, Math.min(newIndex, without.length));
     const prevOrder = insertAt > 0 ? without[insertAt - 1]!.order : null;
-    const nextOrder = insertAt < without.length ? without[insertAt]!.order : null;
+    const nextOrder =
+      insertAt < without.length ? without[insertAt]!.order : null;
     let newOrder: number;
     if (prevOrder === null && nextOrder !== null) newOrder = nextOrder - 1;
     else if (prevOrder !== null && nextOrder === null) newOrder = prevOrder + 1;
@@ -778,12 +660,11 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       set({
         rows,
         mutationError:
-          e instanceof Error ? e.message : 'Не удалось изменить порядок строк',
+          e instanceof Error ? e.message : "Не удалось изменить порядок строк",
       });
     }
   },
 
-  // ─── Pending-patches + provenance (Фаза 3) ──────────────────────────
   loadPendingPatches: async () => {
     const { orgId, tableId } = get();
     if (!orgId || !tableId) return;
@@ -791,9 +672,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
       const res = await tableProvenanceApi.listPendingPatches(orgId, tableId);
       const items = res.items.map(pendingPatchFromApi);
       set({ pendingPatches: items, pendingCount: items.length });
-    } catch {
-      // Тихо: очередь подтверждений вторична, не ломаем загрузку таблицы.
-    }
+    } catch {}
   },
 
   approvePatch: async (patchId) => {
@@ -802,7 +681,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     const patch = pendingPatches.find((p) => p.id === patchId);
     if (!patch) return;
 
-    // Optimistic: убираем из очереди + применяем proposedValue в ячейку.
     const nextPending = pendingPatches.filter((p) => p.id !== patchId);
     set({
       pendingPatches: nextPending,
@@ -818,10 +696,9 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     });
 
     try {
-      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'approve');
-      toast.success('Правка принята');
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, "approve");
+      toast.success("Правка принята");
     } catch (e) {
-      // Откат: возвращаем правку в очередь и старое значение в ячейку.
       set({
         pendingPatches: [...get().pendingPatches, patch],
         pendingCount: get().pendingCount + 1,
@@ -834,9 +711,7 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
             : r,
         ),
       });
-      toast.error(
-        e instanceof Error ? e.message : 'Не удалось принять правку',
-      );
+      toast.error(e instanceof Error ? e.message : "Не удалось принять правку");
     }
   },
 
@@ -850,26 +725,23 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     set({ pendingPatches: nextPending, pendingCount: nextPending.length });
 
     try {
-      await tableProvenanceApi.decidePendingPatch(orgId, patchId, 'reject');
-      toast.success('Правка отклонена');
+      await tableProvenanceApi.decidePendingPatch(orgId, patchId, "reject");
+      toast.success("Правка отклонена");
     } catch (e) {
       set({
         pendingPatches: [...get().pendingPatches, patch],
         pendingCount: get().pendingCount + 1,
       });
       toast.error(
-        e instanceof Error ? e.message : 'Не удалось отклонить правку',
+        e instanceof Error ? e.message : "Не удалось отклонить правку",
       );
     }
   },
 
   approveAllPatches: async () => {
     const { pendingPatches, approvePatch } = get();
-    // Снимок id — список меняется по ходу (approvePatch мутирует state).
     const ids = pendingPatches.map((p) => p.id);
     for (const id of ids) {
-      // Последовательно: backend decide идемпотентен per-patch, а
-      // последовательность даёт предсказуемый порядок применения в cells.
       await approvePatch(id);
     }
   },
@@ -887,7 +759,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
     if (!orgId) return [];
     try {
       const res = await tableProvenanceApi.getRowProvenance(orgId, rowId);
-      // Скрываем откатанные записи — у них нет актуального источника значения.
       return res.items
         .map(cellProvenanceFromApi)
         .filter((p) => p.rolledBackAt === null);
@@ -917,17 +788,6 @@ export const useTableStore = create<TableStoreState>((set, get) => ({
   },
 }));
 
-// ─────────────────────────── selectors (view-aware) ──────────────────────
-
-/**
- * Возвращает видимые колонки в правильном порядке с учётом draftConfig:
- *   1. фильтр по `hiddenProps`,
- *   2. если задан `propOrder` — сортируем по нему (остальные — в конец
- *      по исходному order).
- *
- * Используется в UI вместо прямого `useTableStore(s => s.properties)`,
- * когда нужно отрисовать grid через призму активного view.
- */
 export function selectVisibleProperties(
   s: TableStoreState,
 ): TablePropertyDomain[] {
@@ -940,51 +800,42 @@ export function selectVisibleProperties(
   }
   const orderIndex = new Map(propOrder.map((id, i) => [id, i] as const));
   return [...visible].sort((a, b) => {
-    const ai = orderIndex.has(a.id) ? orderIndex.get(a.id)! : Number.MAX_SAFE_INTEGER;
-    const bi = orderIndex.has(b.id) ? orderIndex.get(b.id)! : Number.MAX_SAFE_INTEGER;
+    const ai = orderIndex.has(a.id)
+      ? orderIndex.get(a.id)!
+      : Number.MAX_SAFE_INTEGER;
+    const bi = orderIndex.has(b.id)
+      ? orderIndex.get(b.id)!
+      : Number.MAX_SAFE_INTEGER;
     if (ai !== bi) return ai - bi;
     return a.order - b.order;
   });
 }
 
-/**
- * Возвращает строки с учётом draftConfig:
- *   1. фильтры (`draftConfig.filters`) — клиент-сайд, AND-семантика (Фаза 5,
- *      NL Saved Views). Полный набор операторов (eq/neq/gt/lt/contains/in/
- *      empty/before/after/older_than) — см. `applyFilters` в `domain/table.ts`.
- *   2. сортировки (`draftConfig.sorts`) — equality для строк/чисел (Фаза 3).
- *
- * Карточка строки (RowDetail) и панель подтверждений работают по полному
- * `s.rows`, поэтому фильтр влияет только на отрисовку грида.
- */
 export function selectVisibleRows(s: TableStoreState): TableRowDomain[] {
-  // 1. Фильтры (AND) — отбираем подмножество строк.
   let rows = applyFilters(s.rows, s.draftConfig.filters, s.properties);
-  // 2. Сорты последовательно (последний — самый приоритетный).
   const sorts = s.draftConfig.sorts ?? [];
   for (let i = sorts.length - 1; i >= 0; i--) {
     const sort = sorts[i]!;
-    const dir = sort.direction === 'desc' ? -1 : 1;
+    const dir = sort.direction === "desc" ? -1 : 1;
     rows.sort((a, b) => {
       const av = a.cells[sort.propertyId];
       const bv = b.cells[sort.propertyId];
       if (av === bv) return 0;
       if (av === undefined || av === null) return 1;
       if (bv === undefined || bv === null) return -1;
-      if (typeof av === 'number' && typeof bv === 'number')
+      if (typeof av === "number" && typeof bv === "number")
         return (av - bv) * dir;
-      return String(av).localeCompare(String(bv), 'ru') * dir;
+      return String(av).localeCompare(String(bv), "ru") * dir;
     });
   }
   return rows;
 }
 
-/** Числовой `rowHeight` для Glide Data Grid (compact / default / tall). */
 export function selectRowHeightPx(s: TableStoreState): number {
   switch (s.draftConfig.rowHeight) {
-    case 'compact':
+    case "compact":
       return 24;
-    case 'tall':
+    case "tall":
       return 48;
     default:
       return 34;

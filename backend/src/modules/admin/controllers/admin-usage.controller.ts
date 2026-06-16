@@ -29,37 +29,20 @@ import {
   UsersUsageQuerySchema,
   type UsersUsageQuery,
 } from '../dto/admin-usage.dto';
-import {
-  type AdminCallLogItem,
-  AdminUsageService,
-} from '../services/admin-usage.service';
+import { type AdminCallLogItem, AdminUsageService } from '../services/admin-usage.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
 import { streamUsageCsv } from './admin-usage.csv';
 
-/**
- * Z-Admin (super_admin) usage endpoints.
- *
- * Все методы — `scope: 'global'`. Параметр `tenantId` не передаётся клиентом —
- * super_admin видит данные по всем Org. Для drill-down в конкретную Org
- * используется фильтр по userId/meetingId/sourceRef.
- *
- * `SuperAdminAuditInterceptor` пишет SuperAdminAccessLog для каждого вызова
- * (в т.ч. GET — это требование compliance).
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/usage')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminUsageController {
-  constructor(
-    @Inject(AdminUsageService) private readonly svc: AdminUsageService,
-  ) {}
+  constructor(@Inject(AdminUsageService) private readonly svc: AdminUsageService) {}
 
   @Get('dashboard')
-  async dashboard(
-    @Query(new ZodValidationPipe(DashboardQuerySchema)) q: DashboardQuery,
-  ) {
+  async dashboard(@Query(new ZodValidationPipe(DashboardQuerySchema)) q: DashboardQuery) {
     return this.svc.getDashboard({
       scope: 'global',
       period: q.period,
@@ -69,9 +52,7 @@ export class AdminUsageController {
   }
 
   @Get('users')
-  async users(
-    @Query(new ZodValidationPipe(UsersUsageQuerySchema)) q: UsersUsageQuery,
-  ) {
+  async users(@Query(new ZodValidationPipe(UsersUsageQuerySchema)) q: UsersUsageQuery) {
     return this.svc.getUsersUsage({
       scope: 'global',
       period: q.period,
@@ -84,9 +65,7 @@ export class AdminUsageController {
   }
 
   @Get('calls')
-  async calls(
-    @Query(new ZodValidationPipe(CallsLogQuerySchema)) q: CallsLogQuery,
-  ) {
+  async calls(@Query(new ZodValidationPipe(CallsLogQuerySchema)) q: CallsLogQuery) {
     return this.svc.getCallsLog({
       scope: 'global',
       ...(q.taskType ? { taskType: q.taskType } : {}),
@@ -108,9 +87,7 @@ export class AdminUsageController {
   }
 
   @Get('functions')
-  async functions(
-    @Query(new ZodValidationPipe(FunctionsUsageQuerySchema)) q: FunctionsUsageQuery,
-  ) {
+  async functions(@Query(new ZodValidationPipe(FunctionsUsageQuerySchema)) q: FunctionsUsageQuery) {
     return this.svc.getFunctionsUsage({
       scope: 'global',
       period: q.period,

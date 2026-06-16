@@ -2,37 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GraphService } from './graph.service';
 
-/**
- * МТЗ «разблокировка конвейера» Ф5 — детерминированные юнит-тесты GraphService
- * БЕЗ живой БД/AGE. Мокаем PrismaService ($transaction + модели) и
- * cypher-исполнитель ($queryRawUnsafe), чтобы доказать:
- *
- *   1. РАЗВЯЗКА ТРАНЗАКЦИИ: при падении cypher() (мок $queryRawUnsafe бросает)
- *      в upsertEntity / upsertDecision / addEdge бизнес-строка ВСЁ РАВНО
- *      записана (prisma.<model>.create / entityLink.upsert вызваны внутри
- *      закоммиченной транзакции), а сам метод НЕ бросает (post-commit
- *      best-effort).
- *   2. KILL-SWITCH: при cfg.graph.ageEnabled=false cypher-исполнитель НЕ
- *      вызывается (no-op), Postgres-часть отрабатывает.
- *
- * Эти тесты — машинный гард на главное свойство Ф5: «отказ AGE не откатывает
- * бизнес-строку». Без живого Postgres+AGE проверяем логику разводки tx, а не
- * реальный cypher (его проверяет интеграция против AGE-контейнера).
- */
-
 interface MockState {
-  // Записи, созданные «бизнес-строкой» (Postgres).
   processCreated: Array<Record<string, unknown>>;
   decisionCreated: Array<Record<string, unknown>>;
   entityLinkUpserted: Array<Record<string, unknown>>;
-  // Вызовы cypher-исполнителя (raw SQL).
   cypherCalls: string[];
 }
 
-/**
- * Строит мок PrismaService. `cypherThrows` — заставляет $queryRawUnsafe
- * (cypher-исполнитель) бросать, имитируя недоступность AGE.
- */
 function buildPrismaMock(cypherThrows: boolean): {
   prisma: any;
   state: MockState;
@@ -76,18 +52,11 @@ function buildPrismaMock(cypherThrows: boolean): {
   };
 
   const prisma = {
-    // $transaction(cb) — синхронно прогоняет колбэк с tx-клиентом и
-    // «коммитит» (просто резолвит). Бизнес-строка фиксируется ДО cypher.
-    $transaction: vi.fn(async (cb: (tx: any) => Promise<unknown>) =>
-      cb(txClient),
-    ),
-    // cypher-исполнитель (runRawCypher / runCypherMergeNode идут сюда).
+    $transaction: vi.fn(async (cb: (tx: any) => Promise<unknown>) => cb(txClient)),
     $queryRawUnsafe: vi.fn(async (sql: string) => {
       state.cypherCalls.push(sql);
       if (cypherThrows) {
-        throw new Error(
-          'function cypher(unknown, unknown) does not exist (42883)',
-        );
+        throw new Error('function cypher(unknown, unknown) does not exist (42883)');
       }
       return [];
     }),
@@ -105,7 +74,7 @@ describe('GraphService Ф5 — развязка транзакции (cypher п�
   let svc: GraphService;
 
   beforeEach(() => {
-    const mock = buildPrismaMock(/* cypherThrows */ true);
+    const mock = buildPrismaMock(true);
     state = mock.state;
     svc = new GraphService(mock.prisma, buildCfg(true));
   });
@@ -118,11 +87,9 @@ describe('GraphService Ф5 — развязка транзакции (cypher п�
       confidence: 0.9,
     });
 
-    // Бизнес-строка создана и закоммичена ДО cypher.
     expect(state.processCreated).toHaveLength(1);
     expect(state.processCreated[0]).toMatchObject({ name: 'Онбординг' });
     expect(res).toMatchObject({ id: 'process-1', created: true });
-    // cypher вызывался (post-commit) и бросил — но метод выжил.
     expect(state.cypherCalls.length).toBeGreaterThan(0);
   });
 
@@ -153,16 +120,14 @@ describe('GraphService Ф5 — развязка транзакции (cypher п�
       }),
     ).resolves.toBeUndefined();
 
-    // EntityLink (источник правды) записан внутри коммита tx.
     expect(state.entityLinkUpserted).toHaveLength(1);
-    // cypher (merge узлов + merge ребра) вызывался post-commit и упал.
     expect(state.cypherCalls.length).toBeGreaterThan(0);
   });
 });
 
 describe('GraphService Ф5 — kill-switch (ageEnabled=false → cypher no-op)', () => {
   it('upsertEntity(process): Postgres пишется, cypher НЕ вызывается', async () => {
-    const mock = buildPrismaMock(/* cypherThrows */ false);
+    const mock = buildPrismaMock(false);
     const svc = new GraphService(mock.prisma, buildCfg(false));
 
     const res = await svc.upsertEntity({
@@ -173,13 +138,12 @@ describe('GraphService Ф5 — kill-switch (ageEnabled=false → cypher no-op)',
 
     expect(mock.state.processCreated).toHaveLength(1);
     expect(res).toMatchObject({ created: true });
-    // Главное: ни одного cypher-вызова.
     expect(mock.state.cypherCalls).toHaveLength(0);
     expect(mock.prisma.$queryRawUnsafe).not.toHaveBeenCalled();
   });
 
   it('addEdge: EntityLink пишется, cypher НЕ вызывается', async () => {
-    const mock = buildPrismaMock(/* cypherThrows */ false);
+    const mock = buildPrismaMock(false);
     const svc = new GraphService(mock.prisma, buildCfg(false));
 
     await svc.addEdge({
@@ -194,7 +158,7 @@ describe('GraphService Ф5 — kill-switch (ageEnabled=false → cypher no-op)',
   });
 
   it('addNode: при ageEnabled=false — полный no-op (cypher не вызывается)', async () => {
-    const mock = buildPrismaMock(/* cypherThrows */ false);
+    const mock = buildPrismaMock(false);
     const svc = new GraphService(mock.prisma, buildCfg(false));
 
     await svc.addNode({ tenantId: 'tenant-1', type: 'role', id: 'r1' });

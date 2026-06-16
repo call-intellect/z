@@ -1,24 +1,3 @@
-/**
- * Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer.
- *
- * После того как ConciergeService LLM выбрал tool_call (top-1), для shadow-режима
- * генерируется top-K кандидатов и каждый оценивается этим промптом — насколько
- * данный конкретный candidate приблизит к цели пользователя.
- *
- * Используется в `ConciergeStepScorerService.scoreStep`:
- *   - один LLM-вызов через `LlmRouterService.call({taskType:'concierge-step-prm'})`.
- *   - Output JSON Schema strict: `{score: number 0..1, reasoning: string ≤500 chars}`.
- *
- * Совместимость с prompt caching:
- *   - SYSTEM стабилен (одна строка, без runtime-переменных) → cache hit у
- *     DeepSeek / OpenAI-via-proxy / MiniMax с экономией ≈99%.
- *   - Все переменные данные — в конце USER. Префикс SYSTEM не меняется
- *     между вызовами, поэтому KV-cache переиспользуется.
- *
- * Источник доказательств: AgentPRM (arxiv 2511.08325), MASPRM (2510.24803),
- * PRIME-RL 2025. См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
- */
-
 export const CONCIERGE_STEP_PRM_SCHEMA_NAME = 'concierge_step_prm_v1';
 
 export const CONCIERGE_STEP_PRM_SYSTEM_PROMPT = [
@@ -42,8 +21,6 @@ export const CONCIERGE_STEP_PRM_USER_TEMPLATE = (args: {
   retrievedContextDigest: string;
   candidate: ConciergeStepPrmCandidate;
 }): string => {
-  // Переменные данные — в самом конце user-сообщения. Так префикс
-  // SYSTEM + начало USER остаются стабильными для prompt caching.
   const lines: string[] = [];
   lines.push('Цель пользователя:');
   lines.push(args.goal.slice(0, 1000));
@@ -60,9 +37,7 @@ export const CONCIERGE_STEP_PRM_USER_TEMPLATE = (args: {
       {
         toolName: args.candidate.toolName,
         args: args.candidate.args,
-        ...(args.candidate.reasoning
-          ? { reasoning: args.candidate.reasoning.slice(0, 500) }
-          : {}),
+        ...(args.candidate.reasoning ? { reasoning: args.candidate.reasoning.slice(0, 500) } : {}),
       },
       null,
       2,

@@ -3,15 +3,9 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Параметры записи строки IssueActivity. `epoch` подставляется сервисом
- * автоматически (микросекунды UNIX-времени). `metadata` — произвольный
- * JSON-контекст события (например, кто упомянут или какой webhook сработал).
- */
 export interface RecordActivityParams {
   tenantId: string;
   issueId: string;
-  /** ID пользователя, инициировавшего изменение. Null — если actor = AI/system. */
   actorUserId?: string | null;
   actorType: 'user' | 'ai_agent' | 'system';
   agentName?: string | null;
@@ -20,29 +14,15 @@ export interface RecordActivityParams {
   oldValue?: unknown;
   newValue?: unknown;
   metadata?: Record<string, unknown> | null;
-  /**
-   * Опционально: транзакционный клиент. Передаётся при многомутационных
-   * операциях, чтобы IssueActivity создавалась внутри той же транзакции.
-   */
   tx?: Prisma.TransactionClient;
 }
 
-/**
- * ActivityRecorderService — централизованная запись audit-trail задач в
- * `IssueActivity`. Все мутации (create / update / delete / status_changed /
- * commented / assigned / linked / ...) должны вызывать `record(...)`, чтобы
- * формировался корректный feed активности и материал для второго мозга.
- *
- * Доступен (через TrackerModule providers): всем сервисам трекера. Снаружи
- * модуля — через export TrackerModule.
- */
 @Injectable()
 export class ActivityRecorderService {
   private readonly logger = new Logger(ActivityRecorderService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Записать одну строку IssueActivity. Возвращает ID созданной записи. */
   async record(params: RecordActivityParams): Promise<string> {
     const client: Prisma.TransactionClient | PrismaService = params.tx ?? this.prisma;
     const epoch = this.nowEpoch();
@@ -65,10 +45,8 @@ export class ActivityRecorderService {
     return created.id;
   }
 
-  /** Удобный helper: записать несколько строк подряд (одна транзакция). */
   async recordMany(rows: RecordActivityParams[]): Promise<number> {
     if (rows.length === 0) return 0;
-    // Если передан tx во всех — используем его; иначе одна общая транзакция.
     const tx = rows[0]?.tx;
     if (tx) {
       for (const r of rows) await this.record({ ...r, tx });
@@ -80,14 +58,12 @@ export class ActivityRecorderService {
     return rows.length;
   }
 
-  /** Микросекунды UNIX-времени (BigInt). Достаточно для строгой сортировки. */
   private nowEpoch(): bigint {
     return BigInt(Date.now()) * 1_000n;
   }
 
   private toJson(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
     if (value === undefined || value === null) return Prisma.JsonNull;
-    // Гарантируем JSON-сериализуемость: BigInt / функции выкинут — что и нужно.
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 }

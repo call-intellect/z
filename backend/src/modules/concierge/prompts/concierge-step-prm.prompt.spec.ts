@@ -1,16 +1,3 @@
-/**
- * Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer prompt.
- *
- * Property test для `CONCIERGE_STEP_PRM_JSON_SCHEMA` и стабильности
- * SYSTEM/USER. Проверяет:
- *   - schema name = concierge_step_prm_v1;
- *   - required = [score, reasoning];
- *   - additionalProperties=false (strict JSON);
- *   - score — number 0..1;
- *   - reasoning — string ≤500;
- *   - SYSTEM стабилен (без runtime-переменных) — cache-friendly;
- *   - USER_TEMPLATE кладёт переменные в конец и упоминает schema name.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -26,10 +13,7 @@ describe('concierge-step-prm prompt — JSON Schema strict', () => {
   });
 
   it('required = [score, reasoning]', () => {
-    expect(CONCIERGE_STEP_PRM_JSON_SCHEMA.required).toEqual([
-      'score',
-      'reasoning',
-    ]);
+    expect(CONCIERGE_STEP_PRM_JSON_SCHEMA.required).toEqual(['score', 'reasoning']);
   });
 
   it('additionalProperties=false (strict)', () => {
@@ -58,8 +42,6 @@ describe('concierge-step-prm prompt — JSON Schema strict', () => {
   });
 
   it('SYSTEM стабилен (без runtime-переменных) — кэш-дружественный', () => {
-    // Регрессия: SYSTEM не должен содержать `${...}`. Тогда у DeepSeek/
-    // OpenAI-proxy/MiniMax cache hit ≈99% между вызовами.
     expect(CONCIERGE_STEP_PRM_SYSTEM_PROMPT).not.toMatch(/\$\{/);
     expect(CONCIERGE_STEP_PRM_SYSTEM_PROMPT).toContain('PRM');
   });
@@ -77,7 +59,6 @@ describe('concierge-step-prm prompt — JSON Schema strict', () => {
     expect(user).toContain('Сколько встреч на завтра?');
     expect(user).toContain('search_meetings');
     expect(user).toContain('concierge_step_prm_v1');
-    // Финальная строка — про схему. Переменные данные раньше.
     const lines = user.split('\n');
     expect(lines[lines.length - 1]).toContain('concierge_step_prm_v1');
   });

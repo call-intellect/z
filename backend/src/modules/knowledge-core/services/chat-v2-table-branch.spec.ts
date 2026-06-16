@@ -1,12 +1,3 @@
-/**
- * ЧАСТЬ B (ТЗ 2026-06-15 §7) — табличная ветка внутри ChatV2Service.ask():
- *  1) падение ветки таблиц НЕ валит ответ (граф отвечает; graceful);
- *  2) строки таблиц доходят до buildUserMessage (блок «Данные из таблиц»);
- *  3) без обогащённого понимания / без сервиса — ветка не запускается (tableRows=[]).
- *
- * Тест изолирует синтез: private retrieval/prisma-методы заспаены, чтобы ask()
- * детерминированно дошёл до llm.call без сети/БД.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -19,9 +10,10 @@ import type { ChatV2RetrievalService } from './chat-v2-retrieval.service';
 import type { ChatV2TableContextService } from './chat-v2-table-context.service';
 import { ChatV2Service, type ChatV2Input } from './chat-v2.service';
 
-function makeService(
-  tableContext?: ChatV2TableContextService,
-): { svc: ChatV2Service; llmCall: ReturnType<typeof vi.fn> } {
+function makeService(tableContext?: ChatV2TableContextService): {
+  svc: ChatV2Service;
+  llmCall: ReturnType<typeof vi.fn>;
+} {
   const prisma = {
     companyProfile: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaService;
@@ -97,14 +89,12 @@ function makeService(
   return { svc, llmCall };
 }
 
-/** Достаёт userMessage из первого вызова llm.call (typed-safe). */
 function userMessageOf(llmCall: ReturnType<typeof vi.fn>): string {
   const call = llmCall.mock.calls[0];
   const arg = call?.[0] as { userMessage?: string } | undefined;
   return arg?.userMessage ?? '';
 }
 
-// Вход с обогащённым пониманием (есть queries → табличная ветка запускается).
 const baseInput: ChatV2Input = {
   tenantId: 'org-1',
   userId: 'user-1',
@@ -126,16 +116,15 @@ describe('ChatV2Service — табличная ветка (ЧАСТЬ B §7)', (
 
     expect(out.message).toBe('Готовый ответ AI-чата.');
     expect(llmCall).toHaveBeenCalledTimes(1);
-    // Блок «Данные из таблиц» НЕ попал в user message (ветка упала).
     const userMsg = userMessageOf(llmCall);
     expect(userMsg).not.toContain('Данные из таблиц');
   });
 
   it('строки таблиц доходят до buildUserMessage (блок «Данные из таблиц»)', async () => {
     const tableContext = {
-      fetchTableContext: vi.fn().mockResolvedValue([
-        { tableName: 'Клиенты', cells: 'Город=Москва; Сумма=100000' },
-      ]),
+      fetchTableContext: vi
+        .fn()
+        .mockResolvedValue([{ tableName: 'Клиенты', cells: 'Город=Москва; Сумма=100000' }]),
     } as unknown as ChatV2TableContextService;
     const { svc, llmCall } = makeService(tableContext);
 
@@ -161,7 +150,6 @@ describe('ChatV2Service — табличная ветка (ЧАСТЬ B §7)', (
     const tableContext = { fetchTableContext } as unknown as ChatV2TableContextService;
     const { svc } = makeService(tableContext);
 
-    // queries не задан → старый chat-модуль без dialog-layer.
     await svc.ask({
       tenantId: 'org-1',
       userId: 'user-1',

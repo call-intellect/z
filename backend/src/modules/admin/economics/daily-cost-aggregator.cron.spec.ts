@@ -2,9 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { DailyCostAggregatorCron } from './daily-cost-aggregator.cron';
 
-/**
- * SBA α-10 wave 3 — DailyCostAggregatorCron: агрегация и upsert.
- */
 describe('DailyCostAggregatorCron', () => {
   const $queryRaw = vi.fn();
   const upsert = vi.fn(async () => ({}));
@@ -48,7 +45,6 @@ describe('DailyCostAggregatorCron', () => {
       [{ create: { costRub: { toString: () => string } } }]
     >;
     const call = calls[0]?.[0];
-    // costRub = 0.123456 * 90 = 11.11104 → 11.1110
     expect(call?.create.costRub.toString()).toMatch(/^11\.11/);
   });
 

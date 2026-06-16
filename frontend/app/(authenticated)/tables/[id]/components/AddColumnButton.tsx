@@ -1,24 +1,15 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useState } from "react";
+import { Plus } from "lucide-react";
 
-import { PROP_TYPE_LABEL_RU, type TablePropType } from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/ui/shadcn/popover';
+import { PROP_TYPE_LABEL_RU, type TablePropType } from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/shadcn/popover";
 
-import { ColumnTypeSelector } from './ColumnTypeSelector';
+import { ColumnTypeSelector } from "./ColumnTypeSelector";
 
-/**
- * Кнопка «+ Колонка». Два состояния popover'а:
- *   1) выбор типа (по умолчанию).
- *   2) ввод имени для выбранного типа.
- */
 export function AddColumnButton({
   onCreate,
   disabled,
@@ -28,12 +19,12 @@ export function AddColumnButton({
 }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<TablePropType | null>(null);
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const reset = () => {
     setType(null);
-    setName('');
+    setName("");
     setSubmitting(false);
   };
 
@@ -68,10 +59,7 @@ export function AddColumnButton({
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[22rem]">
         {type === null ? (
-          <ColumnTypeSelector
-            selected={type}
-            onSelect={(t) => setType(t)}
-          />
+          <ColumnTypeSelector selected={type} onSelect={(t) => setType(t)} />
         ) : (
           <div className="space-y-3">
             <div className="text-xs font-medium text-fg-secondary">
@@ -83,8 +71,8 @@ export function AddColumnButton({
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void submit();
-                if (e.key === 'Escape') onOpenChange(false);
+                if (e.key === "Enter") void submit();
+                if (e.key === "Escape") onOpenChange(false);
               }}
               disabled={submitting}
               aria-label="Название колонки"
@@ -112,7 +100,7 @@ export function AddColumnButton({
                   onClick={() => void submit()}
                   disabled={submitting || !name.trim()}
                 >
-                  {submitting ? 'Создание...' : 'Создать'}
+                  {submitting ? "Создание..." : "Создать"}
                 </Button>
               </div>
             </div>

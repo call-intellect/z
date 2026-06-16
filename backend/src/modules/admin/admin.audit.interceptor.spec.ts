@@ -58,7 +58,6 @@ describe('AdminAuditInterceptor', () => {
       user: { id: 'admin-1', email: 'a@z.app', role: 'admin' },
     });
     await firstValueFrom(interceptor.intercept(ctx, makeNext({ items: [] })));
-    // Дать time для async fire-and-forget — ничего не должно произойти.
     await new Promise((r) => setTimeout(r, 10));
 
     expect(create).not.toHaveBeenCalled();
@@ -81,12 +80,17 @@ describe('AdminAuditInterceptor', () => {
 
     expect(create).toHaveBeenCalledOnce();
     const arg = create.mock.calls[0]![0] as {
-      data: { actorId: string; action: string; targetType: string; targetId: string; payload: unknown };
+      data: {
+        actorId: string;
+        action: string;
+        targetType: string;
+        targetId: string;
+        payload: unknown;
+      };
     };
     expect(arg.data.actorId).toBe('admin-1');
     expect(arg.data.action).toBe('create_integration_key');
     expect(arg.data.targetType).toBe('IntegrationKey');
-    // targetId должен взяться из ответа (id), потому что в params его нет.
     expect(arg.data.targetId).toBe('ik-123');
     expect(arg.data.payload).toEqual({ partner_name: 'acme' });
   });
@@ -145,9 +149,7 @@ describe('AdminAuditInterceptor', () => {
       user: { id: 'admin-1', email: 'a@z.app', role: 'admin' },
       body: { partner_name: 'acme', password: 'super-secret', nested: { key: 'should-be-masked' } },
     });
-    await firstValueFrom(
-      interceptor.intercept(ctx, makeNext({ id: 'ik-1', key: 'plain' })),
-    );
+    await firstValueFrom(interceptor.intercept(ctx, makeNext({ id: 'ik-1', key: 'plain' })));
     await new Promise((r) => setTimeout(r, 10));
 
     const arg = create.mock.calls[0]![0] as { data: { payload: unknown } };
@@ -167,9 +169,7 @@ describe('AdminAuditInterceptor', () => {
       originalUrl: '/admin/api/v1/integration-keys',
       body: { partner_name: 'acme' },
     });
-    await firstValueFrom(
-      interceptor.intercept(ctx, makeNext({ id: 'ik-1', key: 'plain' })),
-    );
+    await firstValueFrom(interceptor.intercept(ctx, makeNext({ id: 'ik-1', key: 'plain' })));
     await new Promise((r) => setTimeout(r, 10));
 
     expect(create).not.toHaveBeenCalled();

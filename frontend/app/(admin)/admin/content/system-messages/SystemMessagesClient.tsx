@@ -1,60 +1,51 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { Edit3, Plus, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useMemo, useState } from "react";
+import { Edit3, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminSystemMessagesApi } from '@/api/admin-system-messages.api';
-import { adminOrgsApi } from '@/api/admin-orgs.api';
-import { adminOrgListFromApi } from '@/domain/admin-org';
+import { ApiError } from "@/api/api-error";
+import { adminSystemMessagesApi } from "@/api/admin-system-messages.api";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
+import { adminOrgListFromApi } from "@/domain/admin-org";
 import {
   SYSTEM_MESSAGE_SEVERITY_LABELS,
   systemMessageListFromApi,
   type SystemMessageItemDomain,
-} from '@/domain/admin-system-message';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/admin-system-message";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { MessageEditDialog } from './MessageEditDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { MessageEditDialog } from "./MessageEditDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'banner', label: 'Баннеры' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'alert', label: 'Алёрты' },
+  { value: "banner", label: "Баннеры" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "alert", label: "Алёрты" },
 ];
 
-/**
- * `/admin/content/system-messages` — управление SystemMessage записями.
- *
- * SystemMessage — единая таблица, разделённая по `type` на три вкладки.
- * Создание / редактирование — через `MessageEditDialog`. Soft-delete
- * деактивирует запись (isActive=false), полное удаление сделано через
- * DELETE-эндпоинт.
- */
 export function SystemMessagesClient() {
   const [editing, setEditing] = useState<SystemMessageItemDomain | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [dialogType, setDialogType] = useState<string>('banner');
+  const [dialogType, setDialogType] = useState<string>("banner");
 
-  const q = useAdminQuery('admin-system-messages', async () => {
+  const q = useAdminQuery("admin-system-messages", async () => {
     const res = await adminSystemMessagesApi.list();
     return systemMessageListFromApi(res);
   });
 
-  // Загружаем список Org один раз, чтобы в диалоге показать multiselect.
-  const orgs = useAdminQuery('admin-system-messages-orgs', async () => {
+  const orgs = useAdminQuery("admin-system-messages-orgs", async () => {
     const res = await adminOrgsApi.list({ limit: 500 });
     return adminOrgListFromApi(res);
   });
@@ -83,11 +74,11 @@ export function SystemMessagesClient() {
   const toggleActive = async (m: SystemMessageItemDomain) => {
     try {
       await adminSystemMessagesApi.update(m.id, { isActive: !m.isActive });
-      toast.success(!m.isActive ? 'Сообщение включено' : 'Сообщение выключено');
+      toast.success(!m.isActive ? "Сообщение включено" : "Сообщение выключено");
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось обновить статус',
+        e instanceof ApiError ? e.message : "Не удалось обновить статус",
       );
     }
   };
@@ -95,10 +86,10 @@ export function SystemMessagesClient() {
   const remove = async (m: SystemMessageItemDomain) => {
     try {
       await adminSystemMessagesApi.remove(m.id);
-      toast.success('Сообщение удалено');
+      toast.success("Сообщение удалено");
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить");
     }
   };
 
@@ -106,8 +97,8 @@ export function SystemMessagesClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Контент' },
-        { label: 'Системные сообщения' },
+        { label: "Контент" },
+        { label: "Системные сообщения" },
       ]}
       title="Системные сообщения"
       description="Баннеры пользователей, режим maintenance и критические алёрты. Можно ограничивать показ конкретным Org или показывать всем."
@@ -194,14 +185,14 @@ function MessageRow({
   onToggleActive: () => void;
   onRemove: () => void;
 }) {
-  const sevVariant: 'success' | 'warning' | 'danger' | 'secondary' =
-    item.severity === 'critical'
-      ? 'danger'
-      : item.severity === 'warning'
-        ? 'warning'
-        : item.severity === 'info'
-          ? 'secondary'
-          : 'secondary';
+  const sevVariant: "success" | "warning" | "danger" | "secondary" =
+    item.severity === "critical"
+      ? "danger"
+      : item.severity === "warning"
+        ? "warning"
+        : item.severity === "info"
+          ? "secondary"
+          : "secondary";
 
   return (
     <tr className="border-t border-border-subtle align-top hover:bg-bg-overlay">
@@ -214,10 +205,10 @@ function MessageRow({
         <span className="line-clamp-2">{item.body}</span>
       </td>
       <td className="px-3 py-3 text-xs text-fg-tertiary">
-        {item.startsAt ? item.startsAt.toLocaleString('ru-RU') : '—'}
+        {item.startsAt ? item.startsAt.toLocaleString("ru-RU") : "—"}
       </td>
       <td className="px-3 py-3 text-xs text-fg-tertiary">
-        {item.endsAt ? item.endsAt.toLocaleString('ru-RU') : '—'}
+        {item.endsAt ? item.endsAt.toLocaleString("ru-RU") : "—"}
       </td>
       <td className="px-3 py-3 text-center">
         <Switch checked={item.isActive} onCheckedChange={onToggleActive} />

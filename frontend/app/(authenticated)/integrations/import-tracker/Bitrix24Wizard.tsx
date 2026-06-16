@@ -1,20 +1,7 @@
-'use client';
+"use client";
 
-/**
- * Wizard импорта из Битрикс24
- * (Wave 3 / Tracker Phase 5 — Bitrix24 ветка).
- *
- * 4 шага:
- *   1. Подключение      — webhook URL + проверка формата.
- *   2. Группы           — ввод ID групп через запятую.
- *   3. Маппинг          — textarea «email=ourUserId / skip» (общий компонент).
- *   4. Подтверждение    — итог + POST /api/v1/tracker/imports/bitrix24.
- *
- * RBAC проверяется родителем (ImportTrackerClient.tsx).
- */
-
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -27,16 +14,16 @@ import {
   Loader2,
   Sparkles,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { importsApi } from '@/api/tracker/imports.api';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError } from "@/api/api-error";
+import { importsApi } from "@/api/tracker/imports.api";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   FreeTextMappingStep,
@@ -47,15 +34,15 @@ import {
   parseIdList,
   parseUserMappings,
   type WizardStepDef,
-} from './_shared';
+} from "./_shared";
 
-type Step = 'connect' | 'groups' | 'mapping' | 'preview';
+type Step = "connect" | "groups" | "mapping" | "preview";
 
 const STEPS: WizardStepDef[] = [
-  { id: 'connect', label: 'Подключение' },
-  { id: 'groups', label: 'Группы' },
-  { id: 'mapping', label: 'Сопоставление' },
-  { id: 'preview', label: 'Подтверждение' },
+  { id: "connect", label: "Подключение" },
+  { id: "groups", label: "Группы" },
+  { id: "mapping", label: "Сопоставление" },
+  { id: "preview", label: "Подтверждение" },
 ];
 
 export function Bitrix24Wizard({
@@ -67,44 +54,41 @@ export function Bitrix24Wizard({
 }) {
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>('connect');
+  const [step, setStep] = useState<Step>("connect");
 
-  // Шаг 1 — Подключение
-  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState("");
   const webhookValid = isLikelyBitrixWebhook(webhookUrl);
 
-  // Шаг 2 — Группы
-  const [groupsInput, setGroupsInput] = useState('');
+  const [groupsInput, setGroupsInput] = useState("");
   const selectedGroupIds = useMemo(
     () => parseIdList(groupsInput),
     [groupsInput],
   );
   const groupsValid =
-    selectedGroupIds.length > 0 && selectedGroupIds.every((id) => /^\d+$/.test(id));
+    selectedGroupIds.length > 0 &&
+    selectedGroupIds.every((id) => /^\d+$/.test(id));
   const invalidGroupIds = useMemo(
     () => selectedGroupIds.filter((id) => !/^\d+$/.test(id)),
     [selectedGroupIds],
   );
 
-  // Шаг 3 — Маппинг (общий компонент)
-  const [mappingText, setMappingText] = useState('');
+  const [mappingText, setMappingText] = useState("");
   const parsedMappings = useMemo(
     () => parseUserMappings(mappingText),
     [mappingText],
   );
 
-  // Шаг 4 — submit
   const [submitting, setSubmitting] = useState(false);
 
   const goNext = () => {
-    if (step === 'connect') setStep('groups');
-    else if (step === 'groups') setStep('mapping');
-    else if (step === 'mapping') setStep('preview');
+    if (step === "connect") setStep("groups");
+    else if (step === "groups") setStep("mapping");
+    else if (step === "mapping") setStep("preview");
   };
   const goBack = () => {
-    if (step === 'preview') setStep('mapping');
-    else if (step === 'mapping') setStep('groups');
-    else if (step === 'groups') setStep('connect');
+    if (step === "preview") setStep("mapping");
+    else if (step === "mapping") setStep("groups");
+    else if (step === "groups") setStep("connect");
     else onCancel();
   };
 
@@ -119,12 +103,14 @@ export function Bitrix24Wizard({
             ? parsedMappings.mappings
             : undefined,
       });
-      toast.success('Импорт из Битрикс24 запущен');
+      toast.success("Импорт из Битрикс24 запущен");
       router.push(`/integrations/import-tracker/${res.importLogId}`);
     } catch (e) {
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось запустить импорт. Попробуйте ещё раз.');
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось запустить импорт. Попробуйте ещё раз.",
+      );
       setSubmitting(false);
     }
   };
@@ -133,7 +119,7 @@ export function Bitrix24Wizard({
     <div className="space-y-6">
       <WizardSteps steps={STEPS} current={step} />
 
-      {step === 'connect' && (
+      {step === "connect" && (
         <ConnectStep
           webhookUrl={webhookUrl}
           onChange={setWebhookUrl}
@@ -143,7 +129,7 @@ export function Bitrix24Wizard({
         />
       )}
 
-      {step === 'groups' && (
+      {step === "groups" && (
         <GroupsStep
           value={groupsInput}
           onChange={setGroupsInput}
@@ -155,7 +141,7 @@ export function Bitrix24Wizard({
         />
       )}
 
-      {step === 'mapping' && (
+      {step === "mapping" && (
         <FreeTextMappingStep
           value={mappingText}
           onChange={setMappingText}
@@ -166,7 +152,7 @@ export function Bitrix24Wizard({
         />
       )}
 
-      {step === 'preview' && (
+      {step === "preview" && (
         <PreviewStep
           webhookUrl={webhookUrl}
           groupsCount={selectedGroupIds.length}
@@ -180,8 +166,6 @@ export function Bitrix24Wizard({
     </div>
   );
 }
-
-// ─── Шаг 1: Подключение ────────────────────────────────────────────────────
 
 function ConnectStep({
   webhookUrl,
@@ -209,16 +193,16 @@ function ConnectStep({
               Шаг 1: Подключите Битрикс24 по webhook
             </h2>
             <p className="mt-1 text-sm text-fg-secondary">
-              Создайте «Входящий webhook» в вашем портале Битрикс24 с правами{' '}
+              Создайте «Входящий webhook» в вашем портале Битрикс24 с правами{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5 text-xs">
                 task
-              </code>{' '}
-              и{' '}
+              </code>{" "}
+              и{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5 text-xs">
                 sonet_group
               </code>
-              , затем вставьте полученный URL ниже. Мы будем читать ваши
-              задачи только в режиме чтения.
+              , затем вставьте полученный URL ниже. Мы будем читать ваши задачи
+              только в режиме чтения.
             </p>
           </div>
         </div>
@@ -239,7 +223,7 @@ function ConnectStep({
           />
           {touched && !valid && (
             <p className="text-xs text-danger">
-              URL не похож на webhook Битрикс24. Ожидаем формат:{' '}
+              URL не похож на webhook Битрикс24. Ожидаем формат:{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5">
                 https://*.bitrix24.ru/rest/&lt;userId&gt;/&lt;token&gt;/
               </code>
@@ -257,13 +241,16 @@ function ConnectStep({
             <ClipboardList size={14} /> Как получить webhook URL
           </div>
           <ol className="list-decimal space-y-1 pl-5">
-            <li>В Битрикс24 откройте «Разработчикам» → «Другое» → «Входящий вебхук».</li>
             <li>
-              Установите права:{' '}
-              <code className="rounded bg-bg-overlay px-1">task</code>,{' '}
-              <code className="rounded bg-bg-overlay px-1">tasks</code>,{' '}
-              <code className="rounded bg-bg-overlay px-1">sonet_group</code>,{' '}
-              <code className="rounded bg-bg-overlay px-1">user</code>,{' '}
+              В Битрикс24 откройте «Разработчикам» → «Другое» → «Входящий
+              вебхук».
+            </li>
+            <li>
+              Установите права:{" "}
+              <code className="rounded bg-bg-overlay px-1">task</code>,{" "}
+              <code className="rounded bg-bg-overlay px-1">tasks</code>,{" "}
+              <code className="rounded bg-bg-overlay px-1">sonet_group</code>,{" "}
+              <code className="rounded bg-bg-overlay px-1">user</code>,{" "}
               <code className="rounded bg-bg-overlay px-1">disk</code>.
             </li>
             <li>Сохраните и скопируйте «URL вашего вебхука для вызова».</li>
@@ -282,8 +269,8 @@ function ConnectStep({
           <AlertTriangle size={14} className="mt-0.5 shrink-0" />
           <p>
             Webhook URL — это секрет. Мы шифруем его в БД (AES-256-GCM) и
-            используем только для импорта. После завершения импорта вебхук
-            можно отозвать в админке Битрикс24.
+            используем только для импорта. После завершения импорта вебхук можно
+            отозвать в админке Битрикс24.
           </p>
         </div>
 
@@ -299,8 +286,6 @@ function ConnectStep({
     </Card>
   );
 }
-
-// ─── Шаг 2: Группы ─────────────────────────────────────────────────────────
 
 function GroupsStep({
   value,
@@ -333,10 +318,10 @@ function GroupsStep({
             <p className="mt-1 text-sm text-fg-secondary">
               В Битрикс24 рабочие группы — это аналог проектов. Каждая группа
               станет отдельным проектом в Коре. ID группы — это число в URL
-              группы (например, для{' '}
+              группы (например, для{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5 text-xs">
                 /workgroups/group/42/
-              </code>{' '}
+              </code>{" "}
               ID = 42).
             </p>
           </div>
@@ -370,9 +355,7 @@ function GroupsStep({
                   <code className="font-mono">{id}</code>
                 </li>
               ))}
-              {invalidIds.length > 5 && (
-                <li>… ещё {invalidIds.length - 5}</li>
-              )}
+              {invalidIds.length > 5 && <li>… ещё {invalidIds.length - 5}</li>}
             </ul>
             <p className="mt-1">
               ID — только цифры. Уберите некорректные значения, чтобы
@@ -403,8 +386,6 @@ function GroupsStep({
   );
 }
 
-// ─── Шаг 4: Preview ────────────────────────────────────────────────────────
-
 function PreviewStep({
   webhookUrl,
   groupsCount,
@@ -434,8 +415,8 @@ function PreviewStep({
               Шаг 4: Подтверждение запуска
             </h2>
             <p className="mt-1 text-sm text-fg-secondary">
-              Проверьте параметры — после старта запрос пойдёт к вашему
-              порталу Битрикс24. Импорт можно отменить, пока он идёт.
+              Проверьте параметры — после старта запрос пойдёт к вашему порталу
+              Битрикс24. Импорт можно отменить, пока он идёт.
             </p>
           </div>
         </div>
@@ -460,8 +441,8 @@ function PreviewStep({
         <div className="mt-5 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
           <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
-            Импорт идемпотентен: повторный запуск не создаст дублей.
-            Прогресс и журнал ошибок откроются на следующей странице.
+            Импорт идемпотентен: повторный запуск не создаст дублей. Прогресс и
+            журнал ошибок откроются на следующей странице.
           </p>
         </div>
 

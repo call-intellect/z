@@ -13,14 +13,6 @@ import type { VoxService } from '../services/vox.service';
 
 import { TranscribeWorker } from './transcribe.worker';
 
-/**
- * `TranscribeWorker.process` тестируется как чистая функция через
- * `(worker as any).process(job)`. BullMQ Worker сам не запускаем —
- * `onModuleInit` пропускаем.
- *
- * Все внешние зависимости (Prisma/Vox/S3/queue/...) замоканы — без сети/БД.
- */
-
 type AnyTrack = {
   id: string;
   participantId: string | null;
@@ -74,7 +66,6 @@ interface Deps {
   usage: AiUsageLogService;
   cfg: TypedConfigService;
   redis: RedisService;
-  // raw spies
   submit: ReturnType<typeof vi.fn>;
   poll: ReturnType<typeof vi.fn>;
   upsert: ReturnType<typeof vi.fn>;
@@ -84,22 +75,6 @@ interface Deps {
   transcriptTrackCount: ReturnType<typeof vi.fn>;
 }
 
-/**
- * Конструирует воркер со всеми моками. `opts` управляет поведением:
- *   - tracks: набор audioTracks встречи
- *   - pollImpl: реализация vox.poll (по умолчанию — всегда COMPLETED)
- *   - existingByIdentity: какие livekitIdentity уже имеют TranscriptTrack
- *   - hasTranscript: есть ли у встречи Transcript (по умолчанию true)
- *   - failedIdentities: набор livekitIdentity, чьи дорожки «не сохранились»
- *     (их upsert не учитывается в count — имитация частичного провала)
- *
- * `transcriptTrack.count` стейтфул и моделирует реальную БД: возвращает число
- * различных дорожек, которые УЖЕ персистнуты на момент вызова (предсуществующие
- * `existingByIdentity` + успешно upsert'нутые в этом прогоне, исключая
- * `failedIdentities`). Это критично: новый pre-pool idempotency-чек и
- * post-pool guard оба вызывают count, и значения должны отличаться (0/частично
- * до пула, полный набор — после), иначе любой прогон коротко замкнул бы в merge.
- */
 function makeWorker(opts: {
   meetingId?: string;
   status?: string;
@@ -114,8 +89,6 @@ function makeWorker(opts: {
   const failed = new Set(opts.failedIdentities ?? []);
   const hasTranscript = opts.hasTranscript ?? true;
 
-  // Стейтфул-модель персистнутых дорожек: стартуем с предсуществующих,
-  // добавляем по мере успешных upsert (кроме «упавших»).
   const persisted = new Set<string>(Object.keys(existing));
 
   const meetingFindUnique = vi.fn(async () => ({
@@ -126,13 +99,11 @@ function makeWorker(opts: {
     transcript: hasTranscript ? { id: 'tr-1' } : null,
   }));
   const transcriptUpsert = vi.fn(async () => ({ id: 'tr-1' }));
-  const upsert = vi.fn(
-    async (args: { create: { livekitIdentity: string } }) => {
-      const identity = args.create.livekitIdentity;
-      if (!failed.has(identity)) persisted.add(identity);
-      return undefined;
-    },
-  );
+  const upsert = vi.fn(async (args: { create: { livekitIdentity: string } }) => {
+    const identity = args.create.livekitIdentity;
+    if (!failed.has(identity)) persisted.add(identity);
+    return undefined;
+  });
   const audioTrackUpdate = vi.fn(async () => undefined);
   const transcriptTrackFindUnique = vi.fn(
     async (args: { where: { transcriptId_livekitIdentity: { livekitIdentity: string } } }) => {
@@ -154,9 +125,7 @@ function makeWorker(opts: {
   } as unknown as PrismaService;
 
   const submit = vi.fn(async () => ({ taskId: 'task-' + Math.random().toString(36).slice(2, 8) }));
-  const poll = vi.fn(
-    opts.pollImpl ?? (async () => completedResult),
-  );
+  const poll = vi.fn(opts.pollImpl ?? (async () => completedResult));
   const vox = { submit, poll } as unknown as VoxService;
 
   const s3 = {
@@ -176,22 +145,11 @@ function makeWorker(opts: {
   const cfg = {
     ai: { vox: { model: 'v3_rnnt', pollIntervalMs: 5000, pollMaxAttempts: 180 } },
     s3: { bucket: 'bucket' },
-    // #74 — порог «битого» аудио (AdminSetting); в тесте отдаём default.
     getDynamic: vi.fn(async (_k: string, _e: unknown, d: number) => d),
   } as unknown as TypedConfigService;
   const redis = { client: {} } as unknown as RedisService;
 
-  const worker = new TranscribeWorker(
-    redis,
-    prisma,
-    vox,
-    s3,
-    queue,
-    meetings,
-    metrics,
-    usage,
-    cfg,
-  );
+  const worker = new TranscribeWorker(redis, prisma, vox, s3, queue, meetings, metrics, usage, cfg);
 
   return {
     worker,
@@ -226,20 +184,20 @@ async function run(worker: TranscribeWorker, meetingId = 'm-1'): Promise<void> {
 describe('TranscribeWorker.process', () => {
   it('happy path: тянет audio, submit+poll(с опциями), upsert per-track, merge один раз', async () => {
     const { worker, deps } = makeWorker({
-      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' }), track({ id: 'b', livekitIdentity: 'guest:bob' })],
+      tracks: [
+        track({ id: 'a', livekitIdentity: 'host:alice' }),
+        track({ id: 'b', livekitIdentity: 'guest:bob' }),
+      ],
     });
     await run(worker);
 
     expect(deps.submit).toHaveBeenCalledTimes(2);
     expect(deps.poll).toHaveBeenCalledTimes(2);
-    // poll вызывается С опциями {intervalMs, maxAttempts} из конфига, а не голый.
     expect(deps.poll).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ intervalMs: 5000, maxAttempts: 180 }),
     );
-    // upsert (не create) для каждого трека.
     expect(deps.upsert).toHaveBeenCalledTimes(2);
-    // merge ровно один раз (все дорожки готовы).
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
     expect(deps.enqueueMerge).toHaveBeenCalledWith('m-1');
   });
@@ -251,7 +209,6 @@ describe('TranscribeWorker.process', () => {
     await run(worker);
 
     expect(deps.submit).toHaveBeenCalledTimes(1);
-    // voxTaskId записан в AudioTrack до poll.
     expect(deps.audioTrackUpdate).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'a' },
@@ -263,7 +220,6 @@ describe('TranscribeWorker.process', () => {
   it('параллель + allSettled: одна дорожка падает → две успешные upsert, merge НЕ ставится, ошибка', async () => {
     const failingIdentity = 'guest:bob';
     const _pollImpl = vi.fn(async (_taskId: string) => {
-      // poll получает taskId, но мы не знаем какой трек — определяем по submit-маппингу ниже.
       return completedResult;
     });
     const { worker, deps } = makeWorker({
@@ -272,24 +228,20 @@ describe('TranscribeWorker.process', () => {
         track({ id: 'b', livekitIdentity: failingIdentity }),
         track({ id: 'c', livekitIdentity: 'guest:carol' }),
       ],
-      // Дорожка 'b' падает на poll → её upsert не вызывается → count=2 (a,c).
     });
 
-    // Маппинг submit → taskId по треку, чтобы знать какой poll реджектить.
     const taskByIdentity: Record<string, string> = {};
     let n = 0;
     (deps.submit as ReturnType<typeof vi.fn>).mockImplementation(async () => {
       const taskId = `task-${n++}`;
       return { taskId };
     });
-    // Чтобы связать identity↔task: audioTrack.update пишет voxTaskId — перехватим там.
     (deps.audioTrackUpdate as ReturnType<typeof vi.fn>).mockImplementation(
       async (args: { where: { id: string }; data: { voxTaskId?: string | null } }) => {
         if (args.data.voxTaskId) taskByIdentity[args.where.id] = args.data.voxTaskId;
         return undefined;
       },
     );
-    // poll реджектит для задачи трека 'b'.
     (deps.poll as ReturnType<typeof vi.fn>).mockImplementation(async (taskId: string) => {
       if (taskByIdentity['b'] === taskId) {
         throw new Error('vox poll failed for track b');
@@ -299,9 +251,7 @@ describe('TranscribeWorker.process', () => {
 
     await expect(run(worker)).rejects.toThrow(/не все дорожки/i);
 
-    // Две успешные дорожки всё равно дали upsert.
     expect(deps.upsert).toHaveBeenCalledTimes(2);
-    // merge НЕ поставлен (не все готовы).
     expect(deps.enqueueMerge).not.toHaveBeenCalled();
   });
 
@@ -319,13 +269,9 @@ describe('TranscribeWorker.process', () => {
     });
     await run(worker);
 
-    // Pre-pool idempotency-чек видит count=1==tracks → сразу merge,
-    // в пул вообще не проваливаемся: ни findUnique по треку, ни submit/poll.
     expect(deps.submit).not.toHaveBeenCalled();
     expect(deps.poll).not.toHaveBeenCalled();
-    // upsert тоже не вызывается для пропущенной дорожки.
     expect(deps.upsert).not.toHaveBeenCalled();
-    // merge ставится (count==tracks).
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
   });
 
@@ -357,12 +303,10 @@ describe('TranscribeWorker.process', () => {
     });
     await run(worker);
 
-    // Очистили voxTaskId (set null) и сделали свежий submit.
     expect(deps.audioTrackUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'a' }, data: { voxTaskId: null } }),
     );
     expect(deps.submit).toHaveBeenCalledTimes(1);
-    // poll вызван дважды: stale (упал) + новый.
     expect(deps.poll).toHaveBeenCalledTimes(2);
     expect(deps.upsert).toHaveBeenCalledTimes(1);
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
@@ -379,10 +323,8 @@ describe('TranscribeWorker.process', () => {
       tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
       pollImpl: async () => empty,
     });
-    // getObject по умолчанию даёт 11 байт (< minAudioBytes 1024) → битое.
     await run(worker);
 
-    // initial submit + один ре-submit = 2; poll вызван дважды.
     expect(deps.submit).toHaveBeenCalledTimes(2);
     expect(deps.poll).toHaveBeenCalledTimes(2);
   });
@@ -398,10 +340,7 @@ describe('TranscribeWorker.process', () => {
       tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
       pollImpl: async () => silent,
     });
-    // большое аудио (> minAudioBytes) + ненулевая длительность → не битое.
-    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(
-      Buffer.alloc(5000),
-    );
+    (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(Buffer.alloc(5000));
     await run(worker);
 
     expect(deps.submit).toHaveBeenCalledTimes(1);
@@ -431,7 +370,6 @@ describe('TranscribeWorker.process', () => {
       ],
     });
     const { worker, deps } = makeWorker({
-      // Встреча ретраится: 2 дорожки уже имеют TranscriptTrack, 3-я — нет.
       status: 'transcription_processing',
       tracks: [
         track({ id: 'a', livekitIdentity: 'host:alice' }),
@@ -446,19 +384,14 @@ describe('TranscribeWorker.process', () => {
 
     await run(worker);
 
-    // Pre-pool count=2 < 3 → НЕ короткозамыкаем, проваливаемся в пул.
-    // Для 2 готовых дорожек submit/poll НЕ вызываются (per-track skip),
-    // только для недостающей 3-й (guest:carol).
     expect(deps.submit).toHaveBeenCalledTimes(1);
     expect(deps.poll).toHaveBeenCalledTimes(1);
-    // upsert ровно один — для доделанной 3-й дорожки.
     expect(deps.upsert).toHaveBeenCalledTimes(1);
     expect(deps.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({ livekitIdentity: 'guest:carol' }),
       }),
     );
-    // После доделки count=3==tracks → merge ровно один раз.
     expect(deps.enqueueMerge).toHaveBeenCalledTimes(1);
     expect(deps.enqueueMerge).toHaveBeenCalledWith('m-1');
   });
@@ -472,14 +405,12 @@ describe('TranscribeWorker.process', () => {
       'failed',
       expect.objectContaining({ failureReason: 'transcribe: no_audio_tracks' }),
     );
-    // Не уводим в ai_failed — записи/дорожек нет, смотреть нечего.
     expect(deps.meetings.transitionStatus).not.toHaveBeenCalledWith(
       'm-1',
       'ai_failed',
       expect.anything(),
     );
     expect(deps.metrics.incMeetingFailed).toHaveBeenCalledWith('transcribe');
-    // submit/poll не вызываются — короткое замыкание на отсутствии треков.
     expect(deps.submit).not.toHaveBeenCalled();
   });
 
@@ -489,20 +420,15 @@ describe('TranscribeWorker.process', () => {
       transcriptText: 'привет',
       durationSeconds: 5,
       words: [] as Array<{ word: string; startMs: number; endMs: number }>,
-      // Vox отдаёт сегмент с speaker/speakerId — персист обязан их отбросить (Б2).
       segments: [{ startSec: 1, endSec: 2, text: 'а', speaker: 'SPEAKER 1', speakerId: 1 }],
     };
     const { worker, deps } = makeWorker({
       tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
       pollImpl: async () => withSegments as unknown as typeof completedResult,
     });
-    // Не «битое» аудио (words пусты, но есть текст и длительность) → без ре-submit.
     (deps.s3.getObject as ReturnType<typeof vi.fn>).mockResolvedValue(Buffer.alloc(5000));
     await run(worker);
 
-    // upsert получает segments как Array<{startSec,endSec,text}> — точно slim
-    // (массив-литерал в toHaveBeenCalledWith сверяется рекурсивно: лишние ключи
-    // speaker/speakerId провалили бы матч).
     expect(deps.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: expect.objectContaining({
@@ -519,7 +445,9 @@ describe('TranscribeWorker.onJobFailed (Фаза 11: развязка запис
   }
 
   it('финальный сбой AI-ветки → встреча уходит в `ai_failed`, НЕ в `failed` (запись остаётся смотрибельной)', async () => {
-    const { worker, deps } = makeWorker({ tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })] });
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+    });
 
     await (
       worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
@@ -539,7 +467,9 @@ describe('TranscribeWorker.onJobFailed (Фаза 11: развязка запис
   });
 
   it('до исчерпания ретраев (attemptsMade < attempts) → не трогает статус', async () => {
-    const { worker, deps } = makeWorker({ tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })] });
+    const { worker, deps } = makeWorker({
+      tracks: [track({ id: 'a', livekitIdentity: 'host:alice' })],
+    });
 
     await (
       worker as unknown as { onJobFailed: (j: unknown, e: Error) => Promise<void> }
@@ -554,7 +484,7 @@ describe('TranscribeWorker.onJobFailed (Фаза 11: развязка запис
 
 describe('LivekitEventsHandler.parseEgressStartedAt (E: ns→Date)', () => {
   it('started_at в наносекундах (number) → корректная Date', () => {
-    const ns = 1_700_000_000_000_000_000; // 1.7e18 ns = 1.7e9 s
+    const ns = 1_700_000_000_000_000_000;
     const d = LivekitEventsHandler.parseEgressStartedAt(ns);
     expect(d).toBeInstanceOf(Date);
     expect(d?.getTime()).toBe(ns / 1_000_000);

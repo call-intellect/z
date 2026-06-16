@@ -1,27 +1,6 @@
-'use client';
+"use client";
 
-/**
- * `/admin/orgs/plans` — карточка единого тарифа Z (Z-Admin, ТЗ 2026-05-31
- * collapse-to-standard, Фаза 5).
- *
- * После сворачивания CRUD-тарифов:
- *   - Тариф один — `tier_standard`.
- *   - Доп. сотрудники — единственная опция (по решению владельца).
- *   - Цена и параметры пакета редактируются super_admin через 6 ключей
- *     `billing.*` в `AdminSetting` (severity='high', нужен `reason`).
- *
- * Структура карточки:
- *   1. Заголовок «Стандартный тариф Z» + подзаголовок.
- *   2. «Параметры пакета (редактируется super_admin)» — 6 `AdminSettingField`
- *      через `useAdminSettingEditor` с `requiresReason: 'high'`.
- *   3. «Калькулятор» — слайдер 0..1000 доп. сотрудников + live-пересчёт.
- *   4. «Что включено в Z (фичи)» — read-only список `features` из снимка.
- *   5. «Org» — два бейджа: на текущем тарифе + на legacy.
- *   6. Кнопка «История правок прайса» — `AdminSettingHistoryDrawer` для
- *      выбранного ключа.
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   Check,
   History as HistoryIcon,
@@ -30,127 +9,109 @@ import {
   Sigma,
   Sliders,
   Users,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { z, type ZodTypeAny } from 'zod';
+} from "lucide-react";
+import { toast } from "sonner";
+import { z, type ZodTypeAny } from "zod";
 
-import { ApiError } from '@/api/api-error';
-import { adminPlansApi } from '@/api/admin-plans.api';
+import { ApiError } from "@/api/api-error";
+import { adminPlansApi } from "@/api/admin-plans.api";
 import {
   calculatePlanPrice,
   formatRub,
   planSnapshotFromApi,
   type PlanSnapshotDomain,
   type PlanSnapshotEditableSettingApi,
-} from '@/domain/admin-plan';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Slider } from '@/ui/shadcn/slider';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/domain/admin-plan";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Slider } from "@/ui/shadcn/slider";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const MIN_REASON_LENGTH = 10;
 const MAX_EXTRA_SEATS = 1000;
 
-// ─────────────────────────────────────── Спецификации полей ──
-
-/**
- * 6 ключей `billing.*`. Zod-схемы и метки повторяют backend-регистратор
- * (admin-setting-schema-registry.ts) — это интерфейс «как UI должен показать
- * это поле». На бэке схема та же, валидация дублируется.
- */
 type FieldSpec = {
-  /** Ключ AdminSetting (`billing.baseMonthlyKopecks` и т. п.). */
   key: string;
-  /** Подпись поля в UI. */
   label: string;
-  /** Подсказка под полем. */
   description: string;
-  /** Zod-схема — используется и `AdminSettingField`, и save-валидацией. */
   schema: ZodTypeAny;
-  /** Дефолт (на случай, если БД пустая) — должен совпадать с code-fallback. */
   defaultValue: number;
 };
 
 const FIELD_SPECS: FieldSpec[] = [
   {
-    key: 'billing.baseMonthlyKopecks',
-    label: 'Базовая цена за месяц, ₽',
+    key: "billing.baseMonthlyKopecks",
+    label: "Базовая цена за месяц, ₽",
     description:
-      'Сколько Org платит за базовый пакет в месяц. Сохраняется в копейках, ввод и показ — в рублях. По умолчанию 60 000 ₽.',
+      "Сколько Org платит за базовый пакет в месяц. Сохраняется в копейках, ввод и показ — в рублях. По умолчанию 60 000 ₽.",
     schema: z.number().int().nonnegative(),
     defaultValue: 6_000_000,
   },
   {
-    key: 'billing.perExtraSeatKopecks',
-    label: 'Цена доп. сотрудника, ₽',
+    key: "billing.perExtraSeatKopecks",
+    label: "Цена доп. сотрудника, ₽",
     description:
-      'Сколько Org платит за каждое дополнительное место сверх пакета. По умолчанию 1 000 ₽ в месяц за человека.',
+      "Сколько Org платит за каждое дополнительное место сверх пакета. По умолчанию 1 000 ₽ в месяц за человека.",
     schema: z.number().int().nonnegative(),
     defaultValue: 100_000,
   },
   {
-    key: 'billing.yearlyDiscountRate',
-    label: 'Множитель годовой подписки',
+    key: "billing.yearlyDiscountRate",
+    label: "Множитель годовой подписки",
     description:
-      'Коэффициент цены при оплате за год. 0.8 = скидка 20%. Значение 0.0–1.0.',
+      "Коэффициент цены при оплате за год. 0.8 = скидка 20%. Значение 0.0–1.0.",
     schema: z.number().min(0).max(1),
     defaultValue: 0.8,
   },
   {
-    key: 'billing.baseSeatsIncluded',
-    label: 'Мест включено в базе',
+    key: "billing.baseSeatsIncluded",
+    label: "Мест включено в базе",
     description:
-      'Сколько участников Org может позвать без доплаты. По умолчанию 31 (1 владелец + 30 человек).',
+      "Сколько участников Org может позвать без доплаты. По умолчанию 31 (1 владелец + 30 человек).",
     schema: z.number().int().positive(),
     defaultValue: 31,
   },
   {
-    key: 'billing.baseMeetingsGrant',
-    label: 'Встреч в базе, шт/мес',
+    key: "billing.baseMeetingsGrant",
+    label: "Встреч в базе, шт/мес",
     description:
-      'Сколько встреч включено в базовый пакет в месяц. По умолчанию 150.',
+      "Сколько встреч включено в базовый пакет в месяц. По умолчанию 150.",
     schema: z.number().int().nonnegative(),
     defaultValue: 150,
   },
   {
-    key: 'billing.perExtraSeatMeetingsGrant',
-    label: 'Встреч за доп. сотрудника, шт/мес',
+    key: "billing.perExtraSeatMeetingsGrant",
+    label: "Встреч за доп. сотрудника, шт/мес",
     description:
-      'Сколько встреч в месяц добавляется к лимиту за каждое доп. место. По умолчанию 5.',
+      "Сколько встреч в месяц добавляется к лимиту за каждое доп. место. По умолчанию 5.",
     schema: z.number().int().nonnegative(),
     defaultValue: 5,
   },
 ];
 
-// ─────────────────────────────────────── PlansClient ──
-
 export function PlansClient() {
   const [historyKey, setHistoryKey] = useState<string | null>(null);
 
-  const q = useAdminQuery('admin-plans-snapshot', async () => {
+  const q = useAdminQuery("admin-plans-snapshot", async () => {
     const res = await adminPlansApi.getCurrent();
     return planSnapshotFromApi(res);
   });
 
   return (
     <AdminSection
-      breadcrumbs={[
-        adminRootCrumb(),
-        { label: 'Тенанты' },
-        { label: 'Тариф' },
-      ]}
+      breadcrumbs={[adminRootCrumb(), { label: "Тенанты" }, { label: "Тариф" }]}
       title="Стандартный тариф Z"
       description="Один тариф для всех Org. Цена и параметры пакета редактируются ниже. Все правки требуют причину (severity=high) и попадают в историю."
     >
@@ -178,8 +139,6 @@ export function PlansClient() {
   );
 }
 
-// ─────────────────────────────────────── PlanCard ──
-
 function PlanCard({
   snapshot,
   onSaved,
@@ -204,8 +163,6 @@ function PlanCard({
   );
 }
 
-// ─────────────────────────────────────── Секция: Параметры ──
-
 function ParametersSection({
   snapshot,
   onSaved,
@@ -226,15 +183,19 @@ function ParametersSection({
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <header className="mb-4 flex items-start gap-2">
-        <Sliders size={18} className="mt-0.5 shrink-0 text-fg-tertiary" aria-hidden />
+        <Sliders
+          size={18}
+          className="mt-0.5 shrink-0 text-fg-tertiary"
+          aria-hidden
+        />
         <div>
           <h2 className="text-base font-semibold text-fg-primary">
             Параметры пакета
           </h2>
           <p className="text-xs text-fg-tertiary">
-            Редактируется только super_admin. При сохранении каждого поля
-            нужно описать причину (минимум {MIN_REASON_LENGTH} символов).
-            История правок — по ссылке рядом с полем.
+            Редактируется только super_admin. При сохранении каждого поля нужно
+            описать причину (минимум {MIN_REASON_LENGTH} символов). История
+            правок — по ссылке рядом с полем.
           </p>
         </div>
       </header>
@@ -244,7 +205,7 @@ function ParametersSection({
           <SettingRow
             key={spec.key}
             spec={spec}
-            severity={editableByKey.get(spec.key)?.severity ?? 'high'}
+            severity={editableByKey.get(spec.key)?.severity ?? "high"}
             onSaved={onSaved}
             onOpenHistory={() => onOpenHistory(spec.key)}
           />
@@ -261,16 +222,17 @@ function SettingRow({
   onOpenHistory,
 }: {
   spec: FieldSpec;
-  severity: PlanSnapshotEditableSettingApi['severity'];
+  severity: PlanSnapshotEditableSettingApi["severity"];
   onSaved: () => void;
   onOpenHistory: () => void;
 }) {
   const editor = useAdminSettingEditor<number>(spec.key, {
     schema: spec.schema,
     defaultValue: spec.defaultValue,
-    requiresReason: severity === 'high' || severity === 'destructive' ? severity : undefined,
+    requiresReason:
+      severity === "high" || severity === "destructive" ? severity : undefined,
   });
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
 
   const handleSave = async () => {
@@ -285,7 +247,7 @@ function SettingRow({
     try {
       await editor.save(trimmed);
       toast.success(`Параметр «${spec.label}» сохранён`);
-      setReason('');
+      setReason("");
       onSaved();
     } catch (e) {
       const msg =
@@ -293,7 +255,7 @@ function SettingRow({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       toast.error(msg);
     }
   };
@@ -337,7 +299,9 @@ function SettingRow({
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] text-fg-tertiary">{spec.key}</span>
+        <span className="font-mono text-[10px] text-fg-tertiary">
+          {spec.key}
+        </span>
         <div className="flex items-center gap-1">
           <Button
             size="sm"
@@ -363,8 +327,6 @@ function SettingRow({
   );
 }
 
-// ─────────────────────────────────────── Секция: Калькулятор ──
-
 function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   const [seatsExtra, setSeatsExtra] = useState(0);
 
@@ -376,12 +338,18 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <header className="mb-4 flex items-start gap-2">
-        <Sigma size={18} className="mt-0.5 shrink-0 text-fg-tertiary" aria-hidden />
+        <Sigma
+          size={18}
+          className="mt-0.5 shrink-0 text-fg-tertiary"
+          aria-hidden
+        />
         <div>
-          <h2 className="text-base font-semibold text-fg-primary">Калькулятор</h2>
+          <h2 className="text-base font-semibold text-fg-primary">
+            Калькулятор
+          </h2>
           <p className="text-xs text-fg-tertiary">
-            Подбирает итоговую цену по текущим значениям сверху.
-            Перетащите слайдер — пересчитается мгновенно.
+            Подбирает итоговую цену по текущим значениям сверху. Перетащите
+            слайдер — пересчитается мгновенно.
           </p>
         </div>
       </header>
@@ -389,7 +357,10 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
       <div className="space-y-4">
         <div>
           <div className="mb-2 flex items-baseline justify-between gap-2">
-            <label className="text-sm font-medium text-fg-primary" htmlFor="seats-slider">
+            <label
+              className="text-sm font-medium text-fg-primary"
+              htmlFor="seats-slider"
+            >
               Доп. сотрудников
             </label>
             <span className="font-mono text-sm tabular-nums text-fg-primary">
@@ -404,7 +375,7 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
             step={1}
             onValueChange={(values) => {
               const next = values[0];
-              if (typeof next === 'number') setSeatsExtra(next);
+              if (typeof next === "number") setSeatsExtra(next);
             }}
           />
           <div className="mt-1 flex justify-between text-[10px] text-fg-tertiary">
@@ -422,9 +393,10 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
               {formatRub(result.monthly)}
             </div>
             <div className="mt-1 text-[11px] text-fg-tertiary">
-              {snapshot.base.seatsIncluded + Math.max(0, seatsExtra)} мест ·{' '}
+              {snapshot.base.seatsIncluded + Math.max(0, seatsExtra)} мест ·{" "}
               {snapshot.base.meetingsIncludedPerMonth +
-                Math.max(0, seatsExtra) * snapshot.extraSeat.meetingsPerSeat}{' '}
+                Math.max(0, seatsExtra) *
+                  snapshot.extraSeat.meetingsPerSeat}{" "}
               встреч/мес
             </div>
           </div>
@@ -444,7 +416,7 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
               </span>
             </div>
             <div className="mt-1 text-[11px] text-fg-tertiary">
-              {formatRub(result.yearlyFull)} за год · экономия{' '}
+              {formatRub(result.yearlyFull)} за год · экономия{" "}
               {formatRub(result.yearlySavings)}
             </div>
           </div>
@@ -454,15 +426,17 @@ function CalculatorSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   );
 }
 
-// ─────────────────────────────────────── Секция: Что включено ──
-
 function FeaturesSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   const entries = Object.entries(snapshot.features);
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <header className="mb-4 flex items-start gap-2">
-        <Check size={18} className="mt-0.5 shrink-0 text-fg-tertiary" aria-hidden />
+        <Check
+          size={18}
+          className="mt-0.5 shrink-0 text-fg-tertiary"
+          aria-hidden
+        />
         <div>
           <h2 className="text-base font-semibold text-fg-primary">
             Что включено в Z
@@ -486,13 +460,17 @@ function FeaturesSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
               <Check
                 size={14}
                 className={
-                  enabled ? 'shrink-0 text-success' : 'shrink-0 text-fg-tertiary opacity-30'
+                  enabled
+                    ? "shrink-0 text-success"
+                    : "shrink-0 text-fg-tertiary opacity-30"
                 }
                 aria-hidden
               />
               <span className="font-mono text-xs">{key}</span>
               {!enabled ? (
-                <span className="text-[10px] text-fg-tertiary">(выключена)</span>
+                <span className="text-[10px] text-fg-tertiary">
+                  (выключена)
+                </span>
               ) : null}
             </li>
           ))}
@@ -521,20 +499,22 @@ function FeaturesSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   );
 }
 
-// ─────────────────────────────────────── Секция: Org ──
-
 function OrgsSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   const legacyOk = snapshot.legacyOrgsRemainingCount === 0;
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <header className="mb-4 flex items-start gap-2">
-        <Users size={18} className="mt-0.5 shrink-0 text-fg-tertiary" aria-hidden />
+        <Users
+          size={18}
+          className="mt-0.5 shrink-0 text-fg-tertiary"
+          aria-hidden
+        />
         <div>
           <h2 className="text-base font-semibold text-fg-primary">Org</h2>
           <p className="text-xs text-fg-tertiary">
-            Сколько компаний сейчас на стандартном тарифе и сколько ещё
-            не перевели с legacy-тиров (`tier_basic` / `tier_pro` /
+            Сколько компаний сейчас на стандартном тарифе и сколько ещё не
+            перевели с legacy-тиров (`tier_basic` / `tier_pro` /
             `tier_enterprise`).
           </p>
         </div>
@@ -557,8 +537,8 @@ function OrgsSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
         <div
           className={
             legacyOk
-              ? 'rounded-md border border-success/30 bg-success/5 p-3'
-              : 'rounded-md border border-warning/30 bg-warning/5 p-3'
+              ? "rounded-md border border-success/30 bg-success/5 p-3"
+              : "rounded-md border border-warning/30 bg-warning/5 p-3"
           }
         >
           <div className="text-[10px] uppercase tracking-wider text-fg-tertiary">
@@ -590,14 +570,16 @@ function OrgsSection({ snapshot }: { snapshot: PlanSnapshotDomain }) {
   );
 }
 
-// ─────────────────────────────────────── Сноска ──
-
 function PriceChangeNote() {
   return (
     <div className="flex items-start gap-2 rounded-md border border-border-subtle bg-bg-overlay/50 p-3 text-xs text-fg-secondary">
-      <Info size={14} className="mt-0.5 shrink-0 text-fg-tertiary" aria-hidden />
+      <Info
+        size={14}
+        className="mt-0.5 shrink-0 text-fg-tertiary"
+        aria-hidden
+      />
       <div>
-        <strong className="text-fg-primary">Как работает правка прайса:</strong>{' '}
+        <strong className="text-fg-primary">Как работает правка прайса:</strong>{" "}
         новая цена применяется только к новым счетам и продлениям. Активные
         подписки сохраняют цену на момент покупки. Чтобы пересчитать цену
         конкретной Org — пересоздайте подписку через `/admin/orgs/[id]/billing`.

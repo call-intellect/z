@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { describeStructuralFilters } from './chat-v2.service';
 
-/**
- * Query Understanding Ф4 (R10) — честное описание применённых структурных
- * условий для ответа «в памяти нет по этим условиям». Чистый хелпер, сервис
- * конструировать не нужно.
- */
 describe('describeStructuralFilters', () => {
   it('описывает период, тип и тему', () => {
     const out = describeStructuralFilters({
@@ -32,7 +27,6 @@ describe('describeStructuralFilters', () => {
       bitemporalActiveOnly: false,
     });
     expect(out).toContain('задачи/дела');
-    // оба исходных типа маппятся в один термин — он не должен повторяться
     expect(out).toBe('тип: задачи/дела');
   });
 

@@ -1,10 +1,3 @@
-/**
- * Smoke-тест агента `block-distill` на DeepSeek-V4-Pro.
- * Промпт встроен в backend/src/modules/knowledge-core/services/block-merge.service.ts
- * (константа JUDGE_SYSTEM_PROMPT). Здесь дублируем текст промпта 1:1 для smoke.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-block-distill.ts
- */
 import {
   client,
   computeCost,
@@ -60,8 +53,7 @@ async function main(): Promise<void> {
   const f = await readFixture<Fixture>(TASK_TYPE);
 
   const userPayload = { newBlock: f.newBlock, candidates: f.candidates };
-  const userMessage =
-    `Новый блок и кандидаты ниже. Реши verdict.\n\n${JSON.stringify(userPayload, null, 2)}\n\nВерни решение через инструмент submit_block_distill_verdict.`;
+  const userMessage = `Новый блок и кандидаты ниже. Реши verdict.\n\n${JSON.stringify(userPayload, null, 2)}\n\nВерни решение через инструмент submit_block_distill_verdict.`;
 
   const start = Date.now();
   let usage: Usage = {};

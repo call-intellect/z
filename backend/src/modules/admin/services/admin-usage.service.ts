@@ -7,10 +7,6 @@ import type { AdminPeriod } from '../dto/admin-usage.dto';
 
 import { AdminCacheService } from './admin-cache.service';
 
-/**
- * Scope — global (Z-Admin) | org (Org-Admin). На уровне сервисов одна и та
- * же логика, разница только в `WHERE tenantId = ?` для `org`.
- */
 export type AdminScope = 'global' | 'org';
 
 interface ScopeArgs {
@@ -26,10 +22,6 @@ interface PeriodArgs {
 
 const DASHBOARD_TTL_MS = 60_000;
 
-/**
- * Cursor для cursor-pagination — base64(JSON({createdAt, id})).
- * Decoder defensive: возвращает null на любую невалидную строку.
- */
 interface UsageCursor {
   createdAt: string;
   id: string;
@@ -58,10 +50,6 @@ function decodeCursor(raw: string | undefined): UsageCursor | null {
   }
 }
 
-/**
- * Преобразует `period` + `from/to` в Prisma-фильтр `gte/lt`.
- * Для `day|week|month` — `now() - N` ... `now()`.
- */
 export function periodToRange(p: PeriodArgs): { gte: Date; lt: Date } {
   const now = new Date();
   if (p.period === 'custom') {
@@ -78,7 +66,6 @@ export function periodToRange(p: PeriodArgs): { gte: Date; lt: Date } {
 
 function decimalToNumber(v: Prisma.Decimal | null | undefined): number {
   if (v === null || v === undefined) return 0;
-  // Prisma.Decimal имеет toNumber()
   if (typeof (v as unknown as { toNumber?: () => number }).toNumber === 'function') {
     try {
       return (v as unknown as { toNumber: () => number }).toNumber();
@@ -102,7 +89,6 @@ export interface AdminDashboardResult {
   byProvider: Array<{ provider: string; costUsd: number; calls: number }>;
   byTaskType: Array<{ taskType: string; costUsd: number; calls: number }>;
   topOrgs?: Array<{ tenantId: string; name: string; costUsd: number; calls: number }>;
-  /** Только для scope=global. */
   counts?: {
     orgsTotal: number;
     usersTotal: number;
@@ -170,15 +156,6 @@ export interface AdminUsageScopeAccessError extends Error {
   code: 'admin_scope_invalid';
 }
 
-/**
- * AdminUsageService — общая логика расчётов для Z-Admin (`scope=global`)
- * и Org-Admin (`scope=org`).
- *
- * Кэширование: `getDashboard` использует `AdminCacheService` с TTL 60s.
- * Инвалидация — через `AdminCacheService.invalidate('usage:')` в mutation-сервисах
- * (см. `AdminFunctionsService.setRouteForTaskType`, `AdminPricesService.setPrice`,
- * `AdminExperimentsService.start/finish`).
- */
 @Injectable()
 export class AdminUsageService {
   private readonly logger = new Logger(AdminUsageService.name);
@@ -187,8 +164,6 @@ export class AdminUsageService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AdminCacheService) private readonly cache: AdminCacheService,
   ) {}
-
-  // ─────────────────────────── helpers ─────────────────────────────────────
 
   private buildTenantWhere(args: ScopeArgs): { tenantId?: string } {
     if (args.scope === 'org') {
@@ -201,7 +176,7 @@ export class AdminUsageService {
   }
 
   private cacheKey(args: ScopeArgs & PeriodArgs, kind: string): string {
-    const tenant = args.scope === 'org' ? args.tenantId ?? '*' : '*';
+    const tenant = args.scope === 'org' ? (args.tenantId ?? '*') : '*';
     const periodKey =
       args.period === 'custom'
         ? `custom_${args.from?.toISOString()}_${args.to?.toISOString()}`
@@ -209,11 +184,7 @@ export class AdminUsageService {
     return `usage:${kind}:${args.scope}:${tenant}:${periodKey}`;
   }
 
-  // ─────────────────────────── getDashboard ─────────────────────────────────
-
-  async getDashboard(
-    args: ScopeArgs & PeriodArgs,
-  ): Promise<AdminDashboardResult> {
+  async getDashboard(args: ScopeArgs & PeriodArgs): Promise<AdminDashboardResult> {
     const cacheKey = this.cacheKey(args, 'dashboard');
     const cached = this.cache.get<AdminDashboardResult>(cacheKey);
     if (cached) return cached;
@@ -225,37 +196,34 @@ export class AdminUsageService {
       ...tenantWhere,
     };
 
-    const [totalsAgg, failedAgg, byProvider, byTaskType, counts, topOrgs] =
-      await Promise.all([
-        this.prisma.aiUsageLog.aggregate({
-          where: baseWhere,
-          _sum: { costUsd: true },
-          _count: { _all: true },
-        }),
-        this.prisma.aiUsageLog.count({
-          where: { ...baseWhere, success: false },
-        }),
-        this.prisma.aiUsageLog.groupBy({
-          by: ['provider'],
-          where: baseWhere,
-          _sum: { costUsd: true },
-          _count: { _all: true },
-        }),
-        this.prisma.aiUsageLog.groupBy({
-          by: ['taskType'],
-          where: baseWhere,
-          _sum: { costUsd: true },
-          _count: { _all: true },
-        }),
-        args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
-        args.scope === 'global'
-          ? this.fetchTopOrgsByCost(range, 10)
-          : Promise.resolve(undefined),
-      ]);
+    const [totalsAgg, failedAgg, byProvider, byTaskType, counts, topOrgs] = await Promise.all([
+      this.prisma.aiUsageLog.aggregate({
+        where: baseWhere,
+        _sum: { costUsd: true },
+        _count: { _all: true },
+      }),
+      this.prisma.aiUsageLog.count({
+        where: { ...baseWhere, success: false },
+      }),
+      this.prisma.aiUsageLog.groupBy({
+        by: ['provider'],
+        where: baseWhere,
+        _sum: { costUsd: true },
+        _count: { _all: true },
+      }),
+      this.prisma.aiUsageLog.groupBy({
+        by: ['taskType'],
+        where: baseWhere,
+        _sum: { costUsd: true },
+        _count: { _all: true },
+      }),
+      args.scope === 'global' ? this.fetchGlobalCounts() : Promise.resolve(undefined),
+      args.scope === 'global' ? this.fetchTopOrgsByCost(range, 10) : Promise.resolve(undefined),
+    ]);
 
     const result: AdminDashboardResult = {
       scope: args.scope,
-      tenantId: args.scope === 'org' ? args.tenantId ?? null : null,
+      tenantId: args.scope === 'org' ? (args.tenantId ?? null) : null,
       period: {
         from: range.gte.toISOString(),
         to: range.lt.toISOString(),
@@ -337,11 +305,8 @@ export class AdminUsageService {
       }));
   }
 
-  // ─────────────────────────── getUsersUsage ────────────────────────────────
-
   async getUsersUsage(
-    args: ScopeArgs &
-      PeriodArgs & { limit: number; cursor?: string; search?: string },
+    args: ScopeArgs & PeriodArgs & { limit: number; cursor?: string; search?: string },
   ): Promise<{ items: AdminUsersUsageRow[]; nextCursor: string | null }> {
     const range = periodToRange(args);
     const tenantWhere = this.buildTenantWhere(args);
@@ -351,7 +316,6 @@ export class AdminUsageService {
       ...tenantWhere,
     };
 
-    // groupBy по userId с агрегацией
     const grouped = await this.prisma.aiUsageLog.groupBy({
       by: ['userId'],
       where: baseWhere,
@@ -361,9 +325,7 @@ export class AdminUsageService {
       take: args.limit + 1,
     });
 
-    const userIds = grouped
-      .map((r) => r.userId)
-      .filter((x): x is string => x !== null);
+    const userIds = grouped.map((r) => r.userId).filter((x): x is string => x !== null);
     if (userIds.length === 0) {
       return { items: [], nextCursor: null };
     }
@@ -381,7 +343,6 @@ export class AdminUsageService {
     });
     const usersById = new Map(users.map((u) => [u.id, u]));
 
-    // Per-user breakdown by taskType
     const breakdownRows = await this.prisma.aiUsageLog.groupBy({
       by: ['userId', 'taskType'],
       where: { ...baseWhere, userId: { in: userIds } },
@@ -403,7 +364,6 @@ export class AdminUsageService {
       breakdownByUser.set(r.userId, existing);
     }
 
-    // tenant info — для scope=global. Берём из Membership (первый orgId).
     const tenantNamesByUser = new Map<string, { id: string; name: string }>();
     if (args.scope === 'global') {
       const memberships = await this.prisma.membership.findMany({
@@ -421,7 +381,6 @@ export class AdminUsageService {
       }
     }
 
-    // Применяем search-фильтр поверх grouped — отбрасываем тех, кто не прошёл по users.
     const visibleUserIds = new Set(users.map((u) => u.id));
     const items: AdminUsersUsageRow[] = grouped
       .filter((r) => r.userId && visibleUserIds.has(r.userId))
@@ -433,7 +392,7 @@ export class AdminUsageService {
             ? args.tenantId
               ? { id: args.tenantId, name: '' }
               : null
-            : tenantNamesByUser.get(userId) ?? null;
+            : (tenantNamesByUser.get(userId) ?? null);
         return {
           userId,
           userEmail: user?.email ?? '',
@@ -460,8 +419,6 @@ export class AdminUsageService {
     return { items: trimmed, nextCursor };
   }
 
-  // ─────────────────────────── getCallsLog ──────────────────────────────────
-
   async getCallsLog(
     args: ScopeArgs & {
       taskType?: string;
@@ -479,9 +436,6 @@ export class AdminUsageService {
 
     const cursor = decodeCursor(args.cursor);
     if (cursor) {
-      // Cursor-pagination: createdAt DESC, id DESC. Получаем строго «после»
-      // курсора: createdAt < cursor.createdAt OR (createdAt = cursor.createdAt
-      // AND id < cursor.id).
       const cursorDate = new Date(cursor.createdAt);
       where.OR = [
         { createdAt: { lt: cursorDate } },
@@ -521,25 +475,19 @@ export class AdminUsageService {
 
     const items: AdminCallLogItem[] = rows.slice(0, args.limit).map((r) =>
       this.toCallLogItem(r, {
-        meetingTitle: r.meetingId ? meetingTitleById.get(r.meetingId) ?? null : null,
-        userEmail: r.userId ? userEmailById.get(r.userId) ?? null : null,
+        meetingTitle: r.meetingId ? (meetingTitleById.get(r.meetingId) ?? null) : null,
+        userEmail: r.userId ? (userEmailById.get(r.userId) ?? null) : null,
       }),
     );
 
     const hasMore = rows.length > args.limit;
     const last = items[items.length - 1];
     const nextCursor =
-      hasMore && last
-        ? encodeCursor({ createdAt: last.createdAt, id: last.id })
-        : null;
+      hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null;
     return { items, nextCursor };
   }
 
-  // ─────────────────────────── getCallDetails ───────────────────────────────
-
-  async getCallDetails(
-    args: ScopeArgs & { callId: string },
-  ): Promise<AdminCallDetail | null> {
+  async getCallDetails(args: ScopeArgs & { callId: string }): Promise<AdminCallDetail | null> {
     const tenantWhere = this.buildTenantWhere(args);
     const row = await this.prisma.aiUsageLog.findFirst({
       where: { id: args.callId, ...tenantWhere },
@@ -570,8 +518,6 @@ export class AdminUsageService {
     };
   }
 
-  // ─────────────────────────── getFunctionsUsage ────────────────────────────
-
   async getFunctionsUsage(
     args: ScopeArgs & PeriodArgs,
   ): Promise<{ items: AdminFunctionUsageRow[] }> {
@@ -582,13 +528,11 @@ export class AdminUsageService {
       ...tenantWhere,
     };
 
-    // Все routes — для current model + experiment status. tenantId=null = глобальный.
     const routes = await this.prisma.llmTaskRoute.findMany({
       where: { tenantId: null },
     });
     const routesByTaskType = new Map(routes.map((r) => [r.taskType, r]));
 
-    // Агрегация по taskType.
     const byTaskTypeAgg = await this.prisma.aiUsageLog.groupBy({
       by: ['taskType'],
       where: { ...baseWhere, taskType: { not: null } },
@@ -605,13 +549,9 @@ export class AdminUsageService {
       where: { ...baseWhere, taskType: { not: null }, success: false },
       _count: { _all: true },
     });
-    const failedByTaskType = new Map(
-      failedAgg.map((r) => [r.taskType ?? '', r._count._all]),
-    );
+    const failedByTaskType = new Map(failedAgg.map((r) => [r.taskType ?? '', r._count._all]));
 
-    const aggByTaskType = new Map(
-      byTaskTypeAgg.map((r) => [r.taskType ?? '', r]),
-    );
+    const aggByTaskType = new Map(byTaskTypeAgg.map((r) => [r.taskType ?? '', r]));
 
     const items: AdminFunctionUsageRow[] = ALL_LLM_TASK_TYPES.map((taskType) => {
       const route = routesByTaskType.get(taskType);
@@ -620,9 +560,9 @@ export class AdminUsageService {
         providers[0] !== undefined
           ? `${providers[0].provider}${providers[0].model ? `:${providers[0].model}` : ''}`
           : null;
-      const fallbackChain = providers.slice(1).map(
-        (p) => `${p.provider}${p.model ? `:${p.model}` : ''}`,
-      );
+      const fallbackChain = providers
+        .slice(1)
+        .map((p) => `${p.provider}${p.model ? `:${p.model}` : ''}`);
       const exp = route?.experiment as { enabled?: boolean } | null | undefined;
 
       const agg = aggByTaskType.get(taskType);
@@ -654,8 +594,6 @@ export class AdminUsageService {
     return { items };
   }
 
-  // ─────────────────────────── getFunctionCalls ─────────────────────────────
-
   async getFunctionCalls(
     args: ScopeArgs & { taskType: string; limit: number; experimentGroup?: 'A' | 'B' },
   ): Promise<{ items: AdminCallLogItem[] }> {
@@ -668,8 +606,6 @@ export class AdminUsageService {
     });
     return { items: result.items };
   }
-
-  // ─────────────────────────── helpers (private) ────────────────────────────
 
   private toCallLogItem(
     r: {
@@ -755,9 +691,7 @@ function parseProvidersJson(
   return result;
 }
 
-function parseSourceRef(
-  raw: Prisma.JsonValue,
-): { type: string; id: string } | null {
+function parseSourceRef(raw: Prisma.JsonValue): { type: string; id: string } | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const t = (raw as Record<string, unknown>).type;
   const i = (raw as Record<string, unknown>).id;

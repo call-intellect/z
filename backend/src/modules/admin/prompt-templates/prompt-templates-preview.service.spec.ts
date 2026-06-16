@@ -1,13 +1,3 @@
-/**
- * Фаза A.2 — тест PromptTemplatesPreviewService.
- *
- * Покрывает (≥3 сценария):
- *   1) runPreview — успех на активной версии, LLM мокнут.
- *   2) runPreview — несуществующий demoMeetingKey не пройдёт Zod на уровне DTO,
- *      но если как-то проскочит — bad request от сервиса.
- *   3) runPreview — rate-limit срабатывает на 11-м вызове.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -80,11 +70,7 @@ function makeSvc(opts?: { llmShouldFail?: boolean }) {
 describe('PromptTemplatesPreviewService', () => {
   it('runPreview — успех: возвращает text, cost, modelUsed', async () => {
     const svc = makeSvc();
-    const out = await svc.runPreview(
-      't-1',
-      { demoMeetingKey: 'demo-sales' },
-      'u-1',
-    );
+    const out = await svc.runPreview('t-1', { demoMeetingKey: 'demo-sales' }, 'u-1');
     expect(out.text).toBe('Ответ LLM');
     expect(out.modelUsed).toBe('deepseek:flash');
     expect(out.source).toBe('db_active');

@@ -1,23 +1,3 @@
-/**
- * Unit-тесты `EngagementScorerCron` — фокус на сигнале `meeting_activity`
- * (Pulse Wave 3 §3.3 + задача A2 рефлексии Pulse).
- *
- * Покрывают:
- *   - person.userId === null → meeting_activity = NEUTRAL_BASELINE (0.5).
- *   - 0 встреч за 14 дней → meeting_activity = NEUTRAL_BASELINE (0.5).
- *   - ratio = 2.0 (Person 30 turn'ов, среднее 15) → meeting_activity = 1.0.
- *   - avg = 0 (все молчали) → ratio = 1.0 → mapping = (1.0-0.2)/1.8 ≈ 0.444.
- *
- * Идея: подменяем `prisma.meetingParticipantBehavior.findMany` чтобы вернуть
- * фиктивные behaviors, и проверяем итоговый score через `runOnce` (который
- * пишет результаты в `person.update` + `personEngagementSnapshot.create`).
- *
- * Все остальные сигналы выставляем в 0 (нет чек-инов, нет обещаний), чтобы
- * meeting_activity был единственным влияющим — тогда финальный score =
- * weight(0.2) * meeting_activity + weight(0.35) * 0.5 (нейтральный sentiment
- * при 0 чек-инов) + weight(0.25) * 0 + weight(0.2) * 0.5 (NEUTRAL_BASELINE
- * commitment при 0 обещаниях).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -31,15 +11,7 @@ interface MockBehavior {
 
 interface BuildOpts {
   persons: Array<{ id: string; tenantId: string; userId: string | null }>;
-  /**
-   * Поведения «Person'а» — то, что вернёт первый вызов
-   * `meetingParticipantBehavior.findMany` с фильтром по userId.
-   */
   personBehaviors?: MockBehavior[];
-  /**
-   * Все поведения по выбранным метрикам — второй вызов findMany с
-   * `meetingBehaviorMetricsId IN [...]`.
-   */
   allBehaviorsByMetrics?: Record<string, MockBehavior[]>;
 }
 
@@ -52,13 +24,11 @@ function buildCron(opts: BuildOpts): {
   const personUpdate = vi.fn();
   const snapshotCreate = vi.fn();
 
-  // mood / commitments — пустые (нет данных).
   const dailyCheckInFindMany = vi.fn(async () => []);
   const dailyCheckInCount = vi.fn(async () => 0);
   const ideaBlockFindMany = vi.fn(async () => []);
 
   const behaviorFindMany = vi.fn(async (args: { where: Record<string, unknown> }) => {
-    // Если фильтр содержит `participant.userId` → запрос «person behaviors».
     const where = args.where as {
       participant?: { userId?: string };
       meetingBehaviorMetricsId?: { in?: string[] };
@@ -66,7 +36,6 @@ function buildCron(opts: BuildOpts): {
     if (where.participant?.userId) {
       return opts.personBehaviors ?? [];
     }
-    // Иначе — выборка по metricsIds для подсчёта avg.
     const inFilter = where.meetingBehaviorMetricsId ?? {};
     const ids = inFilter.in ?? [];
     const result: MockBehavior[] = [];
@@ -95,7 +64,6 @@ function buildCron(opts: BuildOpts): {
     personEngagementSnapshot: {
       create: snapshotCreate,
     },
-    // $transaction([ops...]) — выполняем все операции просто as-is.
     $transaction: vi.fn(async (ops: unknown[]) => ops),
   } as unknown as PrismaService;
 
@@ -103,18 +71,10 @@ function buildCron(opts: BuildOpts): {
   return { cron, personUpdate, snapshotCreate };
 }
 
-/**
- * Извлекает payload, переданный в `personEngagementSnapshot.create`. Так как
- * `$transaction` принимает массив prisma-call'ов, нам важен сам момент
- * формирования аргумента — он создаётся в `persistScore` через
- * `this.prisma.personEngagementSnapshot.create({ data: {...} })`.
- *
- * При мокинге Prisma `prisma.personEngagementSnapshot.create` вызывается
- * как обычная функция и сохраняет переданный объект в `mock.calls`.
- */
-function readSnapshotSignals(
-  snapshotCreate: ReturnType<typeof vi.fn>,
-): { meeting_activity: number; baseline: number } {
+function readSnapshotSignals(snapshotCreate: ReturnType<typeof vi.fn>): {
+  meeting_activity: number;
+  baseline: number;
+} {
   const call = snapshotCreate.mock.calls[0]?.[0] as
     | { data: { signalsJson: { signals: Record<string, number>; baseline: number } } }
     | undefined;
@@ -155,11 +115,8 @@ describe('EngagementScorerCron — meeting_activity', () => {
   it('ratio=2.0 (turn 30, avg 15) → meeting_activity = 1.0', async () => {
     const { cron, snapshotCreate } = buildCron({
       persons: [{ id: 'p-1', tenantId: 't-1', userId: 'u-1' }],
-      personBehaviors: [
-        { meetingBehaviorMetricsId: 'm-1', turnsCount: 30 },
-      ],
+      personBehaviors: [{ meetingBehaviorMetricsId: 'm-1', turnsCount: 30 }],
       allBehaviorsByMetrics: {
-        // 3 участника: 30 / 10 / 5 → avg = 15 → ratio = 30/15 = 2.0
         'm-1': [
           { meetingBehaviorMetricsId: 'm-1', turnsCount: 30 },
           { meetingBehaviorMetricsId: 'm-1', turnsCount: 10 },
@@ -174,9 +131,7 @@ describe('EngagementScorerCron — meeting_activity', () => {
   it('avg = 0 (все молчали) → ratio = 1 → meeting_activity ≈ 0.444', async () => {
     const { cron, snapshotCreate } = buildCron({
       persons: [{ id: 'p-1', tenantId: 't-1', userId: 'u-1' }],
-      personBehaviors: [
-        { meetingBehaviorMetricsId: 'm-1', turnsCount: 0 },
-      ],
+      personBehaviors: [{ meetingBehaviorMetricsId: 'm-1', turnsCount: 0 }],
       allBehaviorsByMetrics: {
         'm-1': [
           { meetingBehaviorMetricsId: 'm-1', turnsCount: 0 },
@@ -185,10 +140,6 @@ describe('EngagementScorerCron — meeting_activity', () => {
       },
     });
     await cron.runOnce();
-    // (1.0 - 0.2) / 1.8 = 0.444444..., округлено до 3 знаков = 0.444
-    expect(readSnapshotSignals(snapshotCreate).meeting_activity).toBeCloseTo(
-      0.444,
-      3,
-    );
+    expect(readSnapshotSignals(snapshotCreate).meeting_activity).toBeCloseTo(0.444, 3);
   });
 });

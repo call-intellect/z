@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { isPlaceholderMeetingTitle } from './meeting-title.util';
 
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — таблица гейта перезаписи title.
- * true → можно перезаписать авто-названием; false → осмысленный пользовательский
- * title, не трогаем.
- */
 describe('isPlaceholderMeetingTitle', () => {
   const placeholders: Array<[string | null | undefined, string]> = [
     [null, 'null'],

@@ -7,20 +7,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { AttributionService } from './attribution.service';
 
-/**
- * audit Б6 (2026-05-29) + commercial-reliability pack (2026-05-30, Фаза 2) —
- * спецификация на attributeOrg.
- *
- * Покрытие:
- *   - self-referral (Referral.ownerUserId уже member orgId) → ConflictException
- *     + метрика referral_self_referral_denied_total.
- *   - обычный referral (ownerUserId НЕ member, pendingAttributionSlug IS NULL)
- *     → updateMany.count === 1 → запись в pendingAttribution.
- *   - first-touch lock: повторный клик при уже зафиксированной атрибуции →
- *     updateMany.count === 0 → метрика referral_attribution_first_touch_locked_total
- *     + возвращается существующая атрибуция.
- *   - нет атрибуции → null.
- */
 describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
   let prisma: {
     referralAttribution: { findFirst: ReturnType<typeof vi.fn> };
@@ -112,14 +98,10 @@ describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
       referralId: 'ref-B',
     });
     prisma.referral.findUnique
-      // 1) self-referral check на новой атрибуции (partner-B)
       .mockResolvedValueOnce({ ownerUserId: 'u-B', slug: 'partner-B' })
-      // 2) resolvePendingForOrg — резолв existing slug (partner-A) в referralId
       .mockResolvedValueOnce({ id: 'ref-A', slug: 'partner-A' });
     prisma.membership.findUnique.mockResolvedValueOnce(null);
-    // updateMany возвращает count=0 — гард сработал.
     prisma.org.updateMany.mockResolvedValueOnce({ count: 0 });
-    // resolvePendingForOrg читает уже зафиксированную атрибуцию (partner-A).
     prisma.org.findUnique.mockResolvedValueOnce({
       pendingAttributionSlug: 'partner-A',
       pendingAttributionAt: new Date(),
@@ -148,7 +130,6 @@ describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
       ownerUserId: 'u-self',
       slug: 'mine',
     });
-    // Тот же u-self уже состоит в org-1.
     prisma.membership.findUnique.mockResolvedValueOnce({ role: 'owner' });
 
     await expect(
@@ -159,10 +140,6 @@ describe('AttributionService.attributeOrg (audit Б6 + first-touch)', () => {
   });
 });
 
-/**
- * audit Б8 (2026-05-29) — record() идемпотентен по
- * (referralId, fingerprint, dateBucket). DoS-flood защищён composite unique.
- */
 describe('AttributionService.record (audit Б8)', () => {
   let prisma: {
     referral: { findUnique: ReturnType<typeof vi.fn> };
@@ -262,8 +239,6 @@ describe('AttributionService.record (audit Б8)', () => {
     });
     prisma.referralAttribution.create.mockRejectedValueOnce(err);
 
-    await expect(
-      svc.record({ slug: 'abc', fingerprint: null }),
-    ).rejects.toBe(err);
+    await expect(svc.record({ slug: 'abc', fingerprint: null })).rejects.toBe(err);
   });
 });

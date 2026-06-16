@@ -1,42 +1,28 @@
-'use client';
+"use client";
 
-/**
- * Smart-tables auto-creation (Фаза 4) — диалог «Из файла».
- *
- * Шаг 1: drag&drop / выбор Excel/CSV → анализ
- *   (`tablesApi.importAnalyze`, multipart).
- * Шаг 2: превью инферренной схемы (иконка/название/колонки + лейблы типов),
- *   счётчик распознанных строк, блок кандидатов на слияние; действия
- *   «Создать новую таблицу» / «Слить с …» (`tablesApi.importCommit`).
- *
- * Drag&drop повторяет паттерн `UploadDocumentDialog` из
- * `documents/DocumentsListClient.tsx`. Превью схемы — компактный read-only
- * рендер (правка схемы здесь не нужна: режим create/merge, а не from-schema).
- */
+import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CloudUpload, GitMerge, Loader2, Table2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { useCallback, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { CloudUpload, GitMerge, Loader2, Table2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { tablesApi } from '@/api/tables.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { tablesApi } from "@/api/tables.api";
 import {
   ENTITY_SYNC_LABEL_RU,
   PROP_TYPE_LABEL_RU,
   type ImportAnalyzeResult,
   type ImportMergeCandidate,
-} from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
-const ACCEPT = '.xlsx,.xls,.csv';
+const ACCEPT = ".xlsx,.xls,.csv";
 
 export function ImportFromFileDialog({
   orgId,
@@ -69,7 +55,7 @@ export function ImportFromFileDialog({
   }, [busy, file, orgId]);
 
   const commit = useCallback(
-    async (mode: 'create' | 'merge', targetTableId?: string) => {
+    async (mode: "create" | "merge", targetTableId?: string) => {
       if (!result || busy) return;
       setCommitting(true);
       try {
@@ -83,13 +69,11 @@ export function ImportFromFileDialog({
         if (res.entitiesLinked > 0) {
           parts.push(`связано с памятью: ${res.entitiesLinked}`);
         }
-        toast.success(parts.join(', '));
+        toast.success(parts.join(", "));
         onClose();
         router.push(`/tables/${res.tableId}`);
       } catch (e) {
-        toast.error(
-          humanizeApiError(e, 'Не удалось импортировать файл.'),
-        );
+        toast.error(humanizeApiError(e, "Не удалось импортировать файл."));
       } finally {
         setCommitting(false);
       }
@@ -102,7 +86,7 @@ export function ImportFromFileDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {result ? 'Проверьте таблицу перед созданием' : 'Импорт из файла'}
+            {result ? "Проверьте таблицу перед созданием" : "Импорт из файла"}
           </DialogTitle>
         </DialogHeader>
 
@@ -128,7 +112,7 @@ export function ImportFromFileDialog({
                   variant="secondary"
                   disabled={busy}
                   onClick={() =>
-                    void commit('merge', result.mergeCandidates[0].tableId)
+                    void commit("merge", result.mergeCandidates[0].tableId)
                   }
                 >
                   {committing ? (
@@ -139,7 +123,7 @@ export function ImportFromFileDialog({
                   Слить с «{result.mergeCandidates[0].name}»
                 </Button>
               ) : null}
-              <Button disabled={busy} onClick={() => void commit('create')}>
+              <Button disabled={busy} onClick={() => void commit("create")}>
                 {committing ? (
                   <Loader2 size={14} className="mr-1 animate-spin" />
                 ) : null}
@@ -164,8 +148,6 @@ export function ImportFromFileDialog({
     </Dialog>
   );
 }
-
-// ─────────────────────────── Шаг 1: загрузка ────────────────────────────
 
 function UploadStep({
   file,
@@ -195,14 +177,14 @@ function UploadStep({
         }}
         className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-sm transition-colors ${
           dragOver
-            ? 'border-accent bg-accent/10 text-accent'
-            : 'border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary'
+            ? "border-accent bg-accent/10 text-accent"
+            : "border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary"
         }`}
       >
         <CloudUpload size={16} />
         {file
           ? `Выбран файл: ${file.name}`
-          : 'Перетащите файл или нажмите, чтобы выбрать'}
+          : "Перетащите файл или нажмите, чтобы выбрать"}
         <input
           id="table-import-upload"
           type="file"
@@ -219,21 +201,18 @@ function UploadStep({
   );
 }
 
-// ─────────────────────────── Шаг 2: превью схемы ─────────────────────────
-
-/** Сколько строк показываем в превью (в DOM), не больше. Импортируются все. */
 const PREVIEW_DISPLAY_LIMIT = 200;
 
 function AnalyzeResultStep({ result }: { result: ImportAnalyzeResult }) {
-  const { schema, rawRowsCount, truncatedColumns, rows, mergeCandidates } = result;
+  const { schema, rawRowsCount, truncatedColumns, rows, mergeCandidates } =
+    result;
 
   const entityLabel = useMemo(
-    () => (schema.entitySync ? ENTITY_SYNC_LABEL_RU[schema.entitySync.type] : null),
+    () =>
+      schema.entitySync ? ENTITY_SYNC_LABEL_RU[schema.entitySync.type] : null,
     [schema.entitySync],
   );
 
-  // Честный счётчик: распознано всего vs реально импортируется (в пределах
-  // лимита импорта) vs показано в превью.
   let rowsLine = `Распознано строк: ${rawRowsCount}`;
   if (rawRowsCount > rows.length) {
     rowsLine += ` (импортируется первые ${rows.length} — превышен лимит импорта)`;
@@ -243,7 +222,7 @@ function AnalyzeResultStep({ result }: { result: ImportAnalyzeResult }) {
 
   return (
     <div className="space-y-3">
-      {/* Превью схемы */}
+      {}
       <div className="rounded-md border border-border-subtle bg-bg-card p-3">
         <div className="flex items-start gap-2.5">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-muted text-accent">
@@ -307,7 +286,7 @@ function AnalyzeResultStep({ result }: { result: ImportAnalyzeResult }) {
         ) : null}
       </div>
 
-      {/* Блок слияния */}
+      {}
       {mergeCandidates.length > 0 ? (
         <MergeBlock candidates={mergeCandidates} />
       ) : null}
@@ -339,14 +318,12 @@ function MergeBlock({ candidates }: { candidates: ImportMergeCandidate[] }) {
   );
 }
 
-// ─────────────────────────── ошибки анализа ─────────────────────────────
-
 function messageForAnalyzeError(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.code === 'unsupported_file_format') {
-      return 'Этот формат пока не поддерживается. PDF и сканы появятся позже — загрузите Excel (.xlsx, .xls) или CSV.';
+    if (e.code === "unsupported_file_format") {
+      return "Этот формат пока не поддерживается. PDF и сканы появятся позже — загрузите Excel (.xlsx, .xls) или CSV.";
     }
     return e.message;
   }
-  return 'Не удалось проанализировать файл.';
+  return "Не удалось проанализировать файл.";
 }

@@ -1,13 +1,6 @@
-import {
-  withAsrNote,
-  withConfidenceCalibration,
-} from '../../ai/services/prompts/common';
+import { withAsrNote, withConfidenceCalibration } from '../../ai/services/prompts/common';
 import type { Segment } from '../services/segment-builder.service';
 
-/**
- * Допустимые значения SignalType (синхронизировано с Prisma enum).
- * Если в схеме появится новый тип — добавь сюда И в JSON Schema ниже.
- */
 export const SIGNAL_TYPE_VALUES = [
   'fact',
   'pain',
@@ -23,14 +16,11 @@ export const SIGNAL_TYPE_VALUES = [
   'competitor_move',
   'metric_change',
   'knowledge_gap',
-  // SBA α-2 wave 1 — расширение Layer 1 разметки (zonтичное §2.A, §3.4).
   'reasoning',
   'rationale',
   'decision_basis',
   'regulation',
   'process_step',
-  // SBA α-2 wave 2 (2026-05-23) — типы для β-6/β-7/β-8/γ-1/γ-3/δ-2.
-  // См. plans/tz/2026-05-23-sba-alpha-2-19-signal-types.md.
   'expertise',
   'experience',
   'competence',
@@ -50,8 +40,6 @@ export const SIGNAL_TYPE_VALUES = [
   'suggestion',
   'client_request',
   'question',
-  // SBA α-2 wave 3 (2026-05-24) — типы для tracker ingest (Phase 1 трекера).
-  // См. plans/tz/2026-05-23-tracker-phase-1-models-api.md (раздел "Ingest в knowledge-core").
   'task_created',
   'task_status_changed',
   'task_blocked',
@@ -60,10 +48,6 @@ export const SIGNAL_TYPE_VALUES = [
   'task_reassigned',
   'task_comment',
   'task_mention',
-  // SBA α-2 wave 3 (2026-05-24) — типы для Specialist 3.8 Helpfulness.
-  // См. plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md.
-  // ВАЖНО: question_unanswered и question_acknowledged_no_action — только для приватного админ-доступа.
-  // НЕ публиковать в публичных лентах. Этическая защита.
   'help_provided',
   'proactive_hint',
   'mentoring',
@@ -71,25 +55,11 @@ export const SIGNAL_TYPE_VALUES = [
   'constructive_feedback',
   'question_unanswered',
   'question_acknowledged_no_action',
-  // SBA α-2 wave 3 (2026-05-24) — типы для Gamification Recognition.
   'helped_by',
   'helped_to',
   'thanks_explicit',
 ] as const;
 
-/**
- * Допустимые значения EntityType для `mentionedEntities` в LLM-ответе.
- * Синхронизировано с Prisma enum `EntityType` (schema.prisma:263, 14 значений).
- *
- * SBA α-3 / CRIT-1: расширено с 7 до 14 типов. Новые типы (customer, vendor,
- * document, goal, event, technology, metric) обязательны — иначе LLM никогда
- * не сможет их вернуть в `mentionedEntities`, и они извлекаются только через
- * специализированные пайплайны.
- *
- * Deprecated `client` и `custom` оставлены для backward-compat: ещё не везде
- * прошёл patch-rename-client-to-customer и migrate-entity-custom-to-topic.
- * В тексте системного промпта LLM явно ориентирован не возвращать их.
- */
 export const ENTITY_TYPE_VALUES = [
   'person',
   'customer',
@@ -103,17 +73,12 @@ export const ENTITY_TYPE_VALUES = [
   'location',
   'technology',
   'metric',
-  'market', // SBA α-3 wave 2 — ось CONTEXTUAL.
-  'org_unit', // SBA α-3 wave 2 — структурное подразделение / команда.
-  'client', // @deprecated — используй 'customer'.
-  'custom', // @deprecated — используй 'topic'.
+  'market',
+  'org_unit',
+  'client',
+  'custom',
 ] as const;
 
-/**
- * Group-Б типизированные сущности (Фаза 0b §5.2).
- * Эти типы LLM может вернуть в полях `processes/decisions/regulations/...`
- * параллельно с блоками. См. JSON Schema ниже.
- */
 export const TYPED_ENTITY_TYPES = [
   'process',
   'decision',
@@ -142,23 +107,6 @@ export const METRIC_VALUE_TYPE_VALUES = [
   'other',
 ] as const;
 
-/**
- * Strict JSON Schema для ответа block-ingest LLM-вызова (v2, Фаза 0b).
- * Совместима с `responseFormat: 'json_schema' strict`.
- *
- * Расширения v2:
- *   - Каждый блок получает `role_relevant: bool` + опц. `roleHint: string`.
- *   - На том же ответе — типизированные сущности группы Б:
- *     `processes/decisions/regulations/policies/metrics/tools` с
- *     `sourceBlockIndex` для провенанса.
- *   - `mission/vision/strategy` — всегда null (отключено фичефлагом
- *     `EXTRACTION_ENABLE_TOP_LEVEL=false`, см. зонтичный §6 решение #11).
- *   - `links` — опц. рёбра между извлечёнными сущностями (можно пустой массив
- *     на эту итерацию; финал-логика по B-варианту — γ).
- *
- * Подход — один промпт за проход (вариант A из ТЗ §5.1). Вариант B (три
- * прохода: блоки + сущности + рёбра) оставлен TODO для длинных документов.
- */
 export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -225,12 +173,6 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
                 name: { type: 'string' },
                 mentionContext: { type: 'string' },
                 metadata: { type: 'object' },
-                /**
-                 * KC-Temporal W1.4 (2026-05-25) — опциональный таймкод цитаты,
-                 * где упомянута эта сущность (для прыжка плеера на нужную
-                 * секунду из карточки блока). Может быть не возвращён —
-                 * в этом случае span на UI просто не подсветится.
-                 */
                 sourceSpan: {
                   type: 'object',
                   additionalProperties: false,
@@ -243,32 +185,10 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
               },
             },
           },
-          /** Прямая отнесённость к конкретной должности (Фаза 0b классификатор role-relevance). */
           role_relevant: { type: 'boolean' },
-          /** Имя должности из контекста, если упомянуто. null если нет. */
           roleHint: { type: ['string', 'null'] },
-          /**
-           * SBA β-8.2 — для блоков signalType='commitment': срок исполнения
-           * в формате YYYY-MM-DD, если упомянут в тексте («к пятнице»,
-           * «до конца месяца», «к 25 числу»). Модель сама конвертирует
-           * относительные выражения в дату исходя из «сегодня». null если
-           * не упомянут или signalType≠'commitment'.
-           */
           commitmentDueDateGuess: { type: ['string', 'null'] },
-          /**
-           * SBA β-8.2 — для блоков signalType='commitment': имя адресата
-           * обещания (кому пообещали), как звучит в тексте. Сопоставление
-           * с Person выполняется в обработчике. null если не упомянут
-           * или signalType≠'commitment'.
-           */
           commitmentRecipientNameGuess: { type: ['string', 'null'] },
-          /**
-           * Wave 3b (2026-06-10) — сторона факта для КЛИЕНТСКИХ типов встреч
-           * (sales/customer_success/partner/custdev): 'our' (наша сторона),
-           * 'client' (сторона клиента), 'unknown' (не определить). Для
-           * внутренних встреч — всегда null. Опциональная разметка стороны,
-           * пока не используется обработчиком (зарезервировано на будущее).
-           */
           sideHint: { type: ['string', 'null'], enum: ['our', 'client', 'unknown', null] },
         },
       },
@@ -367,16 +287,9 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
         },
       },
     },
-    /** Mission/Vision/Strategy — отключены фичефлагом EXTRACTION_ENABLE_TOP_LEVEL=false. */
     mission: { type: 'null' },
     vision: { type: 'null' },
     strategy: { type: 'null' },
-    /**
-     * Опциональные типизированные рёбра между извлечёнными сущностями.
-     * На этой итерации обычно пустой массив. Поле зарезервировано — TODO
-     * реализовать соединение Process↔Role/Tool/Document после стабилизации
-     * (см. ТЗ §5.2 «links»).
-     */
     links: {
       type: 'array',
       items: {
@@ -393,26 +306,10 @@ export const BLOCK_INGEST_JSON_SCHEMA: Record<string, unknown> = {
         },
       },
     },
-    /**
-     * Wave 3b (2026-06-10) — самооценка качества входных данных окна.
-     * Опциональна на чтении (Zod .optional() — старые кэш-результаты её
-     * не содержат). Пока не используется обработчиком — зарезервировано
-     * для будущих метрик надёжности извлечения.
-     *   - speakerCoveragePercent: доля реплик с известным спикером, 0..100,
-     *     или null если оценить нельзя.
-     *   - transcriptTruncated: похоже, что транскрипт обрезан (окно
-     *     заканчивается на полуслове / явно неполное).
-     *   - lowConfidenceBlockCount: сколько блоков извлечено с низкой
-     *     уверенностью (confidence < 0.5).
-     */
     dataQuality: {
       type: 'object',
       additionalProperties: false,
-      required: [
-        'speakerCoveragePercent',
-        'transcriptTruncated',
-        'lowConfidenceBlockCount',
-      ],
+      required: ['speakerCoveragePercent', 'transcriptTruncated', 'lowConfidenceBlockCount'],
       properties: {
         speakerCoveragePercent: { type: ['number', 'null'], minimum: 0, maximum: 100 },
         transcriptTruncated: { type: 'boolean' },
@@ -590,10 +487,6 @@ interface BuildArgs {
   segments: Segment[];
 }
 
-/**
- * Формирует system + user промпты для block-ingest LLM-вызова.
- * userMessage — JSON-сериализация сегментов (минимум контекстных полей).
- */
 export function buildBlockIngestPrompt(args: BuildArgs): {
   system: string;
   user: string;
@@ -605,9 +498,7 @@ export function buildBlockIngestPrompt(args: BuildArgs): {
     speakers: s.speakers,
     text: s.text,
   }));
-  const header = args.meetingTitle
-    ? `Заголовок встречи/документа: ${args.meetingTitle}\n\n`
-    : '';
+  const header = args.meetingTitle ? `Заголовок встречи/документа: ${args.meetingTitle}\n\n` : '';
   const user = `${header}Сегменты (порядок сохраняй для таймкодов):\n${JSON.stringify(segmentsJson, null, 2)}\n\nВерни JSON по схеме.`;
   return { system: SYSTEM_PROMPT, user };
 }

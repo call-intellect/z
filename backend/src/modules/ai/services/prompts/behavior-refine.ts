@@ -1,36 +1,15 @@
-/**
- * Code-fallback промпта `behavior-refine` (Фаза B.2).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §7.
- *
- * Задача: батч-классификатор. На вход — список «кандидатов на вопросы»
- * (текст сегмента + флаг, ставится ли «?») и «кандидатов на filler»
- * (слово + контекст). На выход — JSON с булевыми решениями по каждому
- * кандидату.
- *
- * Уровень модели: короткий yes/no классификатор (см. playbook §11). Не
- * требует длинного контекста, не требует reasoning. Подходит gpt-5.4-nano /
- * deepseek-v4-flash / qwen3.5:9b.
- */
-
 export const BEHAVIOR_REFINE_TASK_TYPE = 'behavior-refine';
 export const BEHAVIOR_REFINE_TOOL_NAME = 'submit_behavior_refine';
 
 export interface BehaviorRefineQuestionCandidate {
-  /** Уникальный ключ кандидата: `${participantId|null}:${segmentIdx}:${sentenceIdx}`. */
   id: string;
-  /** Полное предложение-кандидат. */
   text: string;
-  /** Содержит ли предложение «?» (для статистики). */
   hasQuestionMark: boolean;
 }
 
 export interface BehaviorRefineFillerCandidate {
-  /** Уникальный ключ: `${participantId|null}:${segmentIdx}:${wordIdx}`. */
   id: string;
-  /** Конкретное слово/фраза по словарю. */
   word: string;
-  /** Окружающий контекст (предложение, в котором встретилось слово). */
   context: string;
 }
 
@@ -40,9 +19,7 @@ export interface BehaviorRefineInput {
 }
 
 export interface BehaviorRefineOutput {
-  /** id → true (это вопрос) / false (не вопрос, например риторика). */
   questions: Record<string, boolean>;
-  /** id → true (это filler) / false (это связка/значимое слово). */
   fillers: Record<string, boolean>;
 }
 
@@ -81,13 +58,6 @@ export const BEHAVIOR_REFINE_TOOL_INPUT_SCHEMA = {
   additionalProperties: false,
 };
 
-/**
- * Строит user-сообщение для LLM. Сериализация — компактный JSON, чтобы
- * провайдеры с маленьким контекстом (Ollama qwen3.5:9b) не упирались в лимит.
- *
- * Лимит per-вызов: до 200 кандидатов вопросов + 500 кандидатов filler'ов.
- * Если кандидатов больше — caller должен бить на батчи.
- */
 export function buildBehaviorRefineUser(input: BehaviorRefineInput): string {
   return JSON.stringify(input);
 }

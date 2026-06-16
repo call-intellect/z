@@ -1,47 +1,7 @@
-/**
- * Sprint 3 B1-3.3 — миграция legacy `Task` → новый трекерный `Issue`.
- *
- * Задача: каждая legacy-задача из встреч (action item) перенесена в новый
- * трекер как `Issue` внутри виртуального проекта «Из встреч» (per Org).
- *
- * Идемпотентно: повторный запуск пропускает уже мигрированные задачи
- * (`externalSource='meeting_legacy'` + `externalId=<legacy Task.id>`).
- *
- * Запуск:
- *   bun run scripts/migrate-task-to-issue.ts                   — dry-run (по умолчанию)
- *   bun run scripts/migrate-task-to-issue.ts --apply           — реальная запись
- *   bun run scripts/migrate-task-to-issue.ts --org-id <id>     — одна организация
- *   bun run scripts/migrate-task-to-issue.ts --apply --org-id <id>
- *
- * Legacy-данные:
- *   - Task НЕ удаляется (см. CLAUDE.md — модели Task не трогаем).
- *   - Legacy REST `/api/v1/tasks/*` остаётся работать, помечен `@deprecated`.
- *   - `Task.assigneeRaw`, который не удалось замапить на User, сохраняется в
- *     `IssueActivity{ verb:'migrated_from_legacy_task' }.metadata.legacyAssigneeRaw`.
- *     На `Issue` нет колонки `metadata`, поэтому используем IssueActivity (audit
- *     trail трекера) — это нативное место для такой технической метаинформации.
- *
- * Маппинг статусов:
- *   TaskStatus.open         → IssueState{ category:'backlog'   } (или fallback)
- *   TaskStatus.in_progress  → IssueState{ category:'started'   }
- *   TaskStatus.done         → IssueState{ category:'completed' }
- *   TaskStatus.cancelled    → IssueState{ category:'cancelled' }
- *
- * Если нужной категории в проекте нет — fallback на первый backlog (или null).
- *
- * Owner виртуального проекта: первый Membership(role='owner'); fallback на
- * первого member любого role; финальный fallback на `Org.ownerId`.
- */
-
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
-type IssueStateCategory =
-  | 'backlog'
-  | 'unstarted'
-  | 'started'
-  | 'completed'
-  | 'cancelled';
+type IssueStateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
 
 interface CliFlags {
   apply: boolean;
@@ -86,16 +46,11 @@ const TASK_STATUS_TO_CATEGORY: Record<string, IssueStateCategory> = {
 function parseFlags(argv: string[]): CliFlags {
   const apply = argv.includes('--apply');
   const orgIdx = argv.indexOf('--org-id');
-  const orgId =
-    orgIdx !== -1 && orgIdx + 1 < argv.length ? (argv[orgIdx + 1] ?? null) : null;
+  const orgId = orgIdx !== -1 && orgIdx + 1 < argv.length ? (argv[orgIdx + 1] ?? null) : null;
   return { apply, orgId };
 }
 
-async function resolveOwnerUserId(
-  prisma: PrismaClient,
-  orgId: string,
-): Promise<string | null> {
-  // 1) первый owner membership
+async function resolveOwnerUserId(prisma: PrismaClient, orgId: string): Promise<string | null> {
   const ownerM = await prisma.membership.findFirst({
     where: { orgId, role: 'owner' },
     orderBy: { joinedAt: 'asc' },
@@ -103,7 +58,6 @@ async function resolveOwnerUserId(
   });
   if (ownerM) return ownerM.userId;
 
-  // 2) любой первый member (по joinedAt asc)
   const anyM = await prisma.membership.findFirst({
     where: { orgId },
     orderBy: { joinedAt: 'asc' },
@@ -111,7 +65,6 @@ async function resolveOwnerUserId(
   });
   if (anyM) return anyM.userId;
 
-  // 3) финальный fallback — поле Org.ownerId
   const org = await prisma.org.findUnique({
     where: { id: orgId },
     select: { ownerId: true },
@@ -119,10 +72,6 @@ async function resolveOwnerUserId(
   return org?.ownerId ?? null;
 }
 
-/**
- * Возвращает виртуальный Project «Из встреч» для Org. Создаёт его, если нет.
- * В dry-run возвращает «фейковый» объект-описание (без записи).
- */
 async function ensureVirtualProject(
   prisma: PrismaClient,
   orgId: string,
@@ -156,10 +105,6 @@ async function ensureVirtualProject(
   return { project: created, created: true };
 }
 
-/**
- * Возвращает текущие IssueState проекта; создаёт DEFAULT_STATES, если их нет.
- * Возвращает map { category → IssueState }.
- */
 async function ensureProjectStates(
   prisma: PrismaClient,
   tenantId: string,
@@ -170,7 +115,6 @@ async function ensureProjectStates(
   fallbackBacklogId: string | null;
   createdCount: number;
 }> {
-  // dry-run без созданного проекта — нечего читать
   if (!projectId) {
     return { byCategory: new Map(), fallbackBacklogId: null, createdCount: DEFAULT_STATES.length };
   }
@@ -200,7 +144,6 @@ async function ensureProjectStates(
       states = created;
       createdCount = created.length;
 
-      // Зафиксируем defaultStateId на проекте (как делает ProjectsService).
       const defaultBacklog = created.find((s) => s.category === 'backlog');
       if (defaultBacklog) {
         await prisma.project.update({
@@ -219,18 +162,11 @@ async function ensureProjectStates(
     if (!byCategory.has(cat)) byCategory.set(cat, { id: s.id });
   }
   const fallbackBacklog =
-    byCategory.get('backlog')?.id ??
-    states.sort((a, b) => a.sequence - b.sequence)[0]?.id ??
-    null;
+    byCategory.get('backlog')?.id ?? states.sort((a, b) => a.sequence - b.sequence)[0]?.id ?? null;
 
   return { byCategory, fallbackBacklogId: fallbackBacklog, createdCount };
 }
 
-/**
- * Возвращает userId, если получилось замапить legacy assignee.
- * Сначала используем прямую FK `Task.assigneeUserId` (если есть и не удалён).
- * Затем пытаемся найти User в той же Org по email / по name (ILIKE).
- */
 async function resolveAssigneeUserId(
   prisma: PrismaClient,
   orgId: string,
@@ -247,7 +183,6 @@ async function resolveAssigneeUserId(
   const raw = task.assigneeRaw?.trim();
   if (!raw) return null;
 
-  // Кандидаты — только пользователи этой Org (через Membership).
   const candidates = await prisma.user.findMany({
     where: {
       deletedAt: null,
@@ -256,29 +191,19 @@ async function resolveAssigneeUserId(
     select: { id: true, email: true, name: true },
   });
 
-  // 1) точное совпадение по email (case-insensitive)
   const rawLower = raw.toLowerCase();
   const byEmail = candidates.find((c) => c.email.toLowerCase() === rawLower);
   if (byEmail) return byEmail.id;
 
-  // 2) email встречается в строке
-  const containsEmail = candidates.find((c) =>
-    rawLower.includes(c.email.toLowerCase()),
-  );
+  const containsEmail = candidates.find((c) => rawLower.includes(c.email.toLowerCase()));
   if (containsEmail) return containsEmail.id;
 
-  // 3) точное имя
-  const byName = candidates.find(
-    (c) => c.name.trim().toLowerCase() === rawLower,
-  );
+  const byName = candidates.find((c) => c.name.trim().toLowerCase() === rawLower);
   if (byName) return byName.id;
 
-  // 4) подстрочное совпадение в name (минимум 3 символа, чтобы исключить шум)
   if (raw.length >= 3) {
     const byNameContains = candidates.find(
-      (c) =>
-        c.name.toLowerCase().includes(rawLower) ||
-        rawLower.includes(c.name.toLowerCase()),
+      (c) => c.name.toLowerCase().includes(rawLower) || rawLower.includes(c.name.toLowerCase()),
     );
     if (byNameContains) return byNameContains.id;
   }
@@ -310,7 +235,6 @@ async function migrateTaskToIssue(
   },
   apply: boolean,
 ): Promise<{ migrated: boolean; assigneeMatched: boolean }> {
-  // 1) Идемпотентность: уже мигрирована?
   const existingIssue = await prisma.issue.findFirst({
     where: {
       tenantId,
@@ -323,14 +247,9 @@ async function migrateTaskToIssue(
     return { migrated: false, assigneeMatched: false };
   }
 
-  // 2) Маппинг статуса.
   const cat = TASK_STATUS_TO_CATEGORY[task.status];
-  const stateId =
-    (cat ? states.byCategory.get(cat)?.id : null) ??
-    states.fallbackBacklogId ??
-    null;
+  const stateId = (cat ? states.byCategory.get(cat)?.id : null) ?? states.fallbackBacklogId ?? null;
 
-  // 3) Assignee.
   const assigneeUserId = await resolveAssigneeUserId(prisma, tenantId, task);
   const assigneeMatched = assigneeUserId !== null;
 
@@ -338,7 +257,6 @@ async function migrateTaskToIssue(
     return { migrated: true, assigneeMatched };
   }
 
-  // 4) Создание Issue + IssueAssignee + IssueActivity в транзакции.
   await prisma.$transaction(async (tx) => {
     const maxRow = await tx.issue.aggregate({
       where: { projectId },
@@ -419,7 +337,6 @@ async function processOrg(
     unmatchedAssignee: 0,
   };
 
-  // Узнаем сколько Task всего в Org (даже если их нет — пропускаем).
   const taskCount = await prisma.task.count({ where: { tenantId: org.id } });
   if (taskCount === 0) {
     console.log(`  [${org.id}] ${org.name}: задач нет — пропуск.`);
@@ -443,16 +360,10 @@ async function processOrg(
   );
   stats.projectCreated = projectCreated;
 
-  const states = await ensureProjectStates(
-    prisma,
-    org.id,
-    project?.id ?? null,
-    apply,
-  );
+  const states = await ensureProjectStates(prisma, org.id, project?.id ?? null, apply);
   stats.statesCreated = states.createdCount;
 
   if (!project) {
-    // dry-run без виртуального проекта: просто посчитаем сколько мигрируется.
     const tasks = await prisma.task.findMany({
       where: { tenantId: org.id },
       select: {
@@ -488,7 +399,6 @@ async function processOrg(
     return stats;
   }
 
-  // Реальная миграция: батчем читаем Task'и и обрабатываем по одной.
   const BATCH = 200;
   let cursorId: string | null = null;
   for (;;) {
@@ -582,7 +492,6 @@ async function main(): Promise<void> {
       );
     }
 
-    // Сводка.
     const sum = allStats.reduce(
       (acc, s) => ({
         orgs: acc.orgs + 1,

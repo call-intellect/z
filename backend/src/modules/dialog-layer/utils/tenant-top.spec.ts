@@ -21,7 +21,6 @@ describe('tenantTopOf', () => {
     for (let i = 0; i < 50; i++) {
       buckets.add(tenantTopOf(`tenant-${i}`));
     }
-    // Не точно 50 (могут быть коллизии), но не меньше 30 из 50.
     expect(buckets.size).toBeGreaterThanOrEqual(30);
   });
 
@@ -30,7 +29,6 @@ describe('tenantTopOf', () => {
     for (let i = 0; i < 1000; i++) {
       buckets.add(tenantTopOf(`tenant-${i}`));
     }
-    // Не больше 100 разных bucket'ов (FNV-1a % 100).
     expect(buckets.size).toBeLessThanOrEqual(100);
   });
 });

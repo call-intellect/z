@@ -1,17 +1,3 @@
-/**
- * BillingController — клиентский кабинет: подписка + счета + расчёт цены.
- *
- * Маршруты (под /api/v1/billing/*, auth+tenant):
- *   GET  /billing/subscription   — текущая подписка Org (или null)
- *   GET  /billing/invoices       — список счетов (paginated)
- *   GET  /billing/quote          — расчёт цены за указанный период/seats
- *
- * MeetingsBalance имеет собственный контроллер
- * (`modules/meetings-balance/`), он отвечает на `GET /billing/meetings-balance`.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.1.
- */
-
 import {
   Body,
   Controller,
@@ -22,12 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { InvoiceStatus, Subscription } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -126,8 +107,7 @@ export class BillingController {
 
   @Post('pay/bank-invoice')
   @ApiOperation({
-    summary:
-      'Выставить безналичный счёт через Tochka. Требует заполненных реквизитов Org.',
+    summary: 'Выставить безналичный счёт через Tochka. Требует заполненных реквизитов Org.',
   })
   @ApiOkResponse({ type: PaymentStartResultDto })
   async payBankInvoice(
@@ -168,8 +148,6 @@ export class BillingController {
     };
   }
 
-  // ──────────────────────── helpers ────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new ForbiddenException('Не определён tenantId (нужен X-Org-Id)');
@@ -180,9 +158,6 @@ export class BillingController {
   private toSubscriptionView(sub: Subscription): SubscriptionViewBody {
     return {
       status: sub.status,
-      // 2026-06-01 — `reference` режим (эталонная демо-Org) не показывается клиенту
-      // как реальный платёжный режим. Внутренне ACTIVE+reference означает «не наша
-      // подписка», фронту отдаём `null`. См. ТЗ demo-shared-org-model §4.10.
       paymentMode: sub.paymentMode === 'reference' ? null : sub.paymentMode,
       billingPeriod: sub.billingPeriod,
       startedAt: sub.startedAt?.toISOString() ?? null,

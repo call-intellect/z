@@ -1,18 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO для документов проекта (2026-05-27).
- *
- * Контракт: plans/tz/2026-05-27-tracker-project-documents.md §DTO (Zod).
- *
- * Контент `content` — TipTap JSON. На сервере НЕ валидируем структуру строго
- * (`z.unknown()`), поскольку TipTap-схема развивается отдельно. Серверная
- * нормализация плэйнтекста (`contentStripped`) для поиска / AI выполняется
- * в сервисе.
- */
-
-// ── ProjectDocument ────────────────────────────────────────────────────
-
 export const CreateProjectDocumentSchema = z
   .object({
     title: z.string().min(1).max(200),
@@ -22,9 +9,7 @@ export const CreateProjectDocumentSchema = z
     parentId: z.string().max(64).nullable().optional(),
   })
   .strict();
-export type CreateProjectDocumentDto = z.infer<
-  typeof CreateProjectDocumentSchema
->;
+export type CreateProjectDocumentDto = z.infer<typeof CreateProjectDocumentSchema>;
 
 export const UpdateProjectDocumentSchema = z
   .object({
@@ -37,21 +22,13 @@ export const UpdateProjectDocumentSchema = z
     sortOrder: z.number().int().min(0).optional(),
   })
   .strict();
-export type UpdateProjectDocumentDto = z.infer<
-  typeof UpdateProjectDocumentSchema
->;
+export type UpdateProjectDocumentDto = z.infer<typeof UpdateProjectDocumentSchema>;
 
-// ── Response DTO ───────────────────────────────────────────────────────
-
-/**
- * Полный ответ на `/project-documents/:id` — с контентом.
- */
 export interface ProjectDocumentResponseDto {
   id: string;
   tenantId: string;
   projectId: string;
   title: string;
-  /** TipTap JSON. */
   content: unknown;
   contentHtml: string | null;
   contentStripped: string | null;
@@ -66,11 +43,6 @@ export interface ProjectDocumentResponseDto {
   deletedAt: string | null;
 }
 
-/**
- * Краткий вариант для списка `/projects/:projectId/documents`. Без полного
- * `content` — только превью (`contentStripped` первые ~240 симв.), чтобы не
- * передавать килобайты на каждое открытие вкладки.
- */
 export interface ProjectDocumentSummaryDto {
   id: string;
   tenantId: string;
@@ -87,11 +59,6 @@ export interface ProjectDocumentSummaryDto {
   updatedAt: string;
 }
 
-/**
- * Минимальная карточка для блока «Связанные карточки» снизу страницы
- * `/projects/:slug/documents`. Возвращается из
- * `GET /projects/:projectId/linked-cards`.
- */
 export interface LinkedCardDto {
   id: string;
   name: string;

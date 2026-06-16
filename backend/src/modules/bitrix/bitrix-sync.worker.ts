@@ -10,16 +10,8 @@ import { type Job, Worker } from 'bullmq';
 import { RedisService } from '../../common/redis/redis.service';
 
 import { BitrixSyncService } from './bitrix-sync.service';
-import {
-  BITRIX_SYNC_QUEUE,
-  type BitrixSyncJobData,
-} from './queue/bitrix-sync.queue';
+import { BITRIX_SYNC_QUEUE, type BitrixSyncJobData } from './queue/bitrix-sync.queue';
 
-/**
- * Worker очереди `bitrix.sync` (ТЗ 2026-06-17, Ф3). Один job →
- * `BitrixSyncService.syncByScope(tenantId, scope)`. Регистрируется в
- * WorkersModule (in-process, как ChatboxSyncWorker).
- */
 @Injectable()
 export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BitrixSyncWorker.name);
@@ -37,10 +29,7 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
       { connection: this.redis.client, concurrency: 2 },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        { jobId: job?.id, err: err.message },
-        'BitrixSyncWorker: job failed',
-      );
+      this.logger.warn({ jobId: job?.id, err: err.message }, 'BitrixSyncWorker: job failed');
     });
     this.logger.log(`BitrixSyncWorker запущен (${BITRIX_SYNC_QUEUE})`);
   }
@@ -52,12 +41,9 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для тестирования. */
   async process(job: Job<BitrixSyncJobData>): Promise<void> {
     const { tenantId, scope } = job.data;
-    this.logger.debug(
-      `BitrixSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`,
-    );
+    this.logger.debug(`BitrixSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`);
     const result = await this.syncService.syncByScope(tenantId, scope);
     this.logger.debug(
       `BitrixSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,

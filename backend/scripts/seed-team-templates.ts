@@ -1,15 +1,3 @@
-/**
- * Wave 3 / Tracker Phase 4 — Seed системных TeamTemplate (10 + 5 опц).
- *
- * Запуск:
- *   cd backend && bun run scripts/seed-team-templates.ts
- *
- * Идемпотентно по `@@unique([tenantId, slug])` (tenantId=null для системных).
- * Защита admin-edited: если `updatedAt > createdAt + 1ч` — skip с warn.
- *
- * См. `src/modules/tracker/seed/team-templates-data.ts` — данные шаблонов.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

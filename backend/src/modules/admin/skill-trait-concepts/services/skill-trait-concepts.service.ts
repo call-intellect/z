@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
@@ -17,12 +11,6 @@ import type {
   SkillTraitConceptListItemDto,
 } from '../dto/skill-trait-concepts.dto';
 
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — сервис админ-API
- * «Смысловые блоки навыка».
- *
- * Все запросы изолированы по tenantId (read/write только в пределах своей Org).
- */
 @Injectable()
 export class AdminSkillTraitConceptsService {
   private readonly logger = new Logger(AdminSkillTraitConceptsService.name);
@@ -33,10 +21,7 @@ export class AdminSkillTraitConceptsService {
     private readonly concepts: SkillTraitConceptService,
   ) {}
 
-  async list(args: {
-    tenantId: string;
-    query: ListSkillTraitConceptsQueryDto;
-  }): Promise<{
+  async list(args: { tenantId: string; query: ListSkillTraitConceptsQueryDto }): Promise<{
     items: SkillTraitConceptListItemDto[];
     total: number;
     page: number;
@@ -70,10 +55,7 @@ export class AdminSkillTraitConceptsService {
     };
   }
 
-  async detail(args: {
-    tenantId: string;
-    conceptId: string;
-  }): Promise<SkillTraitConceptDetailDto> {
+  async detail(args: { tenantId: string; conceptId: string }): Promise<SkillTraitConceptDetailDto> {
     const row = await this.prisma.skillTraitConcept.findUnique({
       where: { id: args.conceptId },
     });
@@ -171,7 +153,6 @@ export class AdminSkillTraitConceptsService {
       sourceIds: [args.sourceId],
       targetId: args.dto.targetId,
     });
-    // Audit-log пишется через AdminAuditInterceptor (если повешен) либо в логи.
     this.logger.log(
       {
         tenantId: args.tenantId,

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -9,11 +9,11 @@ import {
   ShieldAlert,
   Sparkles,
   UsersRound,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import type { AdminOrgBillingResponseApi } from '@/api/types/billing';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import type { AdminOrgBillingResponseApi } from "@/api/types/billing";
 import {
   formatRubles,
   invoiceFromApi,
@@ -23,26 +23,17 @@ import {
   subscriptionStatusLabel,
   type InvoiceDomain,
   type SubscriptionDomain,
-} from '@/domain/billing';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/billing";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { AdjustSeatsDialog } from './AdjustSeatsDialog';
-import { ForceStatusDialog } from './ForceStatusDialog';
-import { InvoiceRowActions } from './InvoiceRowActions';
-import { SubscriptionEventsTimeline } from './SubscriptionEventsTimeline';
+import { AdjustSeatsDialog } from "./AdjustSeatsDialog";
+import { ForceStatusDialog } from "./ForceStatusDialog";
+import { InvoiceRowActions } from "./InvoiceRowActions";
+import { SubscriptionEventsTimeline } from "./SubscriptionEventsTimeline";
 
-/**
- * `/admin/orgs/[id]/subscription` — super_admin управление подпиской.
- *
- * Главные действия:
- *   - Ручная активация (paid/bonus + reason ≥3 символа)
- *   - История инвойсов (с возможностью mark-paid / void через будущий UI)
- *
- * MVP-функционал. force-status, adjust-seats, history — TODO.
- */
 export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
   const [data, setData] = useState<AdminOrgBillingResponseApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,7 +46,7 @@ export function AdminSubscriptionClient({ tenantId }: { tenantId: string }) {
       const res = await billingApi.adminGetOrgBilling(tenantId);
       setData(res);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
     } finally {
       setLoading(false);
     }
@@ -126,27 +117,24 @@ function CurrentSubscriptionCard({
   }
 
   const colorClass = {
-    green: 'bg-green-100 text-green-900',
-    amber: 'bg-amber-100 text-amber-900',
-    red: 'bg-red-100 text-red-900',
-    slate: 'bg-slate-100 text-slate-900',
+    green: "bg-green-100 text-green-900",
+    amber: "bg-amber-100 text-amber-900",
+    red: "bg-red-100 text-red-900",
+    slate: "bg-slate-100 text-slate-900",
   }[subscriptionStatusColor(subscription.status)];
 
-  // Pro-rata hint: вычисляем остаток текущего периода для подсказки в
-  // AdjustSeatsDialog. На MVP бэкенд сам считает доплату, мы только
-  // показываем саппорту контекст.
   const now = new Date();
   const periodEnd = subscription.currentPeriodEnd;
   const periodStart = subscription.currentPeriodStart;
   let daysLeftInMonthlyPeriod: number | undefined;
   let monthsLeftInYearlyPeriod: number | undefined;
   if (periodEnd && periodStart && periodEnd > now) {
-    if (subscription.billingPeriod === 'monthly') {
+    if (subscription.billingPeriod === "monthly") {
       daysLeftInMonthlyPeriod = Math.max(
         0,
         Math.ceil((periodEnd.getTime() - now.getTime()) / 86_400_000),
       );
-    } else if (subscription.billingPeriod === 'yearly') {
+    } else if (subscription.billingPeriod === "yearly") {
       monthsLeftInYearlyPeriod = Math.max(
         0,
         Math.floor(
@@ -162,15 +150,15 @@ function CurrentSubscriptionCard({
         <div>
           <h2 className="text-lg font-medium">Текущая подписка</h2>
           <p className="text-sm text-muted-foreground">
-            {subscription.paymentMode === 'paid'
-              ? 'Платная (учитывается в выручке + реф-комиссия)'
-              : subscription.paymentMode === 'bonus'
-                ? 'Бонусная (не в выручке, реф не идёт)'
-                : '—'}
+            {subscription.paymentMode === "paid"
+              ? "Платная (учитывается в выручке + реф-комиссия)"
+              : subscription.paymentMode === "bonus"
+                ? "Бонусная (не в выручке, реф не идёт)"
+                : "—"}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {subscription.paymentMode === 'bonus' && (
+          {subscription.paymentMode === "bonus" && (
             <Badge className="bg-amber-100 text-amber-900 border border-amber-200">
               Бонус
             </Badge>
@@ -181,7 +169,7 @@ function CurrentSubscriptionCard({
         </div>
       </div>
       <dl className="grid grid-cols-2 gap-3 text-sm">
-        <Field label="Период" value={subscription.billingPeriod ?? '—'} />
+        <Field label="Период" value={subscription.billingPeriod ?? "—"} />
         <Field
           label="Цена / месяц"
           value={formatRubles(subscription.monthlyPriceKopecks)}
@@ -192,14 +180,14 @@ function CurrentSubscriptionCard({
         />
         <Field
           label="autoRenew"
-          value={subscription.autoRenew ? 'да' : 'нет'}
+          value={subscription.autoRenew ? "да" : "нет"}
         />
         <Field
           label="Текущий период"
           value={
             subscription.currentPeriodStart && subscription.currentPeriodEnd
-              ? `${subscription.currentPeriodStart.toLocaleDateString('ru-RU')} — ${subscription.currentPeriodEnd.toLocaleDateString('ru-RU')}`
-              : '—'
+              ? `${subscription.currentPeriodStart.toLocaleDateString("ru-RU")} — ${subscription.currentPeriodEnd.toLocaleDateString("ru-RU")}`
+              : "—"
           }
         />
         <Field
@@ -209,11 +197,7 @@ function CurrentSubscriptionCard({
       </dl>
 
       <div className="mt-5 flex flex-wrap gap-2 border-t pt-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setOpenAdjust(true)}
-        >
+        <Button variant="outline" size="sm" onClick={() => setOpenAdjust(true)}>
           <UsersRound size={14} />
           Изменить места
         </Button>
@@ -278,12 +262,12 @@ function ActivateForm({
   tenantId: string;
   onActivated: () => void;
 }) {
-  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>(
-    'monthly',
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "yearly">(
+    "monthly",
   );
   const [seatsExtra, setSeatsExtra] = useState(0);
-  const [paymentMode, setPaymentMode] = useState<'paid' | 'bonus'>('paid');
-  const [reason, setReason] = useState('');
+  const [paymentMode, setPaymentMode] = useState<"paid" | "bonus">("paid");
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -291,7 +275,7 @@ function ActivateForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (reason.trim().length < 3) {
-      setErr('reason обязателен (≥3 символа)');
+      setErr("reason обязателен (≥3 символа)");
       return;
     }
     setSubmitting(true);
@@ -308,10 +292,10 @@ function ActivateForm({
       setSuccess(
         `Активировано. Subscription ${result.subscriptionId}, Invoice ${result.invoiceId}, +${result.grantedMeetings} встреч.`,
       );
-      setReason('');
+      setReason("");
       onActivated();
     } catch (e2) {
-      setErr(e2 instanceof ApiError ? e2.message : 'Ошибка');
+      setErr(e2 instanceof ApiError ? e2.message : "Ошибка");
     } finally {
       setSubmitting(false);
     }
@@ -338,7 +322,7 @@ function ActivateForm({
           <select
             value={billingPeriod}
             onChange={(e) =>
-              setBillingPeriod(e.target.value as 'monthly' | 'yearly')
+              setBillingPeriod(e.target.value as "monthly" | "yearly")
             }
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
           >
@@ -362,10 +346,12 @@ function ActivateForm({
         <label className="text-sm font-medium">Режим</label>
         <select
           value={paymentMode}
-          onChange={(e) => setPaymentMode(e.target.value as 'paid' | 'bonus')}
+          onChange={(e) => setPaymentMode(e.target.value as "paid" | "bonus")}
           className="w-full rounded-md border bg-background px-3 py-2 text-sm"
         >
-          <option value="paid">paid — в выручке, идёт реф-комиссия 20 000 ₽</option>
+          <option value="paid">
+            paid — в выручке, идёт реф-комиссия 20 000 ₽
+          </option>
           <option value="bonus">bonus — НЕ в выручке, реф НЕ идёт</option>
         </select>
       </div>
@@ -434,13 +420,15 @@ function RecentInvoicesTable({
         <tbody>
           {invoices.map((inv) => (
             <tr key={inv.id} className="border-t">
-              <td className="px-6 py-3 font-mono text-xs">{inv.invoiceNumber}</td>
+              <td className="px-6 py-3 font-mono text-xs">
+                {inv.invoiceNumber}
+              </td>
               <td className="px-6 py-3 font-medium">
                 {formatRubles(inv.totalKopecks)}
               </td>
               <td className="px-6 py-3">{invoiceStatusLabel(inv.status)}</td>
               <td className="px-6 py-3 text-muted-foreground">
-                {inv.createdAt.toLocaleDateString('ru-RU')}
+                {inv.createdAt.toLocaleDateString("ru-RU")}
               </td>
               <td className="px-6 py-3">
                 <InvoiceRowActions invoice={inv} onChanged={onReload} />

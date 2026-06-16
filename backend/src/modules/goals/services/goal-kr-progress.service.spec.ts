@@ -3,28 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import {
-  GoalKrProgressService,
-  type ActiveGoalRow,
-} from './goal-kr-progress.service';
-
-/**
- * Goals OKR v2 (Фаза 3) — unit-тесты авто-прогресса KR.
- *
- * Покрываем (§5 Фаза 3):
- *   - meeting_count → currentValue := meeting.count, checkpoint(auto) при изменении;
- *   - issue_rollup → completed count, checkpoint;
- *   - metric_entity → mentionsCount;
- *   - manual → skip (нет update/checkpoint);
- *   - manualOverride.currentValue → skip даже при meeting_count;
- *   - newValue == currentValue → no-op (нет checkpoint);
- *   - recomputeProgressStatus: achieved / stalled / at_risk / on_track /
- *     manualOverride.progressStatus / 0 KR.
- */
+import { GoalKrProgressService, type ActiveGoalRow } from './goal-kr-progress.service';
 
 type Fn = ReturnType<typeof vi.fn>;
 
-/** Первый аргумент первого вызова мока (vi.fn без сигнатуры типизирует calls как []). */
 function firstArg<T>(fn: Fn): T {
   const calls = fn.mock.calls as unknown as unknown[][];
   return calls[0]![0] as T;
@@ -83,10 +65,7 @@ function makeService(prisma: PrismaStub): {
   inc: Fn;
 } {
   const { metrics, inc } = makeMetrics();
-  const svc = new GoalKrProgressService(
-    prisma as unknown as PrismaService,
-    metrics,
-  );
+  const svc = new GoalKrProgressService(prisma as unknown as PrismaService, metrics);
   return { svc, inc };
 }
 
@@ -128,9 +107,7 @@ describe('GoalKrProgressService.processGoalKr — computeKrValue', () => {
 
     expect(res.krsUpdated).toBe(1);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(krUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'kr1' } }),
-    );
+    expect(krUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'kr1' } }));
     expect(checkpointCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -140,7 +117,6 @@ describe('GoalKrProgressService.processGoalKr — computeKrValue', () => {
         }),
       }),
     );
-    // meeting.count вызван с status=completed, deletedAt=null.
     expect(prisma.meeting.count).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -235,9 +211,7 @@ describe('GoalKrProgressService.processGoalKr — computeKrValue', () => {
   it('metric_entity без entityId → skip (нет checkpoint, status=skipped)', async () => {
     const { prisma, checkpointCreate } = makePrisma({
       goalKeyResult: {
-        findMany: vi.fn(async () => [
-          krRow({ sourceKind: 'metric_entity', sourceConfig: {} }),
-        ]),
+        findMany: vi.fn(async () => [krRow({ sourceKind: 'metric_entity', sourceConfig: {} })]),
         update: vi.fn(),
       },
     });
@@ -296,9 +270,7 @@ describe('GoalKrProgressService.processGoalKr — computeKrValue', () => {
   it('newValue == currentValue → no-op (нет checkpoint, status=unchanged)', async () => {
     const { prisma, checkpointCreate } = makePrisma({
       goalKeyResult: {
-        findMany: vi.fn(async () => [
-          krRow({ sourceKind: 'meeting_count', currentValue: '17' }),
-        ]),
+        findMany: vi.fn(async () => [krRow({ sourceKind: 'meeting_count', currentValue: '17' })]),
         update: vi.fn(),
       },
       meeting: { count: vi.fn(async () => 17) },
@@ -339,8 +311,6 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
   });
 
   it('движение есть + отставание от темпа → at_risk', () => {
-    // прошло ~50% времени (createdAt 05-01, target 05-29, now 05-15),
-    // expected ~50%, а фактический прогресс 10% → отставание > 25 → at_risk.
     const status = GoalKrProgressService.computeStatus({
       createdAt: new Date('2026-05-01T00:00:00.000Z'),
       now: new Date('2026-05-15T00:00:00.000Z'),
@@ -351,7 +321,6 @@ describe('GoalKrProgressService.computeStatus (pure)', () => {
   });
 
   it('движение есть + в темпе → on_track', () => {
-    // прошло ~50% времени, прогресс 60% → не отстаёт → on_track.
     const status = GoalKrProgressService.computeStatus({
       createdAt: new Date('2026-05-01T00:00:00.000Z'),
       now: new Date('2026-05-15T00:00:00.000Z'),
@@ -408,15 +377,11 @@ describe('GoalKrProgressService.recomputeProgressStatus (через processGoalK
   });
 
   it('статус изменился (achieved) → goal.update вызван, restatused=true', async () => {
-    // KR currentValue==target (100) → не двигается (unchanged), но
-    // recompute из чтения KR даёт achieved.
     const krFindMany = vi
       .fn()
-      // первый вызов — внутри processGoalKr для computeKrValue
       .mockResolvedValueOnce([
         krRow({ sourceKind: 'manual', currentValue: '100', targetValue: '100' }),
       ])
-      // второй вызов — внутри recomputeProgressStatus
       .mockResolvedValueOnce([
         { id: 'kr1', startValue: '0', targetValue: '100', currentValue: '100' },
       ]);

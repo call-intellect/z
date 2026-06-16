@@ -20,20 +20,8 @@ import { SuperAdminGuard } from '../../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor';
 
 import { AdminStorageService } from './admin-storage.service';
-import {
-  SwitchProviderSchema,
-  type SwitchProviderDto,
-} from './dto/admin-storage.dto';
+import { SwitchProviderSchema, type SwitchProviderDto } from './dto/admin-storage.dto';
 
-/**
- * Admin-redesign Фаза 7 — `AdminStorageController`.
- *
- * UI Z-Admin `/admin/media/storage` — снимок S3-стораджа + переключение
- * провайдера (маркер, реальный endpoint в ENV).
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`.
- */
 @ApiTags('admin-media-storage')
 @Controller('api/v1/admin/media/storage')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)

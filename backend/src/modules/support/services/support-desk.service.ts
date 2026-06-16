@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -14,10 +8,8 @@ import type { DeskListQueryDto } from '../dto/desk-list-query.dto';
 import { SupportAccessService } from './support-access.service';
 import { SupportLearningService } from './support-learning.service';
 
-/** Максимум тикетов в одной странице очереди (Ф1 — без keyset-cursor). */
 const DESK_PAGE_SIZE = 50;
 
-/** Идентификатор Support-проекта (systemGenerated) в вендор-Org. */
 const SUPPORT_PROJECT_IDENTIFIER = 'SUP';
 
 export interface DeskMetaState {
@@ -73,18 +65,9 @@ export interface DeskTicketDetail {
   slaBreachedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  /** ВСЕ комментарии (internal+external) — деск доверенный. */
   messages: DeskTicketComment[];
 }
 
-/**
- * SupportDeskService — сторона сотрудника поддержки. Все операции в scope
- * вендор-Org (guard уже проверил членство и выставил req.tenantId).
- *
- * ТЗ 2026-06-09 support-desk Ф1. Клон/черновики (draft/accept/reject) — Ф3,
- * здесь не реализуются; `fromDraftCommentId` в reply принимается, но
- * draft-outcome логика отложена.
- */
 @Injectable()
 export class SupportDeskService {
   private readonly logger = new Logger(SupportDeskService.name);
@@ -99,7 +82,6 @@ export class SupportDeskService {
     private readonly learning: SupportLearningService,
   ) {}
 
-  /** Очередь тикетов вендор-деска по выбранному view. */
   async listTickets(
     userId: string,
     query: DeskListQueryDto,
@@ -150,12 +132,10 @@ export class SupportDeskService {
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       })),
-      // Ф1 — keyset-пагинация не реализована (страница до 50). См. ТЗ.
       nextCursor: null,
     };
   }
 
-  /** Детали тикета + ВСЕ комментарии (internal+external). */
   async getTicket(ticketId: string): Promise<DeskTicketDetail> {
     const issue = await this.requireTicket(ticketId);
     const comments = await this.prisma.issueComment.findMany({
@@ -206,12 +186,6 @@ export class SupportDeskService {
     };
   }
 
-  /**
-   * Ответ сотрудника клиенту (access='external', authorType='human').
-   * Первый ответ проставляет `firstRespondedAt`. `fromDraftCommentId` —
-   * Ф3-задел (DIFF/outcome не реализованы в Ф1), сохраняется в метаданные
-   * активности.
-   */
   async reply(
     ticketId: string,
     userId: string,
@@ -250,8 +224,6 @@ export class SupportDeskService {
       });
     });
 
-    // Учебный сигнал Ф3: если ответ собран из правки черновика клона —
-    // зафиксировать исход `edited` (best-effort, не валит сам ответ).
     if (fromDraftCommentId) {
       try {
         await this.learning.recordEdit(fromDraftCommentId, message, userId);
@@ -269,7 +241,6 @@ export class SupportDeskService {
     return { ok: true, commentId };
   }
 
-  /** Внутренняя заметка (access='internal', не видна клиенту). */
   async note(
     ticketId: string,
     userId: string,
@@ -290,7 +261,6 @@ export class SupportDeskService {
     return { ok: true, commentId: comment.id };
   }
 
-  /** Назначить сотрудника на тикет (reuse IssueAssignee M:M). Идемпотентно. */
   async assign(
     ticketId: string,
     assigneeUserId: string,
@@ -323,12 +293,7 @@ export class SupportDeskService {
     return { ok: true };
   }
 
-  /** Сменить статус тикета. Валидирует, что state принадлежит Support-проекту. */
-  async transition(
-    ticketId: string,
-    userId: string,
-    stateId: string,
-  ): Promise<{ ok: true }> {
+  async transition(ticketId: string, userId: string, stateId: string): Promise<{ ok: true }> {
     const issue = await this.requireTicket(ticketId);
     const state = await this.prisma.issueState.findFirst({
       where: { id: stateId, projectId: issue.projectId },
@@ -369,14 +334,9 @@ export class SupportDeskService {
     return { ok: true };
   }
 
-  /**
-   * Справочники деска для UI: статусы Support-проекта (для смены статуса) и
-   * сотрудники контура поддержки (для назначения). Всё в scope вендор-Org.
-   */
   async getMeta(): Promise<DeskMeta> {
     const vendorOrgId = await this.requireVendorOrg();
 
-    // Статусы Support-проекта, по порядку (sequence).
     const project = await this.prisma.project.findFirst({
       where: {
         tenantId: vendorOrgId,
@@ -395,7 +355,6 @@ export class SupportDeskService {
         ).map((s) => ({ id: s.id, name: s.name, category: s.category }))
       : [];
 
-    // Сотрудники контура поддержки → {userId,name} (только с привязанным User).
     const agents: DeskMetaAgent[] = [];
     const groupId = await this.access.getSupportGroupId(vendorOrgId);
     if (groupId) {
@@ -424,8 +383,6 @@ export class SupportDeskService {
     return { states, agents };
   }
 
-  // ─────────────────────────── internal ───────────────────────────
-
   private async requireVendorOrg(): Promise<string> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) {
@@ -440,7 +397,6 @@ export class SupportDeskService {
     return vendorOrgId;
   }
 
-  /** Загрузить support-тикет в scope вендор-Org. 404 если не support/чужой. */
   private async requireTicket(ticketId: string) {
     const vendorOrgId = await this.requireVendorOrg();
     const issue = await this.prisma.issue.findFirst({

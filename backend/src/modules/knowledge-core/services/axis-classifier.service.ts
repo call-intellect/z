@@ -5,10 +5,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   AXIS_CLASSIFY_JSON_SCHEMA,
   AXIS_CLASSIFY_SYSTEM_PROMPT,
@@ -17,48 +14,11 @@ import {
 
 import { resolveAxisTenantTop } from './tenant-top';
 
-/**
- * SBA α-3 wave 3 — AxisClassifierService.
- *
- * Fan-out одного IdeaBlock по 4 осям знания:
- *   - who         — субъект (Person / employee / team). Источник: IdeaBlockEntity
- *                   role='subject' + Person.relationship='employee'.
- *   - functional  — функциональная область (FunctionalDomain.slug). Источник:
- *                   статически по тегам блока или FunctionalDomain.slug ↔ tags,
- *                   доводится LLM-классификатором по тексту блока.
- *   - contextual  — контекст (Project / Customer / Vendor / Event entity).
- *                   Источник: IdeaBlockEntity → Entity{type ∈ ...}.
- *   - temporal    — временное измерение. Маппинг по signalType:
- *                   regulation/policy/process_step/methodology_step → permanent,
- *                   idea/feature_request/suggestion/plan_item/hypothesis → future,
- *                   lesson/result/done_item/decision/decision_basis/rationale → past,
- *                   pain/risk/blocker/team_friction/process_friction → current.
- *                   LLM добивает остальные.
- *
- * Гибрид static + LLM:
- *   1. Сначала пробуем static-резолверы (дёшево, ~60-70% покрытие who/contextual/temporal).
- *   2. Если AXIS_CLASSIFY_ENABLED=true и не хватает functional/temporal — вызываем LLM.
- *
- * Идемпотентность: upsert по unique-ключу `(tenantId, blockId, axis, label)`.
- * При ошибке classify — лог + продолжение (не блокирует block-ingest).
- *
- * Метрики:
- *   - `axis_labels_total{tenant_top, axis, source}` — created+updated.
- *   - `axis_classify_duration_seconds{axis}` — для LLM-вызова (только при llm-source).
- */
 @Injectable()
 export class AxisClassifierService {
   private readonly logger = new Logger(AxisClassifierService.name);
 
-  /**
-   * Маппинг signalType → temporal-period (если static-уверенность есть).
-   * Экспортируется как public static для тестов и для других сервисов,
-   * которые захотят посмотреть, какой temporal-маппинг считается канонкой.
-   * См. §3.4 sub-ТЗ.
-   */
-  static readonly TEMPORAL_BY_SIGNAL: Partial<
-    Record<SignalType, string>
-  > = {
+  static readonly TEMPORAL_BY_SIGNAL: Partial<Record<SignalType, string>> = {
     regulation: 'temporal:permanent',
     process_step: 'temporal:permanent',
     methodology_step: 'temporal:permanent',
@@ -97,9 +57,6 @@ export class AxisClassifierService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -108,12 +65,6 @@ export class AxisClassifierService {
     }
   }
 
-  /**
-   * Главный метод: классифицировать блок по 4 осям и сохранить axis-метки.
-   *
-   * Контракт: НЕ бросает (best-effort). Любая ошибка → warn-log и пустой
-   * массив возвращён.
-   */
   async classify(args: {
     blockId: string;
     tenantId: string;
@@ -122,7 +73,6 @@ export class AxisClassifierService {
     const enabled = this.isAxisClassifyEnabled();
     const stats = { created: 0, static: 0, llm: 0 };
     if (!enabled) {
-      // Полностью выключено feature-флагом — выходим.
       return stats;
     }
 
@@ -146,20 +96,13 @@ export class AxisClassifierService {
 
       const labels: PendingLabel[] = [];
 
-      // ── WHO (static) ──
       const whoLabels = await this.resolveStaticWhoLabels(block.id);
       for (const l of whoLabels) labels.push(l);
 
-      // ── CONTEXTUAL (static) ──
-      const contextualLabels = await this.resolveStaticContextualLabels(
-        block.id,
-      );
+      const contextualLabels = await this.resolveStaticContextualLabels(block.id);
       for (const l of contextualLabels) labels.push(l);
 
-      // ── TEMPORAL (static by signalType) ──
-      const temporalStatic = AxisClassifierService.TEMPORAL_BY_SIGNAL[
-        block.signalType
-      ];
+      const temporalStatic = AxisClassifierService.TEMPORAL_BY_SIGNAL[block.signalType];
       if (temporalStatic) {
         labels.push({
           axis: 'temporal',
@@ -169,8 +112,6 @@ export class AxisClassifierService {
         });
       }
 
-      // ── FUNCTIONAL / TEMPORAL (LLM добивка) ──
-      // LLM вызываем только если functional пустой ИЛИ temporal не покрыт.
       const hasFunctional = labels.some((l) => l.axis === 'functional');
       const hasTemporal = labels.some((l) => l.axis === 'temporal');
       if (!hasFunctional || !hasTemporal) {
@@ -193,7 +134,6 @@ export class AxisClassifierService {
         }
       }
 
-      // ── Upsert ──
       const tenantTop = resolveAxisTenantTop(args.tenantId);
       for (const label of labels) {
         const upserted = await this.upsertLabel({
@@ -227,15 +167,7 @@ export class AxisClassifierService {
     return stats;
   }
 
-  // ─────────────────────── static resolvers ──────────────────────────
-
-  /**
-   * WHO: ищем IdeaBlockEntity{role='subject', entity.type='person',
-   * person.relationship='employee'} — берём entityId как label.
-   */
-  private async resolveStaticWhoLabels(
-    blockId: string,
-  ): Promise<PendingLabel[]> {
+  private async resolveStaticWhoLabels(blockId: string): Promise<PendingLabel[]> {
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         blockId,
@@ -260,12 +192,7 @@ export class AxisClassifierService {
     }));
   }
 
-  /**
-   * CONTEXTUAL: все entity (любой role), тип ∈ {customer/vendor/project/event/client}.
-   */
-  private async resolveStaticContextualLabels(
-    blockId: string,
-  ): Promise<PendingLabel[]> {
+  private async resolveStaticContextualLabels(blockId: string): Promise<PendingLabel[]> {
     const rows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         blockId,
@@ -282,8 +209,6 @@ export class AxisClassifierService {
       source: 'static' as const,
     }));
   }
-
-  // ─────────────────────── LLM classifier ────────────────────────────
 
   private async classifyWithLlm(args: {
     tenantId: string;
@@ -304,7 +229,6 @@ export class AxisClassifierService {
       take: 50,
     });
     const start = Date.now();
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока + whitelist) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = AXIS_CLASSIFY_USER_TEMPLATE({
       blockName: args.block.name,
@@ -340,7 +264,6 @@ export class AxisClassifierService {
     if (args.wantFunctional && Array.isArray(parsed.functional)) {
       for (const item of parsed.functional) {
         if (!isLabelEntry(item)) continue;
-        // Принимаем только slug'и из whitelist'а.
         if (!knownSlugs.has(item.label)) continue;
         labels.push({
           axis: 'functional',
@@ -373,12 +296,6 @@ export class AxisClassifierService {
     return labels;
   }
 
-  // ─────────────────────── upsert ──────────────────────────────────
-
-  /**
-   * Идемпотентный upsert axis-метки. Возвращает true, если запись была
-   * создана (insert); false, если уже существовала.
-   */
   private async upsertLabel(args: {
     tenantId: string;
     blockId: string;
@@ -400,31 +317,19 @@ export class AxisClassifierService {
       });
       return true;
     } catch (err) {
-      // P2002 — уже существует (unique constraint), это нормальная идемпотентность.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         return false;
       }
       throw err;
     }
   }
 
-  // ─────────────────────── env flag ────────────────────────────────
-
-  /**
-   * TODO(env-refactor): после фикса TS2589 в EnvSchema перенести в TypedConfig.
-   * Default = true (см. sub-ТЗ §13).
-   */
   private isAxisClassifyEnabled(): boolean {
     const raw = process.env['AXIS_CLASSIFY_ENABLED'];
     if (raw == null || raw === '') return true;
     return raw === 'true' || raw === '1';
   }
 }
-
-// ─────────────────────── helpers ────────────────────────────────────
 
 interface PendingLabel {
   axis: AxisType;
@@ -443,7 +348,7 @@ function isLabelEntry(x: unknown): x is LlmLabelEntry {
     typeof x === 'object' &&
     x !== null &&
     typeof (x as { label?: unknown }).label === 'string' &&
-  typeof (x as { confidence?: unknown }).confidence === 'number'
+    typeof (x as { confidence?: unknown }).confidence === 'number'
   );
 }
 
@@ -456,7 +361,6 @@ function safeParseJson(text: string): { functional?: unknown; temporal?: unknown
     }
     return null;
   } catch {
-    // Иногда модели заворачивают JSON в ```json … ``` или добавляют текст.
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) return null;
     try {
@@ -464,9 +368,7 @@ function safeParseJson(text: string): { functional?: unknown; temporal?: unknown
       if (typeof parsed === 'object' && parsed !== null) {
         return parsed as { functional?: unknown; temporal?: unknown };
       }
-    } catch {
-      /* ignore */
-    }
+    } catch {}
     return null;
   }
 }

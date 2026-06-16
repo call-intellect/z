@@ -1,24 +1,7 @@
-/**
- * SBA α-8 wave 3 — API клиент для Appointment (назначения Person → Role).
- *
- * Replacement для PersonRole (на старте оба источника читаются PersonsService
- * через feature-flag USE_APPOINTMENT_FOR_PERSON_ROLES).
- *
- * Эндпоинты (см. backend/src/modules/appointments/appointments.controller.ts):
- *   - GET    /api/v1/appointments?personId=&roleId=&departmentId=&status=&activeOnly=
- *   - GET    /api/v1/appointments/:id
- *   - GET    /api/v1/appointments/persons/:personId/timeline
- *   - POST   /api/v1/appointments
- *   - PATCH  /api/v1/appointments/:id
- *   - DELETE /api/v1/appointments/:id   (soft archive — status=former + validTo=now)
- *
- * Защита: CookieAuthGuard + TenantGuard. RBAC: `appointment.read|write|delete`.
- */
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
-
-export type AppointmentStatusApi = 'active' | 'former' | 'acting';
+export type AppointmentStatusApi = "active" | "former" | "acting";
 
 export interface AppointmentApi {
   id: string;
@@ -89,11 +72,6 @@ export const appointmentsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Timeline по Entity{type=person}.id — резолвит Person через
-   * Person.entityId на бэке. Возвращает пустой список, если Person не
-   * привязан к Entity.
-   */
   entityTimeline: (orgId: string, entityId: string) =>
     apiClient.get<{ items: AppointmentTimelineItemApi[] }>(
       `/api/v1/appointments/entities/${encodeURIComponent(entityId)}/timeline`,

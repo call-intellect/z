@@ -1,21 +1,15 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-import { apiClient } from './api-client';
-
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — API клиент для админ-
- * управления «Смысловыми блоками навыка» (SkillTraitConcept).
- *
- * Контракт — backend `src/modules/admin/skill-trait-concepts/`.
- * Все запросы require `X-Org-Id` (per-tenant), RBAC owner/admin.
- */
+import { apiClient } from "./api-client";
 
 export const SkillTraitConceptStatusSchema = z.enum([
-  'active',
-  'merged_into',
-  'archived',
+  "active",
+  "merged_into",
+  "archived",
 ]);
-export type SkillTraitConceptStatus = z.infer<typeof SkillTraitConceptStatusSchema>;
+export type SkillTraitConceptStatus = z.infer<
+  typeof SkillTraitConceptStatusSchema
+>;
 
 const SkillTraitConceptListItemSchema = z.object({
   id: z.string(),
@@ -46,9 +40,10 @@ const SkillTraitConceptRecentTraitSchema = z.object({
   lastConfirmedAt: z.string(),
 });
 
-export const SkillTraitConceptDetailSchema = SkillTraitConceptListItemSchema.extend({
-  recentTraits: z.array(SkillTraitConceptRecentTraitSchema),
-});
+export const SkillTraitConceptDetailSchema =
+  SkillTraitConceptListItemSchema.extend({
+    recentTraits: z.array(SkillTraitConceptRecentTraitSchema),
+  });
 
 export type SkillTraitConceptListItem = z.infer<
   typeof SkillTraitConceptListItemSchema
@@ -56,7 +51,9 @@ export type SkillTraitConceptListItem = z.infer<
 export type SkillTraitConceptsListResponse = z.infer<
   typeof SkillTraitConceptsListResponseSchema
 >;
-export type SkillTraitConceptDetail = z.infer<typeof SkillTraitConceptDetailSchema>;
+export type SkillTraitConceptDetail = z.infer<
+  typeof SkillTraitConceptDetailSchema
+>;
 export type SkillTraitConceptRecentTrait = z.infer<
   typeof SkillTraitConceptRecentTraitSchema
 >;
@@ -84,12 +81,13 @@ export const adminSkillTraitConceptsApi = {
     q?: string;
   }): Promise<SkillTraitConceptsListResponse> {
     const qs = new URLSearchParams();
-    if (params.status) qs.set('status', params.status);
-    if (params.page) qs.set('page', String(params.page));
-    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
-    if (params.q) qs.set('q', params.q);
+    if (params.status) qs.set("status", params.status);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+    if (params.q) qs.set("q", params.q);
     const url =
-      `/api/v1/admin/skill-trait-concepts` + (qs.size ? `?${qs.toString()}` : '');
+      `/api/v1/admin/skill-trait-concepts` +
+      (qs.size ? `?${qs.toString()}` : "");
     const raw = await apiClient.get<unknown>(url);
     return SkillTraitConceptsListResponseSchema.parse(raw);
   },

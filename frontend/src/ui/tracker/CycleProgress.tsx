@@ -1,15 +1,11 @@
-'use client';
+"use client";
 
-/**
- * CycleProgress — progress-bar по циклу.
- */
-
-import { Progress } from '@/ui/shadcn/progress';
+import { Progress } from "@/ui/shadcn/progress";
 import {
   cycleDateRangeLabel,
   readCycleProgress,
   type Cycle,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export function CycleProgress({ cycle }: { cycle: Cycle }) {
   const progress = readCycleProgress(cycle.progressSnapshot);

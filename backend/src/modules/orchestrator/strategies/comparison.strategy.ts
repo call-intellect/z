@@ -4,13 +4,6 @@ import type { OrchestratorPlanStep } from '../orchestrator.types';
 
 import { BaseRetrievalStrategy } from './base-retrieval-strategy';
 
-/**
- * SBA δ-1 — стратегия `comparison`.
- *
- * Цель: сравнить N сущностей по K измерениям. Параметры:
- *   - `params.subjects`: string[] — что сравниваем (имена/идентификаторы).
- *   - `params.dimensions`: string[] — измерения сравнения (если не задано — LLM выбирает сам).
- */
 @Injectable()
 export class ComparisonStrategy extends BaseRetrievalStrategy {
   readonly agentType = 'comparison' as const;

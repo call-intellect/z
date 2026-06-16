@@ -2,20 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportAnswerCriticService } from './services/support-answer-critic.service';
 
-/**
- * support-desk Ф3 — unit-тесты SupportAnswerCriticService.check:
- *   - groundedness < threshold, но модель сказала answer → понижаем до clarify
- *     (DEFENSIVE);
- *   - LLM упал / непарсимый JSON → fail-safe { verdict: escalate,
- *     groundedness: 0 } (отдаём человеку).
- *
- * Зависимости (llm / cfg) замоканы.
- */
 describe('SupportAnswerCriticService.check', () => {
   const TENANT = 'vendor-org-1';
-  const BLOCKS = [
-    { id: 'b1', criticalQuestion: 'q', trustedAnswer: 'a' },
-  ];
+  const BLOCKS = [{ id: 'b1', criticalQuestion: 'q', trustedAnswer: 'a' }];
 
   let llmStub: { call: ReturnType<typeof vi.fn> };
   let cfgStub: { getDynamic: ReturnType<typeof vi.fn> };
@@ -23,12 +12,8 @@ describe('SupportAnswerCriticService.check', () => {
 
   beforeEach(() => {
     llmStub = { call: vi.fn() };
-    // Порог обоснованности 0.6.
     cfgStub = { getDynamic: vi.fn(async () => 0.6) };
-    svc = new SupportAnswerCriticService(
-      llmStub as unknown as never,
-      cfgStub as unknown as never,
-    );
+    svc = new SupportAnswerCriticService(llmStub as unknown as never, cfgStub as unknown as never);
   });
 
   it('groundedness ниже порога + verdict=answer → понижаем до clarify', async () => {

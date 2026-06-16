@@ -2,23 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../../common/config/index';
 
-import {
-  TelegramProxyAdminClient,
-  TelegramProxyAdminError,
-} from './telegram-proxy-admin.client';
-
-/**
- * Unit-тесты `TelegramProxyAdminClient` после перехода на статический
- * Bearer-токен (`TELEGRAM_PROXY_TOKEN`) и реальный контракт прокси
- * `telegram.crossmark.ru` (Swagger `/docs`).
- *
- * Покрываем:
- *   - getAdminToken() возвращает токен из ENV; кидает если выключен / пуст.
- *   - apiRequest() шлёт Bearer-токен; на 401 — внятная ошибка (без relogin).
- *   - upsertBot(): POST при пустом списке, PATCH при существующем боте,
- *     матчинг по telegramBotId, валидации, webhookError → throw.
- *   - ping() возвращает {ok:true} на 2xx, {ok:false} на сеть/HTTP-ошибку.
- */
+import { TelegramProxyAdminClient, TelegramProxyAdminError } from './telegram-proxy-admin.client';
 
 const ORIGINAL_FETCH = globalThis.fetch;
 
@@ -65,11 +49,12 @@ describe('TelegramProxyAdminClient.apiRequest', () => {
   });
 
   it('шлёт Authorization: Bearer <token>', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(JSON.stringify({ ok: 1 }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ok: 1 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
     ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
 
@@ -87,30 +72,27 @@ describe('TelegramProxyAdminClient.apiRequest', () => {
   });
 
   it('на 401 бросает внятную ошибку без re-login', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('unauthorized', { status: 401 }),
+    globalThis.fetch = vi.fn(
+      async () => new Response('unauthorized', { status: 401 }),
     ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
 
-    const err = await client
-      .apiRequest('GET', '/api/bots', undefined)
-      .catch((e) => e);
+    const err = await client.apiRequest('GET', '/api/bots', undefined).catch((e) => e);
     expect(err).toBeInstanceOf(TelegramProxyAdminError);
     expect((err as TelegramProxyAdminError).status).toBe(401);
     expect((err as TelegramProxyAdminError).message).toMatch(/TELEGRAM_PROXY_TOKEN/);
-    // Только один запрос — никакого повторного логина.
-    expect((globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(1);
+    expect((globalThis.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls).toHaveLength(
+      1,
+    );
   });
 
   it('на 5xx бросает transient-ошибку', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response('upstream down', { status: 503 }),
+    globalThis.fetch = vi.fn(
+      async () => new Response('upstream down', { status: 503 }),
     ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
 
-    const err = await client
-      .apiRequest('GET', '/api/bots', undefined)
-      .catch((e) => e);
+    const err = await client.apiRequest('GET', '/api/bots', undefined).catch((e) => e);
     expect((err as TelegramProxyAdminError).status).toBe(503);
     expect((err as TelegramProxyAdminError).transient).toBe(true);
   });
@@ -174,8 +156,24 @@ describe('TelegramProxyAdminClient.upsertBot', () => {
           JSON.stringify({
             total: 2,
             items: [
-              { id: 'other', telegramBotId: 999, tokenPreview: '999:******zzzz', webhookUrl: 'x', targetWebhookUrl: 'y', name: 'Other', isActive: true },
-              { id: 'bot-existing-9', telegramBotId: 111, tokenPreview: '111:******cdef', webhookUrl: 'x', targetWebhookUrl: 'y', name: 'Kora', isActive: true },
+              {
+                id: 'other',
+                telegramBotId: 999,
+                tokenPreview: '999:******zzzz',
+                webhookUrl: 'x',
+                targetWebhookUrl: 'y',
+                name: 'Other',
+                isActive: true,
+              },
+              {
+                id: 'bot-existing-9',
+                telegramBotId: 111,
+                tokenPreview: '111:******cdef',
+                webhookUrl: 'x',
+                targetWebhookUrl: 'y',
+                name: 'Kora',
+                isActive: true,
+              },
             ],
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -205,7 +203,9 @@ describe('TelegramProxyAdminClient.upsertBot', () => {
       targetUrl: 'https://app/api/v1/webhooks/telegram-bot/s/sec',
     });
     expect(info.id).toBe('bot-existing-9');
-    expect(calls.some((c) => c.method === 'PATCH' && c.url.endsWith('/api/bots/bot-existing-9'))).toBe(true);
+    expect(
+      calls.some((c) => c.method === 'PATCH' && c.url.endsWith('/api/bots/bot-existing-9')),
+    ).toBe(true);
   });
 
   it('webhookError в ответе → бросает (прокси не смог setWebhook)', async () => {
@@ -265,16 +265,25 @@ describe('TelegramProxyAdminClient.upsertBot', () => {
 
 describe('TelegramProxyAdminClient.getBotByToken', () => {
   it('botId есть в списке → возвращает по telegramBotId', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          total: 1,
-          items: [
-            { id: 'b1', telegramBotId: 111, tokenPreview: '111:******cdef', webhookUrl: 'x', targetWebhookUrl: 'y', name: 'Kora', isActive: true },
-          ],
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            total: 1,
+            items: [
+              {
+                id: 'b1',
+                telegramBotId: 111,
+                tokenPreview: '111:******cdef',
+                webhookUrl: 'x',
+                targetWebhookUrl: 'y',
+                name: 'Kora',
+                isActive: true,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
     ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
     const info = await client.getBotByToken('111:abcdef');
@@ -282,16 +291,25 @@ describe('TelegramProxyAdminClient.getBotByToken', () => {
   });
 
   it('botId НЕ найден среди ботов → null (не берём чужого)', async () => {
-    globalThis.fetch = vi.fn(async () =>
-      new Response(
-        JSON.stringify({
-          total: 1,
-          items: [
-            { id: 'b1', telegramBotId: 999, tokenPreview: '999:******zzzz', webhookUrl: 'x', targetWebhookUrl: 'y', name: 'Other', isActive: true },
-          ],
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            total: 1,
+            items: [
+              {
+                id: 'b1',
+                telegramBotId: 999,
+                tokenPreview: '999:******zzzz',
+                webhookUrl: 'x',
+                targetWebhookUrl: 'y',
+                name: 'Other',
+                isActive: true,
+              },
+            ],
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
     ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
     const info = await client.getBotByToken('111:abcdef');
@@ -301,7 +319,9 @@ describe('TelegramProxyAdminClient.getBotByToken', () => {
 
 describe('TelegramProxyAdminClient.ping', () => {
   it('возвращает ok:true на 200', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(
+      async () => new Response('', { status: 200 }),
+    ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
     const r = await client.ping();
     expect(r.ok).toBe(true);
@@ -320,7 +340,9 @@ describe('TelegramProxyAdminClient.ping', () => {
   });
 
   it('возвращает ok:false на 5xx', async () => {
-    globalThis.fetch = vi.fn(async () => new Response('', { status: 502 })) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(
+      async () => new Response('', { status: 502 }),
+    ) as unknown as typeof fetch;
     const client = new TelegramProxyAdminClient(makeCfg());
     const r = await client.ping();
     expect(r.ok).toBe(false);

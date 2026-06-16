@@ -1,17 +1,3 @@
-/**
- * AdminReferralsController — управление рефералами и payout'ами (super_admin).
- *
- * Маршруты (под /api/v1/admin/referrals/*, super_admin only):
- *   GET   /admin/referrals               — список всех рефералов
- *   GET   /admin/referrals/:id           — карточка реферала + клиенты + payouts
- *   GET   /admin/referrals/payouts       — все payouts с фильтрами status/period
- *   POST  /admin/referrals/payouts/:id/mark-paid
- *   POST  /admin/referrals/payouts/:id/void
- *   POST  /admin/referrals/close-period  — ручное закрытие периода (для отладки cron)
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4.
- */
-
 import {
   Body,
   Controller,
@@ -23,19 +9,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { ReferralPayoutStatus } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import {
@@ -63,10 +42,7 @@ export class AdminReferralsController {
 
   @Get()
   @ApiOperation({ summary: 'Список всех рефералов.' })
-  async list(
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
-  ) {
+  async list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
     const items = await this.prisma.referral.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit ? Number(limit) : 50,

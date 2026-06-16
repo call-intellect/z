@@ -2,19 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingTitleService } from './meeting-title.service';
 
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — mini-e2e MeetingTitleService.
- *
- * Проверяем:
- *   1. placeholder-title + готовый транскрипт → LLM зовётся, updateMany('title')
- *      вызван с очищенным названием.
- *   2. осмысленный пользовательский title → LLM НЕ зовётся, update НЕ вызван.
- *   3. пустой транскрипт → LLM НЕ зовётся, update НЕ вызван.
- *   4. чистка ответа LLM (кавычки/точка/код-фенс) перед сохранением.
- *
- * Мокаем Prisma + LlmRouterService — без сети/DI.
- */
-
 interface BuildOpts {
   title: string | null;
   turns?: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;

@@ -1,14 +1,3 @@
-/**
- * Admin-redesign Фаза 5 — unit-тесты `SystemMessagesAdminService`.
- *
- * Покрываем:
- *   1) list(): фильтры type/isActive работают, сортировка createdAt DESC.
- *   2) create(): создаёт с default isActive=true и пустым targetOrgs.
- *   3) update(): partial; 404 на отсутствующий id.
- *   4) remove(): hard-delete; 404 на отсутствующий id.
- *   5) getActive(): фильтрует isActive и временные границы.
- */
-
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,11 +21,7 @@ interface MsgRow {
 function buildPrisma(state: { rows: MsgRow[] }): PrismaService {
   let nextId = 1;
 
-  const matches = (
-    r: MsgRow,
-    where: Record<string, unknown>,
-    now?: Date,
-  ): boolean => {
+  const matches = (r: MsgRow, where: Record<string, unknown>, now?: Date): boolean => {
     if (where.type !== undefined && r.type !== where.type) return false;
     if (where.isActive !== undefined && r.isActive !== where.isActive) return false;
     if (Array.isArray(where.AND)) {
@@ -63,14 +48,11 @@ function buildPrisma(state: { rows: MsgRow[] }): PrismaService {
     return true;
   };
 
-  const findMany = vi.fn(
-    async (args: { where?: Record<string, unknown>; orderBy?: unknown }) => {
-      const where = args.where ?? {};
-      const filtered = state.rows.filter((r) => matches(r, where));
-      // orderBy createdAt desc
-      return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-    },
-  );
+  const findMany = vi.fn(async (args: { where?: Record<string, unknown>; orderBy?: unknown }) => {
+    const where = args.where ?? {};
+    const filtered = state.rows.filter((r) => matches(r, where));
+    return filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  });
   const findUnique = vi.fn(async ({ where }: { where: { id: string } }) => {
     return state.rows.find((r) => r.id === where.id) ?? null;
   });
@@ -91,13 +73,7 @@ function buildPrisma(state: { rows: MsgRow[] }): PrismaService {
     return row;
   });
   const update = vi.fn(
-    async ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: Partial<MsgRow>;
-    }) => {
+    async ({ where, data }: { where: { id: string }; data: Partial<MsgRow> }) => {
       const r = state.rows.find((x) => x.id === where.id);
       if (!r) throw new Error('not found');
       Object.assign(r, data);
@@ -199,12 +175,9 @@ describe('SystemMessagesAdminService', () => {
     const upd = await svc.update('m-1', { severity: 'critical', isActive: false });
     expect(upd.severity).toBe('critical');
     expect(upd.isActive).toBe(false);
-    // body не менялся
     expect(upd.body).toBe('Привет');
 
-    await expect(svc.update('missing', { body: 'x' })).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.update('missing', { body: 'x' })).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('remove(): hard-delete; 404 на отсутствующий id', async () => {

@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,9 +59,7 @@ describe('TagsService', () => {
     it('лимит достигнут → 409', async () => {
       repo.countByUser.mockResolvedValue(50);
       const svc = make();
-      await expect(svc.create('u1', { name: 'x' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(svc.create('u1', { name: 'x' })).rejects.toBeInstanceOf(ConflictException);
       expect(repo.create).not.toHaveBeenCalled();
     });
 
@@ -76,9 +70,7 @@ describe('TagsService', () => {
       });
       repo.create.mockRejectedValue(err);
       const svc = make();
-      await expect(svc.create('u1', { name: 'dup' })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(svc.create('u1', { name: 'dup' })).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -110,11 +102,11 @@ describe('TagsService', () => {
         ownerId: 'u1',
         deletedAt: null,
       });
-      repo.countByIds.mockResolvedValue(1); // только 1 из 2 валиден
+      repo.countByIds.mockResolvedValue(1);
       const svc = make();
-      await expect(
-        svc.setMeetingTags('m1', 'u1', { tagIds: ['a', 'b'] }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.setMeetingTags('m1', 'u1', { tagIds: ['a', 'b'] })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(repo.setMeetingTags).not.toHaveBeenCalled();
     });
 
@@ -135,9 +127,9 @@ describe('TagsService', () => {
         deletedAt: null,
       });
       const svc = make();
-      await expect(
-        svc.setMeetingTags('m1', 'u1', { tagIds: [] }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.setMeetingTags('m1', 'u1', { tagIds: [] })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });

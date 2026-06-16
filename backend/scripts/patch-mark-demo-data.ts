@@ -1,27 +1,3 @@
-/**
- * audit Б3 (2026-05-29) — backfill `externalSource='demo'` для legacy
- * demo-кабинетов, которые были seed'ены ДО введения поля.
- *
- * Логика:
- *   1. Находим все `Org`, где `demoWorkspaceSeededAt IS NOT NULL`.
- *   2. Для каждой пробегаемся по списку tenant-scoped таблиц с колонкой
- *      `externalSource` и проставляем 'demo', где `externalSource IS NULL`.
- *
- * ВАЖНО: helper `markAllDemoEntitiesForTenant` лежит в backend/src/, но
- * импортировать из bun-скрипта мы можем — Dockerfile копирует src/ в runtime.
- * Используем тот же файл, чтобы список таблиц был один.
- *
- * Идемпотентен:
- *   - повторный запуск не делает ничего (externalSource уже 'demo').
- *   - флаг `--dry-run` — без записи.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-mark-demo-data.ts
- *   docker compose exec backend bun run scripts/patch-mark-demo-data.ts --dry-run
- *
- * Зарегистрирован в `apply-prod-deploy.ts` STEPS (phase: 'patch', skipBootstrap: true).
- */
-
 import { markAllDemoEntitiesForTenant } from '../src/modules/onboarding/demo-data/mark-demo';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -58,14 +34,10 @@ async function main(): Promise<void> {
     }
     const { updated } = await markAllDemoEntitiesForTenant(prisma, org.id);
     totalUpdated += updated;
-    console.log(
-      `[audit Б3 mark-demo-data] org=${org.id} (${org.name}): updated=${updated}`,
-    );
+    console.log(`[audit Б3 mark-demo-data] org=${org.id} (${org.name}): updated=${updated}`);
   }
 
-  console.log(
-    `[audit Б3 mark-demo-data] done. Всего обновлено записей: ${totalUpdated}`,
-  );
+  console.log(`[audit Б3 mark-demo-data] done. Всего обновлено записей: ${totalUpdated}`);
 }
 
 main()

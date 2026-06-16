@@ -1,17 +1,3 @@
-/**
- * MeetingReportsController — Фаза E §7.
- *
- * Endpoints:
- *   GET    /api/v1/meetings/:id/reports
- *   GET    /api/v1/meetings/:id/reports/templates
- *   POST   /api/v1/meetings/:id/reports
- *   GET    /api/v1/meetings/:id/reports/:reportId
- *   POST   /api/v1/meetings/:id/reports/:reportId/regenerate
- *   DELETE /api/v1/meetings/:id/reports/:reportId
- *
- * Auth: CookieAuthGuard. RBAC внутри сервиса (host или Org-Admin).
- */
-
 import {
   Body,
   Controller,
@@ -34,10 +20,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
@@ -98,17 +81,12 @@ export class MeetingReportsController {
     return this.svc.listAvailableTemplates(meetingId, user.id);
   }
 
-  /**
-   * Rate-limit 10/мин на пользователя для защиты от автоматических спам-вызовов;
-   * прикладная логика «не более 10 живых отчётов на встречу» — внутри сервиса.
-   */
   @Post()
   @RequireSubscription()
   @HttpCode(HttpStatus.ACCEPTED)
   @Throttle({ default: { ttl: 60_000, limit: 10 } })
   @ApiOperation({
-    summary:
-      'Создать новый отчёт по выбранному шаблону. Async-генерация в `ai.custom-report`.',
+    summary: 'Создать новый отчёт по выбранному шаблону. Async-генерация в `ai.custom-report`.',
   })
   @ApiAcceptedResponse({ type: CreateReportBodySwagger })
   async create(
@@ -142,7 +120,7 @@ export class MeetingReportsController {
     body: RegenerateReportBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<{ id: string; status: MeetingReportStatusDto }> {
-    void RegenerateReportBodySwagger; // Swagger tree-shake guard.
+    void RegenerateReportBodySwagger;
     return this.svc.regenerate(meetingId, reportId, user.id, body);
   }
 

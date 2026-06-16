@@ -10,27 +10,6 @@ import {
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HmacService } from '../services/hmac.service';
 
-
-/**
- * Guard для Crossmark-интеграционных endpoint'ов.
- *
- * Заголовки:
- *   - `Authorization: Bearer <plainKey>` — сырой ключ интеграции;
- *   - `X-Crossmark-Signature: <hex>`     — HMAC-SHA256 от `${ts}.${rawBody}`;
- *   - `X-Crossmark-Timestamp: <unix_s>`  — Unix-timestamp в секундах;
- *   - `X-Idempotency-Key: <opaque>`      — опционально для не-GET запросов.
- *
- * Поток:
- *   1. Достаём `plainKey`, ищем `IntegrationKey.keyHash = sha256(plain)` (не revoked).
- *   2. Проверяем подпись через `HmacService.verify` на `req.rawBody`.
- *   3. Кладём `req.partner = { id, partnerName }`.
- *   4. Если `X-Idempotency-Key` присутствует и метод не GET:
- *      - запись по ключу есть и hash тела совпадает с сохранённым → отдаём
- *        сохранённый ответ напрямую (короткое замыкание перед контроллером);
- *      - запись есть, но hash тела отличается → `IdempotencyConflictError`;
- *      - записи нет → `req.idempotencyKey = key` для последующего сохранения
- *        в `IdempotencyInterceptor` после успешного ответа.
- */
 @Injectable()
 export class HmacGuard implements CanActivate {
   constructor(
@@ -42,13 +21,11 @@ export class HmacGuard implements CanActivate {
     const request = ctx.switchToHttp().getRequest<Request>();
     const response = ctx.switchToHttp().getResponse<Response>();
 
-    // 1. Сырой ключ из Authorization.
     const plainKey = this.extractBearer(request.headers['authorization']);
     if (!plainKey) {
       throw new IntegrationKeyInvalidError('authorization_missing');
     }
 
-    // 2. Поиск IntegrationKey по hash.
     const keyHash = this.hmac.hashKey(plainKey);
     const integrationKey = await this.prisma.integrationKey.findFirst({
       where: { keyHash, revokedAt: null },
@@ -57,7 +34,6 @@ export class HmacGuard implements CanActivate {
       throw new IntegrationKeyInvalidError('not_found_or_revoked');
     }
 
-    // 3. Проверка подписи на rawBody.
     const rawBody = request.rawBody ?? Buffer.alloc(0);
     const signature = this.headerString(request.headers['x-crossmark-signature']);
     const timestamp = this.headerString(request.headers['x-crossmark-timestamp']);
@@ -75,13 +51,11 @@ export class HmacGuard implements CanActivate {
       throw new IntegrationKeyInvalidError('signature_mismatch');
     }
 
-    // 4. Партнёр на request.
     request.partner = {
       id: integrationKey.id,
       partnerName: integrationKey.partnerName,
     };
 
-    // 5. Idempotency (только для не-GET).
     const idempKey = this.headerString(request.headers['x-idempotency-key']);
     if (idempKey && request.method !== 'GET') {
       const requestHash = this.bodyHash(rawBody);
@@ -92,7 +66,6 @@ export class HmacGuard implements CanActivate {
         if (existing.responseHash !== requestHash) {
           throw new IdempotencyConflictError(idempKey);
         }
-        // Короткое замыкание: возвращаем сохранённый ответ напрямую.
         response.status(existing.httpStatus).json(existing.responseBody);
         return false;
       }

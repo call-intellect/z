@@ -1,24 +1,3 @@
-/**
- * SBA α-9 wave 3 — patch-migrate Mission/Vision/Strategy → CompanyProfile.
- *
- * Логика:
- *   - Для каждой Org с не-null Mission/Vision/Strategy:
- *     - Upsert CompanyProfile с tenantId.
- *     - Если в Mission есть `contentMd` — переносим в `missionJson`
- *       (только если `missionJson` пуст; admin-edited не перезаписываем).
- *     - То же для Vision/Strategy.
- *   - Mission/Vision/Strategy в БД ОСТАЮТСЯ (deprecated, не удаляются).
- *
- * Запуск:
- *   bun run scripts/patch-migrate-mvs-to-company-profile.ts            (dry-run, по умолчанию)
- *   bun run scripts/patch-migrate-mvs-to-company-profile.ts --apply    (реальная миграция)
- *
- * Идемпотентно: повторный запуск ничего не делает, если данные уже мигрированы.
- *
- * NB: безопасный seed-rules — НЕ перезаписываем existing JSON-поля
- * (administrator мог уже отредактировать через UI после первой миграции).
- */
-
 import { PrismaClient, Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { tableExists } from './_lib/schema-guards';
@@ -56,9 +35,6 @@ async function main(): Promise<void> {
     `=== patch-migrate-mvs-to-company-profile START (${APPLY ? 'APPLY' : 'DRY-RUN'}) ===`,
   );
 
-  // Guard: legacy-модели Mission/Vision/Strategy планово удаляются после
-  // переноса в CompanyProfile. Если их таблиц уже нет — обращение к
-  // prisma.mission/vision/strategy упало бы. Выходим чисто.
   const [hasMission, hasVision, hasStrategy] = await Promise.all([
     tableExists(prisma, 'Mission'),
     tableExists(prisma, 'Vision'),
@@ -103,7 +79,6 @@ async function main(): Promise<void> {
           data: { tenantId: org.id },
         });
       } else {
-        // dry-run — представим виртуальный профиль с пустыми JSON.
         profile = {
           id: '(dry-run)',
           tenantId: org.id,
@@ -133,9 +108,7 @@ async function main(): Promise<void> {
         updateData.missionJson = {
           contentMd: mission.contentMd,
           horizon: mission.horizon,
-          ...(mission.targetDate
-            ? { targetDate: mission.targetDate.toISOString() }
-            : {}),
+          ...(mission.targetDate ? { targetDate: mission.targetDate.toISOString() } : {}),
         } satisfies Prisma.InputJsonValue;
         counters.missionsMigrated++;
       }
@@ -146,12 +119,8 @@ async function main(): Promise<void> {
       } else {
         updateData.visionJson = {
           contentMd: vision.contentMd,
-          ...(vision.horizonYears !== null
-            ? { horizonYears: vision.horizonYears }
-            : {}),
-          ...(vision.targetDate
-            ? { targetDate: vision.targetDate.toISOString() }
-            : {}),
+          ...(vision.horizonYears !== null ? { horizonYears: vision.horizonYears } : {}),
+          ...(vision.targetDate ? { targetDate: vision.targetDate.toISOString() } : {}),
         } satisfies Prisma.InputJsonValue;
         counters.visionsMigrated++;
       }
@@ -165,9 +134,7 @@ async function main(): Promise<void> {
           markets: jsonAsStringArray(strategy.markets),
           bets: jsonAsStringArray(strategy.bets),
           horizon: strategy.horizon,
-          ...(strategy.targetDate
-            ? { targetDate: strategy.targetDate.toISOString() }
-            : {}),
+          ...(strategy.targetDate ? { targetDate: strategy.targetDate.toISOString() } : {}),
         } satisfies Prisma.InputJsonValue;
         counters.strategiesMigrated++;
       }

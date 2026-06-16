@@ -1,21 +1,18 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
-
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type AiJobData, QUEUE_NAMES } from '../queues';
 
-/**
- * Worker стадии `ai.notify`.
- *
- * MVP: записываем `MeetingEvent { eventType: 'ai_notified' }`.
- * Никаких email/push — фронт узнаёт через polling.
- *
- * Hook для будущих интеграций (Resend, SES, Telegram).
- */
 @Injectable()
 export class NotifyWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NotifyWorker.name);

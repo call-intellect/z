@@ -13,16 +13,6 @@ import type { ProbePendingProvider } from '../providers/probe.provider';
 
 import { PendingActionsService } from './pending-actions.service';
 
-/**
- * Unit-тесты PendingActionsService (Action Center B0).
- *
- * Покрытие:
- *   - getCount: total = сумма bySource; роль резолвится из Membership;
- *     snoozed-сет передаётся провайдерам по source;
- *   - getList: объединение, сортировка urgent-first → ageDays desc, limit;
- *   - snooze: upsert PendingActionSnooze + валидация hours (1..720).
- */
-
 function item(
   source: PendingActionItem['source'],
   over: Partial<PendingActionItem> = {},
@@ -141,21 +131,18 @@ describe('PendingActionsService (B0)', () => {
     ]);
     await svc.getCount({ tenantId: 't-1', userId: 'u-1' });
 
-    const curationArgs = (curation.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const curationArgs = (curation.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(curationArgs.role).toBe('manager');
     expect([...curationArgs.snoozedResourceIds]).toEqual(['ci-1']);
 
-    const probeArgs = (probe.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const probeArgs = (probe.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect([...probeArgs.snoozedResourceIds]).toEqual(['nt-1']);
   });
 
   it('getCount: не член Org → role=null', async () => {
     membershipFindUnique.mockResolvedValue(null);
     await svc.getCount({ tenantId: 't-1', userId: 'u-x' });
-    const args = (curation.countForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const args = (curation.countForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(args.role).toBeNull();
   });
 
@@ -174,17 +161,13 @@ describe('PendingActionsService (B0)', () => {
       userId: 'u-1',
       limit: 3,
     });
-    // urgent сначала (c[age8], b[age1]), потом normal (a[age10], d[age2]); limit=3
     expect(items.map((i) => i.resourceId)).toEqual(['c', 'b', 'a']);
   });
 
   it('getList: передаёт limit и snoozed-сет провайдерам', async () => {
-    snoozeFindMany.mockResolvedValue([
-      { source: 'intake', resourceId: 'ii-1' },
-    ]);
+    snoozeFindMany.mockResolvedValue([{ source: 'intake', resourceId: 'ii-1' }]);
     await svc.getList({ tenantId: 't-1', userId: 'u-1', limit: 25 });
-    const intakeArgs = (intake.listForUser as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const intakeArgs = (intake.listForUser as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(intakeArgs.limit).toBe(25);
     expect([...intakeArgs.snoozedResourceIds]).toEqual(['ii-1']);
   });
@@ -235,8 +218,6 @@ describe('PendingActionsService (B0)', () => {
     ).rejects.toThrow();
     expect(snoozeUpsert).not.toHaveBeenCalled();
   });
-
-  // ──────────────────── confirm (Ф4 — сквозной резолв) ────────────
 
   it('confirm curation: light pending → decide(approve) вызван', async () => {
     curationItemFindUnique.mockResolvedValue({

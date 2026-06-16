@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -15,21 +10,9 @@ import type {
   UpdateDecisionPointBody,
 } from '../dto/processes.dto';
 
-/**
- * SBA α-7 wave 2 — DecisionPointService.
- *
- * CRUD для `DecisionPoint`. DecisionPoint всегда привязан к
- * `ProcessTemplate.id` (а не к конкретной версии — версия — это snapshot
- * definition'а; DecisionPoint живёт «поверх» template'а и видим всем версиям).
- * См. §3.3 sub-TZ.
- *
- * Не бросает на «нет данных» — отдаёт пустой список.
- */
 @Injectable()
 export class DecisionPointService {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async list(args: {
     tenantId: string;
@@ -40,9 +23,6 @@ export class DecisionPointService {
       tenantId: args.tenantId,
     };
     if (q.templateId) where.templateId = q.templateId;
-    // templateVersionId — в текущей schema DecisionPoint живёт на templateId,
-    // не на versionId (см. §3.3). Параметр оставлен для будущего расширения;
-    // на α-7 wave 2 — игнорируем без ошибки.
     void q.templateVersionId;
 
     const skip = (q.page - 1) * q.limit;
@@ -66,7 +46,6 @@ export class DecisionPointService {
     tenantId: string;
     body: CreateDecisionPointBody;
   }): Promise<DecisionPointDto> {
-    // Проверяем, что template принадлежит этому tenant'у.
     const t = await this.prisma.processTemplate.findFirst({
       where: { id: args.body.templateId, tenantId: args.tenantId },
       select: { id: true },
@@ -107,8 +86,7 @@ export class DecisionPointService {
 
     const data: Prisma.DecisionPointUpdateInput = {};
     if (args.body.name !== undefined) data.name = args.body.name;
-    if (args.body.condition !== undefined)
-      data.condition = args.body.condition ?? null;
+    if (args.body.condition !== undefined) data.condition = args.body.condition ?? null;
     if (args.body.branches !== undefined)
       data.branchesJson = args.body.branches as unknown as Prisma.InputJsonValue;
     if (args.body.decidedByRoleId !== undefined) {
@@ -134,8 +112,6 @@ export class DecisionPointService {
     await this.prisma.decisionPoint.delete({ where: { id: args.id } });
     return { ok: true };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private toDto(dp: {
     id: string;

@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -43,22 +40,6 @@ import {
 } from './dto/ideas.dto';
 import { IdeasService } from './services/ideas.service';
 
-/**
- * REST API SBA β-5 — Ideas Collector.
- *
- *   GET  /api/v1/ideas                        — список идей (фильтры).
- *   GET  /api/v1/ideas/:id                    — детали идеи.
- *   GET  /api/v1/me/ideas                     — мои идеи (author|supporter).
- *   POST /api/v1/ideas/:id/status             — изменить статус (owner/admin/curator).
- *   POST /api/v1/ideas/:id/support            — поддержать идею (member).
- *   POST /api/v1/me/ideas/:id/withdraw        — отозвать свою идею (автор).
- *   GET  /api/v1/idea-clusters                — список кластеров.
- *   GET  /api/v1/idea-clusters/:id            — детали кластера.
- *
- * RBAC: `idea` ResourceType. Read — все member'ы Org. Write status —
- * owner/admin. Support — любой member. Withdraw — только автор (проверка в
- * сервисе).
- */
 @ApiTags('ideas')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -67,8 +48,6 @@ export class IdeasController {
     @Inject(IdeasService) private readonly svc: IdeasService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ────────────── Idea: list / detail ──────────────
 
   @Get('ideas')
   @ApiOperation({ summary: 'Список идей (с фильтрами)' })
@@ -84,8 +63,7 @@ export class IdeasController {
 
   @Get('ideas/top')
   @ApiOperation({
-    summary:
-      'TZ-1 Ф4.A — топ идей (ре-ранк weight+свежесть+цель). Доступ owner/admin/coo.',
+    summary: 'TZ-1 Ф4.A — топ идей (ре-ранк weight+свежесть+цель). Доступ owner/admin/coo.',
   })
   async top(
     @Query(new ZodValidationPipe(TopIdeasQuerySchema)) q: TopIdeasQuery,
@@ -109,8 +87,6 @@ export class IdeasController {
     return this.svc.getById({ tenantId: t, id });
   }
 
-  // ────────────── Me ──────────────
-
   @Get('me/ideas')
   @ApiOperation({ summary: 'Мои идеи (author | supporter)' })
   async myIdeas(
@@ -132,8 +108,6 @@ export class IdeasController {
     const t = this.requireTenant(tenantId);
     return this.svc.withdraw({ tenantId: t, id, userId: user.id });
   }
-
-  // ────────────── Actions ──────────────
 
   @Post('ideas/:id/status')
   @ApiOperation({ summary: 'Изменить статус идеи (owner / admin)' })
@@ -182,8 +156,6 @@ export class IdeasController {
     return this.svc.support({ tenantId: t, id, userId: user.id });
   }
 
-  // ────────────── Clusters ──────────────
-
   @Get('idea-clusters')
   @ApiOperation({ summary: 'Список кластеров идей' })
   async listClusters(
@@ -208,8 +180,6 @@ export class IdeasController {
     await this.requireRead(user.id, t);
     return this.svc.getClusterById({ tenantId: t, id });
   }
-
-  // ────────────── Helpers ──────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -247,15 +217,7 @@ export class IdeasController {
     }
   }
 
-  /**
-   * TZ-1 Ф4.A — доступ к ленте идей (`GET /ideas/top`): owner/admin/coo
-   * (+ super_admin). Переиспользуем `canViewOperationsDashboard` — та же роль,
-   * что и для COO-дашборда (лента идей — управленческий виджет, не общий read).
-   */
-  private async requireFeedAccess(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireFeedAccess(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canViewOperationsDashboard(userId, tenantId);
     if (!ok) {
       throw new ForbiddenException({

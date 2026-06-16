@@ -5,10 +5,7 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
@@ -18,32 +15,6 @@ interface ExtractedStatus {
   blockerText?: string | null;
 }
 
-/**
- * SBA β-8.2 — CommitmentResponseHandler.
- *
- * Слушает `notification.responded`, отфильтровывает только ответы на
- * followup-probe от Хранителя обещаний:
- *   - `eventType='probe.question'`,
- *   - в payload оригинального Notification `metaJson.reason='commitment.followup'`
- *     (или поле `reason='commitment.followup'`, payload Хранителя обещаний
- *     кладёт его сразу).
- *
- * Алгоритм:
- *   1. Найти исходный Notification — достать reason и `contextBlockId`
- *      исходного commitment-блока.
- *   2. Извлечь rawText из ответа.
- *   3. LLM `commitment-extract-status` → `{status, rationale, blockerText?}`.
- *      Best-effort: при отказе — пропускаем (статус не меняется, cron
- *      попробует ещё раз).
- *   4. Создать новый IdeaBlock с `signalType='commitment_status'`,
- *      `commitmentStatus=status`, evidence — Notification.id.
- *   5. Создать IdeaBlockLink(type='resolves', from=новый, to=исходный).
- *   6. Обновить `commitmentStatus` исходного блока (=fulfilled|missed).
- *   7. Если missed + blockerText → дополнительный IdeaBlock signalType='blocker'.
- *
- * Никаких throw'ов — handler best-effort, чтобы не ломать
- * respond-to-probe pipeline.
- */
 @Injectable()
 export class CommitmentResponseHandler {
   private readonly logger = new Logger(CommitmentResponseHandler.name);
@@ -54,23 +25,11 @@ export class CommitmentResponseHandler {
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
-    /**
-     * E2 (мастер-ТЗ Волна 1, Кластер A) — нужен только для kill-switch
-     * анти-инъекционной обёртки (`promptInjectionGuardEnabled`). `@Optional()`
-     * + дефолт null — существующие unit-тесты конструируют handler без него.
-     * Default при отсутствии cfg — guard ON.
-     */
     @Optional()
     @Inject(TypedConfigService)
     private readonly config: TypedConfigService | null = null,
   ) {}
 
-  /**
-   * E2 — мастер-флаг защиты от prompt-injection. Ответ сотрудника на
-   * followup-probe — свободный текст, инъекция в котором может ложно
-   * объявить обещание выполненным. Поэтому он обязан идти в LLM обёрнутым
-   * в маркеры данных. Default — true; при отсутствии cfg тоже true.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.config?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -89,7 +48,6 @@ export class CommitmentResponseHandler {
     contextBlockId?: string | null;
   }): Promise<void> {
     try {
-      // Фильтр: только probe.question + reason=commitment.followup.
       if (event.eventType !== 'probe.question') return;
 
       const notif = await this.prisma.notification.findUnique({
@@ -113,7 +71,8 @@ export class CommitmentResponseHandler {
         (event.contextBlockId ??
           (typeof origPayload.contextBlockId === 'string'
             ? (origPayload.contextBlockId as string)
-            : null)) || null;
+            : null)) ||
+        null;
       if (!contextBlockId) {
         this.metrics?.incCommitmentsExtractFailed({
           tenantTop: resolveOperationsTenantTop(event.tenantId),
@@ -149,13 +108,9 @@ export class CommitmentResponseHandler {
         });
         return;
       }
-      // Если уже терминальный (fulfilled/missed/cancelled) — пропускаем
-      // (повторный ответ не должен переписывать историю).
       if (
         original.commitmentStatus &&
-        ['fulfilled', 'missed', 'cancelled', 'superseded'].includes(
-          original.commitmentStatus,
-        )
+        ['fulfilled', 'missed', 'cancelled', 'superseded'].includes(original.commitmentStatus)
       ) {
         return;
       }
@@ -167,11 +122,9 @@ export class CommitmentResponseHandler {
         trustedAnswer: original.trustedAnswer,
       });
       if (!parsed) {
-        // extractStatus уже инкрементил метрику.
         return;
       }
 
-      // Создаём commitment_status блок + связь resolves + обновляем исходный.
       const tenantTop = resolveOperationsTenantTop(event.tenantId);
       await this.prisma.$transaction(async (tx) => {
         const statusBlock = await tx.ideaBlock.create({
@@ -201,18 +154,13 @@ export class CommitmentResponseHandler {
               toBlockId: original.id,
               relationType: 'resolves',
               confidence: new Prisma.Decimal('0.900'),
-              explanation:
-                'Ответ сотрудника на followup-probe Хранителя обещаний.',
+              explanation: 'Ответ сотрудника на followup-probe Хранителя обещаний.',
               createdBy: 'linker',
               status: 'active',
             },
           })
           .catch((err) => {
-            // Уникальность (from, to, type) — игнорируем повторы.
-            if (
-              err instanceof Prisma.PrismaClientKnownRequestError &&
-              err.code === 'P2002'
-            ) {
+            if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
               return;
             }
             throw err;
@@ -224,7 +172,6 @@ export class CommitmentResponseHandler {
           },
         });
 
-        // Missed + blocker → дополнительный сигнал в общий поток.
         if (parsed.status === 'missed' && parsed.blockerText) {
           await tx.ideaBlock.create({
             data: {
@@ -295,14 +242,8 @@ export class CommitmentResponseHandler {
       args.rawText.slice(0, 2_000),
     ].join('\n');
 
-    // E2 (мастер-ТЗ Волна 1, Кластер A) — анти-инъекционная обёртка. Свободный
-    // ответ сотрудника оборачиваем в маркеры данных, system дополняем
-    // INJECTION_GUARD_NOTE, чтобы инъекция не подменила статус обещания.
-    // Только обёртка — статус 'unclear' это отдельная волна.
     const guardOn = this.isPromptInjectionGuardEnabled();
-    const guardedSystem = guardOn
-      ? withInjectionGuard(systemPrompt)
-      : systemPrompt;
+    const guardedSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
     const userMessage = guardOn ? wrapUserData(rawUserMessage) : rawUserMessage;
 
     let text: string;
@@ -335,10 +276,7 @@ export class CommitmentResponseHandler {
     return this.parseExtractedJson(text, args.tenantId);
   }
 
-  private parseExtractedJson(
-    text: string,
-    tenantId: string,
-  ): ExtractedStatus | null {
+  private parseExtractedJson(text: string, tenantId: string): ExtractedStatus | null {
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
@@ -369,8 +307,7 @@ export class CommitmentResponseHandler {
       return null;
     }
     const obj = parsed as Record<string, unknown>;
-    const status =
-      obj.status === 'fulfilled' || obj.status === 'missed' ? obj.status : null;
+    const status = obj.status === 'fulfilled' || obj.status === 'missed' ? obj.status : null;
     if (!status) {
       this.metrics?.incCommitmentsExtractFailed({
         tenantTop: resolveOperationsTenantTop(tenantId),

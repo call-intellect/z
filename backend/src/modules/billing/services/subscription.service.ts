@@ -1,25 +1,6 @@
-/**
- * SubscriptionService — CRUD + FSM-переходы подписки.
- *
- * Главные правила (ТЗ §7 + §14):
- *   - Никаких прямых `prisma.subscription.update({status: ...})` в проекте.
- *     Любая смена `status` идёт через `transition()` — он проверяет FSM и
- *     пишет `SubscriptionEvent`.
- *   - События в `EventEmitter2` отправляются fire-and-forget ПОСЛЕ
- *     транзакции — если эмит упал, БД-операция уже зафиксирована.
- *   - `forceStatus()` — обход FSM для super_admin'а (с обязательным reason).
- *     Записывает eventType='status_forced' для аудита.
- *
- * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.1.
- */
-
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import {
-  Prisma,
-  type Subscription,
-  type SubscriptionStatus,
-} from '@prisma/client';
+import { Prisma, type Subscription, type SubscriptionStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { SubscriptionEventType } from '../billing.types';
@@ -32,22 +13,11 @@ import {
 import { assertCanTransition } from './subscription-fsm';
 
 export interface TransitionOptions {
-  /** Новый статус. */
   to: SubscriptionStatus;
-  /** Кто инициировал (admin/system). NULL для cron. */
   byUserId?: string | null;
-  /** Обязательно для админских действий. */
   reason?: string | null;
-  /** Произвольные данные для `SubscriptionEvent.payload`. */
   payload?: Prisma.JsonObject;
-  /**
-   * Принудительный переход (обход FSM). Использовать только из админ-эндпоинта
-   * `force-status` (требует super_admin + reason).
-   */
   force?: boolean;
-  /**
-   * Внешняя prisma-транзакция. Если не передана, сервис делает свою.
-   */
   tx?: Prisma.TransactionClient;
 }
 
@@ -60,12 +30,10 @@ export class SubscriptionService {
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
   ) {}
 
-  /** Получить подписку Org. NULL если у Org ещё нет записи Subscription. */
   async getByTenant(tenantId: string): Promise<Subscription | null> {
     return this.prisma.subscription.findUnique({ where: { tenantId } });
   }
 
-  /** Найти или бросить 404. */
   async getByTenantOrFail(tenantId: string): Promise<Subscription> {
     const sub = await this.getByTenant(tenantId);
     if (!sub) {
@@ -74,16 +42,7 @@ export class SubscriptionService {
     return sub;
   }
 
-  /**
-   * Создаёт начальную запись Subscription со status=DEMO для свежей Org.
-   * Идемпотентно: если запись уже есть — возвращает её без вторичной записи.
-   * Принимает опциональный `tx`, чтобы вписаться в транзакцию вызывающего
-   * (например, OrgsService.createForOwner внутри AccountsService.register).
-   */
-  async ensureDemo(
-    tenantId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<Subscription> {
+  async ensureDemo(tenantId: string, tx?: Prisma.TransactionClient): Promise<Subscription> {
     const client = tx ?? this.prisma;
     const existing = await client.subscription.findUnique({
       where: { tenantId },
@@ -93,8 +52,6 @@ export class SubscriptionService {
     const created = await client.subscription.create({
       data: { tenantId },
     });
-    // Пишем событие 'created' (без эмита EventEmitter — это создание, не
-    // активация). Реф-комиссия не триггерится.
     await client.subscriptionEvent.create({
       data: {
         subscriptionId: created.id,
@@ -105,19 +62,9 @@ export class SubscriptionService {
     return created;
   }
 
-  /**
-   * Переход статуса с обязательной FSM-валидацией.
-   *
-   * Эмитит соответствующее BillingEvent после успешной записи. НЕ ставит
-   * `currentPeriodStart`/`End` — это ответственность вызывающего сервиса
-   * (ManualBillingService / RecurringChargeCron). Принимает явный
-   * `payload.dataPatch` для одновременного update полей (период, seatsExtra,
-   * autoRenew и т.п.) — атомарно с FSM-переходом.
-   */
   async transition(
     tenantId: string,
     options: TransitionOptions & {
-      /** Дополнительные поля для update (period, seats, autoRenew, ...). */
       dataPatch?: Prisma.SubscriptionUncheckedUpdateInput;
     },
   ): Promise<Subscription> {
@@ -127,7 +74,6 @@ export class SubscriptionService {
       throw new NotFoundException(`Подписка для tenantId=${tenantId} не найдена`);
     }
 
-    // FSM check (skip только для force).
     if (!options.force) {
       assertCanTransition(current.status, options.to);
     }
@@ -160,11 +106,6 @@ export class SubscriptionService {
       },
     });
 
-    // Fire-and-forget эмит соответствующих BillingEvent (не блокируем основной поток).
-    // audit С7 (2026-05-29): защитный try/catch — если когда-то emitForTransition
-    // получит sync-логику (resolve subscription / cache / metrics), ошибка не
-    // должна откатывать tx, но обязана попасть в лог. До С7 синхронные
-    // ошибки молча терялись из-за `void`.
     try {
       this.emitForTransition(updated, current.status, options.to);
     } catch (err) {
@@ -178,13 +119,6 @@ export class SubscriptionService {
     return updated;
   }
 
-  /**
-   * Установить число доп. мест. Идёт через transition() со status=ACTIVE
-   * (от текущего ACTIVE → ACTIVE — same-status, FSM не сработает; но
-   * мы хотим записать SubscriptionEvent SEATS_CHANGED).
-   *
-   * Если запись seatsExtra совпадает — no-op (не пишем событие).
-   */
   async setSeatsExtra(args: {
     tenantId: string;
     newSeatsExtra: number;
@@ -225,18 +159,9 @@ export class SubscriptionService {
     return updated;
   }
 
-  // ──────────────────────── private ────────────────────────
-
-  private statusToEventType(
-    to: SubscriptionStatus,
-    _from: SubscriptionStatus,
-  ): string {
+  private statusToEventType(to: SubscriptionStatus, _from: SubscriptionStatus): string {
     switch (to) {
       case 'ACTIVE':
-        // Различие paid/bonus определяется в ManualBillingService — там
-        // используется отдельный transition с payload.paymentMode и
-        // конкретный SubscriptionEventType (ACTIVATED_PAID/BONUS).
-        // Для прямого вызова transition с to=ACTIVE считаем как RENEWED.
         return SubscriptionEventType.RENEWED;
       case 'PAST_DUE':
         return SubscriptionEventType.PAST_DUE;
@@ -269,7 +194,6 @@ export class SubscriptionService {
         subscriptionId: sub.id,
       });
     }
-    // ACTIVE-эмиты идут из ManualBillingService (там есть paymentMode/период).
   }
 
   private async safeEmit(eventName: string, payload: unknown): Promise<void> {

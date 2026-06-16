@@ -5,15 +5,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * SBA α-5 — Cron auto-archive диалогов chat-v2.
- *
- * Раз в неделю (по умолчанию вс 03:00 — `CHAT_V2_CLEANUP_CRON`) проходит
- * по всем active-диалогам с `updatedAt < now - TTL дней` (default 90),
- * `pinnedAt IS NULL` и переводит в `status='archived'`. Не удаляет физически.
- *
- * Pinned диалоги исключаются — пользователь явно сказал «храню».
- */
 @Injectable()
 export class ChatV2CleanupCron {
   private readonly logger = new Logger(ChatV2CleanupCron.name);
@@ -25,8 +16,6 @@ export class ChatV2CleanupCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // NB: ScheduleModule.Cron не поддерживает динамическое имя из ENV
-  // напрямую — на α-5 захардкодим default. Изменение требует рестарта.
   @Cron('0 3 * * 0', { name: 'chat-v2-cleanup' })
   async runCleanup(): Promise<void> {
     const ttlDays = this.cfg.chatV2.conversationTtlDays;

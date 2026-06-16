@@ -51,10 +51,7 @@ export class AdminOrgsController {
   }
 
   @Patch(':id')
-  update(
-    @Param('id') id: string,
-    @Body(new ZodValidationPipe(UpdateOrgSchema)) dto: UpdateOrgDto,
-  ) {
+  update(@Param('id') id: string, @Body(new ZodValidationPipe(UpdateOrgSchema)) dto: UpdateOrgDto) {
     return this.svc.updateOrg(id, {
       ...(dto.tier !== undefined ? { tier: dto.tier } : {}),
       ...(dto.freeze !== undefined ? { freeze: dto.freeze } : {}),
@@ -65,9 +62,6 @@ export class AdminOrgsController {
   remove(@Param('id') id: string) {
     return this.svc.deleteOrg(id);
   }
-
-  // ─────────────────────────── Admin-redesign Фаза 4 ──────────────────────
-  // Вкладки `/admin/orgs/[id]`: overview / members / sources / audit.
 
   @Get(':id/overview')
   overview(@Param('id') id: string) {

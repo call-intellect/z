@@ -1,80 +1,50 @@
-'use client';
+"use client";
 
-/**
- * AdminDashboardClient — главный дашборд `/admin` (admin-redesign Фаза 1).
- *
- * Структура:
- *   - `AdminSection` (заголовок + period-селектор).
- *   - KPI tiles (4 в строку на десктопе, стопка на мобиле).
- *   - Sparkline-карточки за 30 дней (Расход / Вызовы / Fail rate).
- *     Бэкенд-эндпоинт `period=30d` — Фаза 2 расширит admin-usage API.
- *     Пока используем mock-данные с TODO в коде.
- *   - Расход по провайдерам (как было).
- *   - Топ функций по расходу + CSV-экспорт.
- *   - Топ организаций + CSV-экспорт.
- *
- * Унификация period-селектора: «сутки / неделя / месяц / 30 дней».
- */
-
-import { useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   ArrowRight,
   Building2,
   Users as UsersIcon,
-} from 'lucide-react';
-import {
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-} from 'recharts';
+} from "lucide-react";
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
-import { adminUsageApi } from '@/api/admin-usage.api';
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   adminDashboardFromApi,
   formatUsd,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { taskTypeLabel } from '@/domain/admin-experiment';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+} from "@/domain/admin-usage";
+import { taskTypeLabel } from "@/domain/admin-experiment";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from './AdminStateViews';
-import { useAdminQuery } from './useAdminQuery';
+} from "./AdminStateViews";
+import { useAdminQuery } from "./useAdminQuery";
 
-// Унифицированная ось периода (на русском).
 const PERIODS: Array<{ value: AdminPeriod; label: string }> = [
-  { value: 'day', label: 'Сутки' },
-  { value: 'week', label: 'Неделя' },
-  { value: 'month', label: 'Месяц' },
-  // 30 дней — отдельный кейс. Эндпоинт пока шлёт period=month, но в UI
-  // показываем как «30 дней» — это совпадает с горизонтом sparkline.
+  { value: "day", label: "Сутки" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
 ];
 
 export function AdminDashboardClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
 
   const q = useAdminQuery(
     `admin-dashboard:${period}`,
@@ -124,12 +94,8 @@ function DashboardContent({
 }: {
   data: ReturnType<typeof adminDashboardFromApi>;
 }) {
-  // TODO (Фаза 2): расширить admin-usage API под period=30d
-  // (`GET /api/v1/admin/usage/series?metric=cost|calls|failRate&period=30d`).
-  // Пока — стабильный mock на основе totals, чтобы дашборд не падал.
   const series30d = useMemo(() => buildMockSeries(data.totals), [data.totals]);
 
-  // Колонки для CSV-экспорта топа функций.
   const functionsCsvRows = useMemo(
     () =>
       data.byTaskType.map((t) => ({
@@ -153,18 +119,18 @@ function DashboardContent({
 
   return (
     <div className="space-y-6">
-      {/* KPI tiles */}
+      {}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiTile
           title="Расход за период"
           value={formatUsd(data.totals.totalCostUsd)}
-          subtitle={`${data.totals.totalCalls.toLocaleString('ru-RU')} вызовов`}
+          subtitle={`${data.totals.totalCalls.toLocaleString("ru-RU")} вызовов`}
         />
         <KpiTile
           title="Доля ошибок"
           value={`${(data.totals.failRate * 100).toFixed(1)}%`}
-          subtitle={`${data.totals.failedCalls.toLocaleString('ru-RU')} неудач`}
-          tone={data.totals.failRate > 0.05 ? 'warning' : 'default'}
+          subtitle={`${data.totals.failedCalls.toLocaleString("ru-RU")} неудач`}
+          tone={data.totals.failRate > 0.05 ? "warning" : "default"}
         />
         {data.counts ? (
           <>
@@ -184,7 +150,7 @@ function DashboardContent({
         ) : null}
       </div>
 
-      {/* Sparkline-карточки за 30 дней */}
+      {}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SparkCard
           title="Расход за 30 дней"
@@ -195,10 +161,10 @@ function DashboardContent({
         />
         <SparkCard
           title="Вызовы за 30 дней"
-          value={data.totals.totalCalls.toLocaleString('ru-RU')}
+          value={data.totals.totalCalls.toLocaleString("ru-RU")}
           data={series30d.calls}
           color="var(--success, #10b981)"
-          formatValue={(v) => Math.round(v).toLocaleString('ru-RU')}
+          formatValue={(v) => Math.round(v).toLocaleString("ru-RU")}
         />
         <SparkCard
           title="Доля ошибок за 30 дней"
@@ -209,7 +175,7 @@ function DashboardContent({
         />
       </div>
 
-      {/* By provider */}
+      {}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Расход по провайдерам</CardTitle>
@@ -229,7 +195,7 @@ function DashboardContent({
                 >
                   <span className="font-mono text-xs">{p.provider}</span>
                   <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{p.calls.toLocaleString('ru-RU')} вызовов</span>
+                    <span>{p.calls.toLocaleString("ru-RU")} вызовов</span>
                     <span className="font-medium text-fg-primary">
                       {formatUsd(p.costUsd)}
                     </span>
@@ -241,7 +207,7 @@ function DashboardContent({
         </CardContent>
       </Card>
 
-      {/* By taskType */}
+      {}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle className="text-base">Топ функций по расходу</CardTitle>
@@ -249,12 +215,12 @@ function DashboardContent({
             <AdminCsvDownloadButton
               rows={functionsCsvRows}
               columns={[
-                { key: 'taskType', label: 'taskType' },
-                { key: 'label', label: 'Название' },
-                { key: 'calls', label: 'Вызовы' },
+                { key: "taskType", label: "taskType" },
+                { key: "label", label: "Название" },
+                { key: "calls", label: "Вызовы" },
                 {
-                  key: 'costUsd',
-                  label: 'Расход, USD',
+                  key: "costUsd",
+                  label: "Расход, USD",
                   format: (v) => Number(v).toFixed(4),
                 },
               ]}
@@ -290,7 +256,7 @@ function DashboardContent({
                     </span>
                   </Link>
                   <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{t.calls.toLocaleString('ru-RU')}</span>
+                    <span>{t.calls.toLocaleString("ru-RU")}</span>
                     <span className="font-medium text-fg-primary">
                       {formatUsd(t.costUsd)}
                     </span>
@@ -302,7 +268,7 @@ function DashboardContent({
         </CardContent>
       </Card>
 
-      {/* Top orgs (только для global) */}
+      {}
       {data.topOrgs.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -313,12 +279,12 @@ function DashboardContent({
               <AdminCsvDownloadButton
                 rows={orgsCsvRows}
                 columns={[
-                  { key: 'tenantId', label: 'tenantId' },
-                  { key: 'name', label: 'Название' },
-                  { key: 'calls', label: 'Вызовы' },
+                  { key: "tenantId", label: "tenantId" },
+                  { key: "name", label: "Название" },
+                  { key: "calls", label: "Вызовы" },
                   {
-                    key: 'costUsd',
-                    label: 'Расход, USD',
+                    key: "costUsd",
+                    label: "Расход, USD",
                     format: (v) => Number(v).toFixed(4),
                   },
                 ]}
@@ -340,7 +306,7 @@ function DashboardContent({
                 >
                   <span>{o.name}</span>
                   <div className="flex items-center gap-4 text-fg-tertiary">
-                    <span>{o.calls.toLocaleString('ru-RU')}</span>
+                    <span>{o.calls.toLocaleString("ru-RU")}</span>
                     <span className="font-medium text-fg-primary">
                       {formatUsd(o.costUsd)}
                     </span>
@@ -360,20 +326,17 @@ function DashboardContent({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// KPI tile
-
 function KpiTile({
   title,
   value,
   subtitle,
-  tone = 'default',
+  tone = "default",
   icon,
 }: {
   title: string;
   value: string;
   subtitle?: string;
-  tone?: 'default' | 'warning';
+  tone?: "default" | "warning";
   icon?: React.ReactNode;
 }) {
   return (
@@ -385,7 +348,7 @@ function KpiTile({
         </div>
         <div
           className={`text-2xl font-semibold ${
-            tone === 'warning' ? 'text-warning' : ''
+            tone === "warning" ? "text-warning" : ""
           }`}
         >
           {value}
@@ -397,9 +360,6 @@ function KpiTile({
     </Card>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// SparkCard
 
 type SeriesPoint = { day: string; value: number };
 
@@ -432,14 +392,14 @@ function SparkCard({
               <XAxis dataKey="day" hide />
               <Tooltip
                 formatter={(value) => {
-                  const n = typeof value === 'number' ? value : Number(value);
-                  return [Number.isFinite(n) ? formatValue(n) : '—', ''];
+                  const n = typeof value === "number" ? value : Number(value);
+                  return [Number.isFinite(n) ? formatValue(n) : "—", ""];
                 }}
                 labelFormatter={(label) => `День ${String(label)}`}
                 contentStyle={{
                   fontSize: 11,
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border-subtle)',
+                  background: "var(--bg-card)",
+                  border: "1px solid var(--border-subtle)",
                   borderRadius: 6,
                 }}
               />
@@ -459,9 +419,6 @@ function SparkCard({
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Mock-серии для sparkline (Фаза 2 заменит на реальный endpoint).
-
 function buildMockSeries(totals: {
   totalCostUsd: number;
   totalCalls: number;
@@ -471,9 +428,10 @@ function buildMockSeries(totals: {
   calls: SeriesPoint[];
   failRate: SeriesPoint[];
 } {
-  // Детерминированный псевдо-рандом на основе суммарных метрик —
-  // чтобы график не «дёргался» между ре-рендерами.
-  const seed = Math.max(1, Math.floor(totals.totalCalls + totals.totalCostUsd * 100));
+  const seed = Math.max(
+    1,
+    Math.floor(totals.totalCalls + totals.totalCostUsd * 100),
+  );
   const cost: SeriesPoint[] = [];
   const calls: SeriesPoint[] = [];
   const failRate: SeriesPoint[] = [];
@@ -493,7 +451,6 @@ function buildMockSeries(totals: {
 }
 
 function pseudoRandom(n: number): number {
-  // Простейший LCG, достаточно для визуала. 0..1.
   const x = Math.sin(n * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 }

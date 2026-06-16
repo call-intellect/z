@@ -1,27 +1,11 @@
-/**
- * Controller-spec для EntitlementsController (Phase F.4).
- *
- * Покрытие:
- *   - GET /me/entitlements — happy: возвращает features+quotas без notes.
- *   - GET /settings/billing — owner: возвращает с notes; не-owner → Forbidden.
- *   - GET /admin/orgs/:tenantId/entitlement — happy для super_admin.
- *   - PATCH /admin/orgs/:tenantId/entitlement — применение tier/overrides/notes,
- *     передача reason в audit.
- *   - BadRequest на пустой tenantId.
- *   - Zod-400 на невалидное тело.
- */
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import type { RbacService } from '../rbac/rbac.service';
 
 import { PatchEntitlementSchema } from './dto/entitlement.dto';
-import type {
-  EntitlementService,
-  ResolvedEntitlement,
-} from './entitlement.service';
+import type { EntitlementService, ResolvedEntitlement } from './entitlement.service';
 import { EntitlementsController } from './entitlements.controller';
 
 const userOwner: CurrentUserPayload = {
@@ -69,9 +53,7 @@ describe('EntitlementsController', () => {
 
     it('BadRequest если tenantId не определён', async () => {
       const { ctrl } = build();
-      await expect(ctrl.meEntitlements(undefined)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(ctrl.meEntitlements(undefined)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 
@@ -84,9 +66,9 @@ describe('EntitlementsController', () => {
 
     it('Forbidden для не-owner', async () => {
       const { ctrl } = build({ canManage: false });
-      await expect(
-        ctrl.settingsBilling(userOwner, 't-1'),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(ctrl.settingsBilling(userOwner, 't-1')).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
     });
   });
 
@@ -161,10 +143,7 @@ describe('EntitlementsController', () => {
         reason: 'manual note',
       });
       await ctrl.adminPatch('t-1', body, userOwner);
-      expect(svc.setNotes).toHaveBeenCalledWith(
-        't-1',
-        'enterprise customer, custom contract',
-      );
+      expect(svc.setNotes).toHaveBeenCalledWith('t-1', 'enterprise customer, custom contract');
     });
 
     it('BadRequest на пустой tenantId', async () => {
@@ -173,9 +152,9 @@ describe('EntitlementsController', () => {
         tier: 'tier_pro',
         reason: 'r',
       });
-      await expect(
-        ctrl.adminPatch('', body, userOwner),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(ctrl.adminPatch('', body, userOwner)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
 

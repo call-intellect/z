@@ -1,29 +1,3 @@
-/**
- * Agents v2 — Seed маршрутов LLM для новых taskType'ов зонтика
- * `plans/tz/2026-05-29-agents-v2-umbrella.md`.
- *
- * Фаза 0.1 (2026-05-30): только один taskType — `probe-response-classify`.
- * В следующих волнах сюда же добавятся остальные agents-v2 taskType'ы.
- *
- *   - probe-response-classify — лёгкий классификатор свободного ответа
- *     человека на probe-вопрос (текст или голос после ASR). Извлекает
- *     {answer, confidence, requiresFollowup}. JSON Schema strict.
- *     Сложность — дешёвая, поэтому primary = deepseek-v4-flash.
- *
- * Источник цепочек: docs/reference/llm-models-playbook.md §2.1 + verified-
- * карта second-brain/01_projects/llm-providers-verified.md (smoke 2026-05-21)
- * + правило feedback `Ollama qwen3.5:9b — только tertiary fallback`.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-agents-v2.ts
- *   bun run scripts/seed-llm-task-routes-agents-v2.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true — не перезаписываем.
- *   - Без флага — пропускаем existing.
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -39,11 +13,6 @@ interface TaskRouteSeed {
   taskType: string;
   playbookSection: string;
   chain: TierEntry[];
-  /**
-   * Закрепление версии модели на тестовый период. Текстовая заметка,
-   * видимая супер-админу на /admin/llm-routes. Сохраняется на всех
-   * записях одного taskType (для всех tier'ов одинаково).
-   */
   pinnedVersionNote?: string;
 }
 
@@ -63,10 +32,6 @@ const SEEDS: TaskRouteSeed[] = [
     ],
     pinnedVersionNote: 'Закреплено 2026-05-30 для Agents v2 Фаза 0.1',
   },
-  // ── Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate ─────────────
-  // Зонтичный taskType (используется для бюджетной аналитики и smoke-теста).
-  // Реальные LLM-вызовы делает `MultiAgentDebateService` через три
-  // stance-specific taskType ниже, каждый со своим primary провайдером.
   {
     taskType: 'debate-decision-supersede',
     playbookSection:
@@ -110,7 +75,8 @@ const SEEDS: TaskRouteSeed[] = [
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
     ],
-    pinnedVersionNote: 'Закреплено 2026-05-30 для Multi-Agent Debate Фаза A2 (empathetic-supporter)',
+    pinnedVersionNote:
+      'Закреплено 2026-05-30 для Multi-Agent Debate Фаза A2 (empathetic-supporter)',
   },
   {
     taskType: 'debate-decision-supersede-neutral',
@@ -127,18 +93,10 @@ const SEEDS: TaskRouteSeed[] = [
     ],
     pinnedVersionNote: 'Закреплено 2026-05-30 для Multi-Agent Debate Фаза A2 (neutral-judge)',
   },
-  // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract (shadow) ────
-  // Сложная задача: извлечение паттерна из 3-8 пар (original, edited)
-  // одного типа промпта. Capable модель с JSON Schema strict + thinking.
-  // Primary = deepseek-v4-pro (лучший на nuanced reasoning); secondary =
-  // gpt-5.4 (другой провайдер для diversity при downtime primary);
-  // tertiary = ollama/qwen3:30b (capable safety-net, НЕ qwen3.5:9b —
-  // слишком слабая для extraction).
-  // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B1.
   {
     taskType: 'autorule-extract',
     playbookSection:
-      '§2.4 capable nuanced арбитр. Используется ночным cron\'ом AutoRuleExtractCron (03:00) для извлечения PromptRule из групп похожих PromptFeedback. Primary = deepseek-v4-pro; secondary = openai-via-proxy/gpt-5.4; tertiary = ollama/qwen3:30b (capable safety-net, не qwen3.5:9b).',
+      "§2.4 capable nuanced арбитр. Используется ночным cron'ом AutoRuleExtractCron (03:00) для извлечения PromptRule из групп похожих PromptFeedback. Primary = deepseek-v4-pro; secondary = openai-via-proxy/gpt-5.4; tertiary = ollama/qwen3:30b (capable safety-net, не qwen3.5:9b).",
     chain: [
       { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' },
       {
@@ -150,14 +108,6 @@ const SEEDS: TaskRouteSeed[] = [
     ],
     pinnedVersionNote: 'Закреплено 2026-05-30 для AutoRule Фаза B1',
   },
-  // ── Agents v2 Фаза B2 (2026-05-30) — Concierge PRM step-scorer (shadow) ──
-  // Дешёвый scorer: на входе один candidate tool_call + goal + краткая история,
-  // на выходе {score 0..1, reasoning ≤500 chars}. Primary = deepseek-v4-flash
-  // (cheap + достаточно умный для оценки); secondary = openai-via-proxy/
-  // gpt-5.4-mini (diverse провайдер при downtime primary); tertiary = ollama/
-  // qwen3.5:9b — здесь приемлем как safety-net (cheap scoring, не nuanced
-  // extraction как у autorule-extract Фазы B1).
-  // См. plans/tz/2026-05-29-agents-v2-umbrella.md §B2.
   {
     taskType: 'concierge-step-prm',
     playbookSection:
@@ -173,14 +123,6 @@ const SEEDS: TaskRouteSeed[] = [
     ],
     pinnedVersionNote: 'Закреплено 2026-05-30 для Concierge PRM Фаза B2',
   },
-  // ── Agents v2 Фаза C1 (2026-05-30) — PracticeSkill (executable skills) ─────
-  // Извлечение и верификация выполняемых навыков клонов. См. §C1.
-  //
-  // practice-skill-extract — capable nuanced extractor (concept + traits +
-  //   reasoning blocks → draft PracticeSkill). Primary = deepseek-v4-pro
-  //   (лучший на nuanced reasoning + thinking); secondary = openai-via-proxy/
-  //   gpt-5.4 (diverse провайдер); tertiary = ollama/qwen3:30b (capable
-  //   safety-net, НЕ qwen3.5:9b — слишком слабая для извлечения steps).
   {
     taskType: 'practice-skill-extract',
     playbookSection:
@@ -196,10 +138,6 @@ const SEEDS: TaskRouteSeed[] = [
     ],
     pinnedVersionNote: 'Закреплено 2026-05-30 для PracticeSkill Фаза C1',
   },
-  // practice-skill-adversarial-verify — дешёвая верификация (бинарный вердикт
-  //   «нарушает redFlags / противоречит skill» на 5 sample usages). Primary =
-  //   deepseek-v4-flash; secondary = gpt-5.4-mini; tertiary = qwen3.5:9b
-  //   (cheap verdict, qwen3.5:9b приемлем как safety-net).
   {
     taskType: 'practice-skill-adversarial-verify',
     playbookSection:
@@ -258,17 +196,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -296,18 +230,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-agents-v2 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-agents-v2 START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

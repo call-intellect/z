@@ -15,18 +15,6 @@ import {
   type BitrixAnalyzeJobData,
 } from './bitrix-analyze.queue';
 
-/**
- * Producer очереди `bitrix.analyze` (ТЗ 2026-06-17-bitrix24-source-sync, Ф4).
- * По образцу `ChatboxAnalyzeQueueService`.
- *
- * `enqueue(tenantId, sessionId)` ставит job анализа закрытой сессии-суток.
- * Дедуп по jobId `bitrix-analyze-${sessionId}` (BullMQ не добавит второй job с
- * тем же id, пока первый не завершён/не очищен). Разделитель `-`, НЕ `:`
- * (BullMQ 5.x запрещает `:` в custom jobId).
- *
- * Worker (`bitrix-analyze.worker.ts`) подхватывает и зовёт BitrixIngestService
- * (день-саммари + накопительное + мост в knowledge-core).
- */
 @Injectable()
 export class BitrixAnalyzeQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BitrixAnalyzeQueueService.name);
@@ -49,17 +37,11 @@ export class BitrixAnalyzeQueueService implements OnModuleInit, OnModuleDestroy 
     }
   }
 
-  /** Поставить job анализа. Дедуп по jobId `bitrix-analyze-${sessionId}`. */
-  async enqueue(
-    tenantId: string,
-    sessionId: string,
-  ): Promise<{ jobId: string }> {
+  async enqueue(tenantId: string, sessionId: string): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
     const jobId = `bitrix-analyze-${sessionId}`;
     await queue.add('analyze', { tenantId, sessionId }, { jobId });
-    this.logger.debug(
-      `enqueue: tenant=${tenantId} session=${sessionId} jobId=${jobId}`,
-    );
+    this.logger.debug(`enqueue: tenant=${tenantId} session=${sessionId} jobId=${jobId}`);
     return { jobId };
   }
 

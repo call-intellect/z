@@ -3,24 +3,12 @@ import { Prisma, type CompanyProfile } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
-import type {
-  CompanyProfileDto,
-  UpdateCompanyProfileDto,
-} from '../dto/company-profile.dto';
+import type { CompanyProfileDto, UpdateCompanyProfileDto } from '../dto/company-profile.dto';
 import type {
   IOrganizationalUnit,
   OrganizationalUnitScope,
 } from '../interfaces/organizational-unit.interface';
 
-/**
- * SBA α-9 wave 3 — CRUD + Org-level operations над CompanyProfile.
- *
- * Бизнес-правила:
- *   - 1:1 на Org: запись либо есть, либо нет (создаём lazily при первом GET).
- *   - Хранит миссию / видение / стратегию в JSON-полях (расширяемо без alter table).
- *   - completeness/maturityScore пересчитывает MaturityScorerCron — этот сервис
- *     только триггерит rebuild при ручных правках.
- */
 @Injectable()
 export class CompanyProfileService {
   private readonly logger = new Logger(CompanyProfileService.name);
@@ -30,9 +18,6 @@ export class CompanyProfileService {
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
 
-  /**
-   * Lazy-load или создаём пустой профиль на лету.
-   */
   async getOrCreate(tenantId: string): Promise<CompanyProfileDto> {
     const existing = await this.prisma.companyProfile.findUnique({
       where: { tenantId },
@@ -41,10 +26,7 @@ export class CompanyProfileService {
     const created = await this.prisma.companyProfile.create({
       data: { tenantId },
     });
-    this.logger.log(
-      { tenantId, companyProfileId: created.id },
-      'CompanyProfile создан lazily',
-    );
+    this.logger.log({ tenantId, companyProfileId: created.id }, 'CompanyProfile создан lazily');
     return this.toDto(created);
   }
 
@@ -53,7 +35,6 @@ export class CompanyProfileService {
     userId: string;
     body: UpdateCompanyProfileDto;
   }): Promise<CompanyProfileDto> {
-    // Lazy-create если ещё нет.
     await this.getOrCreate(args.tenantId);
 
     const data: Prisma.CompanyProfileUpdateInput = {};
@@ -98,22 +79,11 @@ export class CompanyProfileService {
     return this.toDto(updated);
   }
 
-  /**
-   * Возвращает (или null) сырой row CompanyProfile — для MaturityScorerService.
-   */
   async getRaw(tenantId: string): Promise<CompanyProfile | null> {
     return this.prisma.companyProfile.findUnique({ where: { tenantId } });
   }
 
-  /**
-   * Применить обновление maturityScore + lastMaturityCalcAt (вызывается из
-   * MaturityScorerService).
-   */
-  async applyMaturity(args: {
-    tenantId: string;
-    maturityScore: number;
-  }): Promise<void> {
-    // upsert: профиль может ещё не существовать.
+  async applyMaturity(args: { tenantId: string; maturityScore: number }): Promise<void> {
     await this.prisma.companyProfile.upsert({
       where: { tenantId: args.tenantId },
       create: {
@@ -128,12 +98,6 @@ export class CompanyProfileService {
     });
   }
 
-  /**
-   * Idempotency-marker для completeness rebuild. На MVP не дёргает воркер —
-   * MaturityScorerCron перезаписывает completeness при следующем проходе.
-   * Возвращает «enqueued=false, reason=…» либо «enqueued=true», когда
-   * подключим отдельный воркер.
-   */
   async rebuildCompleteness(args: {
     tenantId: string;
     userId: string;
@@ -150,12 +114,6 @@ export class CompanyProfileService {
     };
   }
 
-  // ─────────────────────────── IOrganizationalUnit ───────────────────
-
-  /**
-   * Преобразование CompanyProfile в IOrganizationalUnit. Children — отделы
-   * верхнего уровня (parentDepartmentId IS NULL).
-   */
   toUnit(row: CompanyProfile, orgName: string): IOrganizationalUnit {
     const prisma = this.prisma;
     return {
@@ -194,8 +152,6 @@ export class CompanyProfileService {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private toDto(p: CompanyProfile): CompanyProfileDto {
     return {
       id: p.id,
@@ -206,9 +162,7 @@ export class CompanyProfileService {
       strategy: extractStrategy(p.strategyJson),
       targetMarketIds: p.targetMarketIds,
       maturityScore: p.maturityScore ? Number(p.maturityScore) : null,
-      lastMaturityCalcAt: p.lastMaturityCalcAt
-        ? p.lastMaturityCalcAt.toISOString()
-        : null,
+      lastMaturityCalcAt: p.lastMaturityCalcAt ? p.lastMaturityCalcAt.toISOString() : null,
       stage: p.stage,
       sourceBlockIds: p.sourceBlockIds,
       confidence: p.confidence ? Number(p.confidence) : null,
@@ -218,17 +172,13 @@ export class CompanyProfileService {
   }
 }
 
-// ─────────────────────────── JSON helpers ──────────────────────────
-
 function extractContentMd(json: Prisma.JsonValue | null): string | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const v = (json as Record<string, unknown>).contentMd;
   return typeof v === 'string' ? v : null;
 }
 
-function extractMission(json: Prisma.JsonValue | null):
-  | CompanyProfileDto['mission']
-  | null {
+function extractMission(json: Prisma.JsonValue | null): CompanyProfileDto['mission'] | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
   const contentMd = obj.contentMd;
@@ -240,25 +190,19 @@ function extractMission(json: Prisma.JsonValue | null):
   };
 }
 
-function extractVision(json: Prisma.JsonValue | null):
-  | CompanyProfileDto['vision']
-  | null {
+function extractVision(json: Prisma.JsonValue | null): CompanyProfileDto['vision'] | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
   const contentMd = obj.contentMd;
   if (typeof contentMd !== 'string') return null;
   return {
     contentMd,
-    ...(typeof obj.horizonYears === 'number'
-      ? { horizonYears: obj.horizonYears }
-      : {}),
+    ...(typeof obj.horizonYears === 'number' ? { horizonYears: obj.horizonYears } : {}),
     ...(typeof obj.targetDate === 'string' ? { targetDate: obj.targetDate } : {}),
   };
 }
 
-function extractStrategy(json: Prisma.JsonValue | null):
-  | CompanyProfileDto['strategy']
-  | null {
+function extractStrategy(json: Prisma.JsonValue | null): CompanyProfileDto['strategy'] | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
   const contentMd = obj.contentMd;

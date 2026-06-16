@@ -1,16 +1,10 @@
-import { apiClient } from './api-client';
-import type { MeetingType } from '@/domain/enums';
-
-/**
- * API DTO для модуля templates (custom AI-templates под типы встреч).
- * Источник правды — backend/src/modules/templates/.
- */
+import { apiClient } from "./api-client";
+import type { MeetingType } from "@/domain/enums";
 
 export type TemplateApi = {
   id: string;
   name: string;
   description: string | null;
-  /** Базовый тип встречи (наследует промпт). null = полностью кастомный. */
   baseType: MeetingType | null;
   customPrompt: string | null;
   isSystem: boolean;

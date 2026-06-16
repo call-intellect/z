@@ -5,28 +5,13 @@ import { TypedConfigService } from '../../../common/config/index';
 import type { LlmCompleteInput, LlmCompleteOutput } from './llm.types';
 import { LlmError } from './llm.types';
 
-/**
- * GRSAI — Gemini через наш прокси (proxy.agent-lia.ru/grsai/...).
- *
- * OpenAI-совместимый chat/completions, но обязательный SSE-стрим. Парсер
- * собирает дельты в одну строку, аккумулирует usage из последнего event'а.
- *
- * Префикс авторизации — `${PROXY_PREFIX}:${GRSAI_API_KEY}` (как у openai-via-proxy),
- * так как ходим через наш прокси (`PROXY_BASE_URL` + `/grsai/v1/...`).
- * Если `cfg.ai.grsai.baseUrl` не равен дефолту прокси — fallback на direct
- * `grsaiapi.com` (без префикса).
- *
- * Retry [500, 1000, 2000] на 429 / 5xx, как у остальных провайдеров.
- */
 @Injectable()
 export class GrsaiService {
   private readonly logger = new Logger(GrsaiService.name);
   private readonly retryDelaysMs = [500, 1000, 2000];
   private readonly timeoutMs = 60_000;
 
-  constructor(
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {}
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
   async complete(input: LlmCompleteInput): Promise<LlmCompleteOutput> {
     const model = input.model;
@@ -36,15 +21,8 @@ export class GrsaiService {
     return this.withRetry(() => this.callOnce(input, model));
   }
 
-  // ─────────────────────────── private ─────────────────────────────────────
-
-  private async callOnce(
-    input: LlmCompleteInput,
-    model: string,
-  ): Promise<LlmCompleteOutput> {
+  private async callOnce(input: LlmCompleteInput, model: string): Promise<LlmCompleteOutput> {
     const { url, auth } = this.resolveEndpoint();
-    // T7-F3: LlmUserInput может быть string или {text, cacheControl?}.
-    // GRSAI — внешний прокси без cache_control API; распаковываем в строку.
     const userText = typeof input.user === 'string' ? input.user : input.user.text;
     const body: Record<string, unknown> = {
       model,
@@ -68,10 +46,7 @@ export class GrsaiService {
     });
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
-      throw new LlmError(
-        `GRSAI HTTP ${resp.status}: ${errText.slice(0, 300)}`,
-        resp.status,
-      );
+      throw new LlmError(`GRSAI HTTP ${resp.status}: ${errText.slice(0, 300)}`, resp.status);
     }
     const { text, inputTokens, outputTokens } = await collectSse(resp);
     return {
@@ -84,10 +59,6 @@ export class GrsaiService {
     };
   }
 
-  /**
-   * Если baseUrl GRSAI указывает на наш прокси — ходим через `/grsai/v1/...`
-   * с `Bearer ${PREFIX}:${KEY}`. Иначе — direct grsai с `Bearer ${KEY}`.
-   */
   private resolveEndpoint(): { url: string; auth: string } {
     const grsaiBase = this.cfg.ai.grsai.baseUrl.replace(/\/+$/, '');
     const proxyBase = this.cfg.ai.proxy.baseUrl.replace(/\/+$/, '');
@@ -95,16 +66,13 @@ export class GrsaiService {
     const apiKey = this.cfg.ai.grsai.apiKey;
     const proxyRoot = proxyBase.replace(/\/v1$/, '');
     const usesProxy =
-      grsaiBase === proxyBase ||
-      grsaiBase === proxyRoot ||
-      grsaiBase.startsWith(proxyRoot);
+      grsaiBase === proxyBase || grsaiBase === proxyRoot || grsaiBase.startsWith(proxyRoot);
     if (usesProxy) {
       return {
         url: `${proxyRoot}/grsai/v1/chat/completions`,
         auth: `Bearer ${proxyPrefix}:${apiKey}`,
       };
     }
-    // direct grsai — на случай, если когда-нибудь захотим ходить без прокси
     const directBase = grsaiBase.endsWith('/v1') ? grsaiBase : `${grsaiBase}/v1`;
     return {
       url: `${directBase}/chat/completions`,
@@ -119,14 +87,10 @@ export class GrsaiService {
         return await fn();
       } catch (err) {
         lastErr = err;
-        const status =
-          err instanceof LlmError ? err.httpStatus : undefined;
-        const isRetriable =
-          status === 429 || (status !== undefined && status >= 500);
+        const status = err instanceof LlmError ? err.httpStatus : undefined;
+        const isRetriable = status === 429 || (status !== undefined && status >= 500);
         if (!isRetriable || attempt === this.retryDelaysMs.length) {
-          this.logger.warn(
-            `GRSAI complete (${status ?? 'no-status'}): ${errMsg(err)}`,
-          );
+          this.logger.warn(`GRSAI complete (${status ?? 'no-status'}): ${errMsg(err)}`);
           if (err instanceof LlmError) throw err;
           throw new LlmError(`GRSAI: ${errMsg(err)}`, status, err);
         }
@@ -141,9 +105,6 @@ export class GrsaiService {
   }
 }
 
-/**
- * Парсер OpenAI-style SSE. Образец — `collectSse()` в smoke-llm-providers.ts.
- */
 async function collectSse(resp: Response): Promise<{
   text: string;
   inputTokens: number;
@@ -180,9 +141,7 @@ async function collectSse(resp: Response): Promise<{
             inputTokens = data.usage.prompt_tokens ?? inputTokens;
             outputTokens = data.usage.completion_tokens ?? outputTokens;
           }
-        } catch {
-          /* skip malformed line */
-        }
+        } catch {}
       }
     }
   } finally {

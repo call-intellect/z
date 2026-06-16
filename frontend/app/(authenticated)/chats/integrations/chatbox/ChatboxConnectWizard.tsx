@@ -1,71 +1,55 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Check, Loader2, Users } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { Check, Loader2, Users } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   chatboxApi,
   type ChatboxMemberApi,
   type ChatboxWorkspaceApi,
-} from '@/api/chatbox.api';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/api/chatbox.api";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-/**
- * Мастер первого подключения ChatBox (ТЗ 2026-06-16).
- *
- *   1. Токен → «Проверить».
- *   2. Воркспейс (один) → «Подключить».
- *   3. Синхронизация сотрудников: синк менеджеров (авто-связка по email) →
- *      таблица сопоставления с предвыбранными действиями (связан / создать).
- *   4. Забрать прошлые чаты за период (бэкафилл) — можно пропустить.
- *
- * После завершения зовёт `onDone()` (родитель перечитывает интеграцию и
- * показывает обычное управление). Мульти-воркспейс — отдельная фаза.
- */
+} from "@/ui/shadcn/select";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
 
-/** Действие по строке сопоставления. matched → keep/unlink; unmatched → create/skip. */
-type MemberAction = 'keep' | 'unlink' | 'create' | 'skip';
+type MemberAction = "keep" | "unlink" | "create" | "skip";
 
 const STEP_TITLES: Record<Step, string> = {
-  1: 'Токен',
-  2: 'Рабочее пространство',
-  3: 'Сотрудники',
-  4: 'Прошлые чаты',
+  1: "Токен",
+  2: "Рабочее пространство",
+  3: "Сотрудники",
+  4: "Прошлые чаты",
 };
 
-// Значения — в ДНЯХ (handleBackfill умножает на сутки). 'all' — вся история.
 const PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '1', label: 'Последний 1 день' },
-  { value: '7', label: 'Последние 7 дней' },
-  { value: '30', label: 'Последний 1 месяц' },
-  { value: '90', label: 'Последние 3 месяца' },
-  { value: '180', label: 'Последние 6 месяцев' },
-  { value: '365', label: 'Последний год' },
-  { value: 'all', label: 'Вся история' },
+  { value: "1", label: "Последний 1 день" },
+  { value: "7", label: "Последние 7 дней" },
+  { value: "30", label: "Последний 1 месяц" },
+  { value: "90", label: "Последние 3 месяца" },
+  { value: "180", label: "Последние 6 месяцев" },
+  { value: "365", label: "Последний год" },
+  { value: "all", label: "Вся история" },
 ];
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
-/** Ключ персиста прогресса визарда (sessionStorage, per-tab). */
-export const WIZARD_STORAGE_KEY = 'chatbox-connect-wizard';
+export const WIZARD_STORAGE_KEY = "chatbox-connect-wizard";
 
 type WizardPersisted = {
   step: Step;
@@ -78,32 +62,27 @@ type WizardPersisted = {
 };
 
 function loadWizardState(): Partial<WizardPersisted> {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(sessionStorage.getItem(WIZARD_STORAGE_KEY) ?? '{}');
+    return JSON.parse(sessionStorage.getItem(WIZARD_STORAGE_KEY) ?? "{}");
   } catch {
     return {};
   }
 }
 
 export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
-  // Прогресс восстанавливается из sessionStorage — уход со страницы и возврат
-  // продолжают с того же шага (а не сбрасывают на ввод токена). Сохраняется
-  // эффектом ниже; очищается родителем при завершении.
   const [step, setStep] = useState<Step>(() => loadWizardState().step ?? 1);
 
-  // — шаги 1–2
-  const [token, setToken] = useState(() => loadWizardState().token ?? '');
+  const [token, setToken] = useState(() => loadWizardState().token ?? "");
   const [workspaces, setWorkspaces] = useState<ChatboxWorkspaceApi[] | null>(
     () => loadWizardState().workspaces ?? null,
   );
   const [workspaceId, setWorkspaceId] = useState(
-    () => loadWizardState().workspaceId ?? '',
+    () => loadWizardState().workspaceId ?? "",
   );
   const [checking, setChecking] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
-  // — шаг 3
   const [members, setMembers] = useState<ChatboxMemberApi[] | null>(
     () => loadWizardState().members ?? null,
   );
@@ -113,33 +92,36 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
   );
   const [applyingMembers, setApplyingMembers] = useState(false);
 
-  // — шаг 4
-  const [period, setPeriod] = useState(() => loadWizardState().period ?? '90');
+  const [period, setPeriod] = useState(() => loadWizardState().period ?? "90");
   const [backfilling, setBackfilling] = useState(false);
 
-  // Персист прогресса при любом изменении значимого стейта.
   useEffect(() => {
     try {
       sessionStorage.setItem(
         WIZARD_STORAGE_KEY,
-        JSON.stringify({ step, token, workspaceId, workspaces, members, actions, period }),
+        JSON.stringify({
+          step,
+          token,
+          workspaceId,
+          workspaces,
+          members,
+          actions,
+          period,
+        }),
       );
-    } catch {
-      /* sessionStorage недоступен — не критично */
-    }
+    } catch {}
   }, [step, token, workspaceId, workspaces, members, actions, period]);
 
-  // ─────────────────── шаг 1: токен ───────────────────
   const handleCheck = async () => {
     if (!token.trim()) {
-      toast.error('Введите токен');
+      toast.error("Введите токен");
       return;
     }
     setChecking(true);
     try {
       const res = await chatboxApi.listWorkspaces(token.trim());
       if (res.length === 0) {
-        toast.error('В этом аккаунте нет доступных пространств');
+        toast.error("В этом аккаунте нет доступных пространств");
         return;
       }
       setWorkspaces(res);
@@ -147,19 +129,18 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
       setStep(2);
     } catch (e) {
       toast.error(
-        e instanceof ApiError && e.code === 'chatbox_token_invalid'
-          ? 'Неверный токен'
-          : errMessage(e, 'Не удалось проверить токен'),
+        e instanceof ApiError && e.code === "chatbox_token_invalid"
+          ? "Неверный токен"
+          : errMessage(e, "Не удалось проверить токен"),
       );
     } finally {
       setChecking(false);
     }
   };
 
-  // ─────────────────── шаг 2: воркспейс ───────────────────
   const handleConnect = async () => {
     if (!workspaceId) {
-      toast.error('Выберите рабочее пространство');
+      toast.error("Выберите рабочее пространство");
       return;
     }
     setConnecting(true);
@@ -167,24 +148,22 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
       await chatboxApi.saveIntegration({
         token: token.trim(),
         workspaceId,
-        syncMode: 'daily', // период фиксирован: раз в сутки в 00:00
-        analysisEnabled: true, // по умолчанию AI-анализ включён (ТЗ 2026-06-16)
+        syncMode: "daily",
+        analysisEnabled: true,
       });
-      toast.success('Подключено');
+      toast.success("Подключено");
       setStep(3);
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось подключить'));
+      toast.error(errMessage(e, "Не удалось подключить"));
     } finally {
       setConnecting(false);
     }
   };
 
-  // ─────────────────── шаг 3: сотрудники ───────────────────
   const loadMembersAfterSync = async () => {
     setMemberSyncing(true);
     try {
-      // Синк менеджеров: бэк сам авто-связывает по email. Затем ждём появления.
-      await chatboxApi.sync('managers');
+      await chatboxApi.sync("managers");
       let list: ChatboxMemberApi[] = [];
       for (let i = 0; i < 8; i += 1) {
         await new Promise((r) => setTimeout(r, 2500));
@@ -192,12 +171,11 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
         if (list.length > 0) break;
       }
       setMembers(list);
-      // Предвыбор: связанный (по email) → keep; не найден → create.
       const init: Record<string, MemberAction> = {};
-      for (const m of list) init[m.id] = m.linkedPerson ? 'keep' : 'create';
+      for (const m of list) init[m.id] = m.linkedPerson ? "keep" : "create";
       setActions(init);
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось синхронизировать сотрудников'));
+      toast.error(errMessage(e, "Не удалось синхронизировать сотрудников"));
     } finally {
       setMemberSyncing(false);
     }
@@ -209,34 +187,32 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
     try {
       for (const m of members) {
         const a = actions[m.id];
-        if (a === 'create') await chatboxApi.createMemberPerson(m.id);
-        else if (a === 'unlink') await chatboxApi.linkMember(m.id, null);
-        // keep / skip — ничего не делаем.
+        if (a === "create") await chatboxApi.createMemberPerson(m.id);
+        else if (a === "unlink") await chatboxApi.linkMember(m.id, null);
       }
-      toast.success('Сотрудники сопоставлены');
+      toast.success("Сотрудники сопоставлены");
       setStep(4);
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось сохранить сопоставление'));
+      toast.error(errMessage(e, "Не удалось сохранить сопоставление"));
     } finally {
       setApplyingMembers(false);
     }
   };
 
-  // ─────────────────── шаг 4: бэкафилл ───────────────────
   const handleBackfill = async () => {
     setBackfilling(true);
     try {
       const since =
-        period === 'all'
+        period === "all"
           ? undefined
           : new Date(
               Date.now() - Number(period) * 24 * 60 * 60 * 1000,
             ).toISOString();
-      await chatboxApi.sync('chats', since);
-      toast.success('Запущен импорт прошлых чатов');
+      await chatboxApi.sync("chats", since);
+      toast.success("Запущен импорт прошлых чатов");
       onDone();
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось запустить импорт'));
+      toast.error(errMessage(e, "Не удалось запустить импорт"));
     } finally {
       setBackfilling(false);
     }
@@ -279,7 +255,11 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
               <Label>Пространство</Label>
-              <Select value={workspaceId} onValueChange={setWorkspaceId} disabled={connecting}>
+              <Select
+                value={workspaceId}
+                onValueChange={setWorkspaceId}
+                disabled={connecting}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Выберите пространство" />
                 </SelectTrigger>
@@ -287,20 +267,28 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                   {workspaces.map((w) => (
                     <SelectItem key={w.id} value={w.id}>
                       {w.name}
-                      {w.role ? ` — ${w.role}` : ''}
+                      {w.role ? ` — ${w.role}` : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-[11px] text-fg-tertiary">
-                Пока подключается один воркспейс. Синхронизация — раз в сутки в 00:00.
+                Пока подключается один воркспейс. Синхронизация — раз в сутки в
+                00:00.
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => setStep(1)} disabled={connecting}>
+              <Button
+                variant="ghost"
+                onClick={() => setStep(1)}
+                disabled={connecting}
+              >
                 Назад
               </Button>
-              <Button onClick={() => void handleConnect()} disabled={connecting || !workspaceId}>
+              <Button
+                onClick={() => void handleConnect()}
+                disabled={connecting || !workspaceId}
+              >
                 {connecting && <Loader2 size={14} className="animate-spin" />}
                 Подключить
               </Button>
@@ -318,10 +306,14 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
             {members === null ? (
               <div className="space-y-3">
                 <p className="text-sm text-fg-secondary">
-                  Заберём менеджеров из Чат бокса и сопоставим с сотрудниками Коры
-                  по email. Совпавших — свяжем, остальных предложим создать.
+                  Заберём менеджеров из Чат бокса и сопоставим с сотрудниками
+                  Коры по email. Совпавших — свяжем, остальных предложим
+                  создать.
                 </p>
-                <Button onClick={() => void loadMembersAfterSync()} disabled={memberSyncing}>
+                <Button
+                  onClick={() => void loadMembersAfterSync()}
+                  disabled={memberSyncing}
+                >
                   {memberSyncing ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
@@ -333,12 +325,18 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
             ) : members.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-fg-secondary">
-                  Менеджеры пока не найдены. Можно пропустить — они подтянутся при
-                  следующей синхронизации.
+                  Менеджеры пока не найдены. Можно пропустить — они подтянутся
+                  при следующей синхронизации.
                 </p>
                 <div className="flex gap-2">
-                  <Button variant="ghost" onClick={() => void loadMembersAfterSync()} disabled={memberSyncing}>
-                    {memberSyncing && <Loader2 size={14} className="animate-spin" />}
+                  <Button
+                    variant="ghost"
+                    onClick={() => void loadMembersAfterSync()}
+                    disabled={memberSyncing}
+                  >
+                    {memberSyncing && (
+                      <Loader2 size={14} className="animate-spin" />
+                    )}
                     Повторить
                   </Button>
                   <Button onClick={() => setStep(4)}>Пропустить</Button>
@@ -350,7 +348,9 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                   <table className="w-full text-sm">
                     <thead className="bg-bg-overlay/50 text-left text-xs text-fg-tertiary">
                       <tr>
-                        <th className="px-3 py-2 font-medium">Менеджер Чат бокса</th>
+                        <th className="px-3 py-2 font-medium">
+                          Менеджер Чат бокса
+                        </th>
                         <th className="px-3 py-2 font-medium">Статус</th>
                         <th className="px-3 py-2 font-medium">Действие</th>
                       </tr>
@@ -359,31 +359,47 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                       {members.map((m) => {
                         const matched = !!m.linkedPerson;
                         return (
-                          <tr key={m.id} className="border-t border-border-subtle">
+                          <tr
+                            key={m.id}
+                            className="border-t border-border-subtle"
+                          >
                             <td className="px-3 py-2">
                               <div className="font-medium text-fg-primary">
-                                {m.name || m.email || 'Без имени'}
+                                {m.name || m.email || "Без имени"}
                               </div>
                               {m.email && (
-                                <div className="text-[11px] text-fg-tertiary">{m.email}</div>
+                                <div className="text-[11px] text-fg-tertiary">
+                                  {m.email}
+                                </div>
                               )}
                             </td>
                             <td className="px-3 py-2">
                               {matched ? (
-                                <Badge variant="success" className="text-[10px]">
-                                  Найден: {m.linkedPerson?.name ?? 'сотрудник'}
+                                <Badge
+                                  variant="success"
+                                  className="text-[10px]"
+                                >
+                                  Найден: {m.linkedPerson?.name ?? "сотрудник"}
                                 </Badge>
                               ) : (
-                                <Badge variant="secondary" className="text-[10px]">
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px]"
+                                >
                                   Нет в Коре
                                 </Badge>
                               )}
                             </td>
                             <td className="px-3 py-2">
                               <Select
-                                value={actions[m.id] ?? (matched ? 'keep' : 'create')}
+                                value={
+                                  actions[m.id] ?? (matched ? "keep" : "create")
+                                }
                                 onValueChange={(v) =>
-                                  setActions((prev) => ({ ...prev, [m.id]: v as MemberAction }))
+                                  setActions((prev) => ({
+                                    ...prev,
+                                    [m.id]: v as MemberAction,
+                                  }))
                                 }
                               >
                                 <SelectTrigger className="h-8 w-[180px]">
@@ -392,13 +408,21 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                                 <SelectContent>
                                   {matched ? (
                                     <>
-                                      <SelectItem value="keep">Связать</SelectItem>
-                                      <SelectItem value="unlink">Не связывать</SelectItem>
+                                      <SelectItem value="keep">
+                                        Связать
+                                      </SelectItem>
+                                      <SelectItem value="unlink">
+                                        Не связывать
+                                      </SelectItem>
                                     </>
                                   ) : (
                                     <>
-                                      <SelectItem value="create">Создать в Коре</SelectItem>
-                                      <SelectItem value="skip">Не создавать</SelectItem>
+                                      <SelectItem value="create">
+                                        Создать в Коре
+                                      </SelectItem>
+                                      <SelectItem value="skip">
+                                        Не создавать
+                                      </SelectItem>
                                     </>
                                   )}
                                 </SelectContent>
@@ -411,11 +435,20 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
                   </table>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setStep(4)} disabled={applyingMembers}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setStep(4)}
+                    disabled={applyingMembers}
+                  >
                     Пропустить
                   </Button>
-                  <Button onClick={() => void handleApplyMembers()} disabled={applyingMembers}>
-                    {applyingMembers && <Loader2 size={14} className="animate-spin" />}
+                  <Button
+                    onClick={() => void handleApplyMembers()}
+                    disabled={applyingMembers}
+                  >
+                    {applyingMembers && (
+                      <Loader2 size={14} className="animate-spin" />
+                    )}
                     Применить и далее
                   </Button>
                 </div>
@@ -437,7 +470,11 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
             </p>
             <div className="space-y-1.5">
               <Label>Период</Label>
-              <Select value={period} onValueChange={setPeriod} disabled={backfilling}>
+              <Select
+                value={period}
+                onValueChange={setPeriod}
+                disabled={backfilling}
+              >
                 <SelectTrigger className="w-[260px]">
                   <SelectValue />
                 </SelectTrigger>
@@ -454,7 +491,10 @@ export function ChatboxConnectWizard({ onDone }: { onDone: () => void }) {
               <Button variant="ghost" onClick={onDone} disabled={backfilling}>
                 Пропустить
               </Button>
-              <Button onClick={() => void handleBackfill()} disabled={backfilling}>
+              <Button
+                onClick={() => void handleBackfill()}
+                disabled={backfilling}
+              >
                 {backfilling && <Loader2 size={14} className="animate-spin" />}
                 Забрать чаты
               </Button>
@@ -474,25 +514,29 @@ function Stepper({ current }: { current: Step }) {
         <div key={s} className="flex items-center gap-2">
           <div
             className={cn(
-              'flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium',
+              "flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
               s < current
-                ? 'bg-accent text-white'
+                ? "bg-accent text-white"
                 : s === current
-                  ? 'bg-accent-muted text-accent-fg'
-                  : 'bg-bg-overlay text-fg-tertiary',
+                  ? "bg-accent-muted text-accent-fg"
+                  : "bg-bg-overlay text-fg-tertiary",
             )}
           >
             {s < current ? <Check size={13} /> : s}
           </div>
           <span
             className={cn(
-              'text-xs',
-              s === current ? 'font-medium text-fg-primary' : 'text-fg-tertiary',
+              "text-xs",
+              s === current
+                ? "font-medium text-fg-primary"
+                : "text-fg-tertiary",
             )}
           >
             {STEP_TITLES[s]}
           </span>
-          {i < steps.length - 1 && <div className="h-px w-5 bg-border-subtle" />}
+          {i < steps.length - 1 && (
+            <div className="h-px w-5 bg-border-subtle" />
+          )}
         </div>
       ))}
     </div>

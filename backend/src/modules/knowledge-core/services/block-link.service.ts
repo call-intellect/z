@@ -11,32 +11,14 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
-import {
-  LlmRouterService,
-  maxDataClass,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   BLOCK_LINKER_JSON_SCHEMA,
   BLOCK_LINKER_SYSTEM_PROMPT,
   BlockLinkerResponseSchema,
 } from '../prompts/block-linker.prompt';
 
-/**
- * Результат LLM-арбитра типизированной связи между двумя блоками.
- *
- *   - Если LLM ответил `'none'` — связи нет, поле `relationType = null`.
- *   - Иначе — конкретный тип из enum'а IdeaBlockLinkType.
- *
- * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges:
- *   - `validFromHint` / `validUntilHint` — ISO-строка (YYYY-MM-DD / YYYY-MM /
- *     YYYY), если LLM извлёк явный временной указатель из исходных блоков;
- *     иначе `null` (открытый интервал, закрывается через
- *     `TemporalConflictService` при детектировании противоречия).
- */
 export interface LinkVerdict {
   relationType: IdeaBlockLinkType | null;
   confidence: number;
@@ -64,20 +46,10 @@ interface RawLinkCandidateRow {
   similarity: string | number;
 }
 
-// Промпт, JSON Schema и Zod вынесены в `prompts/block-linker.prompt.ts`.
-// Алиасы под историческими именами — чтобы тело сервиса не менялось.
 const LINK_JSON_SCHEMA = BLOCK_LINKER_JSON_SCHEMA;
 const LinkResponseSchema = BlockLinkerResponseSchema;
 const LINK_SYSTEM_PROMPT = BLOCK_LINKER_SYSTEM_PROMPT;
 
-/**
- * BlockLinkService — KNN-кандидаты + LLM-арбитр для `block-linker.worker`.
- *
- *   - `findLinkCandidates`: top-K ближайших canonical-блоков того же tenant'а
- *     по cosine. Без threshold — отбор по похожести делает LLM.
- *   - `judgeLink`: один LLM-вызов на одну пару (block, candidate). Возвращает
- *     `relationType` ∈ enum + 'none', confidence, explanation.
- */
 @Injectable()
 export class BlockLinkService {
   private readonly logger = new Logger(BlockLinkService.name);
@@ -93,9 +65,6 @@ export class BlockLinkService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -109,8 +78,6 @@ export class BlockLinkService {
     blockId: string;
     topK: number;
   }): Promise<Array<{ candidate: IdeaBlock; similarity: number }>> {
-    // Фильтр такой же, как в BlockMergeService.knnCandidates, но без
-    // threshold — кандидатов отсеивает LLM.
     const rows = await this.prisma.$queryRawUnsafe<RawLinkCandidateRow[]>(
       `
       SELECT b.id, b."tenantId", b.name, b."criticalQuestion", b."trustedAnswer",
@@ -157,11 +124,8 @@ export class BlockLinkService {
     };
     const userMessage = `Блок A и блок B ниже. Определи тип связи (или "none").\n\n${JSON.stringify(userPayload, null, 2)}`;
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
 
-    // Ретрай зеркалит block-ingest (block-extraction.service.ts): 2 попытки
-    // вызов+парсинг, чтобы один невалидный JSON арбитра не терял связь молча.
     const fromId = args.fromBlock.id;
     const toId = args.toBlock.id;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -169,9 +133,7 @@ export class BlockLinkService {
         const out = await this.llm.call({
           taskType: 'block-linker',
           tenantId: args.tenantId,
-          systemPrompt: guardOn
-            ? withInjectionGuard(LINK_SYSTEM_PROMPT)
-            : LINK_SYSTEM_PROMPT,
+          systemPrompt: guardOn ? withInjectionGuard(LINK_SYSTEM_PROMPT) : LINK_SYSTEM_PROMPT,
           userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
           responseFormat: {
             type: 'json_schema',
@@ -180,20 +142,11 @@ export class BlockLinkService {
             schema: LINK_JSON_SCHEMA,
           },
           sourceRef: { type: 'idea-block', id: args.fromBlock.id },
-          // Фаза 11: max(fromBlock, toBlock).dataClass.
-          dataClass: maxDataClass([
-            args.fromBlock.dataClass,
-            args.toBlock.dataClass,
-          ]),
-          // ТЗ-3 Ф2: битый primary (HTTP 200, не JSON-вердикт) → router сам
-          // переключится на secondary ВНУТРИ одного attempt, прежде чем этот
-          // retry-цикл увидит ошибку.
+          dataClass: maxDataClass([args.fromBlock.dataClass, args.toBlock.dataClass]),
           validate: (text) => this.parseVerdict(text) !== null,
         });
         const parsed = this.parseVerdict(out.text);
         if (parsed) return parsed;
-        // S6-02: доля невалидного JSON per-attempt (видна ещё до терминального
-        // fallback). ?.(...) — метрика @Optional() + мок может не иметь метода.
         this.metrics?.incKcBlockLinkerInvalidJson?.({ reason: 'parse' });
         this.logger.warn(
           { fromId, toId, attempt },
@@ -213,21 +166,12 @@ export class BlockLinkService {
       }
     }
 
-    // После двух попыток — fallback на none + метрика молчаливой деградации.
     this.metrics?.incKcBlockLinkerFallbackNone({ reason: 'exhausted' });
-    this.logger.warn(
-      { fromId, toId },
-      'block-linker: fallback на none после 2 попыток',
-    );
+    this.logger.warn({ fromId, toId }, 'block-linker: fallback на none после 2 попыток');
     return { relationType: null, confidence: 0, explanation: 'invalid LLM judge JSON' };
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────────
-
   private parseVerdict(text: string): LinkVerdict | null {
-    // `tryParseJson` снимает ```json-обёртку и вытаскивает первый {…} из
-    // прозы/преамбулы; не бросает — на мусор вернёт `{ raw }`, который не
-    // пройдёт Zod-валидацию → null (без ложных null на fenced-ответах).
     const raw = tryParseJson(text);
     const parsed = LinkResponseSchema.safeParse(raw);
     if (!parsed.success) return null;
@@ -242,7 +186,6 @@ export class BlockLinkService {
       relationType: parsed.data.relationType,
       confidence: parsed.data.confidence,
       explanation: parsed.data.explanation,
-      // Agents v2 Фаза A1 — bi-temporal hints (если LLM их вернул).
       validFromHint: parsed.data.validFrom ?? null,
       validUntilHint: parsed.data.validUntil ?? null,
     };

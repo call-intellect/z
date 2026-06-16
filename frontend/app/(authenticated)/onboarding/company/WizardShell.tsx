@@ -1,25 +1,13 @@
-'use client';
+"use client";
 
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type ReactNode } from 'react';
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { Progress } from '@/ui/shadcn/progress';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { Progress } from "@/ui/shadcn/progress";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * Каркас wizard'а «Знакомство с компанией». Узкая колонка по центру,
- * сверху — progress-bar (1/5..5/5), снизу — кнопка «Прервать и вернуться
- * позже» (→ /dashboard).
- *
- * Гарды:
- *   1. Если `currentOrgRole !== 'owner'` — редирект на /dashboard.
- *
- * Однократность мастера НЕ форсируем (ТЗ «Команда + доступы» Фаза 0.3):
- * owner может вернуться в «Знакомство» и дозаполнить компанию в любой момент,
- * поэтому прежний редирект «уже есть отделы → /dashboard» убран.
- */
 const TOTAL_STEPS = 5;
 
 function stepFromPath(pathname: string | null): number {
@@ -41,15 +29,12 @@ export function WizardShell({ children }: { children: ReactNode }) {
   const step = stepFromPath(pathname);
   const progress = Math.round((step / TOTAL_STEPS) * 100);
 
-  // Guard: только owner. После прохождения проверки — открываем мастер
-  // (guardChecked=true). Однократность НЕ форсируем (ТЗ Фаза 0.3): owner
-  // может вернуться и дозаполнить, прежний редирект «есть отделы» убран.
   useEffect(() => {
     if (isLoading) return;
     if (!user) return;
-    if (currentOrgRole !== 'owner') {
+    if (currentOrgRole !== "owner") {
       setRedirecting(true);
-      router.replace('/dashboard');
+      router.replace("/dashboard");
       return;
     }
     setGuardChecked(true);
@@ -80,7 +65,7 @@ export function WizardShell({ children }: { children: ReactNode }) {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push('/dashboard')}
+            onClick={() => router.push("/dashboard")}
           >
             Прервать и вернуться позже
           </Button>

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -11,12 +11,12 @@ import {
   Trash2,
   Webhook,
   XCircle,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { z } from 'zod';
+} from "lucide-react";
+import { toast } from "sonner";
+import { z } from "zod";
 
-import { ApiError } from '@/api/api-error';
-import { adminBotsApi } from '@/api/admin-bots.api';
+import { ApiError } from "@/api/api-error";
+import { adminBotsApi } from "@/api/admin-bots.api";
 import {
   BOT_STATUS_LABELS,
   botsOverviewFromApi,
@@ -24,45 +24,32 @@ import {
   type BotKindApi,
   type BotsOverviewDomain,
   type EmailInboxSettingsDomain,
-} from '@/domain/admin-bot';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-bot";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'telegram', label: 'Telegram', icon: Send },
-  { value: 'max', label: 'Max', icon: Bot },
-  { value: 'email_inbox', label: 'Email-inbox', icon: Inbox },
+  { value: "telegram", label: "Telegram", icon: Send },
+  { value: "max", label: "Max", icon: Bot },
+  { value: "email_inbox", label: "Email-inbox", icon: Inbox },
 ];
 
-/**
- * `/admin/integrations/bots` — управление conversational ботами
- * (Telegram / Max / Email-inbox).
- *
- * Каждая вкладка отображает:
- *   - статус канала (last webhook event, ошибки);
- *   - метаданные токена (только последние 4 символа);
- *   - кнопки «Установить/Удалить webhook»;
- *   - настройки rate-limit и quiet hours через `AdminSettingField`
- *     (`conversational.<kind>.global_rps`, `…quiet_hours`).
- *
- * При отсутствии backend-эндпоинта (404) вкладки показывают `AdminEmpty`.
- */
 export function BotsClient() {
-  const q = useAdminQuery('admin-bots-overview', async () => {
+  const q = useAdminQuery("admin-bots-overview", async () => {
     const res = await adminBotsApi.overview();
     return botsOverviewFromApi(res);
   });
@@ -71,8 +58,8 @@ export function BotsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Каналы и интеграции' },
-        { label: 'Conversational боты' },
+        { label: "Каналы и интеграции" },
+        { label: "Conversational боты" },
       ]}
       title="Conversational боты"
       description="Глобальные боты Z: один Telegram-канал @kora_bot, Max и Email-inbox. Содержимое переписки сотрудников супер-админу недоступно (продуктовый принцип №1)."
@@ -85,7 +72,7 @@ export function BotsClient() {
       {!q.isLoading && (q.data || !q.error) && (
         <AdminTabs tabs={TABS} defaultTab="telegram">
           {(active) =>
-            active === 'email_inbox' ? (
+            active === "email_inbox" ? (
               <EmailInboxTab
                 data={q.data?.emailInbox ?? null}
                 fallback={!q.data}
@@ -93,7 +80,7 @@ export function BotsClient() {
               />
             ) : (
               <BotChannelTab
-                kind={active as Exclude<BotKindApi, 'email_inbox'>}
+                kind={active as Exclude<BotKindApi, "email_inbox">}
                 data={pickChannel(q.data, active)}
                 fallback={!q.data}
                 onRefetch={q.refetch}
@@ -111,16 +98,14 @@ function pickChannel(
   kind: string,
 ): BotChannelSettingsDomain | null {
   if (!overview) return null;
-  if (kind === 'telegram') return overview.telegram;
-  if (kind === 'max') return overview.max;
+  if (kind === "telegram") return overview.telegram;
+  if (kind === "max") return overview.max;
   return null;
 }
 
-// ─────────────────────────── Telegram / Max ───────────────────────────
-
-const KIND_LABELS: Record<Exclude<BotKindApi, 'email_inbox'>, string> = {
-  telegram: 'Telegram',
-  max: 'Max',
+const KIND_LABELS: Record<Exclude<BotKindApi, "email_inbox">, string> = {
+  telegram: "Telegram",
+  max: "Max",
 };
 
 function BotChannelTab({
@@ -129,7 +114,7 @@ function BotChannelTab({
   fallback,
   onRefetch,
 }: {
-  kind: Exclude<BotKindApi, 'email_inbox'>;
+  kind: Exclude<BotKindApi, "email_inbox">;
   data: BotChannelSettingsDomain | null;
   fallback: boolean;
   onRefetch: () => void;
@@ -150,9 +135,7 @@ function BotChannelTab({
       />
     );
   }
-  return (
-    <BotChannelEditor kind={kind} data={data} onRefetch={onRefetch} />
-  );
+  return <BotChannelEditor kind={kind} data={data} onRefetch={onRefetch} />;
 }
 
 function BotChannelEditor({
@@ -160,35 +143,33 @@ function BotChannelEditor({
   data,
   onRefetch,
 }: {
-  kind: Exclude<BotKindApi, 'email_inbox'>;
+  kind: Exclude<BotKindApi, "email_inbox">;
   data: BotChannelSettingsDomain;
   onRefetch: () => void;
 }) {
-  const [webhookUrl, setWebhookUrl] = useState<string>(
-    data.webhookUrl ?? '',
-  );
-  const [token, setToken] = useState<string>('');
+  const [webhookUrl, setWebhookUrl] = useState<string>(data.webhookUrl ?? "");
+  const [token, setToken] = useState<string>("");
   const [isSavingWebhook, setIsSavingWebhook] = useState(false);
   const [isDeletingWebhook, setIsDeletingWebhook] = useState(false);
   const [isSavingToken, setIsSavingToken] = useState(false);
 
   useEffect(() => {
-    setWebhookUrl(data.webhookUrl ?? '');
+    setWebhookUrl(data.webhookUrl ?? "");
   }, [data.webhookUrl]);
 
   const handleSetWebhook = async () => {
     if (!webhookUrl.trim()) {
-      toast.error('Введите URL webhook');
+      toast.error("Введите URL webhook");
       return;
     }
     setIsSavingWebhook(true);
     try {
       await adminBotsApi.setWebhook(kind, { webhookUrl: webhookUrl.trim() });
-      toast.success('Webhook установлен');
+      toast.success("Webhook установлен");
       onRefetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось установить webhook',
+        e instanceof ApiError ? e.message : "Не удалось установить webhook",
       );
     } finally {
       setIsSavingWebhook(false);
@@ -199,11 +180,11 @@ function BotChannelEditor({
     setIsDeletingWebhook(true);
     try {
       await adminBotsApi.deleteWebhook(kind);
-      toast.success('Webhook удалён');
+      toast.success("Webhook удалён");
       onRefetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось удалить webhook',
+        e instanceof ApiError ? e.message : "Не удалось удалить webhook",
       );
     } finally {
       setIsDeletingWebhook(false);
@@ -212,35 +193,35 @@ function BotChannelEditor({
 
   const handleSaveToken = async () => {
     if (!token.trim()) {
-      toast.error('Введите токен');
+      toast.error("Введите токен");
       return;
     }
     setIsSavingToken(true);
     try {
       await adminBotsApi.setToken(kind, { token: token.trim() });
-      toast.success('Токен сохранён');
-      setToken('');
+      toast.success("Токен сохранён");
+      setToken("");
       onRefetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось сохранить токен',
+        e instanceof ApiError ? e.message : "Не удалось сохранить токен",
       );
     } finally {
       setIsSavingToken(false);
     }
   };
 
-  const sevVariant: 'success' | 'warning' | 'danger' | 'secondary' = data.isLive
-    ? 'success'
-    : data.status === 'broken'
-      ? 'danger'
+  const sevVariant: "success" | "warning" | "danger" | "secondary" = data.isLive
+    ? "success"
+    : data.status === "broken"
+      ? "danger"
       : data.isGloballyDisabled
-        ? 'warning'
-        : 'secondary';
+        ? "warning"
+        : "secondary";
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Статус-карточка */}
+      {}
       <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -250,7 +231,7 @@ function BotChannelEditor({
             </Badge>
           </div>
           <span className="text-xs text-fg-tertiary">
-            Обновлено {data.updatedAt.toLocaleString('ru-RU')}
+            Обновлено {data.updatedAt.toLocaleString("ru-RU")}
           </span>
         </div>
         <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -299,7 +280,7 @@ function BotChannelEditor({
             label="Последнее событие"
             value={
               data.lastWebhookEventAt ? (
-                <span>{data.lastWebhookEventAt.toLocaleString('ru-RU')}</span>
+                <span>{data.lastWebhookEventAt.toLocaleString("ru-RU")}</span>
               ) : (
                 <span className="text-fg-tertiary">пока нет</span>
               )
@@ -318,7 +299,7 @@ function BotChannelEditor({
         </dl>
       </div>
 
-      {/* Webhook controls */}
+      {}
       <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-fg-primary">
           <Webhook size={14} /> Webhook
@@ -367,7 +348,7 @@ function BotChannelEditor({
         </div>
       </div>
 
-      {/* Token controls */}
+      {}
       <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <h3 className="mb-3 text-sm font-semibold text-fg-primary">
           Токен бота
@@ -401,13 +382,11 @@ function BotChannelEditor({
         </div>
       </div>
 
-      {/* Глобальные настройки (AdminSetting) */}
+      {}
       <BotGlobalSettings kind={kind} />
     </div>
   );
 }
-
-// ─────────────────────────── AdminSetting-поля ───────────────────────────
 
 const RPS_SCHEMA = z.number().min(0).max(1000);
 const QUIET_HOURS_SCHEMA = z.string();
@@ -415,7 +394,7 @@ const QUIET_HOURS_SCHEMA = z.string();
 function BotGlobalSettings({
   kind,
 }: {
-  kind: Exclude<BotKindApi, 'email_inbox'>;
+  kind: Exclude<BotKindApi, "email_inbox">;
 }) {
   const rpsKey = `conversational.${kind}.global_rps`;
   const quietKey = `conversational.${kind}.quiet_hours`;
@@ -423,12 +402,12 @@ function BotGlobalSettings({
   const rps = useAdminSettingEditor<number>(rpsKey, {
     schema: RPS_SCHEMA,
     defaultValue: 30,
-    requiresReason: 'low',
+    requiresReason: "low",
   });
   const quiet = useAdminSettingEditor<string>(quietKey, {
     schema: QUIET_HOURS_SCHEMA,
-    defaultValue: '',
-    requiresReason: 'low',
+    defaultValue: "",
+    requiresReason: "low",
   });
 
   const onSave = useCallback(
@@ -466,9 +445,11 @@ function BotGlobalSettings({
               size="sm"
               variant="outline"
               disabled={!rps.isDirty || rps.isSaving}
-              onClick={() => void onSave(() => rps.save(), 'RPS')}
+              onClick={() => void onSave(() => rps.save(), "RPS")}
             >
-              {rps.isSaving ? <Loader2 size={14} className="animate-spin" /> : null}
+              {rps.isSaving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : null}
               Сохранить
             </Button>
             {rps.isDirty ? (
@@ -493,7 +474,7 @@ function BotGlobalSettings({
               size="sm"
               variant="outline"
               disabled={!quiet.isDirty || quiet.isSaving}
-              onClick={() => void onSave(() => quiet.save(), 'Тихие часы')}
+              onClick={() => void onSave(() => quiet.save(), "Тихие часы")}
             >
               {quiet.isSaving ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -511,8 +492,6 @@ function BotGlobalSettings({
     </div>
   );
 }
-
-// ─────────────────────────── Email-inbox ───────────────────────────
 
 function EmailInboxTab({
   data,
@@ -548,14 +527,14 @@ function EmailInboxTab({
     try {
       const res = await adminBotsApi.testEmailInbox();
       if (res.ok) {
-        toast.success('Соединение успешно');
+        toast.success("Соединение успешно");
       } else {
-        toast.error(res.message ?? 'Соединение не удалось');
+        toast.error(res.message ?? "Соединение не удалось");
       }
       onRefetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось проверить соединение',
+        e instanceof ApiError ? e.message : "Не удалось проверить соединение",
       );
     } finally {
       setIsTesting(false);
@@ -567,8 +546,10 @@ function EmailInboxTab({
       <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-fg-primary">Email-inbox</h3>
-            <Badge variant={data.isLive ? 'success' : 'secondary'}>
+            <h3 className="text-sm font-semibold text-fg-primary">
+              Email-inbox
+            </h3>
+            <Badge variant={data.isLive ? "success" : "secondary"}>
               {BOT_STATUS_LABELS[data.status] ?? data.status}
             </Badge>
           </div>
@@ -631,7 +612,7 @@ function EmailInboxTab({
             label="Последняя выборка"
             value={
               data.lastFetchAt ? (
-                <span>{data.lastFetchAt.toLocaleString('ru-RU')}</span>
+                <span>{data.lastFetchAt.toLocaleString("ru-RU")}</span>
               ) : (
                 <span className="text-fg-tertiary">пока нет</span>
               )
@@ -640,7 +621,9 @@ function EmailInboxTab({
           {data.lastWebhookError ? (
             <StatRow
               label="Последняя ошибка"
-              value={<span className="text-danger">{data.lastWebhookError}</span>}
+              value={
+                <span className="text-danger">{data.lastWebhookError}</span>
+              }
             />
           ) : null}
         </dl>
@@ -649,15 +632,7 @@ function EmailInboxTab({
   );
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
-function StatRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
       <dt className="text-xs uppercase tracking-wide text-fg-tertiary">

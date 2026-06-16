@@ -1,22 +1,3 @@
-/**
- * Inline-шаблоны писем (Handlebars-source).
- *
- * Хранятся как константы в коде, а не как .hbs-файлы рядом, потому что
- * `tsc -p tsconfig.build.json` собирает только `.ts` — внешние ассеты в
- * `dist/` не попадают, и в проде `readFileSync` отвалится. Inline-шаблоны
- * убирают этот риск и не требуют отдельного шага копирования assets.
- *
- * Текстовый формат (без HTML) — оптимален для reg.ru SMTP: меньше
- * фильтрации антиспам-фильтрами, проще тестировать.
- */
-
-// DEPRECATED β-9 (2026-05-25): используй INVITE_GITHUB_STYLE_TEMPLATE для
-// приглашений сотрудников. Это письмо остаётся работающим для обратной
-// совместимости — внутренние/программные регистрации без OrgInvitation
-// (например при импорте из внешних источников) по-прежнему его используют.
-// Подробности в plans/tz/2026-05-25-telegram-bot-global-and-invites.md §14
-// и second-brain/01_projects/conversational-channels.md §«Продуктовые
-// принципы каналов» (принцип 2 — magic-link вместо паролей по умолчанию).
 export const REGISTER_TEMP_PASSWORD_TEMPLATE = `Здравствуйте, {{name}}!
 
 Для вас создан аккаунт в Коре — сервисе AI-видеовстреч.
@@ -34,11 +15,6 @@ export const REGISTER_TEMP_PASSWORD_TEMPLATE = `Здравствуйте, {{name
 — Команда Кора
 `;
 
-/**
- * β-9 (2026-05-25) — GitHub-style приглашение сотрудника в компанию.
- * Magic-link (вход в кабинет без пароля) + deep-link в глобального
- * Telegram-бота. Текст утверждён в ТЗ §14.
- */
 export const INVITE_GITHUB_STYLE_TEMPLATE = `Здравствуйте, {{name}}!
 
 {{inviterName}} приглашает вас в компанию «{{orgName}}» в Коре —
@@ -57,12 +33,6 @@ export const INVITE_GITHUB_STYLE_TEMPLATE = `Здравствуйте, {{name}}!
 — Команда Коры
 `;
 
-/**
- * β-10 (2026-05-27) — приглашение сотрудника с явными реквизитами входа.
- * Отправляется из `OrgInvitationsService.createInvitation` /
- * `resendInvitation` для email-инвайтов вместо `INVITE_GITHUB_STYLE_TEMPLATE`.
- * Цель: сотрудник с первого взгляда видит логин и одноразовый пароль.
- */
 export const INVITE_WITH_CREDENTIALS_TEMPLATE = `Здравствуйте, {{name}}!
 
 {{inviterName}} приглашает вас в компанию «{{orgName}}» в Коре —
@@ -93,10 +63,6 @@ export const INVITE_WITH_CREDENTIALS_TEMPLATE = `Здравствуйте, {{nam
 — Команда Коры
 `;
 
-/**
- * β-9 (2026-05-25) — напоминание сотруднику на 7-й день, если он
- * не принял приглашение. Отправляется кроном `org-invitation-reminders`.
- */
 export const INVITE_REMINDER_TEMPLATE = `Здравствуйте, {{name}}!
 
 Неделю назад {{inviterName}} пригласил вас в компанию
@@ -114,11 +80,6 @@ export const INVITE_REMINDER_TEMPLATE = `Здравствуйте, {{name}}!
 — Команда Коры
 `;
 
-/**
- * β-9 (2026-05-25) — уведомление директора на 14-й день, когда
- * приглашение истекло без принятия. Отправляется кроном
- * `org-invitation-reminders`.
- */
 export const INVITE_DIRECTOR_TIMEOUT_TEMPLATE = `Здравствуйте, {{directorName}}!
 
 Сотрудник {{employeeName}}{{#if employeeEmail}} ({{employeeEmail}}){{/if}} так и не принял
@@ -131,14 +92,6 @@ export const INVITE_DIRECTOR_TIMEOUT_TEMPLATE = `Здравствуйте, {{dir
 — Команда Коры
 `;
 
-/**
- * ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
- * Plain-text, без HTML. Отправляется из `MeetingsService.createForUser`
- * приглашённым сотрудникам с каналом доставки `email`. Персональная
- * ссылка `{{joinUrl}}` несёт `?inv=<inviteToken>` — переход проставляет
- * identity участника (Фаза 3.1). `{{telegramDeepLink}}` — опционально
- * (если не передан, Handlebars подставит пустую строку).
- */
 export const MEETING_INVITE_TEMPLATE = `Здравствуйте!
 
 {{hostName}} приглашает вас на встречу в Коре:

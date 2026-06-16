@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState } from "react";
+import { Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminMeetingTypesApi } from '@/api/admin-meeting-types.api';
+import { ApiError } from "@/api/api-error";
+import { adminMeetingTypesApi } from "@/api/admin-meeting-types.api";
 import {
   MEETING_TYPE_DEFAULT_LABELS,
   MEETING_TYPE_IDS,
   type CreateMeetingTypeRequest,
   type MeetingTypeItemDomain,
   type UpdateMeetingTypeRequest,
-} from '@/domain/admin-meeting-type';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-meeting-type";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -21,34 +21,27 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 type Props = {
-  /** При null — режим «создать». Иначе — редактировать запись. */
   item: MeetingTypeItemDomain | null;
-  /** Уже занятые id (для отсечения в Select при создании). */
   existingIds: string[];
   open: boolean;
   onOpenChange: (next: boolean) => void;
   onSaved: () => void;
 };
 
-/**
- * Диалог CRUD `MeetingTypeConfig`. В режиме создания id выбирается из
- * `MEETING_TYPE_IDS` (значения enum MeetingType), кроме уже занятых.
- * В режиме редактирования id — read-only (PK).
- */
 export function MeetingTypeEditDialog({
   item,
   existingIds,
@@ -58,21 +51,19 @@ export function MeetingTypeEditDialog({
 }: Props) {
   const isEdit = item !== null;
 
-  const [id, setId] = useState<string>('');
-  const [displayName, setDisplayName] = useState('');
-  const [description, setDescription] = useState('');
-  const [icon, setIcon] = useState('');
-  const [reportPromptKey, setReportPromptKey] = useState('');
-  const [sortOrder, setSortOrder] = useState<string>('0');
+  const [id, setId] = useState<string>("");
+  const [displayName, setDisplayName] = useState("");
+  const [description, setDescription] = useState("");
+  const [icon, setIcon] = useState("");
+  const [reportPromptKey, setReportPromptKey] = useState("");
+  const [sortOrder, setSortOrder] = useState<string>("0");
   const [isActive, setIsActive] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const availableIds = useMemo(
     () =>
-      MEETING_TYPE_IDS.filter(
-        (candidate) => !existingIds.includes(candidate),
-      ),
+      MEETING_TYPE_IDS.filter((candidate) => !existingIds.includes(candidate)),
     [existingIds],
   );
 
@@ -82,22 +73,22 @@ export function MeetingTypeEditDialog({
     if (item) {
       setId(item.id);
       setDisplayName(item.displayName);
-      setDescription(item.description ?? '');
-      setIcon(item.icon ?? '');
-      setReportPromptKey(item.reportPromptKey ?? '');
+      setDescription(item.description ?? "");
+      setIcon(item.icon ?? "");
+      setReportPromptKey(item.reportPromptKey ?? "");
       setSortOrder(String(item.sortOrder));
       setIsActive(item.isActive);
     } else {
-      setId(availableIds[0] ?? '');
+      setId(availableIds[0] ?? "");
       setDisplayName(
         availableIds[0]
-          ? (MEETING_TYPE_DEFAULT_LABELS[availableIds[0]] ?? '')
-          : '',
+          ? (MEETING_TYPE_DEFAULT_LABELS[availableIds[0]] ?? "")
+          : "",
       );
-      setDescription('');
-      setIcon('');
-      setReportPromptKey('');
-      setSortOrder('0');
+      setDescription("");
+      setIcon("");
+      setReportPromptKey("");
+      setSortOrder("0");
       setIsActive(true);
     }
   }, [open, item, availableIds]);
@@ -118,7 +109,8 @@ export function MeetingTypeEditDialog({
         };
         if (description.trim()) body.description = description.trim();
         if (icon.trim()) body.icon = icon.trim();
-        if (reportPromptKey.trim()) body.reportPromptKey = reportPromptKey.trim();
+        if (reportPromptKey.trim())
+          body.reportPromptKey = reportPromptKey.trim();
         if (sortOrder.trim()) {
           const s = Number(sortOrder);
           if (Number.isFinite(s) && s >= 0) body.sortOrder = Math.floor(s);
@@ -148,7 +140,7 @@ export function MeetingTypeEditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -167,14 +159,12 @@ export function MeetingTypeEditDialog({
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit
-              ? `Редактировать тип «${item!.id}»`
-              : 'Создать тип встречи'}
+            {isEdit ? `Редактировать тип «${item!.id}»` : "Создать тип встречи"}
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'id типа нельзя изменить — он привязан к значению enum MeetingType.'
-              : 'Id выбирается из enum MeetingType. Если нужного значения нет в списке — добавьте его в schema.prisma и сделайте db push.'}
+              ? "id типа нельзя изменить — он привязан к значению enum MeetingType."
+              : "Id выбирается из enum MeetingType. Если нужного значения нет в списке — добавьте его в schema.prisma и сделайте db push."}
           </DialogDescription>
         </DialogHeader>
 
@@ -200,7 +190,7 @@ export function MeetingTypeEditDialog({
                       <SelectItem key={candidate} value={candidate}>
                         <span className="font-mono text-xs">{candidate}</span>
                         <span className="ml-2 text-fg-tertiary">
-                          {MEETING_TYPE_DEFAULT_LABELS[candidate] ?? ''}
+                          {MEETING_TYPE_DEFAULT_LABELS[candidate] ?? ""}
                         </span>
                       </SelectItem>
                     ))}
@@ -314,7 +304,7 @@ export function MeetingTypeEditDialog({
             onClick={() => void handleSave()}
           >
             <Save size={14} />
-            {saving ? 'Сохраняем…' : isEdit ? 'Сохранить' : 'Создать'}
+            {saving ? "Сохраняем…" : isEdit ? "Сохранить" : "Создать"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -20,10 +20,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurationService } from '../../curation/services/curation.service';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -50,20 +47,11 @@ import {
   MarkEntityWrongBodySchema,
   type MarkEntityWrongResultDto,
 } from './dto/graph.dto';
-import type {
-  BlockSearchItemDto,
-  EntityItemDto,
-} from './dto/search.dto';
+import type { BlockSearchItemDto, EntityItemDto } from './dto/search.dto';
 
-/** Лимит nodes для entity-graph (G.3, KC-Temporal). */
 const ENTITY_GRAPH_MAX_NODES = 100;
-/** Top-N evidence на каждое ребро. */
 const ENTITY_GRAPH_EVIDENCE_PER_EDGE = 3;
 
-/**
- * `GET /api/v1/knowledge/entities` — список Entity с фильтрами / поиском.
- * `GET /api/v1/knowledge/entities/:id` — деталка с примерами блоков.
- */
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -71,19 +59,9 @@ export class KnowledgeEntitiesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    /**
-     * G.3 KC-Temporal — `recordDecision` для `POST /entities/:id/mark-wrong`.
-     * @Optional, чтобы не ломать legacy-тесты `KnowledgeEntitiesController`,
-     * которые создают контроллер позиционно (без CurationService). В
-     * HTTP-runtime CurationService доступен через @Global CurationModule.
-     */
     @Optional()
     @Inject(CurationService)
     private readonly curation: CurationService | null = null,
-    // Ф4 (knowledge-access) — гейт доступа в деталке/графе сущности.
-    // RbacModule/MetricsModule/Config @Global. @Optional, чтобы legacy-тесты,
-    // создающие контроллер позиционно (без этих сервисов), не падали —
-    // при null гейт не активируется (поведение = off).
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -179,7 +157,6 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
 
     const entity = await this.prisma.entity.findUnique({ where: { id } });
@@ -190,8 +167,6 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // Если запрошенная сущность уже merged_into — показываем её, но кладём
-    // в DTO `mergedIntoId` чтобы UI мог редиректить.
     const mentionRows = await this.prisma.ideaBlockEntity.findMany({
       where: {
         entityId: entity.id,
@@ -202,14 +177,12 @@ export class KnowledgeEntitiesController {
       take: 20,
     });
 
-    // Ф4 (knowledge-access) — post-filter блоков-упоминаний по группам.
     let visibleMentionRows = mentionRows;
     if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
-      const { accessible, denied } =
-        await this.accessResolver.partitionBlockIdsByAccess(
-          accessCtx,
-          mentionRows.map((r) => r.block.id),
-        );
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        mentionRows.map((r) => r.block.id),
+      );
       if (enf === 'enforce') {
         const allow = new Set(accessible);
         visibleMentionRows = mentionRows.filter((r) => allow.has(r.block.id));
@@ -228,17 +201,11 @@ export class KnowledgeEntitiesController {
         mentionsCount: entity.mentionsCount,
         metadata: this.jsonObj(entity.metadata),
       },
-      blocks: visibleMentionRows.map(
-        (r): BlockSearchItemDto => this.mapBlock(r.block),
-      ),
+      blocks: visibleMentionRows.map((r): BlockSearchItemDto => this.mapBlock(r.block)),
       ...(entity.mergedIntoId ? { mergedIntoId: entity.mergedIntoId } : {}),
     };
   }
 
-  /**
-   * `GET /api/v1/knowledge/entities/:id/links` — типизированные связи сущности
-   * (Фаза 3). Возвращает outgoing + incoming, без архивных связей.
-   */
   @Get('entities/:id/links')
   @ApiOperation({ summary: 'Типизированные связи сущности (outgoing + incoming)' })
   async links(
@@ -270,10 +237,6 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Связи на
-    // Entity↔Entity фильтруем по fromType/toType IS NULL (legacy) OR = 'entity';
-    // остальные узлы (Role/Person/Process/...) на этой ручке не возвращаем —
-    // /entities/* — view knowledge-core, а не графа Фазы 0.
     const [outgoing, incoming] = await Promise.all([
       this.prisma.entityLink.findMany({
         where: {
@@ -297,13 +260,8 @@ export class KnowledgeEntitiesController {
       }),
     ]);
 
-    // Подгружаем Entity-узлы отдельным запросом, потому что FK relation
-    // (fromEntity/toEntity) убраны при полиморфизации EntityLink.
     const peerIds = Array.from(
-      new Set([
-        ...outgoing.map((l) => l.toEntityId),
-        ...incoming.map((l) => l.fromEntityId),
-      ]),
+      new Set([...outgoing.map((l) => l.toEntityId), ...incoming.map((l) => l.fromEntityId)]),
     );
     const peers = peerIds.length
       ? await this.prisma.entity.findMany({
@@ -361,23 +319,9 @@ export class KnowledgeEntitiesController {
     };
   }
 
-  // ───────────────────── G.3 KC-Temporal: entity-graph + mark-wrong ───────
-
-  /**
-   * `GET /api/v1/knowledge/entities/:id/graph?depth=1..3`
-   *
-   * G.3 KC-Temporal — entity-centric BFS-обход графа с rich-edge'ами и
-   * top-3 evidence на каждое ребро. Используется UI «что система знает про X»
-   * (frontend/app/(authenticated)/entities/[id]/graph).
-   *
-   * RBAC — entity:read (как у других /entities/*).
-   *
-   * Лимит nodes — 100, evidence per edge — 3 (по recency).
-   */
   @Get('entities/:id/graph')
   @ApiOperation({
-    summary:
-      'Entity-centric граф с rich-edge атрибутами и top-3 evidence (G.3)',
+    summary: 'Entity-centric граф с rich-edge атрибутами и top-3 evidence (G.3)',
   })
   async getGraph(
     @Param('id') id: string,
@@ -400,7 +344,6 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
     const { enf, accessCtx } = await this.resolveAccess(tenantId, user.id);
 
     const center = await this.prisma.entity.findUnique({
@@ -430,8 +373,6 @@ export class KnowledgeEntitiesController {
     for (let level = 1; level <= query.depth; level++) {
       if (frontier.length === 0) break;
       const nextFrontier: string[] = [];
-      // EntityLink — полиморфная модель (Фаза 0). Фильтруем только
-      // entity↔entity (как в /entities/:id/links и graph/neighbors).
       const [outgoing, incoming] = await Promise.all([
         this.prisma.entityLink.findMany({
           where: {
@@ -454,10 +395,7 @@ export class KnowledgeEntitiesController {
       ]);
 
       const peerIds = Array.from(
-        new Set([
-          ...outgoing.map((l) => l.toEntityId),
-          ...incoming.map((l) => l.fromEntityId),
-        ]),
+        new Set([...outgoing.map((l) => l.toEntityId), ...incoming.map((l) => l.fromEntityId)]),
       ).filter((peerId) => !nodesById.has(peerId));
 
       const peers = peerIds.length
@@ -485,13 +423,8 @@ export class KnowledgeEntitiesController {
       if (truncated) break;
 
       for (const link of [...outgoing, ...incoming]) {
-        // Проверяем что оба конца — в nodesById (после трункейта может не быть).
         if (!nodesById.has(link.fromEntityId) || !nodesById.has(link.toEntityId)) {
-          // Дополнительная проверка peerById для текущего батча.
-          if (
-            !peerById.has(link.fromEntityId) &&
-            !nodesById.has(link.fromEntityId)
-          ) {
+          if (!peerById.has(link.fromEntityId) && !nodesById.has(link.fromEntityId)) {
             continue;
           }
           if (!peerById.has(link.toEntityId) && !nodesById.has(link.toEntityId)) {
@@ -508,7 +441,7 @@ export class KnowledgeEntitiesController {
           attributes: this.jsonObj(link.attributes),
           validFrom: link.validFrom.toISOString(),
           validUntil: link.validUntil ? link.validUntil.toISOString() : null,
-          evidence: [], // заполняется ниже одним запросом
+          evidence: [],
         });
         for (const blockId of link.sourceBlockIds) {
           allSourceBlockIds.add(blockId);
@@ -517,8 +450,6 @@ export class KnowledgeEntitiesController {
       frontier = nextFrontier;
     }
 
-    // Подгружаем все evidence одним запросом + sourceBlockIds на ребро
-    // отдельным sweep'ом (мы не сохранили их в DTO). Так избегаем N+1.
     if (allSourceBlockIds.size > 0) {
       const [blocks, fullEdges] = await Promise.all([
         this.prisma.ideaBlock.findMany({
@@ -548,19 +479,12 @@ export class KnowledgeEntitiesController {
       ]);
       const blockMap = new Map(blocks.map((b) => [b.id, b]));
 
-      // Ф4 (knowledge-access) — узлы графа — сущности, но КОНТЕНТ блоков утекает
-      // через edge.evidence[]. Партиционируем source-блоки по группам:
-      //   enforce — убираем недоступные из blockMap (их quote/name не попадут в
-      //     evidence) и копим denied-set, чтобы дропнуть рёбра, чьи ВСЕ source-
-      //     блоки недоступны (ребро целиком выведено из закрытого знания);
-      //   shadow — только метрика, выдачу не меняем.
       const deniedBlockIds = new Set<string>();
       if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
-        const { accessible, denied } =
-          await this.accessResolver.partitionBlockIdsByAccess(
-            accessCtx,
-            Array.from(allSourceBlockIds),
-          );
+        const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+          accessCtx,
+          Array.from(allSourceBlockIds),
+        );
         if (enf === 'enforce') {
           const allow = new Set(accessible);
           for (const id of allSourceBlockIds) {
@@ -595,9 +519,6 @@ export class KnowledgeEntitiesController {
         }
         edge.evidence = evList;
 
-        // enforce — ребро, ВСЕ source-блоки которого недоступны, удаляем
-        // целиком (выведено только из закрытого знания). Рёбра с >=1 доступным
-        // блоком остаются с отфильтрованным evidence.
         if (
           enf === 'enforce' &&
           deniedBlockIds.size > 0 &&
@@ -609,8 +530,6 @@ export class KnowledgeEntitiesController {
       }
     }
 
-    // Ф4 (knowledge-access) — после удаления рёбер дропаем осиротевшие узлы
-    // (сущности, оставшиеся без связей), кроме центра. Центр оставляем всегда.
     let resultNodes = Array.from(nodesById.values());
     const resultEdges = Array.from(edgesById.values());
     if (enf === 'enforce' && accessCtx && !accessCtx.isBypass) {
@@ -635,19 +554,10 @@ export class KnowledgeEntitiesController {
     };
   }
 
-  /**
-   * `POST /api/v1/knowledge/entities/:id/mark-wrong`
-   *
-   * G.3 KC-Temporal — post-hoc «это неверно» из UI Карты знаний. Прокси
-   * к `CurationService.recordDecision({decisionType:'mark_as_misleading'})`.
-   *
-   * RBAC — entity:write (правка фактуры — не чтение).
-   */
   @Post('entities/:id/mark-wrong')
   @HttpCode(200)
   @ApiOperation({
-    summary:
-      'Пометить ребро или сущность как «неверную» (G.3, попадает в LlmPreferenceSample)',
+    summary: 'Пометить ребро или сущность как «неверную» (G.3, попадает в LlmPreferenceSample)',
   })
   async markWrong(
     @Param('id') id: string,
@@ -670,7 +580,6 @@ export class KnowledgeEntitiesController {
       });
     }
     if (!this.curation) {
-      // Не должно случаться в runtime — CurationModule в @Global.
       throw new InternalServerErrorException({
         ok: false,
         error: {
@@ -680,7 +589,6 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // Проверяем что сущность принадлежит этому tenant'у — защита от подмены.
     const entity = await this.prisma.entity.findUnique({
       where: { id },
       select: { id: true, tenantId: true },
@@ -692,11 +600,9 @@ export class KnowledgeEntitiesController {
       });
     }
 
-    // Определяем, что помечаем: ребро или сам узел.
     let resourceType: string;
     let resourceId: string;
     if (body.edgeId) {
-      // Проверяем что ребро живёт в этом tenant'е.
       const edge = await this.prisma.entityLink.findUnique({
         where: { id: body.edgeId },
         select: { id: true, tenantId: true },
@@ -710,7 +616,6 @@ export class KnowledgeEntitiesController {
       resourceType = 'entity_link';
       resourceId = body.edgeId;
     } else if (body.nodeId) {
-      // nodeId должен совпадать с :id в URL или быть валидной сущностью того же tenant'а.
       if (body.nodeId !== id) {
         const node = await this.prisma.entity.findUnique({
           where: { id: body.nodeId },
@@ -730,34 +635,26 @@ export class KnowledgeEntitiesController {
       resourceId = id;
     }
 
-    const { curationItemId, curationDecisionId } =
-      await this.curation.recordDecision({
-        tenantId,
-        resourceType,
-        resourceId,
-        decisionType: 'mark_as_misleading',
-        recordedBy: user.id,
-        reason: body.reason ?? null,
-        taskType: body.taskType ?? null,
-        context: { entityId: id, via: 'entity-graph-ui' },
-      });
+    const { curationItemId, curationDecisionId } = await this.curation.recordDecision({
+      tenantId,
+      resourceType,
+      resourceId,
+      decisionType: 'mark_as_misleading',
+      recordedBy: user.id,
+      reason: body.reason ?? null,
+      taskType: body.taskType ?? null,
+      context: { entityId: id, via: 'entity-graph-ui' },
+    });
 
     return { ok: true, curationItemId, curationDecisionId };
   }
 
-  /**
-   * Ф4 (knowledge-access) — резолв режима гейта + контекста групп пользователя.
-   * Если сервисы не подключены (legacy позиционные тесты) или флаг off —
-   * возвращает enf='off' + ctx=null (поведение байт-в-байт текущее).
-   */
   private async resolveAccess(
     tenantId: string,
     userId: string,
   ): Promise<{
     enf: 'off' | 'shadow' | 'enforce';
-    accessCtx: Awaited<
-      ReturnType<KnowledgeAccessResolver['resolveAccessibleGroups']>
-    > | null;
+    accessCtx: Awaited<ReturnType<KnowledgeAccessResolver['resolveAccessibleGroups']>> | null;
   }> {
     if (!this.cfg || !this.accessResolver) {
       return { enf: 'off', accessCtx: null };

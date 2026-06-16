@@ -1,37 +1,23 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { type OrgApi, orgsApi } from '@/api/orgs.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { type OrgApi, orgsApi } from "@/api/orgs.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-/**
- * Страница /settings/organization — базовые настройки Org текущего юзера.
- *
- * Содержит только:
- *   - Информация об Org: name + visibilityMode (open/strict). Редактирует только owner.
- *
- * Управление участниками и приглашениями переехало в раздел «Команда»
- * (ТЗ «Команда + доступы» Фаза 3).
- *
- * Архитектура (frontend-rules):
- *   - Single client-side component (Org-страница чисто-форма, без SSR-нужд).
- *   - Все запросы через единый orgsApi.
- *   - Состояние локально в useState, без Redux/Query.
- */
 export function OrganizationClient() {
   const { user } = useAuth();
   const [orgs, setOrgs] = useState<OrgApi[]>([]);
@@ -40,8 +26,10 @@ export function OrganizationClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [editName, setEditName] = useState('');
-  const [editVisibility, setEditVisibility] = useState<'open' | 'strict'>('open');
+  const [editName, setEditName] = useState("");
+  const [editVisibility, setEditVisibility] = useState<"open" | "strict">(
+    "open",
+  );
   const [savingOrg, setSavingOrg] = useState(false);
 
   const activeOrg = orgs.find((o) => o.id === activeOrgId) ?? null;
@@ -57,7 +45,7 @@ export function OrganizationClient() {
         setActiveOrgId(res.orgs[0]!.id);
       }
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить организации'));
+      setError(humanizeApiError(e, "Не удалось загрузить организации"));
     } finally {
       setLoading(false);
     }
@@ -82,9 +70,9 @@ export function OrganizationClient() {
         visibilityMode: editVisibility,
       });
       setOrgs((prev) => prev.map((o) => (o.id === res.org.id ? res.org : o)));
-      toast.success('Настройки организации сохранены');
+      toast.success("Настройки организации сохранены");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSavingOrg(false);
     }
@@ -121,7 +109,10 @@ export function OrganizationClient() {
           </p>
         </div>
         {orgs.length > 1 ? (
-          <Select value={activeOrgId ?? ''} onValueChange={(v) => setActiveOrgId(v)}>
+          <Select
+            value={activeOrgId ?? ""}
+            onValueChange={(v) => setActiveOrgId(v)}
+          >
             <SelectTrigger className="w-56">
               <SelectValue />
             </SelectTrigger>
@@ -136,7 +127,7 @@ export function OrganizationClient() {
         ) : null}
       </header>
 
-      {/* Информация */}
+      {}
       <section className="space-y-4 rounded-lg border border-border-subtle bg-bg-card p-5">
         <h2 className="text-base font-medium">Информация</h2>
         <div className="space-y-3 max-w-md">
@@ -153,7 +144,7 @@ export function OrganizationClient() {
             <Label htmlFor="org-visibility">Режим видимости</Label>
             <Select
               value={editVisibility}
-              onValueChange={(v) => setEditVisibility(v as 'open' | 'strict')}
+              onValueChange={(v) => setEditVisibility(v as "open" | "strict")}
               disabled={!isOwner}
             >
               <SelectTrigger id="org-visibility">
@@ -169,15 +160,15 @@ export function OrganizationClient() {
               </SelectContent>
             </Select>
             <p className="text-xs text-fg-secondary">
-              {editVisibility === 'open'
-                ? 'Менеджеры могут читать встречи, карточки и задачи коллег. Писать — только свои.'
-                : 'Каждый менеджер видит только свои встречи, карточки, задачи. Owner и admin видят всё.'}
+              {editVisibility === "open"
+                ? "Менеджеры могут читать встречи, карточки и задачи коллег. Писать — только свои."
+                : "Каждый менеджер видит только свои встречи, карточки, задачи. Owner и admin видят всё."}
             </p>
           </div>
         </div>
         {isOwner ? (
           <Button onClick={handleSaveOrg} disabled={savingOrg}>
-            {savingOrg ? 'Сохраняем…' : 'Сохранить'}
+            {savingOrg ? "Сохраняем…" : "Сохранить"}
           </Button>
         ) : (
           <p className="text-xs text-fg-secondary">

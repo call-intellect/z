@@ -4,20 +4,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { EntityResolutionService } from './entity-resolution.service';
 
-/**
- * ТЗ-D Ф2a (2026-06-05) — чистый unit-тест `resolveSubjectPersonId`.
- *
- * БД-независимый: мокаем только нужные prisma-делегаты (`person.findFirst`,
- * `person.findUnique`, `participant.findUnique`). Остальные зависимости
- * конструктора @Optional — передаём `undefined`. Метод детерминированный,
- * сети/Postgres не требует. Integration-сценарии (реальный resolve по графу) —
- * в `entity-resolution.service.spec.ts` (там есть beforeAll → Postgres).
- *
- * Ветка speakerName здесь НЕ тестируется: она делегирует во внутренний
- * `resolvePersonByHint` (findMany по Person), что выходит за рамки этих
- * детерминированных unit-кейсов.
- */
-
 interface PrismaMock {
   person: {
     findFirst: ReturnType<typeof vi.fn>;
@@ -40,17 +26,10 @@ function makePrismaMock(): PrismaMock {
   };
 }
 
-/**
- * Конструирует сервис только с prisma-моком. Остальные конструкторные
- * зависимости (embeddings + 5 @Optional) для `resolveSubjectPersonId` не
- * используются, поэтому передаём `undefined`/пустые заглушки.
- */
 function makeService(prisma: PrismaMock): EntityResolutionService {
   return new EntityResolutionService(
     prisma as unknown as PrismaService,
-    // embeddings — не вызывается этим методом
     {} as never,
-    // redis, coreQueue, metrics, cfg, events — все @Optional
     undefined as never,
     undefined as never,
     undefined as never,
@@ -98,7 +77,6 @@ describe('EntityResolutionService.resolveSubjectPersonId', () => {
     });
 
     expect(result).toBe('pers-2');
-    // authorUserId не задан → findFirst не должен дёргаться
     expect(prisma.person.findFirst).not.toHaveBeenCalled();
     expect(prisma.participant.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'sp1' } }),

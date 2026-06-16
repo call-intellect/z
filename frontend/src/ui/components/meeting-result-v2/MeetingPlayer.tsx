@@ -1,36 +1,17 @@
-'use client';
+"use client";
 
-/**
- * Плеер встречи на нативном `<video>` (Vidstack не инициализировался в
- * prod-сборке → вечная крутилка; нативный `<video>` доказанно играет).
- *
- * Источник видео: presigned URL из `meeting.recording.mainVideoUrl`.
- * Если запись не готова — placeholder.
- *
- * Маркеры (отдельная тонкая полоса НАД видео, не оверлей на скраббер):
- *   - Главы: вертикальные mint-glow линии в `chapter.startMs`.
- *   - Highlights: золотые точки в `highlight.startMs`.
- */
+import { useRef } from "react";
 
-import { useRef } from 'react';
-
-import type { ChapterDomain } from '@/domain/chapter';
-import type { HighlightDomain } from '@/domain/highlight';
+import type { ChapterDomain } from "@/domain/chapter";
+import type { HighlightDomain } from "@/domain/highlight";
 
 export type MeetingPlayerProps = {
-  /** Presigned URL основной видеозаписи (или null если не готово). */
   videoUrl: string | null;
-  /** Длительность записи в миллисекундах для расчёта позиций маркеров. */
   durationMs: number | null;
-  /** Главы для рендера маркеров. */
   chapters: ChapterDomain[];
-  /** Хайлайты для рендера маркеров. */
   highlights: HighlightDomain[];
-  /** Ref на нативный `<video>` (см. `useVideoPlayer`). */
   playerRef?: React.MutableRefObject<HTMLVideoElement | null>;
-  /** Колбэк при изменении текущей позиции воспроизведения. */
   onTimeUpdate?: (ms: number) => void;
-  /** Заголовок встречи (для accessibility). */
   title?: string;
 };
 
@@ -64,7 +45,7 @@ export function MeetingPlayer({
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-border-subtle bg-bg-card">
-      {/* Маркеры глав/хайлайтов — тонкой полосой НАД видео (нативный скраббер не оверлеить). */}
+      {}
       <PlayerMarkers
         chapters={chapters}
         highlights={highlights}
@@ -81,17 +62,12 @@ export function MeetingPlayer({
         playsInline
         onTimeUpdate={(e) => onTimeUpdate?.(e.currentTarget.currentTime * 1000)}
         className="aspect-video w-full bg-black"
-        aria-label={title ?? 'Запись встречи'}
+        aria-label={title ?? "Запись встречи"}
       />
     </div>
   );
 }
 
-/**
- * Маркеры (главы + highlights) — тонкой полосой над нативным `<video>`.
- * Нативный скраббер не поддаётся точному CSS-оверлею, поэтому полоса идёт
- * сверху на всю ширину; позиция каждого маркера — доля от `durationMs`.
- */
 function PlayerMarkers({
   chapters,
   highlights,
@@ -127,7 +103,7 @@ function PlayerMarkers({
             key={`hl-${h.id}`}
             title={h.title}
             className="absolute top-0 h-2 w-2 -translate-x-1/2 rounded-full bg-warning shadow-[0_0_8px_rgba(251,191,36,0.6)]"
-            style={{ left: `${left}%`, top: '-4px' }}
+            style={{ left: `${left}%`, top: "-4px" }}
           />
         );
       })}

@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import Handlebars from 'handlebars';
 
@@ -21,23 +15,6 @@ import {
 
 import type { EmailTemplateCategory } from './dto/email-templates-admin.dto';
 
-/**
- * Admin-redesign Фаза 5 — `EmailTemplatesAdminService`.
- *
- * CRUD шаблонов писем (`EmailTemplate`). При первом GET (count === 0) —
- * bootstrap-sync констант из `mail.templates.ts` в БД. Дальше все шаблоны
- * редактируются только из админки; код остаётся как fallback на случай,
- * если запись в БД удалили/не нашли.
- *
- * Валидация `body`/`htmlBody`: компиляция через `Handlebars.compile()` —
- * она бросает понятный SyntaxError при несовпадающих скобках. Мы ловим
- * и возвращаем 400 с человекочитаемым сообщением.
- *
- * Test-send: rate-limit 5 запросов / минуту на (super_admin_user_id),
- * хранится в простом in-memory Map. Этого достаточно — endpoint
- * super_admin-only, реалистичной нагрузки тут нет.
- */
-
 export interface EmailTemplateItem {
   key: string;
   subject: string;
@@ -50,11 +27,9 @@ export interface EmailTemplateItem {
 }
 
 export interface EmailTemplateDetail extends EmailTemplateItem {
-  /** Превью с подставленными placeholder-значениями из `variables`. */
   preview: { subject: string; body: string; htmlBody: string | null };
 }
 
-/** Шаблоны из кода — fallback и источник bootstrap-sync. */
 interface StaticTemplate {
   key: string;
   subject: string;
@@ -150,7 +125,6 @@ export class EmailTemplatesAdminService {
   private readonly logger = new Logger(EmailTemplatesAdminService.name);
   private syncing: Promise<void> | null = null;
 
-  /** Простой in-memory rate-limit для test-send: super_admin_user_id → timestamps. */
   private readonly testSendRateLimit = new Map<string, number[]>();
 
   constructor(
@@ -158,14 +132,6 @@ export class EmailTemplatesAdminService {
     @Inject(MailService) private readonly mail: MailService,
   ) {}
 
-  /**
-   * Получить отрисованное тело шаблона по ключу с подстановкой переменных.
-   * Если в БД шаблона нет — fallback на static-константу. Используется
-   * `MailService` обёртками для backward compat.
-   *
-   * Не выбрасывает — на ошибке возвращает null, caller обязан перейти
-   * на прямой fallback на код.
-   */
   async renderOrNull(
     key: string,
     context: Record<string, unknown>,
@@ -301,15 +267,7 @@ export class EmailTemplatesAdminService {
     return this.toItem(updated);
   }
 
-  /**
-   * Отправить тестовое письмо. Rate-limit 5/мин на super_admin_user_id.
-   * Шаблон рендерим placeholder-значениями из `variables`.
-   */
-  async testSend(
-    key: string,
-    to: string,
-    userId: string | null,
-  ): Promise<{ ok: true }> {
+  async testSend(key: string, to: string, userId: string | null): Promise<{ ok: true }> {
     const limiterKey = userId ?? 'anonymous';
     if (!this.allowTestSend(limiterKey)) {
       throw new BadRequestException({
@@ -357,8 +315,6 @@ export class EmailTemplatesAdminService {
     return { ok: true };
   }
 
-  // ─────────────────────────── private ─────────────────────────────────
-
   private allowTestSend(key: string): boolean {
     const now = Date.now();
     const arr = this.testSendRateLimit.get(key) ?? [];
@@ -402,10 +358,6 @@ export class EmailTemplatesAdminService {
     }
   }
 
-  /**
-   * Проверяем, что строка валидна как Handlebars-шаблон. На ошибке —
-   * BadRequest. Под капотом ловим SyntaxError из `Handlebars.parse`.
-   */
   private assertHandlebars(field: string, source: string): void {
     try {
       Handlebars.parse(source);
@@ -429,9 +381,7 @@ export class EmailTemplatesAdminService {
     try {
       const subjectFn = Handlebars.compile(src.subject, { noEscape: true });
       const bodyFn = Handlebars.compile(src.body, { noEscape: true });
-      const htmlFn = src.htmlBody
-        ? Handlebars.compile(src.htmlBody, { noEscape: true })
-        : null;
+      const htmlFn = src.htmlBody ? Handlebars.compile(src.htmlBody, { noEscape: true }) : null;
       return {
         subject: subjectFn(context),
         body: bodyFn(context),
@@ -455,16 +405,9 @@ export class EmailTemplatesAdminService {
   ): { subject: string; body: string; htmlBody: string | null } | null {
     const t = STATIC_TEMPLATES.find((x) => x.key === key);
     if (!t) return null;
-    return this.compileAndRender(
-      { subject: t.subject, body: t.body, htmlBody: null },
-      context,
-    );
+    return this.compileAndRender({ subject: t.subject, body: t.body, htmlBody: null }, context);
   }
 
-  /**
-   * Placeholder-context: `{ varName: '{{varName}}' }` чтобы preview визуально
-   * показал, какие переменные доступны.
-   */
   private placeholderContext(variables: Record<string, string>): Record<string, string> {
     const out: Record<string, string> = {};
     for (const key of Object.keys(variables)) {

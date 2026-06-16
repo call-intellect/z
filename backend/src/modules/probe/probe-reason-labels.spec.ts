@@ -1,7 +1,3 @@
-/**
- * Probe-система Фаза 1 (2026-06-11) — словари reason→человек.
- * Детерминизм: чистые объекты, без сети/времени/БД.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -14,9 +10,7 @@ import {
 describe('probe-reason-labels', () => {
   it('ярлык для известного reason — человеческий рус. текст', () => {
     expect(PROBE_REASON_LABEL['decision.overdue']).toBe('решение просрочено');
-    expect(PROBE_REASON_LABEL['regulation.missing_owner']).toBe(
-      'у регламента нет ответственного',
-    );
+    expect(PROBE_REASON_LABEL['regulation.missing_owner']).toBe('у регламента нет ответственного');
   });
 
   it('ярлык по умолчанию — для незнакомого reason', () => {

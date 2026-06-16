@@ -1,47 +1,32 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import useSWR, { mutate } from 'swr';
-import { BriefcaseBusiness, Check, Loader2, Plus } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import useSWR, { mutate } from "swr";
+import { BriefcaseBusiness, Check, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   rolesDomainApi,
   personsDomainApi,
   type MyProfileApi,
-} from '@/api/structure.api';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/structure.api";
+import { Button } from "@/ui/shadcn/button";
 import {
   Command,
   CommandEmpty,
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/ui/shadcn/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/ui/shadcn/popover';
+} from "@/ui/shadcn/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/shadcn/popover";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * Ф3 (2026-06-05) — карточка «Должность» на странице «Я» (`/me`).
- *
- * Собственник назначает себе должность: выбирает существующую `Role` или
- * создаёт новую одним кликом. После назначения дёргаем `mutate(['me-profile',
- * orgId])` — шапка «Я» перерисовывается и перестаёт показывать «Должность не
- * назначена».
- *
- * Список ролей грузится целиком (`rolesDomainApi.list` без `q` — query не
- * поддерживает фильтр по имени) и фильтруется на клиенте.
- */
 export function MyPositionCard({
   orgId,
   profile,
@@ -100,14 +85,14 @@ function PositionEditor({
 }: {
   orgId: string;
   personId: string;
-  currentRole: MyProfileApi['primaryRole'];
+  currentRole: MyProfileApi["primaryRole"];
 }) {
   const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const rolesSwr = useSWR(['roles', orgId], () => rolesDomainApi.list(orgId));
+  const rolesSwr = useSWR(["roles", orgId], () => rolesDomainApi.list(orgId));
   const roles = rolesSwr.data?.items ?? [];
 
   const trimmed = query.trim();
@@ -115,14 +100,12 @@ function PositionEditor({
   const filtered = lowered
     ? roles.filter((r) => r.name.toLowerCase().includes(lowered))
     : roles;
-  const hasExact = roles.some(
-    (r) => r.name.trim().toLowerCase() === lowered,
-  );
+  const hasExact = roles.some((r) => r.name.trim().toLowerCase() === lowered);
 
   const closeAll = () => {
     setOpen(false);
     setEditing(false);
-    setQuery('');
+    setQuery("");
   };
 
   const assignRole = async (roleId: string) => {
@@ -130,14 +113,12 @@ function PositionEditor({
     setSaving(true);
     try {
       await personsDomainApi.update(orgId, personId, { roleId });
-      await mutate(['me-profile', orgId]);
-      await mutate(['roles', orgId]);
-      toast.success('Должность назначена');
+      await mutate(["me-profile", orgId]);
+      await mutate(["roles", orgId]);
+      toast.success("Должность назначена");
       closeAll();
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось назначить должность'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось назначить должность"));
     } finally {
       setSaving(false);
     }
@@ -151,25 +132,22 @@ function PositionEditor({
     try {
       const res = await rolesDomainApi.create(orgId, { name: clean });
       await personsDomainApi.update(orgId, personId, { roleId: res.role.id });
-      await mutate(['me-profile', orgId]);
-      await mutate(['roles', orgId]);
-      toast.success('Должность назначена');
+      await mutate(["me-profile", orgId]);
+      await mutate(["roles", orgId]);
+      toast.success("Должность назначена");
       closeAll();
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось назначить должность'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось назначить должность"));
     } finally {
       setSaving(false);
     }
   };
 
-  // Уже есть должность и не в режиме изменения — показываем текущую.
   if (currentRole && !editing) {
     return (
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm" style={{ color: CHART.dim }}>
-          Текущая должность:{' '}
+          Текущая должность:{" "}
           <span className="font-medium" style={{ color: CHART.text }}>
             {currentRole.name}
           </span>
@@ -200,7 +178,7 @@ function PositionEditor({
         onOpenChange={(next) => {
           setOpen(next);
           if (!next) {
-            setQuery('');
+            setQuery("");
             if (currentRole) setEditing(false);
           }
         }}

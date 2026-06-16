@@ -1,26 +1,19 @@
-/**
- * API DTO для модуля billing.
- *
- * Источник правды — backend/src/modules/billing/.
- * Доменные модели — `src/domain/billing.ts`.
- */
-
 export type SubscriptionStatusApi =
-  | 'DEMO'
-  | 'ACTIVE'
-  | 'PAST_DUE'
-  | 'SUSPENDED'
-  | 'CANCELED'
-  | 'EXPIRED';
+  | "DEMO"
+  | "ACTIVE"
+  | "PAST_DUE"
+  | "SUSPENDED"
+  | "CANCELED"
+  | "EXPIRED";
 
-export type PaymentModeApi = 'paid' | 'bonus';
-export type BillingPeriodApi = 'monthly' | 'yearly';
-export type InvoiceStatusApi = 'draft' | 'issued' | 'paid' | 'bonus' | 'void';
+export type PaymentModeApi = "paid" | "bonus";
+export type BillingPeriodApi = "monthly" | "yearly";
+export type InvoiceStatusApi = "draft" | "issued" | "paid" | "bonus" | "void";
 export type BillingPaymentMethodApi =
-  | 'card_recurring'
-  | 'bank_invoice'
-  | 'manual_admin'
-  | 'bonus';
+  | "card_recurring"
+  | "bank_invoice"
+  | "manual_admin"
+  | "bonus";
 
 export interface SubscriptionViewApi {
   status: SubscriptionStatusApi;
@@ -92,8 +85,6 @@ export interface StartBankInvoiceBody {
   dueInDays?: number;
   sendToEmail?: boolean;
 }
-
-// ────────────────────────── Admin ──────────────────────────
 
 export interface AdminActivateBody {
   billingPeriod: BillingPeriodApi;

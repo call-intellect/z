@@ -16,10 +16,7 @@ import type { Prisma } from '@prisma/client';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -37,12 +34,6 @@ import {
 } from './dto/curation.dto';
 import { CompletenessScannerService } from './workers/completeness-scanner.cron';
 
-/**
- * SBA α-4 wave 2 — REST API CompletenessSlot.
- *
- *   GET  /api/v1/curation/completeness-slots?cardType=&cardId=&status=open|filled
- *   POST /api/v1/curation/completeness-slots/:id/mark-filled
- */
 @ApiTags('curation')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -122,13 +113,7 @@ export class CompletenessController {
         },
       });
     }
-    const ok = await this.rbac.canWrite(
-      user.id,
-      t,
-      'completeness_slot',
-      // resourceOwnerId — кто закрывает слот; для manager:self self-check = currentUser.
-      user.id,
-    );
+    const ok = await this.rbac.canWrite(user.id, t, 'completeness_slot', user.id);
     if (!ok) {
       throw new ForbiddenException({
         ok: false,
@@ -139,7 +124,6 @@ export class CompletenessController {
       });
     }
     if (slot.filledAt) {
-      // Идемпотентно: уже закрыт.
       return this.toDto(slot);
     }
     const filledBy = body.filledByUserId ?? user.id;

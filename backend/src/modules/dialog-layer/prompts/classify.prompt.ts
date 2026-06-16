@@ -1,26 +1,3 @@
-/**
- * SBA α-5 dialog-layer — system prompt для QueryClassifierService.
- *
- * ТЗ 2026-05-29 telegram-self-initiated-checkins (rev3, согласован 2026-05-29):
- * расширили enum на 3 категории — `daily_plan_morning`, `daily_report_evening`,
- * `note`. Текст промпта/JSON-схемы/префикса user-сообщения зафиксирован в
- * Приложении А ТЗ. Любые правки = инвалидация prompt cache (deepseek-v4-flash
- * кэширует SYSTEM с hit ≈99.9%, см. second-brain/02_architecture/llm-cache-status.md).
- *
- * Intent ∈ { factual | exploratory | analytical | clone_roleplay |
- *            daily_plan_morning | daily_report_evening | note }.
- *
- * ТЗ 2026-06-14 channels-sync (channels ↔ помощник): УБРАЛИ интенты `task`
- * и `show_tasks` (enum 9→7). Постановку и показ задач из Telegram/MAX теперь
- * закрывает единый AI-помощник своими инструментами (create_task /
- * search_tasks), поэтому отдельная классификация задач в боте больше не нужна
- * — task-сообщения уходят в assistant_turn → concierge. Удаление меняет
- * JSON-схему, что разово инвалидирует prompt cache — приемлемо.
- *
- * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Текст в system
- * остаётся как fallback (Ollama и другие провайдеры без strict-support).
- */
-
 export const DIALOG_CLASSIFY_SYSTEM_PROMPT = `Ты — классификатор намерения пользователя в боте компании.
 Пользователь пишет в Telegram-бота, и тебе нужно понять, что это
 за сообщение, чтобы система отправила его в правильный обработчик.
@@ -147,14 +124,6 @@ confidence — твоя уверенность в классификации:
 Если сомневаешься между категорией и note — выбирай note и
 ставь confidence 0.5-0.6. Система обработает корректно.`;
 
-/**
- * T7-F6: JSON Schema для `responseFormat: json_schema strict`. Хардкод (не
- * через z.toJSONSchema) — схема стабильная, intent — фиксированный enum,
- * читать прямо тут проще, чем через zod export.
- *
- * Порядок enum-значений ВАЖЕН для prompt cache (см. Приложение А ТЗ
- * 2026-05-29-telegram-self-initiated-checkins.md).
- */
 export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -168,8 +137,6 @@ export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
         'daily_plan_morning',
         'daily_report_evening',
         'note',
-        // ТЗ 2026-06-14 channels-sync — task/show_tasks убраны (enum 9→7):
-        // постановку/показ задач из каналов закрывает AI-помощник.
       ],
     },
     confidence: {
@@ -182,13 +149,6 @@ export const DIALOG_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-/**
- * Префикс «Сообщение пользователя: » — стабильный, не править. Переменная
- * часть (`args.question`) — единственное, что меняется между вызовами
- * (см. правило cache-friendliness в Приложении А ТЗ).
- */
-export function buildClassifyUserPrompt(args: {
-  question: string;
-}): string {
+export function buildClassifyUserPrompt(args: { question: string }): string {
   return `Сообщение пользователя: ${args.question}\n\nКатегория:`;
 }

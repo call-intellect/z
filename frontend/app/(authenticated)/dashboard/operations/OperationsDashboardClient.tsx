@@ -1,25 +1,35 @@
-'use client';
+"use client";
 
-import { AlertTriangle, Handshake, Target, Thermometer, UserX, Users } from 'lucide-react';
-import Link from 'next/link';
-import { useState, type ReactNode } from 'react';
-import useSWR from 'swr';
+import {
+  AlertTriangle,
+  Handshake,
+  Target,
+  Thermometer,
+  UserX,
+  Users,
+} from "lucide-react";
+import Link from "next/link";
+import { useState, type ReactNode } from "react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { commitmentsApi, type OpenCommitmentsListApi } from '@/api/commitments.api';
+import { ApiError } from "@/api/api-error";
+import {
+  commitmentsApi,
+  type OpenCommitmentsListApi,
+} from "@/api/commitments.api";
 import {
   operationsDashboardApi,
   type OperationsMissingCheckInsApi,
   type OperationsStaleIssuesApi,
   type OperationsTeamTemperatureApi,
   type OperationsTeamTemperatureSummaryApi,
-} from '@/api/operations-dashboard.api';
+} from "@/api/operations-dashboard.api";
 import {
   fromOperationsOverviewApi,
   type OperationsOverviewDomain,
-} from '@/domain/operations-dashboard';
-import { useAuth } from '@/contexts/auth-context';
-import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+} from "@/domain/operations-dashboard";
+import { useAuth } from "@/contexts/auth-context";
+import { ActivityFeedWidget } from "@/ui/components/dashboard/ActivityFeedWidget";
 import {
   AreaTrend,
   Avatar,
@@ -35,45 +45,27 @@ import {
   StatCard,
   StatusPill,
   type ModernTableColumn,
-} from '@/ui/components/dashboard/modern';
-import { OperationsTabs } from '@/ui/components/dashboard/OperationsTabs';
-import { RequiresActionBanner } from '@/ui/components/dashboard/RequiresActionBanner';
-import { TeamTemperatureHeatmap } from '@/ui/components/operations/TeamTemperatureHeatmap';
-import { InsightsTopWidget } from '../widgets/InsightsTopWidget';
-import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
-import { ChronicBlockersWidget } from './widgets/ChronicBlockersWidget';
-import { MaturityWidget } from './widgets/MaturityWidget';
-import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
-import { DecisionThroughputWidget } from './widgets/DecisionThroughputWidget';
-import { CustomerRiskRadarWidget } from './widgets/CustomerRiskRadarWidget';
-import { KnowledgeAtRiskWidget } from './widgets/KnowledgeAtRiskWidget';
-import { dashboardApi } from '@/api/dashboard.api';
-import { pulsePatternsFromApi } from '@/domain/pulse-patterns';
-import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
-import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
-import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
-import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
-import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
-import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
+} from "@/ui/components/dashboard/modern";
+import { OperationsTabs } from "@/ui/components/dashboard/OperationsTabs";
+import { RequiresActionBanner } from "@/ui/components/dashboard/RequiresActionBanner";
+import { TeamTemperatureHeatmap } from "@/ui/components/operations/TeamTemperatureHeatmap";
+import { InsightsTopWidget } from "../widgets/InsightsTopWidget";
+import { CauseCategoryMapWidget } from "./widgets/CauseCategoryMapWidget";
+import { ChronicBlockersWidget } from "./widgets/ChronicBlockersWidget";
+import { MaturityWidget } from "./widgets/MaturityWidget";
+import { TeamCapacityWidget } from "./widgets/TeamCapacityWidget";
+import { DecisionThroughputWidget } from "./widgets/DecisionThroughputWidget";
+import { CustomerRiskRadarWidget } from "./widgets/CustomerRiskRadarWidget";
+import { KnowledgeAtRiskWidget } from "./widgets/KnowledgeAtRiskWidget";
+import { dashboardApi } from "@/api/dashboard.api";
+import { pulsePatternsFromApi } from "@/domain/pulse-patterns";
+import { BusFactorWidget } from "@/ui/components/dashboard/BusFactorWidget";
+import { RecurringTopicsWidget } from "@/ui/components/dashboard/RecurringTopicsWidget";
+import { LowRoiMeetingsWidget } from "@/ui/components/dashboard/LowRoiMeetingsWidget";
+import { BottleneckHeatmapWidget } from "@/ui/components/dashboard/BottleneckHeatmapWidget";
+import { KnowledgeVelocityKpi } from "@/ui/components/dashboard/KnowledgeVelocityKpi";
+import { IrreversibleDecisionsAlert } from "@/ui/components/dashboard/IrreversibleDecisionsAlert";
 
-/**
- * SBA β-8 — клиентский COO-дашборд.
- *
- * Показывает агрегат `/api/v1/dashboard/operations/overview`:
- *   - кол-во активных блокеров (с разбивкой по severity);
- *   - missed goals + cascade-missed;
- *   - team friction count;
- *   - средний % загрузки + перегруженные сотрудники;
- *   - топ-5 свежих блокеров / team frictions.
- *
- * Без Recharts (пакет не подключён к проекту) — простой grid из «карточек».
- * Для визуализации severity используем CSS-плашки. Когда Recharts добавят
- * в `package.json` — переделаем на BarChart / PieChart.
- *
- * Встроенный режим (`embedded`, ТЗ редизайн кабинета Ф2): на экране `/week`
- * (вкладка «Пульс сейчас») клиент живёт внутри общего `ModernPageShell` +
- * вкладок, поэтому не рендерит собственный `ModernPageShell` / `OperationsTabs`.
- */
 export function OperationsDashboardClient({
   embedded = false,
 }: {
@@ -81,16 +73,13 @@ export function OperationsDashboardClient({
 } = {}) {
   const { currentOrgId } = useAuth();
 
-  // R2 — overview и open-commitments через SWR (раньше императивная загрузка
-  // через Promise.all). Каждый запрос независим: провал commitments не валит
-  // overview.
   const overviewSwr = useSWR(
-    ['operations-overview'],
+    ["operations-overview"],
     () => operationsDashboardApi.getOverview(),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const commitmentsSwr = useSWR(
-    ['operations-open-commitments', 14, 100],
+    ["operations-open-commitments", 14, 100],
     () => commitmentsApi.listOpen({ days: 14, limit: 100 }).catch(() => null),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -98,48 +87,45 @@ export function OperationsDashboardClient({
   const data: OperationsOverviewDomain | null = overviewSwr.data
     ? fromOperationsOverviewApi(overviewSwr.data)
     : null;
-  const commitments: OpenCommitmentsListApi | null = commitmentsSwr.data ?? null;
+  const commitments: OpenCommitmentsListApi | null =
+    commitmentsSwr.data ?? null;
   const loading = overviewSwr.isLoading;
-  // Сохраняем спец-обработку forbidden → понятный текст про роль.
   const error = (() => {
     const err = overviewSwr.error;
     if (!err) return null;
-    if (err instanceof ApiError && err.code === 'forbidden') {
-      return 'Нет доступа к COO-дашборду (нужна роль coo / admin / owner).';
+    if (err instanceof ApiError && err.code === "forbidden") {
+      return "Нет доступа к COO-дашборду (нужна роль coo / admin / owner).";
     }
-    return err instanceof Error ? err.message : 'Не удалось загрузить дашборд';
+    return err instanceof Error ? err.message : "Не удалось загрузить дашборд";
   })();
 
-  // Pulse Wave 2.3 — данные для расширенных виджетов. Каждый — независимый
-  // SWR, чтобы провал одного не валил весь дашборд.
   const temperatureSwr = useSWR(
-    ['operations-team-temperature', 7],
+    ["operations-team-temperature", 7],
     async () => operationsDashboardApi.getTeamTemperature(7),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const missingCheckInsSwr = useSWR(
-    ['operations-missing-checkins'],
+    ["operations-missing-checkins"],
     async () => operationsDashboardApi.getMissingCheckIns(),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const staleIssuesSwr = useSWR(
-    ['operations-stale-issues', 5, 20],
-    async () => operationsDashboardApi.getStaleIssues({ staleDays: 5, limit: 20 }),
+    ["operations-stale-issues", 5, 20],
+    async () =>
+      operationsDashboardApi.getStaleIssues({ staleDays: 5, limit: 20 }),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // ТЗ coo-orphan-agents Ф1 — единый SWR на 7 паттернов пульса (тот же тяжёлый
-  // эндпоинт, что на главной; здесь — второй независимый потребитель). Null-ключ
-  // при отсутствии orgId ставит SWR на паузу. Провал не валит доску: ошибка
-  // прокидывается в сами виджеты (у каждого свой error/empty-state).
   const pulseSwr = useSWR(
-    currentOrgId ? ['operations-pulse-patterns', currentOrgId, 'week'] : null,
-    () => dashboardApi.getPulsePatterns(currentOrgId as string, 'week'),
+    currentOrgId ? ["operations-pulse-patterns", currentOrgId, "week"] : null,
+    () => dashboardApi.getPulsePatterns(currentOrgId as string, "week"),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
   if (loading) {
-    return <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>;
+    return (
+      <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>
+    );
   }
   if (error) {
     return (
@@ -155,31 +141,21 @@ export function OperationsDashboardClient({
     return <div className="p-6 text-sm text-fg-secondary">Нет данных</div>;
   }
 
-  // Производные pulse (ТЗ Ф1). pulse=null до загрузки/при ошибке — каждый виджет
-  // сам показывает loading/error/empty по своим props.
   const pulse = pulseSwr.data ? pulsePatternsFromApi(pulseSwr.data) : null;
   const pulseLoading = pulseSwr.isLoading;
   const pulseError = pulseSwr.error
     ? pulseSwr.error instanceof Error
       ? pulseSwr.error.message
-      : 'Не удалось загрузить аналитику'
+      : "Не удалось загрузить аналитику"
     : null;
 
-  // ТЗ-2 Ф2 — инфо-перекомпоновка под kill-switch (default true). При OFF
-  // дашборд возвращается к легаси-раскладке («Свежие блокеры», без новых
-  // виджетов).
   const reworkEnabled = data.reworkEnabled;
-  // ТЗ-2 Ф2 — «доменов посчитано N»: явного поля в снапшоте нет, считаем
-  // distinct-домены по slug среди сильных+слабых (лучшее доступное приближение).
   const maturityDomainCount = new Set(
     [...data.maturity.weakestDomains, ...data.maturity.topDomains].map(
       (d) => d.slug,
     ),
   ).size;
 
-  // Ф2 редизайн — данные hero-графика «Операционная нагрузка» по weeklyInflow.
-  // 12 недель old→new; подпись «12н … 1н». Если все значения пусты/null —
-  // график не рендерим (пустой area-trend не несёт смысла).
   const inflowBlockers = data.weeklyInflow.blockers;
   const inflowFrictions = data.weeklyInflow.frictions;
   const inflowData = inflowBlockers.map((v, i) => ({
@@ -193,21 +169,18 @@ export function OperationsDashboardClient({
 
   const body = (
     <>
-      {/* Action Center B2 — баннер «Требует подтверждения». Скрыт при total=0. */}
+      {}
       <div className="mb-4">
         <RequiresActionBanner orgId={currentOrgId} />
       </div>
 
-      {/* ТЗ coo-orphan-agents Ф1 — необратимые решения без альтернатив (flagship).
-          Самоскрывается при alertCount=0. Вне reworkEnabled (Р-4). */}
+      {}
       <IrreversibleDecisionsAlert
         decisions={pulse?.irreversibleDecisions.decisions ?? []}
         alertCount={pulse?.irreversibleDecisions.alertCount ?? 0}
       />
 
-      {/* §5.3/§5.4 — KPI-ряд из StatCard (новый стеклянный язык). Spark — только
-          там, где у KPI есть свой недельный ряд (weeklyInflow); для целей и
-          обещаний рядов нет — sparkline не выдумываем. */}
+      {}
       <div className="mt-6 grid grid-cols-1 gap-4 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-300 motion-safe:fill-mode-backwards sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <StatCard
@@ -220,7 +193,10 @@ export function OperationsDashboardClient({
               yellow: 3,
               inverted: true,
             })}
-            spark={data.weeklyInflow.frictions.map((v, i) => ({ i, v: v ?? 0 }))}
+            spark={data.weeklyInflow.frictions.map((v, i) => ({
+              i,
+              v: v ?? 0,
+            }))}
           />
           {reworkEnabled ? (
             <p className="mt-1.5 text-xs" style={{ color: CHART.faint }}>
@@ -263,7 +239,6 @@ export function OperationsDashboardClient({
         />
 
         {commitments === null ? (
-          // Запрос упал — нейтральный KPI без threshold-тона, экран не падает.
           <StatCard
             icon={<Handshake size={20} />}
             grad={GRAD.teal}
@@ -287,11 +262,9 @@ export function OperationsDashboardClient({
         )}
       </div>
 
-      {/* ═══ ТЗ coo-orphan-agents Ф1 — аналитический слой COO: подключение
-          готовых orphan-виджетов pulse-patterns. Секции — каркас, в который
-          Ф3/Ф4/Ф5/Ф7 домонтируют свои виджеты. Вне reworkEnabled (Р-4). ═══ */}
+      {}
 
-      {/* СЕКЦИЯ: Риски и непрерывность — сюда Ф4 (CustomerRisk) и Ф5 (KnowledgeAtRisk) */}
+      {}
       <AnalyticsSection title="Риски и непрерывность" tone={CHART.red}>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <BusFactorWidget
@@ -299,16 +272,16 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
-          {/* ТЗ coo-orphan-agents Ф3 — «Доведение решений» (self-fetch). */}
+          {}
           <DecisionThroughputWidget />
-          {/* ТЗ coo-orphan-agents Ф4 — «Клиенты под риском оттока» (self-fetch). */}
+          {}
           <CustomerRiskRadarWidget />
-          {/* ТЗ coo-orphan-agents Ф5 — «Знания под риском» (self-fetch). */}
+          {}
           <KnowledgeAtRiskWidget />
         </div>
       </AnalyticsSection>
 
-      {/* СЕКЦИЯ: Аналитика пульса */}
+      {}
       <AnalyticsSection title="Аналитика пульса" tone={CHART.cyan}>
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
@@ -327,7 +300,7 @@ export function OperationsDashboardClient({
         </div>
       </AnalyticsSection>
 
-      {/* СЕКЦИЯ: Трения — тяжёлый heatmap во всю ширину, последним в аналитическом слое */}
+      {}
       <AnalyticsSection title="Трения" tone={CHART.amber}>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <BottleneckHeatmapWidget
@@ -338,8 +311,7 @@ export function OperationsDashboardClient({
         </div>
       </AnalyticsSection>
 
-      {/* Ф2 редизайн — hero-график «Операционная нагрузка» по недельному
-          инфлоу. Скрыт, пока в обоих рядах нет ни одного значения. */}
+      {}
       {hasInflow ? (
         <div className="mt-6">
           <AreaTrend
@@ -349,8 +321,8 @@ export function OperationsDashboardClient({
             data={inflowData}
             xKey="w"
             series={[
-              { key: 'blockers', color: CHART.amber, label: 'Блокеры' },
-              { key: 'frictions', color: CHART.pink, label: 'Конфликты' },
+              { key: "blockers", color: CHART.amber, label: "Блокеры" },
+              { key: "frictions", color: CHART.pink, label: "Конфликты" },
             ]}
             height={240}
           />
@@ -389,9 +361,7 @@ export function OperationsDashboardClient({
         />
       </div>
 
-      {/* ТЗ-3 Ф2 — «Загрузка команд». Заменяет «мёртвый» средний % загрузки,
-          который раньше не рендерился вовсе. Только при включённой
-          перекомпоновке (kill-switch). */}
+      {}
       {reworkEnabled ? (
         <div className="mt-6">
           <TeamCapacityWidget />
@@ -400,14 +370,14 @@ export function OperationsDashboardClient({
 
       <div className="mt-6">
         <ActivityFeedWidget
-          feedTypes={['probe_question']}
+          feedTypes={["probe_question"]}
           scope="company"
           pageSize={10}
           title="Вопросы Коры команде"
         />
       </div>
 
-      {/* Зона «Сигналы» — зрелость данных + карта первопричин (R1). */}
+      {}
       <section className="mt-8">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2
@@ -416,18 +386,16 @@ export function OperationsDashboardClient({
           >
             Сигналы
           </h2>
-          {/* ТЗ-2 Ф2 — «оценка» + знаменатель «(доменов посчитано N)».
-              Явного поля count в снапшоте нет → N = distinct-домены по slug
-              среди сильных+слабых. */}
+          {}
           {data.maturity.score !== null ? (
             <span
               className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
             >
               оценка
               {maturityDomainCount > 0
                 ? ` (доменов посчитано ${maturityDomainCount})`
-                : ''}
+                : ""}
             </span>
           ) : null}
         </div>
@@ -443,12 +411,10 @@ export function OperationsDashboardClient({
       {commitments ? <OpenCommitmentsWidget data={commitments} /> : null}
 
       {reworkEnabled ? (
-        // ТЗ-2 Ф2 — «Свежие блокеры» заменены на «Хронические блокеры».
         <div className="mt-8">
           <ChronicBlockersWidget />
         </div>
       ) : (
-        // Легаси-раскладка (kill-switch OFF): прежний блок «Свежие блокеры».
         <section className="mt-8">
           <h2 className="mb-3 text-lg font-semibold">Свежие блокеры</h2>
           {data.topRecentBlockers.length === 0 ? (
@@ -464,8 +430,8 @@ export function OperationsDashboardClient({
                     <SeverityBadge severity={b.severity} />
                   </div>
                   <div className="mt-1 text-xs text-fg-secondary">
-                    {b.ownerPersonName ?? 'без владельца'} ·{' '}
-                    {new Date(b.createdAt).toLocaleString('ru-RU')}
+                    {b.ownerPersonName ?? "без владельца"} ·{" "}
+                    {new Date(b.createdAt).toLocaleString("ru-RU")}
                   </div>
                 </li>
               ))}
@@ -490,12 +456,12 @@ export function OperationsDashboardClient({
                   <li
                     key={f.id}
                     className="rounded-xl p-3"
-                    style={{ background: 'var(--surface-inset)' }}
+                    style={{ background: "var(--surface-inset)" }}
                   >
                     <div className="flex flex-wrap items-baseline gap-2 text-sm">
-                      <strong>{f.fromPersonName ?? 'неизвестный'}</strong>
+                      <strong>{f.fromPersonName ?? "неизвестный"}</strong>
                       <span style={{ color: CHART.faint }}>↔</span>
-                      <strong>{f.toPersonName ?? 'неизвестный'}</strong>
+                      <strong>{f.toPersonName ?? "неизвестный"}</strong>
                       <span className="text-xs" style={{ color: CHART.dim }}>
                         ({Math.round(f.confidence * 100)}% уверенности)
                       </span>
@@ -520,20 +486,15 @@ export function OperationsDashboardClient({
   return (
     <ModernPageShell
       title="Аналитика"
-      subtitle={`Обновлено ${data.generatedAt.toLocaleString('ru-RU')}`}
+      subtitle={`Обновлено ${data.generatedAt.toLocaleString("ru-RU")}`}
     >
-      {/* §5.1 — Общая навигация по операционному разделу. */}
+      {}
       <OperationsTabs />
       {body}
     </ModernPageShell>
   );
 }
 
-/**
- * ТЗ coo-orphan-agents Ф1 — обёртка-секция аналитического слоя: цветной
- * uppercase-заголовок (как существующая секция «Сигналы») + контент. `tone` —
- * цвет заголовка из палитры CHART (red/cyan/amber/violet).
- */
 function AnalyticsSection({
   title,
   tone,
@@ -556,20 +517,13 @@ function AnalyticsSection({
   );
 }
 
-/**
- * ТЗ-C Ф3 (R4) — единый блок «Температура команды» с переключателем
- * «Общая / По людям». Один визуальный `<section>` с общим заголовком; внутри —
- * либо `TeamTemperatureOverallBody` (полоса green/yellow/red), либо
- * `TeamTemperatureByPersonBody` (heatmap по людям). Каждый body сохраняет свои
- * empty/loading/error-состояния.
- */
 function TeamTemperatureSection(props: {
   summary: OperationsTeamTemperatureSummaryApi;
   heatmapLoading: boolean;
   heatmapError: string | null;
   heatmap: OperationsTeamTemperatureApi | null;
 }) {
-  const [mode, setMode] = useState<'overall' | 'byPerson'>('overall');
+  const [mode, setMode] = useState<"overall" | "byPerson">("overall");
   return (
     <div className="mt-8">
       <GlassCard>
@@ -579,21 +533,21 @@ function TeamTemperatureSection(props: {
           </CardTitle>
           <div
             className="inline-flex gap-1 rounded-xl p-1"
-            style={{ background: 'var(--surface-inset)' }}
+            style={{ background: "var(--surface-inset)" }}
           >
             <TemperatureModePill
-              active={mode === 'overall'}
-              onClick={() => setMode('overall')}
+              active={mode === "overall"}
+              onClick={() => setMode("overall")}
               label="Общая"
             />
             <TemperatureModePill
-              active={mode === 'byPerson'}
-              onClick={() => setMode('byPerson')}
+              active={mode === "byPerson"}
+              onClick={() => setMode("byPerson")}
               label="По людям"
             />
           </div>
         </div>
-        {mode === 'overall' ? (
+        {mode === "overall" ? (
           <TeamTemperatureOverallBody summary={props.summary} />
         ) : (
           <TeamTemperatureByPersonBody
@@ -607,7 +561,6 @@ function TeamTemperatureSection(props: {
   );
 }
 
-/** Стеклянная пилюля-переключатель режима температуры. */
 function TemperatureModePill(props: {
   active: boolean;
   onClick: () => void;
@@ -621,7 +574,7 @@ function TemperatureModePill(props: {
       className="rounded-lg px-3 py-1 text-xs font-medium transition-colors"
       style={
         props.active
-          ? { background: 'var(--surface-inset-strong)', color: CHART.text }
+          ? { background: "var(--surface-inset-strong)", color: CHART.text }
           : { color: CHART.dim }
       }
     >
@@ -630,11 +583,6 @@ function TemperatureModePill(props: {
   );
 }
 
-/**
- * ТЗ-C Ф3 — режим «Общая»: полоса зелёный/жёлтый/красный + легенда.
- * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
- * Empty-state при нуле чек-инов сохранён.
- */
 function TeamTemperatureOverallBody(props: {
   summary: OperationsTeamTemperatureSummaryApi;
 }) {
@@ -644,7 +592,7 @@ function TeamTemperatureOverallBody(props: {
   const deltaLabel = (() => {
     if (s.redShareDelta == null) return null;
     const delta = Math.round(s.redShareDelta * 100);
-    if (delta === 0) return 'без изменений';
+    if (delta === 0) return "без изменений";
     if (delta > 0) return `красных +${delta}% к прошлой неделе`;
     return `красных ${delta}% к прошлой неделе`;
   })();
@@ -659,19 +607,29 @@ function TeamTemperatureOverallBody(props: {
     );
   }
 
-  // Сегменты пончика. Доли нормируем в проценты (целые) для подписи; имена
-  // несут русскую долю, чтобы легенда пончика была информативной.
   const donutData = [
-    { name: `зелёных ${pct(s.greenShare)}`, value: Math.round(s.greenShare * 100), c: CHART.mint },
-    { name: `жёлтых ${pct(s.yellowShare)}`, value: Math.round(s.yellowShare * 100), c: CHART.amber },
-    { name: `красных ${pct(s.redShare)}`, value: Math.round(s.redShare * 100), c: CHART.red },
+    {
+      name: `зелёных ${pct(s.greenShare)}`,
+      value: Math.round(s.greenShare * 100),
+      c: CHART.mint,
+    },
+    {
+      name: `жёлтых ${pct(s.yellowShare)}`,
+      value: Math.round(s.yellowShare * 100),
+      c: CHART.amber,
+    },
+    {
+      name: `красных ${pct(s.redShare)}`,
+      value: Math.round(s.redShare * 100),
+      c: CHART.red,
+    },
   ].filter((d) => d.value > 0);
 
   return (
     <div className="mt-3 space-y-3">
       <p className="text-sm" style={{ color: CHART.dim }}>
         Последние {s.days} дн. · всего чек-инов: {s.totalCheckIns}
-        {deltaLabel ? `; ${deltaLabel}.` : '.'}
+        {deltaLabel ? `; ${deltaLabel}.` : "."}
       </p>
       <DonutCard
         title="Распределение настроений"
@@ -696,10 +654,9 @@ function TeamTemperatureOverallBody(props: {
 
 function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
   const { items, total } = props.data;
-  // Группируем по автору, чтобы COO видел «кто сколько висит».
-  const groups = new Map<string, OpenCommitmentsListApi['items']>();
+  const groups = new Map<string, OpenCommitmentsListApi["items"]>();
   for (const c of items) {
-    const key = c.authorPersonName ?? 'без автора';
+    const key = c.authorPersonName ?? "без автора";
     const list = groups.get(key) ?? [];
     list.push(c);
     groups.set(key, list);
@@ -729,7 +686,7 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
                 <li
                   key={author}
                   className="rounded-xl p-3"
-                  style={{ background: 'var(--surface-inset)' }}
+                  style={{ background: "var(--surface-inset)" }}
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Avatar name={author} />
@@ -738,26 +695,39 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
                       ({list.length})
                     </span>
                   </div>
-                  <ul className="mt-2 ml-1 space-y-1 text-xs" style={{ color: CHART.dim }}>
+                  <ul
+                    className="mt-2 ml-1 space-y-1 text-xs"
+                    style={{ color: CHART.dim }}
+                  >
                     {list.slice(0, 5).map((c) => (
-                      <li key={c.id} className="flex flex-wrap items-center gap-1.5 py-0.5">
+                      <li
+                        key={c.id}
+                        className="flex flex-wrap items-center gap-1.5 py-0.5"
+                      >
                         <span>{c.text}</span>
                         {c.dueDate ? (
                           <span style={{ color: CHART.faint }}>
-                            (срок {new Date(c.dueDate).toLocaleDateString('ru-RU')})
+                            (срок{" "}
+                            {new Date(c.dueDate).toLocaleDateString("ru-RU")})
                           </span>
                         ) : null}
                         {c.escalatedAt ? (
                           <span
                             className="rounded-full px-1.5 py-0.5 text-[10px]"
-                            style={{ color: CHART.red, background: 'oklch(0.66 0.22 25 / 0.16)' }}
+                            style={{
+                              color: CHART.red,
+                              background: "oklch(0.66 0.22 25 / 0.16)",
+                            }}
                           >
                             давно молчит
                           </span>
                         ) : c.askedAt ? (
                           <span
                             className="rounded-full px-1.5 py-0.5 text-[10px]"
-                            style={{ color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }}
+                            style={{
+                              color: CHART.amber,
+                              background: "oklch(0.84 0.16 80 / 0.14)",
+                            }}
                           >
                             спросили
                           </span>
@@ -781,24 +751,24 @@ function OpenCommitmentsWidget(props: { data: OpenCommitmentsListApi }) {
 }
 
 function SeverityBadge(props: {
-  severity: 'low' | 'medium' | 'high' | 'unknown';
+  severity: "low" | "medium" | "high" | "unknown";
 }) {
   const label =
-    props.severity === 'high'
-      ? 'высокая'
-      : props.severity === 'medium'
-        ? 'средняя'
-        : props.severity === 'low'
-          ? 'низкая'
-          : 'неизв.';
+    props.severity === "high"
+      ? "высокая"
+      : props.severity === "medium"
+        ? "средняя"
+        : props.severity === "low"
+          ? "низкая"
+          : "неизв.";
   const colour =
-    props.severity === 'high'
-      ? 'bg-chip-danger-bg text-chip-danger-fg'
-      : props.severity === 'medium'
-        ? 'bg-chip-warning-bg text-chip-warning-fg'
-        : props.severity === 'low'
-          ? 'bg-chip-info-bg text-chip-info-fg'
-          : 'bg-bg-subtle text-fg-secondary';
+    props.severity === "high"
+      ? "bg-chip-danger-bg text-chip-danger-fg"
+      : props.severity === "medium"
+        ? "bg-chip-warning-bg text-chip-warning-fg"
+        : props.severity === "low"
+          ? "bg-chip-info-bg text-chip-info-fg"
+          : "bg-bg-subtle text-fg-secondary";
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${colour}`}>
       {label}
@@ -806,12 +776,6 @@ function SeverityBadge(props: {
   );
 }
 
-/**
- * ТЗ-C Ф3 — режим «По людям»: heatmap из `TeamTemperatureHeatmap`.
- * Без собственного `<section>`/заголовка — они общие в `TeamTemperatureSection`.
- * Состояния loading/error/empty сохранены. `byPerson` уже отсортирован на бэке
- * по `red DESC`.
- */
 function TeamTemperatureByPersonBody(props: {
   loading: boolean;
   error: string | null;
@@ -845,12 +809,6 @@ function TeamTemperatureByPersonBody(props: {
   );
 }
 
-/**
- * Pulse Wave 2.3 — карточка «Не отчитались сегодня».
- *
- * Backend сам резолвит дату по умолчанию (сегодня МСК). Empty state — все
- * отчитались или сотрудников нет. Показываем до 30 имён в списке.
- */
 function MissingCheckInsCard(props: {
   loading: boolean;
   error: string | null;
@@ -891,9 +849,9 @@ function MissingCheckInsCard(props: {
               <li
                 key={m.personId}
                 className="rounded-lg px-3 py-1.5"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               >
-                {m.personName ?? 'Без имени'}
+                {m.personName ?? "Без имени"}
               </li>
             ))}
             {props.data.missing.length > 30 ? (
@@ -908,25 +866,17 @@ function MissingCheckInsCard(props: {
   );
 }
 
-/**
- * Pulse Wave 2.3 — карточка «Зависли задачи» (stale ИЛИ overdue).
- *
- * `daysOverdue` приоритетнее `daysSinceActivity` — показываем красную плашку
- * «просрочено на N дней». Если задача только зависла без просрочки — серая
- * плашка «без активности N дней».
- */
 function StaleIssuesCard(props: {
   loading: boolean;
   error: string | null;
   data: OperationsStaleIssuesApi | null;
 }) {
-  // Статус строки: просрочка → риск, иначе зависание без просрочки → внимание.
-  type StaleRow = OperationsStaleIssuesApi['items'][number];
+  type StaleRow = OperationsStaleIssuesApi["items"][number];
   const overdue = (it: StaleRow) =>
     it.daysOverdue !== null && it.daysOverdue > 0;
   const columns: ModernTableColumn<StaleRow>[] = [
     {
-      header: 'Задача',
+      header: "Задача",
       cell: (it) => (
         <Link
           href={`/issues/${it.issueId}`}
@@ -941,12 +891,12 @@ function StaleIssuesCard(props: {
       ),
     },
     {
-      header: 'Статус',
-      cell: (it) => <StatusPill status={overdue(it) ? 'risk' : 'warning'} />,
+      header: "Статус",
+      cell: (it) => <StatusPill status={overdue(it) ? "risk" : "warning"} />,
     },
     {
-      header: 'Просрочка',
-      align: 'right',
+      header: "Просрочка",
+      align: "right",
       cell: (it) => (
         <span className="text-xs" style={{ color: CHART.dim }}>
           {overdue(it)

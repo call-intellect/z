@@ -1,23 +1,3 @@
-/**
- * SBA α-9 wave 3 — seed скрипт для FunctionalDomain.
- *
- * Поведение:
- *   - Без аргумента — сидим 8 базовых доменов для каждой Org в БД.
- *   - С аргументом `--tenant <orgId>` — только для одной Org.
- *   - С аргументом `--industry <slug>` — дополнительно создаются per-industry домены.
- *
- * Безопасный seed (skill `safe-seed-rules`):
- *   - Только INSERT через `upsert`-логику (по `(tenantId, slug)`).
- *   - Существующие записи (даже отредактированные admin'ом) НЕ обновляются.
- *   - `isSystem=true` — пометка «seed»; пользовательские домены создаются
- *     через REST API с `isSystem=false`.
- *
- * Запуск:
- *   bun run scripts/seed-functional-domains.ts
- *   bun run scripts/seed-functional-domains.ts --tenant <orgId>
- *   bun run scripts/seed-functional-domains.ts --tenant <orgId> --industry saas
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -45,10 +25,7 @@ function getArg(name: string): string | undefined {
   return undefined;
 }
 
-async function seedForTenant(args: {
-  tenantId: string;
-  industry?: IndustrySlug;
-}): Promise<{
+async function seedForTenant(args: { tenantId: string; industry?: IndustrySlug }): Promise<{
   baseCreated: number;
   baseSkipped: number;
   industryCreated: number;
@@ -59,7 +36,6 @@ async function seedForTenant(args: {
   let industryCreated = 0;
   let industrySkipped = 0;
 
-  // 1. Базовые 8.
   for (const it of BASE_FUNCTIONAL_DOMAINS) {
     const exists = await prisma.functionalDomain.findUnique({
       where: { tenantId_slug: { tenantId: args.tenantId, slug: it.slug } },
@@ -82,7 +58,6 @@ async function seedForTenant(args: {
     baseCreated++;
   }
 
-  // 2. Per-industry надстройка.
   if (args.industry) {
     const tpl = INDUSTRY_DOMAIN_TEMPLATES[args.industry];
     if (tpl) {
@@ -102,7 +77,7 @@ async function seedForTenant(args: {
           industrySkipped++;
           continue;
         }
-        const parentId = it.parentSlug ? idBySlug.get(it.parentSlug) ?? null : null;
+        const parentId = it.parentSlug ? (idBySlug.get(it.parentSlug) ?? null) : null;
         await prisma.functionalDomain.create({
           data: {
             tenantId: args.tenantId,

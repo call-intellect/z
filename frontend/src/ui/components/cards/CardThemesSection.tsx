@@ -1,24 +1,18 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { HelpCircle, Sparkles } from 'lucide-react';
+import Link from "next/link";
+import useSWR from "swr";
+import { HelpCircle, Sparkles } from "lucide-react";
 
-import { cardsApi } from '@/api/cards.api';
+import { cardsApi } from "@/api/cards.api";
 import {
   THEME_BRANCH_LABELS,
   cardThemeMiniFromApi,
   type CardThemeMiniDomain,
-} from '@/domain/theme';
+} from "@/domain/theme";
 
-/**
- * Мини-секция «AI обнаружил эти темы» в sidebar карточки.
- *
- * Показывает до 3 тем (бэкенд ограничивает top-3). Если тем нет — секция
- * НЕ рендерится (return null).
- */
 export function CardThemesSection({ cardId }: { cardId: string }) {
-  const { data } = useSWR(['card-themes', cardId], async () => {
+  const { data } = useSWR(["card-themes", cardId], async () => {
     const res = await cardsApi.listThemes(cardId);
     return res.items.map(cardThemeMiniFromApi);
   });

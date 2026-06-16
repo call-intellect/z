@@ -1,19 +1,6 @@
-'use client';
+"use client";
 
-/**
- * `/admin/media/storage` — S3 хранилище. Фаза 7 редизайна Z-Admin.
- *
- * Три вкладки:
- *   - Бакеты (таблица: имя / провайдер / endpoint / объекты / размер / статус)
- *   - Статистика (KPI tiles: общий объём, прогноз, прирост, largest bucket)
- *   - Переключение провайдера (`storage.provider`, severity='destructive')
- *
- * Источник данных — backend `/api/v1/admin/media/storage`. Если эндпоинт ещё
- * не реализован — AdminEmpty. Переключение провайдера дополнительно требует
- * подтверждения через AdminDangerZone (причина ≥ 10 символов).
- */
-
-import { useCallback } from 'react';
+import { useCallback } from "react";
 import {
   Boxes,
   Cloud,
@@ -22,12 +9,12 @@ import {
   RefreshCw,
   Settings2,
   TrendingUp,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { z } from 'zod';
+} from "lucide-react";
+import { toast } from "sonner";
+import { z } from "zod";
 
-import { adminStorageApi } from '@/api/admin-storage.api';
-import { ApiError } from '@/api/api-error';
+import { adminStorageApi } from "@/api/admin-storage.api";
+import { ApiError } from "@/api/api-error";
 import {
   storageOverviewFromApi,
   STORAGE_PROVIDER_LABELS,
@@ -35,42 +22,42 @@ import {
   type StorageOverviewDomain,
   type StorageProviderApi,
   type StorageStatsDomain,
-} from '@/domain/admin-storage';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
+} from "@/domain/admin-storage";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
 import {
   AdminDangerZone,
   DangerAction,
-} from '@/ui/components/admin/AdminDangerZone';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/components/admin/AdminDangerZone";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'buckets', label: 'Бакеты', icon: Boxes },
-  { value: 'stats', label: 'Статистика', icon: TrendingUp },
-  { value: 'switch', label: 'Переключение провайдера', icon: Settings2 },
+  { value: "buckets", label: "Бакеты", icon: Boxes },
+  { value: "stats", label: "Статистика", icon: TrendingUp },
+  { value: "switch", label: "Переключение провайдера", icon: Settings2 },
 ];
 
 const STORAGE_PROVIDER_SCHEMA = z.enum([
-  'yandex',
-  'selectel',
-  'sbercloud',
-  'minio',
+  "yandex",
+  "selectel",
+  "sbercloud",
+  "minio",
 ]);
 
 export function StorageClient() {
-  const q = useAdminQuery('admin-storage-overview', async () => {
+  const q = useAdminQuery("admin-storage-overview", async () => {
     const res = await adminStorageApi.overview();
     return storageOverviewFromApi(res);
   });
@@ -79,8 +66,8 @@ export function StorageClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Записи и медиа' },
-        { label: 'S3 хранилище' },
+        { label: "Записи и медиа" },
+        { label: "S3 хранилище" },
       ]}
       title="S3 хранилище"
       description="Обзор бакетов, объёмов и провайдера. Переключение провайдера затронет загрузку и скачивание записей — выполняйте в окно maintenance."
@@ -104,11 +91,11 @@ export function StorageClient() {
       {!q.isLoading && !q.error && !q.isForbidden ? (
         <AdminTabs tabs={TABS} defaultTab="buckets">
           {(active) => {
-            if (active === 'buckets')
+            if (active === "buckets")
               return <BucketsTab data={q.data} fallback={!q.data} />;
-            if (active === 'stats')
+            if (active === "stats")
               return <StatsTab data={q.data} fallback={!q.data} />;
-            if (active === 'switch')
+            if (active === "switch")
               return <SwitchTab overview={q.data} onSaved={q.refetch} />;
             return null;
           }}
@@ -117,8 +104,6 @@ export function StorageClient() {
     </AdminSection>
   );
 }
-
-// ─────────────────────────── Бакеты ───────────────────────────
 
 function BucketsTab({
   data,
@@ -160,12 +145,12 @@ function BucketsTab({
 }
 
 function BucketRow({ bucket }: { bucket: StorageBucketDomain }) {
-  const statusVariant: 'secondary' | 'danger' | 'outline' | 'success' =
-    bucket.status === 'ok'
-      ? 'success'
-      : bucket.status === 'warning'
-        ? 'secondary'
-        : 'danger';
+  const statusVariant: "secondary" | "danger" | "outline" | "success" =
+    bucket.status === "ok"
+      ? "success"
+      : bucket.status === "warning"
+        ? "secondary"
+        : "danger";
   return (
     <tr className="border-t border-border-subtle align-top hover:bg-bg-overlay">
       <td
@@ -182,10 +167,10 @@ function BucketRow({ bucket }: { bucket: StorageBucketDomain }) {
         {bucket.endpoint}
       </td>
       <td className="px-3 py-2 text-right text-xs">
-        {bucket.objectsCount.toLocaleString('ru-RU')}
+        {bucket.objectsCount.toLocaleString("ru-RU")}
       </td>
       <td className="px-3 py-2 text-right text-xs font-semibold">
-        {bucket.sizeGB.toLocaleString('ru-RU')}
+        {bucket.sizeGB.toLocaleString("ru-RU")}
       </td>
       <td className="px-3 py-2 text-xs">
         <Badge variant={statusVariant}>{bucket.statusLabel}</Badge>
@@ -193,8 +178,6 @@ function BucketRow({ bucket }: { bucket: StorageBucketDomain }) {
     </tr>
   );
 }
-
-// ─────────────────────────── Статистика ───────────────────────────
 
 function StatsTab({
   data,
@@ -209,17 +192,17 @@ function StatsTab({
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <KpiTile
         label="Общий объём, ГБ"
-        value={s.totalGB.toLocaleString('ru-RU')}
+        value={s.totalGB.toLocaleString("ru-RU")}
         icon={<HardDrive size={14} className="text-fg-secondary" />}
       />
       <KpiTile
         label="Всего объектов"
-        value={s.totalObjects.toLocaleString('ru-RU')}
+        value={s.totalObjects.toLocaleString("ru-RU")}
         icon={<Boxes size={14} className="text-fg-secondary" />}
       />
       <KpiTile
         label="Самый большой бакет"
-        value={s.largestBucket ?? '—'}
+        value={s.largestBucket ?? "—"}
         icon={<Cloud size={14} className="text-fg-secondary" />}
         valueClassName="text-sm font-mono"
       />
@@ -227,8 +210,8 @@ function StatsTab({
         label="Прирост, ГБ/день"
         value={
           s.growthGBPerDay !== null
-            ? s.growthGBPerDay.toLocaleString('ru-RU')
-            : '—'
+            ? s.growthGBPerDay.toLocaleString("ru-RU")
+            : "—"
         }
         icon={<TrendingUp size={14} className="text-fg-secondary" />}
       />
@@ -236,15 +219,12 @@ function StatsTab({
         label="Прогноз через месяц, ГБ"
         value={
           s.forecastNextMonthGB !== null
-            ? s.forecastNextMonthGB.toLocaleString('ru-RU')
-            : 'недостаточно данных'
+            ? s.forecastNextMonthGB.toLocaleString("ru-RU")
+            : "недостаточно данных"
         }
         icon={<TrendingUp size={14} className="text-fg-secondary" />}
       />
-      <KpiTile
-        label="Проверено"
-        value={s.checkedAt.toLocaleString('ru-RU')}
-      />
+      <KpiTile label="Проверено" value={s.checkedAt.toLocaleString("ru-RU")} />
     </div>
   );
 }
@@ -268,7 +248,7 @@ function KpiTile({
       </div>
       <div
         className={`mt-2 truncate text-lg font-semibold text-fg-primary ${
-          valueClassName ?? ''
+          valueClassName ?? ""
         }`}
       >
         {value}
@@ -277,8 +257,6 @@ function KpiTile({
   );
 }
 
-// ─────────────────────────── Переключение провайдера ───────────────────────────
-
 function SwitchTab({
   overview,
   onSaved,
@@ -286,36 +264,32 @@ function SwitchTab({
   overview: StorageOverviewDomain | null;
   onSaved: () => void;
 }) {
-  const editor = useAdminSettingEditor<StorageProviderApi>('storage.provider', {
+  const editor = useAdminSettingEditor<StorageProviderApi>("storage.provider", {
     schema: STORAGE_PROVIDER_SCHEMA,
-    defaultValue: overview?.currentProvider ?? 'minio',
-    requiresReason: 'destructive',
+    defaultValue: overview?.currentProvider ?? "minio",
+    requiresReason: "destructive",
   });
 
   const handleConfirm = useCallback(
     async (reason?: string) => {
-      const finalReason = (reason ?? '').trim();
+      const finalReason = (reason ?? "").trim();
       if (finalReason.length < 10) {
         throw new Error(
-          'Причина обязательна и должна быть не короче 10 символов.',
+          "Причина обязательна и должна быть не короче 10 символов.",
         );
       }
       try {
         await editor.save(finalReason);
-        // Параллельно — низкоуровневый switch, если backend требует отдельный
-        // эндпоинт для применения (drain queue, кэшсброса и т.п.). Игнорируем
-        // 404 — основной путь это AdminSetting.
         try {
           await adminStorageApi.switchProvider(editor.value, finalReason);
         } catch (e) {
-          if (e instanceof ApiError && e.code === 'http_404') {
-            // эндпоинт необязательный — настройка уже сохранена
+          if (e instanceof ApiError && e.code === "http_404") {
           } else {
             throw e;
           }
         }
         toast.success(
-          'Провайдер S3 обновлён. Все процессы подхватят изменение в течение 30 секунд.',
+          "Провайдер S3 обновлён. Все процессы подхватят изменение в течение 30 секунд.",
         );
         onSaved();
       } catch (e) {
@@ -324,7 +298,7 @@ function SwitchTab({
             ? e.message
             : e instanceof Error
               ? e.message
-              : 'Не удалось переключить провайдера';
+              : "Не удалось переключить провайдера";
         toast.error(msg);
         throw e instanceof Error ? e : new Error(msg);
       }
@@ -343,7 +317,7 @@ function SwitchTab({
 
       <div className="rounded-xl border border-border-subtle bg-bg-elevated p-4">
         <p className="mb-2 text-xs text-fg-tertiary">
-          Текущий провайдер:{' '}
+          Текущий провайдер:{" "}
           <span className="font-medium text-fg-primary">
             {STORAGE_PROVIDER_LABELS[
               overview?.currentProvider ?? editor.value
@@ -368,12 +342,12 @@ function SwitchTab({
         <div className="flex flex-col gap-2">
           <DangerAction
             label={
-              editor.isSaving ? 'Переключаем…' : 'Переключить провайдера S3'
+              editor.isSaving ? "Переключаем…" : "Переключить провайдера S3"
             }
             title="Переключить провайдера S3?"
             description={
               <span>
-                Текущий: <b>{overview?.currentProviderLabel ?? '—'}</b>. Новый:{' '}
+                Текущий: <b>{overview?.currentProviderLabel ?? "—"}</b>. Новый:{" "}
                 <b>{STORAGE_PROVIDER_LABELS[editor.value] ?? editor.value}</b>.
                 Все идущие upload&apos;ы будут переадресованы на новый бакет.
                 Опишите причину переключения — она попадёт в журнал super_admin.
@@ -382,7 +356,7 @@ function SwitchTab({
             severity="destructive"
             onConfirm={(reason) => handleConfirm(reason)}
             disabled={!editor.isDirty || editor.isSaving}
-            confirmLabel={editor.isSaving ? 'Переключаем…' : 'Подтвердить'}
+            confirmLabel={editor.isSaving ? "Переключаем…" : "Подтвердить"}
           />
           {editor.isSaving ? (
             <p className="inline-flex items-center gap-1 text-xs text-fg-tertiary">
@@ -395,8 +369,6 @@ function SwitchTab({
     </div>
   );
 }
-
-// ─────────────────────────── helpers ───────────────────────────
 
 function FallbackEmpty({ section }: { section: string }) {
   return (

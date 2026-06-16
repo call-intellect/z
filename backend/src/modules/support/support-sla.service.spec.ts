@@ -20,10 +20,7 @@ describe('SupportSlaService', () => {
     } as unknown as PrismaService;
     const svc = new SupportSlaService(prisma, makeAccess(VENDOR_ORG));
     const created = new Date('2026-06-09T10:00:00Z');
-    const { firstResponseDueAt, resolutionDueAt } = await svc.computeDueDates(
-      VENDOR_ORG,
-      created,
-    );
+    const { firstResponseDueAt, resolutionDueAt } = await svc.computeDueDates(VENDOR_ORG, created);
     expect(firstResponseDueAt.getTime()).toBe(created.getTime() + 60 * 60_000);
     expect(resolutionDueAt.getTime()).toBe(created.getTime() + 480 * 60_000);
   });
@@ -39,10 +36,7 @@ describe('SupportSlaService', () => {
     } as unknown as PrismaService;
     const svc = new SupportSlaService(prisma, makeAccess(VENDOR_ORG));
     const created = new Date('2026-06-09T10:00:00Z');
-    const { firstResponseDueAt, resolutionDueAt } = await svc.computeDueDates(
-      VENDOR_ORG,
-      created,
-    );
+    const { firstResponseDueAt, resolutionDueAt } = await svc.computeDueDates(VENDOR_ORG, created);
     expect(firstResponseDueAt.getTime()).toBe(created.getTime() + 15 * 60_000);
     expect(resolutionDueAt.getTime()).toBe(created.getTime() + 120 * 60_000);
   });
@@ -58,7 +52,6 @@ describe('SupportSlaService', () => {
     const count = await svc.markBreaches(now);
     expect(count).toBe(1);
 
-    // Запрос tenant-scoped + open + не отвечен + просрочен.
     const whereArg = (findMany.mock.calls[0] as unknown[])[0] as {
       where: Record<string, unknown>;
     };
@@ -66,7 +59,6 @@ describe('SupportSlaService', () => {
     expect(whereArg.where.firstRespondedAt).toBeNull();
     expect(whereArg.where.slaBreachedAt).toBeNull();
 
-    // updateMany по найденному id, slaBreachedAt=now.
     const updArg = (updateMany.mock.calls[0] as unknown[])[0] as {
       where: { id: { in: string[] } };
       data: { slaBreachedAt: Date };

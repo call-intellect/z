@@ -11,30 +11,13 @@ import {
   type OrchestratorPlanStep,
 } from '../orchestrator.types';
 
-/**
- * SBA δ-1 — PlanningService.
- *
- * LLM-step: на вход — исходный task, на выход — план шагов (subagent jobs).
- * Используется taskType='orchestrator-plan' (primary gpt-4o).
- *
- * Гарантии:
- *   - количество шагов <= `maxSubagentsPerRun` (truncate с конца).
- *   - agentType из whitelist'а (fallback 'topic_summary' для unknown).
- *   - `contextSlice` всегда непустой (изоляция context).
- */
 @Injectable()
 export class PlanningService {
   private readonly logger = new Logger(PlanningService.name);
 
-  constructor(
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-  ) {}
+  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
 
-  async plan(args: {
-    task: string;
-    tenantId: string;
-    userId: string;
-  }): Promise<OrchestratorPlan> {
+  async plan(args: { task: string; tenantId: string; userId: string }): Promise<OrchestratorPlan> {
     const limits = readOrchestratorLimits();
     const max = limits.maxSubagentsPerRun;
 
@@ -69,10 +52,6 @@ export class PlanningService {
         tenantId: args.tenantId,
         userId: args.userId,
         maxTokens: 1500,
-        // A9 (I11) — native json_schema strict вместо json_object (снижает
-        // долю битого JSON). gpt-4o (primary) — нативно; deepseek (secondary) —
-        // через tool-путь; ollama (tertiary) — LlmFormatNotSupportedError →
-        // роутер перейдёт к следующему провайдеру.
         responseFormat: {
           type: 'json_schema',
           name: ORCHESTRATOR_PLAN_SCHEMA_NAME,
@@ -102,8 +81,6 @@ export class PlanningService {
     try {
       obj = JSON.parse(text);
     } catch {
-      // Попытка вытащить JSON из markdown-fence (на случай если LLM
-      // проигнорирует strict-mode).
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) return null;
       try {
@@ -168,8 +145,7 @@ export class PlanningService {
 
   private fallbackPlan(task: string): OrchestratorPlan {
     return {
-      rationale:
-        'Fallback-план: одиночный topic_summary (LLM не вернул валидный плана).',
+      rationale: 'Fallback-план: одиночный topic_summary (LLM не вернул валидный плана).',
       steps: [
         {
           stepIndex: 0,

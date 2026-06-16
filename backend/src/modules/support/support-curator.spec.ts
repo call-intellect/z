@@ -2,18 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportCuratorService } from './services/support-curator.service';
 
-/**
- * support-desk Ф4 — unit-тесты SupportCuratorService.runOnce / applyAction:
- *   - kill-switch (curatorEnabled=false) → skipped, ноль LLM/debate/update;
- *   - factual fix за дебат-гейтом: verdict «против» → блок НЕ меняется,
- *     аудит applied=false (R23);
- *   - fix применён при affirm → ideaBlock.update(status='archived') (R24 soft);
- *   - soft-only: prisma.ideaBlock.delete отсутствует/не вызван;
- *   - merge с валидной целью + affirm → status='merged_into'/mergedIntoId;
- *   - идемпотентность: существующий SupportCuratorAction → no-op.
- *
- * Все зависимости замоканы (prisma / access / debate / llm / cfg).
- */
 describe('SupportCuratorService', () => {
   const VENDOR = 'vendor-org-1';
   const GROUP = 'grp-support';
@@ -48,7 +36,6 @@ describe('SupportCuratorService', () => {
     );
   }
 
-  /** LLM возвращает одно действие (по умолчанию keep). */
   function llmActions(
     actions: Array<{
       blockId: string;
@@ -151,12 +138,10 @@ describe('SupportCuratorService', () => {
 
   it('fix applied: debate affirm → soft-archive (status=archived, supersededAt)', async () => {
     llmActions([{ blockId: 'b1', action: 'fix', reason: 'фактическая ошибка' }]);
-    // debate.judge default → supersedes/majority (affirm).
 
     const now = new Date('2026-06-09T03:00:00Z');
     const res = await svc.runOnce(now);
 
-    // debate.judge вызван ПЕРЕД update (gate).
     expect(debateStub.judge).toHaveBeenCalledTimes(1);
     expect(prismaStub.ideaBlock.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -179,10 +164,7 @@ describe('SupportCuratorService', () => {
     llmActions([{ blockId: 'b1', action: 'archive' }]);
     await svc.runOnce(new Date('2026-06-09T03:00:00Z'));
 
-    // Стаб ideaBlock не имеет delete → код не может его вызвать.
-    expect(
-      (prismaStub.ideaBlock as Record<string, unknown>).delete,
-    ).toBeUndefined();
+    expect((prismaStub.ideaBlock as Record<string, unknown>).delete).toBeUndefined();
   });
 
   it('merge: valid targetBlockId + affirm → status=merged_into, mergedIntoId', async () => {
@@ -202,7 +184,6 @@ describe('SupportCuratorService', () => {
     ]);
     llmActions([
       { blockId: 'b1', action: 'merge', targetBlockId: 'b2', reason: 'дубликат' },
-      // b2 keep — не мутируем.
       { blockId: 'b2', action: 'keep' },
     ]);
 

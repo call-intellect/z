@@ -1,21 +1,3 @@
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — `skill-trait-concept-name`.
- *
- * Лёгкий LLM-агент: получает N формулировок одной и той же черты рабочего
- * поведения (после автоматического слияния SkillTraitConcept в cron-нормализаторе)
- * и предлагает короткое каноническое имя «смыслового блока навыка».
- *
- * Контракт:
- *   - Вызывается ТОЛЬКО при слиянии 2+ концептов в кластер.
- *   - НЕ вызывается при создании одиночной черты (тогда `category` берётся как есть).
- *   - Имя — 3–6 слов на русском, без приговорных утверждений.
- *
- * Маршрутизация: см. seed `seed-llm-task-routes-skill-concept.ts`
- *   primary: deepseek:deepseek-v4-flash
- *   secondary: openai-via-proxy:gpt-5.4-mini
- *   tertiary: ollama:qwen3:30b
- */
-
 export const SKILL_TRAIT_CONCEPT_NAME_SYSTEM_PROMPT = [
   'Ты — knowledge-инженер. Тебе дают N формулировок одной и той же черты рабочего поведения сотрудника(ов), которые автоматическая система уже признала смысловыми дубликатами.',
   'Твоя задача — предложить короткое каноническое имя смыслового блока (3–6 слов на русском). Отвечай строго в формате JSON по предоставленной схеме.',
@@ -43,9 +25,7 @@ export const SKILL_TRAIT_CONCEPT_NAME_USER_TEMPLATE = (args: {
   variants: ReadonlyArray<string>;
 }): string => {
   const list = args.variants.length
-    ? args.variants
-        .map((v, i) => `  ${i + 1}. «${v}»`)
-        .join('\n')
+    ? args.variants.map((v, i) => `  ${i + 1}. «${v}»`).join('\n')
     : '  (вариантов нет — это баг вызова)';
   return [
     'Формулировки одной черты, признанные дубликатами:',

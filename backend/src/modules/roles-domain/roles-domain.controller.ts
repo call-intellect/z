@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -40,18 +37,6 @@ import {
 } from './dto/roles-domain.dto';
 import { RolesDomainService } from './services/roles-domain.service';
 
-/**
- * REST API бизнес-должностей (Role) — Фаза 0a, группа А.
- *
- *   GET    /api/v1/roles?q=&departmentId=&includeDeleted=&limit=
- *   GET    /api/v1/roles/:id
- *   POST   /api/v1/roles
- *   POST   /api/v1/roles/batch
- *   PATCH  /api/v1/roles/:id
- *   DELETE /api/v1/roles/:id
- *
- * RBAC ресурс — `role` (НЕ путать с MembershipRole — это бизнес-должность).
- */
 @ApiTags('roles-domain')
 @Controller('api/v1/roles')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -141,8 +126,6 @@ export class RolesDomainController {
     await this.requireDelete(user.id, t);
     return this.roles.softDelete({ tenantId: t, userId: user.id, id });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

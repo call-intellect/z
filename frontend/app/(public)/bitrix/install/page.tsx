@@ -1,22 +1,11 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError } from '@/api/api-error';
-import { bitrixApi } from '@/api/bitrix.api';
+import { ApiError } from "@/api/api-error";
+import { bitrixApi } from "@/api/bitrix.api";
 
-/**
- * Handler-страница установки приложения Bitrix24 (способ B, открывается в iframe
- * внутри портала). ТЗ: plans/tz/2026-06-09-bitrix24-integration-install.md.
- *
- * Поток:
- *   1. Грузим b24jssdk, BX24.init → BX24.getAuth().member_id.
- *   2. Привязываем pending-установку к текущей org Коры (claim; нужна сессия Коры
- *      в iframe — third-party cookie). Нет сессии → 401 → предложить войти.
- *   3. Успех → BX24.installFinish() (иначе app остаётся «не установлен»).
- */
-
-const BX24_SDK_URL = 'https://api.bitrix24.com/api/v1/';
+const BX24_SDK_URL = "https://api.bitrix24.com/api/v1/";
 
 type Bx24 = {
   init: (cb: () => void) => void;
@@ -30,58 +19,58 @@ declare global {
   }
 }
 
-type Phase = 'loading' | 'claiming' | 'done' | 'need_login' | 'error';
+type Phase = "loading" | "claiming" | "done" | "need_login" | "error";
 
 export default function BitrixInstallPage() {
-  const [phase, setPhase] = useState<Phase>('loading');
-  const [message, setMessage] = useState<string>('Устанавливаем приложение…');
+  const [phase, setPhase] = useState<Phase>("loading");
+  const [message, setMessage] = useState<string>("Устанавливаем приложение…");
 
   const claim = useCallback(async (memberId: string) => {
-    setPhase('claiming');
-    setMessage('Привязываем портал к вашей компании…');
+    setPhase("claiming");
+    setMessage("Привязываем портал к вашей компании…");
     try {
       await bitrixApi.claim(memberId);
       window.BX24?.installFinish();
-      setPhase('done');
-      setMessage('Готово! Приложение установлено. Можно закрыть это окно.');
+      setPhase("done");
+      setMessage("Готово! Приложение установлено. Можно закрыть это окно.");
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'unauthorized') {
-        setPhase('need_login');
-        setMessage('Войдите в Кору, чтобы завершить установку.');
+      if (e instanceof ApiError && e.code === "unauthorized") {
+        setPhase("need_login");
+        setMessage("Войдите в Кору, чтобы завершить установку.");
         return;
       }
-      setPhase('error');
+      setPhase("error");
       setMessage(
-        e instanceof ApiError ? e.message : 'Не удалось завершить установку.',
+        e instanceof ApiError ? e.message : "Не удалось завершить установку.",
       );
     }
   }, []);
 
   useEffect(() => {
-    const script = document.createElement('script');
+    const script = document.createElement("script");
     script.src = BX24_SDK_URL;
     script.async = true;
     script.onload = () => {
       const bx = window.BX24;
       if (!bx) {
-        setPhase('error');
-        setMessage('Не удалось загрузить BX24 SDK.');
+        setPhase("error");
+        setMessage("Не удалось загрузить BX24 SDK.");
         return;
       }
       bx.init(() => {
         const auth = bx.getAuth();
         const memberId = auth ? auth.member_id : undefined;
         if (!memberId) {
-          setPhase('error');
-          setMessage('Не удалось определить портал (member_id).');
+          setPhase("error");
+          setMessage("Не удалось определить портал (member_id).");
           return;
         }
         void claim(memberId);
       });
     };
     script.onerror = () => {
-      setPhase('error');
-      setMessage('Не удалось загрузить BX24 SDK.');
+      setPhase("error");
+      setMessage("Не удалось загрузить BX24 SDK.");
     };
     document.body.appendChild(script);
     return () => {
@@ -96,7 +85,7 @@ export default function BitrixInstallPage() {
           Установка Bitrix24 → Кора
         </h1>
         <p className="text-sm text-fg-secondary">{message}</p>
-        {phase === 'need_login' && (
+        {phase === "need_login" && (
           <a
             href="/login"
             target="_blank"

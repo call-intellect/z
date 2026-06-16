@@ -13,10 +13,6 @@ export interface MeetingVisibilityCtx {
   groupIds: string[];
 }
 
-/**
- * ТЗ 2026-06-10 meeting-visibility — предикат «Кому видно» для READ-поверхностей
- * встречи. ОТДЕЛЬНАЯ подсистема: НЕ пересекается с knowledge-access (граф знаний).
- */
 @Injectable()
 export class MeetingVisibilityService {
   constructor(
@@ -25,12 +21,10 @@ export class MeetingVisibilityService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /** Резолв контекста доступа пользователя (прямые группы + bypass + personId). */
   async resolveContext(tenantId: string, userId: string): Promise<MeetingVisibilityCtx> {
     return this.resolver.resolveDirectGroupIds({ tenantId, userId });
   }
 
-  /** Чистый предикат видимости (kill-switch → legacy owner-only). */
   canView(args: {
     meeting: {
       ownerId: string;
@@ -63,11 +57,6 @@ export class MeetingVisibilityService {
     return false;
   }
 
-  /**
-   * Загружает встречу (+ гранты), резолвит ctx, проверяет canView.
-   * throws NotAuthorizedError('meeting_not_visible') / MeetingNotFoundError.
-   * Возвращает саму встречу (для дальнейшего использования вызывающим).
-   */
   async assertCanView(meetingId: string, userId: string): Promise<Meeting> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },
@@ -99,8 +88,11 @@ export class MeetingVisibilityService {
     return meeting;
   }
 
-  /** Where-фрагмент списка встреч (видимые пользователю). kill-switch → legacy owner-only. */
-  buildListWhere(ctx: MeetingVisibilityCtx, tenantId: string, userId: string): Prisma.MeetingWhereInput {
+  buildListWhere(
+    ctx: MeetingVisibilityCtx,
+    tenantId: string,
+    userId: string,
+  ): Prisma.MeetingWhereInput {
     if (!this.cfg.meetingVisibilityEnabled) return { ownerId: userId };
     if (ctx.isBypass) return { tenantId };
     return {
@@ -130,12 +122,14 @@ export class MeetingVisibilityService {
     };
   }
 
-  /** ТЗ Ф4 — текущий режим + гранты с человекочитаемыми именами (host уже проверен вызывающим). */
   async getVisibility(meeting: {
     id: string;
     tenantId: string;
     visibilityScope: string;
-  }): Promise<{ scope: string; grants: { granteeType: string; granteeId: string; name: string }[] }> {
+  }): Promise<{
+    scope: string;
+    grants: { granteeType: string; granteeId: string; name: string }[];
+  }> {
     const grants = await this.prisma.meetingAccessGrant.findMany({
       where: { meetingId: meeting.id },
       select: { granteeType: true, granteeId: true },
@@ -144,10 +138,16 @@ export class MeetingVisibilityService {
     const groupIds = grants.filter((g) => g.granteeType === 'group').map((g) => g.granteeId);
     const [persons, groups] = await Promise.all([
       personIds.length
-        ? this.prisma.person.findMany({ where: { id: { in: personIds } }, select: { id: true, name: true } })
+        ? this.prisma.person.findMany({
+            where: { id: { in: personIds } },
+            select: { id: true, name: true },
+          })
         : Promise.resolve([] as { id: string; name: string }[]),
       groupIds.length
-        ? this.prisma.knowledgeGroup.findMany({ where: { id: { in: groupIds } }, select: { id: true, name: true } })
+        ? this.prisma.knowledgeGroup.findMany({
+            where: { id: { in: groupIds } },
+            select: { id: true, name: true },
+          })
         : Promise.resolve([] as { id: string; name: string }[]),
     ]);
     const pName = new Map(persons.map((p) => [p.id, p.name]));
@@ -159,13 +159,12 @@ export class MeetingVisibilityService {
         granteeId: g.granteeId,
         name:
           g.granteeType === 'person'
-            ? pName.get(g.granteeId) ?? '—'
-            : gName.get(g.granteeId) ?? '—',
+            ? (pName.get(g.granteeId) ?? '—')
+            : (gName.get(g.granteeId) ?? '—'),
       })),
     };
   }
 
-  /** ТЗ Ф4 — задать режим + (для custom) полная замена набора грантов в транзакции. */
   async setVisibility(
     meeting: { id: string; tenantId: string },
     userId: string,

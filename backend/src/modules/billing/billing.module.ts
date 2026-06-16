@@ -1,28 +1,3 @@
-/**
- * BillingModule — биллинг (Subscription/Invoice/Provider).
- *
- * **Фаза 5 (текущая):** добавляется TochkaBillingProvider + OAuth + webhook +
- * pay-flow + cron'ы списания. Фабрика `BILLING_PROVIDER` теперь выбирает
- * между ManualBillingProvider и TochkaBillingProvider по
- * `cfg.billing.provider === 'tochka' && cfg.billing.features.tochka`.
- *
- * Webhook автоматически регистрируется в Точке при старте через
- * `onApplicationBootstrap` (с задержкой 1.5с — чтобы HTTP-сервер успел
- * подняться).
- *
- * Зависимости через @Global модули:
- *   - PrismaService — @Global, auto-imported.
- *   - RedisService — @Global, auto-imported.
- *   - EventEmitterModule.forRoot() — глобально в AppModule.
- *
- * Зависимость через @Module:
- *   - AuthModule (CookieAuthGuard, SuperAdminGuard)
- *   - RbacModule (TenantGuard, @CurrentOrg)
- *   - MeetingsBalanceModule (grant при активации подписки)
- *
- * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7 + §14.
- */
-
 import { Module, type OnApplicationBootstrap } from '@nestjs/common';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -62,27 +37,22 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     BillingTochkaOAuthController,
   ],
   providers: [
-    // Pure-сервисы (Фаза 4a).
     SeatService,
     InvoiceNumberService,
 
-    // БД-сервисы (Фаза 4b).
     SubscriptionService,
     InvoiceService,
     BillingEventService,
     ManualBillingService,
     BillingOverviewService,
 
-    // Tochka-провайдер (Фаза 5).
     TochkaOAuthService,
     TochkaWebhookVerifierService,
     TochkaWebhookRegistrarService,
     TochkaBillingProvider,
 
-    // Manual-провайдер (fallback).
     ManualBillingProvider,
 
-    // Фабрика выбора провайдера.
     {
       provide: BILLING_PROVIDER,
       inject: [ManualBillingProvider, TochkaBillingProvider, TypedConfigService],
@@ -91,19 +61,15 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
         tochka: TochkaBillingProvider,
         cfg: TypedConfigService,
       ) => {
-        const wantsTochka =
-          cfg.billing.provider === 'tochka' && cfg.billing.features.tochka;
+        const wantsTochka = cfg.billing.provider === 'tochka' && cfg.billing.features.tochka;
         return wantsTochka ? tochka : manual;
       },
     },
 
-    // Главный фасад (использует BILLING_PROVIDER).
     BillingService,
 
-    // Guard (paywall без trial).
     SubscriptionGuard,
 
-    // Cron.
     BillingCycleCron,
     TochkaRecurringChargeCron,
     InvoiceStatusSyncCron,
@@ -118,8 +84,6 @@ import { TochkaRecurringChargeCron } from './services/tochka-recurring-charge.cr
     BillingService,
     BILLING_PROVIDER,
     SubscriptionGuard,
-    // ТЗ 2026-05-27 Фаза 8 — TochkaOpenBankingAdapter в InnLookupModule
-    // использует TochkaOAuthService для bearer-токена OpenBanking.
     TochkaOAuthService,
   ],
 })
@@ -131,23 +95,13 @@ export class BillingModule implements OnApplicationBootstrap {
     private readonly tochka: TochkaBillingProvider,
   ) {}
 
-  /**
-   * При старте бэка в production-Tochka режиме:
-   *   1. OAuth-инициализация (логирует authorize URL если нет токенов).
-   *   2. Через 1.5с авто-регистрация webhook'а (если TOCHKA_WEBHOOK_AUTO_REGISTER=true).
-   *
-   * Sandbox-режим или manual-провайдер — ничего не делаем.
-   */
   async onApplicationBootstrap(): Promise<void> {
     if (!this.cfg.billing.features.tochka) return;
     if (this.cfg.billing.provider !== 'tochka') return;
 
-    await this.oauth.ensureOAuthReady().catch(() => {
-      // ensureOAuthReady пишет свой warn-лог — здесь молча
-    });
+    await this.oauth.ensureOAuthReady().catch(() => {});
 
     if (this.cfg.billing.tochka.webhookAutoRegister) {
-      // Задержка 1.5с — даём HTTP-серверу подняться к моменту probe-GET от Точки.
       setTimeout(() => {
         void this.registrar.registerOnce(this.tochka);
       }, 1500);

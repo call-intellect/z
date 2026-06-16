@@ -13,18 +13,6 @@ import { tap } from 'rxjs/operators';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { IpHashingService } from '../../security/ip-hashing.service';
 
-/**
- * Pulse Wave 4 §4.2 — пишет `KnowledgeAccessLog` для view-событий на
- *   `/api/v1/persons/:id/{pulse|knowledge-profile|skill-profile|appointments|contributions}`.
- *
- * Поведение:
- *   - Срабатывает только на успешный ответ (`tap.next`); 4xx/5xx не пишутся.
- *   - Не пишет, если viewer `req.user.id` === владелец карточки (`Person.userId`).
- *   - Best-effort: ошибки записи логируются на DEBUG, но запрос не валят.
- *   - Если URL не относится к одному из «view»-разделов карточки — пропуск.
- *
- * Привязан к `PersonsController` через `@UseInterceptors(...)`.
- */
 @Injectable()
 export class KnowledgeAccessLoggerInterceptor implements NestInterceptor {
   private readonly logger = new Logger(KnowledgeAccessLoggerInterceptor.name);
@@ -35,9 +23,9 @@ export class KnowledgeAccessLoggerInterceptor implements NestInterceptor {
   ) {}
 
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const req = ctx.switchToHttp().getRequest<
-      Request & { user?: { id?: string }; tenantId?: string }
-    >();
+    const req = ctx
+      .switchToHttp()
+      .getRequest<Request & { user?: { id?: string }; tenantId?: string }>();
     const personId =
       typeof (req.params as { id?: string } | undefined)?.id === 'string'
         ? ((req.params as { id?: string }).id as string)
@@ -73,7 +61,6 @@ export class KnowledgeAccessLoggerInterceptor implements NestInterceptor {
     ipHash: string | null;
   }): Promise<void> {
     try {
-      // Self-view не логируем — нужна Person.userId.
       const person = await this.prisma.person.findFirst({
         where: { id: args.viewedPersonId, tenantId: args.tenantId },
         select: { userId: true },
@@ -91,14 +78,11 @@ export class KnowledgeAccessLoggerInterceptor implements NestInterceptor {
         },
       });
     } catch (err) {
-      this.logger.debug(
-        `KnowledgeAccessLog: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.debug(`KnowledgeAccessLog: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   private extractSection(url: string): string | null {
-    // Берём только path-часть, чтобы query-параметры не сбивали матч.
     const path = url.split('?')[0] ?? '';
     if (path.endsWith('/pulse')) return 'pulse';
     if (path.endsWith('/knowledge-profile')) return 'knowledge_profile';
@@ -110,9 +94,7 @@ export class KnowledgeAccessLoggerInterceptor implements NestInterceptor {
 
   private safeIpHash(req: Request): string | null {
     try {
-      const xff = (req.headers['x-forwarded-for'] as string | undefined)
-        ?.split(',')[0]
-        ?.trim();
+      const xff = (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim();
       const ip = xff ?? req.socket?.remoteAddress ?? null;
       if (!ip) return null;
       return this.ipHasher.hashIp(ip);

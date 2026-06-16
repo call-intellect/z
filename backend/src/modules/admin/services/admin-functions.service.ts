@@ -33,18 +33,6 @@ export interface FunctionDetail extends FunctionListItem {
   } | null;
 }
 
-/**
- * AdminFunctionsService — управление функциями LLM (taskType) для Z-Admin.
- *
- *   - `listFunctions()` — список ВСЕХ taskType из `ALL_LLM_TASK_TYPES` с
- *     указанием текущей route, активного эксперимента, последнего вызова.
- *   - `getFunctionDetail(taskType)` — карточка функции с конфигом эксперимента.
- *   - `setRouteForTaskType` — обновляет глобальную (tenantId=null) route.
- *     Инвалидирует AdminCacheService('usage:').
- *
- * Глобальная (tenantId=null) — единственный пишущий метод для UI; per-Org
- * override через UI пока не делаем (есть в БД, но нет UI).
- */
 @Injectable()
 export class AdminFunctionsService {
   constructor(
@@ -61,8 +49,6 @@ export class AdminFunctionsService {
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // Последние вызовы по каждому taskType — берём отдельным запросом
-    // (count + последний AiUsageLog).
     const counts = await this.prisma.aiUsageLog.groupBy({
       by: ['taskType'],
       where: {
@@ -71,11 +57,8 @@ export class AdminFunctionsService {
       },
       _count: { _all: true },
     });
-    const countByTaskType = new Map(
-      counts.map((c) => [c.taskType ?? '', c._count._all]),
-    );
+    const countByTaskType = new Map(counts.map((c) => [c.taskType ?? '', c._count._all]));
 
-    // Last call per taskType — упрощённо одним запросом, take=1 на каждый.
     const lastCalls = await Promise.all(
       ALL_LLM_TASK_TYPES.map(async (taskType) => {
         const last = await this.prisma.aiUsageLog.findFirst({
@@ -92,9 +75,7 @@ export class AdminFunctionsService {
       const providers = parseProvidersJson(route?.providers);
       const exp = (route?.experiment as { enabled?: boolean } | null | undefined) ?? null;
       const lc = lastCalls.find((x) => x.taskType === taskType);
-      const lastModel = lc?.last
-        ? `${lc.last.provider}:${lc.last.model}`
-        : null;
+      const lastModel = lc?.last ? `${lc.last.provider}:${lc.last.model}` : null;
       return {
         taskType,
         hasRoute: route !== undefined,
@@ -117,17 +98,18 @@ export class AdminFunctionsService {
       where: { taskType, tenantId: null },
     });
     const providers = parseProvidersJson(route?.providers);
-    const exp = (route?.experiment as
-      | {
-          enabled?: boolean;
-          modelA?: string;
-          modelB?: string;
-          splitPercent?: number;
-          startedAt?: string;
-          endsAt?: string;
-        }
-      | null
-      | undefined) ?? null;
+    const exp =
+      (route?.experiment as
+        | {
+            enabled?: boolean;
+            modelA?: string;
+            modelB?: string;
+            splitPercent?: number;
+            startedAt?: string;
+            endsAt?: string;
+          }
+        | null
+        | undefined) ?? null;
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const [totalCalls7d, lastCall] = await Promise.all([
@@ -159,9 +141,7 @@ export class AdminFunctionsService {
               enabled: true,
               ...(exp.modelA ? { modelA: exp.modelA } : {}),
               ...(exp.modelB ? { modelB: exp.modelB } : {}),
-              ...(exp.splitPercent !== undefined
-                ? { splitPercent: exp.splitPercent }
-                : {}),
+              ...(exp.splitPercent !== undefined ? { splitPercent: exp.splitPercent } : {}),
               ...(exp.startedAt ? { startedAt: exp.startedAt } : {}),
               ...(exp.endsAt ? { endsAt: exp.endsAt } : {}),
             }
@@ -173,32 +153,16 @@ export class AdminFunctionsService {
     taskType: string;
     providers: Array<{ provider: LlmProviderName; model?: string }>;
     isActive: boolean;
-    /**
-     * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии.
-     * Текстовая пометка о закреплении модели (см. `LlmTaskRoute.pinnedVersionNote`).
-     * undefined — поле не передавалось (не трогаем существующее значение).
-     * null или пустая строка — снять закрепление.
-     */
     pinnedVersionNote?: string | null;
   }): Promise<{ ok: true }> {
     if (!(ALL_LLM_TASK_TYPES as readonly string[]).includes(args.taskType)) {
       throw new Error(`Unknown taskType: ${args.taskType}`);
     }
 
-    // Используем сервисный метод LlmRouterService.setRoute, но он не поддерживает
-    // model — пока вызываем через Prisma напрямую (с моделями). LlmRouterService.setRoute
-    // плоско принимает массив имён провайдеров (без model), для совместимости с
-    // существующим контроллером оставляем оба пути.
     const validProviders = args.providers.filter((p) =>
-      [
-        'anthropic',
-        'minimax',
-        'openai-via-proxy',
-        'deepseek',
-        'ollama',
-        'kie',
-        'grsai',
-      ].includes(p.provider),
+      ['anthropic', 'minimax', 'openai-via-proxy', 'deepseek', 'ollama', 'kie', 'grsai'].includes(
+        p.provider,
+      ),
     );
     if (validProviders.length === 0) {
       throw new Error('No valid providers');
@@ -208,7 +172,6 @@ export class AdminFunctionsService {
       where: { taskType: args.taskType, tenantId: null },
     });
     const providersJson: Prisma.InputJsonValue = validProviders as unknown as Prisma.InputJsonValue;
-    // Нормализуем pinnedVersionNote: пустая строка → null (снять закрепление).
     const pinnedVersionNote =
       args.pinnedVersionNote !== undefined
         ? args.pinnedVersionNote && args.pinnedVersionNote.trim().length > 0
@@ -225,8 +188,6 @@ export class AdminFunctionsService {
           ...(pinnedVersionNote !== undefined ? { pinnedVersionNote } : {}),
         },
       });
-      // ТЗ Фаза 6.5: при наличии нескольких записей по taskType (по tier'ам)
-      // — синхронизируем заметку о версии на все, чтобы UI видел единое значение.
       if (pinnedVersionNote !== undefined) {
         await this.prisma.llmTaskRoute.updateMany({
           where: {

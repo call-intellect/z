@@ -1,14 +1,3 @@
-/**
- * Agents v2 Фаза B1 (2026-05-30) — Unit-тесты `AutoRuleExtractorService`.
- *
- * 4 сценария (соответствуют DoD §B1):
- *   1. <10 feedback'ов → пустой возврат, LLM не вызывался.
- *   2. 12 feedback'ов / 3 KNN-группы по 4 → 3 candidate rules.
- *   3. Confidence < threshold → правило не создаётся.
- *   4. Existing `overridden_by_admin` → skip (sticky).
- *
- * Все Prisma/LLM/Metrics/Embeddings мокированы.
- */
 import type { PromptFeedback, PromptRule } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -67,24 +56,25 @@ function makePrisma(args?: {
     promptRule: {
       findFirst: vi.fn().mockResolvedValue(args?.findFirstRule ?? null),
       findUnique: vi.fn().mockResolvedValue(args?.similarRule ?? null),
-      create: vi.fn().mockImplementation(async ({ data }) =>
-        ({
-          id: `rule-${Math.random().toString(36).slice(2, 8)}`,
-          tenantId: data.tenantId,
-          promptKey: data.promptKey,
-          rule: data.rule,
-          ruleType: data.ruleType,
-          source: data.source,
-          status: data.status,
-          confidence: data.confidence,
-          examples: data.examples,
-          shadowMetrics: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          promotedAt: null,
-          archivedAt: null,
-          archivedReason: null,
-        }) as PromptRule,
+      create: vi.fn().mockImplementation(
+        async ({ data }) =>
+          ({
+            id: `rule-${Math.random().toString(36).slice(2, 8)}`,
+            tenantId: data.tenantId,
+            promptKey: data.promptKey,
+            rule: data.rule,
+            ruleType: data.ruleType,
+            source: data.source,
+            status: data.status,
+            confidence: data.confidence,
+            examples: data.examples,
+            shadowMetrics: null,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            promotedAt: null,
+            archivedAt: null,
+            archivedReason: null,
+          }) as PromptRule,
       ),
       update: vi.fn().mockResolvedValue({} as PromptRule),
     },
@@ -147,8 +137,6 @@ describe('AutoRuleExtractorService.extractForPromptKey', () => {
   });
 
   it('12 feedback / 3 KNN-группы (через inputDigest fallback) → 3 candidate rules', async () => {
-    // Без embedding'ов — fallback group-by inputDigest точным match'ем.
-    // Создаём 12 элементов, 3 distinct digest'а, по 4 на каждый.
     const items: PromptFeedback[] = [];
     for (let g = 0; g < 3; g++) {
       for (let i = 0; i < 4; i++) {
@@ -179,7 +167,6 @@ describe('AutoRuleExtractorService.extractForPromptKey', () => {
     expect(rules).toHaveLength(3);
     expect(llmCall).toHaveBeenCalledTimes(3);
     expect(prisma.promptRule.create).toHaveBeenCalledTimes(3);
-    // status должен быть 'shadow' (Фаза B — никаких active).
     const createCall = prisma.promptRule.create.mock.calls[0]?.[0] as
       | { data: { status: string; source: string } }
       | undefined;
@@ -188,15 +175,13 @@ describe('AutoRuleExtractorService.extractForPromptKey', () => {
   });
 
   it('confidence < threshold → правило не создаётся', async () => {
-    const items = Array.from({ length: 12 }, (_, i) =>
-      fb(i, { inputDigest: 'same-digest' }),
-    );
+    const items = Array.from({ length: 12 }, (_, i) => fb(i, { inputDigest: 'same-digest' }));
     const prisma = makePrisma({ feedback: items });
     const llmCall = vi.fn().mockResolvedValue({
       text: JSON.stringify({
         rule: 'Слабый сигнал',
         ruleType: 'tone',
-        confidence: 0.4, // ниже порога 0.7
+        confidence: 0.4,
         examples: [{ originalSnippet: 'o', editedSnippet: 'e', why: 'why' }],
         reasoning: 'weak',
       }),
@@ -215,10 +200,7 @@ describe('AutoRuleExtractorService.extractForPromptKey', () => {
   });
 
   it('existing overridden_by_admin → skip (sticky)', async () => {
-    const items = Array.from({ length: 12 }, (_, i) =>
-      fb(i, { inputDigest: 'same-digest' }),
-    );
-    // findFirst по точному text'у вернёт правило в `overridden_by_admin`.
+    const items = Array.from({ length: 12 }, (_, i) => fb(i, { inputDigest: 'same-digest' }));
     const overridden: PromptRule = {
       id: 'rule-over',
       tenantId: 'org-1',

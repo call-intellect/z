@@ -1,34 +1,21 @@
-'use client';
+"use client";
 
-/**
- * ProjectPickerDialog — переиспользуемый диалог выбора проекта (с поиском и
- * inline-созданием нового проекта).
- *
- * Вынесен из `app/(authenticated)/intake/IntakeClient.tsx` (2026-06-15,
- * plans/tz/2026-06-15-issue-move-to-project.md), чтобы тем же пикером
- * пользовались два сценария:
- *   - триаж входящей без проекта (Intake);
- *   - перенос задачи в другой проект из карточки (IssueSidebar).
- *
- * Все строки — только русский (правило admin_ui_russian_only).
- */
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
+import { toast } from "sonner";
 
-import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { projectsApi } from '@/api/tracker/projects.api';
-import { humanizeApiError } from '@/api/api-error';
-import { useProjects } from '@/hooks/tracker/useProjects';
-import { Button } from '@/ui/shadcn/button';
+import { projectsApi } from "@/api/tracker/projects.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useProjects } from "@/hooks/tracker/useProjects";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
 
 export function ProjectPickerDialog({
   orgId,
@@ -36,32 +23,28 @@ export function ProjectPickerDialog({
   onClose,
   onPick,
   excludeProjectId,
-  title = 'Выбор проекта',
-  description = 'Выберите проект.',
+  title = "Выбор проекта",
+  description = "Выберите проект.",
 }: {
   orgId: string;
   open: boolean;
   onClose: () => void;
-  /** Вызывается с id выбранного (или созданного) проекта. */
   onPick: (projectId: string) => void;
-  /** Скрыть из списка текущий проект задачи (чтобы не «перенести в себя»). */
   excludeProjectId?: string | null;
   title?: string;
   description?: string;
 }) {
-  const [query, setQuery] = useState('');
-  // Inline-создание проекта прямо из пикера (D1, ТЗ 2026-06-11).
+  const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState('');
+  const [newName, setNewName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   useResetOnOpen(open, () => {
-    setQuery('');
+    setQuery("");
     setCreating(false);
-    setNewName('');
+    setNewName("");
     setSubmitting(false);
   });
 
-  // Хук вызывается всегда (rules-of-hooks); ключ null, пока диалог закрыт.
   const { projects, isLoading, mutate } = useProjects(open ? orgId : null);
 
   const filtered = useMemo(() => {
@@ -78,16 +61,15 @@ export function ProjectPickerDialog({
     if (name.length === 0 || submitting) return;
     setSubmitting(true);
     try {
-      // Шлём только name — slug/identifier генерит сервер.
       const created = await projectsApi.create(orgId, { name });
       await mutate();
       onPick(created.id);
     } catch (e) {
       toast.error(
-        `Не удалось создать проект: ${humanizeApiError(e, 'попробуйте ещё раз')}`,
+        `Не удалось создать проект: ${humanizeApiError(e, "попробуйте ещё раз")}`,
         { duration: 5000 },
       );
-      setSubmitting(false); // форма не теряет введённое имя
+      setSubmitting(false);
     }
   };
 
@@ -95,7 +77,7 @@ export function ProjectPickerDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{creating ? 'Новый проект' : title}</DialogTitle>
+          <DialogTitle>{creating ? "Новый проект" : title}</DialogTitle>
         </DialogHeader>
         {creating ? (
           <>
@@ -129,7 +111,7 @@ export function ProjectPickerDialog({
                 onClick={() => void handleCreate()}
                 disabled={submitting || newName.trim().length === 0}
               >
-                {submitting ? 'Создаём…' : 'Создать'}
+                {submitting ? "Создаём…" : "Создать"}
               </Button>
             </DialogFooter>
           </>
@@ -183,7 +165,9 @@ export function ProjectPickerDialog({
               <Button variant="ghost" onClick={onClose}>
                 Отмена
               </Button>
-              <Button onClick={() => setCreating(true)}>+ Создать проект</Button>
+              <Button onClick={() => setCreating(true)}>
+                + Создать проект
+              </Button>
             </DialogFooter>
           </>
         )}
@@ -192,10 +176,6 @@ export function ProjectPickerDialog({
   );
 }
 
-/**
- * Сброс состояния формы при открытии диалога. Ловит переход open false → true.
- * Хук всегда вызывается в одном и том же порядке (rules-of-hooks).
- */
 function useResetOnOpen(open: boolean, reset: () => void): void {
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {

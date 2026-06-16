@@ -11,26 +11,12 @@ import type { TrackerEmitterService } from './tracker-emitter.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
 
-/**
- * T8 (2026-05-24) — unit-тесты CommentsService.
- *
- * Покрытие:
- *  1. parseMentions: @username соответствует email-local-part юзера в Org.
- *  2. parseMentions: @userId соответствует id юзера.
- *  3. parseMentions: дубликаты схлопываются (один Mention на упомянутого юзера).
- *  4. parseMentions: неизвестный токен игнорируется без падения.
- *  5. notification flow: ConversationalService.sendNotification вызывается с
- *     issue.mention payload'ом для каждого упомянутого (кроме автора).
- */
-
 interface UserRow {
   id: string;
   email: string | null;
 }
 
-function makeService(opts: {
-  users: UserRow[];
-}): {
+function makeService(opts: { users: UserRow[] }): {
   svc: CommentsService;
   sendNotification: ReturnType<typeof vi.fn>;
   emitMentionCreated: ReturnType<typeof vi.fn>;
@@ -72,14 +58,12 @@ function makeService(opts: {
           create: vi.fn(async () => createdComment),
         },
         issueMention: {
-          createMany: vi.fn(
-            async (args: { data: Array<{ mentionedUserId: string }> }) => {
-              for (const d of args.data) {
-                issueMentionCreated.push({ mentionedUserId: d.mentionedUserId });
-              }
-              return { count: args.data.length };
-            },
-          ),
+          createMany: vi.fn(async (args: { data: Array<{ mentionedUserId: string }> }) => {
+            for (const d of args.data) {
+              issueMentionCreated.push({ mentionedUserId: d.mentionedUserId });
+            }
+            return { count: args.data.length };
+          }),
         },
       };
       return cb(tx);
@@ -95,16 +79,14 @@ function makeService(opts: {
     },
   } as unknown as PrismaService;
 
-  const activity = { record: vi.fn(async () => {}) } as unknown as
-    ActivityRecorderService;
+  const activity = { record: vi.fn(async () => {}) } as unknown as ActivityRecorderService;
   const issues = {
     requireIssue: vi.fn(async () => issue),
   } as unknown as IssuesService;
   const events = {
     publishCommentCreated: vi.fn(),
   } as unknown as TrackerEventsService;
-  const webhooks = { dispatch: vi.fn(async () => {}) } as unknown as
-    WebhookDispatcher;
+  const webhooks = { dispatch: vi.fn(async () => {}) } as unknown as WebhookDispatcher;
   const emitMentionCreated = vi.fn();
   const emitter = {
     emitCommentCreated: vi.fn(),
@@ -158,48 +140,26 @@ describe('CommentsService: mentions + notifications', () => {
 
   it('2: @user-3 резолвится по userId', async () => {
     const { svc } = makeService({ users });
-    const res = await svc.create(
-      'i1',
-      baseDto('Привет @user-3'),
-      'tenant-1',
-      'author-id',
-    );
+    const res = await svc.create('i1', baseDto('Привет @user-3'), 'tenant-1', 'author-id');
     expect(res.mentionedUserIds).toContain('user-3');
   });
 
   it('3: дубликаты @anna @anna @anna дают один Mention', async () => {
     const { svc } = makeService({ users });
-    const res = await svc.create(
-      'i1',
-      baseDto('@anna @anna @anna'),
-      'tenant-1',
-      'author-id',
-    );
+    const res = await svc.create('i1', baseDto('@anna @anna @anna'), 'tenant-1', 'author-id');
     const annaCount = res.mentionedUserIds.filter((id) => id === 'user-anna').length;
     expect(annaCount).toBe(1);
   });
 
   it('4: неизвестный токен игнорируется', async () => {
     const { svc } = makeService({ users });
-    const res = await svc.create(
-      'i1',
-      baseDto('@nosuchuser hello'),
-      'tenant-1',
-      'author-id',
-    );
+    const res = await svc.create('i1', baseDto('@nosuchuser hello'), 'tenant-1', 'author-id');
     expect(res.mentionedUserIds).toHaveLength(0);
   });
 
   it('5: sendNotification вызывается для упомянутых, кроме автора', async () => {
     const { svc, sendNotification } = makeService({ users });
-    await svc.create(
-      'i1',
-      baseDto('@anna @author посмотри'),
-      'tenant-1',
-      'author-id',
-    );
-    // EventEmitter.emit срабатывает синхронно, sendNotification — promise,
-    // дёрнем microtask чтобы он успел.
+    await svc.create('i1', baseDto('@anna @author посмотри'), 'tenant-1', 'author-id');
     await Promise.resolve();
     await Promise.resolve();
 

@@ -1,19 +1,7 @@
-/**
- * Unit-тесты SubscriptionFSM. Полное покрытие переходов:
- *   - все разрешённые переходы возвращают true
- *   - все запрещённые — false + assertCanTransition бросает с понятным сообщением
- *   - same-status переход всегда true (idempotent)
- *   - allowedNextStatuses возвращает корректный массив
- */
-
 import { SubscriptionStatus } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
-import {
-  allowedNextStatuses,
-  assertCanTransition,
-  canTransition,
-} from './subscription-fsm';
+import { allowedNextStatuses, assertCanTransition, canTransition } from './subscription-fsm';
 
 const ALL_STATUSES: SubscriptionStatus[] = [
   SubscriptionStatus.DEMO,
@@ -25,22 +13,16 @@ const ALL_STATUSES: SubscriptionStatus[] = [
 ];
 
 const ALLOWED: Array<[SubscriptionStatus, SubscriptionStatus]> = [
-  // DEMO →
   [SubscriptionStatus.DEMO, SubscriptionStatus.ACTIVE],
-  // ACTIVE →
   [SubscriptionStatus.ACTIVE, SubscriptionStatus.PAST_DUE],
   [SubscriptionStatus.ACTIVE, SubscriptionStatus.CANCELED],
   [SubscriptionStatus.ACTIVE, SubscriptionStatus.EXPIRED],
-  // PAST_DUE →
   [SubscriptionStatus.PAST_DUE, SubscriptionStatus.ACTIVE],
   [SubscriptionStatus.PAST_DUE, SubscriptionStatus.SUSPENDED],
-  // SUSPENDED →
   [SubscriptionStatus.SUSPENDED, SubscriptionStatus.ACTIVE],
   [SubscriptionStatus.SUSPENDED, SubscriptionStatus.EXPIRED],
-  // CANCELED →
   [SubscriptionStatus.CANCELED, SubscriptionStatus.EXPIRED],
   [SubscriptionStatus.CANCELED, SubscriptionStatus.ACTIVE],
-  // EXPIRED →
   [SubscriptionStatus.EXPIRED, SubscriptionStatus.ACTIVE],
   [SubscriptionStatus.EXPIRED, SubscriptionStatus.DEMO],
 ];
@@ -69,30 +51,18 @@ describe('SubscriptionFSM.canTransition', () => {
   });
 
   it('DEMO → CANCELED / EXPIRED / SUSPENDED / PAST_DUE → false', () => {
-    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.CANCELED)).toBe(
-      false,
-    );
-    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED)).toBe(
-      false,
-    );
-    expect(
-      canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.SUSPENDED),
-    ).toBe(false);
-    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.PAST_DUE)).toBe(
-      false,
-    );
+    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.CANCELED)).toBe(false);
+    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED)).toBe(false);
+    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.SUSPENDED)).toBe(false);
+    expect(canTransition(SubscriptionStatus.DEMO, SubscriptionStatus.PAST_DUE)).toBe(false);
   });
 
   it('CANCELED → PAST_DUE → false (рекуррент уже выключен)', () => {
-    expect(
-      canTransition(SubscriptionStatus.CANCELED, SubscriptionStatus.PAST_DUE),
-    ).toBe(false);
+    expect(canTransition(SubscriptionStatus.CANCELED, SubscriptionStatus.PAST_DUE)).toBe(false);
   });
 
   it('SUSPENDED → CANCELED → false (отменять нечего)', () => {
-    expect(
-      canTransition(SubscriptionStatus.SUSPENDED, SubscriptionStatus.CANCELED),
-    ).toBe(false);
+    expect(canTransition(SubscriptionStatus.SUSPENDED, SubscriptionStatus.CANCELED)).toBe(false);
   });
 });
 
@@ -110,20 +80,18 @@ describe('SubscriptionFSM.assertCanTransition', () => {
   });
 
   it('throw с понятным сообщением при запрещённом переходе', () => {
-    expect(() =>
-      assertCanTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED),
-    ).toThrow(/Запрещённый переход FSM подписки: DEMO → EXPIRED/);
-    expect(() =>
-      assertCanTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED),
-    ).toThrow(/Допустимые из DEMO: ACTIVE/);
+    expect(() => assertCanTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED)).toThrow(
+      /Запрещённый переход FSM подписки: DEMO → EXPIRED/,
+    );
+    expect(() => assertCanTransition(SubscriptionStatus.DEMO, SubscriptionStatus.EXPIRED)).toThrow(
+      /Допустимые из DEMO: ACTIVE/,
+    );
   });
 });
 
 describe('SubscriptionFSM.allowedNextStatuses', () => {
   it('DEMO → [ACTIVE]', () => {
-    expect(allowedNextStatuses(SubscriptionStatus.DEMO)).toEqual([
-      SubscriptionStatus.ACTIVE,
-    ]);
+    expect(allowedNextStatuses(SubscriptionStatus.DEMO)).toEqual([SubscriptionStatus.ACTIVE]);
   });
 
   it('ACTIVE → [PAST_DUE, CANCELED, EXPIRED]', () => {

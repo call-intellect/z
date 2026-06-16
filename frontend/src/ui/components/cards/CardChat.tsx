@@ -1,21 +1,21 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Send, Sparkles } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { Send, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
-import { cardsApi } from '@/api/cards.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { ScrollArea } from '@/ui/shadcn/scroll-area';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
+import { cardsApi } from "@/api/cards.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { ScrollArea } from "@/ui/shadcn/scroll-area";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { AiTypingDots } from "@/ui/components/ai/AiTypingDots";
 
 type Message = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   citations?: Array<{
     meetingId: string;
@@ -26,18 +26,13 @@ type Message = {
   }>;
 };
 
-/**
- * AI-чат по карточке. RAG-режим: бэкенд ищет релевантные кусочки транскрипта
- * среди встреч карточки и отвечает с цитатами.
- */
 export function CardChat({ cardId }: { cardId: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
-  // Загружаем историю один раз.
   useEffect(() => {
     let cancelled = false;
     cardsApi
@@ -62,7 +57,7 @@ export function CardChat({ cardId }: { cardId: string }) {
   }, [cardId]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, sending]);
 
   async function sendMessage() {
@@ -71,31 +66,30 @@ export function CardChat({ cardId }: { cardId: string }) {
     setSending(true);
     const userMsg: Message = {
       id: `local-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: text,
     };
     setMessages((prev) => [...prev, userMsg]);
-    setInput('');
+    setInput("");
     try {
       const res = await cardsApi.ask(cardId, text);
       const aiMsg: Message = {
         id: `local-ai-${Date.now()}`,
-        role: 'assistant',
+        role: "assistant",
         content: res.message,
         citations: res.citations,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (err) {
-      const msg = humanizeApiError(err, 'Ошибка чата');
+      const msg = humanizeApiError(err, "Ошибка чата");
       toast.error(msg);
-      // Сообщение пользователя оставляем в ленте — оно ушло на сервер.
     } finally {
       setSending(false);
     }
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       void sendMessage();
     }
@@ -160,13 +154,13 @@ export function CardChat({ cardId }: { cardId: string }) {
 }
 
 function ChatBubble({ message }: { message: Message }) {
-  const isUser = message.role === 'user';
+  const isUser = message.role === "user";
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          'max-w-[85%] rounded-2xl px-3 py-2 text-sm',
-          isUser ? 'bg-accent text-accent-fg' : 'bg-bg-overlay text-fg-primary',
+          "max-w-[85%] rounded-2xl px-3 py-2 text-sm",
+          isUser ? "bg-accent text-accent-fg" : "bg-bg-overlay text-fg-primary",
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
@@ -189,23 +183,31 @@ function ChatBubble({ message }: { message: Message }) {
   );
 }
 
-function extractCitations(raw: unknown): Message['citations'] {
+function extractCitations(raw: unknown): Message["citations"] {
   if (!Array.isArray(raw)) return undefined;
   return raw
     .filter(
-      (x): x is { meetingId: string; meetingTitle: string; startMs: number; endMs: number; snippet: string } =>
-        typeof x === 'object' &&
+      (
+        x,
+      ): x is {
+        meetingId: string;
+        meetingTitle: string;
+        startMs: number;
+        endMs: number;
+        snippet: string;
+      } =>
+        typeof x === "object" &&
         x !== null &&
-        typeof (x as Record<string, unknown>).meetingId === 'string' &&
-        typeof (x as Record<string, unknown>).meetingTitle === 'string' &&
-        typeof (x as Record<string, unknown>).startMs === 'number' &&
-        typeof (x as Record<string, unknown>).endMs === 'number',
+        typeof (x as Record<string, unknown>).meetingId === "string" &&
+        typeof (x as Record<string, unknown>).meetingTitle === "string" &&
+        typeof (x as Record<string, unknown>).startMs === "number" &&
+        typeof (x as Record<string, unknown>).endMs === "number",
     )
     .map((c) => ({
       meetingId: c.meetingId,
       meetingTitle: c.meetingTitle,
       startMs: c.startMs,
       endMs: c.endMs,
-      snippet: typeof c.snippet === 'string' ? c.snippet : '',
+      snippet: typeof c.snippet === "string" ? c.snippet : "",
     }));
 }

@@ -4,16 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/index';
 import { ProactiveWatcherService } from '../services/proactive-watcher.service';
 
-/**
- * SBA δ-2 — ProactiveWatcherCron.
- *
- * Каждые 6 часов (`@Cron('0 *‎/6 * * *')`) запускает полный проход
- * `ProactiveWatcherService.runOnce` — 8 правил × все Org.
- *
- * Мастер-флаг `PROACTIVE_WATCHER_ENABLED` (default true). При false cron
- * срабатывает, но сразу выходит (no-op) — позволяет включать/отключать без
- * рестарта (запуск каждые 6 часов).
- */
 @Injectable()
 export class ProactiveWatcherCron {
   private readonly logger = new Logger(ProactiveWatcherCron.name);
@@ -27,9 +17,7 @@ export class ProactiveWatcherCron {
   @Cron('0 */6 * * *')
   async sweep(): Promise<void> {
     if (!this.cfg.proactive.enabled) {
-      this.logger.debug(
-        'proactive-watcher.cron: PROACTIVE_WATCHER_ENABLED=false, skip',
-      );
+      this.logger.debug('proactive-watcher.cron: PROACTIVE_WATCHER_ENABLED=false, skip');
       return;
     }
     const startedAt = Date.now();

@@ -4,22 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Specialist38ProbeService } from '../services/specialist-3-8-probe.service';
 
-/**
- * SBA Wave 2 — HelpfulnessProbeCron.
- *
- * Каждый день в 10:00 UTC проходит по всем активным tenant'ам и запускает 4
- * probe-trigger'а из Specialist38ProbeService:
- *   - helpfulness.new_expertise_helper_detected
- *   - helpfulness.unrecognized_high_contributor
- *   - helpfulness.mentor_emerging
- *   - helpfulness.question_chain_unanswered (PRIVATE — admin only)
- *
- * Best-effort: ProbeService встроил dedup + rate-limit + cold-start. Если у
- * tenant'а нет helper'ов — пройдёт без эмиссии.
- *
- * Запускается ПОСЛЕ SocialContributionProfileCron (05:00) и HelpfulnessSpotlightCron
- * (понедельник 09:00) — данные уже актуальные.
- */
 @Injectable()
 export class HelpfulnessProbeCron {
   private readonly logger = new Logger(HelpfulnessProbeCron.name);
@@ -43,9 +27,7 @@ export class HelpfulnessProbeCron {
     }
   }
 
-  /** Public — для ручного запуска / тестов. */
   async runOnce(): Promise<{ emittedTotal: number; orgsScanned: number }> {
-    // Берём активные Org'и, у которых были helpfulness-traits за 30 дней.
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400 * 1000);
     const tenants = await this.prisma.helpfulnessTrait.findMany({
       where: {

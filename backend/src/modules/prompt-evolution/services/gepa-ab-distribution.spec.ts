@@ -1,13 +1,3 @@
-/**
- * Agents v2 Фаза C2 (2026-05-30) — Distribution test для A/B GEPA hashing.
- *
- * Цель: убедиться, что при `abTrafficShare=0.1` через `LlmRouterService.pickGepaCandidate`
- * примерно 10% invocations попадают на candidate (±3% при N=1000).
- *
- * Реализуем эквивалентную функцию hash + bucket-pick тут локально (повторяет
- * логику в `llm-router.service.ts`). Это unit-test ядра алгоритма; реальную
- * подмену systemPrompt'а в `LlmRouter.call` покрывает integration test.
- */
 import { describe, expect, it } from 'vitest';
 
 function simpleHash(s: string): number {
@@ -74,8 +64,6 @@ describe('GEPA A/B deterministic hashing distribution', () => {
   });
 
   it('different tenantId → разные распределения (не должны быть синхронизированы)', () => {
-    // Проверяем, что для одного seed разные tenant'ы дают разные результаты
-    // хотя бы в трети случаев (хеш разделяет namespaces).
     let same = 0;
     for (let i = 0; i < 100; i++) {
       const seed = `s-${i}`;
@@ -83,7 +71,6 @@ describe('GEPA A/B deterministic hashing distribution', () => {
       const b = pick(0.5, 'task', 'org-2', seed);
       if (a === b) same += 1;
     }
-    // ~50% совпадений ожидаемо (rng coin), но строгая синхронизация исключена.
     expect(same).toBeGreaterThan(20);
     expect(same).toBeLessThan(80);
   });

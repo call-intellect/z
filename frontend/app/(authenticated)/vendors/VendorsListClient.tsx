@@ -1,41 +1,38 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   vendorsApi,
   type VendorSegmentApi,
   type VendorStatusApi,
   type VendorsListResponseApi,
-} from '@/api/vendors.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Input } from '@/ui/shadcn/input';
+} from "@/api/vendors.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 const SEGMENT_LABEL: Record<VendorSegmentApi, string> = {
-  software: 'ПО',
-  hardware: 'Оборудование',
-  consulting: 'Консалтинг',
-  logistics: 'Логистика',
-  other: 'Другое',
+  software: "ПО",
+  hardware: "Оборудование",
+  consulting: "Консалтинг",
+  logistics: "Логистика",
+  other: "Другое",
 };
 
 const STATUS_LABEL: Record<VendorStatusApi, string> = {
-  active: 'Активный',
-  evaluating: 'В оценке',
-  churned: 'Расстались',
-  banned: 'В чёрном списке',
+  active: "Активный",
+  evaluating: "В оценке",
+  churned: "Расстались",
+  banned: "В чёрном списке",
 };
 
-/**
- * `/vendors` — список поставщиков Org (SBA α-3).
- */
 export function VendorsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
@@ -56,7 +53,7 @@ function VendorsListContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -69,10 +66,10 @@ function VendorsListContent() {
       });
       setData(dto);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Ошибка загрузки'));
+        setError(humanizeApiError(e, "Ошибка загрузки"));
       }
     } finally {
       setIsLoading(false);
@@ -118,8 +115,8 @@ function VendorsListContent() {
               <div>
                 <div className="text-sm font-medium">{v.name}</div>
                 <div className="mt-0.5 text-xs text-fg-tertiary">
-                  {v.segment ? SEGMENT_LABEL[v.segment] : 'Без сегмента'}
-                  {v.inn ? ` · ИНН ${v.inn}` : ''}
+                  {v.segment ? SEGMENT_LABEL[v.segment] : "Без сегмента"}
+                  {v.inn ? ` · ИНН ${v.inn}` : ""}
                 </div>
               </div>
               <div className="text-xs tabular-nums text-fg-tertiary">

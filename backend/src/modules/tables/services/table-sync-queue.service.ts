@@ -16,13 +16,6 @@ import {
   type TableSyncJobData,
 } from '../queues';
 
-/**
- * HTTP/listener-side диспетчер очереди `tables.sync` (Smart-tables Фаза 2).
- *
- * Воркер (`TableSyncWorker`) живёт in-process в `WorkersModule`; здесь — только
- * enqueue. Регистрируется в `TablesModule` (доступен и listener'у, и
- * `TableSyncService.runInitialBackfill`).
- */
 @Injectable()
 export class TableSyncQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableSyncQueueService.name);
@@ -53,47 +46,26 @@ export class TableSyncQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Поставить реакцию на событие графа. jobId
-   * `tsync:<eventType>:<entityId>` — повторный enqueue того же события в
-   * течение жизни job'а в Redis игнорируется (idempotency).
-   */
   async enqueueEntityEvent(data: Omit<TableSyncEntityJobData, 'kind'>): Promise<void> {
     const q = this.queue;
     if (!q) {
       throw new Error('TableSyncQueueService: enqueue до onModuleInit');
     }
     const jobId = `tsync:${data.eventType}:${data.entityId}`;
-    await q.add(
-      'entity-event',
-      { kind: 'entity-event', ...data },
-      { jobId },
-    );
+    await q.add('entity-event', { kind: 'entity-event', ...data }, { jobId });
     this.logger.debug(
       `enqueue tables.sync entity-event type=${data.eventType} entity=${data.entityId}`,
     );
   }
 
-  /**
-   * Поставить фоновый батч initial-backfill (для больших Org). jobId
-   * `tbackfill:<tableId>:<firstEntityId>` — детерминирован по содержимому
-   * батча, чтобы повторный enqueue того же батча не дублировался.
-   */
-  async enqueueBackfillBatch(
-    data: Omit<TableSyncBackfillBatchJobData, 'kind'>,
-  ): Promise<void> {
+  async enqueueBackfillBatch(data: Omit<TableSyncBackfillBatchJobData, 'kind'>): Promise<void> {
     const q = this.queue;
     if (!q) {
       throw new Error('TableSyncQueueService: enqueue до onModuleInit');
     }
     const first = data.entityIds[0] ?? 'empty';
-    // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — используем '_'.
     const jobId = `tbackfill_${data.tableId}_${first}_${data.entityIds.length}`;
-    await q.add(
-      'backfill-batch',
-      { kind: 'backfill-batch', ...data },
-      { jobId },
-    );
+    await q.add('backfill-batch', { kind: 'backfill-batch', ...data }, { jobId });
     this.logger.debug(
       `enqueue tables.sync backfill-batch table=${data.tableId} size=${data.entityIds.length}`,
     );

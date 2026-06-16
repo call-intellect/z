@@ -27,20 +27,12 @@ import {
   type UpdateCronScheduleDto,
 } from './dto/admin-crons.dto';
 
-/**
- * Admin-redesign Фаза 0 — `CronManagerController`.
- *
- * Просмотр, переопределение расписания и ручной запуск cron-джобов из
- * админки Z. Источник истины — модель `CronSchedule` + `CronRunHistory`.
- */
 @ApiTags('admin-crons')
 @Controller('api/v1/admin/crons')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class CronManagerController {
-  constructor(
-    @Inject(CronManagerService) private readonly svc: CronManagerService,
-  ) {}
+  constructor(@Inject(CronManagerService) private readonly svc: CronManagerService) {}
 
   @Get()
   @ApiOperation({ summary: 'Список cron-джобов с расписанием и последним запуском.' })

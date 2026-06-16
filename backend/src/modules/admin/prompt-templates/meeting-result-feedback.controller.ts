@@ -1,17 +1,3 @@
-/**
- * Фаза A.3 — MeetingResultFeedbackController.
- *
- * POST /api/v1/meetings/:meetingId/result/feedback — пользователь оставляет 👍/👎.
- * GET  /api/v1/meetings/:meetingId/result/feedback/me — получить свою реакцию.
- * DELETE /api/v1/meetings/:meetingId/result/feedback/me — удалить свою реакцию.
- *
- * RBAC: пользователь должен быть авторизован (CookieAuthGuard) и иметь
- * доступ к встрече: либо host (Meeting.ownerId), либо член той же Org
- * (через Membership), либо participant (через participant.userId).
- *
- * Источник: ТЗ A §7.3.
- */
-
 import {
   BadRequestException,
   Body,
@@ -28,17 +14,11 @@ import { ApiExcludeController } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 
 import { AiResultFeedbackService } from './ai-result-feedback.service';
-import {
-  CreateFeedbackSchema,
-  type CreateFeedbackDto,
-} from './dto/ai-result-feedback.dto';
+import { CreateFeedbackSchema, type CreateFeedbackDto } from './dto/ai-result-feedback.dto';
 
 @ApiExcludeController()
 @Controller('api/v1/meetings/:meetingId/result/feedback')
@@ -83,8 +63,6 @@ export class MeetingResultFeedbackController {
     return this.svc.deleteOwn({ meetingId, userId });
   }
 
-  // ─── private ─────────────────────────────────────────────────
-
   private assertUser(user: CurrentUserPayload | null | undefined): string {
     if (!user || !user.id) {
       throw new BadRequestException({
@@ -95,14 +73,6 @@ export class MeetingResultFeedbackController {
     return user.id;
   }
 
-  /**
-   * Проверка, что пользователь имеет право видеть результат данной встречи.
-   * Достаточно одного из условий:
-   *   1) Он host (Meeting.ownerId).
-   *   2) Он super_admin.
-   *   3) Он member той же Org (через Membership).
-   *   4) Он participant встречи (Participant.userId).
-   */
   private async assertCanAccessMeeting(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: meetingId },

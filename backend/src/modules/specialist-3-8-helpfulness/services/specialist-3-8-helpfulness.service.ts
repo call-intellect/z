@@ -4,14 +4,8 @@ import { type DataClass, Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 import {
   HELPFULNESS_DETECT_JSON_SCHEMA,
@@ -24,11 +18,6 @@ import {
   HELPFULNESS_TRAIT_MERGE_USER_TEMPLATE,
 } from '../prompts/helpfulness.prompts';
 
-/**
- * Допустимые traitType — синхронизировано с SignalType + sub-ТЗ §«Паттерны
- * для извлечения». Первые 5 — публичные, последние 2 — restricted (только
- * админ + руководитель).
- */
 export const ALLOWED_TRAIT_TYPES = [
   'help_provided',
   'proactive_hint',
@@ -41,32 +30,19 @@ export const ALLOWED_TRAIT_TYPES = [
 
 export type HelpfulnessTraitType = (typeof ALLOWED_TRAIT_TYPES)[number];
 
-/** Тип ResourceType для RBAC. */
 export const HELPFULNESS_RESOURCE_TYPE = 'helpfulness_trait';
 
-/**
- * traitType, которые публикуются ТОЛЬКО для админа + руководителя (никогда
- * публично). Этическая защита.
- */
 export const PRIVATE_TRAIT_TYPES = new Set<HelpfulnessTraitType>([
   'question_unanswered',
   'question_acknowledged_no_action',
 ]);
 
-/**
- * KNN-порог cosine distance (`<=>`) — ниже = ближе. Sub-ТЗ §«Worker» порог
- * 0.82 на cosine similarity ⇔ distance ≤ 0.18. Берём чуть строже (0.15)
- * для уверенного merge.
- */
 const KNN_MERGE_DISTANCE_THRESHOLD = 0.15;
 
-/** KNN top-K — сколько ближайших trait'ов запрашиваем при merge. */
 const KNN_TOP_K = 5;
 
-/** Минимальный confidence для записи trait'а (ниже — выбрасываем). */
 const MIN_TRAIT_CONFIDENCE = 0.4;
 
-/** Тип LLM-ответа detect. */
 interface DetectedTraitLlm {
   traitType: string;
   helperUserHint: string;
@@ -88,18 +64,6 @@ interface MergeLlmResponse {
   reason?: string;
 }
 
-/**
- * Главный сервис Specialist 3.8 (Helpfulness Agent).
- *
- * Контракт:
- *   1. `processBlock` — публичный вход для worker'а.
- *   2. Внутри — LLM detect → resolve helperUserId/recipientUserId по hint'у
- *      (через Person.name fuzzy) → embedding → KNN merge / create.
- *   3. visibility принудительно 'restricted' для PRIVATE_TRAIT_TYPES.
- *   4. Best-effort: ловит ошибки, инкрементит метрики, не throw'ит наружу.
- *
- * Метрики: переиспользуем `coreSpecialist*` с type='helpfulness_trait'.
- */
 @Injectable()
 export class Specialist38HelpfulnessService {
   private readonly logger = new Logger(Specialist38HelpfulnessService.name);
@@ -119,9 +83,6 @@ export class Specialist38HelpfulnessService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -130,12 +91,6 @@ export class Specialist38HelpfulnessService {
     }
   }
 
-  /**
-   * Главный метод обработки одного IdeaBlock'а.
-   *
-   * Best-effort: ловит ошибки на каждом шаге, метрики инкрементит, не
-   * throw'ит наружу (воркер решает re-enqueue по политике BullMQ).
-   */
   async processBlock(args: {
     tenantId: string;
     blockId: string;
@@ -161,10 +116,7 @@ export class Specialist38HelpfulnessService {
         },
       });
       if (!block) {
-        this.logger.debug(
-          { blockId: args.blockId },
-          'specialist-3-8: блок не найден — skip',
-        );
+        this.logger.debug({ blockId: args.blockId }, 'specialist-3-8: блок не найден — skip');
         return null;
       }
       if (block.tenantId !== args.tenantId) {
@@ -241,8 +193,6 @@ export class Specialist38HelpfulnessService {
     }
   }
 
-  // ─────────────────────────── LLM detect ─────────────────────────────────
-
   private async detectTraits(args: {
     tenantId: string;
     block: {
@@ -257,7 +207,6 @@ export class Specialist38HelpfulnessService {
     };
   }): Promise<DetectedTraitLlm[] | null> {
     const start = Date.now();
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
     const guardOnDetect = this.isPromptInjectionGuardEnabled();
     const rawUserDetect = HELPFULNESS_DETECT_USER_TEMPLATE({
       blockName: args.block.name,
@@ -333,11 +282,7 @@ export class Specialist38HelpfulnessService {
       if (typeof t.helperUserHint !== 'string' || t.helperUserHint.length === 0) {
         continue;
       }
-      if (
-        typeof t.intensity !== 'number' ||
-        t.intensity < 0 ||
-        t.intensity > 1
-      ) {
+      if (typeof t.intensity !== 'number' || t.intensity < 0 || t.intensity > 1) {
         continue;
       }
       if (
@@ -355,12 +300,6 @@ export class Specialist38HelpfulnessService {
     return filtered;
   }
 
-  // ─────────────────────────── persist + merge ────────────────────────────
-
-  /**
-   * Пишет trait в БД. Если есть похожий — merge через LLM-арбитр.
-   * Возвращает 'created' | 'merged' | 'skipped'.
-   */
   private async persistTrait(args: {
     tenantId: string;
     blockId: string;
@@ -386,14 +325,11 @@ export class Specialist38HelpfulnessService {
       : null;
 
     const traitType = args.trait.traitType as HelpfulnessTraitType;
-    const visibility = PRIVATE_TRAIT_TYPES.has(traitType)
-      ? 'restricted'
-      : 'internal';
+    const visibility = PRIVATE_TRAIT_TYPES.has(traitType) ? 'restricted' : 'internal';
     const topicHint = args.trait.topicHint?.slice(0, 120) ?? null;
     const evidenceQuote = args.trait.evidenceQuote.slice(0, 500);
     const now = new Date();
 
-    // Embedding для KNN merge.
     const embeddingText = this.buildEmbeddingText({
       traitType,
       topicHint,
@@ -401,7 +337,6 @@ export class Specialist38HelpfulnessService {
     });
     const embedding = await this.embedSafe(embeddingText);
 
-    // KNN search — ищем существующие trait'ы того же helper'а с похожим topicHint.
     let mergedExistingId: string | null = null;
     let mergeIntensity: number | null = null;
     let mergeTopicHint: string | null = null;
@@ -413,7 +348,6 @@ export class Specialist38HelpfulnessService {
         embedding,
       });
       if (nearest) {
-        // LLM-арбитр.
         const decision = await this.callMergeArbiter({
           tenantId: args.tenantId,
           existing: nearest,
@@ -429,10 +363,7 @@ export class Specialist38HelpfulnessService {
           mergedExistingId = nearest.id;
           mergeIntensity = Math.min(
             1,
-            Math.max(
-              decision.mergedIntensity ?? args.trait.intensity,
-              Number(nearest.intensity),
-            ),
+            Math.max(decision.mergedIntensity ?? args.trait.intensity, Number(nearest.intensity)),
           );
           mergeTopicHint = decision.mergedTopicHint?.slice(0, 120) ?? nearest.topicHint;
         }
@@ -440,14 +371,10 @@ export class Specialist38HelpfulnessService {
     }
 
     if (mergedExistingId) {
-      // Update existing.
       await this.prisma.helpfulnessTrait.update({
         where: { id: mergedExistingId },
         data: {
-          intensity:
-            mergeIntensity !== null
-              ? new Prisma.Decimal(mergeIntensity)
-              : undefined,
+          intensity: mergeIntensity !== null ? new Prisma.Decimal(mergeIntensity) : undefined,
           topicHint: mergeTopicHint ?? undefined,
           sourceBlockIds: {
             push: args.blockId,
@@ -458,7 +385,6 @@ export class Specialist38HelpfulnessService {
           decayedAt: null,
         },
       });
-      // Embedding обновим отдельно (вне prisma model, поскольку Unsupported).
       if (embedding) {
         await this.writeEmbeddingSafe({
           id: mergedExistingId,
@@ -472,7 +398,6 @@ export class Specialist38HelpfulnessService {
       return 'merged';
     }
 
-    // Create new.
     const created = await this.prisma.helpfulnessTrait.create({
       data: {
         tenantId: args.tenantId,
@@ -498,8 +423,6 @@ export class Specialist38HelpfulnessService {
     });
     return 'created';
   }
-
-  // ─────────────────────────── KNN + embeddings ───────────────────────────
 
   private async knnSearchSimilar(args: {
     tenantId: string;
@@ -583,10 +506,7 @@ export class Specialist38HelpfulnessService {
     }
   }
 
-  private async writeEmbeddingSafe(args: {
-    id: string;
-    embedding: number[];
-  }): Promise<void> {
+  private async writeEmbeddingSafe(args: { id: string; embedding: number[] }): Promise<void> {
     try {
       const vec = `[${args.embedding.join(',')}]`;
       await this.prisma.$executeRawUnsafe(
@@ -616,8 +536,6 @@ export class Specialist38HelpfulnessService {
       .slice(0, 1_000);
   }
 
-  // ─────────────────────────── LLM merge arbiter ──────────────────────────
-
   private async callMergeArbiter(args: {
     tenantId: string;
     existing: {
@@ -636,7 +554,6 @@ export class Specialist38HelpfulnessService {
       lastObservedAt: string;
     };
   }): Promise<MergeLlmResponse | null> {
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (existing + incoming) в маркеры.
     const guardOnMerge = this.isPromptInjectionGuardEnabled();
     const rawUserMerge = HELPFULNESS_TRAIT_MERGE_USER_TEMPLATE({
       existing: {
@@ -693,19 +610,6 @@ export class Specialist38HelpfulnessService {
     }
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
-  /**
-   * Резолвит helperUserId по строке-hint'у (имя/email/@username из LLM).
-   * Шаги:
-   *   1. Точное совпадение Person.email (если выглядит как email).
-   *   2. Точное совпадение Person.name.
-   *   3. Если Person.userId != null — возвращаем его.
-   *   4. Иначе пробуем @-mention отрезать `@` и поискать по name.
-   *
-   * Возвращает только реального User.id (Person.userId != null).
-   * Внешних/удалённых пропускаем.
-   */
   private async resolveUserIdByHint(args: {
     tenantId: string;
     hint: string;
@@ -723,32 +627,21 @@ export class Specialist38HelpfulnessService {
         userId: { not: null },
         OR: isEmail
           ? [{ email: cleaned }]
-          : [
-              { name: cleaned },
-              { name: { contains: cleaned, mode: 'insensitive' } },
-            ],
+          : [{ name: cleaned }, { name: { contains: cleaned, mode: 'insensitive' } }],
       },
       select: { userId: true, name: true },
       take: 5,
     });
     if (candidates.length === 0) return null;
-    // Если несколько — берём с наиболее точным совпадением (полное равенство).
     const exact = candidates.find((c) => c.name === cleaned);
     return (exact?.userId ?? candidates[0]?.userId ?? null) as string | null;
   }
 
-  /**
-   * Static-проверка traitType (для unit-тестов). Публичный для unit-test'ов.
-   */
   static isValidTraitType(value: unknown): value is HelpfulnessTraitType {
     if (typeof value !== 'string') return false;
     return (ALLOWED_TRAIT_TYPES as readonly string[]).includes(value);
   }
 
-  /**
-   * Static-helper: определяет visibility по traitType. Используется
-   * worker'ом и unit-тестами на этическую защиту.
-   */
   static defaultVisibilityFor(
     traitType: HelpfulnessTraitType,
   ): 'public_team' | 'internal' | 'restricted' {

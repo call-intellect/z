@@ -12,29 +12,10 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import type {
-  CreateCheckInInput,
-  DailyCheckInDto,
-} from '../dto/daily-check-in.dto';
+import type { CreateCheckInInput, DailyCheckInDto } from '../dto/daily-check-in.dto';
 import { getLocalDate } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8 — DailyCheckInService.
- *
- * Главный сервис управления чек-инами:
- *   - `createOrUpsert` — manual create через `/me/check-ins POST` или из
- *     `CheckinResponseHandler` (после LLM-парсинга ответа).
- *   - `listMine` — список своих чек-инов с фильтром по date/kind.
- *   - `historyMine` — окно N дней назад.
- *   - `listForTenant` — admin/coo читают все чек-ины Org (для COO dashboard).
- *
- * Anti-spam: unique constraint `(tenantId, personId, kind, dateLocal)`. Все
- * upsert'ы через этот ключ; повторный create в тот же день — обновляет.
- *
- * `parseConfidence < 0.6` → `curatorReview=true`, raw текст в `rawResponseText`,
- * данные plans/dones/blockers могут остаться пустыми (LLM не уверен).
- */
 @Injectable()
 export class DailyCheckInService {
   private readonly logger = new Logger(DailyCheckInService.name);
@@ -49,10 +30,6 @@ export class DailyCheckInService {
     private readonly eventEmitter?: EventEmitter2,
   ) {}
 
-  /**
-   * Найти Person'а текущего user'а в Org. Если нет — это «гость» и чек-ин
-   * не разрешён (бросаем 403). Возвращает personId.
-   */
   async resolveSelfPerson(args: {
     tenantId: string;
     userId: string;
@@ -70,19 +47,13 @@ export class DailyCheckInService {
         ok: false,
         error: {
           code: 'no_person',
-          message:
-            'У пользователя нет Person-записи в этой Org — чек-ины недоступны',
+          message: 'У пользователя нет Person-записи в этой Org — чек-ины недоступны',
         },
       });
     }
     return person;
   }
 
-  /**
-   * Manual create / upsert чек-ина. Если запись на (person, kind, dateLocal)
-   * уже есть — обновляем поля. parseConfidence не передаётся: manual вход
-   * считается canonical (confidence=1.0).
-   */
   async createOrUpsertManual(args: {
     tenantId: string;
     personId: string;
@@ -90,8 +61,7 @@ export class DailyCheckInService {
     personTimezone: string | null;
   }): Promise<DailyCheckInDto> {
     const now = new Date();
-    const dateLocal =
-      args.input.dateLocal ?? getLocalDate(now, args.personTimezone);
+    const dateLocal = args.input.dateLocal ?? getLocalDate(now, args.personTimezone);
 
     const dto = await this.upsertInternal({
       tenantId: args.tenantId,
@@ -109,8 +79,6 @@ export class DailyCheckInService {
       source: 'manual',
     });
 
-    // SBA β-8.1 — эмитим событие, на которое подписан
-    // CheckinSentimentAnalyzerWorker. Best-effort, ошибки не ломают flow.
     try {
       this.eventEmitter?.emit('checkin.created', {
         tenantId: args.tenantId,
@@ -132,9 +100,6 @@ export class DailyCheckInService {
     return dto;
   }
 
-  /**
-   * Upsert из LLM-парсера ответа. parseConfidence < 0.6 → curatorReview=true.
-   */
   async upsertFromParser(args: {
     tenantId: string;
     personId: string;
@@ -148,8 +113,7 @@ export class DailyCheckInService {
     parseConfidence: number;
     source: 'cron_prompted' | 'self_initiated' | 'manual';
   }): Promise<DailyCheckInDto> {
-    const lowConfidence =
-      args.parseConfidence < DailyCheckInService.MIN_CONFIDENCE;
+    const lowConfidence = args.parseConfidence < DailyCheckInService.MIN_CONFIDENCE;
 
     return this.upsertInternal({
       tenantId: args.tenantId,
@@ -168,11 +132,6 @@ export class DailyCheckInService {
     });
   }
 
-  /**
-   * Cron-плейсхолдер: создаём «пустой» чек-ин (если его ещё нет),
-   * фиксируем notificationId и оставляем completedAt=null. После ответа
-   * пользователя `upsertFromParser` заполнит данные.
-   */
   async createPromptPlaceholder(args: {
     tenantId: string;
     personId: string;
@@ -198,9 +157,6 @@ export class DailyCheckInService {
     });
   }
 
-  /**
-   * Проверить, есть ли уже completed-чек-ин на сегодня (anti-spam для cron).
-   */
   async hasCompletedToday(args: {
     tenantId: string;
     personId: string;
@@ -221,9 +177,6 @@ export class DailyCheckInService {
     return existing?.completedAt != null;
   }
 
-  /**
-   * Получить мой чек-ин по дате/типу. Если нет — null.
-   */
   async getMine(args: {
     tenantId: string;
     personId: string;
@@ -243,9 +196,6 @@ export class DailyCheckInService {
     return row ? this.toDto(row) : null;
   }
 
-  /**
-   * Список моих чек-инов (с фильтром по date/kind).
-   */
   async listMine(args: {
     tenantId: string;
     personId: string;
@@ -266,9 +216,6 @@ export class DailyCheckInService {
     return rows.map((r) => this.toDto(r));
   }
 
-  /**
-   * Окно последних N дней (default 30).
-   */
   async historyMine(args: {
     tenantId: string;
     personId: string;
@@ -287,8 +234,6 @@ export class DailyCheckInService {
     });
     return rows.map((r) => this.toDto(r));
   }
-
-  // ─────────────────────── private ────────────────────────────────────
 
   private async upsertInternal(args: {
     tenantId: string;
@@ -317,7 +262,9 @@ export class DailyCheckInService {
     const upsertData = {
       plansJson: (args.plans ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
       donesJson: (args.dones ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
-      blockersJson: (args.blockers ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull,
+      blockersJson: (args.blockers ?? Prisma.JsonNull) as
+        | Prisma.InputJsonValue
+        | typeof Prisma.JsonNull,
       notificationId: args.notificationId,
       rawResponseText: args.rawResponseText,
       parseConfidence: args.parseConfidence,
@@ -370,10 +317,6 @@ export class DailyCheckInService {
     return this.toDto(row);
   }
 
-  /**
-   * Преобразует Prisma-row в DTO. Json-поля валидируются мягко (mapper в
-   * DailyCheckInDto не падает на NULL — возвращает пустой массив).
-   */
   private toDto(row: {
     id: string;
     tenantId: string;
@@ -400,20 +343,16 @@ export class DailyCheckInService {
         ? null
         : Number((row.parseConfidence as { toString(): string }).toString());
     const sentiment =
-      row.sentiment === 'green' ||
-      row.sentiment === 'yellow' ||
-      row.sentiment === 'red'
+      row.sentiment === 'green' || row.sentiment === 'yellow' || row.sentiment === 'red'
         ? row.sentiment
         : null;
     const source: DailyCheckInDto['source'] =
-      row.source === 'self_initiated' || row.source === 'manual'
-        ? row.source
-        : 'cron_prompted';
+      row.source === 'self_initiated' || row.source === 'manual' ? row.source : 'cron_prompted';
     return {
       id: row.id,
       tenantId: row.tenantId,
       personId: row.personId,
-      kind: (row.kind === 'evening' ? 'evening' : 'morning'),
+      kind: row.kind === 'evening' ? 'evening' : 'morning',
       dateLocal: row.dateLocal,
       source,
       plans: Array.isArray(row.plansJson) ? (row.plansJson as DailyCheckInDto['plans']) : [],
@@ -437,7 +376,6 @@ export class DailyCheckInService {
   }
 }
 
-/** Удобный type-guard: бросает 404, если getMine вернул null. */
 export function assertCheckIn<T>(value: T | null, code: string, message: string): T {
   if (value == null) {
     throw new NotFoundException({

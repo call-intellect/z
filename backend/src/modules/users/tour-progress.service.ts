@@ -1,32 +1,10 @@
-/**
- * TourProgressService — управление состоянием onboarding-туров пользователя.
- *
- * Хранит структуру в `User.tourProgress Json @default("{}")`. Merge — на
- * уровне приложения: читаем существующий объект, обновляем нужный ключ,
- * пишем целиком. Полагаемся на одиночные операции по PK (`User.id`); гонок
- * между PATCH-ами одного юзера в рамках текущей конкуренции не ожидаем
- * (фоновых писателей нет). Если в будущем потребуется — обернём в
- * `prisma.$transaction`.
- *
- * Источник: plans/tz/2026-05-27-tracker-onboarding-tour.md.
- */
-
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import {
-  TourIdSchema,
-  type TourId,
-  type TourProgressResponse,
-} from './dto/tour-progress.dto';
+import { TourIdSchema, type TourId, type TourProgressResponse } from './dto/tour-progress.dto';
 
 interface TourEntry {
   completedAt?: string;
@@ -57,12 +35,6 @@ export class TourProgressService {
     return this.normalize(user.tourProgress);
   }
 
-  /**
-   * Merge одного тура в `tourProgress`. Если `completedAt` отсутствует,
-   * считаем что тур только что начат — записываем started_at-эквивалент
-   * (текущий момент) и инкрементируем `tour_started_total`. Если есть
-   * `completedAt` или `skipped` — событие completed/skipped соответственно.
-   */
   async update(
     userId: string,
     tenantId: string | null,
@@ -82,16 +54,12 @@ export class TourProgressService {
     const current = this.normalize(user.tourProgress);
     const prevEntry = current[input.tourId];
     const isFirstTouch = prevEntry === undefined;
-    const isCompleting =
-      input.completedAt !== undefined && prevEntry?.completedAt === undefined;
-    const isSkipping =
-      input.skipped === true && prevEntry?.skipped !== true;
+    const isCompleting = input.completedAt !== undefined && prevEntry?.completedAt === undefined;
+    const isSkipping = input.skipped === true && prevEntry?.skipped !== true;
 
     const nextEntry: TourEntry = {
       ...(prevEntry ?? {}),
-      ...(input.completedAt !== undefined
-        ? { completedAt: input.completedAt }
-        : {}),
+      ...(input.completedAt !== undefined ? { completedAt: input.completedAt } : {}),
       ...(input.skipped !== undefined ? { skipped: input.skipped } : {}),
     };
 
@@ -105,8 +73,6 @@ export class TourProgressService {
       data: { tourProgress: nextProgress as unknown as Prisma.InputJsonValue },
     });
 
-    // Метрики Prometheus. Started — только на первый PATCH без completedAt
-    // и без skipped (новая запись). Completed/Skipped — на конкретное событие.
     const tenantLabel = tenantId ?? 'none';
     if (isFirstTouch && !isCompleting && !isSkipping) {
       this.metrics.incTourStarted({
@@ -121,8 +87,6 @@ export class TourProgressService {
       });
     }
     if (isSkipping) {
-      // at_step мы не знаем здесь (клиент не передаёт). По ТЗ §"Метрики" —
-      // лейбл `at_step` есть, но клиент пока не шлёт; шлём 'unknown'.
       this.metrics.incTourSkipped({
         tenant: tenantLabel,
         tour_id: input.tourId,
@@ -137,7 +101,6 @@ export class TourProgressService {
     return nextProgress;
   }
 
-  /** Обнуляет все туры пользователя (debug/админ-кнопка «Показать заново»). */
   async reset(userId: string): Promise<{ ok: true }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -157,11 +120,6 @@ export class TourProgressService {
     return { ok: true };
   }
 
-  /**
-   * Нормализуем сырое значение из БД в типизированную форму. Любое отклонение
-   * от ожидаемой структуры (включая null, массив, скаляр) — считаем пустым
-   * объектом. Это защищает от старых записей и ручных правок в БД.
-   */
   private normalize(raw: unknown): TourProgressResponse {
     if (raw === null || raw === undefined) return {};
     if (typeof raw !== 'object' || Array.isArray(raw)) return {};

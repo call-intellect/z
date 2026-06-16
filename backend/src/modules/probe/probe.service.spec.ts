@@ -1,11 +1,3 @@
-/**
- * W2 autonomy (2026-06-12) — ProbeService.suggest: гейт ценности
- * (dropped_low_value), NUDGE-реклассификация (routed_to_digest) и включённый
- * cold-start (окно прогрева после первого probe в Org).
- *
- * Детерминизм: Redis/Prisma/Queue/Cfg/Metrics мокированы (стиль
- * probe-service-queued-digest.spec.ts).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -25,26 +17,22 @@ function makeService(over?: {
   enqueue: ReturnType<typeof vi.fn>;
   incProbeEvent: ReturnType<typeof vi.fn>;
 } {
-  const create = vi
-    .fn()
-    .mockImplementation(async (args: { data: { status: string } }) => ({
-      id: 'probe-new-1',
-      ...args.data,
-    }));
+  const create = vi.fn().mockImplementation(async (args: { data: { status: string } }) => ({
+    id: 'probe-new-1',
+    ...args.data,
+  }));
   const earliestAge = over?.earliestProbeAgeHours ?? null;
-  const findFirst = vi.fn().mockResolvedValue(
-    earliestAge == null
-      ? null
-      : { createdAt: new Date(Date.now() - earliestAge * 3600 * 1000) },
-  );
+  const findFirst = vi
+    .fn()
+    .mockResolvedValue(
+      earliestAge == null ? null : { createdAt: new Date(Date.now() - earliestAge * 3600 * 1000) },
+    );
   const prisma = {
     probeEvent: { create, findFirst },
   } as unknown as PrismaService;
 
   const redis = {
     client: {
-      // dedup SET NX → '1' (не дубль); GET → null (бюджет свободен,
-      // cooldown/engagement отсутствуют).
       set: vi.fn().mockResolvedValue('1'),
       get: vi.fn().mockResolvedValue(null),
     },
@@ -63,10 +51,7 @@ function makeService(over?: {
       expiryDays: 14,
       coldStartModeHours: over?.coldStartModeHours ?? 0,
     },
-    // getDynamic возвращает default: adaptiveFatigue=true, minValuePriority=30.
-    getDynamic: vi
-      .fn()
-      .mockImplementation(async (_key: string, _env, def: unknown) => def),
+    getDynamic: vi.fn().mockImplementation(async (_key: string, _env, def: unknown) => def),
   } as unknown as TypedConfigService;
 
   const incProbeEvent = vi.fn();
@@ -99,7 +84,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       reason: 'idea.status_unclear',
       payload: { message: 'Малоценный вопрос' },
       recipientCandidates: ['user-1'],
-      priorityHint: 0.2, // → priority 20
+      priorityHint: 0.2,
     });
 
     expect('dropped' in res && res.dropped).toBe('low_value');
@@ -121,7 +106,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       reason: 'commitment.followup',
       payload: { message: 'Напоминание по обещанию' },
       recipientCandidates: ['user-1'],
-      priorityHint: 0.5, // → priority 50 ≥ 30 (гейт ценности пройден)
+      priorityHint: 0.5,
     });
 
     expect('ok' in res && res.ok).toBe(true);
@@ -129,10 +114,8 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       data: { status: string; expiresAt?: Date };
     };
     expect(created.data.status).toBe('routed_to_digest');
-    // L-2 — digest-статус получает expiresAt (тот же расчёт, что у pending).
     expect(created.data.expiresAt).toBeInstanceOf(Date);
     expect(created.data.expiresAt!.getTime()).toBeGreaterThan(Date.now());
-    // Дайджест-cron подберёт — dispatcher НЕ ставится в очередь.
     expect(env.enqueue).not.toHaveBeenCalled();
   });
 
@@ -140,7 +123,7 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
     const res = await env.service.suggest({
       tenantId: 'org-1',
       emittedByService: '3-1-regulations',
-      reason: 'regulation.missing_owner', // immediate, не NUDGE
+      reason: 'regulation.missing_owner',
       payload: { message: 'У регламента нет владельца' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.5,
@@ -181,16 +164,13 @@ describe('ProbeService.suggest — W2 гейт ценности + NUDGE + cold-s
       priorityHint: 0.5,
     });
 
-    // L-3 — не терминальный drop, а отложка: придёт дайджестом после прогрева.
     expect('ok' in res && res.ok).toBe(true);
     const created = e.create.mock.calls[0]![0] as {
       data: { status: string; priority: number; expiresAt?: Date };
     };
     expect(created.data.status).toBe('routed_to_digest');
     expect(created.data.priority).toBe(50);
-    // L-2 — digest-статус стареет (expiresAt задан).
     expect(created.data.expiresAt).toBeInstanceOf(Date);
-    // Метрика идёт со status='routed_to_digest', не dropped_cold_start.
     expect(e.incProbeEvent).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'routed_to_digest' }),
     );

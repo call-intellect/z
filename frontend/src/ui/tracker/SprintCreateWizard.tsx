@@ -1,28 +1,7 @@
-'use client';
+"use client";
 
-/**
- * SprintCreateWizard — расширенный мастер создания спринта (ТЗ 2026-05-28).
- *
- * Два шага:
- *   1) 'scope'      — выбор привязки спринта (6 вариантов: компания / отдел /
- *                     клиент / поставщик / сотрудник / проект). Для каждого
- *                     варианта (кроме «компания») — combobox существующей
- *                     сущности с поддержкой inline-create новой.
- *   2) 'parameters' — название, длительность, дата начала.
- *
- * Сабмит — атомарный `POST /api/v1/sprints/quick-create`: backend в одной
- * transaction создаёт Project (если нужно) + Cycle + Board + State'ы.
- *
- * Inline-create: combobox показывает кнопку «+ Создать “<query>”» поверх
- * списка, при клике разворачивается мини-форма; на успех новый объект
- * выбирается автоматически.
- *
- * A11y: radio-группа с `role="radiogroup"`, combobox с `aria-expanded`,
- * клавиатурная навигация по Command (cmdk).
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
@@ -36,7 +15,7 @@ import {
   User,
   UserCircle2,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
 import {
   Dialog,
@@ -45,15 +24,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/ui/shadcn/popover';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/ui/shadcn/popover";
 import {
   Command,
   CommandEmpty,
@@ -61,36 +36,31 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/ui/shadcn/command';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/ui/shadcn/command";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
 
-import { useProjects } from '@/hooks/tracker/useProjects';
-import { useVendors } from '@/hooks/useVendors';
-import { useCards } from '@/hooks/useCards';
-import { useDepartments } from '@/hooks/useDepartments';
-import { useRoles } from '@/hooks/useRoles';
-import { usePersons } from '@/hooks/usePersons';
+import { useProjects } from "@/hooks/tracker/useProjects";
+import { useVendors } from "@/hooks/useVendors";
+import { useCards } from "@/hooks/useCards";
+import { useDepartments } from "@/hooks/useDepartments";
+import { useRoles } from "@/hooks/useRoles";
+import { usePersons } from "@/hooks/usePersons";
 
-import { vendorsApi } from '@/api/vendors.api';
-import { cardsApi } from '@/api/cards.api';
-import {
-  departmentsApi,
-  personsDomainApi,
-} from '@/api/structure.api';
+import { vendorsApi } from "@/api/vendors.api";
+import { cardsApi } from "@/api/cards.api";
+import { departmentsApi, personsDomainApi } from "@/api/structure.api";
 import {
   sprintsListApi,
   type QuickCreateSprintRequest,
-} from '@/api/sprints.api';
-import type { SprintScopeKindApi } from '@/domain/sprint';
-
-// ─── Константы ──────────────────────────────────────────────────────────────
+} from "@/api/sprints.api";
+import type { SprintScopeKindApi } from "@/domain/sprint";
 
 const DURATION_OPTIONS = [
-  { value: 7, label: '1 неделя' },
-  { value: 14, label: '2 недели' },
-  { value: 21, label: '3 недели' },
-  { value: 28, label: '4 недели' },
+  { value: 7, label: "1 неделя" },
+  { value: 14, label: "2 недели" },
+  { value: 21, label: "3 недели" },
+  { value: 28, label: "4 недели" },
 ] as const;
 
 type ScopeKind = SprintScopeKindApi;
@@ -104,51 +74,49 @@ interface ScopeOption {
 
 const SCOPE_OPTIONS: ScopeOption[] = [
   {
-    kind: 'org',
-    title: 'Компания',
-    description: 'Общий спринт всей организации',
+    kind: "org",
+    title: "Компания",
+    description: "Общий спринт всей организации",
     icon: Building2,
   },
   {
-    kind: 'department',
-    title: 'Отдел',
-    description: 'Спринт одного отдела',
+    kind: "department",
+    title: "Отдел",
+    description: "Спринт одного отдела",
     icon: Users,
   },
   {
-    kind: 'customer',
-    title: 'Клиент',
-    description: 'Спринт по конкретному клиенту',
+    kind: "customer",
+    title: "Клиент",
+    description: "Спринт по конкретному клиенту",
     icon: Briefcase,
   },
   {
-    kind: 'vendor',
-    title: 'Поставщик',
-    description: 'Спринт по поставщику',
+    kind: "vendor",
+    title: "Поставщик",
+    description: "Спринт по поставщику",
     icon: UserCircle2,
   },
   {
-    kind: 'person',
-    title: 'Сотрудник',
-    description: 'Спринт для одной должности и сотрудника',
+    kind: "person",
+    title: "Сотрудник",
+    description: "Спринт для одной должности и сотрудника",
     icon: User,
   },
   {
-    kind: 'project',
-    title: 'Проект',
-    description: 'Спринт внутри существующего проекта',
+    kind: "project",
+    title: "Проект",
+    description: "Спринт внутри существующего проекта",
     icon: FolderKanban,
   },
 ];
 
 function toIsoDate(d: Date): string {
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-
-// ─── Универсальный combobox с inline-create ─────────────────────────────────
 
 interface ComboItem {
   id: string;
@@ -164,12 +132,9 @@ interface ComboboxProps {
   searchPlaceholder: string;
   emptyText: string;
   isLoading?: boolean;
-  /** Если задано — рендерим кнопку «+ Создать “<query>”». */
   onInlineCreate?: (query: string) => Promise<void> | void;
   inlineCreateBusy?: boolean;
-  /** Доп. сообщение об ошибке inline-create. */
   inlineCreateError?: string | null;
-  /** label для aria. */
   ariaLabel: string;
 }
 
@@ -187,7 +152,7 @@ function Combobox({
   ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
   const selected = useMemo(
     () => items.find((it) => it.id === selectedId) ?? null,
@@ -200,24 +165,18 @@ function Combobox({
     return items.filter(
       (it) =>
         it.label.toLowerCase().includes(q) ||
-        (it.hint ?? '').toLowerCase().includes(q),
+        (it.hint ?? "").toLowerCase().includes(q),
     );
   }, [items, query]);
 
-  // Возможность создать = есть колбэк, query не пустой, и точного совпадения
-  // в списке нет.
   const canCreate =
-    typeof onInlineCreate === 'function' &&
+    typeof onInlineCreate === "function" &&
     query.trim().length > 0 &&
     !filtered.some(
       (it) => it.label.trim().toLowerCase() === query.trim().toLowerCase(),
     );
 
   return (
-    // modal: combobox живёт внутри модального Dialog (мастер спринта). Без
-    // modal контент Popover портируется в body, у которого Dialog ставит
-    // pointer-events:none → список виден, но клики по нему не доходят. modal
-    // заставляет Popover держать собственный слой с pointer-events:auto.
     <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <button
@@ -226,9 +185,9 @@ function Combobox({
           aria-label={ariaLabel}
           aria-expanded={open}
           className={cn(
-            'flex h-10 w-full items-center justify-between rounded-md border border-border-subtle bg-bg-elevated px-3 text-left text-sm',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-            selected ? 'text-fg-primary' : 'text-fg-tertiary',
+            "flex h-10 w-full items-center justify-between rounded-md border border-border-subtle bg-bg-elevated px-3 text-left text-sm",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+            selected ? "text-fg-primary" : "text-fg-tertiary",
           )}
         >
           <span className="truncate">
@@ -261,9 +220,9 @@ function Combobox({
                     );
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2 text-sm text-accent-fg',
-                    'bg-accent/10 hover:bg-accent/20',
-                    inlineCreateBusy && 'opacity-60',
+                    "flex w-full items-center gap-2 px-3 py-2 text-sm text-accent-fg",
+                    "bg-accent/10 hover:bg-accent/20",
+                    inlineCreateBusy && "opacity-60",
                   )}
                 >
                   {inlineCreateBusy ? (
@@ -274,10 +233,7 @@ function Combobox({
                   <span className="truncate">Создать «{query.trim()}»</span>
                 </button>
                 {inlineCreateError ? (
-                  <p
-                    className="px-3 pb-2 text-xs text-danger"
-                    role="alert"
-                  >
+                  <p className="px-3 pb-2 text-xs text-danger" role="alert">
                     {inlineCreateError}
                   </p>
                 ) : null}
@@ -297,7 +253,7 @@ function Combobox({
                   return (
                     <CommandItem
                       key={it.id}
-                      value={`${it.label} ${it.hint ?? ''} ${it.id}`}
+                      value={`${it.label} ${it.hint ?? ""} ${it.id}`}
                       onSelect={() => {
                         onSelect(it.id);
                         setOpen(false);
@@ -329,8 +285,6 @@ function Combobox({
   );
 }
 
-// ─── Wizard ─────────────────────────────────────────────────────────────────
-
 export function SprintCreateWizard({
   open,
   onClose,
@@ -344,18 +298,16 @@ export function SprintCreateWizard({
   const router = useRouter();
 
   const today = useMemo(() => toIsoDate(new Date()), []);
-  const [step, setStep] = useState<'scope' | 'parameters'>('scope');
-  const [scope, setScope] = useState<ScopeKind>('org');
+  const [step, setStep] = useState<"scope" | "parameters">("scope");
+  const [scope, setScope] = useState<ScopeKind>("org");
 
-  // refId — для customer/vendor/person/department. existingProjectId — для project.
   const [refId, setRefId] = useState<string | null>(null);
   const [existingProjectId, setExistingProjectId] = useState<string | null>(
     null,
   );
-  // Для scope='person' — выбранная должность (двухступенчатый picker).
   const [roleId, setRoleId] = useState<string | null>(null);
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [durationDays, setDurationDays] = useState<number>(14);
   const [startDate, setStartDate] = useState<string>(today);
 
@@ -364,25 +316,33 @@ export function SprintCreateWizard({
   const [inlineBusy, setInlineBusy] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
 
-  // ── Источники данных combobox'ов ──
-  const { projects, isLoading: projectsLoading, mutate: mutateProjects } =
-    useProjects(currentOrgId);
-  const { vendors, isLoading: vendorsLoading, mutate: mutateVendors } =
-    useVendors(currentOrgId);
-  const { cards, isLoading: cardsLoading, mutate: mutateCards } = useCards(
-    currentOrgId,
-    { kind: 'client', limit: 50 },
-  );
+  const {
+    projects,
+    isLoading: projectsLoading,
+    mutate: mutateProjects,
+  } = useProjects(currentOrgId);
+  const {
+    vendors,
+    isLoading: vendorsLoading,
+    mutate: mutateVendors,
+  } = useVendors(currentOrgId);
+  const {
+    cards,
+    isLoading: cardsLoading,
+    mutate: mutateCards,
+  } = useCards(currentOrgId, { kind: "client", limit: 50 });
   const {
     departments,
     isLoading: departmentsLoading,
     mutate: mutateDepartments,
   } = useDepartments(currentOrgId);
   const { roles, isLoading: rolesLoading } = useRoles(currentOrgId);
-  const { persons, isLoading: personsLoading, mutate: mutatePersons } =
-    usePersons(currentOrgId, roleId ? { roleId } : {});
+  const {
+    persons,
+    isLoading: personsLoading,
+    mutate: mutatePersons,
+  } = usePersons(currentOrgId, roleId ? { roleId } : {});
 
-  // Сбрасываем выбор сущности при смене scope.
   useEffect(() => {
     setRefId(null);
     setExistingProjectId(null);
@@ -391,12 +351,12 @@ export function SprintCreateWizard({
   }, [scope]);
 
   const reset = () => {
-    setStep('scope');
-    setScope('org');
+    setStep("scope");
+    setScope("org");
     setRefId(null);
     setExistingProjectId(null);
     setRoleId(null);
-    setName('');
+    setName("");
     setDurationDays(14);
     setStartDate(today);
     setError(null);
@@ -411,29 +371,27 @@ export function SprintCreateWizard({
     onClose();
   };
 
-  // ── Валидация ──
   const scopeIsValid = useMemo(() => {
-    if (scope === 'org') return true;
-    if (scope === 'project') return Boolean(existingProjectId);
-    if (scope === 'person') return Boolean(refId);
+    if (scope === "org") return true;
+    if (scope === "project") return Boolean(existingProjectId);
+    if (scope === "person") return Boolean(refId);
     return Boolean(refId);
   }, [scope, refId, existingProjectId]);
 
   const handleNext = () => {
     if (!scopeIsValid) {
-      setError('Выберите привязку спринта.');
+      setError("Выберите привязку спринта.");
       return;
     }
     setError(null);
-    setStep('parameters');
+    setStep("parameters");
   };
 
   const handleBack = () => {
-    setStep('scope');
+    setStep("scope");
     setError(null);
   };
 
-  // ── Inline-create handlers ──
   const handleCreateVendor = async (query: string) => {
     if (!currentOrgId) return;
     setInlineBusy(true);
@@ -444,7 +402,7 @@ export function SprintCreateWizard({
       setRefId(v.id);
     } catch (e) {
       setInlineError(
-        e instanceof Error ? e.message : 'Не удалось создать поставщика.',
+        e instanceof Error ? e.message : "Не удалось создать поставщика.",
       );
     } finally {
       setInlineBusy(false);
@@ -455,12 +413,12 @@ export function SprintCreateWizard({
     setInlineBusy(true);
     setInlineError(null);
     try {
-      const c = await cardsApi.create({ name: query, kind: 'client' });
+      const c = await cardsApi.create({ name: query, kind: "client" });
       await mutateCards();
       setRefId(c.id);
     } catch (e) {
       setInlineError(
-        e instanceof Error ? e.message : 'Не удалось создать клиента.',
+        e instanceof Error ? e.message : "Не удалось создать клиента.",
       );
     } finally {
       setInlineBusy(false);
@@ -477,7 +435,7 @@ export function SprintCreateWizard({
       setRefId(res.department.id);
     } catch (e) {
       setInlineError(
-        e instanceof Error ? e.message : 'Не удалось создать отдел.',
+        e instanceof Error ? e.message : "Не удалось создать отдел.",
       );
     } finally {
       setInlineBusy(false);
@@ -497,23 +455,22 @@ export function SprintCreateWizard({
       setRefId(res.person.id);
     } catch (e) {
       setInlineError(
-        e instanceof Error ? e.message : 'Не удалось создать сотрудника.',
+        e instanceof Error ? e.message : "Не удалось создать сотрудника.",
       );
     } finally {
       setInlineBusy(false);
     }
   };
 
-  // ── Submit ──
   const handleSubmit = async () => {
     if (!currentOrgId) return;
     if (!name.trim()) {
-      setError('Укажите название спринта.');
+      setError("Укажите название спринта.");
       return;
     }
     const start = new Date(startDate);
     if (Number.isNaN(start.getTime())) {
-      setError('Некорректная дата начала.');
+      setError("Некорректная дата начала.");
       return;
     }
 
@@ -523,9 +480,9 @@ export function SprintCreateWizard({
       durationDays: durationDays as 7 | 14 | 21 | 28,
       startDate: toIsoDate(start),
     };
-    if (scope === 'project') {
+    if (scope === "project") {
       body.existingProjectId = existingProjectId;
-    } else if (scope !== 'org') {
+    } else if (scope !== "org") {
       body.refId = refId;
     }
 
@@ -533,8 +490,7 @@ export function SprintCreateWizard({
     setError(null);
     try {
       const res = await sprintsListApi.quickCreate(currentOrgId, body);
-      // Подсасываем актуальный список проектов (новый, если создался).
-      if (scope !== 'project') {
+      if (scope !== "project") {
         void mutateProjects();
       }
       onCreated?.(res.cycleId);
@@ -542,14 +498,11 @@ export function SprintCreateWizard({
       onClose();
       router.push(`/sprints/${encodeURIComponent(res.cycleId)}`);
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : 'Не удалось создать спринт.',
-      );
+      setError(e instanceof Error ? e.message : "Не удалось создать спринт.");
       setPending(false);
     }
   };
 
-  // ── Рендер ──
   return (
     <Dialog open={open} onOpenChange={(o) => (!o ? handleClose() : undefined)}>
       <DialogContent className="max-w-lg">
@@ -559,17 +512,16 @@ export function SprintCreateWizard({
             Новый спринт
           </DialogTitle>
           <DialogDescription>
-            {step === 'scope'
-              ? 'Шаг 1 из 2. Выберите, к кому или к чему привязан спринт.'
-              : 'Шаг 2 из 2. Название, длительность и дата начала.'}
+            {step === "scope"
+              ? "Шаг 1 из 2. Выберите, к кому или к чему привязан спринт."
+              : "Шаг 2 из 2. Название, длительность и дата начала."}
           </DialogDescription>
         </DialogHeader>
 
-        {step === 'scope' ? (
+        {step === "scope" ? (
           <ScopeStep
             scope={scope}
             onScopeChange={setScope}
-            // entity selectors
             departments={departments}
             departmentsLoading={departmentsLoading}
             cards={cards}
@@ -591,7 +543,6 @@ export function SprintCreateWizard({
               setRoleId(id);
               setRefId(null);
             }}
-            // inline-create
             inlineBusy={inlineBusy}
             inlineError={inlineError}
             onCreateVendor={handleCreateVendor}
@@ -617,7 +568,7 @@ export function SprintCreateWizard({
         ) : null}
 
         <DialogFooter className="gap-2">
-          {step === 'scope' ? (
+          {step === "scope" ? (
             <>
               <Button variant="ghost" onClick={handleClose} disabled={pending}>
                 Отмена
@@ -657,8 +608,6 @@ export function SprintCreateWizard({
     </Dialog>
   );
 }
-
-// ─── Шаг 1 (scope) ──────────────────────────────────────────────────────────
 
 interface ScopeStepProps {
   scope: ScopeKind;
@@ -737,35 +686,37 @@ function ScopeStep(props: ScopeStepProps) {
               aria-checked={isActive}
               onClick={() => onScopeChange(opt.kind)}
               className={cn(
-                'flex flex-col items-start gap-1 rounded-md border px-3 py-2 text-left transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                "flex flex-col items-start gap-1 rounded-md border px-3 py-2 text-left transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 isActive
-                  ? 'border-accent bg-accent/10'
-                  : 'border-border-subtle bg-bg-elevated hover:bg-bg-overlay',
+                  ? "border-accent bg-accent/10"
+                  : "border-border-subtle bg-bg-elevated hover:bg-bg-overlay",
               )}
             >
               <div className="flex items-center gap-2">
                 <Icon
                   size={14}
-                  className={isActive ? 'text-accent' : 'text-fg-tertiary'}
+                  className={isActive ? "text-accent" : "text-fg-tertiary"}
                 />
                 <span
                   className={cn(
-                    'text-sm font-medium',
-                    isActive ? 'text-fg-primary' : 'text-fg-secondary',
+                    "text-sm font-medium",
+                    isActive ? "text-fg-primary" : "text-fg-secondary",
                   )}
                 >
                   {opt.title}
                 </span>
               </div>
-              <span className="text-xs text-fg-tertiary">{opt.description}</span>
+              <span className="text-xs text-fg-tertiary">
+                {opt.description}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Combobox под radio (если требуется) */}
-      {scope === 'department' ? (
+      {}
+      {scope === "department" ? (
         <div className="flex flex-col gap-1.5">
           <Label>Отдел</Label>
           <Combobox
@@ -784,7 +735,7 @@ function ScopeStep(props: ScopeStepProps) {
         </div>
       ) : null}
 
-      {scope === 'customer' ? (
+      {scope === "customer" ? (
         <div className="flex flex-col gap-1.5">
           <Label>Клиент</Label>
           <Combobox
@@ -803,7 +754,7 @@ function ScopeStep(props: ScopeStepProps) {
         </div>
       ) : null}
 
-      {scope === 'vendor' ? (
+      {scope === "vendor" ? (
         <div className="flex flex-col gap-1.5">
           <Label>Поставщик</Label>
           <Combobox
@@ -826,7 +777,7 @@ function ScopeStep(props: ScopeStepProps) {
         </div>
       ) : null}
 
-      {scope === 'person' ? (
+      {scope === "person" ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <Label>Должность</Label>
@@ -870,7 +821,7 @@ function ScopeStep(props: ScopeStepProps) {
         </div>
       ) : null}
 
-      {scope === 'project' ? (
+      {scope === "project" ? (
         <div className="flex flex-col gap-1.5">
           <Label>Проект</Label>
           <Combobox
@@ -890,7 +841,7 @@ function ScopeStep(props: ScopeStepProps) {
         </div>
       ) : null}
 
-      {scope === 'org' ? (
+      {scope === "org" ? (
         <p className="text-xs text-fg-tertiary">
           Будет создан общий спринт компании. Привязка к конкретной сущности не
           требуется.
@@ -899,8 +850,6 @@ function ScopeStep(props: ScopeStepProps) {
     </div>
   );
 }
-
-// ─── Шаг 2 (parameters) ─────────────────────────────────────────────────────
 
 interface ParametersStepProps {
   name: string;
@@ -946,10 +895,10 @@ function ParametersStep(props: ParametersStepProps) {
                 onClick={() => onDurationChange(opt.value)}
                 aria-pressed={isActive}
                 className={cn(
-                  'inline-flex items-center rounded-md border px-3 py-1.5 text-xs transition-colors',
+                  "inline-flex items-center rounded-md border px-3 py-1.5 text-xs transition-colors",
                   isActive
-                    ? 'border-accent bg-accent text-accent-fg'
-                    : 'border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay',
+                    ? "border-accent bg-accent text-accent-fg"
+                    : "border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay",
                 )}
               >
                 {opt.label}

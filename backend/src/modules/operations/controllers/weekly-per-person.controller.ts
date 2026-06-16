@@ -27,18 +27,6 @@ import {
 } from '../dto/weekly-per-person.dto';
 import { WeeklyPerPersonService } from '../services/weekly-per-person.service';
 
-/**
- * ТЗ-D Фаза 4 (2026-06-05) — `/api/v1/dashboard/operations/weekly-per-person`.
- *
- * Источник: plans/tz/2026-06-05-weekly-per-person-plan-fact.md.
- *
- *   GET /?weekStart=YYYY-MM-DD&limit&offset&sort — недельный план-факт по людям
- *     (обещания/задачи/чек-ины за неделю, агрегаты per Person).
- *     Доступ: coo / owner / admin / super_admin (через
- *     `RbacService.canViewOperationsDashboard`).
- *
- * БЕЗ финансовых данных.
- */
 @ApiTags('dashboard-operations-weekly-per-person')
 @Controller('api/v1/dashboard/operations/weekly-per-person')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -74,11 +62,6 @@ export class WeeklyPerPersonController {
     );
   }
 
-  /**
-   * ТЗ редизайн Ф8.5 — drill-down: построчный план-факт по человеку за неделю
-   * (что планировал / что сделал / что мешало) из обещаний/задач/чек-инов.
-   * Доступ: тот же operations-dashboard RBAC.
-   */
   @Get(':personId/items')
   @ApiOperation({
     summary: 'Построчный план-факт по человеку за неделю (drill-down)',
@@ -119,10 +102,7 @@ export class WeeklyPerPersonController {
     }
   }
 
-  private async requireReadAccess(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireReadAccess(userId: string, tenantId: string): Promise<void> {
     const allowed = await this.rbac.canViewOperationsDashboard(userId, tenantId);
     if (!allowed) {
       throw new ForbiddenException({

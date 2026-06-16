@@ -1,22 +1,3 @@
-/**
- * Фаза A.4 — smoke-тест Ollama tertiary (DoD: «для 5 ключевых taskType'ов
- * один реальный вызов через qwen3.5:9b → ответ парсится»).
- *
- * Запуск:
- *   bun run scripts/smoke-llm-tertiary.ts
- *   OLLAMA_BASE_URL=https://ollama.agent-lia.ru/v1 bun run scripts/smoke-llm-tertiary.ts
- *
- * Скрипт намеренно НЕ зависит от NestJS — он использует OpenAI SDK напрямую,
- * чтобы запускался даже когда Docker выключен. Главная цель — убедиться, что:
- *   1) Ollama endpoint отвечает.
- *   2) Модель `qwen3.5:9b` отдаёт текст.
- *   3) Когда запрос предполагает JSON — ответ парсится `JSON.parse()`.
- *
- * Если для какого-то taskType ответ не парсится — выводим warning и
- * возвращаем exit code 0 (это не блокер деплоя, но сигнал для on-call). Если
- * сам HTTP не дошёл — exit 1.
- */
-
 import OpenAI from 'openai';
 
 const BASE_URL = process.env.OLLAMA_BASE_URL ?? 'https://ollama.agent-lia.ru/v1';
@@ -27,7 +8,6 @@ interface SmokeCase {
   taskType: string;
   systemPrompt: string;
   userMessage: string;
-  /** Ожидаем ли JSON. */
   expectJson: boolean;
 }
 
@@ -35,7 +15,8 @@ const CASES: SmokeCase[] = [
   {
     taskType: 'summary',
     systemPrompt: 'Ты резюмируешь рабочую встречу. Отвечай кратко на русском.',
-    userMessage: 'Встреча 5 мая о найме маркетолога. Решили: опубликовать вакансию до пятницы. Резюмируй в 2 предложениях.',
+    userMessage:
+      'Встреча 5 мая о найме маркетолога. Решили: опубликовать вакансию до пятницы. Резюмируй в 2 предложениях.',
     expectJson: false,
   },
   {
@@ -67,8 +48,7 @@ const CASES: SmokeCase[] = [
     systemPrompt:
       'Оцени поведенческие метрики участника. Верни ТОЛЬКО JSON: ' +
       '{"engagement":0..1,"clarity":0..1,"interruptions":int}.',
-    userMessage:
-      'Участник Иван говорил 60% времени, прерывал 2 раза. Reply with valid JSON only.',
+    userMessage: 'Участник Иван говорил 60% времени, прерывал 2 раза. Reply with valid JSON only.',
     expectJson: true,
   },
 ];
@@ -145,9 +125,10 @@ async function main(): Promise<void> {
   const jsonFail = results.filter((r) => r.status === 'json_parse_failed').length;
   const httpFail = results.filter((r) => r.status === 'http_error').length;
   // eslint-disable-next-line no-console
-  console.log(`=== smoke-llm-tertiary DONE: ok=${okCount}, json_failed=${jsonFail}, http_failed=${httpFail} ===`);
+  console.log(
+    `=== smoke-llm-tertiary DONE: ok=${okCount}, json_failed=${jsonFail}, http_failed=${httpFail} ===`,
+  );
   if (httpFail === CASES.length) {
-    // Если ВСЕ упали по сети — выходим с ошибкой (Ollama недоступна).
     process.exit(1);
   }
 }

@@ -8,19 +8,6 @@ import { BoardsService } from './boards.service';
 import type { ProjectsService } from './projects.service';
 import type { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Tracker Boards (2026-05-27) — unit-тесты `BoardsService`.
- *
- * Покрытие:
- *   - `create` — успешный путь + 409 на дубликат имени.
- *   - `softDelete` — перенос issues на default + защита от удаления default.
- *   - `archive` — защита от архивации default.
- *
- * Интеграционные сценарии (реальная Prisma, RBAC) — отдельный *.integration.spec.ts,
- * прогоняется на dev-DB после merge.
- *
- * ТЗ: plans/tz/2026-05-27-tracker-boards.md.
- */
 describe('BoardsService', () => {
   const tenantId = 'org_1';
   const projectId = 'p1';
@@ -141,7 +128,6 @@ describe('BoardsService', () => {
 
     it('кидает 409 на дубликат имени', async () => {
       boardAggregate.mockResolvedValue({ _max: { sequence: 0 } });
-      // Эмулируем Prisma unique-constraint violation.
       const err = new Error('Unique violation') as Error & {
         code: string;
         clientVersion: string;
@@ -155,23 +141,16 @@ describe('BoardsService', () => {
       );
       boardCreate.mockRejectedValue(err);
 
-      await expect(
-        service.create(
-          projectId,
-          { name: 'Доска' },
-          tenantId,
-          'u1',
-        ),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create(projectId, { name: 'Доска' }, tenantId, 'u1')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
   describe('softDelete', () => {
     it('переносит issues на default-доску и помечает доску deletedAt', async () => {
       boardFindFirst
-        // requireBoard
         .mockResolvedValueOnce(customBoardRow)
-        // ensureDefaultBoard — нашли default
         .mockResolvedValueOnce({ id: defaultBoardId });
       issueUpdateMany.mockResolvedValue({ count: 7 });
       boardUpdate.mockResolvedValue({ ...customBoardRow, deletedAt: new Date() });
@@ -202,28 +181,27 @@ describe('BoardsService', () => {
     it('запрещает удаление default-доски (409)', async () => {
       boardFindFirst.mockResolvedValueOnce(defaultBoardRow);
 
-      await expect(
-        service.softDelete(defaultBoardId, tenantId, 'u1'),
-      ).rejects.toThrow(ConflictException);
-      // Не должны были даже попытаться перенести issues.
+      await expect(service.softDelete(defaultBoardId, tenantId, 'u1')).rejects.toThrow(
+        ConflictException,
+      );
       expect(issueUpdateMany).not.toHaveBeenCalled();
     });
 
     it('кидает 404 если доска не найдена', async () => {
       boardFindFirst.mockResolvedValueOnce(null);
 
-      await expect(
-        service.softDelete('b_missing', tenantId, 'u1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.softDelete('b_missing', tenantId, 'u1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
   describe('archive', () => {
     it('запрещает архивацию default-доски (409)', async () => {
       boardFindFirst.mockResolvedValueOnce(defaultBoardRow);
-      await expect(
-        service.archive(defaultBoardId, tenantId, 'u1'),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.archive(defaultBoardId, tenantId, 'u1')).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('архивирует обычную доску', async () => {
@@ -280,42 +258,33 @@ describe('BoardsService', () => {
 
   describe('reorder', () => {
     it('переустанавливает sequence в порядке передачи', async () => {
-      // Все доски одного проекта.
       const findManyMock = vi.fn().mockResolvedValue([
         { id: customBoardId, projectId },
         { id: otherCustomBoardId, projectId },
       ]);
       (prisma as unknown as { board: { findMany: typeof findManyMock } }).board.findMany =
         findManyMock;
-      // findAll вызывается на финале — мокаем чтобы не падал.
-      (prisma as unknown as {
-        board: { findMany: typeof findManyMock };
-      }).board.findMany = vi
+      (
+        prisma as unknown as {
+          board: { findMany: typeof findManyMock };
+        }
+      ).board.findMany = vi
         .fn()
-        // первый вызов — для валидации boardIds (нужен projectId на каждой)
         .mockResolvedValueOnce([
           { id: customBoardId, projectId },
           { id: otherCustomBoardId, projectId },
         ])
-        // второй вызов — внутри findAll
         .mockResolvedValueOnce([customBoardRow]);
 
-      // $transaction принимает массив update-промисов; в нашем mock'е prisma
-      // транзакция уже определена как функция-callback. Заменим, чтобы
-      // принимать массив.
-      (prisma as unknown as {
-        $transaction: (
-          arg: unknown,
-        ) => Promise<unknown>;
-      }).$transaction = vi.fn().mockResolvedValue([]);
+      (
+        prisma as unknown as {
+          $transaction: (arg: unknown) => Promise<unknown>;
+        }
+      ).$transaction = vi.fn().mockResolvedValue([]);
 
       boardUpdate.mockResolvedValue(customBoardRow);
 
-      const result = await service.reorder(
-        [otherCustomBoardId, customBoardId],
-        tenantId,
-        'u1',
-      );
+      const result = await service.reorder([otherCustomBoardId, customBoardId], tenantId, 'u1');
 
       expect(events.publishBoardReordered).toHaveBeenCalledWith({
         tenantId,

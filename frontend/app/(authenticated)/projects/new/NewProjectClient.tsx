@@ -1,37 +1,30 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSWRConfig } from 'swr';
-import { FilePlus2, Loader2, Sparkles } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { Label } from '@/ui/shadcn/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
-import { useAuth } from '@/contexts/auth-context';
-import { projectsApi } from '@/api/tracker/projects.api';
-import { humanizeApiError } from '@/api/api-error';
-import { FromTemplateWizard } from './FromTemplateWizard';
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSWRConfig } from "swr";
+import { FilePlus2, Loader2, Sparkles } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { Label } from "@/ui/shadcn/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
+import { useAuth } from "@/contexts/auth-context";
+import { projectsApi } from "@/api/tracker/projects.api";
+import { humanizeApiError } from "@/api/api-error";
+import { FromTemplateWizard } from "./FromTemplateWizard";
 
-/**
- * `/projects/new` — создание проекта в двух режимах:
- *   - «Пустой проект» — старая форма (минимальный набор полей);
- *   - «Из шаблона» — 3-step wizard на базе TeamTemplate (Phase 4 / Sprint 9,
- *     `POST /api/v1/projects/from-template`).
- */
 export function NewProjectClient() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
   const { mutate: globalMutate } = useSWRConfig();
 
-  const [tab, setTab] = useState<'template' | 'blank'>('template');
+  const [tab, setTab] = useState<"template" | "blank">("template");
 
-  // Поля «пустого проекта».
-  const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
-  const [identifier, setIdentifier] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [identifier, setIdentifier] = useState("");
+  const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,19 +40,17 @@ export function NewProjectClient() {
         name: name.trim(),
         description: description.trim() || null,
       });
-      // Инвалидируем список проектов, чтобы при навигации SWR подхватил
-      // новый проект (иначе useProjectBySlug видел бы stale-кэш).
       void globalMutate(
         (key: unknown) =>
           Array.isArray(key) &&
-          typeof key[0] === 'string' &&
-          key[0] === 'tracker.projects',
+          typeof key[0] === "string" &&
+          key[0] === "tracker.projects",
         undefined,
         { revalidate: true },
       );
       router.push(`/projects/${encodeURIComponent(project.slug)}/board`);
     } catch (err) {
-      setError(humanizeApiError(err, 'Не удалось создать проект'));
+      setError(humanizeApiError(err, "Не удалось создать проект"));
     } finally {
       setSubmitting(false);
     }
@@ -76,7 +67,10 @@ export function NewProjectClient() {
         </p>
       </header>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'template' | 'blank')}>
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as "template" | "blank")}
+      >
         <TabsList>
           <TabsTrigger value="template">
             <Sparkles size={14} />

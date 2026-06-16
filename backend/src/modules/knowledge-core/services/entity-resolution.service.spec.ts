@@ -1,15 +1,3 @@
-/**
- * Integration spec для EntityResolutionService (Phase F.2).
- *
- * Реальный Postgres + pgvector из docker-compose.dev.yml. Если БД недоступна —
- * тесты skip'аются.
- *
- * Покрываемые сценарии (минимум, расширяется по мере надобности):
- *   - findOrCreateEntity: новое имя → create + mentionsCount=1.
- *   - findOrCreateEntity: повторное точное совпадение → update + mentionsCount+=1.
- *   - findOrCreateEntity: case-insensitive дедуп («Альфа» = «АЛЬФА»).
- *   - Изоляция per-tenant: одно имя в двух Org → две разные Entity.
- */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -43,8 +31,6 @@ beforeAll(async () => {
   ctx.fixture = await buildKnowledgeCoreFixture(prisma, PREFIX);
   ctx.cleanup = ctx.fixture.cleanup;
 
-  // Эмбеддинги мокаем — для F.2 они нам не критичны, плюс OpenAI ключи в
-  // test-env поддельные. Возвращаем фиксированный 1536-мерный вектор.
   const embed = {
     embedEntityNames: vi.fn(async (names: string[]) =>
       names.map(() => new Array<number>(1536).fill(0)),
@@ -52,15 +38,11 @@ beforeAll(async () => {
     embedQuery: vi.fn(async () => new Array<number>(1536).fill(0)),
   } as unknown as KnowledgeEmbeddingService;
 
-  ctx.svc = new EntityResolutionService(
-    prisma as unknown as PrismaService,
-    embed,
-  );
+  ctx.svc = new EntityResolutionService(prisma as unknown as PrismaService, embed);
 });
 
 afterAll(async () => {
   if (ctx.cleanup) await ctx.cleanup();
-  // Гарантия: даже если фикстура не отработала — стираем созданные нами entity.
   const prisma = await getPrismaClient().catch(() => null);
   if (prisma) await cleanupByPrefix(prisma, PREFIX);
   await closePrismaClient();
@@ -90,8 +72,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(entity.mentionsCount).toBe(1);
       expect(entity.canonicalName).toBe(`${PREFIX}-новая-тема`);
 
-      // Подчищаем созданную сущность (не покрыта prefix-cleanup'ом —
-      // id у неё cuid).
       await prisma.entity.delete({ where: { id: entity.id } }).catch(() => undefined);
     });
 
@@ -175,30 +155,21 @@ describe('EntityResolutionService (integration)', () => {
     });
   });
 
-  // ─────────────────────────────────────────────────────────────────────
-  // KC-Temporal W3.4 — Strong IDs (ИНН/ОГРН/email/domain/phone).
-  // Дедуп БЕЗ LLM: одно и то же юр.лицо с разными написаниями имени
-  // (например "ООО Альфа" и "Альфа") должно резолвиться в одну Entity,
-  // если совпадает ИНН.
-  // ─────────────────────────────────────────────────────────────────────
   describe('findOrCreateEntity — strong-IDs (W3.4)', () => {
     it('резолвит по ИНН — старая Entity возвращается, mentionsCount++', async (testCtx) => {
       if (skipIfNoDb(testCtx)) return;
       const f = ctx.fixture!;
       const prisma = await getPrismaClient();
 
-      // 1) Первый вызов — создаём vendor с ИНН.
       const r1 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
         name: `${PREFIX}-ООО Альфа Продакшн`,
-        inn: '7707083893', // 10 цифр — валидный ИНН юр.лица
+        inn: '7707083893',
       });
       expect(r1.created).toBe(true);
       expect(r1.entity.inn).toBe('7707083893');
 
-      // 2) Второй вызов — другое написание имени, тот же ИНН → должна
-      //    вернуться ТА ЖЕ Entity (resolve по strong-ID до exact-name).
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
@@ -209,7 +180,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r2.entity.id).toBe(r1.entity.id);
       expect(r2.entity.mentionsCount).toBe(2);
 
-      // 3) И ИНН в форматированном виде ("7707-083-893") должен нормализоваться.
       const r3 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'vendor',
@@ -228,7 +198,6 @@ describe('EntityResolutionService (integration)', () => {
       const f = ctx.fixture!;
       const prisma = await getPrismaClient();
 
-      // 1) Создаём по имени БЕЗ strong-IDs.
       const r1 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'customer',
@@ -237,8 +206,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r1.created).toBe(true);
       expect(r1.entity.inn).toBeNull();
 
-      // 2) Второй вызов с НОВЫМ ИНН (которого ни у кого нет) — strong-ID
-      //    lookup промахнётся → fallback на exact-name → найдёт ту же Entity.
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'customer',
@@ -247,8 +214,6 @@ describe('EntityResolutionService (integration)', () => {
       });
       expect(r2.created).toBe(false);
       expect(r2.entity.id).toBe(r1.entity.id);
-      // Заодно проверяем, что новый ИНН подписался на существующую Entity
-      // (W3.4 backfill пустых strong-полей).
       expect(r2.entity.inn).toBe('1234567890');
 
       await prisma.entity.delete({ where: { id: r1.entity.id } }).catch(() => undefined);
@@ -293,7 +258,6 @@ describe('EntityResolutionService (integration)', () => {
       expect(r1.created).toBe(true);
       expect(r1.entity.email).toBe('ivan.petrov@example.com');
 
-      // Другое написание имени, тот же email (в другом регистре) → та же Entity.
       const r2 = await ctx.svc!.findOrCreateEntity({
         tenantId: f.orgAId,
         type: 'person',
@@ -308,12 +272,6 @@ describe('EntityResolutionService (integration)', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф1 (knowledge-access, 2026-06-06) — новые ветки resolveSubjectEntityId:
-// authorPersonId (прямой Person.id) и authorEmail (Person по email,
-// case-insensitive), оба с приоритетом над authorUserId. Юнит-тесты с
-// моканым prisma — БД не нужна (в отличие от integration-блоков выше).
-// ───────────────────────────────────────────────────────────────────────────
 describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter identity (unit)', () => {
   function buildSvc(personFindFirst: ReturnType<typeof vi.fn>): EntityResolutionService {
     const prisma = {
@@ -367,7 +325,6 @@ describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter ide
   });
 
   it('authorPersonId имеет приоритет над authorUserId (первый успех возвращается)', async () => {
-    // Первый вызов (ветка authorPersonId) находит Person → дальше не идём.
     const findFirst = vi.fn(async () => ({ id: 'pers-3', entityId: 'ent-3' }));
     const svc = buildSvc(findFirst);
 
@@ -377,7 +334,6 @@ describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter ide
     });
 
     expect(res).toBe('ent-3');
-    // Ровно один lookup — ветка authorUserId не достигнута.
     expect(findFirst).toHaveBeenCalledTimes(1);
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({

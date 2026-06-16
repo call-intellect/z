@@ -1,16 +1,3 @@
-/**
- * FeedbackUserController — пользовательская сторона канала «Ваши предложения».
- *
- * Маршруты (см. ТЗ § Пользовательские эндпоинты):
- *   POST /api/v1/feedback           — отправка (под FeedbackRateLimitGuard)
- *   GET  /api/v1/feedback/my        — история своих сообщений
- *   GET  /api/v1/feedback/my/limit  — usedToday / limit / resetAt
- *
- * Все эндпоинты под CookieAuthGuard.
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
- */
-
 import {
   Body,
   Controller,
@@ -23,18 +10,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import {
   FeedbackLimitResponseDto,
@@ -46,10 +25,7 @@ import {
   type FeedbackMessagesListQuery,
   type FeedbackMessagesListResponse,
 } from '../dto/feedback-message.dto';
-import {
-  SubmitFeedbackSchema,
-  type SubmitFeedbackBody,
-} from '../dto/submit-feedback.dto';
+import { SubmitFeedbackSchema, type SubmitFeedbackBody } from '../dto/submit-feedback.dto';
 import { FeedbackRateLimitGuard } from '../guards/feedback-rate-limit.guard';
 import { FeedbackService } from '../services/feedback.service';
 
@@ -58,17 +34,14 @@ import { FeedbackService } from '../services/feedback.service';
 @Controller('api/v1/feedback')
 @UseGuards(CookieAuthGuard)
 export class FeedbackUserController {
-  constructor(
-    @Inject(FeedbackService) private readonly feedback: FeedbackService,
-  ) {}
+  constructor(@Inject(FeedbackService) private readonly feedback: FeedbackService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(FeedbackRateLimitGuard)
   @ApiOperation({
     summary: 'Отправить предложение / жалобу / благодарность команде Кора.',
-    description:
-      'Лимит 5 сообщений в сутки на пользователя (окно UTC). При превышении — 429.',
+    description: 'Лимит 5 сообщений в сутки на пользователя (окно UTC). При превышении — 429.',
   })
   @ApiOkResponse({ type: FeedbackMessageDto })
   async submit(
@@ -76,8 +49,7 @@ export class FeedbackUserController {
     @CurrentUser() user: CurrentUserPayload,
     @Headers('x-org-id') orgIdHeader: string | undefined,
   ): Promise<FeedbackMessage> {
-    const orgId =
-      orgIdHeader && orgIdHeader.trim().length > 0 ? orgIdHeader.trim() : null;
+    const orgId = orgIdHeader && orgIdHeader.trim().length > 0 ? orgIdHeader.trim() : null;
     return this.feedback.submit(user.id, orgId, body.text);
   }
 
@@ -96,13 +68,10 @@ export class FeedbackUserController {
 
   @Get('my/limit')
   @ApiOperation({
-    summary:
-      'Сколько сообщений я отправил сегодня и когда счётчик обнулится (00:00 UTC).',
+    summary: 'Сколько сообщений я отправил сегодня и когда счётчик обнулится (00:00 UTC).',
   })
   @ApiOkResponse({ type: FeedbackLimitResponseDto })
-  async getLimit(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<FeedbackLimitResponse> {
+  async getLimit(@CurrentUser() user: CurrentUserPayload): Promise<FeedbackLimitResponse> {
     return this.feedback.getLimit(user.id);
   }
 }

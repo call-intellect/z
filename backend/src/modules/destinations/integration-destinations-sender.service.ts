@@ -4,17 +4,6 @@ import type { Task } from '@prisma/client';
 import { DestinationsService } from './destinations.service';
 import { SenderFactory } from './senders/sender.factory';
 
-/**
- * Real-implementation отправки сущностей через destinations.
- *
- * M3b (`TasksDispatcherService`) — заглушка, бросающая 501. Когда подключают
- * этот модуль, M3b может либо:
- *   а) оставить свою заглушку и инжектить этот сервис как реальный backend
- *      (через token override),
- *   б) импортировать `IntegrationDestinationsSenderService` напрямую.
- *
- * Мы НЕ перезаписываем `tasks-dispatcher.service.ts` (M3b территория).
- */
 @Injectable()
 export class IntegrationDestinationsSenderService {
   private readonly logger = new Logger(IntegrationDestinationsSenderService.name);

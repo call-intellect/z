@@ -1,5 +1,5 @@
-import { apiClient } from './api-client';
-import type { UserRole } from '@/domain/enums';
+import { apiClient } from "./api-client";
+import type { UserRole } from "@/domain/enums";
 
 export type UserApi = {
   id: string;
@@ -16,16 +16,12 @@ export type UnifiedLoginResponse = {
 };
 
 export const authApi = {
-  /**
-   * Единый логин для пользователей и супер-админов (бэк пробует
-   * standalone → admin). Возвращает роль и isSuperAdmin для редиректа.
-   */
   login: (body: { email: string; password: string }) =>
-    apiClient.post<UnifiedLoginResponse>('/api/v1/auth/login', body),
-  me: () => apiClient.get<{ user: UserApi | null }>('/api/v1/auth/me'),
+    apiClient.post<UnifiedLoginResponse>("/api/v1/auth/login", body),
+  me: () => apiClient.get<{ user: UserApi | null }>("/api/v1/auth/me"),
   exchange: (token: string, meetingId: string) =>
     apiClient.get<{ ok: true; redirect: string }>(
       `/api/v1/auth/exchange?token=${encodeURIComponent(token)}&meeting_id=${encodeURIComponent(meetingId)}`,
     ),
-  logout: () => apiClient.post<{ ok: true }>('/api/v1/auth/logout'),
+  logout: () => apiClient.post<{ ok: true }>("/api/v1/auth/logout"),
 };

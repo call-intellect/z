@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
-import useSWR from 'swr';
+import { useState } from "react";
+import { Loader2, ShieldCheck } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   privacyApi,
   type ConsentDataType,
   type ConsentRecordDto,
-} from '@/api/privacy.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/privacy.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
 
 interface ConsentMeta {
   type: ConsentDataType;
@@ -19,38 +19,36 @@ interface ConsentMeta {
   description: string;
 }
 
-/**
- * Метаданные для отрисовки всех типов согласий — даже если в `ConsentLog`
- * ещё нет записи (новый сотрудник, не прошёл `/onboarding/consents`).
- */
 const CONSENT_META: readonly ConsentMeta[] = [
   {
-    type: 'checkin_processing',
-    title: 'Обработка чек-инов и настроения',
+    type: "checkin_processing",
+    title: "Обработка чек-инов и настроения",
     description:
-      'Кора читает ваши чек-ины, определяет настроение и использует это для агрегатов команды.',
+      "Кора читает ваши чек-ины, определяет настроение и использует это для агрегатов команды.",
   },
   {
-    type: 'risk_analysis',
-    title: 'Анализ сигналов риска',
+    type: "risk_analysis",
+    title: "Анализ сигналов риска",
     description:
-      'Кора ищет сигналы перегруза, выгорания и конфликтов и подсказывает руководителю.',
+      "Кора ищет сигналы перегруза, выгорания и конфликтов и подсказывает руководителю.",
   },
   {
-    type: 'card_visible_to_manager',
-    title: 'Показ карточки руководителю',
+    type: "card_visible_to_manager",
+    title: "Показ карточки руководителю",
     description:
-      'Ваша pulse-карточка видна непосредственному руководителю. Полный текст ваших чек-инов не показывается.',
+      "Ваша pulse-карточка видна непосредственному руководителю. Полный текст ваших чек-инов не показывается.",
   },
 ] as const;
 
 export function ConsentsListClient() {
   const { currentOrgId, isLoading } = useAuth();
-  const swrKey = currentOrgId ? ['my-consents', currentOrgId] : null;
-  const { data, error, isLoading: loading, mutate } = useSWR(
-    swrKey,
-    async () => privacyApi.listMyConsents(currentOrgId!),
-  );
+  const swrKey = currentOrgId ? ["my-consents", currentOrgId] : null;
+  const {
+    data,
+    error,
+    isLoading: loading,
+    mutate,
+  } = useSWR(swrKey, async () => privacyApi.listMyConsents(currentOrgId!));
   const [busyType, setBusyType] = useState<ConsentDataType | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
 
@@ -91,7 +89,7 @@ export function ConsentsListClient() {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось изменить согласие.';
+            : "Не удалось изменить согласие.";
       setErrorText(msg);
     } finally {
       setBusyType(null);
@@ -136,12 +134,12 @@ export function ConsentsListClient() {
             const current = byType.get(meta.type);
             const consented = current?.consented ?? false;
             const updatedAt = current
-              ? new Date(current.createdAt).toLocaleString('ru-RU', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
+              ? new Date(current.createdAt).toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
                 })
               : null;
             return (
@@ -157,11 +155,11 @@ export function ConsentsListClient() {
                     <span
                       className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                         consented
-                          ? 'bg-success/15 text-success-fg'
-                          : 'bg-warning/15 text-warning-fg'
+                          ? "bg-success/15 text-success-fg"
+                          : "bg-warning/15 text-warning-fg"
                       }`}
                     >
-                      {consented ? 'Согласие дано' : 'Отозвано'}
+                      {consented ? "Согласие дано" : "Отозвано"}
                     </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-fg-secondary">
@@ -169,26 +167,26 @@ export function ConsentsListClient() {
                   </p>
                   {updatedAt && (
                     <p className="mt-1 text-xs text-fg-tertiary">
-                      Последнее изменение: {updatedAt} (v{current?.policyVersion ?? '1'})
+                      Последнее изменение: {updatedAt} (v
+                      {current?.policyVersion ?? "1"})
                     </p>
                   )}
                 </div>
                 <div className="shrink-0">
                   <Button
                     size="sm"
-                    variant={consented ? 'outline' : 'default'}
+                    variant={consented ? "outline" : "default"}
                     disabled={busyType === meta.type}
                     onClick={() => handleToggle(meta.type, !consented)}
                   >
                     {busyType === meta.type ? (
                       <span className="flex items-center gap-1.5">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        …
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />…
                       </span>
                     ) : consented ? (
-                      'Отозвать'
+                      "Отозвать"
                     ) : (
-                      'Дать согласие'
+                      "Дать согласие"
                     )}
                   </Button>
                 </div>

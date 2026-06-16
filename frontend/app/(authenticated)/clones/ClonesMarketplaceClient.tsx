@@ -1,36 +1,21 @@
-'use client';
+"use client";
 
-/**
- * `/clones` — публичный маркетплейс клонов должностей (ТЗ 2026-05-26).
- *
- * UX:
- *   - Header с описанием категории.
- *   - Sticky поиск по названию должности.
- *   - Группировка карточек по департаментам (сворачиваемые секции).
- *   - hasGrant=true → «Спросить» → /clones/[roleId].
- *   - hasGrant=false → «Запросить доступ» (тост о результате).
- *   - 1/2/3/4 кол. в зависимости от viewport.
- *
- * Слой: ApiDto (clones.api / me-clone-access.api) → DomainModel (useClones /
- * useMyCloneAccess) → UiModel этого компонента.
- */
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { clonesApi } from "@/api/clones.api";
+import { useAuth } from "@/contexts/auth-context";
+import { useClones, useMyCloneAccess } from "@/hooks/useClones";
+import { CloneCard, CloneCardSkeleton } from "@/ui/clones/CloneCard";
+import { CloneSearchInput } from "@/ui/clones/CloneSearchInput";
+import { DepartmentSection } from "@/ui/clones/DepartmentSection";
+import { EmptyCloneList } from "@/ui/clones/EmptyCloneList";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { toast } from "@/ui/shadcn/toast";
+import { useEffect, useMemo, useState } from "react";
+import type { CloneListUiItem } from "@/domain/clone";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { clonesApi } from '@/api/clones.api';
-import { useAuth } from '@/contexts/auth-context';
-import { useClones, useMyCloneAccess } from '@/hooks/useClones';
-import { CloneCard, CloneCardSkeleton } from '@/ui/clones/CloneCard';
-import { CloneSearchInput } from '@/ui/clones/CloneSearchInput';
-import { DepartmentSection } from '@/ui/clones/DepartmentSection';
-import { EmptyCloneList } from '@/ui/clones/EmptyCloneList';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { toast } from '@/ui/shadcn/toast';
-import { useEffect, useMemo, useState } from 'react';
-import type { CloneListUiItem } from '@/domain/clone';
+import { AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
 
-import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
-
-const LAST_SEEN_GRANTS_LS_KEY = 'clones:last-seen-grants-iso';
+const LAST_SEEN_GRANTS_LS_KEY = "clones:last-seen-grants-iso";
 
 export function ClonesMarketplaceClient() {
   const { currentOrgId, isLoading } = useAuth();
@@ -50,26 +35,21 @@ function Content({ orgId }: { orgId: string }) {
   const clones = useClones(orgId);
   const myAccess = useMyCloneAccess(orgId);
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [requestingFor, setRequestingFor] = useState<string | null>(null);
 
-  // При заходе на /clones сбрасываем "точку нового гранта" в Sidebar
-  // (см. useUnseenCloneGrants / Sidebar.tsx).
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(
         LAST_SEEN_GRANTS_LS_KEY,
         new Date().toISOString(),
       );
-      window.dispatchEvent(new CustomEvent('clones:grants-seen'));
-    } catch {
-      // ignore — localStorage может быть отключён.
-    }
+      window.dispatchEvent(new CustomEvent("clones:grants-seen"));
+    } catch {}
   }, []);
 
-  // Группировка по департаменту + локальный поиск.
   const grouped = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const filtered = clones.items.filter((it) => {
@@ -81,21 +61,19 @@ function Content({ orgId }: { orgId: string }) {
     });
     const map = new Map<string, { name: string; items: CloneListUiItem[] }>();
     for (const it of filtered) {
-      const key = it.departmentId ?? '__none__';
-      const name = it.departmentName ?? 'Без отдела';
+      const key = it.departmentId ?? "__none__";
+      const name = it.departmentName ?? "Без отдела";
       const bucket = map.get(key) ?? { name, items: [] };
       bucket.items.push(it);
       map.set(key, bucket);
     }
-    // Сортировка департаментов: «Без отдела» в конец, остальные — alpha.
     const entries = Array.from(map.entries()).sort(([ka, a], [kb, b]) => {
-      if (ka === '__none__') return 1;
-      if (kb === '__none__') return -1;
-      return a.name.localeCompare(b.name, 'ru');
+      if (ka === "__none__") return 1;
+      if (kb === "__none__") return -1;
+      return a.name.localeCompare(b.name, "ru");
     });
-    // Внутри секции — alpha по publicName.
     for (const [, v] of entries) {
-      v.items.sort((a, b) => a.publicName.localeCompare(b.publicName, 'ru'));
+      v.items.sort((a, b) => a.publicName.localeCompare(b.publicName, "ru"));
     }
     return entries;
   }, [clones.items, searchQuery]);
@@ -104,22 +82,21 @@ function Content({ orgId }: { orgId: string }) {
     if (requestingFor) return;
     setRequestingFor(roleId);
     try {
-      await clonesApi.requestAccess(orgId, 'role', roleId);
-      toast.success('Запрос отправлен администратору.');
+      await clonesApi.requestAccess(orgId, "role", roleId);
+      toast.success("Запрос отправлен администратору.");
     } catch (err) {
-      const code = err instanceof ApiError ? err.code : '';
+      const code = err instanceof ApiError ? err.code : "";
       if (
-        code === 'not_found' ||
-        code === 'http_404' ||
+        code === "not_found" ||
+        code === "http_404" ||
         /404/.test(String(code))
       ) {
-        toast.message('Функция временно недоступна.', {
-          description: 'Попросите администратора выдать доступ вручную.',
+        toast.message("Функция временно недоступна.", {
+          description: "Попросите администратора выдать доступ вручную.",
         });
       } else {
-        toast.error('Не удалось отправить запрос.', {
-          description:
-            humanizeApiError(err, 'Попробуйте ещё раз.'),
+        toast.error("Не удалось отправить запрос.", {
+          description: humanizeApiError(err, "Попробуйте ещё раз."),
         });
       }
     } finally {
@@ -127,14 +104,12 @@ function Content({ orgId }: { orgId: string }) {
     }
   }
 
-  // ─── Error state ───
   if (clones.error && !clones.isLoading) {
     const err = clones.error;
-    if (err instanceof ApiError && err.code === 'forbidden') {
+    if (err instanceof ApiError && err.code === "forbidden") {
       return <AdminForbidden />;
     }
-    const message =
-      humanizeApiError(err, 'Не удалось загрузить клонов.');
+    const message = humanizeApiError(err, "Не удалось загрузить клонов.");
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
         <Header total={0} />
@@ -188,7 +163,7 @@ function Content({ orgId }: { orgId: string }) {
               <CloneCard
                 key={it.personaId}
                 item={it}
-                hasGrant={myAccess.access?.has('role', it.roleId) ?? false}
+                hasGrant={myAccess.access?.has("role", it.roleId) ?? false}
                 onRequestAccess={(rid) => void handleRequestAccess(rid)}
                 requestAccessPending={requestingFor === it.roleId}
               />
@@ -212,8 +187,8 @@ function Header({ total }: { total: number }) {
       </h1>
       <p className="mt-1 text-xs text-fg-secondary sm:text-sm">
         Клон отвечает в стиле должности, опираясь на накопленные обсуждения
-        подхода к решениям. Когда носитель роли меняется — клон сохраняет
-        опыт и продолжает версионироваться. Всего: {total}.
+        подхода к решениям. Когда носитель роли меняется — клон сохраняет опыт и
+        продолжает версионироваться. Всего: {total}.
       </p>
     </header>
   );

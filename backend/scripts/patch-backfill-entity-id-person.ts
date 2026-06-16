@@ -1,21 +1,3 @@
-/**
- * Patch (SBA α-3) — backfill Person.entityId.
- *
- * Для каждой Person без entityId — найти или создать Entity{type='person',
- * canonicalName=Person.name, tenantId}, проставить Person.entityId.
- *
- * Запуск:
- *   bun run scripts/patch-backfill-entity-id-person.ts          — реальный backfill
- *   bun run scripts/patch-backfill-entity-id-person.ts --dry-run — только подсчёт
- *
- * Идемпотентно (фильтр `entityId IS NULL`). Батч 1000 записей за раз.
- *
- * Логика дедупа Entity:
- *   1. Точное совпадение lower(canonicalName) внутри Org — переиспользуем.
- *   2. Иначе — создаём новый Entity (без embedding'а — он будет посчитан
- *      при следующем upsert через EntityResolutionService).
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { isColumnNullable } from './_lib/schema-guards';
@@ -41,12 +23,8 @@ async function main(): Promise<void> {
 
   try {
     /* eslint-disable no-console */
-    console.log(
-      `=== patch-backfill-entity-id-person START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
-    );
+    console.log(`=== patch-backfill-entity-id-person START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`);
 
-    // Guard: если Person.entityId уже NOT NULL (cleanup-миграция применена) —
-    // типизированный where:{entityId:null} упал бы Prisma 7-валидацией.
     if (!(await isColumnNullable(prisma, 'Person', 'entityId'))) {
       console.log(
         'Person.entityId уже NOT NULL — backfill применён ранее, обновление не требуется.',
@@ -75,7 +53,6 @@ async function main(): Promise<void> {
         }
         const lowered = normalized.toLowerCase();
 
-        // 1. Ищем существующий Entity{type=person, tenantId} с совпадающим именем.
         const candidates = await prisma.entity.findMany({
           where: {
             tenantId: p.tenantId,
@@ -85,9 +62,7 @@ async function main(): Promise<void> {
           select: { id: true, canonicalName: true },
           take: 200,
         });
-        const matched = candidates.find(
-          (c) => c.canonicalName.trim().toLowerCase() === lowered,
-        );
+        const matched = candidates.find((c) => c.canonicalName.trim().toLowerCase() === lowered);
 
         let entityId: string;
         if (matched) {
@@ -120,9 +95,7 @@ async function main(): Promise<void> {
       }
 
       cursorId = batch[batch.length - 1]?.id;
-      console.log(
-        `  ...обработан батч до id=${cursorId}, всего отсканировано=${counters.scanned}`,
-      );
+      console.log(`  ...обработан батч до id=${cursorId}, всего отсканировано=${counters.scanned}`);
       if (batch.length < BATCH_SIZE) break;
     }
 

@@ -1,11 +1,5 @@
 import { z } from 'zod';
 
-/**
- * PATCH проекта — все поля опциональные. `slug` и `identifier` не меняются
- * после создания (так как уже завязаны в issue.identifier `KORA-123`).
- *
- * Sprints (2026-05-27) — scope-поля. `null` явно очищает scope. См. §1.6 ТЗ.
- */
 export const UpdateProjectSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
@@ -24,7 +18,5 @@ export const UpdateProjectSchema = z
     departmentId: z.string().max(64).nullable().optional(),
   })
   .strict();
-// NB: инвариант ≤1 заполненного scope-поля валидируется в ProjectsService.update
-// (там учитываются текущие значения, не только дельта).
 
 export type UpdateProjectDto = z.infer<typeof UpdateProjectSchema>;

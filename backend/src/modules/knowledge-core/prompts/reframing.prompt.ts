@@ -1,25 +1,4 @@
-/**
- * Промпт `reframing` — ночное переосмысление графа знания.
- *
- * Использует `ReframingCron` в два прохода для одного и того же `taskType`:
- *
- *  1. **analyzeFreshBlocks** — анализ свежих блоков за последние 7 дней:
- *     splitCandidates / mergeCandidates / themeShifts / общий analysis.
- *     System-промпт — `REFRAMING_BLOCKS_SYSTEM_PROMPT`,
- *     JSON Schema — `REFRAMING_BLOCKS_JSON_SCHEMA`.
- *  2. **reflectOnThemes** — рефлексия над активными Theme'ами:
- *     themeSplits / themeMerges / themesToArchive / analysis.
- *     System-промпт — `REFRAMING_THEMES_SYSTEM_PROMPT`,
- *     JSON Schema — `REFRAMING_THEMES_JSON_SCHEMA`.
- *
- * Вынесено из `workers/reframing.cron.ts` в рамках Фазы 8 §10 Find 2
- * (ТЗ 2026-05-25-llm-architecture-changes-from-experiments.md) — для
- * единообразия и admin-редактируемости.
- */
-
 import { z } from 'zod';
-
-// ─────────────────────────── blocks-проход ───────────────────────────────────
 
 export const REFRAMING_BLOCKS_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
@@ -79,15 +58,6 @@ export const REFRAMING_BLOCKS_SYSTEM_PROMPT = `Ты — аналитик, пер
 - При противоречии источников бери более позднее / актуальное; устаревшее считай заменённым, не смешивай старую и новую редакцию знания.
 - Ответ — строго JSON по схеме.`;
 
-// ─────────────────────────── themes-проход ───────────────────────────────────
-
-/**
- * JSON Schema для шага 4 reframing'а — рефлексия над Theme'ами.
- * - themeSplits — id тем-кандидатов на разделение (ничего не делаем
- *   автоматически, только лог-сигнал — UI разберёт через owner Org).
- * - themeMerges — пары (sourceId, targetId): source становится merged_into target.
- * - themesToArchive — id тем, которые reframing считает устаревшими.
- */
 export const REFRAMING_THEMES_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,

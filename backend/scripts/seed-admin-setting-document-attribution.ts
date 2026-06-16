@@ -1,28 +1,3 @@
-/**
- * ТЗ-4 Ф10 (manual-document-upload) — Seed AdminSetting для kill-switch
- * LLM-подсказки атрибуции загруженного документа (docType + тема графа).
- *
- * Регистрирует kill-switch (редактируется super_admin'ом в админке,
- * code-fallback `true` в `DocumentAttributionService` через
- * `TypedConfigService.getDynamic(..., default=true)`):
- *
- *   - `documents.ai_attribution.enabled` (bool, default true) — kill-switch (ON).
- *     Гейтит подсказку атрибуции: после успешного парсинга документа БЕЗ явной
- *     атрибуции (`docType` и `attachedThemeId` оба null) дешёвый классификатор
- *     `document-attribution-suggest` предлагает смысловой тип + тему и пишет их в
- *     `Document.suggestedDocType`/`suggestedThemeId` (НЕ применяет — человек
- *     подтверждает, Р3). OFF → подсказка не строится, suggested* остаются null.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-document-attribution.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -81,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

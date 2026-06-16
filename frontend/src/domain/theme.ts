@@ -1,85 +1,73 @@
-/**
- * Доменная модель Theme (knowledge-core, Фаза 4).
- *
- * Theme — AI-кластер блоков идей по 12 веткам компании. Создаётся только
- * AI (`theme-clusterer.cron`), пользователь не создаёт темы вручную.
- *
- * Контракт: `backend/src/modules/knowledge-core/api/themes.controller.ts`,
- *           `backend/src/modules/knowledge-core/api/dto/theme.dto.ts`.
- */
-
-// ─── Enums ──────────────────────────────────────────────────────────────────
-
 export type ThemeBranch =
-  | 'strategy'
-  | 'clients'
-  | 'sales'
-  | 'marketing'
-  | 'product'
-  | 'operations'
-  | 'team'
-  | 'finance'
-  | 'technology'
-  | 'production'
-  | 'partnerships'
-  | 'legal';
+  | "strategy"
+  | "clients"
+  | "sales"
+  | "marketing"
+  | "product"
+  | "operations"
+  | "team"
+  | "finance"
+  | "technology"
+  | "production"
+  | "partnerships"
+  | "legal";
 
 export const THEME_BRANCH_VALUES: readonly ThemeBranch[] = [
-  'strategy',
-  'clients',
-  'sales',
-  'marketing',
-  'product',
-  'operations',
-  'team',
-  'finance',
-  'technology',
-  'production',
-  'partnerships',
-  'legal',
+  "strategy",
+  "clients",
+  "sales",
+  "marketing",
+  "product",
+  "operations",
+  "team",
+  "finance",
+  "technology",
+  "production",
+  "partnerships",
+  "legal",
 ] as const;
 
 export const THEME_BRANCH_LABELS: Record<ThemeBranch, string> = {
-  strategy: 'Стратегия',
-  clients: 'Клиенты',
-  sales: 'Продажи',
-  marketing: 'Маркетинг',
-  product: 'Продукт',
-  operations: 'Операции',
-  team: 'Команда',
-  finance: 'Финансы',
-  technology: 'Технологии',
-  production: 'Производство',
-  partnerships: 'Партнёрства',
-  legal: 'Юридическое',
+  strategy: "Стратегия",
+  clients: "Клиенты",
+  sales: "Продажи",
+  marketing: "Маркетинг",
+  product: "Продукт",
+  operations: "Операции",
+  team: "Команда",
+  finance: "Финансы",
+  technology: "Технологии",
+  production: "Производство",
+  partnerships: "Партнёрства",
+  legal: "Юридическое",
 };
 
-export type ThemeStatus = 'active' | 'archived' | 'merged_into';
+export type ThemeStatus = "active" | "archived" | "merged_into";
 
 export const THEME_STATUS_LABELS: Record<ThemeStatus, string> = {
-  active: 'Активна',
-  archived: 'В архиве',
-  merged_into: 'Объединена',
+  active: "Активна",
+  archived: "В архиве",
+  merged_into: "Объединена",
 };
 
-export type ThemeDynamic = 'growing' | 'stable' | 'declining';
+export type ThemeDynamic = "growing" | "stable" | "declining";
 
 export const THEME_DYNAMIC_LABELS: Record<ThemeDynamic, string> = {
-  growing: 'Растёт',
-  stable: 'Стабильна',
-  declining: 'Угасает',
+  growing: "Растёт",
+  stable: "Стабильна",
+  declining: "Угасает",
 };
 
 const KNOWN_BRANCHES: ReadonlySet<string> = new Set(THEME_BRANCH_VALUES);
 const KNOWN_STATUSES: ReadonlySet<string> = new Set([
-  'active',
-  'archived',
-  'merged_into',
+  "active",
+  "archived",
+  "merged_into",
 ]);
 const KNOWN_DYNAMICS: ReadonlySet<string> = new Set([
-  'growing',
-  'stable',
-  'declining',
+  "growing",
+  "stable",
+  "declining",
 ]);
 
 function parseBranch(raw: string | null): ThemeBranch | null {
@@ -87,24 +75,20 @@ function parseBranch(raw: string | null): ThemeBranch | null {
   return KNOWN_BRANCHES.has(raw) ? (raw as ThemeBranch) : null;
 }
 
-/** Публичный alias для переиспользования в смежных domain-моделях
- *  (`director-dashboard.ts` и т.п.). Поведение идентично `parseBranch`. */
 export function parseBranchSafe(raw: string | null): ThemeBranch | null {
   return parseBranch(raw);
 }
 
 function parseStatus(raw: string): ThemeStatus {
-  return KNOWN_STATUSES.has(raw) ? (raw as ThemeStatus) : 'active';
+  return KNOWN_STATUSES.has(raw) ? (raw as ThemeStatus) : "active";
 }
 
 function parseDynamic(raw: string): ThemeDynamic {
-  return KNOWN_DYNAMICS.has(raw) ? (raw as ThemeDynamic) : 'stable';
+  return KNOWN_DYNAMICS.has(raw) ? (raw as ThemeDynamic) : "stable";
 }
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
-
-// ─── Theme ──────────────────────────────────────────────────────────────────
 
 export type ThemeApi = {
   id: string;
@@ -163,8 +147,6 @@ export function themeFromApi(api: ThemeApi): ThemeDomain {
   };
 }
 
-// ─── Block (минимальный shape для деталки темы) ─────────────────────────────
-
 export type ThemeBlockApi = {
   id: string;
   name: string;
@@ -209,8 +191,6 @@ export function themeBlockFromApi(api: ThemeBlockApi): ThemeBlockDomain {
   };
 }
 
-// ─── Entity (минимальный shape) ─────────────────────────────────────────────
-
 export type ThemeEntityApi = {
   id: string;
   type: string;
@@ -240,8 +220,6 @@ export function themeEntityFromApi(api: ThemeEntityApi): ThemeEntityDomain {
   };
 }
 
-// ─── Theme detail ───────────────────────────────────────────────────────────
-
 export type ThemeDetailApi = {
   theme: ThemeApi;
   blocks: ThemeBlockApi[];
@@ -265,16 +243,12 @@ export function themeDetailFromApi(api: ThemeDetailApi): ThemeDetailDomain {
   };
 }
 
-// ─── save-as-card response ──────────────────────────────────────────────────
-
 export type ThemeSavedAsCardApi = {
   cardId: string;
   name: string;
   kind: string;
   bornFromThemeId: string;
 };
-
-// ─── Card → themes (мини-тема для секции на карточке) ───────────────────────
 
 export type CardThemeMiniApi = {
   id: string;
@@ -292,7 +266,9 @@ export type CardThemeMiniDomain = {
   blocksInCommon: number;
 };
 
-export function cardThemeMiniFromApi(api: CardThemeMiniApi): CardThemeMiniDomain {
+export function cardThemeMiniFromApi(
+  api: CardThemeMiniApi,
+): CardThemeMiniDomain {
   return {
     id: api.id,
     name: api.name,

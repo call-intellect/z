@@ -7,12 +7,6 @@ import type { RedisService } from '../../../common/redis/redis.service';
 
 import { ImportService } from './import.service';
 
-/**
- * Unit-тесты `ImportService`. Мокируем PrismaService + BullMQ Queue (через
- * приватное поле `queue` — задаём вручную после конструктора, не зовём
- * onModuleInit).
- */
-
 function makeService(): {
   svc: ImportService;
   prisma: {
@@ -60,14 +54,9 @@ function makeService(): {
   } as unknown as BusinessMetricsService & {
     incImportStarted: ReturnType<typeof vi.fn>;
   };
-  const svc = new ImportService(
-    prisma as unknown as PrismaService,
-    redis,
-    metrics,
-  );
+  const svc = new ImportService(prisma as unknown as PrismaService, redis, metrics);
 
   const queueAdd = vi.fn(async () => undefined);
-  // Подменим приватное поле queue, чтобы избежать создания реальной BullMQ-очереди.
   (svc as unknown as { queue: { add: typeof queueAdd } }).queue = {
     add: queueAdd,
   };
@@ -121,8 +110,7 @@ describe('ImportService.start', () => {
       }),
     ).rejects.toThrow('redis down');
     expect(prisma.importLog.update).toHaveBeenCalledTimes(1);
-    const updateData = prisma.importLog.update.mock.calls[0]?.[0]
-      ?.data as Record<string, unknown>;
+    const updateData = prisma.importLog.update.mock.calls[0]?.[0]?.data as Record<string, unknown>;
     expect(updateData.status).toBe('failed');
     expect(updateData.completedAt).toBeInstanceOf(Date);
   });
@@ -136,9 +124,9 @@ describe('ImportService.cancel', () => {
   it('404 если ImportLog не найден', async () => {
     const { svc, prisma } = makeService();
     prisma.importLog.findFirst.mockResolvedValueOnce(null);
-    await expect(
-      svc.cancel({ tenantId: 't1', importLogId: 'missing' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.cancel({ tenantId: 't1', importLogId: 'missing' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('помечает status=cancelled если был running', async () => {
@@ -217,7 +205,7 @@ describe('ImportService.list', () => {
     prisma.importLog.findMany.mockResolvedValueOnce(rows);
     const out = await svc.list({ tenantId: 't1', limit: 2 });
     expect(out.items).toHaveLength(2);
-    expect(out.nextCursor).toBe('imp-1'); // последний из pageItems
+    expect(out.nextCursor).toBe('imp-1');
   });
 
   it('nextCursor=null когда rows ≤ limit', async () => {

@@ -1,44 +1,26 @@
-/**
- * API-клиент Слоя 4 (SBA α-4 — Curation Foundation).
- *
- * Эндпоинты — см. `backend/src/modules/curation/curation.controller.ts`.
- *
- *   GET    /api/v1/curation/queue
- *   GET    /api/v1/curation/items/:id
- *   POST   /api/v1/curation/items/:id/decide
- *   GET    /api/v1/curation/conflicts
- *   GET    /api/v1/curation/conflicts/:id
- *   POST   /api/v1/curation/conflicts/:id/resolve
- *   POST   /api/v1/curation/conflicts/:id/dismiss
- *   GET    /api/v1/settings/curation
- *   PATCH  /api/v1/settings/curation
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export type CurationLevelApi = 'light' | 'deep';
+export type CurationLevelApi = "light" | "deep";
 export type CurationItemStatusApi =
-  | 'pending'
-  | 'decided'
-  | 'expired'
-  | 'cancelled';
+  | "pending"
+  | "decided"
+  | "expired"
+  | "cancelled";
 export type CurationDecisionTypeApi =
-  | 'approve'
-  | 'reject'
-  | 'approve_with_edits'
-  | 'split'
-  | 'merge'
-  | 'supersede'
-  /// SBA α-4 wave 2 — слияние SkillTraitCategory (γ-1).
-  | 'merge_categories'
-  /// SBA α-4 wave 2 — передача следующему куратору (escalateToUserId).
-  | 'escalate';
-export type ConflictStatusApi = 'open' | 'resolved' | 'dismissed';
+  | "approve"
+  | "reject"
+  | "approve_with_edits"
+  | "split"
+  | "merge"
+  | "supersede"
+  | "merge_categories"
+  | "escalate";
+export type ConflictStatusApi = "open" | "resolved" | "dismissed";
 export type ConflictResolutionApi =
-  | 'accept_new'
-  | 'keep_old'
-  | 'merge'
-  | 'evolving';
+  | "accept_new"
+  | "keep_old"
+  | "merge"
+  | "evolving";
 
 export interface CurationItemApi {
   id: string;
@@ -145,29 +127,27 @@ export interface ResolveConflictRequest {
 }
 
 function buildQuery(filters: Record<string, unknown> | undefined): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) {
-    if (v === undefined || v === null || v === '') continue;
-    if (typeof v === 'boolean') {
-      p.set(k, v ? 'true' : 'false');
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "boolean") {
+      p.set(k, v ? "true" : "false");
       continue;
     }
     p.set(k, String(v));
   }
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
-// ─── Completeness slots (SBA α-4 wave 2) ─────────────────────────
-
 export type CompletenessParentCardTypeApi =
-  | 'regulation'
-  | 'process'
-  | 'role'
-  | 'company_profile';
-export type CompletenessSlotKindApi = 'required' | 'optional';
-export type CompletenessSlotStatusApi = 'open' | 'filled';
+  | "regulation"
+  | "process"
+  | "role"
+  | "company_profile";
+export type CompletenessSlotKindApi = "required" | "optional";
+export type CompletenessSlotStatusApi = "open" | "filled";
 
 export interface CompletenessSlotApi {
   id: string;
@@ -199,7 +179,6 @@ export type ListCompletenessSlotsRequest = {
 };
 
 export const curationApi = {
-  // ── queue ────────────────────────────────────────────────────────
   listQueue: (filters?: ListCurationQueueRequest) =>
     apiClient.get<ListCurationQueueResponseApi>(
       `/api/v1/curation/queue${buildQuery(filters)}`,
@@ -216,7 +195,6 @@ export const curationApi = {
       body,
     ),
 
-  // ── conflicts ────────────────────────────────────────────────────
   listConflicts: (filters?: ListConflictsRequest) =>
     apiClient.get<ListConflictsResponseApi>(
       `/api/v1/curation/conflicts${buildQuery(filters)}`,
@@ -239,14 +217,12 @@ export const curationApi = {
       reasoning ? { reasoning } : {},
     ),
 
-  // ── settings ─────────────────────────────────────────────────────
   getSettings: () =>
-    apiClient.get<CurationSettingsApi>('/api/v1/settings/curation'),
+    apiClient.get<CurationSettingsApi>("/api/v1/settings/curation"),
 
   updateSettings: (body: Partial<CurationSettingsApi>) =>
-    apiClient.patch<CurationSettingsApi>('/api/v1/settings/curation', body),
+    apiClient.patch<CurationSettingsApi>("/api/v1/settings/curation", body),
 
-  // ── completeness slots (SBA α-4 wave 2) ──────────────────────────
   listCompletenessSlots: (filters?: ListCompletenessSlotsRequest) =>
     apiClient.get<ListCompletenessSlotsResponseApi>(
       `/api/v1/curation/completeness-slots${buildQuery(filters)}`,

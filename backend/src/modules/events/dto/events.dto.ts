@@ -1,18 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля Events.
- *
- * `Event` — событие графа знаний (meeting | incident | release | transition |
- * milestone | call | offline_meeting | personal_block | deadline | other).
- * Привязано к Entity{type=event} 1:1. Не путать с доменными событиями LiveKit,
- * AI-pipeline и т.п. — RBAC ResourceType назван `event_card`, чтобы избежать
- * путаницы.
- *
- * Calendar MVP (2026-05-25) расширил DTO до полного CRUD + RSVP + календарного
- * представления `/me/calendar` / `/users/:id/calendar` + find-free-slot.
- */
-
 export const EventKindSchema = z.enum([
   'meeting',
   'incident',
@@ -33,32 +20,19 @@ export type EventVisibilityDto = z.infer<typeof EventVisibilitySchema>;
 export const EventStatusSchema = z.enum(['tentative', 'confirmed', 'cancelled']);
 export type EventStatusDto = z.infer<typeof EventStatusSchema>;
 
-export const EventParticipantRoleSchema = z.enum([
-  'organizer',
-  'required',
-  'optional',
-]);
+export const EventParticipantRoleSchema = z.enum(['organizer', 'required', 'optional']);
 export type EventParticipantRoleDto = z.infer<typeof EventParticipantRoleSchema>;
 
-export const RsvpStatusSchema = z.enum([
-  'pending',
-  'accepted',
-  'declined',
-  'tentative',
-]);
+export const RsvpStatusSchema = z.enum(['pending', 'accepted', 'declined', 'tentative']);
 export type RsvpStatusDto = z.infer<typeof RsvpStatusSchema>;
 
 export const ReminderChannelSchema = z.enum(['push', 'email', 'telegram']);
 export type ReminderChannelDto = z.infer<typeof ReminderChannelSchema>;
 
-// ─────────────────────────── Query / Filters ─────────────────────────
-
 export const ListEventsQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   kind: EventKindSchema.optional(),
-  /** Нижняя граница диапазона startAt (включительно). ISO-8601. */
   from: z.coerce.date().optional(),
-  /** Верхняя граница диапазона startAt (включительно). ISO-8601. */
   to: z.coerce.date().optional(),
   includeDeleted: z.coerce.boolean().optional().default(false),
   page: z.coerce.number().int().min(1).default(1),
@@ -66,12 +40,6 @@ export const ListEventsQuerySchema = z.object({
 });
 export type ListEventsQuery = z.infer<typeof ListEventsQuerySchema>;
 
-// ─────────────────────────── RRULE preset validator ──────────────────
-
-/**
- * MVP: разрешены только пресеты FREQ=DAILY|WEEKLY|MONTHLY|YEARLY
- * с опц. `;BYDAY=MO,TU,WE,TH,FR,SA,SU`. Полный RFC-5545 парсер — Фаза 3.
- */
 const RRULE_PRESET_RE =
   /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;BYDAY=(MO|TU|WE|TH|FR|SA|SU)(,(MO|TU|WE|TH|FR|SA|SU))*)?$/;
 
@@ -84,14 +52,11 @@ const RruleStringSchema = z
       'RRULE: в MVP поддерживаются только пресеты FREQ=DAILY|WEEKLY|MONTHLY|YEARLY с опц. BYDAY',
   });
 
-// ─────────────────────────── Create / Update / RSVP ──────────────────
-
 export const EventParticipantInputSchema = z
   .object({
     userId: z.string().min(1).max(80).optional(),
     personId: z.string().min(1).max(80).optional(),
     role: EventParticipantRoleSchema.optional().default('required'),
-    /** Совместимо со старым API: optional участник = role='optional'. */
     optional: z.boolean().optional(),
   })
   .refine((p) => Boolean(p.userId) || Boolean(p.personId), {
@@ -100,10 +65,12 @@ export const EventParticipantInputSchema = z
 export type EventParticipantInput = z.infer<typeof EventParticipantInputSchema>;
 
 export const EventReminderInputSchema = z.object({
-  /** За сколько минут до начала. 0 — в момент начала; макс 7 дней. */
-  offsetMin: z.coerce.number().int().min(0).max(60 * 24 * 7),
+  offsetMin: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(60 * 24 * 7),
   channel: ReminderChannelSchema,
-  /** null/undefined → всем участникам. */
   userId: z.string().min(1).max(80).nullable().optional(),
 });
 export type EventReminderInput = z.infer<typeof EventReminderInputSchema>;
@@ -111,9 +78,7 @@ export type EventReminderInput = z.infer<typeof EventReminderInputSchema>;
 export const CreateEventSchema = z
   .object({
     title: z.string().trim().min(1).max(300),
-    /** ISO-8601 начало. */
     startAt: z.coerce.date(),
-    /** ISO-8601 конец. Опц. для personal_block/deadline. */
     endAt: z.coerce.date().optional(),
     kind: EventKindSchema.default('meeting'),
     visibility: EventVisibilitySchema.optional().default('company'),
@@ -126,13 +91,10 @@ export const CreateEventSchema = z
     participants: z.array(EventParticipantInputSchema).max(200).optional(),
     reminders: z.array(EventReminderInputSchema).max(20).optional(),
   })
-  .refine(
-    (v) =>
-      v.kind === 'personal_block' ||
-      v.kind === 'deadline' ||
-      v.endAt !== undefined,
-    { path: ['endAt'], message: '`endAt` обязателен для этого типа события' },
-  )
+  .refine((v) => v.kind === 'personal_block' || v.kind === 'deadline' || v.endAt !== undefined, {
+    path: ['endAt'],
+    message: '`endAt` обязателен для этого типа события',
+  })
   .refine((v) => !v.endAt || v.endAt >= v.startAt, {
     path: ['endAt'],
     message: '`endAt` должен быть не раньше `startAt`',
@@ -164,11 +126,13 @@ export const RsvpSchema = z.object({
 });
 export type RsvpDto = z.infer<typeof RsvpSchema>;
 
-// ─────────────────────────── find-free-slot ──────────────────────────
-
 export const FindFreeSlotSchema = z.object({
   participantUserIds: z.array(z.string().min(1).max(80)).min(1).max(20),
-  durationMin: z.coerce.number().int().min(5).max(60 * 12),
+  durationMin: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(60 * 12),
   withinDays: z.coerce.number().int().min(1).max(30).optional().default(7),
   workingHoursOnly: z.coerce.boolean().optional().default(true),
 });
@@ -180,21 +144,12 @@ export interface FindFreeSlotResponse {
   found: boolean;
 }
 
-// ─────────────────────────── Calendar query ──────────────────────────
-
 export const MyCalendarQuerySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
-  /**
-   * Calendar MVP Polish (P3, 2026-05-25). Фильтр событий и задач по проекту.
-   * Если задан — серверная фильтрация заменяет клиентскую, которая раньше
-   * подгружала все события user'а и резала их на стороне браузера.
-   */
   projectId: z.string().min(1).max(80).optional(),
 });
 export type MyCalendarQuery = z.infer<typeof MyCalendarQuerySchema>;
-
-// ─────────────────────────── Response DTO ────────────────────────────
 
 export interface EventListItemDto {
   id: string;
@@ -206,11 +161,6 @@ export interface EventListItemDto {
   durationMin: number | null;
   location: string | null;
   relatedMeetingId: string | null;
-  /**
-   * Calendar MVP Polish (P1, 2026-05-25). Публичный URL для подключения к
-   * LiveKit-комнате связанной встречи. Заполнен только когда `kind=meeting`
-   * и Meeting создан успешно. Берётся из `Event.metadata.joinUrl`.
-   */
   joinUrl: string | null;
   createdAt: string;
   updatedAt: string;
@@ -238,7 +188,6 @@ export interface EventDto extends EventListItemDto {
   participantsPersonIds: string[];
   outcomeSummary: string | null;
   metadata: Record<string, unknown> | null;
-  // Calendar MVP fields
   ownerId: string | null;
   description: string | null;
   allDay: boolean;
@@ -260,8 +209,6 @@ export interface ListEventsResponse {
   limit: number;
   totalPages: number;
 }
-
-// ── Calendar items (микс Event + Issue) ──────────────────────────────
 
 export interface CalendarEventItem {
   type: 'event';

@@ -1,13 +1,3 @@
-/**
- * Фаза A.4 — unit-тесты на AdminAiModelsService.
- *
- * Покрываем (≥3 сценария по DoD):
- *   1) list() возвращает все taskType'ы с группировкой.
- *   2) switchPrimary при abSplitPercent=100 — переключает primary, пишет audit.
- *   3) addProvider не даёт дублировать (tier, providerName).
- *   4) removeProvider блокирует удаление последнего primary.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -37,8 +27,9 @@ function build(routesInDb: Array<Record<string, unknown>> = []) {
       }) ?? null
     );
   });
-  const findUnique = vi.fn(async (args: { where: { id: string } }) =>
-    routesInDb.find((r) => r.id === args.where.id) ?? null,
+  const findUnique = vi.fn(
+    async (args: { where: { id: string } }) =>
+      routesInDb.find((r) => r.id === args.where.id) ?? null,
   );
   const update = vi.fn(async (args: { where: { id: string }; data: Record<string, unknown> }) => {
     const idx = routesInDb.findIndex((r) => r.id === args.where.id);
@@ -87,10 +78,14 @@ function build(routesInDb: Array<Record<string, unknown>> = []) {
       count,
     },
     llmTaskRouteChange: { create: auditCreate, count: auditCount, findMany: vi.fn(async () => []) },
-    llmModelExperiment: { findUnique: vi.fn(async () => null), create: vi.fn(async () => ({})), update: vi.fn(), findMany: vi.fn(async () => []) },
+    llmModelExperiment: {
+      findUnique: vi.fn(async () => null),
+      create: vi.fn(async () => ({})),
+      update: vi.fn(),
+      findMany: vi.fn(async () => []),
+    },
     aiUsageLog: { groupBy: vi.fn(async () => []), findMany: vi.fn(async () => []) },
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
-      // В тестах транзакция = inline-выполнение функции с тем же prisma-моком.
       return fn({
         llmTaskRoute: { findFirst, update, create },
       });
@@ -163,10 +158,8 @@ describe('AdminAiModelsService', () => {
       },
       'user-1',
     );
-    // Старый primary → secondary
     const old = ctx.routesInDb.find((r) => r.providerName === 'deepseek');
     expect(old?.tier).toBe('secondary');
-    // Новый primary должен появиться
     const newPrimary = ctx.routesInDb.find(
       (r) => r.providerName === 'openai-via-proxy' && r.tier === 'primary',
     );

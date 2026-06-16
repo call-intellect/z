@@ -6,36 +6,10 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { resolveAxisTenantTop } from '../services/tenant-top';
 
-/**
- * SBA β-6 — ExperimentTransitionsCron (он же EntityTransitionCron в ТЗ §2).
- *
- * Расписание: каждый день в 07:00 UTC.
- *
- * Задача: для каждого «закрытого» эксперимента (`status='completed'`) эмитить
- * EntityLink predicates, связывающие Experiment с Insight'ами / Decision'ами,
- * которые либо подтверждаются его результатом, либо опираются на его уроки.
- *
- * Эмитируемые EntityLink (см. §3 решение #4 ТЗ):
- *   - `result_supports_insight` — Experiment → Insight (когда currentResult
- *     явно поддерживает существующий сигнал; на β-6 эвристика по пересечению
- *     sourceBlockIds).
- *   - `lesson_informs_decision` — Experiment → Decision (когда lessonsJson
- *     ссылается на блоки, которые также участвовали в Decision).
- *
- * ВАЖНО: cron НЕ модифицирует Insight/Decision (§3 решение #4). Он только
- * создаёт EntityLink — UI агрегирует на чтении. Это снимает классическую
- * проблему «двух источников правды» и сохраняет идемпотентность (повторный
- * прогон не создаёт дубликаты — upsert по composite ключу).
- *
- * Запись идёт прямо в Postgres `EntityLink` (без AGE-зеркала: для β-6 нет
- * graph view, добавим в δ+, когда появится `experiment` в NodeType whitelist).
- */
 @Injectable()
 export class ExperimentTransitionsCron {
   private readonly logger = new Logger(ExperimentTransitionsCron.name);
-  /** Лимит экспериментов на проход — защита от взрывного fan-out'а. */
   private static readonly BATCH_LIMIT = 300;
-  /** Максимум predicates одного типа на эксперимент за проход. */
   private static readonly LINKS_PER_EXPERIMENT = 20;
 
   constructor(
@@ -84,17 +58,12 @@ export class ExperimentTransitionsCron {
     tenantId: string,
   ): Promise<{ resultLinks: number; lessonLinks: number }> {
     const tenantTop = resolveAxisTenantTop(tenantId);
-    // Все completed-эксперименты за последние 90 дней — узкий слайс, чтобы
-    // не пересчитывать вечно старые. lastConfirmedAt > now-90d.
     const cutoff = new Date(Date.now() - 90 * 24 * 3600 * 1000);
     const experiments = await this.prisma.experiment.findMany({
       where: {
         tenantId,
         status: 'completed',
-        OR: [
-          { lastConfirmedAt: { gte: cutoff } },
-          { completedAt: { gte: cutoff } },
-        ],
+        OR: [{ lastConfirmedAt: { gte: cutoff } }, { completedAt: { gte: cutoff } }],
       },
       take: ExperimentTransitionsCron.BATCH_LIMIT,
     });
@@ -104,16 +73,11 @@ export class ExperimentTransitionsCron {
 
     for (const exp of experiments) {
       try {
-        // Если у эксперимента нет entityId — нечего связывать (predicate
-        // требует fromEntityId). Пропускаем (будущая wave создаст Entity
-        // под Experiment явно).
         if (!exp.entityId) continue;
 
         const blockIds = exp.sourceBlockIds;
         if (blockIds.length === 0) continue;
 
-        // 1) result_supports_insight: Insight'ы, у которых sourceBlockIds
-        //    пересекаются с блоками эксперимента (heuristic).
         const insights = await this.prisma.insight.findMany({
           where: {
             tenantId,
@@ -154,18 +118,13 @@ export class ExperimentTransitionsCron {
           }
         }
 
-        // 2) lesson_informs_decision: Decision'ы, у которых sourceBlockIds
-        //    пересекаются с lesson-блоками эксперимента (если lessonsJson
-        //    содержит sourceBlockId — берём именно их; иначе fallback на
-        //    общие блоки эксперимента).
         const lessons = Array.isArray(exp.lessonsJson)
           ? (exp.lessonsJson as Array<{ sourceBlockId?: string }>)
           : [];
         const lessonBlockIds = lessons
           .map((l) => l?.sourceBlockId)
           .filter((b): b is string => typeof b === 'string' && b.length > 0);
-        const decisionScopeBlocks =
-          lessonBlockIds.length > 0 ? lessonBlockIds : blockIds;
+        const decisionScopeBlocks = lessonBlockIds.length > 0 ? lessonBlockIds : blockIds;
         const decisions = await this.prisma.decision.findMany({
           where: {
             tenantId,
@@ -226,15 +185,6 @@ export class ExperimentTransitionsCron {
     return { resultLinks, lessonLinks };
   }
 
-  /**
-   * Идемпотентный upsert EntityLink. Composite key включает relationType, так
-   * что повторный прогон не плодит дубликаты.
-   *
-   * NB: пишем только в Postgres (без AGE-зеркала через GraphService) —
-   * `experiment` пока не входит в NodeType whitelist'е CypherBuilder.
-   * Для UI master-detail Postgres-источника достаточно; graph view добавим
-   * в δ+, расширив whitelist.
-   */
   private async upsertLink(args: {
     tenantId: string;
     fromEntityId: string;
@@ -271,7 +221,6 @@ export class ExperimentTransitionsCron {
         properties: args.properties as Prisma.InputJsonValue,
       },
       update: {
-        // Идемпотент: освежаем explanation и confidence, не пересоздаём.
         confidence: new Prisma.Decimal(0.85),
         explanation: args.explanation,
         properties: args.properties as Prisma.InputJsonValue,

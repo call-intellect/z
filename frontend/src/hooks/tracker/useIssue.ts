@@ -1,22 +1,18 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { issuesApi } from '@/api/tracker/issues.api';
+import { issuesApi } from "@/api/tracker/issues.api";
 import {
   issueActivityFromApi,
   issueFromApi,
   type Issue,
   type IssueActivity,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
-import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+import { useTrackerLiveRefresh } from "./useTrackerLiveRefresh";
 
-/**
- * Одна задача по ID. Подписывается на live-события issue.* / comment.* —
- * любое изменение задачи и любые комментарии триггерят SWR-revalidate.
- */
 export function useIssue(
   orgId: string | null | undefined,
   issueId: string | null | undefined,
@@ -26,20 +22,22 @@ export function useIssue(
   isLoading: boolean;
   mutate: () => Promise<unknown>;
 } {
-  const key = orgId && issueId ? ['tracker.issue', orgId, issueId] : null;
+  const key = orgId && issueId ? ["tracker.issue", orgId, issueId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !issueId) throw new Error('orgId/issueId required');
+      if (!orgId || !issueId) throw new Error("orgId/issueId required");
       return issuesApi.get(orgId, issueId);
     },
     { revalidateOnFocus: false },
   );
 
-  // Узкая подписка на issue room — backend гарантирует, что в `issue:<id>`
-  // прилетают только события этой задачи.
-  useTrackerLiveRefresh(orgId, { issueId: issueId ?? null }, Boolean(orgId && issueId));
+  useTrackerLiveRefresh(
+    orgId,
+    { issueId: issueId ?? null },
+    Boolean(orgId && issueId),
+  );
 
   const issue = useMemo<Issue | null>(
     () => (swr.data ? issueFromApi(swr.data) : null),
@@ -54,7 +52,6 @@ export function useIssue(
   };
 }
 
-/** Лента активности задачи. */
 export function useIssueActivity(
   orgId: string | null | undefined,
   issueId: string | null | undefined,
@@ -65,19 +62,22 @@ export function useIssueActivity(
   mutate: () => Promise<unknown>;
 } {
   const key =
-    orgId && issueId ? ['tracker.issue.activity', orgId, issueId] : null;
+    orgId && issueId ? ["tracker.issue.activity", orgId, issueId] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !issueId) throw new Error('orgId/issueId required');
+      if (!orgId || !issueId) throw new Error("orgId/issueId required");
       return issuesApi.activity(orgId, issueId);
     },
     { revalidateOnFocus: false },
   );
 
-  // Live: issue.updated / comment.* → activity feed нужно ре-валидировать.
-  useTrackerLiveRefresh(orgId, { issueId: issueId ?? null }, Boolean(orgId && issueId));
+  useTrackerLiveRefresh(
+    orgId,
+    { issueId: issueId ?? null },
+    Boolean(orgId && issueId),
+  );
 
   const activity = useMemo<IssueActivity[]>(
     () => (swr.data ? swr.data.map(issueActivityFromApi) : []),

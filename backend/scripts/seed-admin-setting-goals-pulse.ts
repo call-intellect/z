@@ -1,25 +1,3 @@
-/**
- * Goals OKR v2 (Фаза 4) — Seed AdminSetting для еженедельного пульса целей.
- *
- * Регистрирует два ключа динамической конфигурации:
- *   - `goals.pulse.enabled` (boolean, default true) — мастер-флаг cron'а
- *     `goals-pulse` (@Cron('0 6 * * 1') = пн 09:00 МСК). ENV-fallback
- *     `GOALS_PULSE_ENABLED`.
- *   - `goals.pulse.deliver_to_telegram` (boolean, default false) — рассылка
- *     пульса через `ConversationalService.sendNotification` (event-type
- *     `goals.pulse`) ролям owner/coo. По умолчанию false, чтобы Telegram не
- *     молотил сразу после раскатки. ENV-fallback `GOALS_PULSE_DELIVER_TO_TELEGRAM`.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-goals-pulse.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -87,7 +65,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },
@@ -120,7 +97,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
 }
 
 async function main(): Promise<void> {
-
   console.log('=== seed-admin-setting-goals-pulse START ===');
 
   const counters: Counters = {
@@ -133,7 +109,6 @@ async function main(): Promise<void> {
     await upsertSetting(seed, counters);
   }
 
-
   console.log(
     `created=${counters.created}, updated=${counters.updated}, skipped_admin_edited=${counters.skippedAdminEdited}`,
   );
@@ -143,7 +118,6 @@ async function main(): Promise<void> {
 
 main()
   .catch((err) => {
-
     console.error('seed-admin-setting-goals-pulse FAILED:', err);
     process.exit(1);
   })

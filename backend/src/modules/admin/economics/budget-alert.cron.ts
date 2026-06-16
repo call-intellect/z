@@ -9,24 +9,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { CurrencyRateService } from './currency-rate.service';
 import { OrgEconomicsCron } from './org-economics.cron';
 
-/**
- * SBA α-10 wave 3 — BudgetAlertCron.
- *
- * Каждые 2 часа: для каждого OrgBudgetCap c monthlyCapRub > 0 — считает
- * текущий MTD-cost и triggerит alert при пересечении порогов из
- * cfg.budget.alertThresholdPercents (default [80, 100]).
- *
- * Anti-spam: запись `OrgBudgetCap.lastAlertThreshold` фиксирует последний
- * сработавший порог. Тот же порог повторно не алертит. Сброс — в начале
- * нового месяца (если lastAlertAt из прошлого месяца).
- *
- * jobId паттерн: `budget-alert_${tenantId}_${currentHourBucket}` — позволяет
- * рассмотреть переход на BullMQ jobId, чтобы 2 ноды backend'а не сделали
- * двойной alert. На MVP cron работает в одной реплике.
- *
- * Доставка через ConversationalService.sendNotification(eventType=
- * 'system.message'). По умолчанию policy = in_app + email_smtp.
- */
 @Injectable()
 export class BudgetAlertCron {
   private readonly logger = new Logger(BudgetAlertCron.name);
@@ -66,9 +48,7 @@ export class BudgetAlertCron {
     const caps = await this.prisma.orgBudgetCap.findMany({
       where: { monthlyCapRub: { not: null } },
     });
-    const thresholds = [...this.cfg.budget.alertThresholdPercents].sort(
-      (a, b) => b - a, // от большего к меньшему — сработает только самый высокий
-    );
+    const thresholds = [...this.cfg.budget.alertThresholdPercents].sort((a, b) => b - a);
     let alertsSent = 0;
     const fxRate = await this.fx.getCurrentUsdRubRate();
 
@@ -79,7 +59,6 @@ export class BudgetAlertCron {
 
         const m = await this.economics.computeForOrg(cap.tenantId, fxRate);
         const utilization = (m.costRubMonthToDate / limit) * 100;
-        // Сбрасываем lastAlertThreshold, если прошёл новый месяц.
         const lastAlertAt = cap.lastAlertAt;
         const isNewMonth =
           !lastAlertAt ||
@@ -87,8 +66,6 @@ export class BudgetAlertCron {
           lastAlertAt.getUTCMonth() !== new Date().getUTCMonth();
         const lastThreshold = isNewMonth ? null : cap.lastAlertThreshold;
 
-        // Находим самый высокий порог, который превышен И выше, чем
-        // последний отправленный.
         let trigger: number | null = null;
         for (const t of thresholds) {
           if (utilization >= t && (lastThreshold == null || t > lastThreshold)) {
@@ -98,7 +75,6 @@ export class BudgetAlertCron {
         }
         if (trigger == null) continue;
 
-        // Найти org-admin'ов (пока шлём первому owner'у; в γ+ — всем admin'ам).
         const owner = await this.prisma.membership.findFirst({
           where: { orgId: cap.tenantId, role: 'owner' },
           orderBy: { joinedAt: 'asc' },

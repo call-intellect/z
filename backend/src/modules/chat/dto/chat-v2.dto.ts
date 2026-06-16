@@ -1,22 +1,6 @@
 import { z } from 'zod';
 
-/**
- * `POST /api/v1/chat/v2` — body schema. Фаза 6 knowledge-core.
- *
- * Scope:
- *   - 'org'    — общий чат по всей базе знаний организации (scopeId не нужен).
- *   - 'meeting'— чат по одной встрече  (scopeId = meetingId, обязателен).
- *   - 'card'   — чат по карточке       (scopeId = cardId, обязателен).
- *   - 'theme'  — чат по AI-теме        (scopeId = themeId, обязателен).
- *   - 'entity' — чат по сущности       (scopeId = entityId, обязателен).
- */
-export const ChatV2ScopeEnum = z.enum([
-  'org',
-  'meeting',
-  'card',
-  'theme',
-  'entity',
-]);
+export const ChatV2ScopeEnum = z.enum(['org', 'meeting', 'card', 'theme', 'entity']);
 
 export type ChatV2ScopeDto = z.infer<typeof ChatV2ScopeEnum>;
 

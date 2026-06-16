@@ -1,31 +1,12 @@
-'use client';
+"use client";
 
-/**
- * `/persons/[id]/social-contribution` — read-only публичный профиль (Specialist 3.8).
- *
- * Что показываем:
- *   - Счётчики по 5 публичным trait-типам.
- *   - Социальные роли + темы экспертизы (если есть).
- *   - Список публичных traits с цитатами (если бэк отдал — он может скрыть
- *     цитаты для member'а, оставив только tag/topic).
- *
- * Чего НЕ показываем:
- *   - Никакой негатив (question_unanswered и т.п.).
- *   - Никакой контрольный score (он отдаётся в DTO, но визуально его как
- *     рейтинг не показываем — это запрещено ТЗ §«Privacy & Ethics»).
- *   - Никаких кнопок «Пометить как ошибку» (это только для self).
- *
- * 403 → пользователь видит сообщение «Профиль доступен только сотруднику и
- * руководителю».
- */
+import Link from "next/link";
+import useSWR from "swr";
+import { ArrowLeft, Calendar, ShieldCheck } from "lucide-react";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { ArrowLeft, Calendar, ShieldCheck } from 'lucide-react';
-
-import { ApiError } from '@/api/api-error';
-import { helpfulnessApi } from '@/api/helpfulness.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError } from "@/api/api-error";
+import { helpfulnessApi } from "@/api/helpfulness.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   HELPFULNESS_TRAIT_LABEL,
   HELPFULNESS_TRAIT_SHORT,
@@ -35,11 +16,11 @@ import {
   type HelpfulnessTrait,
   type PersonContributionView,
   type PublicHelpfulnessTraitType,
-} from '@/domain/helpfulness';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
+} from "@/domain/helpfulness";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
 
 export function PersonSocialContributionClient({
   personId,
@@ -49,10 +30,14 @@ export function PersonSocialContributionClient({
   const { currentOrgId, isLoading } = useAuth();
 
   const swrKey = currentOrgId
-    ? ['persons/social-contribution', currentOrgId, personId]
+    ? ["persons/social-contribution", currentOrgId, personId]
     : null;
 
-  const { data, error, isLoading: loading } = useSWR(
+  const {
+    data,
+    error,
+    isLoading: loading,
+  } = useSWR(
     swrKey,
     async () => {
       const res = await helpfulnessApi.getPersonSocialContribution(personId);
@@ -80,8 +65,7 @@ export function PersonSocialContributionClient({
           href={`/persons/${encodeURIComponent(personId)}`}
           className="inline-flex items-center gap-1 text-sm text-fg-tertiary hover:text-fg-primary"
         >
-          <ArrowLeft className="h-4 w-4" />
-          К карточке сотрудника
+          <ArrowLeft className="h-4 w-4" />К карточке сотрудника
         </Link>
         <h1 className="text-2xl font-semibold text-fg-primary">
           Вклад в команду
@@ -105,7 +89,7 @@ export function PersonSocialContributionClient({
 }
 
 function ErrorPanel({ error }: { error: unknown }) {
-  const isForbidden = error instanceof ApiError && error.code === 'forbidden';
+  const isForbidden = error instanceof ApiError && error.code === "forbidden";
   if (isForbidden) {
     return (
       <Card>
@@ -147,7 +131,7 @@ function ProfileView({ view }: { view: PersonContributionView }) {
       <div className="flex flex-wrap items-center gap-3 text-sm text-fg-tertiary">
         <span className="inline-flex items-center gap-1.5">
           <Calendar size={14} />
-          Обновлён: {profile.lastBuiltAt.toLocaleString('ru-RU')}
+          Обновлён: {profile.lastBuiltAt.toLocaleString("ru-RU")}
         </span>
         <span className="inline-flex items-center gap-1.5">
           <ShieldCheck size={14} />
@@ -291,7 +275,7 @@ function TraitCard({ trait }: { trait: HelpfulnessTrait }) {
             )}
           </div>
           <p className="text-xs text-fg-tertiary">
-            {trait.lastObservedAt.toLocaleString('ru-RU')}
+            {trait.lastObservedAt.toLocaleString("ru-RU")}
           </p>
         </CardHeader>
         {trait.evidenceQuote && (

@@ -1,14 +1,3 @@
-/**
- * Доменная модель инцидентов (admin-redesign Фаза 1).
- *
- * Контракт: backend `AdminIncidentsController` (Фаза 1, бэк-часть).
- * Источники:
- *   - BullMQ `getJobCounts()` + `getFailed()` для очередей и failed-jobs.
- *   - Будущие модели `AlertRule` и история инцидентов — Фаза 8.
- */
-
-// ─── Queues with counts ─────────────────────────────────────────────────────
-
 export type IncidentQueueApi = {
   queueName: string;
   waiting: number;
@@ -19,8 +8,7 @@ export type IncidentQueueApi = {
 };
 
 export type IncidentQueueDomain = IncidentQueueApi & {
-  /** Серьёзность по числу failed-jobs: low (0) / warning (1..10) / critical (>10). */
-  severity: 'low' | 'warning' | 'critical';
+  severity: "low" | "warning" | "critical";
 };
 
 export type IncidentQueuesListApi = {
@@ -31,10 +19,12 @@ export type IncidentQueuesListDomain = {
   items: IncidentQueueDomain[];
 };
 
-export function incidentQueueFromApi(api: IncidentQueueApi): IncidentQueueDomain {
-  let severity: IncidentQueueDomain['severity'] = 'low';
-  if (api.failed > 10) severity = 'critical';
-  else if (api.failed > 0) severity = 'warning';
+export function incidentQueueFromApi(
+  api: IncidentQueueApi,
+): IncidentQueueDomain {
+  let severity: IncidentQueueDomain["severity"] = "low";
+  if (api.failed > 10) severity = "critical";
+  else if (api.failed > 0) severity = "warning";
   return { ...api, severity };
 }
 
@@ -43,8 +33,6 @@ export function incidentQueuesListFromApi(
 ): IncidentQueuesListDomain {
   return { items: api.items.map(incidentQueueFromApi) };
 }
-
-// ─── Failed jobs ────────────────────────────────────────────────────────────
 
 export type IncidentFailedJobApi = {
   id: string;
@@ -56,10 +44,7 @@ export type IncidentFailedJobApi = {
   stacktraceExcerpt?: string | null;
 };
 
-export type IncidentFailedJobDomain = Omit<
-  IncidentFailedJobApi,
-  'failedAt'
-> & {
+export type IncidentFailedJobDomain = Omit<IncidentFailedJobApi, "failedAt"> & {
   failedAt: Date;
 };
 
@@ -83,14 +68,12 @@ export function incidentFailedJobsListFromApi(
   return { items: api.items.map(incidentFailedJobFromApi) };
 }
 
-// ─── Alert rules (stub) ─────────────────────────────────────────────────────
-
 export type AlertRuleApi = {
   id: string;
   name: string;
   metric: string;
-  condition: string; // ">", "<", "=="
+  condition: string;
   threshold: number;
-  channel: string; // "telegram" | "email" | "web-push"
+  channel: string;
   enabled: boolean;
 };

@@ -1,25 +1,3 @@
-/**
- * ReferralsService — CRUD реферального профиля.
- *
- * Бизнес-правила:
- *   - Один user → один Referral (`@unique ownerUserId`).
- *   - Slug: 8 chars из nanoid с custom alphabet (a-z, 0-9; без 0/o/l/1 чтобы
- *     не путались в QR-кодах и копировании руками).
- *   - Создание профиля: достаточно `contractAccepted: true`. Реквизиты
- *     (`inn / legalForm / payoutDetails`) можно заполнить позже (ТЗ
- *     2026-05-31-referrals-cabinet-revamp §6.1).
- *   - ИНН верифицируется через `InnLookupService.lookup(inn)` — отдельный
- *     метод `verifyInn()`, который ставит `innVerifiedAt = now` если lookup
- *     успешен (без сравнения с владельцем — на MVP доверяем юзеру).
- *   - Контракт-оферта: `acceptContract()` ставит `contractAcceptedAt = now`
- *     (legacy-эндпоинт; в новом флоу оферта принимается при `create`).
- *     Без `innVerifiedAt && contractAcceptedAt && payoutDetails` cron
- *     10-го числа НЕ переведёт payout в `paid` (см. ReferralPayoutCron).
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9
- * и plans/tz/2026-05-31-referrals-cabinet-revamp.md §6, §7.
- */
-
 import { randomBytes } from 'node:crypto';
 import { crc32 } from 'node:zlib';
 
@@ -31,11 +9,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  type Referral,
-  type ReferralLegalForm,
-} from '@prisma/client';
+import { Prisma, type Referral, type ReferralLegalForm } from '@prisma/client';
 import { customAlphabet } from 'nanoid';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -48,17 +22,8 @@ const SLUG_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
 const SLUG_LENGTH = 8;
 const generateSlug = customAlphabet(SLUG_ALPHABET, SLUG_LENGTH);
 
-/** ТЗ referrals-cabinet-revamp §7.2: фиксированная сумма комиссии. */
 const REFERRAL_COMMISSION_KOPECKS = 2_000_000;
 
-/**
- * Создание партнёрского профиля (ТЗ referrals-cabinet-revamp §7.2).
- *
- * `contractAccepted` обязателен на сервисном уровне (дополнительный
- * defense-in-depth — даже если контроллер вызвал create напрямую без Zod).
- * Если задан `inn` — обязателен `legalForm` (и наоборот) — иначе
- * `BadRequestException`.
- */
 export interface CreateReferralInput {
   ownerUserId: string;
   contractAccepted: boolean;
@@ -73,11 +38,6 @@ export interface UpdateReferralInput {
   payoutDetails?: Prisma.InputJsonValue;
 }
 
-/**
- * Маскированный клиент партнёра (ТЗ referrals-cabinet-revamp §6.4).
- *
- * **Юридический приоритет:** ни одно поле не должно идентифицировать Org.
- */
 export interface ReferralClientMaskedView {
   clientCode: string;
   attachedAt: Date;
@@ -87,7 +47,6 @@ export interface ReferralClientMaskedView {
   totalEarnedKopecks: number;
 }
 
-/** Расширенная статистика партнёра (ТЗ referrals-cabinet-revamp §7.2). */
 export interface ReferralStatsExtended {
   totalClients: number;
   activePaying: number;
@@ -101,17 +60,12 @@ export interface ReferralStatsExtended {
   conversionSignupToPaidPercent: number;
 }
 
-/** Точка графика дохода (ТЗ referrals-cabinet-revamp §7.3). */
 export interface MonthlyPoint {
-  month: string; // 'YYYY-MM'
+  month: string;
   incomeRub: number;
   activeClients: number;
 }
 
-/**
- * Прогресс к награде партнёра (B2 — шкала прогресса баннера рефералки).
- * `hasProfile=false` для pre-profile-кейса (профиль ещё не создан).
- */
 export interface RewardProgress {
   hasProfile: boolean;
   activePaying: number;
@@ -119,7 +73,6 @@ export interface RewardProgress {
   monthlyEarnedKopecks: number;
 }
 
-/** Воронка (ТЗ referrals-cabinet-revamp §7.3). */
 export interface Funnel {
   period: FunnelPeriod;
   clicks: number;
@@ -152,14 +105,6 @@ export class ReferralsService {
     return this.prisma.referral.findUnique({ where: { slug } });
   }
 
-  /**
-   * Создать реферальный профиль (ТЗ referrals-cabinet-revamp §6.1, §7.2).
-   *
-   * - Обязательно `contractAccepted === true` (иначе BadRequest).
-   * - `inn` и `legalForm` идут парой: либо оба, либо ни одного (иначе BadRequest).
-   * - `contractAcceptedAt = now()` ставится сразу (согласие == принятие).
-   * - `verifyInn` НЕ вызывается автоматически — это явное действие из UI.
-   */
   async create(input: CreateReferralInput): Promise<Referral> {
     if (input.contractAccepted !== true) {
       throw new BadRequestException(
@@ -187,34 +132,21 @@ export class ReferralsService {
         slug: await this.generateUniqueSlug(),
         inn: hasInn ? input.inn!.trim() : null,
         legalForm: hasLegalForm ? input.legalForm! : null,
-        payoutDetails:
-          input.payoutDetails !== undefined
-            ? input.payoutDetails
-            : Prisma.JsonNull,
+        payoutDetails: input.payoutDetails !== undefined ? input.payoutDetails : Prisma.JsonNull,
         contractAcceptedAt: new Date(),
       },
     });
   }
 
-  /**
-   * Обновить inn / legalForm / payoutDetails (сбрасывает innVerifiedAt если inn менялся).
-   *
-   * null-safe сравнение: `existing.inn` теперь nullable (ТЗ §5.1).
-   */
-  async update(
-    ownerUserId: string,
-    input: UpdateReferralInput,
-  ): Promise<Referral> {
+  async update(ownerUserId: string, input: UpdateReferralInput): Promise<Referral> {
     const existing = await this.getByUserId(ownerUserId);
     if (!existing) {
-      throw new NotFoundException(
-        `Партнёрский профиль для user ${ownerUserId} не найден`,
-      );
+      throw new NotFoundException(`Партнёрский профиль для user ${ownerUserId} не найден`);
     }
     const data: Prisma.ReferralUncheckedUpdateInput = {};
     if (input.inn !== undefined && input.inn.trim() !== (existing.inn ?? '')) {
       data.inn = input.inn.trim();
-      data.innVerifiedAt = null; // сброс верификации при смене ИНН
+      data.innVerifiedAt = null;
     }
     if (input.legalForm !== undefined) data.legalForm = input.legalForm;
     if (input.payoutDetails !== undefined) data.payoutDetails = input.payoutDetails;
@@ -224,34 +156,11 @@ export class ReferralsService {
     });
   }
 
-  /**
-   * Верифицировать ИНН реферала через InnLookupService.
-   *
-   * audit Б6 (2026-05-29): раньше любой lookup-успех ставил innVerifiedAt.
-   * Можно было подать ИНН любого юрлица и получить отметку. Теперь:
-   *   - **self_employed / individual**: ИНН в lookup-результате должен
-   *     БУКВАЛЬНО совпадать с введённым (защита от опечатки/подмены).
-   *     На практике для физлица lookup возвращает свой же ИНН — значит
-   *     verifyInn автоматически проходит, если ИНН валидный.
-   *   - **company**: требуется `directorName` в lookup-результате и
-   *     совпадение по фамилии с `User.name` заявителя. Если нет — статус
-   *     `pendingDocVerification` (innVerifiedAt НЕ ставится), UI попросит
-   *     загрузить документ.
-   *   - На несовпадении бьём метрику `referral_inn_mismatch_total`.
-   */
   async verifyInn(ownerUserId: string): Promise<Referral> {
     const ref = await this.getByUserId(ownerUserId);
     if (!ref) {
-      throw new NotFoundException(
-        `Партнёрский профиль для user ${ownerUserId} не найден`,
-      );
+      throw new NotFoundException(`Партнёрский профиль для user ${ownerUserId} не найден`);
     }
-    // ТЗ referrals-cabinet-revamp §5.1: inn теперь optional. Если ИНН ещё не
-    // задан — нечего верифицировать, возвращаем профиль как есть (не throw'им,
-    // потому что вызов verifyInn для неинициализированного профиля — частый
-    // случай в новом флоу: пользователь жмёт «Проверить ИНН» в карточке
-    // реквизитов, заполняет форму, повторно жмёт). До заполнения мы просто
-    // отдаём текущее состояние без побочных эффектов.
     if (!ref.inn) return ref;
     if (ref.innVerifiedAt) return ref;
 
@@ -259,11 +168,8 @@ export class ReferralsService {
 
     try {
       const lookup = await this.innLookup.lookup(innValue);
-      this.logger.log(
-        `Inn-lookup для ${innValue} → ${lookup.source}/${lookup.payerType}`,
-      );
+      this.logger.log(`Inn-lookup для ${innValue} → ${lookup.source}/${lookup.payerType}`);
 
-      // audit Б6: проверки до выставления innVerifiedAt.
       if (lookup.inn && lookup.inn.replace(/\D/g, '') !== innValue.replace(/\D/g, '')) {
         this.logger.warn(
           `verifyInn: ИНН в lookup-результате (${lookup.inn}) не совпадает с введённым (${innValue})`,
@@ -272,7 +178,6 @@ export class ReferralsService {
         return ref;
       }
 
-      // Для company требуем директора с совпадением по User.name.
       if (lookup.payerType === 'legal_entity') {
         const owner = await this.prisma.user.findUnique({
           where: { id: ownerUserId },
@@ -297,25 +202,14 @@ export class ReferralsService {
       this.logger.warn(
         `verifyInn ${innValue} не нашёл: ${err instanceof Error ? err.message : String(err)}`,
       );
-      // НЕ throw — возвращаем неверифицированный профиль; UI покажет статус.
       return ref;
     }
   }
 
-  /**
-   * Принять оферту (фикс `contractAcceptedAt`). Идемпотентно.
-   *
-   * Legacy-эндпоинт (ТЗ referrals-cabinet-revamp §7.2): в новом флоу оферта
-   * принимается при `create` через `contractAccepted: true`. Метод оставлен
-   * для обратной совместимости с уже существующими профилями, у которых
-   * `contractAcceptedAt == null`.
-   */
   async acceptContract(ownerUserId: string): Promise<Referral> {
     const ref = await this.getByUserId(ownerUserId);
     if (!ref) {
-      throw new NotFoundException(
-        `Партнёрский профиль для user ${ownerUserId} не найден`,
-      );
+      throw new NotFoundException(`Партнёрский профиль для user ${ownerUserId} не найден`);
     }
     if (ref.contractAcceptedAt) return ref;
     return this.prisma.referral.update({
@@ -324,22 +218,10 @@ export class ReferralsService {
     });
   }
 
-  /**
-   * Список приведённых клиентов в маскированном виде (ТЗ §6.4).
-   *
-   * **Юридический приоритет:** возвращаем только анонимный `clientCode`,
-   * даты и агрегированные суммы. Никаких `org.id`, `org.name`, `tenantId`,
-   * ИНН клиента — это даёт партнёру возможность увести клиента мимо нас.
-   *
-   * `include.subscription` нужен ТОЛЬКО для расчёта `status` ('active' /
-   * 'churned' / 'pending') — поля `status` и `paymentMode` не попадают в
-   * выходной DTO напрямую. `include.org` НЕ используется (намеренно убран).
-   */
   async listClients(referralId: string): Promise<ReferralClientMaskedView[]> {
     const links = await this.prisma.clientReferralLink.findMany({
       where: { referralId },
       include: {
-        // Нужно только для расчёта 'active'/'churned' — в response не попадает.
         subscription: {
           select: {
             status: true,
@@ -352,7 +234,6 @@ export class ReferralsService {
 
     if (links.length === 0) return [];
 
-    // Подтянем payouts всех link'ов разом (1 запрос вместо N).
     const linkIds = links.map((l) => l.id);
     const monthStart = startOfCurrentMonthUtc();
     const payouts = await this.prisma.referralPayout.findMany({
@@ -378,13 +259,6 @@ export class ReferralsService {
     return links.map((link) => toMaskedClientView(link, byLink.get(link.id)));
   }
 
-  /**
-   * Список приведённых клиентов для super_admin (БЕЗ маскировки).
-   *
-   * Используется только в `AdminReferralsController.detail()` — super_admin
-   * имеет право видеть реальные `org.name`/`org.id` для аудита и поддержки.
-   * Контракт маскировки из §6.4 относится исключительно к партнёру (`/api/v1/referrals/me/clients`).
-   */
   async listClientsForAdmin(referralId: string) {
     return this.prisma.clientReferralLink.findMany({
       where: { referralId },
@@ -403,7 +277,6 @@ export class ReferralsService {
     });
   }
 
-  /** Список payout'ов реферала. */
   async listPayouts(referralId: string) {
     return this.prisma.referralPayout.findMany({
       where: { referralId },
@@ -412,12 +285,6 @@ export class ReferralsService {
     });
   }
 
-  /**
-   * Расширенная статистика партнёра (ТЗ §6.3 + §7.2).
-   *
-   * Legacy 5 полей + 5 новых (clicks30d / signups30d / firstPayments30d
-   * + 2 конверсии). Все count'ы параллельно через Promise.all.
-   */
   async getStats(referralId: string): Promise<ReferralStatsExtended> {
     const referral = await this.prisma.referral.findUnique({
       where: { id: referralId },
@@ -495,25 +362,9 @@ export class ReferralsService {
     };
   }
 
-  /**
-   * Прогресс к награде партнёра для шкалы промо-баннера (B2).
-   *
-   * Покрывает pre-profile-кейс: если профиля нет — возвращаем
-   * `{ hasProfile: false, activePaying: 0, monthlyEarnedKopecks: 0 }`, но
-   * `targetClients` всё равно посчитан (шкала рисуется с нулевым прогрессом),
-   * НЕ возвращаем null.
-   *
-   * `targetClients = ceil(baseMonthlyPriceKopecks / REFERRAL_COMMISSION_KOPECKS)` —
-   * сколько активных клиентов «отбивают» базовую месячную подписку. Базовую
-   * цену берём из `SeatService.calculateMonthlyPriceKopecks(0)` (эффективная
-   * `billing.baseMonthlyKopecks` из AdminSetting через `getDynamic`, не
-   * хардкод) — формула самонастраивается при смене цены.
-   */
   async getRewardProgress(ownerUserId: string): Promise<RewardProgress> {
     const baseMonthlyPriceKopecks = await this.seats.calculateMonthlyPriceKopecks(0);
-    const targetClients = Math.ceil(
-      baseMonthlyPriceKopecks / REFERRAL_COMMISSION_KOPECKS,
-    );
+    const targetClients = Math.ceil(baseMonthlyPriceKopecks / REFERRAL_COMMISSION_KOPECKS);
 
     const ref = await this.getByUserId(ownerUserId);
     if (!ref) {
@@ -534,21 +385,6 @@ export class ReferralsService {
     };
   }
 
-  /**
-   * График дохода и активных клиентов по месяцам (ТЗ §7.3).
-   *
-   * Ровно 12 точек: `now - 11mo` … `now` включительно (UTC, начало месяца).
-   * Алгоритм:
-   *   1. Берём payouts (status in pending|paid) за окно 12 месяцев. Группируем
-   *      в коде по `periodMonth` ('YYYY-MM'). Считаем в коде, а не raw SQL
-   *      `GROUP BY` — выборка маленькая (≤ N клиентов × 12 месяцев), а
-   *      переход на raw SQL ломает совместимость с in-memory тестами.
-   *   2. Берём все ClientReferralLink партнёра — для каждого месяца
-   *      считаем «сколько было активных на конец месяца» (firstPaidAt
-   *      <= конец месяца). На MVP не учитываем churn по месяцам (отдельной
-   *      колонки `churnedAt` нет) — для текущего месяца берём live
-   *      `subscription.status='ACTIVE' && paymentMode='paid'`.
-   */
   async getIncomeChart(referralId: string): Promise<MonthlyPoint[]> {
     const months = buildLast12Months(new Date());
     const earliestMonthStart = months[0]!.start;
@@ -573,17 +409,10 @@ export class ReferralsService {
 
     const incomeByMonth = new Map<string, number>();
     for (const p of payouts) {
-      incomeByMonth.set(
-        p.periodMonth,
-        (incomeByMonth.get(p.periodMonth) ?? 0) + p.amountKopecks,
-      );
+      incomeByMonth.set(p.periodMonth, (incomeByMonth.get(p.periodMonth) ?? 0) + p.amountKopecks);
     }
 
     const points: MonthlyPoint[] = months.map(({ key, endExclusive }) => {
-      // Активные на конец месяца: firstPaidAt < endExclusive.
-      // Для исторических месяцев это «когда-либо стал активным к этой дате»,
-      // для текущего — пересекается с live ACTIVE+paid (точнее: link стал
-      // активным до сейчас И сейчас платит).
       const isCurrentMonth = endExclusive.getTime() > Date.now();
       let activeClients = 0;
       for (const link of links) {
@@ -605,13 +434,6 @@ export class ReferralsService {
     return points;
   }
 
-  /**
-   * Воронка партнёра за период (ТЗ §7.3).
-   *
-   * Для `'all'` — без фильтра по датам (clicks/signups/firstPayments за всё
-   * время). Для `'30d'` / `'90d'` — фильтр `>= now - N дней`. `activeNow`
-   * — снимок «сейчас» (как `getStats.activePaying`), не зависит от периода.
-   */
   async getFunnel(referralId: string, period: FunnelPeriod): Promise<Funnel> {
     const referral = await this.prisma.referral.findUnique({
       where: { id: referralId },
@@ -619,12 +441,11 @@ export class ReferralsService {
     });
     const slug = referral?.slug ?? null;
 
-    const since: Date | null =
-      period === 'all' ? null : daysAgo(period === '30d' ? 30 : 90);
+    const since: Date | null = period === 'all' ? null : daysAgo(period === '30d' ? 30 : 90);
     const dateGte = since ? { gte: since } : undefined;
 
-    const [clicks, signupsFromLinks, signupsFromOrgs, firstPayments, activeNow] =
-      await Promise.all([
+    const [clicks, signupsFromLinks, signupsFromOrgs, firstPayments, activeNow] = await Promise.all(
+      [
         this.prisma.referralAttribution.count({
           where: { referralId, ...(dateGte ? { createdAt: dateGte } : {}) },
         }),
@@ -640,7 +461,10 @@ export class ReferralsService {
             })
           : Promise.resolve(0),
         this.prisma.clientReferralLink.count({
-          where: { referralId, ...(dateGte ? { firstPaidAt: dateGte } : { firstPaidAt: { not: null } }) },
+          where: {
+            referralId,
+            ...(dateGte ? { firstPaidAt: dateGte } : { firstPaidAt: { not: null } }),
+          },
         }),
         this.prisma.clientReferralLink.count({
           where: {
@@ -649,7 +473,8 @@ export class ReferralsService {
             subscription: { status: 'ACTIVE', paymentMode: 'paid' },
           },
         }),
-      ]);
+      ],
+    );
 
     const signups = signupsFromLinks + signupsFromOrgs;
 
@@ -667,14 +492,10 @@ export class ReferralsService {
     };
   }
 
-  /**
-   * Активна ли кнопка «Вывести» для этого профиля (ТЗ §6.5).
-   *
-   * Хелпер не используется текущим контроллером (фронт строит логику сам
-   * по `stats` и `view`), но экспортируется для возможного эндпоинта
-   * `/me/withdraw-eligibility` на будущих фазах.
-   */
-  static computeWithdrawalEligibility(ref: Referral, totalPendingKopecks: number): {
+  static computeWithdrawalEligibility(
+    ref: Referral,
+    totalPendingKopecks: number,
+  ): {
     eligible: boolean;
     reason: 'ok' | 'no_payout_details' | 'no_inn_verified' | 'no_balance';
   } {
@@ -684,11 +505,6 @@ export class ReferralsService {
     return { eligible: true, reason: 'ok' };
   }
 
-  // ────────────────────────── private ──────────────────────────
-
-  // ↓ см. ниже extractLastName в file scope
-
-  /** Генерация уникального slug'а. Retry до 5 раз при коллизии. */
   private async generateUniqueSlug(): Promise<string> {
     for (let i = 0; i < 5; i += 1) {
       const candidate = generateSlug();
@@ -698,20 +514,12 @@ export class ReferralsService {
       });
       if (!taken) return candidate;
     }
-    // Крайне маловероятно (32^8 ≈ 1.1×10^12 комбинаций). Fallback на hex.
     return randomBytes(6).toString('hex');
   }
 }
 
-/** Сколько копеек 20 000 ₽ комиссии — экспортируем для тестов / возможных утилит. */
 export const REFERRAL_MONTHLY_COMMISSION_KOPECKS = REFERRAL_COMMISSION_KOPECKS;
 
-/**
- * audit Б6: грубое извлечение фамилии для сравнения «director vs user».
- * Принимаем «Иванов Иван Иванович» / «Иван Иванов» / «И. И. Иванов». Берём
- * самое длинное русское слово в верхнем регистре первой буквы, либо первое
- * слово >2 символов. Если ничего не нашли — возвращаем null.
- */
 function extractLastName(fullName: string | null): string | null {
   if (!fullName) return null;
   const tokens = fullName
@@ -720,8 +528,6 @@ function extractLastName(fullName: string | null): string | null {
     .map((t) => t.trim())
     .filter((t) => t.length >= 2 && /^[\p{L}-]+$/u.test(t));
   if (tokens.length === 0) return null;
-  // Берём самое длинное слово как эвристику «фамилии». Для «Иванов Иван Иванович»
-  // это часто «Иванов» либо «Иванович» — оба содержат «Иванов».
   let best = tokens[0]!;
   for (const t of tokens) {
     if (t.length > best.length) best = t;
@@ -729,17 +535,6 @@ function extractLastName(fullName: string | null): string | null {
   return best.toLowerCase();
 }
 
-// ──────────────────────── helpers (file scope) ────────────────────────
-
-/**
- * Анонимный идентификатор клиента партнёра (ТЗ §6.4 + §7.4).
- *
- * `'C' + base36(crc32(linkId))` — детерминированный, ~7 символов, без
- * хранения в БД. `crc32` из `node:zlib` доступен в Node 20+ и в Bun.
- * Коллизия (4.3 млрд значений на ~max-base36 7 символов) для одного
- * партнёра практически невозможна — массовая реф-программа не дойдёт до
- * единиц миллионов клиентов на одного человека.
- */
 export function clientCodeFromLinkId(linkId: string): string {
   return `C${crc32(linkId).toString(36)}`;
 }
@@ -777,18 +572,6 @@ function isNonEmptyObject(value: Prisma.JsonValue | null): boolean {
   return Object.keys(value as Record<string, unknown>).length > 0;
 }
 
-/**
- * Признак «банковские реквизиты для выплаты заполнены» — `payoutDetails`
- * содержит непустой JSON-объект.
- *
- * Используется как:
- *   - часть `computeWithdrawalEligibility` (правило «no_payout_details»);
- *   - computed-поле `hasPayoutDetails` в `ReferralViewBody` (фронт строит
- *     по нему `canWithdraw`, заменив прежнюю эвристику по `inn && legalForm`).
- *
- * См. ТЗ referrals-cabinet-revamp §6.3 + §6.5 и
- * `plans/tz/2026-05-31-referrals-cabinet-revamp.md` блок «hasPayoutDetails».
- */
 export function hasPayoutDetails(ref: Pick<Referral, 'payoutDetails'>): boolean {
   return isNonEmptyObject(ref.payoutDetails);
 }
@@ -810,21 +593,16 @@ function percent(numerator: number, denominator: number): number {
 }
 
 interface MonthSlot {
-  key: string; // 'YYYY-MM'
-  start: Date; // 1-е число месяца, UTC
-  endExclusive: Date; // 1-е число следующего месяца, UTC
+  key: string;
+  start: Date;
+  endExclusive: Date;
 }
 
-/** Массив 12 месяцев: `now - 11mo` … `now` включительно (UTC). */
 function buildLast12Months(now: Date): MonthSlot[] {
   const slots: MonthSlot[] = [];
   for (let offset = 11; offset >= 0; offset -= 1) {
-    const base = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1),
-    );
-    const next = new Date(
-      Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 1),
-    );
+    const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
+    const next = new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth() + 1, 1));
     const y = base.getUTCFullYear();
     const m = String(base.getUTCMonth() + 1).padStart(2, '0');
     slots.push({ key: `${y}-${m}`, start: base, endExclusive: next });

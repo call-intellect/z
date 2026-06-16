@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RbacService } from '../rbac/rbac.service';
@@ -15,17 +10,6 @@ import {
   type UpsertCapabilityDto,
 } from './dto/capability-override.dto';
 
-/**
- * ТЗ «Команда + доступы» Фаза 5 — персональные override доступа сотрудника.
- *
- * Override — это ДЕЛЬТА (allow/deny) поверх дефолта роли/тарифа; сам дефолт
- * остаётся в существующем слое (RBAC + entitlements) и здесь не трогается.
- * Управлять может только владелец/администратор Org (или super_admin).
- *
- * Активным считается override с revokedAt=null и (expiresAt=null ИЛИ
- * expiresAt>now). Только небиллинговые оси «что человек видит» (см.
- * CAPABILITIES в dto/capability-override.dto.ts).
- */
 @Injectable()
 export class CapabilitiesService {
   constructor(
@@ -33,7 +17,6 @@ export class CapabilitiesService {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  /** Проверка прав: только owner/admin/super_admin Org. */
   private async assertManager(actorUserId: string, orgId: string): Promise<void> {
     const ctx = await this.rbac.loadContext(actorUserId, orgId);
     if (!ctx || (ctx.role !== 'owner' && ctx.role !== 'admin' && !ctx.isSuperAdmin)) {
@@ -47,7 +30,6 @@ export class CapabilitiesService {
     }
   }
 
-  /** Проверка, что capability входит в канонический список. */
   private assertCapability(cap: string): void {
     if (!(CAPABILITIES as readonly string[]).includes(cap)) {
       throw new BadRequestException({
@@ -57,7 +39,6 @@ export class CapabilitiesService {
     }
   }
 
-  /** Проверка, что целевой пользователь — участник этой Org. */
   private async assertMember(orgId: string, userId: string): Promise<void> {
     const membership = await this.prisma.membership.findUnique({
       where: { orgId_userId: { orgId, userId } },
@@ -74,10 +55,6 @@ export class CapabilitiesService {
     }
   }
 
-  /**
-   * Список override'ов по сотруднику — строка по КАЖДОЙ возможности из
-   * CAPABILITIES (effect из активного override либо null).
-   */
   async listForMember(
     orgId: string,
     actorUserId: string,
@@ -109,10 +86,6 @@ export class CapabilitiesService {
     });
   }
 
-  /**
-   * Создать/обновить override по конкретной возможности. Re-grant
-   * «воскрешает» строку (revokedAt/revokedBy сбрасываются в null).
-   */
   async upsert(
     orgId: string,
     actorUserId: string,
@@ -159,7 +132,6 @@ export class CapabilitiesService {
     };
   }
 
-  /** Полностью удалить override по возможности (hard delete). */
   async remove(
     orgId: string,
     actorUserId: string,
@@ -180,11 +152,6 @@ export class CapabilitiesService {
     return { ok: true };
   }
 
-  /**
-   * Эффективные override'ы текущего пользователя — map capability→effect.
-   * Только активные (revokedAt=null, expiresAt null/в будущем) и только
-   * для возможностей из канонического списка CAPABILITIES.
-   */
   async getEffectiveOverrides(
     userId: string,
     tenantId: string,

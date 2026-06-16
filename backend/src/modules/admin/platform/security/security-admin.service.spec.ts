@@ -1,11 +1,3 @@
-/**
- * Admin-redesign Фаза 8 — unit-тесты `SecurityAdminService`.
- *
- * Покрываем:
- *   1) update() — делегирует AdminSettings.set с reason.
- *   2) rotateIpSalt() — кидает 501 Not Implemented.
- */
-
 import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -28,7 +20,6 @@ function buildService() {
       comment: null,
     },
     {
-      // Запись «постороннего» ключа в platform/security — фильтр должен её отбросить.
       key: 'security.unknown_key',
       value: 1,
       category: 'platform',
@@ -94,9 +85,7 @@ describe('SecurityAdminService', () => {
       svc.rotateIpSalt();
       throw new Error('должно было выкинуть');
     } catch (err) {
-      expect((err as { status?: number }).status).toBe(
-        HttpStatus.NOT_IMPLEMENTED,
-      );
+      expect((err as { status?: number }).status).toBe(HttpStatus.NOT_IMPLEMENTED);
     }
   });
 });

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useProjectOverview } from '@/hooks/tracker/useProjectOverview';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useProjectOverview } from "@/hooks/tracker/useProjectOverview";
 import {
   ActiveCycleWidget,
   ActivityFeedWidget,
@@ -12,14 +12,8 @@ import {
   ProjectHeader,
   RecentDocumentsWidget,
   StatesDistributionWidget,
-} from '@/ui/tracker/overview';
+} from "@/ui/tracker/overview";
 
-/**
- * Tracker Project Overview (2026-05-27) — клиентский контейнер вкладки.
- *
- * Один SWR-запрос `/api/v1/projects/:projectId/overview` приносит все 7
- * виджетов. UX-состояния: loading (skeleton), error, empty (внутри виджетов).
- */
 export function OverviewClient({ slug }: { slug: string }) {
   const { currentOrgId } = useAuth();
   const { project, isLoading: isProjectLoading } = useProjectBySlug(
@@ -55,10 +49,7 @@ export function OverviewClient({ slug }: { slug: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <ProjectHeader
-        project={overview.project}
-        members={overview.members}
-      />
+      <ProjectHeader project={overview.project} members={overview.members} />
       <MetricsRow metrics={overview.metrics} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

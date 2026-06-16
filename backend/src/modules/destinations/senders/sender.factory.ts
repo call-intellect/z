@@ -7,11 +7,6 @@ import type { DestinationSender, SenderMessage } from './sender.types';
 import { SlackWebhookSender } from './slack-webhook.sender';
 import { TelegramBotSender } from './telegram-bot.sender';
 
-/**
- * Диспатчер сендеров по `destination.type`. Все 4 сендера инжектятся
- * напрямую (а не через массив SENDERS), чтобы Nest DI мог разрешить
- * зависимости и в `bun run typecheck` не падали `unknown` сигнатуры.
- */
 @Injectable()
 export class SenderFactory {
   constructor(

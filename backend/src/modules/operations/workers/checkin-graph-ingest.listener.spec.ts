@@ -6,17 +6,6 @@ import type { CheckinIngestService } from '../services/checkin-ingest.service';
 
 import { CheckinGraphIngestListener } from './checkin-graph-ingest.listener';
 
-/**
- * Детерминированные unit-тесты CheckinGraphIngestListener (ТЗ
- * 2026-06-10-daily-checkin-to-graph-bridge, Фаза 3).
- *
- * Проверяем:
- *  - флаг ON → ingestCheckin вызван с (tenantId, checkInId); метрика ok/skipped;
- *  - флаг OFF → ingestCheckin НЕ вызван, метрика skipped (R1, kill-switch);
- *  - брошенная ошибка ingestCheckin НЕ пробрасывается (best-effort, R9),
- *    метрика error.
- */
-
 const EVENT = {
   tenantId: 't1',
   checkInId: 'ci1',
@@ -25,10 +14,7 @@ const EVENT = {
   rawText: 'отчёт',
 };
 
-function makeListener(opts: {
-  enabled: boolean;
-  ingestCheckin?: ReturnType<typeof vi.fn>;
-}): {
+function makeListener(opts: { enabled: boolean; ingestCheckin?: ReturnType<typeof vi.fn> }): {
   listener: CheckinGraphIngestListener;
   ingestCheckin: ReturnType<typeof vi.fn>;
   incCheckinGraphIngest: ReturnType<typeof vi.fn>;
@@ -36,8 +22,7 @@ function makeListener(opts: {
   const cfg = {
     betaOps: { checkinGraphIngestEnabled: opts.enabled },
   } as unknown as TypedConfigService;
-  const ingestCheckin =
-    opts.ingestCheckin ?? vi.fn().mockResolvedValue({ rawEventId: 're1' });
+  const ingestCheckin = opts.ingestCheckin ?? vi.fn().mockResolvedValue({ rawEventId: 're1' });
   const ingestService = { ingestCheckin } as unknown as CheckinIngestService;
   const incCheckinGraphIngest = vi.fn();
   const metrics = {

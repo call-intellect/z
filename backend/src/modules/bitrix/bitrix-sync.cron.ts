@@ -6,13 +6,6 @@ import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
 import { BitrixSyncQueueService } from './queue/bitrix-sync.queue.service';
 
-/**
- * Cron-планировщик полного синка Bitrix24 (ТЗ 2026-06-17, Ф3).
- *
- * **Раз в сутки в 00:00** ставит `scope='all'` для ВСЕХ подключённых порталов.
- * Дедуп по jobId схлопнёт дубли. Kill-switch `bitrix.enabled` (admin settings)
- * глушит проход. Тело в try/catch — cron не должен падать.
- */
 @Injectable()
 export class BitrixSyncCron {
   private readonly logger = new Logger(BitrixSyncCron.name);
@@ -28,8 +21,7 @@ export class BitrixSyncCron {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async runDaily(): Promise<void> {
     try {
-      const enabled =
-        (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;
+      const enabled = (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;
       if (!enabled) {
         this.logger.debug('bitrix sync-cron: bitrix.enabled=false — пропуск');
         return;

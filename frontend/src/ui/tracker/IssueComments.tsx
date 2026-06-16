@@ -1,26 +1,6 @@
-'use client';
+"use client";
 
-/**
- * IssueComments — multi-user чат-комментарии задачи (T8, 2026-05-24).
- *
- * Сводный поток:
- *   - REST GET `/issues/:id/comments` (через `useIssueComments`) для initial-загрузки.
- *   - WebSocket `/ws/tracker`:
- *       · `comment.*` → автоинвалидация SWR-кэша через `useTrackerLiveRefresh`
- *         (live-обновление без polling'а).
- *       · presence/typing → `useIssueChatPresence` (онлайн-список и
- *         индикатор «печатает...»).
- *   - @-mention autocomplete через `MentionAutocompletePopup`. После выбора
- *     в текст вставляется `@<handle>` (handle = email-local-part или userId);
- *     backend `CommentsService.extractMentionTokens` парсит эти токены и
- *     резолвит в IssueMention + Notification(issue.mention).
- *
- * NB: REST-эндпоинт для создания comment'а остаётся — WS только доставляет
- * созданные comments обратно всем подписанным клиентам через
- * `comment.created` → SWR mutate.
- */
-
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Send } from "lucide-react";
 import {
   type ChangeEvent,
   type KeyboardEvent,
@@ -29,90 +9,81 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
+} from "react";
 
-import { commentsApi } from '@/api/tracker/comments.api';
+import { commentsApi } from "@/api/tracker/comments.api";
 import {
   memberDisplayName,
   memberHandle,
   type Comment,
   type ProjectMember,
-} from '@/domain/tracker';
-import { useIssueChatPresence } from '@/hooks/tracker/useIssueChatPresence';
-import { useIssueComments } from '@/hooks/tracker/useIssueComments';
-import { useProjectMembers } from '@/hooks/tracker/useProject';
-import { useTrackerLiveRefresh } from '@/hooks/tracker/useTrackerLiveRefresh';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/domain/tracker";
+import { useIssueChatPresence } from "@/hooks/tracker/useIssueChatPresence";
+import { useIssueComments } from "@/hooks/tracker/useIssueComments";
+import { useProjectMembers } from "@/hooks/tracker/useProject";
+import { useTrackerLiveRefresh } from "@/hooks/tracker/useTrackerLiveRefresh";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { AssigneeAvatar } from './AssigneeAvatar';
-import { MentionAutocompletePopup } from './MentionAutocompletePopup';
+import { AssigneeAvatar } from "./AssigneeAvatar";
+import { MentionAutocompletePopup } from "./MentionAutocompletePopup";
 
 export interface IssueCommentsProps {
   orgId: string;
   issueId: string;
-  /**
-   * T8: нужен для подгрузки участников проекта (для @-mention autocomplete'а).
-   * Если не передан — autocomplete деградирует (mention'ы можно ввести вручную,
-   * но без подсказок).
-   */
   projectId?: string;
 }
 
 interface MentionState {
   open: boolean;
   query: string;
-  /** Индекс символа `@` в textarea — для замены при выборе. */
   anchor: number;
 }
 
-export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps) {
-  const { comments, isLoading, error, mutate } = useIssueComments(orgId, issueId);
+export function IssueComments({
+  orgId,
+  issueId,
+  projectId,
+}: IssueCommentsProps) {
+  const { comments, isLoading, error, mutate } = useIssueComments(
+    orgId,
+    issueId,
+  );
   const { members } = useProjectMembers(orgId, projectId ?? null);
 
-  // T8: live-обновление comments через WS `comment.*` events (мутирует
-  // SWR-кэш 'tracker.issue.comments'). Также join'нем room задачи, чтобы
-  // получать события issue.*.
   useTrackerLiveRefresh(orgId, { issueId }, true);
 
-  // T8: presence/typing.
   const { onlineUsers, typingUsers, sendTyping } = useIssueChatPresence(
     orgId,
     issueId,
   );
 
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mention, setMention] = useState<MentionState>({
     open: false,
-    query: '',
+    query: "",
     anchor: -1,
   });
 
-  // ── @-mention detection ─────────────────────────────────────────────
   const updateMentionState = useCallback(
     (nextValue: string, caret: number): void => {
-      // Найти последний @ перед каретой; если за ним нет пробела/конца —
-      // значит мы в режиме ввода mention'а.
       const before = nextValue.slice(0, caret);
-      const atIdx = before.lastIndexOf('@');
+      const atIdx = before.lastIndexOf("@");
       if (atIdx < 0) {
-        setMention({ open: false, query: '', anchor: -1 });
+        setMention({ open: false, query: "", anchor: -1 });
         return;
       }
-      // @ должен быть в начале строки или после пробела (иначе это email-подобный
-      // текст). Иначе закрываем popup.
-      const charBefore = atIdx === 0 ? ' ' : before[atIdx - 1] ?? ' ';
+      const charBefore = atIdx === 0 ? " " : (before[atIdx - 1] ?? " ");
       if (!/\s/.test(charBefore)) {
-        setMention({ open: false, query: '', anchor: -1 });
+        setMention({ open: false, query: "", anchor: -1 });
         return;
       }
       const query = before.slice(atIdx + 1);
-      // Если в query есть пробел — пользователь уже закончил mention.
       if (/\s/.test(query)) {
-        setMention({ open: false, query: '', anchor: -1 });
+        setMention({ open: false, query: "", anchor: -1 });
         return;
       }
       setMention({ open: true, query, anchor: atIdx });
@@ -126,7 +97,6 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
       setValue(next);
       const caret = e.target.selectionStart ?? next.length;
       updateMentionState(next, caret);
-      // Сообщить серверу, что юзер печатает (throttled внутри хука).
       sendTyping(next.length > 0);
     },
     [sendTyping, updateMentionState],
@@ -142,8 +112,7 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
       const inserted = `@${handle}`;
       const next = `${before}${inserted} ${after}`;
       setValue(next);
-      setMention({ open: false, query: '', anchor: -1 });
-      // Восстановим каретку сразу после вставки.
+      setMention({ open: false, query: "", anchor: -1 });
       requestAnimationFrame(() => {
         const ta = textareaRef.current;
         if (!ta) return;
@@ -157,15 +126,14 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>): void => {
-      if (e.key === 'Escape' && mention.open) {
-        setMention({ open: false, query: '', anchor: -1 });
+      if (e.key === "Escape" && mention.open) {
+        setMention({ open: false, query: "", anchor: -1 });
         e.preventDefault();
       }
     },
     [mention.open],
   );
 
-  // ── Submit ───────────────────────────────────────────────────────────
   const handleSend = useCallback(async () => {
     const content = value.trim();
     if (!content || sending) return;
@@ -173,24 +141,21 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
     setSendErr(null);
     try {
       await commentsApi.create(orgId, issueId, { content });
-      setValue('');
-      setMention({ open: false, query: '', anchor: -1 });
+      setValue("");
+      setMention({ open: false, query: "", anchor: -1 });
       sendTyping(false);
-      // SWR mutate срабатывает автоматически по `comment.created` через
-      // useTrackerLiveRefresh. Дублирующий вызов оставляем для надёжности —
-      // если WS отвалился, REST-fetch всё равно обновит список.
       await mutate();
     } catch (e) {
-      setSendErr(e instanceof Error ? e.message : 'Не удалось отправить');
+      setSendErr(e instanceof Error ? e.message : "Не удалось отправить");
     } finally {
       setSending(false);
     }
   }, [issueId, mutate, orgId, sendTyping, sending, value]);
 
-  // ── Помощники для UI ────────────────────────────────────────────────
   const onlineSummary = useMemo<string | null>(() => {
     if (onlineUsers.length === 0) return null;
-    if (onlineUsers.length === 1) return `${onlineUsers[0]!.displayName} онлайн`;
+    if (onlineUsers.length === 1)
+      return `${onlineUsers[0]!.displayName} онлайн`;
     if (onlineUsers.length === 2) {
       return `${onlineUsers[0]!.displayName} и ${onlineUsers[1]!.displayName} онлайн`;
     }
@@ -199,14 +164,14 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
 
   const typingSummary = useMemo<string | null>(() => {
     if (typingUsers.length === 0) return null;
-    if (typingUsers.length === 1) return `${typingUsers[0]!.displayName} печатает…`;
+    if (typingUsers.length === 1)
+      return `${typingUsers[0]!.displayName} печатает…`;
     if (typingUsers.length === 2) {
       return `${typingUsers[0]!.displayName} и ${typingUsers[1]!.displayName} печатают…`;
     }
     return `${typingUsers.length} человек печатают…`;
   }, [typingUsers]);
 
-  // Карта userId → displayName для рендера CommentItem.
   const userNameMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) map.set(m.userId, memberDisplayName(m));
@@ -215,7 +180,7 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Presence widget */}
+      {}
       {onlineSummary ? (
         <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-elevated px-3 py-1.5 text-xs text-fg-secondary">
           <span
@@ -273,8 +238,6 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
           onKeyDown={handleKeyDown}
           onBlur={() => {
             sendTyping(false);
-            // Чуть задержим закрытие popup'а, чтобы успел сработать onClick
-            // по элементу popup'а (blur пришёл бы раньше).
             setTimeout(() => setMention((m) => ({ ...m, open: false })), 120);
           }}
           placeholder="Добавить комментарий… (@ — упомянуть участника)"
@@ -288,9 +251,7 @@ export function IssueComments({ orgId, issueId, projectId }: IssueCommentsProps)
               members={members}
               query={mention.query}
               onSelect={handleSelectMention}
-              onClose={() =>
-                setMention({ open: false, query: '', anchor: -1 })
-              }
+              onClose={() => setMention({ open: false, query: "", anchor: -1 })}
             />
           </div>
         ) : null}
@@ -325,7 +286,7 @@ function CommentItem({
   comment: Comment;
   authorDisplayName: string | null;
 }) {
-  const name = authorDisplayName ?? 'Участник';
+  const name = authorDisplayName ?? "Участник";
   return (
     <li className="flex items-start gap-3 rounded-md border border-border-subtle bg-bg-elevated px-3 py-2">
       <AssigneeAvatar userId={comment.authorId} size={28} />
@@ -333,13 +294,13 @@ function CommentItem({
         <div className="flex items-baseline gap-2">
           <span className="text-xs font-medium text-fg-primary">{name}</span>
           <span className="text-[10px] text-fg-tertiary">
-            {comment.createdAt.toLocaleString('ru-RU', {
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
+            {comment.createdAt.toLocaleString("ru-RU", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
             })}
-            {comment.isEdited && ' · изменён'}
+            {comment.isEdited && " · изменён"}
           </span>
         </div>
         <p className="mt-1 whitespace-pre-wrap break-words text-sm text-fg-primary">

@@ -29,10 +29,6 @@ import {
 } from './dto/admin-llm-providers.dto';
 import { ProviderSmokeTestCron } from './provider-smoke-test.cron';
 
-/**
- * SBA α-10 wave 3 — /api/v1/admin/llm-providers.
- * SuperAdminGuard — глобальный реестр, доступ только super_admin.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/llm-providers')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -80,10 +76,6 @@ export class AdminLlmProvidersController {
     return this.svc.softDelete(id);
   }
 
-  /**
-   * Manual smoke-test: один провайдер. Результат пишет в LlmProvider +
-   * метрики (как и автоматический cron).
-   */
   @Post(':id/smoke-test')
   async smoke(@Param('id') id: string) {
     const provider = await this.svc.getById(id);

@@ -11,11 +11,6 @@ import type { MeetingUploadsQueueService } from '../meeting-uploads-queue.servic
 
 import { MeetingUploadIngestWorker } from './meeting-upload-ingest.worker';
 
-/**
- * Тестовый подкласс: переопределяет `runFfmpeg` (пишет out-файл, чтобы
- * `readFile` отработал на реальном fs) и `runFfprobe` (возвращает заданный
- * JSON). Так воркер тестируется БЕЗ реального ffmpeg.
- */
 class TestIngestWorker extends MeetingUploadIngestWorker {
   public ffmpegCalls: string[][] = [];
   public probeJson = '';
@@ -103,22 +98,17 @@ describe('MeetingUploadIngestWorker.processMeeting', () => {
 
     await worker.processMeeting('m-1');
 
-    // Нормализованное аудио залито (mono 16к opus → audio.ogg).
     const putCalls = (s3 as any).putObject.mock.calls.map((c: any[]) => c[0]);
     expect(putCalls.some((a: any) => a.key === 'meetings/m-1/upload/audio.ogg')).toBe(true);
-    // ffmpeg вызван с нормализацией аудио.
     expect(worker.ffmpegCalls[0]).toEqual(
       expect.arrayContaining(['-vn', '-ac', '1', '-ar', '16000', '-c:a', 'libopus']),
     );
-    // Recording создан/обновлён как ready.
     const upsertArg = (prisma as any).recording.upsert.mock.calls[0][0];
     expect(upsertArg.create.status).toBe('ready');
     expect(upsertArg.create.retentionDays).toBe(30);
-    // FSM: scheduled→recording_processing→recording_ready.
     const transitions = (meetings as any).transitionStatus.mock.calls.map((c: any[]) => c[1]);
     expect(transitions).toContain('recording_processing');
     expect(transitions).toContain('recording_ready');
-    // Дальше — transcribe.
     expect((queue as any).enqueueUploadTranscribe).toHaveBeenCalledWith('m-1');
   });
 
@@ -127,7 +117,6 @@ describe('MeetingUploadIngestWorker.processMeeting', () => {
 
     await worker.processMeeting('m-1');
 
-    // faststart-ремукс по compositeKey.
     const putCalls = (s3 as any).putObject.mock.calls.map((c: any[]) => c[0]);
     expect(putCalls.some((a: any) => a.key === 'meetings/m-1/composite.mp4')).toBe(true);
     expect(worker.ffmpegCalls.some((a) => a.includes('+faststart'))).toBe(true);

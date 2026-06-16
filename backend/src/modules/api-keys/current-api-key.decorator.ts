@@ -2,7 +2,6 @@ import { type ExecutionContext, createParamDecorator } from '@nestjs/common';
 import type { ApiKey } from '@prisma/client';
 import type { Request } from 'express';
 
-/** Подкладывается `BearerAuthGuard`. */
 export interface RequestWithApiKey extends Request {
   apiKey?: ApiKey;
   apiUserId?: string;

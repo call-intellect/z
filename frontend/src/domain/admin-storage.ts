@@ -1,39 +1,19 @@
-/**
- * Доменная модель для `/admin/media/storage` — S3-хранилище (бакеты,
- * статистика, переключение провайдера). Фаза 7 редизайна Z-Admin.
- *
- * Контракт backend: `AdminStorageController` под префиксом
- * `/api/v1/admin/media/storage`. Защита — `SuperAdminGuard`.
- *
- * Переключение провайдера — это `AdminSetting` с ключом `storage.provider`
- * (severity='destructive'), редактируется через `useAdminSettingEditor`,
- * вызывает POST /admin/media/storage/switch.
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
-export type StorageProviderApi = 'yandex' | 'selectel' | 'sbercloud' | 'minio';
+export type StorageProviderApi = "yandex" | "selectel" | "sbercloud" | "minio";
 
 export type StorageBucketApiDto = {
   name: string;
   provider: StorageProviderApi;
   endpoint: string;
   objectsCount: number;
-  /** Размер в байтах. */
   sizeBytes: number;
-  /** "ok" | "warning" | "error" | … серверный enum. */
   status: string;
 };
 
 export type StorageStatsApiDto = {
-  /** Общий объём всех бакетов в байтах. */
   totalBytes: number;
   totalObjects: number;
-  /** Прогноз роста за следующий месяц в байтах. null = недостаточно данных. */
   forecastNextMonthBytes: number | null;
-  /** Скорость прироста за последние 7 дней (байт/день). */
   growthBytesPerDay: number | null;
-  /** Самый «тяжёлый» бакет (по размеру). */
   largestBucket: string | null;
   checkedAt: string;
 };
@@ -44,13 +24,11 @@ export type StorageOverviewApiDto = {
   stats: StorageStatsApiDto;
 };
 
-// ────────────────────────── DomainModel ──────────────────────────
-
 export const STORAGE_PROVIDER_LABELS: Record<StorageProviderApi, string> = {
-  yandex: 'Yandex Object Storage',
-  selectel: 'Selectel S3',
-  sbercloud: 'SberCloud OBS',
-  minio: 'MinIO (self-hosted)',
+  yandex: "Yandex Object Storage",
+  selectel: "Selectel S3",
+  sbercloud: "SberCloud OBS",
+  minio: "MinIO (self-hosted)",
 };
 
 export type StorageBucketDomain = {
@@ -60,10 +38,8 @@ export type StorageBucketDomain = {
   endpoint: string;
   objectsCount: number;
   sizeBytes: number;
-  /** Размер в гигабайтах, округлён до 2 знаков. */
   sizeGB: number;
   status: string;
-  /** Локализованная подпись статуса. */
   statusLabel: string;
 };
 
@@ -86,8 +62,6 @@ export type StorageOverviewDomain = {
   stats: StorageStatsDomain;
 };
 
-// ────────────────────────── Mappers ──────────────────────────
-
 const BYTES_IN_GB = 1024 ** 3;
 
 function bytesToGB(bytes: number): number {
@@ -95,10 +69,10 @@ function bytesToGB(bytes: number): number {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  ok: 'ок',
-  warning: 'предупреждение',
-  error: 'ошибка',
-  unreachable: 'недоступен',
+  ok: "ок",
+  warning: "предупреждение",
+  error: "ошибка",
+  unreachable: "недоступен",
 };
 
 export function storageBucketFromApi(

@@ -9,31 +9,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { resolveAxisTenantTop } from '../../knowledge-core/services/tenant-top';
 import { GoalsPulseService } from '../services/goals-pulse.service';
 
-/**
- * Goals OKR v2 (Фаза 4) — GoalsPulseCron.
- *
- * Глобальный cron `@Cron('0 6 * * 1')` (= понедельник 09:00 МСК). НЕ per-Org
- * timezone (ICP — РФ; различие до 6 часов несущественно для утреннего пульса).
- *
- * Тумблеры (через `TypedConfigService.getDynamic` → AdminSetting + ENV-fallback):
- *   - `goals.pulse.enabled` (default true) — мастер-флаг.
- *   - `goals.pulse.deliver_to_telegram` (default false) — рассылка ролям
- *     owner/coo через `ConversationalService.sendNotification` (eventType
- *     `goals.pulse`). По умолчанию false, чтобы Telegram не молотил сразу
- *     после раскатки.
- *
- * Поведение:
- *   1. Проверить тумблер `enabled`. False → log skip, return.
- *   2. Вычислить границы прошедшей недели в МСК + isoWeek.
- *   3. Обойти Org с активными целями (distinct tenantId).
- *   4. Идемпотентно `GoalsPulseService.getOrGenerate`.
- *   5. Если `deliver_to_telegram=true` и ещё не доставлено — отправить пульс
- *      всем owner/coo Org'а, проставить deliveredAt.
- *   6. Best-effort: ошибка по одной Org не валит остальные.
- *
- * Cron крутится в HTTP-приложении (ScheduleModule.forRoot() в AppModule),
- * как и `GoalKrProgressCron`.
- */
 @Injectable()
 export class GoalsPulseCron {
   private readonly logger = new Logger(GoalsPulseCron.name);
@@ -77,14 +52,7 @@ export class GoalsPulseCron {
     }
   }
 
-  /**
-   * Выделен для unit-тестов: можно передать произвольный `now` и явно
-   * проконтролировать `deliverToTelegram`.
-   */
-  async runOnce(args: {
-    now: Date;
-    deliverToTelegram: boolean;
-  }): Promise<{
+  async runOnce(args: { now: Date; deliverToTelegram: boolean }): Promise<{
     orgsProcessed: number;
     digestsGenerated: number;
     digestsSkippedAlreadyExists: number;
@@ -152,10 +120,6 @@ export class GoalsPulseCron {
     };
   }
 
-  /**
-   * Отправить пульс всем owner/coo Org'а (БЕЗ admin — admin это IT/devops-роль,
-   * не бизнес-stakeholder, как в daily-digest). Возвращает кол-во отправок.
-   */
   private async notifyRecipients(args: {
     tenantId: string;
     digestId: string;
@@ -171,9 +135,7 @@ export class GoalsPulseCron {
     if (memberships.length === 0) return 0;
 
     const rawBody = args.shortSummary ?? args.bodyMarkdown;
-    // Telegram-лимит ~4096 симв; усекаем безопасно.
-    const safeBody =
-      rawBody.length > 2000 ? rawBody.slice(0, 1999) + '…' : rawBody;
+    const safeBody = rawBody.length > 2000 ? rawBody.slice(0, 1999) + '…' : rawBody;
 
     let sent = 0;
     for (const m of memberships) {
@@ -214,7 +176,6 @@ export class GoalsPulseCron {
     return sent;
   }
 
-  /** tenantId-ы Org, у которых есть активные живые цели. */
   private async listOrgsWithActiveGoals(): Promise<string[]> {
     const rows = await this.prisma.goal.findMany({
       where: { promotionState: 'active', validUntil: null, archivedAt: null },

@@ -1,12 +1,3 @@
-/**
- * DomainModel + мапперы для интеграции с Чат боксом
- * (ТЗ 2026-06-05 chatbox-integration, Фаза 7).
- *
- * Слой ApiDto → DomainModel → UiModel (см. правило `frontend-rules`).
- * Здесь: parse ISO-строк в Date, человекочитаемые русские лейблы статуса
- * и режима синхронизации.
- */
-
 import type {
   ChatboxChatApi,
   ChatboxChatDetailApi,
@@ -22,18 +13,18 @@ import type {
   ChatboxStatus,
   ChatboxSyncMode,
   MessengerIdentityApi,
-} from '@/api/chatbox.api';
+} from "@/api/chatbox.api";
 
 const STATUS_LABELS: Record<ChatboxStatus, string> = {
-  connected: 'Подключено',
-  error: 'Ошибка',
-  disconnected: 'Отключено',
+  connected: "Подключено",
+  error: "Ошибка",
+  disconnected: "Отключено",
 };
 
 const SYNC_MODE_LABELS: Record<ChatboxSyncMode, string> = {
-  hourly: 'Раз в час',
-  daily: 'Раз в сутки',
-  realtime: 'При новом сообщении',
+  hourly: "Раз в час",
+  daily: "Раз в сутки",
+  realtime: "При новом сообщении",
 };
 
 export function chatboxStatusLabel(status: ChatboxStatus): string {
@@ -44,14 +35,13 @@ export function chatboxSyncModeLabel(mode: ChatboxSyncMode): string {
   return SYNC_MODE_LABELS[mode] ?? mode;
 }
 
-/** Все режимы синхронизации для выпадающего списка. */
 export const CHATBOX_SYNC_MODES: ReadonlyArray<{
   value: ChatboxSyncMode;
   label: string;
 }> = [
-  { value: 'hourly', label: SYNC_MODE_LABELS.hourly },
-  { value: 'daily', label: SYNC_MODE_LABELS.daily },
-  { value: 'realtime', label: SYNC_MODE_LABELS.realtime },
+  { value: "hourly", label: SYNC_MODE_LABELS.hourly },
+  { value: "daily", label: SYNC_MODE_LABELS.daily },
+  { value: "realtime", label: SYNC_MODE_LABELS.realtime },
 ];
 
 export type ChatboxIntegrationView = {
@@ -99,62 +89,51 @@ export function mapIntegration(
   };
 }
 
-// --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
-
-/**
- * Человекочитаемое имя мессенджера по техническому `channelType`.
- * Чат бокс присылает разные варианты одного канала (например
- * `TELEGRAM` и `TELEGRAM_PRIVATE`) — схлопываем их в один лейбл.
- */
 export function chatboxChannelTypeLabel(type: string): string {
   switch (type) {
-    case 'TELEGRAM':
-    case 'TELEGRAM_PRIVATE':
-      return 'Telegram';
-    case 'WHATSAPP':
-    case 'WHATSAPP_BUSINESS':
-    case 'WHATSAPP_WHAPI':
-    case 'EXT_WHATSAPP':
-      return 'WhatsApp';
-    case 'MAX':
-    case 'EXT_MAX':
-      return 'MAX';
-    case 'CHAT_WIDGET':
-      return 'Виджет';
-    case 'AVITO':
-      return 'Avito';
-    case 'VK':
-      return 'VK';
-    case 'CIAN':
-      return 'Циан';
-    case 'EMAIL_CLIENT':
-      return 'Email';
+    case "TELEGRAM":
+    case "TELEGRAM_PRIVATE":
+      return "Telegram";
+    case "WHATSAPP":
+    case "WHATSAPP_BUSINESS":
+    case "WHATSAPP_WHAPI":
+    case "EXT_WHATSAPP":
+      return "WhatsApp";
+    case "MAX":
+    case "EXT_MAX":
+      return "MAX";
+    case "CHAT_WIDGET":
+      return "Виджет";
+    case "AVITO":
+      return "Avito";
+    case "VK":
+      return "VK";
+    case "CIAN":
+      return "Циан";
+    case "EMAIL_CLIENT":
+      return "Email";
     default:
-      return 'Другое';
+      return "Другое";
   }
 }
 
-/**
- * Пара токен-классов для бейджа мессенджера. Только дизайн-токены,
- * без hex/text-white.
- */
 export function chatboxChannelTypeBadgeClass(type: string): string {
   const label = chatboxChannelTypeLabel(type);
   switch (label) {
-    case 'Telegram':
-      return 'bg-info/10 text-info';
-    case 'WhatsApp':
-      return 'bg-success/10 text-success';
-    case 'MAX':
-      return 'bg-accent-muted text-accent-fg';
+    case "Telegram":
+      return "bg-info/10 text-info";
+    case "WhatsApp":
+      return "bg-success/10 text-success";
+    case "MAX":
+      return "bg-accent-muted text-accent-fg";
     default:
-      return 'bg-bg-subtle text-fg-secondary';
+      return "bg-bg-subtle text-fg-secondary";
   }
 }
 
 const CHAT_STATUS_LABELS: Record<ChatboxChatStatusApi, string> = {
-  active: 'Активен',
-  closed: 'Закрыт',
+  active: "Активен",
+  closed: "Закрыт",
 };
 
 export function chatboxChatStatusLabel(status: ChatboxChatStatusApi): string {
@@ -162,21 +141,20 @@ export function chatboxChatStatusLabel(status: ChatboxChatStatusApi): string {
 }
 
 const ANALYSIS_STATUS_LABELS: Record<string, string> = {
-  pending: 'В очереди',
-  analyzing: 'Анализ',
-  done: 'Готово',
-  failed: 'Ошибка',
+  pending: "В очереди",
+  analyzing: "Анализ",
+  done: "Готово",
+  failed: "Ошибка",
 };
 
 export function chatboxAnalysisStatusLabel(status: string): string {
   return ANALYSIS_STATUS_LABELS[status] ?? status;
 }
 
-/** Роль отправителя сообщения: клиент слева, менеджер/бот справа. */
-export type ChatboxSenderRole = 'client' | 'manager';
+export type ChatboxSenderRole = "client" | "manager";
 
 export function senderRoleOf(type: ChatboxSenderTypeApi): ChatboxSenderRole {
-  return type === 'CLIENT' ? 'client' : 'manager';
+  return type === "CLIENT" ? "client" : "manager";
 }
 
 export type MessengerIdentityView = {
@@ -226,7 +204,7 @@ export type ChatboxMessageView = {
   senderRole: ChatboxSenderRole;
   senderName: string;
   senderPersonId: string | null;
-  contentType: ChatboxMessageApi['contentType'];
+  contentType: ChatboxMessageApi["contentType"];
   text: string | null;
   imageUrl: string | null;
   fileUrl: string | null;
@@ -238,7 +216,7 @@ export type ChatboxMessageView = {
 };
 
 function clientNameOf(api: ChatboxChatApi): string {
-  return api.customer?.name ?? api.clientName ?? 'Без имени';
+  return api.customer?.name ?? api.clientName ?? "Без имени";
 }
 
 export function mapChat(api: ChatboxChatApi): ChatboxChatView {
@@ -297,33 +275,26 @@ export function mapChatDetail(
   };
 }
 
-// --- Менеджеры → сотрудники (ТЗ 2026-06-05 chatbox-integration, Фаза 9) ---
-
 const LINK_MODE_LABELS: Record<ChatboxLinkMode, string> = {
-  auto: 'Авто (по email или имени)',
-  manual: 'Вручную',
-  none: 'Не связан',
+  auto: "Авто (по email или имени)",
+  manual: "Вручную",
+  none: "Не связан",
 };
 
 export function chatboxLinkModeLabel(mode: ChatboxLinkMode): string {
   return LINK_MODE_LABELS[mode] ?? mode;
 }
 
-/**
- * Вариант бейджа режима связи (только дизайн-токены через shadcn Badge).
- * Палитра Badge: `default` использует accent-токены (auto), `success`
- * (вручную), `secondary` — приглушённый/нейтральный (не связан).
- */
 export function chatboxLinkModeBadgeVariant(
   mode: ChatboxLinkMode,
-): 'default' | 'success' | 'secondary' {
+): "default" | "success" | "secondary" {
   switch (mode) {
-    case 'auto':
-      return 'default';
-    case 'manual':
-      return 'success';
+    case "auto":
+      return "default";
+    case "manual":
+      return "success";
     default:
-      return 'secondary';
+      return "secondary";
   }
 }
 
@@ -332,7 +303,6 @@ export type ChatboxMemberView = {
   externalId: string;
   email: string | null;
   name: string | null;
-  /** Имя для показа: name, иначе email, иначе externalId. */
   displayName: string;
   role: string | null;
   linkMode: ChatboxLinkMode;
@@ -356,15 +326,12 @@ export function mapMember(api: ChatboxMemberApi): ChatboxMemberView {
   };
 }
 
-// --- Клиенты → сотрудники (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1) ---
-
 export type ChatboxCustomerView = {
   id: string;
   externalId: string;
   email: string | null;
   phone: string | null;
   name: string | null;
-  /** Имя для показа: name, иначе email, иначе телефон, иначе externalId. */
   displayName: string;
   linkMode: ChatboxLinkMode;
   linkModeLabel: string;
@@ -387,21 +354,17 @@ export function mapCustomer(api: ChatboxCustomerApi): ChatboxCustomerView {
   };
 }
 
-// --- Сводка «Чаты в памяти» (ТЗ 2026-06-11 remaining-handoff, блок A, Ф2) ---
-
 export type ChatboxMemorySummaryView = {
   configured: boolean;
   analysisEnabled: boolean;
   dialogs: number;
   sessions: number;
   analyzed: number;
-  /** Псевдоним inProgress (pending + analyzing) — «в работе». */
   pending: number;
   inProgress: number;
   failed: number;
   blocks: number;
   tasks: number;
-  /** Есть ли вообще что показывать (хоть один диалог или сессия). */
   hasData: boolean;
 };
 
@@ -428,7 +391,7 @@ export function mapMessage(api: ChatboxMessageApi): ChatboxMessageView {
     id: api.id,
     senderType: api.senderType,
     senderRole: senderRoleOf(api.senderType),
-    senderName: api.senderName ?? '',
+    senderName: api.senderName ?? "",
     senderPersonId: api.senderPersonId ?? null,
     contentType: api.contentType,
     text: api.text ?? null,

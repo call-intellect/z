@@ -15,7 +15,6 @@ describe('ensureJsonWordInUser (cache-safety #56/#72)', () => {
     ];
     ensureJsonWordInUser(messages);
 
-    // SYSTEM байт-в-байт неизменен (кэш не ломается).
     expect(messages[0]!.content).toBe('Сделай отчёт.');
     expect(messages[1]!.content).toBe('Транскрипт' + JSON_MODE_USER_SUFFIX);
     expect(messages[1]!.content.toLowerCase()).toContain('json');
@@ -30,7 +29,7 @@ describe('ensureJsonWordInUser (cache-safety #56/#72)', () => {
     ];
     ensureJsonWordInUser(messages);
 
-    expect(messages[1]!.content).toBe('первый'); // прошлый user не тронут
+    expect(messages[1]!.content).toBe('первый');
     expect(messages[3]!.content).toBe('второй' + JSON_MODE_USER_SUFFIX);
   });
 
@@ -41,9 +40,8 @@ describe('ensureJsonWordInUser (cache-safety #56/#72)', () => {
     ];
     ensureJsonWordInUser(messages);
     expect(messages[0]!.content).toBe('Верни ответ в JSON.');
-    expect(messages[1]!.content).toBe('данные'); // не дописываем
+    expect(messages[1]!.content).toBe('данные');
 
-    // Повторный вызов после первой мутации — тоже no-op.
     const m2 = [
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'u' },
@@ -51,7 +49,7 @@ describe('ensureJsonWordInUser (cache-safety #56/#72)', () => {
     ensureJsonWordInUser(m2);
     const afterFirst = m2[1]!.content;
     ensureJsonWordInUser(m2);
-    expect(m2[1]!.content).toBe(afterFirst); // не задвоилось
+    expect(m2[1]!.content).toBe(afterFirst);
   });
 
   it('no-op, если нет ни одного user-сообщения', () => {

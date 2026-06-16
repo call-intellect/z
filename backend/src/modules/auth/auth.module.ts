@@ -11,20 +11,6 @@ import { AdminLoginService } from './services/admin-login.service';
 import { HmacService } from './services/hmac.service';
 import { JwtService } from './services/jwt.service';
 
-/**
- * Глобальный auth-модуль.
- *
- * Экспортирует:
- *   - `JwtService`      — для подписи/проверки session/deep-link JWT;
- *   - `HmacService`     — для проверки/выдачи интеграционных ключей;
- *   - `CookieAuthGuard` — для пользовательских роутов (с `@OptionalAuth()` режимом);
- *   - `HmacGuard`       — для Crossmark-роутов (HMAC + idempotency);
- *   - `AdminGuard`      — после `CookieAuthGuard` для admin-роутов.
- *
- * Контроллер `/api/v1/auth/{exchange,me,logout}` использует `UsersService`
- * (найти пользователя по deep-link). `UsersModule` глобален, поэтому
- * импортировать его в `AuthModule` не нужно.
- */
 @Global()
 @Module({
   controllers: [AuthController],
@@ -37,8 +23,6 @@ import { JwtService } from './services/jwt.service';
     AdminGuard,
     SuperAdminGuard,
     OrgAdminGuard,
-    // audit Б2 — провайдер сам по себе НЕ глобальный (APP_GUARD регистрируется
-    // в AppModule). Экспортируем класс, чтобы AppModule мог сослаться через useClass.
     MustChangePasswordGuard,
   ],
   exports: [

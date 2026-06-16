@@ -1,35 +1,8 @@
-/**
- * Clones=Roles Фаза 1 (2026-05-25) — backfill versioning-полей для
- * существующих `ExecutablePersona(scope='role', status='active')`.
- *
- * Что делает (идемпотентно):
- *   1. Берёт все `ExecutablePersona(scope='role', status='active')` с
- *      `roleVersion IS NULL`.
- *   2. Для каждой:
- *        roleVersion           = 1
- *        currentBearerPersonId = NULL  (компания назначит руками)
- *        succeedsPersonaId     = NULL
- *        publicName            = 'Клон <Role.name> v1' (берём Role.name по
- *                                 scopeRefId; если Role не нашли —
- *                                 'Клон роли v1' с warning).
- *   3. `scope='person'` записи НЕ трогает (legacy, остаются как есть).
- *
- * Безопасность (skill safe-seed-rules):
- *   - WHERE roleVersion IS NULL — повторный запуск не перезаписывает данные.
- *   - `--dry-run` — печатает обновления, не пишет.
- *
- * Запуск:
- *   cd backend
- *   bun run scripts/patch-clones-role-versioning.ts
- *   bun run scripts/patch-clones-role-versioning.ts --dry-run
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 import { tableExists } from './_lib/schema-guards';
 
-// Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
 });
@@ -48,11 +21,6 @@ async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   console.log(`=== patch-clones-role-versioning START (dry-run=${opts.dryRun}) ===`);
 
-  // Берём все role-scope активные personas без roleVersion.
-  // Используем raw query — Prisma-модель уже знает новое поле, но в
-  // raw'е удобнее агрегировать с Role одним JOIN'ом.
-  // Таблица модели Role замаплена как "roles" (@@map). Если её нет (легаси-
-  // схема ушла дальше) — берём кандидатов без JOIN'а, имя из fallback.
   const hasRoles = await tableExists(prisma, 'roles');
   const sql = hasRoles
     ? `
@@ -92,9 +60,7 @@ async function main(): Promise<void> {
 
   for (const cand of candidates) {
     const roleName = cand.roleName?.trim();
-    const publicName = roleName
-      ? `Клон ${roleName} v1`
-      : 'Клон роли v1';
+    const publicName = roleName ? `Клон ${roleName} v1` : 'Клон роли v1';
     if (!roleName) {
       warnedNoRole++;
       console.warn(

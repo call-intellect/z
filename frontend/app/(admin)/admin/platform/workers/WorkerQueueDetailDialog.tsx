@@ -1,35 +1,25 @@
-'use client';
+"use client";
 
-/**
- * Диалог деталей очереди BullMQ для `/admin/platform/workers`.
- *
- * Загружает GET /api/v1/admin/workers/queues/:name и показывает:
- *   - failed jobs: id, name, attemptsMade, ошибка + кнопка Remove;
- *   - completed jobs (последние): просто список с временами.
- *
- * Remove → DELETE /api/v1/admin/workers/queues/:name/jobs/:id.
- */
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminWorkersApi } from '@/api/admin-workers.api';
-import { ApiError } from '@/api/api-error';
+import { adminWorkersApi } from "@/api/admin-workers.api";
+import { ApiError } from "@/api/api-error";
 import {
   workerQueueDetailFromApi,
   type WorkerQueueDetailDomain,
   type WorkerJobDomain,
-} from '@/domain/admin-worker';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-worker";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
 type Props = {
   queueName: string | null;
@@ -62,7 +52,7 @@ export function WorkerQueueDetailDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось загрузить детали очереди',
+            : "Не удалось загрузить детали очереди",
       );
     } finally {
       setLoading(false);
@@ -87,9 +77,7 @@ export function WorkerQueueDetailDialog({
       await load();
       onJobRemoved();
     } catch (e) {
-      toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось удалить job',
-      );
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить job");
     } finally {
       setRemovingId(null);
     }
@@ -100,7 +88,7 @@ export function WorkerQueueDetailDialog({
       <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            Очередь: <code className="font-mono">{queueName ?? '—'}</code>
+            Очередь: <code className="font-mono">{queueName ?? "—"}</code>
           </DialogTitle>
           <DialogDescription>
             Последние ошибочные и успешные задачи. Failed-задачи можно удалить
@@ -110,7 +98,11 @@ export function WorkerQueueDetailDialog({
 
         {loading ? (
           <div className="flex items-center justify-center py-10">
-            <Loader2 size={20} className="animate-spin text-fg-tertiary" aria-hidden />
+            <Loader2
+              size={20}
+              className="animate-spin text-fg-tertiary"
+              aria-hidden
+            />
           </div>
         ) : null}
 
@@ -177,13 +169,17 @@ function SummaryRow({ data }: { data: WorkerQueueDetailDomain }) {
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
       <StatBox label="Ждут" value={data.waiting} />
       <StatBox label="Активные" value={data.active} />
-      <StatBox label="Ошибки" value={data.failed} tone={data.failed > 0 ? 'danger' : undefined} />
+      <StatBox
+        label="Ошибки"
+        value={data.failed}
+        tone={data.failed > 0 ? "danger" : undefined}
+      />
       <StatBox label="Отложены" value={data.delayed} />
       <StatBox label="Готовы" value={data.completed} />
       <StatBox
         label="Состояние"
-        value={data.paused ? 'пауза' : 'активна'}
-        tone={data.paused ? 'warning' : undefined}
+        value={data.paused ? "пауза" : "активна"}
+        tone={data.paused ? "warning" : undefined}
       />
     </div>
   );
@@ -196,20 +192,22 @@ function StatBox({
 }: {
   label: string;
   value: number | string;
-  tone?: 'danger' | 'warning';
+  tone?: "danger" | "warning";
 }) {
   const toneClass =
-    tone === 'danger'
-      ? 'text-danger'
-      : tone === 'warning'
-        ? 'text-warning'
-        : 'text-fg-primary';
+    tone === "danger"
+      ? "text-danger"
+      : tone === "warning"
+        ? "text-warning"
+        : "text-fg-primary";
   return (
     <div className="rounded-md border border-border-subtle bg-bg-overlay px-3 py-2">
       <p className="text-[10px] uppercase tracking-wide text-fg-tertiary">
         {label}
       </p>
-      <p className={`text-sm font-semibold tabular-nums ${toneClass}`}>{value}</p>
+      <p className={`text-sm font-semibold tabular-nums ${toneClass}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -231,8 +229,8 @@ function FailedJobRow({
             {job.name} <span className="text-fg-tertiary">#{job.id}</span>
           </p>
           <p className="text-[11px] text-fg-tertiary">
-            Попыток: {job.attemptsMade} · Завершено:{' '}
-            {job.finishedOn ? job.finishedOn.toLocaleString('ru-RU') : '—'}
+            Попыток: {job.attemptsMade} · Завершено:{" "}
+            {job.finishedOn ? job.finishedOn.toLocaleString("ru-RU") : "—"}
           </p>
         </div>
         <Button
@@ -259,7 +257,7 @@ function FailedJobRow({
             stacktrace
           </summary>
           <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-bg-overlay p-2 text-[10px] text-fg-secondary">
-            {job.stacktrace.join('\n')}
+            {job.stacktrace.join("\n")}
           </pre>
         </details>
       ) : null}
@@ -276,7 +274,7 @@ function CompletedJobRow({ job }: { job: WorkerJobDomain }) {
       <code className="font-mono text-fg-primary">{job.name}</code>
       <span className="text-fg-tertiary">#{job.id}</span>
       <span className="ml-auto text-[11px] text-fg-tertiary">
-        {job.finishedOn ? job.finishedOn.toLocaleString('ru-RU') : '—'}
+        {job.finishedOn ? job.finishedOn.toLocaleString("ru-RU") : "—"}
       </span>
     </li>
   );

@@ -1,67 +1,33 @@
 import { randomBytes } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { ChatboxIntegration } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import {
-  ChatboxApiClient,
-  ChatboxApiError,
-  type ChatboxWorkspace,
-} from './chatbox-api.client';
+import { ChatboxApiClient, ChatboxApiError, type ChatboxWorkspace } from './chatbox-api.client';
 import type {
   ChatboxIntegrationResponseDto,
   ChatboxIntegrationUpsertDto,
   ChatboxWorkspaceDto,
 } from './dto/chatbox-integration.dto';
 
-/**
- * Сервис конфига ChatBox-интеграции (ТЗ 2026-06-05, Фаза 2).
- *
- * Инвариант приватности: plain-токен НИКОГДА не покидает сервис в read-ответе —
- * наружу отдаётся только `hasToken`. Токен хранится зашифрованным
- * (`tokenEnc`, AES-256-GCM через CryptoService).
- *
- * Фаза 2 НЕ делает: регистрацию webhook (Фаза 4), синк данных (Фаза 3),
- * отправку сообщений (Фаза 6).
- */
 @Injectable()
 export class ChatboxIntegrationService {
   private readonly logger = new Logger(ChatboxIntegrationService.name);
 
-  /**
-   * Роли воркспейса, которыми владелец токена реально УПРАВЛЯЕТ. Реселлерский
-   * токен видит сотни чужих воркспейсов с ролью `USER` (просто видимость) —
-   * их в выбор не отдаём, иначе нельзя найти/подключить свой. Оставляем только
-   * `OWNER`/`ADMIN`.
-   */
   private static readonly OWNED_ROLES = new Set(['OWNER', 'ADMIN']);
 
-  /** Размер страницы при переборе воркспейсов ChatBox. */
   private static readonly WORKSPACES_PAGE = 100;
 
-  /**
-   * Перебрать ВСЕ страницы воркспейсов токена (ChatBox отдаёт `{workspaces,total}`
-   * с `limit`/`offset`) и вернуть только те, где владелец токена — OWNER/ADMIN.
-   * Бросает `ChatboxApiError` наружу — вызывающий маппит через `mapClientError`.
-   */
-  private async fetchOwnedWorkspaces(
-    token: string,
-  ): Promise<ChatboxWorkspace[]> {
+  private async fetchOwnedWorkspaces(token: string): Promise<ChatboxWorkspace[]> {
     const page = ChatboxIntegrationService.WORKSPACES_PAGE;
     const all: ChatboxWorkspace[] = [];
     let offset = 0;
     let total = Number.POSITIVE_INFINITY;
 
-    // Жёсткий потолок итераций — страховка от кривого `total` у апстрима.
     for (let i = 0; i < 1000 && offset < total; i++) {
       const res = await this.client.listWorkspaces(token, { limit: page, offset });
       const batch = res.workspaces ?? [];
@@ -87,20 +53,13 @@ export class ChatboxIntegrationService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /** Текущая интеграция org (sanitized, без токена) или null. */
-  async getIntegration(
-    tenantId: string,
-  ): Promise<ChatboxIntegrationResponseDto | null> {
+  async getIntegration(tenantId: string): Promise<ChatboxIntegrationResponseDto | null> {
     const row = await this.prisma.chatboxIntegration.findUnique({
       where: { tenantId },
     });
     return row ? this.sanitize(row) : null;
   }
 
-  /**
-   * По введённому токену вернуть список воркспейсов (для выбора владельцем).
-   * 401 → `chatbox_token_invalid`.
-   */
   async listWorkspaces(token: string): Promise<ChatboxWorkspaceDto[]> {
     let workspaces: ChatboxWorkspace[];
     try {
@@ -116,12 +75,6 @@ export class ChatboxIntegrationService {
     }));
   }
 
-  /**
-   * Создать/обновить интеграцию. Валидирует токен + наличие выбранного
-   * `workspaceId` среди доступных. Сохраняет `tokenEnc` только при новом токене.
-   *
-   * Фаза 4 (TODO): при `syncMode==='realtime'` зарегистрировать webhook ChatBox.
-   */
   async upsert(
     tenantId: string,
     dto: ChatboxIntegrationUpsertDto,
@@ -130,7 +83,6 @@ export class ChatboxIntegrationService {
       where: { tenantId },
     });
 
-    // Резолв plain-токена: новый из dto ИЛИ существующий (decrypt).
     const tokenIsNew = Boolean(dto.token);
     let plainToken: string | null = dto.token ?? null;
     if (!plainToken && existing) {
@@ -140,7 +92,6 @@ export class ChatboxIntegrationService {
       throw this.tokenInvalid('Токен ChatBox не передан');
     }
 
-    // Валидация токена + проверка, что выбранный воркспейс — СВОЙ (OWNER/ADMIN).
     let workspaces: ChatboxWorkspace[];
     try {
       workspaces = await this.fetchOwnedWorkspaces(plainToken);
@@ -153,13 +104,11 @@ export class ChatboxIntegrationService {
         ok: false,
         error: {
           code: 'chatbox_workspace_not_found',
-          message:
-            'Выбранный воркспейс недоступен для этого токена (нужна роль OWNER/ADMIN)',
+          message: 'Выбранный воркспейс недоступен для этого токена (нужна роль OWNER/ADMIN)',
         },
       });
     }
 
-    // tokenEnc: шифруем только новый токен; иначе сохраняем существующий.
     const tokenEnc = tokenIsNew
       ? this.crypto.encrypt(plainToken)
       : (existing?.tokenEnc ?? this.crypto.encrypt(plainToken));
@@ -171,10 +120,7 @@ export class ChatboxIntegrationService {
         tokenEnc,
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
-        syncMode: 'daily', // период фиксирован (синк 00:00); выбор убран 2026-06-16
-        // ТЗ 2026-06-10 cabinet §5 (Р-5): подключение канала = СОГЛАСИЕ на анализ
-        // (как создание встречи/загрузка аудио). Дефолт ON — переписку подключают
-        // именно ДЛЯ анализа; молчаливый OFF оставлял чаты в графе невидимыми.
+        syncMode: 'daily',
         analysisEnabled: dto.analysisEnabled ?? true,
         status: 'connected',
         lastError: null,
@@ -183,33 +129,21 @@ export class ChatboxIntegrationService {
         tokenEnc,
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
-        syncMode: 'daily', // период фиксирован (синк 00:00); выбор убран 2026-06-16
-        // Меняем только если явно передали — иначе сохранение syncMode не сбросит флаг.
-        ...(dto.analysisEnabled !== undefined
-          ? { analysisEnabled: dto.analysisEnabled }
-          : {}),
+        syncMode: 'daily',
+        ...(dto.analysisEnabled !== undefined ? { analysisEnabled: dto.analysisEnabled } : {}),
         status: 'connected',
         lastError: null,
       },
     });
 
-    // Фаза 4: синхронизация webhook ChatBox в зависимости от syncMode.
     await this.reconcileWebhook(tenantId, plainToken, dto.workspaceId, saved);
 
-    // Источник в списке «Источники» создаётся СРАЗУ при подключении (2026-06-16),
-    // а не лениво при первом синке — иначе после connect его не видно в списке.
     await this.ensureChatboxSource(tenantId);
 
     const result = await this.getIntegration(tenantId);
-    // upsert гарантирует наличие строки — null здесь невозможен.
     return result as ChatboxIntegrationResponseDto;
   }
 
-  /**
-   * Lazy upsert `Source(type='chatbox', name='ChatBox')` для tenant'а — чтобы
-   * ChatBox появился в списке «Источники» сразу при подключении. Совпадает с
-   * тем, что делает `ChatboxIngestService` при ingest (тот же natural-key).
-   */
   private async ensureChatboxSource(tenantId: string): Promise<void> {
     await this.prisma.source
       .upsert({
@@ -231,7 +165,6 @@ export class ChatboxIntegrationService {
         select: { id: true },
       })
       .catch((err) => {
-        // Не критично для подключения — синк всё равно создаст источник лениво.
         this.logger.warn(
           `ensureChatboxSource: не удалось создать Source — ${
             err instanceof Error ? err.message : String(err)
@@ -240,22 +173,15 @@ export class ChatboxIntegrationService {
       });
   }
 
-  /**
-   * Отключить интеграцию (удалить конфиг). Перед удалением снимает
-   * зарегистрированный webhook ChatBox (best-effort). Источник в списке гасим
-   * (isActive=false) — собранные данные остаются в памяти компании.
-   */
   async remove(tenantId: string): Promise<{ ok: true }> {
     const row = await this.prisma.chatboxIntegration.findUnique({
       where: { tenantId },
     });
     if (row?.webhookExternalId) {
-      // Снять webhook ПЕРЕД удалением строки — токен ещё доступен.
       const token = this.crypto.decrypt(row.tokenEnc);
       await this.removeWebhook(token, row.workspaceId, row.webhookExternalId);
     }
     await this.prisma.chatboxIntegration.deleteMany({ where: { tenantId } });
-    // Гасим источник в списке (данные не трогаем — FK RawEvent).
     await this.prisma.source
       .updateMany({
         where: { tenantId, type: 'chatbox', name: 'ChatBox' },
@@ -265,10 +191,6 @@ export class ChatboxIntegrationService {
     return { ok: true };
   }
 
-  /**
-   * Расшифрованный токен для будущих фаз (синк/webhook/отправка). null —
-   * интеграция не настроена. НЕ использовать в read-ответах API.
-   */
   async getDecryptedToken(tenantId: string): Promise<string | null> {
     const row = await this.prisma.chatboxIntegration.findUnique({
       where: { tenantId },
@@ -276,11 +198,6 @@ export class ChatboxIntegrationService {
     return row ? this.crypto.decrypt(row.tokenEnc) : null;
   }
 
-  /**
-   * Конфиг для синка (Фаза 3): workspaceId + расшифрованный токен +
-   * integrationId. null — интеграция не настроена. НЕ для read-ответов API
-   * (содержит plain-токен).
-   */
   async getConfigForSync(tenantId: string): Promise<{
     workspaceId: string;
     token: string;
@@ -297,19 +214,10 @@ export class ChatboxIntegrationService {
     };
   }
 
-  // ─────────────────────────── webhook (Фаза 4) ─────────────────────
-
-  /** Внешний URL inbound-webhook'а ChatBox для этого tenant'а. */
   private buildWebhookUrl(tenantId: string, secret: string): string {
     return `${this.cfg.publicHostUrl}/api/v1/webhooks/chatbox/${tenantId}/${secret}`;
   }
 
-  /**
-   * Синхронизировать webhook ChatBox с текущим `syncMode` (best-effort):
-   *   - `realtime` → гарантировать наличие webhook'а; при ошибке создания —
-   *     НЕ ронять upsert, а пометить `status:'error'` + `lastError`.
-   *   - иначе, если webhook был → снять и очистить поля.
-   */
   private async reconcileWebhook(
     tenantId: string,
     token: string,
@@ -329,12 +237,10 @@ export class ChatboxIntegrationService {
           data: { webhookExternalId, webhookSecret },
         });
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : 'Не удалось создать webhook';
+        const message = err instanceof Error ? err.message : 'Не удалось создать webhook';
         this.logger.warn(
           `reconcileWebhook: создание webhook не удалось для tenant=${tenantId}: ${message}`,
         );
-        // Интеграцию сохраняем, но помечаем проблему.
         await this.prisma.chatboxIntegration
           .update({
             where: { tenantId },
@@ -345,7 +251,6 @@ export class ChatboxIntegrationService {
       return;
     }
 
-    // syncMode !== realtime: если был webhook — снять и очистить.
     if (row.webhookExternalId) {
       await this.removeWebhook(token, workspaceId, row.webhookExternalId);
       await this.prisma.chatboxIntegration
@@ -357,10 +262,6 @@ export class ChatboxIntegrationService {
     }
   }
 
-  /**
-   * Гарантировать webhook: если у строки уже есть `webhookExternalId` +
-   * `webhookSecret` — переиспользовать (не пересоздавать). Иначе создать новый.
-   */
   private async ensureWebhook(
     tenantId: string,
     token: string,
@@ -388,7 +289,6 @@ export class ChatboxIntegrationService {
     return { webhookExternalId: wh.id, webhookSecret: secret };
   }
 
-  /** Снять webhook ChatBox (best-effort: webhook мог быть удалён вручную). */
   private async removeWebhook(
     token: string,
     workspaceId: string,
@@ -398,13 +298,9 @@ export class ChatboxIntegrationService {
       await this.client.deleteWebhook(token, workspaceId, webhookExternalId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        `removeWebhook: не удалось снять webhook ${webhookExternalId}: ${message}`,
-      );
+      this.logger.warn(`removeWebhook: не удалось снять webhook ${webhookExternalId}: ${message}`);
     }
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private sanitize(row: ChatboxIntegration): ChatboxIntegrationResponseDto {
     return {
@@ -427,8 +323,7 @@ export class ChatboxIntegrationService {
     if (err instanceof ChatboxApiError && err.status === 401) {
       return this.tokenInvalid('Токен ChatBox недействителен');
     }
-    const message =
-      err instanceof Error ? err.message : 'Ошибка обращения к ChatBox API';
+    const message = err instanceof Error ? err.message : 'Ошибка обращения к ChatBox API';
     this.logger.warn(`ChatBox API error: ${message}`);
     return this.tokenInvalid(message);
   }

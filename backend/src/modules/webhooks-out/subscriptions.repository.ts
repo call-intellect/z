@@ -1,9 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  Prisma,
-  WebhookDelivery,
-  WebhookSubscription,
-} from '@prisma/client';
+import type { Prisma, WebhookDelivery, WebhookSubscription } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -26,7 +22,6 @@ export class SubscriptionsRepository {
     return this.prisma.webhookSubscription.findUnique({ where: { id } });
   }
 
-  /** Возвращает все active подписки юзера, у которых event ∈ events. */
   async findByUserAndEvent(userId: string, event: string): Promise<WebhookSubscription[]> {
     return this.prisma.webhookSubscription.findMany({
       where: {
@@ -69,14 +64,11 @@ export class SubscriptionsRepository {
     });
   }
 
-  /** Подсчёт failed-delivery подряд (для авто-перевода в `failing`). */
   countConsecutiveFailed(subscriptionId: string): Promise<number> {
     return this.prisma.webhookDelivery.count({
       where: { subscriptionId, status: 'failed' },
     });
   }
-
-  // ─────────────────────────── deliveries ─────────────────────────────────
 
   createDelivery(input: {
     subscriptionId: string;
@@ -111,10 +103,7 @@ export class SubscriptionsRepository {
     });
   }
 
-  updateDelivery(
-    id: string,
-    data: Prisma.WebhookDeliveryUpdateInput,
-  ): Promise<WebhookDelivery> {
+  updateDelivery(id: string, data: Prisma.WebhookDeliveryUpdateInput): Promise<WebhookDelivery> {
     return this.prisma.webhookDelivery.update({ where: { id }, data });
   }
 }

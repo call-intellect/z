@@ -3,30 +3,11 @@ import { Cron } from '@nestjs/schedule';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * SBA α-9 wave 3 — DepartmentDetectorCron.
- *
- * MVP-эвристика: раз в час пробегает Entity с `type='org_unit'`, у которых ещё
- * нет соответствующего Department.entityId (см. wave 2 расширение Department).
- * Создаёт Department с этим entityId, копируя имя и (если есть в `meta.summary`) —
- * `missionStatement`.
- *
- * Это разгружает руками-CRUD: когда специалисты Слоя 3 распознают «отдел» в
- * блоках встреч (через Entity{type=org_unit}), Department появляется
- * автоматически. Bulk-insert через `createMany skipDuplicates`.
- *
- * NB: «настоящий» BullMQ-воркер `department-detector` (signal-driven) появится
- * на следующей фазе, когда подключим `core.specialist-routing` к Layer 2 для
- * `org_unit`. Текущая cron-реализация — strawman, чтобы фича работала с момента
- * α-9 wave 3.
- */
 @Injectable()
 export class DepartmentDetectorCron {
   private readonly logger = new Logger(DepartmentDetectorCron.name);
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Cron('45 * * * *')
   async run(): Promise<void> {
@@ -43,15 +24,12 @@ export class DepartmentDetectorCron {
       });
       if (orgUnits.length === 0) return;
 
-      // Какие entityId уже связаны с Department?
       const ids = orgUnits.map((e) => e.id);
       const linked = await this.prisma.department.findMany({
         where: { entityId: { in: ids } },
         select: { entityId: true },
       });
-      const linkedSet = new Set(
-        linked.map((d) => d.entityId).filter((v): v is string => !!v),
-      );
+      const linkedSet = new Set(linked.map((d) => d.entityId).filter((v): v is string => !!v));
 
       let created = 0;
       let skipped = 0;
@@ -60,8 +38,6 @@ export class DepartmentDetectorCron {
           skipped++;
           continue;
         }
-        // Проверяем дубль по (tenantId, name) — если Department уже есть с тем
-        // же именем (но без entityId), линкуем вместо создания нового.
         const existing = await this.prisma.department.findFirst({
           where: {
             tenantId: e.tenantId,

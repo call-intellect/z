@@ -1,14 +1,4 @@
-import { apiClient } from './api-client';
-
-/**
- * API DTO для in-meeting чата с persist через backend.
- * Источник правды — backend/src/modules/room-messages/.
- *
- * Сообщения сохраняются в `MeetingRoomMessage` (Prisma) и видны:
- * - опоздавшему гостю при join (история);
- * - на странице результата встречи (6-й таб «Чат»);
- * - на public share-странице (если `allowChat=true`).
- */
+import { apiClient } from "./api-client";
 
 export type RoomMessageApi = {
   id: string;
@@ -22,23 +12,17 @@ export type RoomMessageApi = {
 };
 
 export const roomMessagesApi = {
-  /**
-   * История сообщений встречи в порядке `sentAt asc`.
-   * Опц. `since` — ISO-таймстамп для фильтра «новее чем».
-   */
-  history: async (meetingId: string, since?: string): Promise<RoomMessageApi[]> => {
+  history: async (
+    meetingId: string,
+    since?: string,
+  ): Promise<RoomMessageApi[]> => {
     const res = await apiClient.get<{ items: RoomMessageApi[] }>(
       `/api/v1/meetings/${encodeURIComponent(meetingId)}/room-messages` +
-        (since ? `?since=${encodeURIComponent(since)}` : ''),
+        (since ? `?since=${encodeURIComponent(since)}` : ""),
     );
     return res.items ?? [];
   },
 
-  /**
-   * Отправить сообщение. Идемпотентно по `clientMessageId`:
-   * повторный POST с тем же id вернёт уже сохранённое сообщение (200).
-   * На collision (тот же id для другой встречи) — 400.
-   */
   send: (
     meetingId: string,
     body: { clientMessageId: string; content: string },

@@ -7,13 +7,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
 
-/**
- * Юнит-тесты `UsersService.upsertFromCrossmark` с mock-PrismaService.
- *
- * `prisma.$transaction(cb)` мокаем как простой await cb(prisma) — внутри
- * репозиторий получает тот же мок. Это позволяет проверить порядок вызовов
- * без реальной БД.
- */
 describe('UsersService.upsertFromCrossmark', () => {
   let service: UsersService;
   let usersRepo: {

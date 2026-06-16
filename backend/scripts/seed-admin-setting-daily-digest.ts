@@ -1,25 +1,3 @@
-/**
- * SBA β-8.3 — Seed AdminSetting для ежедневного отчёта COO.
- *
- * Регистрирует два ключа динамической конфигурации:
- *   - `operations.daily_digest.enabled` (boolean, default true) — мастер-флаг
- *     cron'а `operations-daily-digest`. ENV-fallback `COO_DAILY_DIGEST_ENABLED`.
- *   - `operations.daily_digest.deliver_to_telegram` (boolean, default false)
- *     — рассылка через `ConversationalService.sendNotification` (event-type
- *     `operations.daily_digest`). По умолчанию false, чтобы Telegram не
- *     молотил сразу после раскатки. ENV-fallback
- *     `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-daily-digest.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем
- *     только метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -82,12 +60,11 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
       },
     });
     counters.created++;
-     
+
     console.log(`[create] ${seed.key}`);
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },
@@ -99,7 +76,7 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
       },
     });
     counters.skippedAdminEdited++;
-     
+
     console.log(`[skip:admin-edited] ${seed.key}`);
     return;
   }
@@ -115,12 +92,11 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     },
   });
   counters.updated++;
-   
+
   console.log(`[update] ${seed.key}`);
 }
 
 async function main(): Promise<void> {
-   
   console.log('=== seed-admin-setting-daily-digest START ===');
 
   const counters: Counters = {
@@ -133,17 +109,15 @@ async function main(): Promise<void> {
     await upsertSetting(seed, counters);
   }
 
-   
   console.log(
     `created=${counters.created}, updated=${counters.updated}, skipped_admin_edited=${counters.skippedAdminEdited}`,
   );
-   
+
   console.log('=== seed-admin-setting-daily-digest DONE ===');
 }
 
 main()
   .catch((err) => {
-     
     console.error('seed-admin-setting-daily-digest FAILED:', err);
     process.exit(1);
   })

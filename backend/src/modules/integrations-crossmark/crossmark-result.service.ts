@@ -5,16 +5,6 @@ import { MeetingNotFoundError } from '../../common/errors/domain-errors';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { pickPrimarySummary } from '../ai/utils/pick-primary-summary';
 
-/**
- * Снэпшот результата встречи для Crossmark API.
- *
- * Условия:
- *   - Если `meeting.status !== 'ai_ready'` — возвращаем `{ status, ready: false }`.
- *   - Иначе — полный объект (meeting + summary/structured/custom/follow-up/tasks
- *     + recording-info без presigned URL).
- *
- * Без проверки ownerId — запрос уже прошёл HMAC.
- */
 export interface CrossmarkResultReadyDto {
   ready: true;
   meeting: {
@@ -73,8 +63,7 @@ export class CrossmarkResultService {
     }
 
     const recording = meeting.recording;
-    const hasRecording =
-      !!recording && recording.status === 'ready' && !!recording.mainVideoUrl;
+    const hasRecording = !!recording && recording.status === 'ready' && !!recording.mainVideoUrl;
 
     return {
       ready: true,

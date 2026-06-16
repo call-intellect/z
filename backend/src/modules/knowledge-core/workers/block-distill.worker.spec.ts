@@ -3,20 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { BlockDistillWorker } from './block-distill.worker';
 
-/**
- * Ф3 МТЗ «разблокировка конвейера» — unit-тесты для переноса диспатча
- * специалистов из block-ingest в block-distill на переход draft→canonical.
- *
- * Проверяем:
- *   1. markCanonical → router.dispatch вызван c { id: block.id, signalType }.
- *   2. mergeInto → router.dispatch вызван c canonicalId + signalType канонического.
- *   3. dispatch best-effort: если router.dispatch бросает — markCanonical/mergeInto
- *      не падают (статус блока уже зафиксирован, проекции просто отложены).
- *
- * markCanonical/mergeInto — private; дёргаем через any-cast, чтобы не поднимать
- * BullMQ Worker и весь DI-граф.
- */
-
 function buildBlock(overrides: Record<string, unknown> = {}): IdeaBlock {
   return {
     id: 'block-1',
@@ -36,9 +22,10 @@ interface Deps {
   prisma: any;
 }
 
-function buildWorker(
-  opts: { dispatchThrows?: boolean } = {},
-): { worker: BlockDistillWorker; deps: Deps } {
+function buildWorker(opts: { dispatchThrows?: boolean } = {}): {
+  worker: BlockDistillWorker;
+  deps: Deps;
+} {
   const router = {
     dispatch: vi.fn(async () => {
       if (opts.dispatchThrows) {
@@ -51,7 +38,6 @@ function buildWorker(
     enqueueBlockLinker: vi.fn(async () => undefined),
   };
 
-  // Состояние для merge-теста.
   const merge = {
     canonical: buildBlock({
       id: 'canon-1',
@@ -90,15 +76,15 @@ function buildWorker(
   } as any;
 
   const worker = new BlockDistillWorker(
-    {} as any, // redis
-    prisma as any, // prisma
-    cfg, // cfg
-    {} as any, // merger
-    coreQueue as any, // coreQueue
-    {} as any, // gate
-    router as any, // router (Ф3)
-    undefined, // factSupersede (Optional)
-    undefined, // eventEmitter (Optional)
+    {} as any,
+    prisma as any,
+    cfg,
+    {} as any,
+    coreQueue as any,
+    {} as any,
+    router as any,
+    undefined,
+    undefined,
   );
 
   return { worker, deps: { router, coreQueue, prisma } };
@@ -130,7 +116,6 @@ describe('BlockDistillWorker — Ф3 диспатч на canonical-перехо�
 
     await expect((worker as any).markCanonical(block)).resolves.toBeUndefined();
     expect(deps.router.dispatch).toHaveBeenCalledTimes(1);
-    // статус всё равно зафиксирован, линкер поставлен.
     expect(deps.prisma.ideaBlock.update).toHaveBeenCalled();
     expect(deps.coreQueue.enqueueBlockLinker).toHaveBeenCalledWith('block-1');
   });
@@ -152,7 +137,6 @@ describe('BlockDistillWorker — Ф3 диспатч на canonical-перехо�
 
     expect(deps.coreQueue.enqueueBlockLinker).toHaveBeenCalledWith('canon-1');
     expect(deps.router.dispatch).toHaveBeenCalledTimes(1);
-    // signalType берётся из канонического блока (regulation), НЕ из merged (decision).
     expect(deps.router.dispatch).toHaveBeenCalledWith({
       id: 'canon-1',
       tenantId: 'tenant-1',

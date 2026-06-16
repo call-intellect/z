@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
@@ -14,24 +8,6 @@ import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.se
 
 import { SupportAccessService } from './support-access.service';
 
-/**
- * SupportContourService — управление закрытым контуром памяти поддержки
- * (ТЗ 2026-06-09 support-desk Ф2).
- *
- * Отвечает за:
- *   - галочку «сотрудник поддержки» = членство `KnowledgeGroupMember(support,
- *     source='manual')` (Р-7); add/remove реплицирует логику
- *     `KnowledgeAccessAdminService` (его модуль НЕ экспортирует сервис) +
- *     `KnowledgeAccessResolver.invalidateAll()` после каждой мутации;
- *   - ручной засев контура (Р-4): пары вопрос→ответ → `IdeaBlock(canonical,
- *     signalType='expertise')` + `IdeaBlockAccess(via='closed')`. Идемпотентно
- *     по хэшу пары (хранится в `IdeaBlock.externalSource = 'support-seed:<hash>'`,
- *     т.к. в схеме IdeaBlock нет `embeddingHash`).
- *
- * Все запросы tenant-scoped по вендор-Org (`SupportAccessService.getVendorOrgId`).
- * Группа контура должна существовать (Ф1 seed) — иначе BadRequest «контур не
- * инициализирован».
- */
 @Injectable()
 export class SupportContourService {
   private readonly logger = new Logger(SupportContourService.name);
@@ -46,12 +22,6 @@ export class SupportContourService {
     private readonly embeddings: KnowledgeEmbeddingService,
   ) {}
 
-  // ─────────────────────────── галочка-членство ──────────────────────────
-
-  /**
-   * Список сотрудников поддержки (членов контура). Пусто, если деск выключен
-   * или группа ещё не создана.
-   */
   async listAgents(): Promise<{
     members: { personId: string; name: string }[];
   }> {
@@ -81,10 +51,6 @@ export class SupportContourService {
     };
   }
 
-  /**
-   * Добавить сотрудника в контур (галочка). source='manual'. Идемпотентно:
-   * повтор = `added:false`. Person резолвится в вендор-Org.
-   */
   async addAgent(personId: string): Promise<{ ok: true; added: boolean }> {
     const { vendorOrgId, groupId } = await this.resolveContour();
 
@@ -120,9 +86,6 @@ export class SupportContourService {
     return { ok: true, added: true };
   }
 
-  /**
-   * Убрать сотрудника из контура. Идемпотентно: нет строки = `removed:false`.
-   */
   async removeAgent(personId: string): Promise<{ ok: true; removed: boolean }> {
     const { vendorOrgId, groupId } = await this.resolveContour();
 
@@ -136,17 +99,6 @@ export class SupportContourService {
     return { ok: true, removed: result.count > 0 };
   }
 
-  // ─────────────────────────── ручной засев (Р-4) ────────────────────────
-
-  /**
-   * Засеять контур парами «вопрос→ответ» (холодный старт). Каждая пара →
-   * `IdeaBlock(status='canonical', signalType='expertise')` +
-   * `IdeaBlockAccess(via='closed', groupId=support)`.
-   *
-   * Идемпотентность по хэшу `sha256(question\nanswer)` в
-   * `IdeaBlock.externalSource = 'support-seed:<hash>'`. Повтор той же пары —
-   * skipped. Каждая пара в своём try/catch — одна плохая не валит батч.
-   */
   async seedContour(
     items: { question: string; answer: string }[],
   ): Promise<{ created: number; skipped: number }> {
@@ -195,18 +147,6 @@ export class SupportContourService {
     return { created, skipped };
   }
 
-  // ─────────────────────────── промоут (R-INV-2) ──────────────────────────
-
-  /**
-   * Промоут принятой/исправленной пары «вопрос→ответ» в контур (Ф3 обучающая
-   * петля). Та же логика создания блока, что и `seedContour`, НО:
-   *   - `confidence=0.7` (ниже человеческого 1.0 — R-INV-2: машинно-выученное
-   *     знание весит меньше засеянного человеком);
-   *   - провенанс `clone-accepted:<hash>` (отличаем промоут от ручного засева).
-   *
-   * Идемпотентно по хэшу пары: повторный промоут той же пары → `promoted:false`.
-   * Контур должен быть инициализирован (иначе BadRequest).
-   */
   async promoteAnswer(
     question: string,
     answer: string,
@@ -227,26 +167,9 @@ export class SupportContourService {
       confidence: 0.7,
       provenance: 'clone-accepted',
     });
-    return result.created
-      ? { promoted: true, blockId: result.blockId }
-      : { promoted: false };
+    return result.created ? { promoted: true, blockId: result.blockId } : { promoted: false };
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────────
-
-  /**
-   * Общий создатель блока контура (используется засевом и промоутом). Один
-   * `IdeaBlock(status='canonical', signalType='expertise')` + best-effort
-   * embedding (raw SQL) + `IdeaBlockAccess(via='closed')`.
-   *
-   * Идемпотентность по хэшу `sha256(question\nanswer)` в
-   * `IdeaBlock.externalSource = '<provenance>:<hash>'`. Уже существует в
-   * support-группе → `{ created:false }` (caller считает skipped/not-promoted).
-   *
-   * Параметризовано:
-   *   - `confidence` — 1.0 для засева (человек), 0.7 для промоута (машина);
-   *   - `provenance` — 'support-seed' | 'clone-accepted' (префикс externalSource).
-   */
   private async createContourBlock(args: {
     vendorOrgId: string;
     groupId: string;
@@ -255,12 +178,9 @@ export class SupportContourService {
     confidence: number;
     provenance: 'support-seed' | 'clone-accepted';
   }): Promise<{ created: boolean; blockId?: string }> {
-    const { vendorOrgId, groupId, question, answer, confidence, provenance } =
-      args;
+    const { vendorOrgId, groupId, question, answer, confidence, provenance } = args;
 
-    const hash = createHash('sha256')
-      .update(`${question}\n${answer}`)
-      .digest('hex');
+    const hash = createHash('sha256').update(`${question}\n${answer}`).digest('hex');
     const externalSource = `${provenance}:${hash}`;
 
     const existing = await this.prisma.ideaBlock.findFirst({
@@ -290,8 +210,6 @@ export class SupportContourService {
       select: { id: true },
     });
 
-    // Эмбеддинг — best-effort: при отказе провайдера блок остаётся без
-    // вектора (ранжируется по recency). Не валим создание.
     const vec = await this.embeddings.embedQuery(`${question} ${answer}`);
     if (vec && vec.length > 0) {
       await this.prisma.$executeRawUnsafe(
@@ -308,11 +226,6 @@ export class SupportContourService {
     return { created: true, blockId: block.id };
   }
 
-  /**
-   * Резолвит вендор-Org + группу контура (оба обязательны). vendorOrgId нет →
-   * деск выключен; группы нет → контур не инициализирован (Ф1 seed не
-   * прогонялся). Используется мутирующими методами (add/remove/seed).
-   */
   private async resolveContour(): Promise<{
     vendorOrgId: string;
     groupId: string;

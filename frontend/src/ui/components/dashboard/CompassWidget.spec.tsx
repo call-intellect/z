@@ -1,48 +1,40 @@
-/**
- * Тесты CompassWidget (ТЗ-B Фаза 3).
- *
- * Главное — чистая функция `computeCompass` (формула вектора §5): фокус,
- * угол (0=север / 90=восток / 180=юг), длина и тон. Плюс smoke на empty-state
- * виджета (русская подпись «Цель ещё не задана…»).
- */
-import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 
-import { CompassWidget, computeCompass } from './CompassWidget';
+import { CompassWidget, computeCompass } from "./CompassWidget";
 
-describe('computeCompass', () => {
-  it('всё к цели → север (focus=1, angle≈0, success)', () => {
+describe("computeCompass", () => {
+  it("всё к цели → север (focus=1, angle≈0, success)", () => {
     const v = computeCompass(10, 0, 10);
     expect(v.focus).toBe(1);
     expect(v.angleDeg).toBeCloseTo(0, 5);
     expect(v.lengthRatio).toBe(1);
-    expect(v.tone).toBe('success');
+    expect(v.tone).toBe("success");
   });
 
-  it('равный дрейф → восток (focus=0, angle≈90, warning)', () => {
+  it("равный дрейф → восток (focus=0, angle≈90, warning)", () => {
     const v = computeCompass(5, 5, 10);
     expect(v.focus).toBe(0);
     expect(v.angleDeg).toBeCloseTo(90, 5);
-    expect(v.tone).toBe('warning');
+    expect(v.tone).toBe("warning");
   });
 
-  it('всё против → юг (focus=−1, angle≈180, danger)', () => {
+  it("всё против → юг (focus=−1, angle≈180, danger)", () => {
     const v = computeCompass(0, 10, 10);
     expect(v.focus).toBe(-1);
     expect(v.angleDeg).toBeCloseTo(180, 5);
-    expect(v.tone).toBe('danger');
+    expect(v.tone).toBe("danger");
   });
 
-  it('нет активности → volume=0 → focus=0, angle=90, lengthRatio=0', () => {
+  it("нет активности → volume=0 → focus=0, angle=90, lengthRatio=0", () => {
     const v = computeCompass(0, 0, 0);
     expect(v.focus).toBe(0);
     expect(v.angleDeg).toBe(90);
     expect(v.lengthRatio).toBe(0);
-    expect(v.tone).toBe('warning');
+    expect(v.tone).toBe("warning");
   });
 
-  it('грязные входы (net/volume>1) → focus клампится в [−1, 1], angle ≥ 0', () => {
-    // pro=12, contra=−2: volume=10, net=14 → net/volume=1.4 → клампим до 1.
+  it("грязные входы (net/volume>1) → focus клампится в [−1, 1], angle ≥ 0", () => {
     const v = computeCompass(12, -2, 10);
     expect(v.focus).toBeLessThanOrEqual(1);
     expect(v.focus).toBeGreaterThanOrEqual(-1);
@@ -51,8 +43,7 @@ describe('computeCompass', () => {
     expect(v.angleDeg).toBeCloseTo(0, 5);
   });
 
-  it('обратный клампинг — net сильно отрицателен → focus=−1, angle≤180', () => {
-    // pro=−2, contra=12: volume=10, net=−14 → −1.4 → клампим до −1.
+  it("обратный клампинг — net сильно отрицателен → focus=−1, angle≤180", () => {
     const v = computeCompass(-2, 12, 10);
     expect(v.focus).toBe(-1);
     expect(v.angleDeg).toBeLessThanOrEqual(180);
@@ -60,8 +51,8 @@ describe('computeCompass', () => {
   });
 });
 
-describe('CompassWidget', () => {
-  it('пустые данные → русский empty-state, без ошибок рендера', () => {
+describe("CompassWidget", () => {
+  it("пустые данные → русский empty-state, без ошибок рендера", () => {
     render(
       <CompassWidget
         data={{ goals: [], primaryGoalId: null }}
@@ -72,32 +63,30 @@ describe('CompassWidget', () => {
     expect(screen.getByText(/Цель ещё не задана/)).toBeInTheDocument();
   });
 
-  it('ошибка → текст ошибки виден', () => {
-    render(
-      <CompassWidget data={null} loading={false} error="Сбой загрузки" />,
-    );
-    expect(screen.getByText('Сбой загрузки')).toBeInTheDocument();
+  it("ошибка → текст ошибки виден", () => {
+    render(<CompassWidget data={null} loading={false} error="Сбой загрузки" />);
+    expect(screen.getByText("Сбой загрузки")).toBeInTheDocument();
   });
 
-  it('есть данные → виден заголовок цели и вердикт «Идём к цели»', () => {
+  it("есть данные → виден заголовок цели и вердикт «Идём к цели»", () => {
     render(
       <CompassWidget
         loading={false}
         error={null}
         data={{
-          primaryGoalId: 'g1',
+          primaryGoalId: "g1",
           goals: [
             {
-              goalId: 'g1',
-              goalTitle: 'Выручка квартала',
+              goalId: "g1",
+              goalTitle: "Выручка квартала",
               isPrimary: true,
               proScore: 20,
               contraScore: 2,
               netScore: 18,
               topContributors: [
                 {
-                  personId: 'p1',
-                  personName: 'Иван Петров',
+                  personId: "p1",
+                  personName: "Иван Петров",
                   proScore: 8,
                   contraScore: 1,
                   netScore: 7,
@@ -105,8 +94,8 @@ describe('CompassWidget', () => {
               ],
               byDepartment: [
                 {
-                  departmentId: 'd1',
-                  departmentName: 'Продажи',
+                  departmentId: "d1",
+                  departmentName: "Продажи",
                   proScore: 12,
                   contraScore: 1,
                   netScore: 11,
@@ -117,18 +106,17 @@ describe('CompassWidget', () => {
         }}
       />,
     );
-    expect(screen.getByText('Выручка квартала')).toBeInTheDocument();
-    expect(screen.getAllByText('Идём к цели').length).toBeGreaterThan(0);
-    expect(screen.getByText('Продажи')).toBeInTheDocument();
+    expect(screen.getByText("Выручка квартала")).toBeInTheDocument();
+    expect(screen.getAllByText("Идём к цели").length).toBeGreaterThan(0);
+    expect(screen.getByText("Продажи")).toBeInTheDocument();
   });
 
-  // Данные с двумя целями — для проверки переключателя уровней (Ф4).
   const twoGoalsData = {
-    primaryGoalId: 'g1',
+    primaryGoalId: "g1",
     goals: [
       {
-        goalId: 'g1',
-        goalTitle: 'Выручка квартала',
+        goalId: "g1",
+        goalTitle: "Выручка квартала",
         isPrimary: true,
         proScore: 20,
         contraScore: 2,
@@ -136,8 +124,8 @@ describe('CompassWidget', () => {
         topContributors: [],
         byDepartment: [
           {
-            departmentId: 'd1',
-            departmentName: 'Продажи',
+            departmentId: "d1",
+            departmentName: "Продажи",
             proScore: 12,
             contraScore: 1,
             netScore: 11,
@@ -145,8 +133,8 @@ describe('CompassWidget', () => {
         ],
       },
       {
-        goalId: 'g2',
-        goalTitle: 'Снижение оттока',
+        goalId: "g2",
+        goalTitle: "Снижение оттока",
         isPrimary: false,
         proScore: 3,
         contraScore: 9,
@@ -157,18 +145,17 @@ describe('CompassWidget', () => {
     ],
   };
 
-  it('есть данные → виден переключатель уровней (3 русские подписи)', () => {
+  it("есть данные → виден переключатель уровней (3 русские подписи)", () => {
     render(<CompassWidget loading={false} error={null} data={twoGoalsData} />);
-    expect(screen.getByText('Вся компания')).toBeInTheDocument();
-    expect(screen.getByText('По целям')).toBeInTheDocument();
-    expect(screen.getByText('По спринту недели')).toBeInTheDocument();
+    expect(screen.getByText("Вся компания")).toBeInTheDocument();
+    expect(screen.getByText("По целям")).toBeInTheDocument();
+    expect(screen.getByText("По спринту недели")).toBeInTheDocument();
   });
 
-  it('клик «По целям» → видны заголовки нескольких целей одновременно', () => {
+  it("клик «По целям» → видны заголовки нескольких целей одновременно", () => {
     render(<CompassWidget loading={false} error={null} data={twoGoalsData} />);
-    fireEvent.click(screen.getByText('По целям'));
-    // Сетка целей рендерит обе цели сразу.
-    expect(screen.getByText('Снижение оттока')).toBeInTheDocument();
-    expect(screen.getByText('Выручка квартала')).toBeInTheDocument();
+    fireEvent.click(screen.getByText("По целям"));
+    expect(screen.getByText("Снижение оттока")).toBeInTheDocument();
+    expect(screen.getByText("Выручка квартала")).toBeInTheDocument();
   });
 });

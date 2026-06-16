@@ -4,12 +4,6 @@ import { describe, expect, it } from 'vitest';
 
 import { TableFileParserService } from './table-file-parser.service';
 
-/**
- * Unit-тесты `TableFileParserService` (Smart-tables Фаза 4, Document-to-Table).
- *
- * XLSX-буфер генерируем через сам ExcelJS (writeBuffer), CSV — из inline-строки.
- * Проверяем: headers/rows, выравнивание, неподдерживаемый формат → 400.
- */
 describe('TableFileParserService', () => {
   const svc = new TableFileParserService();
 
@@ -59,21 +53,15 @@ describe('TableFileParserService', () => {
 
     const res = await svc.parseFileToTable({ buffer, filename: 'wide60.xlsx' });
 
-    // Лишние столбцы отброшены до MAX_IMPORT_COLUMNS=50.
     expect(res.headers).toHaveLength(50);
     expect(res.headers[49]).toBe('Кол50');
     expect(res.truncatedColumns).toBe(true);
-    // Ячейки строк тоже обрезаны до 50.
     expect(res.rows[0]).toHaveLength(50);
     expect(res.rows[0]?.[49]).toBe('v50');
   });
 
   it('XLSX: пустые строки данных пропускаются, столбцы выравниваются', async () => {
-    const buffer = await xlsxBuffer([
-      ['A', 'B', 'C'],
-      ['x', 'y', 'z'],
-      ['only-a'], // короткая строка → дополняется ''
-    ]);
+    const buffer = await xlsxBuffer([['A', 'B', 'C'], ['x', 'y', 'z'], ['only-a']]);
 
     const res = await svc.parseFileToTable({ buffer, filename: 'd.xlsx' });
     expect(res.headers).toEqual(['A', 'B', 'C']);
@@ -82,7 +70,8 @@ describe('TableFileParserService', () => {
   });
 
   it('CSV: разбирает заголовки и строки из буфера', async () => {
-    const csv = 'Имя,Email,Телефон\nИван,ivan@example.com,+79990001122\nПётр,petr@example.com,+79993334455\n';
+    const csv =
+      'Имя,Email,Телефон\nИван,ivan@example.com,+79990001122\nПётр,petr@example.com,+79993334455\n';
     const buffer = Buffer.from(csv, 'utf8');
 
     const res = await svc.parseFileToTable({ buffer, filename: 'people.csv' });
@@ -106,9 +95,9 @@ describe('TableFileParserService', () => {
 
   it('неподдерживаемый формат → BadRequestException (unsupported_file_format)', async () => {
     const buffer = Buffer.from('%PDF-1.4 ...', 'utf8');
-    await expect(
-      svc.parseFileToTable({ buffer, filename: 'scan.pdf' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.parseFileToTable({ buffer, filename: 'scan.pdf' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('PDF → отдельное сообщение «появятся позже»', async () => {

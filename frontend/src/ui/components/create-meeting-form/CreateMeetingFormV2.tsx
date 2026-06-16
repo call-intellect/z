@@ -1,17 +1,8 @@
-'use client';
+"use client";
 
-/**
- * Wizard создания встречи в стиле AI Meeting Workspace.
- *
- *   Step 1: «Шаблон» — галерея карточек (системные типы + юзерские templates).
- *   Step 2: «Параметры» — title, чекбоксы блоков отчёта, customPrompt.
- *
- * После создания — модалка с deep-link встречи.
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
@@ -33,47 +24,47 @@ import {
   Users,
   UserSearch,
   Video,
-} from 'lucide-react';
-import useSWR from 'swr';
-import type { LucideIcon } from 'lucide-react';
+} from "lucide-react";
+import useSWR from "swr";
+import type { LucideIcon } from "lucide-react";
 
-import { cardsApi } from '@/api/cards.api';
-import { meetingsApi } from '@/api/meetings.api';
-import { templatesApi } from '@/api/templates.api';
-import { knowledgeAccessApi } from '@/api/knowledge-access.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { templateFromApi, type TemplateDomain } from '@/domain/template';
-import { MEETING_TYPES, type MeetingType } from '@/domain/enums';
+import { cardsApi } from "@/api/cards.api";
+import { meetingsApi } from "@/api/meetings.api";
+import { templatesApi } from "@/api/templates.api";
+import { knowledgeAccessApi } from "@/api/knowledge-access.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { templateFromApi, type TemplateDomain } from "@/domain/template";
+import { MEETING_TYPES, type MeetingType } from "@/domain/enums";
 import {
   CLOSED_GROUP_OPTIONS,
   detectConfidentiality,
   toKnowledgeGroup,
   type ClosedGroupKind,
   type KnowledgeGroupDomain,
-} from '@/domain/knowledge-access';
+} from "@/domain/knowledge-access";
 import {
   VISIBILITY_SCOPE_OPTIONS,
   type GranteeType,
   type VisibilityScope,
-} from '@/domain/meeting';
-import { t } from '@/lib/i18n';
+} from "@/domain/meeting";
+import { t } from "@/lib/i18n";
 
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 import {
   ParticipantPicker,
   type ParticipantPickerValue,
-} from '@/ui/shared/ParticipantPicker';
+} from "@/ui/shared/ParticipantPicker";
 import {
   Dialog,
   DialogContent,
@@ -81,9 +72,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { toast } from '@/ui/shadcn/toast';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dialog";
+import { toast } from "@/ui/shadcn/toast";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const TYPE_ICON: Record<MeetingType, LucideIcon> = {
   team: Users,
@@ -98,22 +89,21 @@ const TYPE_ICON: Record<MeetingType, LucideIcon> = {
 };
 
 type TemplateCard =
-  | { kind: 'system'; type: MeetingType; label: string; description: string }
-  | { kind: 'custom'; template: TemplateDomain };
+  | { kind: "system"; type: MeetingType; label: string; description: string }
+  | { kind: "custom"; template: TemplateDomain };
 
 export function CreateMeetingFormV2() {
   const searchParams = useSearchParams();
-  const cardId = searchParams?.get('cardId') ?? null;
+  const cardId = searchParams?.get("cardId") ?? null;
 
-  // Если в URL `?cardId=...` — подгружаем имя карточки для UI-чипа.
   const { data: cardData } = useSWR(
-    cardId ? ['create-meeting-card', cardId] : null,
+    cardId ? ["create-meeting-card", cardId] : null,
     () => (cardId ? cardsApi.get(cardId) : null),
     { revalidateOnFocus: false },
   );
 
   const { data: templatesData } = useSWR(
-    'templates-list',
+    "templates-list",
     () => templatesApi.list(),
     { revalidateOnFocus: false },
   );
@@ -121,51 +111,51 @@ export function CreateMeetingFormV2() {
   const userTemplates: TemplateDomain[] = useMemo(
     () =>
       templatesData?.items
-        ? templatesData.items.filter((tmp) => !tmp.isSystem).map(templateFromApi)
+        ? templatesData.items
+            .filter((tmp) => !tmp.isSystem)
+            .map(templateFromApi)
         : [],
     [templatesData],
   );
 
   const cards: TemplateCard[] = useMemo(() => {
     const sys: TemplateCard[] = MEETING_TYPES.map((type) => ({
-      kind: 'system',
+      kind: "system",
       type,
       label: t(`meeting_types.${type}.label`),
       description: t(`meeting_types.${type}.description`),
     }));
     const cus: TemplateCard[] = userTemplates.map((tmpl) => ({
-      kind: 'custom',
+      kind: "custom",
       template: tmpl,
     }));
     return [...sys, ...cus];
   }, [userTemplates]);
 
-  const [step, setStep] = useState<'pick' | 'configure'>('pick');
+  const [step, setStep] = useState<"pick" | "configure">("pick");
   const [selected, setSelected] = useState<TemplateCard | null>(null);
-  const [title, setTitle] = useState('');
+  const [title, setTitle] = useState("");
   const [includeFollowUp, setIncludeFollowUp] = useState(true);
   const [includeTasks, setIncludeTasks] = useState(true);
   const [recordByDefault, setRecordByDefault] = useState(true);
-  // ТЗ 2026-06-06 knowledge-access (Ф7) — закрытость встречи. 'none' = открыто.
-  const [closedGroupKind, setClosedGroupKind] = useState<ClosedGroupKind | 'none'>(
-    'none',
-  );
-  const [customPrompt, setCustomPrompt] = useState('');
+  const [closedGroupKind, setClosedGroupKind] = useState<
+    ClosedGroupKind | "none"
+  >("none");
+  const [customPrompt, setCustomPrompt] = useState("");
   const [showCustomPrompt, setShowCustomPrompt] = useState(false);
   const [invitees, setInvitees] = useState<ParticipantPickerValue[]>([]);
-  // ТЗ Ф4 «Кому видно» — режим видимости знаний встречи. Дефолт «Участникам».
   const [visibilityScope, setVisibilityScope] =
-    useState<VisibilityScope>('participants');
+    useState<VisibilityScope>("participants");
   const [visPeople, setVisPeople] = useState<ParticipantPickerValue[]>([]);
   const [visGroupIds, setVisGroupIds] = useState<Set<string>>(new Set());
   const [visGroups, setVisGroups] = useState<KnowledgeGroupDomain[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [created, setCreated] = useState<{ id: string; url: string } | null>(null);
+  const [created, setCreated] = useState<{ id: string; url: string } | null>(
+    null,
+  );
 
-  // Группы доступа подгружаем лениво — только когда выбран режим «Выбрать людей
-  // и группы». Ошибку глотаем: пикер групп просто не покажется.
   useEffect(() => {
-    if (visibilityScope !== 'custom' || visGroups.length > 0) return;
+    if (visibilityScope !== "custom" || visGroups.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
@@ -180,24 +170,23 @@ export function CreateMeetingFormV2() {
     };
   }, [visibilityScope, visGroups.length]);
 
-  // Гранты для setVisibility (только в custom-режиме).
   const visGrants = useMemo(
     () => [
       ...visPeople
-        .filter((p) => p.type === 'person')
+        .filter((p) => p.type === "person")
         .map((p) => ({
-          granteeType: 'person' as GranteeType,
-          granteeId: p.type === 'person' ? p.personId : '',
+          granteeType: "person" as GranteeType,
+          granteeId: p.type === "person" ? p.personId : "",
         })),
       ...Array.from(visGroupIds).map((id) => ({
-        granteeType: 'group' as GranteeType,
+        granteeType: "group" as GranteeType,
         granteeId: id,
       })),
     ],
     [visPeople, visGroupIds],
   );
 
-  const visCustomEmpty = visibilityScope === 'custom' && visGrants.length === 0;
+  const visCustomEmpty = visibilityScope === "custom" && visGrants.length === 0;
 
   const toggleVisGroup = (id: string) =>
     setVisGroupIds((prev) => {
@@ -209,39 +198,39 @@ export function CreateMeetingFormV2() {
 
   const onPick = (c: TemplateCard) => {
     setSelected(c);
-    setStep('configure');
+    setStep("configure");
   };
 
   const baseType: MeetingType =
-    selected?.kind === 'system'
+    selected?.kind === "system"
       ? selected.type
-      : (selected?.template.baseType ?? 'team');
+      : (selected?.template.baseType ?? "team");
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selected) return;
     if (!title.trim()) {
-      toast.error('Введите название встречи');
+      toast.error("Введите название встречи");
       return;
     }
     if (visCustomEmpty) {
-      toast.error('Выберите, кому видна встреча: хотя бы одного человека или группу');
+      toast.error(
+        "Выберите, кому видна встреча: хотя бы одного человека или группу",
+      );
       return;
     }
     setSubmitting(true);
     try {
-      // Собираем sections-конфиг в customPrompt-tail если кастом-prompt не пуст,
-      // иначе передаём как есть. Бэк сам интерпретирует.
       const promptParts: string[] = [];
       if (customPrompt.trim()) promptParts.push(customPrompt.trim());
-      if (!includeFollowUp) promptParts.push('[no follow-up email]');
-      if (!includeTasks) promptParts.push('[no tasks]');
-      const finalPrompt = promptParts.length > 0 ? promptParts.join('\n\n') : null;
+      if (!includeFollowUp) promptParts.push("[no follow-up email]");
+      if (!includeTasks) promptParts.push("[no tasks]");
+      const finalPrompt =
+        promptParts.length > 0 ? promptParts.join("\n\n") : null;
 
-      // Приглашённые → invitees-контракт бэка (Фаза 2.1).
       const inviteesPayload = invitees.map((v) => ({
-        userId: v.type === 'user' ? v.userId : null,
-        personId: v.type === 'person' ? v.personId : null,
+        userId: v.type === "user" ? v.userId : null,
+        personId: v.type === "person" ? v.personId : null,
         email: v.email ?? null,
         sendVia: v.sendVia ?? [],
       }));
@@ -251,35 +240,34 @@ export function CreateMeetingFormV2() {
         title: title.trim(),
         custom_prompt: finalPrompt,
         record_by_default: recordByDefault,
-        ...(selected.kind === 'custom' ? { templateId: selected.template.id } : {}),
+        ...(selected.kind === "custom"
+          ? { templateId: selected.template.id }
+          : {}),
         ...(cardId ? { card_id: cardId } : {}),
         ...(inviteesPayload.length > 0 ? { invitees: inviteesPayload } : {}),
-        ...(closedGroupKind !== 'none'
+        ...(closedGroupKind !== "none"
           ? { closed_group_kind: closedGroupKind }
           : {}),
       });
 
-      // ТЗ Ф4 «Кому видно». Бэкенд-дефолт = 'participants', поэтому для дефолта
-      // ничего не шлём. Иначе — задаём видимость ДО навигации. Best-effort:
-      // ошибка PATCH не блокирует вход — показываем тост, но продолжаем.
-      if (visibilityScope !== 'participants') {
+      if (visibilityScope !== "participants") {
         try {
           await meetingsApi.setVisibility(result.id, {
             scope: visibilityScope,
-            ...(visibilityScope === 'custom' ? { grants: visGrants } : {}),
+            ...(visibilityScope === "custom" ? { grants: visGrants } : {}),
           });
         } catch (ve) {
           const vmsg =
             ve instanceof ApiError
               ? ve.message
-              : 'Не удалось задать доступ к встрече — поменяйте его на странице встречи.';
+              : "Не удалось задать доступ к встрече — поменяйте его на странице встречи.";
           toast.error(vmsg);
         }
       }
 
       setCreated(result);
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка создания');
+      const msg = humanizeApiError(e, "Ошибка создания");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -296,12 +284,16 @@ export function CreateMeetingFormV2() {
           </Link>
         </Button>
         <div className="flex-1">
-          <h1 className="text-xl font-semibold tracking-tight">Создать встречу</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            Создать встречу
+          </h1>
           <p className="text-sm text-fg-secondary">
-            {step === 'pick'
-              ? 'Шаг 1 из 2 · Выберите шаблон отчёта'
+            {step === "pick"
+              ? "Шаг 1 из 2 · Выберите шаблон отчёта"
               : `Шаг 2 из 2 · ${
-                  selected?.kind === 'custom' ? selected.template.name : 'Параметры встречи'
+                  selected?.kind === "custom"
+                    ? selected.template.name
+                    : "Параметры встречи"
                 }`}
           </p>
         </div>
@@ -312,16 +304,18 @@ export function CreateMeetingFormV2() {
             title="Встреча будет привязана к карточке"
           >
             <FolderKanban size={14} />
-            Карточка: {cardData?.name ?? '…'}
+            Карточка: {cardData?.name ?? "…"}
           </Link>
         )}
       </header>
 
-      {step === 'pick' && (
+      {step === "pick" && (
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {cards.map((c, i) => {
-            const isSystem = c.kind === 'system';
-            const type: MeetingType = isSystem ? c.type : c.template.baseType ?? 'team';
+            const isSystem = c.kind === "system";
+            const type: MeetingType = isSystem
+              ? c.type
+              : (c.template.baseType ?? "team");
             const Icon = TYPE_ICON[type] ?? Sparkles;
             return (
               <button
@@ -329,8 +323,8 @@ export function CreateMeetingFormV2() {
                 type="button"
                 onClick={() => onPick(c)}
                 className={cn(
-                  'group flex flex-col items-start gap-3 rounded-lg border border-border-subtle bg-bg-card p-5 text-left transition-all',
-                  'hover:-translate-y-0.5 hover:border-accent-border hover:shadow-glow-mint',
+                  "group flex flex-col items-start gap-3 rounded-lg border border-border-subtle bg-bg-card p-5 text-left transition-all",
+                  "hover:-translate-y-0.5 hover:border-accent-border hover:shadow-glow-mint",
                 )}
                 style={{ animationDelay: `${i * 30}ms` }}
               >
@@ -351,7 +345,7 @@ export function CreateMeetingFormV2() {
                   <div className="mt-1 text-xs text-fg-secondary">
                     {isSystem
                       ? c.description
-                      : (c.template.description ?? 'Кастомный шаблон отчёта')}
+                      : (c.template.description ?? "Кастомный шаблон отчёта")}
                   </div>
                 </div>
                 <span className="ml-auto mt-auto text-xs text-fg-tertiary group-hover:text-accent">
@@ -363,7 +357,7 @@ export function CreateMeetingFormV2() {
         </section>
       )}
 
-      {step === 'configure' && selected && (
+      {step === "configure" && selected && (
         <form
           onSubmit={onSubmit}
           className="flex flex-col gap-5 rounded-lg border border-border-subtle bg-bg-card p-6"
@@ -371,9 +365,9 @@ export function CreateMeetingFormV2() {
           <div className="flex items-center gap-3 rounded-md border border-accent-border bg-accent-muted px-4 py-3">
             <Sparkles size={14} className="text-accent" />
             <div className="text-sm">
-              Шаблон:{' '}
+              Шаблон:{" "}
               <span className="font-medium text-fg-primary">
-                {selected.kind === 'system'
+                {selected.kind === "system"
                   ? t(`meeting_types.${selected.type}.label`)
                   : selected.template.name}
               </span>
@@ -383,7 +377,7 @@ export function CreateMeetingFormV2() {
               variant="ghost"
               size="sm"
               className="ml-auto"
-              onClick={() => setStep('pick')}
+              onClick={() => setStep("pick")}
             >
               Сменить
             </Button>
@@ -415,18 +409,21 @@ export function CreateMeetingFormV2() {
                   Вести запись автоматически
                 </div>
                 <div className="mt-0.5 text-xs text-fg-tertiary">
-                  Запись стартует при входе хоста. Участники не смогут остановить запись вручную.
+                  Запись стартует при входе хоста. Участники не смогут
+                  остановить запись вручную.
                 </div>
               </div>
             </label>
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="meeting-closed-group">Кто увидит знания встречи</Label>
+            <Label htmlFor="meeting-closed-group">
+              Кто увидит знания встречи
+            </Label>
             <Select
               value={closedGroupKind}
               onValueChange={(v) =>
-                setClosedGroupKind(v as ClosedGroupKind | 'none')
+                setClosedGroupKind(v as ClosedGroupKind | "none")
               }
             >
               <SelectTrigger id="meeting-closed-group">
@@ -445,7 +442,7 @@ export function CreateMeetingFormV2() {
             </Select>
             <p className="text-xs text-fg-tertiary">
               {CLOSED_GROUP_OPTIONS.find((o) => o.value === closedGroupKind)
-                ?.hint ?? ''}
+                ?.hint ?? ""}
             </p>
 
             <ConfidentialityAdvisory
@@ -493,10 +490,10 @@ export function CreateMeetingFormV2() {
             </Select>
             <p className="text-xs text-fg-tertiary">
               {VISIBILITY_SCOPE_OPTIONS.find((o) => o.value === visibilityScope)
-                ?.hint ?? ''}
+                ?.hint ?? ""}
             </p>
 
-            {visibilityScope === 'custom' && (
+            {visibilityScope === "custom" && (
               <div className="mt-1 flex flex-col gap-4 rounded-md border border-border-subtle bg-bg-overlay p-4">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="visibility-people">Люди</Label>
@@ -581,7 +578,7 @@ export function CreateMeetingFormV2() {
               className="self-start text-sm font-medium text-accent hover:text-accent-hover"
               aria-expanded={showCustomPrompt}
             >
-              {showCustomPrompt ? '▾' : '▸'} Дополнительный prompt (опционально)
+              {showCustomPrompt ? "▾" : "▸"} Дополнительный prompt (опционально)
             </button>
             {showCustomPrompt && (
               <Textarea
@@ -598,7 +595,7 @@ export function CreateMeetingFormV2() {
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setStep('pick')}
+              onClick={() => setStep("pick")}
             >
               Назад
             </Button>
@@ -622,13 +619,6 @@ export function CreateMeetingFormV2() {
   );
 }
 
-/**
- * Advisory-подсказка о конфиденциальности (ТЗ 2026-06-06 knowledge-access, Ф7).
- *
- * Лёгкий клиентский эвристик: по типу встречи или словам-маркерам в заголовке
- * предлагает закрыть доступ. Это ПОДСКАЗКА, не замок — решает человек. Не
- * показывается, если пользователь уже выбрал предлагаемый уровень закрытости.
- */
 function ConfidentialityAdvisory({
   meetingType,
   title,
@@ -637,16 +627,15 @@ function ConfidentialityAdvisory({
 }: {
   meetingType: MeetingType;
   title: string;
-  currentValue: ClosedGroupKind | 'none';
+  currentValue: ClosedGroupKind | "none";
   onApply: (kind: ClosedGroupKind) => void;
 }) {
   const hint = detectConfidentiality(meetingType, title);
-  // Не навязываем, если человек уже закрыл встречу нужным образом.
   if (!hint.show || currentValue === hint.suggested) return null;
 
   const suggestedLabel =
     CLOSED_GROUP_OPTIONS.find((o) => o.value === hint.suggested)?.label ??
-    'Закрыть доступ';
+    "Закрыть доступ";
 
   return (
     <div className="flex items-start gap-2.5 rounded-md bg-chip-warning-bg px-3 py-2.5 text-chip-warning-fg">
@@ -684,8 +673,8 @@ function RowItem({
   return (
     <label
       className={cn(
-        'flex items-start gap-2 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2',
-        disabled && 'opacity-60',
+        "flex items-start gap-2 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2",
+        disabled && "opacity-60",
       )}
     >
       <Checkbox
@@ -721,7 +710,7 @@ function CreatedDialog({
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
   return (
@@ -742,7 +731,7 @@ function CreatedDialog({
           </Button>
           <Button variant="outline" onClick={onCopy}>
             {copied ? <Check size={14} /> : <Copy size={14} />}
-            {copied ? 'Скопировано' : 'Скопировать ссылку'}
+            {copied ? "Скопировано" : "Скопировать ссылку"}
           </Button>
           <Button asChild>
             <a href={lobbyUrl} target="_blank" rel="noopener noreferrer">

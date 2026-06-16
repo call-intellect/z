@@ -2,14 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { WeeklyDigestService } from './weekly-digest.service';
 
-/**
- * SBA β-8.1 — WeeklyDigestService unit-тесты.
- *
- *   - aggregate: корректно собирает агрегаты из фикстур.
- *   - generate: при успехе LLM сохраняет связный bodyMarkdown + llmTaskRouteId.
- *   - generate: при провале LLM сохраняет fallback markdown с llmTaskRouteId=null.
- *   - getOrGenerate: идемпотентен по `(tenantId, weekStart)`.
- */
 describe('WeeklyDigestService', () => {
   function buildSvc(overrides: {
     checkIns?: unknown[];
@@ -29,8 +21,6 @@ describe('WeeklyDigestService', () => {
       dailyCheckIn: {
         findMany: vi.fn().mockImplementation(() => {
           const i = checkInCallIndex++;
-          // 0 = checkIns текущей недели (sentiment-filtered);
-          // 1 = blockerCheckIns (blockersJson IS NOT NULL).
           if (i === 0) return Promise.resolve(overrides.checkIns ?? []);
           return Promise.resolve(overrides.blockerCheckIns ?? []);
         }),
@@ -48,26 +38,35 @@ describe('WeeklyDigestService', () => {
       decision: {
         findMany: vi.fn().mockResolvedValue(overrides.decisions ?? []),
       },
-      // TZ-1 Ф4.A — секция «Идеи недели» в недельном дайджесте.
       idea: {
         findMany: vi.fn().mockResolvedValue(overrides.ideas ?? []),
       },
       weeklyOperationsDigest: {
         findUnique: vi.fn().mockResolvedValue(overrides.existing ?? null),
-        upsert: vi.fn().mockImplementation(({ create, update }: { create: Record<string, unknown>; update: Record<string, unknown> }) => {
-          const row = overrides.existing ? { ...update } : { ...create };
-          return Promise.resolve({
-            id: 'wd1',
-            tenantId: 't1',
-            weekStart: '2026-05-18',
-            weekEnd: '2026-05-24',
-            bodyMarkdown: (row.bodyMarkdown as string) ?? '',
-            metricsJson: row.metricsJson,
-            sourcesJson: row.sourcesJson,
-            llmTaskRouteId: row.llmTaskRouteId ?? null,
-            createdAt: new Date('2026-05-25T08:00:00Z'),
-          });
-        }),
+        upsert: vi
+          .fn()
+          .mockImplementation(
+            ({
+              create,
+              update,
+            }: {
+              create: Record<string, unknown>;
+              update: Record<string, unknown>;
+            }) => {
+              const row = overrides.existing ? { ...update } : { ...create };
+              return Promise.resolve({
+                id: 'wd1',
+                tenantId: 't1',
+                weekStart: '2026-05-18',
+                weekEnd: '2026-05-24',
+                bodyMarkdown: (row.bodyMarkdown as string) ?? '',
+                metricsJson: row.metricsJson,
+                sourcesJson: row.sourcesJson,
+                llmTaskRouteId: row.llmTaskRouteId ?? null,
+                createdAt: new Date('2026-05-25T08:00:00Z'),
+              });
+            },
+          ),
       },
     };
     const llm = {
@@ -84,11 +83,7 @@ describe('WeeklyDigestService', () => {
       incCooWeeklyDigestGenerated: vi.fn(),
       incCooWeeklyDigestFailed: vi.fn(),
     };
-    const svc = new WeeklyDigestService(
-      prisma as never,
-      llm as never,
-      metrics as never,
-    );
+    const svc = new WeeklyDigestService(prisma as never, llm as never, metrics as never);
     return { svc, prisma, llm, metrics };
   }
 
@@ -120,7 +115,6 @@ describe('WeeklyDigestService', () => {
     expect(result.metrics.greenShare).toBeCloseTo(0.5);
     expect(result.metrics.yellowShare).toBeCloseTo(0.25);
     expect(result.metrics.redShare).toBeCloseTo(0.25);
-    // «нет доступа к s3» и «нет доступа к S3» сгруппировались по lowercase ключу.
     const blocker = result.metrics.topBlockers.find((b) =>
       b.text.toLowerCase().includes('нет доступа'),
     );
@@ -162,7 +156,6 @@ describe('WeeklyDigestService', () => {
     expect(metrics.incCooWeeklyDigestFailed).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'llm_failed' }),
     );
-    // generated тоже инкрементится (сухой вариант — это всё ещё сохранённый дайджест).
     expect(metrics.incCooWeeklyDigestGenerated).toHaveBeenCalledOnce();
   });
 

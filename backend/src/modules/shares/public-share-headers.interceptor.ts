@@ -7,14 +7,6 @@ import {
 import type { Response } from 'express';
 import { type Observable, tap } from 'rxjs';
 
-/**
- * Глобально-локальный интерцептор для публичных share-эндпоинтов.
- * Ставит заголовки безопасности до того, как Nest сериализует payload.
- *
- *   - `Referrer-Policy: no-referrer`
- *   - `X-Robots-Tag: noindex, nofollow, noarchive`
- *   - `Cache-Control: private, no-store`
- */
 @Injectable()
 export class PublicShareHeadersInterceptor implements NestInterceptor {
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {

@@ -5,20 +5,6 @@ import type { Segment } from '../services/segment-builder.service';
 
 import { BlockIngestWorker } from './block-ingest.worker';
 
-/**
- * Report-to-graph Ф4 ГАРД A — пониженный trust блоков из отчёта встречи.
- *
- * Тест дёргает приватный `persistBlock` через any-cast (как
- * block-ingest.subject.spec.ts) и проверяет, какие данные ушли в
- * `tx.ideaBlock.create`:
- *   - report-блок (`event.sourceType='meeting_report'`): confidence capped
- *     по `knowledge.reportBlockConfidenceCap` (fallback 0.6), `primarySource='report'`,
- *     `dynamicScore=0.7`.
- *   - транскриптный блок (`event.sourceType='meeting'`): ПОБИТОВО прежнее —
- *     confidence как из LLM, `primarySource='transcript'`, dynamicScore НЕ
- *     передаётся (дефолт схемы 1.0).
- */
-
 function buildFakeTx() {
   const create = vi.fn(async (a: { data: Record<string, unknown> }) => ({
     id: 'block-1',
@@ -47,8 +33,6 @@ function buildWorker(opts: { cap?: number } = {}) {
     ideaBlockEntity: { upsert: vi.fn(async () => ({})) },
   } as unknown;
 
-  // getDynamic: cap для report; subjectAttribution* возвращаем false, чтобы
-  // не уходить в attributeSubject (signalType=decision не reasoning по-умолч.).
   const getDynamic = vi.fn(async (key: string, _env?: unknown, def?: unknown) => {
     if (key === 'knowledge.reportBlockConfidenceCap') {
       return opts.cap ?? (def as number);
@@ -61,20 +45,20 @@ function buildWorker(opts: { cap?: number } = {}) {
   } as unknown;
 
   const worker = new BlockIngestWorker(
-    {} as never, // redis
-    prisma as never, // prisma
-    {} as never, // s3
-    {} as never, // segments
-    {} as never, // extractor
-    {} as never, // embeddings
-    {} as never, // entities
-    {} as never, // coreQueue
-    {} as never, // gate
-    {} as never, // graph
-    { incSubjectAttribution: vi.fn() } as never, // metrics
-    {} as never, // axisClassifier
-    cfg as never, // cfg
-    {} as never, // blockAccessDeriver
+    {} as never,
+    prisma as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { incSubjectAttribution: vi.fn() } as never,
+    {} as never,
+    cfg as never,
+    {} as never,
   );
   return { worker, create, getDynamic };
 }
@@ -112,19 +96,11 @@ const meetingEvent = {
   dataClass: 'internal',
 } as never;
 
-const segments: Segment[] = [
-  { startMs: 0, endMs: 0, speakers: [], text: 'x' },
-];
+const segments: Segment[] = [{ startMs: 0, endMs: 0, speakers: [], text: 'x' }];
 
-type PersistArg = Parameters<
-  (a: unknown) => Promise<string | null>
->[0];
+type PersistArg = Parameters<(a: unknown) => Promise<string | null>>[0];
 
-async function callPersist(
-  worker: BlockIngestWorker,
-  event: unknown,
-  block: ExtractedBlock,
-) {
+async function callPersist(worker: BlockIngestWorker, event: unknown, block: ExtractedBlock) {
   await (
     worker as unknown as { persistBlock: (a: PersistArg) => Promise<string | null> }
   ).persistBlock({
@@ -143,13 +119,9 @@ describe('BlockIngestWorker — Ф4 ГАРД A (report trust cap)', () => {
     const { worker, create, getDynamic } = buildWorker();
     await callPersist(worker, reportEvent, buildBlock({ confidence: 0.92 }));
 
-    expect(getDynamic).toHaveBeenCalledWith(
-      'knowledge.reportBlockConfidenceCap',
-      undefined,
-      0.6,
-    );
+    expect(getDynamic).toHaveBeenCalledWith('knowledge.reportBlockConfidenceCap', undefined, 0.6);
     const data = create.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(String(data.confidence)).toBe('0.6'); // min(0.92, 0.6) → 0.600
+    expect(String(data.confidence)).toBe('0.6');
     expect(data.primarySource).toBe('report');
     expect(String(data.dynamicScore)).toBe('0.7');
   });
@@ -159,7 +131,7 @@ describe('BlockIngestWorker — Ф4 ГАРД A (report trust cap)', () => {
     await callPersist(worker, reportEvent, buildBlock({ confidence: 0.3 }));
 
     const data = create.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(String(data.confidence)).toBe('0.3'); // min(0.3, 0.6) → 0.300
+    expect(String(data.confidence)).toBe('0.3');
     expect(data.primarySource).toBe('report');
   });
 
@@ -167,16 +139,14 @@ describe('BlockIngestWorker — Ф4 ГАРД A (report trust cap)', () => {
     const { worker, create, getDynamic } = buildWorker();
     await callPersist(worker, meetingEvent, buildBlock({ confidence: 0.92 }));
 
-    // cap НЕ читается на транскриптном пути (isReport=false).
     expect(getDynamic).not.toHaveBeenCalledWith(
       'knowledge.reportBlockConfidenceCap',
       undefined,
       0.6,
     );
     const data = create.mock.calls[0]![0].data as Record<string, unknown>;
-    expect(String(data.confidence)).toBe('0.92'); // дословно из LLM (0.920)
+    expect(String(data.confidence)).toBe('0.92');
     expect(data.primarySource).toBe('transcript');
-    // dynamicScore НЕ должен присутствовать в create-data (дефолт схемы 1.0).
     expect('dynamicScore' in data).toBe(false);
   });
 

@@ -7,20 +7,6 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { TableAgentService } from './table-agent.service';
 
-/**
- * Unit-тесты `TableAgentService` (Smart-tables Text-to-Schema, Фаза 1).
- *
- * LLMRouter.call() мокается через vi.fn() с mockResolvedValueOnce для 3
- * последовательных pass'ов (draft / architect / entity-check). Prisma не
- * используется (getAvailableSyncTypes на Фазе 1 не ходит в БД).
- *
- * Случаи (из ТЗ §8):
- *  (a) успешный happy-path — ≥3 колонки, ровно одна isPrimary, валидные типы.
- *  (b) hallucinated column type — невалидный 'magic' отброшен/заменён на text.
- *  (c) no entity match — entitySync.type вне available -> null.
- *  (d) инвариант: 0 primary в ответе LLM -> ровно одна isPrimary на выходе.
- *  (e) невалидный JSON на pass-1 -> BadRequestException.
- */
 describe('TableAgentService', () => {
   const TENANT = 'org-1';
 
@@ -29,7 +15,6 @@ describe('TableAgentService', () => {
   let prisma: PrismaService;
   let svc: TableAgentService;
 
-  /** Хелпер: мок-ответ LlmRouter (только text важен). */
   function reply(obj: unknown) {
     return {
       text: JSON.stringify(obj),
@@ -61,9 +46,9 @@ describe('TableAgentService', () => {
       ],
     };
     call
-      .mockResolvedValueOnce(reply(draft)) // pass1 draft
-      .mockResolvedValueOnce(reply(draft)) // pass2 architect
-      .mockResolvedValueOnce(reply(draft)); // pass3 entity-check
+      .mockResolvedValueOnce(reply(draft))
+      .mockResolvedValueOnce(reply(draft))
+      .mockResolvedValueOnce(reply(draft));
 
     const out = await svc.inferSchemaFromText({
       tenantId: TENANT,
@@ -78,7 +63,6 @@ describe('TableAgentService', () => {
     for (const p of out.properties) {
       expect(['text', 'phone', 'currency']).toContain(p.type);
     }
-    // Проверим cache-friendly contract: json_object responseFormat.
     const firstCallArg = call.mock.calls[0]?.[0];
     expect(firstCallArg).toMatchObject({
       taskType: 'table-infer-schema',
@@ -108,7 +92,6 @@ describe('TableAgentService', () => {
 
     const types = out.properties.map((p) => p.type);
     expect(types).not.toContain('magic');
-    // Невалидный 'magic' заменён на 'text'.
     const magicCol = out.properties.find((p) => p.name === 'Магия');
     expect(magicCol?.type).toBe('text');
   });
@@ -116,11 +99,9 @@ describe('TableAgentService', () => {
   it('(c) no entity match: entitySync.type вне available -> null', async () => {
     const draft = {
       name: 'Проекты',
-      entitySync: { type: 'project' }, // нет такого типа
+      entitySync: { type: 'project' },
       properties: [{ name: 'Название', type: 'text', isPrimary: true }],
     };
-    // entity-check вернул всё равно 'project' (галлюцинация) — бэкенд обязан
-    // обнулить, т.к. 'project' не входит в availableSyncTypes.
     call
       .mockResolvedValueOnce(reply(draft))
       .mockResolvedValueOnce(reply(draft))
@@ -155,14 +136,10 @@ describe('TableAgentService', () => {
 
     const primaries = out.properties.filter((p) => p.isPrimary);
     expect(primaries).toHaveLength(1);
-    // Первая колонка стала primary.
     expect(out.properties[0]?.isPrimary).toBe(true);
   });
 
   it('(e) невалидный JSON на pass-1 -> BadRequestException (R1: 3 ретрая при cfg=undefined)', async () => {
-    // Мок отдаёт невалидный текст только первый раз; последующие вызовы вернут
-    // undefined → callJson вернёт null → итог BadRequestException, но DRAFT
-    // вызван 3 раза (table.agent.draft_max_attempts def=3, cfg отсутствует).
     call.mockResolvedValueOnce({
       text: 'это не json вовсе',
       modelUsed: 'deepseek:deepseek-v4-pro',
@@ -178,7 +155,6 @@ describe('TableAgentService', () => {
         userPrompt: 'что-то',
       }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // DRAFT ретраится 3 раза (architect/entity не вызываются — фейл до них).
     expect(call).toHaveBeenCalledTimes(3);
   });
 
@@ -189,7 +165,6 @@ describe('TableAgentService', () => {
       properties: [{ name: 'Название', type: 'text', isPrimary: true }],
     };
     call
-      // 1-я попытка DRAFT: невалидный JSON → null → ретрай
       .mockResolvedValueOnce({
         text: 'не json',
         modelUsed: 'deepseek:deepseek-v4-pro',
@@ -198,11 +173,8 @@ describe('TableAgentService', () => {
         cachedTokens: 0,
         durationMs: 1,
       })
-      // 2-я попытка DRAFT: валидно
       .mockResolvedValueOnce(reply(draft))
-      // architect
       .mockResolvedValueOnce(reply(draft))
-      // entity-check
       .mockResolvedValueOnce(reply(draft));
 
     const out = await svc.inferSchemaFromText({
@@ -211,20 +183,12 @@ describe('TableAgentService', () => {
     });
 
     expect(out.name).toBe('Клиенты');
-    // DRAFT (table-infer-schema) вызван дважды.
-    const draftCalls = call.mock.calls.filter(
-      (c) => c[0]?.taskType === 'table-infer-schema',
-    );
+    const draftCalls = call.mock.calls.filter((c) => c[0]?.taskType === 'table-infer-schema');
     expect(draftCalls).toHaveLength(2);
-    // Всего 4 вызова: draft-fail, draft-ok, architect, entity.
     expect(call).toHaveBeenCalledTimes(4);
   });
 });
 
-/**
- * Document-to-Table (Фаза 4) — inferSchemaFromTabular / findSimilarTables /
- * linkRowsToEntities.
- */
 describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
   const TENANT = 'org-1';
 
@@ -246,7 +210,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const prisma = {} as unknown as PrismaService;
       const svc = new TableAgentService(llm, prisma);
 
-      // LLM вернул только 2 колонки, а headers — 3 → выравнивание дополнит до 3.
       const draft = {
         name: 'Клиенты',
         entitySync: { type: 'org' },
@@ -267,15 +230,8 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       });
 
       expect(out.properties).toHaveLength(3);
-      // Имена строго по заголовкам файла.
-      expect(out.properties.map((p) => p.name)).toEqual([
-        'Название',
-        'Сумма',
-        'Стадия',
-      ]);
-      // Третья (отсутствовавшая у LLM) колонка — text.
+      expect(out.properties.map((p) => p.name)).toEqual(['Название', 'Сумма', 'Стадия']);
       expect(out.properties[2]?.type).toBe('text');
-      // Ровно одна isPrimary.
       expect(out.properties.filter((p) => p.isPrimary)).toHaveLength(1);
       expect(out.properties[0]?.isPrimary).toBe(true);
     });
@@ -343,9 +299,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       });
 
       expect(out.properties.find((p) => p.name === 'Дата')?.type).toBe('date');
-      expect(out.properties.find((p) => p.name === 'Сумма')?.type).toBe(
-        'currency',
-      );
+      expect(out.properties.find((p) => p.name === 'Сумма')?.type).toBe('currency');
     });
 
     it('(R4) longtext upgrade: длинные значения text (≥50% >80 симв) → longtext', async () => {
@@ -389,7 +343,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
             name: 'Стадия',
             type: 'selectSingle',
             isPrimary: false,
-            // LLM выдал только «Лид» (без «Переговоры» и «Отказ»).
             config: {
               options: [{ id: 'opt-1', name: 'Лид', color: 'info' }],
             },
@@ -420,10 +373,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const refusal = opts.find((o) => o.name === 'Отказ');
       expect(refusal).toBeDefined();
       expect(refusal?.id).toMatch(/^opt-\d+$/);
-      expect(['info', 'warning', 'success', 'danger', 'neutral']).toContain(
-        refusal?.color,
-      );
-      // Исходная опция LLM НЕ переименована / не перекрашена.
+      expect(['info', 'warning', 'success', 'danger', 'neutral']).toContain(refusal?.color);
       const lead = opts.find((o) => o.name === 'Лид');
       expect(lead).toEqual({ id: 'opt-1', name: 'Лид', color: 'info' });
     });
@@ -459,7 +409,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       });
 
       const opts = (out.properties[0]?.config?.options ?? []) as unknown[];
-      // Не выросло: осталась исходная единственная опция LLM.
       expect(opts).toHaveLength(1);
     });
 
@@ -505,10 +454,9 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const embeddings = { embed } as unknown as {
         embed: (texts: string[]) => Promise<number[][]>;
       };
-      // ОДИН batch-вызов: [proposed, existing] — вектора почти одинаковые.
       embed.mockResolvedValueOnce([
-        [1, 0, 0], // предложенная (индекс 0)
-        [0.99, 0.01, 0], // существующая (индекс 1)
+        [1, 0, 0],
+        [0.99, 0.01, 0],
       ]);
       const prisma = {
         table: {
@@ -556,16 +504,17 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const embeddings = { embed } as unknown as {
         embed: (texts: string[]) => Promise<number[][]>;
       };
-      // ОДИН batch-вызов: [proposed, existing] — ортогональны → cosine 0.
       embed.mockResolvedValueOnce([
         [1, 0, 0],
         [0, 1, 0],
       ]);
       const prisma = {
         table: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'tbl-2', name: 'Риски', properties: [{ name: 'Описание' }] },
-          ]),
+          findMany: vi
+            .fn()
+            .mockResolvedValue([
+              { id: 'tbl-2', name: 'Риски', properties: [{ name: 'Описание' }] },
+            ]),
         },
       } as unknown as PrismaService;
       const cfg = {
@@ -605,10 +554,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
           ]),
         },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
       const out = await svc.findSimilarTables({
         tenantId: TENANT,
         schema: {
@@ -619,7 +565,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
           properties: [{ name: 'Название', type: 'text', isPrimary: true }],
         },
       });
-      // jaccard = 1.0 ≥ fallback 0.6 → кандидат найден без embeddings.
       expect(out).toHaveLength(1);
       expect(out[0]?.tableId).toBe('tbl-9');
       expect(out[0]?.cosine).toBeCloseTo(1, 5);
@@ -629,10 +574,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const prisma = {
         table: { findMany: vi.fn().mockResolvedValue([]) },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
       const out = await svc.findSimilarTables({
         tenantId: TENANT,
         schema: {
@@ -651,7 +593,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const embeddings = { embed } as unknown as {
         embed: (texts: string[]) => Promise<number[][]>;
       };
-      // Ортогональные вектора → cosine 0, но колонки совпадают полностью.
       embed.mockResolvedValueOnce([
         [1, 0, 0],
         [0, 1, 0],
@@ -673,11 +614,8 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
           ]),
         },
       } as unknown as PrismaService;
-      // cfg отвечает дефолтом на любой ключ: dedup_threshold→0.85, jaccard→0.6.
       const cfg = {
-        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
-          Promise.resolve(def),
-        ),
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) => Promise.resolve(def)),
       } as unknown as TypedConfigService;
 
       const svc = new TableAgentService(
@@ -706,7 +644,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
 
       expect(out).toHaveLength(1);
       expect(out[0]?.name).toBe('Идеи и бэклог');
-      // score = max(cosine≈0, jaccard=1.0) = 1.0.
       expect(out[0]?.cosine).toBeCloseTo(1, 5);
     });
 
@@ -721,15 +658,15 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       ]);
       const prisma = {
         table: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'tbl-x', name: 'Риски', properties: [{ name: 'Описание' }] },
-          ]),
+          findMany: vi
+            .fn()
+            .mockResolvedValue([
+              { id: 'tbl-x', name: 'Риски', properties: [{ name: 'Описание' }] },
+            ]),
         },
       } as unknown as PrismaService;
       const cfg = {
-        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
-          Promise.resolve(def),
-        ),
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) => Promise.resolve(def)),
       } as unknown as TypedConfigService;
 
       const svc = new TableAgentService(
@@ -750,7 +687,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
         },
       });
 
-      // jaccard = 0 (нет общих колонок), cosine = 0 → нет кандидата.
       expect(out).toEqual([]);
     });
 
@@ -759,7 +695,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const embeddings = { embed } as unknown as {
         embed: (texts: string[]) => Promise<number[][]>;
       };
-      // Почти одинаковые вектора → cosine ≥ 0.85.
       embed.mockResolvedValueOnce([
         [1, 0, 0],
         [0.99, 0.01, 0],
@@ -770,16 +705,13 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
             {
               id: 'tbl-sem',
               name: 'Похожая по смыслу',
-              // Колонки полностью другие → jaccard = 0.
               properties: [{ name: 'Описание' }, { name: 'Комментарий' }],
             },
           ]),
         },
       } as unknown as PrismaService;
       const cfg = {
-        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) =>
-          Promise.resolve(def),
-        ),
+        getDynamic: vi.fn((_key: string, _scope: unknown, def: number) => Promise.resolve(def)),
       } as unknown as TypedConfigService;
 
       const svc = new TableAgentService(
@@ -805,34 +737,28 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
 
       expect(out).toHaveLength(1);
       expect(out[0]?.tableId).toBe('tbl-sem');
-      // Прошёл по cosine (≥0.85), хотя jaccard = 0.
       expect(out[0]?.cosine).toBeGreaterThanOrEqual(0.85);
     });
   });
 
   describe('linkRowsToEntities', () => {
     it('совпадение по canonicalName (без учёта регистра) → entityId; без — null', async () => {
-      const findMany = vi.fn().mockResolvedValue([
-        { id: 'ent-1', canonicalName: 'ООО Ромашка', aliases: [] },
-      ]);
+      const findMany = vi
+        .fn()
+        .mockResolvedValue([{ id: 'ent-1', canonicalName: 'ООО Ромашка', aliases: [] }]);
       const prisma = {
         entity: { findMany },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
 
       const out = await svc.linkRowsToEntities({
         tenantId: TENANT,
         entitySync: { type: 'org' },
-        // регистр отличается от canonicalName — матч всё равно обязан сработать.
         primaryValues: ['ооо ромашка', 'Неизвестная'],
       });
 
       expect(out.entityIds).toEqual(['ent-1', null]);
       expect(out.linkedCount).toBe(1);
-      // Один batch-запрос на весь набор (не N+1).
       expect(findMany).toHaveBeenCalledTimes(1);
     });
 
@@ -847,15 +773,11 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const prisma = {
         entity: { findMany },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
 
       const out = await svc.linkRowsToEntities({
         tenantId: TENANT,
         entitySync: { type: 'org' },
-        // совпадение с alias, но в другом регистре.
         primaryValues: ['beta llc'],
       });
 
@@ -868,10 +790,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const prisma = {
         entity: { findMany },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
 
       const out = await svc.linkRowsToEntities({
         tenantId: TENANT,
@@ -885,16 +804,13 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
     });
 
     it('одинаковые имена → один batch-запрос, все привязаны', async () => {
-      const findMany = vi.fn().mockResolvedValue([
-        { id: 'ent-9', canonicalName: 'Бета', aliases: [] },
-      ]);
+      const findMany = vi
+        .fn()
+        .mockResolvedValue([{ id: 'ent-9', canonicalName: 'Бета', aliases: [] }]);
       const prisma = {
         entity: { findMany },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
 
       const out = await svc.linkRowsToEntities({
         tenantId: TENANT,
@@ -904,7 +820,6 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
 
       expect(out.entityIds).toEqual(['ent-9', 'ent-9', 'ent-9']);
       expect(out.linkedCount).toBe(3);
-      // Один batch-запрос на весь импорт (не per-value).
       expect(findMany).toHaveBeenCalledTimes(1);
     });
 
@@ -913,10 +828,7 @@ describe('TableAgentService — Document-to-Table (Фаза 4)', () => {
       const prisma = {
         entity: { findMany },
       } as unknown as PrismaService;
-      const svc = new TableAgentService(
-        {} as unknown as LlmRouterService,
-        prisma,
-      );
+      const svc = new TableAgentService({} as unknown as LlmRouterService, prisma);
 
       const out = await svc.linkRowsToEntities({
         tenantId: TENANT,

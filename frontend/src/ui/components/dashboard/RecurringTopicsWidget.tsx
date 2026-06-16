@@ -1,30 +1,16 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { CircleHelp, Repeat } from 'lucide-react';
+import Link from "next/link";
+import { CircleHelp, Repeat } from "lucide-react";
 
-import type { PulsePatternRecurringTopicApi } from '@/domain/pulse-patterns';
+import type { PulsePatternRecurringTopicApi } from "@/domain/pulse-patterns";
 import {
   MiniBarRow,
   MiniSparkline,
   autoTone,
-} from '@/ui/components/dashboard/charts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-
-/**
- * RecurringTopicsWidget (Pulse Wave 6 §6.2) — «Что мы обсуждаем по кругу».
- *
- * Топ-N тем без implemented Decision из последних snapshot'ов
- * `RecurringTopic`. Кликом — на страницу темы (если есть themeId).
- *
- * Полировка (Фаза 3 ТЗ dashboards-wow-polish, 2026-06-01):
- *   - Под заголовком — общий `MiniSparkline` по mentionCount всех тем
- *     (визуальная плотность; временной ряд в API не приходит).
- *   - Справа от каждой темы — `MiniBarRow` по `mentionCount`. Max —
- *     максимум по показанному списку. Тон — авто: ratio>0.7 → danger,
- *     0.3..0.7 → warning, ≥0 → success.
- */
+} from "@/ui/components/dashboard/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 type Props = {
   data: PulsePatternRecurringTopicApi | null;

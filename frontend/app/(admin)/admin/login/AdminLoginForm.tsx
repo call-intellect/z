@@ -1,25 +1,21 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 
-import { adminApi } from '@/api/admin.api';
-import { ApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { adminApi } from "@/api/admin.api";
+import { ApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Форма admin-login. Использует backend `/api/v1/auth/admin-login`
- * (через `adminApi.adminLogin`) — отдельный flow от accounts/login.
- */
 export function AdminLoginForm() {
   const router = useRouter();
   const { refresh } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -31,12 +27,12 @@ export function AdminLoginForm() {
     try {
       await adminApi.adminLogin(email.trim(), password);
       await refresh();
-      router.replace('/admin');
+      router.replace("/admin");
     } catch (err) {
       if (err instanceof ApiError) {
-        setErrorMessage('Неверный email или пароль.');
+        setErrorMessage("Неверный email или пароль.");
       } else {
-        setErrorMessage('Что-то пошло не так.');
+        setErrorMessage("Что-то пошло не так.");
       }
       setSubmitting(false);
     }
@@ -78,7 +74,7 @@ export function AdminLoginForm() {
             </p>
           ) : null}
           <Button type="submit" disabled={submitting} className="w-full">
-            {submitting ? 'Входим…' : 'Войти'}
+            {submitting ? "Входим…" : "Войти"}
           </Button>
         </form>
       </CardContent>

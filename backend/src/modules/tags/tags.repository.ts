@@ -40,14 +40,6 @@ export class TagsRepository {
     return this.prisma.tag.delete({ where: { id } });
   }
 
-  /**
-   * Заменяет связь Meeting↔Tag в одной транзакции:
-   *   1. Удаляет все MeetingTag для meetingId.
-   *   2. Создаёт по одному MeetingTag для каждого валидированного tagId.
-   *
-   * Передавать сюда нужно уже отвалидированный набор тегов (все принадлежат
-   * userId и существуют). Иначе FK или уникальность могут упасть.
-   */
   async setMeetingTags(meetingId: string, tagIds: string[]): Promise<void> {
     await this.prisma.$transaction([
       this.prisma.meetingTag.deleteMany({ where: { meetingId } }),

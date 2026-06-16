@@ -1,14 +1,10 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { FolderKanban } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
-import { useProjects } from '@/hooks/tracker/useProjects';
+import Link from "next/link";
+import { FolderKanban } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { useProjects } from "@/hooks/tracker/useProjects";
 
-/**
- * `/admin/projects` — расширенный список всех проектов организации (включая
- * архивные / удалённые). Для admin / owner.
- */
 export function AdminProjectsClient() {
   const { currentOrgId } = useAuth();
   const { projects, total, isLoading } = useProjects(currentOrgId, {
@@ -63,10 +59,10 @@ export function AdminProjectsClient() {
                   {p.slug}
                 </td>
                 <td className="py-2 pr-3 text-xs">
-                  {p.archivedAt ? 'Архив' : 'Активен'}
+                  {p.archivedAt ? "Архив" : "Активен"}
                 </td>
                 <td className="py-2 pr-3 text-xs text-fg-tertiary">
-                  {p.createdAt.toLocaleDateString('ru-RU')}
+                  {p.createdAt.toLocaleDateString("ru-RU")}
                 </td>
               </tr>
             ))}

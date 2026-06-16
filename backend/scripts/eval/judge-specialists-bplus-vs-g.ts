@@ -1,17 +1,3 @@
-/**
- * Судья Б+ vs Г — DeepSeek-V4-Pro.
- *
- * Сравнивает два варианта извлечения сущностей на 8 типов:
- *   Б+: один объединённый вызов, отдаёт все 8 типов разом.
- *   Г:  8 отдельных вызовов с общим кэш-префиксом.
- *
- * Цель: подтвердить или опровергнуть, что Б+ почти равен Г по качеству
- * (Б+ ≈ 41 сущность, Г ≈ 42), но в ~3.7× дешевле.
- *
- * Метки Б+ / Г маскируются как X / Y случайно.
- *
- * Запуск: cd backend && bun run scripts/eval/judge-specialists-bplus-vs-g.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -22,7 +8,10 @@ const PRICE_OUT = 0.87 / 1_000_000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/reports');
-const FIXTURE_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json');
+const FIXTURE_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json',
+);
 const G_PATH = path.join(REPORTS_DIR, 'variant-g.json');
 const BPLUS_PATH = path.join(REPORTS_DIR, 'variant-b-plus.json');
 const SUMMARY_PATH = path.join(REPORTS_DIR, 'SUMMARY-BPLUS-VS-G.md');
@@ -36,8 +25,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── нормализация ────────────────────────────────────────────────────────────
-// Унифицированная структура с 8 ключами (порядок важен для UI отчёта).
 interface NormalizedEntities {
   decisions: unknown[];
   ideas: unknown[];
@@ -62,12 +49,10 @@ function emptyNorm(): NormalizedEntities {
   };
 }
 
-// Г: 8 шагов, каждый отдаёт свой output с разным именем ключа.
 function normalizeG(report: {
   steps: Array<{ step: string; output?: Record<string, unknown> }>;
 }): NormalizedEntities {
   const out = emptyNorm();
-  // Маппинг step.step → имя ключа в output → целевой ключ NormalizedEntities.
   const map: Array<[string, string, keyof NormalizedEntities]> = [
     ['3-3 decisions', 'decisions', 'decisions'],
     ['3-6 ideas', 'ideas', 'ideas'],
@@ -86,7 +71,6 @@ function normalizeG(report: {
   return out;
 }
 
-// Б+: уже плоский output с 8 ключами.
 function normalizeBPlus(report: { output?: Record<string, unknown> }): NormalizedEntities {
   const out = emptyNorm();
   const o = report.output ?? {};
@@ -110,7 +94,6 @@ function countAll(norm: NormalizedEntities): number {
   );
 }
 
-// ── промпт судьи ─────────────────────────────────────────────────────────────
 const JUDGE_SYSTEM = `Ты — независимый эксперт по системам извлечения структурированного знания из встреч.
 
 Тебе дают:
@@ -184,7 +167,6 @@ async function main(): Promise<void> {
   console.log('  Г: сущностей по типам:', JSON.stringify(countByType(gNorm)));
   console.log('  Б+: сущностей по типам:', JSON.stringify(countByType(bPlusNorm)));
 
-  // Случайная маскировка X/Y.
   const swap = Math.random() < 0.5;
   const xLabel: 'BPLUS' | 'G' = swap ? 'G' : 'BPLUS';
   const yLabel: 'BPLUS' | 'G' = swap ? 'BPLUS' : 'G';
@@ -280,13 +262,9 @@ ${JSON.stringify(yOutput, null, 2)}
     reasoning: string;
   };
 
-  // Раскрытие масок: бал X → реальная метка (BPLUS или G).
-  const scoreFor = (
-    label: 'BPLUS' | 'G',
-    crit: { score_x: number; score_y: number },
-  ): number => (label === xLabel ? crit.score_x : crit.score_y);
+  const scoreFor = (label: 'BPLUS' | 'G', crit: { score_x: number; score_y: number }): number =>
+    label === xLabel ? crit.score_x : crit.score_y;
 
-  // Расшифровка X/Y в тексте судьи на читаемые «Б+» / «Г».
   const explainNormalized = (text: string): string =>
     text
       .replace(/\bвариант X\b/gi, `вариант ${labelToName(xLabel)}`)
@@ -361,7 +339,9 @@ ${JSON.stringify(yOutput, null, 2)}
 
   await fs.writeFile(SUMMARY_PATH, md, 'utf-8');
   console.log(`=== Итог ===`);
-  console.log(`  Победитель: ${winnerReal === 'tie' ? 'ничья' : `Variant ${labelToName(winnerReal)}`}`);
+  console.log(
+    `  Победитель: ${winnerReal === 'tie' ? 'ничья' : `Variant ${labelToName(winnerReal)}`}`,
+  );
   console.log(`  Б+ = ${sumOf('BPLUS')} / Г = ${sumOf('G')} (из 20)`);
   console.log(`\n✓ отчёт: ${SUMMARY_PATH}`);
 }

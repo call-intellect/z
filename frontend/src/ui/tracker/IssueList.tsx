@@ -1,27 +1,18 @@
-'use client';
+"use client";
 
-/**
- * IssueList — плоский список задач или с группировкой по category статуса.
- */
-
-import { useMemo } from 'react';
+import { useMemo } from "react";
 import {
   ISSUE_STATE_CATEGORY_LABELS,
   ISSUE_STATE_CATEGORY_VALUES,
   type Issue,
   type IssueStateCategory,
-} from '@/domain/tracker';
-import { IssueCard } from './IssueCard';
+} from "@/domain/tracker";
+import { IssueCard } from "./IssueCard";
 
 export function IssueList({
   issues,
   group = false,
-  emptyText = 'Пока нет задач',
-  /**
-   * Кастомный маппер задачи → category. По умолчанию использует stateId,
-   * но в Phase 2 у нас нет полного state-объекта в карточке, поэтому
-   * вернёт `unstarted` для всего. Передай свой mapper, если есть.
-   */
+  emptyText = "Пока нет задач",
   resolveCategory,
 }: {
   issues: Issue[];
@@ -37,8 +28,8 @@ export function IssueList({
       const cat = resolveCategory
         ? resolveCategory(issue)
         : issue.isCompleted
-          ? 'completed'
-          : 'unstarted';
+          ? "completed"
+          : "unstarted";
       const arr = map.get(cat);
       if (arr) arr.push(issue);
     }

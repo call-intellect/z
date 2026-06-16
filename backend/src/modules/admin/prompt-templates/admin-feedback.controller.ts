@@ -1,11 +1,3 @@
-/**
- * Фаза A.3 — AdminFeedbackController.
- *
- * GET /api/v1/admin/feedback — список фидбека для аналитики (ТЗ A §7.3).
- *
- * RBAC: super_admin видит ВЕСЬ фидбек, owner/admin Org — только встречи своих Org.
- */
-
 import {
   BadRequestException,
   Controller,
@@ -19,18 +11,12 @@ import { ApiExcludeController } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
 import { AiResultFeedbackService } from './ai-result-feedback.service';
-import {
-  ListFeedbackQuerySchema,
-  type ListFeedbackQueryDto,
-} from './dto/ai-result-feedback.dto';
+import { ListFeedbackQuerySchema, type ListFeedbackQueryDto } from './dto/ai-result-feedback.dto';
 
 @ApiExcludeController()
 @Controller('api/v1/admin/feedback')

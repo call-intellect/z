@@ -14,16 +14,6 @@ import type { ConversationalLinkCodeService } from '../../link-code.service';
 import type { MaxApiClient } from './max-api-client';
 import { MaxBotChannelAdapter } from './max-bot.adapter';
 
-/**
- * Unit-тесты `MaxBotChannelAdapter.renderText` — видимые брифы
- * (Ф2 assistant-channels, ТЗ 2026-06-11): ни одно проактивное уведомление
- * не должно уходить как «Уведомление: <eventType>». MAX — plain text
- * (без HTML), зеркало telegram-bot.adapter.spec.ts.
- *
- * renderText не трогает зависимости — конструктор получает пустые моки
- * (паттерн `as unknown as T`, принятый в проекте).
- */
-
 function makeAdapter(): MaxBotChannelAdapter {
   return new MaxBotChannelAdapter(
     { register: vi.fn() } as unknown as ChannelRegistry,
@@ -41,17 +31,11 @@ function makeAdapter(): MaxBotChannelAdapter {
 }
 
 describe('MaxBotChannelAdapter.renderText — видимые брифы (Ф2 assistant-channels)', () => {
-  const render = (
-    eventType: string,
-    payload: Record<string, unknown>,
-  ): string => {
+  const render = (eventType: string, payload: Record<string, unknown>): string => {
     const adapter = makeAdapter();
     return (
       adapter as unknown as {
-        renderText: (n: {
-          eventType: string;
-          payload: Record<string, unknown>;
-        }) => string;
+        renderText: (n: { eventType: string; payload: Record<string, unknown> }) => string;
       }
     ).renderText({ eventType, payload });
   };
@@ -66,10 +50,7 @@ describe('MaxBotChannelAdapter.renderText — видимые брифы (Ф2 ass
         dateLocal: '2026-06-12',
         question: 'Какие 1-3 задачи у вас в фокусе сегодня?',
       },
-      [
-        'Какие 1-3 задачи у вас в фокусе сегодня?',
-        'Ответьте текстом или голосом — Кора запишет.',
-      ],
+      ['Какие 1-3 задачи у вас в фокусе сегодня?', 'Ответьте текстом или голосом — Кора запишет.'],
     ],
     [
       'operations.weekly_digest',
@@ -81,11 +62,7 @@ describe('MaxBotChannelAdapter.renderText — видимые брифы (Ф2 ass
         body: 'Закрыто 12 задач, 3 риска требуют внимания.',
         actionUrl: 'https://app.kora.test/digest/d-1',
       },
-      [
-        'Итоги недели',
-        'Закрыто 12 задач',
-        'https://app.kora.test/digest/d-1',
-      ],
+      ['Итоги недели', 'Закрыто 12 задач', 'https://app.kora.test/digest/d-1'],
     ],
     [
       'goals.pulse',

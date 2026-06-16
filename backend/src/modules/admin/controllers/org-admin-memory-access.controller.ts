@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Inject,
-  Patch,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Inject, Patch, Req, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -17,19 +9,6 @@ import { OrgAdminGuard } from '../../auth/guards/org-admin.guard';
 import { EntitlementService } from '../../entitlements/entitlement.service';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
-
-/**
- * `GET / PATCH /api/v1/admin/org/memory-access` — управление доступом к
- * разделам «Памяти компании» для роли `member` (ТЗ 2026-05-26 §6).
- *
- * Дальше эти feature-флаги читаются:
- *   - на frontend — через `useMemoryAccess()` для скрытия пунктов в сайдбаре;
- *   - на backend — будущим member-guard (когда роль `member` появится).
- *
- * RBAC: только owner / admin Org (через `OrgAdminGuard`).
- *
- * Реализация — тонкая обвязка над `EntitlementService.setOverride('feature', …)`.
- */
 
 const UpdateMemoryAccessSchema = z.object({
   regulationsForMembers: z.boolean().optional(),
@@ -66,10 +45,8 @@ export class OrgAdminMemoryAccessController {
   async get(@CurrentOrg() tenantId: string): Promise<MemoryAccessDto> {
     const ent = await this.entitlements.getEntitlement(tenantId);
     return {
-      regulationsForMembers:
-        ent.features['feature.memory_regulations_for_members'] === true,
-      entitiesForMembers:
-        ent.features['feature.memory_entities_for_members'] === true,
+      regulationsForMembers: ent.features['feature.memory_regulations_for_members'] === true,
+      entitiesForMembers: ent.features['feature.memory_entities_for_members'] === true,
     };
   }
 

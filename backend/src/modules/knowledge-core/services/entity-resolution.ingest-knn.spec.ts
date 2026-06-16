@@ -1,17 +1,4 @@
-/**
- * KC-Temporal W1.5 — unit-тесты ingest-time KNN resolver в
- * EntityResolutionService.findOrCreateEntity.
- *
- * Покрытие:
- *   - cache_hit: Redis вернул entityId → берём из БД без exact/KNN.
- *   - exact path: raw SQL exact match → reuse.
- *   - knn path: best similarity ≥ threshold → reuse без LLM.
- *   - knn miss → create + enqueue async resolver + cache write.
- *
- * Postgres не требуется — все зависимости моки.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -23,8 +10,6 @@ import type { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 
 function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
-  // Prisma — последовательность $queryRawUnsafe вызовов разная в каждом тесте;
-  // тест сам контролирует mockResolvedValueOnce.
   const queryRawUnsafe = vi.fn();
   const executeRawUnsafe = vi.fn(async () => 1);
   const entityFindUnique = vi.fn();
@@ -55,12 +40,10 @@ function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
       create: entityCreate,
     },
     person: {
-      // linkEntityPerson вызывается для type='person'; в наших тестах type='topic'.
       findMany: vi.fn(async () => []),
     },
   } as unknown as PrismaService;
 
-  // Redis
   const redisGet = vi.fn(async () => null as string | null);
   const redisSet = vi.fn(async () => 'OK');
   const redisDel = vi.fn(async () => 1);
@@ -68,7 +51,6 @@ function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
     client: { get: redisGet, set: redisSet, del: redisDel },
   } as unknown as RedisService;
 
-  // Embedding
   const embedNames = vi.fn(async (names: string[]) =>
     names.map(() => new Array<number>(1536).fill(0.1)),
   );
@@ -76,19 +58,16 @@ function makeMocks(opts: { threshold?: number; cacheTtl?: number } = {}) {
     embedEntityNames: embedNames,
   } as unknown as KnowledgeEmbeddingService;
 
-  // CoreQueue
   const enqueueEntityResolver = vi.fn(async () => undefined);
   const coreQueue = {
     enqueueEntityResolver,
   } as unknown as CoreQueueService;
 
-  // Metrics
   const metrics = {
     incKcEntityResolvePath: vi.fn(),
     observeKcEntityResolveLatencyMs: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  // Config
   const cfg = {
     entityIngest: {
       resolveThreshold: opts.threshold ?? 0.95,
@@ -162,9 +141,7 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
 
   it('exact: raw SQL exact match → reuse + cache write', async () => {
     const m = makeMocks();
-    // Cache miss.
     m.spies.redisGet.mockResolvedValueOnce(null);
-    // Exact SQL вернул найденный id.
     m.spies.queryRawUnsafe.mockResolvedValueOnce([{ id: 'ent-exact' }]);
     m.spies.entityFindUnique.mockResolvedValueOnce({
       id: 'ent-exact',
@@ -192,7 +169,6 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
     });
 
     expect(r.created).toBe(false);
-    // KNN raw SQL НЕ должен быть запущен (только exact-запрос).
     expect(m.spies.queryRawUnsafe).toHaveBeenCalledTimes(1);
     expect(m.spies.entityCreate).not.toHaveBeenCalled();
     expect(m.spies.embedNames).not.toHaveBeenCalled();
@@ -205,12 +181,8 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
   it('knn match: best similarity ≥ threshold → reuse без LLM', async () => {
     const m = makeMocks({ threshold: 0.95 });
     m.spies.redisGet.mockResolvedValueOnce(null);
-    // Exact пусто.
     m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
-    // KNN: distance=0.04 → similarity=0.96 (>= 0.95).
-    m.spies.queryRawUnsafe.mockResolvedValueOnce([
-      { id: 'ent-knn', distance: 0.04 },
-    ]);
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([{ id: 'ent-knn', distance: 0.04 }]);
     m.spies.entityFindUnique.mockResolvedValueOnce({
       id: 'ent-knn',
       tenantId: 'org-1',
@@ -237,7 +209,7 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
     });
 
     expect(r.created).toBe(false);
-    expect(m.spies.embedNames).toHaveBeenCalledTimes(1); // embed для KNN
+    expect(m.spies.embedNames).toHaveBeenCalledTimes(1);
     expect(m.spies.entityCreate).not.toHaveBeenCalled();
     expect(m.spies.enqueueEntityResolver).not.toHaveBeenCalled();
     expect(m.metrics.incKcEntityResolvePath).toHaveBeenCalledWith({
@@ -248,12 +220,8 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
   it('knn miss → create + enqueue entity-resolver + cache write', async () => {
     const m = makeMocks({ threshold: 0.95 });
     m.spies.redisGet.mockResolvedValueOnce(null);
-    // Exact пусто.
     m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
-    // KNN: distance=0.20 → similarity=0.80 (< 0.95).
-    m.spies.queryRawUnsafe.mockResolvedValueOnce([
-      { id: 'ent-far', distance: 0.2 },
-    ]);
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([{ id: 'ent-far', distance: 0.2 }]);
 
     const svc = new EntityResolutionService(
       m.prisma,

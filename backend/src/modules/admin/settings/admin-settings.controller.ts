@@ -33,21 +33,12 @@ import {
   type SetSettingDto,
 } from './dto/admin-settings.dto';
 
-/**
- * Admin-redesign Фаза 0 — `AdminSettingsController`.
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor` (compliance — каждое drill-down действие
- * super_admin'а пишется в `SuperAdminAccessLog`).
- */
 @ApiTags('admin-settings')
 @Controller('api/v1/admin/settings')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminSettingsController {
-  constructor(
-    @Inject(AdminSettingsService) private readonly svc: AdminSettingsService,
-  ) {}
+  constructor(@Inject(AdminSettingsService) private readonly svc: AdminSettingsService) {}
 
   @Get()
   @ApiOperation({ summary: 'Список admin-настроек с фильтрами по category/section.' })
@@ -71,9 +62,6 @@ export class AdminSettingsController {
     const zodSchema = getSchemaForKey(key);
     const jsonSchema = zodToSimpleSchema(zodSchema);
 
-    // Текущее значение и метаданные берём через сервис, если запись есть.
-    // Для not-found возвращаем jsonSchema с currentValue=null — фронт всё
-    // равно сможет отрисовать поле и записать первый раз.
     let currentValue: unknown = null;
     let severity: string | null = null;
     let description: string | null = null;
@@ -84,9 +72,7 @@ export class AdminSettingsController {
       severity = detail.severity;
       description = detail.description;
       updatedAt = detail.updatedAt;
-    } catch {
-      // not found — оставляем nulls
-    }
+    } catch {}
 
     return {
       key,

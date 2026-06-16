@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
+import Link from "next/link";
+import { useState } from "react";
 import {
   Building2,
   ClipboardList,
@@ -11,57 +11,51 @@ import {
   TrendingUp,
   Users,
   Wallet,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminOrgsApi } from '@/api/admin-orgs.api';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
+import { ApiError } from "@/api/api-error";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
 import {
   AdminDangerZone,
   DangerAction,
-} from '@/ui/components/admin/AdminDangerZone';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/components/admin/AdminDangerZone";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { BillingAdminClient } from './billing/BillingAdminClient';
-import { AdminSubscriptionClient } from './subscription/AdminSubscriptionClient';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { BillingAdminClient } from "./billing/BillingAdminClient";
+import { AdminSubscriptionClient } from "./subscription/AdminSubscriptionClient";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 type Props = { orgId: string };
 
 const TABS: AdminTabDef[] = [
-  { value: 'overview', label: 'Обзор', icon: Building2 },
-  { value: 'billing', label: 'Тариф и лимиты', icon: Wallet },
-  { value: 'subscription', label: 'Подписка и счета', icon: Receipt },
-  { value: 'members', label: 'Участники', icon: Users },
-  { value: 'sources', label: 'Источники', icon: FolderTree },
-  { value: 'economics', label: 'Экономика', icon: TrendingUp },
-  { value: 'audit', label: 'Аудит', icon: ClipboardList },
-  { value: 'danger', label: 'Опасная зона', icon: ShieldAlert },
+  { value: "overview", label: "Обзор", icon: Building2 },
+  { value: "billing", label: "Тариф и лимиты", icon: Wallet },
+  { value: "subscription", label: "Подписка и счета", icon: Receipt },
+  { value: "members", label: "Участники", icon: Users },
+  { value: "sources", label: "Источники", icon: FolderTree },
+  { value: "economics", label: "Экономика", icon: TrendingUp },
+  { value: "audit", label: "Аудит", icon: ClipboardList },
+  { value: "danger", label: "Опасная зона", icon: ShieldAlert },
 ];
 
-/**
- * Глобальная карточка Org (Z-Admin Фаза 4 редизайна).
- *
- * Активная вкладка через `?tab=`. Каждый таб — отдельный запрос (lazy),
- * чтобы карточка открывалась быстро и не делала лишних запросов.
- */
 export function OrgDetailClient({ orgId }: Props) {
   return (
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Организации', href: '/admin/orgs' },
+        { label: "Организации", href: "/admin/orgs" },
         { label: orgId },
       ]}
       title="Карточка организации"
@@ -75,24 +69,22 @@ export function OrgDetailClient({ orgId }: Props) {
       <AdminTabs tabs={TABS}>
         {(active) => (
           <>
-            {active === 'overview' && <OverviewTab orgId={orgId} />}
-            {active === 'billing' && <BillingAdminClient tenantId={orgId} />}
-            {active === 'subscription' && (
+            {active === "overview" && <OverviewTab orgId={orgId} />}
+            {active === "billing" && <BillingAdminClient tenantId={orgId} />}
+            {active === "subscription" && (
               <AdminSubscriptionClient tenantId={orgId} />
             )}
-            {active === 'members' && <MembersTab orgId={orgId} />}
-            {active === 'sources' && <SourcesTab orgId={orgId} />}
-            {active === 'economics' && <EconomicsTab orgId={orgId} />}
-            {active === 'audit' && <AuditTab orgId={orgId} />}
-            {active === 'danger' && <DangerTab orgId={orgId} />}
+            {active === "members" && <MembersTab orgId={orgId} />}
+            {active === "sources" && <SourcesTab orgId={orgId} />}
+            {active === "economics" && <EconomicsTab orgId={orgId} />}
+            {active === "audit" && <AuditTab orgId={orgId} />}
+            {active === "danger" && <DangerTab orgId={orgId} />}
           </>
         )}
       </AdminTabs>
     </AdminSection>
   );
 }
-
-// ───────────────────────────── Обзор ─────────────────────────────────────────
 
 function OverviewTab({ orgId }: { orgId: string }) {
   const q = useAdminQuery(
@@ -104,37 +96,38 @@ function OverviewTab({ orgId }: { orgId: string }) {
   if (q.isLoading) return <AdminLoading rows={4} />;
   if (q.isForbidden) return <AdminForbidden />;
   if (q.error) return <AdminError message={q.error} onRetry={q.refetch} />;
-  if (!q.data) return <AdminEmpty title="Нет данных" description="Org не найдена." />;
+  if (!q.data)
+    return <AdminEmpty title="Нет данных" description="Org не найдена." />;
 
   const ov = q.data;
 
   const tiles: Array<{ label: string; value: string; hint?: string }> = [
-    { label: 'Название', value: ov.name, hint: ov.slug },
+    { label: "Название", value: ov.name, hint: ov.slug },
     {
-      label: 'Тариф',
+      label: "Тариф",
       value: ov.tier,
-      hint: ov.isFrozen ? 'Org заморожена' : undefined,
+      hint: ov.isFrozen ? "Org заморожена" : undefined,
     },
     {
-      label: 'Создана',
-      value: new Date(ov.createdAt).toLocaleDateString('ru-RU'),
+      label: "Создана",
+      value: new Date(ov.createdAt).toLocaleDateString("ru-RU"),
     },
-    { label: 'Владелец', value: ov.ownerEmail ?? '—' },
-    { label: 'Участников', value: String(ov.membersCount) },
-    { label: 'Встреч', value: String(ov.meetingsCount) },
+    { label: "Владелец", value: ov.ownerEmail ?? "—" },
+    { label: "Участников", value: String(ov.membersCount) },
+    { label: "Встреч", value: String(ov.meetingsCount) },
     {
-      label: 'Расход за 30 дней',
+      label: "Расход за 30 дней",
       value:
         ov.totalSpendUsd === 0
-          ? '$0,00'
-          : `$${ov.totalSpendUsd.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}`,
+          ? "$0,00"
+          : `$${ov.totalSpendUsd.toLocaleString("ru-RU", { maximumFractionDigits: 2 })}`,
     },
     {
-      label: 'Доход (план)',
+      label: "Доход (план)",
       value:
         ov.totalRevenueRub === null
-          ? '—'
-          : `${ov.totalRevenueRub.toLocaleString('ru-RU')} ₽/мес`,
+          ? "—"
+          : `${ov.totalRevenueRub.toLocaleString("ru-RU")} ₽/мес`,
     },
   ];
 
@@ -158,7 +151,9 @@ function OverviewTab({ orgId }: { orgId: string }) {
               {tile.value}
             </div>
             {tile.hint && (
-              <div className="mt-1 text-[11px] text-fg-tertiary">{tile.hint}</div>
+              <div className="mt-1 text-[11px] text-fg-tertiary">
+                {tile.hint}
+              </div>
             )}
           </div>
         ))}
@@ -166,8 +161,6 @@ function OverviewTab({ orgId }: { orgId: string }) {
     </div>
   );
 }
-
-// ──────────────────────────── Участники ──────────────────────────────────────
 
 type MemberRow = {
   userId: string;
@@ -184,7 +177,7 @@ function MembersTab({ orgId }: { orgId: string }) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const q = useAdminQuery(
-    `org-members:${orgId}:${cursor ?? ''}`,
+    `org-members:${orgId}:${cursor ?? ""}`,
     async () => {
       const res = await adminOrgsApi.members(orgId, {
         ...(cursor ? { cursor } : {}),
@@ -192,13 +185,12 @@ function MembersTab({ orgId }: { orgId: string }) {
       });
       const newItems: MemberRow[] = res.items.map((m) => ({
         userId: m.userId,
-        email: m.email ?? '',
+        email: m.email ?? "",
         name: m.name,
         role: m.role,
         joinedAt: m.joinedAt,
-        lastSeenAt: m.lastSeenAt ?? '',
+        lastSeenAt: m.lastSeenAt ?? "",
       }));
-      // Если это первая страница — заменяем; иначе — добавляем.
       setAccumulator((prev) => (cursor ? [...prev, ...newItems] : newItems));
       setNextCursor(res.nextCursor);
       return res;
@@ -224,20 +216,20 @@ function MembersTab({ orgId }: { orgId: string }) {
         <AdminCsvDownloadButton
           rows={accumulator}
           columns={[
-            { key: 'email', label: 'Email' },
-            { key: 'name', label: 'Имя' },
-            { key: 'role', label: 'Роль' },
+            { key: "email", label: "Email" },
+            { key: "name", label: "Имя" },
+            { key: "role", label: "Роль" },
             {
-              key: 'joinedAt',
-              label: 'Вступил',
+              key: "joinedAt",
+              label: "Вступил",
               format: (v) =>
-                v ? new Date(String(v)).toLocaleString('ru-RU') : '',
+                v ? new Date(String(v)).toLocaleString("ru-RU") : "",
             },
             {
-              key: 'lastSeenAt',
-              label: 'Последний визит',
+              key: "lastSeenAt",
+              label: "Последний визит",
               format: (v) =>
-                v ? new Date(String(v)).toLocaleString('ru-RU') : '',
+                v ? new Date(String(v)).toLocaleString("ru-RU") : "",
             },
           ]}
           filename={`org-${orgId}-members`}
@@ -260,8 +252,8 @@ function MembersTab({ orgId }: { orgId: string }) {
                 key={m.userId}
                 className="border-t border-border-subtle hover:bg-bg-overlay"
               >
-                <td className="px-3 py-2">{m.email || '—'}</td>
-                <td className="px-3 py-2">{m.name || '—'}</td>
+                <td className="px-3 py-2">{m.email || "—"}</td>
+                <td className="px-3 py-2">{m.name || "—"}</td>
                 <td className="px-3 py-2">
                   <Badge variant="default" className="text-[10px]">
                     {m.role}
@@ -269,13 +261,13 @@ function MembersTab({ orgId }: { orgId: string }) {
                 </td>
                 <td className="px-3 py-2 text-xs text-fg-tertiary">
                   {m.joinedAt
-                    ? new Date(m.joinedAt).toLocaleString('ru-RU')
-                    : '—'}
+                    ? new Date(m.joinedAt).toLocaleString("ru-RU")
+                    : "—"}
                 </td>
                 <td className="px-3 py-2 text-xs text-fg-tertiary">
                   {m.lastSeenAt
-                    ? new Date(m.lastSeenAt).toLocaleString('ru-RU')
-                    : '—'}
+                    ? new Date(m.lastSeenAt).toLocaleString("ru-RU")
+                    : "—"}
                 </td>
               </tr>
             ))}
@@ -290,15 +282,13 @@ function MembersTab({ orgId }: { orgId: string }) {
             disabled={q.isLoading}
             onClick={() => setCursor(nextCursor)}
           >
-            {q.isLoading ? 'Загружаем…' : 'Показать ещё'}
+            {q.isLoading ? "Загружаем…" : "Показать ещё"}
           </Button>
         </div>
       )}
     </div>
   );
 }
-
-// ──────────────────────────── Источники ──────────────────────────────────────
 
 function SourcesTab({ orgId }: { orgId: string }) {
   const q = useAdminQuery(
@@ -319,8 +309,10 @@ function SourcesTab({ orgId }: { orgId: string }) {
     );
   }
 
-  const channels = q.data.items.filter((it) => it.kind === 'channel');
-  const webhooks = q.data.items.filter((it) => it.kind === 'webhook_subscription');
+  const channels = q.data.items.filter((it) => it.kind === "channel");
+  const webhooks = q.data.items.filter(
+    (it) => it.kind === "webhook_subscription",
+  );
 
   return (
     <div className="space-y-6">
@@ -348,7 +340,13 @@ function SourcesGroup({
 }: {
   title: string;
   description: string;
-  items: Array<{ kind: string; type: string; id: string; status: string; createdAt: string }>;
+  items: Array<{
+    kind: string;
+    type: string;
+    id: string;
+    status: string;
+    createdAt: string;
+  }>;
   emptyHint: string;
 }) {
   return (
@@ -386,7 +384,7 @@ function SourcesGroup({
                     </Badge>
                   </td>
                   <td className="px-3 py-2 text-xs text-fg-tertiary">
-                    {new Date(it.createdAt).toLocaleString('ru-RU')}
+                    {new Date(it.createdAt).toLocaleString("ru-RU")}
                   </td>
                 </tr>
               ))}
@@ -397,8 +395,6 @@ function SourcesGroup({
     </section>
   );
 }
-
-// ──────────────────────────── Экономика ──────────────────────────────────────
 
 function EconomicsTab({ orgId }: { orgId: string }) {
   const q = useAdminQuery(
@@ -422,7 +418,7 @@ function EconomicsTab({ orgId }: { orgId: string }) {
           </div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">
             $
-            {ov.totalSpendUsd.toLocaleString('ru-RU', {
+            {ov.totalSpendUsd.toLocaleString("ru-RU", {
               maximumFractionDigits: 2,
             })}
           </div>
@@ -436,8 +432,8 @@ function EconomicsTab({ orgId }: { orgId: string }) {
           </div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">
             {ov.totalRevenueRub === null
-              ? '—'
-              : `${ov.totalRevenueRub.toLocaleString('ru-RU')} ₽/мес`}
+              ? "—"
+              : `${ov.totalRevenueRub.toLocaleString("ru-RU")} ₽/мес`}
           </div>
           <p className="mt-2 text-[11px] text-fg-tertiary">
             Цена текущего Plan (если задана). Для full-картины откройте полный
@@ -454,8 +450,6 @@ function EconomicsTab({ orgId }: { orgId: string }) {
   );
 }
 
-// ────────────────────────────── Аудит ───────────────────────────────────────
-
 type AuditRow = {
   id: string;
   superAdminEmail: string;
@@ -471,7 +465,7 @@ function AuditTab({ orgId }: { orgId: string }) {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
   const q = useAdminQuery(
-    `org-audit:${orgId}:${cursor ?? ''}`,
+    `org-audit:${orgId}:${cursor ?? ""}`,
     async () => {
       const res = await adminOrgsApi.audit(orgId, {
         ...(cursor ? { cursor } : {}),
@@ -482,7 +476,7 @@ function AuditTab({ orgId }: { orgId: string }) {
         superAdminEmail: r.superAdminEmail ?? r.superAdminUserId,
         route: r.route,
         method: r.method,
-        reason: r.reason ?? '',
+        reason: r.reason ?? "",
         createdAt: r.createdAt,
       }));
       setAccumulator((prev) => (cursor ? [...prev, ...newRows] : newRows));
@@ -511,14 +505,14 @@ function AuditTab({ orgId }: { orgId: string }) {
           rows={accumulator}
           columns={[
             {
-              key: 'createdAt',
-              label: 'Когда',
-              format: (v) => new Date(String(v)).toLocaleString('ru-RU'),
+              key: "createdAt",
+              label: "Когда",
+              format: (v) => new Date(String(v)).toLocaleString("ru-RU"),
             },
-            { key: 'superAdminEmail', label: 'super_admin' },
-            { key: 'method', label: 'Метод' },
-            { key: 'route', label: 'Маршрут' },
-            { key: 'reason', label: 'Причина' },
+            { key: "superAdminEmail", label: "super_admin" },
+            { key: "method", label: "Метод" },
+            { key: "route", label: "Маршрут" },
+            { key: "reason", label: "Причина" },
           ]}
           filename={`org-${orgId}-audit`}
         />
@@ -541,7 +535,7 @@ function AuditTab({ orgId }: { orgId: string }) {
                 className="border-t border-border-subtle hover:bg-bg-overlay"
               >
                 <td className="px-3 py-2 text-xs text-fg-tertiary">
-                  {new Date(r.createdAt).toLocaleString('ru-RU')}
+                  {new Date(r.createdAt).toLocaleString("ru-RU")}
                 </td>
                 <td className="px-3 py-2">{r.superAdminEmail}</td>
                 <td className="px-3 py-2">
@@ -553,7 +547,7 @@ function AuditTab({ orgId }: { orgId: string }) {
                   {r.route}
                 </td>
                 <td className="px-3 py-2 text-xs text-fg-secondary">
-                  {r.reason || '—'}
+                  {r.reason || "—"}
                 </td>
               </tr>
             ))}
@@ -568,15 +562,13 @@ function AuditTab({ orgId }: { orgId: string }) {
             disabled={q.isLoading}
             onClick={() => setCursor(nextCursor)}
           >
-            {q.isLoading ? 'Загружаем…' : 'Показать ещё'}
+            {q.isLoading ? "Загружаем…" : "Показать ещё"}
           </Button>
         </div>
       )}
     </div>
   );
 }
-
-// ────────────────────────────── Опасная зона ────────────────────────────────
 
 function DangerTab({ orgId }: { orgId: string }) {
   const q = useAdminQuery(
@@ -595,11 +587,11 @@ function DangerTab({ orgId }: { orgId: string }) {
   const toggleFreeze = async () => {
     try {
       await adminOrgsApi.update(orgId, { freeze: !isFrozen });
-      toast.success(isFrozen ? 'Org разморожена' : 'Org заморожена');
+      toast.success(isFrozen ? "Org разморожена" : "Org заморожена");
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось изменить состояние',
+        e instanceof ApiError ? e.message : "Не удалось изменить состояние",
       );
       throw e;
     }
@@ -608,10 +600,10 @@ function DangerTab({ orgId }: { orgId: string }) {
   const removeOrg = async () => {
     try {
       await adminOrgsApi.remove(orgId);
-      toast.success('Org удалена (soft-delete)');
+      toast.success("Org удалена (soft-delete)");
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить");
       throw e;
     }
   };
@@ -624,30 +616,32 @@ function DangerTab({ orgId }: { orgId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-card p-4">
         <div className="min-w-0">
           <p className="text-sm font-medium">
-            {isFrozen ? 'Разморозить организацию' : 'Заморозить организацию'}
+            {isFrozen ? "Разморозить организацию" : "Заморозить организацию"}
           </p>
           <p className="text-xs text-fg-tertiary">
             {isFrozen
-              ? 'Доступ участников будет возвращён, все процессы возобновятся.'
-              : 'Участники потеряют доступ. Запись данных останется в БД.'}
+              ? "Доступ участников будет возвращён, все процессы возобновятся."
+              : "Участники потеряют доступ. Запись данных останется в БД."}
           </p>
         </div>
         <DangerAction
-          label={isFrozen ? 'Разморозить' : 'Заморозить'}
-          title={isFrozen ? 'Разморозить Org?' : 'Заморозить Org?'}
+          label={isFrozen ? "Разморозить" : "Заморозить"}
+          title={isFrozen ? "Разморозить Org?" : "Заморозить Org?"}
           description={
             isFrozen
-              ? 'Org снова станет доступной для участников.'
-              : 'Участники потеряют доступ до разморозки.'
+              ? "Org снова станет доступной для участников."
+              : "Участники потеряют доступ до разморозки."
           }
           severity="high"
-          confirmLabel={isFrozen ? 'Разморозить' : 'Заморозить'}
+          confirmLabel={isFrozen ? "Разморозить" : "Заморозить"}
           onConfirm={toggleFreeze}
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border-subtle bg-bg-card p-4">
         <div className="min-w-0">
-          <p className="text-sm font-medium">Удалить организацию (soft-delete)</p>
+          <p className="text-sm font-medium">
+            Удалить организацию (soft-delete)
+          </p>
           <p className="text-xs text-fg-tertiary">
             Org помечается удалённой. Данные не уничтожаются, но Org становится
             недоступной. Восстановление возможно через прямой UPDATE в БД.

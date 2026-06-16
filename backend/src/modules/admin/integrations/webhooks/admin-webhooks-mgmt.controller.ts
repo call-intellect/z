@@ -16,21 +16,8 @@ import { SuperAdminGuard } from '../../../auth/guards/super-admin.guard';
 import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor';
 
 import { AdminWebhooksMgmtService } from './admin-webhooks-mgmt.service';
-import {
-  DeliveriesQuerySchema,
-  type DeliveriesQueryDto,
-} from './dto/admin-webhooks-mgmt.dto';
+import { DeliveriesQuerySchema, type DeliveriesQueryDto } from './dto/admin-webhooks-mgmt.dto';
 
-/**
- * Admin-redesign Фаза 6 — `AdminWebhooksMgmtController`.
- *
- * Префикс выделен: `/admin/integrations/webhooks-mgmt`, чтобы НЕ
- * конфликтовать с потенциальным `/admin/webhooks` (per-tenant CRUD,
- * другой scope).
- *
- * Все эндпоинты — `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`.
- */
 @ApiTags('admin-integrations-webhooks')
 @Controller('api/v1/admin/integrations/webhooks-mgmt')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -43,8 +30,7 @@ export class AdminWebhooksMgmtController {
 
   @Get('active')
   @ApiOperation({
-    summary:
-      'Список активных webhook-подписок по всем tenant\'ам (status=active).',
+    summary: "Список активных webhook-подписок по всем tenant'ам (status=active).",
   })
   listActive() {
     return this.svc.listActive();
@@ -52,8 +38,7 @@ export class AdminWebhooksMgmtController {
 
   @Get('deliveries')
   @ApiOperation({
-    summary:
-      'Лента доставок WebhookDelivery с cursor-paginate. Фильтры: status, подстрока URL.',
+    summary: 'Лента доставок WebhookDelivery с cursor-paginate. Фильтры: status, подстрока URL.',
   })
   listDeliveries(
     @Query(new ZodValidationPipe(DeliveriesQuerySchema))

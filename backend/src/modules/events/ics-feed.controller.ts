@@ -1,34 +1,13 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  NotFoundException,
-  Param,
-  Query,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, Inject, NotFoundException, Param, Query, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
 import { IcsFeedService } from './services/ics-feed.service';
 
-/**
- * Публичный контроллер ICS-feed календаря пользователя.
- *
- * `GET /api/v1/calendar/:userId.ics?token=<secret>` — БЕЗ `CookieAuthGuard`
- * и `TenantGuard`. Авторизация — по совпадению `token` с
- * `User.calendarFeedToken` (генерируется через
- * `POST /api/v1/me/calendar/feed/generate`).
- *
- * При любой ошибке доступа отдаём 404 (не 401/403), чтобы не палить факт
- * существования пользователя.
- */
 @ApiTags('events')
 @Controller('api/v1')
 export class IcsFeedController {
-  constructor(
-    @Inject(IcsFeedService) private readonly icsFeed: IcsFeedService,
-  ) {}
+  constructor(@Inject(IcsFeedService) private readonly icsFeed: IcsFeedService) {}
 
   @Get('calendar/:userId.ics')
   @ApiOperation({

@@ -1,34 +1,16 @@
-/**
- * Доменные модели self-scope виджетов «ежедневной ценности» в `/me`
- * (ТЗ-2 Ф5 daily-value-dashboards).
- *
- * Слои:
- *   - `*Api` — что приходит с бэка (см. `src/api/me-daily-value.api.ts`).
- *   - `*Domain` — UI-friendly: Date вместо string, готовые RU-лейблы.
- *
- * Контракт бэка: `backend/.../dto/my-daily-value.dto.ts`,
- * `backend/.../dto/weekly-per-person.dto.ts`.
- */
-
 import type {
   MyRecognitionApi,
   MyWeeklyPerPersonApi,
   MyWeeklyPersonRowApi,
-} from '@/api/me-daily-value.api';
+} from "@/api/me-daily-value.api";
 
-// ─── Признания ──────────────────────────────────────────────────────
-
-/**
- * RU-лейблы типов признания. Значения `type` приходят с бэка как строки
- * (Recognition.type). Незнакомый тип отрендерим «как есть» через fallback.
- */
 export const RECOGNITION_TYPE_LABEL: Record<string, string> = {
-  thanks_comment: 'спасибо за комментарий',
-  thanks_helpfulness: 'спасибо за помощь',
-  mention_helped: 'отметили, что помог',
-  idea_shipped: 'идея реализована',
-  streak_milestone: 'серия достижений',
-  weekly_summary: 'итоги недели',
+  thanks_comment: "спасибо за комментарий",
+  thanks_helpfulness: "спасибо за помощь",
+  mention_helped: "отметили, что помог",
+  idea_shipped: "идея реализована",
+  streak_milestone: "серия достижений",
+  weekly_summary: "итоги недели",
 };
 
 export function recognitionTypeLabel(type: string): string {
@@ -38,7 +20,6 @@ export function recognitionTypeLabel(type: string): string {
 export interface MyRecognitionDomain {
   id: string;
   type: string;
-  /** Готовый RU-лейбл типа (или сам `type`, если карта его не знает). */
   typeLabel: string;
   message: string | null;
   fromPersonName: string | null;
@@ -58,8 +39,6 @@ export function mapMyRecognition(api: MyRecognitionApi): MyRecognitionDomain {
   };
 }
 
-// ─── Недельный план-факт (self) ─────────────────────────────────────
-
 export interface MyWeeklySelfRowDomain {
   personId: string;
   personName: string;
@@ -72,11 +51,6 @@ export interface MyWeeklySelfRowDomain {
   reliabilityPercent: number | null;
   tasksDone: number;
   checkInsCompleted: number;
-  /**
-   * Знаменатель надёжности (kept+broken+overdue). Считаем на фронте, чтобы
-   * отличить «мало данных» (denom>0, но reliabilityPercent=null) от «совсем
-   * нет обещаний» (denom=0).
-   */
   reliabilityDenominator: number;
 }
 

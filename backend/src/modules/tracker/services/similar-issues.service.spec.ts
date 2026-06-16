@@ -5,10 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { SimilarIssuesService } from './similar-issues.service';
 
-/**
- * Юнит-тест SimilarIssuesService — мок `$queryRawUnsafe`, проверка фильтра
- * по threshold и метрики.
- */
 describe('SimilarIssuesService.findSimilar', () => {
   let prisma: PrismaService;
   let metrics: BusinessMetricsService;
@@ -30,7 +26,7 @@ describe('SimilarIssuesService.findSimilar', () => {
     queryRawMock.mockResolvedValueOnce([{ embedding: null }]);
     const result = await svc.findSimilar({ tenantId: 't1', issueId: 'iss1' });
     expect(result).toEqual([]);
-    expect(queryRawMock).toHaveBeenCalledTimes(1); // только seed
+    expect(queryRawMock).toHaveBeenCalledTimes(1);
     expect(incSimilarSearchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -42,9 +38,7 @@ describe('SimilarIssuesService.findSimilar', () => {
   });
 
   it('фильтр по threshold: distance > threshold отбрасывается', async () => {
-    queryRawMock.mockResolvedValueOnce([
-      { embedding: '[0.1,0.2,0.3]' },
-    ]);
+    queryRawMock.mockResolvedValueOnce([{ embedding: '[0.1,0.2,0.3]' }]);
     queryRawMock.mockResolvedValueOnce([
       {
         id: 'iss2',
@@ -53,7 +47,7 @@ describe('SimilarIssuesService.findSimilar', () => {
         stateId: 'st1',
         projectId: 'p1',
         completedAt: null,
-        distance: 0.05, // < 0.18 → попадает
+        distance: 0.05,
       },
       {
         id: 'iss3',
@@ -62,7 +56,7 @@ describe('SimilarIssuesService.findSimilar', () => {
         stateId: 'st1',
         projectId: 'p1',
         completedAt: null,
-        distance: 0.5, // > 0.18 → отброшен
+        distance: 0.5,
       },
     ]);
 
@@ -74,7 +68,7 @@ describe('SimilarIssuesService.findSimilar', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe('iss2');
-    expect(result[0]?.similarity).toBeCloseTo(0.95, 5); // 1 - 0.05
+    expect(result[0]?.similarity).toBeCloseTo(0.95, 5);
   });
 
   it('completedAt преобразуется в ISO-строку', async () => {
@@ -107,7 +101,6 @@ describe('SimilarIssuesService.findSimilar', () => {
       limit: 9999,
     });
 
-    // Второй вызов — это KNN. Аргумент $4 — limit*2; при clamp limit=20 → 40.
     const knnCall = queryRawMock.mock.calls[1];
     expect(knnCall).toBeDefined();
     if (!knnCall) throw new Error('unreachable');
@@ -124,7 +117,7 @@ describe('SimilarIssuesService.findSimilar', () => {
         stateId: null,
         projectId: 'p1',
         completedAt: null,
-        distance: -0.0000001, // 1 - (-0.0000001) = 1.0000001 → clamp 1
+        distance: -0.0000001,
       },
     ]);
 

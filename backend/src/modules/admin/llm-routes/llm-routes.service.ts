@@ -23,10 +23,6 @@ export class LlmRoutesService {
         error: { code: 'invalid_task_type', message: `Unknown taskType: ${taskType}` },
       });
     }
-    // На Фазе 7 шаг 4: используем AdminFunctionsService.setRouteForTaskType,
-    // который сохраняет провайдеров с моделями (а не только именами) и
-    // инвалидирует AdminCacheService('usage:'). Для backward-compat возвращаем
-    // в том же виде, что раньше — список роутов из LlmRouter.
     await this.functions.setRouteForTaskType({
       taskType,
       providers: dto.providers.map((p) => ({
@@ -34,10 +30,7 @@ export class LlmRoutesService {
         ...(p.model ? { model: p.model } : {}),
       })),
       isActive: dto.isActive,
-      // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 6.5 — заморозка версии.
-      ...(dto.pinnedVersionNote !== undefined
-        ? { pinnedVersionNote: dto.pinnedVersionNote }
-        : {}),
+      ...(dto.pinnedVersionNote !== undefined ? { pinnedVersionNote: dto.pinnedVersionNote } : {}),
     });
     const updated = (await this.router.getRoutes()).find(
       (r) => r.taskType === taskType && r.tenantId === null,

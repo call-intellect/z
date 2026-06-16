@@ -1,26 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-/**
- * AdminCacheService (Z-Admin + Org-Admin, Фаза 7 шаг 8).
- *
- * In-memory TTL-кэш. Используется в `AdminUsageService.getDashboard` (TTL 60s)
- * и в других admin-сервисах, где результат не должен пересчитываться на каждый
- * пуш F5 в UI.
- *
- * Принципиально: кэш — single-process. Если backend размножается на >1 ноду,
- * кэш у каждой свой (в production текущая Z-инфра — один backend-pod, см.
- * `second-brain/02_architecture/runtime-topology.md`). Распределённый кэш
- * (Redis / pg-cache) — vNext.
- *
- * API:
- *   - `get<T>(key)` → значение или null.
- *   - `setWithTtl(key, value, ttlMs)` → положить с истечением.
- *   - `invalidate(prefix)` → удалить все ключи, начинающиеся с `prefix`.
- *
- * NB: prefix-инвалидация делает linear scan по Map'у. Для текущих масштабов
- * (десятки ключей) это норма; на 1000+ ключей перейти на trie или раздельные
- * Map'ы по namespace.
- */
 @Injectable()
 export class AdminCacheService {
   private readonly logger = new Logger(AdminCacheService.name);

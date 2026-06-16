@@ -1,16 +1,3 @@
-/**
- * Controller-level integration тест для TourProgressController.
- *
- * Не поднимает full NestJS-app (без БД), но создаёт контроллер с
- * мокнутым TourProgressService и проверяет, что:
- *   - GET /api/v1/users/me/tour-progress — делегирует svc.get(userId).
- *   - PATCH — делегирует svc.update(userId, tenantId, body).
- *   - POST /reset — делегирует svc.reset(userId).
- *
- * Сервисная логика merge'а / метрик / нормализации — отдельным spec'ом
- * (tour-progress.service.spec.ts).
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';

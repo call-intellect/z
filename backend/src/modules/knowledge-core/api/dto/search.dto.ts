@@ -2,16 +2,6 @@ import { z } from 'zod';
 
 import { SIGNAL_TYPE_VALUES } from '../../prompts/block-ingest.prompt';
 
-/**
- * `POST /api/v1/knowledge/search` — гибридный поиск knowledge-core.
- *
- * Body:
- *   - `query`: непустая строка до 500 символов (используется для embed + BM25).
- *   - `signalTypes`: фильтр по типу сигнала (массив SignalType).
- *   - `entityIds`: фильтр — блок упоминает хотя бы одну из переданных Entity.
- *   - `dateFrom` / `dateTo`: фильтр по `IdeaBlockEvidence.sourceTimestamp`.
- *   - `limit`: 1..50, default 10.
- */
 export const SearchRequestSchema = z.object({
   query: z.string().trim().min(1).max(500),
   signalTypes: z.array(z.enum(SIGNAL_TYPE_VALUES)).max(SIGNAL_TYPE_VALUES.length).optional(),
@@ -23,10 +13,6 @@ export const SearchRequestSchema = z.object({
 
 export type SearchRequestDto = z.infer<typeof SearchRequestSchema>;
 
-/**
- * Минимальный shape блока для результата поиска (ApiDto). Никаких embedding
- * полей и TS-типов из Prisma наружу.
- */
 export interface BlockSearchItemDto {
   id: string;
   name: string;

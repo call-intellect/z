@@ -3,17 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ChatV2FeedbackService } from './chat-v2-feedback.service';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — unit-тесты ChatV2FeedbackService.
- *
- * Mock Prisma/cfg/metrics. Покрываем:
- *   1. setFeedback — upsert идемпотентен (повторный вызов перезаписывает один и
- *      тот же messageId), проверка владения, только assistant-сообщения.
- *   2. clearFeedback — снимает оценку, проверка владения.
- *   3. getChatUsageStats — type-guard citations в SQL + дедуп ретраев в SQL +
- *      скрытие helped-rate при rated<min; self-scope без userId → пусто.
- *   4. негативные пути: чужое сообщение → 404; user-сообщение → 403; disabled.
- */
 describe('ChatV2FeedbackService', () => {
   function buildCfg(overrides: Record<string, unknown> = {}) {
     return {
@@ -80,7 +69,6 @@ describe('ChatV2FeedbackService', () => {
       await svc.setFeedback({ tenantId: 't1', userId: 'u1', messageId: 'm1', helpful: 'up' });
       await svc.setFeedback({ tenantId: 't1', userId: 'u1', messageId: 'm1', helpful: 'down' });
       expect(update).toHaveBeenCalledTimes(2);
-      // оба апдейта — по where {id:'m1'} (нет дублей строк).
       for (const call of update.mock.calls) {
         const arg = (call as unknown[])[0] as { where: { id: string } };
         expect(arg.where.id).toBe('m1');
@@ -168,24 +156,18 @@ describe('ChatV2FeedbackService', () => {
       expect(stats.answeredWithCitation).toBe(20);
       expect(stats.rated).toBe(12);
       expect(stats.helpedUp).toBe(9);
-      expect(stats.helpedRatePercent).toBe(75); // 9/12
+      expect(stats.helpedRatePercent).toBe(75);
       expect(stats.helpedRateHidden).toBe(false);
       expect(metrics.setChatAnsweredWithCitation).toHaveBeenCalledWith({
         mode: 'org',
         value: 20,
       });
-      // SQL содержит type-guard citations-массива. Первый аргумент
-      // tagged-template `$queryRaw` — это TemplateStringsArray (массив частей).
       const firstCall = (queryRaw.mock.calls as unknown[][])[0] ?? [];
       const sqlParts = Array.isArray(firstCall[0]) ? (firstCall[0] as string[]) : [];
       const joined = sqlParts.join(' ');
-      expect(joined).toContain("jsonb_typeof");
+      expect(joined).toContain('jsonb_typeof');
       expect(joined).toContain('jsonb_array_length');
-      // QA B2 (2026-06-15): array-length вызывается под CASE-guard (внутри CASE
-      // порядок вычисления детерминирован) — иначе Postgres на части планов
-      // зовёт jsonb_array_length на скалярном citations и падает 22023.
       expect(joined).toContain('CASE');
-      // дедуп ретраев присутствует в SQL.
       expect(joined).toContain('gap_seconds');
     });
 

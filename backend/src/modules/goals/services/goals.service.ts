@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -31,19 +25,8 @@ import { StrategicAlignmentIssuesService } from './strategic-alignment-issues.se
 
 const TIMELINE_LIMIT = 30;
 
-/** Лимит глубины обхода дерева при защите от цикла (на случай битых данных). */
 const CYCLE_GUARD_MAX_DEPTH = 50;
 
-/**
- * Сервис целей компании (Фаза 9 knowledge-core).
- *
- * Бизнес-правила:
- *   - tenantId на каждом запросе обязателен (изоляция Org).
- *   - `archive` — soft через `archivedAt = now() AND status = 'abandoned'`.
- *     Записи Goal сохраняются для истории; снапшоты остаются доступны.
- *   - `addThemes` — идемпотентен: пропускаем уже существующие связи (no-op).
- *   - Все мутации пишут в `AuditLog` с action `goal.*` и metadata-полями.
- */
 @Injectable()
 export class GoalsService {
   private readonly logger = new Logger(GoalsService.name);
@@ -60,18 +43,10 @@ export class GoalsService {
     private readonly issuesAlignment: StrategicAlignmentIssuesService,
   ) {}
 
-  // ─────────────────────────── issue-based snapshot ────────────────────
-
-  /**
-   * Sprint 3 B1-3.2 — отдать issue-based snapshot. cache-first: пробуем
-   * Redis, при cache miss считаем on-the-fly и пишем в Redis для
-   * последующих запросов до следующего cron-прогона.
-   */
   async getIssueAlignmentSnapshot(args: {
     tenantId: string;
     goalId: string;
   }): Promise<GoalIssueProgressSnapshotDto> {
-    // Сначала проверяем, что Goal существует и принадлежит tenant'у.
     const exists = await this.prisma.goal.findFirst({
       where: { id: args.goalId, tenantId: args.tenantId },
       select: { id: true },
@@ -94,8 +69,6 @@ export class GoalsService {
     return { ...fresh, fromCache: false };
   }
 
-  // ─────────────────────────── list / get ───────────────────────────
-
   async list(args: {
     tenantId: string;
     status: 'active' | 'paused' | 'achieved' | 'abandoned' | 'all';
@@ -103,9 +76,7 @@ export class GoalsService {
   }): Promise<{ items: GoalListItemDto[]; total: number }> {
     const where: Prisma.GoalWhereInput = {
       tenantId: args.tenantId,
-      ...(args.status === 'all'
-        ? {}
-        : { status: args.status, archivedAt: null }),
+      ...(args.status === 'all' ? {} : { status: args.status, archivedAt: null }),
     };
 
     const [rows, total] = await Promise.all([
@@ -121,16 +92,11 @@ export class GoalsService {
       this.prisma.goal.count({ where }),
     ]);
 
-    const items = rows.map((g) =>
-      this.mapList(g, g._count.themes),
-    );
+    const items = rows.map((g) => this.mapList(g, g._count.themes));
     return { items, total };
   }
 
-  async get(args: {
-    tenantId: string;
-    goalId: string;
-  }): Promise<GoalDetailDto> {
+  async get(args: { tenantId: string; goalId: string }): Promise<GoalDetailDto> {
     const goal = await this.prisma.goal.findUnique({
       where: { id: args.goalId },
       include: {
@@ -180,8 +146,6 @@ export class GoalsService {
       keyResults,
     };
   }
-
-  // ─────────────────────────── create / update / archive ────────────
 
   async create(args: {
     tenantId: string;
@@ -269,14 +233,12 @@ export class GoalsService {
     if (body.promotionState !== undefined) {
       data.promotionState = body.promotionState;
     }
-    // Reparent: проверяем цикл/принадлежность/существование родителя.
     if (body.parentGoalId !== undefined) {
       if (body.parentGoalId) {
         await this.assertParentExists(tenantId, body.parentGoalId);
         await this.assertNoCycle(tenantId, goalId, body.parentGoalId);
         data.parent = { connect: { id: body.parentGoalId } };
       } else {
-        // null = открепить от родителя.
         data.parent = { disconnect: true };
       }
     }
@@ -289,7 +251,6 @@ export class GoalsService {
       }
     }
 
-    // M0: имена всех правленых полей «прибиваются» руками — AI их не перетрёт.
     data.manualOverride = this.mergeManualOverride(
       existing.manualOverride,
       Object.keys(body),
@@ -314,11 +275,6 @@ export class GoalsService {
     return this.mapList(updated, updated._count.themes);
   }
 
-  /**
-   * ТЗ-2 Ф6.A (daily-value-dashboards) — проставить MoSCoW-приоритет цели.
-   * Tenant-scoped (цель должна принадлежать tenant). `null` = снять приоритет
-   * (корзина 'none' в портфеле). AI приоритет не перетирает.
-   */
   async setPriority(args: {
     tenantId: string;
     userId: string;
@@ -357,14 +313,6 @@ export class GoalsService {
     return { id: updated.id, priority: updated.priority };
   }
 
-  // ─────────────────────────── supersede ────────────────────────────
-
-  /**
-   * Goals OKR v2 (M0) — «передумали через 2 дня»: создать новую версию цели
-   * (наследует поля старой + переопределения из body), старую увести в
-   * историю (`validUntil = now`, `status` сохраняется). KR в Фазе 1 НЕ
-   * копируются (привязаны к старой цели; перенос — vNext).
-   */
   async supersede(args: {
     tenantId: string;
     userId: string;
@@ -393,9 +341,7 @@ export class GoalsService {
       });
     }
     const weight =
-      body.weight !== undefined
-        ? new Prisma.Decimal(body.weight.toFixed(3))
-        : old.weight;
+      body.weight !== undefined ? new Prisma.Decimal(body.weight.toFixed(3)) : old.weight;
 
     const now = new Date();
     const result = await this.prisma.$transaction(async (tx) => {
@@ -407,9 +353,7 @@ export class GoalsService {
           targetDate,
           weight,
           horizon: body.horizon ?? old.horizon,
-          ...(old.parentGoalId
-            ? { parentGoalId: old.parentGoalId }
-            : {}),
+          ...(old.parentGoalId ? { parentGoalId: old.parentGoalId } : {}),
           source: 'manual',
           promotionState: 'active',
           progressStatus: old.progressStatus,
@@ -420,7 +364,6 @@ export class GoalsService {
           createdById: userId,
         },
       });
-      // Старую — в историю: проставляем validUntil, status НЕ трогаем.
       await tx.goal.update({
         where: { id: old.id },
         data: { validUntil: now },
@@ -470,8 +413,6 @@ export class GoalsService {
     };
   }
 
-  // ─────────────────────────── themes ───────────────────────────────
-
   async addThemes(args: {
     tenantId: string;
     userId: string;
@@ -489,7 +430,6 @@ export class GoalsService {
       });
     }
 
-    // Проверим, что все темы принадлежат этому tenant'у.
     const validThemes = await this.prisma.theme.findMany({
       where: { id: { in: args.themeIds }, tenantId: args.tenantId },
       select: { id: true },
@@ -547,10 +487,7 @@ export class GoalsService {
         where: { goalId_themeId: { goalId: args.goalId, themeId: args.themeId } },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         return { removed: false };
       }
       throw err;
@@ -564,16 +501,6 @@ export class GoalsService {
     return { removed: true };
   }
 
-  // ─────────────────────────── recompute ────────────────────────────
-
-  /**
-   * Ручной recompute strategic-alignment для цели. Только owner/admin/super_admin
-   * (проверка прав — в контроллере). Quota: `MAX_GOAL_RECOMPUTE_PER_DAY` per user.
-   *
-   * Возвращает `{enqueued, jobId}`. Snapshot создаст воркер позже —
-   * клиент должен опрашивать `GET /goals/:id` чтобы увидеть новый
-   * `cachedAlignment*`.
-   */
   async recompute(args: {
     tenantId: string;
     userId: string;
@@ -622,13 +549,7 @@ export class GoalsService {
     return { enqueued: true, jobId };
   }
 
-  // ─────────────────────────── tree guards ──────────────────────────
-
-  /** Проверить, что parent существует и принадлежит тому же tenant'у. */
-  private async assertParentExists(
-    tenantId: string,
-    parentGoalId: string,
-  ): Promise<void> {
+  private async assertParentExists(tenantId: string, parentGoalId: string): Promise<void> {
     const parent = await this.prisma.goal.findUnique({
       where: { id: parentGoalId },
       select: { id: true, tenantId: true },
@@ -644,11 +565,7 @@ export class GoalsService {
     }
   }
 
-  /** Проверить, что Person (ответственный) существует и принадлежит тому же tenant'у. */
-  private async assertOwnerPersonExists(
-    tenantId: string,
-    ownerPersonId: string,
-  ): Promise<void> {
+  private async assertOwnerPersonExists(tenantId: string, ownerPersonId: string): Promise<void> {
     const person = await this.prisma.person.findUnique({
       where: { id: ownerPersonId },
       select: { id: true, tenantId: true },
@@ -664,14 +581,6 @@ export class GoalsService {
     }
   }
 
-  /**
-   * Защита от цикла при перепривязке (`parentGoalId`):
-   *   - newParentId === goalId → цель не может быть родителем самой себя.
-   *   - поднимаемся вверх по цепочке parentGoalId от newParentId; если
-   *     встретили goalId — перепривязка создаёт цикл.
-   *   - newParentId === null обрабатывается выше (открепление, цикла нет).
-   * Лимит глубины — на случай уже повреждённых данных.
-   */
   private async assertNoCycle(
     tenantId: string,
     goalId: string,
@@ -698,21 +607,16 @@ export class GoalsService {
           },
         });
       }
-      const node: { parentGoalId: string | null } | null =
-        await this.prisma.goal.findFirst({
-          where: { id: cursor, tenantId },
-          select: { parentGoalId: true },
-        });
+      const node: { parentGoalId: string | null } | null = await this.prisma.goal.findFirst({
+        where: { id: cursor, tenantId },
+        select: { parentGoalId: true },
+      });
       cursor = node?.parentGoalId ?? null;
       depth += 1;
     }
   }
 
-  /** Смердж имён правленых полей в Goal.manualOverride (Record<string,true>). */
-  private mergeManualOverride(
-    existing: unknown,
-    fields: string[],
-  ): Record<string, true> {
+  private mergeManualOverride(existing: unknown, fields: string[]): Record<string, true> {
     const out: Record<string, true> = {};
     if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
       for (const key of Object.keys(existing as Record<string, unknown>)) {
@@ -722,8 +626,6 @@ export class GoalsService {
     for (const f of fields) out[f] = true;
     return out;
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private decimalOrNull(v: unknown): number | null {
     if (v === null || v === undefined) return null;
@@ -746,12 +648,7 @@ export class GoalsService {
       updatedAt: Date;
       source: 'manual' | 'ai';
       promotionState: 'suggested' | 'active' | 'dismissed';
-      progressStatus:
-        | 'on_track'
-        | 'at_risk'
-        | 'stalled'
-        | 'achieved'
-        | 'dropped';
+      progressStatus: 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
       parentGoalId: string | null;
       ownerPersonId: string | null;
       ownerPerson: { name: string } | null;
@@ -767,9 +664,7 @@ export class GoalsService {
       status: g.status,
       weight: this.decimalToNumber(g.weight),
       cachedAlignment: g.cachedAlignment,
-      cachedAlignmentAt: g.cachedAlignmentAt
-        ? g.cachedAlignmentAt.toISOString()
-        : null,
+      cachedAlignmentAt: g.cachedAlignmentAt ? g.cachedAlignmentAt.toISOString() : null,
       cachedAlignmentDelta: g.cachedAlignmentDelta,
       themesCount,
       archivedAt: g.archivedAt ? g.archivedAt.toISOString() : null,
@@ -813,15 +708,11 @@ export class GoalsService {
     };
   }
 
-  private normalizeSignals(
-    raw: unknown,
-  ): { pro: string[]; contra: string[] } {
+  private normalizeSignals(raw: unknown): { pro: string[]; contra: string[] } {
     if (!raw || typeof raw !== 'object') return { pro: [], contra: [] };
     const obj = raw as { pro?: unknown; contra?: unknown };
     return {
-      pro: Array.isArray(obj.pro)
-        ? obj.pro.filter((x): x is string => typeof x === 'string')
-        : [],
+      pro: Array.isArray(obj.pro) ? obj.pro.filter((x): x is string => typeof x === 'string') : [],
       contra: Array.isArray(obj.contra)
         ? obj.contra.filter((x): x is string => typeof x === 'string')
         : [],
@@ -839,9 +730,7 @@ export class GoalsService {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());

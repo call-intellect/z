@@ -1,32 +1,18 @@
-'use client';
+"use client";
 
-import { Loader2, Save, Search, X as XIcon } from 'lucide-react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
-import { toast } from 'sonner';
+import { Loader2, Save, Search, X as XIcon } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
 
-import { tableViewsApi } from '@/api/tables.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+import { tableViewsApi } from "@/api/tables.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
-import { useTableStore } from '../store/tableStore';
-import { SaveViewDialog } from './SaveViewDialog';
+import { useTableStore } from "../store/tableStore";
+import { SaveViewDialog } from "./SaveViewDialog";
 
-/**
- * Строка «Найти срез» — NL Saved Views (Smart-tables Фаза 5).
- *
- * Пользователь пишет запрос на естественном языке («клиенты, кому месяц никто
- * не писал»), фронт зовёт `tableViewsApi.semanticFilter`, получает JSON-фильтр
- * (уже валидированный backend'ом против схемы) и применяет его к строкам
- * клиент-сайд через `setDraftFilters`. Грид перерисуется через
- * `selectVisibleRows`.
- *
- * Дальше пользователь может сохранить срез как новый вид (переиспользуем
- * `SaveViewDialog` — конфиг с фильтрами уже лежит в `draftConfig`).
- *
- * Копи — только русский (см. memory `feedback_admin_ui_russian_only`).
- */
 export function SemanticFilterBar({ tableId }: { tableId: string }) {
   const { currentOrgId } = useAuth();
   const router = useRouter();
@@ -38,14 +24,14 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
   const draftFilters = useTableStore((s) => s.draftConfig.filters);
   const activeCount = draftFilters?.length ?? 0;
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
   async function onApply() {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
-      toast.error('Введите запрос подлиннее — минимум 2 символа');
+      toast.error("Введите запрос подлиннее — минимум 2 символа");
       return;
     }
     if (!currentOrgId) return;
@@ -57,7 +43,7 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
         trimmed,
       );
       if (res.filters.length === 0) {
-        toast.error('Не удалось распознать фильтр, переформулируйте запрос');
+        toast.error("Не удалось распознать фильтр, переформулируйте запрос");
         return;
       }
       setDraftFilters(res.filters);
@@ -68,7 +54,7 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
       );
     } catch (e) {
       toast.error(
-        e instanceof Error ? e.message : 'Не удалось применить фильтр',
+        e instanceof Error ? e.message : "Не удалось применить фильтр",
       );
     } finally {
       setBusy(false);
@@ -77,13 +63,13 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
 
   function onReset() {
     clearDraftFilters();
-    setQuery('');
+    setQuery("");
   }
 
   function navigateToView(viewId: string | null) {
-    const params = new URLSearchParams(searchParams?.toString() ?? '');
-    if (viewId) params.set('view', viewId);
-    else params.delete('view');
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (viewId) params.set("view", viewId);
+    else params.delete("view");
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
   }
@@ -99,7 +85,7 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !busy) {
+            if (e.key === "Enter" && !busy) {
               e.preventDefault();
               void onApply();
             }
@@ -164,8 +150,6 @@ export function SemanticFilterBar({ tableId }: { tableId: string }) {
         open={saveDialogOpen}
         onOpenChange={setSaveDialogOpen}
         onSaved={(view) => {
-          // После создания вида — переходим на него по URL (ViewSelector
-          // подхватит `?view=` и применит config с фильтрами).
           navigateToView(view.id);
         }}
       />

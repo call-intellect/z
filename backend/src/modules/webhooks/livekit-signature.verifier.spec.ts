@@ -8,10 +8,6 @@ import { IntegrationKeyInvalidError } from '../../common/errors/domain-errors';
 
 import { LivekitSignatureVerifier } from './livekit-signature.verifier';
 
-/**
- * Юнит-тесты верификатора LiveKit-вебхуков.
- */
-
 const SECRET = 'lk-webhook-secret-' + 'x'.repeat(40);
 
 function makeCfg(secret: string = SECRET): TypedConfigService {
@@ -87,8 +83,8 @@ describe('LivekitSignatureVerifier', () => {
       algorithm: 'HS256',
       expiresIn: -10,
     });
-    expect(() =>
-      verifier.verify({ rawBody: sampleBody, authHeader: expiredToken }),
-    ).toThrow(IntegrationKeyInvalidError);
+    expect(() => verifier.verify({ rawBody: sampleBody, authHeader: expiredToken })).toThrow(
+      IntegrationKeyInvalidError,
+    );
   });
 });

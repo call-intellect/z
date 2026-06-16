@@ -23,22 +23,10 @@ import {
 } from './dto/create-share.dto';
 import { SharesService } from './shares.service';
 
-/**
- * Приватные share-эндпоинты (требуют CookieAuth).
- *
- *   `GET    /api/v1/meetings/:id/shares`        — список ссылок встречи
- *   `POST   /api/v1/meetings/:id/shares`        — создать
- *   `DELETE /api/v1/shares/:id`                  — revoke (revokedAt = now)
- *   `GET    /api/v1/highlights/:id/shares`      — список ссылок клипа
- *   `POST   /api/v1/highlights/:id/shares`      — создать клип-ссылку
- *   `DELETE /api/v1/highlight-shares/:id`        — revoke клип-ссылку
- */
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
 export class SharesController {
   constructor(@Inject(SharesService) private readonly shares: SharesService) {}
-
-  // ─────────────────────────── meeting shares ───────────────────────────
 
   @Get('meetings/:id/shares')
   async listMeeting(
@@ -69,8 +57,6 @@ export class SharesController {
     await this.shares.revokeMeetingShare(id, user.id);
   }
 
-  // ─────────────────────────── highlight shares ─────────────────────────
-
   @Get('highlights/:id/shares')
   async listHighlight(
     @Param('id') highlightId: string,
@@ -99,8 +85,6 @@ export class SharesController {
   ): Promise<void> {
     await this.shares.revokeHighlightShare(id, user.id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapMeetingShare(s: {
     id: string;

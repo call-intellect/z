@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Check, Copy, Send } from 'lucide-react';
+import { useState } from "react";
+import { Check, Copy, Send } from "lucide-react";
 
-import type { OrgInvitationCreateResultDomain } from '@/domain/org-invitations';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+import type { OrgInvitationCreateResultDomain } from "@/domain/org-invitations";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 type Props = {
   open: boolean;
@@ -23,19 +23,6 @@ type Props = {
   onOpenChange: (open: boolean) => void;
 };
 
-/**
- * β-9 (2026-05-25) — модал после создания приглашения.
- *
- * Показывает:
- *   - manualShareUrl (главная ссылка для пересылки сотруднику)
- *   - QR-код этой ссылки (если backend не отдал qrCodeDataUrl — используем
- *     внешний CDN api.qrserver.com; см. TODO ниже про локальную генерацию)
- *   - telegramDeepLink (`https://t.me/<bot>?start=<linkCode>`)
- *   - linkCode (для ручного ввода в бота)
- *   - подсказку про срок жизни приглашения
- *
- * См. plans/tz/2026-05-25-telegram-bot-global-and-invites.md §12.
- */
 export function InviteCreatedDialog({ open, result, onOpenChange }: Props) {
   if (!result) {
     return null;
@@ -48,7 +35,7 @@ export function InviteCreatedDialog({ open, result, onOpenChange }: Props) {
           <DialogDescription>
             {result.email
               ? `Письмо отправлено на ${result.email}. Если сотрудник не получит — отправьте ссылку вручную.`
-              : 'Отправьте ссылку сотруднику в любой мессенджер. По ссылке он войдёт без пароля и подключит Telegram-бота.'}
+              : "Отправьте ссылку сотруднику в любой мессенджер. По ссылке он войдёт без пароля и подключит Telegram-бота."}
           </DialogDescription>
         </DialogHeader>
 
@@ -79,14 +66,14 @@ export function InviteCreatedDialog({ open, result, onOpenChange }: Props) {
           />
 
           <p className="text-xs text-fg-secondary">
-            Ссылка действует до{' '}
+            Ссылка действует до{" "}
             <strong>
-              {result.expiresAt.toLocaleString('ru-RU', {
-                day: '2-digit',
-                month: 'long',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
+              {result.expiresAt.toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "long",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
               })}
             </strong>
             . Если сотрудник не успеет — перевыпустите приглашение.
@@ -130,10 +117,9 @@ function CopyableField({
       await navigator.clipboard.writeText(value);
       setCopied(true);
       toast.success(successMessage);
-      // Возвращаем «чек» через 1.5с обратно в «копировать».
       window.setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
   return (
@@ -146,7 +132,7 @@ function CopyableField({
         <Input
           readOnly
           value={value}
-          className={monospace ? 'font-mono text-sm' : ''}
+          className={monospace ? "font-mono text-sm" : ""}
           onFocus={(e) => e.target.select()}
         />
         <Button
@@ -176,15 +162,6 @@ type QrPreviewProps = {
   qrDataUrl: string | null;
 };
 
-/**
- * QR-код magic-ссылки. Если backend отдаёт `qrCodeDataUrl` — используем
- * его (data-URL). Иначе — fallback на внешний CDN `api.qrserver.com`.
- *
- * TODO(qrcode-local): подключить клиентскую библиотеку `qrcode` (или
- * `qrcode.react`) и рисовать локально, чтобы избежать внешнего запроса.
- * Сейчас CDN-вариант приемлем т.к. ссылка ОДНОРАЗОВАЯ и не содержит
- * долгоживущих секретов — её и так сразу пересылают сотруднику.
- */
 function QrPreview({ value, qrDataUrl }: QrPreviewProps) {
   const externalQrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
     value,
@@ -205,8 +182,7 @@ function QrPreview({ value, qrDataUrl }: QrPreviewProps) {
           QR-код для быстрого открытия
         </p>
         <p>
-          Покажите сотруднику — он отсканирует камерой и сразу войдёт в
-          кабинет.
+          Покажите сотруднику — он отсканирует камерой и сразу войдёт в кабинет.
         </p>
         {qrDataUrl ? null : (
           <p className="text-fg-tertiary">

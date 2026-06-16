@@ -1,31 +1,3 @@
-/**
- * ТЗ 2026-05-24-kie-grsai-llm-router-integration §Фаза 4 — пример A/B-эксперимента
- * `LlmModelExperiment` для taskType `dialog-multi-query`:
- *   - control: deepseek/deepseek-v4-flash (текущий primary)
- *   - variant: kie/gemini-3-flash
- *   - split: 10% трафика на variant (sticky-allocation в LlmRouter
- *     по hash(meetingId)).
- *
- * Цель — дать оператору заранее заведённую draft-запись, чтобы:
- *   1) в админке `/admin/ai-models/dialog-multi-query` сразу было что
- *      «запустить» одной кнопкой (`startExperiment` переведёт status='running');
- *   2) end-to-end путь A/B был проверен на безопасных 10% — primary остаётся
- *      DeepSeek, KIE-нестабильность не аффектит большинство юзеров.
- *
- * **Не активирует эксперимент** — создаёт со `status='draft'`. Активация —
- * вручную из админки (Z-Admin, audit log в `LlmTaskRouteChange`).
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - lookup по (taskType, controlModel, variantModel, status='draft'):
- *     если такой draft уже есть — пропускаем (не пересоздаём дубль).
- *   - НЕ трогаем `running`/`stopped`/`completed` записи — это рабочие данные.
- *   - НЕ пишем `splitPercent`/`notes` поверх существующей записи — оператор
- *     мог настроить через UI.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-kie-grsai-ab.ts
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -58,7 +30,6 @@ const SEEDS: AbSeed[] = [
 ];
 
 async function pickSystemAdminUserId(): Promise<string> {
-  // По образцу seed-prompt-templates.ts: super_admin → admin → ошибка.
   const superAdmin = await prisma.user.findFirst({
     where: { isSuperAdmin: true, deletedAt: null },
     select: { id: true },
@@ -83,8 +54,6 @@ interface SeedStats {
 }
 
 async function applySeed(seed: AbSeed, createdById: string, stats: SeedStats): Promise<void> {
-  // Идемпотентность: ищем draft с тем же набором control/variant — если
-  // нашли, ничего не делаем.
   const existing = await prisma.llmModelExperiment.findFirst({
     where: {
       tenantId: null,
@@ -102,8 +71,6 @@ async function applySeed(seed: AbSeed, createdById: string, stats: SeedStats): P
     );
     return;
   }
-  // Также не создаём draft если уже есть running той же пары — чтобы не
-  // запутать оператора одинаковыми «черновиками рядом с запущенным».
   const running = await prisma.llmModelExperiment.findFirst({
     where: {
       tenantId: null,

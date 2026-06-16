@@ -1,36 +1,7 @@
-/**
- * Фаза A.2 — PromptTemplatesPreviewService.
- *
- * Запуск preview-генерации на синтетической demo-встрече.
- * Источник: ТЗ A §9.
- *
- * Алгоритм:
- *   1. Берём шаблон + конкретную версию (если versionId не задан — активная,
- *      иначе последняя draft).
- *   2. Подгружаем demo-meeting JSON из `backend/test-fixtures/demo-meetings/`.
- *   3. Собираем prompt (system + сводка демо-встречи как user-message).
- *   4. Вызываем LlmRouterService с taskType='summary' и dataClass='internal'.
- *   5. Возвращаем результат + cost + duration.
- *
- * Rate-limit и cost-limit:
- *   - 10 preview/час на user — простая in-memory защёлка (ResetMap).
- *     В production хорошо бы перевести на Redis-bucket, но Docker выключен,
- *     поэтому ограничиваемся in-process.
- *   - $0.20 на preview — если стоимость превысила, пишем warning + метрика.
- *     Само вызов не отменяется (это уже после-фактум), но в response придёт
- *     `costOverBudget: true`.
- */
-
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { PromptTemplateSection, PromptTemplateVersion } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -49,7 +20,6 @@ interface DemoMeeting {
   type: string;
   durationSec: number;
   participants: Array<{ name: string; role?: string }>;
-  /** Уже готовый merged-транскрипт (склейка по таймстампам). */
   transcript: Array<{ speaker: string; text: string; ts?: number }>;
 }
 
@@ -71,7 +41,6 @@ export interface PreviewResult {
 @Injectable()
 export class PromptTemplatesPreviewService {
   private readonly logger = new Logger(PromptTemplatesPreviewService.name);
-  /** Map<userId, Array<timestamps_in_last_hour>>. */
   private readonly recentByUser = new Map<string, number[]>();
 
   constructor(
@@ -91,7 +60,6 @@ export class PromptTemplatesPreviewService {
   ): Promise<PreviewResult> {
     this.assertRateLimit(userId);
 
-    // Выбор версии: явная → активная → последняя.
     const tpl = await this.templates.detail(templateId);
     const resolved = await this.resolveVersion(tpl, dto.versionId);
     const { version, source } = resolved;
@@ -101,10 +69,6 @@ export class PromptTemplatesPreviewService {
     const systemPrompt = this.buildSystemPrompt(version);
     const userMessage = this.buildUserMessage(demo);
 
-    // A2: оборачиваем сырой транскрипт demo-встречи в анти-инъекционные маркеры.
-    // asr:true — это транскрипт (демо). У сервиса нет TypedConfigService —
-    // глобальный kill-switch здесь не гейтит (enabled по умолчанию true);
-    // конструктор ради флага не расширяем.
     const guarded = applyInputGuards(systemPrompt, userMessage, {
       injection: true,
       asr: true,
@@ -116,22 +80,13 @@ export class PromptTemplatesPreviewService {
         taskType: 'summary',
         systemPrompt: guarded.system,
         userMessage: guarded.user,
-        // Tenant неизвестен на preview-уровне (super_admin запускает за себя).
-        // null допустимо по контракту LlmRouterService.
         tenantId: null,
         userId,
         dataClass: 'internal',
         sourceRef: { type: 'prompt_template_preview', id: tpl.id },
       });
       const durationMs = Date.now() - startedAt;
-      // costUsd напрямую из LlmCallResult не приходит. Метрика и логи
-      // фиксируют его в AiUsageLog, здесь оцениваем приближённо через
-      // input/output tokens × средний прайс (для UI достаточно). Точное
-      // значение остаётся в AiUsageLog.
-      const approxCost = this.approximateCost(
-        res.inputTokens,
-        res.outputTokens,
-      );
+      const approxCost = this.approximateCost(res.inputTokens, res.outputTokens);
       const costOverBudget = approxCost > PREVIEW_COST_LIMIT_USD;
       if (costOverBudget) {
         this.logger.warn(
@@ -185,8 +140,6 @@ export class PromptTemplatesPreviewService {
     }
   }
 
-  // ─── helpers ──────────────────────────────────────────────────────
-
   private async resolveVersion(
     tpl: { id: string; activeVersionId: string | null },
     explicitVersionId: string | undefined,
@@ -222,9 +175,7 @@ export class PromptTemplatesPreviewService {
   private assertRateLimit(userId: string): void {
     const now = Date.now();
     const windowStart = now - 60 * 60 * 1000;
-    const hits = (this.recentByUser.get(userId) ?? []).filter(
-      (t) => t > windowStart,
-    );
+    const hits = (this.recentByUser.get(userId) ?? []).filter((t) => t > windowStart);
     if (hits.length >= PREVIEW_RATE_LIMIT_PER_HOUR) {
       throw new BadRequestException({
         ok: false,
@@ -240,21 +191,11 @@ export class PromptTemplatesPreviewService {
   private recordHit(userId: string): void {
     const now = Date.now();
     const windowStart = now - 60 * 60 * 1000;
-    const arr = (this.recentByUser.get(userId) ?? []).filter(
-      (t) => t > windowStart,
-    );
+    const arr = (this.recentByUser.get(userId) ?? []).filter((t) => t > windowStart);
     arr.push(now);
     this.recentByUser.set(userId, arr);
   }
 
-  /**
-   * Чтение demo-meeting JSON из `backend/test-fixtures/demo-meetings/`.
-   * Файлы лежат рядом с backend root (НЕ src/), путь от dist/...
-   *
-   * Используем `process.cwd()` + относительный путь — при dev и build
-   * `cwd = backend/`. В тестах путь резолвится из текущей рабочей директории
-   * tests-runner'а.
-   */
   private loadDemoMeeting(key: DemoMeetingKey): DemoMeeting {
     const path = join(process.cwd(), 'test-fixtures', 'demo-meetings', `${key}.json`);
     try {
@@ -274,11 +215,6 @@ export class PromptTemplatesPreviewService {
     }
   }
 
-  /**
-   * Сборка system-промпта: используем `version.systemPrompt` как базу,
-   * добавляем перечень секций с инструкциями. Это эмулирует
-   * `prompt-renderer` из A.1, упрощённо для preview.
-   */
   private buildSystemPrompt(
     version: PromptTemplateVersion & { sections: PromptTemplateSection[] },
   ): string {
@@ -296,15 +232,11 @@ export class PromptTemplatesPreviewService {
     const head = `Транскрипт демо-встречи (тип: ${demo.type}, длительность ${Math.round(
       demo.durationSec / 60,
     )} мин, участников: ${demo.participants.length}).`;
-    const body = demo.transcript
-      .map((t) => `${t.speaker}: ${t.text}`)
-      .join('\n');
+    const body = demo.transcript.map((t) => `${t.speaker}: ${t.text}`).join('\n');
     return `${head}\n\n${body}`;
   }
 
   private approximateCost(inputTokens: number, outputTokens: number): number {
-    // Грубая оценка: $0.5 / 1M входных + $1.5 / 1M выходных (deepseek-flash-like).
-    // Точная цена пишется в AiUsageLog через LlmRouter; здесь — только для UI.
     return (inputTokens * 0.5 + outputTokens * 1.5) / 1_000_000;
   }
 }

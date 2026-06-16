@@ -1,52 +1,3 @@
-/**
- * ТЗ-1 Ф3.D + Ф3.A/B/C (daily-value-engine) — Seed AdminSetting для агентов
- * исполнения (фиксы достоверности + синтез блокеров + контролёр решений +
- * каскад обещаний).
- *
- * Регистрирует пороги-«крутилки» (редактируются super_admin'ом в админке,
- * code-fallback в самих сервисах):
- *
- * Ф3.D (фиксы достоверности):
- *   - `goals.author_coverage_min` (0..1, default 0.6) — минимальная доля
- *     commitment с непустым `commitmentAuthorPersonId` для goal-vector. Ниже —
- *     атрибуция kept/broken откатывается на адресата (recipient).
- *   - `reliability.min_denominator` (int, default 3) — минимальный знаменатель
- *     (kept+broken+overdue), ниже которого `reliabilityPercent` помечается как
- *     «мало данных» (не показываем 1/1=100%).
- *   - `probe.reply_latency_rise.factor` (number, default 2) — во сколько раз
- *     средняя задержка ответа за 14д должна вырасти vs baseline (15-90д), чтобы
- *     сработал trigrеr `reply_latency_rise`.
- *   - `probe.workload_overload.load_percent` (int, default 120) — порог
- *     `Appointment.loadPercent` (строго >) для триггера `workload_overload`.
- *   - `probe.meeting_noshows.count` (int, default 3) — минимум неявок за 28д
- *     для триггера `meeting_noshows`.
- *
- * Ф3.A (синтез блокеров):
- *   - `blocker_synthesis.lookback_days` (int, default 7) — окно накопления.
- *   - `blocker_synthesis.recurring_days` (int, default 2) — с какого daysOpen
- *     повторяющийся блокер мостится в Insight.
- *   - `blocker_synthesis.impact.{base,customer,deadline,commitment,per_day_open}`
- *     — веса бизнес-удара кластера блокеров.
- *   - `operations.blocker_synthesis.enabled` (bool, default true) — kill-switch.
- *
- * Ф3.B (контролёр внедрения решений):
- *   - `decision.stale_days` (int, default 21) — после скольких дней решение без
- *     задач и без actualOutcomes помечается `stalled`.
- *   - `operations.decision_controller.enabled` (bool, default true) — kill-switch.
- *
- * Ф3.C (каскад обещаний):
- *   - `operations.promise_cascade.enabled` (bool, default true) — kill-switch.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-execution-agents.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -111,7 +62,6 @@ const SEEDS: SettingSeed[] = [
       'Минимум неявок на завершённые встречи за 28 дней (приглашён, но не присоединился), при котором срабатывает risk-триггер пропуска встреч (meeting_noshows). По умолчанию 3.',
   },
 
-  // ── Ф3.A — накопительный синтез блокеров ──────────────────────────────
   {
     key: 'blocker_synthesis.lookback_days',
     value: 7,
@@ -136,8 +86,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'blocker_synthesis',
     severity: 'low',
-    description:
-      'Базовый вес бизнес-удара за каждый блок в кластере блокеров. По умолчанию 1.',
+    description: 'Базовый вес бизнес-удара за каждый блок в кластере блокеров. По умолчанию 1.',
   },
   {
     key: 'blocker_synthesis.impact.customer',
@@ -145,8 +94,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'blocker_synthesis',
     severity: 'low',
-    description:
-      'Бонус бизнес-удара, если блокер задевает клиента/выручку/сделку. По умолчанию 4.',
+    description: 'Бонус бизнес-удара, если блокер задевает клиента/выручку/сделку. По умолчанию 4.',
   },
   {
     key: 'blocker_synthesis.impact.deadline',
@@ -154,8 +102,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'blocker_synthesis',
     severity: 'low',
-    description:
-      'Бонус бизнес-удара, если блокер задевает дедлайн/срок/релиз. По умолчанию 3.',
+    description: 'Бонус бизнес-удара, если блокер задевает дедлайн/срок/релиз. По умолчанию 3.',
   },
   {
     key: 'blocker_synthesis.impact.commitment',
@@ -185,7 +132,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) дневного синтеза блокеров (cron 22:00). Выкл → синтез не строится, мост в инсайты не работает. По умолчанию ВКЛ.',
   },
 
-  // ── Ф3.B — контролёр внедрения решений ────────────────────────────────
   {
     key: 'decision.stale_days',
     value: 21,
@@ -205,7 +151,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) контролёра внедрения решений (cron 06:00). Выкл → статусы внедрения не пересчитываются, пушей нет. По умолчанию ВКЛ.',
   },
 
-  // ── Ф3.C — каскад обещаний ────────────────────────────────────────────
   {
     key: 'operations.promise_cascade.enabled',
     value: true,
@@ -246,7 +191,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

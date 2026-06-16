@@ -2,14 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportEditClassifyService } from './services/support-edit-classify.service';
 
-/**
- * support-desk Ф3 — unit-тесты SupportEditClassifyService.classify:
- *   - возвращает editType из строгого JSON LLM;
- *   - LLM бросает / непарсимый JSON → fallback 'factual' (консервативно:
- *     неверный ответ НЕ должен быть промоутнут).
- *
- * Зависимость llm замокана.
- */
 describe('SupportEditClassifyService.classify', () => {
   const TENANT = 'vendor-org-1';
 

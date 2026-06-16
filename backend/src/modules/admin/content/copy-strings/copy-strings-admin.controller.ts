@@ -29,13 +29,6 @@ import {
   type UpdateCopyStringDto,
 } from './dto/copy-strings-admin.dto';
 
-/**
- * Admin-redesign Фаза 5 — `CopyStringsAdminController`.
- *
- * Глоссарий и UI-строки. Хранятся в `AdminSetting` (MVP, без отдельной
- * модели). Все мутации идут через `AdminSettingsService.set()`, чтобы
- * получить history + audit + pub/sub-инвалидацию бесплатно.
- */
 @ApiTags('admin-content-copy-strings')
 @Controller('api/v1/admin/content/copy-strings')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -48,8 +41,7 @@ export class CopyStringsAdminController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Все AdminSetting с category=content section=copy-strings (UI-строки + глоссарий).',
+    summary: 'Все AdminSetting с category=content section=copy-strings (UI-строки + глоссарий).',
   })
   list() {
     return this.svc.list();

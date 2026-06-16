@@ -1,21 +1,4 @@
-/**
- * KC-Temporal W3.5 — unit-тесты ProjectionRebuilderService.
- *
- * Покрытие:
- *   1. Один блок обновлён → 2 зависимые проекции (Decision + Insight) →
- *      два enqueue в `core.specialist-routing` с правильными jobId.
- *   2. Idempotency: повторный event на тот же блок вызывает один и тот же
- *      jobId для проекции (BullMQ-дедуп через jobId уже на стороне очереди;
- *      проверяем, что сервис стабильно строит одинаковый jobId).
- *   3. Infinite-loop защита: changeKind='projection_rebuild_emitted_by_self'
- *      → сервис ничего не делает (никаких findMany / enqueue).
- *   4. Card → enqueueCardRollupV2 (отдельная очередь).
- *
- * Все зависимости (PrismaService, CoreQueueService, BusinessMetricsService,
- * TypedConfigService) мокаются.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -24,12 +7,7 @@ import type { CoreQueueService } from '../../core-queue/core-queue.service';
 
 import { ProjectionRebuilderService } from './projection-rebuilder.service';
 
-/**
- * Минимальная фабрика моков. Все Prisma-findMany по умолчанию возвращают
- * пустой массив; каждый тест уточняет нужные ответы.
- */
 function makeMocks() {
-  // ── prisma ────────────────────────────────────────────────────────────
   const decisionFindMany = vi.fn(async () => []);
   const insightFindMany = vi.fn(async () => []);
   const ideaFindMany = vi.fn(async () => []);
@@ -53,10 +31,9 @@ function makeMocks() {
     experiment: { findMany: experimentFindMany },
   } as unknown as PrismaService;
 
-  // ── core queue ───────────────────────────────────────────────────────
-  const enqueueSpecialistCustom = vi.fn(
-    async (args: Record<string, unknown>) => ({ jobId: String(args.jobId) }),
-  );
+  const enqueueSpecialistCustom = vi.fn(async (args: Record<string, unknown>) => ({
+    jobId: String(args.jobId),
+  }));
   const enqueueCardRollupV2 = vi.fn(
     async (_cardId: string, _opts?: Record<string, unknown>) => undefined,
   );
@@ -65,13 +42,11 @@ function makeMocks() {
     enqueueCardRollupV2,
   } as unknown as CoreQueueService;
 
-  // ── metrics ──────────────────────────────────────────────────────────
   const metrics = {
     incKcProjectionRebuild: vi.fn(),
     observeKcProjectionRebuildLagMs: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  // ── config ────────────────────────────────────────────────────────────
   const cfg = {
     projectionRebuild: { debounceMs: 300_000 },
   } as unknown as TypedConfigService;
@@ -104,16 +79,10 @@ describe('ProjectionRebuilderService', () => {
 
   beforeEach(() => {
     mocks = makeMocks();
-    svc = new ProjectionRebuilderService(
-      mocks.prisma,
-      mocks.coreQueue,
-      mocks.cfg,
-      mocks.metrics,
-    );
+    svc = new ProjectionRebuilderService(mocks.prisma, mocks.coreQueue, mocks.cfg, mocks.metrics);
   });
 
   it('Один блок обновлён → две зависимые проекции (Decision + Insight) → два enqueue с правильными jobId', async () => {
-    // Decision и Insight оба используют blockId как источник.
     mocks.fns.decisionFindMany.mockResolvedValueOnce([{ id: 'dec-1' }] as never);
     mocks.fns.insightFindMany.mockResolvedValueOnce([{ id: 'ins-1' }] as never);
 
@@ -124,10 +93,8 @@ describe('ProjectionRebuilderService', () => {
       emittedAt: Date.now() - 5,
     });
 
-    // Проверяем что обе проекции были обработаны.
     expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledTimes(2);
 
-    // Проверяем jobId для Decision.
     const decisionCall = mocks.fns.enqueueSpecialistCustom.mock.calls.find(
       (c) => (c[0] as { jobId: string }).jobId === 'projection-rebuild_decision_dec-1',
     );
@@ -141,7 +108,6 @@ describe('ProjectionRebuilderService', () => {
       delayMs: 300_000,
     });
 
-    // Проверяем jobId для Insight.
     const insightCall = mocks.fns.enqueueSpecialistCustom.mock.calls.find(
       (c) => (c[0] as { jobId: string }).jobId === 'projection-rebuild_insight_ins-1',
     );
@@ -153,14 +119,12 @@ describe('ProjectionRebuilderService', () => {
       delayMs: 300_000,
     });
 
-    // Метрики инкрементированы.
     expect(mocks.metrics.incKcProjectionRebuild).toHaveBeenCalledWith({
       type: 'decision',
     });
     expect(mocks.metrics.incKcProjectionRebuild).toHaveBeenCalledWith({
       type: 'insight',
     });
-    // Lag-метрика наблюдалась один раз (на всё событие).
     expect(mocks.metrics.observeKcProjectionRebuildLagMs).toHaveBeenCalledTimes(1);
   });
 
@@ -178,9 +142,6 @@ describe('ProjectionRebuilderService', () => {
       changeKind: 'updated',
     });
 
-    // Сервис вызвал enqueue дважды (BullMQ сам сворачивает по jobId), но
-    // оба вызова — с ОДИНАКОВЫМ jobId. Это и есть контракт идемпотентности
-    // на уровне сервиса: одинаковый input → одинаковый jobId.
     expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledTimes(2);
     const jobIds = mocks.fns.enqueueSpecialistCustom.mock.calls.map(
       (c) => (c[0] as { jobId: string }).jobId,
@@ -190,7 +151,6 @@ describe('ProjectionRebuilderService', () => {
   });
 
   it('Infinite-loop защита: changeKind=projection_rebuild_emitted_by_self → ничего не делается', async () => {
-    // Подсаживаем «ловушку»: если сервис всё-таки полезет в БД — мы поймём.
     mocks.fns.decisionFindMany.mockResolvedValue([{ id: 'dec-1' }] as never);
     mocks.fns.insightFindMany.mockResolvedValue([{ id: 'ins-1' }] as never);
 
@@ -200,7 +160,6 @@ describe('ProjectionRebuilderService', () => {
       changeKind: 'projection_rebuild_emitted_by_self',
     });
 
-    // Никаких findMany, никаких enqueue, никаких метрик.
     expect(mocks.fns.decisionFindMany).not.toHaveBeenCalled();
     expect(mocks.fns.insightFindMany).not.toHaveBeenCalled();
     expect(mocks.fns.enqueueSpecialistCustom).not.toHaveBeenCalled();
@@ -209,10 +168,7 @@ describe('ProjectionRebuilderService', () => {
   });
 
   it('Card → enqueueCardRollupV2 с правильными reason/delayMs (отдельная очередь, не specialist-routing)', async () => {
-    mocks.fns.cardFindMany.mockResolvedValueOnce([
-      { id: 'card-1' },
-      { id: 'card-2' },
-    ] as never);
+    mocks.fns.cardFindMany.mockResolvedValueOnce([{ id: 'card-1' }, { id: 'card-2' }] as never);
 
     await svc.onIdeaBlockUpdated({
       tenantId: 'tenant-1',
@@ -229,15 +185,11 @@ describe('ProjectionRebuilderService', () => {
       delayMs: 300_000,
       reason: 'projection-rebuild',
     });
-    // Specialist-routing очередь не дёргалась.
     expect(mocks.fns.enqueueSpecialistCustom).not.toHaveBeenCalled();
-    // Card-метрика инкрементирована дважды.
     expect(mocks.metrics.incKcProjectionRebuild).toHaveBeenCalledWith({ type: 'card' });
   });
 
   it('Ф4 регресс-гард: skillTrait.findMany фильтрует через profile.tenantId, БЕЗ верхнеуровневого tenantId', async () => {
-    // SkillTrait не имеет колонки tenantId — фильтр должен идти через
-    // relation `profile`, иначе Prisma бросает PrismaClientValidationError.
     await svc.onIdeaBlockUpdated({
       tenantId: 'tenant-1',
       blockId: 'block-1',
@@ -254,8 +206,6 @@ describe('ProjectionRebuilderService', () => {
       }),
     );
 
-    // Регресс-гард на сам баг: НЕТ верхнеуровневого tenantId во where
-    // (SkillTrait такой колонки не имеет → Prisma бросила бы ValidationError).
     expect(mocks.fns.skillTraitFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.not.objectContaining({ tenantId: expect.anything() }),
@@ -263,15 +213,12 @@ describe('ProjectionRebuilderService', () => {
     );
   });
 
-  it('Устойчивость класса: reject одного подзапроса (insight) не валит остальные — Decision всё равно enqueue\'ится', async () => {
-    // insight.findMany падает (имитация PrismaClientValidationError),
-    // но decision.findMany успешен → его проекция должна доехать до enqueue.
+  it("Устойчивость класса: reject одного подзапроса (insight) не валит остальные — Decision всё равно enqueue'ится", async () => {
     mocks.fns.decisionFindMany.mockResolvedValueOnce([{ id: 'dec-1' }] as never);
     mocks.fns.insightFindMany.mockRejectedValueOnce(
       new Error('PrismaClientValidationError: insight broke'),
     );
 
-    // Не должно бросить наружу.
     await expect(
       svc.onIdeaBlockUpdated({
         tenantId: 'tenant-1',
@@ -280,7 +227,6 @@ describe('ProjectionRebuilderService', () => {
       }),
     ).resolves.toBeUndefined();
 
-    // Decision-проекция всё равно поставлена в очередь, несмотря на падение insight.
     expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledTimes(1);
     expect(mocks.fns.enqueueSpecialistCustom).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -288,7 +234,6 @@ describe('ProjectionRebuilderService', () => {
         specialistName: '3-3-decisions',
       }),
     );
-    // Lag-метрика всё равно наблюдалась — обработка события дошла до конца.
     expect(mocks.metrics.observeKcProjectionRebuildLagMs).toHaveBeenCalledTimes(1);
   });
 });

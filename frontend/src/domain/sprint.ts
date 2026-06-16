@@ -1,35 +1,21 @@
-/**
- * Доменная модель спринта (frontend).
- *
- * Backend-контракт:
- *   - `backend/src/modules/tracker/dto/cycles/cycle-dashboard.dto.ts`
- *   - `backend/src/modules/tracker/dto/sprint-hints/sprint-hint.dto.ts`
- *   - `backend/src/modules/knowledge-core/services/sprint-review.service.ts` (interface SprintReviewPayload)
- *
- * Слой ApiDto → Domain. Используется страницами `/sprints`, `/sprints/[id]`,
- * `/sprints/[id]/review`.
- */
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
-
 export type SprintScopeKindApi =
-  | 'org'
-  | 'customer'
-  | 'vendor'
-  | 'person'
-  | 'department'
-  | 'project';
+  | "org"
+  | "customer"
+  | "vendor"
+  | "person"
+  | "department"
+  | "project";
 
 export interface SprintDashboardTaskRefApi {
   id: string;
   identifier: string;
   title: string;
   stateCategory:
-    | 'backlog'
-    | 'unstarted'
-    | 'started'
-    | 'completed'
-    | 'cancelled'
+    | "backlog"
+    | "unstarted"
+    | "started"
+    | "completed"
+    | "cancelled"
     | null;
   priority: string;
   dueDate: string | null;
@@ -87,19 +73,19 @@ export interface SprintDashboardApi {
 }
 
 export type SprintHintKindApi =
-  | 'no_due_date'
-  | 'no_description'
-  | 'no_assignee'
-  | 'due_date_at_risk'
-  | 'recurring_carry_over'
-  | 'no_recent_mentions'
-  | 'conflicts_with_goal'
-  | 'can_be_split'
-  | 'similar_to_past_task'
-  | 'generic';
+  | "no_due_date"
+  | "no_description"
+  | "no_assignee"
+  | "due_date_at_risk"
+  | "recurring_carry_over"
+  | "no_recent_mentions"
+  | "conflicts_with_goal"
+  | "can_be_split"
+  | "similar_to_past_task"
+  | "generic";
 
-export type SprintHintSeverityApi = 'info' | 'warning' | 'critical';
-export type SprintHintStatusApi = 'active' | 'dismissed' | 'resolved';
+export type SprintHintSeverityApi = "info" | "warning" | "critical";
+export type SprintHintStatusApi = "active" | "dismissed" | "resolved";
 
 export interface SprintHintApi {
   id: string;
@@ -135,18 +121,14 @@ export interface SprintReviewPayloadApi {
   confidence: number;
 }
 
-/**
- * Discriminated union ответа `GET /api/v1/cycles/:id/review` и
- * `POST /api/v1/cycles/:id/review/regenerate`.
- *
- * Источник: `SprintReviewService.getCurrentReview` / `.generateReview`.
- */
 export type SprintReviewStateApi =
-  | { status: 'ready'; review: SprintReviewPayloadApi; cardVersionId?: string | null }
-  | { status: 'pending' }
-  | { status: 'failed'; error: string };
-
-// ─── Domain ─────────────────────────────────────────────────────────────────
+  | {
+      status: "ready";
+      review: SprintReviewPayloadApi;
+      cardVersionId?: string | null;
+    }
+  | { status: "pending" }
+  | { status: "failed"; error: string };
 
 export interface SprintDashboard {
   cycleId: string;
@@ -156,7 +138,6 @@ export interface SprintDashboard {
     kind: SprintScopeKindApi;
     label: string;
     refId: string | null;
-    /** Готовая русская подпись для бэйджа («Спринт компании» / «Маркетинг» / …). */
     badgeLabel: string;
   };
   progress: {
@@ -180,23 +161,23 @@ export interface SprintDashboard {
   generatedAt: Date;
 }
 
-// ─── Mappers ────────────────────────────────────────────────────────────────
-
 const SCOPE_KIND_LABEL: Record<SprintScopeKindApi, string> = {
-  org: 'Спринт компании',
-  customer: 'Клиент',
-  vendor: 'Поставщик',
-  person: 'Сотрудник',
-  department: 'Отдел',
-  project: 'Проект',
+  org: "Спринт компании",
+  customer: "Клиент",
+  vendor: "Поставщик",
+  person: "Сотрудник",
+  department: "Отдел",
+  project: "Проект",
 };
 
-export function mapSprintDashboardApi(api: SprintDashboardApi): SprintDashboard {
+export function mapSprintDashboardApi(
+  api: SprintDashboardApi,
+): SprintDashboard {
   const percent = Math.round((api.progress.ratio ?? 0) * 100);
   const badgeLabel =
-    api.scope.kind === 'org'
-      ? 'Спринт компании'
-      : `${SCOPE_KIND_LABEL[api.scope.kind]}: ${api.scope.label || '—'}`;
+    api.scope.kind === "org"
+      ? "Спринт компании"
+      : `${SCOPE_KIND_LABEL[api.scope.kind]}: ${api.scope.label || "—"}`;
   return {
     cycleId: api.cycleId,
     projectId: api.projectId,
@@ -229,19 +210,17 @@ export function mapSprintDashboardApi(api: SprintDashboardApi): SprintDashboard 
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
 const HINT_KIND_LABELS: Record<SprintHintKindApi, string> = {
-  no_due_date: 'Задача без срока',
-  no_description: 'Задача без описания',
-  no_assignee: 'Задача без исполнителя',
-  due_date_at_risk: 'Срок горит',
-  recurring_carry_over: 'Переносится несколько спринтов',
-  no_recent_mentions: 'Не упоминалась давно',
-  conflicts_with_goal: 'Не соответствует цели спринта',
-  can_be_split: 'Можно разбить на подзадачи',
-  similar_to_past_task: 'Похожа на задачу из прошлого',
-  generic: 'Общая подсказка',
+  no_due_date: "Задача без срока",
+  no_description: "Задача без описания",
+  no_assignee: "Задача без исполнителя",
+  due_date_at_risk: "Срок горит",
+  recurring_carry_over: "Переносится несколько спринтов",
+  no_recent_mentions: "Не упоминалась давно",
+  conflicts_with_goal: "Не соответствует цели спринта",
+  can_be_split: "Можно разбить на подзадачи",
+  similar_to_past_task: "Похожа на задачу из прошлого",
+  generic: "Общая подсказка",
 };
 
 export function getSprintHintKindLabel(kind: SprintHintKindApi): string {
@@ -249,9 +228,9 @@ export function getSprintHintKindLabel(kind: SprintHintKindApi): string {
 }
 
 const HINT_SEVERITY_LABELS: Record<SprintHintSeverityApi, string> = {
-  info: 'Информация',
-  warning: 'Внимание',
-  critical: 'Критично',
+  info: "Информация",
+  warning: "Внимание",
+  critical: "Критично",
 };
 
 export function getSprintHintSeverityLabel(
@@ -260,41 +239,33 @@ export function getSprintHintSeverityLabel(
   return HINT_SEVERITY_LABELS[severity] ?? severity;
 }
 
-/**
- * Подпись scope-бэйджа из «сырых» данных проекта (для мастера создания
- * спринта и списка `/sprints`, где дашборд ещё не загружен).
- */
 export function getSprintScopeLabel(args: {
   customerCardId: string | null;
   vendorId: string | null;
   subjectPersonId: string | null;
   departmentId: string | null;
-  /** Опц. fallback — название проекта. */
   projectName?: string | null;
 }): string {
-  if (args.customerCardId) return 'Клиент';
-  if (args.vendorId) return 'Поставщик';
-  if (args.subjectPersonId) return 'Сотрудник';
-  if (args.departmentId) return 'Отдел';
+  if (args.customerCardId) return "Клиент";
+  if (args.vendorId) return "Поставщик";
+  if (args.subjectPersonId) return "Сотрудник";
+  if (args.departmentId) return "Отдел";
   if (args.projectName) return `Проект: ${args.projectName}`;
-  return 'Спринт компании';
+  return "Спринт компании";
 }
 
-/** Короткая подпись диапазона дат спринта («12 апр – 25 апр»). */
 export function formatSprintDateRange(
   startDate: Date | string,
   endDate: Date | string,
 ): string {
   const fmt = (d: Date) =>
-    d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-  const a = typeof startDate === 'string' ? new Date(startDate) : startDate;
-  const b = typeof endDate === 'string' ? new Date(endDate) : endDate;
+    d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  const a = typeof startDate === "string" ? new Date(startDate) : startDate;
+  const b = typeof endDate === "string" ? new Date(endDate) : endDate;
   return `${fmt(a)} – ${fmt(b)}`;
 }
 
-// ─── Pulse §5.1-5.3 (2026-05-30) — Daily / Weekly / Archive DTO ─────────────
-
-export type SprintActivityColorApi = 'success' | 'warning' | 'danger';
+export type SprintActivityColorApi = "success" | "warning" | "danger";
 
 export interface SprintDailyIssueWithActivityApi {
   issueId: string;
@@ -304,11 +275,11 @@ export interface SprintDailyIssueWithActivityApi {
   lastActivity: string | null;
   activityColor: SprintActivityColorApi;
   stateCategory:
-    | 'backlog'
-    | 'unstarted'
-    | 'started'
-    | 'completed'
-    | 'cancelled'
+    | "backlog"
+    | "unstarted"
+    | "started"
+    | "completed"
+    | "cancelled"
     | null;
 }
 
@@ -338,7 +309,7 @@ export interface SprintDailyDigestApi {
 export interface SprintWeeklyVelocityApi {
   closedThisWeek: number;
   closedPrevWeek: number;
-  trend: 'up' | 'flat' | 'down';
+  trend: "up" | "flat" | "down";
 }
 
 export interface SprintWeeklyTeamHealthRowApi {
@@ -357,7 +328,7 @@ export interface SprintWeeklyLearningApi {
 }
 
 export interface SprintWeeklyForecastApi {
-  trend: 'improving' | 'stable' | 'declining' | null;
+  trend: "improving" | "stable" | "declining" | null;
   summary: string | null;
   snapshotAt: string | null;
 }
@@ -380,11 +351,8 @@ export interface SprintWeeklyDigestApi {
   generatedAt: string;
 }
 
-export type SprintArchivePeriodApi = 'month' | 'quarter' | 'year';
-export type SprintArchiveStatusApi =
-  | 'in_progress'
-  | 'completed'
-  | 'cancelled';
+export type SprintArchivePeriodApi = "month" | "quarter" | "year";
+export type SprintArchiveStatusApi = "in_progress" | "completed" | "cancelled";
 
 export interface SprintArchiveItemApi {
   cycleId: string;
@@ -414,18 +382,12 @@ export interface SprintArchiveListApi {
   period: SprintArchivePeriodApi;
 }
 
-// ─── Master-detail список спринтов (ТЗ 2026-05-28) ──────────────────────────
+import type { SprintListItemApi, SprintSortByApi } from "@/api/sprints.api";
 
-import type {
-  SprintListItemApi,
-  SprintSortByApi,
-} from '@/api/sprints.api';
-
-export type SprintStatus = 'active' | 'completed' | 'upcoming';
+export type SprintStatus = "active" | "completed" | "upcoming";
 
 export interface DomainSprintScope {
   kind: SprintScopeKindApi;
-  /** Готовый русский лейбл с backend («Клиент: Альфа», «Спринт компании», …). */
   label: string;
   refId: string | null;
   isDeleted: boolean;
@@ -450,7 +412,6 @@ export interface DomainSprintListItem {
   completedAt: Date | null;
 }
 
-/** Маппер ApiDto → DomainModel для строки списка спринтов. */
 export function mapApiSprint(api: SprintListItemApi): DomainSprintListItem {
   return {
     id: api.id,
@@ -482,37 +443,34 @@ export function mapApiSprint(api: SprintListItemApi): DomainSprintListItem {
 }
 
 const SCOPE_KIND_SHORT_LABEL: Record<SprintScopeKindApi, string> = {
-  org: 'Компания',
-  customer: 'Клиент',
-  vendor: 'Поставщик',
-  person: 'Сотрудник',
-  department: 'Отдел',
-  project: 'Проект',
+  org: "Компания",
+  customer: "Клиент",
+  vendor: "Поставщик",
+  person: "Сотрудник",
+  department: "Отдел",
+  project: "Проект",
 };
 
-/** Короткая русская подпись scope-вида (для chip-фильтров и radio-группы). */
 export function getScopeKindLabel(kind: SprintScopeKindApi): string {
   return SCOPE_KIND_SHORT_LABEL[kind] ?? kind;
 }
 
 const STATUS_LABEL: Record<SprintStatus, string> = {
-  active: 'Активный',
-  completed: 'Завершён',
-  upcoming: 'Предстоящий',
+  active: "Активный",
+  completed: "Завершён",
+  upcoming: "Предстоящий",
 };
 
-/** Подпись статуса спринта на русском. */
 export function getStatusLabel(status: SprintStatus): string {
   return STATUS_LABEL[status] ?? status;
 }
 
 const SORT_BY_LABEL: Record<SprintSortByApi, string> = {
-  startDate: 'По дате старта',
-  progress: 'По прогрессу',
-  hints: 'По подсказкам',
+  startDate: "По дате старта",
+  progress: "По прогрессу",
+  hints: "По подсказкам",
 };
 
-/** Подпись варианта сортировки на русском. */
 export function getSortByLabel(sortBy: SprintSortByApi): string {
   return SORT_BY_LABEL[sortBy] ?? sortBy;
 }

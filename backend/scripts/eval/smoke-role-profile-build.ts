@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `role-profile-build` на DeepSeek-V4-Pro.
- * Промпт из backend/src/modules/knowledge-core/prompts/role-profile-build.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-role-profile-build.ts
- */
 import {
   client,
   computeCost,
@@ -27,8 +21,6 @@ interface Fixture extends RoleContextForPrompt {
   description: string;
 }
 
-// Минимальный tool — достаточно проверить, что модель отдаёт структурный ответ.
-// Полная JSON-схема промпта длинная (9 слотов); для smoke ужимаем до ключевых полей.
 const TOOL = {
   type: 'function' as const,
   function: {

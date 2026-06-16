@@ -1,21 +1,3 @@
-/**
- * SBA β-8.3 — Seed маршрутов LLM для ежедневного отчёта операционного директора.
- *
- *   - operations-daily-digest — связный текст ежедневного дайджеста
- *     (markdown, 4-6 коротких разделов + shortSummary для Telegram).
- *     Один вызов в день на Org — не критично к скорости. Тот же
- *     провайдерский профиль, что и у weekly-digest.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-beta-8-3.ts
- *   bun run scripts/seed-llm-task-routes-beta-8-3.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → НЕ перезаписываем.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -85,18 +67,14 @@ async function applySeed(
         },
       });
       stats.inserted++;
-       
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
-       
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -120,20 +98,16 @@ async function applySeed(
       },
     });
     stats.updated++;
-     
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
-   
-  console.log(
-    `=== seed-llm-task-routes-beta-8-3 START (updateExisting=${updateExisting}) ===`,
-  );
-   
+
+  console.log(`=== seed-llm-task-routes-beta-8-3 START (updateExisting=${updateExisting}) ===`);
+
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 
   const stats: SeedStats = {
@@ -146,17 +120,15 @@ async function main(): Promise<void> {
     await applySeed(seed, updateExisting, stats);
   }
 
-   
   console.log(
     `inserted=${stats.inserted}, updated=${stats.updated}, skipped=${stats.skipped}, protected_by_admin=${stats.protectedByAudit}`,
   );
-   
+
   console.log('=== seed-llm-task-routes-beta-8-3 DONE ===');
 }
 
 main()
   .catch((err) => {
-     
     console.error('seed-llm-task-routes-beta-8-3 FAILED:', err);
     process.exit(1);
   })

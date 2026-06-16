@@ -8,29 +8,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { resourceTypeRu } from '../../pending-actions/resource-type-ru';
 
-/**
- * CardStaleDetectorCron — раз в сутки сканирует канонические карточки
- * специалистов и помечает «устаревающие». См.
- * plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §7, §12.α-4.11.
- *
- * Алгоритм (α-4):
- *   1. По каждому Org берём последние CardVersion'ы (по resourceType+resourceId),
- *      где `createdAt < now - N мес.` (порог из ENV).
- *   2. Создаём `CurationItem(level='light', triageReason: { reason: 'stale' })`.
- *   3. Отправляем probe владельцу карточки (если есть `createdByUserId` в
- *      последней версии) через `ConversationalService.sendNotification` —
- *      `eventType: 'system.message'`.
- *   4. Метрики `curation_stale_detected_total{resource_type}`.
- *
- * На α-4 — детектируем устаревающие записи и создаём CurationItem; реальная
- * пометка карточек `status='stale'` реализуется специалистами в δ+
- * (у них есть собственные модели Card/Regulation/Decision/...).
- *
- * Cron-литерал в декораторе `'0 4 * * *'` (sub-TZ §8). Реальное значение
- * (на случай админских изменений) — `cfg.curation.staleDetectorCron`, оно
- * не перезаписывает декоратор автоматически (для динамической смены —
- * `SchedulerRegistry`, выйдет за рамки α-4).
- */
 @Injectable()
 export class CardStaleDetectorCron {
   private readonly logger = new Logger(CardStaleDetectorCron.name);
@@ -82,7 +59,6 @@ export class CardStaleDetectorCron {
 
       for (const c of candidates) {
         try {
-          // Идемпотентность: если открытый stale-CurationItem уже есть — skip.
           const existing = await this.prisma.curationItem.findFirst({
             where: {
               tenantId: org.id,
@@ -171,11 +147,6 @@ export class CardStaleDetectorCron {
     };
   }
 
-  /**
-   * Кандидат — это resource (resourceType+resourceId), у которого
-   * последний `CardVersion` старше cutoff'а. Берём не более 100 кандидатов
-   * на Org за один проход (защита от взрывного fan-out'а).
-   */
   private async findStaleCandidates(
     tenantId: string,
     cutoff: Date,
@@ -188,8 +159,6 @@ export class CardStaleDetectorCron {
       lastVersionAt: Date;
     }>
   > {
-    // Получаем последнюю версию по каждой паре (resourceType, resourceId)
-    // через сырой SQL — Prisma не поддерживает `DISTINCT ON` декларативно.
     const rows = await this.prisma.$queryRaw<
       Array<{
         resourceType: string;

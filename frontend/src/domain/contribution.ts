@@ -1,14 +1,3 @@
-/**
- * T1 (2026-05-23) — Доменные модели для Gamification & Recognition.
- *
- * Слой DomainModel: ApiDto → нормализованные сущности с Date, enum, helper'ами.
- *
- * Принципы (см. plans/tz/2026-05-23-gamification-and-motivation.md):
- *   - Мягкое признание. Не «лучший vs худший». Никаких очков-валюты.
- *   - Streaks без штрафов за прерывание.
- *   - Тон UI — позитивный, нейтральный.
- */
-
 import type {
   ContributionsSnapshotApiDto,
   MyContributionsApiDto,
@@ -19,36 +8,34 @@ import type {
   TeamSpotlightApiDto,
   TeamSpotlightPersonApiDto,
   UserBadgeApiDto,
-} from '@/api/gamification.api';
-
-// ─────────────────────────── Enums + лейблы ───────────────────────────────
+} from "@/api/gamification.api";
 
 export type RecognitionType = RecognitionTypeApi;
 export type RecognitionVisibility = RecognitionVisibilityApi;
 
 export const RECOGNITION_TYPE_LABELS: Record<RecognitionType, string> = {
-  thanks_comment: 'Спасибо за комментарий',
-  thanks_helpfulness: 'Спасибо за полезность',
-  mention_helped: 'Помог коллеге',
-  idea_shipped: 'Идея в работе',
-  streak_milestone: 'Стрик чек-инов',
-  weekly_summary: 'Недельная благодарность',
+  thanks_comment: "Спасибо за комментарий",
+  thanks_helpfulness: "Спасибо за полезность",
+  mention_helped: "Помог коллеге",
+  idea_shipped: "Идея в работе",
+  streak_milestone: "Стрик чек-инов",
+  weekly_summary: "Недельная благодарность",
 };
 
 const KNOWN_RECOGNITION_TYPES: ReadonlySet<string> = new Set([
-  'thanks_comment',
-  'thanks_helpfulness',
-  'mention_helped',
-  'idea_shipped',
-  'streak_milestone',
-  'weekly_summary',
+  "thanks_comment",
+  "thanks_helpfulness",
+  "mention_helped",
+  "idea_shipped",
+  "streak_milestone",
+  "weekly_summary",
 ]);
 
 function parseRecognitionType(raw: string): RecognitionType {
-  return (KNOWN_RECOGNITION_TYPES.has(raw) ? raw : 'weekly_summary') as RecognitionType;
+  return (
+    KNOWN_RECOGNITION_TYPES.has(raw) ? raw : "weekly_summary"
+  ) as RecognitionType;
 }
-
-// ─────────────────────────── Domain types ──────────────────────────────────
 
 export interface RecognitionEntry {
   id: string;
@@ -69,9 +56,7 @@ export interface CheckinStreakInfo {
 }
 
 export interface IdeaInProgress {
-  /** Сколько идей сейчас «в разработке» (status = in_development). */
   inDevelopment: number;
-  /** Сколько идей доехало до «shipped». */
   shipped: number;
 }
 
@@ -118,9 +103,9 @@ export interface TeamSpotlight {
   persons: TeamSpotlightPerson[];
 }
 
-// ─────────────────────────── Mappers ApiDto → Domain ──────────────────────
-
-export function recognitionEntryFromApi(dto: RecognitionApiDto): RecognitionEntry {
+export function recognitionEntryFromApi(
+  dto: RecognitionApiDto,
+): RecognitionEntry {
   const type = parseRecognitionType(dto.type);
   return {
     id: dto.id,
@@ -201,9 +186,6 @@ export function teamSpotlightFromApi(dto: TeamSpotlightApiDto): TeamSpotlight {
   };
 }
 
-// ─────────────────────────── UI helpers ────────────────────────────────────
-
-/** Русское склонение «N идей в работе / N идея / N идеи». */
 export function pluralRu(
   n: number,
   one: string,
@@ -219,34 +201,29 @@ export function pluralRu(
 }
 
 export function thanksLabel(n: number): string {
-  return pluralRu(n, 'благодарность', 'благодарности', 'благодарностей');
+  return pluralRu(n, "благодарность", "благодарности", "благодарностей");
 }
 
 export function ideasInDevLabel(n: number): string {
-  return pluralRu(n, 'идея в работе', 'идеи в работе', 'идей в работе');
+  return pluralRu(n, "идея в работе", "идеи в работе", "идей в работе");
 }
 
 export function streakLabel(n: number): string {
-  return pluralRu(n, 'день подряд', 'дня подряд', 'дней подряд');
+  return pluralRu(n, "день подряд", "дня подряд", "дней подряд");
 }
 
-/**
- * Инициалы для AvatarFallback (когда aватара нет в схеме). Возвращает 1-2
- * заглавные буквы.
- */
 export function nameInitials(name: string): string {
   const parts = name.trim().split(/\s+/u).filter(Boolean);
-  if (parts.length === 0) return '?';
-  const first = parts[0]?.[0] ?? '';
-  const second = parts.length > 1 ? (parts[1]?.[0] ?? '') : '';
-  return (first + second).toUpperCase() || '?';
+  if (parts.length === 0) return "?";
+  const first = parts[0]?.[0] ?? "";
+  const second = parts.length > 1 ? (parts[1]?.[0] ?? "") : "";
+  return (first + second).toUpperCase() || "?";
 }
 
-/** Дата в формате `24 мая 2026` (русская локаль). */
 export function formatRuDate(d: Date): string {
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+  return d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
 }

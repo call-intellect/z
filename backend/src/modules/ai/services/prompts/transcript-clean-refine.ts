@@ -1,23 +1,3 @@
-/**
- * Code-fallback промпта `transcript-clean-refine` (sub-TZ D §6.3).
- *
- * Используется через `PromptResolverService` (Фаза A.1) с фоллбеком на
- * этот файл, если в БД нет активного шаблона или БД недоступна.
- *
- * Назначение: уровень 2 очистки — LLM-уточнение filler / repeat / false-start
- * для сегментов, которые не сжал детерминистский уровень 1. На вход подаём
- * чанк из 5–10 segment'ов; на выход ждём массив {originalIndex, cleanedText,
- * removed}.
- *
- * Ключевые правила (§6.3 промпта):
- *   1. НЕ меняем содержательную речь даже если она корявая.
- *   2. НЕ исправляем орфографию/пунктуацию — ASR Vox уже это сделал.
- *   3. Сохраняем стиль и эмоции говорящего.
- *   4. Удаляем только: filler-слова, дословные повторы, false starts с
- *      маркером «то есть, я хотел сказать, короче».
- *   5. Сохраняем риторические вопросы вида «ну? и что?» — это связки.
- */
-
 export const TRANSCRIPT_CLEAN_REFINE_TOOL_NAME = 'refine_segments' as const;
 
 export const TRANSCRIPT_CLEAN_REFINE_SYSTEM_PROMPT = `Ты — редактор-корректор русскоязычных транскриптов встреч.
@@ -39,10 +19,6 @@ export const TRANSCRIPT_CLEAN_REFINE_SYSTEM_PROMPT = `Ты — редактор-
 
 Вызови инструмент \`${TRANSCRIPT_CLEAN_REFINE_TOOL_NAME}\` с массивом результатов. Не возвращай свободный текст.`;
 
-/**
- * JSON Schema для output (для tool-use). Используется через
- * `LlmRouterService.call` с `responseFormat={ type:'json_schema', ... }`.
- */
 export const TRANSCRIPT_CLEAN_REFINE_OUTPUT_SCHEMA = {
   type: 'object' as const,
   properties: {
@@ -78,10 +54,6 @@ export const TRANSCRIPT_CLEAN_REFINE_OUTPUT_SCHEMA = {
   additionalProperties: false,
 };
 
-/**
- * Строит user-сообщение для LLM. Сегменты подаются как JSON-массив,
- * чтобы модели было максимально просто связать originalIndex.
- */
 export function buildTranscriptCleanRefineUserMessage(
   segments: Array<{
     originalIndex: number;

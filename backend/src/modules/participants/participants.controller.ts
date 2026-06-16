@@ -1,13 +1,4 @@
-import {
-  Body,
-  Controller,
-  Inject,
-  Param,
-  Post,
-  Req,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Inject, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 
@@ -31,15 +22,6 @@ interface JoinResponse {
   };
 }
 
-/**
- * `POST /api/v1/meetings/:id/join` — единый endpoint и для хоста, и для гостя.
- *
- *   - Cookie-авторизация **опциональна** (`@OptionalAuth()`):
- *       если cookie есть и юзер === host встречи → host-флоу;
- *       иначе → guest-флоу (требует `guest_name`).
- *   - Гостевая cookie `guest_session_<meetingId>` ставится **здесь** при первом
- *     успешном join'е и читается при повторных.
- */
 @Controller('api/v1/meetings')
 export class ParticipantsController {
   constructor(
@@ -50,8 +32,6 @@ export class ParticipantsController {
   @Post(':id/join')
   @UseGuards(CookieAuthGuard)
   @OptionalAuth()
-  // Public endpoint (гость без cookie). 30 в минуту с IP — защита от
-  // перебора meetingId/брутфорса. Реальный гость использует ровно 1 запрос.
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async join(
     @Param('id') meetingId: string,
@@ -71,7 +51,6 @@ export class ParticipantsController {
       inviteToken: body.invite_token ?? null,
     });
 
-    // Если сервис подписал новую guest-cookie — выставляем её.
     if (result.guestSessionCookie) {
       response.cookie(result.guestSessionCookie.name, result.guestSessionCookie.value, {
         domain: this.cfg.auth.cookieDomain,

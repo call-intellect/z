@@ -17,14 +17,14 @@ import { z } from 'zod';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { CurrentPartner, type CurrentPartnerPayload } from '../auth/decorators/current-partner.decorator';
+import {
+  CurrentPartner,
+  type CurrentPartnerPayload,
+} from '../auth/decorators/current-partner.decorator';
 import { HmacGuard } from '../auth/guards/hmac.guard';
 import { RecordingsService } from '../recordings/recordings.service';
 
-import {
-  type CreateMeetingDto,
-  CreateMeetingSchema,
-} from './dto/create-meeting.dto';
+import { type CreateMeetingDto, CreateMeetingSchema } from './dto/create-meeting.dto';
 import type { MeetingPublicDto } from './dto/meeting-public.dto';
 import { MeetingsService } from './meetings.service';
 
@@ -33,10 +33,6 @@ const ExtendRetentionSchema = z.object({
 });
 type ExtendRetentionDto = z.infer<typeof ExtendRetentionSchema>;
 
-/**
- * Crossmark integration endpoints (HMAC + idempotency).
- * Roles: server-to-server, без CORS, без cookies.
- */
 @ApiExcludeController()
 @Controller('integrations/crossmark/v1/meetings')
 @UseGuards(HmacGuard)
@@ -90,8 +86,6 @@ export class MeetingsCrossmarkController {
     await this.meetings.cancelScheduled(id, partner.id);
     return { ok: true };
   }
-
-  // ─────────────────────────── recording ────────────────────────────────
 
   @Get(':id/recording-url')
   async getRecordingUrl(

@@ -7,21 +7,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 
-/**
- * β-9 (2026-05-25) — `OrgInvitationRemindersCron`.
- *
- * Раз в час смотрит pending-приглашения и:
- *
- *   1) Если `createdAt < now - INVITE_REMINDER_DAYS * 86400000` и
- *      `reminderSentAt IS NULL` — отправляет напоминание сотруднику
- *      (`sendInviteReminder`), ставит `reminderSentAt = now()`.
- *   2) Если `createdAt < now - INVITE_TTL_DAYS * 86400000` и
- *      `directorNotifiedAt IS NULL` — уведомляет приглашающего директора
- *      (`sendInviteDirectorTimeout`), ставит `directorNotifiedAt = now()`.
- *
- * Cron-выражение — литералом, потому что NestJS @Cron не читает ENV.
- * См. plans/tz/2026-05-25-telegram-bot-global-and-invites.md §8.
- */
 @Injectable()
 export class OrgInvitationRemindersCron {
   private readonly logger = new Logger(OrgInvitationRemindersCron.name);
@@ -46,14 +31,10 @@ export class OrgInvitationRemindersCron {
     }
   }
 
-  // ─────────────────────────── reminders ────────────────────────────
-
   private async sendReminders(): Promise<void> {
     const reminderDays = this.cfg.invites.reminderDays;
     const threshold = new Date(Date.now() - reminderDays * 86_400_000);
 
-    // Только приглашения с указанной электронной почтой — без неё
-    // напоминание физически некуда отправить.
     const candidates = await this.prisma.orgInvitation.findMany({
       where: {
         status: 'pending',
@@ -81,11 +62,6 @@ export class OrgInvitationRemindersCron {
     );
   }
 
-  /**
-   * Отправить одно напоминание. NB: мы не повторяем безусловно при ошибке —
-   * всегда ставим `reminderSentAt`, чтобы избежать спама. Директор всё равно
-   * увидит истечение через timeout-notification на 14-й день.
-   */
   private async sendOneReminder(
     invite: OrgInvitation & {
       org: { name: string };
@@ -94,9 +70,6 @@ export class OrgInvitationRemindersCron {
   ): Promise<boolean> {
     if (!invite.email) return false;
     if (!invite.linkCode || !invite.magicTokenHash) {
-      // Legacy-приглашение без β-9 полей — пропускаем (нет ни magic-link,
-      // ни deep-link для шаблона). Всё равно ставим reminderSentAt=now,
-      // чтобы не зацикливаться.
       this.logger.warn(
         { invitationId: invite.id },
         'sendReminders: пропуск legacy-приглашения без linkCode/magicToken',
@@ -109,10 +82,7 @@ export class OrgInvitationRemindersCron {
     }
 
     const displayName: string = invite.email.split('@')[0] ?? 'Сотрудник';
-    const daysLeft = Math.max(
-      1,
-      Math.ceil((invite.expiresAt.getTime() - Date.now()) / 86_400_000),
-    );
+    const daysLeft = Math.max(1, Math.ceil((invite.expiresAt.getTime() - Date.now()) / 86_400_000));
     const magicLinkUrl = this.buildMagicLinkUrlFromInvite(invite);
     const telegramDeepLink = this.buildTelegramDeepLink(invite.linkCode);
 
@@ -139,8 +109,6 @@ export class OrgInvitationRemindersCron {
     );
     return false;
   }
-
-  // ─────────────────────── director timeout ─────────────────────────
 
   private async notifyDirectors(): Promise<void> {
     const ttlDays = this.cfg.invites.ttlDays;
@@ -188,7 +156,6 @@ export class OrgInvitationRemindersCron {
           );
         }
       }
-      // Помечаем приглашение expired и фиксируем директора.
       await this.prisma.orgInvitation.update({
         where: { id: invite.id },
         data: {
@@ -206,18 +173,7 @@ export class OrgInvitationRemindersCron {
     );
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private buildMagicLinkUrlFromInvite(
-    invite: OrgInvitation,
-  ): string {
-    // У нас в БД хранится magicTokenHash, а не сам токен. Использовать
-    // hash как URL-параметр некорректно (тогда любой, кто увидит письмо,
-    // сможет восстановить пользователя). Для напоминания шлём ссылку
-    // на универсальный entry-point по `token` приглашения — фронт сам
-    // покажет «нажми, чтобы войти» и под капотом вызовет
-    // `/accounts/magic-link/request`. Если magic-token уже прожжён —
-    // ссылка просто скажет «уже использована», что корректно.
+  private buildMagicLinkUrlFromInvite(invite: OrgInvitation): string {
     const base = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
     return `${base}/invitations/${invite.token}`;
   }

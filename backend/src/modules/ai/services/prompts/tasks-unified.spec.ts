@@ -1,31 +1,6 @@
-/**
- * Unit-тесты для `tasks-unified.ts` — единого builder'а tasks-промта
- * (F5, ТЗ 2026-05-24 §8).
- *
- * Проверяем три ключевых аспекта:
- *   1. Динамическая Zod-схема (`buildTaskItemSchemaUnified`) корректно
- *      собирается под опции (enriched / withConfidence / withSourceQuote /
- *      withFragmentBounds / useAssigneeRaw).
- *   2. Динамический LlmTool (`buildTasksToolUnified`) содержит правильные
- *      properties / required.
- *   3. System-промт (`buildTasksPromptUnified`) включает нужные блоки —
- *      CONFIDENCE_CALIBRATION при withConfidence, цитата при withSourceQuote,
- *      контекст организации в user при orgContext, и т.д.
- *
- * А также — обратная совместимость legacy экспортов:
- *   - `buildTasksPrompt` из `tasks.ts` собирает promt 1:1 с историческим.
- *   - `buildMeetingExtractActionsPrompt` сохраняет все ключевые поля и блоки.
- *   - `buildTasksStructuredPrompt` из `tasks-structured.ts` отдаёт
- *     «JSON only» инструкцию + assigneeRaw + sourceStartMs/EndMs.
- */
-
 import { describe, expect, it } from 'vitest';
 
-import {
-  CONFIDENCE_CALIBRATION,
-  NOT_A_TASK_DISCRIMINATOR,
-  type PromptInput,
-} from './common';
+import { CONFIDENCE_CALIBRATION, NOT_A_TASK_DISCRIMINATOR, type PromptInput } from './common';
 import {
   buildMeetingExtractActionsPrompt,
   buildTasksPrompt,
@@ -70,7 +45,7 @@ describe('buildTaskItemSchemaUnified', () => {
       title: 'X',
       assignee: null,
       dueDate: null,
-      suggestedPriority: 'high', // лишнее в legacy
+      suggestedPriority: 'high',
     });
     expect(fail.success).toBe(false);
   });
@@ -91,7 +66,7 @@ describe('buildTaskItemSchemaUnified', () => {
       title: 'X',
       assignee: null,
       dueDate: null,
-      suggestedPriority: 'omg', // не в enum
+      suggestedPriority: 'omg',
     });
     expect(badPriority.success).toBe(false);
   });
@@ -176,7 +151,6 @@ describe('buildTaskItemSchemaUnified', () => {
     });
     expect(ok.success).toBe(true);
 
-    // assignee (без Raw) — лишнее в structured-варианте
     const fail = schema.safeParse({
       title: 'X',
       assignee: 'Иванов',
@@ -207,9 +181,7 @@ describe('buildTasksSchemaUnified (wrapped `{ tasks: [...] }`)', () => {
 
   it('падает на голом массиве (нужен объект-обёртка)', () => {
     const schema = buildTasksSchemaUnified({});
-    const fail = schema.safeParse([
-      { title: 'X', assignee: null, dueDate: null },
-    ]);
+    const fail = schema.safeParse([{ title: 'X', assignee: null, dueDate: null }]);
     expect(fail.success).toBe(false);
   });
 });
@@ -232,7 +204,6 @@ describe('buildTasksToolUnified', () => {
     expect(Object.keys(tasksArr.items.properties)).toEqual(
       expect.arrayContaining(['title', 'assignee', 'dueDate']),
     );
-    // suggested* не должно быть в legacy-варианте
     expect(tasksArr.items.properties['suggestedAssigneeHint']).toBeUndefined();
   });
 
@@ -246,13 +217,7 @@ describe('buildTasksToolUnified', () => {
       items: { required: string[]; properties: Record<string, unknown> };
     };
     expect(tasksArr.items.required).toEqual(
-      expect.arrayContaining([
-        'title',
-        'assignee',
-        'dueDate',
-        'confidence',
-        'sourceQuote',
-      ]),
+      expect.arrayContaining(['title', 'assignee', 'dueDate', 'confidence', 'sourceQuote']),
     );
     expect(tasksArr.items.properties['suggestedAssigneeHint']).toBeDefined();
     expect(tasksArr.items.properties['suggestedDueDate']).toBeDefined();
@@ -321,9 +286,6 @@ describe('buildTasksPromptUnified — system', () => {
     expect(out.system).not.toContain('Вызови инструмент');
   });
 
-  // Ф7 (интент): негативный класс «не задача» приклеен в конец system для
-  // ЛЮБЫХ опций (enriched / structured / legacy), чтобы вопросы/команды не
-  // становились кандидатами в задачи.
   it('всегда содержит NOT_A_TASK_DISCRIMINATOR (Ф7) — legacy', () => {
     const out = buildTasksPromptUnified(SAMPLE_INPUT, {});
     expect(out.system).toContain(NOT_A_TASK_DISCRIMINATOR);
@@ -336,7 +298,6 @@ describe('buildTasksPromptUnified — system', () => {
       withSourceQuote: true,
     });
     expect(out.system).toContain(NOT_A_TASK_DISCRIMINATOR);
-    // Блок — в самом хвосте: идёт ПОСЛЕ калибровки confidence.
     expect(out.system.indexOf(NOT_A_TASK_DISCRIMINATOR)).toBeGreaterThan(
       out.system.indexOf(CONFIDENCE_CALIBRATION),
     );
@@ -422,8 +383,6 @@ describe('buildTasksPromptUnified — user', () => {
   });
 });
 
-// ─────────────────── Legacy backward-compat ──────────────────────────────
-
 describe('Legacy buildTasksPrompt (tasks.ts) — обратная совместимость', () => {
   it('возвращает system + user, system содержит инструкцию tool-use', () => {
     const out = buildTasksPrompt(SAMPLE_INPUT);
@@ -446,7 +405,6 @@ describe('Legacy buildTasksPrompt (tasks.ts) — обратная совмест
     expect(tasksArr.items.properties['suggestedPriority']).toBeDefined();
     expect(tasksArr.items.properties['confidence']).toBeDefined();
     expect(tasksArr.items.properties['sourceQuote']).toBeDefined();
-    // Required — только legacy-набор (старые модели не сломаются)
     expect(tasksArr.items.required).toEqual(
       expect.arrayContaining(['title', 'assignee', 'dueDate']),
     );
@@ -456,9 +414,7 @@ describe('Legacy buildTasksPrompt (tasks.ts) — обратная совмест
 
   it('TASKS_SCHEMA принимает legacy-ответ (только 3 поля)', () => {
     const ok = TASKS_SCHEMA.safeParse({
-      tasks: [
-        { title: 'X', assignee: null, dueDate: null },
-      ],
+      tasks: [{ title: 'X', assignee: null, dueDate: null }],
     });
     expect(ok.success).toBe(true);
   });
@@ -519,20 +475,13 @@ describe('Legacy buildTasksStructuredPrompt (tasks-structured.ts) — обрат
       meeting: { id: 'm-1', type: 'team', title: 'Sample' },
       dialog: SAMPLE_INPUT.dialog,
     });
-    // structured-контракт Task: assigneeRaw + description вместо assignee
     expect(out.system).toContain('assigneeRaw');
     expect(out.system).toContain('description');
-    // привязка к фрагменту
     expect(out.system).toContain('sourceStartMs');
     expect(out.system).toContain('sourceEndMs');
-    // обязательная цитата + confidence
     expect(out.system).toContain('sourceQuote');
     expect(out.system).toContain('confidence');
     expect(out.system).toContain('Шкала confidence');
-    // T7-F6: теперь builder использует unified tool-use, а не bare-array.
-    // Раньше тут была "ТОЛЬКО валидный JSON-массив" (responseAsBareArray:true).
-    // Теперь caller (TaskExtractionService) пробрасывает responseFormat:json_schema
-    // и парсит { tasks: [...] } обёртку.
     expect(out.system).toContain(TASKS_UNIFIED_TOOL_NAME);
     expect(out.system).not.toContain('ТОЛЬКО валидный JSON-массив');
   });
@@ -542,10 +491,7 @@ describe('Legacy buildTasksStructuredPrompt (tasks-structured.ts) — обрат
       meeting: { id: 'm-1', type: 'team', title: 'Sample' },
       dialog: SAMPLE_INPUT.dialog,
     });
-    // T7-F6: эта инструкция была частью responseAsBareArray:true пути,
-    // который мы убрали (структурный strict JSON Schema надёжнее).
     expect(out.user).not.toContain('Reply with valid JSON only');
-    // user всё ещё содержит meta встречи и диалог.
     expect(out.user).toContain('Тип встречи: team');
     expect(out.user).toContain('Заголовок: Sample');
   });

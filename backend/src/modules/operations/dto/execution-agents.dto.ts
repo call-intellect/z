@@ -1,15 +1,5 @@
 import { z } from 'zod';
 
-/**
- * TZ-1 Фаза 3.A/B (daily-value-engine) — DTO эндпоинтов агентов исполнения на
- * COO-дашборде операций:
- *   - `GET /dashboard/operations/blockers/chronic` — хронические блокеры.
- *   - `GET /dashboard/operations/decisions/throughput` — % доведённых решений.
- *   - `GET /dashboard/operations/decisions/stalled` — застрявшие решения.
- */
-
-// ── Хронические блокеры ──────────────────────────────────────────────
-
 export const ChronicBlockersQuerySchema = z
   .object({
     status: z.enum(['new', 'recurring', 'resolved']).optional(),
@@ -35,8 +25,6 @@ export interface ChronicBlockersListDto {
   items: ChronicBlockerDto[];
 }
 
-// ── Пропускная способность решений ───────────────────────────────────
-
 export const DecisionThroughputQuerySchema = z
   .object({
     from: z
@@ -50,9 +38,7 @@ export const DecisionThroughputQuerySchema = z
   })
   .strict();
 
-export type DecisionThroughputQuery = z.infer<
-  typeof DecisionThroughputQuerySchema
->;
+export type DecisionThroughputQuery = z.infer<typeof DecisionThroughputQuerySchema>;
 
 export interface DecisionThroughputDto {
   total: number;
@@ -61,8 +47,6 @@ export interface DecisionThroughputDto {
   from: string;
   to: string;
 }
-
-// ── Застрявшие решения ───────────────────────────────────────────────
 
 export interface StalledDecisionDto {
   id: string;

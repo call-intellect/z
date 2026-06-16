@@ -11,32 +11,14 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 
-import {
-  ProjectEmailInboxService,
-  type ProjectEmailInboxDto,
-} from './project-email-inbox.service';
+import { ProjectEmailInboxService, type ProjectEmailInboxDto } from './project-email-inbox.service';
 
-/**
- * REST `/api/v1/projects/:id/email-inbox` (Tracker Phase 4, T5 — Email-to-task).
- *
- * Все эндпоинты — admin / owner проекта (`canWrite('project')` через RbacService).
- * `GET` достаточно canRead, чтобы member видел текущий адрес и логи.
- *
- * Сценарии:
- *  - `GET .../email-inbox` — текущий alias + последние 20 inbound писем.
- *  - `POST .../email-inbox/enable` — генерирует alias (если ещё нет) + включает.
- *  - `POST .../email-inbox/disable` — выключает (alias сохраняется).
- *  - `POST .../email-inbox/regenerate-alias` — новый alias (старый теряется).
- */
 @ApiTags('tracker / projects / email-inbox')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -106,8 +88,6 @@ export class ProjectEmailInboxController {
     await this.requireWrite(user.id, t);
     return this.svc.regenerate(id, t);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

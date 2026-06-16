@@ -1,28 +1,3 @@
-/**
- * ReferralsController — кабинет партнёра.
- *
- * Маршруты (под /api/v1/referrals/*, auth required):
- *   GET    /referrals/me                — мой профиль (или null)
- *   POST   /referrals/me                — создать профиль (contractAccepted + опц. реквизиты)
- *   PATCH  /referrals/me                — обновить (inn/legalForm/payoutDetails)
- *   POST   /referrals/me/verify-inn     — запустить InnLookup verification
- *   POST   /referrals/me/accept-contract — принять оферту (legacy; в новом флоу
- *                                          оферта принимается при create)
- *   GET    /referrals/me/clients        — список приведённых клиентов (маскированный)
- *   GET    /referrals/me/payouts        — все мои начисления
- *   GET    /referrals/me/stats          — расширенная статистика (legacy 5 + 5 новых)
- *   GET    /referrals/me/reward-progress — шкала прогресса баннера (B2): активные / цель
- *   GET    /referrals/me/income-chart   — 12 месяцев доход + активные клиенты
- *   GET    /referrals/me/funnel         — воронка за период (30d/90d/all)
- *   POST   /referrals/me/promo-event    — трекинг ReferralPromoStrip
- *                                          (impression/click/dismissed, 30/min/IP)
- *   POST   /referrals/attribute-current-org — резолв атрибуции для текущей Org
- *                                            (фронт зовёт после signup)
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.2 +
- * plans/tz/2026-05-31-referrals-cabinet-revamp.md §7.5, §7.6, §8.3a.
- */
-
 import {
   Body,
   Controller,
@@ -51,10 +26,7 @@ import { Prisma, type Referral } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -114,8 +86,7 @@ export class ReferralsController {
 
   @Post('me')
   @ApiOperation({
-    summary:
-      'Создать партнёрский профиль. Достаточно contractAccepted=true (реквизиты — позже).',
+    summary: 'Создать партнёрский профиль. Достаточно contractAccepted=true (реквизиты — позже).',
   })
   @ApiOkResponse({ type: ReferralViewDto })
   async create(
@@ -153,9 +124,7 @@ export class ReferralsController {
   @Post('me/verify-inn')
   @ApiOperation({ summary: 'Верифицировать ИНН через InnLookupService.' })
   @ApiOkResponse({ type: ReferralViewDto })
-  async verifyInn(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<ReferralViewBody> {
+  async verifyInn(@CurrentUser() user: CurrentUserPayload): Promise<ReferralViewBody> {
     const ref = await this.referrals.verifyInn(user.id);
     return this.toView(ref);
   }
@@ -163,22 +132,17 @@ export class ReferralsController {
   @Post('me/accept-contract')
   @ApiOperation({ summary: 'Принять оферту реферальной программы.' })
   @ApiOkResponse({ type: ReferralViewDto })
-  async acceptContract(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<ReferralViewBody> {
+  async acceptContract(@CurrentUser() user: CurrentUserPayload): Promise<ReferralViewBody> {
     const ref = await this.referrals.acceptContract(user.id);
     return this.toView(ref);
   }
 
   @Get('me/clients')
   @ApiOperation({
-    summary:
-      'Список приведённых клиентов (маскированный — без названия Org и id).',
+    summary: 'Список приведённых клиентов (маскированный — без названия Org и id).',
   })
   @ApiOkResponse({ type: ReferralClientMaskedDto, isArray: true })
-  async listClients(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<ReferralClientMaskedBody[]> {
+  async listClients(@CurrentUser() user: CurrentUserPayload): Promise<ReferralClientMaskedBody[]> {
     const ref = await this.referrals.getByUserId(user.id);
     if (!ref) return [];
     const views = await this.referrals.listClients(ref.id);
@@ -199,9 +163,7 @@ export class ReferralsController {
       'Расширенная статистика партнёра (legacy 5 полей + клики/регистрации/конверсии за 30 дней).',
   })
   @ApiOkResponse({ type: ReferralStatsExtendedDto })
-  async stats(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<ReferralStatsExtendedBody | null> {
+  async stats(@CurrentUser() user: CurrentUserPayload): Promise<ReferralStatsExtendedBody | null> {
     const ref = await this.referrals.getByUserId(user.id);
     if (!ref) return null;
     const stats = await this.referrals.getStats(ref.id);
@@ -214,22 +176,17 @@ export class ReferralsController {
       'Прогресс к награде для шкалы промо-баннера: активных платящих клиентов / цель + доход/мес. Без профиля — hasProfile=false (НЕ null).',
   })
   @ApiOkResponse({ type: RewardProgressDto })
-  async rewardProgress(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<RewardProgressBody> {
+  async rewardProgress(@CurrentUser() user: CurrentUserPayload): Promise<RewardProgressBody> {
     const progress = await this.referrals.getRewardProgress(user.id);
     return toRewardProgressBody(progress);
   }
 
   @Get('me/income-chart')
   @ApiOperation({
-    summary:
-      'График дохода и активных клиентов: 12 точек за последние 12 месяцев (UTC).',
+    summary: 'График дохода и активных клиентов: 12 точек за последние 12 месяцев (UTC).',
   })
   @ApiOkResponse({ type: MonthlyPointDto, isArray: true })
-  async incomeChart(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<MonthlyPointBody[]> {
+  async incomeChart(@CurrentUser() user: CurrentUserPayload): Promise<MonthlyPointBody[]> {
     const ref = await this.referrals.getByUserId(user.id);
     if (!ref) return [];
     const points = await this.referrals.getIncomeChart(ref.id);
@@ -238,8 +195,7 @@ export class ReferralsController {
 
   @Get('me/funnel')
   @ApiOperation({
-    summary:
-      'Воронка партнёра за период: клики → регистрации → первые оплаты → активные сейчас.',
+    summary: 'Воронка партнёра за период: клики → регистрации → первые оплаты → активные сейчас.',
   })
   @ApiQuery({
     name: 'period',
@@ -258,32 +214,14 @@ export class ReferralsController {
     return toFunnelBody(funnel);
   }
 
-  /**
-   * Трекинг событий промо-полосы `<ReferralPromoStrip />` в `AppShell`
-   * (ТЗ referrals-cabinet-revamp §8.3a). Никакой бизнес-логики и записи
-   * в БД — только инкремент Prometheus-counter'а. Throttle 30/min/IP —
-   * защита от шумных клиентов / случайных циклов ререндера.
-   *
-   * Body:
-   *   - `type` = `impression` (первый показ за сессию) | `click` |
-   *     `dismissed`.
-   *   - `role` = `owner` | `member` — фронт сам определяет роль
-   *     текущего пользователя в Org и присылает её для аналитики
-   *     (конверсия по сегментам различается).
-   *
-   * Ответ — 204 No Content.
-   */
   @Post('me/promo-event')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({
-    summary:
-      'Трекинг промо-полосы рефералки (impression / click / dismissed). 204 без тела.',
+    summary: 'Трекинг промо-полосы рефералки (impression / click / dismissed). 204 без тела.',
   })
   @ApiNoContentResponse({ description: 'Метрика инкрементирована.' })
-  trackPromoEvent(
-    @Body(new ZodValidationPipe(PromoEventBodySchema)) body: PromoEventBody,
-  ): void {
+  trackPromoEvent(@Body(new ZodValidationPipe(PromoEventBodySchema)) body: PromoEventBody): void {
     switch (body.type) {
       case 'impression':
         this.metrics.incReferralPromoImpression({ role: body.role });
@@ -297,20 +235,10 @@ export class ReferralsController {
     }
   }
 
-  /**
-   * После регистрации Org фронт зовёт этот эндпоинт чтобы привязать
-   * cookie/fingerprint к Org. Резолвит атрибуцию по cookie z_ref
-   * (передаётся как `X-Z-Ref` заголовок, потому что cookie может не
-   * долететь в API-домен) и/или fingerprint.
-   */
   @Post('attribute-current-org')
   @ApiOperation({
-    summary:
-      'Привязать атрибуцию к текущей Org (фронт зовёт сразу после signup).',
+    summary: 'Привязать атрибуцию к текущей Org (фронт зовёт сразу после signup).',
   })
-  // audit-fixes Б14: TenantGuard валидирует X-Org-Id и проверяет, что
-  // юзер действительно member этой Org. Без него можно было передать
-  // X-Org-Id чужого тенанта и навязать ему реферера → 20 000 ₽ × 12 мес.
   @UseGuards(TenantGuard)
   async attributeCurrentOrg(
     @Headers('x-z-ref') xZRef: string | undefined,
@@ -319,8 +247,6 @@ export class ReferralsController {
     @Ip() ip: string,
   ): Promise<{ attributed: boolean; slug: string | null }> {
     if (!tenantId) {
-      // TenantGuard уже отверг бы запрос без tenantId/без membership,
-      // но defense-in-depth — оставляем явный 404.
       throw new NotFoundException('Не определён tenantId (нужен X-Org-Id)');
     }
     const resolved = await this.attribution.attributeOrg({
@@ -335,17 +261,11 @@ export class ReferralsController {
     };
   }
 
-  // ──────────────────────── helpers ────────────────────────
-
   private toView(ref: Referral): ReferralViewBody {
     return {
       id: ref.id,
       slug: ref.slug,
-      // ТЗ referrals-cabinet-revamp §6.3 + §6.5: computed-поле,
-      // фронт строит по нему `canWithdraw`. См. hasPayoutDetails()
-      // в services/referrals.service.ts.
       hasPayoutDetails: computeHasPayoutDetails(ref),
-      // ТЗ referrals-cabinet-revamp §5.1: inn / legalForm теперь nullable.
       inn: ref.inn ?? null,
       innVerifiedAt: ref.innVerifiedAt?.toISOString() ?? null,
       legalForm: ref.legalForm ?? null,
@@ -354,8 +274,6 @@ export class ReferralsController {
     };
   }
 }
-
-// ──────────────────────── module-level mappers ────────────────────────
 
 function toMaskedClientBody(view: ReferralClientMaskedView): ReferralClientMaskedBody {
   return {

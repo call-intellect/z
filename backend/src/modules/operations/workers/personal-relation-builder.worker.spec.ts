@@ -5,31 +5,17 @@ import {
   PersonalRelationBuilderWorker,
 } from './personal-relation-builder.worker';
 
-/**
- * SBA β-8 — PersonalRelationBuilderWorker unit-тесты.
- *
- * Ф2 МТЗ: воркер стал чистым handler'ом (без своего BullMQ Worker; jobName-
- * маршрутизацию делает SpecialistRoutingDispatcherWorker). Проверяем приватную
- * process()-логику через прямой вызов (handle() оборачивает её в PipelineRunner,
- * который тут не инжектится).
- */
 describe('PersonalRelationBuilderWorker', () => {
-  function buildWorker(overrides: {
-    block?: unknown;
-  }) {
+  function buildWorker(overrides: { block?: unknown }) {
     const prisma = {
       ideaBlock: { findUnique: vi.fn().mockResolvedValue(overrides.block ?? null) },
       entityLink: { upsert: vi.fn().mockResolvedValue({}) },
     };
     const metrics = {
       incPersonalRelationBuilderRun: vi.fn(),
-      // Ф3 МТЗ — единый skip-counter специалистов.
       incCoreSpecialistSkipped: vi.fn(),
     };
-    const worker = new PersonalRelationBuilderWorker(
-      prisma as never,
-      metrics as never,
-    );
+    const worker = new PersonalRelationBuilderWorker(prisma as never, metrics as never);
     return { worker, prisma, metrics };
   }
 
@@ -39,14 +25,14 @@ describe('PersonalRelationBuilderWorker', () => {
         id: 'b1',
         tenantId: 't1',
         status: 'canonical',
-        entities: [
-          { entity: { id: 'e1', type: 'person', name: 'Анна' } },
-        ],
+        entities: [{ entity: { id: 'e1', type: 'person', name: 'Анна' } }],
       },
     });
-    await (worker as unknown as {
-      process(job: unknown): Promise<void>;
-    }).process({
+    await (
+      worker as unknown as {
+        process(job: unknown): Promise<void>;
+      }
+    ).process({
       name: '3-12-personal-relation',
       data: {
         blockId: 'b1',
@@ -73,9 +59,11 @@ describe('PersonalRelationBuilderWorker', () => {
         ],
       },
     });
-    await (worker as unknown as {
-      process(job: unknown): Promise<void>;
-    }).process({
+    await (
+      worker as unknown as {
+        process(job: unknown): Promise<void>;
+      }
+    ).process({
       name: '3-12-personal-relation',
       data: {
         blockId: 'b1',
@@ -106,9 +94,11 @@ describe('PersonalRelationBuilderWorker', () => {
         ],
       },
     });
-    await (worker as unknown as {
-      process(job: unknown): Promise<void>;
-    }).process({
+    await (
+      worker as unknown as {
+        process(job: unknown): Promise<void>;
+      }
+    ).process({
       name: '3-12-personal-relation',
       data: {
         blockId: 'b1',
@@ -124,11 +114,6 @@ describe('PersonalRelationBuilderWorker', () => {
   });
 });
 
-/**
- * Pulse Wave 4 §3.2 — CheckInConflictDetectorCron.
- *
- * Daily сканирует тексты DailyCheckIn'ов и upsert'ит EntityLink(conflicted_with).
- */
 describe('CheckInConflictDetectorCron', () => {
   function buildCron(opts: {
     checkIns: Array<{
@@ -159,22 +144,16 @@ describe('CheckInConflictDetectorCron', () => {
     metrics: { incPersonalRelationBuilderRun: ReturnType<typeof vi.fn> };
   } {
     const dailyCheckInFindMany = vi.fn(async () => opts.checkIns);
-    const personFindFirst = vi.fn(
-      async (args: { where: { id?: string; tenantId?: string } }) => {
-        return (
-          opts.persons.find(
-            (p) =>
-              p.id === args.where.id && p.tenantId === args.where.tenantId,
-          ) ?? null
-        );
-      },
-    );
-    const personFindMany = vi.fn(
-      async (args: { where: { tenantId?: string } }) => {
-        const tenant = args.where.tenantId;
-        return opts.persons.filter((p) => p.tenantId === tenant);
-      },
-    );
+    const personFindFirst = vi.fn(async (args: { where: { id?: string; tenantId?: string } }) => {
+      return (
+        opts.persons.find((p) => p.id === args.where.id && p.tenantId === args.where.tenantId) ??
+        null
+      );
+    });
+    const personFindMany = vi.fn(async (args: { where: { tenantId?: string } }) => {
+      const tenant = args.where.tenantId;
+      return opts.persons.filter((p) => p.tenantId === tenant);
+    });
     const entityLinkUpsert = vi.fn(async () => ({}));
 
     const prisma = {
@@ -184,14 +163,10 @@ describe('CheckInConflictDetectorCron', () => {
     };
     const metrics = {
       incPersonalRelationBuilderRun: vi.fn(),
-      // Ф3 МТЗ — единый skip-counter специалистов.
       incCoreSpecialistSkipped: vi.fn(),
     };
 
-    const cron = new CheckInConflictDetectorCron(
-      prisma as never,
-      metrics as never,
-    );
+    const cron = new CheckInConflictDetectorCron(prisma as never, metrics as never);
     return { cron, prisma, metrics };
   }
 
@@ -233,9 +208,7 @@ describe('CheckInConflictDetectorCron', () => {
           rawResponseText: 'Всё нормально, работаем дальше',
         },
       ],
-      persons: [
-        { id: 'author', tenantId: 't-1', entityId: 'ent-a', name: 'Борис Сидоров' },
-      ],
+      persons: [{ id: 'author', tenantId: 't-1', entityId: 'ent-a', name: 'Борис Сидоров' }],
     });
     const stats = await cron.runOnce();
     expect(stats.linksCreated).toBe(0);
@@ -252,9 +225,7 @@ describe('CheckInConflictDetectorCron', () => {
           rawResponseText: 'Конфликт с Гипотетический Несуществующий по поводу X',
         },
       ],
-      persons: [
-        { id: 'author', tenantId: 't-1', entityId: 'ent-a', name: 'Борис Сидоров' },
-      ],
+      persons: [{ id: 'author', tenantId: 't-1', entityId: 'ent-a', name: 'Борис Сидоров' }],
     });
     const stats = await cron.runOnce();
     expect(stats.linksCreated).toBe(0);
@@ -282,7 +253,6 @@ describe('CheckInConflictDetectorCron', () => {
   });
 
   it('skip само-упоминание (один и тот же Person)', async () => {
-    // Person.id=author, name=Анна Иванова — мы упоминаем самого себя.
     const { cron, prisma } = buildCron({
       checkIns: [
         {

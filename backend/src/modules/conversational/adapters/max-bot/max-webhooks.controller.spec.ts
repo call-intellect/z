@@ -1,19 +1,5 @@
-/**
- * Spec для MaxWebhooksController (Phase F.5).
- *
- * MAX Bot API (dev.max.ru/docs-api) НЕ передаёт header-secret. Secret валидация
- * — через path-параметр `/:tenantId/:secret`. URL сам по себе является
- * shared-secret. `setup-max-bot.ts` использует тот же формат.
- *
- * Покрытие:
- *   - 404 если Channel нет / неактивен.
- *   - 403 invalid_webhook_secret если secret в URL не совпал.
- *   - 200 happy: ingestUpdate + dispatchInbound.
- *   - 200 без 5xx если adapter / dispatch бросают.
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { ConversationalService } from '../../conversational.service';
@@ -23,14 +9,15 @@ import { MaxWebhooksController } from './max-webhooks.controller';
 
 const SECRET = 'max-secret-shared-32characters!!';
 
-function build(opts: {
-  channel?: { status: string } | null;
-  readSecret?: string | null;
-  adapterIngestReturns?: 'inbound' | 'null' | 'throw';
-  dispatchThrows?: boolean;
-} = {}) {
-  const channel =
-    opts.channel === undefined ? { status: 'active' } : opts.channel;
+function build(
+  opts: {
+    channel?: { status: string } | null;
+    readSecret?: string | null;
+    adapterIngestReturns?: 'inbound' | 'null' | 'throw';
+    dispatchThrows?: boolean;
+  } = {},
+) {
+  const channel = opts.channel === undefined ? { status: 'active' } : opts.channel;
   const prisma = {
     channel: {
       findUnique: vi.fn(async () => channel),
@@ -76,16 +63,16 @@ describe('MaxWebhooksController', () => {
 
   it('404 если Channel отсутствует', async () => {
     const { ctrl } = build({ channel: null });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('404 если канал неактивен', async () => {
     const { ctrl } = build({ channel: { status: 'disabled' } });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('403 invalid_webhook_secret если secret в URL не совпал', async () => {
@@ -97,9 +84,9 @@ describe('MaxWebhooksController', () => {
 
   it('403 webhook_secret_unreadable если расшифровка падает', async () => {
     const { ctrl } = build({ readSecret: null });
-    await expect(
-      ctrl.receive('tenant-1', SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('tenant-1', SECRET, validBody as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('200 (НЕ 5xx) если adapter.ingestUpdate бросает', async () => {

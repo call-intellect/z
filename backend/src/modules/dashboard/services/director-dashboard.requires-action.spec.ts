@@ -1,15 +1,3 @@
-/**
- * Unit-тесты блока `requiresAction` директорского дашборда (Action Center B2).
- *
- * Покрывают:
- *   - requiresAction заполняется из PendingActionsService.getCount (мок);
- *   - ошибка PendingActionsService НЕ валит дашборд (best-effort → нули);
- *   - без userId блок requiresAction = undefined (getCount не вызывается).
- *
- * Используем «пустой» tenant (все fetch* возвращают пусто) — getDirectorView
- * уходит в sample-story ветку, которая тоже заполняет requiresAction и не
- * дёргает LLM. Так изолируем именно B2-логику без моков всех 6 виджетов.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -25,14 +13,14 @@ import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
-function buildService(opts: {
-  getCount?: ReturnType<typeof vi.fn>;
-} = {}): {
+function buildService(
+  opts: {
+    getCount?: ReturnType<typeof vi.fn>;
+  } = {},
+): {
   service: DirectorDashboardService;
   getCount: ReturnType<typeof vi.fn>;
 } {
-  // Все запросы к БД пустые → tenant считается empty → sample-story ветка.
-  // ТЗ-2 Ф1 — fetchValueStrip добавил meeting/task/decision/ideaBlock.count.
   const prisma = {
     theme: { findMany: vi.fn(async () => []) },
     ideaBlock: {
@@ -47,7 +35,6 @@ function buildService(opts: {
     $queryRaw: vi.fn(async () => []),
   } as unknown as PrismaService;
 
-  // In-memory кэш-заглушка: get всегда промахивается, setWithTtl — no-op.
   const cache = {
     get: vi.fn(() => null),
     setWithTtl: vi.fn(),
@@ -79,13 +66,9 @@ function buildService(opts: {
     }));
   const pendingActions = { getCount } as unknown as PendingActionsService;
 
-  // ТЗ-2 Ф1 — getDynamic возвращает code-fallback (флаг ON по умолчанию).
   const config = {
-    getDynamic: vi.fn(
-      async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def,
-    ),
+    getDynamic: vi.fn(async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def),
   } as unknown as TypedConfigService;
-  // ТЗ-2 Ф1 — метрики «Полосы пользы» (no-op в тесте).
   const metrics = {
     incDashboardValueStripServed: vi.fn(),
     setDashboardMainFirstScreenWidgetCount: vi.fn(),
@@ -139,7 +122,6 @@ describe('DirectorDashboardService — requiresAction (B2)', () => {
       userId: 'u-1',
     });
 
-    // Дашборд вернулся (не упал), requiresAction обнулён.
     expect(dto.isEmpty).toBe(true);
     expect(dto.requiresAction).toEqual({
       total: 0,

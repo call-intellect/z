@@ -15,10 +15,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -44,15 +41,6 @@ import {
 } from '../dto/checklists/checklist.dto';
 import { ChecklistsService } from '../services/checklists.service';
 
-/**
- * REST `/api/v1/issues/:id/checklists` + `/api/v1/checklists/...` +
- * `/api/v1/checklist-items/...`.
- *
- * RBAC: наследуем от Issue (отдельного ResourceType `checklist` нет — см.
- * ТЗ §RBAC, plans/tz/2026-05-27-tracker-checklists.md).
- *   - read   ← canRead(user, tenant, 'issue')
- *   - write  ← canWrite(user, tenant, 'issue')
- */
 @ApiTags('tracker / checklists')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -62,8 +50,6 @@ export class ChecklistsController {
     @Inject(ChecklistsService) private readonly svc: ChecklistsService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ── Checklists ────────────────────────────────────────────────────────
 
   @Get('issues/:id/checklists')
   @ApiOperation({ summary: 'Список чек-листов задачи (с пунктами inline)' })
@@ -136,8 +122,6 @@ export class ChecklistsController {
       tenantId: t,
     });
   }
-
-  // ── Checklist items ───────────────────────────────────────────────────
 
   @Post('checklists/:id/items')
   @RequireSubscription()
@@ -220,8 +204,6 @@ export class ChecklistsController {
       t,
     );
   }
-
-  // ── helpers ───────────────────────────────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

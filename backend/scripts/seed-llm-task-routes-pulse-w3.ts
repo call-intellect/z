@@ -1,32 +1,3 @@
-/**
- * Pulse Wave 3 (2026-05-30, plans/tz/2026-05-30-pulse-full.md §3.1/3.5/3.7) —
- * Seed маршрутов LLM для 3 новых taskType'ов дашбордовой Волны 3:
- *
- *   - team-health-analyzer       — JSON-strict 5-факторов отдела + summary.
- *                                 Рутинная классификация, capable не нужна.
- *                                 Primary: deepseek-v4-flash.
- *   - reflection-quality-scorer  — JSON-strict 3-axis (depth/concreteness/variety).
- *                                 Очень частый дешёвый вызов.
- *                                 Primary: deepseek-v4-flash.
- *   - hr-recommender             — 0..3 рекомендаций руководителю по сотруднику.
- *                                 Нужна capable модель (нюансы, тон).
- *                                 Primary: deepseek-v4-pro.
- *
- * Цепочки по docs/reference/llm-models-playbook.md §2.1 / §2.2 + verified
- * карта second-brain/01_projects/llm-providers-verified.md (см.
- * project_z_infra_and_ai в MEMORY: ollama qwen3.5:9b разрешён как cheap
- * scoring safety-net, но для capable extraction — qwen3:30b).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-pulse-w3.ts
- *   bun run scripts/seed-llm-task-routes-pulse-w3.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются.
- *   - Без флага — пропускаем существующие (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive (НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -130,17 +101,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -165,18 +132,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-pulse-w3 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-pulse-w3 START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

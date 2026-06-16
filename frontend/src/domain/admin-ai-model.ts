@@ -1,13 +1,3 @@
-/**
- * Фаза A.4 — DomainModel для admin/ai-models.
- *
- * Цепочка: ApiDto (admin-ai-models.api.ts) → DomainModel (этот файл) → UiModel
- * (компоненты в `app/(admin)/admin/ai-models/`).
- *
- * Здесь только мапперы и формат-helpers: даты, проценты, ₽-цены. Бизнес-логика
- * (по типам встреч, по группам) живёт в сервисе.
- */
-
 import type {
   AiModelGroup,
   AiModelTier,
@@ -15,59 +5,58 @@ import type {
   RouteChangeApi,
   TaskTypeMetricsApi,
   TaskTypeRouteApi,
-} from '@/api/admin-ai-models.api';
+} from "@/api/admin-ai-models.api";
 
-/** Унифицированная локаль для всех UI-строк. */
 export type ProviderInTierUi = ProviderInTierApi & {
-  /** Человекочитаемое имя провайдера на русском. */
   providerLabel: string;
-  /** Цветовая метка tier'а (для бейджа). */
-  tierColor: 'green' | 'orange' | 'gray';
+  tierColor: "green" | "orange" | "gray";
 };
 
-export type TaskTypeRouteUi = Omit<TaskTypeRouteApi, 'chain' | 'primary' | 'secondary' | 'tertiary'> & {
+export type TaskTypeRouteUi = Omit<
+  TaskTypeRouteApi,
+  "chain" | "primary" | "secondary" | "tertiary"
+> & {
   primary: ProviderInTierUi | null;
   secondary: ProviderInTierUi | null;
   tertiary: ProviderInTierUi | null;
   chain: ProviderInTierUi[];
-  /** Имя группы по-русски. */
   groupLabel: string;
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  anthropic: 'Anthropic Claude',
-  minimax: 'MiniMax',
-  'openai-via-proxy': 'OpenAI (через прокси)',
-  deepseek: 'DeepSeek',
-  ollama: 'Ollama (локальный)',
+  anthropic: "Anthropic Claude",
+  minimax: "MiniMax",
+  "openai-via-proxy": "OpenAI (через прокси)",
+  deepseek: "DeepSeek",
+  ollama: "Ollama (локальный)",
 };
 
-const TIER_COLOR: Record<AiModelTier, ProviderInTierUi['tierColor']> = {
-  primary: 'green',
-  secondary: 'orange',
-  tertiary: 'gray',
+const TIER_COLOR: Record<AiModelTier, ProviderInTierUi["tierColor"]> = {
+  primary: "green",
+  secondary: "orange",
+  tertiary: "gray",
 };
 
-const GROUP_LABEL: Record<AiModelGroup | 'unknown', string> = {
-  'ai-pipeline': 'AI-конвейер встреч',
-  'knowledge-core': 'База знаний',
-  'competitor-parity': 'Паритет с конкурентами',
-  unknown: 'Прочее',
+const GROUP_LABEL: Record<AiModelGroup | "unknown", string> = {
+  "ai-pipeline": "AI-конвейер встреч",
+  "knowledge-core": "База знаний",
+  "competitor-parity": "Паритет с конкурентами",
+  unknown: "Прочее",
 };
 
 const TIER_LABEL: Record<AiModelTier, string> = {
-  primary: 'Основная',
-  secondary: 'Запасная',
-  tertiary: 'Локальная',
+  primary: "Основная",
+  secondary: "Запасная",
+  tertiary: "Локальная",
 };
 
 const CHANGE_TYPE_LABEL: Record<string, string> = {
-  switched_primary: 'Переключение основной модели',
-  added_provider: 'Добавлен провайдер',
-  removed_provider: 'Удалён провайдер',
-  started_ab: 'Запущен A/B-тест',
-  stopped_ab: 'Остановлен A/B-тест',
-  reset_to_default: 'Сброс к дефолту',
+  switched_primary: "Переключение основной модели",
+  added_provider: "Добавлен провайдер",
+  removed_provider: "Удалён провайдер",
+  started_ab: "Запущен A/B-тест",
+  stopped_ab: "Остановлен A/B-тест",
+  reset_to_default: "Сброс к дефолту",
 };
 
 export function tierLabel(tier: AiModelTier): string {
@@ -111,14 +100,12 @@ export function formatLatency(ms: number): string {
 }
 
 export function formatCostRub(usd: number): string {
-  // Курс — округлённо 90 ₽/$. Точное значение настраивается в админке прайса.
   const rub = usd * 90;
   if (rub < 1) return `${(rub * 100).toFixed(2)} коп`;
   return `${rub.toFixed(2)} ₽`;
 }
 
 export function mapMetrics(api: TaskTypeMetricsApi): TaskTypeMetricsApi {
-  // Сейчас просто пробрасываем; UI сам форматирует через formatPercent/Latency.
   return api;
 }
 

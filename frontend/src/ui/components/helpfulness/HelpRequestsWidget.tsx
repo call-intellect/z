@@ -1,43 +1,28 @@
-'use client';
+"use client";
 
-/**
- * `<HelpRequestsWidget />` — ⚠ ADMIN-ONLY — открытые «вопросы без ответа»
- * (Specialist 3.8).
- *
- * Источник: `/api/v1/admin/helpfulness/unanswered` — приватные негативные
- * сигналы. По ТЗ §«Privacy & Ethics» эти данные НЕ показываются нигде, кроме
- * админ-интерфейса. Виджет рендерится только если у пользователя есть права
- * (owner/admin) — иначе возвращает null без флэша.
- *
- * Использование:
- *   - Только на `/admin/helpfulness-overview` или admin dashboard.
- *   - НЕ встраивать в публичные ленты / /me / COO Dashboard.
- */
+import Link from "next/link";
+import useSWR from "swr";
+import { AlertTriangle, ArrowRight } from "lucide-react";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { AlertTriangle, ArrowRight } from 'lucide-react';
-
-import { helpfulnessApi } from '@/api/helpfulness.api';
-import { useAuth } from '@/contexts/auth-context';
-import { mapUnanswered, type UnansweredQuestionRow } from '@/domain/helpfulness';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { helpfulnessApi } from "@/api/helpfulness.api";
+import { useAuth } from "@/contexts/auth-context";
+import {
+  mapUnanswered,
+  type UnansweredQuestionRow,
+} from "@/domain/helpfulness";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 type Props = {
-  /** orgId — для cache-ключа SWR; права проверяются на бэке (403 → ничего). */
   orgId: string | null;
-  /** Лимит карточек (по умолчанию 5). */
   limit?: number;
 };
 
 export function HelpRequestsWidget({ orgId, limit = 5 }: Props) {
   const { currentOrgRole } = useAuth();
-  const canSee =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canSee = currentOrgRole === "owner" || currentOrgRole === "admin";
 
-  const swrKey =
-    canSee && orgId ? ['helpfulness/unanswered', orgId] : null;
+  const swrKey = canSee && orgId ? ["helpfulness/unanswered", orgId] : null;
 
   const { data, error, isLoading } = useSWR(
     swrKey,
@@ -68,8 +53,8 @@ export function HelpRequestsWidget({ orgId, limit = 5 }: Props) {
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p className="text-xs text-fg-tertiary">
-          Видно только администратору и руководителю. Не показывается публично
-          и не отображается сотруднику.
+          Видно только администратору и руководителю. Не показывается публично и
+          не отображается сотруднику.
         </p>
 
         {isLoading && (
@@ -98,11 +83,11 @@ export function HelpRequestsWidget({ orgId, limit = 5 }: Props) {
               >
                 <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-fg-tertiary">
                   <span className="font-medium text-fg-secondary">
-                    {row.recipientName ?? 'Сотрудник'}
+                    {row.recipientName ?? "Сотрудник"}
                   </span>
                   <span>не получил(а) ответ от</span>
                   <span className="font-medium text-fg-secondary">
-                    {row.helperName ?? 'коллеги'}
+                    {row.helperName ?? "коллеги"}
                   </span>
                   {row.topicHint && (
                     <span className="truncate">· {row.topicHint}</span>

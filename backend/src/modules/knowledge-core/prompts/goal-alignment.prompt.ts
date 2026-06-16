@@ -2,20 +2,6 @@ import { z } from 'zod';
 
 import type { LlmTaskType } from '../../ai/services/llm-router.service';
 
-/**
- * Промпт strategic-alignment воркера (Фаза 9 knowledge-core).
- *
- * Цель: оценить, движется ли компания к указанной Goal за окно (default 30
- * дней) на основе блоков (IdeaBlock) из связанных тем.
- *
- * Output — JSON:
- *   { score: 0..100, explanation: string, signals: { pro: [...], contra: [...] } }
- *
- * Валидация ответа — `GoalAlignmentResponseSchema` ниже (Zod). LLM-router
- * передаёт `responseFormat: 'json'` (если provider поддерживает) — но мы всё
- * равно проверяем структуру через Zod на стороне Z.
- */
-
 export const GOAL_ALIGNMENT_TASK_TYPE: LlmTaskType = 'goal-alignment';
 
 export const GOAL_ALIGNMENT_SYSTEM_PROMPT = `Ты — стратегический аналитик. Твоя задача — оценить, движется ли компания к указанной цели за заданный период, опираясь только на предоставленные сигналы (канонические блоки знания из тем, связанных с целью).
@@ -45,9 +31,6 @@ Score 0..100:
 }
 `;
 
-/**
- * Strict JSON Schema (для провайдеров, поддерживающих response_format: json_schema).
- */
 export const GOAL_ALIGNMENT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -85,8 +68,6 @@ export const GoalAlignmentResponseSchema = z.object({
 });
 export type GoalAlignmentResponse = z.infer<typeof GoalAlignmentResponseSchema>;
 
-// ─────────────────────────── user message builder ───────────────────────────
-
 export interface GoalAlignmentBlockInput {
   signalType: string;
   criticalQuestion: string;
@@ -103,7 +84,6 @@ export interface GoalAlignmentThemeInput {
 export interface GoalAlignmentInput {
   goalName: string;
   goalDescription: string;
-  /** Дни до targetDate (если задана). Используется для пометки «Дедлайн близок». */
   daysUntilTarget: number | null;
   windowDays: number;
   themes: GoalAlignmentThemeInput[];
@@ -114,35 +94,19 @@ const TRUSTED_ANSWER_TRUNCATE = 280;
 const CRITICAL_QUESTION_TRUNCATE = 240;
 const MAX_BLOCKS_IN_PROMPT = 50;
 
-/**
- * Строит system + user сообщения.
- *
- * F1 cache-friendly (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8): SYSTEM —
- * СТАБИЛЬНАЯ константа `GOAL_ALIGNMENT_SYSTEM_PROMPT`, его БОЛЬШЕ НЕ мутируем
- * при «дедлайн близок» (`daysUntilTarget <= 7`). Раньше переменное число дней
- * вшивалось в SYSTEM, ломая prompt-cache на каждый goal. Теперь пометка
- * «дедлайн близок» едет в user-сообщении (значение `daysUntilTarget` там уже
- * есть строкой «Осталось до дедлайна: N дн.»). См. feedback
- * `LLM-промпты — обязательно cache-friendly`.
- */
 export function buildGoalAlignmentMessages(input: GoalAlignmentInput): {
   systemPrompt: string;
   userMessage: string;
 } {
   const systemPrompt = GOAL_ALIGNMENT_SYSTEM_PROMPT;
 
-  // «Дедлайн близок» — переменный акцент, идёт в user (не в SYSTEM).
-  const deadlineSoon =
-    input.daysUntilTarget !== null && input.daysUntilTarget <= 7;
+  const deadlineSoon = input.daysUntilTarget !== null && input.daysUntilTarget <= 7;
 
   const themesBlock =
     input.themes.length === 0
       ? 'Связанных тем нет.'
       : input.themes
-          .map(
-            (t, i) =>
-              `${i + 1}. ${t.name} (вес=${t.weight.toFixed(2)}, динамика=${t.dynamic})`,
-          )
+          .map((t, i) => `${i + 1}. ${t.name} (вес=${t.weight.toFixed(2)}, динамика=${t.dynamic})`)
           .join('\n');
 
   const trimmedBlocks = input.blocks.slice(0, MAX_BLOCKS_IN_PROMPT);

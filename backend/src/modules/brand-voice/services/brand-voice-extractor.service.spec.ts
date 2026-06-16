@@ -2,17 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { BrandVoiceExtractorService } from './brand-voice-extractor.service';
 
-/**
- * SBA β-7 — BrandVoiceExtractorService unit-тест.
- *
- * Покрываем 4 ключевые ветки:
- *   1. extractorEnabled=false → 'skipped_disabled'.
- *   2. corpusSize < minCorpusSize → 'skipped_low_corpus'.
- *   3. idempotency-окно ещё не истекло → 'skipped_idempotency'.
- *   4. happy-path: mock LLM возвращает валидный JSON → applyExtracted вызван.
- *
- * Реальная Prisma не дёргается — все зависимости замокированы.
- */
 describe('BrandVoiceExtractorService', () => {
   function makeMetrics() {
     return {
@@ -74,7 +63,7 @@ describe('BrandVoiceExtractorService', () => {
     const profiles = {
       corpusSize: vi.fn().mockResolvedValue(10),
       getRaw: vi.fn().mockResolvedValue({
-        lastBuiltAt: new Date(Date.now() - 60 * 60 * 1000), // 1h назад
+        lastBuiltAt: new Date(Date.now() - 60 * 60 * 1000),
         version: 3,
       }),
       applyExtracted: vi.fn(),

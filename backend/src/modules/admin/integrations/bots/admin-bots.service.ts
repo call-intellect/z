@@ -22,27 +22,6 @@ import type {
   MaskedSecret,
 } from './dto/admin-bots.dto';
 
-/**
- * Admin-redesign Фаза 6 — `AdminBotsService`.
- *
- * Источник истины для conversational-ботов из админки Z:
- *   - глобальный Telegram-бот: `Channel WHERE tenantId IS NULL AND kind='telegram_bot'`.
- *   - глобальный MAX-бот: `Channel WHERE tenantId IS NULL AND kind='max_bot'`.
- *   - email-inbox (IMAP) — пока только read-only ENV-снапшот; реальный
- *     ImapClient в коде есть (см. mail-inbox/), но тест-коннект — заглушка
- *     (TODO + 501) до отдельного ТЗ.
- *
- * Семантика commands:
- *   - set-webhook: вызываем Telegram API `setWebhook` / MAX API
- *     `subscribeWebhook`. URL по умолчанию — `${publicHostUrl}/api/v1/webhooks/<...>`.
- *   - delete-webhook: Telegram `deleteWebhook` / MAX `unsubscribeWebhook` по
- *     уже записанному в `Channel.config.webhookUrl`.
- *
- * Безопасность:
- *   - Токены никогда не возвращаем наружу — только masked.
- *   - Декриптуем из `Channel.config` через `CryptoService.decrypt` с
- *     legacy-fallback на plain-token.
- */
 @Injectable()
 export class AdminBotsService {
   private readonly logger = new Logger(AdminBotsService.name);
@@ -56,8 +35,6 @@ export class AdminBotsService {
     @Inject(AdminSettingsService)
     private readonly settings: AdminSettingsService,
   ) {}
-
-  // ─────────────────────────── telegram ────────────────────────────────
 
   async getTelegramStatus(): Promise<BotStatusResponseDto> {
     const channel = await this.findGlobalChannel('telegram_bot');
@@ -79,9 +56,7 @@ export class AdminBotsService {
     };
   }
 
-  async setTelegramWebhook(args: {
-    url?: string;
-  }): Promise<BotWebhookActionResponseDto> {
+  async setTelegramWebhook(args: { url?: string }): Promise<BotWebhookActionResponseDto> {
     const channel = await this.findGlobalChannel('telegram_bot');
     if (!channel) {
       throw new BadRequestException({
@@ -135,9 +110,7 @@ export class AdminBotsService {
       ...cur,
       webhookUrl,
     }));
-    this.logger.log(
-      `admin: Telegram setWebhook → ${webhookUrl} (channelId=${channel.id})`,
-    );
+    this.logger.log(`admin: Telegram setWebhook → ${webhookUrl} (channelId=${channel.id})`);
     return {
       ok: true,
       webhookUrl,
@@ -190,13 +163,9 @@ export class AdminBotsService {
     };
   }
 
-  // ─────────────────────────── max ─────────────────────────────────────
-
   async getMaxStatus(): Promise<BotStatusResponseDto> {
     const channel = await this.findGlobalChannel('max_bot');
-    const tokenEnc = channel
-      ? this.readEncField(channel, 'accessToken')
-      : '';
+    const tokenEnc = channel ? this.readEncField(channel, 'accessToken') : '';
     const decryptedToken = tokenEnc ? this.tryDecrypt(tokenEnc) : '';
     const rps = await this.readGlobalRps('max');
     const quietHours = await this.readQuietHours('max');
@@ -214,9 +183,7 @@ export class AdminBotsService {
     };
   }
 
-  async setMaxWebhook(args: {
-    url?: string;
-  }): Promise<BotWebhookActionResponseDto> {
+  async setMaxWebhook(args: { url?: string }): Promise<BotWebhookActionResponseDto> {
     const channel = await this.findGlobalChannel('max_bot');
     if (!channel) {
       throw new BadRequestException({
@@ -228,9 +195,7 @@ export class AdminBotsService {
         },
       });
     }
-    const accessToken = this.tryDecrypt(
-      this.readEncField(channel, 'accessToken'),
-    );
+    const accessToken = this.tryDecrypt(this.readEncField(channel, 'accessToken'));
     if (!accessToken) {
       throw new BadRequestException({
         ok: false,
@@ -257,9 +222,7 @@ export class AdminBotsService {
       ...cur,
       webhookUrl,
     }));
-    this.logger.log(
-      `admin: MAX subscribeWebhook → ${webhookUrl} (channelId=${channel.id})`,
-    );
+    this.logger.log(`admin: MAX subscribeWebhook → ${webhookUrl} (channelId=${channel.id})`);
     return {
       ok: true,
       webhookUrl,
@@ -278,9 +241,7 @@ export class AdminBotsService {
         },
       });
     }
-    const accessToken = this.tryDecrypt(
-      this.readEncField(channel, 'accessToken'),
-    );
+    const accessToken = this.tryDecrypt(this.readEncField(channel, 'accessToken'));
     if (!accessToken) {
       throw new BadRequestException({
         ok: false,
@@ -325,8 +286,6 @@ export class AdminBotsService {
     };
   }
 
-  // ─────────────────────────── email inbox ────────────────────────────
-
   async getEmailInboxStatus(): Promise<EmailInboxStatusResponseDto> {
     const mi = this.cfg.mailInbox;
     return {
@@ -339,19 +298,11 @@ export class AdminBotsService {
       pollCron: mi.pollCron ?? null,
       maxPerRun: mi.maxPerRun ?? null,
       domain: mi.domain ?? null,
-      // TODO: завести `AdminSetting` `mailInbox.lastFetchAt` либо метрику
-      //       Prometheus → таскать её сюда через AlertingService. На текущей
-      //       фазе админка показывает null + подпись «настройте метрику».
       lastFetchAt: null,
     };
   }
 
   async testEmailInboxConnection(): Promise<EmailInboxTestResponseDto> {
-    // ImapClient как готовый класс в проекте не выделен — поллер сидит в
-    // mail-inbox и собирается через `imapflow` напрямую внутри cron. Чтобы
-    // не дублировать конструкцию (риск падения на dev'е), на этой фазе
-    // отдаём 501 с понятным сообщением. Отдельным ТЗ можно вынести
-    // ImapClient как сервис и вернуться сюда.
     throw new NotImplementedException({
       ok: false,
       error: {
@@ -362,11 +313,7 @@ export class AdminBotsService {
     });
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────
-
-  private async findGlobalChannel(
-    kind: 'telegram_bot' | 'max_bot',
-  ): Promise<Channel | null> {
+  private async findGlobalChannel(kind: 'telegram_bot' | 'max_bot'): Promise<Channel | null> {
     return this.prisma.channel.findFirst({
       where: { tenantId: null, kind },
     });
@@ -414,8 +361,7 @@ export class AdminBotsService {
     if (!token) {
       return { isSet: false, lastChars: null };
     }
-    const lastChars =
-      token.length <= 4 ? `****${token}` : `****${token.slice(-4)}`;
+    const lastChars = token.length <= 4 ? `****${token}` : `****${token.slice(-4)}`;
     return { isSet: true, lastChars };
   }
 
@@ -441,25 +387,16 @@ export class AdminBotsService {
     }
   }
 
-  /**
-   * RPS читаем сначала из AdminSetting, потом из ENV. Это позволяет
-   * переключать лимит без рестарта (см. ТЗ §3 «AdminSetting → ENV
-   * fallback»).
-   */
   private async readGlobalRps(kind: 'telegram' | 'max'): Promise<number> {
     const key = `conversational.${kind}_bot_global_rps`;
     const dynamic = await this.settings.get<number>(key);
     if (typeof dynamic === 'number' && Number.isFinite(dynamic)) {
       return dynamic;
     }
-    return kind === 'telegram'
-      ? this.cfg.telegramBot.globalRps
-      : this.cfg.maxBot.globalRps;
+    return kind === 'telegram' ? this.cfg.telegramBot.globalRps : this.cfg.maxBot.globalRps;
   }
 
-  private async readQuietHours(
-    kind: 'telegram' | 'max',
-  ): Promise<string | null> {
+  private async readQuietHours(kind: 'telegram' | 'max'): Promise<string | null> {
     const key = `conversational.${kind}_quiet_hours`;
     const value = await this.settings.get<string>(key);
     return typeof value === 'string' && value ? value : null;

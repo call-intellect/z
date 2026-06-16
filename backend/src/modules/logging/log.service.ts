@@ -29,7 +29,6 @@ const SEARCH_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const INSTANCE_ID = `${hostname()}:${process.pid}`;
 
-/** Фильтры списка логов (контракт для контроллера и buildLogWhere). */
 export interface LogQueryFilters {
   level?: SystemLogLevel;
   levelAtLeast?: SystemLogLevel;
@@ -51,13 +50,11 @@ export interface LogQueryFilters {
   offset: number;
 }
 
-/** Разворачивает «уровень не ниже» в список уровней. */
 export function expandLevelAtLeast(level: SystemLogLevel): SystemLogLevel[] {
   const min = LOG_LEVEL_ORDER[level];
   return LEVEL_VALUES.filter((l) => LOG_LEVEL_ORDER[l] >= min);
 }
 
-/** Строит Prisma-where из фильтров. Чистая функция (для тестов). */
 export function buildLogWhere(
   f: LogQueryFilters,
   now: Date = new Date(),
@@ -82,8 +79,6 @@ export function buildLogWhere(
   if (typeof f.statusCode === 'number') where.statusCode = f.statusCode;
   if (f.path) where.path = { contains: f.path, mode: 'insensitive' };
 
-  // Период: gte dateFrom .. lt dateTo. Если период не задан, но есть search —
-  // ограничиваем окно последними 30 днями (использует индекс по createdAt).
   const createdAt: Prisma.DateTimeFilter = {};
   if (f.dateFrom) createdAt.gte = f.dateFrom;
   if (f.dateTo) createdAt.lt = f.dateTo;
@@ -103,13 +98,6 @@ export function buildLogWhere(
   return where;
 }
 
-/**
- * LoggingModule — публичный API записи + методы чтения для админки.
- *
- * `write()` — best-effort: обёрнут в try/catch, НИКОГДА не бросает и не ломает
- * бизнес-операцию. Настройки читаются синхронно из кэша (горячий путь).
- * См. plans/tz/2026-06-01-logging-module.md §5.
- */
 @Injectable()
 export class LogService {
   constructor(
@@ -118,8 +106,6 @@ export class LogService {
     private readonly buffer: LogBufferService,
     private readonly ctx: RequestContextService,
   ) {}
-
-  // ───────────────────────────── запись ─────────────────────────────
 
   write(input: WriteLogInput): void {
     try {
@@ -133,13 +119,10 @@ export class LogService {
         return;
       }
 
-      // module: прямое значение → из контекста (напр. имя стадии цепочки).
       const module = input.module ?? this.ctx.module;
       if (module && cfg.disabledModules.includes(module)) return;
 
       const entry: SystemLogEntry = {
-        // Явные id/createdAt — чтобы live-стрим (LogStreamGateway) отдавал те же
-        // значения, что попадут в БД (иначе они генерятся БД и в стриме их нет).
         id: randomUUID(),
         createdAt: new Date(),
         level: input.level,
@@ -153,11 +136,9 @@ export class LogService {
       if (module) entry.module = module;
       if (input.action) entry.action = input.action;
 
-      // Процессный контур цепочки: прямое значение → из контекста.
       const pipeline = input.pipeline ?? this.ctx.pipeline;
       if (pipeline) entry.pipeline = pipeline;
 
-      // Обогащение из request-context (если есть прямые значения — приоритет им).
       const userId = input.userId ?? this.ctx.userId;
       const userRole = input.userRole ?? this.ctx.userRole;
       const orgId = input.orgId ?? this.ctx.orgId;
@@ -190,9 +171,7 @@ export class LogService {
       }
 
       this.buffer.enqueue(entry);
-    } catch {
-      // best-effort: проглатываем — лог не должен ломать бизнес-операцию.
-    }
+    } catch {}
   }
 
   debug(message: string, extra?: Partial<WriteLogInput>): void {
@@ -211,7 +190,6 @@ export class LogService {
     this.write({ level: 'FATAL', message, ...extra });
   }
 
-  /** Бизнес-событие (category=BUSINESS, level=INFO). */
   business(action: string, message: string, extra?: Partial<WriteLogInput>): void {
     this.write({
       level: 'INFO',
@@ -222,7 +200,6 @@ export class LogService {
     });
   }
 
-  /** Событие безопасности (category=SECURITY, level=WARN). */
   security(action: string, message: string, extra?: Partial<WriteLogInput>): void {
     this.write({
       level: 'WARN',
@@ -248,8 +225,6 @@ export class LogService {
     return { name: 'NonError', message: truncate(String(error), MAX_MESSAGE_LEN) };
   }
 
-  // ───────────────────────────── чтение (админка) ─────────────────────
-
   async list(
     filters: LogQueryFilters,
   ): Promise<{ total: number; items: unknown[]; limit: number; offset: number }> {
@@ -270,10 +245,6 @@ export class LogService {
     return this.prisma.systemLog.findUnique({ where: { id } });
   }
 
-  /**
-   * Все записи одной цепочки по `traceId`, по времени (asc) — для вида
-   * «Цепочка» в админке (полная трассировка одного действия сквозь модули).
-   */
   async chain(
     traceId: string,
     limit: number,
@@ -295,42 +266,48 @@ export class LogService {
       createdAt: { gte: dateFrom, lt: dateTo },
     };
 
-    const [total, byLevelRaw, byCategoryRaw, byPipelineRaw, durationAgg, topModulesRaw, topPathsRaw] =
-      await Promise.all([
-        this.prisma.systemLog.count({ where }),
-        this.prisma.systemLog.groupBy({ by: ['level'], where, _count: { _all: true } }),
-        this.prisma.systemLog.groupBy({ by: ['category'], where, _count: { _all: true } }),
-        this.prisma.systemLog.groupBy({ by: ['pipeline'], where, _count: { _all: true } }),
-        this.prisma.systemLog.aggregate({
-          where: { ...where, category: SystemLogCategory.REQUEST },
-          _avg: { durationMs: true },
-        }),
-        this.prisma.systemLog.groupBy({
-          by: ['module'],
-          where: { ...where, level: { in: ['ERROR', 'FATAL'] } },
-          _count: { _all: true },
-          orderBy: { _count: { module: 'desc' } },
-          take: 5,
-        }),
-        this.prisma.systemLog.groupBy({
-          by: ['path'],
-          where: { ...where, level: { in: ['ERROR', 'FATAL'] } },
-          _count: { _all: true },
-          orderBy: { _count: { path: 'desc' } },
-          take: 5,
-        }),
-      ]);
+    const [
+      total,
+      byLevelRaw,
+      byCategoryRaw,
+      byPipelineRaw,
+      durationAgg,
+      topModulesRaw,
+      topPathsRaw,
+    ] = await Promise.all([
+      this.prisma.systemLog.count({ where }),
+      this.prisma.systemLog.groupBy({ by: ['level'], where, _count: { _all: true } }),
+      this.prisma.systemLog.groupBy({ by: ['category'], where, _count: { _all: true } }),
+      this.prisma.systemLog.groupBy({ by: ['pipeline'], where, _count: { _all: true } }),
+      this.prisma.systemLog.aggregate({
+        where: { ...where, category: SystemLogCategory.REQUEST },
+        _avg: { durationMs: true },
+      }),
+      this.prisma.systemLog.groupBy({
+        by: ['module'],
+        where: { ...where, level: { in: ['ERROR', 'FATAL'] } },
+        _count: { _all: true },
+        orderBy: { _count: { module: 'desc' } },
+        take: 5,
+      }),
+      this.prisma.systemLog.groupBy({
+        by: ['path'],
+        where: { ...where, level: { in: ['ERROR', 'FATAL'] } },
+        _count: { _all: true },
+        orderBy: { _count: { path: 'desc' } },
+        take: 5,
+      }),
+    ]);
 
-    const byLevel = Object.fromEntries(
-      byLevelRaw.map((r) => [r.level, r._count._all]),
-    ) as Record<string, number>;
+    const byLevel = Object.fromEntries(byLevelRaw.map((r) => [r.level, r._count._all])) as Record<
+      string,
+      number
+    >;
     const byCategory = Object.fromEntries(
       byCategoryRaw.map((r) => [r.category, r._count._all]),
     ) as Record<string, number>;
     const byPipeline = Object.fromEntries(
-      byPipelineRaw
-        .filter((r) => r.pipeline != null)
-        .map((r) => [r.pipeline, r._count._all]),
+      byPipelineRaw.filter((r) => r.pipeline != null).map((r) => [r.pipeline, r._count._all]),
     ) as Record<string, number>;
 
     const errorCount = (byLevel['ERROR'] ?? 0) + (byLevel['FATAL'] ?? 0);
@@ -356,7 +333,6 @@ export class LogService {
     };
   }
 
-  /** Все валидные категории — для UI и валидации. */
   static categories(): SystemLogCategory[] {
     return CATEGORY_VALUES;
   }

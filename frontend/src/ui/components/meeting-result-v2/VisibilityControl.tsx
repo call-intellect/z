@@ -1,26 +1,11 @@
-'use client';
+"use client";
 
-/**
- * Контрол «Кому видно» для встречи (ТЗ Ф4 «Кому видно»).
- *
- * Слои: ApiDto (`meetingsApi.getVisibility`) → DomainModel
- * (`meetingVisibilityFromApi`) → UiModel (русские лейблы `VISIBILITY_SCOPE_OPTIONS`).
- *
- * 4 пресета: «Только мне» / «Участникам» (дефолт) / «Выбрать людей и группы» /
- * «Всей компании». При выборе «Выбрать людей и группы» раскрывается:
- *   - пикер людей (поиск по имени/почте через ParticipantPicker → personId);
- *   - список групп доступа компании (чекбоксы) из knowledge-access.
- *
- * Доступ host-only: backend отдаёт 403 не-хосту на GET/PATCH. При 403 на
- * загрузке — компонент показывает read-only текущий режим без редактирования.
- */
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Lock, Users } from "lucide-react";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Lock, Users } from 'lucide-react';
-
-import { meetingsApi } from '@/api/meetings.api';
-import { knowledgeAccessApi } from '@/api/knowledge-access.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { meetingsApi } from "@/api/meetings.api";
+import { knowledgeAccessApi } from "@/api/knowledge-access.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   meetingVisibilityFromApi,
   normalizeVisibilityScope,
@@ -28,36 +13,29 @@ import {
   VISIBILITY_SCOPE_OPTIONS,
   type GranteeType,
   type VisibilityScope,
-} from '@/domain/meeting';
+} from "@/domain/meeting";
 import {
   toKnowledgeGroup,
   type KnowledgeGroupDomain,
-} from '@/domain/knowledge-access';
+} from "@/domain/knowledge-access";
 
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Label } from '@/ui/shadcn/label';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { toast } from '@/ui/shadcn/toast';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Label } from "@/ui/shadcn/label";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { toast } from "@/ui/shadcn/toast";
+import { cn } from "@/ui/shadcn/lib/utils";
 import {
   ParticipantPicker,
   type ParticipantPickerValue,
-} from '@/ui/shared/ParticipantPicker';
+} from "@/ui/shared/ParticipantPicker";
 
 export type VisibilityControlProps = {
   meetingId: string;
-  /**
-   * Может ли текущий пользователь управлять видимостью (host). Если явно
-   * `false` — рендерим только read-only режим, не дёргая host-only эндпоинт.
-   * Если не передан — пробуем загрузить; при 403 переключаемся в read-only.
-   */
   canManage?: boolean;
-  /** Колбэк после успешного сохранения (например, для mutate карточки встречи). */
   onSaved?: (scope: VisibilityScope) => void;
 };
 
-/** Выбранный человек для custom-режима → грант `{granteeType:'person', granteeId}`. */
 type SelectedGroup = { id: string; name: string };
 
 export function VisibilityControl({
@@ -69,10 +47,8 @@ export function VisibilityControl({
   const [readOnly, setReadOnly] = useState(canManage === false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [scope, setScope] = useState<VisibilityScope>('participants');
-  // Люди для custom-режима — переиспользуем ParticipantPicker (поиск + чипы).
+  const [scope, setScope] = useState<VisibilityScope>("participants");
   const [people, setPeople] = useState<ParticipantPickerValue[]>([]);
-  // Выбранные группы доступа (id).
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(
     new Set(),
   );
@@ -80,7 +56,6 @@ export function VisibilityControl({
   const [groups, setGroups] = useState<KnowledgeGroupDomain[]>([]);
   const [saving, setSaving] = useState(false);
 
-  // ─── Загрузка текущей видимости ───────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -93,9 +68,9 @@ export function VisibilityControl({
         setScope(domain.scope);
         setPeople(
           domain.grants
-            .filter((g) => g.granteeType === 'person')
+            .filter((g) => g.granteeType === "person")
             .map((g) => ({
-              type: 'person' as const,
+              type: "person" as const,
               personId: g.granteeId,
               name: g.name,
             })),
@@ -103,18 +78,17 @@ export function VisibilityControl({
         setSelectedGroupIds(
           new Set(
             domain.grants
-              .filter((g) => g.granteeType === 'group')
+              .filter((g) => g.granteeType === "group")
               .map((g) => g.granteeId),
           ),
         );
         setReadOnly(false);
       } catch (e) {
         if (cancelled) return;
-        // 403 = не-хост: показываем read-only текущий режим.
-        if (e instanceof ApiError && e.code === 'http_403') {
+        if (e instanceof ApiError && e.code === "http_403") {
           setReadOnly(true);
         } else {
-          setLoadError(humanizeApiError(e, 'Не удалось загрузить доступ.'));
+          setLoadError(humanizeApiError(e, "Не удалось загрузить доступ."));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -125,16 +99,14 @@ export function VisibilityControl({
     };
   }, [meetingId]);
 
-  // ─── Загрузка групп доступа (только когда нужен custom и можем редактировать) ─
   useEffect(() => {
-    if (readOnly || scope !== 'custom' || groups.length > 0) return;
+    if (readOnly || scope !== "custom" || groups.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
         const res = await knowledgeAccessApi.listGroups();
         if (!cancelled) setGroups(res.items.map(toKnowledgeGroup));
       } catch {
-        // Группы недоступны — пикер групп просто не покажется, люди остаются.
         if (!cancelled) setGroups([]);
       }
     })();
@@ -143,7 +115,6 @@ export function VisibilityControl({
     };
   }, [readOnly, scope, groups.length]);
 
-  // ─── Сбор грантов для отправки ────────────────────────────────────────────
   const selectedGroups: SelectedGroup[] = useMemo(
     () =>
       groups
@@ -155,20 +126,20 @@ export function VisibilityControl({
   const grants = useMemo(
     () => [
       ...people
-        .filter((p) => p.type === 'person')
+        .filter((p) => p.type === "person")
         .map((p) => ({
-          granteeType: 'person' as GranteeType,
-          granteeId: p.type === 'person' ? p.personId : '',
+          granteeType: "person" as GranteeType,
+          granteeId: p.type === "person" ? p.personId : "",
         })),
       ...Array.from(selectedGroupIds).map((id) => ({
-        granteeType: 'group' as GranteeType,
+        granteeType: "group" as GranteeType,
         granteeId: id,
       })),
     ],
     [people, selectedGroupIds],
   );
 
-  const customEmpty = scope === 'custom' && grants.length === 0;
+  const customEmpty = scope === "custom" && grants.length === 0;
 
   const toggleGroup = (id: string) => {
     setSelectedGroupIds((prev) => {
@@ -185,18 +156,17 @@ export function VisibilityControl({
     try {
       await meetingsApi.setVisibility(meetingId, {
         scope,
-        ...(scope === 'custom' ? { grants } : {}),
+        ...(scope === "custom" ? { grants } : {}),
       });
-      toast.success('Доступ к встрече сохранён');
+      toast.success("Доступ к встрече сохранён");
       onSaved?.(scope);
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить доступ.'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить доступ."));
     } finally {
       setSaving(false);
     }
   };
 
-  // ─── Состояния загрузки / ошибки / read-only ──────────────────────────────
   if (loading) {
     return (
       <div className="flex flex-col gap-2">
@@ -220,7 +190,7 @@ export function VisibilityControl({
       <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2.5 text-sm text-fg-secondary">
         <Lock size={14} className="shrink-0 text-fg-tertiary" />
         <span>
-          Кому видно:{' '}
+          Кому видно:{" "}
           <span className="font-medium text-fg-primary">
             {visibilityScopeLabel(scope)}
           </span>
@@ -229,7 +199,6 @@ export function VisibilityControl({
     );
   }
 
-  // ─── Редактор (host) ──────────────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
       <fieldset className="flex flex-col gap-2">
@@ -245,7 +214,7 @@ export function VisibilityControl({
         ))}
       </fieldset>
 
-      {scope === 'custom' && (
+      {scope === "custom" && (
         <div className="flex flex-col gap-4 rounded-md border border-border-subtle bg-bg-overlay p-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="visibility-people">Люди</Label>
@@ -315,7 +284,6 @@ export function VisibilityControl({
   );
 }
 
-/** Один пресет-радиокнопка с подписью и пояснением. */
 function PresetRow({
   label,
   hint,
@@ -334,17 +302,17 @@ function PresetRow({
       aria-checked={checked}
       onClick={onSelect}
       className={cn(
-        'flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors',
+        "flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors",
         checked
-          ? 'border-accent-border bg-accent-muted'
-          : 'border-border-subtle bg-bg-overlay hover:border-accent-border',
+          ? "border-accent-border bg-accent-muted"
+          : "border-border-subtle bg-bg-overlay hover:border-accent-border",
       )}
     >
       <span
         aria-hidden
         className={cn(
-          'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border',
-          checked ? 'border-accent' : 'border-border',
+          "mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border",
+          checked ? "border-accent" : "border-border",
         )}
       >
         {checked && <span className="h-2 w-2 rounded-full bg-accent" />}
@@ -352,8 +320,8 @@ function PresetRow({
       <span className="min-w-0">
         <span
           className={cn(
-            'block text-sm font-medium',
-            checked ? 'text-accent' : 'text-fg-primary',
+            "block text-sm font-medium",
+            checked ? "text-accent" : "text-fg-primary",
           )}
         >
           {label}

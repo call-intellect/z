@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Ручное создание главы (`POST /api/v1/meetings/:id/chapters`).
- * `order` опционально — если не задан, сервис ставит next.
- */
 export const CreateChapterSchema = z
   .object({
     startMs: z.coerce.number().int().min(0),

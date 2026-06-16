@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -9,54 +9,38 @@ import {
   Minus,
   RefreshCcw,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { dashboardApi } from '@/api/dashboard.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { dashboardApi } from "@/api/dashboard.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   teamHealthFromApi,
   type HealthToneDomain,
   type TeamHealthAttrDomain,
   type TeamHealthDomain,
   type TeamHealthRowDomain,
-} from '@/domain/team-health';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-/**
- * /teams — список команд (Pulse Wave 2 §2.4).
- *
- * Источник: `GET /api/v1/dashboard/team-health` (тот же, что и в
- * `TeamHealthGrid` на дашборде, но здесь — расширенный список со
- * всеми колонками + сортировка + общий тренд + click → /teams/[id]).
- *
- * Сортировка кодируется так, что «хуже» = выше:
- *   - tone мапится в TONE_RANK; danger выше warning выше success.
- *   - внутри одной зоны добавляем числовое значение (со знаком).
- *   - default — по комбинированному score всех 4 attrs (worst first).
- *
- * Below-cohort (size < 3) отделы остаются в списке, но визуально
- * приглушены и не участвуют в скоринге метрик.
- */
+} from "@/domain/team-health";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type SortKey =
-  | 'name'
-  | 'size'
-  | 'sentiment'
-  | 'promises'
-  | 'conflicts'
-  | 'decisions'
-  | 'overall';
+  | "name"
+  | "size"
+  | "sentiment"
+  | "promises"
+  | "conflicts"
+  | "decisions"
+  | "overall";
 
-type SortDir = 'asc' | 'desc';
+type SortDir = "asc" | "desc";
 
 const TONE_CHIP: Record<HealthToneDomain, string> = {
-  success: 'bg-chip-success-bg text-chip-success-fg',
-  warning: 'bg-chip-warning-bg text-chip-warning-fg',
-  danger: 'bg-chip-danger-bg text-chip-danger-fg',
-  neutral: 'bg-bg-overlay text-fg-tertiary',
+  success: "bg-chip-success-bg text-chip-success-fg",
+  warning: "bg-chip-warning-bg text-chip-warning-fg",
+  danger: "bg-chip-danger-bg text-chip-danger-fg",
+  neutral: "bg-bg-overlay text-fg-tertiary",
 };
 
 const TONE_RANK: Record<HealthToneDomain, number> = {
@@ -71,8 +55,8 @@ export function TeamsListClient() {
   const [data, setData] = useState<TeamHealthDomain | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('overall');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>("overall");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const load = useCallback(async () => {
     if (!currentOrgId) return;
@@ -82,9 +66,7 @@ export function TeamsListClient() {
       const res = await dashboardApi.getTeamHealth(currentOrgId);
       setData(teamHealthFromApi(res));
     } catch (e) {
-      setError(
-        humanizeApiError(e, 'Не удалось загрузить команды'),
-      );
+      setError(humanizeApiError(e, "Не удалось загрузить команды"));
     } finally {
       setLoading(false);
     }
@@ -97,7 +79,7 @@ export function TeamsListClient() {
   const sortedTeams = useMemo(() => {
     if (!data) return [];
     const arr = [...data.teams];
-    const sign = sortDir === 'asc' ? 1 : -1;
+    const sign = sortDir === "asc" ? 1 : -1;
     arr.sort((a, b) => {
       const ka = keyValue(a, sortKey);
       const kb = keyValue(b, sortKey);
@@ -109,10 +91,10 @@ export function TeamsListClient() {
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
-      setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
     } else {
       setSortKey(key);
-      setSortDir('asc');
+      setSortDir("asc");
     }
   };
 
@@ -254,20 +236,20 @@ function SortHeader({
   sortKey: SortKey;
   sortDir: SortDir;
   onClick: (k: SortKey) => void;
-  align: 'left' | 'center';
+  align: "left" | "center";
 }) {
   const active = sortKey === thisKey;
   const Icon = active
-    ? sortDir === 'asc'
+    ? sortDir === "asc"
       ? ArrowUpRight
       : ArrowDownRight
     : null;
   return (
     <th
       className={cn(
-        'cursor-pointer px-3 py-3 font-medium hover:text-fg-secondary',
-        align === 'left' ? 'text-left' : 'text-center',
-        active && 'text-accent',
+        "cursor-pointer px-3 py-3 font-medium hover:text-fg-secondary",
+        align === "left" ? "text-left" : "text-center",
+        active && "text-accent",
       )}
       onClick={() => onClick(thisKey)}
     >
@@ -343,17 +325,17 @@ function AttrChip({
   formatter: (v: number) => string;
 }) {
   const TrendIcon =
-    attr.trend === 'up'
+    attr.trend === "up"
       ? ArrowUpRight
-      : attr.trend === 'down'
+      : attr.trend === "down"
         ? ArrowDownRight
-        : attr.trend === 'flat'
+        : attr.trend === "flat"
           ? Minus
           : null;
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
         TONE_CHIP[attr.tone],
       )}
     >
@@ -374,20 +356,20 @@ function OverallChip({ row }: { row: TeamHealthRowDomain }) {
   for (const t of tones) counts[t]++;
   const overall: HealthToneDomain =
     counts.danger >= 2
-      ? 'danger'
+      ? "danger"
       : counts.danger >= 1 || counts.warning >= 2
-        ? 'warning'
-        : 'success';
+        ? "warning"
+        : "success";
   const label =
-    overall === 'success'
-      ? 'хорошо'
-      : overall === 'warning'
-        ? 'внимание'
-        : 'критично';
+    overall === "success"
+      ? "хорошо"
+      : overall === "warning"
+        ? "внимание"
+        : "критично";
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium',
+        "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
         TONE_CHIP[overall],
       )}
     >
@@ -403,19 +385,19 @@ function formatSigned(v: number): string {
 
 function keyValue(row: TeamHealthRowDomain, key: SortKey): number | string {
   switch (key) {
-    case 'name':
+    case "name":
       return row.departmentName;
-    case 'size':
+    case "size":
       return row.size;
-    case 'sentiment':
+    case "sentiment":
       return -TONE_RANK[row.sentiment.tone] * 1000 - row.sentiment.value;
-    case 'promises':
+    case "promises":
       return -TONE_RANK[row.promises.tone] * 1000 - row.promises.value;
-    case 'conflicts':
+    case "conflicts":
       return TONE_RANK[row.conflicts.tone] * 1000 + row.conflicts.value;
-    case 'decisions':
+    case "decisions":
       return TONE_RANK[row.decisions.tone] * 1000 + row.decisions.value;
-    case 'overall': {
+    case "overall": {
       const tones = [
         row.sentiment.tone,
         row.promises.tone,

@@ -1,73 +1,66 @@
-'use client';
+"use client";
 
-/**
- * Поиск по памяти компании — `/memory` (ТЗ 2026-06-13 «Редизайн кабинета», Ф5б).
- *
- * Поверх `POST /api/v1/knowledge/search` (гибридный cosine + BM25). Поле ввода
- * + submit (Enter / кнопка), список результатов карточками: заголовок блока,
- * доверенный ответ или первая цитата, мета «тип · источник [таймкод]», чип
- * «уверенность N%» с тоном по порогу.
- *
- * Б-6 (три состояния):
- *   - пустой запрос (ничего не искали) → подсказка-приглашение;
- *   - 0 результатов → «ничего не нашлось»;
- *   - ошибка → «не получилось — чиним».
- */
+import { useState } from "react";
+import { Loader2, Search } from "lucide-react";
 
-import { useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
-
-import { knowledgeSearchApi } from '@/api/knowledge-search.api';
-import { humanizeApiError } from '@/api/api-error';
+import { knowledgeSearchApi } from "@/api/knowledge-search.api";
+import { humanizeApiError } from "@/api/api-error";
 import {
   knowledgeSearchResultsFromApi,
   type KnowledgeSearchResult,
-} from '@/domain/knowledge-search';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/knowledge-search";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type SearchState =
-  | { kind: 'idle' }
-  | { kind: 'loading' }
-  | { kind: 'done'; results: KnowledgeSearchResult[]; tookMs: number; query: string }
-  | { kind: 'error'; message: string };
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | {
+      kind: "done";
+      results: KnowledgeSearchResult[];
+      tookMs: number;
+      query: string;
+    }
+  | { kind: "error"; message: string };
 
-/** Тон чипа уверенности по порогу: ≥80% — успех, ≥50% — внимание, иначе — приглушённо. */
 function confidenceChipClass(confidence: number): string {
   const pct = confidence * 100;
-  if (pct >= 80) return 'bg-chip-success-bg text-chip-success-fg';
-  if (pct >= 50) return 'bg-chip-warning-bg text-chip-warning-fg';
-  return 'bg-bg-overlay text-fg-tertiary';
+  if (pct >= 80) return "bg-chip-success-bg text-chip-success-fg";
+  if (pct >= 50) return "bg-chip-warning-bg text-chip-warning-fg";
+  return "bg-bg-overlay text-fg-tertiary";
 }
 
 function fmtTimecode(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export function MemorySearch() {
   const { currentOrgId } = useAuth();
-  const [query, setQuery] = useState('');
-  const [state, setState] = useState<SearchState>({ kind: 'idle' });
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState<SearchState>({ kind: "idle" });
 
   const runSearch = async () => {
     const q = query.trim();
     if (!q || !currentOrgId) return;
-    setState({ kind: 'loading' });
+    setState({ kind: "loading" });
     try {
       const api = await knowledgeSearchApi.search(currentOrgId, {
         query: q,
         limit: 10,
       });
       const { items, tookMs } = knowledgeSearchResultsFromApi(api);
-      setState({ kind: 'done', results: items, tookMs, query: q });
+      setState({ kind: "done", results: items, tookMs, query: q });
     } catch (e) {
-      const message = humanizeApiError(e, 'Не получилось найти — мы уже чиним.');
-      setState({ kind: 'error', message });
+      const message = humanizeApiError(
+        e,
+        "Не получилось найти — мы уже чиним.",
+      );
+      setState({ kind: "error", message });
     }
   };
 
@@ -77,7 +70,9 @@ export function MemorySearch() {
   };
 
   const canSubmit =
-    state.kind !== 'loading' && query.trim().length > 0 && Boolean(currentOrgId);
+    state.kind !== "loading" &&
+    query.trim().length > 0 &&
+    Boolean(currentOrgId);
 
   return (
     <section className="rounded-xl border border-border-subtle bg-bg-surface p-5">
@@ -108,7 +103,7 @@ export function MemorySearch() {
           />
         </div>
         <Button type="submit" disabled={!canSubmit}>
-          {state.kind === 'loading' ? (
+          {state.kind === "loading" ? (
             <Loader2 size={14} className="animate-spin" />
           ) : (
             <Search size={14} />
@@ -131,18 +126,17 @@ function MemorySearchBody({
   state: SearchState;
   hasOrg: boolean;
 }) {
-  // Б-6: пустой запрос (ещё ничего не искали) → подсказка-приглашение.
-  if (state.kind === 'idle') {
+  if (state.kind === "idle") {
     return (
       <p className="text-sm text-fg-secondary">
         {hasOrg
-          ? 'Спросите память компании одним запросом — Кора найдёт решения, факты и риски со ссылками на источники.'
-          : 'Поиск доступен только в рамках организации.'}
+          ? "Спросите память компании одним запросом — Кора найдёт решения, факты и риски со ссылками на источники."
+          : "Поиск доступен только в рамках организации."}
       </p>
     );
   }
 
-  if (state.kind === 'loading') {
+  if (state.kind === "loading") {
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-fg-tertiary">
         <Loader2 size={15} className="animate-spin" />
@@ -151,8 +145,7 @@ function MemorySearchBody({
     );
   }
 
-  // Б-6: ошибка → честное «чиним».
-  if (state.kind === 'error') {
+  if (state.kind === "error") {
     return (
       <div className="rounded-lg border border-chip-danger-bg bg-chip-danger-bg px-4 py-3 text-sm text-chip-danger-fg">
         {state.message}
@@ -160,12 +153,11 @@ function MemorySearchBody({
     );
   }
 
-  // Б-6: 0 результатов → «ничего не нашлось».
   if (state.results.length === 0) {
     return (
       <div className="rounded-lg border border-border-subtle bg-bg-card px-4 py-6 text-center text-sm text-fg-secondary">
-        Ничего не нашлось по запросу «{state.query}». Попробуйте переформулировать
-        или задать вопрос помощнику в разделе «Спросить».
+        Ничего не нашлось по запросу «{state.query}». Попробуйте
+        переформулировать или задать вопрос помощнику в разделе «Спросить».
       </div>
     );
   }
@@ -203,7 +195,7 @@ function MemorySearchResultCard({ result }: { result: KnowledgeSearchResult }) {
             {result.evidence && (
               <span className="inline-flex items-center gap-1">
                 источник: {result.evidence.sourceLabel}
-                {typeof result.evidence.startMs === 'number' && (
+                {typeof result.evidence.startMs === "number" && (
                   <span className="font-mono text-accent">
                     [{fmtTimecode(result.evidence.startMs)}]
                   </span>
@@ -219,7 +211,7 @@ function MemorySearchResultCard({ result }: { result: KnowledgeSearchResult }) {
         </div>
         <span
           className={cn(
-            'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+            "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
             confidenceChipClass(result.confidence),
           )}
         >

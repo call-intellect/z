@@ -1,28 +1,3 @@
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Seed маршрута LLM для
- * нового taskType `skill-trait-concept-name`.
- *
- * Задача — короткое каноническое имя «смыслового блока навыка» (3–6 слов на
- * русском) для слитого кластера 2+ концептов. Лёгкая, нечастая (max 1 вызов
- * на каждый merge в cron'е раз в сутки).
- *
- * Цепочка моделей (per playbook §2.1 lightweight arbiter):
- *   primary:   deepseek:deepseek-v4-flash
- *   secondary: openai-via-proxy:gpt-5.4-mini
- *   tertiary:  ollama:qwen3:30b
- *
- * maxDataClass: 'internal' (стандарт для skill-инфраструктуры).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-skill-concept.ts
- *   bun run scripts/seed-llm-task-routes-skill-concept.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с editedByAdmin=true НЕ перезаписываются (защита админ-правок).
- *   - Без флага --update-existing — пропускаем существующие.
- *   - С флагом — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -101,17 +76,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -136,9 +107,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

@@ -1,18 +1,13 @@
-'use client';
+"use client";
 
-/**
- * usePersons — SWR-хук списка сотрудников Org с фильтром по должности.
- *
- * Backend: `GET /api/v1/persons?roleId=...&departmentId=...` (SBA α-0c).
- */
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
 import {
   personsDomainApi,
   type ListPersonsQuery,
   type PersonDomainApi,
-} from '@/api/structure.api';
+} from "@/api/structure.api";
 
 export function usePersons(
   orgId: string | null | undefined,
@@ -25,7 +20,7 @@ export function usePersons(
 } {
   const key = orgId
     ? [
-        'persons.list',
+        "persons.list",
         orgId,
         query.roleId ?? null,
         query.departmentId ?? null,
@@ -36,7 +31,7 @@ export function usePersons(
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId required');
+      if (!orgId) throw new Error("orgId required");
       return personsDomainApi.list(orgId, query);
     },
     { revalidateOnFocus: false },

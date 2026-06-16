@@ -1,37 +1,3 @@
-/**
- * SBA α-7 — Seed маршрутов LLM для 3 новых taskType'ов Specialist 3.1
- * (Regulations / Processes / Policies):
- *   - regulation-extract  — извлечение черновика Regulation/Process/Policy
- *     из блока. Сложная задача (понимание контекста + JSON Schema strict).
- *   - regulation-dedupe   — арбитр merge/new/extension/contradicts. Дешевле
- *     extract, но точнее (требует уверенности).
- *   - process-steps-extract — структурированное извлечение шагов процесса.
- *     Похоже по сложности на extract.
- *
- * Все три фильтруются по `maxDataClass >= confidential` (на стороне роутера
- * через provider capability — regulation может содержать чувствительные
- * внутренние правила, public-only провайдеры не должны её видеть).
- *
- * Источник цепочек: `docs/reference/llm-models-playbook.md` §2.1 + verified-
- * карта `second-brain/01_projects/llm-providers-verified.md` (smoke 2026-05-21).
- *
- * Дефолтная тройная цепочка (соответствует Phase 0b пайплайну block-distill):
- *   primary   — deepseek-v4-flash         (быстрый, дешёвый, JSON Schema strict)
- *   secondary — openai-via-proxy gpt-5.4-mini (резерв при недоступности DeepSeek)
- *   tertiary  — ollama qwen3:30b           (локальный fallback, internal-only)
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-regulations.ts
- *   bun run scripts/seed-llm-task-routes-regulations.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются (даже с
- *     `--update-existing`).
- *   - Без флага — пропускаем все существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ
- *     editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

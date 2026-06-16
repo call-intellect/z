@@ -1,22 +1,15 @@
-/**
- * API DTO для /api/v1/meetings/:id/reports (Фаза E §7).
- *
- * Источник правды — backend/src/modules/meeting-reports/.
- * Слой ApiDto. Domain-маппер живёт в `src/domain/meeting-report.ts`.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export const MEETING_REPORT_STATUSES = [
-  'pending',
-  'running',
-  'ready',
-  'failed',
-  'archived',
+  "pending",
+  "running",
+  "ready",
+  "failed",
+  "archived",
 ] as const;
 export type MeetingReportStatusApi = (typeof MEETING_REPORT_STATUSES)[number];
 
-export type ReportKindApi = 'primary' | 'additional';
+export type ReportKindApi = "primary" | "additional";
 
 export type ReportListItemApi = {
   kind: ReportKindApi;
@@ -40,7 +33,7 @@ export type ReportDetailApi = ReportListItemApi & {
 
 export type AvailableTemplateApi = {
   id: string;
-  scope: 'system' | 'org';
+  scope: "system" | "org";
   name: string;
   description: string | null;
   meetingType: string | null;
@@ -69,7 +62,11 @@ export const meetingReportsApi = {
       `/api/v1/meetings/${encodeURIComponent(meetingId)}/reports/${encodeURIComponent(reportId)}`,
     ),
 
-  regenerate: (meetingId: string, reportId: string, body?: { useVersionId?: string }) =>
+  regenerate: (
+    meetingId: string,
+    reportId: string,
+    body?: { useVersionId?: string },
+  ) =>
     apiClient.post<{ id: string; status: MeetingReportStatusApi }>(
       `/api/v1/meetings/${encodeURIComponent(meetingId)}/reports/${encodeURIComponent(reportId)}/regenerate`,
       body ?? {},

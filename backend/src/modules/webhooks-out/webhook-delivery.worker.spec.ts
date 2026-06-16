@@ -163,7 +163,7 @@ describe('WebhookDeliveryWorker.process', () => {
         event: 'task.created',
         eventId: 'evt_3',
         payload: {},
-        attempts: 2, // следующий attempt = 3 = maxAttempts → final fail
+        attempts: 2,
         status: 'retrying',
       },
       subscription: {

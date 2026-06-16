@@ -1,29 +1,22 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import {
-  personsApi,
-  type ListPersonsResultApi,
-} from '@/api/persons.api';
-import { useAuth } from '@/contexts/auth-context';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { Input } from '@/ui/shadcn/input';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { personsApi, type ListPersonsResultApi } from "@/api/persons.api";
+import { useAuth } from "@/contexts/auth-context";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-const ERASED_NAME = '[удалено по запросу]';
+const ERASED_NAME = "[удалено по запросу]";
 
-/**
- * `/persons` — простой список персон Org. Минимальный экран для шага 13
- * Фазы 11 (после удаления данных мы сюда редиректим).
- */
 export function PersonsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
@@ -44,7 +37,7 @@ function PersonsListContent({ orgId }: { orgId: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -57,8 +50,8 @@ function PersonsListContent({ orgId }: { orgId: string }) {
       });
       setData(dto);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') setForbidden(true);
-      else setError(humanizeApiError(e, 'Ошибка загрузки'));
+      if (e instanceof ApiError && e.code === "forbidden") setForbidden(true);
+      else setError(humanizeApiError(e, "Ошибка загрузки"));
     } finally {
       setIsLoading(false);
     }
@@ -96,8 +89,8 @@ function PersonsListContent({ orgId }: { orgId: string }) {
           title="Персон не найдено"
           description={
             q.trim()
-              ? 'Попробуйте изменить запрос.'
-              : 'Персоны появятся после первых встреч.'
+              ? "Попробуйте изменить запрос."
+              : "Персоны появятся после первых встреч."
           }
         />
       ) : (
@@ -114,15 +107,15 @@ function PersonsListContent({ orgId }: { orgId: string }) {
                     <div
                       className={
                         isErased
-                          ? 'text-sm italic text-fg-tertiary'
-                          : 'text-sm font-medium'
+                          ? "text-sm italic text-fg-tertiary"
+                          : "text-sm font-medium"
                       }
                     >
                       {p.canonicalName}
                     </div>
                     {p.aliases.length > 0 && !isErased && (
                       <div className="mt-0.5 text-xs text-fg-tertiary">
-                        {p.aliases.slice(0, 3).join(', ')}
+                        {p.aliases.slice(0, 3).join(", ")}
                       </div>
                     )}
                   </div>

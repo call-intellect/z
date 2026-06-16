@@ -1,8 +1,3 @@
-/**
- * Попытаться распарсить JSON: чистый объект, обёрнутый в ```json ... ```
- * или первый встретившийся объект внутри текста. На неуспех — вернуть
- * `{ raw: text }`, чтобы хотя бы что-то записалось в `output`.
- */
 export function tryParseJson(text: string): unknown {
   const trimmed = text.trim();
   const stripped = stripCodeFence(trimmed);
@@ -13,9 +8,7 @@ export function tryParseJson(text: string): unknown {
     if (match) {
       try {
         return JSON.parse(match[0]);
-      } catch {
-        // fall through
-      }
+      } catch {}
     }
   }
   return { raw: text };

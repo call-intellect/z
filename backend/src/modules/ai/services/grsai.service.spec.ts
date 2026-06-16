@@ -5,16 +5,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 import { GrsaiService } from './grsai.service';
 import { LlmError } from './llm.types';
 
-/**
- * GrsaiService unit-тесты: SSE-парсер, токены usage, выбор endpoint'а
- * (proxy vs direct), retry-лестница, error handling.
- *
- * Mocking — через `globalThis.fetch` (как в vox.service.spec.ts).
- * SSE-тело отдаём как `ReadableStream<Uint8Array>`, который умеет читать
- * `Response.body.getReader()`. Это тот же путь, что вызовет `collectSse()`.
- */
-
-/** Собирает Response с SSE-телом из набора готовых event-строк. */
 function sseResponse(events: string[], status = 200): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -94,14 +84,8 @@ describe('GrsaiService.complete — happy path и форматирование �
     expect(out.model).toBe('gemini-3-pro');
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
-    // Когда grsai.baseUrl совпадает с proxy.baseUrl — идём через /grsai/v1/chat/completions
-    expect(String(url)).toBe(
-      'https://proxy.agent-lia.ru/grsai/v1/chat/completions',
-    );
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe('https://proxy.agent-lia.ru/grsai/v1/chat/completions');
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer myFeedproxy3128:grsai-secret');
     const body = JSON.parse(init.body as string) as {
@@ -137,10 +121,7 @@ describe('GrsaiService.complete — happy path и форматирование �
     });
 
     expect(out.text).toBe('hi');
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toBe('https://grsaiapi.com/v1/chat/completions');
     const headers = init.headers as Record<string, string>;
     expect(headers.Authorization).toBe('Bearer grsai-direct');
@@ -172,9 +153,9 @@ describe('GrsaiService.complete — happy path и форматирование �
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const svc = new GrsaiService(makeProxyCfg());
-    await expect(
-      svc.complete({ system: { text: 's' }, user: 'u' }),
-    ).rejects.toBeInstanceOf(LlmError);
+    await expect(svc.complete({ system: { text: 's' }, user: 'u' })).rejects.toBeInstanceOf(
+      LlmError,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
@@ -191,9 +172,7 @@ describe('GrsaiService.complete — retry/error handling', () => {
   });
 
   it('HTTP 400 → LlmError сразу, без retry', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response('bad', { status: 400 }),
-    );
+    const fetchMock = vi.fn(async () => new Response('bad', { status: 400 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const svc = new GrsaiService(makeProxyCfg());
@@ -209,9 +188,7 @@ describe('GrsaiService.complete — retry/error handling', () => {
   });
 
   it('HTTP 429 → 3 retry → 4 попытки → LlmError(httpStatus=429)', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response('rate limited', { status: 429 }),
-    );
+    const fetchMock = vi.fn(async () => new Response('rate limited', { status: 429 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const svc = new GrsaiService(makeProxyCfg());
@@ -230,9 +207,7 @@ describe('GrsaiService.complete — retry/error handling', () => {
   });
 
   it('HTTP 502 везде → retry до конца → LlmError(httpStatus=502)', async () => {
-    const fetchMock = vi.fn(async () =>
-      new Response('bad gateway', { status: 502 }),
-    );
+    const fetchMock = vi.fn(async () => new Response('bad gateway', { status: 502 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const svc = new GrsaiService(makeProxyCfg());

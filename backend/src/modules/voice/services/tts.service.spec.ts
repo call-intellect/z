@@ -24,9 +24,7 @@ function makeCfg(overrides?: {
 describe('TtsService.synthesize', () => {
   const realFetch = globalThis.fetch;
 
-  beforeEach(() => {
-    // ничего
-  });
+  beforeEach(() => {});
   afterEach(() => {
     globalThis.fetch = realFetch;
     vi.restoreAllMocks();
@@ -77,19 +75,14 @@ describe('TtsService.synthesize', () => {
     const result = await svc.synthesize({ text: 'Hi', voice: 'nova' });
 
     expect(result.voice).toBe('nova');
-    const call = fetchMock.mock.calls[0] as unknown as [
-      string,
-      { body: string },
-    ];
+    const call = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
     const body = JSON.parse(call[1].body) as Record<string, unknown>;
     expect(body['voice']).toBe('nova');
   });
 
   it('пустой text падает в TtsError(text_empty)', async () => {
     const svc = new TtsService(makeCfg());
-    await expect(svc.synthesize({ text: '   ' })).rejects.toBeInstanceOf(
-      TtsError,
-    );
+    await expect(svc.synthesize({ text: '   ' })).rejects.toBeInstanceOf(TtsError);
     await expect(svc.synthesize({ text: '' })).rejects.toMatchObject({
       message: 'text_empty',
     });
@@ -111,9 +104,7 @@ describe('TtsService.synthesize', () => {
   });
 
   it('non-OK ответ openai падает в TtsError(openai_http_<status>:...)', async () => {
-    const fetchMock = vi.fn(
-      async () => new Response('rate limited', { status: 429 }),
-    );
+    const fetchMock = vi.fn(async () => new Response('rate limited', { status: 429 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     const svc = new TtsService(makeCfg());

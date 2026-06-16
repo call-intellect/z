@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, ShieldCheck } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { retentionApi } from '@/api/retention.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { retentionApi } from "@/api/retention.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   ARCHIVED_BLOCK_ACTIONS,
   RETENTION_LIMITS,
@@ -16,35 +16,20 @@ import {
   type ArchivedBlockAction,
   type OrgRetentionPolicyDomain,
   type UpdateRetentionPolicyRequest,
-} from '@/domain/retention';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/retention";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/settings/retention` — конфигурация retention-политики Org (152-ФЗ).
- *
- * Owner-only: manager / admin / super_admin (не-owner) → empty state.
- *
- * Поля:
- *   - 4 numeric input'а (RawEvent / архивные блоки / чат / аудит).
- *   - radio-группа `archivedBlockAction` (`archive_then_delete` / `keep_forever`).
- *   - read-only `lastSweepAt`.
- *
- * Архитектура (frontend-rules):
- *   - Слои: ApiDto → Domain (даты как Date) → form-state (строки для input).
- *   - Все запросы через `retentionApi` (единый apiClient, X-Org-Id из orgHeaders).
- *   - 4 UX-состояния: loading / forbidden / error / data.
- */
 export function RetentionClient() {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
-  const isOwner = currentOrgRole === 'owner';
+  const isOwner = currentOrgRole === "owner";
 
   if (authLoading) return <AdminLoading rows={4} />;
   if (!currentOrgId) {
@@ -74,13 +59,12 @@ function RetentionForm({ orgId }: { orgId: string }) {
   const [forbidden, setForbidden] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Form state — храним как строки, чтобы не дёргать input при пустом значении.
-  const [rawEventDays, setRawEventDays] = useState('');
-  const [archivedBlockDays, setArchivedBlockDays] = useState('');
-  const [chatMessageDays, setChatMessageDays] = useState('');
-  const [auditLogDays, setAuditLogDays] = useState('');
+  const [rawEventDays, setRawEventDays] = useState("");
+  const [archivedBlockDays, setArchivedBlockDays] = useState("");
+  const [chatMessageDays, setChatMessageDays] = useState("");
+  const [auditLogDays, setAuditLogDays] = useState("");
   const [archivedBlockAction, setArchivedBlockAction] =
-    useState<ArchivedBlockAction>('archive_then_delete');
+    useState<ArchivedBlockAction>("archive_then_delete");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -96,12 +80,10 @@ function RetentionForm({ orgId }: { orgId: string }) {
       setAuditLogDays(String(domain.auditLogDays));
       setArchivedBlockAction(domain.archivedBlockAction);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(
-          humanizeApiError(e, 'Не удалось загрузить политику'),
-        );
+        setError(humanizeApiError(e, "Не удалось загрузить политику"));
       }
     } finally {
       setIsLoading(false);
@@ -146,7 +128,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
     }
 
     if (Object.keys(body).length === 0) {
-      toast('Нет изменений для сохранения');
+      toast("Нет изменений для сохранения");
       return;
     }
 
@@ -155,9 +137,9 @@ function RetentionForm({ orgId }: { orgId: string }) {
       const dto = await retentionApi.update(orgId, body);
       const domain = retentionPolicyFromApi(dto);
       setPolicy(domain);
-      toast.success('Политика хранения сохранена');
+      toast.success("Политика хранения сохранена");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSaving(false);
     }
@@ -173,8 +155,8 @@ function RetentionForm({ orgId }: { orgId: string }) {
       <header>
         <h1 className="text-2xl font-semibold">Хранение данных и 152-ФЗ</h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Управление сроками хранения исходных событий, архивных блоков, чатов
-          и журнала аудита для вашей организации.
+          Управление сроками хранения исходных событий, архивных блоков, чатов и
+          журнала аудита для вашей организации.
         </p>
       </header>
 
@@ -186,9 +168,8 @@ function RetentionForm({ orgId }: { orgId: string }) {
         />
         <div className="space-y-1">
           <p>
-            По умолчанию исходные события (RawEvent) хранятся 7 лет (2555
-            дней) — это базовое требование 152-ФЗ. Сократить нельзя ниже 30
-            дней.
+            По умолчанию исходные события (RawEvent) хранятся 7 лет (2555 дней)
+            — это базовое требование 152-ФЗ. Сократить нельзя ниже 30 дней.
           </p>
           <p>
             После наступления срока данные удаляются ежечасным sweep&rsquo;ом
@@ -274,13 +255,13 @@ function RetentionForm({ orgId }: { orgId: string }) {
             <span className="tabular-nums">
               {policy.lastSweepAt
                 ? formatRelative(policy.lastSweepAt)
-                : 'никогда'}
+                : "никогда"}
             </span>
           </div>
           <div className="flex justify-between">
             <span className="text-fg-tertiary">Изменено:</span>
             <span className="tabular-nums">
-              {policy.updatedAt.toLocaleString('ru-RU')}
+              {policy.updatedAt.toLocaleString("ru-RU")}
             </span>
           </div>
         </div>
@@ -294,7 +275,7 @@ function RetentionForm({ orgId }: { orgId: string }) {
               Сохраняем…
             </>
           ) : (
-            'Сохранить'
+            "Сохранить"
           )}
         </Button>
       </div>
@@ -366,18 +347,18 @@ function parseFormInts(input: {
     label: string;
     raw: string;
   }> = [
-    { key: 'rawEventDays', label: 'Сырые события', raw: input.rawEventDays },
+    { key: "rawEventDays", label: "Сырые события", raw: input.rawEventDays },
     {
-      key: 'archivedBlockDays',
-      label: 'Архивные блоки',
+      key: "archivedBlockDays",
+      label: "Архивные блоки",
       raw: input.archivedBlockDays,
     },
     {
-      key: 'chatMessageDays',
-      label: 'Чат-сообщения',
+      key: "chatMessageDays",
+      label: "Чат-сообщения",
       raw: input.chatMessageDays,
     },
-    { key: 'auditLogDays', label: 'Журнал аудита', raw: input.auditLogDays },
+    { key: "auditLogDays", label: "Журнал аудита", raw: input.auditLogDays },
   ];
 
   const out = {
@@ -420,13 +401,13 @@ function parseFormInts(input: {
 
 function formatRelative(date: Date): string {
   const diffMs = Date.now() - date.getTime();
-  if (diffMs < 0) return date.toLocaleString('ru-RU');
+  if (diffMs < 0) return date.toLocaleString("ru-RU");
   const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return 'только что';
+  if (minutes < 1) return "только что";
   if (minutes < 60) return `${minutes} мин назад`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours} ч назад`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} дн назад`;
-  return date.toLocaleString('ru-RU');
+  return date.toLocaleString("ru-RU");
 }

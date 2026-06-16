@@ -8,20 +8,6 @@ import type { MeetingsService } from '../../meetings/meetings.service';
 
 import { EventsService } from './events.service';
 
-/**
- * Юнит-тесты EventsService — Calendar MVP (2026-05-25).
- *
- * Покрывают:
- *   1.  create — создаёт Entity + Event + дефолтные reminders (для kind=meeting).
- *   2.  create с visibility='personal' — без эмита event.created.
- *   3.  update — owner может, чужой не может.
- *   4.  update — organizer (через EventParticipant.role='organizer') может.
- *   5.  softDelete — выставляет deletedAt + status='cancelled'.
- *   6.  rsvp — обновляет EventParticipant.rsvp.
- *   7.  rsvp — non-participant получает ForbiddenException.
- *   8.  getMyCalendar — миксует Events + Issues.
- *   9.  getUserCalendar — personal-события другого user маскируются как «Занято».
- */
 describe('EventsService', () => {
   let prisma: PrismaService;
   let entityResolver: EntityResolutionService;
@@ -48,9 +34,7 @@ describe('EventsService', () => {
   let meetingsCancelScheduled: ReturnType<typeof vi.fn>;
   let meetings: MeetingsService;
 
-  function makeEvent(
-    over: Partial<Record<string, unknown>> = {},
-  ): Record<string, unknown> {
+  function makeEvent(over: Partial<Record<string, unknown>> = {}): Record<string, unknown> {
     return {
       id: 'e-1',
       tenantId: 't-1',
@@ -134,9 +118,7 @@ describe('EventsService', () => {
       cancelScheduledForCalendarEvent: meetingsCancelScheduled,
     } as unknown as MeetingsService;
 
-    entityFindOrCreate = vi
-      .fn()
-      .mockResolvedValue({ entity: { id: 'ent-1' }, created: true });
+    entityFindOrCreate = vi.fn().mockResolvedValue({ entity: { id: 'ent-1' }, created: true });
     entityResolver = {
       findOrCreateEntity: entityFindOrCreate,
     } as unknown as EntityResolutionService;
@@ -180,7 +162,6 @@ describe('EventsService', () => {
       });
       txEventCreate.mockResolvedValue({ id: 'e-new' });
       txEventFindUnique.mockResolvedValue(created);
-      // P1: MeetingsService.createForCalendarEvent → eventUpdate (relatedMeetingId + metadata).
       eventUpdate.mockResolvedValue({
         ...created,
         relatedMeetingId: 'm-1',
@@ -209,9 +190,7 @@ describe('EventsService', () => {
         data: Array<{ offsetMin: number; channel: string }>;
       };
       expect(reminderArgs.data).toHaveLength(2);
-      expect(
-        reminderArgs.data.map((r) => r.offsetMin).sort((a, b) => a - b),
-      ).toEqual([15, 1440]);
+      expect(reminderArgs.data.map((r) => r.offsetMin).sort((a, b) => a - b)).toEqual([15, 1440]);
       expect(emitMock).toHaveBeenCalledWith(
         'event.created',
         expect.objectContaining({ tenantId: 't-1' }),
@@ -268,9 +247,7 @@ describe('EventsService', () => {
     });
 
     it('чужой не может обновить (ForbiddenException)', async () => {
-      eventFindUnique.mockResolvedValue(
-        makeEvent({ ownerId: 'u-other', participants: [] }),
-      );
+      eventFindUnique.mockResolvedValue(makeEvent({ ownerId: 'u-other', participants: [] }));
       await expect(
         svc.update({
           tenantId: 't-1',
@@ -297,9 +274,7 @@ describe('EventsService', () => {
           ],
         }),
       );
-      eventUpdate.mockResolvedValue(
-        makeEvent({ title: 'X', participants: [], reminders: [] }),
-      );
+      eventUpdate.mockResolvedValue(makeEvent({ title: 'X', participants: [], reminders: [] }));
       await expect(
         svc.update({
           tenantId: 't-1',
@@ -313,9 +288,7 @@ describe('EventsService', () => {
 
   describe('softDelete', () => {
     it('помечает deletedAt + status=cancelled', async () => {
-      eventFindUnique.mockResolvedValue(
-        makeEvent({ ownerId: 'u-owner', participants: [] }),
-      );
+      eventFindUnique.mockResolvedValue(makeEvent({ ownerId: 'u-owner', participants: [] }));
       eventUpdate.mockResolvedValue({});
       await svc.softDelete({
         tenantId: 't-1',
@@ -386,9 +359,7 @@ describe('EventsService', () => {
   describe('Calendar MVP Polish — P1 LiveKit integration', () => {
     it('create with kind=meeting → MeetingsService.createForCalendarEvent вызван; relatedMeetingId и joinUrl возвращаются', async () => {
       txEventCreate.mockResolvedValue({ id: 'e-1' });
-      txEventFindUnique.mockResolvedValue(
-        makeEvent({ id: 'e-1', kind: 'meeting' }),
-      );
+      txEventFindUnique.mockResolvedValue(makeEvent({ id: 'e-1', kind: 'meeting' }));
       eventUpdate.mockResolvedValue(
         makeEvent({
           id: 'e-1',
@@ -430,9 +401,7 @@ describe('EventsService', () => {
 
     it('create with kind=call → MeetingsService НЕ вызывается (телефонный звонок)', async () => {
       txEventCreate.mockResolvedValue({ id: 'e-call' });
-      txEventFindUnique.mockResolvedValue(
-        makeEvent({ id: 'e-call', kind: 'call' }),
-      );
+      txEventFindUnique.mockResolvedValue(makeEvent({ id: 'e-call', kind: 'call' }));
 
       const dto = await svc.create({
         tenantId: 't-1',

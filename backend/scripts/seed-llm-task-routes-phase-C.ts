@@ -1,32 +1,3 @@
-/**
- * Seed LlmTaskRoute для taskType='meeting-quality-score' (Фаза C).
- *
- * Источник: plans/tz/2026-05-21-phase-C-meeting-quality-score.md §5.4.
- * Reference: docs/reference/llm-models-playbook.md §11 (fallback chain).
- *
- * Цепочка из трёх tier'ов:
- *   - primary    deepseek          deepseek-v4-pro   (thinking on, internal)
- *   - secondary  openai-via-proxy  gpt-5.4           (internal)
- *   - tertiary   ollama            qwen3.5:9b        (private, degraded mode)
- *
- * meeting-quality-score — middle reasoning: оценить структурированно 5 категорий
- * и сгенерировать рекомендации. На tertiary воркер автоматически проставляет
- * `degradedMode=true` в каждый элемент `recommendations` (см. sub-TZ §5.4).
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - upsert по (taskType, tenantId=null, tier, providerName).
- *   - если запись существует и `editedByAdmin=true` → пропуск
- *     (не перетираем ручные правки super_admin'а).
- *   - если запись существует и `editedByAdmin=false` → пропуск
- *     (seed создаёт только отсутствующие; обновлять — вручную через UI).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-phase-C.ts
- *
- * Этот seed НЕ запускается автоматически — выполняется при rollout'е Фазы C
- * на проде. См. docs/reference/llm-models-playbook.md §11.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

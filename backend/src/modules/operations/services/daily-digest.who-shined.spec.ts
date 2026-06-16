@@ -2,34 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DailyDigestService } from './daily-digest.service';
 
-/**
- * ТЗ-C Ф4 (2026-06-05, R6) — позитивная секция «Кто выделился» (whoShined).
- *
- * Тестируем сборку whoShined внутри `computeRuntimeSections` через публичную
- * точку `getStored` (она зовёт `enrichDto` → `computeRuntimeSections`).
- * Метод приватный, поэтому идём через выдачу DTO с замоканной существующей
- * записью дайджеста.
- *
- * Проверяем поведение R6:
- *   - Recognition (toUserId=U, createdAt в окне) + Person(userId=U)
- *     → whoShined содержит { personId, reason:'recognition_received' }.
- *   - Пустые источники → whoShined=[].
- *   - Приоритет: один человек в recognition И helpful → reason остаётся
- *     'recognition_received' (более высокий приоритет не перезаписывается).
- *   - Сдержанное обещание атрибутируется по commitmentAuthorPersonId
- *     (НЕ по получателю).
- *   - Person без имени / без userId → запись пропускается (не «Без имени»).
- */
-
 const TENANT = 't1';
 const DATE = '2026-05-24';
-// dateLocal '2026-05-24' → окно МСК [2026-05-23T21:00Z, 2026-05-24T21:00Z).
 const IN_WINDOW = new Date('2026-05-24T08:00:00.000Z');
 
-/**
- * Полный мок Prisma для `computeRuntimeSections`. Все findMany по умолчанию
- * пустые; переопределяем нужные источники whoShined.
- */
 function buildSvc(overrides: {
   recognitions?: unknown[];
   helpfulness?: unknown[];
@@ -40,9 +16,6 @@ function buildSvc(overrides: {
     .fn()
     .mockImplementation((arg: { where?: Record<string, unknown> }) => {
       const where = arg?.where ?? {};
-      // computeRuntimeSections делает несколько ideaBlock.findMany:
-      // critical signals / overdue commits / broken commits (missed) /
-      // kept commits (fulfilled). Различаем по commitmentStatus.
       if (where.commitmentStatus === 'fulfilled') {
         return Promise.resolve(overrides.keptCommits ?? []);
       }
@@ -121,7 +94,6 @@ describe('DailyDigestService.whoShined (R6)', () => {
     expect(row.personId).toBe('p1');
     expect(row.personName).toBe('Иван');
     expect(row.reason).toBe('recognition_received');
-    // detail человекочитаемый, со склонением «благодарности».
     expect(row.detail).toContain('2');
     expect(row.detail).toContain('благодарност');
     expect(row.link).toBe('/persons/p1');
@@ -136,9 +108,7 @@ describe('DailyDigestService.whoShined (R6)', () => {
 
   it('приоритет: тот же человек в recognition и helpful → recognition_received', async () => {
     const { svc } = buildSvc({
-      recognitions: [
-        { toUserId: 'u1', type: 'mention_helped', createdAt: IN_WINDOW },
-      ],
+      recognitions: [{ toUserId: 'u1', type: 'mention_helped', createdAt: IN_WINDOW }],
       helpfulness: [{ helperUserId: 'u1', helpCount: 5 }],
       persons: [{ id: 'p1', name: 'Иван', userId: 'u1' }],
     });
@@ -182,10 +152,7 @@ describe('DailyDigestService.whoShined (R6)', () => {
 
   it('Person без userId / без имени → запись пропускается (не «Без имени»)', async () => {
     const { svc } = buildSvc({
-      recognitions: [
-        { toUserId: 'u-unknown', type: 'thanks_comment', createdAt: IN_WINDOW },
-      ],
-      // Person есть, но userId не совпадает → резолв не находит → пропуск.
+      recognitions: [{ toUserId: 'u-unknown', type: 'thanks_comment', createdAt: IN_WINDOW }],
       persons: [{ id: 'p1', name: 'Иван', userId: 'u1' }],
     });
     const dto = await svc.getStored({ tenantId: TENANT, dateLocal: DATE });

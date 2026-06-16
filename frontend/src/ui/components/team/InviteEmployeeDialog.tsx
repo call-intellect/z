@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { UserPlus } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { UserPlus } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { orgsApi, type InviteMemberRequest } from '@/api/orgs.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { orgsApi, type InviteMemberRequest } from "@/api/orgs.api";
 import {
   mapOrgInvitationCreateResultDtoToDomain,
   type OrgInvitationCreateResultDomain,
-} from '@/domain/org-invitations';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/org-invitations";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -18,16 +18,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 type Props = {
   open: boolean;
@@ -36,56 +36,40 @@ type Props = {
   onCreated: (result: OrgInvitationCreateResultDomain) => void;
 };
 
-/** Роль, выдаваемая при приглашении (без owner — он не выдаётся через UI). */
-type InviteRole = NonNullable<InviteMemberRequest['role']>;
+type InviteRole = NonNullable<InviteMemberRequest["role"]>;
 
-/** Русские описания роли для подсказки под селектом. */
 const ROLE_HINT: Record<InviteRole, string> = {
-  admin: 'Администратор может приглашать сотрудников и менять настройки компании.',
-  manager: 'Сотрудник видит свои встречи, задачи и переписку с ботом.',
-  coo: 'Операционный директор видит сводные дашборды и операционные показатели, но не управляет настройками и ролями.',
+  admin:
+    "Администратор может приглашать сотрудников и менять настройки компании.",
+  manager: "Сотрудник видит свои встречи, задачи и переписку с ботом.",
+  coo: "Операционный директор видит сводные дашборды и операционные показатели, но не управляет настройками и ролями.",
   hr_partner:
-    'HR-партнёр видит аналитику по командам и сигналы вовлечённости (карточку человека — только с его согласия), без управления настройками и ролями.',
+    "HR-партнёр видит аналитику по командам и сигналы вовлечённости (карточку человека — только с его согласия), без управления настройками и ролями.",
 };
 
-/**
- * β-9 (2026-05-25) — диалог «Пригласить сотрудника» в GitHub-style flow.
- *
- * Поля:
- *   - Имя — обязательное (показывается в карточке pending до accept).
- *   - Роль в системе — «Сотрудник» (manager) по умолчанию / «Администратор» (admin) /
- *     «COO» (coo) / «HR-партнёр» (hr_partner) — A5/Р3 (2026-06-10) разблокировали coo/hr_partner.
- *   - Электронная почта — опциональная. Если пусто — после создания
- *     откроется модал «Скопировать ссылку» с manualShareUrl + QR + linkCode.
- *
- * См. plans/tz/2026-05-25-telegram-bot-global-and-invites.md §2 и §12,
- * second-brain/01_projects/conversational-channels.md §«Продуктовые
- * принципы каналов» (принципы 3 и 4).
- */
 export function InviteEmployeeDialog({
   open,
   orgId,
   onOpenChange,
   onCreated,
 }: Props) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<InviteRole>('manager');
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<InviteRole>("manager");
   const [submitting, setSubmitting] = useState(false);
 
-  // Сбрасываем поля при открытии/закрытии — чтобы старые данные не «прилипали».
   useEffect(() => {
     if (open) {
-      setName('');
-      setEmail('');
-      setRole('manager');
+      setName("");
+      setEmail("");
+      setRole("manager");
     }
   }, [open]);
 
   const handleSubmit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      toast.error('Имя сотрудника обязательно');
+      toast.error("Имя сотрудника обязательно");
       return;
     }
     const trimmedEmail = email.trim();
@@ -101,15 +85,14 @@ export function InviteEmployeeDialog({
       const res = await orgsApi.invite(orgId, body);
       const domain = mapOrgInvitationCreateResultDtoToDomain(res.invitation);
       onCreated(domain);
-      // Сообщение зависит от того, ушло ли письмо.
       if (trimmedEmail) {
-        toast.success('Приглашение отправлено на электронную почту');
+        toast.success("Приглашение отправлено на электронную почту");
       } else {
-        toast.success('Приглашение создано — скопируйте ссылку для сотрудника');
+        toast.success("Приглашение создано — скопируйте ссылку для сотрудника");
       }
       onOpenChange(false);
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось создать приглашение'));
+      toast.error(humanizeApiError(e, "Не удалось создать приглашение"));
     } finally {
       setSubmitting(false);
     }
@@ -128,8 +111,8 @@ export function InviteEmployeeDialog({
           <DialogTitle>Пригласить сотрудника</DialogTitle>
           <DialogDescription>
             Сотрудник получит ссылку для входа и подключения Telegram-бота.
-            Электронную почту можно не указывать — тогда мы дадим вам ссылку
-            для отправки сотруднику вручную. Telegram-бот — личный помощник
+            Электронную почту можно не указывать — тогда мы дадим вам ссылку для
+            отправки сотруднику вручную. Telegram-бот — личный помощник
             сотрудника: через него Кора присылает чек-ины, напоминания и
             собирает короткие апдейты. Подключение по желанию.
           </DialogDescription>
@@ -170,8 +153,10 @@ export function InviteEmployeeDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="invite-email-dialog">
-              Электронная почта{' '}
-              <span className="text-xs font-normal text-fg-tertiary">— необязательно</span>
+              Электронная почта{" "}
+              <span className="text-xs font-normal text-fg-tertiary">
+                — необязательно
+              </span>
             </Label>
             <Input
               id="invite-email-dialog"
@@ -182,8 +167,8 @@ export function InviteEmployeeDialog({
               disabled={submitting}
             />
             <p className="text-xs text-fg-secondary">
-              Если оставить пустым, вы получите ссылку для отправки
-              сотруднику в любом мессенджере.
+              Если оставить пустым, вы получите ссылку для отправки сотруднику в
+              любом мессенджере.
             </p>
           </div>
         </div>
@@ -203,7 +188,7 @@ export function InviteEmployeeDialog({
             disabled={submitting || !name.trim()}
           >
             <UserPlus className="mr-2 h-4 w-4" />
-            {submitting ? 'Создаём…' : 'Отправить приглашение'}
+            {submitting ? "Создаём…" : "Отправить приглашение"}
           </Button>
         </DialogFooter>
       </DialogContent>

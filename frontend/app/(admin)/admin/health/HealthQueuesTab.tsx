@@ -1,44 +1,30 @@
-'use client';
+"use client";
 
-/**
- * HealthQueuesTab — вкладка «Очереди» внутри /admin/health.
- *
- * Источник данных: `GET /api/v1/admin/health/queues` (Фаза 1 ТЗ admin-redesign).
- * Если эндпоинт ещё не реализован — fallback на старый объединённый
- * `GET /api/v1/admin/health` (Фаза 7), пока сохраняем совместимость.
- */
-
-import { ApiError } from '@/api/api-error';
-import { apiClient } from '@/api/api-client';
-import { adminHealthApi } from '@/api/admin-health.api';
+import { ApiError } from "@/api/api-error";
+import { apiClient } from "@/api/api-client";
+import { adminHealthApi } from "@/api/admin-health.api";
 import {
   adminHealthFromApi,
   type AdminHealthApi,
   type AdminQueueCountsDomain,
-} from '@/domain/admin-health';
-import { Card, CardContent } from '@/ui/shadcn/card';
+} from "@/domain/admin-health";
+import { Card, CardContent } from "@/ui/shadcn/card";
 
-import {
-  AdminEmpty,
-  AdminError,
-  AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminEmpty, AdminError, AdminLoading } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 export function HealthQueuesTab() {
   const q = useAdminQuery(
-    'admin-health-queues',
+    "admin-health-queues",
     async () => {
       try {
-        // Целевой эндпоинт.
-        return await apiClient.get<{ queues: AdminHealthApi['queues'] }>(
-          '/api/v1/admin/health/queues',
+        return await apiClient.get<{ queues: AdminHealthApi["queues"] }>(
+          "/api/v1/admin/health/queues",
         );
       } catch (e) {
-        // 404 — бэкенд ещё не реализован. Откатимся на общий /admin/health.
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           const merged = await adminHealthApi.get();
           return { queues: merged.queues };
@@ -70,7 +56,7 @@ export function HealthQueuesTab() {
       aiUsageLogTotal: 0,
     },
     redis: { available: true },
-    s3: { available: 'unknown' },
+    s3: { available: "unknown" },
     generatedAt: new Date().toISOString(),
   });
 
@@ -115,13 +101,13 @@ function QueuesTable({ queues }: { queues: AdminQueueCountsDomain[] }) {
               <td className="px-2 py-1 text-right tabular-nums">{q.delayed}</td>
               <td
                 className={`px-2 py-1 text-right tabular-nums ${
-                  q.failed > 0 ? 'text-warning' : ''
+                  q.failed > 0 ? "text-warning" : ""
                 }`}
               >
                 {q.failed}
               </td>
               <td className="px-2 py-1 text-right tabular-nums text-fg-tertiary">
-                {q.completed.toLocaleString('ru-RU')}
+                {q.completed.toLocaleString("ru-RU")}
               </td>
             </tr>
           ))}

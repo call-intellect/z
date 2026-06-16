@@ -1,53 +1,3 @@
-/**
- * Первичная миграция грантов клонов при включении `CLONE_V2_ENABLED=true`.
- *
- * Под флагом V2 единственный источник правды о доступе к клону —
- * `CloneAccessGrant` (см. RbacService.canAccessRoleClone/canAccessPersonClone
- * + ТЗ `plans/tz/2026-05-26-clone-access-grant-admin-api.md`). Без записи
- * в этой таблице доступа нет ни у кого — даже у owner Org. Поэтому перед
- * флипом флага нужно подложить первичные гранты, иначе все пользователи
- * теряют доступ к клонам одномоментно.
- *
- * Правила выдачи (ТЗ §7.2):
- *  1. Носитель роли (Appointment validTo IS NULL, status IN ('active','acting'))
- *     с заполненным Person.userId → грант на свой role-клон.
- *  2. Manager того же отдела (Membership.role='manager', и Person этого
- *     manager-membership имеет primaryDepartmentId == primaryDepartmentId
- *     носителя) → грант на role-клон подчинённого. Это та же логика,
- *     что и `RbacService.canAccessPersonCloneLegacy` (rbac.service.ts ~593).
- *  3. Owner / admin Org (Membership.role IN ('owner','admin')) → гранты
- *     на все активные role-клоны Org (Role.deletedAt IS NULL).
- *
- * Person-клоны (cloneType='person') скрипт НЕ выдаёт — клоны в Z теперь
- * ролевые, не персональные (memory `project_clones_are_role_based`,
- * рефлексия 2026-05-25). Person-grant остаётся как ручная админская опция
- * через `POST /api/v1/admin/clones/access-grants` с cloneType='person'.
- *
- * `grantedById` для первичных грантов = User.id первого (по joinedAt)
- * owner'а Org. Если owner'ов нет — первый admin. Если и admin'ов нет —
- * тенант пропускается с warn'ом (некому формально «выдать» грант).
- *
- * `expiresAt`/`revokedAt` — null (бессрочные, не отозванные).
- *
- * ИДЕМПОТЕНТНОСТЬ. Уникальный индекс
- *   (tenantId, grantedToUserId, cloneType, cloneRefId)
- * + `createMany({ skipDuplicates: true })` (Postgres `ON CONFLICT DO NOTHING`).
- * Повторный запуск:
- *   - активные гранты, которые уже есть, → пропускаются как дубликаты;
- *   - revoked-гранты, которые admin отозвал руками, скрипт НЕ воскрешает
- *     (revoked-запись физически осталась, дубликат → пропуск). Это
- *     намеренное решение (§7.4): патч не должен перебивать решения админа.
- *
- * Запуск:
- *   bun run scripts/patch-migrate-clone-access.ts                  # все тенанты
- *   bun run scripts/patch-migrate-clone-access.ts --tenant <orgId> # один тенант
- *
- * Перед прогоном на проде убедитесь, что схема актуальна:
- *   bun run prisma:push
- *
- * ТЗ: plans/tz/2026-05-26-clone-access-grant-admin-api.md §7
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -84,16 +34,11 @@ function parseArgs(): { tenantId: string | null } {
   return { tenantId };
 }
 
-function keyOf(g: {
-  grantedToUserId: string;
-  cloneType: string;
-  cloneRefId: string;
-}): string {
+function keyOf(g: { grantedToUserId: string; cloneType: string; cloneRefId: string }): string {
   return `${g.grantedToUserId}::${g.cloneType}::${g.cloneRefId}`;
 }
 
 async function findActorUserId(tenantId: string): Promise<string | null> {
-  // 1) Owner с самым ранним joinedAt — детерминированный выбор.
   const owner = await prisma.membership.findFirst({
     where: { orgId: tenantId, role: 'owner' },
     orderBy: { joinedAt: 'asc' },
@@ -101,7 +46,6 @@ async function findActorUserId(tenantId: string): Promise<string | null> {
   });
   if (owner) return owner.userId;
 
-  // 2) Fallback на admin'а.
   const admin = await prisma.membership.findFirst({
     where: { orgId: tenantId, role: 'admin' },
     orderBy: { joinedAt: 'asc' },
@@ -129,9 +73,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
     };
   }
 
-  // Уникальные (grantedToUserId, cloneType, cloneRefId) внутри Org.
-  // Map нужен, чтобы внутри одного прогона не плодить дубли (например, owner —
-  // он же manager того же отдела, он же носитель).
   const grants = new Map<string, GrantInput>();
   const addGrant = (grant: Omit<GrantInput, 'tenantId' | 'grantedById'>) => {
     const full: GrantInput = {
@@ -142,7 +83,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
     grants.set(keyOf(full), full);
   };
 
-  // Правило 1: носители активных ролей → грант на свой role-клон.
   const activeAppointments = await prisma.appointment.findMany({
     where: {
       tenantId,
@@ -161,7 +101,7 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
   });
 
   for (const ap of activeAppointments) {
-    if (!ap.person.userId) continue; // Person без linked User — не выдаём.
+    if (!ap.person.userId) continue;
     addGrant({
       grantedToUserId: ap.person.userId,
       cloneType: 'role',
@@ -169,9 +109,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
     });
   }
 
-  // Правило 2: manager того же primaryDepartmentId → грант на каждый role-клон
-  // отдела. Группируем roleId носителей по primaryDepartmentId, чтобы один
-  // findMany на отдел давал список manager'ов, а затем матрица manager×roles.
   const departmentToRoleIds = new Map<string, Set<string>>();
   for (const ap of activeAppointments) {
     const dep = ap.person.primaryDepartmentId;
@@ -185,11 +122,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
   }
 
   for (const [depId, roleIds] of departmentToRoleIds) {
-    // Manager того же отдела — это Membership(role='manager') у которого
-    // привязанный Person имеет primaryDepartmentId === depId. Это совпадает
-    // с логикой RbacService.canAccessPersonCloneLegacy (~rbac.service.ts:593):
-    // там «manager» = есть Membership(role='manager') + Person требующего
-    // имеет тот же primaryDepartmentId, что и target.
     const managers = await prisma.membership.findMany({
       where: {
         orgId: tenantId,
@@ -213,10 +145,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
     }
   }
 
-  // Правило 3: owner/admin Org → все активные role-клоны (все Role,
-  // не soft-deleted). Берём все Role: даже если ExecutablePersona ещё
-  // не построена, грант пусть лежит готовым (UI просто не покажет клона
-  // без persona; зато при первом же билде клон сразу доступен).
   const orgAdmins = await prisma.membership.findMany({
     where: {
       orgId: tenantId,
@@ -245,8 +173,6 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
     return base;
   }
 
-  // createMany + skipDuplicates: идемпотентность через unique-индекс
-  // (tenantId, grantedToUserId, cloneType, cloneRefId).
   const data = Array.from(grants.values());
   const res = await prisma.cloneAccessGrant.createMany({
     data,
@@ -260,9 +186,7 @@ async function migrateOrg(tenantId: string, orgName: string): Promise<OrgStat> {
 async function main(): Promise<void> {
   const { tenantId } = parseArgs();
   /* eslint-disable no-console */
-  console.log(
-    `=== patch-migrate-clone-access START (tenantId=${tenantId ?? 'ALL'}) ===`,
-  );
+  console.log(`=== patch-migrate-clone-access START (tenantId=${tenantId ?? 'ALL'}) ===`);
 
   const orgs = tenantId
     ? await prisma.org.findMany({

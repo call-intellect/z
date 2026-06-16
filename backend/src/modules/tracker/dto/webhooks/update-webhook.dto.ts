@@ -2,10 +2,6 @@ import { z } from 'zod';
 
 import { WebhookEventSchema } from './create-webhook.dto';
 
-/**
- * PATCH webhook. `secretKey` через PATCH не меняется — для ротации будет
- * отдельный action `POST /webhooks/:id/rotate-secret` (Sprint 2).
- */
 export const UpdateWebhookSchema = z
   .object({
     name: z.string().min(1).max(200).optional(),
@@ -22,12 +18,9 @@ export const WebhookLogsQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(50),
-    /** Фильтр по success/failed. Опционально. */
     success: z.coerce.boolean().optional(),
-    /** Период (ISO8601). Опционально. */
     since: z.coerce.date().optional(),
     until: z.coerce.date().optional(),
-    /** Фильтр по eventType (например `issue.created`). */
     eventType: z.string().min(1).max(64).optional(),
   })
   .strict();

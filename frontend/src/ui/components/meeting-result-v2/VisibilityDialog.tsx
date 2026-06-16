@@ -1,9 +1,4 @@
-'use client';
-
-/**
- * Диалог «Кому видно» для встречи (ТЗ Ф4). Обёртка над VisibilityControl —
- * по образцу ShareDialog. Открывается из меню хоста на странице результата.
- */
+"use client";
 
 import {
   Dialog,
@@ -11,15 +6,14 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { VisibilityControl } from './VisibilityControl';
-import type { VisibilityScope } from '@/domain/meeting';
+} from "@/ui/shadcn/dialog";
+import { VisibilityControl } from "./VisibilityControl";
+import type { VisibilityScope } from "@/domain/meeting";
 
 export type VisibilityDialogProps = {
   meetingId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Вызывается после сохранения (для обновления карточки встречи). */
   onSaved?: (scope: VisibilityScope) => void;
 };
 
@@ -38,8 +32,7 @@ export function VisibilityDialog({
             Выберите, кто увидит знания этой встречи в памяти компании.
           </DialogDescription>
         </DialogHeader>
-        {/* key=open — пересоздаём контрол при каждом открытии, чтобы свежо
-            подтянуть текущий режим. */}
+        {}
         {open && (
           <VisibilityControl
             key={meetingId}

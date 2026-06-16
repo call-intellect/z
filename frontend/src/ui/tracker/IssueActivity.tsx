@@ -1,26 +1,22 @@
-'use client';
+"use client";
 
-/**
- * IssueActivity — лента активности по задаче.
- */
-
-import { useIssueActivity } from '@/hooks/tracker/useIssue';
-import type { IssueActivity as ActivityItem } from '@/domain/tracker';
+import { useIssueActivity } from "@/hooks/tracker/useIssue";
+import type { IssueActivity as ActivityItem } from "@/domain/tracker";
 
 const VERB_LABELS: Record<string, string> = {
-  created: 'создана',
-  updated: 'изменена',
-  commented: 'оставлен комментарий',
-  status_changed: 'смена статуса',
-  assignee_added: 'добавлен исполнитель',
-  assignee_removed: 'удалён исполнитель',
-  label_added: 'добавлена метка',
-  label_removed: 'удалена метка',
-  archived: 'архивирована',
-  deleted: 'удалена',
-  meeting_started: 'запущена встреча',
-  goal_linked: 'связана с целью',
-  goal_unlinked: 'отвязана от цели',
+  created: "создана",
+  updated: "изменена",
+  commented: "оставлен комментарий",
+  status_changed: "смена статуса",
+  assignee_added: "добавлен исполнитель",
+  assignee_removed: "удалён исполнитель",
+  label_added: "добавлена метка",
+  label_removed: "удалена метка",
+  archived: "архивирована",
+  deleted: "удалена",
+  meeting_started: "запущена встреча",
+  goal_linked: "связана с целью",
+  goal_unlinked: "отвязана от цели",
 };
 
 function describeVerb(item: ActivityItem): string {
@@ -53,14 +49,14 @@ export function IssueActivityFeed({
 
   if (error) {
     return (
-      <div className="text-sm text-danger">Не удалось загрузить активность.</div>
+      <div className="text-sm text-danger">
+        Не удалось загрузить активность.
+      </div>
     );
   }
 
   if (activity.length === 0) {
-    return (
-      <div className="text-sm text-fg-tertiary">Активности пока нет.</div>
-    );
+    return <div className="text-sm text-fg-tertiary">Активности пока нет.</div>;
   }
 
   return (
@@ -79,11 +75,11 @@ export function IssueActivityFeed({
             )}
           </div>
           <time className="shrink-0 text-[11px] text-fg-tertiary">
-            {item.createdAt.toLocaleString('ru-RU', {
-              day: 'numeric',
-              month: 'short',
-              hour: '2-digit',
-              minute: '2-digit',
+            {item.createdAt.toLocaleString("ru-RU", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
             })}
           </time>
         </li>

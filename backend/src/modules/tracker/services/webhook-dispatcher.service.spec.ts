@@ -5,15 +5,6 @@ import type { RedisService } from '../../../common/redis/redis.service';
 
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
-/**
- * Юнит-тест проверяет, что dispatch:
- *   1. Запрашивает только active + matching events.
- *   2. Кладёт по job'у на каждый найденный webhook.
- *   3. Возвращает массив jobIds.
- *   4. Не падает, если ни одного матча — возвращает [].
- *
- * Через мок ioredis-клиента в RedisService.client + мок Prisma.
- */
 describe('WebhookDispatcher', () => {
   let dispatcher: WebhookDispatcher;
   let findManyMock: ReturnType<typeof vi.fn>;
@@ -27,15 +18,10 @@ describe('WebhookDispatcher', () => {
       issueWebhook: { findMany: findManyMock },
     } as unknown as PrismaService;
 
-    // RedisService — нужен только `client` (для new Queue). Передаём в Queue
-    // объект с минимальным интерфейсом ioredis (BullMQ требует методы duplicate
-    // и connection-like методы) — поэтому здесь подменяем сам queue в обход.
     const redis = { client: {} } as unknown as RedisService;
 
     dispatcher = new WebhookDispatcher(redis, prisma);
 
-    // Внедрим mocked queue, минуя onModuleInit (он создаст реальную Queue,
-    // которая попытается подключиться к Redis).
     Object.defineProperty(dispatcher, 'queue', {
       value: { add: addJobMock, close: vi.fn() },
       writable: true,
@@ -43,7 +29,6 @@ describe('WebhookDispatcher', () => {
   });
 
   it('dispatch — фильтрует по tenant + isActive + events.has(eventType)', async () => {
-    // W4.3: select теперь возвращает + name + allowedDataClasses (для canEmit).
     findManyMock.mockResolvedValueOnce([
       { id: 'wh_1', name: 'wh-one', allowedDataClasses: ['public', 'internal'] },
       { id: 'wh_2', name: 'wh-two', allowedDataClasses: ['public', 'internal'] },
@@ -60,7 +45,7 @@ describe('WebhookDispatcher', () => {
     });
     expect(addJobMock).toHaveBeenCalledTimes(2);
     const firstCall = addJobMock.mock.calls[0]!;
-    expect(firstCall[0]).toBe('issue.created'); // job name = eventType
+    expect(firstCall[0]).toBe('issue.created');
     expect(firstCall[1].webhookId).toBe('wh_1');
     expect(firstCall[1].tenantId).toBe('org_1');
     expect(firstCall[1].eventType).toBe('issue.created');

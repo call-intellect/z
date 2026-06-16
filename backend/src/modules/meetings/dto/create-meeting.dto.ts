@@ -1,11 +1,6 @@
 import { MeetingType } from '@prisma/client';
 import { z } from 'zod';
 
-/**
- * Схема входного тела для `POST /integrations/crossmark/v1/meetings`.
- * Имена полей в API — snake_case (под Crossmark-партнёра); внутри Z мы их
- * нормализуем в `MeetingsService.createFromCrossmark`.
- */
 export const CreateMeetingSchema = z.object({
   host: z.object({
     external_id: z.string().min(1, 'host.external_id обязателен'),
@@ -19,11 +14,6 @@ export const CreateMeetingSchema = z.object({
 
 export type CreateMeetingDto = z.infer<typeof CreateMeetingSchema>;
 
-/**
- * Приглашённый на встречу (pre-seed Participant + доставка по каналам).
- * Используется и при создании встречи (`CreateMeetingForUserSchema.invitees`),
- * и при «допригласить» (`AddInviteesSchema`, B5 2026-06-06).
- */
 export const InviteeSchema = z.object({
   userId: z.string().nullish(),
   personId: z.string().nullish(),
@@ -33,13 +23,6 @@ export const InviteeSchema = z.object({
 
 export type InviteeDto = z.infer<typeof InviteeSchema>;
 
-/**
- * Схема для cookie-эндпоинта (Фаза 7.5).
- * Юзер уже есть (cookie), поэтому `host` не нужен.
- *
- * `card_id` (опц.) — встреча будет автоматически привязана к карточке владельца.
- * Используется при «Создать встречу из карточки» (deeplink с `?cardId=...`).
- */
 export const CreateMeetingForUserSchema = z.object({
   type: z.nativeEnum(MeetingType),
   title: z.string().min(1).max(200),
@@ -47,22 +30,11 @@ export const CreateMeetingForUserSchema = z.object({
   card_id: z.string().min(1).max(50).nullish(),
   record_by_default: z.boolean().optional().default(true),
   invitees: z.array(InviteeSchema).max(50).optional().default([]),
-  /**
-   * ТЗ 2026-06-06 knowledge-access (Фаза 7A) — ручная пометка закрытости
-   * встречи хостом. null/опущено = открыто; 'leadership' | 'council' |
-   * 'personal'. Читается на ingest (Ф3) для привязки блоков к закрытой группе.
-   */
-  closed_group_kind: z
-    .enum(['leadership', 'council', 'personal'])
-    .nullish(),
+  closed_group_kind: z.enum(['leadership', 'council', 'personal']).nullish(),
 });
 
 export type CreateMeetingForUserDto = z.infer<typeof CreateMeetingForUserSchema>;
 
-/**
- * Тело `POST /api/v1/meetings/:id/invitees` (B5 2026-06-06) — допригласить
- * участников на уже созданную / идущую встречу. Минимум один приглашённый.
- */
 export const AddInviteesSchema = z.object({
   invitees: z.array(InviteeSchema).min(1).max(50),
 });

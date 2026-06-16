@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useMemo, useState } from 'react';
-import { Plus, Table2, Trash2 } from 'lucide-react';
+import { useCallback, useMemo, useState } from "react";
+import { Plus, Table2, Trash2 } from "lucide-react";
 
 import {
   ENTITY_SYNC_LABEL_RU,
@@ -10,22 +10,9 @@ import {
   type InferredSchemaProperty,
   type InferredTableSchema,
   type TablePropType,
-} from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-
-/**
- * Smart-tables Text-to-Schema (Фаза 1) — карточка-превью схемы таблицы
- * внутри окна Кора (Concierge). Рендерится по SSE-событию `tool_result`
- * инструмента `infer_table_schema`.
- *
- * Два режима:
- *   - просмотр: иконка/название/описание + список колонок;
- *   - редактирование: переименование колонок, смена типа, удаление,
- *     добавление, переключение «Ключевой» (ровно одна).
- *
- * `onConfirm` получает текущую (возможно отредактированную) схему.
- */
+} from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
 export interface TableSchemaPreviewProps {
   schema: InferredTableSchema;
@@ -33,7 +20,6 @@ export interface TableSchemaPreviewProps {
   busy?: boolean;
 }
 
-/** Гарантирует ровно одну ключевую колонку (первая — fallback). */
 function normalizePrimary(
   props: InferredSchemaProperty[],
 ): InferredSchemaProperty[] {
@@ -55,18 +41,14 @@ export function TableSchemaPreview({
 
   const entityLabel = useMemo(
     () =>
-      schema.entitySync
-        ? ENTITY_SYNC_LABEL_RU[schema.entitySync.type]
-        : null,
+      schema.entitySync ? ENTITY_SYNC_LABEL_RU[schema.entitySync.type] : null,
     [schema.entitySync],
   );
 
   const canConfirm = props.length > 0 && props.some((p) => p.isPrimary);
 
   const renameProp = useCallback((idx: number, name: string) => {
-    setProps((prev) =>
-      prev.map((p, i) => (i === idx ? { ...p, name } : p)),
-    );
+    setProps((prev) => prev.map((p, i) => (i === idx ? { ...p, name } : p)));
   }, []);
 
   const changeType = useCallback((idx: number, type: TablePropType) => {
@@ -84,7 +66,7 @@ export function TableSchemaPreview({
   const addProp = useCallback(() => {
     setProps((prev) => [
       ...prev,
-      { name: 'Новая колонка', type: 'text', isPrimary: prev.length === 0 },
+      { name: "Новая колонка", type: "text", isPrimary: prev.length === 0 },
     ]);
   }, []);
 
@@ -95,7 +77,7 @@ export function TableSchemaPreview({
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-card p-3">
-      {/* Шапка схемы */}
+      {}
       <div className="flex items-start gap-2.5">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-muted text-accent">
           {schema.icon ? (
@@ -125,7 +107,7 @@ export function TableSchemaPreview({
         </div>
       </div>
 
-      {/* Колонки */}
+      {}
       <ul className="mt-3 space-y-1.5">
         {props.map((p, idx) => (
           <li
@@ -211,7 +193,7 @@ export function TableSchemaPreview({
         </button>
       ) : null}
 
-      {/* Действия */}
+      {}
       <div className="mt-3 flex items-center gap-2">
         <Button
           type="button"
@@ -219,7 +201,7 @@ export function TableSchemaPreview({
           onClick={handleConfirm}
           disabled={busy || !canConfirm}
         >
-          {busy ? 'Создаём…' : 'Подтвердить и создать'}
+          {busy ? "Создаём…" : "Подтвердить и создать"}
         </Button>
         <Button
           type="button"
@@ -228,7 +210,7 @@ export function TableSchemaPreview({
           onClick={() => setEditing((v) => !v)}
           disabled={busy}
         >
-          {editing ? 'Готово' : 'Изменить'}
+          {editing ? "Готово" : "Изменить"}
         </Button>
       </div>
       {!canConfirm ? (

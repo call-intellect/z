@@ -1,15 +1,3 @@
-/**
- * Admin-redesign Фаза 1 — unit-тесты `AdminAuditService`.
- *
- * Покрываем:
- *   1) list(): фильтр по adminUserId передаётся в where.
- *   2) list(): фильтр по периоду (from/to) формирует createdAt range.
- *   3) list(): cursor pagination — следующая страница отдаёт более старые.
- *   4) list(): nextCursor === null когда страница последняя.
- *   5) listAdmins(): аггрегирует action counts + lastActionAt + JOIN'ит email.
- *   6) stats(): группирует по routes/methods за период.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -59,18 +47,12 @@ function buildService(logs: LogRow[] = []): {
       if (typeof where.method === 'string') {
         rows = rows.filter((r) => r.method === where.method);
       }
-      const createdAt = where.createdAt as
-        | { gte?: Date; lt?: Date }
-        | undefined;
+      const createdAt = where.createdAt as { gte?: Date; lt?: Date } | undefined;
       if (createdAt) {
-        if (createdAt.gte)
-          rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
-        if (createdAt.lt)
-          rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
+        if (createdAt.gte) rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
+        if (createdAt.lt) rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
       }
-      const andClauses = where.AND as
-        | Array<{ OR?: Array<Record<string, unknown>> }>
-        | undefined;
+      const andClauses = where.AND as Array<{ OR?: Array<Record<string, unknown>> }> | undefined;
       if (andClauses) {
         for (const clause of andClauses) {
           const or = clause.OR;
@@ -81,22 +63,12 @@ function buildService(logs: LogRow[] = []): {
                 | { lt?: Date }
                 | Date
                 | undefined;
-              const idCond = (cond as Record<string, unknown>).id as
-                | { lt?: string }
-                | undefined;
-              if (
-                ca &&
-                typeof ca === 'object' &&
-                'lt' in ca &&
-                ca.lt instanceof Date &&
-                !idCond
-              ) {
+              const idCond = (cond as Record<string, unknown>).id as { lt?: string } | undefined;
+              if (ca && typeof ca === 'object' && 'lt' in ca && ca.lt instanceof Date && !idCond) {
                 return r.createdAt < ca.lt;
               }
               if (ca instanceof Date && idCond?.lt) {
-                return (
-                  r.createdAt.getTime() === ca.getTime() && r.id < idCond.lt
-                );
+                return r.createdAt.getTime() === ca.getTime() && r.id < idCond.lt;
               }
               return false;
             }),
@@ -117,24 +89,15 @@ function buildService(logs: LogRow[] = []): {
     }) => {
       let rows = [...logs];
       const where = (args.where ?? {}) as Record<string, unknown>;
-      const createdAt = where.createdAt as
-        | { gte?: Date; lt?: Date }
-        | undefined;
+      const createdAt = where.createdAt as { gte?: Date; lt?: Date } | undefined;
       if (createdAt) {
-        if (createdAt.gte)
-          rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
-        if (createdAt.lt)
-          rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
+        if (createdAt.gte) rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
+        if (createdAt.lt) rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
       }
       const groupBy = args.by[0];
-      const buckets = new Map<
-        string,
-        { count: number; maxCreatedAt: Date | null }
-      >();
+      const buckets = new Map<string, { count: number; maxCreatedAt: Date | null }>();
       for (const r of rows) {
-        const key = (r as unknown as Record<string, unknown>)[
-          groupBy as string
-        ] as string;
+        const key = (r as unknown as Record<string, unknown>)[groupBy as string] as string;
         const b = buckets.get(key) ?? { count: 0, maxCreatedAt: null };
         b.count += 1;
         if (!b.maxCreatedAt || r.createdAt > b.maxCreatedAt) {
@@ -153,36 +116,30 @@ function buildService(logs: LogRow[] = []): {
   const countLog = vi.fn(async (args: { where?: Record<string, unknown> }) => {
     let rows = [...logs];
     const where = (args.where ?? {}) as Record<string, unknown>;
-    const createdAt = where.createdAt as
-      | { gte?: Date; lt?: Date }
-      | undefined;
+    const createdAt = where.createdAt as { gte?: Date; lt?: Date } | undefined;
     if (createdAt) {
-      if (createdAt.gte)
-        rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
-      if (createdAt.lt)
-        rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
+      if (createdAt.gte) rows = rows.filter((r) => r.createdAt >= (createdAt.gte as Date));
+      if (createdAt.lt) rows = rows.filter((r) => r.createdAt < (createdAt.lt as Date));
     }
     return rows.length;
   });
 
-  const findManyUser = vi.fn(
-    async (args: { where: { id: { in: string[] } } }) => {
-      const ids = args.where.id.in;
-      const users: Array<{ id: string; email: string; name: string }> = [];
-      const seen = new Set<string>();
-      for (const log of logs) {
-        if (!ids.includes(log.superAdminUserId)) continue;
-        if (seen.has(log.superAdminUserId)) continue;
-        seen.add(log.superAdminUserId);
-        users.push({
-          id: log.superAdminUserId,
-          email: log.superAdmin?.email ?? `${log.superAdminUserId}@example.com`,
-          name: log.superAdminUserId,
-        });
-      }
-      return users;
-    },
-  );
+  const findManyUser = vi.fn(async (args: { where: { id: { in: string[] } } }) => {
+    const ids = args.where.id.in;
+    const users: Array<{ id: string; email: string; name: string }> = [];
+    const seen = new Set<string>();
+    for (const log of logs) {
+      if (!ids.includes(log.superAdminUserId)) continue;
+      if (seen.has(log.superAdminUserId)) continue;
+      seen.add(log.superAdminUserId);
+      users.push({
+        id: log.superAdminUserId,
+        email: log.superAdmin?.email ?? `${log.superAdminUserId}@example.com`,
+        name: log.superAdminUserId,
+      });
+    }
+    return users;
+  });
 
   const prisma = {
     superAdminAccessLog: {
@@ -307,14 +264,12 @@ describe('AdminAuditService', () => {
     expect(a?.totalActions).toBe(2);
     expect(a?.email).toBe('a@example.com');
     expect(a?.lastActionAt?.toISOString()).toBe('2026-05-25T11:00:00.000Z');
-    // Сортировка: свежие первыми.
     expect(res[0]?.superAdminUserId).toBe('admin-a');
   });
 
   it('stats(): группирует по routes/methods за период', async () => {
-    // recent должен быть строго В прошлом, иначе stats(to=now()) отсечёт.
     const recent = new Date(Date.now() - 60_000);
-    const old = new Date(recent.getTime() - 60 * 24 * 60 * 60 * 1000); // 60 дней назад
+    const old = new Date(recent.getTime() - 60 * 24 * 60 * 60 * 1000);
     const { svc } = buildService([
       makeLog({ id: '1', route: 'admin/settings', method: 'GET', createdAt: recent }),
       makeLog({ id: '2', route: 'admin/settings', method: 'POST', createdAt: recent }),

@@ -1,14 +1,14 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import Link from 'next/link';
-import { Sparkles } from 'lucide-react';
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 
 import type {
   CitationDomain,
   NarrativeSummaryDomain,
-} from '@/domain/director-dashboard';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/director-dashboard";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Props = {
   data: NarrativeSummaryDomain;
@@ -16,20 +16,17 @@ type Props = {
   className?: string;
 };
 
-/**
- * AI-сводка дашборда с прозрачными цитатами. Pulse Wave 1 §1.4.
- *
- * Inline-номера [1] [2] — суперскрипт + клик ведёт на источник.
- * Под текстом — список «Источники: [1] ... [2] ...» с deep-link.
- */
-export function AiNarrativeWithSources({ data, periodLabel, className }: Props) {
-  // Разбиваем text по маркерам [1], [2], ... и оборачиваем номера в clickable spans.
+export function AiNarrativeWithSources({
+  data,
+  periodLabel,
+  className,
+}: Props) {
   const parts = renderInlineCitations(data.text, data.citations);
 
   return (
     <div
       className={cn(
-        'mb-6 rounded-xl border border-accent/25 bg-accent/5 p-4 shadow-card-soft',
+        "mb-6 rounded-xl border border-accent/25 bg-accent/5 p-4 shadow-card-soft",
         className,
       )}
     >
@@ -45,7 +42,7 @@ export function AiNarrativeWithSources({ data, periodLabel, className }: Props) 
           <span className="font-medium text-fg-secondary">Источники: </span>
           {data.citations.map((c, idx) => (
             <span key={`${c.type}:${c.id}`}>
-              {idx > 0 && ' · '}
+              {idx > 0 && " · "}
               {c.url ? (
                 <Link
                   href={c.url}

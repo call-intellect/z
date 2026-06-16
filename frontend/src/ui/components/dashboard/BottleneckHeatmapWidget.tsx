@@ -1,20 +1,12 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import { Grid2x2, Users2 } from 'lucide-react';
+import { useMemo } from "react";
+import { Grid2x2, Users2 } from "lucide-react";
 
-import type { PulsePatternBottleneckApi } from '@/domain/pulse-patterns';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-/**
- * BottleneckHeatmapWidget (Pulse Wave 6 §6.4) — «Узкие места между командами».
- *
- * Тепловая карта `departments × departments`. Интенсивность — opacity на
- * базе `var(--chip-danger-bg)`. Цифры в ячейках — суммарная severity
- * трений (low=1, medium=2, high=3).
- */
+import type { PulsePatternBottleneckApi } from "@/domain/pulse-patterns";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Props = {
   data: PulsePatternBottleneckApi | null;
@@ -51,8 +43,8 @@ export function BottleneckHeatmapWidget({ data, loading, error }: Props) {
           <div className="flex flex-col items-center gap-2 rounded-lg bg-bg-overlay/40 p-6 text-center">
             <Users2 size={28} className="text-fg-tertiary" />
             <p className="text-sm text-fg-secondary">
-              Команд недостаточно для построения тепловой карты — нужно
-              минимум 2 отдела.
+              Команд недостаточно для построения тепловой карты — нужно минимум
+              2 отдела.
             </p>
           </div>
         )}
@@ -113,7 +105,7 @@ export function BottleneckHeatmapWidget({ data, loading, error }: Props) {
                       className="flex items-center justify-between gap-3 rounded-md px-2 py-1 text-sm hover:bg-bg-overlay/40"
                     >
                       <span className="truncate text-fg-primary">
-                        {p.fromName} <span className="text-fg-tertiary">↔</span>{' '}
+                        {p.fromName} <span className="text-fg-tertiary">↔</span>{" "}
                         {p.toName}
                       </span>
                       <span className="inline-flex shrink-0 items-center rounded-full bg-chip-danger-bg px-2 py-0.5 text-xs font-medium text-chip-danger-fg">
@@ -138,26 +130,25 @@ export function BottleneckHeatmapWidget({ data, loading, error }: Props) {
 
 function HeatCell({ value, max }: { value: number; max: number }) {
   const ratio = max > 0 ? value / max : 0;
-  // 0.1 — минимальная заметность; 1.0 — максимум.
   const opacity = value === 0 ? 0 : Math.max(0.12, Math.min(1, ratio));
   return (
     <div
       className={cn(
-        'mx-auto flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-medium tabular-nums transition-opacity',
+        "mx-auto flex h-7 w-7 items-center justify-center rounded-md text-[11px] font-medium tabular-nums transition-opacity",
         value === 0
-          ? 'bg-bg-overlay/40 text-fg-tertiary'
-          : 'text-chip-danger-fg',
+          ? "bg-bg-overlay/40 text-fg-tertiary"
+          : "text-chip-danger-fg",
       )}
       style={
         value > 0
           ? {
-              backgroundColor: 'var(--chip-danger-bg)',
+              backgroundColor: "var(--chip-danger-bg)",
               opacity: 0.6 + opacity * 0.4,
             }
           : undefined
       }
     >
-      {value > 0 ? value : ''}
+      {value > 0 ? value : ""}
     </div>
   );
 }

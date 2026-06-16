@@ -1,21 +1,3 @@
-/**
- * Фаза A.2 + A.3 — AdminPromptTemplatesController.
- *
- * Эндпоинты `/api/v1/admin/prompt-templates` (см. ТЗ A §7.1, 10 штук).
- *
- * RBAC:
- *   - super_admin (User.isSuperAdmin) — полный CRUD над system + org шаблонами.
- *   - owner / admin Org — read system + полный CRUD над шаблонами своих Org.
- *     Фильтрация ставится в сервисе через `PromptTemplateRbacContext`.
- *   - Фаза A.3 — entitlement-гейт `feature.custom_prompt_templates` для создания
- *     Org-шаблонов; лимит `prompt_templates_per_org`. См.
- *     `AdminPromptTemplatesService.assertOrgCanCreateTemplate`.
- *
- * Guard цепочка: `CookieAuthGuard` обязателен (без него `req.user` пуст).
- * Все остальные проверки делает сервис на основе пары
- * (`isSuperAdmin`, `ownedOrgIds`), что упрощает покрытие unit-тестами.
- */
-
 import {
   BadRequestException,
   Body,
@@ -71,7 +53,6 @@ export class AdminPromptTemplatesController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  // 1) GET список
   @Get()
   async list(
     @Query(new ZodValidationPipe(ListPromptTemplatesQuerySchema))
@@ -82,13 +63,11 @@ export class AdminPromptTemplatesController {
     return this.svc.list(query, rbac);
   }
 
-  // 2) GET карточка по id
   @Get(':id')
   async detail(@Param('id') id: string) {
     return this.svc.detail(id);
   }
 
-  // 3) POST создать шаблон
   @Post()
   async create(
     @Body(new ZodValidationPipe(CreatePromptTemplateSchema))
@@ -99,7 +78,6 @@ export class AdminPromptTemplatesController {
     return this.svc.create(dto, rbac.userId, rbac);
   }
 
-  // 4) PATCH метаданные
   @Patch(':id')
   async update(
     @Param('id') id: string,
@@ -111,7 +89,6 @@ export class AdminPromptTemplatesController {
     return this.svc.update(id, dto, rbac.userId, rbac);
   }
 
-  // 5) DELETE soft-delete
   @Delete(':id')
   async remove(
     @Param('id') id: string,
@@ -121,7 +98,6 @@ export class AdminPromptTemplatesController {
     return this.svc.softDelete(id, rbac.userId, rbac);
   }
 
-  // 6) POST создать новую версию
   @Post(':id/versions')
   async createVersion(
     @Param('id') id: string,
@@ -133,16 +109,11 @@ export class AdminPromptTemplatesController {
     return this.svc.createVersion(id, dto, rbac.userId, rbac);
   }
 
-  // 7) GET версия
   @Get(':id/versions/:versionId')
-  async getVersion(
-    @Param('id') id: string,
-    @Param('versionId') versionId: string,
-  ) {
+  async getVersion(@Param('id') id: string, @Param('versionId') versionId: string) {
     return this.svc.getVersion(id, versionId);
   }
 
-  // 8) POST активировать версию
   @Post(':id/activate-version/:versionId')
   async activateVersion(
     @Param('id') id: string,
@@ -153,7 +124,6 @@ export class AdminPromptTemplatesController {
     return this.svc.activateVersion(id, versionId, rbac);
   }
 
-  // 9) POST копировать в Org
   @Post(':id/copy-to-org')
   async copyToOrg(
     @Param('id') id: string,
@@ -164,7 +134,6 @@ export class AdminPromptTemplatesController {
     return this.svc.copyToOrg(id, dto, rbac.userId, rbac);
   }
 
-  // 10) POST preview
   @Post(':id/preview')
   async preview(
     @Param('id') id: string,
@@ -174,8 +143,6 @@ export class AdminPromptTemplatesController {
     const rbac = await this.resolveRbac(user);
     return this.previewSvc.runPreview(id, dto, rbac.userId);
   }
-
-  // ─── private ─────────────────────────────────────────────────────
 
   private async resolveRbac(
     user: CurrentUserPayload | null | undefined,
@@ -201,7 +168,6 @@ export class AdminPromptTemplatesController {
       select: { orgId: true },
     });
     const ownedOrgIds = memberships.map((m) => m.orgId);
-    // Если не super_admin и нет ни одной owned Org — этот контроллер ему не доступен.
     if (!u.isSuperAdmin && ownedOrgIds.length === 0) {
       throw new BadRequestException({
         ok: false,

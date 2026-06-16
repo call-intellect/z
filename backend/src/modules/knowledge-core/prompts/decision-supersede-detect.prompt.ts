@@ -1,22 +1,3 @@
-/**
- * SBA β-3 — Specialist 3.3 (Decisions Registry).
- *
- * LLM-арбитр `decision-supersede-detect` — решает, что делать с черновиком
- * Decision от `decision-extract`:
- *   - `new` — это новое решение, не связанное со старыми.
- *   - `merge` — это уточнение / переформулировка существующего решения
- *     (обновить existing rationale / alternatives / sourceBlockIds).
- *   - `supersedes` — это новая версия старого решения (другая логика;
- *     старое перестало действовать). Создаётся новый Decision с
- *     `supersedesId = existing.id` + ConflictItem с suggested resolution
- *     'evolving' (existingValidUntil = now, newValidFrom = decidedAt).
- *
- * На вход — черновик + top-K (≤5) cosine-кандидатов того же Org.
- *
- * Контракт verdict-only: confidence в схеме нет — для аудита достаточно
- * поля `reasoning`. Цель: дешёвый арбитр (≤700 input + ≤300 output tokens).
- */
-
 export const DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT = [
   'Ты — knowledge-арбитр для реестра решений компании. Тебе дают черновик нового решения и top-K похожих существующих решений той же организации.',
   'Реши: новое решение, развитие старого (merge) или замена старого новой версией (supersedes).',
@@ -35,7 +16,6 @@ export const DECISION_SUPERSEDE_DETECT_SYSTEM_PROMPT = [
   '- existingValidUntil — ISO дата/время, до которой старое решение было действительно. Если не указано иначе — используй decidedAt нового черновика.',
   '- newValidFrom — ISO дата/время, с которой новое решение действует. Обычно совпадает с existingValidUntil.',
   '',
-  // D1 supersession-правило (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8).
   'При противоречии источников бери более позднее / актуальное решение (по decidedAt); устаревшее помечай как заменённое (verdict="supersedes", supersedesId=targetId). НЕ смешивай старую и новую редакцию решения в одно — это две разные версии.',
   '',
   'Отвечай строго в формате JSON по схеме decision_supersede_detect_v1.',
@@ -87,8 +67,7 @@ export const DECISION_SUPERSEDE_DETECT_JSON_SCHEMA: Record<string, unknown> = {
     },
     targetId: {
       type: ['string', 'null'],
-      description:
-        'id кандидата (для merge/supersedes); null для new',
+      description: 'id кандидата (для merge/supersedes); null для new',
     },
     reasoning: { type: 'string', maxLength: 2_000 },
     evolvingMeta: {
@@ -104,5 +83,4 @@ export const DECISION_SUPERSEDE_DETECT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const DECISION_SUPERSEDE_DETECT_SCHEMA_NAME =
-  'decision_supersede_detect_v1';
+export const DECISION_SUPERSEDE_DETECT_SCHEMA_NAME = 'decision_supersede_detect_v1';

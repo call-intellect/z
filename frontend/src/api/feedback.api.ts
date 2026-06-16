@@ -1,17 +1,5 @@
-/**
- * Feedback API — пользовательский канал «Ваши предложения».
- *
- * Эндпоинты (см. backend/src/modules/feedback/controllers/feedback-user.controller.ts):
- *   - POST /api/v1/feedback           — отправка (rate-limit 5/сутки UTC)
- *   - GET  /api/v1/feedback/my        — история своих сообщений (пагинация)
- *   - GET  /api/v1/feedback/my/limit  — usedToday / limit / resetAt
- *
- * Защита: CookieAuthGuard на backend; здесь только тонкие обёртки над
- * единым `apiClient`. Фаза 3 ТЗ user-feedback-with-ai-clustering.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 
 export interface FeedbackMessageApi {
   id: string;
@@ -39,7 +27,7 @@ export interface SubmitFeedbackBody {
 
 export const feedbackApi = {
   submit: (body: SubmitFeedbackBody) =>
-    apiClient.post<FeedbackMessageApi>('/api/v1/feedback', body),
+    apiClient.post<FeedbackMessageApi>("/api/v1/feedback", body),
 
   listMine: (params: { page?: number; pageSize?: number } = {}) => {
     const qs = buildQuery({
@@ -50,5 +38,5 @@ export const feedbackApi = {
   },
 
   getMyLimit: () =>
-    apiClient.get<FeedbackLimitApi>('/api/v1/feedback/my/limit'),
+    apiClient.get<FeedbackLimitApi>("/api/v1/feedback/my/limit"),
 };

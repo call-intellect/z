@@ -1,11 +1,3 @@
-/**
- * Admin-redesign Фаза 8 — unit-тесты `LimitsAdminService`.
- *
- * Покрываем:
- *   1) list() — делегирует AdminSettingsService.list с правильными фильтрами.
- *   2) update() — делегирует AdminSettingsService.set с userId/reason.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AdminSettingsService } from '../../settings/admin-settings.service';

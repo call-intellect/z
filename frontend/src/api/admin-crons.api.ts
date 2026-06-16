@@ -1,27 +1,11 @@
-/**
- * API-клиент для `/admin/platform/crons` — BullMQ-неработающие @Cron-задачи.
- * Фаза 8 редизайна Z-Admin.
- *
- * Контракт backend (`CronManagerController` под префиксом
- * `/api/v1/admin/crons`):
- *   GET    /                            → CronScheduleApiDto[]
- *   GET    /with-history                → CronScheduleWithHistoryApiDto[]
- *   GET    /:name/history?limit=N       → { items: CronRunHistoryApiDto[] }
- *   PATCH  /:name   { expression?, enabled?, reason? } → { ok: true }
- *   POST   /:name/run                   → { ok: boolean, ... }
- *
- * Защита — `SuperAdminGuard` + `SuperAdminAuditInterceptor` (severity='high'
- * требует `reason` ≥ 10 символов на бэке).
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 import type {
   CronRunHistoryApiDto,
   CronScheduleApiDto,
   CronScheduleWithHistoryApiDto,
-} from '@/domain/admin-cron';
+} from "@/domain/admin-cron";
 
-const BASE = '/api/v1/admin/crons';
+const BASE = "/api/v1/admin/crons";
 
 export type UpdateCronRequest = {
   expression?: string;
@@ -45,11 +29,11 @@ export const adminCronsApi = {
     ),
 
   update: (name: string, body: UpdateCronRequest): Promise<{ ok: true }> =>
-    apiClient.patch<{ ok: true }>(
-      `${BASE}/${encodeURIComponent(name)}`,
-      body,
-    ),
+    apiClient.patch<{ ok: true }>(`${BASE}/${encodeURIComponent(name)}`, body),
 
   runNow: (name: string): Promise<{ ok: boolean }> =>
-    apiClient.post<{ ok: boolean }>(`${BASE}/${encodeURIComponent(name)}/run`, {}),
+    apiClient.post<{ ok: boolean }>(
+      `${BASE}/${encodeURIComponent(name)}/run`,
+      {},
+    ),
 };

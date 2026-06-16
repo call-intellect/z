@@ -1,19 +1,7 @@
-/**
- * API-клиент модуля tracker.boards (Tracker Boards, 2026-05-27).
- *
- * Контракт: `backend/src/modules/tracker/controllers/boards.controller.ts`.
- * Auth: `CookieAuthGuard + TenantGuard` (cookie + `X-Org-Id`).
- *
- * ТЗ: plans/tz/2026-05-27-tracker-boards.md.
- */
+import type { BoardApi, ListBoardsResponseApi } from "@/domain/tracker";
 
-import type {
-  BoardApi,
-  ListBoardsResponseApi,
-} from '@/domain/tracker';
-
-import { orgHeaders, buildQuery } from '../admin-helpers';
-import { apiClient } from '../api-client';
+import { orgHeaders, buildQuery } from "../admin-helpers";
+import { apiClient } from "../api-client";
 
 export interface ListBoardsRequest {
   includeArchived?: boolean;
@@ -54,10 +42,9 @@ export const boardsApi = {
     ),
 
   get: (orgId: string, boardId: string) =>
-    apiClient.get<BoardApi>(
-      `/api/v1/boards/${encodeURIComponent(boardId)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.get<BoardApi>(`/api/v1/boards/${encodeURIComponent(boardId)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
   create: (orgId: string, projectId: string, body: CreateBoardRequest) =>
     apiClient.post<BoardApi>(
@@ -94,9 +81,7 @@ export const boardsApi = {
     ),
 
   reorder: (orgId: string, body: ReorderBoardsRequest) =>
-    apiClient.post<ListBoardsResponseApi>(
-      `/api/v1/boards/reorder`,
-      body,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.post<ListBoardsResponseApi>(`/api/v1/boards/reorder`, body, {
+      headers: orgHeaders(orgId),
+    }),
 };

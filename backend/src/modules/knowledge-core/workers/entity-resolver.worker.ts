@@ -10,43 +10,16 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { type Entity, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type EntityResolverJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type EntityResolverJobData } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ENTITY_ARCHIVED } from '../../tables/events/entity-sync.events';
 import { EntityMergeService } from '../services/entity-merge.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
-/**
- * Entity-resolver worker (`core.entity-resolver` consumer).
- *
- * Шаги на job `{ entityId }`:
- *   1. findUnique Entity. Если null → skip.
- *   2. Идемпотентность: entity.mergedIntoId !== null → skip (уже объединена).
- *   3. KNN cosine top-5 кандидатов того же tenantId/type, embedding IS NOT NULL,
- *      mergedIntoId IS NULL, sim > ENTITY_MERGE_THRESHOLD.
- *   4. Если кандидатов нет — return.
- *   5. Для каждого (по убыванию similarity) — judgeMerge с контекстом блоков.
- *      На первый verdict='merge' — Prisma-транзакция:
- *        - Защита: target.mergedIntoId === null, entity.mergedIntoId === null (race).
- *        - Защита: canonicalId реально присутствует в списке кандидатов.
- *        - entity.mergedIntoId = target.id, updatedAt=now.
- *        - target.mentionsCount += entity.mentionsCount.
- *        - target.aliases = union(target.aliases, [entity.canonicalName, ...entity.aliases]).
- *        - Перенос IdeaBlockEntity entityId=entity.id → entityId=target.id;
- *          composite PK (blockId, entityId) — try update, на P2002 → delete старую.
- *
- * Concurrency=1: cron + on-event могут пересекаться, но операция merge меняет
- * глобальное состояние. Обрабатываем серийно, чтобы не было race условий
- * между двумя параллельными jobs для одной пары Entity.
- */
 @Injectable()
 export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EntityResolverWorker.name);
@@ -61,10 +34,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityMergeService) private readonly merger: EntityMergeService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
-    // KC-Temporal W3.5 — Optional EventEmitter2 для emit'а
-    // `idea_block.updated` (после merge сущности блоки канонической
-    // сущности получили новый список mention'ов → projections на этих
-    // блоках стоит пересобрать).
     @Optional()
     @Inject(EventEmitter2)
     private readonly eventEmitter?: EventEmitter2,
@@ -84,14 +53,10 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     );
     this.worker.on('failed', (job, err) => {
       this.onJobFailed(job ?? null, err).catch((e) => {
-        this.logger.error(
-          `onJobFailed: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        this.logger.error(`onJobFailed: ${e instanceof Error ? e.message : String(e)}`);
       });
     });
-    this.logger.debug(
-      `EntityResolverWorker запущен (${CORE_QUEUE_NAMES.ENTITY_RESOLVER})`,
-    );
+    this.logger.debug(`EntityResolverWorker запущен (${CORE_QUEUE_NAMES.ENTITY_RESOLVER})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -101,8 +66,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ─────────────────────────── core ────────────────────────────────────────
-
   private async process(job: Job<EntityResolverJobData>): Promise<void> {
     const { entityId } = job.data;
     const entity = await this.prisma.entity.findUnique({ where: { id: entityId } });
@@ -111,14 +74,10 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (entity.mergedIntoId !== null) {
-      this.logger.debug(
-        { entityId },
-        'entity-resolver: уже merged_into — skip',
-      );
+      this.logger.debug({ entityId }, 'entity-resolver: уже merged_into — skip');
       return;
     }
 
-    // Org-Admin Фаза 7: проверка тумблера.
     await this.gate.checkOrThrow(entity.tenantId, 'entity-resolver');
 
     const candidates = await this.merger.findCandidates({
@@ -131,7 +90,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Контекст блоков «этой» сущности — общий, не зависит от candidate.
     const recentBlocks = await this.loadRecentBlocks(entity.id);
 
     for (const c of candidates) {
@@ -144,7 +102,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         candidateRecentBlocks: candRecent,
       });
       if (verdict.verdict === 'distinct') continue;
-      // verdict='merge'
       try {
         await this.applyMerge({
           entity,
@@ -180,10 +137,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     return rows.map((r) => r.block);
   }
 
-  /**
-   * Атомарный merge entity → target. Все защиты внутри транзакции, чтобы
-   * параллельный resolver-job для той же пары не разрушил состояние.
-   */
   private async applyMerge(args: {
     entity: Entity;
     targetId: string;
@@ -191,28 +144,21 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   }): Promise<void> {
     const { entity, targetId } = args;
     if (targetId === entity.id) {
-      throw new Error(
-        `entity-resolver: targetId == entityId (${entity.id}) — abort`,
-      );
+      throw new Error(`entity-resolver: targetId == entityId (${entity.id}) — abort`);
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // Re-load под транзакцией.
       const fresh = await tx.entity.findUnique({ where: { id: entity.id } });
       if (!fresh) throw new Error(`entity ${entity.id} not found in tx`);
       if (fresh.mergedIntoId !== null) {
-        throw new Error(
-          `entity ${entity.id} уже merged_into=${fresh.mergedIntoId} — abort`,
-        );
+        throw new Error(`entity ${entity.id} уже merged_into=${fresh.mergedIntoId} — abort`);
       }
       const target = await tx.entity.findUnique({ where: { id: targetId } });
       if (!target) {
         throw new Error(`target ${targetId} не найден — abort`);
       }
       if (target.mergedIntoId !== null) {
-        throw new Error(
-          `target ${targetId} сам merged_into=${target.mergedIntoId} — abort (race)`,
-        );
+        throw new Error(`target ${targetId} сам merged_into=${target.mergedIntoId} — abort (race)`);
       }
       if (target.tenantId !== fresh.tenantId) {
         throw new Error(
@@ -220,18 +166,14 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
       if (target.type !== fresh.type) {
-        throw new Error(
-          `target.type=${target.type} != entity.type=${fresh.type} — abort`,
-        );
+        throw new Error(`target.type=${target.type} != entity.type=${fresh.type} — abort`);
       }
 
-      // 1. Помечаем entity как merged_into.
       await tx.entity.update({
         where: { id: fresh.id },
         data: { mergedIntoId: targetId },
       });
 
-      // 2. Обновляем target: mentionsCount, aliases (union).
       const newAliases = Array.from(
         new Set([...target.aliases, fresh.canonicalName, ...fresh.aliases]),
       ).filter((a) => a !== target.canonicalName);
@@ -243,10 +185,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
 
-      // 3. Переносим IdeaBlockEntity'и: entityId=fresh.id → targetId.
-      //    Composite PK (blockId, entityId) может конфликтовать —
-      //    идём по одному с try/skip P2002 (если в block уже есть mention
-      //    target'а, удаляем mention'а entity).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { entityId: fresh.id },
       });
@@ -259,10 +197,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
             data: { entityId: targetId },
           });
         } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
+          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
             await tx.ideaBlockEntity.delete({
               where: {
                 blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
@@ -280,10 +215,6 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       'entity-resolver: merged',
     );
 
-    // Smart-tables Фаза 2 — объединённая сущность (entity.id) теперь
-    // mergedInto target и больше не «живая». Эмитим entity.archived, чтобы
-    // TableSyncListener пометил её строку archivedAt (строка target'а остаётся).
-    // Best-effort: ошибка эмита не валит merge.
     if (this.eventEmitter) {
       try {
         this.eventEmitter.emit(ENTITY_ARCHIVED, {
@@ -302,26 +233,12 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // KC-Temporal W3.5 — emit'им `idea_block.updated` для каждого блока,
-    // у которого был mention объединённой сущности. Сущность теперь
-    // указывает на target → projections (Decision/Insight/...), привязанные
-    // к этим блокам, могли поменять смысл.
-    //
-    // NB: список блоков читаем ПОСЛЕ commit'а транзакции (mention'ы уже
-    // перенесены на targetId, поэтому ищем по target.id, чтобы накрыть и
-    // оригинальные блоки канонической сущности, и блоки только что
-    // приклеившейся entity).
     await this.emitProjectionsRebuildForEntityMerge({
       tenantId: entity.tenantId,
       targetEntityId: targetId,
     });
   }
 
-  /**
-   * KC-Temporal W3.5 — best-effort emit `idea_block.updated` для каждого
-   * блока, в котором target-сущность (включая бывшие mention'ы entity)
-   * упоминается. Ошибки логируются warn'ом и не валят merge.
-   */
   private async emitProjectionsRebuildForEntityMerge(args: {
     tenantId: string;
     targetEntityId: string;
@@ -363,10 +280,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async onJobFailed(
-    job: Job<EntityResolverJobData> | null,
-    err: Error,
-  ): Promise<void> {
+  private async onJobFailed(job: Job<EntityResolverJobData> | null, err: Error): Promise<void> {
     if (!job) return;
     if (job.attemptsMade < (job.opts.attempts ?? 5)) return;
     this.logger.error(

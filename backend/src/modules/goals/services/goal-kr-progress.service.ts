@@ -4,38 +4,12 @@ import { Prisma } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Goals OKR v2 (Фаза 3) — авто-прогресс Key Results.
- *
- * Для каждой АКТИВНОЙ цели (`promotionState='active'`, `validUntil=null`)
- * сервис пересчитывает `currentValue` каждого KR по его `sourceKind`,
- * пишет `GoalKeyResultCheckpoint(recordedBy='auto')` ТОЛЬКО при изменении
- * значения, и пересчитывает `Goal.progressStatus` из тренда checkpoints.
- *
- * Жёсткие правила (M0 — ручной контроль первичен):
- *   - `sourceKind='manual'` → всегда skip (ручной KR).
- *   - `'currentValue' ∈ kr.manualOverride` → skip (человек прибил значение).
- *   - `'progressStatus' ∈ goal.manualOverride` → не трогаем статус цели.
- *   - checkpoint пишем ТОЛЬКО при `newValue !== currentValue`.
- *
- * Источники (`computeKrValue`):
- *   - `meeting_count` → count завершённых встреч Org (sourceConfig {meetingType?, since?}).
- *   - `issue_rollup`  → count completed Issue, привязанных к goalId.
- *   - `metric_entity` → `Entity.mentionsCount` по sourceConfig.entityId (best-effort).
- *
- * Cron-обёртка — `goal-kr-progress.cron.ts` (@Cron 05:00 ежедневно).
- */
 @Injectable()
 export class GoalKrProgressService {
   private readonly logger = new Logger(GoalKrProgressService.name);
 
-  /** Окно тренда для пересчёта progressStatus (дни). */
   static readonly TREND_WINDOW_DAYS = 14;
 
-  /**
-   * Запас «отставания от темпа» (п.п.) для статуса at_risk: если фактический
-   * прогресс ниже ожидаемого по времени более чем на столько — at_risk.
-   */
   static readonly AT_RISK_MARGIN = 25;
 
   constructor(
@@ -44,13 +18,6 @@ export class GoalKrProgressService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────────── public API ─────────────────────────────
-
-  /**
-   * Полный проход по всем Org с активными целями. Per-Org/per-goal try/catch —
-   * ошибка одной цели/Org не валит весь проход. Возвращает summary для
-   * cron-лога и теста.
-   */
   async runForAllOrgs(): Promise<GoalKrProgressSummary> {
     const orgs = await this.listOrgsWithActiveGoals();
     let krsUpdated = 0;
@@ -97,10 +64,6 @@ export class GoalKrProgressService {
     };
   }
 
-  /**
-   * Обработать одну цель: пересчитать все её KR, затем пересчитать
-   * progressStatus из тренда.
-   */
   async processGoalKr(args: {
     tenantId: string;
     goal: ActiveGoalRow;
@@ -132,12 +95,6 @@ export class GoalKrProgressService {
     return { krsUpdated, krsSkipped, restatused };
   }
 
-  // ─────────────────────────── KR value ───────────────────────────────
-
-  /**
-   * Пересчитать currentValue одного KR. Возвращает {updated, skipped}.
-   * Пишет checkpoint(recordedBy='auto') ТОЛЬКО при изменении значения.
-   */
   private async computeKrValue(args: {
     tenantId: string;
     goal: ActiveGoalRow;
@@ -145,7 +102,6 @@ export class GoalKrProgressService {
   }): Promise<{ updated: boolean; skipped: boolean }> {
     const { tenantId, goal, kr } = args;
 
-    // Правило M0 + ручной KR: не трогаем.
     if (kr.sourceKind === 'manual') {
       this.metrics.incGoalKrAutoprogress('manual', 'skipped');
       return { updated: false, skipped: true };
@@ -187,7 +143,6 @@ export class GoalKrProgressService {
       return { updated: false, skipped: true };
     }
 
-    // Источник не дал значения (например metric_entity без entityId) — skip.
     if (newValue === null) {
       this.metrics.incGoalKrAutoprogress(kr.sourceKind, 'skipped');
       return { updated: false, skipped: true };
@@ -218,14 +173,9 @@ export class GoalKrProgressService {
     return { updated: true, skipped: false };
   }
 
-  /** meeting_count: завершённые (не удалённые) встречи Org с опц. type/since. */
-  private async countMeetings(args: {
-    tenantId: string;
-    kr: KrRow;
-  }): Promise<number> {
+  private async countMeetings(args: { tenantId: string; kr: KrRow }): Promise<number> {
     const cfg = GoalKrProgressService.parseConfig(args.kr.sourceConfig);
-    const meetingType =
-      typeof cfg.meetingType === 'string' ? cfg.meetingType : undefined;
+    const meetingType = typeof cfg.meetingType === 'string' ? cfg.meetingType : undefined;
     const since = GoalKrProgressService.parseDate(cfg.since);
 
     return this.prisma.meeting.count({
@@ -233,19 +183,13 @@ export class GoalKrProgressService {
         tenantId: args.tenantId,
         status: 'completed',
         deletedAt: null,
-        ...(meetingType
-          ? { type: meetingType as Prisma.MeetingWhereInput['type'] }
-          : {}),
+        ...(meetingType ? { type: meetingType as Prisma.MeetingWhereInput['type'] } : {}),
         ...(since ? { endedAt: { gte: since } } : {}),
       },
     });
   }
 
-  /** issue_rollup: completed Issue, привязанные к цели через Issue.goalId. */
-  private async countCompletedIssues(args: {
-    tenantId: string;
-    goalId: string;
-  }): Promise<number> {
+  private async countCompletedIssues(args: { tenantId: string; goalId: string }): Promise<number> {
     return this.prisma.issue.count({
       where: {
         tenantId: args.tenantId,
@@ -256,14 +200,7 @@ export class GoalKrProgressService {
     });
   }
 
-  /**
-   * metric_entity: Entity.mentionsCount по sourceConfig.entityId (best-effort).
-   * Если entityId не задан или Entity не найдена — возвращаем null (KR skip).
-   */
-  private async readEntityMentions(args: {
-    tenantId: string;
-    kr: KrRow;
-  }): Promise<number | null> {
+  private async readEntityMentions(args: { tenantId: string; kr: KrRow }): Promise<number | null> {
     const cfg = GoalKrProgressService.parseConfig(args.kr.sourceConfig);
     const entityId = typeof cfg.entityId === 'string' ? cfg.entityId : null;
     if (!entityId) {
@@ -287,19 +224,12 @@ export class GoalKrProgressService {
     return entity.mentionsCount;
   }
 
-  // ─────────────────────────── progressStatus ─────────────────────────
-
-  /**
-   * Пересчитать Goal.progressStatus из тренда checkpoints. Возвращает true,
-   * если статус изменился (и записан).
-   */
   private async recomputeProgressStatus(args: {
     tenantId: string;
     goal: ActiveGoalRow;
   }): Promise<boolean> {
     const { tenantId, goal } = args;
 
-    // M0: статус прибит руками — не трогаем.
     if (GoalKrProgressService.overrideHas(goal.manualOverride, 'progressStatus')) {
       return false;
     }
@@ -314,15 +244,12 @@ export class GoalKrProgressService {
       },
     });
 
-    // 0 KR — качественная веха, движение по числам не считаем.
     if (krs.length === 0) return false;
 
     const since = new Date(
-      Date.now() -
-        GoalKrProgressService.TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - GoalKrProgressService.TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    // Baseline каждого KR — earliest checkpoint в окне (или startValue).
     const baselines = await Promise.all(
       krs.map(async (kr) => {
         const earliest = await this.prisma.goalKeyResultCheckpoint.findFirst({
@@ -359,17 +286,7 @@ export class GoalKrProgressService {
     return true;
   }
 
-  // ─────────────────────────── pure helpers ───────────────────────────
-
-  /**
-   * Прогресс одного KR в %: clamp 0..100 от (current-start)/(target-start)*100.
-   * Защита от деления на 0: target==start → 0.
-   */
-  static progressPercent(
-    start: number,
-    target: number,
-    current: number,
-  ): number {
+  static progressPercent(start: number, target: number, current: number): number {
     const span = target - start;
     if (span === 0) return 0;
     const pct = ((current - start) / span) * 100;
@@ -377,19 +294,6 @@ export class GoalKrProgressService {
     return Math.max(0, Math.min(100, pct));
   }
 
-  /**
-   * Чистый расчёт progressStatus из тренда KR. Детерминирован — для unit-тестов.
-   *
-   * Алгоритм:
-   *   - avgProgress = среднее progressPercent по всем KR.
-   *   - avgProgress >= 100 → 'achieved'.
-   *   - иначе goalDelta = Σ(current - baseline):
-   *       goalDelta <= 0 → 'stalled' (нет движения за окно);
-   *       goalDelta > 0  → если targetDate задан и avgProgress отстаёт от
-   *                        ожидаемого по времени более чем на AT_RISK_MARGIN →
-   *                        'at_risk'; иначе 'on_track'.
-   *   - 'dropped' авто НЕ ставим.
-   */
   static computeStatus(args: {
     krs: KrTrendInput[];
     createdAt: Date;
@@ -401,8 +305,7 @@ export class GoalKrProgressService {
 
     const avgProgress =
       krs.reduce(
-        (acc, k) =>
-          acc + GoalKrProgressService.progressPercent(k.start, k.target, k.current),
+        (acc, k) => acc + GoalKrProgressService.progressPercent(k.start, k.target, k.current),
         0,
       ) / krs.length;
 
@@ -411,7 +314,6 @@ export class GoalKrProgressService {
     const goalDelta = krs.reduce((acc, k) => acc + (k.current - k.baseline), 0);
     if (goalDelta <= 0) return 'stalled';
 
-    // Движение есть. Проверяем темп относительно ожидаемого по времени.
     if (targetDate) {
       const expected = GoalKrProgressService.expectedProgress({
         createdAt,
@@ -425,12 +327,7 @@ export class GoalKrProgressService {
     return 'on_track';
   }
 
-  /** Ожидаемый прогресс по времени, % (доля createdAt→targetDate). Clamp 0..100. */
-  static expectedProgress(args: {
-    createdAt: Date;
-    targetDate: Date;
-    now: Date;
-  }): number {
+  static expectedProgress(args: { createdAt: Date; targetDate: Date; now: Date }): number {
     const total = args.targetDate.getTime() - args.createdAt.getTime();
     if (total <= 0) return 100;
     const elapsed = args.now.getTime() - args.createdAt.getTime();
@@ -438,12 +335,10 @@ export class GoalKrProgressService {
     return Math.max(0, Math.min(100, pct));
   }
 
-  /** Decimal(18,4) для KR-значений (как в GoalKeyResultsService). */
   private static dec(value: number): Prisma.Decimal {
     return new Prisma.Decimal(value.toFixed(4));
   }
 
-  /** Безопасный Number из Decimal | number | string. */
   static toNumber(v: unknown): number {
     if (v === null || v === undefined) return 0;
     if (typeof v === 'number') return v;
@@ -455,9 +350,7 @@ export class GoalKrProgressService {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());
@@ -466,31 +359,22 @@ export class GoalKrProgressService {
     return 0;
   }
 
-  /** Есть ли имя поля в manualOverride-объекте. */
   private static overrideHas(raw: unknown, field: string): boolean {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-    return Object.prototype.hasOwnProperty.call(
-      raw as Record<string, unknown>,
-      field,
-    );
+    return Object.prototype.hasOwnProperty.call(raw as Record<string, unknown>, field);
   }
 
-  /** sourceConfig (Json) → плоский Record. */
   private static parseConfig(raw: unknown): Record<string, unknown> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
     return raw as Record<string, unknown>;
   }
 
-  /** ISO-строка → Date | undefined (невалидная — undefined). */
   private static parseDate(raw: unknown): Date | undefined {
     if (typeof raw !== 'string' || raw.length === 0) return undefined;
     const d = new Date(raw);
     return Number.isNaN(d.getTime()) ? undefined : d;
   }
 
-  // ─────────────────────────── data access ────────────────────────────
-
-  /** tenantId-ы Org, у которых есть активные живые цели. */
   private async listOrgsWithActiveGoals(): Promise<string[]> {
     const rows = await this.prisma.goal.findMany({
       where: { promotionState: 'active', validUntil: null },
@@ -500,7 +384,6 @@ export class GoalKrProgressService {
     return rows.map((r) => r.tenantId);
   }
 
-  /** Активные живые цели Org. */
   private async listActiveGoals(tenantId: string): Promise<ActiveGoalRow[]> {
     return this.prisma.goal.findMany({
       where: { tenantId, promotionState: 'active', validUntil: null },
@@ -515,14 +398,7 @@ export class GoalKrProgressService {
   }
 }
 
-// ─────────────────────────── types ──────────────────────────────────
-
-export type GoalProgressStatusValue =
-  | 'on_track'
-  | 'at_risk'
-  | 'stalled'
-  | 'achieved'
-  | 'dropped';
+export type GoalProgressStatusValue = 'on_track' | 'at_risk' | 'stalled' | 'achieved' | 'dropped';
 
 export interface GoalKrProgressSummary {
   orgsScanned: number;
@@ -532,7 +408,6 @@ export interface GoalKrProgressSummary {
   failures: number;
 }
 
-/** Минимальный набор полей цели для прохода. */
 export interface ActiveGoalRow {
   id: string;
   createdAt: Date;
@@ -541,7 +416,6 @@ export interface ActiveGoalRow {
   manualOverride: unknown;
 }
 
-/** Минимальный набор полей KR для расчёта. */
 interface KrRow {
   id: string;
   sourceKind: 'manual' | 'meeting_count' | 'issue_rollup' | 'metric_entity';
@@ -552,11 +426,9 @@ interface KrRow {
   currentValue: unknown;
 }
 
-/** Вход для чистого расчёта статуса по одному KR. */
 export interface KrTrendInput {
   start: number;
   target: number;
   current: number;
-  /** Значение в начале окна тренда (earliest checkpoint или startValue). */
   baseline: number;
 }

@@ -1,25 +1,9 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля Curation (SBA α-4 — Layer 4 Curation Foundation).
- *
- * REST API `/api/v1/curation/*` и `/api/v1/settings/curation`. Контракт
- * специалистов для вызова `CurationService.triage(...)` — типы внутри сервиса
- * (TriageInput / TriageResult), здесь — только то, что выезжает наружу через
- * HTTP.
- */
-
-// ─────────────────────────── Enums ─────────────────────────────────
-
 export const CurationLevelSchema = z.enum(['light', 'deep']);
 export type CurationLevelDto = z.infer<typeof CurationLevelSchema>;
 
-export const CurationItemStatusSchema = z.enum([
-  'pending',
-  'decided',
-  'expired',
-  'cancelled',
-]);
+export const CurationItemStatusSchema = z.enum(['pending', 'decided', 'expired', 'cancelled']);
 export type CurationItemStatusDto = z.infer<typeof CurationItemStatusSchema>;
 
 export const CurationDecisionTypeSchema = z.enum([
@@ -29,14 +13,8 @@ export const CurationDecisionTypeSchema = z.enum([
   'split',
   'merge',
   'supersede',
-  /// SBA γ-1 — post-hoc «карточка/ребро неверны» (Skill traits, rich-edge,
-  /// другие фактуры). Не порождает CardVersion, но эмитит
-  /// `curation.decision_recorded` → PreferenceDatasetService → LlmPreferenceSample.
   'mark_as_misleading',
-  /// SBA α-4 wave 2 — слияние SkillTraitCategory (для γ-1).
   'merge_categories',
-  /// SBA α-4 wave 2 — передача карточки следующему куратору
-  /// (payload.escalateToUserId обязателен; CurationItem остаётся pending).
   'escalate',
 ]);
 export type CurationDecisionTypeDto = z.infer<typeof CurationDecisionTypeSchema>;
@@ -44,15 +22,8 @@ export type CurationDecisionTypeDto = z.infer<typeof CurationDecisionTypeSchema>
 export const ConflictStatusSchema = z.enum(['open', 'resolved', 'dismissed']);
 export type ConflictStatusDto = z.infer<typeof ConflictStatusSchema>;
 
-export const ConflictResolutionSchema = z.enum([
-  'accept_new',
-  'keep_old',
-  'merge',
-  'evolving',
-]);
+export const ConflictResolutionSchema = z.enum(['accept_new', 'keep_old', 'merge', 'evolving']);
 export type ConflictResolutionDto = z.infer<typeof ConflictResolutionSchema>;
-
-// ─────────────────────────── Queue queries ────────────────────────
 
 export const ListCurationQueueQuerySchema = z.object({
   level: CurationLevelSchema.optional(),
@@ -65,19 +36,14 @@ export const ListCurationQueueQuerySchema = z.object({
 });
 export type ListCurationQueueQuery = z.infer<typeof ListCurationQueueQuerySchema>;
 
-// ─────────────────────────── Decision body ────────────────────────
-
 export const DecideCurationBodySchema = z
   .object({
     decisionType: CurationDecisionTypeSchema,
-    /** Финальный payload карточки (для approve_with_edits / split / merge / supersede). */
     payload: z.record(z.string(), z.unknown()).optional(),
     reasoning: z.string().trim().max(4_000).optional(),
   })
   .strict();
 export type DecideCurationBody = z.infer<typeof DecideCurationBodySchema>;
-
-// ─────────────────────────── Conflict queries ─────────────────────
 
 export const ListConflictsQuerySchema = z.object({
   status: ConflictStatusSchema.optional(),
@@ -90,11 +56,6 @@ export type ListConflictsQuery = z.infer<typeof ListConflictsQuerySchema>;
 export const ResolveConflictBodySchema = z
   .object({
     resolution: ConflictResolutionSchema,
-    /**
-     * Обязательно для resolution='evolving': пара дат
-     * `existingValidUntil` (когда существующая версия перестала быть истиной)
-     * и `newValidFrom` (когда новая стала истиной).
-     */
     evolvingMeta: z
       .object({
         existingValidUntil: z.string().datetime(),
@@ -116,8 +77,6 @@ export const ResolveConflictBodySchema = z
   });
 export type ResolveConflictBody = z.infer<typeof ResolveConflictBodySchema>;
 
-// ─────────────────────────── Conflict dismiss ─────────────────────
-
 export const DismissConflictBodySchema = z
   .object({
     reasoning: z.string().trim().max(4_000).optional(),
@@ -125,119 +84,44 @@ export const DismissConflictBodySchema = z
   .strict();
 export type DismissConflictBody = z.infer<typeof DismissConflictBodySchema>;
 
-// ─────────────────────────── Settings ─────────────────────────────
-
 export const CurationSettingsSchema = z
   .object({
     autoThreshold: z.number().min(0).max(1),
     deepReviewThreshold: z.number().min(0).max(1),
     criticalTypes: z.array(z.string().trim().min(1).max(80)).max(64),
     itemExpiryDays: z.number().int().min(1).max(365),
-    /**
-     * A0 «лестница доверия» (2026-06-02) — пер-типовые пороги auto-canonical.
-     * Карта `resourceType → порог [0..1]`. Если для типа задан порог здесь —
-     * он перекрывает глобальный `autoThreshold` в triage'е. Опционально и
-     * обратносовместимо: отсутствие/пустая карта = поведение как раньше.
-     */
     autoThresholdByType: z
       .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
       .optional(),
-    /**
-     * A0 «лестница доверия» (2026-06-02) — пер-типовые пороги deep-review.
-     * Карта `resourceType → порог [0..1]`. Перекрывает глобальный
-     * `deepReviewThreshold` для конкретного типа. Опционально.
-     */
     deepReviewThresholdByType: z
       .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
       .optional(),
-    /**
-     * Action Center A1 «лестница доверия» (2026-06-02) — порог провизорной
-     * AI-канонизации критических типов (regulation/process/decision). Если
-     * критический тип имеет conflict ≠ 'hard' И effectiveConfidence ≥ этого
-     * порога — карточка отправляется AI-судье (3-голосовый debate); при
-     * accept-консенсусе становится провизорно-канонической (trustTier=provisional),
-     * минуя человека. Иначе — deep review (человек). Default 0.8.
-     */
     provisionalThreshold: z.number().min(0).max(1).optional(),
-    /**
-     * A1 — пер-типовая карта порога провизорной канонизации (override
-     * глобального provisionalThreshold для конкретного resourceType).
-     */
     provisionalThresholdByType: z
       .record(z.string().trim().min(1).max(80), z.number().min(0).max(1))
       .optional(),
-    /**
-     * A1 — включён ли AI-судья (Curation-Verify debate) для критических
-     * типов. При false критические карточки всегда идут к человеку (deep).
-     * Default true.
-     */
     aiVerifierEnabled: z.boolean().optional(),
-    /**
-     * A1 — доля авто/провизорных решений, на которую дополнительно создаётся
-     * лёгкий аудит-CurationItem (не блокирует канонизацию). Default 0.05 (5%).
-     */
     auditSampleRate: z.number().min(0).max(1).optional(),
-    /**
-     * Action Center A2 «лестница доверия» (2026-06-02) — авто-подстройка
-     * пер-типовых порогов auto-canonical по override-rate. **Default false** —
-     * понижение порогов (больше авто-канонизации) opt-in: владелец Org
-     * осознанно включает автоматику. Kill-switch (повышение порога при
-     * высоком проценте ошибок провизорных карточек) работает ВСЕГДА,
-     * вне зависимости от этого флага.
-     */
     autotuneEnabled: z.boolean().optional(),
-    /**
-     * A2 — нижняя граница, ниже которой авто-подстройка не опускает
-     * autoThresholdByType[type]. Default 0.6.
-     */
     thresholdMin: z.number().min(0).max(1).optional(),
-    /**
-     * A2 — верхняя граница, выше которой авто-подстройка не поднимает
-     * autoThresholdByType[type]. Default 0.97.
-     */
     thresholdMax: z.number().min(0).max(1).optional(),
-    /**
-     * A2 — шаг изменения порога за один проход cron. Default 0.02.
-     */
     autotuneStep: z.number().min(0).max(1).optional(),
-    /**
-     * A2 — минимальное число решений (decided items / аудит-решений) по типу,
-     * прежде чем авто-подстройка / kill-switch будут применены. Default 20.
-     */
     minDecisionsForAutotune: z.number().int().min(1).max(100_000).optional(),
-    /**
-     * A2 — максимально допустимая доля «неверных» провизорных карточек среди
-     * аудит-выборки. Превышение → kill-switch (provisionalThresholdByType[type]
-     * = 1.01, эффективно отключает провизорный путь для типа). Также служит
-     * порогом высокого/низкого override-rate для авто-подстройки. Default 0.2.
-     */
     maxProvisionalOverride: z.number().min(0).max(1).optional(),
   })
   .strict();
 export type CurationSettingsDto = z.infer<typeof CurationSettingsSchema>;
 
 export const UpdateCurationSettingsBodySchema = CurationSettingsSchema.partial();
-export type UpdateCurationSettingsBody = z.infer<
-  typeof UpdateCurationSettingsBodySchema
->;
-
-// ─────────────────────────── Override-rate read-model (A0) ────────
-//
-// A0 «лестница доверия» (2026-06-02) — агрегат override-rate по resourceType.
-// Используется для ручной/будущей авто-подстройки пер-типовых порогов:
-// высокий overrideRate (кураторы часто правят/отклоняют авто-предложения)
-// → стоит поднять порог auto-canonical для этого типа.
+export type UpdateCurationSettingsBody = z.infer<typeof UpdateCurationSettingsBodySchema>;
 
 export interface OverrideStatsItemDto {
   resourceType: string;
-  /** Число items с финальным решением (есть хотя бы одно решение ≠ 'escalate'). */
   totalDecided: number;
   approve: number;
   approveWithEdits: number;
   reject: number;
-  /** Прочие финальные типы (split / merge / supersede / mark_as_misleading / merge_categories). */
   other: number;
-  /** (reject + approveWithEdits) / totalDecided; 0 при totalDecided=0. */
   overrideRate: number;
 }
 
@@ -245,26 +129,10 @@ export interface OverrideStatsResponse {
   items: OverrideStatsItemDto[];
 }
 
-// ─────────────────────────── Provisional audit read-model (A2) ────
-//
-// Action Center A2 «лестница доверия» (2026-06-02) — агрегат «провизорных
-// ошибок» по resourceType. Считается ТОЛЬКО по аудит-выборке
-// (CurationItem.triageReason.reason='audit_sample'), по которой принято
-// решение (status='decided'). Высокий provisionalWrongRate сигналит, что
-// AI-судья пропускает плохие провизорные карточки → kill-switch отключает
-// провизорный путь для типа.
-
 export interface ProvisionalAuditStatsItemDto {
   resourceType: string;
-  /** Число аудит-items с финальным решением (decided). */
   auditDecided: number;
-  /**
-   * Среди них — те, чьё финальное решение ∈
-   * {reject, mark_as_misleading, supersede}: провизорная карточка оказалась
-   * неверной (отклонена / помечена ошибочной / заменена).
-   */
   auditWrong: number;
-  /** auditWrong / auditDecided; 0 при auditDecided=0. */
   provisionalWrongRate: number;
 }
 
@@ -272,14 +140,10 @@ export interface ProvisionalAuditStatsResponse {
   items: ProvisionalAuditStatsItemDto[];
 }
 
-// ─────────────────────────── Curator assignments (settings) ──────
-
 export const ListCuratorAssignmentsQuerySchema = z.object({
   resourceType: z.string().trim().min(1).max(80).optional(),
 });
-export type ListCuratorAssignmentsQuery = z.infer<
-  typeof ListCuratorAssignmentsQuerySchema
->;
+export type ListCuratorAssignmentsQuery = z.infer<typeof ListCuratorAssignmentsQuerySchema>;
 
 export const CreateCuratorAssignmentBodySchema = z
   .object({
@@ -289,17 +153,11 @@ export const CreateCuratorAssignmentBodySchema = z
     criteria: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
-export type CreateCuratorAssignmentBody = z.infer<
-  typeof CreateCuratorAssignmentBodySchema
->;
+export type CreateCuratorAssignmentBody = z.infer<typeof CreateCuratorAssignmentBodySchema>;
 
 export const UpdateCuratorAssignmentBodySchema =
   CreateCuratorAssignmentBodySchema.partial().strict();
-export type UpdateCuratorAssignmentBody = z.infer<
-  typeof UpdateCuratorAssignmentBodySchema
->;
-
-// ─────────────────────────── Response DTO (HTTP shape) ───────────
+export type UpdateCuratorAssignmentBody = z.infer<typeof UpdateCuratorAssignmentBodySchema>;
 
 export interface CurationItemDto {
   id: string;
@@ -319,7 +177,6 @@ export interface CurationItemDto {
 
 export interface CurationItemDetailDto extends CurationItemDto {
   decisions: CurationDecisionDto[];
-  /** ID связанного открытого конфликта (если есть). */
   relatedConflictIds: string[];
 }
 
@@ -382,49 +239,35 @@ export interface ListCuratorAssignmentsResponse {
   items: CuratorAssignmentDto[];
 }
 
-// ─────────────────────────── Completeness Slots (SBA α-4 wave 2) ──
-
-/// Поддерживаемые типы родительской карточки для слотов.
 export const CompletenessParentCardTypeSchema = z.enum([
   'regulation',
   'process',
   'role',
   'company_profile',
 ]);
-export type CompletenessParentCardTypeDto = z.infer<
-  typeof CompletenessParentCardTypeSchema
->;
+export type CompletenessParentCardTypeDto = z.infer<typeof CompletenessParentCardTypeSchema>;
 
 export const CompletenessSlotKindSchema = z.enum(['required', 'optional']);
 export type CompletenessSlotKindDto = z.infer<typeof CompletenessSlotKindSchema>;
 
 export const CompletenessSlotStatusSchema = z.enum(['open', 'filled']);
-export type CompletenessSlotStatusDto = z.infer<
-  typeof CompletenessSlotStatusSchema
->;
+export type CompletenessSlotStatusDto = z.infer<typeof CompletenessSlotStatusSchema>;
 
 export const ListCompletenessSlotsQuerySchema = z.object({
   cardType: CompletenessParentCardTypeSchema.optional(),
   cardId: z.string().trim().min(1).max(80).optional(),
   status: CompletenessSlotStatusSchema.optional(),
-  /// Пагинация — простое take/skip.
   take: z.coerce.number().int().min(1).max(200).default(50),
   skip: z.coerce.number().int().min(0).default(0),
 });
-export type ListCompletenessSlotsQuery = z.infer<
-  typeof ListCompletenessSlotsQuerySchema
->;
+export type ListCompletenessSlotsQuery = z.infer<typeof ListCompletenessSlotsQuerySchema>;
 
 export const MarkCompletenessSlotFilledBodySchema = z
   .object({
-    /// User.id того, кто пометил слот заполненным (опц.: если не передан —
-    /// используется текущий пользователь из сессии).
     filledByUserId: z.string().min(1).optional(),
   })
   .strict();
-export type MarkCompletenessSlotFilledBody = z.infer<
-  typeof MarkCompletenessSlotFilledBodySchema
->;
+export type MarkCompletenessSlotFilledBody = z.infer<typeof MarkCompletenessSlotFilledBodySchema>;
 
 export interface CompletenessSlotDto {
   id: string;

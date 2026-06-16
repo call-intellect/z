@@ -1,25 +1,3 @@
-/**
- * Ф8 (knowledge-access-groups-and-provenance) — Patch: проставить
- * `MeetingTypeConfig.defaultClosedGroupKind = 'personal'` для типа встречи
- * `interview` (найм), если он ещё не задан (NULL).
- *
- * Зачем: решение владельца В6 — встречи-собеседования (interview) по умолчанию
- * закрываются в «личный сейф» (personal). При первом GET /admin/.../meeting-types
- * bootstrap-sync уже создаёт interview с этим дефолтом (см.
- * meeting-types-admin.service.ts `ensureBootstrap`), но на проде, где bootstrap
- * мог пройти ДО этой фичи, строка interview существует с
- * defaultClosedGroupKind=NULL. Этот патч добивает её.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-meeting-type-closed-defaults.ts
- *   docker compose exec backend bun run scripts/patch-meeting-type-closed-defaults.ts --dry-run
- *
- * Идемпотентность: повторный запуск — no-op (WHERE defaultClosedGroupKind IS NULL).
- *
- * Safe-seed-rules: НЕ перезаписываем уже выставленный admin'ом
- * defaultClosedGroupKind — только NULL → 'personal'. Остальные типы не трогаем.
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -37,8 +15,6 @@ async function main(): Promise<void> {
     select: { id: true, defaultClosedGroupKind: true, sortOrder: true },
   });
 
-  // Строки interview ещё нет — bootstrap не запускался. Создадим минимальную
-  // с нужным дефолтом, чтобы патч был самодостаточным (а не зависел от первого GET).
   if (!row) {
     if (dryRun) {
       // eslint-disable-next-line no-console

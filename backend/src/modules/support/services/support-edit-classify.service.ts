@@ -7,28 +7,13 @@ import {
   buildSupportEditClassifyUserPrompt,
 } from '../prompts/support-edit-classify.prompt';
 
-/** Тип правки человека над черновиком клона (R-INV-2). */
 export type SupportEditType = 'factual' | 'tone' | 'policy' | 'empty';
 
-/**
- * SupportEditClassifyService — классификатор ТИПА правки (TZ 2026-06-09
- * support-desk Ф3, taskType `support-edit-classify`, R-INV-2).
- *
- * Дешёвый judge сравнивает ЧЕРНОВИК клона с ФИНАЛОМ человека и определяет
- * тип правки: factual / tone / policy / empty. Это сигнал обучающей петли —
- * голый diff не годится (Р-9), нужен классифицированный тип.
- *
- * Fail-safe: при ошибке LLM / непарсимом JSON возвращаем `'factual'` —
- * консервативно трактуем как реальное исправление, чтобы СОМНИТЕЛЬНЫЙ
- * (возможно неверный) ответ НЕ был промоутнут в контур.
- */
 @Injectable()
 export class SupportEditClassifyService {
   private readonly logger = new Logger(SupportEditClassifyService.name);
 
-  constructor(
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-  ) {}
+  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
 
   async classify(args: {
     tenantId: string;
@@ -77,19 +62,12 @@ export class SupportEditClassifyService {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
 function parseEditType(text: string): SupportEditType | null {
   try {
     const cleaned = stripCodeFence(text).trim();
     const parsed = JSON.parse(cleaned) as { editType?: unknown };
     const raw = parsed.editType;
-    if (
-      raw === 'factual' ||
-      raw === 'tone' ||
-      raw === 'policy' ||
-      raw === 'empty'
-    ) {
+    if (raw === 'factual' || raw === 'tone' || raw === 'policy' || raw === 'empty') {
       return raw;
     }
     return null;

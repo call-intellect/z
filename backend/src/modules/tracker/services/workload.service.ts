@@ -1,28 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import type {
-  WorkloadResponseDto,
-  WorkloadRowDto,
-} from '../dto/overview/workload-response.dto';
+import type { WorkloadResponseDto, WorkloadRowDto } from '../dto/overview/workload-response.dto';
 
 import { ProjectsService } from './projects.service';
 
-/**
- * Tracker Project Overview Часть 2 (2026-05-27) — «Загруженность».
- *
- * Считаем счётчики задач на каждого участника проекта (IssueAssignee), сгруппировав
- * по категориям состояний. Это отдельный endpoint от `/dashboard/operations/capacity`
- * (тот считает Person × Appointment.loadPercent — другая семантика).
- *
- * Логика:
- *   - open       = неудалённые задачи, state.category ∈ {backlog, unstarted, started}
- *   - inProgress = state.category = started
- *   - overdue    = dueDate < now AND state.category NOT IN {completed, cancelled}
- *   - completed7 = state.category=completed AND completedAt >= now-7d
- *
- * Read-only, без кэша (страница редкая, агрегаты быстрые).
- */
 @Injectable()
 export class WorkloadService {
   private readonly logger = new Logger(WorkloadService.name);
@@ -32,13 +14,9 @@ export class WorkloadService {
     @Inject(ProjectsService) private readonly projects: ProjectsService,
   ) {}
 
-  async getWorkload(args: {
-    projectId: string;
-    tenantId: string;
-  }): Promise<WorkloadResponseDto> {
+  async getWorkload(args: { projectId: string; tenantId: string }): Promise<WorkloadResponseDto> {
     await this.projects.requireProject(args.projectId, args.tenantId);
 
-    // Все участники проекта (включая тех, у кого нет задач).
     const members = await this.prisma.projectMember.findMany({
       where: { projectId: args.projectId },
       orderBy: { joinedAt: 'asc' },
@@ -53,7 +31,6 @@ export class WorkloadService {
     });
     const userById = new Map(users.map((u) => [u.id, u]));
 
-    // Все активные ассайны по задачам проекта с релевантными полями.
     const assignees = await this.prisma.issueAssignee.findMany({
       where: {
         userId: { in: userIds },
@@ -79,7 +56,6 @@ export class WorkloadService {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Аккумулятор счётчиков на userId.
     const acc = new Map<
       string,
       {
@@ -105,11 +81,7 @@ export class WorkloadService {
         if (a.issue.dueDate && a.issue.dueDate < now) slot.overdue += 1;
       }
 
-      if (
-        cat === 'completed' &&
-        a.issue.completedAt &&
-        a.issue.completedAt >= sevenDaysAgo
-      ) {
+      if (cat === 'completed' && a.issue.completedAt && a.issue.completedAt >= sevenDaysAgo) {
         slot.completed7 += 1;
       }
     }
@@ -134,9 +106,7 @@ export class WorkloadService {
     });
 
     const totalOpen = items.reduce((s, r) => s + r.openCount, 0);
-    const avgOpenPerMember = items.length
-      ? Math.round((totalOpen / items.length) * 10) / 10
-      : 0;
+    const avgOpenPerMember = items.length ? Math.round((totalOpen / items.length) * 10) / 10 : 0;
 
     return { items, avgOpenPerMember };
   }

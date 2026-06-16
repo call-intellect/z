@@ -1,4 +1,3 @@
-/** RU-названия типов ресурсов для отображения (НЕ для value фильтров). */
 const RESOURCE_TYPE_RU: Record<string, string> = {
   idea_block: 'карточка знания',
   entity: 'сущность',
@@ -22,24 +21,20 @@ const RESOURCE_TYPE_RU: Record<string, string> = {
   company_profile: 'профиль компании',
 };
 
-/** Переводит тип ресурса в RU для отображения; неизвестный — как есть. */
 export function resourceTypeRu(t: string): string {
   return RESOURCE_TYPE_RU[t] ?? t;
 }
 
-/** RU-названия уровней проверки знаний для отображения. */
 const LEVEL_RU: Record<string, string> = {
   light: 'базовый',
   medium: 'средний',
   high: 'высокий',
 };
 
-/** Переводит уровень знаний в RU для отображения; неизвестный — как есть. */
 export function levelRu(level: string): string {
   return LEVEL_RU[level] ?? level;
 }
 
-/** RU-названия резолюций конфликта для отображения. */
 const RESOLUTION_RU: Record<string, string> = {
   accepted: 'принято',
   dismissed: 'отклонено',
@@ -49,7 +44,6 @@ const RESOLUTION_RU: Record<string, string> = {
   kept_new: 'принято новое',
 };
 
-/** Переводит резолюцию конфликта в RU для отображения; неизвестная — как есть. */
 export function resolutionRu(resolution: string | null | undefined): string {
   if (!resolution) return 'отклонено';
   return RESOLUTION_RU[resolution] ?? resolution;

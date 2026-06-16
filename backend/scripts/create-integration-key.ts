@@ -1,20 +1,3 @@
-/**
- * Создаёт IntegrationKey (HMAC-ключ для партнёра — Crossmark и т.п.).
- *
- * Usage:
- *   bun run scripts/create-integration-key.ts <partner_name>
- *
- * Эффект:
- *   - Сгенерировать сырой ключ (32 байта энтропии = 64 hex-символа).
- *   - Записать в БД только sha256-хеш (`IntegrationKey.keyHash`).
- *   - Вывести сырой ключ в STDOUT — это ЕДИНСТВЕННЫЙ момент,
- *     когда он показывается. Сохранить его в безопасном хранилище.
- *
- * Используется:
- *   - при онбординге партнёра (Crossmark);
- *   - в smoke-test'е (`infra/smoke/smoke-test.sh`).
- */
-
 import { createHash, randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
@@ -55,10 +38,7 @@ async function main(): Promise<void> {
     });
 
     // eslint-disable-next-line no-console
-    console.error(
-      `[create-integration-key] OK. id=${created.id}, partner_name=${partnerName}.`,
-    );
-    // Сырой ключ — ОДИН раз в stdout (для пайпинга в env, файл или пользователю).
+    console.error(`[create-integration-key] OK. id=${created.id}, partner_name=${partnerName}.`);
     process.stdout.write(`${plainKey}\n`);
   } finally {
     await prisma.$disconnect();

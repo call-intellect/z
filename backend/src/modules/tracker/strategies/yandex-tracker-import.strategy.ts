@@ -5,71 +5,22 @@ import { nanoid } from 'nanoid';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { ImportErrorEntry } from '../dto/imports/import-log-response.dto';
 
-import type {
-  ImportResult,
-  ImportStrategy,
-  ImportStrategyArgs,
-} from './import-strategy.interface';
+import type { ImportResult, ImportStrategy, ImportStrategyArgs } from './import-strategy.interface';
 
-/**
- * Wave 3 / Tracker Phase 5 part 2 (2026-05-24) — импорт из Я.Трекер (Yandex
- * Tracker) через REST API `https://api.tracker.yandex.net/v2/`.
- *
- * Авторизация:
- *   `Authorization: OAuth ${token}` — токен Яндекс ID. Опционально
- *   `X-Org-ID: ${orgId}` для multi-org Я.Трекер аккаунтов (если у клиента
- *   несколько организаций под одним OAuth-токеном).
- *
- * Что мапим (см. plans/tz/2026-05-23-tracker-phase-5-import.md §Я.Трекер→Кора):
- *   Queue (key+name)            → Project (identifier=key, name=name)
- *   Queue.workflow statuses     → IssueState (category эвристически по
- *                                 status.type: open/inProgress/resolved/cancelled)
- *   Issue (key, e.g. PROJ-123)  → Issue (identifier=тот же key,
- *                                 externalSource='yandex_tracker',
- *                                 externalId=issue.id)
- *   Issue.summary               → Issue.title
- *   Issue.description (md)      → Issue.description (как есть)
- *   Issue.assignee.email        → IssueAssignee (через userMappings)
- *   Issue.deadline              → Issue.dueDate
- *   Issue.priority              → Issue.priority (critical→urgent,
- *                                 normal→medium, minor→low, ...)
- *   Issue.tags                  → Label / IssueLabel
- *   Issue.comments[]            → IssueComment
- *   Issue.attachments[]         → IssueAttachment (best-effort download → S3,
- *                                 25 МБ limit)
- *   Issue.links (blocks/...)    → IssueRelation
- *   Issue.parent                → Issue.parentId (если parent в том же импорте)
- *
- * Идемпотентность:
- *   Перед создание Issue — `findFirst({ tenantId, externalSource:
- *   'yandex_tracker', externalId: yandexIssue.id })`. Если есть — skip.
- *
- * Cancellation: каждые 50 items перечитываем ImportLog.status; если
- * 'cancelled' — выходим с частичными счётчиками (worker не перезатрёт).
- *
- * Rate limiting: при 429 — exponential backoff (1s, 2s, 4s, max 16s,
- * до 4 попыток). На 5xx — то же самое. На 4xx (кроме 429) — бросаем сразу.
- */
 @Injectable()
 export class YandexTrackerImportStrategy implements ImportStrategy {
   private readonly logger = new Logger(YandexTrackerImportStrategy.name);
 
-  /** Каждые сколько items проверяем cancellation + эмитим progress. */
   private static readonly PROGRESS_BATCH_SIZE = 50;
 
-  /** Max attachments fetch размер (соответствует attachments.service / Trello). */
   private static readonly MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-  /** Базовый URL REST API Я.Трекер. Override через ENV — не делаем (один known endpoint). */
   private static readonly API_BASE = 'https://api.tracker.yandex.net/v2';
 
-  /** Таймаут одного HTTP-запроса. */
   private static readonly REQUEST_TIMEOUT_MS = 30_000;
 
-  /** Max попыток при 429/5xx. */
   private static readonly MAX_RETRY_ATTEMPTS = 4;
 
-  /** Per-page для list-эндпоинтов. */
   private static readonly PAGE_SIZE = 50;
 
   async run(args: ImportStrategyArgs): Promise<ImportResult> {
@@ -82,22 +33,15 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     const selectedQueueIds = Array.isArray(params.selectedQueueIds)
       ? (params.selectedQueueIds as string[])
       : [];
-    const userMappings = (params.userMappings ?? {}) as Record<
-      string,
-      string | null
-    >;
+    const userMappings = (params.userMappings ?? {}) as Record<string, string | null>;
     const orgId =
-      typeof params.orgId === 'string' && params.orgId.trim()
-        ? params.orgId.trim()
-        : undefined;
+      typeof params.orgId === 'string' && params.orgId.trim() ? params.orgId.trim() : undefined;
 
     if (!oauthToken) {
       throw new Error('Yandex Tracker import: oauthToken не задан');
     }
     if (selectedQueueIds.length === 0) {
-      throw new Error(
-        'Yandex Tracker import: selectedQueueIds пуст — нечего импортировать',
-      );
+      throw new Error('Yandex Tracker import: selectedQueueIds пуст — нечего импортировать');
     }
 
     const errors: ImportErrorEntry[] = [];
@@ -114,16 +58,12 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       oauthToken,
       orgId,
       logger: this.logger,
-      // Используем глобальный fetch — в тестах подменяется через globalThis.fetch.
-      fetchImpl: (input, init) =>
-        fetch(input as unknown as string, init as unknown as RequestInit),
+      fetchImpl: (input, init) => fetch(input as unknown as string, init as unknown as RequestInit),
     });
 
     const unmatchedEmails = new Set<string>();
     let processedItems = 0;
 
-    // ── 1) Загружаем все Issues по всем очередям заранее, чтобы знать total
-    //      и иметь возможность разрулить parentId внутри одного импорта.
     type LoadedQueue = {
       queue: YandexQueue;
       issues: YandexIssue[];
@@ -146,10 +86,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
 
     const totalIssues = loaded.reduce((sum, q) => sum + q.issues.length, 0);
 
-    // Карта `yandex issue.id` → `our Issue.id` (для linking parent + relations).
     const issueIdByYandexId = new Map<string, string>();
-    // Карта `yandex issue.key` (PROJ-123) → `yandex issue.id`. Полезно
-    // для resolving parent (parent в Я.Трекер ссылается через key или объект).
     const yandexIdByKey = new Map<string, string>();
     for (const { issues } of loaded) {
       for (const issue of issues) {
@@ -157,7 +94,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       }
     }
 
-    // ── 2) Импортируем по очереди / queue → project + states + issues.
     for (const { queue, issues } of loaded) {
       let project: { id: string; identifier: string };
       let stateByName: Map<string, string>;
@@ -186,12 +122,9 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
         continue;
       }
 
-      // Кэш Label per project. По имени → id.
       const labelByName = new Map<string, string>();
 
-      // ── Issues импорта.
       for (const issue of issues) {
-        // Cancellation + progress каждые 50 items.
         if (
           processedItems > 0 &&
           processedItems % YandexTrackerImportStrategy.PROGRESS_BATCH_SIZE === 0
@@ -263,8 +196,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       }
     }
 
-    // ── 3) Вторым проходом — связи (relations / parent), потому что они
-    //      требуют, чтобы все импортируемые Issue уже существовали.
     for (const { issues } of loaded) {
       for (const issue of issues) {
         const ourId = issueIdByYandexId.get(issue.id);
@@ -298,8 +229,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
             client,
             services,
           });
-          // Relations не считаем в counters (есть отдельный stage), но
-          // ошибки внутри linkRelations уже push'нуты per-link.
           void linksCount;
         } catch (err) {
           errors.push(
@@ -314,7 +243,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       }
     }
 
-    // Финализация.
     result.unmatchedEmails = Array.from(unmatchedEmails);
     this.trimErrors(errors);
     await services.prisma.importLog
@@ -322,8 +250,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
         where: { id: importLog.id },
         data: {
           processedItems,
-          unmatchedJson:
-            result.unmatchedEmails as unknown as Prisma.InputJsonValue,
+          unmatchedJson: result.unmatchedEmails as unknown as Prisma.InputJsonValue,
         },
       })
       .catch(() => undefined);
@@ -335,13 +262,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     return result;
   }
 
-  // ─────────────────────────── per-issue ─────────────────────────────────
-
-  /**
-   * Создаёт Issue + комментарии + вложения. Возвращает `created=false`,
-   * если Issue с (tenantId, externalSource='yandex_tracker', externalId) уже
-   * существует — тогда мы skip'аем целиком (comments/attachments не дублируем).
-   */
   private async importIssue(args: {
     tenantId: string;
     project: { id: string; identifier: string };
@@ -374,7 +294,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       errors,
     } = args;
 
-    // Идемпотентность.
     const existing = await services.prisma.issue.findFirst({
       where: {
         tenantId,
@@ -392,7 +311,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       };
     }
 
-    // Resolve assignee email через userMappings.
     let assigneeUserId: string | null = null;
     const assigneeEmail = (issue.assignee?.email ?? '').toLowerCase().trim();
     if (assigneeEmail) {
@@ -403,7 +321,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       }
     }
 
-    // Resolve state по name (если есть в кэше). null → state останется не задан.
     const stateName = (issue.status?.display ?? issue.status?.key ?? '').trim();
     const stateId = stateName ? (stateByName.get(stateName) ?? null) : null;
 
@@ -411,17 +328,12 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     const dueDate = issue.deadline ? safeParseDate(issue.deadline) : null;
     const description = issue.description ?? null;
 
-    // Создание Issue в транзакции с пересчётом sequenceId.
     const created = await services.prisma.$transaction(async (tx) => {
       const maxRow = await tx.issue.aggregate({
         where: { projectId: project.id },
         _max: { sequenceId: true },
       });
       const sequenceId = (maxRow._max.sequenceId ?? 0) + 1;
-      // Issue.identifier в Я.Трекер уже выглядит как PROJ-123. Но per ТЗ
-      // используем тот же формат, что у нас (projectIdentifier-sequenceId).
-      // Это гарантирует уникальность @@unique([tenantId, identifier]) даже
-      // если у клиента уже был проект с тем же префиксом из другого импорта.
       const identifier = `${project.identifier}-${sequenceId}`;
 
       const row = await tx.issue.create({
@@ -460,7 +372,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       return row;
     });
 
-    // Labels (tags) — отдельно вне транзакции, ленивым upsert'ом.
     const tags = Array.isArray(issue.tags) ? issue.tags : [];
     for (const tagRaw of tags) {
       const tag = (tagRaw ?? '').toString().trim();
@@ -492,7 +403,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       }
     }
 
-    // Comments.
     let commentsCount = 0;
     try {
       const comments = await client.getIssueComments(issue.key ?? issue.id);
@@ -515,9 +425,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
               contentHtml: null,
               contentStripped: text,
               access: 'internal',
-              createdAt: c.createdAt
-                ? (safeParseDate(c.createdAt) ?? new Date())
-                : new Date(),
+              createdAt: c.createdAt ? (safeParseDate(c.createdAt) ?? new Date()) : new Date(),
             },
           });
           commentsCount += 1;
@@ -543,12 +451,9 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       );
     }
 
-    // Attachments (best-effort).
     let attachmentsCount = 0;
     try {
-      const attachments = await client.getIssueAttachments(
-        issue.key ?? issue.id,
-      );
+      const attachments = await client.getIssueAttachments(issue.key ?? issue.id);
       for (const att of attachments) {
         try {
           const ok = await this.downloadAttachment({
@@ -589,8 +494,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     };
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────────
-
   private async isCancelled(args: {
     importLogId: string;
     services: ImportStrategyArgs['services'];
@@ -602,10 +505,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     return row?.status === 'cancelled';
   }
 
-  /**
-   * Создаёт Project из Я.Трекер очереди. Identifier = Queue.key (PROJ),
-   * если он коллизит per tenant — добавляем nanoid-суффикс.
-   */
   private async upsertProject(args: {
     tenantId: string;
     queue: YandexQueue;
@@ -615,9 +514,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     const { tenantId, queue, userId, services } = args;
 
     const slugBase = slugify(queue.name) || 'imported';
-    const identifierBase = (queue.key ?? makeIdentifier(queue.name))
-      .toUpperCase()
-      .slice(0, 5);
+    const identifierBase = (queue.key ?? makeIdentifier(queue.name)).toUpperCase().slice(0, 5);
 
     let slug = slugBase;
     let identifier = identifierBase;
@@ -655,17 +552,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     return created;
   }
 
-  /**
-   * Создаёт IssueState из workflow.statuses очереди. Категория эвристически
-   * по `status.type`:
-   *   - 'open' → 'unstarted'
-   *   - 'inProgress' → 'started'
-   *   - 'resolved'/'closed' → 'completed'
-   *   - 'cancelled' → 'cancelled'
-   *   - всё иное → 'unstarted'.
-   *
-   * Если очередь не вернула workflow — создаём дефолтные 3 статуса.
-   */
   private async createStatesForQueue(args: {
     tenantId: string;
     projectId: string;
@@ -674,11 +560,8 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
   }): Promise<Map<string, string>> {
     const { tenantId, projectId, queue, services } = args;
     const stateByName = new Map<string, string>();
-    const statuses = Array.isArray(queue.workflowStatuses)
-      ? queue.workflowStatuses
-      : [];
+    const statuses = Array.isArray(queue.workflowStatuses) ? queue.workflowStatuses : [];
     if (statuses.length === 0) {
-      // Дефолтный набор.
       const defaults = [
         { name: 'Открыт', category: 'unstarted' as const, isDefault: true },
         { name: 'В работе', category: 'started' as const, isDefault: false },
@@ -770,10 +653,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       labelByName.set(key, created.id);
       return created.id;
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const existing = await services.prisma.label.findFirst({
           where: { tenantId, projectId, name: key },
           select: { id: true },
@@ -787,10 +667,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     }
   }
 
-  /**
-   * Скачивает attachment из Я.Трекер и кладёт в S3. Возвращает false на
-   * любой fail (network / non-2xx / size limit) — caller учитывает в errors.
-   */
   private async downloadAttachment(args: {
     attachment: YandexAttachment;
     issueId: string;
@@ -802,8 +678,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     if (!attachment.id) return false;
 
     let buffer: Buffer;
-    let mimeType =
-      attachment.mimetype ?? attachment.metadata?.type ?? 'application/octet-stream';
+    let mimeType = attachment.mimetype ?? attachment.metadata?.type ?? 'application/octet-stream';
     try {
       const downloaded = await client.downloadAttachment(attachment);
       if (!downloaded) return false;
@@ -865,10 +740,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     return true;
   }
 
-  /**
-   * Если у Issue есть parent в Я.Трекер — и этот parent тоже импортирован
-   * в текущей сессии — выставляем Issue.parentId. Иначе skip.
-   */
   private async linkParent(args: {
     issue: YandexIssue;
     ourIssueId: string;
@@ -876,17 +747,14 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     yandexIdByKey: Map<string, string>;
     services: ImportStrategyArgs['services'];
   }): Promise<void> {
-    const { issue, ourIssueId, issueIdByYandexId, yandexIdByKey, services } =
-      args;
+    const { issue, ourIssueId, issueIdByYandexId, yandexIdByKey, services } = args;
     const parent = issue.parent;
     if (!parent) return;
-    // parent может быть как объект {id, key, ...}, так и просто key.
     let parentYandexId: string | undefined;
     if (typeof parent === 'string') {
       parentYandexId = yandexIdByKey.get(parent);
     } else if (typeof parent === 'object' && parent) {
-      if ('id' in parent && typeof parent.id === 'string')
-        parentYandexId = parent.id;
+      if ('id' in parent && typeof parent.id === 'string') parentYandexId = parent.id;
       else if ('key' in parent && typeof parent.key === 'string')
         parentYandexId = yandexIdByKey.get(parent.key);
     }
@@ -901,10 +769,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       .catch(() => undefined);
   }
 
-  /**
-   * Импортирует links (relates/blocks/duplicates) как IssueRelation.
-   * Только для пар, где обе стороны импортированы в этой сессии.
-   */
   private async linkRelations(args: {
     issue: YandexIssue;
     tenantId: string;
@@ -915,15 +779,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     client: YandexTrackerClient;
     services: ImportStrategyArgs['services'];
   }): Promise<number> {
-    const {
-      issue,
-      ourIssueId,
-      issueIdByYandexId,
-      yandexIdByKey,
-      userId,
-      client,
-      services,
-    } = args;
+    const { issue, ourIssueId, issueIdByYandexId, yandexIdByKey, userId, client, services } = args;
     const links = await client.getIssueLinks(issue.key ?? issue.id);
     let created = 0;
     for (const link of links) {
@@ -931,9 +787,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
       if (!target) continue;
       const targetYandexId =
         (typeof target === 'object' && target.id) ||
-        (typeof target === 'object' && target.key
-          ? yandexIdByKey.get(target.key)
-          : undefined) ||
+        (typeof target === 'object' && target.key ? yandexIdByKey.get(target.key) : undefined) ||
         (typeof target === 'string' ? yandexIdByKey.get(target) : undefined);
       if (!targetYandexId) continue;
       const targetOurId = issueIdByYandexId.get(targetYandexId);
@@ -952,13 +806,7 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
         });
         created += 1;
       } catch (err) {
-        // P2002 — уже есть такая relation (идемпотентность); это ОК.
-        if (
-          !(
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          )
-        ) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
           throw err;
         }
       }
@@ -966,19 +814,10 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     return created;
   }
 
-  /**
-   * Identity-обёртка для cap'а. Реальный лимит 100 enforce'им в `trimErrors`,
-   * вызываемом в конце `run`. Так call-site остаётся читаемым:
-   *   `errors.push(this.cap(errors, { stage: '...', ... }))`.
-   */
   private cap(_errors: ImportErrorEntry[], entry: ImportErrorEntry): ImportErrorEntry {
     return entry;
   }
 
-  /**
-   * Trim errors до 100 (последняя превращается в truncated-маркер если
-   * было >100). Вызывается из `run` перед возвратом и при cancellation.
-   */
   private trimErrors(errors: ImportErrorEntry[]): void {
     if (errors.length <= 100) return;
     const dropped = errors.length - 99;
@@ -990,8 +829,6 @@ export class YandexTrackerImportStrategy implements ImportStrategy {
     };
   }
 }
-
-// ───────────────────────── Yandex Tracker HTTP client ──────────────────────
 
 interface YandexClientOptions {
   oauthToken: string;
@@ -1007,15 +844,9 @@ class YandexTrackerClient {
     return this.requestJson<YandexQueue>(`/queues/${encodeURIComponent(queueId)}`);
   }
 
-  /**
-   * Постранично возвращает Issues очереди. Используем `/issues/_search`
-   * с фильтром по queue (более надёжно, чем queue-specific endpoint, и
-   * поддерживает `perPage`).
-   */
   async listIssuesByQueue(queueId: string): Promise<YandexIssue[]> {
     const all: YandexIssue[] = [];
     let page = 1;
-    // Безопасный лимит на случай некорректного `X-Total-Pages` от API.
     const MAX_PAGES = 1_000;
     for (; page <= MAX_PAGES; page++) {
       const search = new URLSearchParams({
@@ -1032,7 +863,6 @@ class YandexTrackerClient {
       const items = (await res.json()) as YandexIssue[];
       if (!Array.isArray(items) || items.length === 0) break;
       all.push(...items);
-      // X-Total-Pages предпочтительно; иначе fallback к < PAGE_SIZE.
       const totalPages = Number(res.headers.get('x-total-pages') ?? '0');
       if (totalPages > 0 && page >= totalPages) break;
       if (items.length < YandexTrackerImportStrategy['PAGE_SIZE']) break;
@@ -1044,7 +874,6 @@ class YandexTrackerClient {
     return this.requestJson<YandexComment[]>(
       `/issues/${encodeURIComponent(issueKeyOrId)}/comments`,
     ).catch((err) => {
-      // 404 / 403 на comments — не фатал.
       if (err instanceof YandexApiError && (err.status === 404 || err.status === 403)) {
         return [];
       }
@@ -1074,12 +903,6 @@ class YandexTrackerClient {
     });
   }
 
-  /**
-   * Скачивает содержимое attachment'а. Я.Трекер отдаёт content по
-   * `/v2/issues/{key}/attachments/{attId}/{name}` либо через
-   * `content.url`. Тут пробуем сначала content.url (если есть), иначе
-   * fallback на канонический endpoint.
-   */
   async downloadAttachment(
     att: YandexAttachment,
   ): Promise<{ buffer: Buffer; size: number; contentType?: string } | null> {
@@ -1090,8 +913,6 @@ class YandexTrackerClient {
         ? contentUrl
         : `${YandexTrackerImportStrategy['API_BASE']}${contentUrl}`;
     } else if (att.id && att.name) {
-      // Канонический endpoint требует issue key, которого у нас здесь нет;
-      // если сюда дошли без content.url — отказываемся (caller log'нёт).
       return null;
     } else {
       return null;
@@ -1103,25 +924,17 @@ class YandexTrackerClient {
     return { buffer: buf, size: buf.byteLength, contentType: ct?.split(';')[0]?.trim() };
   }
 
-  // ── internals ──────────────────────────────────────────────────────────
-
   private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await this.requestRaw(path, init);
     return (await res.json()) as T;
   }
 
-  /**
-   * HTTP-запрос с retry на 429/5xx (exponential backoff 1s/2s/4s/...).
-   * `init.absolute=true` — `path` уже полный URL.
-   */
   private async requestRaw(
     path: string,
     init?: RequestInit,
     opts: { absolute?: boolean } = {},
   ): Promise<Response> {
-    const url = opts.absolute
-      ? path
-      : `${YandexTrackerImportStrategy['API_BASE']}${path}`;
+    const url = opts.absolute ? path : `${YandexTrackerImportStrategy['API_BASE']}${path}`;
     const headers = new Headers(init?.headers ?? {});
     headers.set('Authorization', `OAuth ${this.opts.oauthToken}`);
     if (!headers.has('Content-Type') && init?.body) {
@@ -1160,7 +973,6 @@ class YandexTrackerClient {
       if (res.ok) return res;
 
       if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
-        // Retry — берём Retry-After если есть, иначе exponential.
         const retryAfter = Number(res.headers.get('retry-after') ?? '0');
         const waitMs = retryAfter > 0 ? retryAfter * 1_000 : backoffMs(attempt);
         if (attempt < maxAttempts) {
@@ -1173,7 +985,6 @@ class YandexTrackerClient {
         }
       }
 
-      // Не-retry-able или закончились попытки → throw.
       const bodyText = await res.text().catch(() => '');
       throw new YandexApiError(
         `Yandex Tracker API ${res.status} ${res.statusText} on ${url}: ${bodyText.slice(0, 500)}`,
@@ -1196,8 +1007,6 @@ class YandexApiError extends Error {
   }
 }
 
-// ───────────────────────── pure helpers ───────────────────────────────────
-
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -1213,10 +1022,17 @@ function makeIdentifier(name: string): string {
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, '');
-  const words = ascii.split(/\s+/).map((w) => w.trim()).filter(Boolean);
+  const words = ascii
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
   if (words.length === 0) return `Q${Math.floor(Math.random() * 9000 + 1000)}`;
   if (words.length >= 2) {
-    return words.slice(0, 5).map((w) => w[0]!).join('').slice(0, 5);
+    return words
+      .slice(0, 5)
+      .map((w) => w[0]!)
+      .join('')
+      .slice(0, 5);
   }
   const single = words[0]!;
   return single.slice(0, 5).padEnd(3, 'X');
@@ -1228,10 +1044,6 @@ function safeParseDate(s: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Я.Трекер priority key (`critical|major|normal|minor|trivial|...`) →
- * наш Issue.priority (`urgent|high|medium|low|none`).
- */
 function mapPriority(key?: string | null): string {
   if (!key) return 'none';
   switch (key.toLowerCase()) {
@@ -1294,14 +1106,6 @@ function categoryColor(category: string): string {
   }
 }
 
-/**
- * Маппинг Я.Трекер link-type-id на наш IssueRelation.relationType.
- *   relates/relates_to       → relates_to
- *   blocks                   → blocks
- *   is blocked by            → blocked_by
- *   duplicates               → duplicates
- *   is duplicated by         → duplicated_by
- */
 function mapLinkType(typeId: string): string | null {
   if (!typeId) return null;
   const key = typeId.toLowerCase();
@@ -1320,12 +1124,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 function backoffMs(attempt: number): number {
-  // 1s, 2s, 4s, max 16s.
   const base = 1_000 * Math.pow(2, attempt - 1);
   return Math.min(base, 16_000);
 }
-
-// ───────────────────────── Y.Tracker types (минимум) ──────────────────────
 
 interface YandexQueue {
   id?: string;
@@ -1338,7 +1139,7 @@ interface YandexQueue {
 interface YandexStatus {
   key?: string;
   display?: string;
-  type?: string; // 'open' | 'inProgress' | 'resolved' | 'cancelled' | ...
+  type?: string;
 }
 
 interface YandexIssue {
@@ -1351,10 +1152,7 @@ interface YandexIssue {
   priority?: { key?: string; display?: string };
   tags?: string[];
   deadline?: string | null;
-  parent?:
-    | string
-    | { id?: string; key?: string; display?: string }
-    | null;
+  parent?: string | { id?: string; key?: string; display?: string } | null;
 }
 
 interface YandexComment {

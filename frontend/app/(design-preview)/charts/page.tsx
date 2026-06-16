@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
 import {
   CountUp,
@@ -10,24 +10,9 @@ import {
   MiniSparkline,
   MiniStackedBar,
   type ChartTone,
-} from '@/ui/components/dashboard/charts';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+} from "@/ui/components/dashboard/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
-/**
- * Preview-страница библиотеки мини-визуализаций (Фаза 2 ТЗ
- * `plans/tz/2026-06-01-dashboards-wow-polish.md`).
- *
- * Маршрут: `/charts` (внутри route group `(design-preview)`, без AppShell
- * и без авторизации). Используется для визуальной приёмки компонентов.
- *
- * Каждая секция показывает 3 варианта (тон/размер/значение), чтобы можно
- * было сразу сверить с эталоном (`BottleneckHeatmapWidget`, `SprintWeeklyPanel`).
- */
 export default function ChartsPreviewPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
@@ -52,7 +37,13 @@ export default function ChartsPreviewPage() {
   );
 }
 
-const TONES: ChartTone[] = ['accent', 'success', 'warning', 'danger', 'neutral'];
+const TONES: ChartTone[] = [
+  "accent",
+  "success",
+  "warning",
+  "danger",
+  "neutral",
+];
 
 function SparklineSection() {
   const rising = [3, 4, 4, 6, 5, 7, 8, 9, 11, 12];
@@ -97,7 +88,12 @@ function BarRowSection() {
       <div className="space-y-3">
         <MiniBarRow label="ROI встречи" value={92} max={100} suffix="%" />
         <MiniBarRow label="Прогресс цели" value={45} max={100} suffix="%" />
-        <MiniBarRow label="Заполнение ёмкости" value={12} max={100} suffix="%" />
+        <MiniBarRow
+          label="Заполнение ёмкости"
+          value={12}
+          max={100}
+          suffix="%"
+        />
         <MiniBarRow
           label="Активность спикеров"
           value={7}
@@ -126,18 +122,18 @@ function StackedBarSection() {
         <Variant label="Распределение участников">
           <MiniStackedBar
             segments={[
-              { value: 5, tone: 'success', label: 'Эксперты' },
-              { value: 3, tone: 'warning', label: 'Продвинутые' },
-              { value: 2, tone: 'danger', label: 'Новички' },
+              { value: 5, tone: "success", label: "Эксперты" },
+              { value: 3, tone: "warning", label: "Продвинутые" },
+              { value: 2, tone: "danger", label: "Новички" },
             ]}
           />
         </Variant>
         <Variant label="Top-3 contributors">
           <MiniStackedBar
             segments={[
-              { value: 45, tone: 'accent', label: 'Анна К.' },
-              { value: 30, tone: 'success', label: 'Иван П.' },
-              { value: 25, tone: 'warning', label: 'Олег С.' },
+              { value: 45, tone: "accent", label: "Анна К." },
+              { value: 30, tone: "success", label: "Иван П." },
+              { value: 25, tone: "warning", label: "Олег С." },
             ]}
             height={20}
           />
@@ -145,10 +141,10 @@ function StackedBarSection() {
         <Variant label="Severity (5 сегментов)">
           <MiniStackedBar
             segments={[
-              { value: 8, tone: 'danger', label: 'High' },
-              { value: 4, tone: 'warning', label: 'Medium' },
-              { value: 12, tone: 'success', label: 'Low' },
-              { value: 3, tone: 'neutral', label: 'Unknown' },
+              { value: 8, tone: "danger", label: "High" },
+              { value: 4, tone: "warning", label: "Medium" },
+              { value: 12, tone: "success", label: "Low" },
+              { value: 3, tone: "neutral", label: "Unknown" },
             ]}
             height={28}
           />
@@ -207,15 +203,28 @@ function HeatCellSection() {
           <p className="mb-2 text-xs text-fg-tertiary">Тон success</p>
           <div className="flex gap-1">
             {[0, 0.2, 0.4, 0.6, 0.8, 1].map((r) => (
-              <MiniHeatCell key={r} ratio={r} tone="success" value={`${Math.round(r * 100)}%`} />
+              <MiniHeatCell
+                key={r}
+                ratio={r}
+                tone="success"
+                value={`${Math.round(r * 100)}%`}
+              />
             ))}
           </div>
         </div>
         <div>
-          <p className="mb-2 text-xs text-fg-tertiary">Размер 48px, тон accent</p>
+          <p className="mb-2 text-xs text-fg-tertiary">
+            Размер 48px, тон accent
+          </p>
           <div className="flex gap-2">
             {[0.3, 0.6, 0.9].map((r) => (
-              <MiniHeatCell key={r} ratio={r} tone="accent" size={48} value={r.toFixed(1)} />
+              <MiniHeatCell
+                key={r}
+                ratio={r}
+                tone="accent"
+                size={48}
+                value={r.toFixed(1)}
+              />
             ))}
           </div>
         </div>
@@ -252,7 +261,7 @@ function CountUpSection() {
           <span className="text-2xl font-semibold text-chip-success-fg">
             <CountUp
               to={48250}
-              format={(v) => `${Math.round(v).toLocaleString('ru-RU')} ₽`}
+              format={(v) => `${Math.round(v).toLocaleString("ru-RU")} ₽`}
             />
           </span>
         </Variant>
@@ -267,10 +276,6 @@ function CountUpSection() {
     </SectionCard>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Вспомогательные обёртки                                            */
-/* ------------------------------------------------------------------ */
 
 type SectionProps = {
   title: string;

@@ -2,34 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { OperationsDashboardService } from './operations-dashboard.service';
 
-/**
- * ТЗ-2 Ф2 — OperationsDashboardService.getOverview() расширение «зеркало
- * закрытого».
- *
- * Покрываем:
- *   - `blockersResolvedCount` берётся из `blockerSynthesis.count` с фильтром
- *     `status='resolved'` и 30-дневным окном;
- *   - `frictionsResolvedCount` — из `entityLink.count` с
- *     `relationType='conflicted_with', status='archived'` и 30-дневным окном;
- *   - `reworkEnabled` приходит из flag `operations.dashboard_rework.enabled`;
- *   - метрика `setCooBlockersResolved` вызывается с count'ом;
- *   - negative-path: ноль закрытых → 0 в DTO.
- *
- * Redis-кэш не подключаем (Optional inject). Мокаем ВСЕ prisma-вызовы,
- * которые делает getOverview, + config + metrics.
- */
 describe('OperationsDashboardService — ТЗ-2 Ф2 resolved counts + reworkEnabled', () => {
   function buildSvc(overrides: {
     blockersResolved?: number;
     frictionsResolved?: number;
     reworkEnabled?: boolean;
   }) {
-    const blockerSynthesisCount = vi
-      .fn()
-      .mockResolvedValue(overrides.blockersResolved ?? 0);
-    const entityLinkCount = vi
-      .fn()
-      .mockResolvedValue(overrides.frictionsResolved ?? 0);
+    const blockerSynthesisCount = vi.fn().mockResolvedValue(overrides.blockersResolved ?? 0);
+    const entityLinkCount = vi.fn().mockResolvedValue(overrides.frictionsResolved ?? 0);
 
     const prisma = {
       dailyCheckIn: { findMany: vi.fn().mockResolvedValue([]) },
@@ -49,9 +29,7 @@ describe('OperationsDashboardService — ТЗ-2 Ф2 resolved counts + reworkEnab
       functionalDomain: { findMany: vi.fn().mockResolvedValue([]) },
     };
 
-    const getDynamic = vi
-      .fn()
-      .mockResolvedValue(overrides.reworkEnabled ?? true);
+    const getDynamic = vi.fn().mockResolvedValue(overrides.reworkEnabled ?? true);
     const cfg = {
       betaOps: { operationsDashboardCacheTtlSeconds: 300 },
       getDynamic,
@@ -66,11 +44,7 @@ describe('OperationsDashboardService — ТЗ-2 Ф2 resolved counts + reworkEnab
       setCooBlockersResolved: vi.fn(),
     };
 
-    const svc = new OperationsDashboardService(
-      prisma as never,
-      cfg as never,
-      metrics as never,
-    );
+    const svc = new OperationsDashboardService(prisma as never, cfg as never, metrics as never);
     return { svc, prisma, cfg, metrics, blockerSynthesisCount, entityLinkCount };
   }
 
@@ -88,14 +62,11 @@ describe('OperationsDashboardService — ТЗ-2 Ф2 resolved counts + reworkEnab
         }),
       }),
     );
-    // Окно ≈ 30 дней назад (допуск ±1 минута на исполнение теста).
     const arg = blockerSynthesisCount.mock.calls[0]?.[0] as {
       where: { updatedAt: { gte: Date } };
     };
     const expected = Date.now() - 30 * 24 * 3_600_000;
-    expect(Math.abs(arg.where.updatedAt.gte.getTime() - expected)).toBeLessThan(
-      60_000,
-    );
+    expect(Math.abs(arg.where.updatedAt.gte.getTime() - expected)).toBeLessThan(60_000);
   });
 
   it('считает frictionsResolvedCount из entityLink.count (conflicted_with → archived, окно 30д)', async () => {

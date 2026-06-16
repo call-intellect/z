@@ -1,21 +1,18 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Search } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import {
-  adminClonesApi,
-  type CloneTypeApi,
-} from '@/api/admin-clones.api';
-import { clonesApi, type CloneListItemApi } from '@/api/clones.api';
+import { ApiError } from "@/api/api-error";
+import { adminClonesApi, type CloneTypeApi } from "@/api/admin-clones.api";
+import { clonesApi, type CloneListItemApi } from "@/api/clones.api";
 import {
   orgMembersApi,
   type OrgMemberSearchItemApi,
-} from '@/api/org-members.api';
-import { CLONE_TYPE_LABELS } from '@/domain/admin-clone-access-grant';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/org-members.api";
+import { CLONE_TYPE_LABELS } from "@/domain/admin-clone-access-grant";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -23,37 +20,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-/**
- * Модал «Выдать грант».
- *
- * Поля:
- *   - Получатель (User Org) — поиск через `orgMembersApi.search`, выбор
- *     отображает имя + email. На бэке `grantedToUserId` — UserId, поэтому
- *     из результата используем только записи `type === 'user'`.
- *   - Тип клона — Должность (role) / Сотрудник (person).
- *   - Клон:
- *       · role → Select из `clonesApi.listClones()` (есть на бэке).
- *       · person → текстовое поле с personId (UI для персон-клонов не
- *         реализован — backend поддерживает, оставляем как admin-инструмент).
- *   - Опционально — `expiresAt` (datetime-local, по умолчанию скрыто за
- *     «Дополнительно»; пустое = бессрочно).
- *
- * Обработка ошибок:
- *   - 400 user_not_in_org / role_not_found / person_not_found / 403 forbidden —
- *     показываем читаемое сообщение в модале. Backend уже возвращает русские
- *     тексты в `error.message`.
- */
 export function CreateGrantDialog({
   orgId,
   onClose,
@@ -63,8 +40,7 @@ export function CreateGrantDialog({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  // ───── получатель ─────
-  const [userQuery, setUserQuery] = useState('');
+  const [userQuery, setUserQuery] = useState("");
   const [userResults, setUserResults] = useState<OrgMemberSearchItemApi[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [selectedUser, setSelectedUser] = useState<{
@@ -73,21 +49,18 @@ export function CreateGrantDialog({
     email: string;
   } | null>(null);
 
-  // ───── клон ─────
-  const [cloneType, setCloneType] = useState<CloneTypeApi>('role');
+  const [cloneType, setCloneType] = useState<CloneTypeApi>("role");
   const [roleClones, setRoleClones] = useState<CloneListItemApi[]>([]);
   const [rolesLoading, setRolesLoading] = useState(false);
-  const [selectedRoleId, setSelectedRoleId] = useState<string>('');
-  const [personRefIdInput, setPersonRefIdInput] = useState('');
+  const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+  const [personRefIdInput, setPersonRefIdInput] = useState("");
 
-  // ───── срок ─────
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [expiresAtInput, setExpiresAtInput] = useState('');
+  const [expiresAtInput, setExpiresAtInput] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Загрузка role-клонов при открытии (один раз — список небольшой).
   useEffect(() => {
     let cancelled = false;
     setRolesLoading(true);
@@ -100,7 +73,7 @@ export function CreateGrantDialog({
       .catch((e) => {
         if (cancelled) return;
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось загрузить клонов',
+          e instanceof ApiError ? e.message : "Не удалось загрузить клонов",
         );
       })
       .finally(() => {
@@ -111,7 +84,6 @@ export function CreateGrantDialog({
     };
   }, [orgId]);
 
-  // Поиск пользователей с debounce 250мс.
   useEffect(() => {
     const trimmed = userQuery.trim();
     if (trimmed.length < 2) {
@@ -125,13 +97,14 @@ export function CreateGrantDialog({
         .search(trimmed, 10)
         .then((res) => {
           if (cancelled) return;
-          // Гранты выдаются только User'ам (User.id), а не Person'ам.
-          setUserResults(res.items.filter((it) => it.type === 'user'));
+          setUserResults(res.items.filter((it) => it.type === "user"));
         })
         .catch((e) => {
           if (cancelled) return;
           toast.error(
-            e instanceof ApiError ? e.message : 'Не удалось искать пользователей',
+            e instanceof ApiError
+              ? e.message
+              : "Не удалось искать пользователей",
           );
         })
         .finally(() => {
@@ -154,30 +127,29 @@ export function CreateGrantDialog({
     setFormError(null);
 
     if (!selectedUser) {
-      setFormError('Выберите получателя гранта');
+      setFormError("Выберите получателя гранта");
       return;
     }
     const cloneRefId =
-      cloneType === 'role' ? selectedRoleId : personRefIdInput.trim();
+      cloneType === "role" ? selectedRoleId : personRefIdInput.trim();
     if (!cloneRefId) {
       setFormError(
-        cloneType === 'role'
-          ? 'Выберите клон должности'
-          : 'Укажите идентификатор сотрудника',
+        cloneType === "role"
+          ? "Выберите клон должности"
+          : "Укажите идентификатор сотрудника",
       );
       return;
     }
 
-    // datetime-local → ISO с локальной зоной. new Date(str).toISOString().
     let expiresAt: string | null = null;
     if (expiresAtInput.trim()) {
       const parsed = new Date(expiresAtInput);
       if (Number.isNaN(parsed.getTime())) {
-        setFormError('Неверный формат даты истечения');
+        setFormError("Неверный формат даты истечения");
         return;
       }
       if (parsed.getTime() <= Date.now()) {
-        setFormError('Дата истечения должна быть в будущем');
+        setFormError("Дата истечения должна быть в будущем");
         return;
       }
       expiresAt = parsed.toISOString();
@@ -191,10 +163,10 @@ export function CreateGrantDialog({
         cloneRefId,
         expiresAt,
       });
-      toast.success('Грант выдан');
+      toast.success("Грант выдан");
       onCreated();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось выдать грант';
+      const msg = e instanceof ApiError ? e.message : "Не удалось выдать грант";
       setFormError(msg);
     } finally {
       setSubmitting(false);
@@ -216,7 +188,7 @@ export function CreateGrantDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* ─────────── Получатель ─────────── */}
+          {}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Получатель</Label>
             {selectedUser ? (
@@ -267,7 +239,7 @@ export function CreateGrantDialog({
                 {userResults.length > 0 && (
                   <ul className="max-h-48 divide-y divide-border-subtle overflow-y-auto rounded-md border border-border-subtle">
                     {userResults.map((it) =>
-                      it.type === 'user' ? (
+                      it.type === "user" ? (
                         <li key={it.userId}>
                           <button
                             type="button"
@@ -294,15 +266,15 @@ export function CreateGrantDialog({
             )}
           </div>
 
-          {/* ─────────── Тип клона ─────────── */}
+          {}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Тип клона</Label>
             <Select
               value={cloneType}
               onValueChange={(v) => {
                 setCloneType(v as CloneTypeApi);
-                setSelectedRoleId('');
-                setPersonRefIdInput('');
+                setSelectedRoleId("");
+                setPersonRefIdInput("");
               }}
             >
               <SelectTrigger>
@@ -317,8 +289,8 @@ export function CreateGrantDialog({
             </Select>
           </div>
 
-          {/* ─────────── Выбор клона ─────────── */}
-          {cloneType === 'role' ? (
+          {}
+          {cloneType === "role" ? (
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">Клон должности</Label>
               {rolesLoading ? (
@@ -372,14 +344,14 @@ export function CreateGrantDialog({
             </div>
           )}
 
-          {/* ─────────── Доп. параметры ─────────── */}
+          {}
           <div className="space-y-1.5 rounded-md border border-border-subtle p-3">
             <button
               type="button"
               className="text-xs font-medium text-fg-secondary hover:text-fg-primary"
               onClick={() => setShowAdvanced((v) => !v)}
             >
-              {showAdvanced ? 'Скрыть дополнительные' : 'Дополнительно'}
+              {showAdvanced ? "Скрыть дополнительные" : "Дополнительно"}
             </button>
             {showAdvanced && (
               <div className="space-y-1.5">
@@ -423,7 +395,7 @@ export function CreateGrantDialog({
                 <Loader2 size={14} className="mr-1 animate-spin" /> Выдаём…
               </>
             ) : (
-              'Выдать грант'
+              "Выдать грант"
             )}
           </Button>
         </DialogFooter>

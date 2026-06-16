@@ -1,40 +1,40 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { ArrowRight, FlaskConical } from 'lucide-react';
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowRight, FlaskConical } from "lucide-react";
 
-import { adminUsageApi } from '@/api/admin-usage.api';
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   ADMIN_PERIOD_LABELS,
   adminFunctionsUsageFromApi,
   formatDurationMs,
   formatUsd,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { taskTypeLabel } from '@/domain/admin-experiment';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-usage";
+import { taskTypeLabel } from "@/domain/admin-experiment";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
 export function FunctionsClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
 
   const q = useAdminQuery(
     `admin-functions:${period}`,
@@ -84,7 +84,7 @@ export function FunctionsClient() {
           />
         ) : (
           <>
-            {/* Desktop таблица */}
+            {}
             <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
               <table className="w-full text-sm">
                 <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
@@ -123,7 +123,9 @@ export function FunctionsClient() {
                         </td>
                         <td className="px-3 py-2">
                           {f.currentProvider ? (
-                            <span className="font-mono text-xs">{f.currentProvider}</span>
+                            <span className="font-mono text-xs">
+                              {f.currentProvider}
+                            </span>
                           ) : (
                             <span className="text-fg-tertiary">не задано</span>
                           )}
@@ -134,11 +136,11 @@ export function FunctionsClient() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {f.totalCalls.toLocaleString('ru-RU')}
+                          {f.totalCalls.toLocaleString("ru-RU")}
                         </td>
                         <td
                           className={`px-3 py-2 text-right tabular-nums ${
-                            f.failRate > 0.05 ? 'text-warning' : ''
+                            f.failRate > 0.05 ? "text-warning" : ""
                           }`}
                         >
                           {(f.failRate * 100).toFixed(1)}%
@@ -167,7 +169,7 @@ export function FunctionsClient() {
               </table>
             </div>
 
-            {/* Mobile card-view */}
+            {}
             <ul className="space-y-2 md:hidden">
               {q.data.items
                 .slice()
@@ -194,7 +196,7 @@ export function FunctionsClient() {
                           {formatUsd(f.totalCostUsd)}
                         </div>
                         <div className="text-[11px] tabular-nums text-fg-tertiary">
-                          {f.totalCalls.toLocaleString('ru-RU')} вызовов
+                          {f.totalCalls.toLocaleString("ru-RU")} вызовов
                         </div>
                       </div>
                     </Link>
@@ -204,7 +206,9 @@ export function FunctionsClient() {
                           {f.currentProvider}
                         </span>
                       ) : (
-                        <span className="text-fg-tertiary">модель не задана</span>
+                        <span className="text-fg-tertiary">
+                          модель не задана
+                        </span>
                       )}
                       {f.experimentEnabled && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-accent-muted px-2 py-0.5 text-[10px] text-accent">
@@ -213,8 +217,10 @@ export function FunctionsClient() {
                       )}
                       <span
                         className={cn(
-                          'ml-auto tabular-nums',
-                          f.failRate > 0.05 ? 'text-warning' : 'text-fg-tertiary',
+                          "ml-auto tabular-nums",
+                          f.failRate > 0.05
+                            ? "text-warning"
+                            : "text-fg-tertiary",
                         )}
                       >
                         fail {(f.failRate * 100).toFixed(1)}%

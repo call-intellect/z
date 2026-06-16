@@ -1,27 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  ConfidenceCalibrationService,
-  sigmoid,
-} from './confidence-calibration.service';
-
-/**
- * W2.2 KC-Temporal (2026-05-25) — unit-тесты `ConfidenceCalibrationService`.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.2.
- *
- * Тестируем:
- *   1) identity при a=1, b=0;
- *   2) Platt monotonicity — если все «correct» имеют higher raw, чем «wrong»,
- *      то fit должен повысить calibrated для positive и понизить для negative;
- *   3) Platt при пустом datasets и при single-class — identity без падений.
- */
+import { ConfidenceCalibrationService, sigmoid } from './confidence-calibration.service';
 
 function makeService(
   enabled = true,
   storage: Record<string, unknown> = {},
 ): ConfidenceCalibrationService {
-  // Заглушки TypedConfigService + AdminSettingsService — без DI Nest'а.
   const fakeCfg = {
     confidenceCalibration: { enabled, cron: '0 4 * * 0' },
   } as unknown as ConstructorParameters<typeof ConfidenceCalibrationService>[0];
@@ -42,7 +26,6 @@ describe('ConfidenceCalibrationService.calibrate', () => {
       'confidence_calibration:t': { a: 1, b: 0 },
     };
     const svc = makeService(true, storage);
-    // sigmoid(0.5) ≈ 0.6225
     const v = await svc.calibrate(0.5, 't');
     expect(v).toBeGreaterThan(0);
     expect(v).toBeLessThan(1);
@@ -89,7 +72,6 @@ describe('ConfidenceCalibrationService.platt (static)', () => {
   });
 
   it('separable dataset → fit получается осмысленный (Brier > 0, sigmoid(a*x+b) для high-conf больше, чем для low-conf)', () => {
-    // 30 positive с high raw, 30 negative с low raw — должно научиться.
     const samples: Array<{ rawConfidence: number; label: 0 | 1 }> = [];
     for (let i = 0; i < 30; i++) {
       samples.push({ rawConfidence: 0.85 + (i % 5) * 0.01, label: 1 });
@@ -110,7 +92,6 @@ describe('ConfidenceCalibrationService.platt (static)', () => {
   it('monotonicity: больший raw → больше calibrated при положительной a из fit', () => {
     const samples: Array<{ rawConfidence: number; label: 0 | 1 }> = [];
     for (let i = 0; i < 50; i++) {
-      // raw correlates с label.
       samples.push({ rawConfidence: 0.9, label: 1 });
       samples.push({ rawConfidence: 0.1, label: 0 });
     }
@@ -120,7 +101,6 @@ describe('ConfidenceCalibrationService.platt (static)', () => {
     const p1 = sigmoid(r.params.a * 0.3 + r.params.b);
     const p2 = sigmoid(r.params.a * 0.6 + r.params.b);
     const p3 = sigmoid(r.params.a * 0.9 + r.params.b);
-    // Сортировка по raw → сортировка по calibrated при a >= 0.
     if (r.params.a >= 0) {
       expect(p1).toBeLessThanOrEqual(p2);
       expect(p2).toBeLessThanOrEqual(p3);

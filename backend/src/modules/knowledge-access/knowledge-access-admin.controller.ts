@@ -30,16 +30,6 @@ import {
 } from './dto/knowledge-access.dto';
 import { KnowledgeAccessAdminService } from './knowledge-access-admin.service';
 
-/**
- * `/api/v1/knowledge-access` — управление доступом к знаниям через группы
- * (ТЗ 2026-06-06 knowledge-access-groups, Фаза 7 часть A).
- *
- * RBAC: owner / admin Org (через `OrgAdminGuard` после `CookieAuthGuard +
- * TenantGuard`). Все запросы tenant-scoped (`tenantId` из @CurrentOrg).
- *
- * Скрыт из публичного Swagger (`@ApiExcludeController`) — admin-only,
- * по образцу `OrgAdminKnowledgeController`.
- */
 @ApiTags('knowledge-access')
 @ApiExcludeController()
 @Controller('api/v1/knowledge-access')
@@ -76,10 +66,7 @@ export class KnowledgeAccessAdminController {
 
   @Get('groups/:groupId/members')
   @ApiOperation({ summary: 'Список членов группы' })
-  async listMembers(
-    @CurrentOrg() tenantId: string,
-    @Param('groupId') groupId: string,
-  ) {
+  async listMembers(@CurrentOrg() tenantId: string, @Param('groupId') groupId: string) {
     return this.svc.listMembers(tenantId, groupId);
   }
 
@@ -117,10 +104,6 @@ export class KnowledgeAccessAdminController {
         error: { code: 'user_required', message: 'Не удалось определить пользователя' },
       });
     }
-    return this.svc.setMeetingTypeClosedDefault(
-      typeId,
-      body.defaultClosedGroupKind,
-      userId,
-    );
+    return this.svc.setMeetingTypeClosedDefault(typeId, body.defaultClosedGroupKind, userId);
   }
 }

@@ -1,24 +1,18 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
-import type { ZodTypeAny } from 'zod';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+import type { ZodTypeAny } from "zod";
 
-import { apiClient } from '@/api/api-client';
-import { ApiError } from '@/api/api-error';
-import type { AdminSettingHistoryEntry } from '@/ui/components/admin/AdminSettingHistoryDrawer';
+import { apiClient } from "@/api/api-client";
+import { ApiError } from "@/api/api-error";
+import type { AdminSettingHistoryEntry } from "@/ui/components/admin/AdminSettingHistoryDrawer";
 
-export type AdminSettingSeverity = 'low' | 'medium' | 'high' | 'destructive';
+export type AdminSettingSeverity = "low" | "medium" | "high" | "destructive";
 
 export type AdminSettingEditorOptions<T> = {
-  /** Zod-схема значения. Используется и в `AdminSettingField`, и при save (если задана). */
   schema: ZodTypeAny;
-  /** Дефолтное значение, если в БД ничего нет. */
   defaultValue: T;
-  /**
-   * Уровень опасности. high/destructive — требуем reason ≥ 10 символов
-   * в `save(reason)`, иначе бросаем Error ещё до сетевого запроса.
-   */
   requiresReason?: AdminSettingSeverity;
 };
 
@@ -36,23 +30,6 @@ type SafeParseResult =
   | { success: true; data: unknown }
   | { success: false; error: { issues: SafeParseIssue[] } };
 
-/**
- * useAdminSettingEditor — read-write хук для редактирования одного
- * `AdminSetting`. Возвращает значение, диспетчер save, флаги, и историю.
- *
- * Контракт API:
- *   GET   /api/v1/admin/settings/:key                → { key, value, ... }
- *   POST  /api/v1/admin/settings/:key  { value, reason? }
- *   GET   /api/v1/admin/settings/:key/history        → { items: [...] }
- *
- * Особенности:
- *   - `value` — локальный draft, инициализируется из БД/`defaultValue`.
- *   - `isDirty` — сравнение JSON.stringify (для плоских значений достаточно).
- *   - `save()` — валидирует через `schema.safeParse(value)` если оно есть.
- *     При severity high/destructive требует `reason` ≥ 10 символов, иначе
- *     бросает `Error` ещё до сетевого вызова (UI это покажет в `error`).
- *   - История подгружается параллельно, можно дёрнуть `refetchHistory()`.
- */
 export function useAdminSettingEditor<T>(
   key: string,
   opts: AdminSettingEditorOptions<T>,
@@ -73,7 +50,12 @@ export function useAdminSettingEditor<T>(
   const swrKey = key ? `admin-setting-editor:${key}` : null;
   const historyKey = key ? `admin-setting-history:${key}` : null;
 
-  const { data, error: fetchError, isLoading, mutate } = useSWR<AdminSettingApiPayload<T>>(
+  const {
+    data,
+    error: fetchError,
+    isLoading,
+    mutate,
+  } = useSWR<AdminSettingApiPayload<T>>(
     swrKey,
     () =>
       apiClient.get<AdminSettingApiPayload<T>>(
@@ -102,8 +84,6 @@ export function useAdminSettingEditor<T>(
   const [isSaving, setIsSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Когда сервер ответил — синхронизируем draft, если пользователь ещё не
-  // успел что-то отредактировать.
   useEffect(() => {
     if (data) {
       setDraft(data.value as T);
@@ -132,9 +112,9 @@ export function useAdminSettingEditor<T>(
       setLocalError(null);
 
       const needsReason =
-        requiresReason === 'high' || requiresReason === 'destructive';
+        requiresReason === "high" || requiresReason === "destructive";
       if (needsReason) {
-        const trimmed = (reason ?? '').trim();
+        const trimmed = (reason ?? "").trim();
         if (trimmed.length < MIN_REASON_LENGTH) {
           const e = new Error(
             `Причина обязательна и должна быть минимум ${MIN_REASON_LENGTH} символов.`,
@@ -151,8 +131,8 @@ export function useAdminSettingEditor<T>(
           const issues = result.error?.issues ?? [];
           const msg =
             issues
-              .map((i) => i.message ?? 'некорректное значение')
-              .join('; ') || 'Значение не прошло валидацию';
+              .map((i) => i.message ?? "некорректное значение")
+              .join("; ") || "Значение не прошло валидацию";
           setLocalError(msg);
           throw new Error(msg);
         }
@@ -174,7 +154,7 @@ export function useAdminSettingEditor<T>(
             ? err.message
             : err instanceof Error
               ? err.message
-              : 'Не удалось сохранить настройку';
+              : "Не удалось сохранить настройку";
         setLocalError(message);
         throw err;
       } finally {
@@ -203,7 +183,7 @@ export function useAdminSettingEditor<T>(
       (fetchError instanceof Error
         ? fetchError.message
         : fetchError
-          ? 'Не удалось загрузить настройку'
+          ? "Не удалось загрузить настройку"
           : null),
   };
 }

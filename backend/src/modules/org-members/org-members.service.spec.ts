@@ -1,13 +1,3 @@
-/**
- * Юнит-тесты OrgMembersService (Calendar MVP, Фаза P4).
- *
- * Покрытие:
- *   - User и Person возвращаются в одном списке (правильные type-литералы);
- *   - dedup: Person с userId, совпадающим с User в результатах, исключается;
- *   - сортировка: точное начало имени → User раньше Person → по алфавиту;
- *   - пустой `q` (после trim) → пустой ответ без обращения к БД;
- *   - limit учитывается на финальной выборке.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { OrgMembersService } from './services/org-members.service';
@@ -72,7 +62,7 @@ describe('OrgMembersService.search', () => {
           id: 'p-link',
           name: 'Иван Петров',
           email: 'ip@x.test',
-          userId: 'u-1', // тот же человек
+          userId: 'u-1',
           relationship: 'employee',
           primaryDepartment: null,
         },
@@ -97,8 +87,8 @@ describe('OrgMembersService.search', () => {
   it('сортировка: префикс-совпадение → User → алфавит', async () => {
     const prisma = buildPrismaStub(
       [
-        { id: 'u-zz', name: 'Зинаида Алова', email: 'za@x.test' }, // не префикс
-        { id: 'u-ap', name: 'Алексей Петров', email: 'ap@x.test' }, // префикс «Ал»
+        { id: 'u-zz', name: 'Зинаида Алова', email: 'za@x.test' },
+        { id: 'u-ap', name: 'Алексей Петров', email: 'ap@x.test' },
       ],
       [
         {
@@ -122,10 +112,10 @@ describe('OrgMembersService.search', () => {
     const svc = new OrgMembersService(prisma as never);
     const res = await svc.search({ tenantId: 'org-1', q: 'Ал', limit: 10 });
     expect(res.items.map((i) => i.name)).toEqual([
-      'Алексей Петров', // User + префикс
-      'Алина Иванова', // Person + префикс
-      'Зинаида Алова', // User без префикса (но User раньше Person)
-      'Михаил Алексеев', // Person без префикса
+      'Алексей Петров',
+      'Алина Иванова',
+      'Зинаида Алова',
+      'Михаил Алексеев',
     ]);
   });
 

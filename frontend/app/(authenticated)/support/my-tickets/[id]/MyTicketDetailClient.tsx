@@ -1,30 +1,22 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useState } from 'react';
-import { ArrowLeft, Star } from 'lucide-react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useCallback, useState } from "react";
+import { ArrowLeft, Star } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { supportApi } from '@/api/support.api';
-import { useAuth } from '@/contexts/auth-context';
-import { useMyTicket } from '@/hooks/useMyTicket';
-import {
-  isTicketResolvedStatus,
-  type SupportMessage,
-} from '@/domain/support';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { supportApi } from "@/api/support.api";
+import { useAuth } from "@/contexts/auth-context";
+import { useMyTicket } from "@/hooks/useMyTicket";
+import { isTicketResolvedStatus, type SupportMessage } from "@/domain/support";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const REPLY_MAX = 5000;
 
-/**
- * MyTicketDetailClient — детали обращения клиента. Все 4 UX-состояния.
- * Лента — только видимые (external) сообщения; автор — «Вы» (свои) или
- * «Поддержка» (остальные). Ответ + CSAT-оценка (после закрытия).
- */
 export function MyTicketDetailClient({ ticketId }: { ticketId: string }) {
   const { user } = useAuth();
   const { data, error, isLoading, mutate } = useMyTicket(ticketId);
@@ -86,14 +78,14 @@ function MessageBubble({
   message: SupportMessage;
   isMine: boolean;
 }) {
-  const author = isMine ? 'Вы' : 'Поддержка';
+  const author = isMine ? "Вы" : "Поддержка";
   return (
     <div
       className={cn(
-        'max-w-[85%] rounded-lg border px-4 py-3',
+        "max-w-[85%] rounded-lg border px-4 py-3",
         isMine
-          ? 'self-end border-accent-border bg-accent-muted'
-          : 'self-start border-border-subtle bg-bg-card',
+          ? "self-end border-accent-border bg-accent-muted"
+          : "self-start border-border-subtle bg-bg-card",
       )}
     >
       <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-fg-tertiary">
@@ -114,7 +106,7 @@ function ReplyBox({
   ticketId: string;
   onSent: () => void;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = text.trim();
@@ -128,13 +120,11 @@ function ReplyBox({
       setSubmitting(true);
       try {
         await supportApi.addMyMessage(ticketId, { message: trimmed });
-        setText('');
-        toast.success('Сообщение отправлено');
+        setText("");
+        toast.success("Сообщение отправлено");
         onSent();
       } catch (err) {
-        toast.error(
-          humanizeApiError(err, 'Не удалось отправить.'),
-        );
+        toast.error(humanizeApiError(err, "Не удалось отправить."));
       } finally {
         setSubmitting(false);
       }
@@ -161,11 +151,11 @@ function ReplyBox({
         className="resize-y"
       />
       <div className="mt-2 flex items-center justify-between text-[11px]">
-        <span className={over ? 'text-danger' : 'text-fg-tertiary'}>
+        <span className={over ? "text-danger" : "text-fg-tertiary"}>
           {text.length} / {REPLY_MAX}
         </span>
         <Button type="submit" size="sm" disabled={!canSubmit}>
-          {submitting ? 'Отправляем…' : 'Отправить'}
+          {submitting ? "Отправляем…" : "Отправить"}
         </Button>
       </div>
     </form>
@@ -181,7 +171,7 @@ function RatingBox({
 }) {
   const [score, setScore] = useState(0);
   const [hover, setHover] = useState(0);
-  const [comment, setComment] = useState('');
+  const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -194,12 +184,10 @@ function RatingBox({
         ...(comment.trim() ? { comment: comment.trim() } : {}),
       });
       setDone(true);
-      toast.success('Спасибо за оценку!');
+      toast.success("Спасибо за оценку!");
       onRated();
     } catch (err) {
-      toast.error(
-        humanizeApiError(err, 'Не удалось сохранить оценку.'),
-      );
+      toast.error(humanizeApiError(err, "Не удалось сохранить оценку."));
     } finally {
       setSubmitting(false);
     }
@@ -234,10 +222,8 @@ function RatingBox({
             >
               <Star
                 size={24}
-                className={cn(
-                  active ? 'text-warning' : 'text-fg-tertiary/40',
-                )}
-                fill={active ? 'currentColor' : 'none'}
+                className={cn(active ? "text-warning" : "text-fg-tertiary/40")}
+                fill={active ? "currentColor" : "none"}
               />
             </button>
           );
@@ -260,7 +246,7 @@ function RatingBox({
           disabled={score < 1 || submitting}
           onClick={() => void handleSubmit()}
         >
-          {submitting ? 'Сохраняем…' : 'Отправить оценку'}
+          {submitting ? "Сохраняем…" : "Отправить оценку"}
         </Button>
       </div>
     </div>
@@ -271,7 +257,7 @@ function ErrorView({ error }: { error: unknown }) {
   const message =
     error instanceof ApiError
       ? error.message
-      : 'Не удалось загрузить обращение.';
+      : "Не удалось загрузить обращение.";
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}
@@ -290,7 +276,7 @@ function DetailSkeleton() {
 }
 
 function formatDateTime(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}`

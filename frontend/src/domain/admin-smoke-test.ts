@@ -1,21 +1,15 @@
-/**
- * Domain-маппер для smoke-тестов LLM-провайдеров.
- *
- * ApiDto (`SmokeTestRunApi`) → UiModel (`SmokeTestRunUi`) — нормализуем
- * латентность, человеко-читаемые лейблы статуса, форматируем дату.
- */
 import type {
   AdminSmokeTestProvider,
   SmokeTestRunApi,
-} from '@/api/admin-smoke-test.api';
+} from "@/api/admin-smoke-test.api";
 
 export type SmokeTestRunUi = {
   id: string;
   provider: AdminSmokeTestProvider | string;
   providerLabel: string;
-  status: 'ok' | 'fail';
+  status: "ok" | "fail";
   statusLabel: string;
-  statusTone: 'success' | 'danger';
+  statusTone: "success" | "danger";
   latencyMs: number | null;
   latencyLabel: string;
   ranAt: string;
@@ -24,14 +18,14 @@ export type SmokeTestRunUi = {
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  openai: 'OpenAI (через прокси)',
-  deepseek: 'DeepSeek (через прокси)',
-  anthropic: 'Anthropic',
-  ollama: 'Ollama (локально)',
-  vox: 'Vox ASR',
-  minimax: 'MiniMax',
-  grsai: 'GRS AI',
-  kie: 'KIE',
+  openai: "OpenAI (через прокси)",
+  deepseek: "DeepSeek (через прокси)",
+  anthropic: "Anthropic",
+  ollama: "Ollama (локально)",
+  vox: "Vox ASR",
+  minimax: "MiniMax",
+  grsai: "GRS AI",
+  kie: "KIE",
 };
 
 export function providerLabel(provider: string): string {
@@ -39,17 +33,17 @@ export function providerLabel(provider: string): string {
 }
 
 export function mapSmokeTestRun(api: SmokeTestRunApi): SmokeTestRunUi {
-  const status: 'ok' | 'fail' = api.status === 'ok' ? 'ok' : 'fail';
+  const status: "ok" | "fail" = api.status === "ok" ? "ok" : "fail";
   return {
     id: api.id ?? `${api.provider}-${api.ranAt}`,
     provider: api.provider,
     providerLabel: providerLabel(api.provider),
     status,
-    statusLabel: status === 'ok' ? 'Успех' : 'Ошибка',
-    statusTone: status === 'ok' ? 'success' : 'danger',
+    statusLabel: status === "ok" ? "Успех" : "Ошибка",
+    statusTone: status === "ok" ? "success" : "danger",
     latencyMs: api.latencyMs,
     latencyLabel:
-      typeof api.latencyMs === 'number' ? `${api.latencyMs} мс` : '—',
+      typeof api.latencyMs === "number" ? `${api.latencyMs} мс` : "—",
     ranAt: api.ranAt,
     ranAtLabel: formatDateTime(api.ranAt),
     message: api.message ?? null,
@@ -58,12 +52,12 @@ export function mapSmokeTestRun(api: SmokeTestRunApi): SmokeTestRunUi {
 
 function formatDateTime(iso: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(iso));
   } catch {
     return iso;

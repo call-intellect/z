@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -29,16 +26,6 @@ import {
   type ChatboxMemberLinkDto,
 } from './dto/chatbox-members.dto';
 
-/**
- * REST API членов ChatBox + ручной маппинг член → Person Коры
- * (ТЗ 2026-06-05, Фаза 9). Backend для админ-фронта связки.
- *
- *   - GET /api/v1/chatbox/members          — список членов с резолвом Person (read).
- *   - PUT /api/v1/chatbox/members/:id/link — привязать/снять связь с Person (manage).
- *
- * RBAC ресурс — `chatbox`. Формат ошибок `{ ok:false, error:{ code, message } }`
- * — по образцу `chatbox-integration.controller`.
- */
 @ApiTags('chatbox')
 @Controller('api/v1/chatbox/members')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -90,8 +77,6 @@ export class ChatboxMembersController {
     return { ok: true, member };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -132,8 +117,7 @@ export class ChatboxMembersController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Управлять связкой членов ChatBox может только владелец или администратор Org',
+          message: 'Управлять связкой членов ChatBox может только владелец или администратор Org',
         },
       });
     }

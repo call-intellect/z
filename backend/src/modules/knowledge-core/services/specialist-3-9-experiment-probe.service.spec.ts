@@ -1,14 +1,3 @@
-/**
- * M-3 (2026-06-12) — Specialist39ExperimentProbeService × «лестница
- * владельца» для `experiment.no_owner`: optimistic-условие «поле всё ещё
- * пусто» (`ownerEntityId: null` в where updateMany).
- *
- *   - count=1 → авто-назначение: запись + лента, probe НЕ шлётся;
- *   - count=0 (кто-то назначил параллельно) → ТИХИЙ skip: лента НЕ
- *     публикуется, probe НЕ шлётся (владелец уже есть), только лог.
- *
- * Все зависимости мокированы.
- */
 import type { Experiment } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -44,9 +33,7 @@ function makeEnv(args: { updateCount: number }): {
   feedPublish: ReturnType<typeof vi.fn>;
   incOwnerResolution: ReturnType<typeof vi.fn>;
 } {
-  const experimentUpdateMany = vi
-    .fn()
-    .mockResolvedValue({ count: args.updateCount });
+  const experimentUpdateMany = vi.fn().mockResolvedValue({ count: args.updateCount });
   const prisma = {
     experiment: {
       findMany: vi.fn().mockResolvedValue([makeExperiment()]),
@@ -85,9 +72,7 @@ function makeEnv(args: { updateCount: number }): {
   const probeService = { suggest } as unknown as ProbeService;
 
   const ownerResolver = {
-    resolve: vi
-      .fn()
-      .mockResolvedValue({ kind: 'resolved', userId: 'user-cand' }),
+    resolve: vi.fn().mockResolvedValue({ kind: 'resolved', userId: 'user-cand' }),
   } as unknown as OwnerResolverService;
 
   const feedPublish = vi.fn().mockResolvedValue({ id: 'feed-1' });
@@ -123,7 +108,6 @@ describe('Specialist39ExperimentProbeService — M-3 optimistic авто-наз�
       where: { id: string; tenantId: string; ownerEntityId: null };
       data: { ownerEntityId: string };
     };
-    // M-3 — optimistic-условие «поле всё ещё пусто».
     expect(upd.where).toEqual({
       id: 'exp-1',
       tenantId: 'org-1',
@@ -145,7 +129,6 @@ describe('Specialist39ExperimentProbeService — M-3 optimistic авто-наз�
     expect(env.experimentUpdateMany).toHaveBeenCalledTimes(1);
     expect(env.feedPublish).not.toHaveBeenCalled();
     expect(env.suggest).not.toHaveBeenCalled();
-    // Метрика auto НЕ инкрементится — назначения не было.
     expect(env.incOwnerResolution).not.toHaveBeenCalledWith({
       outcome: 'auto',
     });

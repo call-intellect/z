@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Header,
-  Inject,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, Header, Inject, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
@@ -14,18 +6,6 @@ import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { PreferenceDatasetService } from '../../knowledge-core/services/preference-dataset.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
-/**
- * W2.3 KC-Temporal (2026-05-25) — admin-endpoint для скачивания
- * preference-dataset в формате JSONL.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W2.3.
- *
- * Owner/super_admin only через `SuperAdminGuard`. Стиль (cookie-auth + audit
- * interceptor) — как `LlmRoutesController`.
- *
- * Фронтенд UI `/admin/llm/preference-dataset` — вне scope этой фазы; endpoint
- * предполагает прямой curl-вызов для оффлайн-retraining'а few-shot'ов.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/llm/preference-dataset')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -57,11 +37,6 @@ export class LlmPreferenceDatasetController {
     });
   }
 
-  /**
-   * JSON-список последних N сэмплов для UI-таблицы `/admin/ai/preference-dataset`.
-   * Дефолтный лимит 200 (страница не предназначена для bulk-выгрузки —
-   * для retraining'а используется `GET ./` без `/items`).
-   */
   @Get('items')
   async items(
     @Query('taskType') taskType?: string,
@@ -85,10 +60,6 @@ export class LlmPreferenceDatasetController {
     return { items };
   }
 
-  /**
-   * Агрегаты для верхней панели страницы: всего сэмплов, разбивка по label
-   * и матрица (taskType × label). Один лёгкий groupBy-запрос.
-   */
   @Get('stats')
   async stats(
     @Query('from') from?: string,

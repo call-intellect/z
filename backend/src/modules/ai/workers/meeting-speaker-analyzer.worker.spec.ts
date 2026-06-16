@@ -5,16 +5,13 @@ import type { LlmRouterService } from '../services/llm-router.service';
 
 import { MeetingSpeakerAnalyzerWorker } from './meeting-speaker-analyzer.worker';
 
-/**
- * ТЗ B Фаза 4 — JSON-резилиенс speaker-analyzer.
- * Проверяем, что ```json-обёртка LLM-ответа теперь парсится (раньше
- * одиночный JSON.parse падал → MPB оставался без анализа), и что вызов
- * проходит ровно один раз при валидном ответе с первой попытки.
- */
 function mkWorker(llmText: string): {
   worker: MeetingSpeakerAnalyzerWorker;
   prisma: {
-    meetingParticipantBehavior: { findMany: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
+    meetingParticipantBehavior: {
+      findMany: ReturnType<typeof vi.fn>;
+      update: ReturnType<typeof vi.fn>;
+    };
     transcript: { findUnique: ReturnType<typeof vi.fn> };
     participant: { findMany: ReturnType<typeof vi.fn> };
   };
@@ -38,15 +35,13 @@ function mkWorker(llmText: string): {
     },
     transcript: {
       findUnique: vi.fn().mockResolvedValue({
-        turns: [
-          { speaker: 'иванов', text: speakerLine, startSec: 0, endSec: 5 },
-        ],
+        turns: [{ speaker: 'иванов', text: speakerLine, startSec: 0, endSec: 5 }],
       }),
     },
     participant: {
-      findMany: vi.fn().mockResolvedValue([
-        { id: 'part-1', livekitIdentity: 'lk-ivanov', name: 'Иванов' },
-      ]),
+      findMany: vi
+        .fn()
+        .mockResolvedValue([{ id: 'part-1', livekitIdentity: 'lk-ivanov', name: 'Иванов' }]),
     },
   };
 

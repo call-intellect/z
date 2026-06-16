@@ -8,22 +8,6 @@ import { OwnerResolverService } from '../../knowledge-core/services/owner-resolv
 import { ProbeService } from '../../probe/probe.service';
 import type { ProcessTemplateDefinitionDto } from '../dto/processes.dto';
 
-/**
- * SBA α-7 wave 2 — ProcessTemplateProbeService.
- *
- * Эмиссия probe-events для ProcessTemplate согласно §2 sub-TZ:
- *   - `process_template.missing_input_artifact` — у >=1 шага нет inputArtifact AND
- *     step != первый (первый шаг может быть «триггерным» событием).
- *   - `process_template.missing_output_artifact` — у >=1 шага нет outputArtifact.
- *   - `process_template.step_without_owner` — у >=1 шага нет ownerRoleId.
- *
- * Получатели:
- *   - ownerPersonId.userId, если есть;
- *   - admin'ы Org (для notice / коррекции).
- *
- * Контракт: сервис НЕ должен бросать. Один упавший probe не валит остальные —
- * лог и продолжение.
- */
 @Injectable()
 export class ProcessTemplateProbeService {
   private readonly logger = new Logger(ProcessTemplateProbeService.name);
@@ -36,29 +20,22 @@ export class ProcessTemplateProbeService {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    // W2 autonomy (2026-06-12) — адресация step_without_owner: владелец
-    // шаблона / держатели роли-владельца. Optional: без него прежнее поведение.
-    @Optional() @Inject(OwnerResolverService)
+    @Optional()
+    @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
   ) {}
 
-  /**
-   * Полный проход триггеров. Загружает текущий definition (через
-   * currentVersionId) и эмитит applicable probe-events.
-   */
   async checkAndEmit(template: ProcessTemplate): Promise<void> {
     if (template.status === 'archived') return;
     try {
       const def = await this.loadDefinition(template);
       if (!def || def.steps.length === 0) {
-        // Нет шагов — probe-trigger «step_without_owner» бессмыслен, выходим.
         return;
       }
-      const stepsMissingInput = def.steps.filter(
-        (s, idx) => idx > 0 && !s.inputArtifact,
-      );
+      const stepsMissingInput = def.steps.filter((s, idx) => idx > 0 && !s.inputArtifact);
       const stepsMissingOutput = def.steps.filter((s) => !s.outputArtifact);
       const stepsWithoutOwner = def.steps.filter((s) => !s.ownerRoleId);
 
@@ -84,10 +61,6 @@ export class ProcessTemplateProbeService {
         });
       }
       if (stepsWithoutOwner.length > 0) {
-        // W2 autonomy (2026-06-12): АВТО-запись в definitionJson ЗАПРЕЩЕНА —
-        // probe-выбор кандидатов остаётся. Меняем только адресата и текст:
-        // владелец шаблона получает вопрос лично; роль-владелец с несколькими
-        // держателями — вопрос-выбор с именами (Р2.2), не «Назначить?».
         const target = await this.stepOwnerProbeTarget(template, recipients);
         await this.emit({
           template,
@@ -109,8 +82,6 @@ export class ProcessTemplateProbeService {
       );
     }
   }
-
-  // ─────────────────────────── internals ──────────────────────────────
 
   private async emit(args: {
     template: ProcessTemplate;
@@ -190,14 +161,6 @@ export class ProcessTemplateProbeService {
     }
   }
 
-  /**
-   * W2 autonomy — адресат/текст probe `step_without_owner`:
-   *   1. У шаблона есть ownerPersonId → вопрос адресуем лично владельцу
-   *      шаблона (он отвечает за шаги), не всем admin'ам.
-   *   2. Иначе ownerRoleId: единственный держатель → ему лично; несколько →
-   *      вопрос-выбор с именами (Р2.2: «Иванов или Петров?»).
-   *   3. Иначе — прежние получатели и прежний текст.
-   */
   private async stepOwnerProbeTarget(
     template: ProcessTemplate,
     fallbackRecipients: readonly string[],
@@ -255,9 +218,7 @@ export class ProcessTemplateProbeService {
     return { recipients: [...fallbackRecipients] };
   }
 
-  private async resolveRecipients(
-    template: ProcessTemplate,
-  ): Promise<string[]> {
+  private async resolveRecipients(template: ProcessTemplate): Promise<string[]> {
     const ids = new Set<string>();
     if (template.ownerPersonId) {
       const person = await this.prisma.person.findUnique({
@@ -287,9 +248,7 @@ export class ProcessTemplateProbeService {
     return this.safeDefinition(version.definitionJson);
   }
 
-  private safeDefinition(
-    value: Prisma.JsonValue,
-  ): ProcessTemplateDefinitionDto | null {
+  private safeDefinition(value: Prisma.JsonValue): ProcessTemplateDefinitionDto | null {
     if (!value || typeof value !== 'object') return null;
     const rec = value as Record<string, unknown>;
     const steps = Array.isArray(rec.steps)

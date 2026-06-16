@@ -1,30 +1,5 @@
-/**
- * Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema, pass 1 DRAFT.
- *
- * LLM-промпт `table-infer-schema`. По свободному NL-описанию пользователя
- * («таблица клиентов с контактами и стадией сделки») генерирует ЧЕРНОВИК
- * схемы Smart-таблицы: name / description / icon / entitySync / properties.
- *
- * Cache-friendly: SYSTEM стабилен, переменные данные в USER (Б10 ТЗ).
- *   - SYSTEM: роль + полный каталог допустимых типов колонок + каталог
- *     entitySync-типов + 10 системных таблиц как эталоны стиля + правила
- *     вывода строго в JSON.
- *   - USER: только короткий запрос пользователя (переменная часть).
- *
- * Выход — JSON object:
- *   { name, description, icon, entitySync: {type}|null,
- *     properties: [{ name, type, isPrimary, config? }] }
- */
-
 import { withInjectionGuard, wrapUserData } from './common';
 
-/**
- * Каталог допустимых типов колонок. Должен совпадать с `TablePropTypeSchema`
- * в `backend/src/modules/tables/dto/tables.dto.ts` (и enum `TablePropType` в
- * schema.prisma). Системные авто-типы (createdAt/updatedAt/createdBy/
- * entityLink/meetingLink/documentLink) намеренно ИСКЛЮЧЕНЫ из списка для LLM —
- * их пользователь не задаёт текстом, они проставляются системой.
- */
 const COLUMN_TYPE_CATALOG: ReadonlyArray<[type: string, ru: string]> = [
   ['text', 'короткая строка (имя, название)'],
   ['longtext', 'длинный текст / заметка'],
@@ -46,7 +21,6 @@ const COLUMN_TYPE_CATALOG: ReadonlyArray<[type: string, ru: string]> = [
   ['rollup', 'агрегат по связанным строкам'],
 ];
 
-/** Каталог допустимых entitySync-типов. Совпадает с `TableEntitySyncSchema`. */
 const ENTITY_SYNC_CATALOG: ReadonlyArray<[type: string, ru: string]> = [
   ['org', 'организация / клиент / поставщик (внешняя компания)'],
   ['person', 'человек / сотрудник'],
@@ -55,13 +29,9 @@ const ENTITY_SYNC_CATALOG: ReadonlyArray<[type: string, ru: string]> = [
 ];
 
 export interface BuildTableInferSchemaPromptArgs {
-  /** Свободный NL-запрос пользователя (переменная часть, в конце USER). */
   userPrompt: string;
-  /** Доступные entitySync-типы тенанта (Фаза 1 — всегда все 4). */
   availableSyncTypes: ReadonlyArray<'org' | 'person' | 'meeting' | 'document'>;
-  /** Каталог типов колонок. Если не передан — используется дефолтный. */
   catalogColumnTypes?: ReadonlyArray<[type: string, ru: string]>;
-  /** Системные таблицы как эталоны стиля (systemKey + name + icon). */
   systemTableExamples: ReadonlyArray<{
     systemKey: string;
     name: string;
@@ -77,12 +47,8 @@ function buildSystem(args: {
     icon: string;
   }>;
 }): string {
-  const typeLines = args.catalogColumnTypes
-    .map(([t, ru]) => `  - \`${t}\` — ${ru}`)
-    .join('\n');
-  const entityLines = ENTITY_SYNC_CATALOG.map(
-    ([t, ru]) => `  - \`${t}\` — ${ru}`,
-  ).join('\n');
+  const typeLines = args.catalogColumnTypes.map(([t, ru]) => `  - \`${t}\` — ${ru}`).join('\n');
+  const entityLines = ENTITY_SYNC_CATALOG.map(([t, ru]) => `  - \`${t}\` — ${ru}`).join('\n');
   const exampleLines = args.systemTableExamples
     .map((e) => `  - ${e.icon} «${e.name}» (${e.systemKey})`)
     .join('\n');
@@ -117,13 +83,10 @@ function buildSystem(args: {
   );
 }
 
-/**
- * Возвращает `{ system, user }` для pass 1 (DRAFT). SYSTEM стабилен (кэшируется),
- * переменный `userPrompt` + `availableSyncTypes` идут в конце USER.
- */
-export function buildTableInferSchemaPrompt(
-  args: BuildTableInferSchemaPromptArgs,
-): { system: string; user: string } {
+export function buildTableInferSchemaPrompt(args: BuildTableInferSchemaPromptArgs): {
+  system: string;
+  user: string;
+} {
   const catalog = args.catalogColumnTypes ?? COLUMN_TYPE_CATALOG;
   const system = buildSystem({
     catalogColumnTypes: catalog,
@@ -133,9 +96,6 @@ export function buildTableInferSchemaPrompt(
     `Доступные типы привязки к графу (entitySync): ${args.availableSyncTypes.join(', ') || '(нет)'}.`,
     '',
     'Запрос пользователя:',
-    // Сырой пользовательский ввод (NL-описание таблицы или данные из файла) —
-    // оборачиваем в маркеры данных (anti-injection). SYSTEM держит
-    // INJECTION_GUARD_NOTE через withInjectionGuard выше.
     wrapUserData(args.userPrompt.trim()),
     '',
     'Верни JSON-объект схемы таблицы по правилам из системного сообщения.',

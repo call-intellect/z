@@ -16,17 +16,6 @@ import { RequireSubscription } from '../billing/guards/require-subscription.deco
 
 import { RecordingsService } from './recordings.service';
 
-/**
- * Cookie-эндпоинты для управления записью встречи.
- *
- *   POST   /api/v1/meetings/:id/recording/start    — host стартует запись.
- *   POST   /api/v1/meetings/:id/recording/stop     — host останавливает.
- *   GET    /api/v1/meetings/:id/recording/download — presigned URL (host).
- *   DELETE /api/v1/meetings/:id/recording          — host удаляет досрочно.
- *
- * Все методы — только под `CookieAuthGuard`. Проверку `ownerId === userId`
- * делает `RecordingsService` (бросает `NotAuthorizedError`).
- */
 @Controller('api/v1/meetings/:id/recording')
 @UseGuards(CookieAuthGuard)
 export class RecordingsController {

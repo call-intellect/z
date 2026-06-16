@@ -1,14 +1,3 @@
-/**
- * Snapshot-тест сборки промпта `query-understand.prompt.ts` (модуль понимания
- * запроса, ТЗ 2026-06-14, схема dialog_multi_query_v2).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `DIALOG_QUERY_UNDERSTAND_SYSTEM_PROMPT` (guard от случайных правок);
- *   - текст user, который собирает `buildQueryUnderstandUserPrompt`
- *     (summary + history + question).
- *
- * Обновлять только при ОСОЗНАННОМ изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

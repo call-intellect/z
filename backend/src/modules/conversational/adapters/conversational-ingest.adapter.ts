@@ -5,25 +5,10 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { IngestService } from '../../ingest/ingest.service';
 import type { ConversationalJson } from '../types/channel.types';
 
-/**
- * Адаптер ingest'а для свободных заметок (`free_note`), которые приходят
- * через ConversationalModule из любого канала (in_app/email/telegram/...).
- *
- * Создаёт ровно один `Source(type=conversational, name='Свободные заметки')`
- * на Org (lazy-upsert) и вызывает `IngestService.ingest(...)` с
- * `sourceExternalId = sha256(userId|tenantId|occurredAt|firstBytes)`,
- * чтобы дать идемпотентность по дубликатам без дополнительного клиентского
- * id. Каноничный payload — { kind: 'free_note', userId, text, metadata }.
- *
- * `sha256` посчитан в IngestService через payloadChecksum как fallback,
- * поэтому здесь мы передаём `sourceExternalId = null` — пусть
- * `IngestService` сам уйдёт на дедуп по checksum.
- */
 @Injectable()
 export class ConversationalIngestAdapter {
   private readonly logger = new Logger(ConversationalIngestAdapter.name);
 
-  /** Канонический name source'а для conversational free-notes. */
   static readonly DEFAULT_SOURCE_NAME = 'Свободные заметки';
 
   constructor(
@@ -31,10 +16,6 @@ export class ConversationalIngestAdapter {
     @Inject(IngestService) private readonly ingest: IngestService,
   ) {}
 
-  /**
-   * Главная точка входа: входящая свободная заметка из любого канала.
-   * Возвращает созданный/найденный `RawEvent`.
-   */
   async ingestFreeNote(args: {
     tenantId: string;
     userId: string;
@@ -68,19 +49,6 @@ export class ConversationalIngestAdapter {
     return result.rawEvent;
   }
 
-  /**
-   * SBA β-5 closing-loop — записывает ответ пользователя на probe-уведомление
-   * как `RawEvent` (kind='notification_response') и явно связывает его с
-   * исходной `Notification` через `payload.respondsToNotificationId` (это
-   * наш «metaJson.respondsToNotificationId» — у RawEvent отдельного metaJson
-   * поля нет, используем тот же payload-канал, как для free_note).
-   *
-   * `sourceExternalId = notificationId` гарантирует идемпотентность: повторный
-   * вызов с тем же `notificationId` (+ той же `occurredAt`) вернёт ранее
-   * созданный `RawEvent`. Если по probe приходит два разных ответа подряд
-   * (см. ТЗ §3.4 idempotency), вызывающая сторона обязана передать разные
-   * `occurredAt` — иначе второй вызов будет дедуплицирован.
-   */
   async ingestNotificationResponse(args: {
     tenantId: string;
     userId: string;
@@ -92,17 +60,7 @@ export class ConversationalIngestAdapter {
     sourceChannelKind?: string | null;
     contextBlockId?: string | null;
     contextCardId?: string | null;
-    /**
-     * TZ clone-method Э3.1 — вопрос, который реально задали человеку.
-     * SegmentBuilder строит из него сегмент «Вопрос Коры: … Ответ: …»
-     * вместо JSON-stringify-шума.
-     */
     questionText?: string | null;
-    /**
-     * TZ clone-method Э3.1 — детерминированный signalType ответа (для
-     * CDM-интервью — 'reasoning'). Кладётся TOP-LEVEL в payload: именно там
-     * его читает `BlockIngestWorker.tryGetSignalTypeHint`.
-     */
     signalTypeHint?: string;
   }): Promise<RawEvent> {
     const source = await this.ensureSource(args.tenantId);
@@ -118,16 +76,12 @@ export class ConversationalIngestAdapter {
       contextCardId: args.contextCardId ?? null,
       questionText: args.questionText ?? null,
       response: args.payload,
-      // signalTypeHint — только при наличии (block-ingest игнорирует
-      // не-строки, но не плодим null-ключ в каждом payload'е).
       ...(args.signalTypeHint ? { signalTypeHint: args.signalTypeHint } : {}),
     };
 
     const result = await this.ingest.ingest({
       tenantId: args.tenantId,
       sourceId: source.id,
-      // sourceExternalId = `resp:<notificationId>` — детерминированная связка
-      // 1-к-1; повторный ingest того же ответа вернёт идемпотентный RawEvent.
       sourceExternalId: `resp:${args.notificationId}`,
       occurredAt,
       payload: rawPayload,
@@ -141,7 +95,6 @@ export class ConversationalIngestAdapter {
   }
 
   private async ensureSource(tenantId: string) {
-    // Уникальность гарантирована @@unique([tenantId, type, name]) в Source.
     return this.prisma.source.upsert({
       where: {
         tenantId_type_name: {

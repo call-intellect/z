@@ -1,51 +1,21 @@
-'use client';
+"use client";
 
-/**
- * `ComingSoonPage` — единый компонент для disabled-γ-разделов (Фаза 0c §6.7).
- *
- * Используется на preview-страницах четырёх будущих разделов:
- *   - `/processes` — Процессы
- *   - `/regulations` — Регламенты
- *   - `/policies` — Политики
- *   - `/metrics` — Метрики
- *
- * Поведение (см. §6.7 и §7.7 аналитики):
- *   - Title + description — всегда.
- *   - Счётчик «N собрано» — только для admin/owner/super_admin И только
- *     если N > 0. На ошибке (403 / 404 / 500) счётчик молча скрывается.
- *
- * Запрос счётчика выполняется через единый `apiClient`. Если backend
- * endpoint ещё не реализован — SWR словит ошибку, счётчик не отрисуется,
- * остальная страница рабочая.
- */
+import { Clock4 } from "lucide-react";
+import useSWR from "swr";
 
-import { Clock4 } from 'lucide-react';
-import useSWR from 'swr';
+import { apiClient } from "@/api/api-client";
+import { useAuth } from "@/contexts/auth-context";
+import { Card, CardContent } from "@/ui/shadcn/card";
 
-import { apiClient } from '@/api/api-client';
-import { useAuth } from '@/contexts/auth-context';
-import { Card, CardContent } from '@/ui/shadcn/card';
-
-export type SectionKey = 'processes' | 'regulations' | 'policies' | 'metrics';
+export type SectionKey = "processes" | "regulations" | "policies" | "metrics";
 
 type SectionConfig = {
   title: string;
   description: string;
   countApi: string;
-  /** Возвращает строку «N процессов» / «1 процесс» / «5 политик» и т.д. */
   countLabel: (n: number) => string;
 };
 
-/**
- * Русская плюрализация по 3 формам.
- *
- *   declension(1, ['процесс', 'процесса', 'процессов']) === 'процесс'
- *   declension(2, [...])                                === 'процесса'
- *   declension(5, [...])                                === 'процессов'
- *   declension(21, [...])                               === 'процесс'
- *
- * Алгоритм — стандартный для русского: смотрим на остатки от 100 и 10.
- */
 export function declension(n: number, forms: [string, string, string]): string {
   const abs = Math.abs(n);
   const mod10 = abs % 10;
@@ -58,52 +28,48 @@ export function declension(n: number, forms: [string, string, string]): string {
 
 const SECTIONS: Record<SectionKey, SectionConfig> = {
   processes: {
-    title: 'Процессы',
+    title: "Процессы",
     description:
-      'Сборка бизнес-процессов из встреч и документов появится в следующей фазе. Мы уже копим данные.',
-    countApi: '/api/v1/processes/count',
+      "Сборка бизнес-процессов из встреч и документов появится в следующей фазе. Мы уже копим данные.",
+    countApi: "/api/v1/processes/count",
     countLabel: (n) =>
-      `${n} ${declension(n, ['процесс', 'процесса', 'процессов'])}`,
+      `${n} ${declension(n, ["процесс", "процесса", "процессов"])}`,
   },
   regulations: {
-    title: 'Правила и стандарты',
+    title: "Правила и стандарты",
     description:
-      'Регламенты и стандарты компании появятся в следующей фазе. Уже сейчас извлекаем их из загруженных документов.',
-    countApi: '/api/v1/regulations/count',
+      "Регламенты и стандарты компании появятся в следующей фазе. Уже сейчас извлекаем их из загруженных документов.",
+    countApi: "/api/v1/regulations/count",
     countLabel: (n) =>
-      `${n} ${declension(n, ['регламент', 'регламента', 'регламентов'])}`,
+      `${n} ${declension(n, ["регламент", "регламента", "регламентов"])}`,
   },
   policies: {
-    title: 'Политики',
+    title: "Политики",
     description:
-      'Политики и правила работы появятся в следующей фазе. Мы уже фиксируем их в графе знаний.',
-    countApi: '/api/v1/policies/count',
+      "Политики и правила работы появятся в следующей фазе. Мы уже фиксируем их в графе знаний.",
+    countApi: "/api/v1/policies/count",
     countLabel: (n) =>
-      `${n} ${declension(n, ['политика', 'политики', 'политик'])}`,
+      `${n} ${declension(n, ["политика", "политики", "политик"])}`,
   },
   metrics: {
-    title: 'Метрики',
+    title: "Метрики",
     description:
-      'Метрики и пульс компании появятся в следующей фазе. Сейчас собираем сигналы для расчёта.',
-    countApi: '/api/v1/metrics/count',
+      "Метрики и пульс компании появятся в следующей фазе. Сейчас собираем сигналы для расчёта.",
+    countApi: "/api/v1/metrics/count",
     countLabel: (n) =>
-      `${n} ${declension(n, ['метрика', 'метрики', 'метрик'])}`,
+      `${n} ${declension(n, ["метрика", "метрики", "метрик"])}`,
   },
 };
 
 type CountResponse = { count: number };
 
-function useSectionCount(
-  countApi: string,
-  enabled: boolean,
-): number | null {
+function useSectionCount(countApi: string, enabled: boolean): number | null {
   const { data } = useSWR(
     enabled ? countApi : null,
     async (path: string) => {
       try {
         return await apiClient.get<CountResponse>(path);
       } catch {
-        // 403/404/500 — счётчик молча скрываем (см. §6.7).
         return null;
       }
     },
@@ -112,7 +78,7 @@ function useSectionCount(
       shouldRetryOnError: false,
     },
   );
-  if (!data || typeof data.count !== 'number') return null;
+  if (!data || typeof data.count !== "number") return null;
   return data.count;
 }
 
@@ -120,11 +86,8 @@ export function ComingSoonPage({ section }: { section: SectionKey }) {
   const config = SECTIONS[section];
   const { currentOrgRole, isSuperAdmin } = useAuth();
 
-  // Счётчик показываем только admin/owner/super_admin.
   const canSeeCount =
-    isSuperAdmin ||
-    currentOrgRole === 'owner' ||
-    currentOrgRole === 'admin';
+    isSuperAdmin || currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const count = useSectionCount(config.countApi, canSeeCount);
 

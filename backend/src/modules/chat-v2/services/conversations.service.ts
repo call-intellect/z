@@ -20,31 +20,13 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { RbacService } from '../../rbac/rbac.service';
 import {
   CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT,
   CHAT_V2_CONVERSATION_TITLE_USER_PROMPT,
 } from '../prompts/chat-v2-conversation-title.prompt';
-
-/**
- * SBA α-5 — ChatV2ConversationsService.
- *
- * Хранит conversation history для модуля chat-v2. CRUD по диалогам и
- * сообщениям, генерация title через LLM (taskType `chat-v2-conversation-title`),
- * pin / archive.
- *
- * Ownership-проверка идёт по `userId` — каждый диалог принадлежит автору.
- * Tenant-проверка — по `tenantId` (Org). Контроллер обязан передавать оба
- * (из CookieAuthGuard + TenantGuard).
- *
- * NB: для админ-доступа «увидеть все диалоги Org» используется отдельный
- * метод (TODO в β+; на α-5 не реализован).
- */
 
 export interface CreateConversationInput {
   tenantId: string;
@@ -59,11 +41,6 @@ export interface AppendMessageInput {
   role: ChatV2MessageRole;
   mode?: ChatV2Mode | null;
   text: string;
-  /**
-   * Для nullable Json-полей Prisma требует `Prisma.NullableJsonNullValueInput`
-   * (это `Prisma.JsonNull` или `Prisma.DbNull`) ИЛИ `InputJsonValue`. Чтобы
-   * сервис мог принимать оба варианта, объединяем типы.
-   */
   citations?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
   retrievalMeta?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
   llmMeta?: Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput;
@@ -93,19 +70,11 @@ export class ChatV2ConversationsService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // audit-fixes Б13: для проверки актуального clone-access гранта при
-    // открытии истории диалога с клоном. Optional, чтобы существующие
-    // unit-тесты ChatV2 без RbacService не падали.
     @Optional()
     @Inject(RbacService)
     private readonly rbac?: RbacService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   * Defensive try/catch — в старых unit-тестах cfg может быть mock без
-   * `aiFeatures`. Default — true (как в env.schema).
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -126,11 +95,6 @@ export class ChatV2ConversationsService {
     });
   }
 
-  /**
-   * Добавить сообщение. Триггерит implicit `updatedAt` обновление
-   * conversation (через @updatedAt в схеме — мы делаем `update` с пустым
-   * data, чтобы updatedAt бамп произошёл атомарно с insert).
-   */
   async appendMessage(input: AppendMessageInput): Promise<ChatV2Message> {
     return this.prisma.$transaction(async (tx) => {
       const message = await tx.chatV2Message.create({
@@ -144,7 +108,6 @@ export class ChatV2ConversationsService {
           llmMeta: input.llmMeta ?? Prisma.DbNull,
         },
       });
-      // bump updatedAt
       await tx.chatV2Conversation.update({
         where: { id: input.conversationId },
         data: { updatedAt: new Date() },
@@ -153,20 +116,6 @@ export class ChatV2ConversationsService {
     });
   }
 
-  /**
-   * Получить диалог по id вместе с сообщениями. Проверяет ownership.
-   * Возвращает 404, если диалог не найден или принадлежит другому
-   * пользователю / Org.
-   *
-   * audit-fixes Б13 (2026-05-29): privacy-эскалация — если у диалога
-   * scope='card' и scopeRefId указывает на person/role-клон, дополнительно
-   * проверяем актуальный CloneAccessGrant через RbacService. Если грант
-   * revoked/expired — отдаём 404 (история уже не доступна).
-   *
-   * Это закрывает дыру: до фикса пользователь, у которого админ отозвал
-   * доступ к клону, продолжал видеть всю историю диалогов через
-   * `/chat-v2/conversations/:id`.
-   */
   async getById(args: {
     tenantId: string;
     userId: string;
@@ -188,8 +137,6 @@ export class ChatV2ConversationsService {
       });
     }
     if (conv.userId !== args.userId) {
-      // Не отдаём 404 / 403 раздельно, чтобы не разглашать существование
-      // чужого диалога. 404 — корректно по UX.
       throw new NotFoundException({
         ok: false,
         error: {
@@ -199,10 +146,6 @@ export class ChatV2ConversationsService {
       });
     }
 
-    // audit-fixes Б13: re-check clone-access гранта.
-    // Условие: scope='card' + scopeRefId + ≥1 сообщение mode='clone_style'
-    // (clone-conversation). Без mode='clone_style' это IssueChat/чат-в-карточке,
-    // их доступ регулируется RBAC на сам issue/card, не отдельным грантом.
     if (
       conv.scope === 'card' &&
       conv.scopeRefId &&
@@ -219,23 +162,12 @@ export class ChatV2ConversationsService {
     return conv;
   }
 
-  /**
-   * audit-fixes Б13: пробует доступ к person-клону, если не получилось —
-   * к role-клону. Если оба отказали → NotFoundException (404). Намеренно
-   * 404, не 403, чтобы не подтверждать существование клон-диалога.
-   *
-   * Сейчас все clone-conversations в chat-v2 — person-клон (см. comment в
-   * synthesis.service.ts: `scopeRefId для clone_style — это personId`).
-   * role-clone здесь оставлен для defense-in-depth — если в будущем
-   * scope='card' + clone_style начнут использоваться для role-клона,
-   * фикс уже сработает.
-   */
   private async assertCloneAccessOrThrow(args: {
     tenantId: string;
     userId: string;
     cloneRefId: string;
   }): Promise<void> {
-    if (!this.rbac) return; // unit-тесты без rbac — fall-through.
+    if (!this.rbac) return;
     const cloneV2Enabled = this.cfg.cloneV2.enabled === true;
     const personCheck = await this.rbac.canAccessPersonClone({
       tenantId: args.tenantId,
@@ -285,10 +217,6 @@ export class ChatV2ConversationsService {
     return { items, total };
   }
 
-  /**
-   * Закрепить / открепить диалог. `pinnedAt=Date` — закрепляет (исключает
-   * из auto-archive); `pinnedAt=null` — открепляет.
-   */
   async setPinned(args: {
     tenantId: string;
     userId: string;
@@ -302,7 +230,6 @@ export class ChatV2ConversationsService {
     });
   }
 
-  /** Архивирует диалог (status='archived'). Не удаляет физически. */
   async archive(args: {
     tenantId: string;
     userId: string;
@@ -315,27 +242,15 @@ export class ChatV2ConversationsService {
     });
   }
 
-  /**
-   * Сгенерировать title диалога через LLM (короткий, 3-7 слов) и сохранить
-   * в conversation. Используется после первого user-сообщения.
-   *
-   * Не блокирует основной поток: если LLM упал — title остаётся NULL и
-   * фронт показывает «Новый диалог». Ошибка логируется warn'ом.
-   */
   async generateTitle(args: {
     tenantId: string;
     conversationId: string;
     firstUserMessage: string;
   }): Promise<string | null> {
     try {
-      // ТЗ 2026-05-24 §4 (F1.2) — обернуть пользовательский firstUserMessage
-      // в маркеры данных + INJECTION_GUARD_NOTE в system. Источник = 'chat'.
       const guardOn = this.isPromptInjectionGuardEnabled();
       const trimmedFirstMessage = args.firstUserMessage.slice(0, 1000);
       if (guardOn) {
-        // Observability: лёгкая regex-проверка (sanitize) с инкрементом метрики
-        // на каждый сработавший pattern. Не отклоняем — структурный слой
-        // (маркеры) даёт защиту даже при false-negative regex'а.
         const sanitized = sanitizeCustomPrompt(trimmedFirstMessage);
         for (const pattern of sanitized.reasons) {
           this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
@@ -345,9 +260,7 @@ export class ChatV2ConversationsService {
         ? withInjectionGuard(CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT)
         : CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT;
       const userText = guardOn
-        ? CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(
-            wrapUserData(trimmedFirstMessage),
-          )
+        ? CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(wrapUserData(trimmedFirstMessage))
         : CHAT_V2_CONVERSATION_TITLE_USER_PROMPT(trimmedFirstMessage);
       const result = await this.llm.call({
         taskType: 'chat-v2-conversation-title',
@@ -380,8 +293,6 @@ export class ChatV2ConversationsService {
       return null;
     }
   }
-
-  // ─────────────────────────── private ───────────────────────────
 
   private async requireOwnership(args: {
     tenantId: string;

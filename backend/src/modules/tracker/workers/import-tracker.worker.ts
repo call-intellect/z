@@ -9,7 +9,6 @@ import {
 import type { ImportLog, Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
@@ -17,10 +16,7 @@ import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { S3Service } from '../../recordings/s3.service';
 import type { ImportErrorEntry } from '../dto/imports/import-log-response.dto';
-import {
-  type ImportTrackerJobData,
-  TRACKER_QUEUE_NAMES,
-} from '../queues';
+import { type ImportTrackerJobData, TRACKER_QUEUE_NAMES } from '../queues';
 import { TrackerEventsService } from '../services/tracker-events.service';
 import { Bitrix24ImportStrategy } from '../strategies/bitrix24-import.strategy';
 import type {
@@ -31,31 +27,11 @@ import type {
 import { TrelloImportStrategy } from '../strategies/trello-import.strategy';
 import { YandexTrackerImportStrategy } from '../strategies/yandex-tracker-import.strategy';
 
-/**
- * Wave 3 / Tracker Phase 5 part 1 (2026-05-24) — ImportTrackerWorker.
- *
- * Consumer очереди `core.imports`. По одному ImportLog за раз:
- *   1. Загружает ImportLog (`paramsJson`, source).
- *   2. Делегирует в стратегию (Trello / Bitrix24 / Я.Трекер).
- *   3. Эмитит WS-events `import.progress` (~раз в 5 секунд через throttle).
- *   4. По завершении — UPDATE ImportLog status='completed' + summary.
- *      На fatal — status='failed', `errors[].fatal=true`.
- *   5. Перед каждым батчем стратегия сама проверяет `status='cancelled'`
- *      и прерывается без падения (`status` уже cancelled, worker не трогает).
- *
- * Concurrency: 2 — импорты I/O-bound (REST API источника + S3 PUT'ы для
- * attachments); параллельные = разные tenant'ы.
- *
- * NB: BullMQ attempts=1 (см. IMPORT_TRACKER_JOB_OPTIONS) — никаких retry.
- * Идемпотентность только на ручной повтор (новый ImportLog, тот же tenant —
- * существующие Issue'и со старым externalSource/Id'ом скипаются стратегией).
- */
 @Injectable()
 export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportTrackerWorker.name);
   private worker: Worker<ImportTrackerJobData> | null = null;
 
-  /** Минимальный интервал между WS-progress'ами (миллисекунды). */
   private static readonly PROGRESS_THROTTLE_MS = 5_000;
 
   @Inject(PipelineRunner)
@@ -118,13 +94,6 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Public — чтобы тесты могли вызвать без BullMQ. Шаги:
-   *  1. Skip если ImportLog уже не 'running' (cancelled до пика воркера).
-   *  2. Выбор стратегии по source.
-   *  3. Заворачиваем в try/catch: fatal → status='failed' + ws.failed.
-   *  4. По завершении сохраняем суммарные счётчики, status='completed', ws.completed.
-   */
   async process(job: Job<ImportTrackerJobData>): Promise<void> {
     const { tenantId, importLogId } = job.data;
 
@@ -132,10 +101,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       where: { id: importLogId, tenantId },
     });
     if (!importLog) {
-      this.logger.warn(
-        { importLogId, tenantId },
-        'import-tracker: ImportLog не найден — пропуск',
-      );
+      this.logger.warn({ importLogId, tenantId }, 'import-tracker: ImportLog не найден — пропуск');
       return;
     }
     if (importLog.status !== 'running') {
@@ -165,7 +131,6 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       events: this.events,
     };
 
-    // Throttled onProgress.
     let lastProgressAt = 0;
     const onProgress = async (args: {
       processed: number;
@@ -174,8 +139,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
     }): Promise<void> => {
       const now = Date.now();
       if (
-        now - lastProgressAt <
-          ImportTrackerWorker.PROGRESS_THROTTLE_MS &&
+        now - lastProgressAt < ImportTrackerWorker.PROGRESS_THROTTLE_MS &&
         args.phase !== 'finalizing'
       ) {
         return;
@@ -215,7 +179,6 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Перечитаем статус — мог стать cancelled между запросами.
     const fresh = await this.prisma.importLog
       .findUnique({
         where: { id: importLogId },
@@ -223,8 +186,6 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       })
       .catch(() => null);
     if (fresh?.status === 'cancelled') {
-      // Юзер успел отменить пока бежали. Не перезаписываем статус;
-      // сохраним частичные счётчики.
       await this.prisma.importLog
         .update({
           where: { id: importLog.id },
@@ -234,8 +195,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
             totalComments: result.totalComments,
             totalAttachments: result.totalAttachments,
             errors: result.errors as unknown as Prisma.InputJsonValue,
-            unmatchedJson:
-              result.unmatchedEmails as unknown as Prisma.InputJsonValue,
+            unmatchedJson: result.unmatchedEmails as unknown as Prisma.InputJsonValue,
           },
         })
         .catch(() => undefined);
@@ -252,7 +212,6 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Финализация.
     await this.prisma.importLog.update({
       where: { id: importLog.id },
       data: {
@@ -263,8 +222,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
         totalComments: result.totalComments,
         totalAttachments: result.totalAttachments,
         errors: result.errors as unknown as Prisma.InputJsonValue,
-        unmatchedJson:
-          result.unmatchedEmails as unknown as Prisma.InputJsonValue,
+        unmatchedJson: result.unmatchedEmails as unknown as Prisma.InputJsonValue,
       },
     });
     this.metrics?.incImportCompleted({
@@ -294,9 +252,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private resolveStrategy(
-    source: 'trello' | 'bitrix24' | 'yandex_tracker',
-  ): ImportStrategy | null {
+  private resolveStrategy(source: 'trello' | 'bitrix24' | 'yandex_tracker'): ImportStrategy | null {
     switch (source) {
       case 'trello':
         return this.trello;
@@ -319,9 +275,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
       message: args.error,
       timestamp: new Date().toISOString(),
     };
-    const prev = Array.isArray(args.importLog.errors)
-      ? (args.importLog.errors as unknown[])
-      : [];
+    const prev = Array.isArray(args.importLog.errors) ? (args.importLog.errors as unknown[]) : [];
     await this.prisma.importLog
       .update({
         where: { id: args.importLog.id },

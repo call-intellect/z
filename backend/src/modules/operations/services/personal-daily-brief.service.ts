@@ -23,24 +23,6 @@ import {
   type PersonalDailyBriefPayload,
 } from './personal-daily-brief.synth';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — PersonalDailyBriefService.
- *
- * Синтезирует утренний персональный бриф «Твой день»:
- *   - Задачи (Issue/Task), назначенные на меня, due today/overdue.
- *   - Мои обещания (IdeaBlock commitment, commitmentAuthorPersonId=я),
- *     срок сегодня/просроченные.
- *   - Открытые блокеры, автором которых являюсь я.
- *   - Обещания, данные МНЕ (commitmentRecipientPersonId=я).
- *   - 1 подсказка дня (LLM `personal-brief-hint` + детерминированный fallback).
- *   - skill-помощь «кто знает X» по открытому блокеру (KnowsWhoService).
- *
- * Дедуп при объединении источников — чистые функции `dedupBriefItems` /
- * `dropPromisesThatBecameTasks` (обещание-ставшее-задачей считается один раз).
- * Бриф преимущественно структурный (SQL+шаблон); LLM только на подсказку.
- *
- * Пороги/флаги — AdminSetting через getDynamic, не код.
- */
 @Injectable()
 export class PersonalDailyBriefService {
   private readonly logger = new Logger(PersonalDailyBriefService.name);
@@ -56,10 +38,6 @@ export class PersonalDailyBriefService {
     @Inject(KnowsWhoService) private readonly knowsWho: KnowsWhoService,
   ) {}
 
-  /**
-   * Собрать payload персонального брифа за `dateLocal`. НЕ персистит (это делает
-   * cron upsert'ом). Чистый синтез из БД + дедуп + 1 подсказка.
-   */
   async buildFor(args: {
     tenantId: string;
     personId: string;
@@ -73,8 +51,6 @@ export class PersonalDailyBriefService {
 
     const dayEnd = this.endOfDayUtc(args.dateLocal);
 
-    // 1. Задачи: Issue (assignee через IssueAssignee.userId) + Task
-    //    (assigneeUserId), due today/overdue, открытые.
     const myTasksRaw = userId
       ? await this.collectMyTasks({
           tenantId: args.tenantId,
@@ -83,59 +59,46 @@ export class PersonalDailyBriefService {
         })
       : [];
 
-    // 2. Мои обещания (commitmentAuthorPersonId=я), срок ≤ конец дня, открытые.
     const myPromisesRaw = await this.collectMyPromises({
       tenantId: args.tenantId,
       personId: args.personId,
       dayEnd,
     });
 
-    // 3. Открытые блокеры, автором которых являюсь я.
     const myBlockersRaw = await this.collectMyBlockers({
       tenantId: args.tenantId,
       personId: args.personId,
     });
 
-    // 4. Обещания, данные МНЕ (commitmentRecipientPersonId=я), открытые.
     const promisedToMeRaw = await this.collectPromisedToMe({
       tenantId: args.tenantId,
       personId: args.personId,
     });
 
-    // Дедуп внутри каждого вида + кросс-вид (обещание-ставшее-задачей).
-    const myTasks = dedupBriefItems(myTasksRaw).slice(
-      0,
-      PersonalDailyBriefService.MAX_ITEMS,
-    );
+    const myTasks = dedupBriefItems(myTasksRaw).slice(0, PersonalDailyBriefService.MAX_ITEMS);
     const myPromisesDeduped = dedupBriefItems(myPromisesRaw);
     const myPromises = dropPromisesThatBecameTasks({
       tasks: myTasks,
       promises: myPromisesDeduped,
     }).slice(0, PersonalDailyBriefService.MAX_ITEMS);
-    const myBlockers = dedupBriefItems(myBlockersRaw).slice(
-      0,
-      PersonalDailyBriefService.MAX_ITEMS,
-    );
+    const myBlockers = dedupBriefItems(myBlockersRaw).slice(0, PersonalDailyBriefService.MAX_ITEMS);
     const promisedToMe = dedupBriefItems(promisedToMeRaw).slice(
       0,
       PersonalDailyBriefService.MAX_ITEMS,
     );
 
-    // 5. skill-помощь «кто знает X» по первому открытому блокеру.
     const knowsWho = await this.resolveKnowsWhoHint({
       tenantId: args.tenantId,
       selfPersonId: args.personId,
       blockers: myBlockers,
     });
 
-    // 5b. TZ-1 Ф4.B — «ты не один»: коллеги уперлись в ту же тему (инсайт).
     const insightCoOccurrence = await this.resolveInsightCoOccurrence({
       tenantId: args.tenantId,
       personId: args.personId,
       personEntityId: person?.entityId ?? null,
     });
 
-    // 6. 1 подсказка дня (LLM + fallback).
     const overdueTaskCount = myTasks.filter((t) => t.overdue).length;
     const hintInput: PersonalBriefHintPromptInput = {
       taskCount: myTasks.length,
@@ -167,7 +130,6 @@ export class PersonalDailyBriefService {
     };
   }
 
-  /** Есть ли в брифе хоть что-то стоящее push'а (иначе утром не спамим). */
   hasContent(payload: PersonalDailyBriefPayload): boolean {
     return (
       payload.counts.tasks > 0 ||
@@ -177,8 +139,6 @@ export class PersonalDailyBriefService {
     );
   }
 
-  // ──────────────────────────── collectors ────────────────────────────
-
   private async collectMyTasks(args: {
     tenantId: string;
     userId: string;
@@ -186,9 +146,6 @@ export class PersonalDailyBriefService {
   }): Promise<BriefItem[]> {
     const out: BriefItem[] = [];
 
-    // Issue (трекер): assignee через IssueAssignee, открытые (state.category НЕ
-    // completed/cancelled), due ≤ конец дня (today/overdue) ИЛИ без срока но
-    // просроченные не попадут — берём только с dueDate ≤ dayEnd.
     const issues = await this.prisma.issue.findMany({
       where: {
         tenantId: args.tenantId,
@@ -196,10 +153,7 @@ export class PersonalDailyBriefService {
         archivedAt: null,
         assignees: { some: { userId: args.userId } },
         dueDate: { lte: args.dayEnd },
-        OR: [
-          { state: null },
-          { state: { category: { notIn: ['completed', 'cancelled'] } } },
-        ],
+        OR: [{ state: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }],
       },
       select: {
         id: true,
@@ -217,11 +171,10 @@ export class PersonalDailyBriefService {
         title: `${i.identifier}: ${i.title}`.slice(0, 200),
         dueDateIso: i.dueDate ? i.dueDate.toISOString() : null,
         overdue: this.isOverdue(i.dueDate, args.dayEnd),
-        priority: 10, // задача из трекера — самый «явный» источник
+        priority: 10,
       });
     }
 
-    // Task (legacy, из встреч): assigneeUserId, открытые, due ≤ конец дня.
     const tasks = await this.prisma.task.findMany({
       where: {
         tenantId: args.tenantId,
@@ -234,8 +187,6 @@ export class PersonalDailyBriefService {
       take: PersonalDailyBriefService.MAX_ITEMS,
     });
     for (const t of tasks) {
-      // Если задача порождена блоком (commitment) — дедуп-ключ = sourceBlockId,
-      // чтобы схлопнуть с «моим обещанием» того же блока.
       const dedupKey =
         Array.isArray(t.evidenceBlockIds) && t.evidenceBlockIds.length > 0
           ? t.evidenceBlockIds[0]!
@@ -291,10 +242,6 @@ export class PersonalDailyBriefService {
     tenantId: string;
     personId: string;
   }): Promise<BriefItem[]> {
-    // Блокеры автора: signalType ∈ {blocker, knowledge_gap}, не архив, не
-    // superseded. Авторство — через commitmentAuthorPersonId (детерминированная
-    // identity спикера; для blocker/knowledge_gap оно тоже проставляется
-    // резолвером subject, см. ТЗ Ф2 «открытые блокеры автора»).
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -355,12 +302,6 @@ export class PersonalDailyBriefService {
     }));
   }
 
-  // ──────────────────────────── knows-who ─────────────────────────────
-
-  /**
-   * Skill-помощь по первому открытому блокеру: ищем носителя (исключая автора —
-   * самого сотрудника). Возвращает hint-структуру для payload или null.
-   */
   private async resolveKnowsWhoHint(args: {
     tenantId: string;
     selfPersonId: string;
@@ -396,17 +337,6 @@ export class PersonalDailyBriefService {
     }
   }
 
-  // ──────────────────────────── insight co-occurrence ─────────────────
-
-  /**
-   * TZ-1 Ф4.B — «ты не один»: ищем активный инсайт, в `personSubjectIds`
-   * которого упомянут этот сотрудник, и считаем сколько коллег (Person)
-   * затронуто той же темой. Эскалация — severity high/critical ИЛИ
-   * dynamicLabel=spike. Возвращает топ-1 (по числу коллег) или null.
-   *
-   * Цель — встроить «4 коллеги сегодня уперлись в то же» прямо в бриф (без
-   * отдельного пуша → без спама). Best-effort: на ошибке возвращаем null.
-   */
   private async resolveInsightCoOccurrence(args: {
     tenantId: string;
     personId: string;
@@ -430,16 +360,12 @@ export class PersonalDailyBriefService {
         take: 25,
       });
       if (insights.length === 0) return null;
-      // Берём инсайт с наибольшим числом затронутых коллег (> 1, чтобы было
-      // «ты не один»; одиночное упоминание не сигнал сопричастности).
       let best: BriefInsightCoOccurrence | null = null;
       for (const ins of insights) {
         const colleaguesCount = new Set(ins.personSubjectIds).size;
         if (colleaguesCount < 2) continue;
         const escalated =
-          ins.severity === 'high' ||
-          ins.severity === 'critical' ||
-          ins.dynamicLabel === 'spike';
+          ins.severity === 'high' || ins.severity === 'critical' || ins.dynamicLabel === 'spike';
         if (!best || colleaguesCount > best.colleaguesCount) {
           best = {
             insightId: ins.id,
@@ -462,12 +388,7 @@ export class PersonalDailyBriefService {
     }
   }
 
-  // ──────────────────────────── hint (LLM) ────────────────────────────
-
-  private async buildHint(
-    tenantId: string,
-    input: PersonalBriefHintPromptInput,
-  ): Promise<string> {
+  private async buildHint(tenantId: string, input: PersonalBriefHintPromptInput): Promise<string> {
     try {
       const result = await this.llm.call({
         taskType: PERSONAL_BRIEF_HINT_TASK_TYPE,
@@ -492,17 +413,7 @@ export class PersonalDailyBriefService {
     }
   }
 
-  // ──────────────────────────── read (endpoints) ──────────────────────
-
-  /**
-   * Прочитать сохранённый бриф пользователя за день (self-scope по personId).
-   * Возвращает payload + метаданные. null если за день брифа нет.
-   */
-  async getForPerson(args: {
-    tenantId: string;
-    personId: string;
-    dateLocal: string;
-  }): Promise<{
+  async getForPerson(args: { tenantId: string; personId: string; dateLocal: string }): Promise<{
     id: string;
     dateLocal: string;
     payload: PersonalDailyBriefPayload;
@@ -535,10 +446,6 @@ export class PersonalDailyBriefService {
     };
   }
 
-  /**
-   * Проставить openedAt (идемпотентно — только если ещё null). Проверка владения
-   * по personId: чужой бриф открыть нельзя (возвращает false).
-   */
   async markOpened(args: {
     tenantId: string;
     personId: string;
@@ -549,11 +456,10 @@ export class PersonalDailyBriefService {
       select: { tenantId: true, personId: true, openedAt: true },
     });
     if (!row) return false;
-    // Self-scope: бриф должен принадлежать этому Person в этом тенанте.
     if (row.tenantId !== args.tenantId || row.personId !== args.personId) {
       return false;
     }
-    if (row.openedAt) return true; // уже открыт — идемпотентно
+    if (row.openedAt) return true;
     await this.prisma.personalDailyBrief.update({
       where: { id: args.briefId },
       data: { openedAt: new Date() },
@@ -562,11 +468,6 @@ export class PersonalDailyBriefService {
     return true;
   }
 
-  /**
-   * Идемпотентный upsert брифа за день (для cron). Перезаписывает payload при
-   * повторном прогоне того же дня. `deliveredAt` НЕ трогаем здесь — его ставит
-   * cron после успешного push.
-   */
   async upsert(args: {
     tenantId: string;
     personId: string;
@@ -597,7 +498,6 @@ export class PersonalDailyBriefService {
     return { id: row.id, alreadyDelivered: row.deliveredAt !== null };
   }
 
-  /** Пометить, что push доставлен (NULL → now). Идемпотентно. */
   async markDelivered(briefId: string): Promise<void> {
     await this.prisma.personalDailyBrief.update({
       where: { id: briefId },
@@ -605,27 +505,19 @@ export class PersonalDailyBriefService {
     });
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
   private isOverdue(due: Date | null | undefined, dayEnd: Date): boolean {
     if (!due) return false;
-    // Просрочено, если срок раньше начала текущего дня (т.е. до 00:00 сегодня).
     const dayStart = new Date(dayEnd.getTime() - 24 * 60 * 60 * 1000 + 1);
     return due.getTime() < dayStart.getTime();
   }
 
-  /** Конец локального дня в UTC: dateLocal + 1 день, 00:00 UTC минус 1мс. */
   private endOfDayUtc(dateLocal: string): Date {
     const start = new Date(`${dateLocal}T00:00:00.000Z`);
     return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
   }
 }
 
-/** Парсинг payloadJson в типизированный объект (защита от мусора). */
-export function parsePayload(
-  raw: Prisma.JsonValue,
-  dateLocal: string,
-): PersonalDailyBriefPayload {
+export function parsePayload(raw: Prisma.JsonValue, dateLocal: string): PersonalDailyBriefPayload {
   const empty: PersonalDailyBriefPayload = {
     dateLocal,
     myTasks: [],
@@ -651,9 +543,7 @@ export function parsePayload(
   };
 }
 
-function parseInsightCoOccurrence(
-  raw: unknown,
-): BriefInsightCoOccurrence | null {
+function parseInsightCoOccurrence(raw: unknown): BriefInsightCoOccurrence | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
   if (typeof o.insightId !== 'string' || typeof o.statement !== 'string') {
@@ -662,8 +552,7 @@ function parseInsightCoOccurrence(
   return {
     insightId: o.insightId,
     statement: o.statement,
-    colleaguesCount:
-      typeof o.colleaguesCount === 'number' ? o.colleaguesCount : 0,
+    colleaguesCount: typeof o.colleaguesCount === 'number' ? o.colleaguesCount : 0,
     escalated: o.escalated === true,
   };
 }
@@ -682,8 +571,7 @@ function parseItems(raw: unknown): BriefItem[] {
       dueDateIso: typeof o.dueDateIso === 'string' ? o.dueDateIso : null,
       overdue: o.overdue === true,
       priority: typeof o.priority === 'number' ? o.priority : undefined,
-      counterpartyName:
-        typeof o.counterpartyName === 'string' ? o.counterpartyName : null,
+      counterpartyName: typeof o.counterpartyName === 'string' ? o.counterpartyName : null,
     });
   }
   return out;

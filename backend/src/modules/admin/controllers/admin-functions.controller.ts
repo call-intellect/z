@@ -14,20 +14,12 @@ import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { AdminFunctionsService } from '../services/admin-functions.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
-/**
- * Z-Admin functions endpoints (Фаза 7 шаг 4).
- * Управление моделью функции делается через существующий
- * `LlmRoutesController` (PUT /api/v1/admin/llm-routes/:taskType) — DTO
- * расширен на все taskType из union.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/functions')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminFunctionsController {
-  constructor(
-    @Inject(AdminFunctionsService) private readonly svc: AdminFunctionsService,
-  ) {}
+  constructor(@Inject(AdminFunctionsService) private readonly svc: AdminFunctionsService) {}
 
   @Get()
   async list() {

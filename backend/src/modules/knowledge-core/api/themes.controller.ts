@@ -20,10 +20,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -46,13 +43,6 @@ import {
 const THEME_DETAIL_BLOCKS_LIMIT = 20;
 const THEME_DETAIL_ENTITIES_LIMIT = 50;
 
-/**
- * Themes API (Фаза 4 knowledge-core):
- *   - `GET /api/v1/knowledge/themes` — список тем Org с фильтрами по ветке/статусу.
- *   - `GET /api/v1/knowledge/themes/:id` — деталка с блоками + сущностями.
- *   - `POST /api/v1/knowledge/themes/:id/save-as-card` — конвертация темы в Card
- *     (kind='topic', bornFromThemeId=themeId).
- */
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge/themes')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -61,10 +51,6 @@ export class KnowledgeThemesController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    // Ф4 (knowledge-access) — гейт доступа в деталке темы. RbacModule/Metrics/
-    // Config @Global. @Optional, чтобы legacy-тесты, создающие контроллер
-    // позиционно (без этих сервисов), не падали — при null гейт не активируется
-    // (поведение = off).
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -102,9 +88,7 @@ export class KnowledgeThemesController {
       tenantId,
       status: query.status,
       ...(query.branch ? { branch: query.branch } : {}),
-      ...(query.q
-        ? { name: { contains: query.q, mode: 'insensitive' } }
-        : {}),
+      ...(query.q ? { name: { contains: query.q, mode: 'insensitive' } } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -153,12 +137,8 @@ export class KnowledgeThemesController {
       });
     }
 
-    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null
-    // (поведение байт-в-байт текущее).
     const enf: 'off' | 'shadow' | 'enforce' =
-      this.cfg && this.accessResolver
-        ? this.cfg.knowledgeAccess.enforcement
-        : 'off';
+      this.cfg && this.accessResolver ? this.cfg.knowledgeAccess.enforcement : 'off';
     const accessCtx =
       enf !== 'off' && this.accessResolver
         ? await this.accessResolver.resolveAccessibleGroups({
@@ -195,16 +175,12 @@ export class KnowledgeThemesController {
       }),
     ]);
 
-    // Ф4 (knowledge-access) — post-filter блоков темы по группам пользователя.
-    // enforce → исключаем недоступные; shadow → только метрика, выдача неизменна;
-    // bypass (owner/admin/super) → видит всё.
     let visibleBlockRows = blockRows;
     if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
-      const { accessible, denied } =
-        await this.accessResolver.partitionBlockIdsByAccess(
-          accessCtx,
-          blockRows.map((r) => r.block.id),
-        );
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockRows.map((r) => r.block.id),
+      );
       if (enf === 'enforce') {
         const allow = new Set(accessible);
         visibleBlockRows = blockRows.filter((r) => allow.has(r.block.id));
@@ -246,7 +222,6 @@ export class KnowledgeThemesController {
         error: { code: 'tenant_required', message: 'Org не определена' },
       });
     }
-    // Read право на тему + write на card.
     const [readOk, writeOk] = await Promise.all([
       this.rbac.canRead(user.id, tenantId, 'theme'),
       this.rbac.canWrite(user.id, tenantId, 'card', user.id),
@@ -295,10 +270,7 @@ export class KnowledgeThemesController {
         bornFromThemeId: card.bornFromThemeId ?? theme.id,
       };
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -310,8 +282,6 @@ export class KnowledgeThemesController {
       throw err;
     }
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapTheme(
     t: {

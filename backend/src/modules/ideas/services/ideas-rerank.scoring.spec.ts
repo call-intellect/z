@@ -8,10 +8,6 @@ import {
   type IdeaRerankInput,
 } from './ideas-rerank.scoring';
 
-/**
- * TZ-1 Фаза 4.A (daily-value-engine) — unit-тесты чистой логики ленты идей.
- * Без БД/сети; время передаётся аргументом.
- */
 describe('ideas-rerank.scoring', () => {
   const now = new Date('2026-06-08T12:00:00.000Z');
 
@@ -24,9 +20,9 @@ describe('ideas-rerank.scoring', () => {
         goalId: null,
       };
       const heavy: IdeaRerankInput = { ...base, id: 'b', weight: 10 };
-      expect(
-        scoreIdea(heavy, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
-      ).toBeGreaterThan(scoreIdea(base, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30));
+      expect(scoreIdea(heavy, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30)).toBeGreaterThan(
+        scoreIdea(base, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
+      );
     });
 
     it('свежее обсуждение → выше, чем старое', () => {
@@ -39,11 +35,11 @@ describe('ideas-rerank.scoring', () => {
       const stale: IdeaRerankInput = {
         ...fresh,
         id: 'b',
-        lastDiscussedAt: new Date('2026-04-01T00:00:00.000Z'), // > 30 дней назад
+        lastDiscussedAt: new Date('2026-04-01T00:00:00.000Z'),
       };
-      expect(
-        scoreIdea(fresh, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
-      ).toBeGreaterThan(scoreIdea(stale, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30));
+      expect(scoreIdea(fresh, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30)).toBeGreaterThan(
+        scoreIdea(stale, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
+      );
     });
 
     it('связь с целью даёт бонус', () => {
@@ -54,9 +50,9 @@ describe('ideas-rerank.scoring', () => {
         goalId: null,
       };
       const withGoal: IdeaRerankInput = { ...noGoal, id: 'b', goalId: 'g-1' };
-      expect(
-        scoreIdea(withGoal, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
-      ).toBeGreaterThan(scoreIdea(noGoal, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30));
+      expect(scoreIdea(withGoal, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30)).toBeGreaterThan(
+        scoreIdea(noGoal, now, DEFAULT_IDEAS_RERANK_WEIGHTS, 30),
+      );
     });
 
     it('мусорный weight (NaN/отриц) → не падает, скор конечный', () => {
@@ -74,14 +70,12 @@ describe('ideas-rerank.scoring', () => {
   describe('rerankIdeas', () => {
     it('сортирует по итоговому скору desc; цель+свежесть могут обогнать чистый weight', () => {
       const items: IdeaRerankInput[] = [
-        // высокий weight, но старое и без цели
         {
           id: 'old-heavy',
           weight: 6,
           lastDiscussedAt: new Date('2026-03-01T00:00:00.000Z'),
           goalId: null,
         },
-        // меньше weight, но свежее и с целью
         {
           id: 'fresh-goal',
           weight: 5,

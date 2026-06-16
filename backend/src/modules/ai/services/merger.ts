@@ -9,27 +9,15 @@ export type { DialogTurn };
 
 const roomChatLogger = new Logger('Merger.roomChat');
 
-/**
- * Per-track word с привязкой к speaker и абсолютному времени trackStartedAt.
- */
 export interface PerTrackWords {
   speakerName: string;
-  /** ms от начала аудио-дорожки (0 = первая миллисекунда). */
   words: Array<{ word: string; startMs: number; endMs: number }>;
-  /** Абсолютное время старта дорожки. Используется как offset. */
   trackStartedAt: Date;
-  /** Базовая точка относительно которой считаем секунды. */
   baseStartedAt: Date;
-  /** Identity спикера: id Participant'а (если резолвлен). Пробрасывается в turn. */
   participantId?: string | null;
-  /** Identity спикера: livekitIdentity дорожки. Пробрасывается в turn. */
   livekitIdentity?: string | null;
 }
 
-/**
- * Промежуточная структура: один word с уже посчитанным абсолютным временем
- * (в секундах от начала встречи).
- */
 interface AbsoluteWord {
   speaker: string;
   word: string;
@@ -41,20 +29,6 @@ interface AbsoluteWord {
 
 const DEFAULT_TURN_GAP_SEC = 1.5;
 
-/**
- * Склеивает word-timestamps из разных дорожек в единый диалог.
- *
- * Алгоритм:
- *   1. Все words → absolute time (sec от `baseStartedAt`).
- *   2. Сортируем по `absStartSec`.
- *   3. Группируем подряд идущие words одного speaker в turn'ы.
- *      Если между соседними words одного speaker gap > `gapSec` —
- *      считаем это новым turn'ом.
- *   4. Если speaker сменился — закрываем предыдущий turn и открываем новый.
- *
- * При одновременной речи двух участников — words взаимно проникают по времени;
- * сортировка по startSec даёт однозначный порядок (а speaker — однозначен).
- */
 export function mergeWordTimestamps(
   perTrack: PerTrackWords[],
   options: { gapSec?: number } = {},
@@ -82,7 +56,6 @@ export function mergeWordTimestamps(
 
   if (allWords.length === 0) return [];
 
-  // Стабильная сортировка по startSec; при равенстве — по endSec.
   allWords.sort((a, b) => a.absStartSec - b.absStartSec || a.absEndSec - b.absEndSec);
 
   const turns: DialogTurn[] = [];
@@ -90,9 +63,6 @@ export function mergeWordTimestamps(
   let currentText: string[] = [];
   let currentStart = 0;
   let currentEnd = 0;
-  // Identity текущего turn'а — берётся из первого слова turn'а (когда
-  // открывается новый turn). Группировка по-прежнему по speaker (имени);
-  // эти поля только пробрасывают identity дорожки в DialogTurn.
   let currentParticipantId: string | null = null;
   let currentLivekitIdentity: string | null = null;
 
@@ -117,7 +87,6 @@ export function mergeWordTimestamps(
 
   for (const w of allWords) {
     const speakerChanged = currentSpeaker !== null && currentSpeaker !== w.speaker;
-    // Gap считаем по `currentEnd → w.absStartSec` для текущего turn'а.
     const gap = currentSpeaker !== null ? w.absStartSec - currentEnd : 0;
     const gapTooLarge = currentSpeaker !== null && gap > gapSec;
 
@@ -139,20 +108,10 @@ export function mergeWordTimestamps(
   return turns;
 }
 
-/**
- * Считает суммарное количество слов в массиве turn'ов.
- */
 export function countWords(turns: DialogTurn[]): number {
-  return turns.reduce(
-    (sum, t) => sum + (t.text === '' ? 0 : t.text.split(/\s+/).length),
-    0,
-  );
+  return turns.reduce((sum, t) => sum + (t.text === '' ? 0 : t.text.split(/\s+/).length), 0);
 }
 
-/**
- * Возвращает максимальный endSec из всех turn'ов — используется как
- * `totalDurationSeconds` Transcript'а.
- */
 export function maxEndSec(turns: DialogTurn[]): number {
   let max = 0;
   for (const t of turns) {
@@ -161,23 +120,6 @@ export function maxEndSec(turns: DialogTurn[]): number {
   return Math.round(max);
 }
 
-/**
- * Загружает in-meeting чат встречи для подмешивания в merged.json AI-pipeline.
- *
- * Контракт:
- *   - если флаг `cfg.aiFeatures.includeRoomChat === false` → вернёт `null`
- *     (downstream НЕ добавляет ключ `roomChat` в merged.json);
- *   - если флаг включён, но сообщений нет → вернёт `null` (тоже без ключа,
- *     чтобы LLM не получал пустой массив и не тратил токены на упоминание чата);
- *   - иначе вернёт массив `RoomChatMessage[]` в порядке `sentAt asc`.
- *
- * Делается отдельной функцией (не методом сервиса), потому что merger.ts
- * — pure-utility слой; injected зависимости передаются параметрами, чтобы
- * не плодить класс ради двух методов и не ломать существующие чистые тесты
- * `mergeWordTimestamps`.
- *
- * Источник: модель `MeetingRoomMessage` (см. ТЗ `meeting-room-chat`).
- */
 export async function loadRoomChatForMerge(args: {
   prisma: PrismaService;
   cfg: TypedConfigService;

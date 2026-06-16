@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { Check, ExternalLink, Loader2, X } from 'lucide-react';
-import { useState } from 'react';
+import { Check, ExternalLink, Loader2, X } from "lucide-react";
+import { useState } from "react";
 
 import {
   PENDING_PATCH_REASON_LABEL_RU,
@@ -10,27 +10,17 @@ import {
   type PendingPatchDomain,
   type TablePropertyDomain,
   type TableRowDomain,
-} from '@/domain/table';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/table";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
-/**
- * Панель очереди подтверждений правок (Smart-tables Фаза 3, Event-to-Cells).
- *
- * Показывает pending-правки ячеек, предложенные агентом из встреч/документов.
- * Для каждой: какая строка, какая колонка, текущее → предлагаемое значение,
- * причина (низкая уверенность / перезапись), уверенность, ссылка на источник.
- *
- * Действия: «Принять» / «Отклонить» на каждой + «Принять все» / «Отклонить
- * все» сверху. Решения проходят через store (оптимистичное обновление).
- */
 export interface PendingPatchesPanelProps {
   open: boolean;
   onClose: () => void;
@@ -156,8 +146,8 @@ function PatchRow({
   const [busy, setBusy] = useState(false);
 
   const property = properties.find((p) => p.id === patch.propertyId) ?? null;
-  const propType = property?.type ?? 'text';
-  const propName = property?.name ?? 'Колонка';
+  const propType = property?.type ?? "text";
+  const propName = property?.name ?? "Колонка";
 
   const row = rows.find((r) => r.id === patch.tableRowId) ?? null;
   const rowTitle = rowPrimaryLabel(row, properties);
@@ -184,9 +174,7 @@ function PatchRow({
         <span className="font-medium text-fg-primary">{rowTitle}</span>
         <span className="text-fg-tertiary">·</span>
         <span className="text-fg-secondary">{propName}</span>
-        {reasonLabel ? (
-          <Badge variant="warning">{reasonLabel}</Badge>
-        ) : null}
+        {reasonLabel ? <Badge variant="warning">{reasonLabel}</Badge> : null}
         {confidence ? (
           <span className="text-fg-tertiary">уверенность {confidence}</span>
         ) : null}
@@ -194,13 +182,13 @@ function PatchRow({
 
       <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
         <span className="rounded bg-bg-subtle px-2 py-0.5 text-fg-tertiary line-through">
-          {formatCellValue(patch.currentValue, propType) || '—'}
+          {formatCellValue(patch.currentValue, propType) || "—"}
         </span>
         <span className="text-fg-tertiary" aria-hidden>
           →
         </span>
         <span className="rounded bg-chip-success-bg/10 px-2 py-0.5 text-fg-primary">
-          {formatCellValue(patch.proposedValue, propType) || '—'}
+          {formatCellValue(patch.proposedValue, propType) || "—"}
         </span>
       </div>
 
@@ -213,11 +201,11 @@ function PatchRow({
             className="inline-flex items-center gap-1 text-xs text-accent transition-colors hover:underline"
           >
             <ExternalLink className="h-3 w-3" aria-hidden />
-            {patch.sourceLabel || 'Источник'}
+            {patch.sourceLabel || "Источник"}
           </a>
         ) : (
           <span className="truncate text-xs text-fg-tertiary">
-            {patch.sourceLabel || 'Источник'}
+            {patch.sourceLabel || "Источник"}
           </span>
         )}
         <div className="flex shrink-0 items-center gap-2">
@@ -249,23 +237,22 @@ function PatchRow({
   );
 }
 
-/** Заголовок строки: значение isPrimary-колонки, иначе первой текстовой. */
 function rowPrimaryLabel(
   row: TableRowDomain | null,
   properties: TablePropertyDomain[],
 ): string {
-  if (!row) return 'Строка';
+  if (!row) return "Строка";
   const primary = properties.find((p) => p.isPrimary);
   if (primary) {
     const v = formatCellValue(row.cells[primary.id], primary.type);
     if (v) return v;
   }
   const firstText = properties.find(
-    (p) => p.type === 'text' || p.type === 'longtext',
+    (p) => p.type === "text" || p.type === "longtext",
   );
   if (firstText) {
     const v = formatCellValue(row.cells[firstText.id], firstText.type);
     if (v) return v;
   }
-  return 'Строка';
+  return "Строка";
 }

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import {
   ArrowLeft,
   Contact,
@@ -11,66 +11,62 @@ import {
   MessagesSquare,
   Trash2,
   Users,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { chatboxApi, type ChatboxSyncScope } from '@/api/chatbox.api';
-import { mapIntegration } from '@/domain/chatbox';
+import { ApiError } from "@/api/api-error";
+import { chatboxApi, type ChatboxSyncScope } from "@/api/chatbox.api";
+import { mapIntegration } from "@/domain/chatbox";
 import {
   CardTitle,
   GlassCard,
   GRAD,
   STATUS_TONE,
-} from '@/ui/components/dashboard/modern';
-import { TierGate } from '@/ui/components/TierGate';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/components/dashboard/modern";
+import { TierGate } from "@/ui/components/TierGate";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   ChatboxConnectWizard,
   WIZARD_STORAGE_KEY,
-} from './ChatboxConnectWizard';
-import { ChatboxMemorySummaryCard } from './ChatboxMemorySummaryCard';
+} from "./ChatboxConnectWizard";
+import { ChatboxMemorySummaryCard } from "./ChatboxMemorySummaryCard";
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
 function formatDate(d: Date | null): string {
-  if (!d) return '—';
-  return d.toLocaleString('ru-RU');
+  if (!d) return "—";
+  return d.toLocaleString("ru-RU");
 }
 
-// Принудительная синхронизация — по отдельности. «Всё» и «Чаты» убраны:
-// чаты НЕ дёргаются мгновенно — только по периоду (бэкафилл ниже), т.к. новые
-// и так подтягиваются раз в сутки. Здесь — только точечные справочники.
 const SYNC_SCOPES: ReadonlyArray<{
   scope: ChatboxSyncScope;
   label: string;
   icon: typeof Users;
 }> = [
-  { scope: 'customers', label: 'Клиенты', icon: Contact },
-  { scope: 'managers', label: 'Менеджеры', icon: Users },
+  { scope: "customers", label: "Клиенты", icon: Contact },
+  { scope: "managers", label: "Менеджеры", icon: Users },
 ];
 
-// Период бэкафилла чатов — в ДНЯХ (как в мастере подключения). 'all' — всё.
 const CHAT_PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '1', label: 'Последний 1 день' },
-  { value: '7', label: 'Последние 7 дней' },
-  { value: '30', label: 'Последний 1 месяц' },
-  { value: '90', label: 'Последние 3 месяца' },
-  { value: '180', label: 'Последние 6 месяцев' },
-  { value: '365', label: 'Последний год' },
-  { value: 'all', label: 'Вся история' },
+  { value: "1", label: "Последний 1 день" },
+  { value: "7", label: "Последние 7 дней" },
+  { value: "30", label: "Последний 1 месяц" },
+  { value: "90", label: "Последние 3 месяца" },
+  { value: "180", label: "Последние 6 месяцев" },
+  { value: "365", label: "Последний год" },
+  { value: "all", label: "Вся история" },
 ];
 
 export function ChatboxIntegrationClient() {
@@ -83,29 +79,18 @@ export function ChatboxIntegrationClient() {
 
 function ChatboxIntegrationContent() {
   const { data, error, isLoading, mutate } = useSWR(
-    ['chatbox-integration'],
+    ["chatbox-integration"],
     () => chatboxApi.getIntegration().then(mapIntegration),
     { revalidateOnFocus: false },
   );
 
-  // Латч режима: решаем один раз после первой загрузки.
-  //   - визард активен, если он «в процессе» (есть сохранённый прогресс в
-  //     sessionStorage) ИЛИ интеграции ещё нет (data === null);
-  //   - иначе ConnectedView.
-  // Это держит мастер открытым на шагах 3–4 даже после создания интеграции
-  // (data !== null) и переживает уход со страницы и возврат — прогресс
-  // восстанавливается из sessionStorage внутри визарда.
   const [wizardMode, setWizardMode] = useState<boolean | null>(null);
   useEffect(() => {
     if (isLoading || error) return;
     setWizardMode((prev) => {
       if (prev !== null) return prev;
-      // Визард активен, если он «в процессе» (есть сохранённый прогресс) ИЛИ
-      // интеграции ещё нет. НИКАКОГО stale-guard по шагу: после «Подключить»
-      // SWR-кэш ещё показывает data=null (mutate не звали), и guard ошибочно
-      // принимал это за «удалённую интеграцию» и стирал прогресс → сброс на шаг 1.
       const inProgress =
-        typeof window !== 'undefined' &&
+        typeof window !== "undefined" &&
         sessionStorage.getItem(WIZARD_STORAGE_KEY) !== null;
       return inProgress || data === null;
     });
@@ -114,9 +99,7 @@ function ChatboxIntegrationContent() {
   const finishWizard = () => {
     try {
       sessionStorage.removeItem(WIZARD_STORAGE_KEY);
-    } catch {
-      /* noop */
-    }
+    } catch {}
     setWizardMode(false);
     void mutate();
   };
@@ -132,7 +115,7 @@ function ChatboxIntegrationContent() {
       <header className="mb-6 flex items-center gap-3">
         <span
           className="grid h-10 w-10 shrink-0 place-items-center rounded-xl"
-          style={{ background: GRAD.violet, color: 'oklch(0.99 0.005 280)' }}
+          style={{ background: GRAD.violet, color: "oklch(0.99 0.005 280)" }}
         >
           <MessagesSquare size={20} />
         </span>
@@ -148,7 +131,7 @@ function ChatboxIntegrationContent() {
 
       {error && !isLoading ? (
         <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {errMessage(error, 'Не удалось загрузить интеграцию')}
+          {errMessage(error, "Не удалось загрузить интеграцию")}
         </div>
       ) : isLoading || wizardMode === null ? (
         <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
@@ -167,8 +150,6 @@ function ChatboxIntegrationContent() {
   );
 }
 
-// ─────────────────────────── Настроено ───────────────────────────────────
-
 function ConnectedView({
   integration,
   onChanged,
@@ -184,28 +165,22 @@ function ConnectedView({
     null,
   );
   const [deleting, setDeleting] = useState(false);
-  // Идёт ли синхронизация (для прогресса): пока true — опрашиваем статус.
   const [syncing, setSyncing] = useState(false);
-  // Период бэкафилла чатов (дни / 'all'). По умолчанию — 3 месяца.
-  const [chatPeriod, setChatPeriod] = useState('90');
+  const [chatPeriod, setChatPeriod] = useState("90");
   const syncBaselineRef = useRef<string | null>(null);
   const syncStartMsRef = useRef<number>(0);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
-  // Общий с SyncStatusCard опрос статуса (один SWR-ключ → общий кэш).
-  // Пока syncing — поллим каждые 2.5с, иначе не дёргаем.
   const { data: syncStatus, mutate: mutateStatus } = useSWR(
-    ['chatbox-sync-status'],
+    ["chatbox-sync-status"],
     () => chatboxApi.syncStatus(),
     { refreshInterval: syncing ? 2500 : 0 },
   );
 
-  // Завершение синка: ловим появление НОВОЙ полной синхронизации
-  // (lastFullSyncAt сдвинулся) либо страховочный таймаут 4 минуты.
   useEffect(() => {
     if (!syncing) return;
     const curFull =
-      syncStatus && 'lastFullSyncAt' in syncStatus
+      syncStatus && "lastFullSyncAt" in syncStatus
         ? syncStatus.lastFullSyncAt
         : null;
     const done =
@@ -213,15 +188,15 @@ function ConnectedView({
       Date.now() - syncStartMsRef.current > 240_000;
     if (done) {
       setSyncing(false);
-      toast.success('Синхронизация завершена');
+      toast.success("Синхронизация завершена");
       onChanged();
     }
   }, [syncing, syncStatus, onChanged]);
 
   const statusTone =
-    integration.status === 'connected'
+    integration.status === "connected"
       ? STATUS_TONE.ok
-      : integration.status === 'error'
+      : integration.status === "error"
         ? STATUS_TONE.risk
         : STATUS_TONE.warning;
 
@@ -234,11 +209,11 @@ function ConnectedView({
         syncMode: integration.syncMode,
         analysisEnabled: next,
       });
-      toast.success(next ? 'AI-анализ включён' : 'AI-анализ выключен');
+      toast.success(next ? "AI-анализ включён" : "AI-анализ выключен");
       onChanged();
     } catch (e) {
-      setAnalysisEnabled(!next); // откат при ошибке
-      toast.error(errMessage(e, 'Не удалось сохранить'));
+      setAnalysisEnabled(!next);
+      toast.error(errMessage(e, "Не удалось сохранить"));
     } finally {
       setSavingAnalysis(false);
     }
@@ -248,51 +223,49 @@ function ConnectedView({
     setSyncingScope(scope);
     try {
       await chatboxApi.sync(scope, since);
-      // Точка отсчёта для детекта завершения.
       syncBaselineRef.current =
-        syncStatus && 'lastFullSyncAt' in syncStatus
+        syncStatus && "lastFullSyncAt" in syncStatus
           ? syncStatus.lastFullSyncAt
           : null;
       syncStartMsRef.current = Date.now();
       setSyncing(true);
       void mutateStatus();
       toast.success(
-        since ? 'Запущен импорт прошлых чатов' : 'Синхронизация запущена',
+        since ? "Запущен импорт прошлых чатов" : "Синхронизация запущена",
       );
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось запустить синхронизацию'));
+      toast.error(errMessage(e, "Не удалось запустить синхронизацию"));
     } finally {
       setSyncingScope(null);
     }
   };
 
-  // Бэкафилл чатов: период (дни) → since (ISO). 'all' → без границы.
   const handleBackfillChats = () => {
     const since =
-      chatPeriod === 'all'
+      chatPeriod === "all"
         ? undefined
         : new Date(
             Date.now() - Number(chatPeriod) * 24 * 60 * 60 * 1000,
           ).toISOString();
-    void handleSync('chats', since);
+    void handleSync("chats", since);
   };
 
   const handleDelete = async () => {
     const ok = await ask({
-      title: 'Отключить интеграцию?',
+      title: "Отключить интеграцию?",
       description:
-        'Синхронизация прекратится. Уже собранные данные останутся в памяти компании.',
-      confirmLabel: 'Отключить',
+        "Синхронизация прекратится. Уже собранные данные останутся в памяти компании.",
+      confirmLabel: "Отключить",
       destructive: true,
     });
     if (!ok) return;
     setDeleting(true);
     try {
       await chatboxApi.deleteIntegration();
-      toast.success('Интеграция отключена');
+      toast.success("Интеграция отключена");
       onChanged();
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось отключить'));
+      toast.error(errMessage(e, "Не удалось отключить"));
     } finally {
       setDeleting(false);
     }
@@ -300,7 +273,7 @@ function ConnectedView({
 
   return (
     <div className="space-y-5">
-      {/* Источник: статус + ручной синк + чаты + AI-анализ — одной карточкой */}
+      {}
       <GlassCard className="space-y-5">
         <div className="flex items-center justify-between gap-3">
           <CardTitle icon={<MessagesSquare size={16} />} grad={GRAD.violet}>
@@ -314,10 +287,13 @@ function ConnectedView({
           </span>
         </div>
 
-        {integration.status === 'error' && integration.lastError && (
+        {integration.status === "error" && integration.lastError && (
           <div
             className="rounded-xl px-3 py-2.5 text-sm"
-            style={{ color: STATUS_TONE.risk.c, background: STATUS_TONE.risk.bg }}
+            style={{
+              color: STATUS_TONE.risk.c,
+              background: STATUS_TONE.risk.bg,
+            }}
           >
             {integration.lastError}
           </div>
@@ -327,7 +303,7 @@ function ConnectedView({
           Автоматическая синхронизация — раз в сутки в 00:00.
         </p>
 
-        {/* Принудительный синк справочников */}
+        {}
         <div className="space-y-2.5">
           <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
             Синхронизировать вручную
@@ -360,19 +336,20 @@ function ConnectedView({
               <span className="font-medium text-fg-primary">
                 Идёт синхронизация…
               </span>
-              {syncStatus && 'counts' in syncStatus && (
+              {syncStatus && "counts" in syncStatus && (
                 <span className="text-fg-secondary">
-                  собрано: {syncStatus.counts.chats.toLocaleString('ru-RU')} чатов ·{' '}
-                  {syncStatus.counts.messages.toLocaleString('ru-RU')} сообщений ·{' '}
-                  {syncStatus.counts.customers.toLocaleString('ru-RU')} клиентов ·{' '}
-                  {syncStatus.counts.sessions.toLocaleString('ru-RU')} сессий
+                  собрано: {syncStatus.counts.chats.toLocaleString("ru-RU")}{" "}
+                  чатов · {syncStatus.counts.messages.toLocaleString("ru-RU")}{" "}
+                  сообщений ·{" "}
+                  {syncStatus.counts.customers.toLocaleString("ru-RU")} клиентов
+                  · {syncStatus.counts.sessions.toLocaleString("ru-RU")} сессий
                 </span>
               )}
             </div>
           )}
         </div>
 
-        {/* Чаты — только по периоду (новые подтягиваются раз в сутки) */}
+        {}
         <div className="space-y-2.5 border-t border-border-subtle pt-5">
           <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
             Забрать прошлые чаты за период
@@ -400,7 +377,7 @@ function ConnectedView({
               onClick={() => handleBackfillChats()}
               disabled={syncingScope !== null || syncing}
             >
-              {syncingScope === 'chats' ? (
+              {syncingScope === "chats" ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <MessagesSquare size={14} />
@@ -412,12 +389,12 @@ function ConnectedView({
             Новые чаты подтягиваются автоматически раз в сутки. Здесь — добрать
             прошлые за выбранный период, если при установке пропустили.
             {analysisEnabled
-              ? ' Забранные диалоги уйдут в AI-анализ (без повторов уже разобранных).'
-              : ' Сейчас AI-анализ выключен: чаты просто зеркалятся.'}
+              ? " Забранные диалоги уйдут в AI-анализ (без повторов уже разобранных)."
+              : " Сейчас AI-анализ выключен: чаты просто зеркалятся."}
           </p>
         </div>
 
-        {/* AI-анализ — строкой с тумблером */}
+        {}
         <div className="flex items-start justify-between gap-4 border-t border-border-subtle pt-5">
           <div className="min-w-0 max-w-[68ch]">
             <p className="text-sm font-medium text-fg-primary">
@@ -441,7 +418,7 @@ function ConnectedView({
         </div>
       </GlassCard>
 
-      {/* Связи с сотрудниками — менеджеры + клиенты одной карточкой */}
+      {}
       <GlassCard className="space-y-3">
         <CardTitle icon={<Users size={16} />} grad={GRAD.teal}>
           Связи с сотрудниками
@@ -466,13 +443,13 @@ function ConnectedView({
         </div>
       </GlassCard>
 
-      {/* Чаты в памяти — сводка анализа и графа */}
+      {}
       <ChatboxMemorySummaryCard />
 
-      {/* Статус собранных данных */}
+      {}
       <SyncStatusCard />
 
-      {/* Отключение — компактной строкой */}
+      {}
       <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-fg-primary">
@@ -502,22 +479,26 @@ function ConnectedView({
   );
 }
 
-// ─────────────────────────── Статус собранных данных ─────────────────────
-
 const COUNT_LABELS: Array<{
-  key: 'chats' | 'messages' | 'customers' | 'channelClients' | 'members' | 'sessions';
+  key:
+    | "chats"
+    | "messages"
+    | "customers"
+    | "channelClients"
+    | "members"
+    | "sessions";
   label: string;
 }> = [
-  { key: 'chats', label: 'Чаты' },
-  { key: 'messages', label: 'Сообщения' },
-  { key: 'customers', label: 'Клиенты' },
-  { key: 'channelClients', label: 'Клиенты каналов' },
-  { key: 'members', label: 'Менеджеры' },
-  { key: 'sessions', label: 'Сессии' },
+  { key: "chats", label: "Чаты" },
+  { key: "messages", label: "Сообщения" },
+  { key: "customers", label: "Клиенты" },
+  { key: "channelClients", label: "Клиенты каналов" },
+  { key: "members", label: "Менеджеры" },
+  { key: "sessions", label: "Сессии" },
 ];
 
 function SyncStatusCard() {
-  const { data, isLoading } = useSWR(['chatbox-sync-status'], () =>
+  const { data, isLoading } = useSWR(["chatbox-sync-status"], () =>
     chatboxApi.syncStatus(),
   );
 
@@ -534,7 +515,7 @@ function SyncStatusCard() {
     );
   }
 
-  if (!data || !('counts' in data)) {
+  if (!data || !("counts" in data)) {
     return null;
   }
 
@@ -550,7 +531,7 @@ function SyncStatusCard() {
             className="rounded-xl border border-border-subtle bg-[oklch(1_0_0/0.03)] px-3 py-2.5"
           >
             <div className="text-xl font-semibold tabular-nums text-fg-primary">
-              {(data.counts[key] ?? 0).toLocaleString('ru-RU')}
+              {(data.counts[key] ?? 0).toLocaleString("ru-RU")}
             </div>
             <div className="mt-0.5 text-[11px] text-fg-tertiary">{label}</div>
           </div>

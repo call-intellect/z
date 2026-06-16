@@ -1,19 +1,16 @@
 export const LABEL_MAP: Record<string, string> = {
-  // companyRole
   founder: 'Собственник или основатель',
   general_director: 'Генеральный директор',
   operations_director: 'Операционный директор',
   department_head: 'Руководитель отдела',
   team_lead: 'Руководитель проекта или команды',
   specialist: 'Сотрудник или специалист',
-  // teamSize
   '1-5': '1–5 человек',
   '6-20': '6–20 человек',
   '21-50': '21–50 человек',
   '51-200': '51–200 человек',
   '201-500': '201–500 человек',
   '500+': 'Больше 500 человек',
-  // industry
   software: 'Разработка программного обеспечения',
   services: 'Услуги, агентство, консалтинг',
   manufacturing: 'Производство',
@@ -22,7 +19,6 @@ export const LABEL_MAP: Record<string, string> = {
   finance: 'Финансы и страхование',
   education: 'Образование',
   other: 'Другое',
-  // painPoints
   goals_dissolve: 'Цели на квартал растворяются, к середине никто не помнит куда шли',
   problems_hidden: 'Сотрудники замалчивают проблемы, узнаю когда уже сгорело',
   green_status_no_progress: 'В трекере зелёные галочки, а реального движения нет',
@@ -35,7 +31,6 @@ export const LABEL_MAP: Record<string, string> = {
   unclear_workload: 'Не вижу кто чем загружен — кто-то завален, кто-то простаивает',
   bottleneck_on_owner: 'Без меня ничего не двигается, я как бутылочное горлышко',
   repeated_questions: 'Одни и те же вопросы по десять раз — никто ничего не запоминает',
-  // currentStack
   video_meetings: 'Видеовстречи (Зум, Google Meet, Телемост, Контур.Толк)',
   task_tracker: 'Трекер задач (Kaiten, Jira, Trello, Битрикс24)',
   knowledge_base: 'База знаний (Notion, Confluence, Teamly)',
@@ -45,7 +40,6 @@ export const LABEL_MAP: Record<string, string> = {
   accounting: 'Бухгалтерия и склад (1С, МойСклад)',
   corporate_email: 'Корпоративная почта',
   nothing_systematic: 'Ничего системного, всё в голове и на словах',
-  // plannedFeatures
   meetings: 'Видеовстречи с записью, транскрибацией и ИИ-отчётом',
   tracker: 'Трекер задач и проектов',
   sprints: 'Спринты с контролем цели',

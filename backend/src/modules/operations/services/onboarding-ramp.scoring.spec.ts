@@ -2,10 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { isOnboardingStalled } from './onboarding-ramp.scoring';
 
-/**
- * TZ-1 Фаза 4.E (daily-value-engine) — unit-тесты онбординг-рампа новичка.
- * Без БД; время аргументом.
- */
 describe('onboarding-ramp.scoring → isOnboardingStalled', () => {
   const now = new Date('2026-06-08T12:00:00.000Z');
   const day = 86_400_000;
@@ -60,7 +56,7 @@ describe('onboarding-ramp.scoring → isOnboardingStalled', () => {
   it('уже поздно (вышел за окно 2×silentDays) → НЕ stalled (не новичок)', () => {
     expect(
       isOnboardingStalled({
-        createdAt: new Date(now.getTime() - 11 * day), // > 10 = 2×5
+        createdAt: new Date(now.getTime() - 11 * day),
         firstActivityAt: null,
         silentDays,
         now,

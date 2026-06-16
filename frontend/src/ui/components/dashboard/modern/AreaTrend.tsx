@@ -1,19 +1,13 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
+import type { ReactNode } from "react";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
-import { CardTitle } from './CardTitle';
-import { ChartTip } from './ChartTip';
-import { Legend } from './Legend';
-import { CHART, glass } from './tokens';
+import { CardTitle } from "./CardTitle";
+import { ChartTip } from "./ChartTip";
+import { Legend } from "./Legend";
+import { CHART, glass } from "./tokens";
 
-/**
- * Обобщённый area-график на стеклянной карточке. Покрывает витринный
- * `RevenueHero`/`AreaHero`: опциональный заголовок, опциональный крупный
- * headline + автолегенда по сериям, затем AreaChart с отдельным linearGradient
- * на каждую серию (id строится из `series.key`).
- */
 export function AreaTrend({
   title,
   titleIcon,
@@ -29,7 +23,13 @@ export function AreaTrend({
   titleGrad?: string;
   data: Record<string, unknown>[];
   xKey: string;
-  series: { key: string; color: string; label: string; strokeWidth?: number; fillOpacity?: number }[];
+  series: {
+    key: string;
+    color: string;
+    label: string;
+    strokeWidth?: number;
+    fillOpacity?: number;
+  }[];
   height?: number;
   headline?: { value: string; sub: string; subColor?: string };
 }) {
@@ -49,7 +49,12 @@ export function AreaTrend({
                 <span className="text-[32px] font-semibold leading-none tracking-tight">
                   {headline.value}
                 </span>
-                <span className="pb-1 text-sm" style={{ color: headline.subColor ?? 'var(--chip-success-fg)' }}>
+                <span
+                  className="pb-1 text-sm"
+                  style={{
+                    color: headline.subColor ?? "var(--chip-success-fg)",
+                  }}
+                >
                   {headline.sub}
                 </span>
               </div>
@@ -60,11 +65,25 @@ export function AreaTrend({
       )}
       <div className="mt-4" style={{ height }}>
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -18 }}>
+          <AreaChart
+            data={data}
+            margin={{ top: 10, right: 8, bottom: 0, left: -18 }}
+          >
             <defs>
               {series.map((s) => (
-                <linearGradient key={s.key} id={gradId(s.key)} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.color} stopOpacity={s.fillOpacity ?? 0.45} />
+                <linearGradient
+                  key={s.key}
+                  id={gradId(s.key)}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor={s.color}
+                    stopOpacity={s.fillOpacity ?? 0.45}
+                  />
                   <stop offset="100%" stopColor={s.color} stopOpacity={0} />
                 </linearGradient>
               ))}
@@ -75,7 +94,10 @@ export function AreaTrend({
               tickLine={false}
               tick={{ fill: CHART.faint, fontSize: 12 }}
             />
-            <Tooltip content={<ChartTip />} cursor={{ stroke: 'var(--border-strong)' }} />
+            <Tooltip
+              content={<ChartTip />}
+              cursor={{ stroke: "var(--border-strong)" }}
+            />
             {series.map((s) => (
               <Area
                 key={s.key}
@@ -94,5 +116,5 @@ export function AreaTrend({
   );
 }
 
-/** Дефолтный градиент иконки, если заголовок задан без `titleGrad`. */
-const GRAD_FALLBACK = 'linear-gradient(135deg, oklch(0.86 0.15 168), oklch(0.74 0.13 205))';
+const GRAD_FALLBACK =
+  "linear-gradient(135deg, oklch(0.86 0.15 168), oklch(0.74 0.13 205))";

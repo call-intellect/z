@@ -1,11 +1,5 @@
-/**
- * SBA α-9 wave 3 — API-клиент для /api/v1/company.
- *
- * Слой ApiDto (frontend-rules): сырые ответы backend'а как есть.
- */
-
-import { apiClient } from './api-client';
-import { orgHeaders } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { orgHeaders } from "./admin-helpers";
 
 export interface CompanyProfileApi {
   id: string;
@@ -38,12 +32,12 @@ export interface CompanyProfileApi {
   updatedAt: string;
 }
 
-export type CompanyStageApi = 'early_stage' | 'growth' | 'scale' | 'enterprise';
+export type CompanyStageApi = "early_stage" | "growth" | "scale" | "enterprise";
 export type StrategyHorizonApi =
-  | 'operational'
-  | 'tactical'
-  | 'strategic'
-  | 'long_term';
+  | "operational"
+  | "tactical"
+  | "strategic"
+  | "long_term";
 
 export interface UpdateCompanyProfileRequest {
   displayName?: string;
@@ -76,18 +70,18 @@ export interface RebuildCompletenessResponseApi {
 
 export const companyApi = {
   get: (orgId: string) =>
-    apiClient.get<CompanyProfileApi>('/api/v1/company', {
+    apiClient.get<CompanyProfileApi>("/api/v1/company", {
       headers: orgHeaders(orgId),
     }),
 
   update: (orgId: string, body: UpdateCompanyProfileRequest) =>
-    apiClient.patch<CompanyProfileApi>('/api/v1/company', body, {
+    apiClient.patch<CompanyProfileApi>("/api/v1/company", body, {
       headers: orgHeaders(orgId),
     }),
 
   rebuildCompleteness: (orgId: string) =>
     apiClient.post<RebuildCompletenessResponseApi>(
-      '/api/v1/company/rebuild-completeness',
+      "/api/v1/company/rebuild-completeness",
       undefined,
       { headers: orgHeaders(orgId) },
     ),

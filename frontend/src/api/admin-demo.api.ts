@@ -1,10 +1,4 @@
-/**
- * API-слой Z-Admin: демо-кабинеты «ТехноСтрим».
- *
- * Эндпоинты — backend `AdminDemoController` (`/api/v1/admin/demo/*`,
- * super-admin only). Вызовы — через единый `apiClient`.
- */
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type AdminDemoOrgApi = {
   id: string;
@@ -18,7 +12,7 @@ export type AdminDemoOrgsResponse = { orgs: AdminDemoOrgApi[] };
 
 export const adminDemoApi = {
   listOrgs: () =>
-    apiClient.get<AdminDemoOrgsResponse>('/api/v1/admin/demo/orgs'),
+    apiClient.get<AdminDemoOrgsResponse>("/api/v1/admin/demo/orgs"),
 
   seed: (orgId: string) =>
     apiClient.post<{ ok: true; stats: Record<string, number> }>(

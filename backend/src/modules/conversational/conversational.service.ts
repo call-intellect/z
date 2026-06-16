@@ -28,17 +28,13 @@ import { ChannelRegistry } from './channel-registry';
 import { ConversationalLinkCodeService } from './link-code.service';
 import { NotificationBudgetService } from './notification-budget.service';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
-import type {
-  ConversationalJson,
-  InboundMessage,
-} from './types/channel.types';
+import type { ConversationalJson, InboundMessage } from './types/channel.types';
 import { validateEventPayload } from './types/event-payload.registry';
 import {
   type ChannelBindingPreferences,
   ChannelBindingPreferencesSchema,
 } from './types/preferences.schema';
 
-/** Числовой вес `DataClass` для сравнения «не выше канала». */
 const DATA_CLASS_ORDER: Record<DataClass, number> = {
   public: 0,
   internal: 1,
@@ -46,11 +42,6 @@ const DATA_CLASS_ORDER: Record<DataClass, number> = {
   private: 3,
 };
 
-/**
- * Public input для отправки нотификации. `eventType` свободный — потребители
- * вольны вводить новые типы (например, `idea.status_changed`); если для
- * `eventType` зарегистрирована схема — payload валидируется по ней.
- */
 export interface SendNotificationInput {
   tenantId: string;
   recipientUserId: string;
@@ -59,142 +50,45 @@ export interface SendNotificationInput {
   dataClass?: DataClass;
   contextBlockId?: string;
   contextCardId?: string;
-  /** ISO-строка истечения. После — не доставляется и помечается expired. */
   expiresAt?: string;
-  /**
-   * Если `critical=true` — игнорируются quiet hours и rate-limit
-   * пользователя. Используется для security-уведомлений и системных алертов.
-   */
   critical?: boolean;
-  /**
-   * Явный список `ChannelKind`'ов, которые маршрутизатор обязан попробовать
-   * (если бы они существуют у пользователя). Если не задано — берётся
-   * per-event-type default policy.
-   */
   preferredChannelKinds?: ChannelKind[];
-  /**
-   * W4.3 — Person subject'а уведомления. Используется при `dataClass='private'`:
-   * `DataClassPolicyService.canEmit` разрешает доставку только если
-   * `recipientPersonId === subjectPersonId` ИЛИ recipient — owner/super_admin.
-   */
   subjectPersonId?: string | null;
-  /**
-   * TZ-1 Фаза 0 (daily-value-engine) — приоритет для дневного бюджета push:
-   * `1` = критично/важно (обходит бюджет и тихие часы), `2` = обычное
-   * (учитывается в лимите). По умолчанию `2`.
-   */
   priorityTier?: number;
 }
 
-/** Per-event-type default-политика выбора каналов. */
 const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'probe.question': ['telegram_bot', 'max_bot', 'in_app'],
-  // Probe Фаза 3 — батч-дайджест отложенных probe: те же каналы, что и
-  // probe.question (пользователь отвечает там же), но ОДНО сообщение вместо N.
   'probe.digest': ['telegram_bot', 'max_bot', 'in_app'],
-  // Probe Фаза 6 — видимое следствие ответа («ваш ответ записан»). Доставляем
-  // туда же, где человек отвечал; in_app — fallback.
   'probe.answer_acknowledged': ['telegram_bot', 'max_bot', 'in_app'],
   'curation.pending': ['in_app', 'email_smtp'],
   'system.message': ['in_app', 'email_smtp'],
-  // TZ-1 Фаза 4.A (daily-value-engine) — смена статуса идеи. Раньше только
-  // in_app → автор/supporter узнавал лишь зайдя в кабинет. Теперь добавлен
-  // telegram_bot (мгновенный пинг), in_app — fallback. Доставка push режется
-  // дневным бюджетом Ф0 (priorityTier по умолчанию 2).
   'idea.status_changed': ['in_app', 'telegram_bot'],
-  // SBA α-5: ответ chat-v2 — приоритет тому же каналу, где задан вопрос.
-  // Если originChannelBindingId задан в sendChatReply, он перебивает policy.
   'chat.answer': ['in_app', 'telegram_bot', 'max_bot', 'email_smtp'],
-  // SBA α-6: probe-event от специалиста Слоя 3 — in_app + email_smtp по
-  // дефолту. Telegram/Max не используем — это не вопрос пользователю
-  // (см. probe.question), а уведомление-подсказка с suggestedActions.
   'specialist.probe': ['in_app', 'email_smtp'],
-  // SBA δ-2: ProactiveWatcher — инициативное уведомление-подсказка («заметил X»).
-  // По дефолту in_app + telegram/max для friendly-каналов. Email — нет
-  // (это «нытик в почту», что обесценивает proactive-режим).
   'proactive.notification': ['in_app', 'telegram_bot', 'max_bot'],
-  // SBA β-8.1: недельная сводка операционного директора. Email уместен
-  // (понедельник утром — типичное окно для разбора почты), in_app — fallback.
   'operations.weekly_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
-  // Goals OKR v2 Фаза 4: еженедельный пульс целей (пн утром). Те же каналы,
-  // что и недельная сводка COO — email уместен, in_app fallback.
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
-  // TZ-1 Фаза 5 (daily-value-engine): месячная витрина value-recap (1-е число).
-  // push-first владельцу/COO — те же каналы, что недельная сводка (email
-  // уместен для разбора, бот для мгновенного пинга, in_app fallback).
   'operations.monthly_recap': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
-  // T8 (2026-05-24): @-упоминание в комментарии задачи. in-app (бейдж в UI)
-  // обязателен; telegram/max — для мгновенных пушей. Email скучен — оставляем
-  // как fallback в дайджест-режиме (не в этом event-type'е).
   'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],
-  // Calendar MVP (2026-05-25): напоминание о событии календаря. Push не везде
-  // подключён — приоритет на бот-каналы + in-app.
   'event.reminder': ['in_app', 'telegram_bot', 'max_bot'],
-  // ТЗ 2026-05-29 telegram-self-initiated-checkins: подтверждение
-  // самоинициированного чек-ина. Caller обычно передаёт preferredChannelKinds=
-  // [originChannelKind], но если не передал — fallback на бот-каналы + in_app.
   'checkin.ack': ['telegram_bot', 'max_bot', 'in_app'],
-  // Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): подтверждение
-  // «Записал в память Коры» после успешного ingest free_note. Caller
-  // (ConversationalFreeNoteBridge) обычно передаёт preferredChannelKinds=
-  // [kind канала-источника]; эта policy — fallback, когда
-  // originChannelBindingId не пришёл или невалиден.
   'note.ack': ['in_app', 'telegram_bot', 'max_bot'],
-  // Action Center B3: повторяющееся напоминание о pending-подтверждениях.
-  // Бот-каналы (мгновенный пинг) + in_app fallback. Не critical — уважает
-  // quiet hours / disabledUntil. Cron явно передаёт preferredChannelKinds=
-  // ['telegram_bot'] и шлёт как system.message (рендер уже поддержан), эта
-  // policy — дефолт на случай прямого вызова с eventType 'actions.reminder'.
   'actions.reminder': ['telegram_bot', 'max_bot', 'in_app'],
-  // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
-  // Telegram-бот (мгновенный пинг с персональной ссылкой) приоритетен;
-  // каскад на email_smtp/in_app — если нет verified telegram-binding.
   'meeting.invite': ['telegram_bot', 'email_smtp', 'in_app'],
-  // TZ-1 Фаза 0 (daily-value-engine) — morning/evening чек-ин prompt. Раньше
-  // checkin.prompt не было в policy → падал на DEFAULT_POLICY=['in_app'] и
-  // не доходил до Telegram. Теперь бот-каналы приоритетны (мгновенный пинг),
-  // in_app — fallback. Это включает доставку дневного чек-ина в Telegram.
   'checkin.prompt': ['telegram_bot', 'max_bot', 'in_app'],
-  // ТЗ 2026-06-09 support-desk (Р-6) — дублирование обращения/ответа клиента
-  // сотруднику поддержки. Telegram + почта (мгновенный пинг + почтовый след),
-  // in_app — fallback. Приём от клиента — только виджет (не эти каналы).
   'support.ticket_created': ['telegram_bot', 'email_smtp', 'in_app'],
   'support.ticket_reply': ['telegram_bot', 'email_smtp', 'in_app'],
 };
 
 const DEFAULT_POLICY: ChannelKind[] = ['in_app'];
 
-/**
- * Public-handler для inbound-сообщений. Регистрируется потребителем (α-5
- * подписывается на `chat_query` через `subscribeInbound`).
- */
 export type InboundHandler = (msg: InboundMessage) => Promise<void>;
 
-/**
- * Главный сервис ConversationalModule. Публичный API:
- *
- *   - sendNotification(input)            — отправить нотификацию
- *   - respondToProbe(notificationId, userId, payload)
- *   - listMyNotifications(userId, filter)
- *   - linkChannel(userId, kind, externalId, code)
- *   - generateLinkCode(userId, kind)
- *   - subscribeInbound(type, handler)    — α-5/β-1 регистрируют свои handlers
- *   - dispatchInbound(msg)               — единая точка для inbound из адаптеров
- *
- * Routing:
- *   - получает `ChannelBinding`'и пользователя,
- *   - фильтрует по `notification.dataClass <= channel.maxDataClass`,
- *   - фильтрует по preferences (allow/deny eventType, quiet hours, rate-limit),
- *   - per-event policy (или явный `preferredChannelKinds`),
- *   - fallback на `in_app` (он всегда есть).
- */
 @Injectable()
 export class ConversationalService {
   private readonly logger = new Logger(ConversationalService.name);
-  private readonly inboundHandlers = new Map<
-    InboundMessage['type'],
-    InboundHandler[]
-  >();
+  private readonly inboundHandlers = new Map<InboundMessage['type'], InboundHandler[]>();
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -206,14 +100,9 @@ export class ConversationalService {
     private readonly linkCode: ConversationalLinkCodeService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений.
-    // Optional: тесты, не инжектящие budget, продолжают работать (push не
-    // ограничивается, как до фичи).
     @Optional()
     @Inject(NotificationBudgetService)
     private readonly budget?: NotificationBudgetService,
-    // W4.3 — outbound gating через единую политику. Optional: тесты, не
-    // инжектящие policy, продолжают работать (легаси-фильтр по effectiveMax).
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly policy?: DataClassPolicyService,
@@ -222,11 +111,7 @@ export class ConversationalService {
     private readonly eventEmitter?: EventEmitter2,
   ) {}
 
-  // ──────────────────────────── sendNotification ─────────────────────
-
-  async sendNotification(
-    input: SendNotificationInput,
-  ): Promise<Notification> {
+  async sendNotification(input: SendNotificationInput): Promise<Notification> {
     const payload = this.validatePayload(input.eventType, input.payload);
     const dataClass: DataClass = input.dataClass ?? 'internal';
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
@@ -241,7 +126,6 @@ export class ConversationalService {
       });
     }
 
-    // 1. Создаём Notification.
     const notification = await this.prisma.notification.create({
       data: {
         tenantId: input.tenantId,
@@ -252,14 +136,11 @@ export class ConversationalService {
         contextBlockId: input.contextBlockId ?? null,
         contextCardId: input.contextCardId ?? null,
         expiresAt,
-        // TZ-1 Фаза 0 (daily-value-engine) — приоритет для дневного бюджета.
         priorityTier: input.priorityTier ?? 2,
-        responseStatus:
-          input.eventType === 'probe.question' ? 'pending' : null,
+        responseStatus: input.eventType === 'probe.question' ? 'pending' : null,
       },
     });
 
-    // 2. Резолвим bindings + ensureInAppForUser (он всегда должен быть).
     await this.ensureInAppForUser({
       tenantId: input.tenantId,
       userId: input.recipientUserId,
@@ -269,11 +150,8 @@ export class ConversationalService {
       userId: input.recipientUserId,
     });
 
-    // 3. Выбираем каналы по политике.
     const policy =
-      input.preferredChannelKinds ??
-      EVENT_TYPE_CHANNEL_POLICY[input.eventType] ??
-      DEFAULT_POLICY;
+      input.preferredChannelKinds ?? EVENT_TYPE_CHANNEL_POLICY[input.eventType] ?? DEFAULT_POLICY;
 
     const selected = this.selectBindingsForNotification({
       bindings,
@@ -285,12 +163,6 @@ export class ConversationalService {
     });
 
     if (selected.length === 0) {
-      // ensureInAppForUser обычно гарантирует in_app. Случай «0 каналов» теперь
-      // имеет два корня: (а) in_app не нашёлся (легаси-ветка) — пишем `failed`;
-      // (б) W4.3 — все каналы, включая in_app fallback, заблокированы canEmit
-      // (например, private payload, а recipient ≠ subject и не owner).
-      // Во втором случае фиксируем `dropped_dataclass_gate` в ProbeEvent
-      // (если payload пришёл от probe-эмитента) — для аудита через UI.
       await this.prisma.notification.update({
         where: { id: notification.id },
         data: { status: 'failed' },
@@ -305,16 +177,8 @@ export class ConversationalService {
       return { ...notification, status: 'failed' };
     }
 
-    // 3.5. TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет push-уведомлений.
-    // Разделяем выбранные binding'и на in_app (видимость — доставляем всегда)
-    // и push (Telegram/MAX/email — учитывается в дневном лимите). Если push'ей
-    // нет — бюджет не трогаем. Если есть и budget.tryConsume вернул allowed=false
-    // → отбрасываем push-доставки (in_app уже покрывает видимость, ничего не
-    // теряется молча). critical/priorityTier===1 байпасят бюджет внутри сервиса.
     let toDeliver = selected;
-    const pushBindings = selected.filter(
-      (s) => s.binding.channel.kind !== 'in_app',
-    );
+    const pushBindings = selected.filter((s) => s.binding.channel.kind !== 'in_app');
     if (this.budget && pushBindings.length > 0) {
       const consume = await this.budget.tryConsume({
         tenantId: input.tenantId,
@@ -324,11 +188,7 @@ export class ConversationalService {
         critical: input.critical === true,
       });
       if (!consume.allowed) {
-        // Оставляем только in_app — push откладываем (метрики инкрементит
-        // сам NotificationBudgetService).
-        toDeliver = selected.filter(
-          (s) => s.binding.channel.kind === 'in_app',
-        );
+        toDeliver = selected.filter((s) => s.binding.channel.kind === 'in_app');
         this.logger.log(
           `sendNotification: push отложен бюджетом (reason=${consume.reason ?? 'unknown'}) ` +
             `user=${input.recipientUserId} eventType=${input.eventType}; in_app доставлен`,
@@ -336,7 +196,6 @@ export class ConversationalService {
       }
     }
 
-    // 4. Создаём NotificationDelivery + enqueue.
     for (const { binding } of toDeliver) {
       const delivery = await this.prisma.notificationDelivery.create({
         data: {
@@ -349,7 +208,6 @@ export class ConversationalService {
         kind: binding.channel.kind,
         status: 'queued',
       });
-      // TZ-1 Фаза 0 — отдельная метрика доставки дневного чек-ина по каналам.
       if (input.eventType === 'checkin.prompt') {
         this.metrics.incCheckinPromptDelivered({ channel: binding.channel.kind });
       }
@@ -366,26 +224,6 @@ export class ConversationalService {
     return notification;
   }
 
-  // ──────────────────────────── sendChatReply (SBA α-5) ──────────────
-
-  /**
-   * Outbound chat-ответ для модуля chat-v2 (SBA α-5). Создаёт
-   * `Notification(eventType='chat.answer', payload={conversationId, text,
-   * citationsCount, ...})` и маршрутизирует через стандартный outbound-
-   * pipeline. Если задан `originChannelBindingId` — приоритет отправки этому
-   * binding'у (binding принадлежит userId — проверяется); иначе работает
-   * стандартная policy.
-   *
-   * Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels): если
-   * `solicited=true` И канал-источник определился (валидный
-   * `originChannelBindingId`) — уведомление уходит с `critical=true`, чтобы
-   * байпаснуть тихие часы и дневной бюджет push: человек ЗАДАЛ вопрос и ждёт
-   * ответ прямо сейчас в том же канале. canEmit-гейтинг по dataClass при
-   * этом остаётся в силе.
-   *
-   * Возвращает созданный `Notification` (id — для логов/корреляции с
-   * ChatV2Message).
-   */
   async sendChatReply(args: {
     tenantId: string;
     userId: string;
@@ -396,27 +234,9 @@ export class ConversationalService {
     mode?: 'factual' | 'synthetic' | 'clone_style';
     uncertaintyNote?: string;
     originChannelBindingId?: string;
-    /**
-     * Класс данных. Chat-ответ может содержать sensitive/private факты —
-     * по умолчанию `sensitive`. Routing отфильтрует каналы с меньшим
-     * `maxDataClass`.
-     */
     dataClass?: DataClass;
-    /**
-     * Ф1 «Стоп-молчание»: true — ответ на ЯВНО заданный пользователем вопрос
-     * (solicited reply). В паре с валидным `originChannelBindingId` даёт
-     * `critical=true` (байпас quiet hours / push-бюджета). Без канала-
-     * источника не действует. По умолчанию false.
-     */
     solicited?: boolean;
   }): Promise<Notification> {
-    // Если задан originChannelBindingId — определим preferredChannelKinds
-    // как [kind того binding'а], чтобы routing выбрал именно его.
-    // H-1 (2026-06-12): реюз resolveOriginChannelKinds — глобальный канал
-    // (Channel.tenantId=null, прод-Telegram/MAX) валиден; строгая проверка
-    // `channel.tenantId === args.tenantId` отвергала его, и solicited/critical
-    // умирал на проде. Проверки binding.userId === args.userId и
-    // status='active' живут внутри резолвера (одна логика в одном месте).
     let preferredKinds: ChannelKind[] | undefined;
     if (args.originChannelBindingId) {
       const kinds = await this.resolveOriginChannelKinds({
@@ -443,10 +263,6 @@ export class ConversationalService {
     if (args.mode) payload.mode = args.mode;
     if (args.uncertaintyNote) payload.uncertaintyNote = args.uncertaintyNote;
 
-    // Ф1 «Стоп-молчание»: solicited-ответ на заданный вопрос должен дойти в
-    // канал-источник даже в тихие часы / при исчерпанном push-бюджете.
-    // critical только когда канал-источник реально определился — иначе
-    // поведение прежнее.
     const critical = args.solicited === true && preferredKinds !== undefined;
 
     return this.sendNotification({
@@ -456,21 +272,10 @@ export class ConversationalService {
       payload,
       dataClass: args.dataClass ?? 'sensitive',
       preferredChannelKinds: preferredKinds,
-      // Не-solicited chat-ответ — не critical (нет смысла будить ночью), но
-      // и не подавляется quiet hours для in_app (in_app — fallback всегда).
       critical,
     });
   }
 
-  /**
-   * Ф1 «Стоп-молчание» — резолв kind'а канала-источника по
-   * `ChannelBinding.id`. Возвращает `[kind]`, если binding существует,
-   * принадлежит userId и его канал активен в Org (или глобальный,
-   * tenantId=null — telegram/max); иначе `[]`. Паттерн повторяет
-   * `CheckinResponseHandler.resolveOriginChannelKinds`. Используется
-   * мостами (например, ack на free_note) для адресной отправки
-   * подтверждения в канал-источник.
-   */
   async resolveOriginChannelKinds(args: {
     originChannelBindingId?: string;
     userId: string;
@@ -483,17 +288,12 @@ export class ConversationalService {
     });
     if (!binding) return [];
     if (binding.userId !== args.userId) return [];
-    if (
-      binding.channel.tenantId &&
-      binding.channel.tenantId !== args.tenantId
-    ) {
+    if (binding.channel.tenantId && binding.channel.tenantId !== args.tenantId) {
       return [];
     }
     if (binding.channel.status !== 'active') return [];
     return [binding.channel.kind];
   }
-
-  // ──────────────────────────── respondToProbe ────────────────────────
 
   async respondToProbe(args: {
     notificationId: string;
@@ -512,12 +312,13 @@ export class ConversationalService {
     if (notif.recipientUserId !== args.userId) {
       throw new ForbiddenException({
         ok: false,
-        error: { code: 'not_recipient', message: 'Это уведомление адресовано другому пользователю' },
+        error: {
+          code: 'not_recipient',
+          message: 'Это уведомление адресовано другому пользователю',
+        },
       });
     }
     if (notif.responseStatus === 'answered') {
-      // Идемпотентность: повторный respond — no-op. Возвращаем текущее
-      // состояние.
       return notif;
     }
     if (notif.expiresAt && notif.expiresAt < new Date()) {
@@ -537,9 +338,6 @@ export class ConversationalService {
       },
     });
 
-    // Помечаем все доставки этой нотификации как responded — нужно,
-    // чтобы во внешних каналах при появлении ответа можно было
-    // ответить «уже отвечено» (β-1 reply-парсер).
     await this.prisma.notificationDelivery.updateMany({
       where: { notificationId: notif.id },
       data: { respondedAt: new Date(), status: 'responded' },
@@ -550,8 +348,6 @@ export class ConversationalService {
       status: 'responded',
     });
 
-    // SBA β-5 — эмитим событие, чтобы ProbeModule мог записать ответ обратно
-    // в pipeline (новый RawEvent через ingest).
     try {
       this.eventEmitter?.emit('notification.responded', {
         tenantId: notif.tenantId,
@@ -578,24 +374,6 @@ export class ConversationalService {
     return updated;
   }
 
-  /**
-   * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.10 —
-   * пометить открытый `checkin.prompt` как answered БЕЗ эмиссии
-   * `notification.responded`. Используется `CheckinResponseHandler.processSelfInitiated`
-   * чтобы закрыть висящий cron-вопрос, когда сотрудник сам прислал план/отчёт
-   * боту (не reply).
-   *
-   * Симметрия с `respondToProbe`:
-   *   - идемпотентный (повтор — no-op);
-   *   - обновляет Notification и связанные NotificationDelivery записи;
-   *   - НЕ эмитит `notification.responded` — иначе `CheckinResponseHandler.handle`
-   *     сработает ещё раз и зациклит upsert (в payload нет text → пустой rawText,
-   *     parser confidence=0, и lowConfidence перезапишет реальные данные с
-   *     curatorReview=true).
-   *
-   * Возвращает обновлённый Notification (или текущий если уже answered).
-   * Бросает NotFound/Forbidden как `respondToProbe` для безопасности.
-   */
   async markAsAnsweredByCheckin(args: {
     notificationId: string;
     userId: string;
@@ -644,18 +422,11 @@ export class ConversationalService {
       eventType: notif.eventType,
       status: 'responded',
     });
-    // ВАЖНО: не эмитим `notification.responded` — см. JSDoc выше.
-    this.logger.log(
-      `markAsAnsweredByCheckin: notificationId=${notif.id} userId=${args.userId}`,
-    );
+    this.logger.log(`markAsAnsweredByCheckin: notificationId=${notif.id} userId=${args.userId}`);
     return updated;
   }
 
-  /** Помечаем notification как прочитанное (read receipt из UI). */
-  async markRead(args: {
-    notificationId: string;
-    userId: string;
-  }): Promise<void> {
+  async markRead(args: { notificationId: string; userId: string }): Promise<void> {
     const notif = await this.prisma.notification.findUnique({
       where: { id: args.notificationId },
     });
@@ -671,11 +442,7 @@ export class ConversationalService {
     });
   }
 
-  /** «Пропустить»/dismiss probe-уведомление (без ответа). */
-  async dismissProbe(args: {
-    notificationId: string;
-    userId: string;
-  }): Promise<Notification> {
+  async dismissProbe(args: { notificationId: string; userId: string }): Promise<Notification> {
     const notif = await this.prisma.notification.findUnique({
       where: { id: args.notificationId },
     });
@@ -688,7 +455,10 @@ export class ConversationalService {
     if (notif.recipientUserId !== args.userId) {
       throw new ForbiddenException({
         ok: false,
-        error: { code: 'not_recipient', message: 'Это уведомление адресовано другому пользователю' },
+        error: {
+          code: 'not_recipient',
+          message: 'Это уведомление адресовано другому пользователю',
+        },
       });
     }
     return this.prisma.notification.update({
@@ -696,8 +466,6 @@ export class ConversationalService {
       data: { responseStatus: 'dismissed', status: 'read' },
     });
   }
-
-  // ──────────────────────────── listMyNotifications ───────────────────
 
   async listMyNotifications(args: {
     userId: string;
@@ -751,12 +519,7 @@ export class ConversationalService {
     return item;
   }
 
-  // ──────────────────────────── channels (my) ─────────────────────────
-
-  async listMyChannels(args: {
-    userId: string;
-    tenantId: string;
-  }): Promise<
+  async listMyChannels(args: { userId: string; tenantId: string }): Promise<
     Array<{
       channel: Channel;
       binding: ChannelBinding | null;
@@ -775,9 +538,7 @@ export class ConversationalService {
     const bindings = await this.prisma.channelBinding.findMany({
       where: { userId: args.userId, channelId: { in: channels.map((c) => c.id) } },
     });
-    const byChannel = new Map<string, ChannelBinding>(
-      bindings.map((b) => [b.channelId, b]),
-    );
+    const byChannel = new Map<string, ChannelBinding>(bindings.map((b) => [b.channelId, b]));
     return channels.map((channel) => ({
       channel,
       binding: byChannel.get(channel.id) ?? null,
@@ -811,13 +572,6 @@ export class ConversationalService {
     });
   }
 
-  /**
-   * W4.3 — пользователь меняет потолок чувствительности своей привязки.
-   * Доступны только `public`/`internal`/`sensitive` (private через UI нельзя —
-   * это «личное» для in_app, и его не выбирают вручную). Если пользователь
-   * пытается поднять потолок выше channel-level (admin-настройка) — это
-   * остаётся допустимым на уровне записи, но эффективным остаётся min(channel, binding).
-   */
   async updateBindingMaxDataClass(args: {
     userId: string;
     bindingId: string;
@@ -850,10 +604,7 @@ export class ConversationalService {
     });
   }
 
-  async unlinkChannel(args: {
-    userId: string;
-    bindingId: string;
-  }): Promise<void> {
+  async unlinkChannel(args: { userId: string; bindingId: string }): Promise<void> {
     const binding = await this.prisma.channelBinding.findUnique({
       where: { id: args.bindingId },
     });
@@ -867,8 +618,6 @@ export class ConversationalService {
     await this.prisma.channelBinding.delete({ where: { id: binding.id } });
     this.logger.log(`unlinkChannel: userId=${args.userId} bindingId=${binding.id}`);
   }
-
-  // ──────────────────────────── linking flow ─────────────────────────
 
   async generateLinkCode(args: {
     userId: string;
@@ -888,14 +637,6 @@ export class ConversationalService {
     return result;
   }
 
-  /**
-   * Прожечь код + создать `ChannelBinding`. Вызывается ботом канала
-   * (β-1: telegram/max). Возвращает созданный binding.
-   *
-   * Для α-1 эндпоинт `linkChannel` не публикуем в /me/* (нет ботов);
-   * это инфра-метод для β-1, но реализован сейчас, чтобы schema была
-   * стабильной.
-   */
   async linkChannel(args: {
     tenantId: string;
     kind: ChannelKind;
@@ -942,19 +683,10 @@ export class ConversationalService {
       kind: args.kind,
       status: 'verified',
     });
-    this.logger.log(
-      `linkChannel: userId=${userId} kind=${args.kind} bindingId=${binding.id}`,
-    );
+    this.logger.log(`linkChannel: userId=${userId} kind=${args.kind} bindingId=${binding.id}`);
     return binding;
   }
 
-  // ──────────────────────────── inbound dispatch ──────────────────────
-
-  /**
-   * Регистрация handler'а для inbound-сообщений. Например, α-5 регистрирует
-   * `subscribeInbound('chat_query', chatService.handleChatQuery)`. Если
-   * никто не зарегистрирован — сообщение просто логируется.
-   */
   subscribeInbound(type: InboundMessage['type'], handler: InboundHandler): void {
     const list = this.inboundHandlers.get(type) ?? [];
     list.push(handler);
@@ -962,10 +694,6 @@ export class ConversationalService {
     this.logger.log(`subscribeInbound: type=${type} handlers=${list.length}`);
   }
 
-  /**
-   * Единая точка для inbound. Вызывается из адаптеров (β-1: telegram/max) и
-   * из REST-эндпоинта `/me/notifications` (для free_note из UI).
-   */
   async dispatchInbound(msg: InboundMessage): Promise<void> {
     this.metrics.incConversationalInbound({
       kind: 'in_app',
@@ -973,10 +701,6 @@ export class ConversationalService {
     });
     const handlers = this.inboundHandlers.get(msg.type) ?? [];
     if (handlers.length === 0) {
-      // 'response' обычно обработан через REST `respondToProbe` до dispatchInbound,
-      // поэтому отсутствие handler'а здесь — норма для него. Для всех остальных
-      // типов (free_note, chat_query) отсутствие handler'а — регрессия:
-      // сообщение теряется. WARN, чтобы поймать такие случаи в проде.
       this.logger.warn(
         `dispatchInbound: нет handlers для type=${msg.type}; userId=${msg.userId} tenantId=${msg.tenantId}`,
       );
@@ -994,8 +718,6 @@ export class ConversationalService {
       }
     }
   }
-
-  // ──────────────────────────── helpers (internal) ────────────────────
 
   private validatePayload(eventType: string, payload: unknown): Record<string, unknown> {
     try {
@@ -1017,10 +739,6 @@ export class ConversationalService {
     }
   }
 
-  /**
-   * Получить активные подтверждённые bindings пользователя в Org вместе
-   * с каналом (eager). Tenant-scoping — через `channel.tenantId`.
-   */
   private async resolveBindings(args: {
     tenantId: string;
     userId: string;
@@ -1041,15 +759,7 @@ export class ConversationalService {
     });
   }
 
-  /**
-   * Гарантировать наличие `Channel(kind='in_app')` для Org +
-   * `ChannelBinding` для пользователя. In-app — равноправный канал и
-   * обязан существовать всегда (это и есть fallback).
-   */
-  private async ensureInAppForUser(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<void> {
+  private async ensureInAppForUser(args: { tenantId: string; userId: string }): Promise<void> {
     const channel = await this.prisma.channel.upsert({
       where: { tenantId_kind: { tenantId: args.tenantId, kind: 'in_app' } },
       update: {},
@@ -1073,14 +783,6 @@ export class ConversationalService {
     });
   }
 
-  /**
-   * Применить per-event policy + dataClass + preferences к множеству bindings.
-   *
-   * W4.3: dataClass-фильтр идёт через `DataClassPolicyService.canEmit` (если
-   * injected) с учётом `min(Channel.maxDataClass, ChannelBinding.maxDataClass)`
-   * + `subjectPersonId`. Если policy не доступна — fallback на легаси
-   * `ch.maxDataClass`-фильтр.
-   */
   private selectBindingsForNotification(args: {
     bindings: Array<ChannelBinding & { channel: Channel }>;
     policy: ChannelKind[];
@@ -1093,20 +795,13 @@ export class ConversationalService {
     const nowQuiet = this.isQuietHour(new Date());
 
     const policySet = new Set<ChannelKind>(args.policy);
-    // in_app — последний шанс fallback'а. Если ни один канал из policy не
-    // подошёл — мы всё равно добавим in_app, чтобы пользователь не пропустил
-    // важное событие.
     let inAppBinding: (ChannelBinding & { channel: Channel }) | null = null;
 
     for (const binding of args.bindings) {
       const ch = binding.channel;
       if (ch.status !== 'active') continue;
 
-      // 1. dataClass filter — W4.3 через policy.canEmit + min(channel, binding).
-      const effectiveMax = this.minDataClass(
-        ch.maxDataClass,
-        binding.maxDataClass,
-      );
+      const effectiveMax = this.minDataClass(ch.maxDataClass, binding.maxDataClass);
       const gate = this.policy?.canEmit({
         payloadDataClass: args.dataClass,
         payloadSubjectPersonId: args.subjectPersonId,
@@ -1115,23 +810,15 @@ export class ConversationalService {
           maxDataClass: effectiveMax,
           channel: `${ch.kind}#${binding.id.slice(-6)}`,
           recipientUserId: binding.userId,
-          // recipientPersonId / recipientIsOwnerOrSuper не резолвятся здесь —
-          // для private gating потребуется доп. запрос. На W4.3 fallback:
-          // если payload=private и subject известен, считаем не-subject; в
-          // in_app dropped→ дальше fallback на in_app, при необходимости.
           recipientPersonId: null,
           recipientIsOwnerOrSuper: false,
         },
       });
       if (gate) {
         if (!gate.allowed) {
-          // Не игнорируем silent — fallback на in_app сработает ниже.
           continue;
         }
-      } else if (
-        DATA_CLASS_ORDER[args.dataClass] > DATA_CLASS_ORDER[effectiveMax]
-      ) {
-        // Legacy-fallback когда policy не inj — простой lattice по effectiveMax.
+      } else if (DATA_CLASS_ORDER[args.dataClass] > DATA_CLASS_ORDER[effectiveMax]) {
         continue;
       }
 
@@ -1139,10 +826,8 @@ export class ConversationalService {
         inAppBinding = binding;
       }
 
-      // 2. policy filter — берём только те kinds, что попадают в policy.
       if (!policySet.has(ch.kind)) continue;
 
-      // 3. preferences filter.
       const prefs = this.readPreferences(binding);
       if (prefs.eventTypeDeny?.includes(args.eventType)) continue;
       if (
@@ -1159,9 +844,7 @@ export class ConversationalService {
         }
       }
 
-      // 4. quiet hours filter (не применяем для critical).
       if (!args.critical && nowQuiet) {
-        // На α-1 — пропускаем «во время сна», в β+ заведём delayed delivery.
         continue;
       }
 
@@ -1169,20 +852,12 @@ export class ConversationalService {
     }
 
     if (selected.length === 0 && inAppBinding) {
-      // Fallback: in_app живёт даже в quiet hours и игнорирует
-      // pref-фильтры (это «безопасный канал последней надежды»).
       selected.push({ binding: inAppBinding });
     }
 
     return selected;
   }
 
-  /**
-   * W4.3 — минимум по lattice DataClass. Используется для эффективного потолка
-   * binding'а: `min(Channel.maxDataClass, ChannelBinding.maxDataClass)`. То есть
-   * пользователь МОЖЕТ опустить свой потолок ниже channel-level, но не поднять
-   * выше (channel-level — admin-настройка, выше — нельзя).
-   */
   private minDataClass(a: DataClass, b: DataClass): DataClass {
     return DATA_CLASS_ORDER[a] <= DATA_CLASS_ORDER[b] ? a : b;
   }
@@ -1200,10 +875,6 @@ export class ConversationalService {
     return parsed.data;
   }
 
-  /**
-   * Простая проверка тихих часов по серверной TZ. Для α-1 достаточно;
-   * локализация TZ-пользователя — задача β+.
-   */
   private isQuietHour(now: Date): boolean {
     const window = this.cfg.conversational.quietHoursDefault;
     const match = window.match(/^(\d{2}):(\d{2})-(\d{2}):(\d{2})$/);
@@ -1219,7 +890,6 @@ export class ConversationalService {
     if (minutesStart < minutesEnd) {
       return minutesNow >= minutesStart && minutesNow < minutesEnd;
     }
-    // Перекрытие через полночь.
     return minutesNow >= minutesStart || minutesNow < minutesEnd;
   }
 }

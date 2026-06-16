@@ -1,37 +1,35 @@
-'use client';
+"use client";
 
-import { KeyRound } from 'lucide-react';
-import useSWR from 'swr';
+import { KeyRound } from "lucide-react";
+import useSWR from "swr";
 
-import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { fromKnowledgeAtRiskApi } from '@/domain/knowledge-at-risk';
-import { CardTitle, CHART, GlassCard, GRAD, StatusPill } from '@/ui/components/dashboard/modern';
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
+import { fromKnowledgeAtRiskApi } from "@/domain/knowledge-at-risk";
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+  StatusPill,
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ coo-orphan-agents Ф5 — виджет «Знания под риском» на COO-доске операций.
- *
- * Bus-factor × уход носителя: зона знаний держится на одном соло-эксперте,
- * который под риском ухода. Self-fetch через SWR (эндпоинт гейтит owner/admin/coo).
- * Показываем только non-ok элементы, топ-5. Сырой идентификатор носителя (cuid)
- * НИКОГДА не рендерим — только резолвнутое имя носителя (или без имени).
- */
-
-/** Совмещённая серьёзность → тон плашки нового языка дашбордов. */
-const SEVERITY_TONE: Record<string, 'ok' | 'warning' | 'risk'> = {
-  critical: 'risk',
-  warning: 'warning',
-  ok: 'ok',
+const SEVERITY_TONE: Record<string, "ok" | "warning" | "risk"> = {
+  critical: "risk",
+  warning: "warning",
+  ok: "ok",
 };
 
 export function KnowledgeAtRiskWidget() {
   const swr = useSWR(
-    ['operations-knowledge-at-risk'],
+    ["operations-knowledge-at-risk"],
     () => operationsDashboardApi.getKnowledgeAtRisk().catch(() => null),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
   const all = swr.data ? fromKnowledgeAtRiskApi(swr.data) : null;
-  const items = all ? all.filter((i) => i.combinedSeverity !== 'ok').slice(0, 5) : [];
+  const items = all
+    ? all.filter((i) => i.combinedSeverity !== "ok").slice(0, 5)
+    : [];
 
   return (
     <GlassCard>
@@ -40,10 +38,13 @@ export function KnowledgeAtRiskWidget() {
       </CardTitle>
       <div className="mt-4">
         {swr.isLoading ? (
-          <p className="text-sm" style={{ color: CHART.dim }}>Загрузка…</p>
+          <p className="text-sm" style={{ color: CHART.dim }}>
+            Загрузка…
+          </p>
         ) : items.length === 0 ? (
           <p className="text-sm" style={{ color: CHART.dim }}>
-            Появится, когда соберётся достаточно данных (обновляется по понедельникам).
+            Появится, когда соберётся достаточно данных (обновляется по
+            понедельникам).
           </p>
         ) : (
           <ul className="space-y-2">
@@ -51,15 +52,22 @@ export function KnowledgeAtRiskWidget() {
               <li
                 key={i.categoryName}
                 className="rounded-xl p-3"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <span className="flex-1 text-sm" style={{ color: CHART.text }}>
+                  <span
+                    className="flex-1 text-sm"
+                    style={{ color: CHART.text }}
+                  >
                     Зона «{i.categoryName}» держится на одном человеке
-                    {i.soleExpertPersonName ? ` (${i.soleExpertPersonName})` : ''}
-                    {i.soleExpertPersonName ? ', он под риском ухода' : ''}
+                    {i.soleExpertPersonName
+                      ? ` (${i.soleExpertPersonName})`
+                      : ""}
+                    {i.soleExpertPersonName ? ", он под риском ухода" : ""}
                   </span>
-                  <StatusPill status={SEVERITY_TONE[i.combinedSeverity] ?? 'warning'} />
+                  <StatusPill
+                    status={SEVERITY_TONE[i.combinedSeverity] ?? "warning"}
+                  />
                 </div>
               </li>
             ))}

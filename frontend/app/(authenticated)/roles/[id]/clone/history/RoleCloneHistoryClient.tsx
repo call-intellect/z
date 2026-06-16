@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useMemo, useState, type FormEvent } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useMemo, useState, type FormEvent } from "react";
+import useSWR from "swr";
 import {
   ArrowLeft,
   History,
@@ -10,11 +10,11 @@ import {
   MessageCircle,
   ShieldAlert,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { clonesApi } from '@/api/clones.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { clonesApi } from "@/api/clones.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   cloneRefusalReasonRu,
   cloneVersionStatusBadge,
@@ -24,26 +24,16 @@ import {
   type AllFormersUiResult,
   type CloneAnswer,
   type CloneVersionUiItem,
-} from '@/domain/clone';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/domain/clone";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { toast } from "@/ui/shadcn/toast";
 
-import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
+import { AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/roles/:id/clone/history` (Clones=Roles Ф4 + Раздел 7 2026-06-16) —
- * история версий клона должности.
- *
- * Раздел 7 «один человек = один клон должности»:
- *   - История = список носителей-версий (active + frozen-снимки бывших).
- *   - ФИО носителя НЕ показываем — только publicName «Клон <Должность> v<N>».
- *   - У каждой версии — кнопка «Спросить эту версию» (ask с roleVersion).
- *   - «Совет бывших»: один вопрос → ответы всех версий рядом.
- */
 export function RoleCloneHistoryClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();
   if (isLoading) return <HistorySkeleton />;
@@ -60,7 +50,7 @@ export function RoleCloneHistoryClient({ roleId }: { roleId: string }) {
 
 function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   const { data, error, isLoading } = useSWR(
-    ['clone-history', orgId, roleId],
+    ["clone-history", orgId, roleId],
     () => clonesApi.getCloneHistory(orgId, roleId),
   );
 
@@ -72,7 +62,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   if (isLoading) return <HistorySkeleton />;
 
   if (error) {
-    const message = humanizeApiError(error, 'Не удалось загрузить историю.');
+    const message = humanizeApiError(error, "Не удалось загрузить историю.");
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         <BackLink roleId={roleId} />
@@ -136,11 +126,6 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   );
 }
 
-/**
- * Раздел 7 — строка версии: publicName + статус-бейдж + период + метрики.
- * ФИО носителя НЕ показываем. Кнопка «Спросить эту версию» открывает inline-
- * форму, которая шлёт /ask с roleVersion.
- */
 function VersionRow({
   orgId,
   version: v,
@@ -163,10 +148,10 @@ function VersionRow({
             </Badge>
           </div>
           <div className="text-xs text-fg-secondary">
-            Период: {v.validFrom.toLocaleDateString('ru-RU')} —{' '}
+            Период: {v.validFrom.toLocaleDateString("ru-RU")} —{" "}
             {v.validUntil
-              ? v.validUntil.toLocaleDateString('ru-RU')
-              : 'по сейчас'}
+              ? v.validUntil.toLocaleDateString("ru-RU")
+              : "по сейчас"}
           </div>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -183,7 +168,7 @@ function VersionRow({
             aria-expanded={asking}
           >
             <MessageCircle className="mr-1.5 h-4 w-4" />
-            {asking ? 'Скрыть' : 'Спросить эту версию'}
+            {asking ? "Скрыть" : "Спросить эту версию"}
           </Button>
         </div>
       </div>
@@ -200,10 +185,6 @@ function VersionRow({
   );
 }
 
-/**
- * Раздел 7 (Р4) — inline-форма «спросить конкретную версию» клона.
- * Шлёт /ask с roleVersion (в т.ч. frozen-снимок бывшего).
- */
 function AskVersionPanel({
   orgId,
   roleId,
@@ -215,7 +196,7 @@ function AskVersionPanel({
   roleVersion: number;
   publicName: string;
 }) {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [answer, setAnswer] = useState<CloneAnswer | null>(null);
 
@@ -224,7 +205,7 @@ function AskVersionPanel({
     const question = input.trim();
     if (!question || sending) return;
     if (question.length < 3) {
-      toast.error('Слишком короткий вопрос (минимум 3 символа).');
+      toast.error("Слишком короткий вопрос (минимум 3 символа).");
       return;
     }
     setSending(true);
@@ -238,7 +219,7 @@ function AskVersionPanel({
       const message =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось получить ответ этой версии клона.';
+          : "Не удалось получить ответ этой версии клона.";
       toast.error(message);
     } finally {
       setSending(false);
@@ -280,10 +261,6 @@ function AskVersionPanel({
   );
 }
 
-/**
- * Раздел 7 §7.5 — «Совет бывших»: один вопрос → ответы всех версий
- * (active + frozen) рядом.
- */
 function FormersCouncil({
   orgId,
   roleId,
@@ -293,7 +270,7 @@ function FormersCouncil({
   roleId: string;
   roleName: string;
 }) {
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<AllFormersUiResult | null>(null);
 
@@ -302,7 +279,7 @@ function FormersCouncil({
     const question = input.trim();
     if (!question || sending) return;
     if (question.length < 3) {
-      toast.error('Слишком короткий вопрос (минимум 3 символа).');
+      toast.error("Слишком короткий вопрос (минимум 3 символа).");
       return;
     }
     setSending(true);
@@ -313,7 +290,7 @@ function FormersCouncil({
       const message =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось опросить версии клона.';
+          : "Не удалось опросить версии клона.";
       toast.error(message);
     } finally {
       setSending(false);
@@ -410,7 +387,6 @@ function FormersCouncil({
   );
 }
 
-/** Рендер одного ответа клона (с учётом отказа и источников). */
 function AnswerBlock({ answer }: { answer: CloneAnswer }) {
   if (answer.refused) {
     return (
@@ -439,7 +415,7 @@ function AnswerBlock({ answer }: { answer: CloneAnswer }) {
               key={`${c.blockId}-${i}`}
               className="rounded bg-bg-card px-2 py-1.5 text-xs"
             >
-              <div className="font-medium">{c.meetingTitle ?? 'Источник'}</div>
+              <div className="font-medium">{c.meetingTitle ?? "Источник"}</div>
               {c.snippet ? (
                 <div className="mt-0.5 italic text-fg-secondary">
                   «{c.snippet}»

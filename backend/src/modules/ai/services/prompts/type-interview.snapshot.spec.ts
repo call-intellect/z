@@ -1,12 +1,3 @@
-/**
- * Snapshot-тест сборки промта `type-interview.ts`.
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot ловит регрессии в
- * `buildPrompt(...)` / `withRoomChatNote` / `withToolInstructions`
- * (порядок применения, дублирование, потерянные кусочки).
- *
- * Обновлять только при осознанном изменении промта: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import { buildPrompt } from './type-interview';

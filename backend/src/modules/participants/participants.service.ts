@@ -12,18 +12,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
 import { LivekitService } from '../livekit/livekit.service';
 
-/**
- * Сервис гостевого/host-join'а.
- *
- * `POST /api/v1/meetings/:id/join`:
- *   - host (по cookie и `userId === ownerId`) — найти/создать host-Participant'а;
- *   - guest — sanitize `guest_name`, переиспользовать guest cookie или создать
- *     нового Participant'а и поставить cookie `guest_session_<meetingId>`.
- *
- * `livekit.token` в Фазе 2 — `null` (заглушка). В Фазе 3.2 заменим на
- * `LivekitService.generateHostToken / generateGuestToken`.
- */
-
 export interface JoinResult {
   participantId: string;
   role: 'host' | 'guest';
@@ -33,7 +21,6 @@ export interface JoinResult {
     token: string;
     identity: string;
   };
-  /** Если установили новый guest-cookie — фронт должен принять её. */
   guestSessionCookie?: {
     name: string;
     value: string;
@@ -42,7 +29,6 @@ export interface JoinResult {
 }
 
 const GUEST_NAME_MAX_LENGTH = 80;
-/** Из имени убираем символы, которые часто используются в XSS-инъекциях. */
 const XSS_UNSAFE_CHARS = /[<>&"'/]/g;
 
 @Injectable()
@@ -60,10 +46,6 @@ export class ParticipantsService {
     return `guest_session_${meetingId}`;
   }
 
-  /**
-   * Очистить пользовательский ввод имени гостя.
-   * Возвращает `null`, если после очистки строка пустая или короче 1 символа.
-   */
   static sanitizeGuestName(input: string): string | null {
     const stripped = input.replace(XSS_UNSAFE_CHARS, '').trim();
     if (stripped.length === 0) return null;
@@ -83,9 +65,6 @@ export class ParticipantsService {
     if (!meeting) throw new MeetingNotFoundError(input.meetingId);
     this.assertJoinable(meeting);
 
-    // 0. Персональная ссылка-приглашение: если пришёл `inviteToken` — заходим как
-    //    pre-seeded Participant (НЕ создаём нового `guest:<nanoid>`).
-    //    Чужой / неизвестный токен — не падаем, проваливаемся в обычную логику.
     if (input.inviteToken) {
       const invited = await this.prisma.participant.findUnique({
         where: { inviteToken: input.inviteToken },
@@ -99,11 +78,6 @@ export class ParticipantsService {
       return this.joinAsHost(meeting, input.userId);
     }
 
-    // 2. Залогинен, не владелец — ищем pre-seeded `invited`-строку ЭТОГО человека
-    //    и переиспользуем её, не плодя дубль `guest:`. Матчим по `userId` ИЛИ по
-    //    `personId` связанного с этим userId Person: приглашение по сотруднику
-    //    заводит строку с userId=null/personId=<id>, и матч только по userId её не
-    //    находил → дубль (корень бага дублирования счётчика, анализ 2026-06-06).
     if (input.userId) {
       const persons = await this.prisma.person.findMany({
         where: {
@@ -128,20 +102,9 @@ export class ParticipantsService {
       }
     }
 
-    return this.joinAsGuest(
-      meeting,
-      input.guestName,
-      input.existingGuestCookie,
-    );
+    return this.joinAsGuest(meeting, input.guestName, input.existingGuestCookie);
   }
 
-  // ───────────────────────── invited (pre-seeded) ────────────────────────
-
-  /**
-   * Вход приглашённого по персональной ссылке / pre-seed по `userId`.
-   * Используем УЖЕ существующий `Participant` и его детерминированный
-   * `livekitIdentity` — без новой guest-cookie.
-   */
   private async joinAsInvited(
     meeting: Meeting,
     participant: { id: string; livekitIdentity: string; name: string; role: 'host' | 'guest' },
@@ -170,8 +133,6 @@ export class ParticipantsService {
     };
   }
 
-  // ────────────────────────── host ───────────────────────────────────────
-
   private async joinAsHost(meeting: Meeting, userId: string): Promise<JoinResult> {
     const livekitIdentity = `host:${userId}`;
     let participant = await this.prisma.participant.findUnique({
@@ -184,8 +145,6 @@ export class ParticipantsService {
     });
 
     if (!participant) {
-      // Обычно host-Participant создаётся в `createFromCrossmark`. Этот fallback —
-      // на случай встреч, заведённых другим путём (`createForUser`, V2-сценарии).
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       participant = await this.prisma.participant.create({
         data: {
@@ -200,7 +159,6 @@ export class ParticipantsService {
       this.logger.log(`Создан host-Participant ${participant.id} для встречи ${meeting.id}`);
     }
 
-    // Idempotent создаём LiveKit room и выдаём реальный host-токен.
     await this.livekit.ensureRoom({ id: meeting.id });
     const token = await this.livekit.generateHostToken(
       { id: meeting.id, endedAt: meeting.endedAt },
@@ -220,14 +178,11 @@ export class ParticipantsService {
     };
   }
 
-  // ────────────────────────── guest ──────────────────────────────────────
-
   private async joinAsGuest(
     meeting: Meeting,
     rawGuestName: string | null,
     existingGuestCookie: string | null,
   ): Promise<JoinResult> {
-    // 1. Попытка переиспользовать guest cookie — её хватает и без имени.
     if (existingGuestCookie) {
       try {
         const payload = this.jwt.verifyGuestSession(existingGuestCookie);
@@ -254,12 +209,9 @@ export class ParticipantsService {
             };
           }
         }
-      } catch {
-        // Cookie битая/просрочена — упадём в ветку с именем ниже.
-      }
+      } catch {}
     }
 
-    // 2. Имя обязательно, иначе клиенту понадобится ввести.
     if (!rawGuestName) {
       throw new GuestNameRequiredError();
     }
@@ -268,9 +220,6 @@ export class ParticipantsService {
       throw new GuestNameRequiredError();
     }
 
-    // 3. Создаём нового Participant'а — `livekit_identity` детерминирован после создания.
-    //    Используем `nanoid` (URL-safe, 21 символ ≈ 126 бит энтропии — на порядок
-    //    больше, чем нужно для guest-identity в одной встрече).
     const guestId = nanoid();
     const livekitIdentity = `guest:${guestId}`;
     const participant = await this.prisma.participant.create({
@@ -283,13 +232,11 @@ export class ParticipantsService {
       },
     });
 
-    // 4. Подписываем guest-cookie — её фронт получит и сохранит.
     const cookieValue = this.jwt.signGuestSession({
       participantId: participant.id,
       meetingId: meeting.id,
     });
 
-    // 5. Генерируем реальный гостевой LiveKit-токен.
     await this.livekit.ensureRoom({ id: meeting.id });
     const token = await this.livekit.generateGuestToken(
       { id: meeting.id, endedAt: meeting.endedAt },
@@ -314,22 +261,11 @@ export class ParticipantsService {
     };
   }
 
-  // ────────────────────────── helpers ────────────────────────────────────
-
-  /**
-   * Можно ли вообще зайти на встречу.
-   * Запрещаем: `failed`; `completed`/`recording_*`/`transcription_*`/`ai_*`,
-   * если с момента `endedAt` прошло больше 1 часа.
-   */
   private assertJoinable(meeting: Meeting): void {
     if (meeting.status === 'failed') {
       throw new MeetingFinishedError();
     }
-    if (
-      meeting.status !== 'scheduled' &&
-      meeting.status !== 'active' &&
-      meeting.endedAt
-    ) {
+    if (meeting.status !== 'scheduled' && meeting.status !== 'active' && meeting.endedAt) {
       const oneHourMs = 60 * 60 * 1000;
       if (Date.now() - meeting.endedAt.getTime() > oneHourMs) {
         throw new MeetingFinishedError();
@@ -337,4 +273,3 @@ export class ParticipantsService {
     }
   }
 }
-

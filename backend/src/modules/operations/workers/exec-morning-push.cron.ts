@@ -10,48 +10,15 @@ import { PendingActionsService } from '../../pending-actions/services/pending-ac
 import { getLocalDate, getLocalHour } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * B6/Ф7 (remaining-handoff / mobile-cora-exec-manager §Ф7) — ExecMorningPushCron.
- *
- * ПЕРВОЕ подключение браузерного web-push к утреннему циклу. До этого
- * `PushSubscription` / `WebPushSender` / очередь `core.push-send` были
- * построены, но НИ ОДИН крон не звал `enqueuePushSend` — web-push физически
- * не запускался. Этот крон закрывает разрыв.
- *
- * Раз в час (`@Cron('0 * * * *')`) обходит руководителей (Membership с
- * role ∈ {owner, admin} и привязанным User) и для тех, у кого локальный час ==
- * утреннему окну (`operations.daily_digest.webpush_morning_hour`, default 9),
- * считает N = «Требует тебя сегодня» (PendingActionsService.getCount.total) и,
- * если N > 0, отправляет браузерный web-push «Кора · Требует тебя сегодня: N»
- * через `CoreQueueService.enqueuePushSend` (`data.url='/dashboard'` — тап
- * открывает мобильный «Обзор»).
- *
- * Тихие часы соблюдаются тем, что шлём ТОЛЬКО в утреннее окно (один час в
- * сутки в TZ пользователя). Пустым (N===0) — не спамим.
- *
- * Master kill-switch `operations.daily_digest.deliver_to_webpush` (ON по
- * умолчанию, Ship-On). False → крон тикает, но сразу выходит.
- *
- * Идемпотентность — Redis NX-гард `exec-morning-push:<tenantId>:<userId>:<dateLocal>`
- * (TTL ~25ч): не более одного web-push на пользователя в локальные сутки.
- *
- * NB: без VAPID-ключей `WebPushSender` делает graceful no-op — это норма
- * (ключи задаёт владелец на проде; Ship-On).
- *
- * Метрика: `z_exec_morning_push_delivered_total{channel}` (channel='webpush').
- */
 @Injectable()
 export class ExecMorningPushCron {
   private readonly logger = new Logger(ExecMorningPushCron.name);
 
   private static readonly DEFAULT_MORNING_HOUR = 9;
 
-  /** Префикс Redis-ключа идемпотентности (один push на пользователя в сутки). */
   private static readonly DEDUP_KEY_PREFIX = 'exec-morning-push';
-  /** ~25 часов: гарантированно покрывает локальные сутки с запасом на TZ-сдвиги. */
   private static readonly DEDUP_TTL_SEC = 90_000;
 
-  /** Защита от runaway: максимум руководителей за один проход. */
   private static readonly MAX_RECIPIENTS_PER_RUN = 5_000;
 
   constructor(
@@ -90,7 +57,6 @@ export class ExecMorningPushCron {
     }
   }
 
-  /** Выделен для unit-тестов: можно передать произвольный `now`. */
   async runOnce(now: Date): Promise<{
     processed: number;
     delivered: number;
@@ -101,9 +67,6 @@ export class ExecMorningPushCron {
   }> {
     const morningHour = await this.resolveMorningHour();
 
-    // Аудитория — руководители: Membership с role ∈ {owner, admin} и
-    // привязанным User. tenantId берём прямо из Membership.orgId (не через
-    // глобальный канал) — путь чистый и однозначный.
     const memberships = await this.prisma.membership.findMany({
       where: { role: { in: ['owner', 'admin'] } },
       select: { orgId: true, userId: true },
@@ -117,8 +80,6 @@ export class ExecMorningPushCron {
     let skippedAlreadyDelivered = 0;
     let errors = 0;
 
-    // Batch-резолв Person.timezone по ключу `userId:tenantId` (default —
-    // 'Europe/Moscow', если Person для пользователя в этой Org нет).
     const timezoneByKey = await this.loadTimezones(memberships);
 
     for (const m of memberships) {
@@ -137,8 +98,6 @@ export class ExecMorningPushCron {
       const dateLocal = getLocalDate(now, tz);
 
       try {
-        // Идемпотентность — один web-push на пользователя в локальные сутки.
-        // NX: ключ уже есть (set вернул не 'OK', т.е. null) → уже отправлено.
         const setResult = await this.redis.client.set(
           `${ExecMorningPushCron.DEDUP_KEY_PREFIX}:${tenantId}:${userId}:${dateLocal}`,
           '1',
@@ -151,7 +110,6 @@ export class ExecMorningPushCron {
           continue;
         }
 
-        // N = «Требует тебя сегодня» — единый агрегатор Action Center.
         const { total } = await this.pendingActions.getCount({ tenantId, userId });
         if (total <= 0) {
           skippedEmpty++;
@@ -191,11 +149,6 @@ export class ExecMorningPushCron {
     };
   }
 
-  /**
-   * Batch-резолв Person.timezone по ключу `userId:tenantId`. Если Person для
-   * пользователя в этой Org не найден — ключа не будет, и caller возьмёт
-   * default ('Europe/Moscow' внутри getLocalHour/getLocalDate при null).
-   */
   private async loadTimezones(
     memberships: Array<{ orgId: string; userId: string }>,
   ): Promise<Map<string, string | null>> {

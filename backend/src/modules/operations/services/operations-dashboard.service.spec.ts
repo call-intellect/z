@@ -1,22 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  bucketizeWeeklyInflow,
-  OperationsDashboardService,
-} from './operations-dashboard.service';
+import { bucketizeWeeklyInflow, OperationsDashboardService } from './operations-dashboard.service';
 
-/**
- * SBA β-8 — OperationsDashboardService unit-тесты.
- *
- * Покрываем агрегацию overview: правильные кол-ва blockers/missed goals/
- * team frictions/capacity. Кэш Redis не подключаем — Optional inject.
- */
 describe('OperationsDashboardService', () => {
   const baseCfg = {
     betaOps: {
       operationsDashboardCacheTtlSeconds: 300,
     },
-    // ТЗ-2 Ф2 — getOverview читает kill-switch новой раскладки COO.
     getDynamic: vi.fn().mockResolvedValue(true),
   };
 
@@ -26,25 +16,12 @@ describe('OperationsDashboardService', () => {
     entityLinks?: unknown[];
     persons?: unknown[];
     appointments?: unknown[];
-    /**
-     * SBA β-8.3 Wave 2 (Фаза 2) — фикстура для `prisma.insight.groupBy`.
-     * Каждый элемент = `{ causeCategory: string | null, count: number }`,
-     * мапится в `_count._all`. Дефолт — пусто.
-     */
     insightGroupBy?: Array<{ causeCategory: string | null; count: number }>;
-    /**
-     * SBA β-8.3 Wave 2 (Фаза 3) — фикстура для `companyProfile.findUnique`.
-     * Если undefined → возвращаем `null` (нет профиля).
-     */
     companyProfile?: {
       maturityScore: { toString(): string } | null;
       lastMaturityCalcAt: Date | null;
       stage: string | null;
     } | null;
-    /**
-     * SBA β-8.3 Wave 2 (Фаза 3) — `functionalDomain.findMany`.
-     * `completeness` — `{ toString(): string }` (имитируем Prisma.Decimal).
-     */
     functionalDomains?: Array<{
       slug: string;
       name: string;
@@ -60,7 +37,6 @@ describe('OperationsDashboardService', () => {
       },
       goal: {
         count: vi.fn().mockImplementation(() => {
-          // First call = missed, second = cascade.
           const value = goalCallIndex === 0 ? goalMissed : goalCascade;
           goalCallIndex++;
           return Promise.resolve(value);
@@ -68,13 +44,10 @@ describe('OperationsDashboardService', () => {
       },
       entityLink: {
         findMany: vi.fn().mockResolvedValue(overrides.entityLinks ?? []),
-        // ТЗ-2 Ф2 — frictionsResolvedCount (conflicted_with → archived, 30д).
         count: vi.fn().mockResolvedValue(0),
       },
-      // ТЗ-2 Ф2 — blockersResolvedCount (BlockerSynthesis status=resolved, 30д).
       blockerSynthesis: {
         count: vi.fn().mockResolvedValue(0),
-        // Ф1 редизайн — buildWeeklyInflow читает BlockerSynthesis.createdAt.
         findMany: vi.fn().mockResolvedValue([]),
       },
       person: {
@@ -95,9 +68,7 @@ describe('OperationsDashboardService', () => {
         findUnique: vi
           .fn()
           .mockResolvedValue(
-            overrides.companyProfile === undefined
-              ? null
-              : overrides.companyProfile,
+            overrides.companyProfile === undefined ? null : overrides.companyProfile,
           ),
       },
       functionalDomain: {
@@ -107,19 +78,12 @@ describe('OperationsDashboardService', () => {
     const metrics = {
       setOperationsBlockersTotal: vi.fn(),
       setTeamFrictionsTotal: vi.fn(),
-      // SBA β-8.1 — getOverview теперь вызывает setCooTeamTemperatureRedShare.
       setCooTeamTemperatureRedShare: vi.fn(),
-      // SBA β-8.3 Wave 2 — карта причин + зрелость.
       setCooInsightsByCause: vi.fn(),
       setCooCompanyMaturityScore: vi.fn(),
-      // ТЗ-2 Ф2 — «зеркало закрытого».
       setCooBlockersResolved: vi.fn(),
     };
-    const svc = new OperationsDashboardService(
-      prisma as never,
-      baseCfg as never,
-      metrics as never,
-    );
+    const svc = new OperationsDashboardService(prisma as never, baseCfg as never, metrics as never);
     return { svc, prisma, metrics };
   }
 
@@ -133,7 +97,6 @@ describe('OperationsDashboardService', () => {
     expect(dto.capacityAvgPercent).toBe(0);
     expect(dto.topRecentBlockers).toEqual([]);
     expect(dto.topRecentTeamFrictions).toEqual([]);
-    // SBA β-8.3 Wave 2 (Фаза 2) — все 8 ключей всегда заполнены нулями.
     expect(Object.keys(dto.insightsByCauseCategory).sort()).toEqual(
       [
         'communication',
@@ -146,10 +109,7 @@ describe('OperationsDashboardService', () => {
         'unknown',
       ].sort(),
     );
-    expect(
-      Object.values(dto.insightsByCauseCategory).every((v) => v === 0),
-    ).toBe(true);
-    // SBA β-8.3 Wave 2 (Фаза 3) — пустой профиль + 0 доменов.
+    expect(Object.values(dto.insightsByCauseCategory).every((v) => v === 0)).toBe(true);
     expect(dto.maturity.score).toBeNull();
     expect(dto.maturity.lastCalcAt).toBeNull();
     expect(dto.maturity.stage).toBeNull();
@@ -190,35 +150,28 @@ describe('OperationsDashboardService', () => {
     expect(dto.cascadeMissedCount).toBe(3);
   });
 
-  // SBA β-8.3 Wave 2 (Фаза 2) — карта причин.
   it('overview: агрегирует insightsByCauseCategory + NULL→unknown', async () => {
     const { svc, metrics } = buildSvc({
       insightGroupBy: [
         { causeCategory: 'process_gap', count: 4 },
         { causeCategory: 'tooling', count: 2 },
         { causeCategory: 'unknown', count: 1 },
-        // NULL → должен попасть в bucket 'unknown'
         { causeCategory: null, count: 3 },
-        // значение вне whitelist'а → тоже в 'unknown' (защита от мусора).
         { causeCategory: 'invalid_value', count: 5 },
       ],
     });
     const dto = await svc.getOverview({ tenantId: 't1' });
     expect(dto.insightsByCauseCategory.process_gap).toBe(4);
     expect(dto.insightsByCauseCategory.tooling).toBe(2);
-    // 1 (явно unknown) + 3 (NULL) + 5 (мусор) = 9
     expect(dto.insightsByCauseCategory.unknown).toBe(9);
-    // Остальные нули.
     expect(dto.insightsByCauseCategory.role_skill).toBe(0);
     expect(dto.insightsByCauseCategory.communication).toBe(0);
     expect(dto.insightsByCauseCategory.priority).toBe(0);
     expect(dto.insightsByCauseCategory.resource_constraint).toBe(0);
     expect(dto.insightsByCauseCategory.external).toBe(0);
-    // Все 8 ключей публикуются в метрику.
     expect(metrics.setCooInsightsByCause).toHaveBeenCalledTimes(8);
   });
 
-  // SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости.
   it('overview: maturity снапшот сортирует weakest/top по completeness', async () => {
     const { svc, metrics } = buildSvc({
       companyProfile: {
@@ -240,27 +193,23 @@ describe('OperationsDashboardService', () => {
     expect(dto.maturity.lastCalcAt).toBe('2026-05-25T05:00:00.000Z');
     expect(dto.maturity.stage).toBe('growth');
 
-    // weakestDomains: ASC по completeness — топ-3.
     expect(dto.maturity.weakestDomains).toHaveLength(3);
     expect(dto.maturity.weakestDomains[0]?.slug).toBe('rnd');
     expect(dto.maturity.weakestDomains[0]?.completeness).toBeCloseTo(0.1);
     expect(dto.maturity.weakestDomains[1]?.slug).toBe('hr');
     expect(dto.maturity.weakestDomains[2]?.slug).toBe('finance');
 
-    // topDomains: DESC по completeness — топ-3.
     expect(dto.maturity.topDomains).toHaveLength(3);
     expect(dto.maturity.topDomains[0]?.slug).toBe('sales');
     expect(dto.maturity.topDomains[0]?.completeness).toBeCloseTo(0.9);
     expect(dto.maturity.topDomains[1]?.slug).toBe('marketing');
     expect(dto.maturity.topDomains[2]?.slug).toBe('finance');
 
-    // Метрика maturity score публикуется (score !== null).
     expect(metrics.setCooCompanyMaturityScore).toHaveBeenCalledWith(
       expect.objectContaining({ value: expect.any(Number) }),
     );
   });
 
-  // SBA β-8.3 Wave 2 (Фаза 3) — score=null → метрика НЕ публикуется.
   it('overview: maturity score=null → метрика maturity не публикуется', async () => {
     const { svc, metrics } = buildSvc({
       companyProfile: {
@@ -303,30 +252,20 @@ describe('OperationsDashboardService', () => {
   });
 });
 
-/**
- * Ф1 редизайн — чистая функция раскладки недельного инфлоу (детерминизм,
- * без моков prisma). idx = floor((t - start) / week), start = now - 12 недель.
- */
 describe('bucketizeWeeklyInflow', () => {
   const WEEK = 7 * 24 * 60 * 60 * 1000;
   const now = new Date('2026-06-10T12:00:00Z');
 
-  // Событие в середине недели i: t = now - (11.5 - i) * WEEK.
   function eventInWeek(i: number): Date {
     return new Date(now.getTime() - (11.5 - i) * WEEK);
   }
 
   it('раскладывает события по нужным неделям (i=0,5,11), остальные null', () => {
-    const result = bucketizeWeeklyInflow(
-      [eventInWeek(0), eventInWeek(5), eventInWeek(11)],
-      now,
-    );
+    const result = bucketizeWeeklyInflow([eventInWeek(0), eventInWeek(5), eventInWeek(11)], now);
     expect(result).toHaveLength(12);
-    // По одному событию в неделях 0, 5, 11 → значение 1.
     expect(result[0]).toBe(1);
     expect(result[5]).toBe(1);
     expect(result[11]).toBe(1);
-    // Остальные индексы — null (неделя без данных).
     for (const idx of [1, 2, 3, 4, 6, 7, 8, 9, 10]) {
       expect(result[idx]).toBeNull();
     }
@@ -339,21 +278,17 @@ describe('bucketizeWeeklyInflow', () => {
   });
 
   it('несколько событий в одной неделе → count > 1', () => {
-    const result = bucketizeWeeklyInflow(
-      [eventInWeek(3), eventInWeek(3), eventInWeek(3)],
-      now,
-    );
+    const result = bucketizeWeeklyInflow([eventInWeek(3), eventInWeek(3), eventInWeek(3)], now);
     expect(result[3]).toBe(3);
-    // Прочие — null.
     for (let i = 0; i < 12; i++) {
       if (i !== 3) expect(result[i]).toBeNull();
     }
   });
 
   it('события вне окна (раньше start / позже now) игнорируются', () => {
-    const before = new Date(now.getTime() - 13 * WEEK); // раньше start
-    const future = new Date(now.getTime() + WEEK); // позже now
-    const atNow = new Date(now.getTime()); // t >= now → исключается (lt now)
+    const before = new Date(now.getTime() - 13 * WEEK);
+    const future = new Date(now.getTime() + WEEK);
+    const atNow = new Date(now.getTime());
     const result = bucketizeWeeklyInflow([before, future, atNow], now);
     expect(result.every((v) => v === null)).toBe(true);
   });

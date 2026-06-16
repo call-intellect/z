@@ -1,51 +1,22 @@
-/**
- * PublicReferralsController — beacon-эндпоинт для лендинга.
- *
- * Маршрут: `POST /api/v1/public/referrals/attribution` (public, throttled 10/min/IP).
- *
- * Лендинг ставит cookie `z_ref=<slug>` и параллельно бьёт сюда beacon с
- * fingerprint/referer. Используется fingerprint как fallback на случай
- * если cookie заблокирован adblocker'ом / приватным режимом.
- *
- * Возвращает 204 (без тела), чтобы не светить инфраструктуру.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.3 + §16.18.
- */
-
-import {
-  Body,
-  Controller,
-  HttpCode,
-  HttpStatus,
-  Ip,
-  Headers,
-  Inject,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Ip, Headers, Inject, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  PublicAttributionBodySchema,
-  type PublicAttributionBody,
-} from '../dto/referrals.dto';
+import { PublicAttributionBodySchema, type PublicAttributionBody } from '../dto/referrals.dto';
 import { AttributionService } from '../services/attribution.service';
 
 @ApiTags('public-referrals')
 @Controller('api/v1/public/referrals')
 export class PublicReferralsController {
-  constructor(
-    @Inject(AttributionService) private readonly attribution: AttributionService,
-  ) {}
+  constructor(@Inject(AttributionService) private readonly attribution: AttributionService) {}
 
   @Post('attribution')
   @HttpCode(HttpStatus.NO_CONTENT)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Beacon от лендинга: зафиксировать касание (slug+fingerprint+referer).',
-    description:
-      'Public-эндпоинт. Rate-limit 10/мин/IP. Не возвращает ничего (204).',
+    description: 'Public-эндпоинт. Rate-limit 10/мин/IP. Не возвращает ничего (204).',
   })
   async record(
     @Body(new ZodValidationPipe(PublicAttributionBodySchema))

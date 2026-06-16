@@ -9,39 +9,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { S3Service } from '../../recordings/s3.service';
 import { IssuesService } from '../../tracker/services/issues.service';
 
-/**
- * ProjectInboxService (Tracker Phase 4, T5 — Email-to-task).
- *
- * Поллинг общего IMAP-ящика `inbox.kora.app` (или другого `MAIL_INBOX_DOMAIN`):
- * - Подключается к IMAP (логин из ENV `MAIL_INBOX_IMAP_*`).
- * - Получает UNSEEN сообщения из `MAIL_INBOX_IMAP_FOLDER` (`INBOX` по умолчанию).
- * - Для каждого письма:
- *   1. Парсит RFC822 (`mailparser.simpleParser`).
- *   2. Проверяет идемпотентность по `MailInboundLog.messageId` (`Message-ID`
- *      или `Delivered-To` + `Date` fallback).
- *   3. Достаёт alias из `To`/`Delivered-To`/`X-Original-To` (часть до `@`).
- *   4. Ищет `Project.findUnique({ where: { emailInboxAlias: alias } })` —
- *      alias уникален глобально (across tenants).
- *   5. Если `project=null` или `emailInboxEnabled=false` → bounced log + skip.
- *   6. Создаёт Issue через `IssuesService.create(...)` с `userId=project.ownerId`
- *      и `externalSource='email'`.
- *   7. Вложения → S3 (key=`mail-inbound/{tenantId}/{projectId}/{messageId}/{filename}`)
- *      → `IssueAttachment` записи. fileUrl — S3 key (для последующего presign).
- *   8. Помечает письмо `\Seen` (чтобы не подтягивать снова).
- *
- * Failure-modes:
- * - Любая ошибка обработки одного письма → `MailInboundLog.status='failed'`
- *   + warn-log; письмо НЕ помечается `\Seen` (повторится в следующем тике
- *   — но `messageId`-идемпотентность не даст создать дубль Issue).
- *   NB: если ошибка стабильная, письмо застрянет навсегда. Это компромисс
- *   ради надёжности; ручной разбор `failed`-логов в UI оператора (см.
- *   `recentLogs` в `ProjectEmailInboxController.get`).
- *
- * NB: не используем `EmailFetchService` напрямую — там Source-per-tenant
- * парадигма с отдельным Source.config, тут нужен один общий ящик + routing
- * по alias. Логику IMAP-connection приходится скопировать; это явный
- * компромисс ради чистого разделения flows.
- */
 @Injectable()
 export class ProjectInboxService {
   private readonly logger = new Logger(ProjectInboxService.name);
@@ -55,13 +22,6 @@ export class ProjectInboxService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Один проход по общему IMAP-ящику. Возвращает счётчики для логирования.
-   *
-   * Защищено внешним guard'ом `cfg.mailInbox.enabled` — но дополнительно
-   * проверяем здесь, чтобы прямой вызов из тестов/смок-скриптов не лез
-   * в продовый ящик.
-   */
   async pollInbox(): Promise<{
     processed: number;
     created: number;
@@ -77,9 +37,7 @@ export class ProjectInboxService {
       return result;
     }
     if (!c.imapHost || !c.imapUser || !c.imapPass) {
-      this.logger.warn(
-        'mail-inbox: MAIL_INBOX_IMAP_HOST/USER/PASS не заданы — поллер пропущен',
-      );
+      this.logger.warn('mail-inbox: MAIL_INBOX_IMAP_HOST/USER/PASS не заданы — поллер пропущен');
       return result;
     }
 
@@ -123,10 +81,8 @@ export class ProjectInboxService {
             else if (outcome === 'duplicate') result.skipped++;
             else if (outcome === 'failed') {
               result.failed++;
-              // НЕ помечаем \Seen — оставляем для retry в следующем тике.
               continue;
             }
-            // Помечаем \Seen (created / bounced / duplicate).
             await client
               .messageFlagsAdd(String(uid), ['\\Seen'], { uid: true })
               .catch(() => undefined);
@@ -136,7 +92,6 @@ export class ProjectInboxService {
               { uid, err: err instanceof Error ? err.message : String(err) },
               'mail-inbox: ошибка обработки письма (uid)',
             );
-            // Не помечаем — retry в следующем проходе.
           }
         }
       } finally {
@@ -145,40 +100,21 @@ export class ProjectInboxService {
     } finally {
       try {
         await client.logout();
-      } catch {
-        // ignore — соединение могло уже отвалиться.
-      }
+      } catch {}
     }
 
     this.logger.log(result, 'mail-inbox: проход завершён');
     return result;
   }
 
-  /**
-   * Обработка одного письма. Возвращает outcome для агрегации в pollInbox.
-   *
-   * Outcome:
-   *  - `created`   — Issue создан, лог status='created'.
-   *  - `bounced`   — alias не найден / выключен; лог status='bounced'.
-   *  - `duplicate` — Message-ID уже в БД; skip без создания дублей.
-   *  - `failed`    — ошибка обработки; лог status='failed' (если удалось
-   *    хотя бы создать лог) ИЛИ выбрасывается caller'у (тогда без лога).
-   */
-  async processOne(
-    parsed: ParsedMail,
-  ): Promise<'created' | 'bounced' | 'duplicate' | 'failed'> {
+  async processOne(parsed: ParsedMail): Promise<'created' | 'bounced' | 'duplicate' | 'failed'> {
     const messageId = (parsed.messageId ?? '').replace(/^<|>$/g, '').trim();
     if (!messageId) {
-      // Без Message-ID не можем гарантировать идемпотентность — отказываемся.
-      this.logger.warn(
-        { subject: parsed.subject },
-        'mail-inbox: письмо без Message-ID — skip',
-      );
+      this.logger.warn({ subject: parsed.subject }, 'mail-inbox: письмо без Message-ID — skip');
       this.metrics.incMailInboundBounce({ reason: 'no_message_id' });
       return 'failed';
     }
 
-    // Идемпотентность: уже видели это письмо.
     const seen = await this.prisma.mailInboundLog.findUnique({
       where: { messageId },
       select: { id: true, status: true },
@@ -190,12 +126,11 @@ export class ProjectInboxService {
     const fromEmail = this.extractFromEmail(parsed) ?? '';
     const subject = (parsed.subject ?? '').slice(0, 500) || '(без темы)';
 
-    // Извлекаем alias из To / Delivered-To / X-Original-To.
     const alias = this.extractAlias(parsed);
     if (!alias) {
       await this.prisma.mailInboundLog.create({
         data: {
-          tenantId: '', // bounce без проекта — tenant неизвестен
+          tenantId: '',
           projectId: null,
           messageId,
           fromEmail,
@@ -209,7 +144,6 @@ export class ProjectInboxService {
       return 'bounced';
     }
 
-    // Routing по alias (unique глобально).
     const project = await this.prisma.project.findUnique({
       where: { emailInboxAlias: alias },
       select: {
@@ -256,12 +190,8 @@ export class ProjectInboxService {
       return 'bounced';
     }
 
-    // Собираем body: предпочитаем text/plain; fallback на text-извлечение из HTML.
     const description = this.extractDescription(parsed);
 
-    // Создаём Issue от имени владельца проекта (он точно member через
-    // ProjectMember admin, RBAC и tenant guard внутри IssuesService обходим
-    // через прямой вызов create() — это intentional bypass для system-flow).
     let issueId: string;
     try {
       const issue = await this.issues.create(
@@ -281,8 +211,6 @@ export class ProjectInboxService {
       );
       issueId = issue.id;
     } catch (err) {
-      // Logger + лог в БД, но НЕ помечаем письмо \Seen — caller (pollInbox)
-      // сам решает retry-логику.
       this.logger.warn(
         {
           messageId,
@@ -291,8 +219,6 @@ export class ProjectInboxService {
         },
         'mail-inbox: IssuesService.create() упал',
       );
-      // Создаём лог failed, чтобы оператор видел в UI; messageId unique —
-      // повторный create в следующем тике не падает (попадает в 'duplicate').
       try {
         await this.prisma.mailInboundLog.create({
           data: {
@@ -302,13 +228,10 @@ export class ProjectInboxService {
             fromEmail,
             subject,
             status: 'failed',
-            reason:
-              err instanceof Error ? err.message.slice(0, 500) : 'unknown_error',
+            reason: err instanceof Error ? err.message.slice(0, 500) : 'unknown_error',
           },
         });
-      } catch {
-        // ignore — если и лог не записался, остался warn выше.
-      }
+      } catch {}
       this.metrics.incMailInboundReceived({
         projectId: project.id,
         status: 'failed',
@@ -316,9 +239,6 @@ export class ProjectInboxService {
       return 'failed';
     }
 
-    // Вложения → S3 + IssueAttachment. Best-effort: если упадёт — лог
-    // всё равно создаётся со status='created' (Issue уже есть), но без
-    // attachments. Помечаем как warn для оператора.
     await this.uploadAttachments({
       parsed,
       tenantId: project.tenantId,
@@ -347,20 +267,9 @@ export class ProjectInboxService {
     return 'created';
   }
 
-  // ── internal ──
-
-  /**
-   * Извлекает alias из заголовков письма. Приоритет:
-   *   1. `Delivered-To` (если SMTP-сервер проставил — наиболее точно).
-   *   2. `X-Original-To` (sendmail/postfix).
-   *   3. `To` (multi-recipient — первый адрес с подходящим доменом).
-   *
-   * Возвращает только часть до `@`, в lowercase.
-   */
   private extractAlias(parsed: ParsedMail): string | null {
     const domain = this.cfg.mailInbox.domain.toLowerCase();
 
-    // Helper: извлечь alias из строки `name <addr@domain>` или `addr@domain`.
     const fromAddr = (addr: string): string | null => {
       const m = /<?([^\s<>"]+)@([^\s<>"]+?)>?$/i.exec(addr.trim());
       if (!m) return null;
@@ -371,7 +280,6 @@ export class ProjectInboxService {
     };
 
     const headers = parsed.headers;
-    // mailparser возвращает Map<string, unknown>; ключи — lowercase.
     const deliveredTo = headers.get('delivered-to');
     if (typeof deliveredTo === 'string') {
       const a = fromAddr(deliveredTo);
@@ -383,7 +291,6 @@ export class ProjectInboxService {
       if (a) return a;
     }
 
-    // To: может быть address-объект (parsed) или массив таковых.
     const toField = parsed.to;
     const candidates: string[] = [];
     if (Array.isArray(toField)) {
@@ -411,17 +318,14 @@ export class ProjectInboxService {
     if (!from?.value || from.value.length === 0) return null;
     const first = from.value[0];
     if (!first?.address) return null;
-    return first.address.slice(0, 320); // RFC max email length
+    return first.address.slice(0, 320);
   }
 
   private extractDescription(parsed: ParsedMail): string {
-    // text/plain — приоритет.
     if (parsed.text) {
       return parsed.text.slice(0, 5000);
     }
-    // Fallback на mailparser-преобразование (он сам text → html → text).
     if (typeof parsed.html === 'string' && parsed.html.length > 0) {
-      // Упрощённый strip HTML.
       const stripped = parsed.html
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
@@ -431,11 +335,6 @@ export class ProjectInboxService {
     return '';
   }
 
-  /**
-   * Загружает вложения в S3 + создаёт IssueAttachment записи.
-   * Best-effort: failure одного вложения не валит остальные.
-   * `fileUrl` = S3 key (presign делается на read).
-   */
   private async uploadAttachments(args: {
     parsed: ParsedMail;
     tenantId: string;

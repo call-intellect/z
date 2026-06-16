@@ -1,47 +1,47 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { tagsApi, type TagApi } from '@/api/tags.api';
-import { toast } from 'sonner';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { tagsApi, type TagApi } from "@/api/tags.api";
+import { toast } from "sonner";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const COLOR_PALETTE = [
-  '#5EEAD4', // mint
-  '#34D399',
-  '#60A5FA',
-  '#A78BFA',
-  '#F472B6',
-  '#FB923C',
-  '#FBBF24',
-  '#94A3B8',
+  "#5EEAD4",
+  "#34D399",
+  "#60A5FA",
+  "#A78BFA",
+  "#F472B6",
+  "#FB923C",
+  "#FBBF24",
+  "#94A3B8",
 ];
 
 type DialogState =
-  | { mode: 'closed' }
-  | { mode: 'create' }
-  | { mode: 'edit'; tag: TagApi };
+  | { mode: "closed" }
+  | { mode: "create" }
+  | { mode: "edit"; tag: TagApi };
 
 export function TagsClient() {
   const [tags, setTags] = useState<TagApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<DialogState>({ mode: 'closed' });
+  const [dialog, setDialog] = useState<DialogState>({ mode: "closed" });
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const fetchTags = useCallback(async () => {
@@ -51,7 +51,7 @@ export function TagsClient() {
       const res = await tagsApi.list();
       setTags(res.items);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить теги'));
+      setError(humanizeApiError(e, "Не удалось загрузить теги"));
     } finally {
       setLoading(false);
     }
@@ -64,18 +64,18 @@ export function TagsClient() {
   const handleDelete = useCallback(
     async (id: string) => {
       const ok = await ask({
-        title: 'Удалить тег?',
-        description: 'Он отвяжется от всех встреч.',
-        confirmLabel: 'Удалить',
+        title: "Удалить тег?",
+        description: "Он отвяжется от всех встреч.",
+        confirmLabel: "Удалить",
         destructive: true,
       });
       if (!ok) return;
       try {
         await tagsApi.remove(id);
         setTags((prev) => prev.filter((t) => t.id !== id));
-        toast.success('Тег удалён');
+        toast.success("Тег удалён");
       } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось удалить'));
+        toast.error(humanizeApiError(e, "Не удалось удалить"));
       }
     },
     [ask],
@@ -85,12 +85,14 @@ export function TagsClient() {
     <div className="w-full">
       <header className="mb-6 flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">Теги</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+            Теги
+          </h1>
           <p className="text-sm text-fg-secondary">
             Метки для группировки встреч и фильтрации.
           </p>
         </div>
-        <Button onClick={() => setDialog({ mode: 'create' })} size="sm">
+        <Button onClick={() => setDialog({ mode: "create" })} size="sm">
           <Plus size={14} /> Создать тег
         </Button>
       </header>
@@ -109,7 +111,7 @@ export function TagsClient() {
             title="Тегов пока нет"
             description="Создайте первый — и он появится при выборе на встречах."
             action={
-              <Button onClick={() => setDialog({ mode: 'create' })} size="sm">
+              <Button onClick={() => setDialog({ mode: "create" })} size="sm">
                 <Plus size={14} /> Создать тег
               </Button>
             }
@@ -125,7 +127,7 @@ export function TagsClient() {
             >
               <span
                 className="block h-3 w-3 shrink-0 rounded-full"
-                style={{ backgroundColor: tag.color ?? '#94A3B8' }}
+                style={{ backgroundColor: tag.color ?? "#94A3B8" }}
               />
               <span className="flex-1 truncate text-sm font-medium text-fg-primary">
                 {tag.name}
@@ -134,7 +136,7 @@ export function TagsClient() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  onClick={() => setDialog({ mode: 'edit', tag })}
+                  onClick={() => setDialog({ mode: "edit", tag })}
                   aria-label="Редактировать"
                 >
                   <Pencil size={13} />
@@ -156,7 +158,7 @@ export function TagsClient() {
 
       <TagDialog
         state={dialog}
-        onClose={() => setDialog({ mode: 'closed' })}
+        onClose={() => setDialog({ mode: "closed" })}
         onSaved={(tag) => {
           setTags((prev) => {
             const idx = prev.findIndex((t) => t.id === tag.id);
@@ -183,39 +185,42 @@ function TagDialog({
   onClose: () => void;
   onSaved: (tag: TagApi) => void;
 }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [color, setColor] = useState(COLOR_PALETTE[0]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (state.mode === 'edit') {
+    if (state.mode === "edit") {
       setName(state.tag.name);
       setColor(state.tag.color ?? COLOR_PALETTE[0]);
-    } else if (state.mode === 'create') {
-      setName('');
+    } else if (state.mode === "create") {
+      setName("");
       setColor(COLOR_PALETTE[0]);
     }
   }, [state]);
 
-  const open = state.mode !== 'closed';
-  const isEdit = state.mode === 'edit';
+  const open = state.mode !== "closed";
+  const isEdit = state.mode === "edit";
 
   const handleSubmit = async () => {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
       if (isEdit) {
-        const tag = await tagsApi.update(state.tag.id, { name: name.trim(), color });
+        const tag = await tagsApi.update(state.tag.id, {
+          name: name.trim(),
+          color,
+        });
         onSaved(tag);
-        toast.success('Тег обновлён');
+        toast.success("Тег обновлён");
       } else {
         const tag = await tagsApi.create({ name: name.trim(), color });
         onSaved(tag);
-        toast.success('Тег создан');
+        toast.success("Тег создан");
       }
       onClose();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSubmitting(false);
     }
@@ -225,7 +230,9 @@ function TagDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEdit ? 'Редактировать тег' : 'Новый тег'}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Редактировать тег" : "Новый тег"}
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -248,10 +255,10 @@ function TagDialog({
                   type="button"
                   onClick={() => setColor(c)}
                   className={cn(
-                    'h-7 w-7 rounded-full transition-all',
+                    "h-7 w-7 rounded-full transition-all",
                     color === c
-                      ? 'ring-2 ring-accent ring-offset-2 ring-offset-bg-card'
-                      : 'hover:scale-110',
+                      ? "ring-2 ring-accent ring-offset-2 ring-offset-bg-card"
+                      : "hover:scale-110",
                   )}
                   style={{ backgroundColor: c }}
                   aria-label={`Цвет ${c}`}
@@ -264,7 +271,10 @@ function TagDialog({
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Отмена
           </Button>
-          <Button onClick={() => void handleSubmit()} disabled={submitting || !name.trim()}>
+          <Button
+            onClick={() => void handleSubmit()}
+            disabled={submitting || !name.trim()}
+          >
             {submitting ? <Loader2 size={14} className="animate-spin" /> : null}
             Сохранить
           </Button>

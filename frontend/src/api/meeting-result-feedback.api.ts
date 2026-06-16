@@ -1,14 +1,6 @@
-/**
- * Фаза A.3 — API-обёртки для feedback пользователя на AI-результат встречи.
- *
- *   POST /api/v1/meetings/:meetingId/result/feedback
- *   GET  /api/v1/meetings/:meetingId/result/feedback/me
- *   DELETE /api/v1/meetings/:meetingId/result/feedback/me
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export type FeedbackReactionApi = 'positive' | 'negative';
+export type FeedbackReactionApi = "positive" | "negative";
 
 export interface AiResultFeedbackApi {
   id: string;
@@ -25,7 +17,6 @@ export interface FeedbackCreatePayload {
 }
 
 export const meetingResultFeedbackApi = {
-  /** Получить собственную реакцию (или null если ещё не оставлял). */
   async getOwn(meetingId: string): Promise<AiResultFeedbackApi | null> {
     const res = await apiClient.get<{ feedback: AiResultFeedbackApi | null }>(
       `/api/v1/meetings/${meetingId}/result/feedback/me`,
@@ -33,7 +24,6 @@ export const meetingResultFeedbackApi = {
     return res.feedback;
   },
 
-  /** Поставить (или обновить) реакцию. */
   async create(
     meetingId: string,
     payload: FeedbackCreatePayload,
@@ -45,7 +35,6 @@ export const meetingResultFeedbackApi = {
     return res.feedback;
   },
 
-  /** Удалить свою реакцию. */
   async remove(meetingId: string): Promise<{ ok: true }> {
     return apiClient.del<{ ok: true }>(
       `/api/v1/meetings/${meetingId}/result/feedback/me`,

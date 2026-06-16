@@ -2,20 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import type {
-  OrchestratorSynthesis,
-  OrchestratorVerification,
-} from '../orchestrator.types';
+import type { OrchestratorSynthesis, OrchestratorVerification } from '../orchestrator.types';
 
-/**
- * SBA δ-1 — VerificationService.
- *
- * LLM-step (taskType='orchestrator-verify'): оценить, соответствует ли
- * synthesis исходному запросу. На выход — confidence 0..1 + reasoning.
- *
- * Если < 0.6 — инкрементит метрику. Re-try логика живёт на стороне
- * OrchestratorService (max 1 retry, см. ТЗ §3.4).
- */
 @Injectable()
 export class VerificationService {
   private readonly logger = new Logger(VerificationService.name);

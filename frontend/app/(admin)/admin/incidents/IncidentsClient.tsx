@@ -1,61 +1,47 @@
-'use client';
+"use client";
 
-/**
- * IncidentsClient — `/admin/incidents` (admin-redesign Фаза 1).
- *
- * Вкладки:
- *   - «Сейчас горит» — все очереди с failed > 0, бейдж серьёзности.
- *   - «Очереди» — полная таблица. При клике на failed раскрывается список
- *     последних 3 failed-jobs со stacktrace excerpt.
- *   - «История 7д» — заглушка (Фаза 8).
- *   - «Правила алертов» — MVP-стаб: форма создания с отключённой submit,
- *     toast «Правила алертов будут запущены в Фазе 8».
- *
- * Если бэкенд не реализован — `AdminEmpty`.
- */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Flame, History, ListTree, Siren } from "lucide-react";
+import { toast } from "sonner";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Flame, History, ListTree, Siren } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
-import { adminIncidentsApi } from '@/api/admin-incidents.api';
+import { ApiError } from "@/api/api-error";
+import { adminIncidentsApi } from "@/api/admin-incidents.api";
 import {
   incidentFailedJobsListFromApi,
   incidentQueuesListFromApi,
   type IncidentFailedJobDomain,
   type IncidentQueueDomain,
-} from '@/domain/admin-incidents';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/admin-incidents";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'burning', label: 'Сейчас горит', icon: Flame },
-  { value: 'queues', label: 'Очереди', icon: ListTree },
-  { value: 'history', label: 'История 7 дней', icon: History },
-  { value: 'rules', label: 'Правила алертов', icon: Siren },
+  { value: "burning", label: "Сейчас горит", icon: Flame },
+  { value: "queues", label: "Очереди", icon: ListTree },
+  { value: "history", label: "История 7 дней", icon: History },
+  { value: "rules", label: "Правила алертов", icon: Siren },
 ];
 
 export function IncidentsClient() {
@@ -63,8 +49,8 @@ export function IncidentsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Пульс', href: '/admin' },
-        { label: 'Инциденты' },
+        { label: "Пульс", href: "/admin" },
+        { label: "Инциденты" },
       ]}
       title="Инциденты"
       description="Очереди с ошибками, последние неудачи воркеров и правила алертов."
@@ -72,19 +58,16 @@ export function IncidentsClient() {
       <AdminTabs tabs={TABS} defaultTab="burning">
         {(active) => (
           <>
-            {active === 'burning' && <BurningTab />}
-            {active === 'queues' && <QueuesTab />}
-            {active === 'history' && <HistoryTab />}
-            {active === 'rules' && <RulesTab />}
+            {active === "burning" && <BurningTab />}
+            {active === "queues" && <QueuesTab />}
+            {active === "history" && <HistoryTab />}
+            {active === "rules" && <RulesTab />}
           </>
         )}
       </AdminTabs>
     </AdminSection>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Hook: подгрузка очередей.
 
 function useQueues(): {
   isLoading: boolean;
@@ -95,7 +78,7 @@ function useQueues(): {
   refetch: () => void;
 } {
   const q = useAdminQuery(
-    'admin-incidents-queues',
+    "admin-incidents-queues",
     async () => {
       try {
         const res = await adminIncidentsApi.listQueues();
@@ -103,7 +86,7 @@ function useQueues(): {
       } catch (e) {
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           return null;
         }
@@ -122,9 +105,6 @@ function useQueues(): {
     refetch: q.refetch,
   };
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Вкладка «Сейчас горит».
 
 function BurningTab() {
   const queues = useQueues();
@@ -163,20 +143,15 @@ function BurningTab() {
               <SeverityBadge severity={q.severity} />
             </div>
             <div className="text-2xl font-semibold text-warning">
-              {q.failed.toLocaleString('ru-RU')}
+              {q.failed.toLocaleString("ru-RU")}
             </div>
-            <div className="mt-1 text-xs text-fg-tertiary">
-              неудачных задач
-            </div>
+            <div className="mt-1 text-xs text-fg-tertiary">неудачных задач</div>
           </CardContent>
         </Card>
       ))}
     </div>
   );
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Вкладка «Очереди»: таблица + раскрытие failed.
 
 function QueuesTab() {
   const queues = useQueues();
@@ -270,7 +245,7 @@ function FragmentRow({
           )}
         </td>
         <td className="px-3 py-2 text-right tabular-nums text-fg-tertiary">
-          {queue.completed.toLocaleString('ru-RU')}
+          {queue.completed.toLocaleString("ru-RU")}
         </td>
       </tr>
       {isExpanded ? (
@@ -298,11 +273,11 @@ function FailedJobsList({ queueName }: { queueName: string }) {
     } catch (e) {
       if (
         e instanceof ApiError &&
-        (e.code === 'http_404' || e.code === 'not_found')
+        (e.code === "http_404" || e.code === "not_found")
       ) {
         setNotImpl(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
       }
     }
   }, [queueName]);
@@ -342,7 +317,7 @@ function FailedJobsList({ queueName }: { queueName: string }) {
           <div className="mb-1 flex items-center justify-between">
             <span className="font-mono">{j.name || j.id}</span>
             <span className="text-fg-tertiary">
-              {j.failedAt.toLocaleString('ru-RU')} · попытка {j.attemptsMade}
+              {j.failedAt.toLocaleString("ru-RU")} · попытка {j.attemptsMade}
             </span>
           </div>
           <div className="mb-1 text-danger">{j.failedReason}</div>
@@ -357,9 +332,6 @@ function FailedJobsList({ queueName }: { queueName: string }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Вкладка «История 7 дней» — заглушка.
-
 function HistoryTab() {
   return (
     <AdminEmpty
@@ -369,23 +341,20 @@ function HistoryTab() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Вкладка «Правила алертов» — MVP-стаб.
-
 function RulesTab() {
   const [form, setForm] = useState({
-    name: '',
-    metric: 'failed_jobs',
-    condition: '>',
-    threshold: '5',
-    channel: 'telegram',
+    name: "",
+    metric: "failed_jobs",
+    condition: ">",
+    threshold: "5",
+    channel: "telegram",
     enabled: true,
   });
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault();
-    toast.message('Правила алертов будут запущены в Фазе 8', {
-      description: 'Сейчас сохранение в БД не работает. Форма — превью UX.',
+    toast.message("Правила алертов будут запущены в Фазе 8", {
+      description: "Сейчас сохранение в БД не работает. Форма — превью UX.",
     });
   };
 
@@ -414,9 +383,7 @@ function RulesTab() {
               <Label htmlFor="rule-metric">Метрика</Label>
               <Select
                 value={form.metric}
-                onValueChange={(v) =>
-                  setForm((s) => ({ ...s, metric: v }))
-                }
+                onValueChange={(v) => setForm((s) => ({ ...s, metric: v }))}
               >
                 <SelectTrigger id="rule-metric">
                   <SelectValue />
@@ -428,9 +395,7 @@ function RulesTab() {
                   <SelectItem value="queue_waiting">
                     Размер очереди ожидания
                   </SelectItem>
-                  <SelectItem value="latency_p99">
-                    Задержка p99 (мс)
-                  </SelectItem>
+                  <SelectItem value="latency_p99">Задержка p99 (мс)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -438,9 +403,7 @@ function RulesTab() {
               <Label htmlFor="rule-condition">Условие</Label>
               <Select
                 value={form.condition}
-                onValueChange={(v) =>
-                  setForm((s) => ({ ...s, condition: v }))
-                }
+                onValueChange={(v) => setForm((s) => ({ ...s, condition: v }))}
               >
                 <SelectTrigger id="rule-condition">
                   <SelectValue />
@@ -505,17 +468,12 @@ function RulesTab() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// SeverityBadge.
-
 function SeverityBadge({
   severity,
 }: {
-  severity: IncidentQueueDomain['severity'];
+  severity: IncidentQueueDomain["severity"];
 }) {
-  if (severity === 'critical')
-    return <Badge variant="danger">критично</Badge>;
-  if (severity === 'warning')
-    return <Badge variant="warning">внимание</Badge>;
+  if (severity === "critical") return <Badge variant="danger">критично</Badge>;
+  if (severity === "warning") return <Badge variant="warning">внимание</Badge>;
   return <Badge variant="secondary">норма</Badge>;
 }

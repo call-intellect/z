@@ -34,7 +34,6 @@ export interface SnoozeInput {
   hours: number;
 }
 
-/** Стратегия резолва (зависит от source). См. DTO ConfirmResolutionSchema. */
 export type ConfirmResolution =
   | 'approve'
   | 'reject'
@@ -48,27 +47,14 @@ export interface ConfirmInput {
   userId: string;
   source: PendingActionSource;
   resourceId: string;
-  /// Стратегия резолва (curation опц.; conflict/intake обязательна; probe — нет).
   resolution?: ConfirmResolution;
-  /// Свободный ответ на probe-вопрос (только source='probe').
   answerText?: string;
-  /// Целевой проект для intake accept.
   targetProjectId?: string;
 }
 
 const SNOOZE_MIN_HOURS = 1;
 const SNOOZE_MAX_HOURS = 720;
 
-/**
- * PendingActionsService — единый агрегатор «что требует действия пользователя»
- * (Action Center B0, 2026-06-02). Фундамент Части B: его потребляют бейдж,
- * колокольчик, дашборд CEO и Telegram.
- *
- * Резолвит роль пользователя в tenant (Membership) → передаёт её провайдерам
- * (owner/admin видят всё по своим источникам). Snooze (PendingActionSnooze)
- * исключается из count/list: провайдер получает множество отложенных
- * resourceId'ов своего источника и фильтрует их в SQL.
- */
 @Injectable()
 export class PendingActionsService {
   private readonly logger = new Logger(PendingActionsService.name);
@@ -84,10 +70,8 @@ export class PendingActionsService {
     private readonly intake: IntakePendingProvider,
     @Inject(ProbePendingProvider)
     private readonly probe: ProbePendingProvider,
-    // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
-    // Редизайн Ф4 — делегаты сквозного резолва остальных источников.
     @Inject(ConflictService)
     private readonly conflictService: ConflictService,
     @Inject(IntakeService)
@@ -95,16 +79,10 @@ export class PendingActionsService {
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
   ) {
-    // Порядок фиксирован — детерминизм для bySource/тестов.
     this.providers = [this.curation, this.conflict, this.intake, this.probe];
   }
 
-  // ──────────────────────────── count ─────────────────────────────
-
-  async getCount(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<PendingActionsCountResult> {
+  async getCount(args: { tenantId: string; userId: string }): Promise<PendingActionsCountResult> {
     const role = await this.resolveRole(args.tenantId, args.userId);
     const snoozed = await this.loadSnoozedBySource(args.tenantId, args.userId);
 
@@ -126,12 +104,9 @@ export class PendingActionsService {
       }),
     );
 
-    const total =
-      bySource.curation + bySource.conflict + bySource.intake + bySource.probe;
+    const total = bySource.curation + bySource.conflict + bySource.intake + bySource.probe;
     return { total, bySource };
   }
-
-  // ──────────────────────────── list ──────────────────────────────
 
   async getList(args: {
     tenantId: string;
@@ -141,8 +116,6 @@ export class PendingActionsService {
     const role = await this.resolveRole(args.tenantId, args.userId);
     const snoozed = await this.loadSnoozedBySource(args.tenantId, args.userId);
 
-    // Каждый провайдер отдаёт не более `limit` — объединяем, сортируем
-    // urgent-first затем по ageDays desc, и обрезаем до limit.
     const lists = await Promise.all(
       this.providers.map((p) =>
         p.listForUser({
@@ -159,14 +132,12 @@ export class PendingActionsService {
     merged.sort((a, b) => {
       const aUrgent = a.severity === 'urgent' ? 1 : 0;
       const bUrgent = b.severity === 'urgent' ? 1 : 0;
-      if (aUrgent !== bUrgent) return bUrgent - aUrgent; // urgent-first
-      return b.ageDays - a.ageDays; // затем самые старые сверху
+      if (aUrgent !== bUrgent) return bUrgent - aUrgent;
+      return b.ageDays - a.ageDays;
     });
 
     return { items: merged.slice(0, args.limit) };
   }
-
-  // ──────────────────────────── snooze ────────────────────────────
 
   async snooze(input: SnoozeInput): Promise<{ ok: true; snoozedUntil: string }> {
     if (
@@ -218,17 +189,6 @@ export class PendingActionsService {
     return { ok: true, snoozedUntil: snoozedUntil.toISOString() };
   }
 
-  // ──────────────────────── confirm (Ф4 — сквозной резолв) ────────
-
-  /**
-   * Сквозной резолв item'а единой очереди решений (редизайн Ф4, 2026-06-13).
-   * Диспетчер по `source` → профильный сервис-резолвер. Все источники
-   * валидируют tenantId-владение и status внутри своих сервисов; ошибки
-   * (BadRequest/Forbidden/NotFound) пробрасываются наружу. Повторный резолв
-   * уже резолвнутого ресурса — понятная ошибка/no-op, не 500.
-   *
-   * Возвращает `{ ok: true }` — детали резолва берутся из профильных API.
-   */
   async confirm(input: ConfirmInput): Promise<{ ok: true }> {
     switch (input.source) {
       case 'curation':
@@ -244,7 +204,6 @@ export class PendingActionsService {
         await this.confirmProbe(input);
         return { ok: true };
       default: {
-        // exhaustive — на случай расширения source без обновления switch.
         const _never: never = input.source;
         throw new BadRequestException({
           ok: false,
@@ -257,13 +216,8 @@ export class PendingActionsService {
     }
   }
 
-  /**
-   * curation: light-карточка → approve (one-tap, B4) либо reject. RBAC,
-   * status==='pending' и reasoning-окно — внутри `decide`.
-   */
   private async confirmCuration(input: ConfirmInput): Promise<void> {
-    const decision: 'approve' | 'reject' =
-      input.resolution === 'reject' ? 'reject' : 'approve';
+    const decision: 'approve' | 'reject' = input.resolution === 'reject' ? 'reject' : 'approve';
 
     const item = await this.prisma.curationItem.findUnique({
       where: { id: input.resourceId },
@@ -279,7 +233,6 @@ export class PendingActionsService {
       });
     }
     if (item.status !== 'pending') {
-      // Идемпотентность: уже резолвнут — понятная ошибка, не 500.
       throw new BadRequestException({
         ok: false,
         error: {
@@ -299,8 +252,6 @@ export class PendingActionsService {
       });
     }
 
-    // decide сам проверяет RBAC (reviewer ∈ candidateCuratorIds | owner/admin),
-    // повторно валидирует status==='pending'. ForbiddenException → 403 наружу.
     await this.curationService.decide({
       tenantId: input.tenantId,
       curationItemId: input.resourceId,
@@ -313,24 +264,14 @@ export class PendingActionsService {
     );
   }
 
-  /**
-   * conflict: keep_old | accept_new | merge → ConflictService.resolve.
-   * `evolving` через быстрый резолв не поддерживаем (нужны даты evolvingMeta —
-   * только на странице конфликта). tenantId-владение и status==='open' —
-   * внутри resolve (повторный → BadRequest 'conflict_not_open', не 500).
-   */
   private async confirmConflict(input: ConfirmInput): Promise<void> {
     const allowed = ['keep_old', 'accept_new', 'merge'] as const;
-    if (
-      !input.resolution ||
-      !(allowed as readonly string[]).includes(input.resolution)
-    ) {
+    if (!input.resolution || !(allowed as readonly string[]).includes(input.resolution)) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'conflict_resolution_required',
-          message:
-            "Для конфликта нужен resolution ∈ keep_old | accept_new | merge",
+          message: 'Для конфликта нужен resolution ∈ keep_old | accept_new | merge',
         },
       });
     }
@@ -341,17 +282,16 @@ export class PendingActionsService {
       resolution: input.resolution as 'keep_old' | 'accept_new' | 'merge',
     });
     this.logger.log(
-      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId, resolution: input.resolution },
+      {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        resourceId: input.resourceId,
+        resolution: input.resolution,
+      },
       'pending-actions.confirm: conflict резолвнут',
     );
   }
 
-  /**
-   * intake: accept | reject → IntakeService.triage. Для accept проект берётся
-   * из targetProjectId / привязки / suggested (логика внутри triage). Если
-   * проекта нет — triage кидает BadRequest 'target_project_required' (наружу,
-   * не 500). Повторный триаж → BadRequest 'intake_already_triaged'.
-   */
   private async confirmIntake(input: ConfirmInput): Promise<void> {
     const decision = input.resolution;
     if (decision !== 'accept' && decision !== 'reject') {
@@ -378,11 +318,6 @@ export class PendingActionsService {
     );
   }
 
-  /**
-   * probe: свободный ответ текстом → ConversationalService.respondToProbe.
-   * Владение (recipientUserId), идемпотентность (answered → no-op) и срок
-   * (expiresAt) — внутри respondToProbe (Forbidden/BadRequest наружу).
-   */
   private async confirmProbe(input: ConfirmInput): Promise<void> {
     const text = input.answerText?.trim();
     if (!text) {
@@ -405,13 +340,7 @@ export class PendingActionsService {
     );
   }
 
-  // ──────────────────────────── helpers ───────────────────────────
-
-  /** Роль пользователя в tenant (Membership) или null, если не член Org. */
-  private async resolveRole(
-    tenantId: string,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveRole(tenantId: string, userId: string): Promise<string | null> {
     const membership = await this.prisma.membership.findUnique({
       where: { orgId_userId: { orgId: tenantId, userId } },
       select: { role: true },
@@ -419,10 +348,6 @@ export class PendingActionsService {
     return membership?.role ?? null;
   }
 
-  /**
-   * Активные snooze пользователя, сгруппированные по source. resourceId'ы
-   * каждого источника передаются провайдеру для SQL-фильтрации.
-   */
   private async loadSnoozedBySource(
     tenantId: string,
     userId: string,

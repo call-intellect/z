@@ -1,36 +1,14 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 
-import type {
-  FeatureFlagItemDto,
-  ResolveResultDto,
-} from './dto/feature-flags.dto';
-import {
-  computeRolloutHash,
-  normalizeOrgOverrides,
-} from './feature-flags.helpers';
+import type { FeatureFlagItemDto, ResolveResultDto } from './dto/feature-flags.dto';
+import { computeRolloutHash, normalizeOrgOverrides } from './feature-flags.helpers';
 
-/**
- * Admin-redesign Фаза 8 — `FeatureFlagsService`.
- *
- * CRUD над `FeatureFlag` + resolution для конкретного tenantId. Дополнительно
- * — точечные override `set/clearOverride(key, tenantId)`.
- *
- * Хранение orgOverrides — JSON-объект `{ tenantId: boolean }`. Здесь
- * приводим к `Record<string, boolean>` через normalizeOrgOverrides.
- */
 @Injectable()
 export class FeatureFlagsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
-
-  // ─────────────────────────── public api ────────────────────────────────
 
   async list(): Promise<FeatureFlagItemDto[]> {
     const rows = await this.prisma.featureFlag.findMany({
@@ -112,10 +90,6 @@ export class FeatureFlagsService {
     return { ok: true };
   }
 
-  /**
-   * Resolve flag для tenantId. Возвращает effective value + источник
-   * (override/rollout/default).
-   */
   async resolve(key: string, tenantId: string): Promise<ResolveResultDto> {
     const flag = await this.requireFlag(key);
     const overrides = normalizeOrgOverrides(flag.orgOverrides);
@@ -144,7 +118,6 @@ export class FeatureFlagsService {
     };
   }
 
-  /** Установить override для конкретного tenantId. */
   async setOverride(args: {
     key: string;
     tenantId: string;
@@ -164,7 +137,6 @@ export class FeatureFlagsService {
     return this.toDto(updated);
   }
 
-  /** Снять override. Если не было — возвращаем текущее состояние без ошибки. */
   async clearOverride(args: {
     key: string;
     tenantId: string;
@@ -185,8 +157,6 @@ export class FeatureFlagsService {
     });
     return this.toDto(updated);
   }
-
-  // ─────────────────────────── private ───────────────────────────────────
 
   private async requireFlag(key: string) {
     const flag = await this.prisma.featureFlag.findUnique({ where: { key } });

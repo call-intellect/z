@@ -1,52 +1,44 @@
-/**
- * ApiDto-типы Smart Tables (Фаза 1).
- *
- * Контракты backend — `backend/src/modules/tables/dto/tables.dto.ts`.
- * Любая правка enum/полей должна синхронизироваться с backend DTO.
- */
-
-/** Все 24 значения TablePropType из Prisma-схемы. */
 export type TablePropTypeApi =
-  | 'text'
-  | 'longtext'
-  | 'number'
-  | 'currency'
-  | 'percent'
-  | 'date'
-  | 'status'
-  | 'selectSingle'
-  | 'selectMulti'
-  | 'checkbox'
-  | 'person'
-  | 'url'
-  | 'email'
-  | 'phone'
-  | 'file'
-  | 'formula'
-  | 'relation'
-  | 'rollup'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'createdBy'
-  | 'entityLink'
-  | 'meetingLink'
-  | 'documentLink';
+  | "text"
+  | "longtext"
+  | "number"
+  | "currency"
+  | "percent"
+  | "date"
+  | "status"
+  | "selectSingle"
+  | "selectMulti"
+  | "checkbox"
+  | "person"
+  | "url"
+  | "email"
+  | "phone"
+  | "file"
+  | "formula"
+  | "relation"
+  | "rollup"
+  | "createdAt"
+  | "updatedAt"
+  | "createdBy"
+  | "entityLink"
+  | "meetingLink"
+  | "documentLink";
 
 export type TableViewTypeApi =
-  | 'grid'
-  | 'kanban'
-  | 'calendar'
-  | 'gantt'
-  | 'gallery'
-  | 'timeline'
-  | 'map'
-  | 'form'
-  | 'chart';
+  | "grid"
+  | "kanban"
+  | "calendar"
+  | "gantt"
+  | "gallery"
+  | "timeline"
+  | "map"
+  | "form"
+  | "chart";
 
-export type TableViewVisibilityApi = 'personal' | 'shared' | 'public';
+export type TableViewVisibilityApi = "personal" | "shared" | "public";
 
 export interface TableEntitySyncApi {
-  type: 'org' | 'person' | 'meeting' | 'document';
+  type: "org" | "person" | "meeting" | "document";
   autoCreate: boolean;
   primaryProperty?: string;
 }
@@ -95,7 +87,6 @@ export interface TableRowApi {
   pageContent: Record<string, unknown> | null;
 }
 
-/** Сохраняемый срез (Saved View) — Фаза 3. */
 export interface TableViewApi {
   id: string;
   tableId: string;
@@ -107,8 +98,6 @@ export interface TableViewApi {
   createdAt: string;
   updatedAt: string;
 }
-
-// ─────────────────────────── Request DTO ─────────────────────────────────
 
 export interface CreateTableBodyApi {
   name: string;
@@ -127,7 +116,7 @@ export interface UpdateTableBodyApi {
 }
 
 export interface TablesListQueryApi {
-  archived?: 'all' | 'active' | 'archived';
+  archived?: "all" | "active" | "archived";
   limit?: number;
   offset?: number;
 }
@@ -165,7 +154,7 @@ export interface UpdateRowBodyApi {
 }
 
 export interface RowsListQueryApi {
-  archived?: 'all' | 'active' | 'archived';
+  archived?: "all" | "active" | "archived";
   limit?: number;
   offset?: number;
 }
@@ -184,15 +173,8 @@ export interface UpdateTableViewBodyApi {
   visibility?: TableViewVisibilityApi;
 }
 
-// ─────────────── Pending-patches / provenance (Фаза 3) ────────────────────
-//
-// Контракты backend — `backend/src/modules/tables/dto/tables.dto.ts`
-// (`CellProvenanceDto`, `PendingPatchDto`, `DecidePendingPatchBody`).
+export type PendingPatchReasonApi = "low_confidence" | "overwrite";
 
-/** Причина, по которой авто-правка попала в очередь подтверждений. */
-export type PendingPatchReasonApi = 'low_confidence' | 'overwrite';
-
-/** Одна запись провенанса (происхождения) значения ячейки. */
 export interface CellProvenanceApi {
   id: string;
   propertyId: string;
@@ -208,7 +190,6 @@ export interface CellProvenanceApi {
   rolledBackAt: string | null;
 }
 
-/** Одна правка ячейки на подтверждении (очередь подтверждений). */
 export interface PendingPatchApi {
   id: string;
   tableId: string;
@@ -226,5 +207,5 @@ export interface PendingPatchApi {
 }
 
 export interface DecidePendingPatchBodyApi {
-  decision: 'approve' | 'reject';
+  decision: "approve" | "reject";
 }

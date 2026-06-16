@@ -1,11 +1,3 @@
-/**
- * Гипотеза 2, Variant Б — batch-классификация: N чек-инов в одном вызове.
- *
- * Размер батча: 10 чек-инов. 25 чек-инов = 3 батча (10+10+5), параллельно.
- * Сравниваем с single (Variant A): даёт ли batch экономию без потери точности?
- *
- * Запуск: cd backend && bun run scripts/eval/run-checkin-batch.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -18,8 +10,14 @@ const MAX_TOKENS = 8000;
 const BATCH_SIZE = 10;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const CHECKINS_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/checkins-week.json');
-const REPORT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-b-checkin-batch.json');
+const CHECKINS_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/checkins-week.json',
+);
+const REPORT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-b-checkin-batch.json',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -30,7 +28,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── system-промпт (модифицирован под batch) ──────────────────────────────────
 const SYSTEM_PROMPT = [
   'Ты — внимательный читатель ежедневных вечерних чек-инов сотрудников.',
   'Тебе дают список из N чек-инов (каждый — короткий свободный текст). Для КАЖДОГО определи общее настроение одним из трёх значений:',
@@ -103,7 +100,9 @@ interface BatchReport {
 function buildUserMessage(batch: CheckIn[]): string {
   const lines: string[] = [];
   lines.push(`Классифицируй настроение для ${batch.length} вечерних чек-инов ниже.`);
-  lines.push('Каждый чек-ин помечен идентификатором [ID]. Верни результат через submit_batch_sentiments.');
+  lines.push(
+    'Каждый чек-ин помечен идентификатором [ID]. Верни результат через submit_batch_sentiments.',
+  );
   lines.push('');
   for (const c of batch) {
     lines.push(`═══ [${c.id}] ═══`);
@@ -137,7 +136,10 @@ async function callBatch(batch: CheckIn[], batchIndex: number): Promise<BatchRep
       tool_choice: 'auto',
     } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
       choices: Array<{
-        message?: { content?: string | null; tool_calls?: Array<{ function: { arguments: string } }> };
+        message?: {
+          content?: string | null;
+          tool_calls?: Array<{ function: { arguments: string } }>;
+        };
       }>;
       usage?: typeof usage;
     };
@@ -196,14 +198,15 @@ async function main(): Promise<void> {
   const raw = JSON.parse(await fs.readFile(CHECKINS_PATH, 'utf-8'));
   const checkins: CheckIn[] = raw.checkins;
   const batches = chunk(checkins, BATCH_SIZE);
-  console.log(`  чек-инов: ${checkins.length}, размер батча: ${BATCH_SIZE}, всего батчей: ${batches.length}`);
+  console.log(
+    `  чек-инов: ${checkins.length}, размер батча: ${BATCH_SIZE}, всего батчей: ${batches.length}`,
+  );
   console.log('  → запросы (батчи параллельно)…');
 
   const totalStart = Date.now();
   const batchReports = await Promise.all(batches.map((b, i) => callBatch(b, i)));
   const totalMs = Date.now() - totalStart;
 
-  // Сопоставление с ожиданиями
   const byId = new Map(checkins.map((c) => [c.id, c]));
   const evaluations: Array<{
     checkInId: string;
@@ -225,7 +228,6 @@ async function main(): Promise<void> {
       });
     }
   }
-  // Чек-ины, для которых модель не вернула результат:
   const returnedIds = new Set(evaluations.map((e) => e.checkInId));
   for (const c of checkins) {
     if (!returnedIds.has(c.id)) {
@@ -252,10 +254,11 @@ async function main(): Promise<void> {
   console.log(`  токены: вход=${totalIn} (кэш=${totalCached}) выход=${totalOut}`);
   console.log(`  стоимость суммарно:             $${totalCost.toFixed(4)}`);
   console.log(`  стоимость за чек-ин:            $${(totalCost / checkins.length).toFixed(4)}`);
-  console.log(`  точность:                       ${correct}/${evaluations.length} (${(accuracy * 100).toFixed(0)}%)`);
+  console.log(
+    `  точность:                       ${correct}/${evaluations.length} (${(accuracy * 100).toFixed(0)}%)`,
+  );
   if (fails > 0) console.log(`  упало батчей: ${fails}`);
 
-  // Confusion-таблица
   console.log('\n=== Confusion (expected → predicted) ===');
   const cf: Record<string, Record<string, number>> = { green: {}, yellow: {}, red: {} };
   for (const e of evaluations) {

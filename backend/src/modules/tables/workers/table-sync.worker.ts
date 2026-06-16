@@ -12,18 +12,6 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { TABLES_QUEUE_NAMES, type TableSyncJobData } from '../queues';
 import { TableSyncService } from '../services/table-sync.service';
 
-/**
- * Worker очереди `tables.sync` (Smart-tables Фаза 2 — graph-driven rows).
- *
- * Регистрируется in-process в `WorkersModule` (как AnalyzeWorker и пр.). На
- * каждый job вызывает соответствующий метод `TableSyncService`:
- *   - `entity-event`   → applyEntityEvent (created/updated/archived);
- *   - `backfill-batch` → runBackfillBatch (один батч initial-backfill).
- *
- * Concurrency=3: операции идемпотентны (upsert по (tableId, entityId)),
- * параллелизм безопасен; разные Entity не конфликтуют, а повтор того же
- * события — no-op.
- */
 @Injectable()
 export class TableSyncWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableSyncWorker.name);
@@ -41,9 +29,7 @@ export class TableSyncWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<TableSyncJobData>(
       TABLES_QUEUE_NAMES.SYNC,
       async (job) =>
-        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'tables.sync', job, () =>
-          this.process(job),
-        ),
+        this.pipe.job(SystemLogPipeline.INTEGRATIONS, 'tables.sync', job, () => this.process(job)),
       {
         connection: this.redis.client,
         concurrency: 3,

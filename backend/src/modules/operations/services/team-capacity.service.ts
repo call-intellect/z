@@ -24,21 +24,9 @@ export interface TeamCapacityResult {
   items: TeamCapacityRow[];
   overloadedCount: number;
   underloadedCount: number;
-  /** true если ни у кого loadPercent не заполнен (нет активных назначений). */
   empty: boolean;
 }
 
-/**
- * TZ-1 Фаза 4.D (daily-value-engine) — TeamCapacityService.
- *
- * Агрегат `Appointment.loadPercent` по отделам: avg/max нагрузки на человека,
- * флаги перегруз/недогруз по AdminSetting-порогам. Для COO-дайджеста
- * («команда A перегружена, B недозагружена») и эндпоинта
- * `GET /dashboard/operations/team-capacity`.
- *
- * Per-person загрузка = сумма loadPercent его активных назначений; per-department
- * — avg/max этих сумм. Классификация — чистая `classifyCapacity`. Без LLM.
- */
 @Injectable()
 export class TeamCapacityService {
   constructor(
@@ -51,7 +39,6 @@ export class TeamCapacityService {
   async aggregate(args: { tenantId: string }): Promise<TeamCapacityResult> {
     const thresholds = await this.resolveThresholds();
 
-    // Активные назначения с отделом и человеком.
     const appts = await this.prisma.appointment.findMany({
       where: {
         tenantId: args.tenantId,
@@ -68,17 +55,12 @@ export class TeamCapacityService {
       take: 50_000,
     });
 
-    // Per (department, person) — сумма loadPercent.
     const loadByDepPerson = new Map<string, Map<string, number>>();
     for (const a of appts) {
       if (!a.departmentId) continue;
       if (a.person?.deletedAt) continue;
-      const byPerson =
-        loadByDepPerson.get(a.departmentId) ?? new Map<string, number>();
-      byPerson.set(
-        a.personId,
-        (byPerson.get(a.personId) ?? 0) + (a.loadPercent ?? 0),
-      );
+      const byPerson = loadByDepPerson.get(a.departmentId) ?? new Map<string, number>();
+      byPerson.set(a.personId, (byPerson.get(a.personId) ?? 0) + (a.loadPercent ?? 0));
       loadByDepPerson.set(a.departmentId, byPerson);
     }
 
@@ -86,7 +68,6 @@ export class TeamCapacityService {
       return { items: [], overloadedCount: 0, underloadedCount: 0, empty: true };
     }
 
-    // Имена отделов.
     const deptIds = Array.from(loadByDepPerson.keys());
     const depts = await this.prisma.department.findMany({
       where: { id: { in: deptIds }, tenantId: args.tenantId },
@@ -119,7 +100,6 @@ export class TeamCapacityService {
 
     items.sort((a, b) => b.avgLoadPercent - a.avgLoadPercent);
 
-    // Метрика — по числу перегруженных отделов (для алертинга).
     for (let i = 0; i < overloadedCount; i++) {
       this.metrics.incTeamCapacityOverload();
     }

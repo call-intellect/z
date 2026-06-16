@@ -8,37 +8,6 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { DailyDigestService } from '../services/daily-digest.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8.3 — OperationsDailyDigestCron.
- *
- * Источник: plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md §1.6.
- *
- * Глобальный cron `@Cron('0 22 * * *')` (= 01:00 МСК ежедневно). НЕ
- * per-Org timezone (ICP — РФ, разница до 6 часов несущественна для
- * утреннего отчёта).
- *
- * Тумблеры (через `TypedConfigService.getDynamic` → AdminSetting + ENV-fallback):
- *   - `operations.daily_digest.enabled` (fallback `COO_DAILY_DIGEST_ENABLED`,
- *     default true) — мастер-флаг.
- *   - `operations.daily_digest.deliver_to_telegram` (fallback
- *     `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`, default false) — рассылка в
- *     Telegram. По умолчанию false, чтобы Telegram не молотил сразу после
- *     раскатки. Включается тумблером без рестарта.
- *
- * Поведение:
- *   1. Проверить тумблер `enabled`. False → log skip, return.
- *   2. Вычислить `dateLocal` = вчера в МСК (по UTC-моменту cron'а).
- *   3. Обход всех активных Org (deletedAt IS NULL). На каждую:
- *      - Идемпотентно `DailyDigestService.getOrGenerate({ tenantId, dateLocal })`.
- *      - Если тумблер `deliver_to_telegram=true`, отправить уведомление
- *        `operations.daily_digest` всем coo/owner Org'а (БЕЗ admin —
- *        admin это IT/devops-роль, не бизнес-stakeholder, см. §3 ТЗ).
- *      - Проставить `deliveredAt` после успешной отправки.
- *   4. Best-effort: ошибка по одной Org не валит остальные.
- *
- * Метрики: `coo_daily_digest_generated_total`, `coo_daily_digest_failed_total{reason}`,
- * `coo_daily_digest_delivered_total{channel}`, `coo_daily_digest_age_seconds`.
- */
 @Injectable()
 export class OperationsDailyDigestCron {
   private readonly logger = new Logger(OperationsDailyDigestCron.name);
@@ -77,10 +46,7 @@ export class OperationsDailyDigestCron {
     const now = new Date();
     try {
       const stats = await this.runOnce({ now, deliverToTelegram });
-      this.logger.debug(
-        stats,
-        'operations-daily-digest.cron: проход завершён',
-      );
+      this.logger.debug(stats, 'operations-daily-digest.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -89,21 +55,13 @@ export class OperationsDailyDigestCron {
     }
   }
 
-  /**
-   * Выделен для unit-тестов: можно передать произвольный `now` и явно
-   * проконтролировать `deliverToTelegram`.
-   */
-  async runOnce(args: {
-    now: Date;
-    deliverToTelegram: boolean;
-  }): Promise<{
+  async runOnce(args: { now: Date; deliverToTelegram: boolean }): Promise<{
     orgsProcessed: number;
     digestsGenerated: number;
     digestsSkippedAlreadyExists: number;
     notificationsSent: number;
     errors: number;
   }> {
-    // `dateLocal` = вчерашний день в МСК.
     const dateLocal = yesterdayInMoscow(args.now);
 
     const orgs = await this.prisma.org.findMany({
@@ -120,7 +78,6 @@ export class OperationsDailyDigestCron {
     for (const org of orgs) {
       const tenantTop = resolveOperationsTenantTop(org.id);
 
-      // Идемпотентность — проверяем существующий дайджест.
       const existing = await this.digestService.getStored({
         tenantId: org.id,
         dateLocal,
@@ -162,7 +119,6 @@ export class OperationsDailyDigestCron {
         }
       }
 
-      // Доставка в Telegram (или мульти-канально по policy event-type'а).
       if (args.deliverToTelegram && alreadyDelivered === null) {
         try {
           const sent = await this.notifyRecipients({
@@ -206,11 +162,6 @@ export class OperationsDailyDigestCron {
     };
   }
 
-  /**
-   * Отправить нотификацию `operations.daily_digest` всем coo/owner Org'а
-   * (БЕЗ admin — admin это IT/devops-роль, см. §3 ТЗ). Возвращает кол-во
-   * отправленных нотификаций.
-   */
   private async notifyRecipients(args: {
     tenantId: string;
     digestId: string;
@@ -231,9 +182,7 @@ export class OperationsDailyDigestCron {
     const body =
       args.shortSummary ??
       'Готов ежедневный отчёт за вчера. Откройте «Ежедневный отчёт» в панели операций.';
-    // Telegram-лимит ~4096 симв; усекаем shortSummary до 2000 безопасно.
     let safeBody = body.length > 2000 ? body.slice(0, 1999) + '…' : body;
-    // TZ-1 Ф1 — секция «Клиенты под риском» (best-effort, не валит дайджест).
     try {
       const customersLine = await this.digestService.buildCustomersAtRiskLine({
         tenantId: args.tenantId,
@@ -253,15 +202,11 @@ export class OperationsDailyDigestCron {
     let sent = 0;
     for (const m of memberships) {
       try {
-        // Action Center B3 — персональный блок «Ждёт подтверждения»
-        // (best-effort, не валит доставку дайджеста).
         const pendingLine = await this.digestService.buildPendingActionsLine({
           tenantId: args.tenantId,
           userId: m.userId,
         });
-        const bodyWithPending = pendingLine
-          ? `${safeBody}${pendingLine}`
-          : safeBody;
+        const bodyWithPending = pendingLine ? `${safeBody}${pendingLine}` : safeBody;
         await this.conversational.sendNotification({
           tenantId: args.tenantId,
           recipientUserId: m.userId,
@@ -299,20 +244,14 @@ export class OperationsDailyDigestCron {
   }
 }
 
-/**
- * Вчерашняя дата в МСК (YYYY-MM-DD). Используем Intl с timeZone='Europe/Moscow'
- * и сдвигаем на -1 день в UTC-числовом представлении.
- */
 export function yesterdayInMoscow(now: Date): string {
-  // Получаем компоненты даты в МСК.
   const fmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Moscow',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  const todayMsk = fmt.format(now); // YYYY-MM-DD
-  // Сдвиг на -1 день — через UTC-арифметику над компонентами строки.
+  const todayMsk = fmt.format(now);
   const d = new Date(`${todayMsk}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() - 1);
   const y = d.getUTCFullYear();

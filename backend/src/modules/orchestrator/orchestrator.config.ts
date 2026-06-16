@@ -1,17 +1,3 @@
-/**
- * SBA δ-1 — конфиг Orchestrator (cost-runaway protection).
- *
- * TODO(typed-config): из-за TS2589 при добавлении новой группы в
- * `TypedConfigService` мы временно читаем 3 ENV через `process.env.*`
- * напрямую. После стабилизации (когда уберём `TS2589`-инциденты от
- * параллельных coders δ-фазы) — перенести в `TypedConfigService` под
- * группу `orchestrator: { enabled, maxSubagentsPerRun, runTimeoutMinutes }`.
- *
- *   ORCHESTRATOR_ENABLED                — feature-flag, default false (production safety).
- *   ORCHESTRATOR_MAX_SUBAGENTS_PER_RUN  — default 5.
- *   ORCHESTRATOR_RUN_TIMEOUT_MINUTES    — default 15.
- */
-
 import type { OrchestratorLimits } from './orchestrator.types';
 
 const DEFAULT_MAX_SUBAGENTS_PER_RUN = 5;
@@ -25,12 +11,7 @@ function parseBool(raw: string | undefined, fallback: boolean): boolean {
   return fallback;
 }
 
-function parseIntSafe(
-  raw: string | undefined,
-  fallback: number,
-  min: number,
-  max: number,
-): number {
+function parseIntSafe(raw: string | undefined, fallback: number, min: number, max: number): number {
   if (raw === undefined || raw === '') return fallback;
   const n = Number.parseInt(raw, 10);
   if (!Number.isFinite(n)) return fallback;
@@ -39,7 +20,6 @@ function parseIntSafe(
   return n;
 }
 
-/** Прочитать лимиты из process.env. Кэширование не нужно — вызывается редко. */
 export function readOrchestratorLimits(): OrchestratorLimits {
   return {
     enabled: parseBool(process.env['ORCHESTRATOR_ENABLED'], false),
@@ -58,7 +38,6 @@ export function readOrchestratorLimits(): OrchestratorLimits {
   };
 }
 
-/** Бакет tenantId → строка для cardinality-safe label'ов. */
 export function tenantTopBucket(tenantId: string): string {
   let h = 0;
   for (let i = 0; i < tenantId.length; i++) {

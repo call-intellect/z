@@ -1,40 +1,8 @@
-/**
- * card-rollup **v1 (legacy)** — обзор встреч карточки по `AiResult.summary`.
- *
- * **СФЕРА ПРИМЕНЕНИЯ (НЕ СМЕШИВАТЬ С v2):**
- * - v1 (этот файл) — используется в `ai/services/card-rollup.service.ts` и
- *   `ai/workers/card-rollup.worker.ts` для legacy `Card.summaryCache` поверх
- *   `AiResult.summary` (саммари встреч уровня analyze.worker).
- * - **v2** — `knowledge-core/prompts/card-rollup-v2.prompts.ts` +
- *   `knowledge-core/services/card-rollup-v2.service.ts` — работает по
- *   `IdeaBlock` (вопрос ↔ доверенный ответ + теги + цитаты), используется
- *   в `CardRollupV2Worker` поверх `CORE_QUEUE_NAMES.CARD_ROLLUP_V2`.
- *
- * Между v1 и v2 разный input (summary-строки vs IdeaBlock-граф) и разный
- * выходной формат. Не унифицировать «одним промтом» — это два независимых
- * pipeline'а с разной семантикой данных. См. F14 в
- * `plans/tz/2026-05-24-prompts-hardening.md`.
- *
- * Промпты отличаются по `kind` карточки:
- *   client  — как развивается работа с клиентом
- *   deal    — как продвигается сделка
- *   project — состояние проекта
- *   topic   — о чём встречи на эту тему
- *   custom  — нейтральный обзор
- *
- * Размер контекста: на вход подаётся до 20 последних встреч карточки
- * (см. MAX_RECENT_MEETINGS). Каждая представлена как:
- *   #N <date> · <type> · <title>
- *   <summary>
- *
- * Выход: 1-2 абзаца. Markdown разрешён (для эмфазы).
- */
-
 export const CARD_ROLLUP_MAX_RECENT_MEETINGS = 20;
 
 export interface CardRollupMeetingDigest {
   index: number;
-  date: string; // ISO без времени
+  date: string;
   type: string;
   title: string;
   summary: string;
@@ -99,9 +67,7 @@ export function buildCardRollupSystemPrompt(kind: string): string {
   return SYSTEM_BY_KIND[kind] ?? SYSTEM_BY_KIND.custom!;
 }
 
-export function buildCardRollupUserMessage(
-  input: BuildCardRollupPromptInput,
-): string {
+export function buildCardRollupUserMessage(input: BuildCardRollupPromptInput): string {
   const lines: string[] = [];
   lines.push(`Карточка: ${input.cardName}`);
   if (input.contactName) {

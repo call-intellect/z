@@ -1,24 +1,12 @@
-/**
- * ТЗ Ф8.7 (cabinet-redesign-rhythms) — доменная модель «Дисциплина чек-инов».
- *
- * Маппит ApiDto → Domain. Структурно совпадает с API DTO (числа + строки уже
- * готовы к рендеру), поэтому маппер — identity с защитными дефолтами для
- * backward-compat (старый backend без поля → нули, `enabled=false`).
- *
- * Контракт ApiDto — `frontend/src/api/operations-dashboard.api.ts`.
- */
-
 import type {
   CheckinDisciplineApi,
   CheckinDisciplinePersonApi,
   CheckinDisciplineTotalsApi,
-} from '@/api/operations-dashboard.api';
+} from "@/api/operations-dashboard.api";
 
-export interface CheckinDisciplineTotalsDomain
-  extends CheckinDisciplineTotalsApi {}
+export interface CheckinDisciplineTotalsDomain extends CheckinDisciplineTotalsApi {}
 
-export interface CheckinDisciplinePersonDomain
-  extends CheckinDisciplinePersonApi {}
+export interface CheckinDisciplinePersonDomain extends CheckinDisciplinePersonApi {}
 
 export interface CheckinDisciplineDomain {
   from: string;
@@ -50,10 +38,9 @@ export function fromCheckinDisciplineApi(
   };
 }
 
-/** YYYY-MM-DD по локальной дате (для плашки «Сегодня»: from=to=сегодня). */
 export function localDateString(d: Date = new Date()): string {
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }

@@ -110,7 +110,6 @@ describe('QuotaService.checkAndIncrement', () => {
       max: 100,
       windowMs: 60_000,
     });
-    // snapshot — fire-and-forget; ждём микротаску.
     await new Promise((r) => setImmediate(r));
     expect(prisma.userQuotaCounter.upsert).toHaveBeenCalled();
   });

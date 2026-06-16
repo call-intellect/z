@@ -12,25 +12,9 @@ import {
   CrossSourceTaskDedupeService,
 } from './cross-source-task-dedupe.service';
 
-/**
- * ТЗ 2026-06-11 chatbox-tasks Ф6 — unit на CrossSourceTaskDedupeService.
- * Контракт NON-LOSSY:
- *   - кандидат совпал с открытой задачей (cosine>=порога) → новой задачи НЕТ,
- *     пишется TaskSource (link); повторный прогон идемпотентен (P2002 → no-op);
- *   - не-дубль → создаётся новая задача (create);
- *   - серая зона + арбитр 'different' (uncertain) → создаётся (non-lossy);
- *   - флаг OFF → дедуп выключен, всегда create.
- *
- * Эмбеддинги детерминированы (заданные векторы по title), cosine считает сам
- * сервис. Порог по умолчанию 0.85, серая зона [0.78, 0.85).
- */
-
 const THRESHOLD = 0.85;
 
-function makeCfg(
-  enabled: boolean,
-  threshold = THRESHOLD,
-): TypedConfigService {
+function makeCfg(enabled: boolean, threshold = THRESHOLD): TypedConfigService {
   return {
     get aiFeatures() {
       return {
@@ -72,7 +56,6 @@ function makeMetrics(): BusinessMetricsService {
   return { incTaskDedupe: vi.fn() } as unknown as BusinessMetricsService;
 }
 
-/** Эмбеддер: каждый title → заранее заданный вектор (префикс до точки). */
 function makeEmbed(vecByTitle: Record<string, number[]>): {
   embed: ReturnType<typeof vi.fn>;
   svc: EmbeddingFallbackService;
@@ -93,11 +76,7 @@ const ctx: CrossSourceChatContext = {
   chatId: 'chat-1',
 };
 
-const openTask = (
-  id: string,
-  title: string,
-  evidenceBlockIds: string[] = [],
-): OpenTaskRow => ({
+const openTask = (id: string, title: string, evidenceBlockIds: string[] = []): OpenTaskRow => ({
   id,
   title,
   description: null,
@@ -123,7 +102,6 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
     const { prisma, taskCreate, taskSourceCreate } = makePrisma([
       openTask('open-1', 'Подготовить смету'),
     ]);
-    // open-1 и кандидат — один вектор → cosine=1.0 >= 0.85.
     const { svc } = makeEmbed({
       'Подготовить смету': [1, 0, 0],
       'Сделать смету': [1, 0, 0],
@@ -175,14 +153,13 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
 
     expect(res).toEqual({ created: 0, linked: 1 });
     expect(taskCreate).not.toHaveBeenCalled();
-    expect(taskSourceCreate).toHaveBeenCalledTimes(1); // вызвали, поймали P2002
+    expect(taskSourceCreate).toHaveBeenCalledTimes(1);
   });
 
   it('не-дубль → создаётся новая задача (create)', async () => {
     const { prisma, taskCreate, taskSourceCreate } = makePrisma([
       openTask('open-1', 'Подготовить смету'),
     ]);
-    // ортогональные → cosine=0 < 0.78 (вне серой зоны).
     const { svc } = makeEmbed({
       'Подготовить смету': [1, 0, 0],
       'Купить кофе': [0, 1, 0],
@@ -213,7 +190,6 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
         }),
       }),
     );
-    // create тоже пишет TaskSource (единый след) для новой задачи.
     expect(taskSourceCreate).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ taskId: 'new-task-1' }) }),
     );
@@ -223,7 +199,6 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
 
   it('серая зона + арбитр different (uncertain) → создаётся (non-lossy)', async () => {
     const { prisma, taskCreate } = makePrisma([openTask('open-1', 'Подготовить смету')]);
-    // cosine ∈ [0.78, 0.85): [1,0] и [cos,sin], cos=0.82.
     const cos = 0.82;
     const sin = Math.sqrt(1 - cos * cos);
     const { svc } = makeEmbed({
@@ -246,9 +221,7 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
 
     expect(res).toEqual({ created: 1, linked: 0 });
     expect(llmCall).toHaveBeenCalledTimes(1);
-    expect(llmCall).toHaveBeenCalledWith(
-      expect.objectContaining({ taskType: 'task-dedupe' }),
-    );
+    expect(llmCall).toHaveBeenCalledWith(expect.objectContaining({ taskType: 'task-dedupe' }));
     expect(taskCreate).toHaveBeenCalledTimes(1);
     expect(metrics.incTaskDedupe).toHaveBeenCalledWith({ result: 'cross_created' });
   });
@@ -322,9 +295,7 @@ describe('CrossSourceTaskDedupeService.processCandidates', () => {
   });
 
   it('link дописывает новые evidenceBlockIds (union, не теряя старые)', async () => {
-    const { prisma, taskUpdate } = makePrisma([
-      openTask('open-1', 'Подготовить смету', ['b1']),
-    ]);
+    const { prisma, taskUpdate } = makePrisma([openTask('open-1', 'Подготовить смету', ['b1'])]);
     const { svc } = makeEmbed({
       'Подготовить смету': [1, 0, 0],
       'Сделать смету': [1, 0, 0],

@@ -5,17 +5,8 @@ import type { AuditLogService } from '../../audit/audit-log.service';
 
 import { GoalKeyResultsService } from './goal-key-results.service';
 
-/**
- * Goals OKR v2 (Фаза 1, M0) — unit-тесты CRUD KR:
- *   - PATCH с currentValue → создаётся GoalKeyResultCheckpoint (recordedBy='manual') в транзакции.
- *   - PATCH без currentValue → checkpoint НЕ создаётся (без транзакции).
- *   - manualOverride: правленые поля мерджатся в kr.manualOverride.
- *   - progressPercent: clamp 0..100 + защита от деления на 0.
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
-/** Первый аргумент первого вызова мока (vi.fn без сигнатуры типизирует calls как []). */
 function firstArg<T>(fn: Fn): T {
   const calls = fn.mock.calls as unknown as unknown[][];
   return calls[0]![0] as T;
@@ -100,7 +91,6 @@ describe('GoalKeyResultsService.update — checkpoint', () => {
     const cpArg = firstArg<{ data: Record<string, unknown> }>(checkpointCreate);
     expect(cpArg.data.recordedBy).toBe('manual');
     expect(cpArg.data.keyResultId).toBe('kr1');
-    // значение чекпойнта = новый currentValue (Decimal 42.0000).
     expect(String(cpArg.data.value)).toBe('42');
   });
 
@@ -163,9 +153,7 @@ describe('GoalKeyResultsService.update — checkpoint', () => {
       krId: 'kr1',
       body: { name: 'X', targetValue: 200 },
     });
-    const arg = firstArg<{ data: { manualOverride: Record<string, true> } }>(
-      directUpdate,
-    );
+    const arg = firstArg<{ data: { manualOverride: Record<string, true> } }>(directUpdate);
     expect(arg.data.manualOverride).toEqual({ unit: true, name: true, targetValue: true });
   });
 });
@@ -173,8 +161,8 @@ describe('GoalKeyResultsService.update — checkpoint', () => {
 describe('GoalKeyResultsService.progressPercent', () => {
   it('clamp 0..100 и защита от деления на 0', () => {
     expect(GoalKeyResultsService.progressPercent(0, 100, 50)).toBe(50);
-    expect(GoalKeyResultsService.progressPercent(0, 100, 150)).toBe(100); // clamp сверху
-    expect(GoalKeyResultsService.progressPercent(0, 100, -10)).toBe(0); // clamp снизу
-    expect(GoalKeyResultsService.progressPercent(50, 50, 70)).toBe(0); // target==start
+    expect(GoalKeyResultsService.progressPercent(0, 100, 150)).toBe(100);
+    expect(GoalKeyResultsService.progressPercent(0, 100, -10)).toBe(0);
+    expect(GoalKeyResultsService.progressPercent(50, 50, 70)).toBe(0);
   });
 });

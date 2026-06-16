@@ -1,9 +1,5 @@
 import type { MeetingStatus, MeetingType } from '@prisma/client';
 
-/**
- * DTO встречи для Crossmark API (`GET /integrations/crossmark/v1/meetings/:id`).
- * Поля — snake_case под партнёра.
- */
 export interface MeetingPublicDto {
   id: string;
   title: string;
@@ -20,10 +16,6 @@ export interface MeetingPublicDto {
   };
 }
 
-/**
- * DTO для cookie-эндпоинтов фронта (`GET /api/v1/meetings/:id`).
- * camelCase — наш внутренний контракт.
- */
 export interface MeetingForUserDto {
   id: string;
   title: string;

@@ -1,38 +1,18 @@
-/**
- * API-клиент модуля decisions (SBA β-3).
- * Контракт: `backend/src/modules/decisions/`.
- *
- * Эндпоинты:
- *   - GET  /api/v1/decisions?status=&decided_by=&deadline_filter=&affects_entity_id=&q=&page=&limit=
- *   - GET  /api/v1/decisions/:id
- *   - GET  /api/v1/decisions/:id/history
- *   - GET  /api/v1/decisions/:id/supersede-chain
- *   - POST /api/v1/decisions                  (admin/owner) manual create
- *   - POST /api/v1/decisions/:id/supersede    (admin/owner)
- *   - POST /api/v1/decisions/:id/status       (admin/owner)
- *   - POST /api/v1/decisions/:id/outcomes     (admin/owner)
- *   - POST /api/v1/decisions/:id/dispute      («это неверно» — любой участник)
- *   - POST /api/v1/decisions/:id/correct      («исправить» — owner/admin применяют сразу)
- *
- * Защита: `CookieAuthGuard + TenantGuard`, RBAC `decision:read|write`.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
 export type DecisionStatusApi =
-  | 'proposed'
-  | 'approved'
-  | 'rejected'
-  | 'implemented'
-  | 'cancelled'
-  | 'superseded'
-  // legacy:
-  | 'active'
-  | 'rolled_back';
+  | "proposed"
+  | "approved"
+  | "rejected"
+  | "implemented"
+  | "cancelled"
+  | "superseded"
+  | "active"
+  | "rolled_back";
 
-export type DeadlineFilterApi = 'overdue' | 'upcoming' | 'all';
+export type DeadlineFilterApi = "overdue" | "upcoming" | "all";
 
-export type TrustTierApi = 'auto' | 'provisional' | 'human';
+export type TrustTierApi = "auto" | "provisional" | "human";
 
 export interface DecisionListItemApi {
   id: string;
@@ -104,17 +84,19 @@ export type ListDecisionsRequest = {
 };
 
 function buildDecisionsQuery(filters?: ListDecisionsRequest): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const p = new URLSearchParams();
-  if (filters.page) p.set('page', String(filters.page));
-  if (filters.limit) p.set('limit', String(filters.limit));
-  if (filters.status) p.set('status', filters.status);
-  if (filters.decided_by) p.set('decided_by', filters.decided_by);
-  if (filters.deadline_filter) p.set('deadline_filter', filters.deadline_filter);
-  if (filters.affects_entity_id) p.set('affects_entity_id', filters.affects_entity_id);
-  if (filters.q) p.set('q', filters.q);
+  if (filters.page) p.set("page", String(filters.page));
+  if (filters.limit) p.set("limit", String(filters.limit));
+  if (filters.status) p.set("status", filters.status);
+  if (filters.decided_by) p.set("decided_by", filters.decided_by);
+  if (filters.deadline_filter)
+    p.set("deadline_filter", filters.deadline_filter);
+  if (filters.affects_entity_id)
+    p.set("affects_entity_id", filters.affects_entity_id);
+  if (filters.q) p.set("q", filters.q);
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
 export const decisionsApi = {
@@ -147,7 +129,10 @@ export const decisionsApi = {
       body,
     ),
 
-  changeStatus: (id: string, body: { newStatus: DecisionStatusApi; reason?: string }) =>
+  changeStatus: (
+    id: string,
+    body: { newStatus: DecisionStatusApi; reason?: string },
+  ) =>
     apiClient.post<{ ok: true; status: DecisionStatusApi }>(
       `/api/v1/decisions/${encodeURIComponent(id)}/status`,
       body,

@@ -1,28 +1,11 @@
-'use client';
+"use client";
 
-/**
- * `/projects/[slug]/documents/[docId]` — полноэкранный редактор документа проекта.
- *
- * Поведение по ТЗ plans/tz/2026-05-27-tracker-project-documents.md:
- *   - Header: breadcrumb «Проект → Документы → Title», Pin / Удалить.
- *   - Editor: markdown-based (заголовки, списки, цитаты, код, разделитель,
- *     ссылка, картинка). Toolbar с кнопками для основных формат-операций.
- *   - Auto-save 3 сек debounce → PATCH.
- *   - Перед unmount (beforeunload + close vкладки) — синхронный sendBeacon.
- *
- * NB: фактически рендер rich-text идёт через react-markdown (preview-mode),
- * а ввод — через textarea. Установка TipTap отложена до отдельной волны
- * (требует ~6 новых npm-пакетов). Контент хранится в формате
- * `{type:'doc', markdown:'<text>'}` — назад-совместимо с TipTap-схемой, при
- * последующем переключении на TipTap потребуется one-shot мигратор.
- */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 import {
   ArrowLeft,
   Bold,
@@ -45,47 +28,44 @@ import {
   Quote,
   Strikethrough,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useProjectDocument } from '@/hooks/tracker/useProjectDocument';
-import { projectDocumentsApi } from '@/api/tracker/project-documents.api';
-import { ApiError } from '@/api/api-error';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useProjectDocument } from "@/hooks/tracker/useProjectDocument";
+import { projectDocumentsApi } from "@/api/tracker/project-documents.api";
+import { ApiError } from "@/api/api-error";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/** Шаг debounce для auto-save (ms). */
 const AUTO_SAVE_DEBOUNCE_MS = 3000;
 
 interface TiptapLikeContent {
-  type: 'doc';
+  type: "doc";
   markdown?: string;
   content?: unknown[];
 }
 
 function extractMarkdown(content: unknown): string {
-  if (!content || typeof content !== 'object') return '';
+  if (!content || typeof content !== "object") return "";
   const obj = content as Record<string, unknown>;
-  if (typeof obj.markdown === 'string') return obj.markdown;
-  // Совместимость с пустым TipTap doc: `{type:'doc',content:[]}` → ''.
-  return '';
+  if (typeof obj.markdown === "string") return obj.markdown;
+  return "";
 }
 
 function wrapMarkdown(markdown: string): TiptapLikeContent {
-  return { type: 'doc', markdown };
+  return { type: "doc", markdown };
 }
 
 function stripMarkdown(markdown: string): string {
-  // Простой stripper: убираем синтаксис без потери текста для contentStripped.
   return markdown
-    .replace(/```[\s\S]*?```/g, ' ') // code blocks
-    .replace(/`([^`]+)`/g, '$1') // inline code
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ') // images
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
-    .replace(/[#>*_~\-]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#>*_~\-]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -104,23 +84,26 @@ export function ProjectDocumentEditorClient({
     docId,
   );
 
-  const [title, setTitle] = useState('');
-  const [markdown, setMarkdown] = useState('');
+  const [title, setTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
   const [pinned, setPinned] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
-  const [savingState, setSavingState] = useState<'idle' | 'saving' | 'saved'>(
-    'idle',
+  const [savingState, setSavingState] = useState<"idle" | "saving" | "saved">(
+    "idle",
   );
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const lastSentRef = useRef<{ title: string; markdown: string; pinned: boolean }>({
-    title: '',
-    markdown: '',
+  const lastSentRef = useRef<{
+    title: string;
+    markdown: string;
+    pinned: boolean;
+  }>({
+    title: "",
+    markdown: "",
     pinned: false,
   });
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Инициализация формы при загрузке.
   useEffect(() => {
     if (!document) return;
     setTitle(document.title);
@@ -142,7 +125,7 @@ export function ProjectDocumentEditorClient({
       if (!currentOrgId) return;
       const stripped = stripMarkdown(args.markdown);
       try {
-        setSavingState('saving');
+        setSavingState("saving");
         await projectDocumentsApi.update(currentOrgId, docId, {
           title: args.title,
           content: wrapMarkdown(args.markdown),
@@ -150,22 +133,20 @@ export function ProjectDocumentEditorClient({
           pinned: args.pinned,
         });
         lastSentRef.current = { ...args };
-        setSavingState('saved');
-        // Через ~1 сек возвращаем «idle» — UX feedback.
-        window.setTimeout(() => setSavingState('idle'), 1200);
+        setSavingState("saved");
+        window.setTimeout(() => setSavingState("idle"), 1200);
       } catch (err) {
-        setSavingState('idle');
+        setSavingState("idle");
         const msg =
           err instanceof ApiError
             ? err.message
-            : 'Не удалось сохранить документ';
+            : "Не удалось сохранить документ";
         toast.error(msg);
       }
     },
     [currentOrgId, docId],
   );
 
-  // Debounce auto-save при изменении title/markdown/pinned.
   useEffect(() => {
     if (!document) return;
     const next = { title, markdown, pinned };
@@ -186,8 +167,6 @@ export function ProjectDocumentEditorClient({
     };
   }, [title, markdown, pinned, document, persist]);
 
-  // Sync-save перед закрытием вкладки. fetch(..., {keepalive:true}) — поддержка
-  // запроса при unload (sendBeacon не пропускает custom headers).
   useEffect(() => {
     const flush = () => {
       const next = { title, markdown, pinned };
@@ -200,7 +179,7 @@ export function ProjectDocumentEditorClient({
       }
       if (!currentOrgId) return;
       const baseUrl =
-        process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+        process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
       const body = JSON.stringify({
         title: next.title,
         content: wrapMarkdown(next.markdown),
@@ -208,31 +187,24 @@ export function ProjectDocumentEditorClient({
         pinned: next.pinned,
       });
       try {
-        // sendBeacon не позволяет set Content-Type=application/json + custom
-        // headers; используем fetch keepalive (поддерживается всеми браузерами
-        // c HTTP/2). Это не блокирует unload, но шанс успеха очень высокий.
         void fetch(
-          `${baseUrl.replace(/\/+$/, '')}/api/v1/project-documents/${encodeURIComponent(docId)}`,
+          `${baseUrl.replace(/\/+$/, "")}/api/v1/project-documents/${encodeURIComponent(docId)}`,
           {
-            method: 'PATCH',
-            credentials: 'include',
+            method: "PATCH",
+            credentials: "include",
             keepalive: true,
             headers: {
-              'Content-Type': 'application/json',
-              'X-Org-Id': currentOrgId,
+              "Content-Type": "application/json",
+              "X-Org-Id": currentOrgId,
             },
             body,
           },
         );
-      } catch {
-        // Best-effort.
-      }
+      } catch {}
     };
-    window.addEventListener('beforeunload', flush);
+    window.addEventListener("beforeunload", flush);
     return () => {
-      window.removeEventListener('beforeunload', flush);
-      // Также — при unmount компонента (пользователь перешёл на другую страницу
-      // SPA-роутером).
+      window.removeEventListener("beforeunload", flush);
       flush();
     };
   }, [title, markdown, pinned, currentOrgId, docId]);
@@ -247,13 +219,11 @@ export function ProjectDocumentEditorClient({
     if (!ok) return;
     try {
       await projectDocumentsApi.remove(currentOrgId, docId);
-      toast.success('Документ удалён');
+      toast.success("Документ удалён");
       router.push(`/projects/${slug}/documents`);
     } catch (err) {
       const msg =
-        err instanceof ApiError
-          ? err.message
-          : 'Не удалось удалить документ';
+        err instanceof ApiError ? err.message : "Не удалось удалить документ";
       toast.error(msg);
     }
   }, [currentOrgId, docId, router, slug, title]);
@@ -266,13 +236,12 @@ export function ProjectDocumentEditorClient({
       const before = value.slice(0, selectionStart);
       const selected = value.slice(selectionStart, selectionEnd);
       const after = value.slice(selectionEnd);
-      const suffix = template.suffix ?? '';
-      const insertion = `${template.prefix}${selected || ''}${suffix}`;
+      const suffix = template.suffix ?? "";
+      const insertion = `${template.prefix}${selected || ""}${suffix}`;
       const newValue = template.block
-        ? `${before}${before.endsWith('\n') || before.length === 0 ? '' : '\n'}${insertion}${after.startsWith('\n') ? '' : '\n'}${after}`
+        ? `${before}${before.endsWith("\n") || before.length === 0 ? "" : "\n"}${insertion}${after.startsWith("\n") ? "" : "\n"}${after}`
         : `${before}${insertion}${after}`;
       setMarkdown(newValue);
-      // Восстановление каретки — после microtask, когда React обновит value.
       window.setTimeout(() => {
         if (!el) return;
         const pos = before.length + insertion.length;
@@ -288,15 +257,15 @@ export function ProjectDocumentEditorClient({
       if (!currentOrgId) return;
       try {
         const asset = await projectDocumentsApi.uploadAsset(currentOrgId, file);
-        const alt = file.name.replace(/\.[^.]+$/, '');
+        const alt = file.name.replace(/\.[^.]+$/, "");
         insertMarkdown({
           prefix: `![${alt}](${asset.url})`,
           block: true,
         });
-        toast.success('Картинка загружена');
+        toast.success("Картинка загружена");
       } catch (err) {
         const msg =
-          err instanceof Error ? err.message : 'Не удалось загрузить картинку';
+          err instanceof Error ? err.message : "Не удалось загрузить картинку";
         toast.error(msg);
       }
     },
@@ -304,18 +273,14 @@ export function ProjectDocumentEditorClient({
   );
 
   const handleInsertLink = useCallback(() => {
-    const url = window.prompt('Адрес ссылки (URL)');
+    const url = window.prompt("Адрес ссылки (URL)");
     if (!url) return;
-    insertMarkdown({ prefix: '[', suffix: `](${url})` });
+    insertMarkdown({ prefix: "[", suffix: `](${url})` });
   }, [insertMarkdown]);
 
   const wordCount = useMemo(
     () =>
-      markdown
-        .replace(/\s+/g, ' ')
-        .trim()
-        .split(' ')
-        .filter(Boolean).length,
+      markdown.replace(/\s+/g, " ").trim().split(" ").filter(Boolean).length,
     [markdown],
   );
 
@@ -349,10 +314,7 @@ export function ProjectDocumentEditorClient({
     <div className="mx-auto flex min-h-screen w-full max-w-4xl flex-col gap-4 p-4 md:p-6">
       <header className="flex flex-col gap-2">
         <nav className="flex flex-wrap items-center gap-1 text-xs text-fg-tertiary">
-          <Link
-            href={`/projects/${slug}`}
-            className="hover:text-fg-secondary"
-          >
+          <Link href={`/projects/${slug}`} className="hover:text-fg-secondary">
             {project.name}
           </Link>
           <span aria-hidden>›</span>
@@ -363,7 +325,7 @@ export function ProjectDocumentEditorClient({
             Документы
           </Link>
           <span aria-hidden>›</span>
-          <span className="truncate text-fg-secondary">{title || '…'}</span>
+          <span className="truncate text-fg-secondary">{title || "…"}</span>
         </nav>
 
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -377,18 +339,18 @@ export function ProjectDocumentEditorClient({
           <div className="flex items-center gap-2">
             <span
               className={cn(
-                'text-xs text-fg-tertiary',
-                savingState === 'saving' && 'flex items-center gap-1',
+                "text-xs text-fg-tertiary",
+                savingState === "saving" && "flex items-center gap-1",
               )}
               aria-live="polite"
             >
-              {savingState === 'saving' && (
+              {savingState === "saving" && (
                 <>
                   <Loader2 className="h-3 w-3 animate-spin" /> Сохраняем…
                 </>
               )}
-              {savingState === 'saved' && 'Сохранено'}
-              {savingState === 'idle' && `${wordCount} слов`}
+              {savingState === "saved" && "Сохранено"}
+              {savingState === "idle" && `${wordCount} слов`}
             </span>
             <Button
               type="button"
@@ -396,7 +358,7 @@ export function ProjectDocumentEditorClient({
               size="sm"
               onClick={() => setPreviewMode((p) => !p)}
               aria-pressed={previewMode}
-              title={previewMode ? 'Режим редактирования' : 'Предпросмотр'}
+              title={previewMode ? "Режим редактирования" : "Предпросмотр"}
             >
               {previewMode ? (
                 <Pencil className="h-4 w-4" />
@@ -410,7 +372,7 @@ export function ProjectDocumentEditorClient({
               size="sm"
               onClick={handleTogglePin}
               aria-pressed={pinned}
-              title={pinned ? 'Открепить' : 'Закрепить'}
+              title={pinned ? "Открепить" : "Закрепить"}
             >
               {pinned ? (
                 <PinOff className="h-4 w-4" />
@@ -454,7 +416,6 @@ export function ProjectDocumentEditorClient({
           ref={textareaRef}
           value={markdown}
           onChange={(e) => {
-            // Re-Read после Edit: подстраховка против устаревших значений.
             void mutate;
             setMarkdown(e.target.value);
           }}
@@ -491,64 +452,64 @@ function Toolbar({
   }> = [
     {
       icon: Heading1,
-      title: 'Заголовок 1 (H1)',
-      handler: () => onCommand({ prefix: '# ', block: true }),
+      title: "Заголовок 1 (H1)",
+      handler: () => onCommand({ prefix: "# ", block: true }),
     },
     {
       icon: Heading2,
-      title: 'Заголовок 2 (H2)',
-      handler: () => onCommand({ prefix: '## ', block: true }),
+      title: "Заголовок 2 (H2)",
+      handler: () => onCommand({ prefix: "## ", block: true }),
     },
     {
       icon: Heading3,
-      title: 'Заголовок 3 (H3)',
-      handler: () => onCommand({ prefix: '### ', block: true }),
+      title: "Заголовок 3 (H3)",
+      handler: () => onCommand({ prefix: "### ", block: true }),
     },
     {
       icon: Bold,
-      title: 'Жирный',
-      handler: () => onCommand({ prefix: '**', suffix: '**' }),
+      title: "Жирный",
+      handler: () => onCommand({ prefix: "**", suffix: "**" }),
     },
     {
       icon: Italic,
-      title: 'Курсив',
-      handler: () => onCommand({ prefix: '_', suffix: '_' }),
+      title: "Курсив",
+      handler: () => onCommand({ prefix: "_", suffix: "_" }),
     },
     {
       icon: Strikethrough,
-      title: 'Зачёркнутый',
-      handler: () => onCommand({ prefix: '~~', suffix: '~~' }),
+      title: "Зачёркнутый",
+      handler: () => onCommand({ prefix: "~~", suffix: "~~" }),
     },
     {
       icon: List,
-      title: 'Маркированный список',
-      handler: () => onCommand({ prefix: '- ', block: true }),
+      title: "Маркированный список",
+      handler: () => onCommand({ prefix: "- ", block: true }),
     },
     {
       icon: ListOrdered,
-      title: 'Нумерованный список',
-      handler: () => onCommand({ prefix: '1. ', block: true }),
+      title: "Нумерованный список",
+      handler: () => onCommand({ prefix: "1. ", block: true }),
     },
     {
       icon: ListChecks,
-      title: 'Список задач',
-      handler: () => onCommand({ prefix: '- [ ] ', block: true }),
+      title: "Список задач",
+      handler: () => onCommand({ prefix: "- [ ] ", block: true }),
     },
     {
       icon: Quote,
-      title: 'Цитата',
-      handler: () => onCommand({ prefix: '> ', block: true }),
+      title: "Цитата",
+      handler: () => onCommand({ prefix: "> ", block: true }),
     },
     {
       icon: Code,
-      title: 'Блок кода',
+      title: "Блок кода",
       handler: () =>
-        onCommand({ prefix: '```\n', suffix: '\n```', block: true }),
+        onCommand({ prefix: "```\n", suffix: "\n```", block: true }),
     },
     {
       icon: Minus,
-      title: 'Разделитель',
-      handler: () => onCommand({ prefix: '\n---\n', block: true }),
+      title: "Разделитель",
+      handler: () => onCommand({ prefix: "\n---\n", block: true }),
     },
   ];
 
@@ -556,7 +517,7 @@ function Toolbar({
     const file = e.target.files?.[0];
     if (!file) return;
     void onUploadImage(file);
-    e.target.value = '';
+    e.target.value = "";
   };
 
   return (

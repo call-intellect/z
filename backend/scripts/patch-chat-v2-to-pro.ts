@@ -1,30 +1,6 @@
-/**
- * Patch — переключает основной отвечальщик чата компании (`taskType=chat-v2`)
- * с `deepseek-v4-flash` на `deepseek-v4-pro` для primary-цепочки.
- *
- * Основание: эксперимент 2026-05-25 на 3 диалоговых фикстурах показал, что
- * качество ответа критично для UX, а Pro со скидкой 75% — лишь незначительно
- * дороже Flash. См. backend/test/eval/dialog-experiment/reports/SUMMARY-ALL.md.
- *
- * Поведение по форматам записи (см. schema.prisma:LlmTaskRoute):
- *   - Legacy (tier IS NULL): обновляет JSON `providers[]`, заменяя model у
- *     первого deepseek-провайдера.
- *   - Новый (tier='primary' + providerName='deepseek'): обновляет model на
- *     deepseek-v4-pro.
- *
- * Безопасность (skill safe-seed-rules):
- *   - editedByAdmin=true → НЕ трогаем (админ выбрал намеренно).
- *   - Нет записи — НЕ создаём (предполагается, что seed уже отработал).
- *   - Идемпотентен — повторный запуск ничего не меняет, если модель уже Pro.
- *
- * Запуск:
- *   cd backend && bun run scripts/patch-chat-v2-to-pro.ts
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
-// Prisma 7: driver adapter обязателен. URL из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
 });
@@ -66,7 +42,6 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Новый формат: tier + providerName + model
     if (route.tier !== null && route.providerName === 'deepseek') {
       if (route.model === NEW_MODEL) {
         alreadyPro++;
@@ -79,9 +54,7 @@ async function main(): Promise<void> {
           data: { model: NEW_MODEL },
         });
         updated++;
-        console.log(
-          `[updated:tier] id=${route.id} ${OLD_MODEL} → ${NEW_MODEL}`,
-        );
+        console.log(`[updated:tier] id=${route.id} ${OLD_MODEL} → ${NEW_MODEL}`);
       } else {
         skippedOtherProvider++;
         console.log(
@@ -91,16 +64,13 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Legacy формат: JSON providers[]
     if (route.tier === null && route.providers) {
       const providers = route.providers as unknown as LegacyProviderEntry[];
       if (!Array.isArray(providers)) {
         console.log(`[skip:invalid] id=${route.id} providers не массив`);
         continue;
       }
-      const idx = providers.findIndex(
-        (p) => p.provider === 'deepseek' && p.model === OLD_MODEL,
-      );
+      const idx = providers.findIndex((p) => p.provider === 'deepseek' && p.model === OLD_MODEL);
       const alreadyHasPro = providers.some(
         (p) => p.provider === 'deepseek' && p.model === NEW_MODEL,
       );

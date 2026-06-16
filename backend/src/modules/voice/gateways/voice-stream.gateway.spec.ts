@@ -1,17 +1,3 @@
-/**
- * Unit-тесты для VoiceStreamGateway (T4 / δ-3).
- *
- * Покрытие 5 сценариев из ТЗ:
- *   1. auth refuse без token / при невалидном JWT → disconnect.
- *   2. happy path: voice:start → voice:chunk x3 → voice:end → voice:transcribed.
- *   3. TTL guard: сессия без voice:end за 60с → voice:error{ttl_expired}.
- *   4. buffer overflow: суммарно > 5MB → voice:error{buffer_overflow}.
- *   5. cancel flow: voice:cancel чистит сессию + метрика 'cancelled'.
- *
- * Поскольку это unit-тест, мы НЕ поднимаем socket.io-сервер. Гейт вызываем
- * напрямую как класс с поддельным `client: Socket` (минимальный shape).
- */
-
 import type { Server, Socket } from 'socket.io';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
@@ -74,9 +60,7 @@ function makeDeps(opts: {
       }),
     },
     membership: {
-      findFirst: vi.fn(async () =>
-        opts.membershipFound === false ? null : { id: 'm-1' },
-      ),
+      findFirst: vi.fn(async () => (opts.membershipFound === false ? null : { id: 'm-1' })),
       findMany: vi.fn(async () => []),
     },
   } as unknown as PrismaService;
@@ -111,7 +95,6 @@ function makeDeps(opts: {
 
 function makeGateway(d: ReturnType<typeof makeDeps>): VoiceStreamGateway {
   const gw = new VoiceStreamGateway(d.jwt, d.prisma, d.cfg, d.adapter, d.metrics);
-  // Серверный мок — пустой, гейт сам делает null-check.
   (gw as unknown as { server: Server }).server = {
     sockets: { sockets: { get: () => undefined } },
   } as unknown as Server;
@@ -191,7 +174,6 @@ describe('VoiceStreamGateway — happy path', () => {
 
     await gw.handleEnd(sock as unknown as Socket);
 
-    // VoiceChannelAdapter был вызван с собранным буфером.
     const adapter = deps.adapter as unknown as {
       transcribe: ReturnType<typeof vi.fn>;
     };
@@ -206,7 +188,6 @@ describe('VoiceStreamGateway — happy path', () => {
     expect(callArg.tenantId).toBe('tenant-1');
     expect(callArg.mimeType).toBe('audio/webm;codecs=opus');
 
-    // emit voice:transcribed с полями text/durationMs/latencyMs.
     const transcribedCall = sock.emit.mock.calls.find(
       (c: unknown[]) => c[0] === 'voice:transcribed',
     );
@@ -241,12 +222,9 @@ describe('VoiceStreamGateway — TTL timeout', () => {
     await gw.handleConnection(sock as unknown as Socket);
     gw.handleStart(sock as unknown as Socket, {});
 
-    // Прыгаем на 61 секунду вперёд — TTL guard должен сработать.
     vi.advanceTimersByTime(61_000);
 
-    const errorCall = sock.emit.mock.calls.find(
-      (c: unknown[]) => c[0] === 'voice:error',
-    );
+    const errorCall = sock.emit.mock.calls.find((c: unknown[]) => c[0] === 'voice:error');
     expect(errorCall).toBeDefined();
     expect((errorCall?.[1] as { code: string }).code).toBe('ttl_expired');
     expect(deps.metricsSpies.incVoiceWsSession).toHaveBeenCalledWith('timeout');
@@ -262,10 +240,7 @@ describe('VoiceStreamGateway — buffer overflow', () => {
     await gw.handleConnection(sock as unknown as Socket);
     gw.handleStart(sock as unknown as Socket, {});
 
-    // Большой chunk (>64KB) сразу режется как 'chunk_too_large'. Чтобы
-    // спровоцировать buffer_overflow, шлём много допустимых chunks.
-    const okChunk = Buffer.alloc(60 * 1024, 0x42); // 60 KB
-    // 5MB / 60KB ≈ 85.3 чанков → шлём 90, чтобы суммарно > 5MB.
+    const okChunk = Buffer.alloc(60 * 1024, 0x42);
     let overflowAt = -1;
     for (let i = 0; i < 90; i++) {
       const ack = gw.handleChunk(sock as unknown as Socket, { data: okChunk });
@@ -275,9 +250,7 @@ describe('VoiceStreamGateway — buffer overflow', () => {
       }
     }
     expect(overflowAt).toBeGreaterThan(0);
-    const errorCall = sock.emit.mock.calls.find(
-      (c: unknown[]) => c[0] === 'voice:error',
-    );
+    const errorCall = sock.emit.mock.calls.find((c: unknown[]) => c[0] === 'voice:error');
     expect((errorCall?.[1] as { code: string }).code).toBe('buffer_overflow');
     expect(deps.metricsSpies.incVoiceWsSession).toHaveBeenCalledWith('error');
   });
@@ -290,7 +263,7 @@ describe('VoiceStreamGateway — buffer overflow', () => {
     await gw.handleConnection(sock as unknown as Socket);
     gw.handleStart(sock as unknown as Socket, {});
 
-    const tooBig = Buffer.alloc(65 * 1024, 0x01); // > 64 KB
+    const tooBig = Buffer.alloc(65 * 1024, 0x01);
     const ack = gw.handleChunk(sock as unknown as Socket, { data: tooBig });
     expect(ack.ok).toBe(false);
     expect(ack.error?.code).toBe('chunk_too_large');
@@ -314,12 +287,9 @@ describe('VoiceStreamGateway — cancel flow', () => {
     expect(ack.ok).toBe(true);
     expect(deps.metricsSpies.incVoiceWsSession).toHaveBeenCalledWith('cancelled');
 
-    // После cancel: voice:end должен пожаловаться на 'no_session'.
     sock.emit.mockClear();
     await gw.handleEnd(sock as unknown as Socket);
-    const errorCall = sock.emit.mock.calls.find(
-      (c: unknown[]) => c[0] === 'voice:error',
-    );
+    const errorCall = sock.emit.mock.calls.find((c: unknown[]) => c[0] === 'voice:error');
     expect((errorCall?.[1] as { code: string }).code).toBe('no_session');
   });
 
@@ -351,9 +321,7 @@ describe('VoiceStreamGateway — ASR upstream error', () => {
     });
     await gw.handleEnd(sock as unknown as Socket);
 
-    const errorCall = sock.emit.mock.calls.find(
-      (c: unknown[]) => c[0] === 'voice:error',
-    );
+    const errorCall = sock.emit.mock.calls.find((c: unknown[]) => c[0] === 'voice:error');
     expect(errorCall).toBeDefined();
     expect((errorCall?.[1] as { code: string }).code).toBe('asr_failed');
     expect(deps.metricsSpies.incVoiceWsSession).toHaveBeenCalledWith('error');

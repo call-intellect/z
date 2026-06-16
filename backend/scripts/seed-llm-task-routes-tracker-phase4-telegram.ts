@@ -1,32 +1,3 @@
-/**
- * Wave 3 / Tracker Phase 4 РФ part 1 (2026-05-24) — Seed маршрутов LLM
- * для Telegram-бота задач (4 LlmTaskType × 3 уровня = 12 строк).
- *
- *   - telegram-create-task        : primary deepseek/deepseek-chat,
- *                                    secondary openai-via-proxy/gpt-4o-mini,
- *                                    tertiary ollama/qwen3.5:9b.
- *   - telegram-forward-to-task    : то же.
- *   - telegram-reply-classify     : primary ollama/qwen3.5:9b (быстрая
- *                                    классификация — дёшево + локально),
- *                                    secondary deepseek/deepseek-chat,
- *                                    tertiary openai-via-proxy/gpt-4o-mini.
- *   - telegram-digest-formulate   : primary deepseek/deepseek-chat,
- *                                    secondary openai-via-proxy/gpt-4o-mini,
- *                                    tertiary ollama/qwen3.5:9b.
- *
- * Источник цепочки: plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md
- * + docs/reference/llm-models-playbook.md.
- *
- * Запуск (skill `safe-seed-rules`):
- *   bun run scripts/seed-llm-task-routes-tracker-phase4-telegram.ts
- *   bun run scripts/seed-llm-task-routes-tracker-phase4-telegram.ts --update-existing
- *
- * Идемпотентность:
- *   - editedByAdmin=true — не перезаписываем никогда.
- *   - Без флага — пропускаем existing.
- *   - С `--update-existing` — обновляем model/priority/isActive (НЕ editedByAdmin).
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -133,17 +104,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -168,9 +135,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
@@ -205,10 +170,7 @@ async function main(): Promise<void> {
 main()
   .catch((err) => {
     // eslint-disable-next-line no-console
-    console.error(
-      'seed-llm-task-routes-tracker-phase4-telegram FAILED:',
-      err,
-    );
+    console.error('seed-llm-task-routes-tracker-phase4-telegram FAILED:', err);
     process.exit(1);
   })
   .finally(async () => {

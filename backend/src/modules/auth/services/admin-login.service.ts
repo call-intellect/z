@@ -7,17 +7,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { JwtService } from './jwt.service';
 
-/**
- * Локальный логин админа по email/password (Phase 8.4).
- *
- * Поток:
- *   1. Найти `User` с `role='admin'` по нормализованному email.
- *   2. Проверить bcrypt.compare(password, user.passwordHash).
- *   3. На успехе — выдать session JWT через `JwtService.signSession`.
- *
- * Ошибки — единый `NotAuthorizedError('admin_login_invalid')` (одинаковый
- * текст для «нет такого юзера» и «неверный пароль» — защита от user-enumeration).
- */
 @Injectable()
 export class AdminLoginService {
   private readonly logger = new Logger(AdminLoginService.name);
@@ -27,16 +16,12 @@ export class AdminLoginService {
     @Inject(JwtService) private readonly jwt: JwtService,
   ) {}
 
-  async login(
-    email: string,
-    password: string,
-  ): Promise<{ user: User; sessionToken: string }> {
+  async login(email: string, password: string): Promise<{ user: User; sessionToken: string }> {
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail || !password) {
       throw new NotAuthorizedError('admin_login_invalid');
     }
 
-    // findFirst c case-insensitive поиском.
     const candidates = await this.prisma.user.findMany({
       where: {
         role: 'admin',
@@ -46,8 +31,10 @@ export class AdminLoginService {
     });
     const user = candidates[0];
     if (!user || !user.passwordHash) {
-      // Тратим время на bcrypt.compare с фейковым хешем чтобы не светить timing.
-      await bcrypt.compare(password, '$2b$12$CwTycUXWue0Thq9StjUM0uJ8.0p/ENjJC7G29Z4Gwl8aQYj9b3Hxe');
+      await bcrypt.compare(
+        password,
+        '$2b$12$CwTycUXWue0Thq9StjUM0uJ8.0p/ENjJC7G29Z4Gwl8aQYj9b3Hxe',
+      );
       throw new NotAuthorizedError('admin_login_invalid');
     }
 

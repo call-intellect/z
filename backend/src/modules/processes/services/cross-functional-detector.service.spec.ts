@@ -2,16 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { CrossFunctionalDetectorService } from './cross-functional-detector.service';
 
-/**
- * SBA γ-3 — юнит-тесты pure-функции `compute()` CrossFunctionalDetectorService.
- * Не используют БД / PrismaService.
- */
 describe('CrossFunctionalDetectorService.compute', () => {
-  // Сервис без DI — для compute не нужны Prisma / Config.
-  const svc = new CrossFunctionalDetectorService(
-    {} as never,
-    {} as never,
-  );
+  const svc = new CrossFunctionalDetectorService({} as never, {} as never);
 
   it('пустые шаги → score=0, isCrossFunctional=false', () => {
     const r = svc.compute({
@@ -27,11 +19,7 @@ describe('CrossFunctionalDetectorService.compute', () => {
 
   it('все шаги одного отдела → score=1/N (low), isCrossFunctional=false', () => {
     const r = svc.compute({
-      steps: [
-        { ownerRoleId: 'role_1' },
-        { ownerRoleId: 'role_2' },
-        { ownerRoleId: 'role_3' },
-      ],
+      steps: [{ ownerRoleId: 'role_1' }, { ownerRoleId: 'role_2' }, { ownerRoleId: 'role_3' }],
       roleToDepartment: new Map([
         ['role_1', 'dept_sales'],
         ['role_2', 'dept_sales'],
@@ -39,7 +27,6 @@ describe('CrossFunctionalDetectorService.compute', () => {
       ]),
       threshold: 0.5,
     });
-    // 1 уникальный dept / 3 шага = 0.333
     expect(r.score).toBeCloseTo(0.333, 3);
     expect(r.isCrossFunctional).toBe(false);
     expect(r.uniqueDepartments).toBe(1);
@@ -47,10 +34,7 @@ describe('CrossFunctionalDetectorService.compute', () => {
 
   it('каждый шаг — свой отдел → score=1, isCrossFunctional=true', () => {
     const r = svc.compute({
-      steps: [
-        { ownerRoleId: 'role_1' },
-        { ownerRoleId: 'role_2' },
-      ],
+      steps: [{ ownerRoleId: 'role_1' }, { ownerRoleId: 'role_2' }],
       roleToDepartment: new Map([
         ['role_1', 'dept_sales'],
         ['role_2', 'dept_eng'],
@@ -78,22 +62,16 @@ describe('CrossFunctionalDetectorService.compute', () => {
       ]),
       threshold: 0.5,
     });
-    // 3 уникальных / 4 = 0.75
     expect(r.score).toBeCloseTo(0.75, 3);
     expect(r.isCrossFunctional).toBe(true);
   });
 
   it('шаги без ownerRoleId → не учитываются → score=0', () => {
     const r = svc.compute({
-      steps: [
-        { ownerRoleId: null },
-        { ownerRoleId: undefined },
-        { ownerRoleId: '' },
-      ],
+      steps: [{ ownerRoleId: null }, { ownerRoleId: undefined }, { ownerRoleId: '' }],
       roleToDepartment: new Map(),
       threshold: 0.5,
     });
-    // totalSteps = 3, deptSet = 0 → 0/3 = 0
     expect(r.score).toBe(0);
     expect(r.isCrossFunctional).toBe(false);
     expect(r.uniqueDepartments).toBe(0);
@@ -102,17 +80,13 @@ describe('CrossFunctionalDetectorService.compute', () => {
 
   it('role без departmentId → пропускаем; департамент не считается', () => {
     const r = svc.compute({
-      steps: [
-        { ownerRoleId: 'role_1' },
-        { ownerRoleId: 'role_2' },
-      ],
+      steps: [{ ownerRoleId: 'role_1' }, { ownerRoleId: 'role_2' }],
       roleToDepartment: new Map([
         ['role_1', 'dept_sales'],
         ['role_2', null],
       ]),
       threshold: 0.5,
     });
-    // Только 1 dept из 2 шагов = 0.5 — на границе threshold = true.
     expect(r.score).toBeCloseTo(0.5, 3);
     expect(r.isCrossFunctional).toBe(true);
   });

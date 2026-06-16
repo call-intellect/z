@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import {
   type ChatboxChatStatus,
   type ChatboxContentType,
@@ -26,24 +21,7 @@ import { ChatboxIntegrationService } from './chatbox-integration.service';
 import { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
-/**
- * ChatboxSyncService — синк данных ChatBox в зеркальные таблицы Коры
- * (ТЗ plans/tz/2026-06-05-chatbox-integration.md, Фаза 3).
- *
- * Чистый сервис (без BullMQ/контроллера — это отдельный кодер). Все методы
- * принимают `tenantId`. Kill-switch `chatbox.enabled` (admin settings) глушит
- * синк (no-op + лог). Конфиг (workspaceId + расшифрованный токен) берётся через
- * ChatboxIntegrationService.getConfigForSync; отсутствие → BadRequestException
- * `chatbox_not_configured`.
- *
- * Enum-маппинг: значения ChatBox для sender.type / content.type совпадают с
- * нашими enum'ами (верхний регистр) — приводим как есть. status приводим к
- * нижнему регистру ('active'/'closed').
- */
-
-/** Размер страницы пагинации ChatBox API. */
 const PAGE_SIZE = 100;
-/** Защитный кап числа страниц (100 * 100 = 10000 записей). */
 const MAX_PAGES = 100;
 
 type SyncCfg = { workspaceId: string; token: string; integrationId: string };
@@ -61,21 +39,13 @@ export class ChatboxSyncService {
     private readonly sessions: ChatboxSessionService,
     @Inject(AdminSettingsService)
     private readonly adminSettings: AdminSettingsService,
-    // Ф1 — fuzzy-резолв имени собеседника в Person для имя-ступени каскада
-    // автосвязки (`resolvePersonByHint`: exact + ILIKE; неоднозначность → null).
     @Inject(EntityResolutionService)
     private readonly entityResolution: EntityResolutionService,
-    // Авто-создание карточки сотрудника для несопоставленных members/customers
-    // (нет хита по email/имени → создаём Person и связываем).
     @Inject(PersonsService) private readonly persons: PersonsService,
-    // Бэкафилл чатов → постановка анализа закрытых сессий (гейт по analysisEnabled).
     @Inject(ChatboxAnalyzeQueueService)
     private readonly analyzeQueue: ChatboxAnalyzeQueueService,
   ) {}
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  /** Конфиг синка или throw `chatbox_not_configured`. */
   private async loadCfg(tenantId: string): Promise<SyncCfg> {
     const cfg = await this.integration.getConfigForSync(tenantId);
     if (!cfg) {
@@ -90,33 +60,21 @@ export class ChatboxSyncService {
     return cfg;
   }
 
-  /** Kill-switch: false → синк не выполняется. */
   private async isEnabled(): Promise<boolean> {
-    return (
-      (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true
-    );
+    return (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;
   }
 
-  /**
-   * Ф1 — ступень fuzzy-сопоставления по имени (AdminSetting,
-   * code-fallback true). Когда false — каскад автосвязки ограничивается
-   * email-ступенью (имя-ступень пропускается).
-   */
   private async isNameFuzzyEnabled(): Promise<boolean> {
     return (
-      (await this.adminSettings.get<boolean>(
-        'chatbox.match.name_fuzzy_enabled',
-        true,
-      )) ?? true
+      (await this.adminSettings.get<boolean>('chatbox.match.name_fuzzy_enabled', true)) ?? true
     );
   }
 
-  /**
-   * Прокачать все страницы пагинированного эндпоинта. Идёт пока собрано < total,
-   * с защитным капом MAX_PAGES (warn при достижении).
-   */
   private async paginateAll<T>(
-    fetchPage: (limit: number, offset: number) => Promise<{
+    fetchPage: (
+      limit: number,
+      offset: number,
+    ) => Promise<{
       items: T[];
       total: number;
     }>,
@@ -138,12 +96,10 @@ export class ChatboxSyncService {
       acc.push(...items);
       page += 1;
       offset += PAGE_SIZE;
-      if (items.length === 0) break; // защита от зацикливания при кривом total
+      if (items.length === 0) break;
     }
     return acc;
   }
-
-  // ─────────────────────────── каналы ──────────────────────────────
 
   async syncChannels(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) {
@@ -178,8 +134,6 @@ export class ChatboxSyncService {
     return channels.length;
   }
 
-  // ─────────────────────────── customers ───────────────────────────
-
   async syncCustomers(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) {
       this.logger.log('syncCustomers: chatbox.enabled=false — пропуск');
@@ -211,17 +165,11 @@ export class ChatboxSyncService {
       });
     }
 
-    // Ф1 — автосвязка клиентов (ChatboxCustomer) с Person (email → имя-fuzzy).
-    // linkedPersonId / linkMode не пишем в upsert выше (как у members), чтобы не
-    // перетереть manual.
     await this.autoLinkCustomerTable(tenantId);
-    // Несопоставленные → создаём карточку Person и связываем (нет хита — создаём).
     await this.autoCreateCustomersUnlinked(tenantId);
 
     return customers.length;
   }
-
-  // ─────────────────────────── channel clients ─────────────────────
 
   async syncChannelClients(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) {
@@ -229,24 +177,16 @@ export class ChatboxSyncService {
       return 0;
     }
     const cfg = await this.loadCfg(tenantId);
-    const clients = await this.paginateAll<ChatboxApiChannelClient>(
-      async (limit, offset) => {
-        const res = await this.client.listChannelClients(
-          cfg.token,
-          cfg.workspaceId,
-          { limit, offset },
-        );
-        return { items: res.clients ?? [], total: res.total };
-      },
-    );
+    const clients = await this.paginateAll<ChatboxApiChannelClient>(async (limit, offset) => {
+      const res = await this.client.listChannelClients(cfg.token, cfg.workspaceId, {
+        limit,
+        offset,
+      });
+      return { items: res.clients ?? [], total: res.total };
+    });
 
-    // Карта customerExternalId → внутренний ChatboxCustomer.id (для связи).
     const customerExtIds = [
-      ...new Set(
-        clients
-          .map((c) => c.customerId)
-          .filter((v): v is string => Boolean(v)),
-      ),
+      ...new Set(clients.map((c) => c.customerId).filter((v): v is string => Boolean(v))),
     ];
     const customers =
       customerExtIds.length > 0
@@ -255,9 +195,7 @@ export class ChatboxSyncService {
             select: { id: true, externalId: true },
           })
         : [];
-    const customerIdByExt = new Map(
-      customers.map((c) => [c.externalId, c.id]),
-    );
+    const customerIdByExt = new Map(customers.map((c) => [c.externalId, c.id]));
 
     const now = new Date();
     for (const cc of clients) {
@@ -286,15 +224,11 @@ export class ChatboxSyncService {
       });
     }
 
-    // Ф1 — автосвязка собеседников канала (ChatboxChannelClient) с Person.
     await this.autoLinkChannelClientTable(tenantId);
-    // Несопоставленные → создаём карточку Person и связываем.
     await this.autoCreateChannelClientsUnlinked(tenantId);
 
     return clients.length;
   }
-
-  // ─────────────────────────── members ─────────────────────────────
 
   async syncMembers(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) {
@@ -312,8 +246,6 @@ export class ChatboxSyncService {
 
     const now = new Date();
     for (const m of members) {
-      // linkedPersonId / linkMode НЕ трогаем в upsert — автосвязка отдельным
-      // проходом ниже (Фаза 9), чтобы не перетереть ручную связку (manual).
       const data = {
         email: m.email ?? null,
         name: m.name ?? null,
@@ -329,24 +261,12 @@ export class ChatboxSyncService {
     }
 
     await this.autoLinkMembers(tenantId);
-    // Несопоставленные менеджеры → создаём карточку Person и связываем.
     await this.autoCreateMembersUnlinked(tenantId);
 
     return members.length;
   }
 
-  /**
-   * Автосвязка членов ChatBox с Person Коры. Каскад (Ф1):
-   *   1) email-ступень (case-insensitive) — Фаза 9;
-   *   2) имя-ступень (fuzzy, `resolvePersonByHint`) для оставшихся несвязанных,
-   *      за AdminSetting `chatbox.match.name_fuzzy_enabled` (code-fallback true).
-   * Ручную связку (`linkMode='manual'`) НЕ трогаем (исключена из выборки).
-   *
-   * Email-ступень — батч (один findMany Person, без N+1). Имя-ступень —
-   * per-candidate резолв (exact + ILIKE; неоднозначность → null), как у встреч.
-   */
   private async autoLinkMembers(tenantId: string): Promise<void> {
-    // ── ступень 1: email (батч) ──
     const candidates = await this.prisma.chatboxMember.findMany({
       where: {
         tenantId,
@@ -362,11 +282,7 @@ export class ChatboxSyncService {
     if (candidates.length === 0) return;
 
     const emails = [
-      ...new Set(
-        candidates
-          .map((c) => c.email?.trim())
-          .filter((e): e is string => !!e),
-      ),
+      ...new Set(candidates.map((c) => c.email?.trim()).filter((e): e is string => !!e)),
     ];
 
     const personByEmail = new Map<string, string>();
@@ -376,32 +292,28 @@ export class ChatboxSyncService {
         select: { id: true, email: true },
       });
       for (const p of persons) {
-        // Первый выигрывает; lowercase-ключ для case-insensitive сопоставления.
         const key = p.email.trim().toLowerCase();
         if (!personByEmail.has(key)) personByEmail.set(key, p.id);
       }
     }
 
-    // Отслеживаем, кто остался несвязанным после email-ступени — для имя-ступени.
     const unlinkedAfterEmail: { id: string; name: string | null }[] = [];
     for (const c of candidates) {
       const key = c.email?.trim().toLowerCase();
       const personId = key ? personByEmail.get(key) : undefined;
       if (personId) {
-        if (c.linkedPersonId === personId) continue; // уже связан корректно
+        if (c.linkedPersonId === personId) continue;
         await this.prisma.chatboxMember.update({
           where: { id: c.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
         continue;
       }
-      // email не дал результата — кандидат на имя-ступень (если ещё не связан).
       if (c.linkedPersonId === null) {
         unlinkedAfterEmail.push({ id: c.id, name: c.name });
       }
     }
 
-    // ── ступень 2: имя (fuzzy), за флагом ──
     await this.autoLinkByName({
       tenantId,
       rows: unlinkedAfterEmail,
@@ -413,12 +325,6 @@ export class ChatboxSyncService {
     });
   }
 
-  /**
-   * Имя-ступень каскада (общая для members/customers/channelClients). Для каждой
-   * несвязанной строки с непустым именем — `resolvePersonByHint` (однозначный хит
-   * → linkedPersonId + linkMode='auto'). Пропускается целиком, если флаг
-   * `chatbox.match.name_fuzzy_enabled` выключен. Неоднозначное имя → null → пропуск.
-   */
   private async autoLinkByName(args: {
     tenantId: string;
     rows: { id: string; name: string | null }[];
@@ -430,29 +336,17 @@ export class ChatboxSyncService {
     for (const row of args.rows) {
       const name = row.name?.trim();
       if (!name) continue;
-      const personId = await this.entityResolution.resolvePersonByHint(
-        args.tenantId,
-        name,
-      );
-      if (!personId) continue; // нет хита / неоднозначно
+      const personId = await this.entityResolution.resolvePersonByHint(args.tenantId, name);
+      if (!personId) continue;
       await args.update(row.id, personId);
     }
   }
 
-  /**
-   * Автосвязка клиентов ChatBox (ChatboxCustomer И ChatboxChannelClient) с Person
-   * Коры за один проход. Тот же каскад, что и для менеджеров: email
-   * (case-insensitive) → имя-fuzzy (за флагом). Ручную связку (`manual`) не
-   * трогаем. Доступен как единая точка; синк-методы вызывают пер-табличные
-   * варианты (`autoLinkCustomerTable` / `autoLinkChannelClientTable`), чтобы не
-   * дублировать работу в `fullSync`.
-   */
   async autoLinkCustomers(tenantId: string): Promise<void> {
     await this.autoLinkCustomerTable(tenantId);
     await this.autoLinkChannelClientTable(tenantId);
   }
 
-  /** Ф1 — автосвязка только таблицы ChatboxCustomer. */
   private async autoLinkCustomerTable(tenantId: string): Promise<void> {
     await this.autoLinkContactTable({
       tenantId,
@@ -474,7 +368,6 @@ export class ChatboxSyncService {
     });
   }
 
-  /** Ф1 — автосвязка только таблицы ChatboxChannelClient. */
   private async autoLinkChannelClientTable(tenantId: string): Promise<void> {
     await this.autoLinkContactTable({
       tenantId,
@@ -496,10 +389,6 @@ export class ChatboxSyncService {
     });
   }
 
-  /**
-   * Обобщённый каскад автосвязки для контактной таблицы (Customer/ChannelClient).
-   * email-ступень батчем + имя-ступень fuzzy. Не трогает уже-связанные и manual.
-   */
   private async autoLinkContactTable(args: {
     tenantId: string;
     load: () => Promise<
@@ -511,11 +400,7 @@ export class ChatboxSyncService {
     if (candidates.length === 0) return;
 
     const emails = [
-      ...new Set(
-        candidates
-          .map((c) => c.email?.trim())
-          .filter((e): e is string => !!e),
-      ),
+      ...new Set(candidates.map((c) => c.email?.trim()).filter((e): e is string => !!e)),
     ];
 
     const personByEmail = new Map<string, string>();
@@ -551,12 +436,6 @@ export class ChatboxSyncService {
     });
   }
 
-  // ──────────────── авто-создание Person для несопоставленных ────────
-
-  /**
-   * Владелец Org (Membership role='owner') — userId для авторства авто-создаваемых
-   * карточек. null → авто-создание пропускается (некому атрибутировать).
-   */
   private async resolveOwnerUserId(tenantId: string): Promise<string | null> {
     const owner = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, role: 'owner' },
@@ -565,12 +444,6 @@ export class ChatboxSyncService {
     return owner?.userId ?? null;
   }
 
-  /**
-   * Для каждой несопоставленной строки с именем/email: дедуп по email (живой
-   * Person → связываем существующего), иначе создаём карточку через
-   * PersonsService и связываем (`linkMode='auto'`). Полностью анонимные
-   * (без имени и email) — пропускаем. LLM НЕ задействует — только карточки и связки.
-   */
   private async autoCreateForUnlinked(args: {
     tenantId: string;
     ownerUserId: string;
@@ -608,7 +481,6 @@ export class ChatboxSyncService {
     }
   }
 
-  /** members: авто-создание Person для оставшихся несопоставленных. */
   private async autoCreateMembersUnlinked(tenantId: string): Promise<void> {
     const ownerUserId = await this.resolveOwnerUserId(tenantId);
     if (!ownerUserId) return;
@@ -628,7 +500,6 @@ export class ChatboxSyncService {
     });
   }
 
-  /** customers: авто-создание Person для оставшихся несопоставленных. */
   private async autoCreateCustomersUnlinked(tenantId: string): Promise<void> {
     const ownerUserId = await this.resolveOwnerUserId(tenantId);
     if (!ownerUserId) return;
@@ -648,7 +519,6 @@ export class ChatboxSyncService {
     });
   }
 
-  /** channelClients: авто-создание Person для оставшихся несопоставленных. */
   private async autoCreateChannelClientsUnlinked(tenantId: string): Promise<void> {
     const ownerUserId = await this.resolveOwnerUserId(tenantId);
     if (!ownerUserId) return;
@@ -668,15 +538,7 @@ export class ChatboxSyncService {
     });
   }
 
-  /**
-   * Бэкафилл/синк чатов → постановка AI-анализа закрытых сессий.
-   * Гейт по `analysisEnabled` (выключено → только зеркалим, LLM не трогаем).
-   * Дедуп: только `analysisStatus='pending'` сессии (уже разобранные 'done' не
-   * трогаем) + jobId `chatbox-analyze-<sessionId>` схлопывает повторы.
-   */
-  private async enqueuePendingAnalysisIfEnabled(
-    tenantId: string,
-  ): Promise<number> {
+  private async enqueuePendingAnalysisIfEnabled(tenantId: string): Promise<number> {
     const integ = await this.prisma.chatboxIntegration.findUnique({
       where: { tenantId },
       select: { analysisEnabled: true },
@@ -704,29 +566,16 @@ export class ChatboxSyncService {
     return enqueued;
   }
 
-  // ─────────────────────────── messages ────────────────────────────
-
-  /**
-   * Синк сообщений одного чата + пересборка сессий. `chatDbId` — внутренний id
-   * ChatboxChat, `chatExternalId` — id в ChatBox.
-   */
-  async syncMessages(
-    tenantId: string,
-    chatDbId: string,
-    chatExternalId: string,
-  ): Promise<number> {
+  async syncMessages(tenantId: string, chatDbId: string, chatExternalId: string): Promise<number> {
     const cfg = await this.loadCfg(tenantId);
-    const messages = await this.paginateAll<ChatboxApiMessage>(
-      async (limit, offset) => {
-        const res = await this.client.listMessages(
-          cfg.token,
-          cfg.workspaceId,
-          chatExternalId,
-          { limit, offset, order: 'asc' },
-        );
-        return { items: res.messages ?? [], total: res.total };
-      },
-    );
+    const messages = await this.paginateAll<ChatboxApiMessage>(async (limit, offset) => {
+      const res = await this.client.listMessages(cfg.token, cfg.workspaceId, chatExternalId, {
+        limit,
+        offset,
+        order: 'asc',
+      });
+      return { items: res.messages ?? [], total: res.total };
+    });
 
     let lastMessageAt: Date | null = null;
     for (const m of messages) {
@@ -754,10 +603,8 @@ export class ChatboxSyncService {
       });
     }
 
-    // Пересборка сессий чата по актуальным сообщениям.
     await this.sessions.rebuildSessions(tenantId, chatDbId);
 
-    // Обновляем агрегаты чата.
     await this.prisma.chatboxChat.update({
       where: { id: chatDbId },
       data: { messageCount: messages.length, lastMessageAt },
@@ -766,26 +613,18 @@ export class ChatboxSyncService {
     return messages.length;
   }
 
-  // ─────────────────────────── chats ───────────────────────────────
-
-  async syncChats(
-    tenantId: string,
-    opts?: { since?: Date },
-  ): Promise<number> {
+  async syncChats(tenantId: string, opts?: { since?: Date }): Promise<number> {
     if (!(await this.isEnabled())) {
       this.logger.log('syncChats: chatbox.enabled=false — пропуск');
       return 0;
     }
     const cfg = await this.loadCfg(tenantId);
 
-    // Карта channelExternalId → channelType (резолв типа канала для чата).
     const channels = await this.prisma.chatboxChannel.findMany({
       where: { tenantId },
       select: { externalId: true, channelType: true },
     });
-    const channelTypeByExt = new Map(
-      channels.map((c) => [c.externalId, c.channelType]),
-    );
+    const channelTypeByExt = new Map(channels.map((c) => [c.externalId, c.channelType]));
 
     let count = 0;
     let offset = 0;
@@ -811,18 +650,12 @@ export class ChatboxSyncService {
 
       for (const apiChat of items) {
         const updatedAt = new Date(apiChat.updatedAt);
-        // Инкрементальный: чаты отсортированы desc по updatedAt — как только
-        // встретили старше курсора, дальше можно не идти.
         if (opts?.since && updatedAt < opts.since) {
           stop = true;
           break;
         }
 
-        const chatDbId = await this.upsertChat(
-          tenantId,
-          apiChat,
-          channelTypeByExt,
-        );
+        const chatDbId = await this.upsertChat(tenantId, apiChat, channelTypeByExt);
         await this.syncMessages(tenantId, chatDbId, apiChat.id);
         count += 1;
       }
@@ -834,7 +667,6 @@ export class ChatboxSyncService {
     return count;
   }
 
-  /** Upsert одного чата. Возвращает внутренний id. */
   private async upsertChat(
     tenantId: string,
     apiChat: ChatboxApiChat,
@@ -843,7 +675,6 @@ export class ChatboxSyncService {
     const channelExternalId = apiChat.channelId;
     const channelType = channelTypeByExt.get(channelExternalId) ?? '';
 
-    // customerExternalId резолвим через ChatboxChannelClient по client.id.
     const clientExternalId = apiChat.client?.id ?? null;
     let customerExternalId: string | null = null;
     if (clientExternalId) {
@@ -878,9 +709,6 @@ export class ChatboxSyncService {
     return chat.id;
   }
 
-  // ─────────────────────────── orchestration ───────────────────────
-
-  /** Полный синк всех сущностей. Обновляет lastFullSyncAt. */
   async fullSync(tenantId: string): Promise<{
     channels: number;
     customers: number;
@@ -912,7 +740,6 @@ export class ChatboxSyncService {
     return { channels, customers, channelClients, members, chats };
   }
 
-  /** Инкрементальный синк (чаты — по курсору lastIncrementalSyncAt). */
   async incrementalSync(tenantId: string): Promise<{
     channels: number;
     customers: number;
@@ -930,8 +757,6 @@ export class ChatboxSyncService {
         chats: 0,
       };
     }
-    // Фиксируем курсор НА СТАРТЕ: чаты, обновлённые во время прогона, не
-    // будут пропущены на следующем инкременте.
     const startedAt = new Date();
 
     const row = await this.prisma.chatboxIntegration.findUnique({
@@ -939,7 +764,6 @@ export class ChatboxSyncService {
       select: { lastIncrementalSyncAt: true },
     });
 
-    // Справочники малы — синкаем полностью.
     const channels = await this.syncChannels(tenantId);
     const customers = await this.syncCustomers(tenantId);
     const channelClients = await this.syncChannelClients(tenantId);
@@ -956,7 +780,6 @@ export class ChatboxSyncService {
     return { channels, customers, channelClients, members, chats };
   }
 
-  /** Синк по scope (ручной триггер из админки). */
   async syncByScope(
     tenantId: string,
     scope: 'all' | 'customers' | 'managers' | 'chats',
@@ -965,10 +788,7 @@ export class ChatboxSyncService {
     switch (scope) {
       case 'all': {
         const result = await this.fullSync(tenantId);
-        // Ручной полный синк → анализ закрытых сессий (гейт по analysisEnabled,
-        // дедуп по pending+jobId).
-        const analysisEnqueued =
-          await this.enqueuePendingAnalysisIfEnabled(tenantId);
+        const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
         return { ...result, analysisEnqueued };
       }
       case 'customers': {
@@ -981,39 +801,21 @@ export class ChatboxSyncService {
         return { members };
       }
       case 'chats': {
-        // Бэкафилл за период: тянем чаты не старше opts.since (фильтр в syncChats).
         const chats = await this.syncChats(tenantId, opts);
-        // Забранные диалоги → анализ (гейт по analysisEnabled, дедуп pending+jobId).
-        const analysisEnqueued =
-          await this.enqueuePendingAnalysisIfEnabled(tenantId);
+        const analysisEnqueued = await this.enqueuePendingAnalysisIfEnabled(tenantId);
         return { chats, analysisEnqueued };
       }
     }
   }
 
-  // ─────────────────────────── enum mapping ────────────────────────
-
-  /**
-   * sender.type ChatBox → ChatboxSenderType. Значения совпадают (верхний
-   * регистр). sender отсутствует / неизвестный тип → fallback 'CLIENT'.
-   */
   private mapSenderType(type: string | null | undefined): ChatboxSenderType {
-    const allowed: ChatboxSenderType[] = [
-      'CLIENT',
-      'USER',
-      'ASSISTANT',
-      'QUALITY_CONTROL',
-    ];
+    const allowed: ChatboxSenderType[] = ['CLIENT', 'USER', 'ASSISTANT', 'QUALITY_CONTROL'];
     if (type && allowed.includes(type as ChatboxSenderType)) {
       return type as ChatboxSenderType;
     }
     return 'CLIENT';
   }
 
-  /**
-   * content.type ChatBox → ChatboxContentType. Значения совпадают. Отсутствует
-   * / неизвестный → fallback 'TEXT'.
-   */
   private mapContentType(type: string | null | undefined): ChatboxContentType {
     const allowed: ChatboxContentType[] = [
       'TEXT',
@@ -1031,7 +833,6 @@ export class ChatboxSyncService {
     return 'TEXT';
   }
 
-  /** status ChatBox (ACTIVE|CLOSED) → ChatboxChatStatus ('active'|'closed'). */
   private mapStatus(status: string): ChatboxChatStatus {
     return status.toLowerCase() === 'closed' ? 'closed' : 'active';
   }

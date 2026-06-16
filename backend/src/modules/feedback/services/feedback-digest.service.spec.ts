@@ -1,23 +1,3 @@
-/**
- * Unit-тесты для FeedbackDigestService (Фаза 5).
- *
- * Покрытие:
- *   - пустой батч (нет unprocessed) → { skipped: true }, агента не дёргает
- *   - корректный батч: 3 messages + 2 existing topics → 2 assignments в
- *     existing + 1 новый topic → транзакция создаёт 1 topic + 3 items +
- *     updateMany(processedAt = now)
- *   - сломанный JSON на первой попытке → retry → ok на второй
- *   - все попытки исчерпаны → throws → markBatchFailed (failedRuns++)
- *   - topicRef ссылается на несуществующий id → ref-валидатор отвергает
- *     обе попытки → throws → markBatchFailed
- *   - 'discard' topicRef → item создаётся с discarded=true, topicId=null
- *   - аномалия newTopics > 0.5 * totalItems → throws → markBatchFailed
- *   - lock уже взят → { skipped: true, reason: 'lock-held' } без вызова LLM
- *   - enqueueManualRun → делегирует в FeedbackDigestQueue.enqueueManualRun()
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md §5.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -31,10 +11,6 @@ import type {
 import type { FeedbackDigestQueue } from '../workers/feedback-digest.queue';
 
 import { FeedbackDigestService } from './feedback-digest.service';
-
-// ──────────────────────────────────────────────────────────────────────────
-// Metrics stub
-// ──────────────────────────────────────────────────────────────────────────
 
 function makeMetrics(): {
   metrics: BusinessMetricsService;
@@ -58,10 +34,6 @@ function makeMetrics(): {
   return { metrics, calls: { run, processed, newTopics, failedRuns } };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Prisma stub
-// ──────────────────────────────────────────────────────────────────────────
-
 interface PrismaCalls {
   findMessages: ReturnType<typeof vi.fn>;
   findTopics: ReturnType<typeof vi.fn>;
@@ -77,27 +49,26 @@ interface PrismaStub {
   calls: PrismaCalls;
 }
 
-function makePrisma(opts: {
-  messages?: Array<{
-    id: string;
-    userId: string;
-    createdAt: Date;
-    text: string;
-  }>;
-  topics?: Array<{ id: string; title: string; description: string }>;
-  /** Кидать ли исключение из транзакции (имитация падения БД). */
-  txThrows?: Error;
-} = {}): PrismaStub {
+function makePrisma(
+  opts: {
+    messages?: Array<{
+      id: string;
+      userId: string;
+      createdAt: Date;
+      text: string;
+    }>;
+    topics?: Array<{ id: string; title: string; description: string }>;
+    txThrows?: Error;
+  } = {},
+): PrismaStub {
   const findMessages = vi.fn(async () => opts.messages ?? []);
   const findTopics = vi.fn(async () => opts.topics ?? []);
   let nextTopicCounter = 1;
-  const txTopicCreate = vi.fn(
-    async (q: { data: { title: string; description: string } }) => ({
-      id: `created_topic_${nextTopicCounter++}`,
-      title: q.data.title,
-      description: q.data.description,
-    }),
-  );
+  const txTopicCreate = vi.fn(async (q: { data: { title: string; description: string } }) => ({
+    id: `created_topic_${nextTopicCounter++}`,
+    title: q.data.title,
+    description: q.data.description,
+  }));
   const txItemCreate = vi.fn(async () => ({ id: 'created_item' }));
   const txMessageUpdateMany = vi.fn(async () => ({ count: 0 }));
   const msgUpdateMany = vi.fn(async () => ({ count: 0 }));
@@ -146,10 +117,6 @@ function makePrisma(opts: {
   };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Redis stub (lock SET NX + GET + DEL)
-// ──────────────────────────────────────────────────────────────────────────
-
 interface RedisCalls {
   set: ReturnType<typeof vi.fn>;
   get: ReturnType<typeof vi.fn>;
@@ -179,10 +146,6 @@ function makeRedis(opts: { lockHeld?: boolean } = {}): RedisStub {
   return { redis, calls: { set, get, del } };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// LLM stub
-// ──────────────────────────────────────────────────────────────────────────
-
 interface LlmStub {
   llm: LlmRouterService;
   call: ReturnType<typeof vi.fn>;
@@ -207,10 +170,6 @@ function makeLlm(responses: Array<string | Error>): LlmStub {
   return { llm, call };
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Queue stub
-// ──────────────────────────────────────────────────────────────────────────
-
 function makeQueue(): {
   queue: FeedbackDigestQueue;
   enqueueManualRun: ReturnType<typeof vi.fn>;
@@ -223,10 +182,6 @@ function makeQueue(): {
   } as unknown as FeedbackDigestQueue;
   return { queue, enqueueManualRun };
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// Тестовые данные
-// ──────────────────────────────────────────────────────────────────────────
 
 const NOW = new Date(Date.UTC(2026, 4, 25, 12, 0, 0));
 
@@ -288,8 +243,6 @@ const GOOD_AGENT_OUTPUT = JSON.stringify({
   ],
 });
 
-// ──────────────────────────────────────────────────────────────────────────
-
 describe('FeedbackDigestService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -316,7 +269,6 @@ describe('FeedbackDigestService', () => {
     });
     expect(l.call).not.toHaveBeenCalled();
     expect(p.calls.transaction).not.toHaveBeenCalled();
-    // lock взят и освобождён.
     expect(r.calls.set).toHaveBeenCalledTimes(1);
     expect(r.calls.del).toHaveBeenCalledTimes(1);
   });
@@ -342,16 +294,13 @@ describe('FeedbackDigestService', () => {
     expect(l.call).toHaveBeenCalledTimes(1);
     expect(p.calls.transaction).toHaveBeenCalledTimes(1);
 
-    // Один новый topic создан.
     expect(p.calls.txTopicCreate).toHaveBeenCalledTimes(1);
     expect(p.calls.txTopicCreate).toHaveBeenCalledWith({
       data: { title: 'Новая идея', description: 'Что-то совсем новое.' },
       select: { id: true },
     });
 
-    // 3 items созданы.
     expect(p.calls.txItemCreate).toHaveBeenCalledTimes(3);
-    // Первый — в existing topic_dark.
     expect(p.calls.txItemCreate).toHaveBeenNthCalledWith(1, {
       data: {
         messageId: 'msg_1',
@@ -361,7 +310,6 @@ describe('FeedbackDigestService', () => {
         discardReason: null,
       },
     });
-    // Третий — в новый topic с created_topic_1 (tempId resolution).
     expect(p.calls.txItemCreate).toHaveBeenNthCalledWith(3, {
       data: {
         messageId: 'msg_3',
@@ -372,7 +320,6 @@ describe('FeedbackDigestService', () => {
       },
     });
 
-    // updateMany processedAt = now.
     expect(p.calls.txMessageUpdateMany).toHaveBeenCalledTimes(1);
     const updateArg = p.calls.txMessageUpdateMany.mock.calls[0]![0] as {
       where: { id: { in: string[] } };
@@ -381,7 +328,6 @@ describe('FeedbackDigestService', () => {
     expect(updateArg.where.id.in).toEqual(['msg_1', 'msg_2', 'msg_3']);
     expect(updateArg.data.processedAt).toEqual(NOW);
 
-    // failedRuns НЕ инкрементируется.
     expect(p.calls.msgUpdateMany).not.toHaveBeenCalled();
   });
 
@@ -400,7 +346,6 @@ describe('FeedbackDigestService', () => {
 
     expect(result.processed).toBe(3);
     expect(l.call).toHaveBeenCalledTimes(2);
-    // Вторая попытка получила userMessage с retry-hint.
     const userMsg2 = (l.call.mock.calls[1]![0] as LlmCallParams).userMessage;
     expect(userMsg2).toContain('предыдущий ответ не прошёл валидацию');
     expect(p.calls.transaction).toHaveBeenCalledTimes(1);
@@ -422,13 +367,11 @@ describe('FeedbackDigestService', () => {
 
     expect(l.call).toHaveBeenCalledTimes(2);
     expect(p.calls.transaction).not.toHaveBeenCalled();
-    // failedRuns++ на всех 3 messages.
     expect(p.calls.msgUpdateMany).toHaveBeenCalledTimes(1);
     expect(p.calls.msgUpdateMany).toHaveBeenCalledWith({
       where: { id: { in: ['msg_1', 'msg_2', 'msg_3'] } },
       data: { failedRuns: { increment: 1 } },
     });
-    // lock освобождён даже на throw.
     expect(r.calls.del).toHaveBeenCalledTimes(1);
   });
 
@@ -494,7 +437,6 @@ describe('FeedbackDigestService', () => {
   });
 
   it('аномалия newTopics > 0.5 * totalItems → throws → failedRuns++ и транзакция не вызывается', async () => {
-    // 1 item, но 5 newTopics — явная аномалия.
     const insaneOutput = JSON.stringify({
       newTopics: [
         { tempId: 'new_1', title: 'A', description: 'd' },
@@ -510,11 +452,6 @@ describe('FeedbackDigestService', () => {
         },
       ],
     });
-    // Sanity-check (см. feedback-digest.service.ts:186) срабатывает только
-    // когда уже есть >=5 существующих топиков (`SANITY_CHECK_MIN_EXISTING_TOPICS`).
-    // На холодном старте (≤4 топиков) создание множества новых блоков —
-    // нормальное поведение. Чтобы покрыть именно ветку «аномалия» — даём 5
-    // существующих топиков.
     const existingTopics = [
       { id: 'topic_1', title: 'T1', description: 'd' },
       { id: 'topic_2', title: 'T2', description: 'd' },
@@ -560,7 +497,6 @@ describe('FeedbackDigestService', () => {
     });
     expect(l.call).not.toHaveBeenCalled();
     expect(p.calls.findMessages).not.toHaveBeenCalled();
-    // lock не наш — не пытаемся его удалять.
     expect(r.calls.del).not.toHaveBeenCalled();
   });
 

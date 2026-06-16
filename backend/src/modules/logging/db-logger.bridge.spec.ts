@@ -4,7 +4,6 @@ import { DbLoggerBridge } from './db-logger.bridge';
 import type { WriteLogInput } from './log.constants';
 import type { LogService } from './log.service';
 
-/** Мок LogService — захватывает аргументы write(). */
 function makeBridge(): { bridge: DbLoggerBridge; writes: WriteLogInput[] } {
   const writes: WriteLogInput[] = [];
   const logs = {
@@ -13,7 +12,6 @@ function makeBridge(): { bridge: DbLoggerBridge; writes: WriteLogInput[] } {
     },
   } as unknown as LogService;
   const bridge = new DbLoggerBridge(logs);
-  // Глушим stdout-вывод ConsoleLogger в тестах (печать наследуется от базы).
   bridge.setLogLevels([]);
   return { bridge, writes };
 }
@@ -23,14 +21,17 @@ describe('DbLoggerBridge', () => {
     const { bridge, writes } = makeBridge();
     bridge.log('Сервер запущен', 'Bootstrap');
     expect(writes).toHaveLength(1);
-    expect(writes[0]).toMatchObject({ level: 'INFO', message: 'Сервер запущен', module: 'Bootstrap' });
+    expect(writes[0]).toMatchObject({
+      level: 'INFO',
+      message: 'Сервер запущен',
+      module: 'Bootstrap',
+    });
   });
 
   it('pino-стиль: (obj, "human msg", context) → text=msg, details=obj', () => {
     const { bridge, writes } = makeBridge();
     bridge.debug({ meetingId: 'm1' }, 'transcribe: старт', 'TranscribeWorker');
     expect(writes).toHaveLength(1);
-    // Последняя строка — context (module), предыдущая строка — текст, объект — details.
     expect(writes[0]).toMatchObject({
       level: 'DEBUG',
       message: 'transcribe: старт',

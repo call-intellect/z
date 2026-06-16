@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus, Sparkles, Trash2, UserCog } from 'lucide-react';
-import useSWR from 'swr';
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Plus, Sparkles, Trash2, UserCog } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   departmentsApi,
   personsDomainApi,
   type DepartmentApi,
   type PersonDomainApi,
-} from '@/api/structure.api';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/structure.api";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -20,47 +20,39 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 import {
   AdminEmpty,
   AdminError,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 type DialogState =
-  | { kind: 'none' }
-  | { kind: 'create' }
-  | { kind: 'rename'; dept: DepartmentApi }
-  | { kind: 'setHead'; dept: DepartmentApi }
-  | { kind: 'remove'; dept: DepartmentApi }
-  | { kind: 'tidy' };
+  | { kind: "none" }
+  | { kind: "create" }
+  | { kind: "rename"; dept: DepartmentApi }
+  | { kind: "setHead"; dept: DepartmentApi }
+  | { kind: "remove"; dept: DepartmentApi }
+  | { kind: "tidy" };
 
-const swrKey = (orgId: string) => ['departments', orgId];
+const swrKey = (orgId: string) => ["departments", orgId];
 
-/* ── Мастер «Наведём порядок в отделах» (ТЗ редизайн Ф7а) ───────────────── */
-
-/** Группа отделов с одинаковым нормализованным именем (≥2 элемента = дубли). */
 type DuplicateGroup = {
-  /** Нормализованное имя (для key). */
   normalized: string;
-  /** Все отделы группы (в порядке списка). */
   members: DepartmentApi[];
 };
 
-/** Нормализация имени отдела для поиска дублей: trim + lowercase + схлоп пробелов. */
 function normalizeDeptName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/** Пуст ли отдел (нет ни должностей, ни сотрудников). */
 function isEmptyDept(d: DepartmentApi): boolean {
   return (d.rolesCount ?? 0) === 0 && (d.personsCount ?? 0) === 0;
 }
 
-/** Группы дублей (по нормализованному имени) — только где ≥2 отдела. */
 function findDuplicateGroups(items: DepartmentApi[]): DuplicateGroup[] {
   const byName = new Map<string, DepartmentApi[]>();
   for (const d of items) {
@@ -77,11 +69,6 @@ function findDuplicateGroups(items: DepartmentApi[]): DuplicateGroup[] {
   return groups;
 }
 
-/**
- * Пустые отделы НЕ из групп дублей (дубли чистятся слиянием, а одиночные
- * пустые — удалением). Если пустой отдел входит в группу дублей, он попадёт
- * под слияние и здесь не учитывается, чтобы не дублировать действие.
- */
 function findEmptyDepts(
   items: DepartmentApi[],
   dupGroups: DuplicateGroup[],
@@ -104,11 +91,11 @@ export function DepartmentsTab({
     { revalidateOnFocus: false },
   );
 
-  const [dialog, setDialog] = useState<DialogState>({ kind: 'none' });
+  const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
 
   if (isLoading) return <AdminLoading rows={5} />;
   if (error) {
-    if (error instanceof ApiError && error.code === 'http_404') {
+    if (error instanceof ApiError && error.code === "http_404") {
       return (
         <AdminEmpty
           title="Раздел в разработке"
@@ -116,7 +103,7 @@ export function DepartmentsTab({
         />
       );
     }
-    if (error instanceof ApiError && error.code === 'forbidden') {
+    if (error instanceof ApiError && error.code === "forbidden") {
       return (
         <AdminEmpty
           title="Недостаточно прав"
@@ -126,7 +113,7 @@ export function DepartmentsTab({
     }
     return (
       <AdminError
-        message={error instanceof Error ? error.message : 'Ошибка загрузки'}
+        message={error instanceof Error ? error.message : "Ошибка загрузки"}
         onRetry={() => void mutate()}
       />
     );
@@ -134,7 +121,8 @@ export function DepartmentsTab({
   const items = data?.items ?? [];
   const dupGroups = findDuplicateGroups(items);
   const emptyDepts = findEmptyDepts(items, dupGroups);
-  const showTidyWizard = canEdit && (dupGroups.length > 0 || emptyDepts.length > 0);
+  const showTidyWizard =
+    canEdit && (dupGroups.length > 0 || emptyDepts.length > 0);
 
   return (
     <div>
@@ -142,7 +130,7 @@ export function DepartmentsTab({
         <TidyWizardCard
           dupGroups={dupGroups}
           emptyDepts={emptyDepts}
-          onOpen={() => setDialog({ kind: 'tidy' })}
+          onOpen={() => setDialog({ kind: "tidy" })}
         />
       )}
 
@@ -151,10 +139,7 @@ export function DepartmentsTab({
           Всего отделов: {items.length}
         </div>
         {canEdit && (
-          <Button
-            size="sm"
-            onClick={() => setDialog({ kind: 'create' })}
-          >
+          <Button size="sm" onClick={() => setDialog({ kind: "create" })}>
             <Plus size={14} className="mr-1" /> Добавить отдел
           </Button>
         )}
@@ -165,8 +150,8 @@ export function DepartmentsTab({
           title="Отделов пока нет"
           description={
             canEdit
-              ? 'Создайте первый отдел кнопкой выше.'
-              : 'Структура ещё не заполнена владельцем компании.'
+              ? "Создайте первый отдел кнопкой выше."
+              : "Структура ещё не заполнена владельцем компании."
           }
         />
       ) : (
@@ -188,9 +173,9 @@ export function DepartmentsTab({
                   orgId={orgId}
                   dept={d}
                   canEdit={canEdit}
-                  onRename={() => setDialog({ kind: 'rename', dept: d })}
-                  onSetHead={() => setDialog({ kind: 'setHead', dept: d })}
-                  onRemove={() => setDialog({ kind: 'remove', dept: d })}
+                  onRename={() => setDialog({ kind: "rename", dept: d })}
+                  onSetHead={() => setDialog({ kind: "setHead", dept: d })}
+                  onRemove={() => setDialog({ kind: "remove", dept: d })}
                 />
               ))}
             </tbody>
@@ -198,61 +183,61 @@ export function DepartmentsTab({
         </div>
       )}
 
-      {dialog.kind === 'create' && (
+      {dialog.kind === "create" && (
         <CreateDeptDialog
           orgId={orgId}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={() => setDialog({ kind: "none" })}
           onDone={() => {
-            setDialog({ kind: 'none' });
+            setDialog({ kind: "none" });
             void mutate();
-            toast.success('Отдел добавлен.');
+            toast.success("Отдел добавлен.");
           }}
         />
       )}
-      {dialog.kind === 'rename' && (
+      {dialog.kind === "rename" && (
         <RenameDeptDialog
           orgId={orgId}
           dept={dialog.dept}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={() => setDialog({ kind: "none" })}
           onDone={() => {
-            setDialog({ kind: 'none' });
+            setDialog({ kind: "none" });
             void mutate();
-            toast.success('Отдел переименован.');
+            toast.success("Отдел переименован.");
           }}
         />
       )}
-      {dialog.kind === 'setHead' && (
+      {dialog.kind === "setHead" && (
         <SetHeadDialog
           orgId={orgId}
           dept={dialog.dept}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={() => setDialog({ kind: "none" })}
           onDone={() => {
-            setDialog({ kind: 'none' });
+            setDialog({ kind: "none" });
             void mutate();
-            toast.success('Глава отдела сохранён.');
+            toast.success("Глава отдела сохранён.");
           }}
         />
       )}
-      {dialog.kind === 'remove' && (
+      {dialog.kind === "remove" && (
         <RemoveDeptDialog
           orgId={orgId}
           dept={dialog.dept}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={() => setDialog({ kind: "none" })}
           onDone={() => {
-            setDialog({ kind: 'none' });
+            setDialog({ kind: "none" });
             void mutate();
-            toast.success('Отдел удалён.');
+            toast.success("Отдел удалён.");
           }}
         />
       )}
-      {dialog.kind === 'tidy' && (
+      {dialog.kind === "tidy" && (
         <TidyWizardDialog
           orgId={orgId}
           dupGroups={dupGroups}
           emptyDepts={emptyDepts}
-          onClose={() => setDialog({ kind: 'none' })}
+          onClose={() => setDialog({ kind: "none" })}
           onDone={(summary) => {
-            setDialog({ kind: 'none' });
+            setDialog({ kind: "none" });
             void mutate();
             toast.success(summary);
           }}
@@ -262,11 +247,6 @@ export function DepartmentsTab({
   );
 }
 
-/**
- * ТЗ редизайн Ф7а — карточка-предложение Коры «Наведём порядок в отделах».
- * Показывается только когда есть что прибрать (дубли или пустые). Кнопка
- * «Объединить и убрать» открывает мастер-диалог.
- */
 function TidyWizardCard({
   dupGroups,
   emptyDepts,
@@ -278,8 +258,6 @@ function TidyWizardCard({
 }) {
   const dupCount = dupGroups.length;
   const emptyCount = emptyDepts.length;
-  // Сколько отделов исчезнет: в каждой группе дублей остаётся один (target),
-  // остальные сливаются; плюс все одиночные пустые удаляются.
   const merged = dupGroups.reduce((acc, g) => acc + (g.members.length - 1), 0);
 
   return (
@@ -299,26 +277,31 @@ function TidyWizardCard({
       <p className="mt-3 text-sm leading-relaxed text-fg-secondary">
         {dupCount > 0 && (
           <>
-            Нашёл{' '}
+            Нашёл{" "}
             <b className="text-fg-primary">
-              {dupCount}{' '}
-              {pluralRu(dupCount, 'похожий отдел', 'похожих отдела', 'похожих отделов')}
+              {dupCount}{" "}
+              {pluralRu(
+                dupCount,
+                "похожий отдел",
+                "похожих отдела",
+                "похожих отделов",
+              )}
             </b>
-            {emptyCount > 0 ? ' и ' : '. '}
+            {emptyCount > 0 ? " и " : ". "}
           </>
         )}
         {emptyCount > 0 && (
           <>
             <b className="text-fg-primary">
-              {emptyCount}{' '}
+              {emptyCount}{" "}
               {pluralRu(
                 emptyCount,
-                'пустое подразделение',
-                'пустых подразделения',
-                'пустых подразделений',
+                "пустое подразделение",
+                "пустых подразделения",
+                "пустых подразделений",
               )}
-            </b>{' '}
-            без единого сотрудника.{' '}
+            </b>{" "}
+            без единого сотрудника.{" "}
           </>
         )}
         Похоже на следы первичной настройки. Объединить дубли и убрать пустые?
@@ -327,8 +310,7 @@ function TidyWizardCard({
       <div className="mt-3 flex flex-wrap gap-2">
         {dupCount > 0 && (
           <span className="inline-flex items-center rounded-full bg-chip-warning-bg px-2.5 py-0.5 text-[11px] font-medium text-chip-warning-fg">
-            {merged}{' '}
-            {pluralRu(merged, 'дубль', 'дубля', 'дублей')} → объединить
+            {merged} {pluralRu(merged, "дубль", "дубля", "дублей")} → объединить
           </span>
         )}
         {emptyCount > 0 && (
@@ -350,7 +332,6 @@ function TidyWizardCard({
   );
 }
 
-/** Русская плюрализация (1 / 2-4 / 5+). */
 function pluralRu(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -359,18 +340,6 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-/**
- * ТЗ редизайн Ф7а — мастер слияния/чистки отделов.
- *
- * Для каждой группы дублей пользователь выбирает, какой отдел оставить
- * (target). По кнопке «Объединить и убрать»:
- *   1. для каждой группы — `merge(other.id, target.id)` по всем кроме target;
- *   2. для каждого одиночного пустого отдела — `remove(id)`.
- *
- * Операции выполняются последовательно (порядок предсказуем; ошибки
- * собираются и показываются, успешная часть не откатывается — backend
- * каждой операции атомарен).
- */
 function TidyWizardDialog({
   orgId,
   dupGroups,
@@ -384,10 +353,9 @@ function TidyWizardDialog({
   onClose: () => void;
   onDone: (summary: string) => void;
 }) {
-  // Выбранный target для каждой группы (по умолчанию — первый член группы).
   const [targets, setTargets] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
-    for (const g of dupGroups) init[g.normalized] = g.members[0]?.id ?? '';
+    for (const g of dupGroups) init[g.normalized] = g.members[0]?.id ?? "";
     return init;
   });
   const [busy, setBusy] = useState(false);
@@ -398,7 +366,6 @@ function TidyWizardDialog({
     let removedCount = 0;
     const errors: string[] = [];
 
-    // 1) Слияние дублей.
     for (const g of dupGroups) {
       const targetId = targets[g.normalized] ?? g.members[0]?.id;
       if (!targetId) continue;
@@ -408,12 +375,13 @@ function TidyWizardDialog({
           await departmentsApi.merge(orgId, m.id, targetId);
           mergedCount += 1;
         } catch (e) {
-          errors.push(humanizeApiError(e, `Не удалось объединить «${m.name}».`));
+          errors.push(
+            humanizeApiError(e, `Не удалось объединить «${m.name}».`),
+          );
         }
       }
     }
 
-    // 2) Удаление одиночных пустых.
     for (const d of emptyDepts) {
       try {
         await departmentsApi.remove(orgId, d.id);
@@ -426,23 +394,19 @@ function TidyWizardDialog({
     setBusy(false);
 
     if (errors.length > 0) {
-      // Показываем первую ошибку; успешная часть уже применена — dialog
-      // закрываем и обновляем список (см. onDone в родителе).
       toast.error(errors[0]);
     }
 
     const parts: string[] = [];
     if (mergedCount > 0)
       parts.push(
-        `объединено ${mergedCount} ${pluralRu(mergedCount, 'отдел', 'отдела', 'отделов')}`,
+        `объединено ${mergedCount} ${pluralRu(mergedCount, "отдел", "отдела", "отделов")}`,
       );
-    if (removedCount > 0)
-      parts.push(
-        `убрано ${removedCount} пустых`,
-      );
-    const summary = parts.length > 0
-      ? `Порядок наведён: ${parts.join(', ')}.`
-      : 'Изменений не внесено.';
+    if (removedCount > 0) parts.push(`убрано ${removedCount} пустых`);
+    const summary =
+      parts.length > 0
+        ? `Порядок наведён: ${parts.join(", ")}.`
+        : "Изменений не внесено.";
     onDone(summary);
   };
 
@@ -452,8 +416,8 @@ function TidyWizardDialog({
         <DialogHeader>
           <DialogTitle>Навести порядок в отделах</DialogTitle>
           <DialogDescription>
-            Сотрудники и должности из объединяемых отделов перейдут в выбранный —
-            люди не пострадают. Действие применяется сразу.
+            Сотрудники и должности из объединяемых отделов перейдут в выбранный
+            — люди не пострадают. Действие применяется сразу.
           </DialogDescription>
         </DialogHeader>
 
@@ -542,7 +506,7 @@ function CreateDeptDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -574,7 +538,7 @@ function CreateDeptDialog({
                 await departmentsApi.create(orgId, { name: name.trim() });
                 onDone();
               } catch (e) {
-                toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
+                toast.error(humanizeApiError(e, "Не удалось сохранить."));
               } finally {
                 setBusy(false);
               }
@@ -631,7 +595,7 @@ function RenameDeptDialog({
                 });
                 onDone();
               } catch (e) {
-                toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
+                toast.error(humanizeApiError(e, "Не удалось сохранить."));
               } finally {
                 setBusy(false);
               }
@@ -645,13 +609,6 @@ function RenameDeptDialog({
   );
 }
 
-/**
- * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — ряд таблицы с
- * отображением главы отдела. Имя главы достаётся одним SWR-запросом
- * `personsDomainApi.byId` (когда headPersonId задан); иначе — «Не назначен».
- * Кэширование — стандартное SWR (тот же ключ для одного personId
- * переиспользуется при перерендерах).
- */
 function DepartmentRow({
   orgId,
   dept,
@@ -669,13 +626,11 @@ function DepartmentRow({
 }) {
   const headPersonId = dept.headPersonId ?? null;
   const { data: headData } = useSWR(
-    headPersonId ? ['person', orgId, headPersonId] : null,
+    headPersonId ? ["person", orgId, headPersonId] : null,
     async () => personsDomainApi.byId(orgId, headPersonId!),
     { revalidateOnFocus: false },
   );
-  const headName = headPersonId
-    ? headData?.person.fullName ?? '…'
-    : null;
+  const headName = headPersonId ? (headData?.person.fullName ?? "…") : null;
   return (
     <tr className="hover:bg-bg-overlay/30">
       <td className="px-4 py-2 font-medium text-fg-primary">{dept.name}</td>
@@ -687,10 +642,10 @@ function DepartmentRow({
         )}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
-        {dept.rolesCount ?? '—'}
+        {dept.rolesCount ?? "—"}
       </td>
       <td className="px-4 py-2 text-right tabular-nums text-fg-secondary">
-        {dept.personsCount ?? '—'}
+        {dept.personsCount ?? "—"}
       </td>
       {canEdit && (
         <td className="px-4 py-2 text-right">
@@ -727,16 +682,6 @@ function DepartmentRow({
   );
 }
 
-/**
- * ТЗ 2026-05-25 Фаза 3 — диалог назначения/снятия главы отдела.
- *
- * Опции — все сотрудники Org (`personsDomainApi.list` без фильтра по отделу:
- * глава отдела может быть руководителем-сотрудником из другого отдела —
- * например, в маленьких компаниях, где один человек ведёт два направления).
- * Backend дополнительно валидирует, что выбранный person — `relationship='employee'`.
- *
- * Кнопка «Снять» отправляет `headPersonId=null` (доступна, если глава назначен).
- */
 function SetHeadDialog({
   orgId,
   dept,
@@ -748,17 +693,14 @@ function SetHeadDialog({
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [selected, setSelected] = useState<string>(dept.headPersonId ?? '');
+  const [selected, setSelected] = useState<string>(dept.headPersonId ?? "");
   const [busy, setBusy] = useState(false);
   const { data, isLoading, error } = useSWR(
-    ['persons', orgId, 'all'],
+    ["persons", orgId, "all"],
     async () => personsDomainApi.list(orgId, {}),
     { revalidateOnFocus: false },
   );
-  const persons = useMemo<PersonDomainApi[]>(
-    () => data?.items ?? [],
-    [data],
-  );
+  const persons = useMemo<PersonDomainApi[]>(() => data?.items ?? [], [data]);
 
   const save = async (headPersonId: string | null) => {
     setBusy(true);
@@ -766,15 +708,13 @@ function SetHeadDialog({
       await departmentsApi.setHead(orgId, dept.id, { headPersonId });
       onDone();
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось сохранить главу отдела.'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось сохранить главу отдела."));
     } finally {
       setBusy(false);
     }
   };
 
-  const initial = dept.headPersonId ?? '';
+  const initial = dept.headPersonId ?? "";
   const changed = selected !== initial;
 
   return (
@@ -791,7 +731,9 @@ function SetHeadDialog({
         <div className="space-y-1.5">
           <Label htmlFor="dept-head-select">Сотрудник</Label>
           {isLoading ? (
-            <div className="text-sm text-fg-tertiary">Загрузка сотрудников…</div>
+            <div className="text-sm text-fg-tertiary">
+              Загрузка сотрудников…
+            </div>
           ) : error ? (
             <div className="text-sm text-danger">
               Не удалось загрузить список сотрудников.
@@ -808,7 +750,7 @@ function SetHeadDialog({
               {persons.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.fullName}
-                  {p.departmentName ? ` — ${p.departmentName}` : ''}
+                  {p.departmentName ? ` — ${p.departmentName}` : ""}
                 </option>
               ))}
             </select>
@@ -829,7 +771,7 @@ function SetHeadDialog({
           </Button>
           <Button
             disabled={busy || !changed}
-            onClick={() => void save(selected === '' ? null : selected)}
+            onClick={() => void save(selected === "" ? null : selected)}
           >
             Сохранить
           </Button>
@@ -851,8 +793,7 @@ function RemoveDeptDialog({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const hasContent =
-    (dept.rolesCount ?? 0) > 0 || (dept.personsCount ?? 0) > 0;
+  const hasContent = (dept.rolesCount ?? 0) > 0 || (dept.personsCount ?? 0) > 0;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -860,8 +801,8 @@ function RemoveDeptDialog({
           <DialogTitle>Удалить отдел «{dept.name}»?</DialogTitle>
           <DialogDescription>
             {hasContent
-              ? 'В отделе есть должности или сотрудники. Backend может отклонить операцию — сначала переназначьте их в другой отдел.'
-              : 'Действие необратимо.'}
+              ? "В отделе есть должности или сотрудники. Backend может отклонить операцию — сначала переназначьте их в другой отдел."
+              : "Действие необратимо."}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -877,7 +818,7 @@ function RemoveDeptDialog({
                 await departmentsApi.remove(orgId, dept.id);
                 onDone();
               } catch (e) {
-                toast.error(humanizeApiError(e, 'Не удалось удалить.'));
+                toast.error(humanizeApiError(e, "Не удалось удалить."));
               } finally {
                 setBusy(false);
               }

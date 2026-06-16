@@ -12,19 +12,6 @@ import {
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
 
-/**
- * SBA β-5 — ProbePriorityCron (Layer 6).
- *
- * Каждые 15 минут:
- *   1. Пересчитывает engagement_rate per-user (отвечено за 30д / отправлено
- *      за 30д) и выставляет gauge `probe_recipient_engagement_rate{user_id}`.
- *   2. Помечает истёкшие ProbeEvent (`expiresAt < now` AND status ∈
- *      pending | queued_digest | routed_to_digest — L-2) статусом 'expired'
- *      (+ метрика probe_expired_total).
- *
- * Cron-выражение в декораторе литералом (NestJS @Cron не читает ENV). Если
- * `PROBE_PRIORITY_REFRESH_CRON` отличается — заменить декоратор.
- */
 @Injectable()
 export class ProbePriorityCron {
   private readonly logger = new Logger(ProbePriorityCron.name);
@@ -43,18 +30,8 @@ export class ProbePriorityCron {
   async sweep(): Promise<void> {
     try {
       const now = new Date();
-      const cutoff = new Date(
-        now.getTime() - ProbePriorityCron.LOOKBACK_DAYS * 24 * 3600 * 1000,
-      );
+      const cutoff = new Date(now.getTime() - ProbePriorityCron.LOOKBACK_DAYS * 24 * 3600 * 1000);
 
-      // 1. Истёкшие ProbeEvent → expired.
-      // SBA β-5 closing-loop (sub-TZ 2026-05-23): дополнительно фильтруем
-      // probe'ы, у которых dispatchedNotificationId уже отвечен
-      // (`Notification.respondedAt IS NOT NULL`). Так мы избегаем гонки
-      // «истёк по таймеру, хотя ответ только что пришёл» — закрытый probe
-      // не должен пере-помечаться `expired`.
-      // L-2 (2026-06-12): digest-статусы (queued_digest / routed_to_digest)
-      // тоже стареют — иначе протухший вопрос вечно ждал бы дайджеста.
       const expiredCandidates = await this.prisma.probeEvent.findMany({
         where: {
           status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
@@ -63,7 +40,6 @@ export class ProbePriorityCron {
         select: {
           id: true,
           dispatchedNotificationId: true,
-          // Probe Фаза 5 — для исход-сигнала (ignored) и cooldown темы.
           reason: true,
           tenantId: true,
           contentHash: true,
@@ -81,7 +57,7 @@ export class ProbePriorityCron {
             where: { id: cand.dispatchedNotificationId },
             select: { respondedAt: true },
           });
-          if (n?.respondedAt) continue; // уже закрыт пользователем — пропускаем
+          if (n?.respondedAt) continue;
         }
         expirable.push({
           id: cand.id,
@@ -95,24 +71,15 @@ export class ProbePriorityCron {
         const expired = await this.prisma.probeEvent.updateMany({
           where: {
             id: { in: expirable.map((e) => e.id) },
-            // L-2 — те же статусы, что в выборке (идемпотентность гонок).
             status: { in: ['pending', 'queued_digest', 'routed_to_digest'] },
           },
           data: { status: 'expired' },
         });
         expiredCount = expired.count;
         for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
-        // Probe Фаза 5 (R10): истёкший без ответа = исход «ignored» (сигнал
-        // калибровки Фазы 2). Тему ставим на cooldown — не доставать человека
-        // тем же вопросом в течение probe.topicCooldownHours.
         await this.recordIgnoredOutcomes(expirable);
       }
 
-      // 2. engagement_rate per recipient.
-      // Считаем по probe-уведомлениям (eventType='probe.question') за 30 дней.
-      // SBA β-5 closing-loop: `respondedAt IS NULL` в знаменателе НЕ
-      // вычитаем — знаменатель = «всего отправлено», числитель = «отвечено»
-      // (`responseStatus='answered'`, что эквивалентно `respondedAt IS NOT NULL`).
       const sent = await this.prisma.notification.groupBy({
         by: ['recipientUserId'],
         where: {
@@ -139,8 +106,6 @@ export class ProbePriorityCron {
         });
         const rate = answeredCount / sentCount;
         this.metrics.setProbeRecipientEngagementRate({ userId, rate });
-        // Probe Фаза 5 — снимок engagement в Redis: filterByRateLimit режет
-        // бюджет низко-отзывчивым (adaptive fatigue). Best-effort.
         try {
           await this.redis.client.set(
             probeEngagementRedisKey(userId),
@@ -148,16 +113,11 @@ export class ProbePriorityCron {
             'EX',
             PROBE_ENGAGEMENT_TTL_SEC,
           );
-        } catch {
-          // Redis down — adaptive просто не применится (graceful).
-        }
+        } catch {}
         usersDone += 1;
       }
 
-      this.logger.debug(
-        { expiredCount, users: usersDone },
-        'probe-priority: sweep завершён',
-      );
+      this.logger.debug({ expiredCount, users: usersDone }, 'probe-priority: sweep завершён');
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -166,13 +126,6 @@ export class ProbePriorityCron {
     }
   }
 
-  /**
-   * Probe Фаза 5 — для каждого истёкшего без ответа probe:
-   *   - метрика `probe_outcome_total{outcome=ignored, reason}` (калибровка Фазы 2);
-   *   - cooldown темы (`contentHash`) в Redis на `probe.topicCooldownHours` —
-   *     не доставать человека тем же вопросом сразу после игнора.
-   * Best-effort: ошибки Redis/настроек не валят sweep.
-   */
   private async recordIgnoredOutcomes(
     expired: Array<{ reason: string; tenantId: string; contentHash: string }>,
   ): Promise<void> {
@@ -194,12 +147,8 @@ export class ProbePriorityCron {
             'EX',
             ttlSec,
           );
-        } catch {
-          // Redis down — cooldown просто не применится (graceful).
-        }
+        } catch {}
       }
-    } catch {
-      // настройка недоступна — пропускаем cooldown.
-    }
+    } catch {}
   }
 }

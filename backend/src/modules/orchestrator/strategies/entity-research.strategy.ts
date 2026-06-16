@@ -4,13 +4,6 @@ import type { OrchestratorPlanStep } from '../orchestrator.types';
 
 import { BaseRetrievalStrategy } from './base-retrieval-strategy';
 
-/**
- * SBA δ-1 — стратегия `entity_research`.
- *
- * Цель: собрать всё, что граф знает о конкретной сущности (Person, Process,
- * Decision, Idea, Insight, ...). Опирается на retrieval по focus + seedHints
- * (имена сущностей) и просит LLM сгруппировать факты.
- */
 @Injectable()
 export class EntityResearchStrategy extends BaseRetrievalStrategy {
   readonly agentType = 'entity_research' as const;

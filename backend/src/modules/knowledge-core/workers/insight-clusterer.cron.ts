@@ -11,31 +11,9 @@ import {
 import { Specialist35Service } from '../services/specialist-3-5-insights.service';
 import { Specialist35ProbeService } from '../services/specialist-3-5-probe.service';
 
-/**
- * SBA β-4 — InsightClustererCron.
- *
- * Раз в N часов (по умолчанию — 0 *‎/6 * * *, см. INSIGHT_CLUSTER_CRON):
- *   1. Для каждой активной Org для каждого active Insight'а вызывает
- *      `Specialist35Service.recalcMetrics` — пересчёт frequencyScore /
- *      dynamicScore / dynamicLabel.
- *   2. Когда новый dynamicLabel='spike' и старый != 'spike' — внутри
- *      recalcMetrics эмиттится probe `insight.escalation_suggested`.
- *   3. Прогоняет `Specialist35ProbeService.checkNoMitigationPlanForOrg` —
- *      probe `insight.no_mitigation_plan` для high/critical Insight'ов без
- *      mitigationPlan и age > 7 дней.
- *   4. Обновляет gauge `insights_dynamic_label_count{label}` — текущее
- *      распределение Insight'ов по dynamicLabel.
- *
- * Контракт: НЕ бросает. Ошибка в одной Org не валит остальные.
- *
- * NB: cron-выражение в декораторе литерально (NestJS @Cron не поддерживает
- * env-driven строки). Если в ENV `INSIGHT_CLUSTER_CRON` отличается от
- * дефолта — заменить декоратор и пересобрать.
- */
 @Injectable()
 export class InsightClustererCron {
   private readonly logger = new Logger(InsightClustererCron.name);
-  /** Лимит Insight'ов на проход в одной Org (защита от взрывного fan-out'а). */
   private static readonly BATCH_LIMIT = 500;
 
   constructor(
@@ -62,10 +40,7 @@ export class InsightClustererCron {
       for (const org of orgs) {
         try {
           totalRecalc += await this.recalcAllForOrg(org.id);
-          totalNoMitigation += await this.probes.checkNoMitigationPlanForOrg(
-            org.id,
-          );
-          // TZ-1 Ф4.B — re-check митигированных инсайтов (повтор → active).
+          totalNoMitigation += await this.probes.checkNoMitigationPlanForOrg(org.id);
           if (recheckEnabled) {
             totalReactivated += await this.recheckMitigatedForOrg(org.id);
           }
@@ -80,7 +55,6 @@ export class InsightClustererCron {
         }
       }
 
-      // Глобальный gauge insights_dynamic_label_count{label}.
       await this.refreshDynamicLabelGauge();
 
       this.logger.debug(
@@ -101,18 +75,6 @@ export class InsightClustererCron {
     }
   }
 
-  /**
-   * TZ-1 Ф4.B — re-check митигированных инсайтов Org.
-   *
-   * Для каждого `Insight(status='mitigated')`:
-   *   1. считаем сколько блоков-источников появилось ПОСЛЕ митигации
-   *      (`createdAt > lastConfirmedAt`) — это свежие повторы паттерна;
-   *   2. чистой функцией `shouldReactivateInsight` решаем, вернуть ли в active
-   *      (прошло >= recheck_days и повтор есть);
-   *   3. при reactivate → status='active', lastObservedAt=now.
-   *
-   * Возвращает число реактивированных. Не бросает на отдельном инсайте.
-   */
   private async recheckMitigatedForOrg(tenantId: string): Promise<number> {
     const recheckDays = await this.cfg.getDynamic<number>(
       'insight.recheck_days',
@@ -135,7 +97,6 @@ export class InsightClustererCron {
     for (const ins of insights) {
       try {
         if (ins.sourceBlockIds.length === 0) continue;
-        // Свежие повторы = блоки-источники, созданные ПОСЛЕ митигации.
         const since = ins.lastConfirmedAt ?? ins.lastObservedAt;
         const recentRecurringBlockCount = await this.prisma.ideaBlock.count({
           where: {
@@ -211,14 +172,9 @@ export class InsightClustererCron {
     return processed;
   }
 
-  /**
-   * Глобальный gauge — сколько активных Insight'ов сейчас в каждом dynamicLabel.
-   * Простой groupBy. labels: growing | stable | declining | spike.
-   */
   private async refreshDynamicLabelGauge(): Promise<void> {
     try {
       const labels = ['growing', 'stable', 'declining', 'spike'] as const;
-      // groupBy на active+mitigating Insights, агрегация по dynamicLabel.
       const grouped = await this.prisma.insight.groupBy({
         by: ['dynamicLabel'],
         where: { status: { in: ['active', 'mitigating'] } },

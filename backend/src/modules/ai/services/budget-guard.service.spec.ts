@@ -7,11 +7,8 @@ import { BudgetGuardService } from './budget-guard.service';
 
 interface BuildOpts {
   cap?: { monthlyCapRub: unknown; capKind?: string } | null;
-  /** Возвращаемая сумма costRub из aiUsageLog.aggregate. */
   mtdRub?: number;
-  /** findUnique бросает (имитация недоступной БД). */
   capThrows?: boolean;
-  /** TTL кэша в секундах (через cfg.getDynamic). */
   ttlSec?: number;
 }
 
@@ -28,9 +25,7 @@ function build(opts: BuildOpts = {}) {
     aiUsageLog: { aggregate },
   } as unknown as PrismaService;
 
-  const getDynamic = vi.fn(async (_key: string, _env: unknown, def: unknown) =>
-    opts.ttlSec ?? def,
-  );
+  const getDynamic = vi.fn(async (_key: string, _env: unknown, def: unknown) => opts.ttlSec ?? def);
   const cfg = { getDynamic } as unknown as TypedConfigService;
 
   const guard = new BudgetGuardService(prisma, cfg);
@@ -51,7 +46,6 @@ describe('BudgetGuardService', () => {
     const res = await ctx.guard.evaluate('t1');
     expect(res.over).toBe(false);
     expect(res.capRub).toBeNull();
-    // без cap'а MTD не агрегируем
     expect(ctx.aggregate).not.toHaveBeenCalled();
   });
 
@@ -63,7 +57,7 @@ describe('BudgetGuardService', () => {
     expect(ctx.aggregate).not.toHaveBeenCalled();
   });
 
-  it("soft-cap при mtd≥cap → over=false (soft = только alert)", async () => {
+  it('soft-cap при mtd≥cap → over=false (soft = только alert)', async () => {
     const ctx = build({ cap: { monthlyCapRub: 100, capKind: 'soft' }, mtdRub: 250 });
     const res = await ctx.guard.evaluate('t1');
     expect(res.over).toBe(false);
@@ -100,7 +94,6 @@ describe('BudgetGuardService', () => {
   });
 
   it('Decimal-like costRub (Number()) корректно суммируется', async () => {
-    // Prisma возвращает Decimal; Number(Decimal) даёт число.
     const ctx = build({
       cap: { monthlyCapRub: 100, capKind: 'hard' },
       mtdRub: 120,

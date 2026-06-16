@@ -1,35 +1,35 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
 
-import { useAuth } from '@/contexts/auth-context';
+import { useAuth } from "@/contexts/auth-context";
 
 const PAIN_ROWS: [string, string][] = [
   [
-    'Решили на планёрке — через неделю никто не помнит, к чему шли',
-    'Цель живёт в спринте. Кора возвращает к ней каждую неделю.',
+    "Решили на планёрке — через неделю никто не помнит, к чему шли",
+    "Цель живёт в спринте. Кора возвращает к ней каждую неделю.",
   ],
   [
-    'Задачи зависают между понедельниками, а вы узнаёте последним',
-    'Кора слышит, что застряло — и подсвечивает до того, как сорвётся срок.',
+    "Задачи зависают между понедельниками, а вы узнаёте последним",
+    "Кора слышит, что застряло — и подсвечивает до того, как сорвётся срок.",
   ],
   [
-    'Статусы в трекере зелёные, а движения нет',
-    'Кора видит правду из встреч и чатов, а не из галочек.',
+    "Статусы в трекере зелёные, а движения нет",
+    "Кора видит правду из встреч и чатов, а не из галочек.",
   ],
   [
-    'Клиенту пообещали — не сделали',
-    'Обещание на встрече = задача на исполнителе. Никто не забывает.',
+    "Клиенту пообещали — не сделали",
+    "Обещание на встрече = задача на исполнителе. Никто не забывает.",
   ],
   [
-    'Ключевой человек ушёл — знания ушли с ним',
-    'Цифровой двойник остаётся. Новый сотрудник входит в курс за минуту.',
+    "Ключевой человек ушёл — знания ушли с ним",
+    "Цифровой двойник остаётся. Новый сотрудник входит в курс за минуту.",
   ],
   [
-    'Тонете в операционке, некогда думать на три хода вперёд',
-    'AI-директор берёт рутину. Голова освобождается для стратегии.',
+    "Тонете в операционке, некогда думать на три хода вперёд",
+    "AI-директор берёт рутину. Голова освобождается для стратегии.",
   ],
 ];
 
@@ -39,42 +39,39 @@ export function HomeClient() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace('/dashboard');
+      router.replace("/dashboard");
     }
   }, [user, isLoading, router]);
 
-  // Шрифты: инжектируем <link> в <head> один раз
   useEffect(() => {
-    const id = 'kl-fonts';
+    const id = "kl-fonts";
     if (document.getElementById(id)) return;
-    const link = document.createElement('link');
+    const link = document.createElement("link");
     link.id = id;
-    link.rel = 'stylesheet';
+    link.rel = "stylesheet";
     link.href =
-      'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Manrope:wght@300;400;500;600;700&display=swap';
+      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Manrope:wght@300;400;500;600;700&display=swap";
     document.head.appendChild(link);
   }, []);
 
-  // Reveal-анимации при скролле
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((e) => {
           if (e.isIntersecting) {
-            e.target.classList.add('in');
+            e.target.classList.add("in");
             io.unobserve(e.target);
           }
         });
       },
-      { rootMargin: '0px 0px -8% 0px', threshold: 0.06 },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 },
     );
-    document.querySelectorAll('.kl .reveal').forEach((el) => io.observe(el));
+    document.querySelectorAll(".kl .reveal").forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
 
-  // Заглушка только под user (момент до редиректа).
   if (user) {
-    return <div className="min-h-screen" style={{ background: '#0C0A08' }} />;
+    return <div className="min-h-screen" style={{ background: "#0C0A08" }} />;
   }
 
   return (
@@ -99,15 +96,15 @@ export function HomeClient() {
       </header>
 
       <main>
-        {/* HERO */}
+        {}
         <section className="hero">
           <div className="wrap">
             <div className="eyebrow">
               Память · Спринты · AI-операционный директор
             </div>
             <h1>
-              Компании растут, когда добивают цели.{' '}
-              <em>Кора</em> следит, чтобы точно добивались.
+              Компании растут, когда добивают цели. <em>Кора</em> следит, чтобы
+              точно добивались.
             </h1>
             <p className="lead">
               Ставите цель — идёте спринтами — Кора из реальных встреч, чатов и
@@ -129,15 +126,14 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* I. ЧТО ВНУТРИ */}
+        {}
         <section id="tools">
           <div className="wrap">
             <div className="section-head reveal">
               <div className="section-num">I — Что внутри</div>
               <div>
                 <h2 className="section-title">
-                  Двенадцать инструментов — один{' '}
-                  <em>растущий актив</em>.
+                  Двенадцать инструментов — один <em>растущий актив</em>.
                 </h2>
                 <p className="section-sub">
                   Четыре опоры, на которых стоит Кора. Не набор разрозненных
@@ -189,8 +185,8 @@ export function HomeClient() {
                 <div className="tool-card">
                   <h4>Спринты с контролем цели</h4>
                   <p>
-                    Недельный ритм. Кора следит, реально ли вы идёте к цели —
-                    а не просто двигаете статусы.
+                    Недельный ритм. Кора следит, реально ли вы идёте к цели — а
+                    не просто двигаете статусы.
                   </p>
                 </div>
               </div>
@@ -226,8 +222,8 @@ export function HomeClient() {
                 <div className="tool-card">
                   <h4>Цифровые двойники</h4>
                   <p>
-                    Спросить эксперта в отпуске или уже уволенного — ответит
-                    так же, как он.
+                    Спросить эксперта в отпуске или уже уволенного — ответит так
+                    же, как он.
                   </p>
                 </div>
                 <div className="tool-card">
@@ -242,7 +238,7 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* II. БОЛЬ */}
+        {}
         <section id="pain">
           <div className="wrap">
             <div className="section-head reveal">
@@ -252,8 +248,8 @@ export function HomeClient() {
                   Цели ставят все. Добивают — <em>единицы</em>.
                 </h2>
                 <p className="section-sub">
-                  Шесть точек, в которых обычно теряется движение компании —
-                  и что меняет Кора.
+                  Шесть точек, в которых обычно теряется движение компании — и
+                  что меняет Кора.
                 </p>
               </div>
             </div>
@@ -269,15 +265,14 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* III. КАК РАБОТАЕТ */}
+        {}
         <section id="how">
           <div className="wrap">
             <div className="section-head reveal">
               <div className="section-num">III — Как это работает</div>
               <div>
                 <h2 className="section-title">
-                  Один недельный цикл, который{' '}
-                  <em>двигает компанию</em> вперёд.
+                  Один недельный цикл, который <em>двигает компанию</em> вперёд.
                 </h2>
               </div>
             </div>
@@ -291,14 +286,16 @@ export function HomeClient() {
               <div className="step">
                 <div className="step-num">02</div>
                 <h4>Команда работает</h4>
-                <p>В привычном трекере. Задачи из встреч и чатов появляются сами.</p>
+                <p>
+                  В привычном трекере. Задачи из встреч и чатов появляются сами.
+                </p>
               </div>
               <div className="step">
                 <div className="step-num">03</div>
                 <h4>Кора видит правду</h4>
                 <p>
-                  Слушает встречи, читает чаты и отчёты — и видит, реально ли
-                  вы идёте к цели.
+                  Слушает встречи, читает чаты и отчёты — и видит, реально ли вы
+                  идёте к цели.
                 </p>
               </div>
               <div className="step">
@@ -312,13 +309,13 @@ export function HomeClient() {
             </div>
 
             <p className="steps-foot reveal">
-              Так каждую неделю. Память накапливается, цели{' '}
-              <em>добиваются</em>, компания растёт.
+              Так каждую неделю. Память накапливается, цели <em>добиваются</em>,
+              компания растёт.
             </p>
           </div>
         </section>
 
-        {/* IV. СПРИНТЫ */}
+        {}
         <section id="sprints">
           <div className="wrap">
             <div className="section-head reveal">
@@ -333,10 +330,9 @@ export function HomeClient() {
             <div className="sprint reveal">
               <div className="sprint-text">
                 <p className="lead-quote">
-                  Обычный трекер знает только то, что вы вписали руками.{' '}
+                  Обычный трекер знает только то, что вы вписали руками.{" "}
                   <em>Кора знает</em> из реальных встреч и переписок —
-                  двигаетесь вы к цели или только отчитываетесь, что
-                  двигаетесь.
+                  двигаетесь вы к цели или только отчитываетесь, что двигаетесь.
                 </p>
               </div>
               <div className="sprint-points">
@@ -385,9 +381,12 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* SOURCES STRIP */}
+        {}
         <section style={{ padding: 0 }}>
-          <div className="wrap sources" style={{ border: 'none', padding: '56px 0' }}>
+          <div
+            className="wrap sources"
+            style={{ border: "none", padding: "56px 0" }}
+          >
             <div className="sources-label reveal">Откуда Кора видит всё</div>
             <div className="sources-list reveal">
               <span>видеовстречи</span>
@@ -400,7 +399,7 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* V. ПАМЯТЬ */}
+        {}
         <section id="memory">
           <div className="wrap">
             <div className="section-head reveal">
@@ -448,7 +447,7 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* VI. ОТЗЫВЫ */}
+        {}
         <section id="reviews">
           <div className="wrap">
             <div className="section-head reveal">
@@ -473,7 +472,9 @@ export function HomeClient() {
                 </blockquote>
                 <div className="author">
                   <strong>Артём Кравцов</strong>
-                  <span>основатель digital-агентства · 18 человек · Казань</span>
+                  <span>
+                    основатель digital-агентства · 18 человек · Казань
+                  </span>
                 </div>
               </div>
 
@@ -483,8 +484,8 @@ export function HomeClient() {
                   У нас уволился логист, который шесть лет держал всех
                   поставщиков в голове. Раньше это был бы коллапс на месяц. А
                   новый человек просто спросил у его цифрового двойника, почему
-                  мы ушли от одного поставщика и как договаривались с другим —
-                  и получил ответы со ссылками на конкретные встречи. Онбординг
+                  мы ушли от одного поставщика и как договаривались с другим — и
+                  получил ответы со ссылками на конкретные встречи. Онбординг
                   вместо полугода занял две недели.
                 </blockquote>
                 <div className="author">
@@ -501,10 +502,9 @@ export function HomeClient() {
                 <blockquote>
                   Главная боль была — на встрече что-то пообещали клиенту и
                   забыли. Теперь Кора слышит «сделаем к пятнице» прямо на
-                  созвоне и ставит задачу сама. За первый месяц перестали
-                  терять обещания — клиенты больше не ловят нас на «вы же
-                  обещали». А я утром открываю одну ленту вместо обзвона пяти
-                  руководителей.
+                  созвоне и ставит задачу сама. За первый месяц перестали терять
+                  обещания — клиенты больше не ловят нас на «вы же обещали». А я
+                  утром открываю одну ленту вместо обзвона пяти руководителей.
                 </blockquote>
                 <div className="author">
                   <strong>Дмитрий Веров</strong>
@@ -517,17 +517,17 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* PRIVACY BLOCK */}
-        <section style={{ padding: '60px 0' }}>
+        {}
+        <section style={{ padding: "60px 0" }}>
           <div className="wrap">
             <div className="privacy-wrap reveal">
               <div className="privacy-mark">§</div>
               <div className="privacy-content">
                 <h3>Ваши данные — только ваши.</h3>
                 <p>
-                  Встречи, чаты и отчёты хранятся в вашем контуре. Доступ —
-                  по ролям: каждый видит своё. Ничего не уходит на сторону и
-                  не используется для обучения чужих моделей. Память — это ваш
+                  Встречи, чаты и отчёты хранятся в вашем контуре. Доступ — по
+                  ролям: каждый видит своё. Ничего не уходит на сторону и не
+                  используется для обучения чужих моделей. Память — это ваш
                   актив, и она остаётся вашей.
                 </p>
               </div>
@@ -535,7 +535,7 @@ export function HomeClient() {
           </div>
         </section>
 
-        {/* FINAL CTA */}
+        {}
         <section className="final" id="cta">
           <div className="wrap">
             <h2 className="reveal">

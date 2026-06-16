@@ -6,11 +6,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConflictPendingProvider } from './conflict.provider';
 import { IntakePendingProvider } from './intake.provider';
 
-/**
- * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
- * (urgentAgeDays=5, reminderLeadDays=3). `overrides` меняет крутилки в
- * отдельном тесте.
- */
 function makeCfg(
   overrides: Partial<{ urgentAgeDays: number; reminderLeadDays: number }> = {},
 ): TypedConfigService {
@@ -26,15 +21,6 @@ function makeCfg(
   } as unknown as TypedConfigService;
 }
 
-/**
- * Unit-тесты ConflictPendingProvider / IntakePendingProvider (Action Center B0).
- *
- * Покрытие:
- *   - только owner/admin видят items; member → 0/[];
- *   - snoozed исключается;
- *   - severity urgent по ageDays >= cfg.pendingActions.urgentAgeDays (дефолт 5);
- *   - крутилка urgentAgeDays переопределяет порог (C2).
- */
 describe('ConflictPendingProvider (B0)', () => {
   let prisma: PrismaService;
   let provider: ConflictPendingProvider;
@@ -98,9 +84,7 @@ describe('ConflictPendingProvider (B0)', () => {
 
   it('list: severity urgent по ageDays >= urgentAgeDays (дефолт 5); canQuickConfirm=false', async () => {
     const old = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    findManyMock.mockResolvedValue([
-      { id: 'cf-9', resourceType: 'decision', createdAt: old },
-    ]);
+    findManyMock.mockResolvedValue([{ id: 'cf-9', resourceType: 'decision', createdAt: old }]);
     const items = await provider.listForUser({
       tenantId: 't-1',
       userId: 'u-admin',
@@ -125,19 +109,15 @@ describe('ConflictPendingProvider (B0)', () => {
       snoozedResourceIds: new Set<string>(),
     };
 
-    // При urgentAgeDays=10 — 7 < 10 → normal.
     const raised = new ConflictPendingProvider(prisma, makeCfg({ urgentAgeDays: 10 }));
     const raisedItems = await raised.listForUser(args);
     expect(raisedItems[0]!.ageDays).toBeGreaterThanOrEqual(7);
     expect(raisedItems[0]!.severity).toBe('normal');
 
-    // Контроль: при дефолте 5 — 7 >= 5 → urgent.
     const defaultProvider = new ConflictPendingProvider(prisma, makeCfg());
     const defaultItems = await defaultProvider.listForUser(args);
     expect(defaultItems[0]!.severity).toBe('urgent');
   });
-
-  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
 
   it('Ф4: title = суть из evidence; detail.kind=conflict с обеими версиями', async () => {
     findManyMock.mockResolvedValue([
@@ -164,9 +144,7 @@ describe('ConflictPendingProvider (B0)', () => {
       limit: 50,
       snoozedResourceIds: new Set(),
     });
-    expect(items[0]!.title).toBe(
-      'Старое решение противоречит новому по длине спринта',
-    );
+    expect(items[0]!.title).toBe('Старое решение противоречит новому по длине спринта');
     expect(items[0]!.detail).toEqual({
       kind: 'conflict',
       summary: 'Старое решение противоречит новому по длине спринта',
@@ -271,11 +249,8 @@ describe('IntakePendingProvider (B0)', () => {
     expect(items[0]!.title).toContain('Починить биллинг');
     expect(items[0]!.actionUrl).toBe('/intake');
     expect(items[0]!.resourceType).toBe('intake_issue');
-    // Без suggestedAssigneeId person.findMany не вызывается.
     expect(personFindManyMock).not.toHaveBeenCalled();
   });
-
-  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
 
   it('Ф4: title = extractedTitle; detail с assigneeName/dueLabel/confidence/description', async () => {
     const due = new Date('2026-06-20T00:00:00.000Z');
@@ -291,9 +266,7 @@ describe('IntakePendingProvider (B0)', () => {
         createdAt: new Date(),
       },
     ]);
-    personFindManyMock.mockResolvedValue([
-      { userId: 'u-nastya', name: 'Настя Иванова' },
-    ]);
+    personFindManyMock.mockResolvedValue([{ userId: 'u-nastya', name: 'Настя Иванова' }]);
     const items = await provider.listForUser({
       tenantId: 't-1',
       userId: 'u-owner',
@@ -310,7 +283,6 @@ describe('IntakePendingProvider (B0)', () => {
       dueLabel: '2026-06-20T00:00:00.000Z',
       confidence: 0.82,
     });
-    // person.findMany вызван один раз для батч-резолва имён.
     expect(personFindManyMock).toHaveBeenCalledTimes(1);
   });
 
@@ -334,9 +306,7 @@ describe('IntakePendingProvider (B0)', () => {
       limit: 50,
       snoozedResourceIds: new Set(),
     });
-    expect(items[0]!.title).toBe(
-      'Длинный сырой текст обращения без явного заголовка',
-    );
+    expect(items[0]!.title).toBe('Длинный сырой текст обращения без явного заголовка');
     expect(items[0]!.detail?.kind).toBe('intake');
   });
 });

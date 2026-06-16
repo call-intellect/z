@@ -1,28 +1,3 @@
-/**
- * ТЗ 2026-06-14 (assistant-router-dedup-and-prompt) — системный промпт
- * помощника (Concierge) «развилка + руки + уточнитель + границы».
- *
- * Помощник — это РАЗВИЛКА и РУКИ, а не второй мозг. Он решает только:
- * «сделать инструментом» / «ответить из памяти (ask_chat_v2)» / «занести в
- * память (ingest_note)» / «уточнить» / «отказать (не про дела компании)».
- * Понимание-цепочка и умный синтез живут в ОДНОМ месте — внутри chat-v2.
- *
- * Cache-friendly (feedback `LLM-промпты — обязательно cache-friendly`):
- *   - SYSTEM (`CONCIERGE_RESPOND_SYSTEM_PROMPT`) СТАБИЛЕН и не зависит от
- *     запроса — провайдер кэширует префикс (≈99% hit).
- *   - Переменные данные (summary / последние сообщения / сообщение) едут в
- *     КОНЦЕ user-блока (`buildConciergeUserPrompt`).
- *
- * Источник текста — Приложение A ТЗ (согласовано с владельцем 2026-06-14).
- * Текст изменять только синхронно с ТЗ.
- */
-
-/**
- * Системный промпт помощника. Дословно — SYSTEM из Приложения A ТЗ
- * 2026-06-14. Native function-calling: точные описания инструментов уходят
- * провайдеру отдельно (через `LlmCallParams.tools`), здесь — только
- * высокоуровневая карта по группам, чтобы SYSTEM оставался стабильным.
- */
 export const CONCIERGE_RESPOND_SYSTEM_PROMPT = `Ты — помощник Коры, памяти компании. Ты главный собеседник сотрудника
 в кабинете и в мессенджерах. Твоя работа — понять, что человек хочет,
 и либо сделать это инструментом, либо дать ответ из памяти компании.
@@ -143,24 +118,6 @@ export const CONCIERGE_RESPOND_SYSTEM_PROMPT = `Ты — помощник Кор
 Если нужно действие или ответ из памяти — вызови инструмент. Хватает того,
 что уже известно из диалога — ответь текстом.`;
 
-/**
- * Билдер USER-блока помощника (Приложение A ТЗ, раздел USER). Переменные —
- * в конце: SYSTEM-кэш не ломается.
- *
- * Формат:
- *   Краткое содержание более раннего разговора:
- *   <summary | "(нет)">
- *
- *   Последние сообщения диалога:
- *   <последние N пар | "(диалог только начался)">
- *
- *   Сообщение пользователя:
- *   <message>
- *
- * `recentMessages` — последние сообщения диалога (без текущего сообщения
- * пользователя), в хронологическом порядке. Каждое — `{ role, content }`,
- * где role ∈ user|assistant|tool.
- */
 export function buildConciergeUserPrompt(args: {
   summary: string | null;
   recentMessages: Array<{ role: string; content: string }>;
@@ -169,22 +126,14 @@ export function buildConciergeUserPrompt(args: {
   const parts: string[] = [];
 
   parts.push('Краткое содержание более раннего разговора:');
-  parts.push(
-    args.summary != null && args.summary.trim() !== ''
-      ? args.summary.trim()
-      : '(нет)',
-  );
+  parts.push(args.summary != null && args.summary.trim() !== '' ? args.summary.trim() : '(нет)');
   parts.push('');
 
   parts.push('Последние сообщения диалога:');
   if (args.recentMessages.length > 0) {
     for (const m of args.recentMessages) {
       const role =
-        m.role === 'user'
-          ? 'Пользователь'
-          : m.role === 'assistant'
-            ? 'Ассистент'
-            : 'Инструмент';
+        m.role === 'user' ? 'Пользователь' : m.role === 'assistant' ? 'Ассистент' : 'Инструмент';
       parts.push(`[${role}] ${m.content.slice(0, 500)}`);
     }
   } else {

@@ -1,14 +1,11 @@
-/**
- * SBA α-10 wave 3 — API-клиент для Unit Economics dashboards.
- */
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminEconomicsGlobalApi,
   AdminEconomicsOrgApi,
   AdminOrgBudgetApi,
   UpdateOrgBudgetRequest,
-} from '@/domain/admin-economics';
+} from "@/domain/admin-economics";
 
 export const adminEconomicsApi = {
   global: (req: { days?: number; topN?: number } = {}) =>
@@ -38,10 +35,11 @@ export const adminEconomicsApi = {
     ),
 
   aggregate: (body: { date?: string } = {}) =>
-    apiClient.post<{ date: string; rowsAggregated: number; rowsUpserted: number }>(
-      '/api/v1/admin/unit-economics/aggregate',
-      body,
-    ),
+    apiClient.post<{
+      date: string;
+      rowsAggregated: number;
+      rowsUpserted: number;
+    }>("/api/v1/admin/unit-economics/aggregate", body),
 };
 
 export const orgEconomicsApi = {

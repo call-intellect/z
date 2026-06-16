@@ -2,18 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { Specialist314GoalsService } from './specialist-3-14-goals.service';
 
-/**
- * Goals OKR v2 (2026-06-02, Фаза 2) — unit-тесты Specialist314GoalsService.
- *
- * Мокаем prisma / llm / embedder / metrics. Покрываем:
- *   - extract → null когда isGoal=false / confidence < MIN (создания нет);
- *   - dedup: verdict='duplicate' к suggested-цели → existing промоутится active,
- *     новой не создаётся;
- *   - hierarchy: verdict='child_of' → goal.create с parentGoalId;
- *   - standalone: нет KNN-кандидатов → goal.create без parentGoalId (и без LLM-арбитра);
- *   - cap: >=7 активных целей горизонта → создания нет.
- */
-
 const TENANT = 'org-1';
 const BLOCK_ID = 'block-1';
 
@@ -144,7 +132,6 @@ describe('Specialist314GoalsService.processBlock', () => {
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
-    // Один LLM-вызов (extract), арбитра нет.
     expect(m.llm.call).toHaveBeenCalledTimes(1);
   });
 
@@ -176,11 +163,10 @@ describe('Specialist314GoalsService.processBlock', () => {
         confidence: 0.6,
       }),
     );
-    m.prisma.goal.findMany.mockResolvedValue([]); // нет кандидатов
+    m.prisma.goal.findMany.mockResolvedValue([]);
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
-    // Только extract — арбитра НЕ зовём при пустых кандидатах.
     expect(m.llm.call).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.create).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.create).toHaveBeenCalledWith(
@@ -188,7 +174,7 @@ describe('Specialist314GoalsService.processBlock', () => {
         data: expect.objectContaining({
           parentGoalId: null,
           source: 'ai',
-          promotionState: 'suggested', // confidence 0.6 < 0.8
+          promotionState: 'suggested',
           createdById: 'owner-1',
         }),
       }),
@@ -254,9 +240,7 @@ describe('Specialist314GoalsService.processBlock', () => {
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 
-    // Новой цели НЕ создаём.
     expect(m.prisma.goal.create).not.toHaveBeenCalled();
-    // Existing suggested → active.
     expect(m.prisma.goal.update).toHaveBeenCalledTimes(1);
     expect(m.prisma.goal.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -264,7 +248,6 @@ describe('Specialist314GoalsService.processBlock', () => {
         data: { promotionState: 'active' },
       }),
     );
-    // dedup-метрика.
     expect(m.metrics.incCoreSpecialistExtractionFailure).toHaveBeenCalledWith({
       type: 'goal',
       reason: 'dedup',
@@ -323,8 +306,8 @@ describe('Specialist314GoalsService.processBlock', () => {
         confidence: 0.6,
       }),
     );
-    m.prisma.goal.findMany.mockResolvedValue([]); // standalone
-    m.prisma.goal.count.mockResolvedValue(7); // cap достигнут
+    m.prisma.goal.findMany.mockResolvedValue([]);
+    m.prisma.goal.count.mockResolvedValue(7);
 
     await svc.processBlock({ tenantId: TENANT, blockId: BLOCK_ID });
 

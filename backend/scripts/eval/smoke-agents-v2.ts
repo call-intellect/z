@@ -1,17 +1,3 @@
-/**
- * Smoke-тест Agents v2 — реальные LLM-вызовы для всех 5 новых taskType'ов.
- * Каноничный паттерн проекта: плейн `chat.completions.create` через DeepSeek
- * (`deepseek-v4-pro` / `deepseek-v4-flash`), JSON в SYSTEM-инструкции, парсинг
- * из text, метрики кэша через `prompt_cache_hit_tokens`.
- *
- * См. _smoke-shared.ts (PRICE_IN / PRICE_CACHED_IN / PRICE_OUT) и
- * smoke-clone-respond.ts / smoke-probe-formulate.ts для паттерна.
- *
- * Каждый кейс прогоняется ДВА РАЗА: 1-й вызов — miss кэша, 2-й — hit
- * (≈99% экономии входных токенов, см. feedback_llm_prompts_cache_friendly).
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-agents-v2.ts
- */
 import OpenAI from 'openai';
 
 import {
@@ -19,9 +5,6 @@ import {
   PROBE_RESPONSE_CLASSIFY_USER_TEMPLATE,
 } from '../../src/modules/probe/prompts/probe-response-classify.prompt';
 
-// ─────────────────────────── модели + цены ───────────────────────────
-
-// DeepSeek-V4-Pro со скидкой -75% до 31.05.2026 (см. model-prices.ts).
 const PRICE_V4_PRO = {
   in: 1.74 / 1_000_000,
   cachedIn: 0.174 / 1_000_000,
@@ -42,8 +25,6 @@ const deepseek = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
-
-// ─────────────────────────── helpers ───────────────────────────
 
 interface CallResult {
   text: string;
@@ -83,7 +64,6 @@ async function call(args: {
 }
 
 function extractJson(text: string): unknown {
-  // Поддержка плейн JSON, markdown ```json блока и ```{...}``` без языка.
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
   const body = fenced?.[1]?.trim() ?? trimmed;
@@ -107,16 +87,32 @@ function computeCost(
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * price.in + cachedTokens * price.cachedIn + tokensOut * price.out;
+  const costUsd = uncached * price.in + cachedTokens * price.cachedIn + tokensOut * price.out;
   return { tokensIn, tokensOut, cachedTokens, costUsd };
 }
 
 interface CaseReport {
   name: string;
   model: 'deepseek-v4-pro' | 'deepseek-v4-flash';
-  cold: { ok: boolean; ms: number; tokensIn: number; tokensOut: number; cachedTokens: number; costUsd: number; parsed?: unknown; error?: string };
-  warm: { ok: boolean; ms: number; tokensIn: number; tokensOut: number; cachedTokens: number; costUsd: number; cacheHitRatio: number };
+  cold: {
+    ok: boolean;
+    ms: number;
+    tokensIn: number;
+    tokensOut: number;
+    cachedTokens: number;
+    costUsd: number;
+    parsed?: unknown;
+    error?: string;
+  };
+  warm: {
+    ok: boolean;
+    ms: number;
+    tokensIn: number;
+    tokensOut: number;
+    cachedTokens: number;
+    costUsd: number;
+    cacheHitRatio: number;
+  };
 }
 
 const results: CaseReport[] = [];
@@ -141,13 +137,9 @@ async function runCase(args: {
   }
   const coldCost = computeCost(cold.usage, price);
 
-  // Warm call: тот же SYSTEM + чуть изменённый user (чтобы system был кэширован,
-  // но это всё равно был валидный второй вызов; для cache_hit достаточно
-  // длинного стабильного префикса SYSTEM ≥ 1024 токенов — иначе кэш не сработает).
   const warm = await call({ model: args.model, system: args.system, user: args.user + ' ' });
   const warmCost = computeCost(warm.usage, price);
-  const cacheHitRatio =
-    warmCost.tokensIn > 0 ? warmCost.cachedTokens / warmCost.tokensIn : 0;
+  const cacheHitRatio = warmCost.tokensIn > 0 ? warmCost.cachedTokens / warmCost.tokensIn : 0;
 
   results.push({
     name: args.name,
@@ -174,8 +166,6 @@ async function runCase(args: {
   });
 }
 
-// ─────────────────────────── cases ───────────────────────────
-
 async function case1ProbeResponseClassify(): Promise<void> {
   await runCase({
     name: 'probe-response-classify',
@@ -201,9 +191,6 @@ async function case1ProbeResponseClassify(): Promise<void> {
 }
 
 async function case2MultiAgentDebate(): Promise<void> {
-  // На локальном .env нет OPENAI_PROXY — имитируем 3 «голоса» через разные
-  // модели/temperature DeepSeek (это проверка majority logic, не diverse providers).
-  // На проде LlmRouter использует DeepSeek + OpenAI proxy + Ollama tertiary.
   const scenario = `КОНТЕКСТ: Существующее решение от 2026-04-10: "Использовать PostgreSQL для основной БД, бэкапы через pg_dump каждые 6 часов".
 
 КАНДИДАТ-РЕШЕНИЕ от 2026-05-29: "Перейти на PostgreSQL + Patroni-кластер с continuous WAL-archiving в S3 и pg_dump оставить только для еженедельных холодных снапшотов".
@@ -217,7 +204,9 @@ async function case2MultiAgentDebate(): Promise<void> {
   const [critic, supporter, neutral] = await Promise.all([
     call({
       model: 'deepseek-v4-pro',
-      system: system + '\n\nТы — критик. Ищи причины НЕ принимать кандидат. Default — отказ при сомнении.',
+      system:
+        system +
+        '\n\nТы — критик. Ищи причины НЕ принимать кандидат. Default — отказ при сомнении.',
       user: scenario,
     }),
     call({
@@ -233,7 +222,8 @@ async function case2MultiAgentDebate(): Promise<void> {
   ]);
   const totalMs = Date.now() - start;
 
-  const votes: Array<{ stance: string; verdict: string; confidence: number; reasoning: string }> = [];
+  const votes: Array<{ stance: string; verdict: string; confidence: number; reasoning: string }> =
+    [];
   for (const [stance, res] of [
     ['critic', critic],
     ['supporter', supporter],
@@ -241,9 +231,19 @@ async function case2MultiAgentDebate(): Promise<void> {
   ] as const) {
     try {
       const p = extractJson(res.text) as { verdict: string; reasoning: string; confidence: number };
-      votes.push({ stance, verdict: p.verdict, confidence: p.confidence, reasoning: p.reasoning.slice(0, 120) });
+      votes.push({
+        stance,
+        verdict: p.verdict,
+        confidence: p.confidence,
+        reasoning: p.reasoning.slice(0, 120),
+      });
     } catch (e) {
-      votes.push({ stance, verdict: 'PARSE_ERROR', confidence: 0, reasoning: String(e).slice(0, 120) });
+      votes.push({
+        stance,
+        verdict: 'PARSE_ERROR',
+        confidence: 0,
+        reasoning: String(e).slice(0, 120),
+      });
     }
   }
   const counts = new Map<string, number>();
@@ -277,7 +277,15 @@ async function case2MultiAgentDebate(): Promise<void> {
       costUsd: totalCost,
       parsed: { decision, consensusType, votes },
     },
-    warm: { ok: true, ms: 0, tokensIn: 0, tokensOut: 0, cachedTokens: 0, costUsd: 0, cacheHitRatio: 0 },
+    warm: {
+      ok: true,
+      ms: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      cachedTokens: 0,
+      costUsd: 0,
+      cacheHitRatio: 0,
+    },
   });
 }
 
@@ -374,8 +382,6 @@ async function case5PracticeSkillExtract(): Promise<void> {
   });
 }
 
-// ─────────────────────────── main ───────────────────────────
-
 async function main(): Promise<void> {
   console.log('=== smoke-agents-v2: real DeepSeek calls (v4-pro + v4-flash) ===\n');
 
@@ -398,7 +404,8 @@ async function main(): Promise<void> {
   console.log('\n=== РЕЗУЛЬТАТЫ ===\n');
   for (const r of results) {
     const status = r.cold.ok ? '✅' : '❌';
-    const cacheTag = r.warm.cachedTokens > 0 ? ` cache_hit=${(r.warm.cacheHitRatio * 100).toFixed(0)}%` : '';
+    const cacheTag =
+      r.warm.cachedTokens > 0 ? ` cache_hit=${(r.warm.cacheHitRatio * 100).toFixed(0)}%` : '';
     console.log(
       `${status} ${r.name} [${r.model}] cold=${r.cold.ms}ms warm=${r.warm.ms}ms${cacheTag}`,
     );
@@ -420,7 +427,9 @@ async function main(): Promise<void> {
 
   const okCount = results.filter((r) => r.cold.ok).length;
   const totalCost = results.reduce((sum, r) => sum + r.cold.costUsd + r.warm.costUsd, 0);
-  console.log(`=== ИТОГ: ${okCount}/${results.length} green | total cost: $${totalCost.toFixed(4)} ===`);
+  console.log(
+    `=== ИТОГ: ${okCount}/${results.length} green | total cost: $${totalCost.toFixed(4)} ===`,
+  );
   process.exit(okCount === results.length ? 0 : 1);
 }
 

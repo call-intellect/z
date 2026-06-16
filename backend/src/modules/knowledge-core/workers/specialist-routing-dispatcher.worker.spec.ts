@@ -14,8 +14,6 @@ import { Specialist37SkillWorker } from './specialist-3-7-skill.worker';
 import { SpecialistRoutingDispatcherWorker } from './specialist-routing-dispatcher.worker';
 import { SprintHelperWorker } from './sprint-helper.worker';
 
-// Не поднимаем реальный BullMQ Worker — мокаем класс, чтобы конструктор
-// `new Worker(...)` в onModuleInit не создавал реального соединения с Redis.
 interface FakeWorker {
   processor: (job: Job) => Promise<void>;
   on: ReturnType<typeof vi.fn>;
@@ -25,7 +23,6 @@ interface FakeWorker {
 const workerInstances: FakeWorker[] = [];
 
 vi.mock('bullmq', () => {
-  // Класс (а не arrow) — чтобы вызов через `new Worker(...)` работал.
   class Worker implements FakeWorker {
     processor: (job: Job) => Promise<void>;
     on = vi.fn();
@@ -38,50 +35,24 @@ vi.mock('bullmq', () => {
   return { Worker };
 });
 
-/**
- * Ф2 МТЗ «разблокировка конвейера» — unit-тесты диспетчера
- * `core.specialist-routing`.
- *
- * Проверяем:
- *   1. известный jobName → вызывается `handle` ровно нужного хендлера один раз,
- *      чужие хендлеры не вызываются;
- *   2. неизвестный jobName → `dispatch` БРОСАЕТ (не resolved молча).
- */
 describe('SpecialistRoutingDispatcherWorker', () => {
-  /**
-   * Собирает по мок-хендлеру на каждый из 14 специалистов. Каждый мок —
-   * `{ handle: vi.fn() }`, плюс на класс навешан правильный static-ключ
-   * (берём из самого класса, чтобы карта совпадала с продакшеном).
-   */
-  function build(opts?: {
-    meetingExternalId?: string | null;
-    hasEvidence?: boolean;
-  }) {
+  function build(opts?: { meetingExternalId?: string | null; hasEvidence?: boolean }) {
     const make = () => ({ handle: vi.fn(async () => undefined) });
 
-    // PipelineRunner-мок: прозрачно исполняет fn (как withPipelineJob), но
-    // фиксирует переданную meta — чтобы проверить traceId.
     const pipe = {
-      run: vi.fn(
-        async (_meta: unknown, fn: () => Promise<unknown>) => fn(),
-      ),
+      run: vi.fn(async (_meta: unknown, fn: () => Promise<unknown>) => fn()),
     };
 
-    // PrismaService-мок: evidence → rawEvent(sourceType='meeting').
     const hasEvidence = opts?.hasEvidence ?? true;
     const meetingExternalId =
       opts?.meetingExternalId === undefined ? 'mtg-1' : opts.meetingExternalId;
     const prisma = {
       ideaBlockEvidence: {
-        findMany: vi.fn(async () =>
-          hasEvidence ? [{ rawEventId: 're1' }] : [],
-        ),
+        findMany: vi.fn(async () => (hasEvidence ? [{ rawEventId: 're1' }] : [])),
       },
       rawEvent: {
         findFirst: vi.fn(async () =>
-          meetingExternalId
-            ? { sourceExternalId: meetingExternalId }
-            : null,
+          meetingExternalId ? { sourceExternalId: meetingExternalId } : null,
         ),
       },
     };
@@ -148,7 +119,6 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     };
   }
 
-  /** Достаёт процессор единственного созданного Worker'а. */
   function getProcessor(): (job: Job) => Promise<void> {
     const last = workerInstances[workerInstances.length - 1];
     if (!last) throw new Error('Worker не был создан');
@@ -170,7 +140,6 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     await processor(jobOf(Specialist314GoalsWorker.SPECIALIST_NAME));
 
     expect(handlers.goals.handle).toHaveBeenCalledTimes(1);
-    // Ни один другой хендлер не должен сработать.
     for (const [key, h] of Object.entries(handlers)) {
       if (key === 'goals') continue;
       expect(h.handle, `handler ${key} не должен вызываться`).not.toHaveBeenCalled();
@@ -206,16 +175,12 @@ describe('SpecialistRoutingDispatcherWorker', () => {
     build();
     const processor = getProcessor();
 
-    await expect(processor(jobOf('3-999-unknown'))).rejects.toThrow(
-      /неизвестный jobName/,
-    );
+    await expect(processor(jobOf('3-999-unknown'))).rejects.toThrow(/неизвестный jobName/);
   });
 
   it('регистрирует ровно 14 handler-ов (по числу специалистов на очереди)', () => {
     const { dispatcher } = build();
-    const map = (
-      dispatcher as unknown as { handlers: Map<string, unknown> }
-    ).handlers;
+    const map = (dispatcher as unknown as { handlers: Map<string, unknown> }).handlers;
     expect(map.size).toBe(14);
   });
 
@@ -230,7 +195,6 @@ describe('SpecialistRoutingDispatcherWorker', () => {
       expect.objectContaining({ traceId: 'mtg_M-42' }),
       expect.any(Function),
     );
-    // Обёртка прозрачна: handler всё равно вызван ровно один раз.
     expect(handlers.goals.handle).toHaveBeenCalledTimes(1);
   });
 

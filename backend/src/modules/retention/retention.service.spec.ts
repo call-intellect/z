@@ -92,9 +92,7 @@ describe('RetentionService', () => {
         status: 'ready',
         expiresAt: new Date(Date.now() - 1000),
         mainVideoUrl: 'https://s3.local/z-records/meetings/m-1/composite.mp4',
-        audioTracks: [
-          { audioUrl: 'https://s3.local/z-records/meetings/m-1/audio/host:u-1.ogg' },
-        ],
+        audioTracks: [{ audioUrl: 'https://s3.local/z-records/meetings/m-1/audio/host:u-1.ogg' }],
       },
     ]);
 
@@ -145,7 +143,6 @@ describe('RetentionService', () => {
       },
     ]);
 
-    // Первый delete падает.
     (s3 as any).delete = vi
       .fn()
       .mockRejectedValueOnce(new Error('s3 down'))
@@ -154,7 +151,6 @@ describe('RetentionService', () => {
     const out = await svc.processExpired();
     expect(out.processed).toBe(1);
     expect(out.failed).toBe(1);
-    // Второй recording всё-таки помечен deleted.
     expect((prisma as any).recording.update).toHaveBeenCalledTimes(1);
   });
 });

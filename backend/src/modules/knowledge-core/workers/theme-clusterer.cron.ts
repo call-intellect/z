@@ -5,35 +5,10 @@ import { type EntityType, Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
-import {
-  ClusteringService,
-  type ClusterableBlock,
-} from '../services/clustering.service';
+import { ClusteringService, type ClusterableBlock } from '../services/clustering.service';
 import { KnowledgeEmbeddingService } from '../services/embedding.service';
 import { ThemeClassificationService } from '../services/theme-classification.service';
 
-/**
- * ThemeClustererCron — каждый час в :15 проходится по активным Org'ам,
- * кластеризует canonical-блоки без темы по эмбеддингам, и для каждого
- * устойчивого кластера (≥ THEME_CLUSTER_MIN_SIZE) — создаёт `Theme`
- * с привязкой блоков и сущностей.
- *
- * Алгоритм на тик (для Org с ≥ THEME_CLUSTERING_MIN_BLOCKS блоков без темы):
- *   1. Загрузить до MAX_BLOCKS_PER_ORG canonical-блоков, у которых нет
- *      записи в ThemeIdeaBlock и есть embedding.
- *   2. ClusteringService.clusterByEmbedding(threshold, minSize) → массив
- *      кластеров.
- *   3. Для каждого кластера:
- *      - Подгрузить top-N entities по mentionsCount через IdeaBlockEntity.
- *      - LLM-вызов theme-classify → {name, description, branch, tags, weight, confidence}.
- *      - Embed `name + ' ' + description` через KnowledgeEmbeddingService.
- *      - Создать Theme + ThemeIdeaBlock × N + ThemeEntity × M.
- *
- * NB: cron-expression в декораторе литерален (`'15 * * * *'`).
- *
- * Сложность: O(B²) cosine на Org (B ≤ MAX_BLOCKS_PER_ORG=1000) → ~1.5s
- * worst-case. На больших Org заменить на pgvector-side query.
- */
 @Injectable()
 export class ThemeClustererCron {
   private readonly logger = new Logger(ThemeClustererCron.name);
@@ -64,7 +39,6 @@ export class ThemeClustererCron {
     }
   }
 
-  /** Public для возможного админ-эндпоинта / ручного запуска. */
   async runForAllOrgs(): Promise<{
     scannedOrgs: number;
     clusteredOrgs: number;
@@ -121,7 +95,6 @@ export class ThemeClustererCron {
   }): Promise<number> {
     const { tenantId, minBlocks, minClusterSize, cosineThreshold } = args;
 
-    // Org-Admin Фаза 7: тумблер. Если выключено — skip Org молча.
     try {
       await this.gate.checkOrThrow(tenantId, 'theme-clusterer');
     } catch {
@@ -129,12 +102,7 @@ export class ThemeClustererCron {
       return 0;
     }
 
-    // Сколько canonical-блоков без темы. Считаем «по факту присутствия» через
-    // raw SQL — count(IdeaBlock) where status='canonical' AND NOT EXISTS
-    // (ThemeIdeaBlock by blockId).
-    const candidateCountRows = await this.prisma.$queryRawUnsafe<
-      Array<{ count: bigint }>
-    >(
+    const candidateCountRows = await this.prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
       `
       SELECT COUNT(*)::bigint AS count
         FROM "IdeaBlock" b
@@ -150,12 +118,7 @@ export class ThemeClustererCron {
     const candidateCount = Number(candidateCountRows[0]?.count ?? 0n);
     if (candidateCount < minBlocks) return 0;
 
-    // Тащим эмбеддинги через сырой SQL (Prisma не умеет vector). Embedding
-    // приходит как float8[] в PostgreSQL — но pg-driver Prisma приведёт его
-    // к строке вида "[0.1,0.2,...]". Парсим явно.
-    const blockRows = await this.prisma.$queryRawUnsafe<
-      Array<{ id: string; embedding: string }>
-    >(
+    const blockRows = await this.prisma.$queryRawUnsafe<Array<{ id: string; embedding: string }>>(
       `
       SELECT b.id AS id, b.embedding::text AS embedding
         FROM "IdeaBlock" b
@@ -224,10 +187,6 @@ export class ThemeClustererCron {
     return created;
   }
 
-  /**
-   * Создаёт Theme по списку blockIds кластера. Возвращает id созданной темы
-   * или null, если LLM/embedding отказали.
-   */
   private async materializeCluster(args: {
     tenantId: string;
     blockIds: string[];
@@ -247,25 +206,17 @@ export class ThemeClustererCron {
     });
     if (blocks.length === 0) return null;
 
-    // Top-N entities по mentionsCount среди этих блоков.
     const entityRows = await this.prisma.ideaBlockEntity.findMany({
       where: { blockId: { in: blocks.map((b) => b.id) } },
       include: {
         entity: { select: { id: true, canonicalName: true, type: true, mentionsCount: true } },
       },
     });
-    // Считаем сколько раз каждая Entity встретилась в блоках кластера.
     const entityMentionsByEntity = new Map<string, number>();
-    const entityMeta = new Map<
-      string,
-      { id: string; canonicalName: string; type: EntityType }
-    >();
+    const entityMeta = new Map<string, { id: string; canonicalName: string; type: EntityType }>();
     for (const row of entityRows) {
       const e = row.entity;
-      entityMentionsByEntity.set(
-        e.id,
-        (entityMentionsByEntity.get(e.id) ?? 0) + 1,
-      );
+      entityMentionsByEntity.set(e.id, (entityMentionsByEntity.get(e.id) ?? 0) + 1);
       if (!entityMeta.has(e.id)) {
         entityMeta.set(e.id, {
           id: e.id,
@@ -353,10 +304,6 @@ export class ThemeClustererCron {
   }
 }
 
-/**
- * pgvector ::text возвращает строку вида `[0.123,-0.456,...]`. Превращаем
- * в `number[]`. На любую кривизну — null.
- */
 function parseVector(raw: string | null): number[] | null {
   if (!raw) return null;
   const trimmed = raw.trim();

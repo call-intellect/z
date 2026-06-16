@@ -1,16 +1,16 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   experimentsApi,
   type ExperimentDetailApi,
   type ExperimentStatusApi,
   type ExperimentsListResponseApi,
-} from '@/api/experiments.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/experiments.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   EXPERIMENT_LESSON_TYPE_LABEL,
   EXPERIMENT_LESSON_TYPE_TONE,
@@ -19,22 +19,15 @@ import {
   experimentRunningDurationDays,
   mapExperimentDetail,
   type ExperimentDetail,
-} from '@/domain/experiment';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/experiment";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * Master-detail для `/experiments` (SBA β-6).
- *
- * Слева — фильтры по status + поиск + список экспериментов.
- * Справа — детальная карточка: гипотеза, текущий результат, уроки
- * (what_worked / what_failed / next_time), статус, действия (transition).
- */
 export function ExperimentsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -50,33 +43,33 @@ export function ExperimentsListClient() {
 }
 
 const STATUS_FILTERS: ReadonlyArray<{
-  value: 'all' | ExperimentStatusApi;
+  value: "all" | ExperimentStatusApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Все статусы' },
-  { value: 'hypothesis', label: 'Гипотезы' },
-  { value: 'running', label: 'Идут' },
-  { value: 'completed', label: 'Завершённые' },
-  { value: 'dropped', label: 'Прекращённые' },
-  { value: 'paused', label: 'На паузе' },
+  { value: "all", label: "Все статусы" },
+  { value: "hypothesis", label: "Гипотезы" },
+  { value: "running", label: "Идут" },
+  { value: "completed", label: "Завершённые" },
+  { value: "dropped", label: "Прекращённые" },
+  { value: "paused", label: "На паузе" },
 ];
 
 const TRANSITION_OPTIONS: ReadonlyArray<{
-  to: 'running' | 'completed' | 'dropped' | 'paused';
+  to: "running" | "completed" | "dropped" | "paused";
   label: string;
 }> = [
-  { to: 'running', label: 'Запустить' },
-  { to: 'completed', label: 'Завершить' },
-  { to: 'dropped', label: 'Прекратить' },
-  { to: 'paused', label: 'На паузу' },
+  { to: "running", label: "Запустить" },
+  { to: "completed", label: "Завершить" },
+  { to: "dropped", label: "Прекратить" },
+  { to: "paused", label: "На паузу" },
 ];
 
 const TONE_TO_CLASS: Record<string, string> = {
-  info: 'bg-chip-info-bg text-chip-info-fg',
-  warning: 'bg-chip-warning-bg text-chip-warning-fg',
-  success: 'bg-chip-success-bg text-chip-success-fg',
-  neutral: 'bg-bg-subtle text-fg-secondary',
-  danger: 'bg-chip-danger-bg text-chip-danger-fg',
+  info: "bg-chip-info-bg text-chip-info-fg",
+  warning: "bg-chip-warning-bg text-chip-warning-fg",
+  success: "bg-chip-success-bg text-chip-success-fg",
+  neutral: "bg-bg-subtle text-fg-secondary",
+  danger: "bg-chip-danger-bg text-chip-danger-fg",
 };
 
 function ExperimentsListContent() {
@@ -84,10 +77,10 @@ function ExperimentsListContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState<
-    'all' | ExperimentStatusApi
-  >('all');
+  const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | ExperimentStatusApi>(
+    "all",
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ExperimentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -100,7 +93,7 @@ function ExperimentsListContent() {
       const resp = await experimentsApi.list({
         page: 1,
         limit: 100,
-        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
         ...(q.trim().length > 0 ? { q: q.trim() } : {}),
       });
       setData(resp);
@@ -109,7 +102,7 @@ function ExperimentsListContent() {
       }
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'forbidden') {
+        if (err.code === "forbidden") {
           setForbidden(true);
         } else {
           setError(err.message);
@@ -117,13 +110,11 @@ function ExperimentsListContent() {
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
-        setError('Не удалось загрузить эксперименты');
+        setError("Не удалось загрузить эксперименты");
       }
     } finally {
       setIsLoading(false);
     }
-    // selectedId намеренно опущен из зависимостей — мы хотим автоматически
-    // выбирать первый элемент только при изменении фильтров, не при выборе.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, q]);
 
@@ -147,7 +138,7 @@ function ExperimentsListContent() {
   }, [selectedId]);
 
   const handleTransition = useCallback(
-    async (to: 'running' | 'completed' | 'dropped' | 'paused') => {
+    async (to: "running" | "completed" | "dropped" | "paused") => {
       if (!detail) return;
       setTransitionBusy(true);
       try {
@@ -180,7 +171,7 @@ function ExperimentsListContent() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-6">
-      {/* Left: list */}
+      {}
       <section className="space-y-4">
         <header className="space-y-2">
           <h1 className="text-2xl font-semibold">Эксперименты</h1>
@@ -199,7 +190,7 @@ function ExperimentsListContent() {
           <select
             value={statusFilter}
             onChange={(e) =>
-              setStatusFilter(e.target.value as 'all' | ExperimentStatusApi)
+              setStatusFilter(e.target.value as "all" | ExperimentStatusApi)
             }
             className="rounded-md border border-border bg-bg-card px-3 py-2 text-sm"
           >
@@ -227,8 +218,8 @@ function ExperimentsListContent() {
                   onClick={() => setSelectedId(item.id)}
                   className={`w-full rounded-md border p-3 text-left text-sm transition ${
                     isSelected
-                      ? 'border-accent bg-chip-info-bg'
-                      : 'border-border-subtle bg-bg-card hover:border-border-strong'
+                      ? "border-accent bg-chip-info-bg"
+                      : "border-border-subtle bg-bg-card hover:border-border-strong"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -260,10 +251,12 @@ function ExperimentsListContent() {
         </div>
       </section>
 
-      {/* Right: detail */}
+      {}
       <section className="rounded-md border border-border-subtle bg-bg-card p-5">
         {!detail && !detailLoading ? (
-          <div className="text-sm text-fg-secondary">Выберите эксперимент слева.</div>
+          <div className="text-sm text-fg-secondary">
+            Выберите эксперимент слева.
+          </div>
         ) : detailLoading ? (
           <AdminLoading rows={6} />
         ) : (
@@ -288,7 +281,7 @@ function ExperimentDetailView({
   detail: ExperimentDetail;
   busy: boolean;
   onTransition: (
-    to: 'running' | 'completed' | 'dropped' | 'paused',
+    to: "running" | "completed" | "dropped" | "paused",
   ) => Promise<void>;
 }) {
   const tone = EXPERIMENT_STATUS_TONE[detail.status];
@@ -323,7 +316,9 @@ function ExperimentDetailView({
 
       {detail.currentResult && (
         <section>
-          <h3 className="text-sm font-medium text-fg-secondary">Текущий результат</h3>
+          <h3 className="text-sm font-medium text-fg-secondary">
+            Текущий результат
+          </h3>
           <p className="mt-1 text-sm text-fg-primary whitespace-pre-wrap">
             {detail.currentResult}
           </p>
@@ -367,19 +362,23 @@ function ExperimentDetailView({
       <section className="grid grid-cols-2 gap-3 text-xs text-fg-secondary">
         <div>
           <div className="font-medium text-fg-secondary">Начат</div>
-          <div>{detail.startedAt ? new Date(detail.startedAt).toLocaleString('ru-RU') : '—'}</div>
+          <div>
+            {detail.startedAt
+              ? new Date(detail.startedAt).toLocaleString("ru-RU")
+              : "—"}
+          </div>
         </div>
         <div>
           <div className="font-medium text-fg-secondary">Завершён</div>
           <div>
             {detail.completedAt
-              ? new Date(detail.completedAt).toLocaleString('ru-RU')
-              : '—'}
+              ? new Date(detail.completedAt).toLocaleString("ru-RU")
+              : "—"}
           </div>
         </div>
         <div>
           <div className="font-medium text-fg-secondary">Длительность</div>
-          <div>{days !== null ? `${days} дн.` : '—'}</div>
+          <div>{days !== null ? `${days} дн.` : "—"}</div>
         </div>
         <div>
           <div className="font-medium text-fg-secondary">Блоков-источников</div>

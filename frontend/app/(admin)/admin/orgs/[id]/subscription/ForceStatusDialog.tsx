@@ -1,29 +1,15 @@
-'use client';
+"use client";
 
-/**
- * Диалог принудительной смены статуса подписки (`force-status`).
- *
- * Это бэкдор для саппорта в исключительных случаях — обход FSM подписки.
- * Может оставить подписку в неконсистентном состоянии (например, ACTIVE
- * без оплаченного инвойса). Поэтому submit требует ДВОЙНОГО подтверждения:
- *   1. reason (≥3 символа);
- *   2. чекбокс «Я понимаю, что обхожу FSM».
- *
- * Действие пишется в `AdminAuditLog` бэкендом.
- *
- * См. plans/tz/2026-05-29-admin-subscription-ui-v2.md (Фаза 3).
- */
+import { useState } from "react";
+import { AlertTriangle, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { useState } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import type { SubscriptionStatus } from '@/domain/billing';
-import { subscriptionStatusLabel } from '@/domain/billing';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import type { SubscriptionStatus } from "@/domain/billing";
+import { subscriptionStatusLabel } from "@/domain/billing";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -31,24 +17,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 const STATUSES: SubscriptionStatus[] = [
-  'DEMO',
-  'ACTIVE',
-  'PAST_DUE',
-  'SUSPENDED',
-  'CANCELED',
-  'EXPIRED',
+  "DEMO",
+  "ACTIVE",
+  "PAST_DUE",
+  "SUSPENDED",
+  "CANCELED",
+  "EXPIRED",
 ];
 
 type Props = {
@@ -67,14 +53,13 @@ export function ForceStatusDialog({
   onSuccess,
 }: Props) {
   const [newStatus, setNewStatus] = useState<SubscriptionStatus>(currentStatus);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const reasonValid = reason.trim().length >= 3;
   const statusChanged = newStatus !== currentStatus;
-  const canSubmit =
-    reasonValid && confirmed && statusChanged && !submitting;
+  const canSubmit = reasonValid && confirmed && statusChanged && !submitting;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,12 +73,12 @@ export function ForceStatusDialog({
       toast.success(
         `Статус подписки изменён на ${subscriptionStatusLabel(newStatus)}`,
       );
-      setReason('');
+      setReason("");
       setConfirmed(false);
       onSuccess();
     } catch (e2) {
       toast.error(
-        e2 instanceof ApiError ? e2.message : 'Не удалось изменить статус',
+        e2 instanceof ApiError ? e2.message : "Не удалось изменить статус",
       );
     } finally {
       setSubmitting(false);
@@ -116,7 +101,7 @@ export function ForceStatusDialog({
           <div className="space-y-2">
             <Label>Текущий статус</Label>
             <p className="text-sm font-medium">
-              {subscriptionStatusLabel(currentStatus)}{' '}
+              {subscriptionStatusLabel(currentStatus)}{" "}
               <span className="font-mono text-xs text-muted-foreground">
                 ({currentStatus})
               </span>
@@ -177,11 +162,8 @@ export function ForceStatusDialog({
               className="mt-0.5"
             />
             <span className="flex-1 leading-relaxed">
-              <AlertTriangle
-                size={14}
-                className="inline mr-1 text-warning"
-              />
-              Я понимаю, что обхожу FSM, и это может оставить подписку в
+              <AlertTriangle size={14} className="inline mr-1 text-warning" />Я
+              понимаю, что обхожу FSM, и это может оставить подписку в
               неконсистентном состоянии.
             </span>
           </label>
@@ -195,11 +177,7 @@ export function ForceStatusDialog({
             >
               Отмена
             </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={!canSubmit}
-            >
+            <Button type="submit" variant="destructive" disabled={!canSubmit}>
               {submitting && <Loader2 size={14} className="animate-spin" />}
               Сменить статус
             </Button>

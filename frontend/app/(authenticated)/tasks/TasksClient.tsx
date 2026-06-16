@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ChevronDown,
@@ -11,21 +11,17 @@ import {
   Search,
   Send,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { destinationsApi, type DestinationApi } from '@/api/destinations.api';
-import {
-  tasksApi,
-  type TaskApi,
-  type TaskStatus,
-} from '@/api/tasks.api';
-import { toast } from 'sonner';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { destinationsApi, type DestinationApi } from "@/api/destinations.api";
+import { tasksApi, type TaskApi, type TaskStatus } from "@/api/tasks.api";
+import { toast } from "sonner";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,64 +29,80 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { Input } from '@/ui/shadcn/input';
-import { Toggle } from '@/ui/shadcn/toggle';
-import { ToggleGroup, ToggleGroupItem } from '@/ui/shadcn/toggle-group';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dropdown-menu";
+import { Input } from "@/ui/shadcn/input";
+import { Toggle } from "@/ui/shadcn/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/ui/shadcn/toggle-group";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
-  open: 'Открыта',
-  in_progress: 'В работе',
-  done: 'Готова',
-  cancelled: 'Отменена',
+  open: "Открыта",
+  in_progress: "В работе",
+  done: "Готова",
+  cancelled: "Отменена",
 };
 
-const STATUS_FILTER_ORDER: TaskStatus[] = ['open', 'in_progress', 'done', 'cancelled'];
+const STATUS_FILTER_ORDER: TaskStatus[] = [
+  "open",
+  "in_progress",
+  "done",
+  "cancelled",
+];
 
-type Group = 'overdue' | 'today' | 'week' | 'later' | 'no_due';
+type Group = "overdue" | "today" | "week" | "later" | "no_due";
 
 const GROUP_LABEL: Record<Group, string> = {
-  overdue: 'Просрочено',
-  today: 'Сегодня',
-  week: 'На неделе',
-  later: 'Позже',
-  no_due: 'Без срока',
+  overdue: "Просрочено",
+  today: "Сегодня",
+  week: "На неделе",
+  later: "Позже",
+  no_due: "Без срока",
 };
 
-const GROUP_ORDER: Group[] = ['overdue', 'today', 'week', 'later', 'no_due'];
+const GROUP_ORDER: Group[] = ["overdue", "today", "week", "later", "no_due"];
 
 function classifyDue(dueIso: string | null): Group {
-  if (!dueIso) return 'no_due';
+  if (!dueIso) return "no_due";
   const due = new Date(dueIso);
-  if (Number.isNaN(due.getTime())) return 'no_due';
+  if (Number.isNaN(due.getTime())) return "no_due";
   const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfTomorrow = new Date(startOfToday.getTime() + 24 * 60 * 60 * 1000);
-  const startOfNextWeek = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
-  if (due < startOfToday) return 'overdue';
-  if (due < startOfTomorrow) return 'today';
-  if (due < startOfNextWeek) return 'week';
-  return 'later';
+  const startOfToday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+  );
+  const startOfTomorrow = new Date(
+    startOfToday.getTime() + 24 * 60 * 60 * 1000,
+  );
+  const startOfNextWeek = new Date(
+    startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000,
+  );
+  if (due < startOfToday) return "overdue";
+  if (due < startOfTomorrow) return "today";
+  if (due < startOfNextWeek) return "week";
+  return "later";
 }
 
 function formatDue(dueIso: string | null): string {
-  if (!dueIso) return '—';
+  if (!dueIso) return "—";
   const d = new Date(dueIso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('ru', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("ru", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
 }
 
 function toDateInputValue(dueIso: string | null): string {
-  if (!dueIso) return '';
+  if (!dueIso) return "";
   const d = new Date(dueIso);
-  if (Number.isNaN(d.getTime())) return '';
+  if (Number.isNaN(d.getTime())) return "";
   return d.toISOString().slice(0, 10);
 }
 
 function fromDateInputValue(value: string): string | null {
   if (!value) return null;
-  // Прибавляем `T00:00:00.000Z` чтобы получить корректный ISO с offset.
   return new Date(`${value}T00:00:00.000Z`).toISOString();
 }
 
@@ -100,9 +112,12 @@ export function TasksClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [filterStatuses, setFilterStatuses] = useState<TaskStatus[]>(['open', 'in_progress']);
+  const [filterStatuses, setFilterStatuses] = useState<TaskStatus[]>([
+    "open",
+    "in_progress",
+  ]);
   const [thisWeekOnly, setThisWeekOnly] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const fetchTasks = useCallback(async () => {
@@ -120,7 +135,7 @@ export function TasksClient() {
       });
       setTasks(res.items);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить задачи'));
+      setError(humanizeApiError(e, "Не удалось загрузить задачи"));
     } finally {
       setLoading(false);
     }
@@ -134,9 +149,7 @@ export function TasksClient() {
     destinationsApi
       .list()
       .then((res) => setDestinations(res.items))
-      .catch(() => {
-        // тихо — destinations опциональны для базового просмотра задач
-      });
+      .catch(() => {});
   }, []);
 
   const grouped = useMemo(() => {
@@ -159,43 +172,37 @@ export function TasksClient() {
         const updated = await tasksApi.update(id, patch);
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)));
       } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось обновить задачу'));
+        toast.error(humanizeApiError(e, "Не удалось обновить задачу"));
       }
     },
     [],
   );
 
-  const handleDelete = useCallback(
-    async (id: string) => {
-      try {
-        await tasksApi.remove(id);
-        setTasks((prev) => prev.filter((t) => t.id !== id));
-        setSelectedIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось удалить задачу'));
-      }
-    },
-    [],
-  );
+  const handleDelete = useCallback(async (id: string) => {
+    try {
+      await tasksApi.remove(id);
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    } catch (e) {
+      toast.error(humanizeApiError(e, "Не удалось удалить задачу"));
+    }
+  }, []);
 
-  const handleSend = useCallback(
-    async (id: string, destinationId: string) => {
-      try {
-        await tasksApi.send(id, { destinationId });
-        toast.success('Отправлено');
-      } catch (e) {
-        toast.error(humanizeApiError(e, 'Не удалось отправить'));
-      }
-    },
-    [],
-  );
+  const handleSend = useCallback(async (id: string, destinationId: string) => {
+    try {
+      await tasksApi.send(id, { destinationId });
+      toast.success("Отправлено");
+    } catch (e) {
+      toast.error(humanizeApiError(e, "Не удалось отправить"));
+    }
+  }, []);
 
   const handleBulk = useCallback(
-    async (action: 'mark_done' | 'delete') => {
+    async (action: "mark_done" | "delete") => {
       if (selectedIds.size === 0) return;
       try {
         const ids = Array.from(selectedIds);
@@ -204,7 +211,7 @@ export function TasksClient() {
         setSelectedIds(new Set());
         await fetchTasks();
       } catch (e) {
-        toast.error(humanizeApiError(e, 'Bulk-операция не удалась'));
+        toast.error(humanizeApiError(e, "Bulk-операция не удалась"));
       }
     },
     [fetchTasks, selectedIds],
@@ -230,13 +237,18 @@ export function TasksClient() {
             Все задачи из ваших встреч в одном месте.
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => void fetchTasks()} disabled={loading}>
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void fetchTasks()}
+          disabled={loading}
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           Обновить
         </Button>
       </header>
 
-      {/* Фильтры */}
+      {}
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-2">
         <div className="-mx-1 flex items-center gap-2 overflow-x-auto scrollbar-none snap-x px-1 md:mx-0 md:flex-wrap md:overflow-visible md:snap-none md:px-0">
           <ToggleGroup
@@ -282,18 +294,30 @@ export function TasksClient() {
         </div>
       </div>
 
-      {/* Bulk-toolbar */}
+      {}
       {selectedIds.size > 0 && (
         <div className="mb-4 flex items-center gap-2 rounded-md border border-accent-border bg-accent-muted/40 px-3 py-2 text-sm">
           <span className="text-fg-primary">Выбрано: {selectedIds.size}</span>
           <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={() => void handleBulk('mark_done')}>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => void handleBulk("mark_done")}
+            >
               Отметить выполненными
             </Button>
-            <Button size="sm" variant="destructive" onClick={() => void handleBulk('delete')}>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => void handleBulk("delete")}
+            >
               Удалить
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+            >
               Снять выделение
             </Button>
           </div>
@@ -330,8 +354,8 @@ export function TasksClient() {
             <section key={group} className="mb-6">
               <h2
                 className={cn(
-                  'sticky top-0 z-10 mb-2 -mx-2 bg-bg-base/95 px-2 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-glass',
-                  group === 'overdue' ? 'text-danger' : 'text-fg-tertiary',
+                  "sticky top-0 z-10 mb-2 -mx-2 bg-bg-base/95 px-2 py-1 text-xs font-semibold uppercase tracking-wider backdrop-blur-glass",
+                  group === "overdue" ? "text-danger" : "text-fg-tertiary",
                 )}
               >
                 {GROUP_LABEL[group]} · {items.length}
@@ -379,11 +403,11 @@ function TaskCard({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
   const [assigneeEditing, setAssigneeEditing] = useState(false);
-  const [assigneeDraft, setAssigneeDraft] = useState(task.assigneeRaw ?? '');
+  const [assigneeDraft, setAssigneeDraft] = useState(task.assigneeRaw ?? "");
   const [dueDraft, setDueDraft] = useState(toDateInputValue(task.dueDate));
   const [duePopoverOpen, setDuePopoverOpen] = useState(false);
 
-  const isDone = task.status === 'done';
+  const isDone = task.status === "done";
   const lowConfidence = task.confidence !== null && task.confidence < 0.7;
 
   const commitTitle = async () => {
@@ -398,7 +422,7 @@ function TaskCard({
   const commitAssignee = async () => {
     setAssigneeEditing(false);
     const next = assigneeDraft.trim();
-    if (next !== (task.assigneeRaw ?? '')) {
+    if (next !== (task.assigneeRaw ?? "")) {
       await onUpdate({ assigneeRaw: next || null });
     }
   };
@@ -414,14 +438,14 @@ function TaskCard({
   return (
     <div
       className={cn(
-        'group flex items-start gap-3 rounded-lg border p-3 transition-colors',
+        "group flex items-start gap-3 rounded-lg border p-3 transition-colors",
         selected
-          ? 'border-accent bg-accent-muted/30'
-          : 'border-border-subtle bg-bg-card hover:border-border',
-        isDone && 'opacity-60',
+          ? "border-accent bg-accent-muted/30"
+          : "border-border-subtle bg-bg-card hover:border-border",
+        isDone && "opacity-60",
       )}
     >
-      {/* Bulk-checkbox slim */}
+      {}
       <Checkbox
         checked={selected}
         onCheckedChange={onToggleSelect}
@@ -429,25 +453,23 @@ function TaskCard({
         aria-label="Выбрать"
       />
 
-      {/* Status checkbox (toggle done) */}
+      {}
       <button
         type="button"
-        onClick={() =>
-          void onUpdate({ status: isDone ? 'open' : 'done' })
-        }
+        onClick={() => void onUpdate({ status: isDone ? "open" : "done" })}
         className={cn(
-          'mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors',
+          "mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full border transition-colors",
           isDone
-            ? 'border-accent bg-accent text-accent-fg'
-            : 'border-border-strong hover:border-accent',
+            ? "border-accent bg-accent text-accent-fg"
+            : "border-border-strong hover:border-accent",
         )}
-        aria-label={isDone ? 'Вернуть в работу' : 'Отметить выполненной'}
+        aria-label={isDone ? "Вернуть в работу" : "Отметить выполненной"}
       >
         {isDone && <span className="block h-2 w-2 rounded-full bg-accent-fg" />}
       </button>
 
       <div className="min-w-0 flex-1">
-        {/* Title */}
+        {}
         {titleEditing ? (
           <Input
             autoFocus
@@ -455,8 +477,8 @@ function TaskCard({
             onChange={(e) => setTitleDraft(e.target.value)}
             onBlur={() => void commitTitle()}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') void commitTitle();
-              if (e.key === 'Escape') {
+              if (e.key === "Enter") void commitTitle();
+              if (e.key === "Escape") {
                 setTitleDraft(task.title);
                 setTitleEditing(false);
               }
@@ -468,8 +490,8 @@ function TaskCard({
             type="button"
             onClick={() => setTitleEditing(true)}
             className={cn(
-              'block w-full text-left text-sm font-medium',
-              isDone ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+              "block w-full text-left text-sm font-medium",
+              isDone ? "text-fg-tertiary line-through" : "text-fg-primary",
             )}
           >
             {task.title}
@@ -482,9 +504,9 @@ function TaskCard({
           </p>
         )}
 
-        {/* Метаданные */}
+        {}
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          {/* Assignee */}
+          {}
           {assigneeEditing ? (
             <Input
               autoFocus
@@ -492,9 +514,9 @@ function TaskCard({
               onChange={(e) => setAssigneeDraft(e.target.value)}
               onBlur={() => void commitAssignee()}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void commitAssignee();
-                if (e.key === 'Escape') {
-                  setAssigneeDraft(task.assigneeRaw ?? '');
+                if (e.key === "Enter") void commitAssignee();
+                if (e.key === "Escape") {
+                  setAssigneeDraft(task.assigneeRaw ?? "");
                   setAssigneeEditing(false);
                 }
               }}
@@ -507,18 +529,18 @@ function TaskCard({
               onClick={() => setAssigneeEditing(true)}
               className="text-fg-tertiary hover:text-fg-primary"
             >
-              {task.assigneeRaw ? `@ ${task.assigneeRaw}` : '+ ответственный'}
+              {task.assigneeRaw ? `@ ${task.assigneeRaw}` : "+ ответственный"}
             </button>
           )}
 
-          {/* Due */}
+          {}
           <div className="relative">
             <button
               type="button"
               onClick={() => setDuePopoverOpen((v) => !v)}
               className="text-fg-tertiary hover:text-fg-primary"
             >
-              {task.dueDate ? `срок: ${formatDue(task.dueDate)}` : '+ срок'}
+              {task.dueDate ? `срок: ${formatDue(task.dueDate)}` : "+ срок"}
             </button>
             {duePopoverOpen && (
               <div className="absolute left-0 top-6 z-20 flex items-center gap-1 rounded-md border border-border-subtle bg-bg-card p-1.5 shadow-modal">
@@ -532,14 +554,18 @@ function TaskCard({
                 <Button size="sm" onClick={() => void commitDue()}>
                   Ок
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => setDuePopoverOpen(false)}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setDuePopoverOpen(false)}
+                >
                   ×
                 </Button>
               </div>
             )}
           </div>
 
-          {/* Link to meeting */}
+          {}
           <Link
             href={`/meetings/${encodeURIComponent(task.meetingId)}/result`}
             className="inline-flex items-center gap-1 text-accent hover:underline"
@@ -547,7 +573,7 @@ function TaskCard({
             <ExternalLink size={11} /> Встреча
           </Link>
 
-          {/* Confidence badge */}
+          {}
           {lowConfidence && (
             <Badge variant="warning" className="text-[10px]">
               Низкая уверенность
@@ -556,7 +582,7 @@ function TaskCard({
         </div>
       </div>
 
-      {/* Actions */}
+      {}
       <div className="opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -570,7 +596,7 @@ function TaskCard({
               <DropdownMenuItem
                 key={s}
                 onSelect={() => void onUpdate({ status: s })}
-                className={cn(task.status === s && 'font-medium text-accent')}
+                className={cn(task.status === s && "font-medium text-accent")}
               >
                 {STATUS_LABEL[s]}
               </DropdownMenuItem>
@@ -589,7 +615,7 @@ function TaskCard({
                 className="flex items-center gap-2"
               >
                 <Badge variant="secondary" className="text-[10px] uppercase">
-                  {d.type.replace('_webhook', '')}
+                  {d.type.replace("_webhook", "")}
                 </Badge>
                 <span className="truncate">{d.name}</span>
               </DropdownMenuItem>

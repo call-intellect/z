@@ -1,18 +1,3 @@
-/**
- * Ф1 «Стоп-молчание» (ТЗ 2026-06-11 assistant-channels) — unit-тесты для
- * `ConversationalService.sendChatReply` (флаг `solicited`) и нового
- * публичного резолвера `resolveOriginChannelKinds`.
- *
- * Покрывает:
- *   - solicited=true + валидный originChannelBindingId → critical=true
- *     (байпас тихих часов / push-бюджета внутри sendNotification);
- *   - без solicited → critical=false (поведение как раньше);
- *   - solicited=true БЕЗ originChannelBindingId → critical=false
- *     (solicited действует только в паре с каналом-источником);
- *   - solicited=true + НЕвалидный binding → critical=false;
- *   - resolveOriginChannelKinds: валидный binding → [kind], глобальный
- *     канал (tenantId=null) допустим, чужой user / неактивный канал → [].
- */
 import type { Notification } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -36,10 +21,7 @@ function makeBinding(overrides?: {
     id: 'binding-1',
     userId: overrides?.userId ?? 'u-1',
     channel: {
-      tenantId:
-        overrides?.channelTenantId === undefined
-          ? 'org-1'
-          : overrides.channelTenantId,
+      tenantId: overrides?.channelTenantId === undefined ? 'org-1' : overrides.channelTenantId,
       status: overrides?.channelStatus ?? 'active',
       kind: overrides?.kind ?? 'telegram_bot',
     },
@@ -57,17 +39,15 @@ function build(): Mocked {
   const svc = new ConversationalService(
     prisma as unknown as never,
     cfg as unknown as never,
-    {} as unknown as never, // registry
-    {} as unknown as never, // queue
-    {} as unknown as never, // linkCode
-    { incConversationalNotification: vi.fn() } as unknown as never, // metrics
-    undefined, // budget
-    undefined, // policy
-    undefined, // eventEmitter
+    {} as unknown as never,
+    {} as unknown as never,
+    {} as unknown as never,
+    { incConversationalNotification: vi.fn() } as unknown as never,
+    undefined,
+    undefined,
+    undefined,
   );
 
-  // sendChatReply делегирует в sendNotification — мокаем его, чтобы
-  // проверять только контракт вызова (critical/dataClass/preferredKinds).
   const sendNotification = vi
     .spyOn(svc, 'sendNotification')
     .mockResolvedValue({ id: 'n-1' } as unknown as Notification);
@@ -114,9 +94,7 @@ describe('ConversationalService.sendChatReply — Ф1 solicited (Стоп-мол
   });
 
   it('H-1: глобальный канал (Channel.tenantId=null, прод-Telegram) + solicited → preferredKinds определён и critical=true', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ channelTenantId: null }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ channelTenantId: null }));
 
     await m.svc.sendChatReply({
       ...baseArgs(),
@@ -134,9 +112,7 @@ describe('ConversationalService.sendChatReply — Ф1 solicited (Стоп-мол
   });
 
   it('H-1: канал ЧУЖОГО Org (tenantId=org-2) → fallback на policy, critical=false', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ channelTenantId: 'org-2' }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ channelTenantId: 'org-2' }));
 
     await m.svc.sendChatReply({
       ...baseArgs(),
@@ -153,9 +129,7 @@ describe('ConversationalService.sendChatReply — Ф1 solicited (Стоп-мол
   });
 
   it('H-1: binding чужого пользователя → fallback на policy (userId-проверка сохранена)', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ userId: 'other-user' }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ userId: 'other-user' }));
 
     await m.svc.sendChatReply({
       ...baseArgs(),
@@ -265,9 +239,7 @@ describe('ConversationalService.resolveOriginChannelKinds (Ф1)', () => {
   });
 
   it('глобальный канал (tenantId=null, telegram/max) → [kind]', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ channelTenantId: null }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ channelTenantId: null }));
     await expect(
       m.svc.resolveOriginChannelKinds({
         originChannelBindingId: 'binding-1',
@@ -288,9 +260,7 @@ describe('ConversationalService.resolveOriginChannelKinds (Ф1)', () => {
   });
 
   it('binding чужого пользователя → []', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ userId: 'other-user' }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ userId: 'other-user' }));
     await expect(
       m.svc.resolveOriginChannelKinds({
         originChannelBindingId: 'binding-1',
@@ -301,9 +271,7 @@ describe('ConversationalService.resolveOriginChannelKinds (Ф1)', () => {
   });
 
   it('канал другого Org → []', async () => {
-    m.prisma.channelBinding.findUnique.mockResolvedValue(
-      makeBinding({ channelTenantId: 'org-2' }),
-    );
+    m.prisma.channelBinding.findUnique.mockResolvedValue(makeBinding({ channelTenantId: 'org-2' }));
     await expect(
       m.svc.resolveOriginChannelKinds({
         originChannelBindingId: 'binding-1',

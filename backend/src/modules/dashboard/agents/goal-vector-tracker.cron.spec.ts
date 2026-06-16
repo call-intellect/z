@@ -1,6 +1,3 @@
-/**
- * Unit-тесты `GoalVectorTrackerCron` (Pulse Wave 6 §6.6).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -35,11 +32,8 @@ interface BuildOpts {
       entity: { persons: Array<{ id: string; name: string }> } | null;
     }>;
   }>;
-  /** Commitment-строки (kept/broken) для второго запроса collectArtefacts. */
   commits?: CommitmentRow[];
-  /** Покрытие commitmentAuthorPersonId (0..1) для resolveAttributionField. */
   authorCoverage?: number;
-  /** AdminSetting goals.author_coverage_min (default 0.6). */
   authorCoverageMin?: number;
   llmResult?: { text: string; modelUsed: string };
   llmThrow?: Error;
@@ -59,23 +53,18 @@ function buildCron(opts: BuildOpts): {
 
   const orgFindMany = vi.fn(async () => orgs);
   const goalFindMany = vi.fn(async () => goals);
-  const ideaBlockFindMany = vi.fn(
-    async (args: { where: { signalType: string } }) => {
-      if (args.where.signalType === 'idea') return ideas;
-      if (args.where.signalType === 'commitment') return commits;
-      return [];
-    },
-  );
-  // resolveAttributionField: total count, then withAuthor count.
+  const ideaBlockFindMany = vi.fn(async (args: { where: { signalType: string } }) => {
+    if (args.where.signalType === 'idea') return ideas;
+    if (args.where.signalType === 'commitment') return commits;
+    return [];
+  });
   const TOTAL = 10;
-  const ideaBlockCount = vi.fn(
-    async (args: { where: { commitmentAuthorPersonId?: unknown } }) => {
-      if (args.where.commitmentAuthorPersonId) {
-        return Math.round(coverage * TOTAL);
-      }
-      return TOTAL;
-    },
-  );
+  const ideaBlockCount = vi.fn(async (args: { where: { commitmentAuthorPersonId?: unknown } }) => {
+    if (args.where.commitmentAuthorPersonId) {
+      return Math.round(coverage * TOTAL);
+    }
+    return TOTAL;
+  });
   const issueFindMany = vi.fn(async () => []);
   const personFindMany = vi.fn(async () => []);
   const contributionUpsert = vi.fn(async () => ({}));
@@ -108,9 +97,7 @@ function buildCron(opts: BuildOpts): {
               proScore: 2.5,
               contraScore: 0.5,
               netScore: 2.0,
-              signals: [
-                { kind: 'idea', refId: 'i1', direction: 'pro' },
-              ],
+              signals: [{ kind: 'idea', refId: 'i1', direction: 'pro' }],
             },
           ],
         }),
@@ -159,9 +146,7 @@ describe('GoalVectorTrackerCron.runOnce', () => {
   it('happy path: вызывает LLM и upsert-ит контрибьюшен', async () => {
     const { cron, llmCall, contributionUpsert } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
-      goals: [
-        { id: 'g1', name: 'Запустить продукт', description: 'Запуск Q3.' },
-      ],
+      goals: [{ id: 'g1', name: 'Запустить продукт', description: 'Запуск Q3.' }],
       ideas: [
         {
           id: 'i1',
@@ -247,7 +232,7 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     const { cron, llmCall } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
       goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
-      ideas: [], // нет идей
+      ideas: [],
     });
     const stats = await cron.runOnce();
     expect(stats.goalsProcessed).toBe(1);
@@ -260,7 +245,7 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     const { cron, llmCall } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
       goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
-      authorCoverage: 0.9, // >= 0.6
+      authorCoverage: 0.9,
       commits: [
         {
           id: 'c1',
@@ -276,10 +261,7 @@ describe('GoalVectorTrackerCron.runOnce', () => {
 
     await cron.runOnce();
 
-    const userMessage = (
-      llmCall.mock.calls[0]?.[0] as { userMessage: string }
-    ).userMessage;
-    // Артефакт commitment должен атрибутироваться автору, не адресату.
+    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
     expect(userMessage).toContain('author-1');
     expect(userMessage).not.toContain('recip-1');
   });
@@ -288,7 +270,7 @@ describe('GoalVectorTrackerCron.runOnce', () => {
     const { cron, llmCall, setCoverage } = buildCron({
       orgs: [{ id: 'org-1', name: 'ACME' }],
       goals: [{ id: 'g1', name: 'Цель', description: 'Описание' }],
-      authorCoverage: 0.3, // < 0.6 → fallback
+      authorCoverage: 0.3,
       commits: [
         {
           id: 'c1',
@@ -304,14 +286,10 @@ describe('GoalVectorTrackerCron.runOnce', () => {
 
     await cron.runOnce();
 
-    // Метрика покрытия должна быть выставлена.
     expect(setCoverage).toHaveBeenCalledWith(
       expect.objectContaining({ value: expect.closeTo(0.3, 5) }),
     );
-    const userMessage = (
-      llmCall.mock.calls[0]?.[0] as { userMessage: string }
-    ).userMessage;
-    // Fallback: обещание с NULL-автором атрибутируется адресату (не выброшено).
+    const userMessage = (llmCall.mock.calls[0]?.[0] as { userMessage: string }).userMessage;
     expect(userMessage).toContain('recip-1');
   });
 

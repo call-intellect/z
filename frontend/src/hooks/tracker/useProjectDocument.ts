@@ -1,20 +1,11 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { projectDocumentsApi } from '@/api/tracker/project-documents.api';
-import {
-  projectDocumentFromApi,
-  type ProjectDocument,
-} from '@/domain/tracker';
+import { projectDocumentsApi } from "@/api/tracker/project-documents.api";
+import { projectDocumentFromApi, type ProjectDocument } from "@/domain/tracker";
 
-/**
- * Один документ с контентом. SWR-ключ:
- * `['tracker.project-document', orgId, documentId]`.
- *
- * Используется на странице редактора `/projects/:slug/documents/:docId`.
- */
 export function useProjectDocument(
   orgId: string | null | undefined,
   documentId: string | null | undefined,
@@ -26,13 +17,13 @@ export function useProjectDocument(
 } {
   const key =
     orgId && documentId
-      ? ['tracker.project-document', orgId, documentId]
+      ? ["tracker.project-document", orgId, documentId]
       : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !documentId) throw new Error('orgId/documentId required');
+      if (!orgId || !documentId) throw new Error("orgId/documentId required");
       return projectDocumentsApi.byId(orgId, documentId);
     },
     { revalidateOnFocus: false },

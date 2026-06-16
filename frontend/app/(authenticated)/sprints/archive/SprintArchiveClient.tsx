@@ -1,19 +1,8 @@
-'use client';
+"use client";
 
-/**
- * Pulse §5.3 (2026-05-30) — Архив спринтов.
- *
- * `/sprints/archive` — хроника всех Cycle tenant'а за период с фильтрами
- * (period / status / search) и сводкой.
- *
- * Источник: `GET /api/v1/sprints/archive?period=&status=&q=`.
- * SaaS-2026 дизайн (ТЗ §1.4): sticky header, card grid, character empty,
- * paired tokens, skeleton loading.
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import useSWR from 'swr';
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import useSWR from "swr";
 import {
   ArrowLeft,
   CalendarDays,
@@ -22,30 +11,28 @@ import {
   HelpCircle,
   ListChecks,
   Search,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { Input } from '@/ui/shadcn/input';
-import { MiniDonut } from '@/ui/components/dashboard/charts';
+import { Input } from "@/ui/shadcn/input";
+import { MiniDonut } from "@/ui/components/dashboard/charts";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { useAuth } from '@/contexts/auth-context';
-import { sprintsApi } from '@/api/tracker/sprints.api';
+import { useAuth } from "@/contexts/auth-context";
+import { sprintsApi } from "@/api/tracker/sprints.api";
 import type {
   SprintArchiveItemApi,
   SprintArchiveListApi,
   SprintArchivePeriodApi,
   SprintArchiveStatusApi,
-} from '@/domain/sprint';
-import { formatSprintDateRange } from '@/domain/sprint';
-
-// ─────────────────── debounce ───────────────────────────────────────────
+} from "@/domain/sprint";
+import { formatSprintDateRange } from "@/domain/sprint";
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -56,36 +43,38 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-// ─────────────────── chips для статусов ─────────────────────────────────
-
-type StatusChipValue = 'all' | SprintArchiveStatusApi;
+type StatusChipValue = "all" | SprintArchiveStatusApi;
 
 const STATUS_CHIPS: Array<{ value: StatusChipValue; label: string }> = [
-  { value: 'all', label: 'Все' },
-  { value: 'completed', label: 'Завершённые' },
-  { value: 'in_progress', label: 'В процессе' },
-  { value: 'cancelled', label: 'Отменены' },
+  { value: "all", label: "Все" },
+  { value: "completed", label: "Завершённые" },
+  { value: "in_progress", label: "В процессе" },
+  { value: "cancelled", label: "Отменены" },
 ];
-
-// ─────────────────── главный компонент ─────────────────────────────────
 
 export function SprintArchiveClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
-  const [period, setPeriod] = useState<SprintArchivePeriodApi>('quarter');
-  const [status, setStatus] = useState<StatusChipValue>('all');
-  const [searchInput, setSearchInput] = useState('');
+  const [period, setPeriod] = useState<SprintArchivePeriodApi>("quarter");
+  const [status, setStatus] = useState<StatusChipValue>("all");
+  const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebouncedValue(searchInput, 300);
 
   const swr = useSWR<SprintArchiveListApi>(
     currentOrgId
-      ? ['tracker.sprints.archive', currentOrgId, period, status, debouncedSearch]
+      ? [
+          "tracker.sprints.archive",
+          currentOrgId,
+          period,
+          status,
+          debouncedSearch,
+        ]
       : null,
     async () => {
-      if (!currentOrgId) throw new Error('orgId required');
+      if (!currentOrgId) throw new Error("orgId required");
       return sprintsApi.archive(currentOrgId, {
         period,
-        status: status === 'all' ? undefined : status,
+        status: status === "all" ? undefined : status,
         q: debouncedSearch || undefined,
       });
     },
@@ -97,7 +86,7 @@ export function SprintArchiveClient() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:p-6">
-      {/* Sticky header — фильтры + summary tiles */}
+      {}
       <header className="sticky top-0 z-10 -mx-4 flex flex-col gap-3 border-b border-border-subtle bg-bg-base/80 px-4 py-3 backdrop-blur-glass md:-mx-6 md:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -147,9 +136,12 @@ export function SprintArchiveClient() {
         />
       </header>
 
-      {/* Body */}
+      {}
       {authLoading || !currentOrgId ? (
-        <LoadingOrNoOrg loading={authLoading} noOrg={!authLoading && !currentOrgId} />
+        <LoadingOrNoOrg
+          loading={authLoading}
+          noOrg={!authLoading && !currentOrgId}
+        />
       ) : swr.isLoading ? (
         <ArchiveSkeleton />
       ) : items.length === 0 ? (
@@ -160,8 +152,6 @@ export function SprintArchiveClient() {
     </div>
   );
 }
-
-// ─────────────────── filters row ───────────────────────────────────────
 
 interface FiltersRowProps {
   period: SprintArchivePeriodApi;
@@ -182,7 +172,7 @@ function FiltersRow({
 }: FiltersRowProps) {
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
-      {/* Period dropdown */}
+      {}
       <div className="flex items-center gap-2">
         <span className="text-xs text-fg-tertiary">Период:</span>
         <Select
@@ -200,7 +190,7 @@ function FiltersRow({
         </Select>
       </div>
 
-      {/* Status chips */}
+      {}
       <div className="flex flex-wrap gap-1.5">
         {STATUS_CHIPS.map((chip) => {
           const isActive = status === chip.value;
@@ -211,11 +201,11 @@ function FiltersRow({
               aria-pressed={isActive}
               onClick={() => onStatusChange(chip.value)}
               className={cn(
-                'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 isActive
-                  ? 'border-accent bg-accent text-accent-fg'
-                  : 'border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay',
+                  ? "border-accent bg-accent text-accent-fg"
+                  : "border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay",
               )}
             >
               {chip.label}
@@ -224,7 +214,7 @@ function FiltersRow({
         })}
       </div>
 
-      {/* Search */}
+      {}
       <div className="relative flex-1 lg:max-w-xs">
         <Search
           size={14}
@@ -242,8 +232,6 @@ function FiltersRow({
   );
 }
 
-// ─────────────────── summary tile ──────────────────────────────────────
-
 function SummaryTile({
   label,
   value,
@@ -251,23 +239,23 @@ function SummaryTile({
 }: {
   label: string;
   value: number;
-  tone: 'success' | 'danger' | 'info';
+  tone: "success" | "danger" | "info";
 }) {
   const bg =
-    tone === 'success'
-      ? 'bg-chip-success-bg'
-      : tone === 'danger'
-        ? 'bg-chip-danger-bg'
-        : 'bg-chip-info-bg';
+    tone === "success"
+      ? "bg-chip-success-bg"
+      : tone === "danger"
+        ? "bg-chip-danger-bg"
+        : "bg-chip-info-bg";
   const fg =
-    tone === 'success'
-      ? 'text-chip-success-fg'
-      : tone === 'danger'
-        ? 'text-chip-danger-fg'
-        : 'text-chip-info-fg';
+    tone === "success"
+      ? "text-chip-success-fg"
+      : tone === "danger"
+        ? "text-chip-danger-fg"
+        : "text-chip-info-fg";
   return (
     <div
-      className={cn('rounded-xl px-3 py-2 shadow-card-soft', bg, fg)}
+      className={cn("rounded-xl px-3 py-2 shadow-card-soft", bg, fg)}
       aria-label={`${label}: ${value}`}
     >
       <div className="text-[10px] font-semibold uppercase tracking-wider opacity-80">
@@ -277,8 +265,6 @@ function SummaryTile({
     </div>
   );
 }
-
-// ─────────────────── items grid ────────────────────────────────────────
 
 function ItemsGrid({ items }: { items: SprintArchiveItemApi[] }) {
   return (
@@ -301,29 +287,29 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
   const durationDays = computeDurationDays(item.startDate, item.endDate);
   const percent = computeCompletedPercent(item.issuesClosed, item.issuesTotal);
   const donutTone =
-    item.status === 'cancelled'
-      ? 'neutral'
+    item.status === "cancelled"
+      ? "neutral"
       : percent === null
-        ? 'neutral'
+        ? "neutral"
         : percent >= 80
-          ? 'success'
+          ? "success"
           : percent >= 50
-            ? 'warning'
-            : 'danger';
+            ? "warning"
+            : "danger";
 
   return (
     <Link
       href={`/sprints/${encodeURIComponent(item.cycleId)}`}
       className={cn(
-        'group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-elevated p-5 shadow-card-soft transition-all',
-        'hover:-translate-y-0.5 hover:shadow-md',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        "group flex h-full flex-col gap-3 rounded-xl border border-border-subtle/40 bg-bg-elevated p-5 shadow-card-soft transition-all",
+        "hover:-translate-y-0.5 hover:shadow-md",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[11px] uppercase tracking-wide text-fg-tertiary">
-            {item.projectName ?? '—'}
+            {item.projectName ?? "—"}
           </div>
           <h3 className="mt-0.5 truncate text-base font-semibold text-fg-primary">
             {item.name}
@@ -335,15 +321,15 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
         {statusBadge}
       </div>
 
-      {/* Фаза 7.5 — 3 мини-stat'а в карточке: длительность / % выполнено / задачи */}
+      {}
       <div className="flex items-center gap-3 rounded-lg bg-bg-overlay/60 px-3 py-2">
         <MiniStat
           icon={<CalendarDays size={11} aria-hidden />}
           label="Длительность"
           value={
             durationDays !== null
-              ? `${durationDays} ${pluralRu(durationDays, ['день', 'дня', 'дней'])}`
-              : '—'
+              ? `${durationDays} ${pluralRu(durationDays, ["день", "дня", "дней"])}`
+              : "—"
           }
         />
         <div className="h-8 w-px bg-border-subtle/40" aria-hidden />
@@ -356,14 +342,17 @@ function ArchiveCard({ item }: { item: SprintArchiveItemApi }) {
               centerLabel={`${percent}%`}
             />
           ) : (
-            <span className="inline-block h-8 w-8 rounded-full bg-bg-overlay" aria-hidden />
+            <span
+              className="inline-block h-8 w-8 rounded-full bg-bg-overlay"
+              aria-hidden
+            />
           )}
           <div className="min-w-0">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-fg-tertiary">
               Выполнено
             </div>
             <div className="truncate text-xs text-fg-secondary">
-              {percent !== null ? `${percent}% от плана` : 'нет данных'}
+              {percent !== null ? `${percent}% от плана` : "нет данных"}
             </div>
           </div>
         </div>
@@ -427,10 +416,7 @@ function computeDurationDays(
   return Math.max(1, Math.round((e - s) / 86_400_000));
 }
 
-function computeCompletedPercent(
-  closed: number,
-  total: number,
-): number | null {
+function computeCompletedPercent(closed: number, total: number): number | null {
   if (total <= 0) return null;
   return Math.max(0, Math.min(100, Math.round((closed / total) * 100)));
 }
@@ -445,29 +431,26 @@ function pluralRu(n: number, forms: [string, string, string]): string {
 }
 
 function renderStatusBadge(item: SprintArchiveItemApi): React.ReactNode {
-  if (item.status === 'in_progress') {
+  if (item.status === "in_progress") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
         <HelpCircle size={11} /> В процессе
       </span>
     );
   }
-  if (item.status === 'cancelled') {
+  if (item.status === "cancelled") {
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-bg-overlay px-2 py-0.5 text-[10px] font-medium text-fg-tertiary">
         Отменён
       </span>
     );
   }
-  // completed (любой исход) — единый «Завершён»
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-chip-success-bg px-2 py-0.5 text-[10px] font-medium text-chip-success-fg">
       <CheckCircle2 size={11} /> Завершён
     </span>
   );
 }
-
-// ─────────────────── states ────────────────────────────────────────────
 
 function ArchiveSkeleton() {
   return (
@@ -492,8 +475,8 @@ function EmptyState() {
         Архив пока пуст
       </div>
       <p className="max-w-md text-sm text-fg-tertiary">
-        Когда вы завершите первый спринт, он попадёт сюда. По каждому
-        будет видно, какую цель вы ставили на спринт и чем он завершился.
+        Когда вы завершите первый спринт, он попадёт сюда. По каждому будет
+        видно, какую цель вы ставили на спринт и чем он завершился.
       </p>
       <Link
         href="/sprints"

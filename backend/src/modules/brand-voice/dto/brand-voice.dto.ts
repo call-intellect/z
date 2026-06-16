@@ -1,25 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA β-7 — DTO для `/api/v1/brand-voice`.
- *
- * `BrandVoiceProfile` хранит:
- *   - tone — 10 осей тона (formal, technical, casual, energetic, ...);
- *   - values — ценности бренда с весами;
- *   - taboos — фразы, которые нельзя использовать;
- *   - exampleArtifactIds — Document.id'ы (useCases includes 'brand_corpus'),
- *     которые послужили опорой при извлечении.
- *
- * JSON-форма позволяет расширять структуру без alter table; валидация
- * происходит в сервисе/zod при PATCH.
- */
-
-// ─────────────────────────── 10 осей тона ──────────────────────────────
-
-/**
- * 10 канонических осей тона. Каждая — число в [0,1]. Все оси опциональны;
- * экстрактор заполняет тот набор, который смог уверенно оценить.
- */
 export const BRAND_VOICE_TONE_DIMENSIONS = [
   'formal',
   'technical',
@@ -33,8 +13,7 @@ export const BRAND_VOICE_TONE_DIMENSIONS = [
   'inclusive',
 ] as const;
 
-export type BrandVoiceToneDimension =
-  (typeof BRAND_VOICE_TONE_DIMENSIONS)[number];
+export type BrandVoiceToneDimension = (typeof BRAND_VOICE_TONE_DIMENSIONS)[number];
 
 const ToneSchema = z
   .object({
@@ -52,8 +31,6 @@ const ToneSchema = z
   .strict();
 
 export type BrandVoiceTone = z.infer<typeof ToneSchema>;
-
-// ─────────────────────────── values + taboos ───────────────────────────
 
 const ValueItemSchema = z
   .object({
@@ -74,26 +51,17 @@ const TabooItemSchema = z
 export type BrandVoiceValueItem = z.infer<typeof ValueItemSchema>;
 export type BrandVoiceTabooItem = z.infer<typeof TabooItemSchema>;
 
-// ─────────────────────────── PATCH body ────────────────────────────────
-
 export const UpdateBrandVoiceProfileSchema = z
   .object({
     tone: ToneSchema.nullable().optional(),
     values: z.array(ValueItemSchema).max(20).nullable().optional(),
     taboos: z.array(TabooItemSchema).max(50).nullable().optional(),
-    exampleArtifactIds: z
-      .array(z.string().min(1).max(64))
-      .max(50)
-      .optional(),
+    exampleArtifactIds: z.array(z.string().min(1).max(64)).max(50).optional(),
   })
   .refine((data) => Object.values(data).some((v) => v !== undefined), {
     message: 'Хотя бы одно поле должно быть указано',
   });
-export type UpdateBrandVoiceProfileDto = z.infer<
-  typeof UpdateBrandVoiceProfileSchema
->;
-
-// ─────────────────────────── response DTO ──────────────────────────────
+export type UpdateBrandVoiceProfileDto = z.infer<typeof UpdateBrandVoiceProfileSchema>;
 
 export interface BrandVoiceProfileDto {
   id: string;
@@ -105,16 +73,9 @@ export interface BrandVoiceProfileDto {
   version: number;
   lastBuiltAt: string | null;
   builderAgentVersion: string | null;
-  /** 0..1, доля заполненных секций (tone/values/taboos/examples). */
   completeness: number;
-  /** Сколько Document'ов с useCases includes 'brand_corpus' в Org. */
   corpusSize: number;
-  /**
-   * Если корпус ниже порога BRAND_VOICE_MIN_CORPUS_SIZE — extractor пропустит
-   * Org, и профиль останется пустым. Frontend подсвечивает этот статус.
-   */
   belowCorpusThreshold: boolean;
-  /** Порог, ниже которого корпус считается недостаточным. */
   minCorpusSize: number;
   createdAt: string;
   updatedAt: string;

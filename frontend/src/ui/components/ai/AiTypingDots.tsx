@@ -1,11 +1,13 @@
-'use client';
+"use client";
 
-import { motion } from 'motion/react';
+import { motion } from "motion/react";
 
-/** AI «думает» — три mint-точки со staggered bounce. */
 export function AiTypingDots() {
   return (
-    <div className="flex items-center gap-1.5 px-1 py-2" aria-label="Кора обрабатывает запрос">
+    <div
+      className="flex items-center gap-1.5 px-1 py-2"
+      aria-label="Кора обрабатывает запрос"
+    >
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
@@ -14,7 +16,7 @@ export function AiTypingDots() {
           transition={{
             duration: 0.6,
             repeat: Infinity,
-            ease: 'easeInOut',
+            ease: "easeInOut",
             delay: i * 0.08,
           }}
         />

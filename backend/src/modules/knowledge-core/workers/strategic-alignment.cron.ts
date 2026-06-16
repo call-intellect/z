@@ -5,18 +5,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AuditLogService } from '../../audit/audit-log.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 
-/**
- * StrategicAlignmentCron (Фаза 9 knowledge-core).
- *
- * Раз в сутки (04:00 server time) проходится по всем активным Org и для
- * каждой активной Goal (status='active' AND archivedAt IS NULL) ставит job
- * в очередь `core.strategic-alignment`. jobId — дневной (`strat_<goalId>_<YYYYMMDD>`)
- * — повторный enqueue в тот же день (например, через ручной recompute) не
- * пройдёт через cron, но manual recompute использует другой jobId-формат
- * (`strat_manual_*`) — конфликта нет.
- *
- * AuditLog: `goal.alignment.scheduled` с counters (orgsScanned/goalsEnqueued).
- */
 @Injectable()
 export class StrategicAlignmentCron {
   private readonly logger = new Logger(StrategicAlignmentCron.name);
@@ -44,7 +32,6 @@ export class StrategicAlignmentCron {
     }
   }
 
-  /** Public для возможного админ-эндпоинта / ручного запуска. */
   async runForAllOrgs(): Promise<{
     orgsScanned: number;
     goalsEnqueued: number;

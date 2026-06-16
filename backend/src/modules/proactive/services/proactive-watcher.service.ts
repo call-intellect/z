@@ -12,31 +12,11 @@ import { getProactiveLocalDate } from '../utils/local-date';
 import { ProactiveDedupService } from './proactive-dedup.service';
 import { ProactiveMessageCraftService } from './proactive-message-craft.service';
 
-/**
- * SBA δ-2 — ProactiveWatcher.
- *
- * Главный сервис: 8 правил-инициаторов, каждое из которых:
- *   1. Находит «болевую точку» в графе компании.
- *   2. Выбирает recipient'а (assignee / owner / department admin'ы / любой
- *      admin Org как fallback).
- *   3. Через `ProactiveDedupService` пытается захватить anti-spam lock.
- *      Не получилось — skip (+ метрика dedup_skipped).
- *   4. Через LLM `proactive-message-craft` формирует короткое friendly
- *      сообщение (с deterministic-fallback'ом).
- *   5. Создаёт `ProactiveNotification`-row + отправляет через
- *      `ConversationalService.sendNotification(eventType='proactive.notification')`.
- *
- * Per-rule budget: 60 сек (см. `RULE_TIMEOUT_MS`). Если правило не успело —
- * cron логирует и переходит к следующему; оставшиеся правила обрабатываются
- * в свою очередь без переноса «не сделанного» — следующий тик через 6 часов.
- */
 @Injectable()
 export class ProactiveWatcherService {
   private readonly logger = new Logger(ProactiveWatcherService.name);
 
-  /** 60-сек budget на каждое правило (см. §17 ТЗ). */
   private static readonly RULE_TIMEOUT_MS = 60_000;
-  /** Лимит recipient'ов на один проход правила в одной Org (anti-flood). */
   private static readonly MAX_NOTIFICATIONS_PER_RULE_PER_ORG = 50;
 
   constructor(
@@ -52,10 +32,6 @@ export class ProactiveWatcherService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Полный проход watcher'а — обходит все Org × все включённые правила.
-   * Возвращает summary для логов / тестов.
-   */
   async runOnce(now: Date = new Date()): Promise<{
     orgsScanned: number;
     rulesExecuted: number;
@@ -64,10 +40,6 @@ export class ProactiveWatcherService {
     notificationsSent: number;
     dedupSkipped: number;
   }> {
-    // ТЗ 2026-06-01-demo-shared-org-model §4.13: исключаем эталонную демо-Org
-    // (`isReferenceDemo=true`). Иначе watcher будет генерить ProactiveNotification
-    // на demo-Person'ов / случайных demo_observer-наблюдателей внутри shared
-    // эталона — это бессмыссленно: наблюдатели не могут ни на что повлиять.
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null, isReferenceDemo: false },
       select: { id: true },
@@ -136,8 +108,6 @@ export class ProactiveWatcherService {
     };
   }
 
-  // ──────────────────────────── правила ──────────────────────────────
-
   private buildEnabledRules(): Array<{
     code: string;
     enabled: boolean;
@@ -191,7 +161,6 @@ export class ProactiveWatcherService {
     ];
   }
 
-  // 1. Decision без owner'а > 3 дней.
   private async ruleDecisionNoOwner(args: {
     tenantId: string;
     now: Date;
@@ -216,11 +185,8 @@ export class ProactiveWatcherService {
     let sent = 0;
     let dedupSkipped = 0;
     for (const d of candidates) {
-      const ageDays = Math.floor(
-        (args.now.getTime() - d.createdAt.getTime()) / (24 * 3600 * 1000),
-      );
-      const name =
-        (d.statement ?? d.text ?? 'без названия').slice(0, 80);
+      const ageDays = Math.floor((args.now.getTime() - d.createdAt.getTime()) / (24 * 3600 * 1000));
+      const name = (d.statement ?? d.text ?? 'без названия').slice(0, 80);
       const result = await this.emit({
         tenantId: args.tenantId,
         userId: recipient,
@@ -240,7 +206,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 2. Insight с frequency≥3 без mitigation.
   private async ruleInsightNoMitigation(args: {
     tenantId: string;
     now: Date;
@@ -263,9 +228,7 @@ export class ProactiveWatcherService {
       take: ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG * 2,
       orderBy: { lastObservedAt: 'desc' },
     });
-    const filtered = candidates.filter(
-      (i) => i.sourceBlockIds.length >= 3,
-    );
+    const filtered = candidates.filter((i) => i.sourceBlockIds.length >= 3);
     if (filtered.length === 0) return { sent: 0, dedupSkipped: 0 };
 
     const recipient = await this.firstAdminUserId(args.tenantId);
@@ -273,20 +236,12 @@ export class ProactiveWatcherService {
 
     let sent = 0;
     let dedupSkipped = 0;
-    for (const i of filtered.slice(
-      0,
-      ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG,
-    )) {
+    for (const i of filtered.slice(0, ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG)) {
       const result = await this.emit({
         tenantId: args.tenantId,
         userId: recipient,
         ruleType: 'insight_no_mitigation',
-        severity:
-          i.severity === 'critical'
-            ? 'high'
-            : i.severity === 'high'
-              ? 'medium'
-              : 'low',
+        severity: i.severity === 'critical' ? 'high' : i.severity === 'high' ? 'medium' : 'low',
         now: args.now,
         facts: {
           name: i.statement.slice(0, 80),
@@ -301,7 +256,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 3. Experiment в running > 30 дней без result.
   private async ruleExperimentRunningTooLong(args: {
     tenantId: string;
     now: Date;
@@ -332,9 +286,7 @@ export class ProactiveWatcherService {
     let dedupSkipped = 0;
     for (const e of candidates) {
       const ageDays = Math.floor(
-        (args.now.getTime() -
-          (e.startedAt?.getTime() ?? args.now.getTime())) /
-          (24 * 3600 * 1000),
+        (args.now.getTime() - (e.startedAt?.getTime() ?? args.now.getTime())) / (24 * 3600 * 1000),
       );
       const result = await this.emit({
         tenantId: args.tenantId,
@@ -351,7 +303,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 4. Process в production без recent edit > 90 дней (status=active, updatedAt).
   private async ruleProcessStaleReview(args: {
     tenantId: string;
     now: Date;
@@ -382,9 +333,7 @@ export class ProactiveWatcherService {
     for (const p of candidates) {
       const recipient = p.ownerPerson?.userId ?? adminFallback;
       if (!recipient) continue;
-      const ageDays = Math.floor(
-        (args.now.getTime() - p.updatedAt.getTime()) / (24 * 3600 * 1000),
-      );
+      const ageDays = Math.floor((args.now.getTime() - p.updatedAt.getTime()) / (24 * 3600 * 1000));
       const result = await this.emit({
         tenantId: args.tenantId,
         userId: recipient,
@@ -400,7 +349,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 5. Role с maturityScore < 0.5 + >5 attached people (через Appointment или PersonRole).
   private async ruleRoleLowCompleteness(args: {
     tenantId: string;
     now: Date;
@@ -409,10 +357,7 @@ export class ProactiveWatcherService {
       where: {
         tenantId: args.tenantId,
         deletedAt: null,
-        OR: [
-          { maturityScore: { lt: 0.5 } },
-          { maturityScore: null },
-        ],
+        OR: [{ maturityScore: { lt: 0.5 } }, { maturityScore: null }],
       },
       select: {
         id: true,
@@ -432,12 +377,8 @@ export class ProactiveWatcherService {
 
     let sent = 0;
     let dedupSkipped = 0;
-    for (const r of filtered.slice(
-      0,
-      ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG,
-    )) {
-      const people =
-        (r._count.personRoles ?? 0) + (r._count.appointments ?? 0);
+    for (const r of filtered.slice(0, ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG)) {
+      const people = (r._count.personRoles ?? 0) + (r._count.appointments ?? 0);
       const result = await this.emit({
         tenantId: args.tenantId,
         userId: recipient,
@@ -458,7 +399,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 6. Department без linked FunctionalDomain.
   private async ruleDepartmentNoDomain(args: {
     tenantId: string;
     now: Date;
@@ -495,12 +435,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // 7. Несколько Insight в одной FunctionalDomain без cross-reference.
-  //    Прокси: domain (через DepartmentDomainLink → Department → Person.primaryDepartment →
-  //    sourceBlockIds → Insight) — на δ-2 упрощаем: считаем insights, у которых
-  //    `relatedDecisionIds` пуст и сгруппированы по `personSubjectIds` пересечению.
-  //    Без явного `domainId` на Insight — берём proxy: ≥ 3 active insights в Org
-  //    без linked decisions → подсветить admin'у, что сигналы «изолированы».
   private async ruleInsightsSiloedInDomain(args: {
     tenantId: string;
     now: Date;
@@ -512,7 +446,6 @@ export class ProactiveWatcherService {
     });
     if (domains.length === 0) return { sent: 0, dedupSkipped: 0 };
 
-    // Подсчёт active insights, у которых нет relatedDecisionIds (proxy «изоляция»).
     const isolatedCount = await this.prisma.insight.count({
       where: {
         tenantId: args.tenantId,
@@ -525,7 +458,6 @@ export class ProactiveWatcherService {
     const recipient = await this.firstAdminUserId(args.tenantId);
     if (!recipient) return { sent: 0, dedupSkipped: 0 };
 
-    // Подсветим первый домен как «контекст» (proxy без явной связи Insight↔Domain).
     const firstDomain = domains[0]!;
     const result = await this.emit({
       tenantId: args.tenantId,
@@ -546,9 +478,6 @@ export class ProactiveWatcherService {
     };
   }
 
-  // 8. plan_item старше 30 дней без done_item.
-  //    Прокси: morning DailyCheckIn с plansJson != null старше 30 дней, для которого
-  //    нет evening DailyCheckIn того же Person'а с непустым donesJson за следующие 24 часа.
   private async rulePlanItemOverdue(args: {
     tenantId: string;
     now: Date;
@@ -573,7 +502,6 @@ export class ProactiveWatcherService {
     });
     if (morningCheckIns.length === 0) return { sent: 0, dedupSkipped: 0 };
 
-    // Group by personId — берём самый старший morning, у которого нет evening с dones за тот же день.
     const byPerson = new Map<string, typeof morningCheckIns>();
     for (const m of morningCheckIns) {
       const arr = byPerson.get(m.personId) ?? [];
@@ -585,11 +513,9 @@ export class ProactiveWatcherService {
     let dedupSkipped = 0;
     let processed = 0;
     for (const [personId, ms] of byPerson) {
-      if (processed >= ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG)
-        break;
+      if (processed >= ProactiveWatcherService.MAX_NOTIFICATIONS_PER_RULE_PER_ORG) break;
       processed++;
       const oldest = ms[ms.length - 1]!;
-      // Проверка: есть ли evening с dones за тот же dateLocal.
       const eveningDone = await this.prisma.dailyCheckIn.count({
         where: {
           tenantId: args.tenantId,
@@ -604,8 +530,7 @@ export class ProactiveWatcherService {
       const recipient = oldest.person?.userId;
       if (!recipient) continue;
       const ageDays = Math.floor(
-        (args.now.getTime() - oldest.createdAt.getTime()) /
-          (24 * 3600 * 1000),
+        (args.now.getTime() - oldest.createdAt.getTime()) / (24 * 3600 * 1000),
       );
       const result = await this.emit({
         tenantId: args.tenantId,
@@ -626,15 +551,6 @@ export class ProactiveWatcherService {
     return { sent, dedupSkipped };
   }
 
-  // ──────────────────────────── emit + helpers ───────────────────────
-
-  /**
-   * Захват dedup → LLM craft → INSERT ProactiveNotification → отправка
-   * через ConversationalService → patch notificationId.
-   *
-   * @returns 'sent' — отправлено, 'dedup_skipped' — anti-spam отбросил,
-   *          'skipped' — нет recipient / failed создать запись.
-   */
   private async emit(input: {
     tenantId: string;
     userId: string;
@@ -655,7 +571,6 @@ export class ProactiveWatcherService {
       return 'dedup_skipped';
     }
 
-    // 1. LLM craft (с deterministic-fallback'ом).
     const crafted = await this.craft.craft({
       tenantId: input.tenantId,
       userId: input.userId,
@@ -664,7 +579,6 @@ export class ProactiveWatcherService {
       facts: input.facts,
     });
 
-    // 2. Создаём ProactiveNotification-row (источник правды).
     let row;
     try {
       row = await this.prisma.proactiveNotification.create({
@@ -695,7 +609,6 @@ export class ProactiveWatcherService {
       return 'skipped';
     }
 
-    // 3. Отправка через ConversationalService.
     try {
       const notif = await this.conversational.sendNotification({
         tenantId: input.tenantId,
@@ -731,8 +644,6 @@ export class ProactiveWatcherService {
         },
         'proactive: sendNotification failed — оставляем ProactiveNotification без notificationId',
       );
-      // Запись остаётся для аудита; пользователь увидит её через
-      // GET /me/proactive-notifications (даже без channel-delivery).
       this.metrics.incProactiveEmitted({
         rule: input.ruleType,
         severity: input.severity,
@@ -741,12 +652,6 @@ export class ProactiveWatcherService {
     }
   }
 
-  /**
-   * Простая стратегия recipient'а: первый admin/owner Org'а (Membership.role
-   * IN ('owner','admin') ORDER BY createdAt). Для δ-2 это разумный default
-   * — γ+ заведёт per-rule recipient'а (decision → DecisionPolicy.ownerRole,
-   * etc.). Возвращает userId или null.
-   */
   private async firstAdminUserId(tenantId: string): Promise<string | null> {
     const membership = await this.prisma.membership.findFirst({
       where: {
@@ -759,14 +664,7 @@ export class ProactiveWatcherService {
     return membership?.userId ?? null;
   }
 
-  /**
-   * Запуск правила с per-rule timeout (RULE_TIMEOUT_MS). На таймаут —
-   * `RuleTimeoutError`, ловится наверху и логируется без падения cron'а.
-   */
-  private async runRuleWithTimeout<T>(
-    ruleCode: string,
-    fn: () => Promise<T>,
-  ): Promise<T> {
+  private async runRuleWithTimeout<T>(ruleCode: string, fn: () => Promise<T>): Promise<T> {
     let timer: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(
@@ -781,8 +679,6 @@ export class ProactiveWatcherService {
     }
   }
 
-  /** Для метрик и логирования: hash bucket tenant-top (как в operations utils). */
-   
   private tenantTop(tenantId: string): string {
     if (!tenantId) return 'other';
     try {
@@ -795,7 +691,6 @@ export class ProactiveWatcherService {
   }
 }
 
-/** Внутренняя ошибка для per-rule timeout. */
 class RuleTimeoutError extends Error {
   constructor(readonly ruleCode: string) {
     super(`proactive-watcher: rule '${ruleCode}' timed out`);

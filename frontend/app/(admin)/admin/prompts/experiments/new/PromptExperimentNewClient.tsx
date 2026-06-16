@@ -1,31 +1,25 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.3 — `/admin/prompts/experiments/new` — форма создания эксперимента.
- *
- * Источник: ТЗ A §7.2.
- */
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-
-import { ApiError } from '@/api/api-error';
-import { adminPromptExperimentsApi } from '@/api/admin-prompt-experiments.api';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { toast } from '@/ui/shadcn/toast';
+import { ApiError } from "@/api/api-error";
+import { adminPromptExperimentsApi } from "@/api/admin-prompt-experiments.api";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { toast } from "@/ui/shadcn/toast";
 
 export function PromptExperimentNewClient() {
   const router = useRouter();
-  const [orgId, setOrgId] = useState('');
-  const [templateAId, setTemplateAId] = useState('');
-  const [templateBId, setTemplateBId] = useState('');
+  const [orgId, setOrgId] = useState("");
+  const [templateAId, setTemplateAId] = useState("");
+  const [templateBId, setTemplateBId] = useState("");
   const [splitPercent, setSplitPercent] = useState(50);
-  const [endsAt, setEndsAt] = useState('');
-  const [notes, setNotes] = useState('');
+  const [endsAt, setEndsAt] = useState("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -42,13 +36,13 @@ export function PromptExperimentNewClient() {
         endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         notes: notes.trim() || null,
       });
-      toast.success('Эксперимент создан');
+      toast.success("Эксперимент создан");
       router.push(`/admin/prompts/experiments/${created.id}`);
     } catch (err) {
       const msg =
         err instanceof ApiError
-          ? `${err.message}${err.code ? ` (${err.code})` : ''}`
-          : 'Не удалось создать эксперимент';
+          ? `${err.message}${err.code ? ` (${err.code})` : ""}`
+          : "Не удалось создать эксперимент";
       setErrorMsg(msg);
     } finally {
       setSubmitting(false);
@@ -114,7 +108,9 @@ export function PromptExperimentNewClient() {
             max={100}
             value={splitPercent}
             onChange={(e) =>
-              setSplitPercent(Math.max(0, Math.min(100, Number(e.target.value))))
+              setSplitPercent(
+                Math.max(0, Math.min(100, Number(e.target.value))),
+              )
             }
             required
           />
@@ -154,7 +150,7 @@ export function PromptExperimentNewClient() {
             <Link href="/admin/prompts/experiments">Отмена</Link>
           </Button>
           <Button type="submit" disabled={submitting}>
-            {submitting ? 'Создаём…' : 'Создать эксперимент'}
+            {submitting ? "Создаём…" : "Создать эксперимент"}
           </Button>
         </div>
       </form>

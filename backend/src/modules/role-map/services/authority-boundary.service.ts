@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -17,18 +12,6 @@ import type {
 
 import { mergeSourceBlocks } from './responsibility-element.service';
 
-/**
- * SBA α-8 wave 4 — CRUD-сервис AuthorityBoundary.
- *
- * Тонкий CRUD-wrapper над `AuthorityBoundary` (wave 2):
- *   - kind: allowed | requires_approval | forbidden;
- *   - scope: бизнес-описание;
- *   - approverRoleId: кто согласует (для requires_approval);
- *   - thresholdsJson: пороги (например, бюджет в рублях).
- *
- * Используется γ-2 Concierge и β-3 Decisions для валидации «может ли этот
- * человек принять X решение».
- */
 @Injectable()
 export class AuthorityBoundaryService {
   constructor(
@@ -57,10 +40,7 @@ export class AuthorityBoundaryService {
     return rows.map((r) => this.toDto(r));
   }
 
-  async get(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<AuthorityBoundaryDto> {
+  async get(args: { tenantId: string; id: string }): Promise<AuthorityBoundaryDto> {
     const row = await this.prisma.authorityBoundary.findUnique({
       where: { id: args.id },
       include: { approverRole: { select: { id: true, name: true } } },
@@ -95,15 +75,12 @@ export class AuthorityBoundaryService {
         scope: args.body.scope,
         approverRoleId: args.body.approverRoleId ?? null,
         thresholdsJson:
-          args.body.thresholdsJson === undefined ||
-          args.body.thresholdsJson === null
+          args.body.thresholdsJson === undefined || args.body.thresholdsJson === null
             ? Prisma.JsonNull
             : (args.body.thresholdsJson as Prisma.InputJsonValue),
         sourceBlockIds: args.body.sourceBlockIds ?? [],
         confidence:
-          args.body.confidence !== undefined
-            ? new Prisma.Decimal(args.body.confidence)
-            : null,
+          args.body.confidence !== undefined ? new Prisma.Decimal(args.body.confidence) : null,
       },
       include: { approverRole: { select: { id: true, name: true } } },
     });
@@ -180,11 +157,7 @@ export class AuthorityBoundaryService {
     return this.toDto(updated);
   }
 
-  async softDelete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; userId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.authorityBoundary.findUnique({
       where: { id: args.id },
     });
@@ -235,19 +208,14 @@ export class AuthorityBoundaryService {
         where: { id: existing.id },
         data: {
           approverRoleId:
-            args.approverRoleId !== undefined
-              ? args.approverRoleId
-              : existing.approverRoleId,
+            args.approverRoleId !== undefined ? args.approverRoleId : existing.approverRoleId,
           thresholdsJson:
             args.thresholdsJson !== undefined
-              ? (args.thresholdsJson === null
-                  ? Prisma.JsonNull
-                  : (args.thresholdsJson as Prisma.InputJsonValue))
+              ? args.thresholdsJson === null
+                ? Prisma.JsonNull
+                : (args.thresholdsJson as Prisma.InputJsonValue)
               : (existing.thresholdsJson as Prisma.InputJsonValue),
-          sourceBlockIds: mergeSourceBlocks(
-            existing.sourceBlockIds,
-            args.sourceBlockIds,
-          ),
+          sourceBlockIds: mergeSourceBlocks(existing.sourceBlockIds, args.sourceBlockIds),
           confidence:
             args.confidence !== undefined && args.confidence !== null
               ? new Prisma.Decimal(args.confidence)
@@ -279,12 +247,7 @@ export class AuthorityBoundaryService {
     return this.toDto(created);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -323,7 +286,8 @@ export class AuthorityBoundaryService {
       approverRoleId: row.approverRoleId,
       approverRoleName: row.approverRole?.name ?? null,
       thresholdsJson:
-        row.thresholdsJson && typeof row.thresholdsJson === 'object' &&
+        row.thresholdsJson &&
+        typeof row.thresholdsJson === 'object' &&
         !Array.isArray(row.thresholdsJson)
           ? (row.thresholdsJson as Record<string, unknown>)
           : null,

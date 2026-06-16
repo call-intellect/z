@@ -8,49 +8,14 @@ import { ProbeService } from '../../probe/probe.service';
 
 import { OwnerResolverService } from './owner-resolver.service';
 
-/**
- * SBA α-6 — Specialist34ProbeService.
- *
- * Эмиссия probe-events специалиста 3.4 (Project / Customer Context) согласно
- * §5.4 контракта зонтичного. До появления `ProbeService` в β-5 специалист
- * сам отправляет нотификации через `ConversationalService.sendNotification`
- * с `eventType='specialist.probe'`. После β-5 этот сервис превратится
- * в тонкую обёртку над `probe.suggest()`.
- *
- * 4 trigger'а из sub-TZ §5:
- *   - `card.missing_owner` — Card.kind ∈ {client,vendor,project} И owner некорректен
- *     или такой роли нет в Org. (В текущей модели Card.ownerId — обязателен,
- *     но это owner-creator карточки. «Назначенный ответственный» хранится
- *     отдельно через Card.metadata.ownerUserId — поле появится в β-/γ-.
- *     Пока эвристика: смотрим Membership ownerId в Org. Если creator
- *     уволился (нет активного Membership) → probe.)
- *   - `card.missing_deadline` — Card.kind='project' И в summaryCache нет
- *     явно упомянутой даты-дедлайна И возраст карточки > 7 дней.
- *   - `card.merge_suggestion` — найдены 2+ Card'ы того же tenant'а с
- *     одинаковым `entityId`. Это вырожденный случай (entityId должен быть
- *     уникален в графе), но возможен после reframing'а.
- *   - `card.outdated_summary` — `lastConfirmedAt` старше 6 месяцев И
- *     за последнюю неделю появились новые блоки-источники.
- *
- * Получатели:
- *   - owner Card (User) — всегда первый кандидат.
- *   - admin'ы Org — для `card.missing_owner` и `card.merge_suggestion`.
- *
- * Контракт: сервис НЕ должен бросать. Один упавший probe не валит остальные —
- * лог и продолжение. Каждый успешно отправленный probe увеличивает
- * `core_specialist_probe_events_total{type='card', reason='...'}`.
- */
 @Injectable()
 export class Specialist34ProbeService {
   private readonly logger = new Logger(Specialist34ProbeService.name);
 
   static readonly SPECIALIST_NAME = '3-4-project-customer';
 
-  /** Возраст карточки для probe `card.missing_deadline`. */
   private static readonly MISSING_DEADLINE_AGE_DAYS = 7;
-  /** Порог «устарела» для probe `card.outdated_summary`. */
-  private static readonly OUTDATED_SUMMARY_AGE_DAYS = 183; // ~6 месяцев
-  /** Окно «новые блоки появились» для probe `card.outdated_summary`. */
+  private static readonly OUTDATED_SUMMARY_AGE_DAYS = 183;
   private static readonly OUTDATED_SUMMARY_FRESH_WINDOW_DAYS = 7;
 
   constructor(
@@ -59,19 +24,14 @@ export class Specialist34ProbeService {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    // W2 autonomy (2026-06-12) — «лестница владельца». Optional: без неё
-    // работает прежнее поведение (probe). M-2: авто-записи владельца для
-    // card нет — лестница даёт только кандидатов для текста вопроса.
-    @Optional() @Inject(OwnerResolverService)
+    @Optional()
+    @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
   ) {}
 
-  /**
-   * Главный метод: вызывается из CardRollupV2Service после успешного rollup'а
-   * (или из cron'а, который обходит карточки). Best-effort: не бросает.
-   */
   async checkAndEmitProbes(card: Card): Promise<void> {
     if (card.deletedAt || !card.tenantId) return;
 
@@ -97,17 +57,6 @@ export class Specialist34ProbeService {
     }
   }
 
-  // ──────────────────────────── triggers ────────────────────────────
-
-  /**
-   * `card.missing_owner` — Card.kind ∈ {client,vendor,project} AND owner-creator
-   * не имеет активного Membership в Org (уволился) ИЛИ owner-creator
-   * совпадает с system-user (что означает, что назначенный ответственный
-   * не задан).
-   *
-   * NB: поле «назначенный ответственный» (Card.metadata.ownerUserId)
-   * появится в β-/γ-. Сейчас эвристика только по ownerId-creator.
-   */
   private async checkMissingOwner(card: Card): Promise<void> {
     if (!['client', 'vendor', 'project'].includes(card.kind)) return;
     if (!card.tenantId) return;
@@ -121,16 +70,9 @@ export class Specialist34ProbeService {
     const ownerActive = membership !== null;
     if (ownerActive) return;
 
-    // Кандидаты-получатели: admin'ы Org.
     const admins = await this.findOrgAdminsAndOwner(card.tenantId);
     if (admins.length === 0) return;
 
-    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe. M-2
-    // (2026-06-12): Card.ownerId — namespace/creator-ключ
-    // (@@unique([ownerId,name]) + cascade), его авто-перезапись опасна —
-    // АВТО-ветки для card НЕТ. Единственный кандидат → probe-вопрос
-    // «Назначить владельцем X?» (ambiguous с одним кандидатом); несколько →
-    // вопрос-выбор с именами; никого → probe как раньше.
     const ladder = await this.tryResolveOwner(card);
     let message: string;
     if (ladder.outcome === 'ambiguous' && ladder.candidateNames.length === 1) {
@@ -150,25 +92,9 @@ export class Specialist34ProbeService {
     });
   }
 
-  /**
-   * W2 autonomy — лестница владельца для `card.missing_owner`.
-   * Кандидаты: subject-Person'ы карточки (`personSubjectIds`) с привязанным
-   * User И активным Membership в Org (проблема как раз в неактивном владельце).
-   * admin'ов в пул не кладём — в Org с одним admin'ом все бесхозные карточки
-   * молча падали бы на него.
-   *
-   * M-2 (2026-06-12): АВТО-записи владельца для card НЕТ — Card.ownerId это
-   * namespace/creator-ключ (@@unique([ownerId,name]), cascade-связи), его
-   * перезапись меняет идентичность карточки. resolved-исход трактуем как
-   * ambiguous с единственным кандидатом (probe-вопрос, без кнопок). Метрика
-   * incOwnerResolution для card — только ambiguous | none.
-   */
   private async tryResolveOwner(
     card: Card,
-  ): Promise<
-    | { outcome: 'ambiguous'; candidateNames: string[] }
-    | { outcome: 'none' }
-  > {
+  ): Promise<{ outcome: 'ambiguous'; candidateNames: string[] } | { outcome: 'none' }> {
     if (!this.ownerResolver || !card.tenantId) return { outcome: 'none' };
     try {
       const subjects =
@@ -185,12 +111,8 @@ export class Specialist34ProbeService {
             })
           : [];
       const subjectUserIds = [
-        ...new Set(
-          subjects.map((p) => p.userId).filter((u): u is string => !!u),
-        ),
+        ...new Set(subjects.map((p) => p.userId).filter((u): u is string => !!u)),
       ];
-      // Только кандидаты с активным Membership (владелец без Membership —
-      // и есть исходная проблема).
       let candidatePool: string[] = [];
       if (subjectUserIds.length > 0) {
         const activeMembers = await this.prisma.membership.findMany({
@@ -206,11 +128,7 @@ export class Specialist34ProbeService {
       });
 
       if (resolution.kind === 'resolved') {
-        // M-2 — без авто-записи: единственный кандидат превращается в
-        // probe-вопрос с одним именем (см. checkMissingOwner).
-        const personName = subjects.find(
-          (p) => p.userId === resolution.userId,
-        )?.name;
+        const personName = subjects.find((p) => p.userId === resolution.userId)?.name;
         if (personName && personName.length > 0) {
           this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
           return { outcome: 'ambiguous', candidateNames: [personName] };
@@ -237,15 +155,10 @@ export class Specialist34ProbeService {
     }
   }
 
-  /**
-   * `card.missing_deadline` — Card.kind='project' AND в summaryCache нет
-   * упоминания дедлайна AND возраст > 7 дней.
-   */
   private async checkMissingDeadline(card: Card): Promise<void> {
     if (card.kind !== 'project') return;
     if (!card.tenantId) return;
-    const ageDays =
-      (Date.now() - card.createdAt.getTime()) / (1000 * 60 * 60 * 24);
+    const ageDays = (Date.now() - card.createdAt.getTime()) / (1000 * 60 * 60 * 24);
     if (ageDays < Specialist34ProbeService.MISSING_DEADLINE_AGE_DAYS) return;
 
     if (this.summaryMentionsDeadline(card.summaryCache)) return;
@@ -261,12 +174,6 @@ export class Specialist34ProbeService {
     });
   }
 
-  /**
-   * `card.merge_suggestion` — найдены 2+ Card одного tenant'а с
-   * одинаковым `entityId`. Сейчас Card.entityId не unique (потому что
-   * legacy без tenant'а имеет много NULL), поэтому ищем явно по
-   * `Card.entityId` для текущей карточки.
-   */
   private async checkMergeSuggestion(card: Card): Promise<void> {
     if (!card.entityId || !card.tenantId) return;
     const others = await this.prisma.card.findMany({
@@ -296,31 +203,17 @@ export class Specialist34ProbeService {
     });
   }
 
-  /**
-   * `card.outdated_summary` — `lastConfirmedAt` старше 6 месяцев AND
-   * за последнюю неделю появились новые блоки-источники (есть свежие
-   * IdeaBlock'и, связанные с entityId или meeting-IDs карточки).
-   */
   private async checkOutdatedSummary(card: Card): Promise<void> {
     if (!card.lastConfirmedAt || !card.tenantId) return;
-    const ageDays =
-      (Date.now() - card.lastConfirmedAt.getTime()) /
-      (1000 * 60 * 60 * 24);
+    const ageDays = (Date.now() - card.lastConfirmedAt.getTime()) / (1000 * 60 * 60 * 24);
     if (ageDays < Specialist34ProbeService.OUTDATED_SUMMARY_AGE_DAYS) return;
 
     const freshSince = new Date(
       Date.now() -
-        Specialist34ProbeService.OUTDATED_SUMMARY_FRESH_WINDOW_DAYS *
-          24 *
-          60 *
-          60 *
-          1000,
+        Specialist34ProbeService.OUTDATED_SUMMARY_FRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
 
-    const entityIds = [
-      ...(card.entityId ? [card.entityId] : []),
-      ...card.relatedEntityIds,
-    ];
+    const entityIds = [...(card.entityId ? [card.entityId] : []), ...card.relatedEntityIds];
     if (entityIds.length === 0) return;
 
     const freshBlock = await this.prisma.ideaBlockEntity.findFirst({
@@ -347,8 +240,6 @@ export class Specialist34ProbeService {
     });
   }
 
-  // ──────────────────────────── helpers ────────────────────────────
-
   private async emit(args: {
     tenantId: string;
     cardId: string;
@@ -366,9 +257,7 @@ export class Specialist34ProbeService {
           reason: args.reason,
           payload: {
             message: args.message,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.cardId,
             contextCardKind: 'card',
             contextCardTitle: args.message.slice(0, 100),
@@ -406,9 +295,7 @@ export class Specialist34ProbeService {
             reason: args.reason,
             message: args.message,
             cardId: args.cardId,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             actionUrl,
           },
           dataClass: 'internal',

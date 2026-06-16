@@ -1,19 +1,3 @@
-/**
- * Адаптер code-fallback (Фаза A.1).
- *
- * Источник: plans/tz/2026-05-21-phase-A-prompt-registry-admin.md §5.3.
- *
- * Превращает существующие `ai/services/prompts/*.ts` (system-summary, type-*,
- * tasks, follow-up) в унифицированный `ResolvedPrompt`. Это
- * используется PromptResolverService, когда в БД ничего не найдено или
- * на любую ошибку резолва.
- *
- * ВАЖНО: файлы `ai/services/prompts/*.ts` НЕ удаляются — они становятся
- * fallback-источником. Любое изменение в них должно сопровождаться обновлением
- * seed-скрипта `seed-prompt-templates.ts`, иначе db-шаблоны и code-fallback
- * разъедутся.
- */
-
 import type { MeetingType } from '@prisma/client';
 
 import type {
@@ -26,7 +10,6 @@ import { getPromptForType } from './prompts/index';
 import { SUMMARY_TOOL_NAME } from './prompts/system-summary';
 import { TASKS_TOOL, TASKS_TOOL_NAME } from './prompts/tasks';
 
-/** Type-helper для безопасного приведения LlmTool.input_schema. */
 function castSchema(input: unknown): ResolvedPrompt['outputSchema'] {
   const schema = input as ResolvedPrompt['outputSchema'];
   return {
@@ -37,17 +20,12 @@ function castSchema(input: unknown): ResolvedPrompt['outputSchema'] {
   };
 }
 
-/**
- * Превращает JSON-schema-объект секций в плоский список ResolvedPromptSection.
- * outputType определяется грубо: array → bullet_list, object → json_object,
- * иначе text. Для UI это нормально (превью), а для LLM это всё равно
- * только индикатор — реальная схема ответа берётся из `outputSchema`.
- */
-function sectionsFromSchema(
-  schema: ResolvedPrompt['outputSchema'],
-): ResolvedPromptSection[] {
+function sectionsFromSchema(schema: ResolvedPrompt['outputSchema']): ResolvedPromptSection[] {
   const required = new Set(schema.required ?? []);
-  const props = schema.properties as Record<string, { type?: string | string[]; description?: string }>;
+  const props = schema.properties as Record<
+    string,
+    { type?: string | string[]; description?: string }
+  >;
   const out: ResolvedPromptSection[] = [];
   let order = 1;
   for (const [key, propRaw] of Object.entries(props)) {
@@ -76,16 +54,8 @@ function humanizeKey(key: string): string {
     .join(' ');
 }
 
-/**
- * code-fallback для summary по типу встречи. Использует `getPromptForType(type)`
- * из существующего `prompts/index.ts`. Тип встречи известен — это основной
- * вызов analyze.worker'а при пустой БД.
- */
 function codeFallbackSummary(type: MeetingType): ResolvedPrompt {
   const descriptor = getPromptForType(type);
-  // Извлекаем system из buildPrompt с пустым input. Это рабочий хак: buildPrompt
-  // встраивает только title встречи в user; system при пустом roomChat
-  // идентичен историческому. Точный текст system'а нужен для side-by-side теста.
   const dummy = descriptor.buildPrompt({
     meeting: { id: '__cf__', title: '__cf__', type, customPrompt: null },
     dialog: [],
@@ -102,14 +72,7 @@ function codeFallbackSummary(type: MeetingType): ResolvedPrompt {
   };
 }
 
-/**
- * code-fallback для system-summary (короткое саммари 2-3 предложения).
- * Системный плейн-текстовый промпт без tool_use.
- */
 function codeFallbackPlainSummary(): ResolvedPrompt {
-  // Прямо тянуть SUMMARY_SYSTEM из приватного файла было бы хрупко — поэтому
-  // используем тот же подход, что и для остальных: вытягиваем system через
-  // buildSummaryPrompt с пустым входом.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildSummaryPrompt } = require('./prompts/system-summary');
   const dummy = (buildSummaryPrompt as (input: unknown) => { system: string; user: string })({
@@ -125,7 +88,8 @@ function codeFallbackPlainSummary(): ResolvedPrompt {
       {
         key: 'summary',
         title: 'Саммари',
-        instruction: 'Сделай связный текст из 2-3 предложений: о чём была встреча, ключевые договорённости.',
+        instruction:
+          'Сделай связный текст из 2-3 предложений: о чём была встреча, ключевые договорённости.',
         outputType: 'text',
         required: true,
       },
@@ -139,7 +103,6 @@ function codeFallbackPlainSummary(): ResolvedPrompt {
   };
 }
 
-/** code-fallback для tasks (универсальный, не зависит от типа встречи). */
 function codeFallbackTasks(): ResolvedPrompt {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildTasksPrompt } = require('./prompts/tasks');
@@ -159,7 +122,6 @@ function codeFallbackTasks(): ResolvedPrompt {
   };
 }
 
-/** code-fallback для follow-up. */
 function codeFallbackFollowUp(): ResolvedPrompt {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildFollowUpPrompt } = require('./prompts/follow-up');
@@ -180,12 +142,6 @@ function codeFallbackFollowUp(): ResolvedPrompt {
   };
 }
 
-/**
- * code-fallback для card-rollup. Системный текстовый промпт. Зависимость от
- * `kind` карточки не вытаскиваем сюда — это деталь рантайма, оставим
- * card-rollup-worker'у. PromptResolver вернёт «универсальный» промпт; voor
- * детального выбора kind — следующая итерация.
- */
 function codeFallbackCardRollup(): ResolvedPrompt {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { buildCardRollupSystemPrompt } = require('./prompts/card-rollup');
@@ -214,24 +170,12 @@ function codeFallbackCardRollup(): ResolvedPrompt {
   };
 }
 
-/**
- * Главная точка входа адаптера. Возвращает `ResolvedPrompt` для пары
- * (meetingType, taskType). Используется PromptResolverService как
- * последний шаг резолва.
- *
- * Воркер аналайза вызывает этот адаптер косвенно: он спрашивает
- * `PromptResolverService.resolveForMeeting`, тот при пустой/упавшей БД
- * возвращает результат `codeFallbackForMeeting`.
- */
 export function codeFallbackForMeeting(
   meetingType: MeetingType,
   taskType: PromptResolverTaskType,
 ): ResolvedPrompt {
   switch (taskType) {
     case 'summary':
-      // Для analyze.worker'а «summary» — это structured-отчёт по типу встречи.
-      // Короткий plain-text summary живёт отдельно (system-summary.ts) и
-      // вызывается перед structured. Возвращаем structured-фаллбек.
       return codeFallbackSummary(meetingType);
     case 'tasks':
       return codeFallbackTasks();
@@ -244,15 +188,6 @@ export function codeFallbackForMeeting(
     case 'behavior-refine':
     case 'transcript-clean-refine':
     case 'custom-report':
-      // Эти taskType'ы НЕ имеют общего code-fallback:
-      // - chapters / meeting-quality-score → главы и качество встречи теперь
-      //   делает ЕДИНЫЙ воркер `meeting-report-fast` (один LLM-вызов по сырому
-      //   транскрипту); отдельный code-fallback больше не нужен.
-      // - behavior-refine → backend/src/modules/ai/services/prompts/behavior-refine.ts
-      // - transcript-clean-refine → backend/src/modules/ai/services/prompts/transcript-clean-refine.ts
-      // - custom-report → Org-шаблоны в БД через A.2; код-фоллбека для них нет (только DB).
-      // PromptResolverService для них не вызывается — каждая фаза работает напрямую
-      // со своим промптом. Если резолвер вызван по ошибке — это блокер, сигнализируем.
       throw new Error(
         `codeFallbackForMeeting: taskType '${taskType}' не имеет общего code-fallback. ` +
           `Используйте свой адаптер из соответствующей фазы (meeting-report-fast / B / D / E).`,
@@ -260,12 +195,6 @@ export function codeFallbackForMeeting(
   }
 }
 
-/**
- * Отдельная точка для plain-text summary (2-3 предложения), которая в
- * analyze.worker'е вызывается ВСЕГДА перед structured-отчётом. ТЗ A.1 не
- * требует резолвить её через БД — но мы заранее заводим её под единый
- * контракт, чтобы analyze.worker мог запросить её через PromptResolver.
- */
 export function codeFallbackPlainSummaryPublic(): ResolvedPrompt {
   return codeFallbackPlainSummary();
 }

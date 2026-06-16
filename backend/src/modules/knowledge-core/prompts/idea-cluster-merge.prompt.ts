@@ -1,15 +1,5 @@
-/**
- * SBA β-5 — Specialist 3.6 (Ideas Collector).
- *
- * LLM-промпт `idea-cluster-merge` — арбитр кластеризации идей: для новой Idea
- * принимает решение `{ 'new_cluster' | 'add_to_existing' | 'standalone' }` на
- * основании ближайших IdeaCluster'ов.
- */
-
 import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 
-// F2 (2026-05-24): mini-якоря для confidence (0.3-0.5 / 0.6-0.8 / 0.85+)
-// удалены — теперь единый источник правды — `CONFIDENCE_CALIBRATION`.
 export const IDEA_CLUSTER_MERGE_SYSTEM_PROMPT = withConfidenceCalibration(
   [
     'Ты — knowledge-куратор. Тебе дают новую идею и список ближайших кластеров идей компании.',
@@ -56,11 +46,8 @@ export const IDEA_CLUSTER_MERGE_JSON_SCHEMA: Record<string, unknown> = {
       type: 'string',
       enum: ['new_cluster', 'add_to_existing', 'standalone'],
     },
-    /** id выбранного кластера (только при add_to_existing). */
     targetClusterId: { type: ['string', 'null'] },
-    /** Имя нового кластера (только при new_cluster). */
     newClusterName: { type: ['string', 'null'], maxLength: 200 },
-    /** Описание нового кластера. */
     newClusterDescription: { type: ['string', 'null'], maxLength: 2_000 },
     reasoning: { type: ['string', 'null'], maxLength: 2_000 },
     confidence: { type: 'number', minimum: 0, maximum: 1 },

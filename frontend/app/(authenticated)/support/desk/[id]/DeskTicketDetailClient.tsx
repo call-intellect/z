@@ -1,34 +1,30 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useCallback, useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { supportApi } from '@/api/support.api';
-import { useDeskTicket } from '@/hooks/useDeskTicket';
-import { useDeskMeta } from '@/hooks/useDeskMeta';
-import { useSupportStatus } from '@/hooks/useSupportStatus';
-import type { DeskMessage, SupportMeta } from '@/domain/support';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { supportApi } from "@/api/support.api";
+import { useDeskTicket } from "@/hooks/useDeskTicket";
+import { useDeskMeta } from "@/hooks/useDeskMeta";
+import { useSupportStatus } from "@/hooks/useSupportStatus";
+import type { DeskMessage, SupportMeta } from "@/domain/support";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const TEXT_MAX = 5000;
 
-/**
- * DeskTicketDetailClient — рабочий экран тикета сотрудника. Все 4 UX-состояния.
- * Гейт по isAgent (не падаем на 403). Все действия мутируют SWR-кэш.
- */
 export function DeskTicketDetailClient({ ticketId }: { ticketId: string }) {
   const { isAgent, isLoading: statusLoading } = useSupportStatus();
   const { data, error, isLoading, mutate } = useDeskTicket(ticketId, isAgent);
@@ -69,7 +65,7 @@ export function DeskTicketDetailClient({ ticketId }: { ticketId: string }) {
         )}
       </header>
 
-      {/* Управление: назначение + статус */}
+      {}
       <DeskControls
         ticketId={ticketId}
         meta={meta}
@@ -78,7 +74,7 @@ export function DeskTicketDetailClient({ ticketId }: { ticketId: string }) {
         onChanged={refresh}
       />
 
-      {/* Лента — internal + external */}
+      {}
       <section aria-label="Переписка" className="mt-5 flex flex-col gap-3">
         {data.messages.length === 0 ? (
           <p className="text-sm text-fg-tertiary">Сообщений пока нет.</p>
@@ -87,7 +83,7 @@ export function DeskTicketDetailClient({ ticketId }: { ticketId: string }) {
         )}
       </section>
 
-      {/* Ответ клиенту */}
+      {}
       <ComposeBox
         title="Ответ клиенту"
         placeholder="Ответ будет виден клиенту"
@@ -97,7 +93,7 @@ export function DeskTicketDetailClient({ ticketId }: { ticketId: string }) {
         accent
       />
 
-      {/* Внутренняя заметка */}
+      {}
       <ComposeBox
         title="Внутренняя заметка"
         placeholder="Заметка видна только команде поддержки"
@@ -125,7 +121,6 @@ function DeskControls({
   const [assignBusy, setAssignBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
 
-  // Текущий статус по названию (бэк отдаёт name, не stateId).
   const currentState = meta?.states.find((s) => s.name === currentStatusName);
   const currentAssignee =
     assigneeUserIds.length > 0 ? assigneeUserIds[0] : undefined;
@@ -135,12 +130,10 @@ function DeskControls({
       setAssignBusy(true);
       try {
         await supportApi.deskAssign(ticketId, { userId });
-        toast.success('Исполнитель назначен');
+        toast.success("Исполнитель назначен");
         onChanged();
       } catch (err) {
-        toast.error(
-          humanizeApiError(err, 'Не удалось назначить.'),
-        );
+        toast.error(humanizeApiError(err, "Не удалось назначить."));
       } finally {
         setAssignBusy(false);
       }
@@ -153,12 +146,10 @@ function DeskControls({
       setStatusBusy(true);
       try {
         await supportApi.deskTransition(ticketId, { stateId });
-        toast.success('Статус изменён');
+        toast.success("Статус изменён");
         onChanged();
       } catch (err) {
-        toast.error(
-          humanizeApiError(err, 'Не удалось сменить статус.'),
-        );
+        toast.error(humanizeApiError(err, "Не удалось сменить статус."));
       } finally {
         setStatusBusy(false);
       }
@@ -216,21 +207,21 @@ function DeskControls({
 }
 
 function DeskMessageBubble({ message }: { message: DeskMessage }) {
-  const isInternal = message.access === 'internal';
+  const isInternal = message.access === "internal";
   const authorLabel =
-    message.authorType === 'clone'
-      ? 'Клон (черновик)'
+    message.authorType === "clone"
+      ? "Клон (черновик)"
       : isInternal
-        ? 'Заметка'
-        : 'Поддержка / клиент';
+        ? "Заметка"
+        : "Поддержка / клиент";
 
   return (
     <div
       className={cn(
-        'rounded-lg border px-4 py-3',
+        "rounded-lg border px-4 py-3",
         isInternal
-          ? 'border-warning/30 bg-warning/10'
-          : 'border-border-subtle bg-bg-card',
+          ? "border-warning/30 bg-warning/10"
+          : "border-border-subtle bg-bg-card",
       )}
     >
       <div className="mb-1 flex items-center justify-between gap-3 text-[11px] text-fg-tertiary">
@@ -266,7 +257,7 @@ function ComposeBox({
   onSent: () => void;
   accent?: boolean;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const trimmed = text.trim();
@@ -280,13 +271,11 @@ function ComposeBox({
       setSubmitting(true);
       try {
         await onSubmit(trimmed);
-        setText('');
-        toast.success('Готово');
+        setText("");
+        toast.success("Готово");
         onSent();
       } catch (err) {
-        toast.error(
-          humanizeApiError(err, 'Не удалось отправить.'),
-        );
+        toast.error(humanizeApiError(err, "Не удалось отправить."));
       } finally {
         setSubmitting(false);
       }
@@ -298,10 +287,10 @@ function ComposeBox({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        'mt-4 rounded-lg border p-4',
+        "mt-4 rounded-lg border p-4",
         accent
-          ? 'border-border-subtle bg-bg-card'
-          : 'border-warning/30 bg-warning/5',
+          ? "border-border-subtle bg-bg-card"
+          : "border-warning/30 bg-warning/5",
       )}
     >
       <h2 className="mb-2 text-sm font-medium text-fg-primary">{title}</h2>
@@ -316,16 +305,16 @@ function ComposeBox({
         aria-label={title}
       />
       <div className="mt-2 flex items-center justify-between text-[11px]">
-        <span className={over ? 'text-danger' : 'text-fg-tertiary'}>
+        <span className={over ? "text-danger" : "text-fg-tertiary"}>
           {text.length} / {TEXT_MAX}
         </span>
         <Button
           type="submit"
           size="sm"
-          variant={accent ? 'default' : 'secondary'}
+          variant={accent ? "default" : "secondary"}
           disabled={!canSubmit}
         >
-          {submitting ? 'Отправляем…' : submitLabel}
+          {submitting ? "Отправляем…" : submitLabel}
         </Button>
       </div>
     </form>
@@ -341,8 +330,7 @@ function NotAgent() {
 }
 
 function ErrorView({ error }: { error: unknown }) {
-  const message =
-    humanizeApiError(error, 'Не удалось загрузить тикет.');
+  const message = humanizeApiError(error, "Не удалось загрузить тикет.");
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}
@@ -361,7 +349,7 @@ function DetailSkeleton() {
 }
 
 function formatDateTime(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}`

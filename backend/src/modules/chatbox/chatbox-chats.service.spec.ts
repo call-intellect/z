@@ -3,26 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import type { ChatboxApiClient } from './chatbox-api.client';
-import {
-  ChatboxChatsService,
-  extractChatboxOutboundId,
-} from './chatbox-chats.service';
+import { ChatboxChatsService, extractChatboxOutboundId } from './chatbox-chats.service';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
 import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
-
-/**
- * Детерминированные unit-тесты ChatboxChatsService: Prisma / ChatboxApiClient /
- * ChatboxIntegrationService полностью замоканы — БД/сети нет.
- *
- * Проверяем:
- *  - listChats: маппинг DTO + батч-резолв имён (findMany по customer/member/
- *    channelClient вызван НЕ в цикле — по одному разу).
- *  - getChat: нет чата → chatbox_chat_not_found; есть → sessions +
- *    messengerIdentities.
- *  - sendMessage: успех → client.sendMessage + upsert(isOutboundFromKora:true,
- *    senderType:'USER') + chat.update; ошибка client → chatbox_send_failed
- *    (БД не трогаем); нет интеграции → chatbox_not_configured.
- */
 
 function makeService(
   over: {
@@ -90,7 +73,7 @@ describe('ChatboxChatsService.listChats', () => {
         externalId: 'ext2',
         channelType: 'TELEGRAM',
         status: 'ACTIVE',
-        customerExternalId: 'cust1', // тот же кастомер — дедуп
+        customerExternalId: 'cust1',
         clientExternalId: null,
         responsibleExternalId: null,
         lastMessageAt: null,
@@ -99,12 +82,8 @@ describe('ChatboxChatsService.listChats', () => {
       },
     ]);
     prisma.chatboxChat.count.mockResolvedValue(2);
-    prisma.chatboxCustomer.findMany.mockResolvedValue([
-      { externalId: 'cust1', name: 'Arsenii' },
-    ]);
-    prisma.chatboxMember.findMany.mockResolvedValue([
-      { externalId: 'mem1', name: 'Никита' },
-    ]);
+    prisma.chatboxCustomer.findMany.mockResolvedValue([{ externalId: 'cust1', name: 'Arsenii' }]);
+    prisma.chatboxMember.findMany.mockResolvedValue([{ externalId: 'mem1', name: 'Никита' }]);
     prisma.chatboxChannelClient.findMany.mockResolvedValue([
       { externalId: 'cli1', name: 'tg-Arsenii' },
     ]);
@@ -131,11 +110,9 @@ describe('ChatboxChatsService.listChats', () => {
       }),
     );
 
-    // Батч: каждый резолвер вызван РОВНО один раз (не на каждый чат).
     expect(prisma.chatboxCustomer.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.chatboxMember.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.chatboxChannelClient.findMany).toHaveBeenCalledTimes(1);
-    // Дедуп уникальных id (cust1 один раз).
     expect(prisma.chatboxCustomer.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -215,7 +192,6 @@ describe('ChatboxChatsService.getChat', () => {
         previousSessionId: null,
       },
     ]);
-    // первый findMany — messengerIdentities; findFirst — clientName
     prisma.chatboxChannelClient.findMany.mockResolvedValue([
       {
         channelType: 'TELEGRAM',
@@ -241,9 +217,7 @@ describe('ChatboxChatsService.getChat', () => {
     expect(out.responsible).toEqual({ externalId: 'mem1', name: 'Никита' });
     expect(out.clientName).toBe('tg-Arsenii');
     expect(out.sessions).toHaveLength(1);
-    expect(out.sessions[0]).toEqual(
-      expect.objectContaining({ id: 's1', seq: 1, summary: 'итог' }),
-    );
+    expect(out.sessions[0]).toEqual(expect.objectContaining({ id: 's1', seq: 1, summary: 'итог' }));
     expect(out.messengerIdentities).toHaveLength(2);
     expect(out.messengerIdentities[0]).toEqual({
       channelType: 'TELEGRAM',
@@ -259,9 +233,7 @@ describe('ChatboxChatsService.listMessages', () => {
     const { service, prisma } = makeService();
     prisma.chatboxChat.findFirst.mockResolvedValue(null);
 
-    await expect(
-      service.listMessages('t1', 'nope', {}),
-    ).rejects.toMatchObject({
+    await expect(service.listMessages('t1', 'nope', {})).rejects.toMatchObject({
       response: { error: { code: 'chatbox_chat_not_found' } },
     });
   });
@@ -372,7 +344,6 @@ describe('ChatboxChatsService.sendMessage', () => {
       sender: { id: 'sndr1', name: 'Менеджер', type: 'USER' },
       createdAt: '2026-06-04T10:00:00.000Z',
     });
-    // строка уже существует — upsert пойдёт по update
     prisma.chatboxMessage.findUnique.mockResolvedValue({ id: 'existing' });
     prisma.chatboxMessage.upsert.mockResolvedValue({});
     prisma.chatboxChat.update.mockResolvedValue({});
@@ -382,9 +353,7 @@ describe('ChatboxChatsService.sendMessage', () => {
     expect(out).toEqual({ id: 'apiMsg1' });
     const updateArg = prisma.chatboxChat.update.mock.calls[0]![0];
     expect(updateArg.data.messageCount).toBeUndefined();
-    expect(updateArg.data.lastMessageAt).toEqual(
-      new Date('2026-06-04T10:00:00.000Z'),
-    );
+    expect(updateArg.data.lastMessageAt).toEqual(new Date('2026-06-04T10:00:00.000Z'));
   });
 
   it('client бросает → chatbox_send_failed, БД не трогаем', async () => {
@@ -401,9 +370,9 @@ describe('ChatboxChatsService.sendMessage', () => {
     });
     client.sendMessage.mockRejectedValue(new Error('network down'));
 
-    await expect(service.sendMessage('t1', 'db1', 'Ответ')).rejects.toMatchObject(
-      { response: { error: { code: 'chatbox_send_failed' } } },
-    );
+    await expect(service.sendMessage('t1', 'db1', 'Ответ')).rejects.toMatchObject({
+      response: { error: { code: 'chatbox_send_failed' } },
+    });
     expect(prisma.chatboxMessage.upsert).not.toHaveBeenCalled();
     expect(prisma.chatboxChat.update).not.toHaveBeenCalled();
   });
@@ -417,9 +386,9 @@ describe('ChatboxChatsService.sendMessage', () => {
     });
     integration.getConfigForSync.mockResolvedValue(null);
 
-    await expect(service.sendMessage('t1', 'db1', 'Ответ')).rejects.toMatchObject(
-      { response: { error: { code: 'chatbox_not_configured' } } },
-    );
+    await expect(service.sendMessage('t1', 'db1', 'Ответ')).rejects.toMatchObject({
+      response: { error: { code: 'chatbox_not_configured' } },
+    });
     expect(client.sendMessage).not.toHaveBeenCalled();
     expect(prisma.chatboxMessage.upsert).not.toHaveBeenCalled();
   });
@@ -464,9 +433,7 @@ describe('extractChatboxOutboundId (чистый хелпер)', () => {
   });
 
   it('обёртка result с приоритетом id-ключей', () => {
-    expect(
-      extractChatboxOutboundId({ result: { _id: 'z', text: 'привет' } }),
-    ).toEqual({
+    expect(extractChatboxOutboundId({ result: { _id: 'z', text: 'привет' } })).toEqual({
       id: 'z',
       createdAt: null,
       senderId: null,
@@ -501,9 +468,7 @@ describe('extractChatboxOutboundId (чистый хелпер)', () => {
   });
 
   it('sender как from.{id,name} (альтернативное имя)', () => {
-    expect(
-      extractChatboxOutboundId({ id: 'm2', from: { id: 'f1', name: 'Бот' } }),
-    ).toEqual({
+    expect(extractChatboxOutboundId({ id: 'm2', from: { id: 'f1', name: 'Бот' } })).toEqual({
       id: 'm2',
       createdAt: null,
       senderId: 'f1',

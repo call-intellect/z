@@ -39,10 +39,6 @@ export interface CommentResponseDto {
 
 const MENTION_REGEX = /@([a-zA-Z0-9_.-]{1,64})/gu;
 
-/**
- * CommentsService — комментарии к задачам + парсинг @-упоминаний.
- * Каждый комментарий → запись в IssueActivity verb='commented' на parent issue.
- */
 @Injectable()
 export class CommentsService {
   private readonly logger = new Logger(CommentsService.name);
@@ -58,18 +54,11 @@ export class CommentsService {
     private readonly webhooks: WebhookDispatcher,
     @Inject(TrackerEmitterService)
     private readonly emitter: TrackerEmitterService,
-    /**
-     * T8 (2026-05-24) — @-mention уведомления через ConversationalService.
-     * Optional: ConversationalModule @Global, но в unit-тестах его обычно
-     * не подключают. Без него мы просто пропускаем notification (всё прочее
-     * — IssueMention в БД, WS event, активность — работает).
-     */
     @Optional()
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService | null = null,
   ) {}
 
-  /** Создать комментарий. Парсит @упоминания (по email-local-part или userId). */
   async create(
     issueId: string,
     dto: CreateCommentDto,
@@ -77,13 +66,8 @@ export class CommentsService {
     userId: string,
   ): Promise<CommentResponseDto> {
     const issue = await this.issues.requireIssue(issueId, tenantId);
-    const mentionTokens = this.extractMentionTokens(
-      `${dto.content} ${dto.contentStripped ?? ''}`,
-    );
-    const mentionedUserIds = await this.resolveMentions(
-      mentionTokens,
-      tenantId,
-    );
+    const mentionTokens = this.extractMentionTokens(`${dto.content} ${dto.contentStripped ?? ''}`);
+    const mentionedUserIds = await this.resolveMentions(mentionTokens, tenantId);
 
     const comment = await this.prisma.$transaction(async (tx) => {
       const created = await tx.issueComment.create({
@@ -128,8 +112,6 @@ export class CommentsService {
 
     const response = await this.assemble(comment.id);
     this.events.publishCommentCreated(response, tenantId);
-    // Sprint 3 B1-3.1 — ingest в knowledge-core: comment.created + mention.created.
-    // ПОСЛЕ транзакции (комментарий уже в БД).
     this.emitter.emitCommentCreated({
       issue,
       comment: response,
@@ -144,12 +126,7 @@ export class CommentsService {
         commentId: response.id,
         contextText,
       });
-      // T8: in-app/telegram нотификация — лично упомянутому. Само себя
-      // не нотифицируем (если автор @упомянул сам себя — это спам).
-      if (
-        this.conversational !== null &&
-        mentionedUserId !== userId
-      ) {
+      if (this.conversational !== null && mentionedUserId !== userId) {
         const snippet = (contextText ?? response.content).slice(0, 200);
         void this.conversational
           .sendNotification({
@@ -179,18 +156,15 @@ export class CommentsService {
           });
       }
     }
-    void this.webhooks
-      .dispatch(tenantId, 'comment.created', { comment: response })
-      .catch((e) => {
-        this.logger.warn(
-          { commentId: response.id, err: e instanceof Error ? e.message : String(e) },
-          'comment.created webhook dispatch failed',
-        );
-      });
+    void this.webhooks.dispatch(tenantId, 'comment.created', { comment: response }).catch((e) => {
+      this.logger.warn(
+        { commentId: response.id, err: e instanceof Error ? e.message : String(e) },
+        'comment.created webhook dispatch failed',
+      );
+    });
     return response;
   }
 
-  /** PATCH комментария. Только автор. Проставляет editedAt. */
   async update(
     commentId: string,
     dto: UpdateCommentDto,
@@ -218,18 +192,15 @@ export class CommentsService {
     });
     const response = await this.assemble(commentId);
     this.events.publishCommentUpdated(response, tenantId);
-    void this.webhooks
-      .dispatch(tenantId, 'comment.updated', { comment: response })
-      .catch((e) => {
-        this.logger.warn(
-          { commentId, err: e instanceof Error ? e.message : String(e) },
-          'comment.updated webhook dispatch failed',
-        );
-      });
+    void this.webhooks.dispatch(tenantId, 'comment.updated', { comment: response }).catch((e) => {
+      this.logger.warn(
+        { commentId, err: e instanceof Error ? e.message : String(e) },
+        'comment.updated webhook dispatch failed',
+      );
+    });
     return response;
   }
 
-  /** Soft-delete комментария (deletedAt). Доступ: автор или admin Org. */
   async softDelete(
     commentId: string,
     tenantId: string,
@@ -265,11 +236,7 @@ export class CommentsService {
     return { ok: true };
   }
 
-  /** Все комментарии задачи (без удалённых) с упоминаниями. */
-  async findByIssue(
-    issueId: string,
-    tenantId: string,
-  ): Promise<CommentResponseDto[]> {
+  async findByIssue(issueId: string, tenantId: string): Promise<CommentResponseDto[]> {
     await this.issues.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issueComment.findMany({
       where: { issueId, deletedAt: null },
@@ -279,9 +246,6 @@ export class CommentsService {
     return rows.map((r) => this.toResponseFromInclude(r));
   }
 
-  // ── internal ──
-
-  /** Найти и проверить, что комментарий относится к issue нужного tenant'а. */
   private async requireComment(
     commentId: string,
     tenantId: string,
@@ -305,7 +269,6 @@ export class CommentsService {
     return c;
   }
 
-  /** Извлечь токены @-упоминаний из текста. */
   private extractMentionTokens(text: string): string[] {
     const tokens = new Set<string>();
     for (const match of text.matchAll(MENTION_REGEX)) {
@@ -315,18 +278,8 @@ export class CommentsService {
     return [...tokens];
   }
 
-  /**
-   * Разрешить токены упоминаний в User.id. Сейчас матчим по email-local-part
-   * (часть до '@') и по самому userId. Если у пользователя нет membership'а
-   * в tenant'е — упоминание игнорируем.
-   */
-  private async resolveMentions(
-    tokens: string[],
-    tenantId: string,
-  ): Promise<string[]> {
+  private async resolveMentions(tokens: string[], tenantId: string): Promise<string[]> {
     if (tokens.length === 0) return [];
-    // Берём всех members tenant'а (для tenant ≤ 1000 users — окей; в Sprint 2
-    // оптимизируем: индекс по email_local_part + точечный запрос).
     const members = await this.prisma.user.findMany({
       where: { memberships: { some: { orgId: tenantId } } },
       select: { id: true, email: true },

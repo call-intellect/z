@@ -27,12 +27,6 @@ import {
 } from './dto/security-admin.dto';
 import { SecurityAdminService } from './security-admin.service';
 
-/**
- * Admin-redesign Фаза 8 — `SecurityAdminController`.
- *
- * UI `/admin/platform/security`. Все security-настройки имеют severity='high'
- * и требуют reason ≥10 символов.
- */
 @ApiTags('admin-platform-security')
 @Controller('api/v1/admin/platform/security')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -45,8 +39,7 @@ export class SecurityAdminController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Текущие security-настройки: Argon2 параметры, TTL сессий, TTL deep-link.',
+    summary: 'Текущие security-настройки: Argon2 параметры, TTL сессий, TTL deep-link.',
   })
   list() {
     return this.svc.list();
@@ -54,8 +47,7 @@ export class SecurityAdminController {
 
   @Patch(':key')
   @ApiOperation({
-    summary:
-      'Обновить security-настройку (severity=high). reason обязателен, ≥10 символов.',
+    summary: 'Обновить security-настройку (severity=high). reason обязателен, ≥10 символов.',
   })
   async update(
     @Param('key') key: string,
@@ -80,8 +72,7 @@ export class SecurityAdminController {
 
   @Post('rotate-ip-salt')
   @ApiOperation({
-    summary:
-      'Manual ротация IP_HASH_DAILY_SALT. Пока 501 — ротация выполняется ежедневным cron.',
+    summary: 'Manual ротация IP_HASH_DAILY_SALT. Пока 501 — ротация выполняется ежедневным cron.',
   })
   rotateIpSalt() {
     return this.svc.rotateIpSalt();

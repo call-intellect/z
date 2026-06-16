@@ -1,67 +1,16 @@
-/**
- * structured-document-compiler.prompt — Волна 6 Стадия C, A7.
- *
- * Агент-компилятор организационного документа: единый владелец сборки
- * `contentMd` для типов regulation / process / policy / instruction. Получает
- * тип, название и материал (накопленные блоки темы) + текущее тело документа,
- * собирает готовый структурный markdown по шаблону типа в двух режимах:
- *   - СОЗДАНИЕ (existingContentMd пуст) — каркас с нуля по структуре типа;
- *   - ДОПОЛНЕНИЕ (existingContentMd непустой) — слияние без потери старого.
- *
- * Источник полного текста SYSTEM:
- *   plans/analysis/2026-06-09-prompt-rewrites/22-org-entities-COMPARE-and-compiler.md §3
- *   (режимы, правила слияния, структуры по типам, маркеры, чек-лист).
- *
- * Контракт (tool `compile_org_document`):
- *   - contentMd:     string  — готовый markdown по структуре типа.
- *   - steps:         array of {title, description} — ТОЛЬКО для kind=process,
- *                    иначе []. Синхронизируются downstream с ProcessStep.
- *   - changeReason:  string  — что и почему изменено («первичная сборка из
- *                    материала» для СОЗДАНИЯ) → ложится в changelog версии.
- *   - signals:       array of string — type-mismatch / no-info / конфликты
- *                    (для триажа).
- *
- * Cache-friendly: SYSTEM стабильный (одинаков для всех вызовов); переменные
- * kind / name / blocks / existingContentMd — целиком в user (см.
- * applyInputGuards на call-site). withDocumentCompilerMode (A0.7) дописан в
- * КОНЕЦ SYSTEM, чтобы не ломать кэш префикса.
- *
- * E1/E2: newSourceBlocks / existingContentMd — пользовательский контент →
- * оборачиваются wrapUserData + withInjectionGuard на call-site (через
- * applyInputGuards). В тело SYSTEM пользовательские данные не вшиваются.
- *
- * Все строки на русском.
- */
-
 import { z } from 'zod';
 
 import type { LlmTool } from '../../ai/services/llm.types';
 import { withDocumentCompilerMode } from '../../ai/services/prompts/common';
 
-// ──────────────────────────── Метаданные ────────────────────────────
-
-/** taskType для LlmRouter (см. llm-router.service.ts LlmTaskType). */
 export const COMPILE_ORG_DOCUMENT_TASK_TYPE = 'compile-org-document' as const;
 
-/** Имя tool'а для structured output (LLM tool-use). */
 export const COMPILE_ORG_DOCUMENT_TOOL_NAME = 'compile_org_document';
 
-/**
- * Лимит выходных токенов. Документ + шаги + changelog — компактны (обычно
- * 2-6k), но запас на длинные регламенты с большой таблицей «кто-что-когда».
- */
 export const COMPILE_ORG_DOCUMENT_MAX_TOKENS = 12_000;
 
-/** Поддерживаемые типы документа (kind). */
-export const ORG_DOCUMENT_KINDS = [
-  'regulation',
-  'process',
-  'policy',
-  'instruction',
-] as const;
+export const ORG_DOCUMENT_KINDS = ['regulation', 'process', 'policy', 'instruction'] as const;
 export type OrgDocumentKind = (typeof ORG_DOCUMENT_KINDS)[number];
-
-// ──────────────────────────── Zod-схема парсинга ────────────────────────────
 
 export const CompiledStepSchema = z
   .object({
@@ -71,10 +20,6 @@ export const CompiledStepSchema = z
   .strict();
 export type CompiledStep = z.infer<typeof CompiledStepSchema>;
 
-/**
- * Output одного LLM-вызова. `steps` — массив (для не-process типов LLM вернёт
- * []). Все поля обязательны (steps/signals могут быть пустыми массивами).
- */
 export const CompileOrgDocumentOutputSchema = z
   .object({
     contentMd: z.string(),
@@ -83,11 +28,7 @@ export const CompileOrgDocumentOutputSchema = z
     signals: z.array(z.string()),
   })
   .strict();
-export type CompileOrgDocumentOutput = z.infer<
-  typeof CompileOrgDocumentOutputSchema
->;
-
-// ──────────────────────────── Tool schema (LlmTool) ────────────────────────────
+export type CompileOrgDocumentOutput = z.infer<typeof CompileOrgDocumentOutputSchema>;
 
 export const COMPILE_ORG_DOCUMENT_TOOL: LlmTool = {
   name: COMPILE_ORG_DOCUMENT_TOOL_NAME,
@@ -132,13 +73,6 @@ export const COMPILE_ORG_DOCUMENT_TOOL: LlmTool = {
   },
 };
 
-// ──────────────────────────── System prompt ────────────────────────────
-
-/**
- * Тело SYSTEM — текст СТАЛО из анализа 22 §3 (режимы, алгоритм, правила
- * слияния, общие принципы, структуры по типам, краевые случаи, чек-лист,
- * формат вывода). Стабильный, без переменных — cache-friendly.
- */
 const COMPILE_ORG_DOCUMENT_SYSTEM_BODY = `## Роль
 Ты — специалист по корпоративной документации компании Кора. Получаешь тип документа, его
 название и материал (накопленные блоки из встреч, переписок, заметок) и собираешь из сырого
@@ -238,29 +172,17 @@ changeReason: «первичная сборка из материала».
 иначе []), changeReason (1–3 строки «что изменилось в этой версии» — только для ДОПОЛНЕНИЯ; для
 СОЗДАНИЯ — «первичная сборка из материала»), signals[]. Никакого текста вне инструмента.`;
 
-/**
- * Полный SYSTEM-промпт компилятора. withDocumentCompilerMode (A0.7) дописывает
- * в КОНЕЦ блок про режимы/маркеры/«ничего не теряй»/версию — стабильно,
- * cache-friendly.
- */
 export function buildCompileOrgDocumentSystemPrompt(): string {
   return withDocumentCompilerMode(COMPILE_ORG_DOCUMENT_SYSTEM_BODY);
 }
 
-// ──────────────────────────── User message ────────────────────────────
-
-/** Минимальное представление блока-источника для user-сообщения. */
 export interface CompileSourceBlock {
   name: string;
-  /** Вопрос/тема блока (criticalQuestion). */
   question?: string | null;
-  /** Подтверждённый ответ/суть (trustedAnswer / statement). */
   answer?: string | null;
-  /** Дословные цитаты-опоры. */
   quotes?: string[];
 }
 
-/** Существующий шаг процесса (для синхронизации в ДОПОЛНЕНИИ). */
 export interface CompileExistingStep {
   title: string;
   description?: string | null;
@@ -270,11 +192,8 @@ export interface CompileOrgDocumentInput {
   kind: OrgDocumentKind;
   name: string;
   newSourceBlocks: CompileSourceBlock[];
-  /** Текущее тело документа. Пусто/undefined → СОЗДАНИЕ; иначе ДОПОЛНЕНИЕ. */
   existingContentMd?: string | null;
-  /** Существующие шаги (для kind=process). */
   existingSteps?: CompileExistingStep[];
-  /** ISO «сейчас» (для относительных сроков). */
   nowIso?: string | null;
 }
 
@@ -289,13 +208,7 @@ function formatSourceBlock(block: CompileSourceBlock, idx: number): string {
   return lines.join('\n');
 }
 
-/**
- * Сборка RAW user-сообщения (БЕЗ guard-обёртки — её добавляет applyInputGuards
- * на call-site). Переменная часть целиком здесь — SYSTEM остаётся стабильным.
- */
-export function buildCompileOrgDocumentUserMessage(
-  input: CompileOrgDocumentInput,
-): string {
+export function buildCompileOrgDocumentUserMessage(input: CompileOrgDocumentInput): string {
   const mode =
     input.existingContentMd && input.existingContentMd.trim().length > 0
       ? 'ДОПОЛНЕНИЕ'
@@ -330,10 +243,7 @@ export function buildCompileOrgDocumentUserMessage(
     if (steps.length > 0) {
       parts.push(
         steps
-          .map(
-            (s, i) =>
-              `  ${i + 1}. ${s.title}${s.description ? ` — ${s.description}` : ''}`,
-          )
+          .map((s, i) => `  ${i + 1}. ${s.title}${s.description ? ` — ${s.description}` : ''}`)
           .join('\n'),
       );
     } else {
@@ -349,10 +259,6 @@ export function buildCompileOrgDocumentUserMessage(
   return parts.join('\n');
 }
 
-/**
- * Удобный билдер пары (system, user) — НЕ применяет guard'ы (это делает
- * сервис через applyInputGuards). Возвращает RAW system/user.
- */
 export function buildCompileOrgDocumentPrompt(input: CompileOrgDocumentInput): {
   system: string;
   user: string;

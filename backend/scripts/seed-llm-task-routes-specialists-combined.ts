@@ -1,33 +1,3 @@
-/**
- * ТЗ 2026-05-25 llm-architecture-changes §3 — Specialists Combined (Variant Б+).
- *
- * Seed маршрута LLM для нового taskType `knowledge-specialists-combined`:
- * один объединённый вызов на ВСЕ блоки одной встречи через tool
- * `submit_all_8_entities`. Эксперимент показал победу 18:13 vs Variant Г
- * (8 раздельных) при 3.7× меньшей стоимости.
- *
- * Цепочка (по §3.4 ТЗ):
- *   primary   — deepseek deepseek-v4-pro (capable + thinking + tools 'auto')
- *   secondary — openai-via-proxy gpt-5.4 (capable, тот же шаблон tool_use)
- *   tertiary  — ollama qwen3.5:9b        (локальный fallback; вряд ли
- *                                          справится с 32k output, но
- *                                          гарантирует, что pipeline не
- *                                          застрянет при падении внешних)
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-specialists-combined.ts
- *   bun run scripts/seed-llm-task-routes-specialists-combined.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - запись с `editedByAdmin=true` НЕ перезаписывается.
- *   - без флага `--update-existing` существующая запись пропускается.
- *   - с флагом — обновляются providers JSON + isActive (но НЕ editedByAdmin).
- *
- * NB: формат записи — `providers` JSON в одной строке `llmTaskRoute`
- * (как у `meeting-report-fast` в seed-llm-task-routes-knowledge-core.ts).
- * Это компактный вариант — секции по tier-ам выводятся из priority внутри JSON.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

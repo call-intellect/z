@@ -1,32 +1,13 @@
-/**
- * Промпт `block-distill` — LLM-арбитр дубликатов IdeaBlock'ов.
- *
- * Используется `BlockMergeService.judgeMerge` для решения, является ли новый
- * блок перефразировкой одного из top-K канонических кандидатов, ближайших по
- * pgvector cosine (merge) — или это отдельное самостоятельное знание (distinct).
- *
- * Вынесено из `services/block-merge.service.ts` в рамках Фазы 8 §10 Find 2
- * (ТЗ 2026-05-25-llm-architecture-changes-from-experiments.md) — для
- * единообразия и admin-редактируемости.
- */
-
 import { z } from 'zod';
 
 import { withAsrNote } from '../../ai/services/prompts/common';
 
-/**
- * Zod-схема ответа арбитра. При `verdict === 'merge'` `canonicalId`
- * обязателен — это валидируется на стороне сервиса.
- */
 export const BlockDistillJudgeResponseSchema = z.object({
   verdict: z.enum(['merge', 'distinct']),
   canonicalId: z.string().optional(),
   explanation: z.string(),
 });
 
-/**
- * Strict JSON Schema для OpenAI Responses / DeepSeek json_schema.
- */
 export const BLOCK_DISTILL_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,

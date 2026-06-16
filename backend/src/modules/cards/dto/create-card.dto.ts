@@ -8,11 +8,6 @@ import {
   CardKindSchema,
 } from './card-kind';
 
-/**
- * `POST /api/v1/cards`. Все поля кроме `name` опциональны.
- * Email/phone валидируются мягко — только длина и тип; глубокую валидацию
- * (например, RFC-compliant email) НЕ делаем — пользователь сам ведёт CRM.
- */
 export const CreateCardSchema = z.object({
   name: z.string().trim().min(1).max(CARD_NAME_MAX),
   kind: CardKindSchema.optional(),

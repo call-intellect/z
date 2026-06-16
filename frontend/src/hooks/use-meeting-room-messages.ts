@@ -1,20 +1,17 @@
-'use client';
+"use client";
 
-import useSWR from 'swr';
-import { useMemo } from 'react';
+import useSWR from "swr";
+import { useMemo } from "react";
 
-import { roomMessagesApi } from '@/api/room-messages.api';
-import { roomMessageFromApi, type RoomMessageDomain } from '@/domain/room-message';
+import { roomMessagesApi } from "@/api/room-messages.api";
+import {
+  roomMessageFromApi,
+  type RoomMessageDomain,
+} from "@/domain/room-message";
 
-/**
- * Хук истории in-meeting чата для уже завершённой встречи.
- * Используется на странице результата встречи (6-й таб «Чат»).
- *
- * Без polling'а — встреча уже не активна, история стабильна.
- */
 export function useMeetingRoomMessages(meetingId: string | null | undefined) {
   const swr = useSWR(
-    meetingId ? ['room-messages', meetingId] : null,
+    meetingId ? ["room-messages", meetingId] : null,
     async () => {
       if (!meetingId) return [];
       return roomMessagesApi.history(meetingId);

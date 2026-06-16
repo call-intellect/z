@@ -1,18 +1,8 @@
-/**
- * Судья сравнивает два варианта анализа одной встречи.
- *
- * Метки A/Б скрыты случайной маской X/Y, чтобы исключить позиционную
- * предвзятость. Судья — тот же DeepSeek-V4-Pro, отдельным вызовом.
- *
- * Запуск: cd backend && bun run scripts/eval/judge.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75% (постоянная):
-//   input miss $0.435/M, cache hit $0.003625/M, output $0.87/M.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
@@ -25,9 +15,7 @@ const A_PATH = path.resolve(
 const B_PATH = path.resolve(
   'test/eval/sales-merge-experiment/reports/fixture-01-pilot-variant-b.json',
 );
-const SUMMARY_PATH = path.resolve(
-  'test/eval/sales-merge-experiment/reports/SUMMARY.md',
-);
+const SUMMARY_PATH = path.resolve('test/eval/sales-merge-experiment/reports/SUMMARY.md');
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -37,8 +25,6 @@ const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
-
-// ── нормализация выходов A и Б к общему формату ─────────────────────────────
 
 interface NormalizedOutput {
   chapters: Array<{ title: string; summary: string; startMs?: number; endMs?: number }>;
@@ -101,8 +87,6 @@ function normalizeB(bReport: { output: unknown }): NormalizedOutput {
     },
   };
 }
-
-// ── промпт судьи ─────────────────────────────────────────────────────────────
 
 const JUDGE_SYSTEM = `Ты — независимый эксперт-аналитик деловых встреч. Тебе дают:
 1. Транскрипт продажной встречи (сырой текст).
@@ -183,8 +167,6 @@ const JUDGE_TOOL = {
   },
 };
 
-// ── main ─────────────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
   console.log('=== Судья: сравнение Variant A vs Б на fixture-01-pilot ===\n');
 
@@ -195,7 +177,6 @@ async function main(): Promise<void> {
   const aNorm = normalizeA(aReport);
   const bNorm = normalizeB(bReport);
 
-  // ── случайная маскировка A/B → X/Y ──────────────────────────────────────────
   const aIsX = Math.random() < 0.5;
   const xOutput = aIsX ? aNorm : bNorm;
   const yOutput = aIsX ? bNorm : aNorm;
@@ -258,7 +239,6 @@ ${JSON.stringify(yOutput, null, 2)}
       try {
         judgement = JSON.parse(call.function.arguments);
       } catch (parseErr) {
-        // Дамп raw args для диагностики
         const dumpPath = path.resolve(
           'test/eval/sales-merge-experiment/reports/judge-raw-args.txt',
         );
@@ -283,7 +263,6 @@ ${JSON.stringify(yOutput, null, 2)}
     process.exit(1);
   }
 
-  // ── размаскирование: X → A/B, Y → A/B ──────────────────────────────────────
   const j = judgement as {
     chapters: { score_x: number; score_y: number; explain: string };
     tasks: { score_x: number; score_y: number; explain: string };
@@ -298,13 +277,8 @@ ${JSON.stringify(yOutput, null, 2)}
     return crit.score_y;
   };
   const winnerReal =
-    j.winner_overall === 'tie'
-      ? 'tie'
-      : j.winner_overall === 'X'
-        ? xLabel
-        : yLabel;
+    j.winner_overall === 'tie' ? 'tie' : j.winner_overall === 'X' ? xLabel : yLabel;
 
-  // ── SUMMARY.md ─────────────────────────────────────────────────────────────
   const aTotalCost = aReport.totalCostUsd;
   const bTotalCost = bReport.totalCostUsd;
   const aTotalMs = aReport.totalMs;

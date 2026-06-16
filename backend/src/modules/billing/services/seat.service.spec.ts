@@ -1,22 +1,3 @@
-/**
- * Unit-тесты SeatService — формулы цены и pro-rata.
- *
- * Покрытие:
- *   - calculateMonthlyPriceKopecks: 60k, 60k+1k×extra (code-fallback)
- *   - calculateYearlyPriceKopecks: monthly × 12 × 0.80 (code-fallback)
- *   - calculatePricing: monthly / yearly с правильным разбиением
- *   - calculateAddSeatsMonthlyProrata: 0/частичный/полный месяц, cap по 30 дней
- *   - calculateAddSeatsYearlyProrata: 0/частичный/12 мес, со скидкой 20%
- *   - calculateMeetingsGrant: делегирование в MeetingsBalanceService
- *   - ensureNonNegativeInt: throw на отрицательных/нецелых
- *   - AdminSetting override: getDynamic возвращает не-default → расчёт по
- *     новой цене (имитация правки прайса super_admin)
- *
- * Все методы async — каждый тест использует await. `TypedConfigService` мокается
- * `getDynamic = (k, _e, def) => def` (= возвращает code-fallback), что
- * эмулирует «AdminSettingsService недоступен / ключа нет в БД».
- */
-
 import { describe, expect, it } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -24,30 +5,15 @@ import type { MeetingsBalanceService } from '../../meetings-balance/meetings-bal
 
 import { SeatService } from './seat.service';
 
-/**
- * Мок `TypedConfigService.getDynamic`, который возвращает `defaultValue`
- * (= code-fallback). Эмулирует ситуацию «ключа нет в AdminSetting» или
- * «AdminSettingsService недоступен».
- */
 function makeFallbackCfg(): TypedConfigService {
   return {
-    getDynamic: async <T>(
-      _key: string,
-      _envKey: string | undefined,
-      def: T,
-    ): Promise<T> => def,
+    getDynamic: async <T>(_key: string, _envKey: string | undefined, def: T): Promise<T> => def,
   } as unknown as TypedConfigService;
 }
 
-/**
- * Мок `MeetingsBalanceService.calculateMeetingsGrant` с фиксированными
- * code-fallback значениями (150 + extra × 5). Возвращается типобезопасно,
- * только нужные SeatService методы.
- */
 function makeMeetingsBalanceMock(): MeetingsBalanceService {
   return {
-    calculateMeetingsGrant: async (extra: number) =>
-      150 + Math.max(0, extra) * 5,
+    calculateMeetingsGrant: async (extra: number) => 150 + Math.max(0, extra) * 5,
   } as unknown as MeetingsBalanceService;
 }
 
@@ -75,15 +41,11 @@ describe('SeatService.calculateMonthlyPriceKopecks (code-fallback)', () => {
   });
 
   it('отрицательный seatsExtra → throw', async () => {
-    await expect(svc.calculateMonthlyPriceKopecks(-1)).rejects.toThrow(
-      /seatsExtra/,
-    );
+    await expect(svc.calculateMonthlyPriceKopecks(-1)).rejects.toThrow(/seatsExtra/);
   });
 
   it('нецелый seatsExtra → throw', async () => {
-    await expect(svc.calculateMonthlyPriceKopecks(1.5)).rejects.toThrow(
-      /seatsExtra/,
-    );
+    await expect(svc.calculateMonthlyPriceKopecks(1.5)).rejects.toThrow(/seatsExtra/);
   });
 });
 
@@ -128,7 +90,7 @@ describe('SeatService.calculatePricing (code-fallback)', () => {
   it('yearly seatsExtra=10: monthly=70k, period=672k, discount=168k', async () => {
     const p = await svc.calculatePricing('yearly', 10);
     expect(p.monthlyKopecks).toBe(7_000_000);
-    expect(p.periodKopecks).toBe(67_200_000); // 70k × 12 × 0.8 = 672 000
+    expect(p.periodKopecks).toBe(67_200_000);
     expect(p.discountKopecks).toBe(7_000_000 * 12 - 67_200_000);
     expect(p.seatsExtraKopecks).toBe(10 * 100_000);
   });
@@ -136,7 +98,7 @@ describe('SeatService.calculatePricing (code-fallback)', () => {
 
 describe('SeatService.calculateAddSeatsMonthlyProrata (code-fallback)', () => {
   const svc = makeSeatService();
-  const PRORATA_DAYS_IN_MONTH = 30; // зеркало бизнес-формата биллинга
+  const PRORATA_DAYS_IN_MONTH = 30;
 
   it('seatsToAdd=0 → 0', async () => {
     expect(
@@ -249,18 +211,9 @@ describe('SeatService.calculateMeetingsGrant — делегирование в M
 });
 
 describe('SeatService — AdminSetting override', () => {
-  /**
-   * Эмулируем правку super_admin: `billing.baseMonthlyKopecks` = 7 000 000
-   * (70 000 ₽). `perExtraSeatKopecks` и `yearlyDiscountRate` — на дефолтах.
-   * Ожидание: новая базовая цена попадает в расчёт сразу.
-   */
   function makeOverridingCfg(overrides: Record<string, number>): TypedConfigService {
     return {
-      getDynamic: async <T>(
-        key: string,
-        _envKey: string | undefined,
-        def: T,
-      ): Promise<T> => {
+      getDynamic: async <T>(key: string, _envKey: string | undefined, def: T): Promise<T> => {
         if (key in overrides) return overrides[key] as unknown as T;
         return def;
       },
@@ -271,12 +224,10 @@ describe('SeatService — AdminSetting override', () => {
     const cfg = makeOverridingCfg({ 'billing.baseMonthlyKopecks': 7_000_000 });
     const svc = new SeatService(cfg, makeMeetingsBalanceMock());
     expect(await svc.calculateMonthlyPriceKopecks(0)).toBe(7_000_000);
-    expect(await svc.calculateMonthlyPriceKopecks(5)).toBe(7_500_000); // +5 × 1000 ₽
+    expect(await svc.calculateMonthlyPriceKopecks(5)).toBe(7_500_000);
   });
 
   it('calculateYearlyPriceKopecks: учитывает override yearlyDiscountRate', async () => {
-    // 70% скидка вместо 80% (= 30% off) на базовом тарифе:
-    // 6 000 000 × 12 × 0.7 = 50 400 000
     const cfg = makeOverridingCfg({ 'billing.yearlyDiscountRate': 0.7 });
     const svc = new SeatService(cfg, makeMeetingsBalanceMock());
     expect(await svc.calculateYearlyPriceKopecks(0)).toBe(50_400_000);
@@ -285,15 +236,13 @@ describe('SeatService — AdminSetting override', () => {
   it('calculatePricing yearly: baseMonthlyKopecks отражает override', async () => {
     const cfg = makeOverridingCfg({
       'billing.baseMonthlyKopecks': 7_000_000,
-      'billing.perExtraSeatKopecks': 150_000, // 1 500 ₽/место
+      'billing.perExtraSeatKopecks': 150_000,
     });
     const svc = new SeatService(cfg, makeMeetingsBalanceMock());
     const p = await svc.calculatePricing('yearly', 4);
-    // monthly = 7M + 4 × 150k = 7 600 000 ₽-копеек
     expect(p.monthlyKopecks).toBe(7_600_000);
     expect(p.baseMonthlyKopecks).toBe(7_000_000);
     expect(p.seatsExtraKopecks).toBe(600_000);
-    // yearly = round(7 600 000 × 12 × 0.8) = 72 960 000
     expect(p.periodKopecks).toBe(72_960_000);
   });
 });

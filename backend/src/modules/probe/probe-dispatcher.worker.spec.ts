@@ -1,14 +1,3 @@
-/**
- * Agents v2 Фаза 0.2 (2026-05-30) — ProbeDispatcherWorker.
- *
- * Unit-тест: после успешного `formulate()` worker сохраняет
- * formulatedQuestion в `ProbeEvent.payload`, чтобы потом
- * `ProbeResponseHandler` мог отдать его LLM-классификатору
- * (`probe-response-classify`) вместо reason/message-fallback'a.
- *
- * Все Prisma/LLM/Conversational/Probe/Metrics/Cfg мокированы (без БД, без сети).
- */
-
 import type { Job } from 'bullmq';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,10 +24,6 @@ interface Mocks {
   llmCall: ReturnType<typeof vi.fn>;
 }
 
-/**
- * Дефолтный priority=80 — выше порога immediatePushMinPriority (70, Autonomy
- * W0 Ф0.2), чтобы тесты dispatch-пути не задевал priority-гейт.
- */
 function buildProbe(
   payload: Record<string, unknown>,
   priority = 80,
@@ -80,12 +65,10 @@ function makeMocks(args: {
       findUnique: vi.fn().mockResolvedValue(probe),
       update: vi
         .fn()
-        .mockImplementation(
-          async (params: { where: unknown; data: Record<string, unknown> }) => {
-            updateCalls.push(params);
-            return { ...probe, ...params.data };
-          },
-        ),
+        .mockImplementation(async (params: { where: unknown; data: Record<string, unknown> }) => {
+          updateCalls.push(params);
+          return { ...probe, ...params.data };
+        }),
     },
   } as unknown as PrismaService;
 
@@ -124,13 +107,9 @@ function makeMocks(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
-    // Динамические крутилки (probe.immediatePushMinPriority=70,
-    // probe.topicCooldownHours=48) — мок отдаёт переданный fallback.
     getDynamic: vi
       .fn()
-      .mockImplementation(
-        async (_key: string, _env: unknown, fallback: unknown) => fallback,
-      ),
+      .mockImplementation(async (_key: string, _env: unknown, fallback: unknown) => fallback),
   } as unknown as TypedConfigService;
 
   const redis = {
@@ -162,11 +141,7 @@ function makeWorker(m: Mocks): ProbeDispatcherWorker {
   );
 }
 
-/** process — приватный; вызываем через bracket-access как в integration spec. */
-async function runProcess(
-  worker: ProbeDispatcherWorker,
-  probeEventId: string,
-): Promise<void> {
+async function runProcess(worker: ProbeDispatcherWorker, probeEventId: string): Promise<void> {
   const job = {
     data: { probeEventId } as ProbeEventJobData,
     attemptsMade: 1,
@@ -197,7 +172,6 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.llmCall).toHaveBeenCalledTimes(1);
-    // Должен быть ровно один update — на status='dispatched'.
     expect(mocks.updateCalls).toHaveLength(1);
     const updateData = mocks.updateCalls[0]!.data;
     expect(updateData.status).toBe('dispatched');
@@ -207,15 +181,8 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали миграцию на DeepSeek с финдиректором?',
     );
-    // Старые поля из payload не теряются.
-    expect(newPayload.message).toBe(
-      'Решение по миграции на DeepSeek просрочено на 2 дня.',
-    );
-    expect(newPayload.suggestedActions).toEqual([
-      'Подтвердить',
-      'Отменить',
-      'Продлить',
-    ]);
+    expect(newPayload.message).toBe('Решение по миграции на DeepSeek просрочено на 2 дня.');
+    expect(newPayload.suggestedActions).toEqual(['Подтвердить', 'Отменить', 'Продлить']);
   });
 
   it('LLM упал — formulatedQuestion = fallback (suggestedQuestion из payload)', async () => {
@@ -232,14 +199,8 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.updateCalls).toHaveLength(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
-      string,
-      unknown
-    >;
-    // formulatedQuestion = fallback = suggestedQuestion.
-    expect(newPayload.formulatedQuestion).toBe(
-      'Вы согласовали с финдиректором?',
-    );
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
+    expect(newPayload.formulatedQuestion).toBe('Вы согласовали с финдиректором?');
   });
 });
 
@@ -267,9 +228,7 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
 
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
-    expect(
-      vi.mocked(mocks.conversational.sendNotification),
-    ).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.conversational.sendNotification)).not.toHaveBeenCalled();
     expect(mocks.llmCall).not.toHaveBeenCalled();
   });
 
@@ -278,9 +237,7 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(
-      vi.mocked(mocks.conversational.sendNotification),
-    ).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
@@ -290,9 +247,7 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(
-      vi.mocked(mocks.conversational.sendNotification),
-    ).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
@@ -311,35 +266,24 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
 
     await runProcess(worker, 'probe-disp-1');
 
-    expect(
-      vi.mocked(mocks.conversational.sendNotification),
-    ).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
 
   it('L-1: getDynamic упал, priority=40 < default 70 → queued_digest (гейт работает на дефолте)', async () => {
     const mocks = makeGateMocks(40);
-    vi.mocked(mocks.cfg.getDynamic).mockRejectedValue(
-      new Error('settings db down'),
-    );
+    vi.mocked(mocks.cfg.getDynamic).mockRejectedValue(new Error('settings db down'));
     const worker = makeWorker(mocks);
 
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
-    expect(
-      vi.mocked(mocks.conversational.sendNotification),
-    ).not.toHaveBeenCalled();
+    expect(vi.mocked(mocks.conversational.sendNotification)).not.toHaveBeenCalled();
   });
 });
 
-/**
- * TZ clone-method Э3.1 — CDM-вопрос НЕ переформулируется: он уже построен
- * LLM `cdm-case-interview` строго по методике критических решений (открытый,
- * не наводящий); прогон через probe-formulate мог бы сделать его наводящим.
- */
 describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', () => {
   it('reason=skill.cdm_interview + suggestedQuestion → LLM probe-formulate НЕ вызывается, вопрос уходит КАК ЕСТЬ', async () => {
     const cdmQuestion =
@@ -357,14 +301,9 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    // LLM probe-formulate не дёргался.
     expect(mocks.llmCall).not.toHaveBeenCalled();
-    // Вопрос сохранён без изменений.
     expect(mocks.updateCalls).toHaveLength(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
-      string,
-      unknown
-    >;
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
     expect(newPayload.formulatedQuestion).toBe(cdmQuestion);
   });
 
@@ -381,12 +320,7 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.llmCall).toHaveBeenCalledTimes(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
-      string,
-      unknown
-    >;
-    expect(newPayload.formulatedQuestion).toBe(
-      'Расскажете, как принимали это решение?',
-    );
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
+    expect(newPayload.formulatedQuestion).toBe('Расскажете, как принимали это решение?');
   });
 });

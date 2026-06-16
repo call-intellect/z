@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Task, TaskStatus } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -13,19 +7,11 @@ import { AuditLogService } from '../audit/audit-log.service';
 import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
 import type { CreateTaskDto } from './dto/create-task.dto';
-import type {
-  BulkTasksDto,
-  ListTasksQuery,
-} from './dto/list-tasks.dto';
+import type { BulkTasksDto, ListTasksQuery } from './dto/list-tasks.dto';
 import type { UpdateTaskDto } from './dto/update-task.dto';
 import { TasksDispatcherService } from './tasks-dispatcher.service';
 import { TasksRepository } from './tasks.repository';
 
-/**
- * Структурная форма задачи встречи, потребляемая `TasksController.mapTask`.
- * Прямой Prisma `Task` ей удовлетворяет; нормализованный `MeetingActionItem`
- * (Ф5.2, режим Issue) мапится в неё в `listByMeeting`.
- */
 export interface MeetingTaskView {
   id: string;
   meetingId: string | null;
@@ -46,13 +32,6 @@ export interface MeetingTaskView {
   updatedAt: Date;
 }
 
-/**
- * Бизнес-сервис задач (action items).
- *
- * Все операции защищены ownership-проверкой: `task.userId === currentUser.id`.
- * Для скрытия информации NotFound используется и при «нет такой задачи»,
- * и при «не ваша задача».
- */
 @Injectable()
 export class TasksService {
   private readonly logger = new Logger(TasksService.name);
@@ -79,21 +58,7 @@ export class TasksService {
     });
   }
 
-  /**
-   * Задачи одной встречи для пользователя (используется legacy-фронтом через
-   * `GET /api/v1/meetings/:id/tasks`).
-   *
-   * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2.
-   * При дефолте (флаг `knowledge.meetingTasksToTrackerOnly` = false,
-   * code-fallback) читаем Task напрямую — форма ответа фронта не меняется
-   * (байт-в-байт). При включённом флаге видимая задача = tracker Issue: берём
-   * её через единый helper и наполняем недостающие до контракта `mapTask`
-   * поля (sourceStartMs/sourceEndMs/createdManually) нейтральными значениями.
-   */
-  async listByMeeting(
-    meetingId: string,
-    userId: string,
-  ): Promise<MeetingTaskView[]> {
+  async listByMeeting(meetingId: string, userId: string): Promise<MeetingTaskView[]> {
     const meeting = await this.assertMeetingOwner(meetingId, userId);
     if (!(await this.actionItems.isTrackerOnly())) {
       return this.repo.listByMeeting(meetingId, userId);
@@ -148,9 +113,7 @@ export class TasksService {
       ...(dto.title !== undefined ? { title: dto.title } : {}),
       ...(dto.description !== undefined ? { description: dto.description } : {}),
       ...(dto.assigneeRaw !== undefined ? { assigneeRaw: dto.assigneeRaw } : {}),
-      ...(dto.dueDate !== undefined
-        ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }
-        : {}),
+      ...(dto.dueDate !== undefined ? { dueDate: dto.dueDate ? new Date(dto.dueDate) : null } : {}),
       ...(dto.status !== undefined ? { status: dto.status } : {}),
     });
   }
@@ -163,11 +126,7 @@ export class TasksService {
     await this.repo.delete(id);
   }
 
-  async send(
-    id: string,
-    userId: string,
-    destinationId: string,
-  ): Promise<{ ok: true }> {
+  async send(id: string, userId: string, destinationId: string): Promise<{ ok: true }> {
     const task = await this.repo.findById(id);
     if (!task || task.userId !== userId) {
       throw new NotFoundException('task_not_found');
@@ -217,8 +176,6 @@ export class TasksService {
 
     return { affected, action: dto.action };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private async assertMeetingOwner(
     meetingId: string,

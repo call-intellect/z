@@ -11,25 +11,11 @@ import { type Table, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import type {
-  CreateTableBody,
-  TablesListQuery,
-  UpdateTableBody,
-} from '../dto/tables.dto';
+import type { CreateTableBody, TablesListQuery, UpdateTableBody } from '../dto/tables.dto';
 
 import { parseEntitySync } from './entity-sync.util';
 import { TableSyncService } from './table-sync.service';
 
-/**
- * Smart Tables — CRUD верхнего уровня (Фаза 0).
- *
- *   - create / findById / list / update
- *   - archive (soft) / unarchive
- *   - hardDelete — только если уже archived
- *
- * Лимит `TABLE_MAX_TABLES_PER_ORG` читается из `TypedConfigService` (ENV
- * + AdminSetting fallback). Multi-tenant scope — `tenantId` в каждом where.
- */
 @Injectable()
 export class TablesService {
   private readonly logger = new Logger(TablesService.name);
@@ -37,21 +23,12 @@ export class TablesService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    // Smart-tables Фаза 2 — initial backfill при включении autoCreate.
-    // @Optional: существующие unit-тесты TablesService конструируют сервис
-    // двумя аргументами; без TableSyncService backfill просто не запускается.
     @Optional()
     @Inject(TableSyncService)
     private readonly tableSync?: TableSyncService,
   ) {}
 
-  // ─────────────────────────── create ─────────────────────────────────────
-
-  async create(args: {
-    tenantId: string;
-    userId: string;
-    input: CreateTableBody;
-  }): Promise<Table> {
+  async create(args: { tenantId: string; userId: string; input: CreateTableBody }): Promise<Table> {
     const limit = this.cfg.smartTables.maxTablesPerOrg;
     const current = await this.prisma.table.count({
       where: { tenantId: args.tenantId, deletedAt: null },
@@ -97,8 +74,6 @@ export class TablesService {
     });
   }
 
-  // ─────────────────────────── findById ───────────────────────────────────
-
   async findById(args: { tenantId: string; id: string }): Promise<Table> {
     const row = await this.prisma.table.findUnique({
       where: { id: args.id },
@@ -110,7 +85,6 @@ export class TablesService {
       });
     }
     if (row.tenantId !== args.tenantId) {
-      // Возвращаем 404, чтобы не подсказывать атакующему о существовании id.
       throw new NotFoundException({
         ok: false,
         error: { code: 'table_not_found', message: 'Таблица не найдена' },
@@ -118,8 +92,6 @@ export class TablesService {
     }
     return row;
   }
-
-  // ─────────────────────────── list ───────────────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -147,19 +119,10 @@ export class TablesService {
     return { items, total };
   }
 
-  // ─────────────────────────── update ─────────────────────────────────────
-
-  async update(args: {
-    tenantId: string;
-    id: string;
-    input: UpdateTableBody;
-  }): Promise<Table> {
+  async update(args: { tenantId: string; id: string; input: UpdateTableBody }): Promise<Table> {
     const existing = await this.findById({ tenantId: args.tenantId, id: args.id });
 
-    if (
-      args.input.parentDocumentId !== undefined &&
-      args.input.parentDocumentId !== null
-    ) {
+    if (args.input.parentDocumentId !== undefined && args.input.parentDocumentId !== null) {
       const doc = await this.prisma.document.findUnique({
         where: { id: args.input.parentDocumentId },
         select: { tenantId: true, deletedAt: true },
@@ -194,9 +157,6 @@ export class TablesService {
       data,
     });
 
-    // Smart-tables Фаза 2 — если autoCreate переключился false/несинк → true,
-    // наполняем таблицу строками по «живым» Entity (initial backfill). Не
-    // блокируем ответ при ошибке — лог + продолжаем (синк догонит по событиям).
     if (args.input.entitySync !== undefined && this.tableSync) {
       const before = parseEntitySync(existing.entitySync);
       const after = parseEntitySync(updated.entitySync);
@@ -220,11 +180,9 @@ export class TablesService {
     return updated;
   }
 
-  // ─────────────────────────── archive / unarchive ────────────────────────
-
   async archive(args: { tenantId: string; id: string }): Promise<Table> {
     const existing = await this.findById({ tenantId: args.tenantId, id: args.id });
-    if (existing.archivedAt) return existing; // идемпотентно
+    if (existing.archivedAt) return existing;
     return this.prisma.table.update({
       where: { id: existing.id },
       data: { archivedAt: new Date() },
@@ -233,32 +191,21 @@ export class TablesService {
 
   async unarchive(args: { tenantId: string; id: string }): Promise<Table> {
     const existing = await this.findById({ tenantId: args.tenantId, id: args.id });
-    if (!existing.archivedAt) return existing; // идемпотентно
+    if (!existing.archivedAt) return existing;
     return this.prisma.table.update({
       where: { id: existing.id },
       data: { archivedAt: null },
     });
   }
 
-  // ─────────────────────────── hardDelete ─────────────────────────────────
-
-  /**
-   * Hard-delete можно только если таблица уже архивирована — это безопасный
-   * двухшаговый сценарий «архив → удалить». Каскады по `onDelete: Cascade`
-   * сами вычищают TableProperty / TableRow / TableView / TableAutomation.
-   */
-  async hardDelete(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<{ id: string }> {
+  async hardDelete(args: { tenantId: string; id: string }): Promise<{ id: string }> {
     const existing = await this.findById({ tenantId: args.tenantId, id: args.id });
     if (existing.isSystem) {
       throw new ForbiddenException({
         ok: false,
         error: {
           code: 'system_table_hard_delete_forbidden',
-          message:
-            'Системную таблицу нельзя удалить навсегда — её можно только перевести в архив.',
+          message: 'Системную таблицу нельзя удалить навсегда — её можно только перевести в архив.',
         },
       });
     }
@@ -267,8 +214,7 @@ export class TablesService {
         ok: false,
         error: {
           code: 'table_must_be_archived',
-          message:
-            'Удалить можно только архивированную таблицу. Сначала переведите её в архив.',
+          message: 'Удалить можно только архивированную таблицу. Сначала переведите её в архив.',
         },
       });
     }

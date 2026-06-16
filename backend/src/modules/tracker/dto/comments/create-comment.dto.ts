@@ -1,10 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Создание комментария к задаче. `parentCommentId` поддерживает треды.
- * `access='external'` — для гостевых пользователей (через guest-channel),
- * но пока в Phase 1 эндпоинт только под аутентификацией → access='internal'.
- */
 export const CreateCommentSchema = z
   .object({
     content: z.string().min(1).max(50_000),

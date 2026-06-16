@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Brain,
   ChevronDown,
@@ -17,9 +17,9 @@ import {
   User,
   Video,
   type LucideIcon,
-} from 'lucide-react';
-import { Avatar, AvatarFallback } from '@/ui/shadcn/avatar';
-import { Button } from '@/ui/shadcn/button';
+} from "lucide-react";
+import { Avatar, AvatarFallback } from "@/ui/shadcn/avatar";
+import { Button } from "@/ui/shadcn/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,52 +30,31 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { Separator } from '@/ui/shadcn/separator';
+} from "@/ui/shadcn/dropdown-menu";
+import { Separator } from "@/ui/shadcn/separator";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '@/ui/shadcn/tooltip';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { useAuth } from '@/contexts/auth-context';
-import { useEntitlement } from '@/hooks/useEntitlement';
-import { useMyInboxCount } from '@/hooks/tracker/useMyInboxCount';
-// ТЗ 2026-06-09 support-desk — статус деска (deskEnabled / isAgent).
-import { useSupportStatus } from '@/hooks/useSupportStatus';
-// ТЗ 2026-05-26 §5.5 — точка-индикатор «новый грант на клона».
-import { useUnseenCloneGrants } from '@/hooks/useUnseenCloneGrants';
-import {
-  FEATURE_MIN_TIER,
-  tierLabel,
-} from '@/domain/entitlement';
-import { useTheme } from '@/ui/components/theme/ThemeProvider';
-import { NAV_HELP } from '@/lib/nav-help';
-import { OrgSwitcher } from './OrgSwitcher';
+} from "@/ui/shadcn/tooltip";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useAuth } from "@/contexts/auth-context";
+import { useEntitlement } from "@/hooks/useEntitlement";
+import { useMyInboxCount } from "@/hooks/tracker/useMyInboxCount";
+import { useSupportStatus } from "@/hooks/useSupportStatus";
+import { useUnseenCloneGrants } from "@/hooks/useUnseenCloneGrants";
+import { FEATURE_MIN_TIER, tierLabel } from "@/domain/entitlement";
+import { useTheme } from "@/ui/components/theme/ThemeProvider";
+import { NAV_HELP } from "@/lib/nav-help";
+import { OrgSwitcher } from "./OrgSwitcher";
 import {
   resolveDesktopNav,
   type NavConfigItem,
   type NavConfigSection,
   type NavConfigSubgroup,
-} from './nav-config';
+} from "./nav-config";
 
-/**
- * Sidebar — главный навигационный каркас кабинета Коры.
- *
- * ТЗ 2026-06-13 «Редизайн кабинета: ритмы, очередь решений, новое меню», Ф0.
- * Структура декларируется в ЕДИНОМ `nav-config.ts` (источник правды и для
- * десктопа, и для мобилки) — 3 ритма + рабочие разделы + Я + Система,
- * роль-зависимо. Здесь — только рендер и наложение динамики (живой бейдж
- * «Мои дела», точка «новый клон-грант», тариф-гейт, статус деска).
- *
- * Состояния пункта (порядок проверки: comingSoon → locked → enabled):
- *   - `comingSoon=true` — иконка `Clock4`, opacity-60, ведёт на preview.
- *   - `gateFeature` + закрытый тариф — иконка `Lock`, клик → /settings/billing.
- *   - Обычное — стандартный `<Link>`.
- */
-
-/** Пункт после наложения динамики (живой бейдж/точка). */
 type ResolvedNavItem = NavConfigItem & {
   badgeCount?: number;
   showDot?: boolean;
@@ -88,21 +67,15 @@ export function Sidebar({
   className?: string;
   onNavigate?: () => void;
 }) {
-  const pathname = usePathname() ?? '';
+  const pathname = usePathname() ?? "";
   const { isSuperAdmin, currentOrgRole, currentOrgId } = useAuth();
 
-  // Живой бейдж «Мои дела» (личный инбокс рядового). Хук вызывается всегда
-  // (rules-of-hooks), запрос гейтится наличием orgId.
   const { count: myInboxCount } = useMyInboxCount(currentOrgId);
 
-  // ТЗ 2026-05-26 §5.5 — точка возле «Клоны» при новом невидённом гранте.
   const hasUnseenCloneGrants = useUnseenCloneGrants(currentOrgId);
 
-  // ТЗ 2026-06-09 support-desk — deskEnabled → «Мои обращения»; isAgent →
-  // секция «Поддержка». Резолвится в nav-config через requiresDesk/Agent.
   const support = useSupportStatus();
 
-  // Резолвим дерево навигации под текущую роль/доступ.
   const sections = resolveDesktopNav({
     role: currentOrgRole,
     isSuperAdmin,
@@ -110,11 +83,10 @@ export function Sidebar({
     isSupportAgent: support.isAgent,
   });
 
-  // Накладываем динамику: живой бейдж и точку «новое».
   const overlay = (item: NavConfigItem): ResolvedNavItem => {
     const out: ResolvedNavItem = { ...item };
-    if (item.badge === 'myInbox') out.badgeCount = myInboxCount;
-    if (item.dot === 'cloneGrants') out.showDot = hasUnseenCloneGrants;
+    if (item.badge === "myInbox") out.badgeCount = myInboxCount;
+    if (item.dot === "cloneGrants") out.showDot = hasUnseenCloneGrants;
     return out;
   };
 
@@ -131,8 +103,6 @@ export function Sidebar({
       : {}),
   }));
 
-  // Считаем «победителя» по самому специфичному matchPrefix (как в активном
-  // пункте) один раз по всему плоскому списку.
   const allItems: ResolvedNavItem[] = resolvedSections.flatMap((g) => [
     ...g.items,
     ...(g.collapsibleSubgroups?.flatMap((s) => s.items) ?? []),
@@ -151,17 +121,18 @@ export function Sidebar({
     }))
     .filter((c) => c.matches);
   const winnerHref = candidates.length
-    ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a)).href
+    ? candidates.reduce((a, b) => (b.prefix.length > a.prefix.length ? b : a))
+        .href
     : null;
 
   return (
     <aside
       className={cn(
-        'flex h-full w-sb shrink-0 flex-col border-r border-border-subtle bg-bg-surface',
+        "flex h-full w-sb shrink-0 flex-col border-r border-border-subtle bg-bg-surface",
         className,
       )}
     >
-      {/* Logo */}
+      {}
       <div className="flex h-header items-center px-5">
         <Link
           href="/dashboard"
@@ -174,23 +145,29 @@ export function Sidebar({
           <div className="grid h-7 w-7 place-items-center rounded-md bg-accent font-mono text-sm font-bold text-accent-fg">
             К
           </div>
-          <span className="text-lg font-semibold tracking-tight text-fg-primary">Кора</span>
+          <span className="text-lg font-semibold tracking-tight text-fg-primary">
+            Кора
+          </span>
         </Link>
       </div>
 
-      {/* Org switcher */}
+      {}
       <div className="px-3 pb-2" data-overview-target="overview.org-switcher">
         <OrgSwitcher variant="sidebar" />
       </div>
 
-      {/* CTA «+ Создать» (Встреча · Мысль · Задача · Цель) */}
-      <div className="px-3 pb-3" data-tour-target="welcome.create-meeting" data-overview-target="overview.create">
+      {}
+      <div
+        className="px-3 pb-3"
+        data-tour-target="welcome.create-meeting"
+        data-overview-target="overview.create"
+      >
         <CreateMenu onNavigate={onNavigate} />
       </div>
 
       <Separator />
 
-      {/* Nav */}
+      {}
       <nav className="flex-1 overflow-y-auto p-2">
         <TooltipProvider delayDuration={150}>
           {resolvedSections.map((section, idx) => (
@@ -207,7 +184,7 @@ export function Sidebar({
 
       <Separator />
 
-      {/* User card */}
+      {}
       <div className="p-2">
         <UserCard onAfterAction={onNavigate} />
       </div>
@@ -215,16 +192,12 @@ export function Sidebar({
   );
 }
 
-/**
- * Дропдаун «+ Создать» — единый вход в создание сущностей (ТЗ Ф0, архитектура
- * §3.1). «Дамп» убран из меню — мысль вносится отсюда.
- */
 function CreateMenu({ onNavigate }: { onNavigate?: () => void }) {
   const opts: { href: string; label: string; icon: LucideIcon }[] = [
-    { href: '/meetings/create', label: 'Встреча', icon: Video },
-    { href: '/dump', label: 'Мысль', icon: Brain },
-    { href: '/intake', label: 'Задача', icon: ListChecks },
-    { href: '/goals', label: 'Цель', icon: Target },
+    { href: "/meetings/create", label: "Встреча", icon: Video },
+    { href: "/dump", label: "Мысль", icon: Brain },
+    { href: "/intake", label: "Задача", icon: ListChecks },
+    { href: "/goals", label: "Цель", icon: Target },
   ];
   return (
     <DropdownMenu>
@@ -234,12 +207,19 @@ function CreateMenu({ onNavigate }: { onNavigate?: () => void }) {
           Создать
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[calc(var(--sidebar-w)-1.5rem)] min-w-44">
+      <DropdownMenuContent
+        align="start"
+        className="w-[calc(var(--sidebar-w)-1.5rem)] min-w-44"
+      >
         {opts.map((o) => {
           const Icon = o.icon;
           return (
             <DropdownMenuItem key={o.href} asChild>
-              <Link href={o.href} onClick={onNavigate} className="flex items-center gap-2">
+              <Link
+                href={o.href}
+                onClick={onNavigate}
+                className="flex items-center gap-2"
+              >
                 <Icon size={15} strokeWidth={1.75} />
                 {o.label}
               </Link>
@@ -307,31 +287,26 @@ function SidebarSubgroup({
 
   useEffect(() => {
     if (!subgroup.storageKey) return;
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     try {
       const stored = window.localStorage.getItem(subgroup.storageKey);
-      if (stored === '0') setCollapsed(false);
-      else if (stored === '1') setCollapsed(true);
-    } catch {
-      // localStorage недоступен (приватный режим, SSR) — игнорируем.
-    }
+      if (stored === "0") setCollapsed(false);
+      else if (stored === "1") setCollapsed(true);
+    } catch {}
   }, [subgroup.storageKey]);
 
   const toggle = () => {
     setCollapsed((prev) => {
       const next = !prev;
-      if (subgroup.storageKey && typeof window !== 'undefined') {
+      if (subgroup.storageKey && typeof window !== "undefined") {
         try {
-          window.localStorage.setItem(subgroup.storageKey, next ? '1' : '0');
-        } catch {
-          // ignore
-        }
+          window.localStorage.setItem(subgroup.storageKey, next ? "1" : "0");
+        } catch {}
       }
       return next;
     });
   };
 
-  // Если внутри подгруппы активный пункт — раскрываем автоматически.
   const hasActive = subgroup.items.some((i) => i.href === winnerHref);
   const effectiveCollapsed = hasActive ? false : collapsed;
 
@@ -341,8 +316,8 @@ function SidebarSubgroup({
         type="button"
         onClick={toggle}
         className={cn(
-          'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-wider text-fg-tertiary transition-colors',
-          'hover:bg-bg-overlay hover:text-fg-secondary',
+          "flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs uppercase tracking-wider text-fg-tertiary transition-colors",
+          "hover:bg-bg-overlay hover:text-fg-secondary",
         )}
         aria-expanded={!effectiveCollapsed}
       >
@@ -369,10 +344,6 @@ function SidebarSubgroup({
   );
 }
 
-/**
- * Один пункт навигации с поддержкой тариф-гейтинга и состояния `comingSoon`.
- * Порядок проверки: `comingSoon → locked → enabled`.
- */
 function SidebarNavLink({
   item,
   isActive,
@@ -382,57 +353,53 @@ function SidebarNavLink({
   isActive: boolean;
   onNavigate?: () => void;
 }) {
-  const gate = useEntitlement(
-    // Хук всегда вызываем — иначе нарушим rules-of-hooks. Если gateFeature
-    // не задан, передаём «всегда true»-фичу `feature.meeting`.
-    item.gateFeature ?? 'feature.meeting',
-  );
+  const gate = useEntitlement(item.gateFeature ?? "feature.meeting");
   const Icon = item.icon;
   const isComingSoon = item.comingSoon === true;
   const gateActive = item.gateFeature !== undefined && !isComingSoon;
   const locked = gateActive && !gate.loading && !gate.enabled;
 
   const baseClass =
-    'relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors';
+    "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors";
 
   let stateClass: string;
   if (isActive) {
-    stateClass = 'bg-accent-muted font-medium text-accent-fg dark:shadow-accent-focus';
+    stateClass =
+      "bg-accent-muted font-medium text-accent-fg dark:shadow-accent-focus";
   } else if (isComingSoon) {
     stateClass =
-      'text-fg-tertiary opacity-60 hover:bg-bg-overlay/60 hover:text-fg-secondary hover:opacity-100';
+      "text-fg-tertiary opacity-60 hover:bg-bg-overlay/60 hover:text-fg-secondary hover:opacity-100";
   } else if (locked) {
-    stateClass = 'text-fg-tertiary hover:bg-bg-overlay/60 hover:text-fg-secondary';
+    stateClass =
+      "text-fg-tertiary hover:bg-bg-overlay/60 hover:text-fg-secondary";
   } else {
-    stateClass = 'text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary';
+    stateClass = "text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary";
   }
 
   const iconClass = cn(
-    'shrink-0',
+    "shrink-0",
     isActive
-      ? 'text-accent'
+      ? "text-accent"
       : isComingSoon || locked
-      ? 'text-fg-tertiary/70'
-      : undefined,
+        ? "text-fg-tertiary/70"
+        : undefined,
   );
 
-  // comingSoon ведёт на свой preview-href; locked — на billing.
   const href = isComingSoon
     ? item.href
     : locked
-    ? '/settings/billing'
-    : item.href;
+      ? "/settings/billing"
+      : item.href;
 
   const requiredTier =
     !isComingSoon && item.gateFeature
-      ? FEATURE_MIN_TIER[item.gateFeature] ?? 'tier_pro'
+      ? (FEATURE_MIN_TIER[item.gateFeature] ?? "tier_pro")
       : null;
 
-  // Badge непрочитанных. Скрыт, если 0/undefined. >99 — рисуем «99+».
   const badge =
     item.badgeCount !== undefined && item.badgeCount > 0
       ? item.badgeCount > 99
-        ? '99+'
+        ? "99+"
         : String(item.badgeCount)
       : null;
 
@@ -449,8 +416,8 @@ function SidebarNavLink({
       {badge && (
         <span
           className={cn(
-            'inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none',
-            'bg-accent text-accent-fg',
+            "inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none",
+            "bg-accent text-accent-fg",
           )}
           aria-label={`Непрочитанных: ${item.badgeCount}`}
         >
@@ -488,8 +455,10 @@ function SidebarNavLink({
       onClick={onNavigate}
       className={cn(baseClass, stateClass)}
       aria-disabled={locked || undefined}
-      {...(item.tourTarget ? { 'data-tour-target': item.tourTarget } : {})}
-      {...(item.overviewTarget ? { 'data-overview-target': item.overviewTarget } : {})}
+      {...(item.tourTarget ? { "data-tour-target": item.tourTarget } : {})}
+      {...(item.overviewTarget
+        ? { "data-overview-target": item.overviewTarget }
+        : {})}
     >
       {linkContent}
     </Link>
@@ -519,7 +488,6 @@ function SidebarNavLink({
     );
   }
 
-  // Hover-тултип из словаря NAV_HELP (только если для href есть запись).
   const navHelp = NAV_HELP[item.href];
   if (navHelp) {
     return (
@@ -538,11 +506,10 @@ function SidebarNavLink({
   return <li>{linkNode}</li>;
 }
 
-/** Русские ярлыки выбранной темы (для подписи в меню аккаунта). */
-const THEME_LABEL: Record<'dark' | 'light' | 'system', string> = {
-  dark: 'Тёмная',
-  light: 'Светлая',
-  system: 'Системная',
+const THEME_LABEL: Record<"dark" | "light" | "system", string> = {
+  dark: "Тёмная",
+  light: "Светлая",
+  system: "Системная",
 };
 
 function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
@@ -553,18 +520,18 @@ function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
   const handleLogout = async () => {
     await logout();
     onAfterAction?.();
-    router.push('/login');
+    router.push("/login");
   };
 
   const initials = user?.name
     ? user.name
-        .split(' ')
+        .split(" ")
         .map((p) => p[0])
         .filter(Boolean)
         .slice(0, 2)
-        .join('')
+        .join("")
         .toUpperCase()
-    : user?.email?.slice(0, 2).toUpperCase() ?? '?';
+    : (user?.email?.slice(0, 2).toUpperCase() ?? "?");
 
   return (
     <DropdownMenu>
@@ -578,10 +545,10 @@ function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium text-fg-primary">
-              {user?.name ?? 'Гость'}
+              {user?.name ?? "Гость"}
             </div>
             <div className="truncate text-xs text-fg-tertiary">
-              {user?.email ?? '—'}
+              {user?.email ?? "—"}
             </div>
           </div>
           <ChevronDown size={14} className="shrink-0 text-fg-tertiary" />
@@ -590,13 +557,21 @@ function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
       <DropdownMenuContent side="top" align="end" className="w-56">
         <DropdownMenuLabel>Аккаунт</DropdownMenuLabel>
         <DropdownMenuItem asChild>
-          <Link href="/settings" onClick={onAfterAction} className="flex items-center gap-2">
+          <Link
+            href="/settings"
+            onClick={onAfterAction}
+            className="flex items-center gap-2"
+          >
             <User size={14} />
             Профиль
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link href="/settings?tab=security" onClick={onAfterAction} className="flex items-center gap-2">
+          <Link
+            href="/settings?tab=security"
+            onClick={onAfterAction}
+            className="flex items-center gap-2"
+          >
             <KeyRound size={14} />
             Сменить пароль
           </Link>
@@ -609,9 +584,15 @@ function UserCard({ onAfterAction }: { onAfterAction?: () => void }) {
             </span>
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            <DropdownMenuItem onSelect={() => setTheme('dark')}>Тёмная</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setTheme('light')}>Светлая</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setTheme('system')}>Системная</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTheme("dark")}>
+              Тёмная
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTheme("light")}>
+              Светлая
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setTheme("system")}>
+              Системная
+            </DropdownMenuItem>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
         <DropdownMenuSeparator />

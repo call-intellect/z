@@ -6,16 +6,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PracticeSkillEvaluatorService } from '../services/practice-skill-evaluator.service';
 
-/**
- * Agents v2 Фаза C1 (2026-05-30) — PracticeSkillEvaluateCron.
- *
- * `@Cron('0 4 * * *')` — daily 04:00, ПОСЛЕ skill-trait-concept-normalizer (03:00)
- * и до момента, когда сотрудники начинают пользоваться клонами днём.
- *
- * 1. Global Redis SETNX lock (один pod выполняет проход) на 1 час.
- * 2. Вызывает `PracticeSkillEvaluatorService.runOnce()`.
- * 3. После прохода обновляет gauge `z_practice_skills_total{tenant_top,scope,status}`.
- */
 @Injectable()
 export class PracticeSkillEvaluateCron {
   private readonly logger = new Logger(PracticeSkillEvaluateCron.name);
@@ -62,20 +52,12 @@ export class PracticeSkillEvaluateCron {
       if (locked) {
         try {
           await this.redis.client.del(PracticeSkillEvaluateCron.LOCK_KEY);
-        } catch {
-          /* TTL подчистит */
-        }
+        } catch {}
       }
-      // Snapshot gauge — даже если сам проход упал, snapshot важнее.
       await this.refreshGauges();
     }
   }
 
-  /**
-   * Обновляет `z_practice_skills_total{tenant_top,scope,status}` по группе.
-   * Tenant_top label — это полный tenantId (так же, как в PRM-метриках —
-   * cardinality на старте Фазы C1 невелика).
-   */
   private async refreshGauges(): Promise<void> {
     try {
       const groups = await this.prisma.practiceSkill.groupBy({
@@ -90,9 +72,7 @@ export class PracticeSkillEvaluateCron {
             status: g.status,
             value: g._count._all,
           });
-        } catch {
-          /* observability */
-        }
+        } catch {}
       }
     } catch (err) {
       this.logger.debug(

@@ -1,25 +1,3 @@
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — промпт `value-recap-narrative`.
- *
- * Назначение: ТОЛЬКО человекочитаемая сводка ПОВЕРХ уже посчитанных твёрдых
- * цифр. Вся агрегация (счётчики снятой рутины, дельта к прошлому месяцу,
- * helped-rate, throughput) — чистый SQL/TS в `ValueRecapService`, БЕЗ LLM.
- *
- * Code-fallback (без PromptRegistry) — как `customer-risk-digest`: систему
- * передаём прямо в `LlmRouterService.call`; маршрут (цепочка моделей)
- * регистрируется в `seed-llm-task-routes-default.ts`. Если LLM упал — сервис
- * использует детерминированный `buildValueRecapFallbackNarrative`.
- *
- * Совместимость с prompt caching (mandatory):
- *   - SYSTEM стабильный (ниже) — не меняем от вызова к вызову.
- *   - Переменные данные (счётчики месяца, дельта) — в КОНЦЕ user-сообщения.
- *
- * Честность (Р6/Р7):
- *   - НИКАКИХ выдуманных рублей / «часы×ставка=₽» / «было→стало до Коры».
- *   - soft-цифры помечаются «оценка»; count решений/задач идёт В ПАРЕ с
- *     «% доведённых».
- */
-
 export const VALUE_RECAP_NARRATIVE_PROMPT_VERSION = 'prompt-v1';
 
 export const VALUE_RECAP_NARRATIVE_TASK_TYPE = 'value-recap-narrative';
@@ -38,10 +16,8 @@ export const VALUE_RECAP_NARRATIVE_SYSTEM_PROMPT = [
   '  - Тон спокойный, деловой, без восторгов и алармизма. 2-4 коротких предложения. Без markdown, без списков.',
 ].join('\n');
 
-/** Вход для промпта (только то, что нужно LLM для формулировки). */
 export interface ValueRecapNarrativePromptInput {
   periodYm: string;
-  /** Твёрдые счётчики «снятой рутины». */
   routine: {
     meetingsAutoProtocoled: number;
     tasksExtracted: number;
@@ -51,7 +27,6 @@ export interface ValueRecapNarrativePromptInput {
     questionsAnsweredWithCitation: number;
     ideasShipped: number;
   };
-  /** Soft-слой «команда лучше» (с оговоркой «оценка» + знаменателем). */
   team: {
     reliabilityPercent: number | null;
     reliabilityDenominator: number;
@@ -60,7 +35,6 @@ export interface ValueRecapNarrativePromptInput {
     decisionsThroughputPercent: number;
     decisionsTotal: number;
   };
-  /** Дельта к прошлому месяцу по ведущим счётчикам (может быть null). */
   delta: {
     meetingsAutoProtocoled: number | null;
     tasksExtracted: number | null;
@@ -68,13 +42,7 @@ export interface ValueRecapNarrativePromptInput {
   } | null;
 }
 
-/**
- * Сборка user-сообщения: стабильная преамбула + переменные данные В КОНЦЕ
- * (для prompt caching).
- */
-export function buildValueRecapNarrativeUserMessage(
-  input: ValueRecapNarrativePromptInput,
-): string {
+export function buildValueRecapNarrativeUserMessage(input: ValueRecapNarrativePromptInput): string {
   const r = input.routine;
   const t = input.team;
   const lines: string[] = [];
@@ -119,13 +87,7 @@ export function buildValueRecapNarrativeUserMessage(
   return lines.join('\n');
 }
 
-/**
- * Детерминированный fallback-текст витрины (если LLM недоступна). Без ₽,
- * без «до Коры». Используется и как «сухой» вариант для push'а.
- */
-export function buildValueRecapFallbackNarrative(
-  input: ValueRecapNarrativePromptInput,
-): string {
+export function buildValueRecapFallbackNarrative(input: ValueRecapNarrativePromptInput): string {
   const r = input.routine;
   const t = input.team;
   const parts: string[] = [];

@@ -28,17 +28,12 @@ import {
   type UpdateLlmModelDto,
 } from './dto/admin-llm-models.dto';
 
-/**
- * SBA α-10 wave 3 — /api/v1/admin/llm-models.
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/llm-models')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminLlmModelsController {
-  constructor(
-    @Inject(AdminLlmModelsService) private readonly svc: AdminLlmModelsService,
-  ) {}
+  constructor(@Inject(AdminLlmModelsService) private readonly svc: AdminLlmModelsService) {}
 
   @Get()
   list(
@@ -63,9 +58,7 @@ export class AdminLlmModelsController {
   }
 
   @Post()
-  create(
-    @Body(new ZodValidationPipe(CreateLlmModelSchema)) dto: CreateLlmModelDto,
-  ) {
+  create(@Body(new ZodValidationPipe(CreateLlmModelSchema)) dto: CreateLlmModelDto) {
     return this.svc.create(dto);
   }
 

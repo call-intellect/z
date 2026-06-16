@@ -1,12 +1,3 @@
-/**
- * Admin-redesign Фаза 7 — unit-тесты `AdminRetentionService`.
- *
- * Покрываем:
- *   1) list() — при пустой БД делает sync из ENV (ensureSeed создаёт 5 типов).
- *   2) update() — UPSERT в RetentionPolicy + вызов AdminSettings.set с reason.
- *   3) preview() — считает affectedCount для share_view (createdAt-фильтр).
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../../common/config/index';
@@ -104,12 +95,9 @@ function buildService(initial: {
     },
   );
 
-  const shareViewCount = vi.fn(
-    async (args: { where: { viewedAt: { lt: Date } } }) => {
-      return shareViews.filter((sv) => sv.viewedAt < args.where.viewedAt.lt)
-        .length;
-    },
-  );
+  const shareViewCount = vi.fn(async (args: { where: { viewedAt: { lt: Date } } }) => {
+    return shareViews.filter((sv) => sv.viewedAt < args.where.viewedAt.lt).length;
+  });
   const shareViewFindMany = vi.fn(
     async (args: {
       where: { viewedAt: { lt: Date } };
@@ -136,8 +124,7 @@ function buildService(initial: {
     webhookDelivery: { count: noop, findMany: noopList },
   } as unknown as PrismaService;
 
-  const setMock =
-    initial.setMock ?? vi.fn(async () => undefined);
+  const setMock = initial.setMock ?? vi.fn(async () => undefined);
   const settings = {
     set: setMock,
   } as unknown as AdminSettingsService;
@@ -167,16 +154,12 @@ describe('AdminRetentionService', () => {
       envValues: { defaultDays: 60, shareViewDays: 120 },
     });
     const result = await svc.list();
-    // 5 типов: meeting_recording / share_view / api_access_log /
-    // webhook_delivery / soft_delete_grace.
     expect(result.length).toBe(5);
     expect(spies.create).toHaveBeenCalledTimes(5);
-    // Проверим что meeting_recording забрал ENV defaultDays.
     const mr = rows.find((r) => r.type === 'meeting_recording');
     expect(mr?.days).toBe(60);
     const sv = rows.find((r) => r.type === 'share_view');
     expect(sv?.days).toBe(120);
-    // Возвращается отсортированный список.
     const types = result.map((r) => r.type);
     const sorted = [...types].sort();
     expect(types).toEqual(sorted);
@@ -203,7 +186,6 @@ describe('AdminRetentionService', () => {
     expect(result.days).toBe(60);
     expect(result.updatedBy).toBe('admin-1');
     expect(spies.upsert).toHaveBeenCalledTimes(1);
-    // AdminSettings.set вызван с retention.share_view + userId/reason.
     expect(setMock).toHaveBeenCalledWith(
       'retention.share_view',
       60,
@@ -234,8 +216,6 @@ describe('AdminRetentionService', () => {
         { id: 'sv-new', viewedAt: tenDaysAgo },
       ],
     });
-    // proposedDays=30 → cutoff = NOW - 30 days; под него попадают
-    // только записи старше 30 дней (2 шт.).
     const result = await svc.preview({ type: 'share_view', days: 30 });
     expect(result.currentDays).toBe(90);
     expect(result.proposedDays).toBe(30);

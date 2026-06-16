@@ -1,36 +1,3 @@
-/**
- * 2026-05-26 — Регистрация (или обновление) глобального Telegram-бота
- * в прокси `telegram.crossmark.ru`.
- *
- * См. ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §6.
- *
- * Что делает:
- *   1. Находит глобальный канал `Channel WHERE tenantId IS NULL AND
- *      kind='telegram_bot'`. Если нет — печатает инструкцию и выходит с
- *      кодом 0 (это норма для свежего бутстрапа; админ настроит токен
- *      через `/admin/system/telegram-bot`, потом запустит скрипт снова).
- *   2. Расшифровывает `config.botToken` и `config.webhookSecret` через
- *      `CryptoService`.
- *   3. Если `webhookSecret` пуст — генерирует новый.
- *   4. Делает `upsertBot({ name, token, targetUrl })` со статическим
- *      Bearer-токеном (`TELEGRAM_PROXY_TOKEN`); секрет — в пути targetUrl.
- *      Прокси сам зарегистрирует `setWebhook` у Telegram.
- *   5. Сохраняет `proxyBotId`, `proxyRegisteredAt`, `proxyLastSyncError=null`,
- *      `webhookSecret` (encrypted) обратно в `Channel.config`.
- *
- * Идемпотентен: повторный запуск либо ничего не меняет (если бот уже
- * зарегистрирован с теми же параметрами), либо обновляет registration
- * через `PUT /api/bots/:id`.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-telegram-register-in-proxy.ts
- *
- * Доп. флаги:
- *   --dry-run      — показать что будет сделано, не дёргать прокси и не писать в БД.
- *   --rotate-secret — сгенерировать новый webhookSecret, даже если в БД уже есть.
- *   --webhook-url=<url> — переопределить URL (default = computeWebhookUrl()).
- */
-
 import { randomBytes } from 'node:crypto';
 
 import { NestFactory } from '@nestjs/core';
@@ -79,10 +46,6 @@ function generateWebhookSecret(): string {
 }
 
 async function main(args: CliArgs): Promise<void> {
-  // Pre-check ДО подъёма AppModule: если прокси явно выключен / нет admin-кредов
-  // / нет глобального telegram-канала — делать нечего, выходим без Nest. Иначе
-  // app.close() рвёт ioredis/BullMQ и засыпает лог флудом «Connection is closed»
-  // на каждом выкате. Сам proxy.enabled-флаг (с дефолтом) проверяется уже внутри.
   const proxyExplicitlyDisabled = ['false', '0'].includes(
     (process.env['TELEGRAM_PROXY_ENABLED'] ?? '').toLowerCase(),
   );
@@ -192,8 +155,7 @@ async function main(args: CliArgs): Promise<void> {
     }
 
     const publicHostUrl = cfg.publicHostUrl.replace(/\/+$/, '');
-    const webhookUrl =
-      args.webhookUrlOverride ?? `${publicHostUrl}/api/v1/webhooks/telegram-bot`;
+    const webhookUrl = args.webhookUrlOverride ?? `${publicHostUrl}/api/v1/webhooks/telegram-bot`;
     if (!/^https:\/\//i.test(webhookUrl)) {
       log(
         `webhookUrl должен быть https://... — получено: ${webhookUrl}. ` +
@@ -201,8 +163,6 @@ async function main(args: CliArgs): Promise<void> {
       );
       return;
     }
-    // Секрет — в путь targetWebhookUrl (прокси не принимает secret_token и
-    // не отдаёт свой через REST; см. TelegramProxyAdminClient + контроллер).
     const targetUrl = `${webhookUrl}/s/${secret}`;
     const botName =
       typeof cfgRaw['botUsername'] === 'string' && cfgRaw['botUsername']
@@ -228,10 +188,6 @@ async function main(args: CliArgs): Promise<void> {
       });
       proxyBotId = info.id;
     } catch (err) {
-      // Прокси — нестабильная внешняя зависимость (сеть / отозванный токен).
-      // Не валим весь `apply-prod-deploy` из-за неё: фиксируем причину в
-      // Channel.config.proxyLastSyncError для observability и выходим чисто.
-      // Оператор перезапустит скрипт после восстановления прокси.
       const proxyLastSyncError = err instanceof Error ? err.message : String(err);
       log(
         `WARN: прокси отверг upsertBot: ${proxyLastSyncError}. ` +

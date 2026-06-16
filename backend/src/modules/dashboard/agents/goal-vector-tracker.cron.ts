@@ -15,48 +15,13 @@ import {
   type GoalVectorArtefact,
 } from '../prompts/goal-vector-tracker.prompt';
 
-/**
- * Pulse Wave 6 §6.6 — Goal-Vector-Tracker cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.6.
- *
- * Weekly (`@Cron('0 5 * * 1')`). Для каждой Org → для каждой active Goal:
- *   1. Собирает per-Person артефакты за последнюю неделю (понедельник 00:00):
- *        - IdeaBlock signalType='idea' (Person как author через
- *          IdeaBlockEntity.role='subject').
- *        - IdeaBlock signalType='commitment' kept / broken (по АВТОРУ слова
- *          commitmentAuthorPersonId / commitmentStatus; при низком покрытии
- *          author — fallback на commitmentRecipientPersonId, см. ниже Ф3.D.1).
- *        - Issue completed (completedAt в неделю) + IssueAssignee.userId →
- *          Person.userId.
- *   2. Передаёт {goalTitle, goalDescription, artefacts[]} в LLM
- *      (taskType='goal-vector-tracker').
- *   3. Парсит strict JSON → `Array<{personId, pro, contra, net, signals[]}>`.
- *   4. Upsert'ит PersonGoalContribution per (tenantId, personId, goalId,
- *      weekStart) — идемпотентность при повторном прогоне в ту же неделю.
- *
- * Best-effort: LLM-fail / parse-fail логируется, но не валит остальные Goals/Orgs.
- *
- * Cache-friendly: SYSTEM статичен, артефакты — в конце user.
- *
- * ТЗ-1 Ф3.D.1 (2026-06-08): атрибуция commitment kept/broken переехала с
- * адресата (`commitmentRecipientPersonId`) на АВТОРА слова
- * (`commitmentAuthorPersonId`) — кто дал обещание, тот и набирает pro/contra.
- * Но `commitmentAuthorPersonId` бывает NULL: чтобы молча не выбросить такие
- * обещания, перед прогоном по Org измеряем `commitment_author_coverage_ratio`
- * и, если покрытие ниже `goals.author_coverage_min`, на этот прогон откатываемся
- * на адресата (`chooseAttributionField`).
- */
 @Injectable()
 export class GoalVectorTrackerCron {
   private readonly logger = new Logger(GoalVectorTrackerCron.name);
   private static readonly WEEK_MS = 7 * 24 * 3600 * 1000;
   private static readonly MAX_ORGS_PER_RUN = 5_000;
-  /** Сколько артефактов максимум отдавать в LLM (страхуем токены). */
   private static readonly MAX_ARTEFACTS_PER_GOAL = 100;
-  /** Максимум блоков-источников IdeaBlock текста — для контекста LLM. */
   private static readonly TEXT_TRUNCATE = 280;
-  /** Code-fallback для `goals.author_coverage_min` (см. AdminSetting). */
   private static readonly DEFAULT_AUTHOR_COVERAGE_MIN = 0.6;
 
   constructor(
@@ -67,7 +32,6 @@ export class GoalVectorTrackerCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /** Weekly Mon 05:00 UTC. */
   @Cron('0 5 * * 1')
   async run(): Promise<void> {
     try {
@@ -89,9 +53,7 @@ export class GoalVectorTrackerCron {
   }> {
     const now = new Date();
     const weekStart = computeWeekStart(now);
-    const weekEnd = new Date(
-      weekStart.getTime() + GoalVectorTrackerCron.WEEK_MS,
-    );
+    const weekEnd = new Date(weekStart.getTime() + GoalVectorTrackerCron.WEEK_MS);
 
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -114,8 +76,6 @@ export class GoalVectorTrackerCron {
     for (const org of orgs) {
       orgsProcessed++;
       try {
-        // ТЗ-1 Ф3.D.1 — решаем, чем атрибутировать commitment в этом Org:
-        // авторством (фикс) или адресатом (fallback при низком покрытии).
         const attribution = await this.resolveAttributionField(
           org.id,
           weekStart,
@@ -172,12 +132,6 @@ export class GoalVectorTrackerCron {
     };
   }
 
-  /**
-   * ТЗ-1 Ф3.D.1 — на уровне Org измеряет долю `commitment` с непустым
-   * `commitmentAuthorPersonId` за неделю (`commitment_author_coverage_ratio`),
-   * эмитит gauge и решает поле атрибуции через чистую `chooseAttributionField`.
-   * При покрытии < `author_coverage_min` — WARN + fallback на адресата.
-   */
   private async resolveAttributionField(
     tenantId: string,
     weekStart: Date,
@@ -296,10 +250,6 @@ export class GoalVectorTrackerCron {
     return { contributionsUpserted: upserted, parseErrors: 0 };
   }
 
-  /**
-   * Собирает артефакты сотрудников за неделю. Лимит
-   * `MAX_ARTEFACTS_PER_GOAL`: при превышении берём последние по времени.
-   */
   private async collectArtefacts(args: {
     tenantId: string;
     weekStart: Date;
@@ -308,7 +258,6 @@ export class GoalVectorTrackerCron {
   }): Promise<GoalVectorArtefact[]> {
     const out: GoalVectorArtefact[] = [];
 
-    // 1. IdeaBlock idea — с автором через IdeaBlockEntity role='subject'.
     const ideas = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -349,10 +298,6 @@ export class GoalVectorTrackerCron {
       });
     }
 
-    // 2. Commitment kept / broken — ТЗ-1 Ф3.D.1: атрибуция на АВТОРА слова
-    //    (`commitmentAuthor`), при низком покрытии author — fallback на адресата
-    //    (`commitmentRecipient`). Поле выбрано на уровне Org в
-    //    `resolveAttributionField` и передано через `attributionField`.
     const useAuthor = args.attributionField === 'author';
     const commits = await this.prisma.ideaBlock.findMany({
       where: {
@@ -379,15 +324,12 @@ export class GoalVectorTrackerCron {
       out.push({
         personId: subject.id,
         personName: subject.name,
-        kind: c.commitmentStatus === 'fulfilled'
-          ? 'commitment_kept'
-          : 'commitment_broken',
+        kind: c.commitmentStatus === 'fulfilled' ? 'commitment_kept' : 'commitment_broken',
         refId: c.id,
         text: truncate(c.name, GoalVectorTrackerCron.TEXT_TRUNCATE),
       });
     }
 
-    // 3. Issue completed — assignee user → Person.userId.
     const issues = await this.prisma.issue.findMany({
       where: {
         tenantId: args.tenantId,
@@ -436,7 +378,6 @@ export class GoalVectorTrackerCron {
       }
     }
 
-    // Финальный жёсткий cap на размер контекста LLM.
     if (out.length > GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL) {
       return out.slice(0, GoalVectorTrackerCron.MAX_ARTEFACTS_PER_GOAL);
     }
@@ -444,14 +385,9 @@ export class GoalVectorTrackerCron {
   }
 }
 
-/**
- * Начало текущей недели (понедельник 00:00 UTC).
- */
 export function computeWeekStart(now: Date): Date {
-  const d = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-  const dayOfWeek = d.getUTCDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dayOfWeek = d.getUTCDay();
   const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
   d.setUTCDate(d.getUTCDate() - diff);
   return d;
@@ -470,22 +406,10 @@ function round3(v: number): number {
   return Math.round(v * 1000) / 1000;
 }
 
-/**
- * ТЗ-1 Ф3.D.1 — чистое решение поля атрибуции commitment kept/broken.
- *
- * `coverage` — доля `commitment` с непустым `commitmentAuthorPersonId` (0..1).
- * `min` — порог `goals.author_coverage_min`. При `coverage >= min` используем
- * АВТОРА слова (фикс), иначе откатываемся на адресата (`recipient`), чтобы не
- * выбросить молча обещания с NULL-автором.
- */
-export function chooseAttributionField(
-  coverage: number,
-  min: number,
-): 'author' | 'recipient' {
+export function chooseAttributionField(coverage: number, min: number): 'author' | 'recipient' {
   return coverage >= min ? 'author' : 'recipient';
 }
 
-/** Аналог CommitmentsService.extractAuthor — subject → fallback first. */
 function pickAuthor(
   entities: Array<{
     role: string | null;

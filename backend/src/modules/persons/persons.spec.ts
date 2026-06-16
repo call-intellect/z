@@ -3,30 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { CreatePersonSchema } from './dto/persons.dto';
 import { PersonsService } from './services/persons.service';
 
-/**
- * Юнит-тесты `PersonsService`.
- *
- * TODO (Фаза 0a.4): покрыть CRUD + EntityLink-temporal через моки Prisma:
- *   - create Person + PersonRole + EntityLink executes_role/member_of;
- *   - PATCH roleId закрывает старую PersonRole и старую EntityLink, создаёт новые;
- *   - softDelete закрывает все исходящие/входящие EntityLink + PersonRole;
- *   - фильтр invitationStatus по последнему OrgInvitation;
- *   - tenant isolation.
- *
- * SBA α-8 wave 3 — добавлены smoke-тесты feature-flag
- * `USE_APPOINTMENT_FOR_PERSON_ROLES`: проверяем что `useAppointment`
- * корректно резолвится из ENV.
- */
-
 const prismaStub = {} as never;
 const auditStub = {} as never;
-const cfgStubFor = (useAppointment: boolean) =>
-  ({ persons: { useAppointment } }) as never;
+const cfgStubFor = (useAppointment: boolean) => ({ persons: { useAppointment } }) as never;
 
 describe('PersonsService — feature-flag USE_APPOINTMENT_FOR_PERSON_ROLES', () => {
   it('cfg.persons.useAppointment=false → useAppointment=false (читаем из PersonRole)', () => {
     const svc = new PersonsService(prismaStub, auditStub, cfgStubFor(false));
-    // приватное поле — обращаемся через unknown-каст.
     const flag = (svc as unknown as { useAppointment: boolean }).useAppointment;
     expect(flag).toBe(false);
   });
@@ -39,9 +22,7 @@ describe('PersonsService — feature-flag USE_APPOINTMENT_FOR_PERSON_ROLES', () 
 });
 
 describe.skip('PersonsService — CRUD (требует мок Prisma)', () => {
-  it('TODO: покрыть CRUD + PersonRole-temporal + EntityLink', () => {
-    // см. план 2026-05-21-phase-0a-data-model-and-graph-infra.md §7-§10
-  });
+  it('TODO: покрыть CRUD + PersonRole-temporal + EntityLink', () => {});
 });
 
 describe('CreatePersonSchema — email опционален (2026-06-03)', () => {

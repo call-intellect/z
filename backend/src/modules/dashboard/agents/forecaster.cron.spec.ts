@@ -1,13 +1,3 @@
-/**
- * Pulse Wave 4 §4.6 — Forecaster cron unit-тесты.
- *
- * Покрывают:
- *   - 4 недели тестовых данных → cron вызывает llm-router с правильным
- *     taskType + structurally valid user-message и создаёт ForecastSnapshot.
- *   - LLM возвращает невалидный JSON → cron не падает и snapshot не
- *     создаётся (parseErrors++).
- *   - LLM call упал (throw) → orgsProcessed=1, snapshotsCreated=0, errors=1.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -39,10 +29,7 @@ function buildCron(opts: BuildOpts): {
     { commitmentStatus: 'missed', commitmentDueDate: new Date() },
   ]);
   const decisionCount = vi.fn(async () => 3);
-  const engagementSnapshotFindMany = vi.fn(async () => [
-    { score: 0.7 },
-    { score: 0.8 },
-  ]);
+  const engagementSnapshotFindMany = vi.fn(async () => [{ score: 0.7 }, { score: 0.8 }]);
   const snapshotCreate = vi.fn(async () => ({ id: 'snap-1' }));
   const orgFindMany = vi.fn(async () => orgs);
 

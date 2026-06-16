@@ -1,16 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { DeskTicketDetailClient } from './DeskTicketDetailClient';
+import { DeskTicketDetailClient } from "./DeskTicketDetailClient";
 
 export const metadata: Metadata = {
-  title: 'Поддержка — тикет',
+  title: "Поддержка — тикет",
 };
 
-/**
- * `/support/desk/[id]` — детали тикета для сотрудника поддержки: вся лента
- * (internal+external), ответ клиенту, внутренняя заметка, назначение,
- * смена статуса (ТЗ 2026-06-09 support-desk Ф1). Доступ гейтится isAgent.
- */
 export default async function DeskTicketDetailPage({
   params,
 }: {

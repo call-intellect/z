@@ -1,14 +1,5 @@
-/**
- * API-клиент модуля tracker.issues + relations + attachments + start-meeting.
- *
- * Контракты:
- *   - `backend/src/modules/tracker/controllers/issues.controller.ts`
- *   - `backend/src/modules/tracker/controllers/relations.controller.ts`
- *   - `backend/src/modules/tracker/controllers/attachments.controller.ts`
- */
-
-import { apiClient } from '../api-client';
-import { buildQuery, orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { buildQuery, orgHeaders } from "../admin-helpers";
 import type {
   IssueActivityApi,
   IssueApi,
@@ -24,7 +15,7 @@ import type {
   IssuePriority,
   IssueStateCategory,
   IssueRelationType,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface ListIssuesRequest {
   stateId?: string;
@@ -33,17 +24,11 @@ export interface ListIssuesRequest {
   labelId?: string;
   cycleId?: string;
   goalId?: string;
-  /** Tracker Boards (2026-05-27) — фильтр задач по доске. */
   boardId?: string;
   priority?: IssuePriority;
   parentId?: string;
   includeArchived?: boolean;
   includeDeleted?: boolean;
-  /**
-   * Tracker subtasks UI (2026-05-27) — попросить backend заполнить
-   * `childrenCount` в каждом item. Используется канбан-доской для
-   * отрисовки badge «N/M».
-   */
   includeChildrenCount?: boolean;
   q?: string;
   page?: number;
@@ -64,21 +49,11 @@ export interface CreateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
-  /**
-   * Tracker Boards (2026-05-27) — доска новой задачи. Если не передано,
-   * backend подставит default-доску проекта.
-   */
   boardId?: string | null;
   assigneeUserIds?: string[];
   labelIds?: string[];
   externalSource?: string | null;
   externalId?: string | null;
-  /**
-   * Phase 3 part C — попросить backend заполнить `aiSuggestions` в ответе.
-   * Когда true и `IssueInferFieldsService` доступен, ответ POST содержит
-   * AI-подсказки по assignee/dueDate/priority/goal/labels.
-   * Default (undefined) — никаких LLM-вызовов не делается.
-   */
   inferSuggestions?: boolean;
 }
 
@@ -96,10 +71,6 @@ export interface UpdateIssueRequest {
   dueDate?: string | null;
   cycleId?: string | null;
   goalId?: string | null;
-  /**
-   * Tracker Boards (2026-05-27) — перенести задачу на другую доску.
-   * Доска должна принадлежать тому же проекту (валидируется backend'ом).
-   */
   boardId?: string | null;
 }
 
@@ -108,10 +79,6 @@ export interface TransitionIssueRequest {
   reason?: string | null;
 }
 
-/**
- * Query-параметры `GET /api/v1/me/inbox` — фильтры и cursor-пагинация.
- * Контракт: `backend/src/modules/tracker/dto/issues/my-inbox-query.dto.ts`.
- */
 export interface MyInboxRequest {
   stateCategory?: IssueStateCategory;
   stateId?: string;
@@ -119,15 +86,11 @@ export interface MyInboxRequest {
   projectId?: string;
   labelId?: string;
   cycleId?: string;
-  /** ISO-дата. dueDate <= dueBefore. */
   dueBefore?: string;
-  /** ISO-дата. dueDate >= dueAfter. */
   dueAfter?: string;
   includeArchived?: boolean;
   includeDeleted?: boolean;
-  /** id последней задачи предыдущей страницы. */
   cursor?: string;
-  /** 1..100, default 50. */
   limit?: number;
 }
 
@@ -141,12 +104,7 @@ export interface StartMeetingFromIssueRequest {
 }
 
 export const issuesApi = {
-  // ── list / create / detail / patch / delete ──
-  list: (
-    orgId: string,
-    projectId: string,
-    req: ListIssuesRequest = {},
-  ) =>
+  list: (orgId: string, projectId: string, req: ListIssuesRequest = {}) =>
     apiClient.get<ListIssuesResponseApi>(
       `/api/v1/projects/${encodeURIComponent(projectId)}/issues${buildQuery({ ...req })}`,
       { headers: orgHeaders(orgId) },
@@ -160,16 +118,10 @@ export const issuesApi = {
     ),
 
   get: (orgId: string, issueId: string) =>
-    apiClient.get<IssueApi>(
-      `/api/v1/issues/${encodeURIComponent(issueId)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.get<IssueApi>(`/api/v1/issues/${encodeURIComponent(issueId)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
-  /**
-   * Tracker subtasks UI (2026-05-27) — список прямых детей задачи.
-   * Контракт: `GET /api/v1/issues/:id/children`.
-   * Используется блоком «Подзадачи» в карточке родителя.
-   */
   getChildren: (orgId: string, issueId: string) =>
     apiClient.get<IssueChildrenResponseApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/children`,
@@ -194,26 +146,17 @@ export const issuesApi = {
       headers: orgHeaders(orgId),
     }),
 
-  // ── my inbox (assignee=me across all projects) ──
   myInbox: (orgId: string, req: MyInboxRequest = {}) =>
     apiClient.get<MyInboxResponseApi>(
       `/api/v1/me/inbox${buildQuery({ ...req })}`,
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Wave 2 polish T6-6a — точный счётчик задач в моём инбоксе.
-   * До этого фронт эмулировал ответ через `myInbox({ limit: 1 })` и видел
-   * только «есть/нет». Теперь backend отдаёт { total, unread } напрямую.
-   * Контракт: `backend/src/modules/tracker/controllers/me-inbox.controller.ts#inboxCount`.
-   */
   myInboxCount: (orgId: string) =>
-    apiClient.get<{ total: number; unread: number }>(
-      `/api/v1/me/inbox/count`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.get<{ total: number; unread: number }>(`/api/v1/me/inbox/count`, {
+      headers: orgHeaders(orgId),
+    }),
 
-  // ── state transition ──
   transition: (orgId: string, issueId: string, body: TransitionIssueRequest) =>
     apiClient.post<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/transitions`,
@@ -221,13 +164,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Перенести задачу в другой проект (move-to-project, 2026-06-15).
-   * Контракт: `POST /api/v1/issues/:id/move` body `{ targetProjectId }`.
-   * Backend атомарно переназначает identifier/sequenceId, ремапит статус по
-   * категории и доску на дефолтную целевого проекта, сбрасывает спринт.
-   * Возвращает обновлённую задачу (новый identifier/projectId).
-   */
   move: (orgId: string, issueId: string, targetProjectId: string) =>
     apiClient.post<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/move`,
@@ -235,18 +171,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Меняет `sortOrder` задачи внутри колонки канбана. Эндпоинт пока на
-   * стороне backend в работе (Wave 2 finishing) — если вернётся 404, frontend
-   * сохраняет оптимистичный порядок до следующего refresh.
-   *
-   * Контракт (предполагаемый):
-   *   `PATCH /api/v1/issues/:id/sortOrder` body `{ sortOrder: number }`
-   *
-   * Альтернатива через uniform `update`-endpoint работает уже сейчас:
-   * сервер принимает `sortOrder` в `UpdateIssueRequest`. Используем её как
-   * стабильный путь, оставляя сноску для будущего dedicated-endpoint'а.
-   */
   reorder: (orgId: string, issueId: string, sortOrder: number) =>
     apiClient.patch<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}`,
@@ -254,7 +178,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── assignees ──
   addAssignee: (orgId: string, issueId: string, userId: string) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/assignees`,
@@ -268,7 +191,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── labels ──
   addLabel: (orgId: string, issueId: string, labelId: string) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/labels`,
@@ -282,7 +204,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── subscribe ──
   subscribe: (orgId: string, issueId: string) =>
     apiClient.post<{ ok: true }>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/subscribe`,
@@ -296,7 +217,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── goal link ──
   linkGoal: (orgId: string, issueId: string, goalId: string) =>
     apiClient.post<IssueApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/link-goal`,
@@ -310,7 +230,6 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── start meeting from issue ──
   startMeeting: (
     orgId: string,
     issueId: string,
@@ -322,19 +241,12 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── Phase 3: KNN similar issues ──
-  /**
-   * Возвращает похожие задачи (KNN по pgvector cosine) для данной задачи.
-   * Контракт: `GET /api/v1/tracker/issues/:id/similar`.
-   * threshold/limit берутся с серверной стороны.
-   */
   getSimilar: (orgId: string, issueId: string) =>
     apiClient.get<SimilarIssueApi[]>(
       `/api/v1/tracker/issues/${encodeURIComponent(issueId)}/similar`,
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── activity / versions ──
   activity: (orgId: string, issueId: string) =>
     apiClient.get<IssueActivityApi[]>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/activity`,
@@ -347,14 +259,17 @@ export const issuesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  // ── relations ──
   listRelations: (orgId: string, issueId: string) =>
     apiClient.get<IssueRelationApi[]>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/relations`,
       { headers: orgHeaders(orgId) },
     ),
 
-  createRelation: (orgId: string, issueId: string, body: CreateRelationRequest) =>
+  createRelation: (
+    orgId: string,
+    issueId: string,
+    body: CreateRelationRequest,
+  ) =>
     apiClient.post<IssueRelationApi>(
       `/api/v1/issues/${encodeURIComponent(issueId)}/relations`,
       body,
@@ -362,31 +277,27 @@ export const issuesApi = {
     ),
 
   removeRelation: (orgId: string, relationId: string) =>
-    apiClient.del<void>(
-      `/api/v1/relations/${encodeURIComponent(relationId)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.del<void>(`/api/v1/relations/${encodeURIComponent(relationId)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
-  // ── attachments ──
   uploadAttachment: async (
     orgId: string,
     issueId: string,
     file: File,
     commentId?: string,
   ): Promise<IssueAttachmentApi> => {
-    // multipart/form-data — apiClient.post сериализует body как JSON, поэтому
-    // здесь идём через нативный fetch с теми же базовыми заголовками.
     const baseUrl =
-      process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
     const fd = new FormData();
-    fd.append('file', file);
-    if (commentId) fd.append('commentId', commentId);
+    fd.append("file", file);
+    if (commentId) fd.append("commentId", commentId);
     const res = await fetch(
-      `${baseUrl.replace(/\/+$/, '')}/api/v1/issues/${encodeURIComponent(issueId)}/attachments`,
+      `${baseUrl.replace(/\/+$/, "")}/api/v1/issues/${encodeURIComponent(issueId)}/attachments`,
       {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-Org-Id': orgId },
+        method: "POST",
+        credentials: "include",
+        headers: { "X-Org-Id": orgId },
         body: fd,
       },
     );

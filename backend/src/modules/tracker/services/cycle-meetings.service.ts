@@ -7,14 +7,6 @@ import { LivekitService } from '../../livekit/livekit.service';
 
 import { CyclesService } from './cycles.service';
 
-/**
- * Sprints (2026-05-27) — запуск встречи по спринту.
- * `POST /api/v1/cycles/:id/start-meeting`. По дефолту type='sprint_review'.
- *
- * Паттерн повторяет IssueMeetingsService — создание Meeting в транзакции с
- * host-Participant, ensureRoom LiveKit + host-токен. Квота не навязывается
- * (системный сценарий, инициированный пользователем из дашборда спринта).
- */
 @Injectable()
 export class CycleMeetingsService {
   private readonly logger = new Logger(CycleMeetingsService.name);
@@ -69,8 +61,7 @@ export class CycleMeetingsService {
 
     const meetingId = ulid();
     const stub = (title ?? cycle.name).slice(0, 60);
-    const meetingTitle =
-      type === 'sprint_review' ? `Итоги спринта: ${stub}` : stub;
+    const meetingTitle = type === 'sprint_review' ? `Итоги спринта: ${stub}` : stub;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.meeting.create({
@@ -123,9 +114,7 @@ export class CycleMeetingsService {
     );
     const meetingUrl = `/m/${meetingId}`;
 
-    this.logger.log(
-      `Cycle=${cycleId} → создана встреча ${meetingId} (${type}), host=${userId}`,
-    );
+    this.logger.log(`Cycle=${cycleId} → создана встреча ${meetingId} (${type}), host=${userId}`);
     return { meetingId, meetingUrl, token };
   }
 }

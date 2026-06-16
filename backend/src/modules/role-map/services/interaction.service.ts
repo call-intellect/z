@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,13 +13,6 @@ import type {
 
 import { mergeSourceBlocks } from './responsibility-element.service';
 
-/**
- * SBA α-8 wave 4 — CRUD-сервис Interaction.
- *
- * Типовые взаимодействия роли (reports_to / collaborates_with / delegates_to /
- * receives_handoff_from / escalates_to / customer_facing / ...). Используется
- * γ-3 CrossFunctional для карты handoff'ов и β-8 для PersonalRelation patterns.
- */
 @Injectable()
 export class InteractionService {
   constructor(
@@ -85,10 +73,7 @@ export class InteractionService {
       await this.assertRoleExists(args.tenantId, args.body.counterpartRoleId);
     }
     if (args.body.counterpartDepartmentId) {
-      await this.assertDepartmentExists(
-        args.tenantId,
-        args.body.counterpartDepartmentId,
-      );
+      await this.assertDepartmentExists(args.tenantId, args.body.counterpartDepartmentId);
     }
     const created = await this.prisma.interaction.create({
       data: {
@@ -102,9 +87,7 @@ export class InteractionService {
         description: args.body.description ?? null,
         sourceBlockIds: args.body.sourceBlockIds ?? [],
         confidence:
-          args.body.confidence !== undefined
-            ? new Prisma.Decimal(args.body.confidence)
-            : null,
+          args.body.confidence !== undefined ? new Prisma.Decimal(args.body.confidence) : null,
       },
       include: {
         counterpartRole: { select: { id: true, name: true } },
@@ -146,10 +129,7 @@ export class InteractionService {
       await this.assertRoleExists(args.tenantId, args.body.counterpartRoleId);
     }
     if (args.body.counterpartDepartmentId) {
-      await this.assertDepartmentExists(
-        args.tenantId,
-        args.body.counterpartDepartmentId,
-      );
+      await this.assertDepartmentExists(args.tenantId, args.body.counterpartDepartmentId);
     }
     const data: Prisma.InteractionUpdateInput = {};
     if (args.body.kind !== undefined) data.kind = args.body.kind;
@@ -199,11 +179,7 @@ export class InteractionService {
     return this.toDto(updated);
   }
 
-  async softDelete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; userId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.interaction.findUnique({
       where: { id: args.id },
     });
@@ -229,10 +205,6 @@ export class InteractionService {
     return { ok: true };
   }
 
-  /**
-   * Upsert по «(kind, counterpartKey)» — для auto-extract'а из LLM.
-   * counterpartKey = counterpartRoleId || `dept:${departmentId}` || `ext:${external}`.
-   */
   async upsertByCounterpart(args: {
     tenantId: string;
     roleId: string;
@@ -245,11 +217,7 @@ export class InteractionService {
     sourceBlockIds?: string[];
     confidence?: number | null;
   }): Promise<InteractionDto> {
-    if (
-      !args.counterpartRoleId &&
-      !args.counterpartDepartmentId &&
-      !args.counterpartExternal
-    ) {
+    if (!args.counterpartRoleId && !args.counterpartDepartmentId && !args.counterpartExternal) {
       throw new BadRequestException({
         ok: false,
         error: {
@@ -277,16 +245,9 @@ export class InteractionService {
       const updated = await this.prisma.interaction.update({
         where: { id: existing.id },
         data: {
-          frequency:
-            args.frequency !== undefined ? args.frequency : existing.frequency,
-          description:
-            args.description !== undefined
-              ? args.description
-              : existing.description,
-          sourceBlockIds: mergeSourceBlocks(
-            existing.sourceBlockIds,
-            args.sourceBlockIds,
-          ),
+          frequency: args.frequency !== undefined ? args.frequency : existing.frequency,
+          description: args.description !== undefined ? args.description : existing.description,
+          sourceBlockIds: mergeSourceBlocks(existing.sourceBlockIds, args.sourceBlockIds),
           confidence:
             args.confidence !== undefined && args.confidence !== null
               ? new Prisma.Decimal(args.confidence)
@@ -323,12 +284,7 @@ export class InteractionService {
     return this.toDto(created);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -344,10 +300,7 @@ export class InteractionService {
     }
   }
 
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },

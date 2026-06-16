@@ -5,20 +5,6 @@ import type { PrismaService } from '../../common/prisma/prisma.service';
 
 import { OnboardingService } from './onboarding.service';
 
-/**
- * audit Б3 (2026-05-29) — спецификация на `resetDemoWorkspace`.
- * Обновлено 2026-06-01-demo-shared-org-model §4.2: добавлен precondition
- * `Org.isReferenceDemo=true`.
- *
- * Покрытие:
- *   - precondition `Org` не найдена → 404 org_not_found,
- *   - precondition `Org.isReferenceDemo IS FALSE` → 400 not_reference_org,
- *   - precondition `Org.demoWorkspaceSeededAt IS NULL` → 400 no_demo_to_reset,
- *   - happy path → каждый `deleteMany` фильтруется по `externalSource: 'demo'`
- *     либо через demo-meeting `roomName.startsWith('demo-room-')`,
- *   - возврат `deletedByTable` со счётчиками от `deleteMany`.
- */
-
 describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
   let prisma: ReturnType<typeof makePrismaMock>;
   let svc: OnboardingService;
@@ -34,9 +20,7 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
         updateCalls.push({ name, args });
         return { count: counters[name] ?? 0 };
       });
-    const $transaction = vi.fn(
-      async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma),
-    );
+    const $transaction = vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma));
     const deleteCalls: { name: string; args: unknown }[] = [];
     const updateCalls: { name: string; args: unknown }[] = [];
     const counters: Record<string, number> = {};
@@ -107,8 +91,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
       label: { deleteMany: _del('label') },
       project: { deleteMany: _del('project') },
 
-      // ── ТЗ 2026-05-31 demo-content-expansion-pulse §7.8 ──
-      // Pulse snapshot-таблицы (без externalSource — чистка по tenantId).
       knowledgeRiskSnapshot: { deleteMany: _del('knowledgeRiskSnapshot') },
       recurringTopic: { deleteMany: _del('recurringTopic') },
       promiseNetworkSnapshot: { deleteMany: _del('promiseNetworkSnapshot') },
@@ -121,7 +103,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
       socialContributionProfile: { deleteMany: _del('socialContributionProfile') },
       processTemplateVersion: { deleteMany: _del('processTemplateVersion') },
       processTemplate: { deleteMany: _del('processTemplate') },
-      // Новый контент (с externalSource='demo').
       regulation: { deleteMany: _del('regulation') },
       idea: { deleteMany: _del('idea') },
       ideaCluster: { deleteMany: _del('ideaCluster') },
@@ -160,7 +141,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     await expect(
       svc.resetDemoWorkspace({ orgId: 'org-1', actorUserId: 'u-1' }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // НИЧЕГО не удаляем
     expect(prisma.__deleteCalls.length).toBe(0);
   });
 
@@ -173,7 +153,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     await expect(
       svc.resetDemoWorkspace({ orgId: 'org-1', actorUserId: 'u-1' }),
     ).rejects.toBeInstanceOf(BadRequestException);
-    // НИЧЕГО не удаляем
     expect(prisma.__deleteCalls.length).toBe(0);
   });
 
@@ -204,10 +183,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     expect(result.deletedByTable.person).toBe(12);
     expect(result.deletedByTable.issue).toBe(42);
 
-    // Все вызовы delete должны фильтровать ИЛИ externalSource='demo',
-    // ИЛИ через родителя с externalSource='demo' / roomName demo-room-…,
-    // ИЛИ для snapshot-таблиц без externalSource — по tenantId/orgId
-    // (precondition demoWorkspaceSeededAt уже отсёк боевые Org'и).
     const safeFilter = (args: unknown): boolean => {
       const w = (args as { where?: unknown }).where as Record<string, unknown> | undefined;
       if (!w) return false;
@@ -215,20 +190,18 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
       return (
         str.includes('"externalSource":"demo"') ||
         str.includes('"startsWith":"demo-room-"') ||
-        // Snapshot-таблицы (Pulse/Helpfulness/Process/Vendor/...).
         str.includes('"tenantId":"org-1"') ||
-        // FeedbackMessage (orgId, не tenantId).
         str.includes('"orgId":"org-1"') ||
-        // Referral (slug starts with 'demo').
         str.includes('"startsWith":"demo"') ||
-        // ContributionSnapshot/HelpfulnessSpotlight/User — по списку userId.
         str.includes('"in":[]')
       );
     };
     for (const call of prisma.__deleteCalls) {
-      expect(safeFilter(call.args), `deleteMany ${call.name} не имеет demo-фильтра: ${JSON.stringify(call.args)}`).toBe(true);
+      expect(
+        safeFilter(call.args),
+        `deleteMany ${call.name} не имеет demo-фильтра: ${JSON.stringify(call.args)}`,
+      ).toBe(true);
     }
-    // Org обновлён: demoWorkspaceSeededAt: null (+ demoUserIds сброшены).
     expect(prisma.org.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'org-1' },
@@ -238,15 +211,6 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
   });
 });
 
-/**
- * QA B6 (2026-06-15) — getSetupProgress: «timestamp ИЛИ факт».
- *
- * Покрытие (детерминизм: мок Prisma):
- *   (а) timestamp'ов нет, но есть отделы/должности → они зачитаны (баг 0/6);
- *   (б) ни вех, ни сущностей → 0 из 6;
- *   (в) timestamp'ы стоят (мастер пройден) → 6 из 6 даже при нулевых счётчиках;
- *   (г) Org нет → 404.
- */
 describe('OnboardingService.getSetupProgress (QA B6)', () => {
   function makeSvc(opts: {
     org: Record<string, unknown> | null;
@@ -282,7 +246,7 @@ describe('OnboardingService.getSetupProgress (QA B6)', () => {
     const p = await svc.getSetupProgress('org-1');
     expect(p.steps.departments).toBe(true);
     expect(p.steps.roles).toBe(true);
-    expect(p.steps.team).toBe(false); // только владелец (persons=1)
+    expect(p.steps.team).toBe(false);
     expect(p.completed).toBe(2);
     expect(p.total).toBe(6);
   });
@@ -320,8 +284,6 @@ describe('OnboardingService.getSetupProgress (QA B6)', () => {
       org: null,
       counts: { department: 0, role: 0, person: 0, meeting: 0, cycle: 0 },
     });
-    await expect(svc.getSetupProgress('org-x')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.getSetupProgress('org-x')).rejects.toBeInstanceOf(NotFoundException);
   });
 });

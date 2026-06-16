@@ -3,34 +3,16 @@ import type { Prisma, User } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Тонкая обёртка над Prisma для модели `User`.
- *
- * Здесь нет бизнес-логики — только запросы к БД. Все транзакции и решения
- * («создавать или обновлять?», «что обновлять?») принимаются в `UsersService`.
- *
- * Для работы внутри транзакции каждый метод принимает опциональный
- * `tx: Prisma.TransactionClient`. Если не передан — используется корневой
- * `PrismaService`.
- */
 @Injectable()
 export class UsersRepository {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  findByExternalId(
-    externalId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<User | null> {
+  findByExternalId(externalId: string, tx?: Prisma.TransactionClient): Promise<User | null> {
     const client = tx ?? this.prisma;
     return client.user.findUnique({ where: { externalId } });
   }
 
-  findById(
-    userId: string,
-    tx?: Prisma.TransactionClient,
-  ): Promise<User | null> {
+  findById(userId: string, tx?: Prisma.TransactionClient): Promise<User | null> {
     const client = tx ?? this.prisma;
     return client.user.findUnique({ where: { id: userId } });
   }

@@ -7,10 +7,6 @@ import type { AdminSettingsService } from '../admin/settings/admin-settings.serv
 import { ChatboxAnalyzeCron } from './chatbox-analyze.cron';
 import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
-/**
- * Unit-тесты sweeper'а анализа сессий ChatBox: Prisma / Queue / AdminSettings
- * замоканы. Проверяем kill-switch и постановку analyze-job по pending-сессиям.
- */
 describe('ChatboxAnalyzeCron', () => {
   let prismaMock: {
     chatboxChatSession: {
@@ -28,14 +24,10 @@ describe('ChatboxAnalyzeCron', () => {
     prismaMock = {
       chatboxChatSession: {
         findMany: vi.fn(),
-        // Системный总 pending для gauge (Ф3).
         count: vi.fn().mockResolvedValue(5),
       },
-      // Гейт анализа: по умолчанию оба тенанта с analysisEnabled=true.
       chatboxIntegration: {
-        findMany: vi
-          .fn()
-          .mockResolvedValue([{ tenantId: 't1' }, { tenantId: 't2' }]),
+        findMany: vi.fn().mockResolvedValue([{ tenantId: 't1' }, { tenantId: 't2' }]),
       },
     };
     queueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
@@ -87,7 +79,6 @@ describe('ChatboxAnalyzeCron', () => {
     expect(queueMock.enqueue).toHaveBeenCalledTimes(2);
     expect(queueMock.enqueue).toHaveBeenCalledWith('t1', 's1');
     expect(queueMock.enqueue).toHaveBeenCalledWith('t2', 's2');
-    // Ф3 — gauge pending-сессий выставлен системным总 (count=5).
     expect(metricsMock.setChatboxPendingSessions).toHaveBeenCalledWith(5);
     expect(prismaMock.chatboxChatSession.count).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -3,12 +3,7 @@ import type {
   BitrixIntegrationStatus,
   BitrixLinkMode,
   BitrixStatusApi,
-} from '@/api/bitrix.api';
-
-/**
- * Domain-слой Bitrix24-интеграции (ApiDto → DomainModel).
- * Гуманизирует статус и парсит даты.
- */
+} from "@/api/bitrix.api";
 
 export interface BitrixIntegrationView {
   id: string;
@@ -25,10 +20,10 @@ export interface BitrixIntegrationView {
 }
 
 const STATUS_LABELS: Record<BitrixIntegrationStatus, string> = {
-  pending: 'Ожидает привязки',
-  connected: 'Подключено',
-  error: 'Ошибка',
-  disconnected: 'Отключено',
+  pending: "Ожидает привязки",
+  connected: "Подключено",
+  error: "Ошибка",
+  disconnected: "Отключено",
 };
 
 export function bitrixStatusLabel(status: BitrixIntegrationStatus): string {
@@ -60,15 +55,13 @@ export function mapBitrixIntegration(
   };
 }
 
-// ─────────────────────────── статус источника ──────────────────────────────
-
 export interface BitrixStatusView {
   integration: BitrixIntegrationView;
   analysisEnabled: boolean;
   lastFullSyncAt: Date | null;
   lastIncrementalSyncAt: Date | null;
-  counts: BitrixStatusApi['counts'];
-  sessionsByStatus: BitrixStatusApi['sessionsByStatus'];
+  counts: BitrixStatusApi["counts"];
+  sessionsByStatus: BitrixStatusApi["sessionsByStatus"];
 }
 
 export function mapBitrixStatus(
@@ -85,12 +78,10 @@ export function mapBitrixStatus(
   };
 }
 
-// ─────────────────────────── режим связки сотрудника ───────────────────────
-
 const LINK_MODE_LABELS: Record<BitrixLinkMode, string> = {
-  none: 'Не связан',
-  auto: 'Авто',
-  manual: 'Вручную',
+  none: "Не связан",
+  auto: "Авто",
+  manual: "Вручную",
 };
 
 export function bitrixLinkModeLabel(mode: BitrixLinkMode): string {

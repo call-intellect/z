@@ -1,14 +1,5 @@
-/**
- * Unit-тесты для `SpecialistsCombinedService`.
- *
- * Логика: LlmRouterService мокаем, проверяем парсинг tool_calls и
- * вызовы persist'ов для каждого типа сущностей. БД мокаем минимально через
- * объект с jest-стилем (vi.fn() / vi.mocked).
- */
-
 import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
-
 
 import { SPECIALISTS_COMBINED_TOOL_NAME } from '../prompts/specialists-combined.prompt';
 
@@ -306,8 +297,6 @@ describe('SpecialistsCombinedService.extractAll', () => {
 
     expect(prisma.decision.create).toHaveBeenCalledTimes(1);
     const callArg = prisma.decision.create.mock.calls[0][0];
-    // Prisma.Decimal — сравним строковое представление, чтобы не зависеть от
-    // внутреннего формата.
     expect(callArg.data.confidence).toBeInstanceOf(Prisma.Decimal);
     expect(callArg.data.confidence.toString()).toBe('1');
   });

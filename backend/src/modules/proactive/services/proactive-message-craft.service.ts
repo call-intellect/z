@@ -1,37 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 
-/**
- * SBA δ-2 — обёртка над LlmRouter для taskType `proactive-message-craft`.
- *
- * Задача: на входе — структурированный контекст сработавшего правила
- * (ruleType, severity, краткий фактический payload). На выходе — короткое
- * friendly-сообщение (≤ 280 символов) и заголовок (≤ 80 символов).
- *
- * Tone: НЕ алармистский — «привет, заметил X — может посмотришь?». Никаких
- * восклицаний, никакого «СРОЧНО». Это инициатива от Коры, а не сирена.
- *
- * Fallback: если LLM упала / undefined ответ — используем deterministic
- * шаблон по ruleType (см. `fallbackTextByRule`). Это гарантирует, что cron
- * никогда не оставит payload без текста.
- */
 export interface ProactiveCraftInput {
   tenantId: string;
   userId: string;
   ruleType: string;
   severity: 'low' | 'medium' | 'high';
-  /** Структурированный контекст правила: что и почему сработало. */
   facts: Record<string, unknown>;
 }
 
 export interface ProactiveCraftOutput {
   title: string;
   body: string;
-  /** True — текст пришёл от LLM. False — fallback-шаблон. */
   fromLlm: boolean;
 }
 
@@ -39,9 +20,7 @@ export interface ProactiveCraftOutput {
 export class ProactiveMessageCraftService {
   private readonly logger = new Logger(ProactiveMessageCraftService.name);
 
-  constructor(
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-  ) {}
+  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
 
   async craft(input: ProactiveCraftInput): Promise<ProactiveCraftOutput> {
     const systemPrompt = [
@@ -92,9 +71,7 @@ export class ProactiveMessageCraftService {
     return { ...this.fallbackTextByRule(input), fromLlm: false };
   }
 
-  private tryParse(
-    res: LlmCallResult,
-  ): { title: string; body: string } | null {
+  private tryParse(res: LlmCallResult): { title: string; body: string } | null {
     try {
       const obj = JSON.parse(res.text);
       if (
@@ -121,10 +98,7 @@ export class ProactiveMessageCraftService {
     body: string;
   } {
     const facts = input.facts;
-    const name =
-      typeof facts.name === 'string'
-        ? String(facts.name).slice(0, 80)
-        : 'элемент';
+    const name = typeof facts.name === 'string' ? String(facts.name).slice(0, 80) : 'элемент';
     switch (input.ruleType) {
       case 'decision_no_owner':
         return {

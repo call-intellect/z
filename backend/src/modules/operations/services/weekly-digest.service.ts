@@ -24,14 +24,6 @@ import {
 } from '../prompts/weekly-digest.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * Ф1b редизайна дашбордов — чистый маппер persisted-снимков weekly-дайджеста
- * в трендовые точки. Принимает строки в порядке DESC по `weekStart`
- * (как их отдаёт `findMany orderBy desc`) и возвращает точки в порядке
- * old→new (через `.reverse()`). `metricsJson` парсится безопасно: blockers
- * считаются как сумма `topBlockers[].count`, hangingDecisions — длина массива;
- * любые отсутствующие/невалидные поля деградируют в 0.
- */
 export function mapWeeklyDigestRowsToTrend(
   rowsDesc: Array<{ weekStart: string; metricsJson: unknown }>,
 ): WeeklyDigestTrendPointDto[] {
@@ -51,31 +43,12 @@ export function mapWeeklyDigestRowsToTrend(
           (s: number, b: unknown) => s + (Number((b as { count?: unknown })?.count) || 0),
           0,
         ),
-        hangingDecisions: Array.isArray(m.hangingDecisions)
-          ? m.hangingDecisions.length
-          : 0,
+        hangingDecisions: Array.isArray(m.hangingDecisions) ? m.hangingDecisions.length : 0,
       };
     })
     .reverse();
 }
 
-/**
- * SBA β-8.1 — WeeklyDigestService.
- *
- * Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §5, §8.
- *
- * Двухстадийная сборка дайджеста:
- *   1. Агрегация из БД (быстро): чек-ины (green/yellow/red), повторяющиеся
- *      блокеры, инсайты, цели, висящие решения.
- *   2. Один LLM-вызов `operations-weekly-digest` — связный текст.
- *
- * Идемпотентность — `@@unique([tenantId, weekStart])`. Если за неделю
- * дайджест уже сохранён — `getOrGenerate` возвращает существующий.
- *
- * При неудаче LLM сохраняем «сухой» вариант (структура без связного текста)
- * с `llmTaskRouteId=null` — это позволяет различать «нормальный» дайджест
- * и fallback в админке.
- */
 @Injectable()
 export class WeeklyDigestService {
   private readonly logger = new Logger(WeeklyDigestService.name);
@@ -87,13 +60,6 @@ export class WeeklyDigestService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Получить сохранённый дайджест за неделю. Возвращает `null`, если ещё
-   * не сгенерирован.
-   *
-   * Pulse Wave 2 §2.2 — обогащает DTO runtime-секциями (kpiDeltas /
-   * teamDynamics / forecast).
-   */
   async getStored(args: {
     tenantId: string;
     weekStart: string;
@@ -105,10 +71,6 @@ export class WeeklyDigestService {
     return this.enrichDto(this.toDto(row));
   }
 
-  /**
-   * Получить или сгенерировать. Если дайджест уже есть — возвращает его
-   * (идемпотентность по `(tenantId, weekStart)`).
-   */
   async getOrGenerate(args: {
     tenantId: string;
     weekStart: string;
@@ -122,10 +84,6 @@ export class WeeklyDigestService {
     return this.generate(args);
   }
 
-  /**
-   * Принудительная генерация. Если дайджест уже есть — перезаписывает
-   * (используется admin-эндпоинтом POST /generate для отладки).
-   */
   async generate(args: {
     tenantId: string;
     weekStart: string;
@@ -173,7 +131,6 @@ export class WeeklyDigestService {
         statement: d.statement,
         ageDays: d.ageDays,
       })),
-      // TZ-1 Ф4.A — секция идей недели (опускается промптом, если пусто).
       ...(aggregates.metrics.topIdeas && aggregates.metrics.topIdeas.length > 0
         ? {
             topIdeas: aggregates.metrics.topIdeas.map((i) => ({
@@ -193,8 +150,6 @@ export class WeeklyDigestService {
         tenantId: args.tenantId,
         systemPrompt: WEEKLY_DIGEST_SYSTEM_PROMPT,
         userMessage: buildWeeklyDigestUserMessage(promptInput),
-        // ТЗ 2026-05-25 LLM-architecture §6.6 — 1500 → 4000. Текст ~250-600
-        // слов (≈800-2000 токенов output) + thinking-токены DeepSeek-Pro.
         maxTokens: 4_000,
         sourceRef: { type: 'weekly-digest', id: `${args.tenantId}:${args.weekStart}` },
       });
@@ -216,7 +171,6 @@ export class WeeklyDigestService {
       bodyMarkdown = buildFallbackDigestMarkdown(promptInput);
     }
 
-    // Upsert идемпотентен по `(tenantId, weekStart)`.
     const row = await this.prisma.weeklyOperationsDigest.upsert({
       where: {
         tenantId_weekStart: {
@@ -246,10 +200,6 @@ export class WeeklyDigestService {
     return this.enrichDto(this.toDto(row));
   }
 
-  /**
-   * Агрегация источников: чек-ины, повторяющиеся блокеры, инсайты, цели,
-   * висящие решения. Выделена для тестирования без LLM.
-   */
   async aggregate(args: {
     tenantId: string;
     weekStart: string;
@@ -265,7 +215,6 @@ export class WeeklyDigestService {
       goalsPrev,
       ideasRaw,
     ] = await Promise.all([
-      // Чек-ины текущей недели — для долей green/yellow/red.
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -274,10 +223,7 @@ export class WeeklyDigestService {
         },
         select: { sentiment: true, id: true },
       }),
-      // Чек-ины предыдущей недели — для дельты целей (используется
-      // отдельно — здесь только для подсчёта delta при необходимости).
       Promise.resolve([] as Array<{ id: string }>),
-      // Чек-ины с блокерами — для топ-блокеров недели.
       this.prisma.dailyCheckIn.findMany({
         where: {
           tenantId: args.tenantId,
@@ -286,7 +232,6 @@ export class WeeklyDigestService {
         },
         select: { id: true, blockersJson: true },
       }),
-      // Инсайты (β-4 Insights Radar) — топ-3 по динамике за последние 7д.
       this.prisma.insight.findMany({
         where: {
           tenantId: args.tenantId,
@@ -306,7 +251,6 @@ export class WeeklyDigestService {
         orderBy: { dynamicScore: 'desc' },
         take: 3,
       }),
-      // Цели — текущая неделя (по updatedAt).
       this.prisma.goal.findMany({
         where: {
           tenantId: args.tenantId,
@@ -317,7 +261,6 @@ export class WeeklyDigestService {
         },
         select: { id: true, status: true, archivedAt: true },
       }),
-      // Висящие решения старше 7 дней без actualOutcomes.
       this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
@@ -329,7 +272,6 @@ export class WeeklyDigestService {
         orderBy: { decidedAt: 'asc' },
         take: 5,
       }),
-      // Цели — предыдущая неделя (для дельты).
       this.prisma.goal.findMany({
         where: {
           tenantId: args.tenantId,
@@ -340,8 +282,6 @@ export class WeeklyDigestService {
         },
         select: { id: true, status: true },
       }),
-      // TZ-1 Ф4.A — топ идей недели: активные (не rejected/archived),
-      // обсуждавшиеся за окно недели, по weight + свежесть lastDiscussedAt.
       this.prisma.idea.findMany({
         where: {
           tenantId: args.tenantId,
@@ -363,7 +303,6 @@ export class WeeklyDigestService {
       }),
     ]);
 
-    // TZ-1 Ф4.A — топ идей недели (опускается, если пусто).
     const topIdeas = ideasRaw.map((i) => ({
       ideaId: i.id,
       statement: (i.statement ?? '').slice(0, 400),
@@ -372,7 +311,6 @@ export class WeeklyDigestService {
       supporterCount: i.supporterCount,
     }));
 
-    // Доли по чек-инам.
     let g = 0;
     let y = 0;
     let r = 0;
@@ -383,9 +321,6 @@ export class WeeklyDigestService {
     }
     const total = g + y + r;
 
-    // Топ-5 повторяющихся блокеров — группируем по нормализованному
-    // первому слову + первым 40 символам, чтобы устранить пробелы и
-    // регистр. Это не «семантическая» дедупликация, но даёт разумный топ.
     const blockerKey = new Map<string, { text: string; count: number; checkInIds: Set<string> }>();
     for (const row of blockerCheckIns) {
       if (!Array.isArray(row.blockersJson)) continue;
@@ -418,19 +353,14 @@ export class WeeklyDigestService {
       ),
     );
 
-    // Цели — achieved (≈completed) / abandoned (≈failed) / active (inProgress)
-    // + дельта к прошлой неделе. NB: enum GoalStatus = active|paused|achieved|abandoned.
     const completedNow = goals.filter((g0) => g0.status === 'achieved').length;
     const failedNow = goals.filter((g0) => g0.status === 'abandoned').length;
     const inProgressNow = goals.filter(
       (g0) => g0.status === 'active' && g0.archivedAt === null,
     ).length;
-    const completedPrev = goalsPrev.filter(
-      (g0) => g0.status === 'achieved',
-    ).length;
+    const completedPrev = goalsPrev.filter((g0) => g0.status === 'achieved').length;
     const failedPrev = goalsPrev.filter((g0) => g0.status === 'abandoned').length;
 
-    // Висящие решения — собираем provenance + age.
     const now = new Date();
     const hangingDecisions = decisions.map((d) => {
       const ageDays = d.decidedAt
@@ -464,7 +394,6 @@ export class WeeklyDigestService {
         failedDelta: failedNow - failedPrev,
       },
       hangingDecisions,
-      // TZ-1 Ф4.A — топ идей недели (пустой массив опускается на рендере).
       ...(topIdeas.length > 0 ? { topIdeas } : {}),
     };
 
@@ -473,21 +402,12 @@ export class WeeklyDigestService {
       insightIds: insights.map((i) => i.id),
       goalIds: goals.map((g0) => g0.id),
       decisionIds: decisions.map((d) => d.id),
-      ...(topIdeas.length > 0
-        ? { ideaIds: topIdeas.map((i) => i.ideaId) }
-        : {}),
+      ...(topIdeas.length > 0 ? { ideaIds: topIdeas.map((i) => i.ideaId) } : {}),
     };
 
     return { metrics, sources };
   }
 
-  /**
-   * Ф1b — исторический тренд weekly-дайджеста из уже persisted-снимков.
-   * Берём до `weeks` последних строк за неделю ≤ текущей (`lte`), сортируем
-   * DESC по `weekStart` (строки YYYY-MM-DD лексикографически сортируемы),
-   * затем чистый маппер разворачивает их в old→new. Best-effort: любая
-   * ошибка БД → пустой тренд (не ломаем выдачу дайджеста).
-   */
   private async buildWeeklyTrend(
     tenantId: string,
     weekStart: string,
@@ -506,14 +426,6 @@ export class WeeklyDigestService {
     }
   }
 
-  /** Преобразование Prisma-row в DTO.
-   *
-   *  Pulse Wave 2 §2.2: 3 расширенных секции (kpiDeltas/teamDynamics/forecast)
-   *  — НЕ хранятся в БД; здесь возвращаем пустые массивы. Реально они
-   *  вычисляются `enrichDto()` через `computeRuntimeSections()`. Пустые
-   *  дефолты гарантируют, что DTO type-корректен даже в ветке, где enrich
-   *  не вызывается (например, в unit-тестах).
-   */
   private toDto(row: {
     id: string;
     tenantId: string;
@@ -535,35 +447,21 @@ export class WeeklyDigestService {
       sources: (row.sourcesJson as WeeklyDigestSourcesDto) ?? emptySources(),
       llmTaskRouteId: row.llmTaskRouteId,
       createdAt: row.createdAt.toISOString(),
-      // Pulse Wave 2 §2.2 — runtime-секции, заполняются в enrichDto().
       kpiDeltas: [],
       teamDynamics: [],
       forecast: [],
-      // ТЗ-2 Ф3 — посекционные дельты, заполняются в enrichDto(). Пустой
-      // дефолт type-корректен для ветки без enrich (unit-тесты).
       sectionDeltas: emptySectionDeltas(),
-      // Ф1b — реально заполняется enrichDto() → buildWeeklyTrend().
       trend: [],
     };
   }
 
-  /**
-   * Pulse Wave 2 §2.2 — обогащение DTO runtime-вычисленными секциями
-   * (kpiDeltas / teamDynamics / forecast). НЕ-блокирующее на ошибки: если
-   * запрос упал, возвращаем DTO с пустыми секциями (а не ломаем выдачу
-   * всего отчёта).
-   */
-  private async enrichDto(
-    dto: WeeklyOperationsDigestDto,
-  ): Promise<WeeklyOperationsDigestDto> {
+  private async enrichDto(dto: WeeklyOperationsDigestDto): Promise<WeeklyOperationsDigestDto> {
     try {
       const sections = await this.computeRuntimeSections({
         tenantId: dto.tenantId,
         weekStart: dto.weekStart,
         weekEnd: dto.weekEnd,
       });
-      // Ф1b — исторический тренд кладём в тот же ответ (один вызов фронта).
-      // buildWeeklyTrend сам глотает ошибку → [], так что enrich не падает.
       const trend = await this.buildWeeklyTrend(dto.tenantId, dto.weekStart);
       return { ...dto, ...sections, trend };
     } catch (err) {
@@ -579,17 +477,6 @@ export class WeeklyDigestService {
     }
   }
 
-  /**
-   * Pulse Wave 2 §2.2 — собирает 3 секции:
-   *   - kpiDeltas: 4 KPI текущей недели с дельтами к предыдущей неделе.
-   *   - teamDynamics: команды, чьи sentiment / promises метрики выделились
-   *     (изменение ≥10 в любую сторону), max 6.
-   *   - forecast: линейная экстраполяция тренда на следующую неделю.
-   *
-   * НЕ персистится в БД. Считается прямыми Prisma-запросами (без инжекта
-   * DashboardModule-сервисов — это создало бы circular dependency, т.к.
-   * `DashboardModule` уже импортирует `OperationsModule` после Фазы 1.3).
-   */
   private async computeRuntimeSections(args: {
     tenantId: string;
     weekStart: string;
@@ -605,17 +492,11 @@ export class WeeklyDigestService {
     const prevStart = shiftDateStr(args.weekStart, -7);
     const prevEnd = shiftDateStr(args.weekEnd, -7);
 
-    // Окно текущей недели в UTC (для запросов по DateTime-полям).
     const curStartUtc = parseDateLocalToUtc(curStart);
     const curEndUtc = endOfDayUtc(parseDateLocalToUtc(curEnd));
     const prevStartUtc = parseDateLocalToUtc(prevStart);
     const prevEndUtc = endOfDayUtc(parseDateLocalToUtc(prevEnd));
 
-    // ── KPI #1-2: чек-ины (для sentiment-индекса и счётчика totalCheckIns).
-    // ── KPI #3: commitments по commitmentDueDate в окне.
-    // ── KPI #4: висящие решения (raisedCount>=2, status активные,
-    //           createdAt старше weekEnd-7d на момент конца текущей недели
-    //           и аналогично для предыдущей).
     const [
       curCheckIns,
       prevCheckIns,
@@ -623,16 +504,10 @@ export class WeeklyDigestService {
       prevCommitments,
       curHanging,
       prevHanging,
-      // ТЗ-2 Ф3 — посекционные счётчики (текущая/предыдущая неделя).
-      // Блокеры — IdeaBlock(signalType=blocker) по createdAt в окне.
       curBlockerCount,
       prevBlockerCount,
-      // Инсайты — тот же фильтр, что и topInsights в aggregate()
-      // (status='active' + lastObservedAt в окне; severity-фильтра нет).
       curInsightCount,
       prevInsightCount,
-      // Идеи — тот же фильтр и окно, что и topIdeas в aggregate()
-      // (status notIn rejected/archived + lastDiscussedAt в окне).
       curIdeaCount,
       prevIdeaCount,
     ] = await Promise.all([
@@ -694,8 +569,6 @@ export class WeeklyDigestService {
           },
         },
       }),
-      // Висящие решения на конец текущей недели: активные, raisedCount>=2,
-      // createdAt < (curEnd - 7d) = старше 7 дней относительно конца недели.
       this.prisma.decision.count({
         where: {
           tenantId: args.tenantId,
@@ -712,7 +585,6 @@ export class WeeklyDigestService {
           createdAt: { lt: addDays(prevEndUtc, -7) },
         },
       }),
-      // ── sectionDeltas: блокеры (IdeaBlock signalType=blocker, createdAt в окне).
       this.prisma.ideaBlock.count({
         where: {
           tenantId: args.tenantId,
@@ -727,8 +599,6 @@ export class WeeklyDigestService {
           createdAt: { gte: prevStartUtc, lte: prevEndUtc },
         },
       }),
-      // ── sectionDeltas: инсайты (мирроринг topInsights — status=active +
-      // lastObservedAt в окне).
       this.prisma.insight.count({
         where: {
           tenantId: args.tenantId,
@@ -743,8 +613,6 @@ export class WeeklyDigestService {
           lastObservedAt: { gte: prevStartUtc, lte: prevEndUtc },
         },
       }),
-      // ── sectionDeltas: идеи (мирроринг topIdeas — notIn rejected/archived +
-      // lastDiscussedAt в окне).
       this.prisma.idea.count({
         where: {
           tenantId: args.tenantId,
@@ -761,16 +629,12 @@ export class WeeklyDigestService {
       }),
     ]);
 
-    // ── KPI #1: индекс настроения = (green-red)/total * 100 (округлено).
     const curSent = computeSentimentIndex(curCheckIns);
     const prevSent = computeSentimentIndex(prevCheckIns);
 
-    // ── KPI #2: надёжность обещаний = kept / (kept+broken+overdue) * 100.
     const curRel = computeReliabilityPercent(curCommitments);
     const prevRel = computeReliabilityPercent(prevCommitments);
 
-    // ── KPI #3: висящие решения (Int).
-    // ── KPI #4: чек-инов всего за неделю.
     const curTotal = curCheckIns.length;
     const prevTotal = prevCheckIns.length;
 
@@ -781,8 +645,6 @@ export class WeeklyDigestService {
       buildKpi('Чек-инов всего', curTotal, prevTotal, 'шт'),
     ];
 
-    // ── teamDynamics: для каждого Department с persons>=3 считаем
-    // sentiment + promises текущей и предыдущей недели.
     const teamDynamics = await this.computeTeamDynamics({
       tenantId: args.tenantId,
       curCheckIns,
@@ -791,10 +653,6 @@ export class WeeklyDigestService {
       prevCommitments,
     });
 
-    // ── forecast: Pulse Wave 4 §4.6 — приоритет ForecastSnapshot
-    // (LLM-агент Forecaster, понедельник 04:00 UTC). Если за последние 14 дней
-    // есть свежий snapshot — берём его. Иначе — линейная экстраполяция
-    // (placeholder из Wave 2 §2.2).
     const forecast = await this.buildForecast({
       tenantId: args.tenantId,
       curSent,
@@ -805,10 +663,6 @@ export class WeeklyDigestService {
       prevHanging,
     });
 
-    // ── sectionDeltas (ТЗ-2 Ф3): кол-во блокеров/инсайтов/идей за неделю +
-    // дельта к предыдущей. previous-окно по факту всегда имеет данные (запрос
-    // выполнен), поэтому previous=число, а не null; форма допускает null на
-    // случай отсутствия данных за предыдущую неделю (тогда delta=null).
     const sectionDeltas: WeeklySectionDeltasDto = {
       blockers: buildSectionDelta(curBlockerCount, prevBlockerCount),
       insights: buildSectionDelta(curInsightCount, prevInsightCount),
@@ -818,19 +672,6 @@ export class WeeklyDigestService {
     return { kpiDeltas, teamDynamics, forecast, sectionDeltas };
   }
 
-  /**
-   * Pulse Wave 4 §4.6 — построить forecast-секцию.
-   *
-   *   1. Если есть `ForecastSnapshot(scope='company')` за последние 14 дней —
-   *      маппим `expectedShifts` обратно в 3-эл DTO (`sentiment` / `promises` /
-   *      `hanging_decisions`). Confidence в DTO ограничен 'low'|'medium' —
-   *      округляем: confidence>=0.5 → 'medium', иначе 'low'.
-   *   2. Иначе — линейная экстраполяция (fallback из Wave 2 §2.2) или
-   *      placeholder «Прогноз появится после первого прогона Forecaster».
-   *
-   * Не падает: если запрос упал — возвращаем линейный fallback (см. caller
-   * `enrichDto`, который сам catch'ит).
-   */
   private async buildForecast(args: {
     tenantId: string;
     curSent: number | null;
@@ -853,33 +694,16 @@ export class WeeklyDigestService {
     if (snapshot) {
       const mapped = this.mapForecastSnapshotToDto(snapshot.payloadJson);
       if (mapped !== null) return mapped;
-      // Если payload битый — fallback на линейную экстраполяцию.
     }
 
     return [
       buildLinearForecast('sentiment', args.curSent, args.prevSent),
       buildLinearForecast('promises', args.curRel, args.prevRel),
-      buildLinearForecast(
-        'hanging_decisions',
-        args.curHanging,
-        args.prevHanging,
-      ),
+      buildLinearForecast('hanging_decisions', args.curHanging, args.prevHanging),
     ];
   }
 
-  /**
-   * Маппит `ForecastSnapshot.payloadJson` в массив `WeeklyForecastItemDto`.
-   *
-   * Источник — `expectedShifts: [{metric, direction, confidence}]` от
-   * `forecast-weekly` LLM-агента. Для каждого из 3 целевых metric'ов
-   * (`sentiment`/`promises`/`hanging_decisions`) пытаемся найти подходящий
-   * shift; если не нашли — генерим нейтральный placeholder с confidence='low'.
-   * Возвращает null, если payload не похож на нужный формат — caller сделает
-   * fallback на линейную экстраполяцию.
-   */
-  private mapForecastSnapshotToDto(
-    payload: unknown,
-  ): WeeklyForecastItemDto[] | null {
+  private mapForecastSnapshotToDto(payload: unknown): WeeklyForecastItemDto[] | null {
     if (!payload || typeof payload !== 'object') return null;
     const obj = payload as Record<string, unknown>;
     const shifts = obj.expectedShifts;
@@ -908,20 +732,14 @@ export class WeeklyDigestService {
 
     const result: WeeklyForecastItemDto[] = [];
     result.push(this.shiftToDto('sentiment', byMetric.get('sentiment_index')));
-    result.push(
-      this.shiftToDto('promises', byMetric.get('commitment_kept_ratio')),
-    );
-    result.push(
-      this.shiftToDto('hanging_decisions', byMetric.get('hanging_decisions')),
-    );
+    result.push(this.shiftToDto('promises', byMetric.get('commitment_kept_ratio')));
+    result.push(this.shiftToDto('hanging_decisions', byMetric.get('hanging_decisions')));
     return result;
   }
 
   private shiftToDto(
     metric: WeeklyForecastItemDto['metric'],
-    shift:
-      | { direction: 'up' | 'flat' | 'down'; confidence: number }
-      | undefined,
+    shift: { direction: 'up' | 'flat' | 'down'; confidence: number } | undefined,
   ): WeeklyForecastItemDto {
     if (!shift) {
       return {
@@ -970,7 +788,6 @@ export class WeeklyDigestService {
         confidence,
       };
     }
-    // hanging_decisions
     if (direction === 'up')
       return {
         metric,
@@ -990,21 +807,6 @@ export class WeeklyDigestService {
     };
   }
 
-  /**
-   * Pulse Wave 2 §2.2 — динамика команд по sentiment / promises.
-   *
-   * Для каждого Department:
-   *   - sentiment-delta = индекс_текущая - индекс_предыдущая (по чек-инам
-   *     сотрудников этого отдела);
-   *   - promises-delta = reliability_текущая - reliability_предыдущая
-   *     (по обещаниям, адресованным сотрудникам отдела).
-   *
-   * Команды, у которых в обеих неделях <3 человек писали чек-ин/получали
-   * commitment, отбрасываем (статистически слабый сигнал).
-   *
-   * Возвращаем top-2 по росту и top-2 по падению для каждой метрики (макс 6,
-   * берём только delta ≥ ±10).
-   */
   private async computeTeamDynamics(args: {
     tenantId: string;
     curCheckIns: Array<{
@@ -1028,7 +830,6 @@ export class WeeklyDigestService {
       commitmentRecipient: { primaryDepartmentId: string | null } | null;
     }>;
   }): Promise<WeeklyTeamDynamicsRowDto[]> {
-    // Соберём множество всех потенциальных departmentId.
     const depIds = new Set<string>();
     for (const c of args.curCheckIns) {
       if (c.person?.primaryDepartmentId) depIds.add(c.person.primaryDepartmentId);
@@ -1053,7 +854,6 @@ export class WeeklyDigestService {
     });
     const depNameById = new Map(departments.map((d) => [d.id, d.name]));
 
-    // group-функции по departmentId.
     const sentByDep = (checkIns: typeof args.curCheckIns) => {
       const map = new Map<string, { g: number; y: number; r: number; total: number }>();
       for (const c of checkIns) {
@@ -1070,7 +870,10 @@ export class WeeklyDigestService {
     };
 
     const relByDep = (commits: typeof args.curCommitments) => {
-      const map = new Map<string, { kept: number; broken: number; overdue: number; total: number }>();
+      const map = new Map<
+        string,
+        { kept: number; broken: number; overdue: number; total: number }
+      >();
       const now = new Date();
       for (const c of commits) {
         const dep = c.commitmentRecipient?.primaryDepartmentId;
@@ -1101,11 +904,10 @@ export class WeeklyDigestService {
     const relCur = relByDep(args.curCommitments);
     const relPrev = relByDep(args.prevCommitments);
 
-    const SENTIMENT_THRESHOLD = 10; // pts
-    const PROMISES_THRESHOLD = 10; // p.p.
+    const SENTIMENT_THRESHOLD = 10;
+    const PROMISES_THRESHOLD = 10;
     const MIN_TEAM_SIZE = 3;
 
-    // Кандидаты (depId, signal, delta, detail).
     type Candidate = {
       depId: string;
       depName: string;
@@ -1118,7 +920,6 @@ export class WeeklyDigestService {
     for (const depId of depIds) {
       const name = depNameById.get(depId) ?? depId;
 
-      // Sentiment.
       const sc = sentCur.get(depId);
       const sp = sentPrev.get(depId);
       if (sc && sp && sc.total >= MIN_TEAM_SIZE && sp.total >= MIN_TEAM_SIZE) {
@@ -1144,7 +945,6 @@ export class WeeklyDigestService {
         }
       }
 
-      // Promises.
       const rc = relCur.get(depId);
       const rp = relPrev.get(depId);
       if (rc && rp && rc.total >= MIN_TEAM_SIZE && rp.total >= MIN_TEAM_SIZE) {
@@ -1171,7 +971,6 @@ export class WeeklyDigestService {
       }
     }
 
-    // Top-2 улучшившихся / top-2 ухудшившихся для каждой метрики, max 6.
     const sentUp = candidates
       .filter((c) => c.signal === 'sentiment_improved')
       .sort((a, b) => b.delta - a.delta)
@@ -1189,14 +988,12 @@ export class WeeklyDigestService {
       .sort((a, b) => a.delta - b.delta)
       .slice(0, 1);
 
-    return [...sentUp, ...sentDown, ...promUp, ...promDown]
-      .slice(0, 6)
-      .map((c) => ({
-        departmentId: c.depId,
-        departmentName: c.depName,
-        signal: c.signal,
-        detail: c.detail,
-      }));
+    return [...sentUp, ...sentDown, ...promUp, ...promDown].slice(0, 6).map((c) => ({
+      departmentId: c.depId,
+      departmentName: c.depName,
+      signal: c.signal,
+      detail: c.detail,
+    }));
   }
 }
 
@@ -1223,23 +1020,12 @@ function emptySources(): WeeklyDigestSourcesDto {
   return { blockerCheckInIds: [], insightIds: [], goalIds: [], decisionIds: [] };
 }
 
-/**
- * ТЗ-2 Ф3 — пустой `sectionDeltas` для `toDto` (ветка без enrich).
- * previous=null → delta=null для всех секций.
- */
 function emptySectionDeltas(): WeeklySectionDeltasDto {
   const zero: WeeklyDeltaDto = { current: 0, previous: null, delta: null };
   return { blockers: { ...zero }, insights: { ...zero }, ideas: { ...zero } };
 }
 
-/**
- * ТЗ-2 Ф3 — собрать дельту одной секции. `previous=null` → `delta=null`
- * (нет данных за предыдущую неделю).
- */
-function buildSectionDelta(
-  current: number,
-  previous: number | null,
-): WeeklyDeltaDto {
+function buildSectionDelta(current: number, previous: number | null): WeeklyDeltaDto {
   return {
     current,
     previous,
@@ -1248,7 +1034,6 @@ function buildSectionDelta(
 }
 
 function parseDateLocalToUtc(dateLocal: string): Date {
-  // dateLocal = YYYY-MM-DD; конвертация в UTC-начало дня.
   return new Date(`${dateLocal}T00:00:00.000Z`);
 }
 
@@ -1264,7 +1049,6 @@ function addDays(d: Date, days: number): Date {
   return c;
 }
 
-/** Сдвиг даты-строки YYYY-MM-DD на ±N дней; возвращает YYYY-MM-DD. */
 function shiftDateStr(dateLocal: string, days: number): string {
   const d = parseDateLocalToUtc(dateLocal);
   d.setUTCDate(d.getUTCDate() + days);
@@ -1274,13 +1058,7 @@ function shiftDateStr(dateLocal: string, days: number): string {
   return `${y}-${m}-${dd}`;
 }
 
-/**
- * Индекс настроения в pts (-100..+100): (green - red) / total * 100.
- * `null` если total=0 (нет чек-инов — не из чего считать).
- */
-function computeSentimentIndex(
-  checkIns: Array<{ sentiment: string | null }>,
-): number | null {
+function computeSentimentIndex(checkIns: Array<{ sentiment: string | null }>): number | null {
   let g = 0;
   let r = 0;
   let total = 0;
@@ -1299,10 +1077,6 @@ function computeSentimentIndex(
   return Math.round(((g - r) / total) * 100);
 }
 
-/**
- * Reliability в % (0..100): kept / (kept+broken+overdue) * 100.
- * `null` если знаменатель=0.
- */
 function computeReliabilityPercent(
   commits: Array<{
     commitmentStatus: string | null;
@@ -1317,11 +1091,7 @@ function computeReliabilityPercent(
     const s = c.commitmentStatus;
     if (s === 'fulfilled') kept++;
     else if (s === 'missed') broken++;
-    else if (
-      (s === 'open' || s === 'asked') &&
-      c.commitmentDueDate &&
-      c.commitmentDueDate < now
-    )
+    else if ((s === 'open' || s === 'asked') && c.commitmentDueDate && c.commitmentDueDate < now)
       overdue++;
   }
   const denom = kept + broken + overdue;
@@ -1329,7 +1099,6 @@ function computeReliabilityPercent(
   return Math.round((kept / denom) * 100);
 }
 
-/** Хелпер: собрать запись KPI с дельтой. */
 function buildKpi(
   label: string,
   current: number | null,
@@ -1347,25 +1116,14 @@ function buildKpi(
   };
 }
 
-/**
- * Прогноз по KPI: линейная экстраполяция на следующую неделю.
- * Confidence='medium' если |delta| >= 10, иначе 'low'.
- *
- * Используется как fallback, если `ForecastSnapshot` (Pulse Wave 4 §4.6)
- * ещё не сгенерирован для этой Org. После первого прогона
- * `ForecasterCron` приоритет переключается на LLM-агента.
- */
 function buildLinearForecast(
   metric: WeeklyForecastItemDto['metric'],
   current: number | null,
   previous: number | null,
 ): WeeklyForecastItemDto {
-  const delta =
-    current !== null && previous !== null ? current - previous : null;
-  const confidence: 'low' | 'medium' =
-    delta !== null && Math.abs(delta) >= 10 ? 'medium' : 'low';
-  const projected =
-    delta !== null && current !== null ? current + delta : current;
+  const delta = current !== null && previous !== null ? current - previous : null;
+  const confidence: 'low' | 'medium' = delta !== null && Math.abs(delta) >= 10 ? 'medium' : 'low';
+  const projected = delta !== null && current !== null ? current + delta : current;
 
   if (metric === 'sentiment') {
     if (current === null) {
@@ -1425,7 +1183,6 @@ function buildLinearForecast(
     };
   }
 
-  // hanging_decisions
   if (current === null) {
     return {
       metric,

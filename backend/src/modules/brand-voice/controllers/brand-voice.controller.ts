@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -32,19 +29,6 @@ import {
 import { BrandVoiceExtractorService } from '../services/brand-voice-extractor.service';
 import { BrandVoiceService } from '../services/brand-voice.service';
 
-/**
- * SBA β-7 — REST API `/api/v1/brand-voice`.
- *
- *   GET     /            — текущий профиль (lazy-create если ещё нет).
- *   PATCH   /            — ручная правка tone/values/taboos (admin).
- *   POST    /rebuild     — синхронный manual rebuild (admin).
- *   GET     /artifacts   — Document'ы с useCases includes 'brand_corpus'.
- *
- * RBAC ResourceType — `brand_voice`.
- *   - read   → employee+ (нужен всем, кто пишет контент).
- *   - write  → owner/admin/manager-marketing (через role).
- *   - manage → owner/admin (rebuild — стоит денег на LLM).
- */
 @ApiTags('brand-voice')
 @Controller('api/v1/brand-voice')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -97,8 +81,7 @@ export class BrandVoiceController {
     const reasonByResult: Record<typeof r.result, string> = {
       built: `Профиль собран (version=${r.profileVersion ?? '?'}).`,
       skipped_low_corpus: `Корпус brand_corpus меньше порога (${r.corpusSize} < минимум).`,
-      skipped_idempotency:
-        'Профиль уже собирался менее 6 часов назад — пропущено.',
+      skipped_idempotency: 'Профиль уже собирался менее 6 часов назад — пропущено.',
       llm_error: 'LLM-провайдер недоступен — попробуйте позже.',
       db_error: 'Внутренняя ошибка записи — обратитесь к админу.',
     };
@@ -112,7 +95,7 @@ export class BrandVoiceController {
   @Get('artifacts')
   @ApiOperation({
     summary:
-      'Список Document\'ов, помеченных как brand_corpus (для UI «какие документы используются»).',
+      "Список Document'ов, помеченных как brand_corpus (для UI «какие документы используются»).",
   })
   async artifacts(
     @CurrentUser() user: CurrentUserPayload,
@@ -123,8 +106,6 @@ export class BrandVoiceController {
     const items = await this.svc.listArtifacts(t);
     return { items };
   }
-
-  // ─────────────────────────── helpers ───────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -144,9 +125,7 @@ export class BrandVoiceController {
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'brand_voice');
     if (!ok)
-      throw this.forbidden(
-        'Изменять голос бренда могут владелец, администратор или маркетолог',
-      );
+      throw this.forbidden('Изменять голос бренда могут владелец, администратор или маркетолог');
   }
 
   private async requireManage(userId: string, tenantId: string): Promise<void> {

@@ -2,10 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  ALL_LLM_TASK_TYPES,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { ALL_LLM_TASK_TYPES, LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { AdminCacheService } from './admin-cache.service';
 
@@ -56,21 +53,6 @@ export interface ExperimentCallRow {
   responsePreview: string | null;
 }
 
-/**
- * AdminExperimentsService (Z-Admin Фаза 7).
- *
- *   - `startExperiment` — пишет `LlmTaskRoute.experiment` для глобальной
- *     (tenantId=null) route. modelA берётся из текущего `providers[0]` —
- *     если нет model'и в записи, используется literal `<provider>:default`.
- *   - `getStatus` — счётчики A/B по `AiUsageLog.experimentGroup`, последние
- *     N вызовов каждой группы для глазного сравнения.
- *   - `finishExperiment` — обнуляет experiment; при `winner=B` ставит modelB
- *     первой в providers (парсинг `<provider>:<model>`).
- *   - `cancelExperiment` — обнуляет без миграции providers.
- *
- * Все мутации сбрасывают `LlmRouterService.refreshCache()` и
- * `AdminCacheService.invalidate('usage:')`.
- */
 @Injectable()
 export class AdminExperimentsService {
   private readonly logger = new Logger(AdminExperimentsService.name);
@@ -103,9 +85,7 @@ export class AdminExperimentsService {
       : 'unknown:default';
 
     const startedAt = new Date();
-    const endsAt = new Date(
-      startedAt.getTime() + args.durationDays * 24 * 60 * 60 * 1000,
-    );
+    const endsAt = new Date(startedAt.getTime() + args.durationDays * 24 * 60 * 60 * 1000);
     const experiment: ExperimentJson = {
       enabled: true,
       modelA,
@@ -121,10 +101,6 @@ export class AdminExperimentsService {
         data: { experiment: experiment as unknown as Prisma.InputJsonValue },
       });
     } else {
-      // Если route не было — создаём «пустой» с providers=[] (необычно, но
-      // легко) — admin сначала ставит модель через UI, потом запускает A/B.
-      // Тем не менее API не запрещаем — позволим стартовать эксперимент
-      // на пустой route, fallback chain default'ный.
       await this.prisma.llmTaskRoute.create({
         data: {
           taskType: args.taskType,
@@ -152,7 +128,7 @@ export class AdminExperimentsService {
     const since = config?.startedAt ? new Date(config.startedAt) : new Date(0);
     const baseWhere = {
       taskType,
-      experimentGroup: { not: null as unknown as string }, // Prisma: ne null
+      experimentGroup: { not: null as unknown as string },
       createdAt: { gte: since },
     } as const;
 
@@ -198,10 +174,7 @@ export class AdminExperimentsService {
     };
   }
 
-  async finishExperiment(args: {
-    taskType: string;
-    winner: 'A' | 'B';
-  }): Promise<{ ok: true }> {
+  async finishExperiment(args: { taskType: string; winner: 'A' | 'B' }): Promise<{ ok: true }> {
     const route = await this.prisma.llmTaskRoute.findFirst({
       where: { taskType: args.taskType, tenantId: null },
     });
@@ -217,7 +190,6 @@ export class AdminExperimentsService {
       const parsed = parseProviderModel(exp.modelB);
       if (parsed) {
         const providers = parseProvidersJson(route.providers);
-        // Удаляем существующее вхождение этого provider+model и ставим первым.
         const filtered = providers.filter(
           (p) => !(p.provider === parsed.provider && (p.model ?? null) === (parsed.model ?? null)),
         );
@@ -237,7 +209,6 @@ export class AdminExperimentsService {
         `finishExperiment: не смогли распарсить modelB=${exp.modelB}, оставляем providers как было`,
       );
     }
-    // winner=A или невалидный modelB — просто обнулить experiment.
     await this.prisma.llmTaskRoute.update({
       where: { id: route.id },
       data: { experiment: Prisma.JsonNull },

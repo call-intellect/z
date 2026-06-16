@@ -6,36 +6,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * SBA β-4 — Specialist35ProbeService.
- *
- * Эмиссия probe-events специалиста 3.5 (Insights Radar) согласно §6 sub-TZ.
- * 4 trigger'а:
- *
- *   1. `insight.escalation_suggested` — dynamicLabel='spike' OR (severity ∈
- *      {'high','critical'} AND частота заметно выросла) → owner/admin Org.
- *      (срабатывает из InsightClustererCron / Specialist35Service.processBlock)
- *   2. `insight.no_mitigation_plan` — severity ∈ {'high','critical'} AND
- *      mitigationPlan IS NULL AND age > 7 дней → admin. (cron-trigger)
- *   3. `insight.linked_decision_question` — LLM нашёл candidate Decision'ы →
- *      owner/admin Org с suggestion подтвердить link.
- *      (срабатывает из Specialist35Service после insight-link-to-decisions LLM)
- *   4. `insight.recurring_after_mitigation` — status='mitigated' AND новое
- *      упоминание (sourceBlockIds.push после mitigated date) → admin/manager.
- *      (срабатывает из Specialist35Service.processBlock на update)
- *
- * Контракт: НЕ бросает. Один упавший probe не валит остальные —
- * лог и продолжение. Каждый успешный probe увеличивает
- * `core_specialist_probe_events_total{type='insight', reason='...'}`.
- */
 @Injectable()
 export class Specialist35ProbeService {
   private readonly logger = new Logger(Specialist35ProbeService.name);
 
   static readonly SPECIALIST_NAME = '3-5-insights';
-  /** Через сколько дней без mitigationPlan для high/critical пинаем admin'а. */
   private static readonly NO_MITIGATION_AGE_DAYS = 7;
-  /** Защита от взрывного fan-out'а в cron'е. */
   private static readonly CRON_BATCH_LIMIT = 100;
 
   constructor(
@@ -44,21 +20,13 @@ export class Specialist35ProbeService {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
   ) {}
 
-  // ─────────────────────── публичные методы (sync) ───────────────────────
-
-  /**
-   * Вызывается из `Specialist35Service.processBlock` после create/update
-   * Insight. Запускает синхронные trigger'ы:
-   *   - escalation_suggested (если dynamicLabel='spike').
-   *   - recurring_after_mitigation (если status='mitigated' и было новое упоминание).
-   */
   async checkAndEmitForInsight(args: {
     insight: Insight;
-    /** Признак того, что блок добавлен поверх существующего mitigated Insight. */
     addedToMitigated: boolean;
   }): Promise<void> {
     try {
@@ -77,11 +45,6 @@ export class Specialist35ProbeService {
     }
   }
 
-  /**
-   * Trigger 3 — linked_decision_question. Вызывается явно из
-   * Specialist35Service после insight-link-to-decisions LLM, когда найдены
-   * candidate Decision'ы.
-   */
   async emitLinkedDecisionQuestion(args: {
     insight: Insight;
     candidateDecisionIds: readonly string[];
@@ -99,20 +62,13 @@ export class Specialist35ProbeService {
         reason: 'insight.linked_decision_question',
         message,
         recipients,
-        suggestedActions: [
-          'Подтвердить связь с решением',
-          'Отклонить связь',
-        ],
+        suggestedActions: ['Подтвердить связь с решением', 'Отклонить связь'],
       });
     } catch (err) {
       this.logErr('insight.linked_decision_question', args.insight.id, err);
     }
   }
 
-  /**
-   * Эскалация для spike / high+frequency. Вызывается явно из cron'а или из
-   * processBlock на dynamicLabel='spike'.
-   */
   async emitEscalationSuggested(insight: Insight): Promise<void> {
     const recipients = await this.findOrgAdminsUserIds(insight.tenantId);
     if (recipients.length === 0) return;
@@ -147,19 +103,9 @@ export class Specialist35ProbeService {
     });
   }
 
-  // ─────────────────────── публичный метод (cron) ───────────────────────
-
-  /**
-   * Trigger 2 — `insight.no_mitigation_plan`. Запускается из
-   * `InsightClustererCron` в основном проходе. Пинает admin'а для каждого
-   * Insight с severity ∈ {'high','critical'}, mitigationPlan IS NULL и
-   * age > NO_MITIGATION_AGE_DAYS.
-   */
   async checkNoMitigationPlanForOrg(tenantId: string): Promise<number> {
     const cutoff = new Date();
-    cutoff.setUTCDate(
-      cutoff.getUTCDate() - Specialist35ProbeService.NO_MITIGATION_AGE_DAYS,
-    );
+    cutoff.setUTCDate(cutoff.getUTCDate() - Specialist35ProbeService.NO_MITIGATION_AGE_DAYS);
     const insights = await this.prisma.insight.findMany({
       where: {
         tenantId,
@@ -183,10 +129,7 @@ export class Specialist35ProbeService {
           reason: 'insight.no_mitigation_plan',
           message,
           recipients,
-          suggestedActions: [
-            'Записать план реагирования',
-            'Понизить остроту',
-          ],
+          suggestedActions: ['Записать план реагирования', 'Понизить остроту'],
         });
         emitted += 1;
       } catch (err) {
@@ -195,8 +138,6 @@ export class Specialist35ProbeService {
     }
     return emitted;
   }
-
-  // ─────────────────────── recipients resolution ───────────────────────
 
   private async findOrgAdminsUserIds(tenantId: string): Promise<string[]> {
     const memberships = await this.prisma.membership.findMany({
@@ -209,8 +150,6 @@ export class Specialist35ProbeService {
     });
     return memberships.map((m) => m.userId);
   }
-
-  // ─────────────────────── emit ───────────────────────
 
   private async emit(args: {
     tenantId: string;
@@ -229,9 +168,7 @@ export class Specialist35ProbeService {
           reason: args.reason,
           payload: {
             message: args.message,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.insightId,
             contextCardKind: 'insight',
             contextCardTitle: args.message.slice(0, 100),
@@ -269,9 +206,7 @@ export class Specialist35ProbeService {
             reason: args.reason,
             message: args.message,
             cardId: args.insightId,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             actionUrl,
           },
           dataClass: 'internal',

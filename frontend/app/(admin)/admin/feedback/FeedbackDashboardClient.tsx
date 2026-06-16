@@ -1,56 +1,47 @@
-'use client';
+"use client";
 
-/**
- * `/admin/feedback` — клиентский компонент дашборда смысловых блоков
- * обратной связи. Все тексты — на русском.
- *
- * Фаза 7+8 ТЗ user-feedback-with-ai-clustering. Действия rename / merge /
- * archive / unarchive открывают соответствующий диалог; после успеха SWR
- * mutate перетягивает таблицу.
- */
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { PlayCircle, AlertTriangle } from "lucide-react";
+import useSWR from "swr";
 
-import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import { PlayCircle, AlertTriangle } from 'lucide-react';
-import useSWR from 'swr';
-
-import { ApiError } from '@/api/api-error';
-import { adminFeedbackApi } from '@/api/admin-feedback.api';
+import { ApiError } from "@/api/api-error";
+import { adminFeedbackApi } from "@/api/admin-feedback.api";
 import {
   toFeedbackTopicsList,
   type FeedbackSort,
   type FeedbackTopicSummary,
   type FeedbackWindow,
-} from '@/domain/admin-feedback';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-feedback";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { ArchiveTopicDialog } from './components/ArchiveTopicDialog';
-import { MergeTopicDialog } from './components/MergeTopicDialog';
-import { RenameTopicDialog } from './components/RenameTopicDialog';
-import { TopicsFilters } from './components/TopicsFilters';
-import { TopicsTable } from './components/TopicsTable';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../AdminStateViews";
+import { ArchiveTopicDialog } from "./components/ArchiveTopicDialog";
+import { MergeTopicDialog } from "./components/MergeTopicDialog";
+import { RenameTopicDialog } from "./components/RenameTopicDialog";
+import { TopicsFilters } from "./components/TopicsFilters";
+import { TopicsTable } from "./components/TopicsTable";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 type DialogState =
-  | { kind: 'rename'; topic: FeedbackTopicSummary }
-  | { kind: 'merge'; topic: FeedbackTopicSummary }
-  | { kind: 'archive'; topic: FeedbackTopicSummary }
+  | { kind: "rename"; topic: FeedbackTopicSummary }
+  | { kind: "merge"; topic: FeedbackTopicSummary }
+  | { kind: "archive"; topic: FeedbackTopicSummary }
   | null;
 
 const PAGE_SIZE = 20;
 
 export function FeedbackDashboardClient() {
-  const [window, setWindow] = useState<FeedbackWindow>('30');
-  const [search, setSearch] = useState('');
+  const [window, setWindow] = useState<FeedbackWindow>("30");
+  const [search, setSearch] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [sort, setSort] = useState<FeedbackSort>('percent');
+  const [sort, setSort] = useState<FeedbackSort>("percent");
   const [page, setPage] = useState(1);
   const [digestRunning, setDigestRunning] = useState(false);
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -58,7 +49,7 @@ export function FeedbackDashboardClient() {
   const swrKey = useMemo(
     () =>
       [
-        'admin-feedback-topics',
+        "admin-feedback-topics",
         window,
         search,
         includeArchived,
@@ -79,12 +70,13 @@ export function FeedbackDashboardClient() {
     }),
   );
 
-  const isForbidden = swr.error instanceof ApiError && swr.error.code === 'forbidden';
+  const isForbidden =
+    swr.error instanceof ApiError && swr.error.code === "forbidden";
   const errorMessage =
     swr.error && !isForbidden
       ? swr.error instanceof ApiError
         ? swr.error.message
-        : 'Не удалось загрузить список блоков'
+        : "Не удалось загрузить список блоков"
       : null;
 
   const list = swr.data ? toFeedbackTopicsList(swr.data) : null;
@@ -97,28 +89,31 @@ export function FeedbackDashboardClient() {
     try {
       const res = await adminFeedbackApi.runDigest();
       toast.success(`Запущена обработка, ID: ${res.jobId}`);
-      // Обновим таблицу через короткое время, чтобы свежие блоки подтянулись.
       await swr.mutate();
     } catch (err) {
       if (err instanceof ApiError) {
-        // Phase 5 ещё не подключён — backend отдаёт NotImplementedException (501).
-        if (err.code === 'http_501') {
-          toast.error('Обработка появится в Фазе 5 (digest-сервис ещё не подключён)');
+        if (err.code === "http_501") {
+          toast.error(
+            "Обработка появится в Фазе 5 (digest-сервис ещё не подключён)",
+          );
         } else {
           toast.error(err.message);
         }
       } else {
-        toast.error('Не удалось запустить обработку');
+        toast.error("Не удалось запустить обработку");
       }
     } finally {
       setDigestRunning(false);
     }
   }
 
-  function handleAction(action: 'rename' | 'merge' | 'archive', topicId: string) {
+  function handleAction(
+    action: "rename" | "merge" | "archive",
+    topicId: string,
+  ) {
     const topic = list?.items.find((t) => t.id === topicId);
     if (!topic) {
-      toast.error('Блок не найден в текущем списке. Обновите страницу.');
+      toast.error("Блок не найден в текущем списке. Обновите страницу.");
       return;
     }
     setDialog({ kind: action, topic });
@@ -130,10 +125,7 @@ export function FeedbackDashboardClient() {
 
   return (
     <AdminSection
-      breadcrumbs={[
-        adminRootCrumb(),
-        { label: 'Обратная связь' },
-      ]}
+      breadcrumbs={[adminRootCrumb(), { label: "Обратная связь" }]}
       title="Обратная связь пользователей"
       description="Смысловые блоки, в которые AI-кластеризатор сводит сообщения канала «Ваши предложения». Метрики считаются за выбранное окно. Действия переименовать / объединить / архивировать доступны в меню «⋯» строки."
       actions={
@@ -144,7 +136,7 @@ export function FeedbackDashboardClient() {
           disabled={digestRunning}
         >
           <PlayCircle size={14} className="mr-1" />
-          {digestRunning ? 'Запускаем…' : 'Запустить обработку сейчас'}
+          {digestRunning ? "Запускаем…" : "Запустить обработку сейчас"}
         </Button>
       }
     >
@@ -168,18 +160,18 @@ export function FeedbackDashboardClient() {
 
       {list && !errorMessage && !isForbidden && (
         <div className="mb-3 mt-4 text-sm text-fg-secondary">
-          За выбранный период:{' '}
+          За выбранный период:{" "}
           <span className="font-medium text-fg-primary">
             {list.totalItemsInWindow}
-          </span>{' '}
-          items от{' '}
+          </span>{" "}
+          items от{" "}
           <span className="font-medium text-fg-primary">
             {list.totalUsersInWindow}
-          </span>{' '}
-          пользователей,{' '}
+          </span>{" "}
+          пользователей,{" "}
           <span className="font-medium text-fg-primary">
             {list.totalTopicsInWindow}
-          </span>{' '}
+          </span>{" "}
           смысловых блоков
         </div>
       )}
@@ -245,7 +237,7 @@ export function FeedbackDashboardClient() {
 
       <FailedMessagesHint />
 
-      {dialog?.kind === 'rename' && (
+      {dialog?.kind === "rename" && (
         <RenameTopicDialog
           open
           onOpenChange={(next) => {
@@ -258,7 +250,7 @@ export function FeedbackDashboardClient() {
         />
       )}
 
-      {dialog?.kind === 'merge' && (
+      {dialog?.kind === "merge" && (
         <MergeTopicDialog
           open
           onOpenChange={(next) => {
@@ -271,7 +263,7 @@ export function FeedbackDashboardClient() {
         />
       )}
 
-      {dialog?.kind === 'archive' && (
+      {dialog?.kind === "archive" && (
         <ArchiveTopicDialog
           open
           onOpenChange={(next) => {
@@ -279,7 +271,7 @@ export function FeedbackDashboardClient() {
           }}
           topicId={dialog.topic.id}
           topicTitle={dialog.topic.title}
-          mode={dialog.topic.status === 'archived' ? 'unarchive' : 'archive'}
+          mode={dialog.topic.status === "archived" ? "unarchive" : "archive"}
           onSaved={() => void refreshAfterAction()}
         />
       )}
@@ -287,20 +279,13 @@ export function FeedbackDashboardClient() {
   );
 }
 
-/**
- * Информационный блок про failed-сообщения. Просто счётчик + ссылка-подсказка.
- * Полноценный список failed — отдельная страница (вне scope Phase 7), здесь
- * лишь сигнальная плашка для оператора.
- */
 function FailedMessagesHint() {
   const swr = useSWR(
-    'admin-feedback-failed-hint',
-    async () =>
-      adminFeedbackApi.listFailedMessages({ page: 1, pageSize: 1 }),
+    "admin-feedback-failed-hint",
+    async () => adminFeedbackApi.listFailedMessages({ page: 1, pageSize: 1 }),
     { revalidateOnFocus: false },
   );
 
-  // Не показываем плашку при загрузке, forbidden или пустом списке.
   if (swr.isLoading || swr.error || !swr.data || swr.data.total === 0) {
     return null;
   }
@@ -313,7 +298,7 @@ function FailedMessagesHint() {
           Сообщения, упавшие при обработке: {swr.data.total}
         </div>
         <div className="text-xs text-fg-secondary">
-          У сообщений `failedRuns` {'>='} 3 — требуется ручной разбор. Список
+          У сообщений `failedRuns` {">="} 3 — требуется ручной разбор. Список
           доступен через API `GET /api/v1/admin/feedback/messages/failed`.
         </div>
       </div>

@@ -1,25 +1,21 @@
-import { apiClient } from './api-client';
-
-// ──────────────────────── ApiDto ────────────────────────
+import { apiClient } from "./api-client";
 
 export type ChannelKindApi =
-  | 'in_app'
-  | 'email_smtp'
-  | 'email_imap'
-  | 'telegram_bot'
-  | 'max_bot';
+  | "in_app"
+  | "email_smtp"
+  | "email_imap"
+  | "telegram_bot"
+  | "max_bot";
 
-export type DataClassApi = 'public' | 'internal' | 'sensitive' | 'private';
+export type DataClassApi = "public" | "internal" | "sensitive" | "private";
 
 export type ChannelApi = {
   id: string;
   kind: ChannelKindApi;
-  direction: 'inbound_only' | 'outbound_only' | 'bidirectional';
-  status: 'active' | 'disabled' | 'broken';
+  direction: "inbound_only" | "outbound_only" | "bidirectional";
+  status: "active" | "disabled" | "broken";
   maxDataClass: DataClassApi;
-  /** Б2 (2026-06-05) — только для бот-каналов: настроен ли токен. */
   configured?: boolean;
-  /** Б2 — username бота для deep-link (из Channel.config). */
   botUsername?: string | null;
 };
 
@@ -28,7 +24,6 @@ export type ChannelBindingApi = {
   externalId: string;
   verifiedAt: string | null;
   preferences: ChannelBindingPreferencesApi | null;
-  /** W4.3 — потолок чувствительности per-binding (radio в /me/channels). */
   maxDataClass: DataClassApi;
 };
 
@@ -46,18 +41,18 @@ export type ChannelEntryApi = {
 };
 
 export type NotificationStatusApi =
-  | 'queued'
-  | 'sent_partial'
-  | 'delivered'
-  | 'read'
-  | 'responded'
-  | 'failed';
+  | "queued"
+  | "sent_partial"
+  | "delivered"
+  | "read"
+  | "responded"
+  | "failed";
 
 export type NotificationResponseStatusApi =
-  | 'pending'
-  | 'answered'
-  | 'dismissed'
-  | 'expired'
+  | "pending"
+  | "answered"
+  | "dismissed"
+  | "expired"
   | null;
 
 export type NotificationApi = {
@@ -97,18 +92,16 @@ export type ListNotificationsResponseApi = {
 };
 
 export type LinkCodeKindApi =
-  | 'email_smtp'
-  | 'email_imap'
-  | 'telegram_bot'
-  | 'max_bot';
-
-// ──────────────────────── API calls ────────────────────────
+  | "email_smtp"
+  | "email_imap"
+  | "telegram_bot"
+  | "max_bot";
 
 export async function listMyChannels(
   orgId: string,
 ): Promise<{ items: ChannelEntryApi[] }> {
-  return apiClient.get<{ items: ChannelEntryApi[] }>('/api/v1/me/channels', {
-    headers: { 'X-Org-Id': orgId },
+  return apiClient.get<{ items: ChannelEntryApi[] }>("/api/v1/me/channels", {
+    headers: { "X-Org-Id": orgId },
   });
 }
 
@@ -125,23 +118,19 @@ export async function updateBindingPreferences(
   bindingId: string,
   preferences: ChannelBindingPreferencesApi,
 ): Promise<{ id: string; preferences: ChannelBindingPreferencesApi }> {
-  return apiClient.patch<{ id: string; preferences: ChannelBindingPreferencesApi }>(
-    `/api/v1/me/channels/bindings/${bindingId}/preferences`,
-    preferences,
-  );
+  return apiClient.patch<{
+    id: string;
+    preferences: ChannelBindingPreferencesApi;
+  }>(`/api/v1/me/channels/bindings/${bindingId}/preferences`, preferences);
 }
 
 export async function unlinkChannelBinding(bindingId: string): Promise<void> {
   await apiClient.del<void>(`/api/v1/me/channels/bindings/${bindingId}`);
 }
 
-/**
- * W4.3 — обновить потолок чувствительности привязки.
- * `private` через UI недоступен (см. §W4.3 ТЗ).
- */
 export async function updateBindingMaxDataClass(
   bindingId: string,
-  maxDataClass: 'public' | 'internal' | 'sensitive',
+  maxDataClass: "public" | "internal" | "sensitive",
 ): Promise<{ id: string; maxDataClass: DataClassApi }> {
   return apiClient.patch<{ id: string; maxDataClass: DataClassApi }>(
     `/api/v1/me/channels/bindings/${bindingId}/max-data-class`,
@@ -152,19 +141,19 @@ export async function updateBindingMaxDataClass(
 export async function listMyNotifications(
   orgId: string,
   query?: {
-    status?: 'unread' | 'all' | 'pending_response';
+    status?: "unread" | "all" | "pending_response";
     limit?: number;
     cursor?: string;
   },
 ): Promise<ListNotificationsResponseApi> {
   const search = new URLSearchParams();
-  if (query?.status) search.set('status', query.status);
-  if (query?.limit) search.set('limit', String(query.limit));
-  if (query?.cursor) search.set('cursor', query.cursor);
+  if (query?.status) search.set("status", query.status);
+  if (query?.limit) search.set("limit", String(query.limit));
+  if (query?.cursor) search.set("cursor", query.cursor);
   const qs = search.toString();
   return apiClient.get<ListNotificationsResponseApi>(
-    `/api/v1/me/notifications${qs ? `?${qs}` : ''}`,
-    { headers: { 'X-Org-Id': orgId } },
+    `/api/v1/me/notifications${qs ? `?${qs}` : ""}`,
+    { headers: { "X-Org-Id": orgId } },
   );
 }
 
@@ -174,7 +163,7 @@ export async function getMyNotification(
 ): Promise<NotificationDetailApi> {
   return apiClient.get<NotificationDetailApi>(
     `/api/v1/me/notifications/${notificationId}`,
-    { headers: { 'X-Org-Id': orgId } },
+    { headers: { "X-Org-Id": orgId } },
   );
 }
 
@@ -212,8 +201,8 @@ export async function createFreeNote(
   metadata?: Record<string, unknown>,
 ): Promise<{ rawEventId: string; occurredAt: string }> {
   return apiClient.post<{ rawEventId: string; occurredAt: string }>(
-    '/api/v1/me/notifications/free-note',
+    "/api/v1/me/notifications/free-note",
     { text, metadata },
-    { headers: { 'X-Org-Id': orgId } },
+    { headers: { "X-Org-Id": orgId } },
   );
 }

@@ -12,20 +12,6 @@ import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type CardRollupJobData, QUEUE_NAMES } from '../queues';
 import { CardRollupService } from '../services/card-rollup.service';
 
-/**
- * Worker очереди `ai.card-rollup`. Один rollup на карточку, дедуп через
- * `jobId = "rollup:card:<cardId>"` + `delay: 5_000` (см. AiQueueService).
- *
- * Concurrency 2 — rollup лёгкий, но LLM-вызовы платные. На ошибку — bullmq retry,
- * без особой обработки status'а карточки (rollup не критичен для UX).
- *
- * @deprecated SBA α-6 — используйте `CardRollupV2Worker` (очередь
- * `core.card-rollup-v2`), который вызывается специалистом 3.4 через
- * `core.specialist-routing` (jobName='3-4-project-customer'). Новый воркер
- * интегрирован с `CurationService.triage()`, эмитит probe-/conflict-events
- * и пишет `CardVersion`. Удаление этого legacy-воркера — отдельный sub-TZ
- * в β/γ-фазе (после переключения всех source'ов на enqueueCardRollupV2).
- */
 @Injectable()
 export class CardRollupWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CardRollupWorker.name);

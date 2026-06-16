@@ -1,20 +1,7 @@
-'use client';
+"use client";
 
-/**
- * Wizard импорта из Яндекс Трекера
- * (Wave 3 / Tracker Phase 5 — Я.Трекер ветка).
- *
- * 4 шага:
- *   1. Подключение      — OAuth-токен Яндекс ID.
- *   2. Очереди          — список ключей очередей (PROJ, DEV, ...).
- *   3. Маппинг          — textarea «email=ourUserId / skip» (общий компонент).
- *   4. Подтверждение    — итог + POST /api/v1/tracker/imports/yandex-tracker.
- *
- * RBAC проверяется родителем (ImportTrackerClient.tsx).
- */
-
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -27,16 +14,16 @@ import {
   KeyRound,
   Loader2,
   Sparkles,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { importsApi } from '@/api/tracker/imports.api';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError } from "@/api/api-error";
+import { importsApi } from "@/api/tracker/imports.api";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   FreeTextMappingStep,
@@ -47,15 +34,15 @@ import {
   parseUserMappings,
   validateQueueKeys,
   type WizardStepDef,
-} from './_shared';
+} from "./_shared";
 
-type Step = 'connect' | 'queues' | 'mapping' | 'preview';
+type Step = "connect" | "queues" | "mapping" | "preview";
 
 const STEPS: WizardStepDef[] = [
-  { id: 'connect', label: 'Подключение' },
-  { id: 'queues', label: 'Очереди' },
-  { id: 'mapping', label: 'Сопоставление' },
-  { id: 'preview', label: 'Подтверждение' },
+  { id: "connect", label: "Подключение" },
+  { id: "queues", label: "Очереди" },
+  { id: "mapping", label: "Сопоставление" },
+  { id: "preview", label: "Подтверждение" },
 ];
 
 export function YandexTrackerWizard({
@@ -67,14 +54,12 @@ export function YandexTrackerWizard({
 }) {
   const router = useRouter();
 
-  const [step, setStep] = useState<Step>('connect');
+  const [step, setStep] = useState<Step>("connect");
 
-  // Шаг 1 — Подключение
-  const [oauthToken, setOauthToken] = useState('');
+  const [oauthToken, setOauthToken] = useState("");
   const tokenValid = oauthToken.trim().length >= 10;
 
-  // Шаг 2 — Очереди
-  const [queuesInput, setQueuesInput] = useState('');
+  const [queuesInput, setQueuesInput] = useState("");
   const parsedQueueKeys = useMemo(
     () => parseIdList(queuesInput).map((k) => k.toUpperCase()),
     [queuesInput],
@@ -86,25 +71,23 @@ export function YandexTrackerWizard({
   const queuesValid =
     validQueueKeys.length > 0 && invalidQueueKeys.length === 0;
 
-  // Шаг 3 — Маппинг
-  const [mappingText, setMappingText] = useState('');
+  const [mappingText, setMappingText] = useState("");
   const parsedMappings = useMemo(
     () => parseUserMappings(mappingText),
     [mappingText],
   );
 
-  // Шаг 4
   const [submitting, setSubmitting] = useState(false);
 
   const goNext = () => {
-    if (step === 'connect') setStep('queues');
-    else if (step === 'queues') setStep('mapping');
-    else if (step === 'mapping') setStep('preview');
+    if (step === "connect") setStep("queues");
+    else if (step === "queues") setStep("mapping");
+    else if (step === "mapping") setStep("preview");
   };
   const goBack = () => {
-    if (step === 'preview') setStep('mapping');
-    else if (step === 'mapping') setStep('queues');
-    else if (step === 'queues') setStep('connect');
+    if (step === "preview") setStep("mapping");
+    else if (step === "mapping") setStep("queues");
+    else if (step === "queues") setStep("connect");
     else onCancel();
   };
 
@@ -119,12 +102,14 @@ export function YandexTrackerWizard({
             ? parsedMappings.mappings
             : undefined,
       });
-      toast.success('Импорт из Яндекс Трекера запущен');
+      toast.success("Импорт из Яндекс Трекера запущен");
       router.push(`/integrations/import-tracker/${res.importLogId}`);
     } catch (e) {
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось запустить импорт. Попробуйте ещё раз.');
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Не удалось запустить импорт. Попробуйте ещё раз.",
+      );
       setSubmitting(false);
     }
   };
@@ -133,7 +118,7 @@ export function YandexTrackerWizard({
     <div className="space-y-6">
       <WizardSteps steps={STEPS} current={step} />
 
-      {step === 'connect' && (
+      {step === "connect" && (
         <ConnectStep
           token={oauthToken}
           onChangeToken={setOauthToken}
@@ -143,7 +128,7 @@ export function YandexTrackerWizard({
         />
       )}
 
-      {step === 'queues' && (
+      {step === "queues" && (
         <QueuesStep
           value={queuesInput}
           onChange={setQueuesInput}
@@ -155,7 +140,7 @@ export function YandexTrackerWizard({
         />
       )}
 
-      {step === 'mapping' && (
+      {step === "mapping" && (
         <FreeTextMappingStep
           value={mappingText}
           onChange={setMappingText}
@@ -166,7 +151,7 @@ export function YandexTrackerWizard({
         />
       )}
 
-      {step === 'preview' && (
+      {step === "preview" && (
         <PreviewStep
           token={oauthToken}
           queueKeys={validQueueKeys}
@@ -180,8 +165,6 @@ export function YandexTrackerWizard({
     </div>
   );
 }
-
-// ─── Шаг 1: Подключение ────────────────────────────────────────────────────
 
 function ConnectStep({
   token,
@@ -209,10 +192,10 @@ function ConnectStep({
               Шаг 1: Подключите Яндекс Трекер
             </h2>
             <p className="mt-1 text-sm text-fg-secondary">
-              Создайте OAuth-приложение в Яндексе с правом{' '}
+              Создайте OAuth-приложение в Яндексе с правом{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5 text-xs">
                 tracker:read
-              </code>{' '}
+              </code>{" "}
               и получите долгоживущий токен. Мы используем его только в режиме
               чтения и шифруем в БД.
             </p>
@@ -252,7 +235,7 @@ function ConnectStep({
           </div>
           <ol className="list-decimal space-y-1 pl-5">
             <li>
-              Зайдите на{' '}
+              Зайдите на{" "}
               <a
                 href="https://oauth.yandex.ru/client/new"
                 target="_blank"
@@ -260,18 +243,15 @@ function ConnectStep({
                 className="text-accent hover:underline"
               >
                 oauth.yandex.ru
-              </a>{' '}
+              </a>{" "}
               и создайте приложение.
             </li>
             <li>
-              В правах укажите{' '}
-              <code className="rounded bg-bg-overlay px-1">
-                tracker:read
-              </code>
-              .
+              В правах укажите{" "}
+              <code className="rounded bg-bg-overlay px-1">tracker:read</code>.
             </li>
             <li>
-              Получите токен через{' '}
+              Получите токен через{" "}
               <code className="rounded bg-bg-overlay px-1">
                 https://oauth.yandex.ru/authorize?response_type=token&client_id=...
               </code>
@@ -310,8 +290,6 @@ function ConnectStep({
   );
 }
 
-// ─── Шаг 2: Очереди ────────────────────────────────────────────────────────
-
 function QueuesStep({
   value,
   onChange,
@@ -342,11 +320,11 @@ function QueuesStep({
             </h2>
             <p className="mt-1 text-sm text-fg-secondary">
               В Яндекс Трекере очередь — это аналог проекта. Каждая очередь
-              станет отдельным проектом в Коре. Ключ очереди — это префикс
-              перед номером задачи (например, для задачи{' '}
+              станет отдельным проектом в Коре. Ключ очереди — это префикс перед
+              номером задачи (например, для задачи{" "}
               <code className="rounded bg-bg-overlay px-1 py-0.5 text-xs">
                 PROJ-42
-              </code>{' '}
+              </code>{" "}
               ключ = PROJ).
             </p>
           </div>
@@ -365,8 +343,8 @@ function QueuesStep({
             autoCapitalize="characters"
           />
           <p className="text-xs text-fg-tertiary">
-            Распознано ключей: <b>{validKeys.length}</b>. Формат: 2–10
-            латинских заглавных букв или цифр, начинается с буквы.
+            Распознано ключей: <b>{validKeys.length}</b>. Формат: 2–10 латинских
+            заглавных букв или цифр, начинается с буквы.
           </p>
         </div>
 
@@ -426,8 +404,6 @@ function QueuesStep({
     </Card>
   );
 }
-
-// ─── Шаг 4: Preview ────────────────────────────────────────────────────────
 
 function PreviewStep({
   token,
@@ -500,8 +476,8 @@ function PreviewStep({
         <div className="mt-5 flex items-start gap-2 rounded-md border border-accent/30 bg-accent/5 p-3 text-xs text-fg-secondary">
           <CheckCircle2 size={14} className="mt-0.5 shrink-0 text-accent-fg" />
           <p>
-            Импорт идемпотентен: повторный запуск не создаст дублей.
-            Прогресс и журнал ошибок откроются на следующей странице.
+            Импорт идемпотентен: повторный запуск не создаст дублей. Прогресс и
+            журнал ошибок откроются на следующей странице.
           </p>
         </div>
 

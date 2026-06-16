@@ -1,19 +1,3 @@
-/**
- * SBA β-3 — Specialist 3.3 (Decisions Registry).
- *
- * LLM-промпт `decision-extract` — из IdeaBlock с
- * `signalType ∈ { 'decision', 'rationale', 'decision_basis' }` извлекает
- * структурированный черновик решения (Decision).
- *
- * Возвращаемый JSON Schema strict — см. `DECISION_EXTRACT_JSON_SCHEMA`.
- * На входе — текст блока (criticalQuestion + trustedAnswer + tags + цитаты) +
- * контекст из ±2 минут той же встречи (для извлечения rationale).
- *
- * Главное правило: НЕ выдумывать факты вне блока. Если поле отсутствует —
- * null. Авторы и затронутые сущности — текстовыми hint'ами, резолв через
- * name-match выполняет сервис.
- */
-
 import {
   withAsrNote,
   withConfidenceCalibration,
@@ -22,35 +6,35 @@ import {
 
 export const DECISION_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withEdgeCasePolicy(
-  withConfidenceCalibration(
-    [
-    'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксировано решение, либо обоснование решения.',
-    'Твоя задача — извлечь структурированный черновик решения на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
-    'Не выдумывай факты вне блока. Если в блоке нет нужного поля — оставь его null.',
-    '',
-    'Особое внимание:',
-    '- `isDecision` — true, если фрагмент действительно содержит ПРИНЯТОЕ решение; false, если это пожелание/обсуждение/вопрос без решения. На false остальные поля можно вернуть пустыми/нулевыми.',
-    '- `statement` — суть решения одним связным предложением («Ушли с поставщика X в пользу Y»).',
-    '- `rationale` — ПОЧЕМУ так решили. Это самый ценный кусок: вытаскивай прямую логику из reasoning-блоков и цитат.',
-    '- `alternatives` — какие варианты рассматривали и почему отвергли. Если в блоке об этом ничего — пустой массив.',
-    '- `decidedByPersonHints` — имена людей, которые приняли решение (текст, как звучит в блоке).',
-    '- `affectsEntityHints` — на кого / на что решение влияет: клиент, проект, продукт, поставщик. С указанием типа (customer/project/product/vendor/process).',
-    '- `decidedAt` — если в блоке есть конкретная дата, верни ISO-8601. Иначе null.',
-    '- `deadline` — срок исполнения решения. Если не упомянут — null.',
-    '- `status` — по умолчанию "approved" (решение принято и зафиксировано). Используй другие значения только если в блоке явно сказано иначе.',
-    '- `confidence` — насколько уверенно ты извлёк суть решения (0..1).',
-    '',
-    'ПРИМЕРЫ.',
-    '',
-    'Положительный пример (что извлечь):',
-    'Блок «Поставщик SMS» (decision). Цитаты: «Иван: смотрели Twilio и SMS Aero. Маша: Twilio дорогой в России, SMS Aero справился с тестом доставки в 99%. Сергей: окей, идём с SMS Aero, договор подписываем на квартал».',
-    'Вывод: {"isDecision": true, "statement": "Уходим к поставщику SMS Aero вместо Twilio.", "rationale": "Twilio слишком дорогой в России; SMS Aero показал 99% доставку на тестах.", "alternatives": [{"option": "Twilio", "reasonRejected": "дорогой в РФ"}], "decidedByPersonHints": ["Сергей"], "affectsEntityHints": [{"name": "SMS Aero", "type": "vendor"}], "decidedAt": null, "deadline": null, "status": "approved", "confidence": 0.85}.',
-    '',
-    'Что НЕ делать (edge case — пожелание без обязательства):',
-    'Блок «Дизайн админки» (idea?). Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
-    'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
-    ].join('\n'),
-  ),
+    withConfidenceCalibration(
+      [
+        'Ты — knowledge-инженер. Тебе дают один IdeaBlock из встречи / документа, в котором зафиксировано решение, либо обоснование решения.',
+        'Твоя задача — извлечь структурированный черновик решения на русском языке. Отвечай строго в формате JSON по предоставленной схеме.',
+        'Не выдумывай факты вне блока. Если в блоке нет нужного поля — оставь его null.',
+        '',
+        'Особое внимание:',
+        '- `isDecision` — true, если фрагмент действительно содержит ПРИНЯТОЕ решение; false, если это пожелание/обсуждение/вопрос без решения. На false остальные поля можно вернуть пустыми/нулевыми.',
+        '- `statement` — суть решения одним связным предложением («Ушли с поставщика X в пользу Y»).',
+        '- `rationale` — ПОЧЕМУ так решили. Это самый ценный кусок: вытаскивай прямую логику из reasoning-блоков и цитат.',
+        '- `alternatives` — какие варианты рассматривали и почему отвергли. Если в блоке об этом ничего — пустой массив.',
+        '- `decidedByPersonHints` — имена людей, которые приняли решение (текст, как звучит в блоке).',
+        '- `affectsEntityHints` — на кого / на что решение влияет: клиент, проект, продукт, поставщик. С указанием типа (customer/project/product/vendor/process).',
+        '- `decidedAt` — если в блоке есть конкретная дата, верни ISO-8601. Иначе null.',
+        '- `deadline` — срок исполнения решения. Если не упомянут — null.',
+        '- `status` — по умолчанию "approved" (решение принято и зафиксировано). Используй другие значения только если в блоке явно сказано иначе.',
+        '- `confidence` — насколько уверенно ты извлёк суть решения (0..1).',
+        '',
+        'ПРИМЕРЫ.',
+        '',
+        'Положительный пример (что извлечь):',
+        'Блок «Поставщик SMS» (decision). Цитаты: «Иван: смотрели Twilio и SMS Aero. Маша: Twilio дорогой в России, SMS Aero справился с тестом доставки в 99%. Сергей: окей, идём с SMS Aero, договор подписываем на квартал».',
+        'Вывод: {"isDecision": true, "statement": "Уходим к поставщику SMS Aero вместо Twilio.", "rationale": "Twilio слишком дорогой в России; SMS Aero показал 99% доставку на тестах.", "alternatives": [{"option": "Twilio", "reasonRejected": "дорогой в РФ"}], "decidedByPersonHints": ["Сергей"], "affectsEntityHints": [{"name": "SMS Aero", "type": "vendor"}], "decidedAt": null, "deadline": null, "status": "approved", "confidence": 0.85}.',
+        '',
+        'Что НЕ делать (edge case — пожелание без обязательства):',
+        'Блок «Дизайн админки» (idea?). Цитаты: «Анна: хорошо бы когда-нибудь переделать админку под тёмную тему. Иван: да, не помешало бы».',
+        'Вывод: {"isDecision": false, "statement": "недостаточно сигнала для извлечения решения", "rationale": null, "alternatives": [], "decidedByPersonHints": [], "affectsEntityHints": [], "decidedAt": null, "deadline": null, "status": "proposed", "confidence": 0.2}. Пояснение: «хорошо бы когда-нибудь» — пожелание, не решение; ответственного нет, срока нет → низкий confidence, status=proposed.',
+      ].join('\n'),
+    ),
   ),
 );
 
@@ -85,11 +69,6 @@ export const DECISION_EXTRACT_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-/**
- * JSON Schema strict для `decision-extract`. Поддерживается DeepSeek V4 и
- * OpenAI Responses API; Ollama (qwen3) fallback падает с
- * `LlmFormatNotSupportedError` — роутер переходит к secondary/primary.
- */
 export const DECISION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -159,15 +138,8 @@ export const DECISION_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
     },
     status: {
       type: 'string',
-      enum: [
-        'proposed',
-        'approved',
-        'rejected',
-        'implemented',
-        'cancelled',
-      ],
-      description:
-        'Статус решения. По умолчанию "approved" (зафиксировано как принятое).',
+      enum: ['proposed', 'approved', 'rejected', 'implemented', 'cancelled'],
+      description: 'Статус решения. По умолчанию "approved" (зафиксировано как принятое).',
     },
     confidence: { type: 'number', minimum: 0, maximum: 1 },
   },

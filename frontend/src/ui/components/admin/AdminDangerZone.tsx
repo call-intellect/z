@@ -1,13 +1,9 @@
-'use client';
+"use client";
 
-import {
-  useCallback,
-  useState,
-  type ReactNode,
-} from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useCallback, useState, type ReactNode } from "react";
+import { AlertTriangle } from "lucide-react";
 
-import { Button } from '@/ui/shadcn/button';
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -15,28 +11,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/dialog";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-export type DangerSeverity = 'low' | 'medium' | 'high' | 'destructive';
+export type DangerSeverity = "low" | "medium" | "high" | "destructive";
 
-/**
- * AdminDangerZone — обёртка для блока «Опасная зона».
- *
- * Использование:
- *   <AdminDangerZone>
- *     <DangerAction
- *       label="Удалить организацию"
- *       title="Удалить организацию?"
- *       description="Все данные тенанта будут безвозвратно удалены."
- *       severity="destructive"
- *       onConfirm={async (reason) => { ... }}
- *     />
- *   </AdminDangerZone>
- */
 export function AdminDangerZone({
-  title = 'Опасная зона',
+  title = "Опасная зона",
   description,
   children,
   className,
@@ -49,7 +31,7 @@ export function AdminDangerZone({
   return (
     <section
       className={cn(
-        'rounded-lg border border-danger/40 bg-danger/5 p-4',
+        "rounded-lg border border-danger/40 bg-danger/5 p-4",
         className,
       )}
     >
@@ -71,39 +53,17 @@ export function AdminDangerZone({
   );
 }
 
-/**
- * Severity-таблица:
- *  - low / medium: подтверждение без обязательной причины (но `requiresReason`
- *    можно выставить вручную).
- *  - high / destructive: причина обязательна (textarea, минимум 10 символов).
- *
- * Кнопка-триггер рендерится через `variant="destructive"` для high/destructive,
- * иначе — `outline`. Можно переопределить через `triggerVariant`.
- */
 type DangerActionProps = {
-  /** Текст основной кнопки-триггера. */
   label: string;
-  /** Заголовок диалога подтверждения. */
   title: string;
-  /** Описание (что произойдёт). */
   description?: ReactNode;
-  /** Уровень опасности — влияет на оформление и требование reason. */
   severity?: DangerSeverity;
-  /**
-   * Принудительно требовать причину. По умолчанию — true для high/destructive,
-   * false для low/medium.
-   */
   requiresReason?: boolean;
-  /** Текст кнопки подтверждения. По умолчанию «Подтвердить». */
   confirmLabel?: string;
-  /** Текст кнопки отмены. По умолчанию «Отмена». */
   cancelLabel?: string;
-  /** Колбэк выполнения — может получить reason (если запрашивалась). */
   onConfirm: (reason?: string) => Promise<void> | void;
-  /** Заблокировать кнопку (например, во время загрузки данных). */
   disabled?: boolean;
-  /** Variant кнопки-триггера. По умолчанию — destructive для high/destructive. */
-  triggerVariant?: 'destructive' | 'outline' | 'secondary' | 'ghost';
+  triggerVariant?: "destructive" | "outline" | "secondary" | "ghost";
 };
 
 const MIN_REASON_LENGTH = 10;
@@ -112,30 +72,30 @@ export function DangerAction({
   label,
   title,
   description,
-  severity = 'medium',
+  severity = "medium",
   requiresReason,
-  confirmLabel = 'Подтвердить',
-  cancelLabel = 'Отмена',
+  confirmLabel = "Подтвердить",
+  cancelLabel = "Отмена",
   onConfirm,
   disabled,
   triggerVariant,
 }: DangerActionProps) {
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const needsReason =
-    requiresReason ?? (severity === 'high' || severity === 'destructive');
+    requiresReason ?? (severity === "high" || severity === "destructive");
 
   const computedVariant =
     triggerVariant ??
-    (severity === 'destructive' || severity === 'high'
-      ? 'destructive'
-      : 'outline');
+    (severity === "destructive" || severity === "high"
+      ? "destructive"
+      : "outline");
 
   const reset = useCallback(() => {
-    setReason('');
+    setReason("");
     setError(null);
   }, []);
 
@@ -167,7 +127,7 @@ export function DangerAction({
       setError(
         err instanceof Error
           ? err.message
-          : 'Не удалось выполнить — попробуйте ещё раз.',
+          : "Не удалось выполнить — попробуйте ещё раз.",
       );
     } finally {
       setPending(false);
@@ -243,7 +203,7 @@ export function DangerAction({
               disabled={pending}
               onClick={() => void handleConfirm()}
             >
-              {pending ? 'Выполняю…' : confirmLabel}
+              {pending ? "Выполняю…" : confirmLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA α-10 wave 3 — DTO для /api/v1/admin/llm-providers.
- */
 export const ProtocolKindSchema = z.enum([
   'openai-chat',
   'openai-responses',

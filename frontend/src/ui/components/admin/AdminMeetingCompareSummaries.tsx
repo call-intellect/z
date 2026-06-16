@@ -1,42 +1,30 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import rehypeSanitize from 'rehype-sanitize';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
+import useSWR from "swr";
 
-import { adminApi, type AdminMeetingDetailsApi } from '@/api/admin.api';
-import { ApiError } from '@/api/api-error';
-import { ErrorState } from '@/ui/components/shared/ErrorState';
-import { Skeleton } from '@/ui/components/shared/Skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
+import { adminApi, type AdminMeetingDetailsApi } from "@/api/admin.api";
+import { ApiError } from "@/api/api-error";
+import { ErrorState } from "@/ui/components/shared/ErrorState";
+import { Skeleton } from "@/ui/components/shared/Skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 
 type Props = {
   meetingId: string;
 };
 
-type TabKey = 'summary' | 'chapters' | 'tasks';
+type TabKey = "summary" | "chapters" | "tasks";
 
-const FAST_LABEL = 'fast (meeting-report-fast)';
+const FAST_LABEL = "fast (meeting-report-fast)";
 
-/**
- * Admin-страница отчёта встречи (meeting-report-fast).
- *
- * Три таба:
- *  - «Сводка» — markdown `aiResult.summaryFast`
- *  - «Главы» — `chapters` (extractorVersion='fast')
- *  - «Задачи» — `tasks` (extractorVersion='fast')
- *
- * v2-колонка удалена 2026-06-10 вместе с мёртвым v2-стеком. Исторические
- * строки с extractorVersion='v2' в БД могут существовать, но в этом UI больше
- * не показываются.
- */
 export function AdminMeetingCompareSummaries({ meetingId }: Props) {
-  const [activeTab, setActiveTab] = useState<TabKey>('summary');
+  const [activeTab, setActiveTab] = useState<TabKey>("summary");
 
   const { data, error, isLoading, mutate } = useSWR(
-    ['admin:meeting:compare', meetingId],
+    ["admin:meeting:compare", meetingId],
     () => adminApi.getMeeting(meetingId),
     { revalidateOnFocus: false },
   );
@@ -45,7 +33,9 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
     return (
       <ErrorState
         message={
-          error instanceof ApiError ? error.message : 'Не удалось загрузить встречу'
+          error instanceof ApiError
+            ? error.message
+            : "Не удалось загрузить встречу"
         }
         onRetry={() => mutate()}
       />
@@ -80,7 +70,7 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
             Отчёт встречи (fast)
           </h1>
           <p className="mt-1 text-sm text-fg-secondary">
-            {m.title}{' '}
+            {m.title}{" "}
             <span className="font-mono text-xs text-fg-secondary">
               ({m.id})
             </span>
@@ -118,8 +108,6 @@ export function AdminMeetingCompareSummaries({ meetingId }: Props) {
   );
 }
 
-// ───────────────────── Summary column ─────────────────────
-
 function SummaryColumn({ data }: { data: AdminMeetingDetailsApi }) {
   const ai = data.aiResult;
   const summary = ai?.summaryFast ?? null;
@@ -138,7 +126,9 @@ function SummaryColumn({ data }: { data: AdminMeetingDetailsApi }) {
       <div className="mt-3 border-t border-border-subtle pt-3">
         {summary ? (
           <div className="prose prose-sm max-w-none text-fg-primary [&>*]:my-2">
-            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{summary}</ReactMarkdown>
+            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+              {summary}
+            </ReactMarkdown>
           </div>
         ) : (
           <EmptyVersionState
@@ -151,11 +141,8 @@ function SummaryColumn({ data }: { data: AdminMeetingDetailsApi }) {
   );
 }
 
-// ───────────────────── Chapters column ─────────────────────
-
 function ChaptersColumn({ data }: { data: AdminMeetingDetailsApi }) {
-  // Только extractorVersion === 'fast'.
-  const items = data.chapters.filter((c) => c.extractorVersion === 'fast');
+  const items = data.chapters.filter((c) => c.extractorVersion === "fast");
 
   return (
     <Column title={FAST_LABEL}>
@@ -192,10 +179,8 @@ function ChaptersColumn({ data }: { data: AdminMeetingDetailsApi }) {
   );
 }
 
-// ───────────────────── Tasks column ─────────────────────
-
 function TasksColumn({ data }: { data: AdminMeetingDetailsApi }) {
-  const items = data.tasks.filter((t) => t.extractorVersion === 'fast');
+  const items = data.tasks.filter((t) => t.extractorVersion === "fast");
 
   return (
     <Column title={FAST_LABEL}>
@@ -222,7 +207,7 @@ function TasksColumn({ data }: { data: AdminMeetingDetailsApi }) {
               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-fg-secondary">
                 {t.assigneeRaw ? (
                   <span>
-                    Исполнитель:{' '}
+                    Исполнитель:{" "}
                     <span className="text-fg-primary">{t.assigneeRaw}</span>
                     {t.assigneeUserId ? (
                       <span className="ml-1 font-mono text-fg-secondary">
@@ -233,15 +218,15 @@ function TasksColumn({ data }: { data: AdminMeetingDetailsApi }) {
                 ) : null}
                 {t.dueDate ? (
                   <span>
-                    Срок:{' '}
+                    Срок:{" "}
                     <span className="text-fg-primary">
-                      {new Date(t.dueDate).toLocaleDateString('ru-RU')}
+                      {new Date(t.dueDate).toLocaleDateString("ru-RU")}
                     </span>
                   </span>
                 ) : null}
                 {t.confidence !== null && t.confidence >= 0 ? (
                   <span>
-                    Уверенность:{' '}
+                    Уверенность:{" "}
                     <span className="text-fg-primary">
                       {Math.round(t.confidence * 100)}%
                     </span>
@@ -276,12 +261,6 @@ function TasksColumn({ data }: { data: AdminMeetingDetailsApi }) {
   );
 }
 
-// ───────────────────── Quality score (общий блок) ─────────────────────
-
-/**
- * Единый collapsed-блок quality_score под сводкой.
- * Генерируется fast-цепочкой (meeting-report-fast.worker). NULL = ещё не посчитано.
- */
 function QualityScoreBlock({
   qualityScore,
 }: {
@@ -299,8 +278,6 @@ function QualityScoreBlock({
     </details>
   );
 }
-
-// ───────────────────── helpers / shared ─────────────────────
 
 function Column({
   title,
@@ -333,12 +310,12 @@ function MetaBlock({
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
       <dt className="text-fg-secondary">Модель</dt>
-      <dd className="font-mono text-fg-primary">{model ?? '—'}</dd>
+      <dd className="font-mono text-fg-primary">{model ?? "—"}</dd>
       <dt className="text-fg-secondary">Статус</dt>
-      <dd className="text-fg-primary">{status ?? '—'}</dd>
+      <dd className="text-fg-primary">{status ?? "—"}</dd>
       <dt className="text-fg-secondary">Сгенерировано</dt>
       <dd className="text-fg-primary">
-        {generatedAt ? new Date(generatedAt).toLocaleString('ru-RU') : '—'}
+        {generatedAt ? new Date(generatedAt).toLocaleString("ru-RU") : "—"}
       </dd>
       {error ? (
         <>
@@ -362,9 +339,9 @@ function EmptyVersionState({
       <p>Отчёт не сгенерирован.</p>
       {generatedAt ? (
         <p className="mt-1 text-xs">
-          Последняя попытка:{' '}
+          Последняя попытка:{" "}
           <span className="text-fg-primary">
-            {new Date(generatedAt).toLocaleString('ru-RU')}
+            {new Date(generatedAt).toLocaleString("ru-RU")}
           </span>
         </p>
       ) : null}
@@ -388,29 +365,29 @@ function StatusBadge({
   return (
     <span
       className={[
-        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs',
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
         tone,
-      ].join(' ')}
+      ].join(" ")}
     >
       <span className="font-semibold uppercase">{label}</span>
-      <span className="font-mono">{status ?? 'не запускался'}</span>
+      <span className="font-mono">{status ?? "не запускался"}</span>
     </span>
   );
 }
 
 function statusTone(status: string | null): string {
   switch (status) {
-    case 'ready':
-      return 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg';
-    case 'failed':
-      return 'border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg';
-    case 'partial':
-      return 'border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg';
-    case 'processing':
-    case 'queued':
-      return 'border-chip-info-bg bg-chip-info-bg text-chip-info-fg';
+    case "ready":
+      return "border-chip-success-bg bg-chip-success-bg text-chip-success-fg";
+    case "failed":
+      return "border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg";
+    case "partial":
+      return "border-chip-warning-bg bg-chip-warning-bg text-chip-warning-fg";
+    case "processing":
+    case "queued":
+      return "border-chip-info-bg bg-chip-info-bg text-chip-info-fg";
     default:
-      return 'border-border-subtle bg-bg-subtle text-fg-secondary';
+      return "border-border-subtle bg-bg-subtle text-fg-secondary";
   }
 }
 
@@ -422,7 +399,7 @@ function formatMmSs(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const mm = Math.floor(totalSeconds / 60)
     .toString()
-    .padStart(2, '0');
-  const ss = (totalSeconds % 60).toString().padStart(2, '0');
+    .padStart(2, "0");
+  const ss = (totalSeconds % 60).toString().padStart(2, "0");
   return `${mm}:${ss}`;
 }

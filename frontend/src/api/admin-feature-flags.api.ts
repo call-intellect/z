@@ -1,28 +1,13 @@
-/**
- * API-клиент для `/admin/platform/flags` — feature flags.
- * Фаза 8 редизайна Z-Admin.
- *
- * Контракт backend (`AdminFeatureFlagsController` под префиксом
- * `/api/v1/admin/platform/feature-flags`):
- *   GET    /                       → FeatureFlagListApiDto
- *   POST   /                       → FeatureFlagApiDto       (создание)
- *   PATCH  /:key                   → FeatureFlagApiDto
- *   DELETE /:key                   → { ok: true }
- *   GET    /:key/resolve?tenantId= → FeatureFlagResolveApiDto
- *
- * Защита — `SuperAdminGuard` + `SuperAdminAuditInterceptor`.
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 import type {
   FeatureFlagApiDto,
   FeatureFlagListApiDto,
   FeatureFlagResolveApiDto,
   UpdateFeatureFlagRequest,
   UpsertFeatureFlagRequest,
-} from '@/domain/admin-feature-flag';
+} from "@/domain/admin-feature-flag";
 
-const BASE = '/api/v1/admin/platform/feature-flags';
+const BASE = "/api/v1/admin/platform/feature-flags";
 
 export const adminFeatureFlagsApi = {
   list: (): Promise<FeatureFlagListApiDto> =>
@@ -47,9 +32,7 @@ export const adminFeatureFlagsApi = {
     key: string,
     tenantId?: string,
   ): Promise<FeatureFlagResolveApiDto> => {
-    const q = tenantId
-      ? `?tenantId=${encodeURIComponent(tenantId)}`
-      : '';
+    const q = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
     return apiClient.get<FeatureFlagResolveApiDto>(
       `${BASE}/${encodeURIComponent(key)}/resolve${q}`,
     );

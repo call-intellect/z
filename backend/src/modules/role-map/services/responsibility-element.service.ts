@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -16,16 +10,6 @@ import type {
   UpdateResponsibilityElementDto,
 } from '../dto/role-map.dto';
 
-/**
- * SBA α-8 wave 4 — CRUD-сервис ResponsibilityElement (нормализованная
- * сущность wave 2, см. plans/tz/2026-05-23-sba-alpha-8-wave2-models.md).
- *
- * Тонкий CRUD-wrapper: бизнес-логика сборки Role Map — в
- * RoleMapBuilderService. Здесь только:
- *   - валидация принадлежности (tenantId + roleId);
- *   - параметризованные иерархические выборки (parent/children);
- *   - аудит изменений.
- */
 @Injectable()
 export class ResponsibilityElementService {
   private readonly logger = new Logger(ResponsibilityElementService.name);
@@ -53,10 +37,7 @@ export class ResponsibilityElementService {
     return rows.map((r) => this.toDto(r));
   }
 
-  async get(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<ResponsibilityElementDto> {
+  async get(args: { tenantId: string; id: string }): Promise<ResponsibilityElementDto> {
     const row = await this.prisma.responsibilityElement.findUnique({
       where: { id: args.id },
     });
@@ -98,9 +79,7 @@ export class ResponsibilityElementService {
         order: args.body.order ?? 0,
         sourceBlockIds: args.body.sourceBlockIds ?? [],
         confidence:
-          args.body.confidence !== undefined
-            ? new Prisma.Decimal(args.body.confidence)
-            : null,
+          args.body.confidence !== undefined ? new Prisma.Decimal(args.body.confidence) : null,
       },
     });
 
@@ -181,11 +160,7 @@ export class ResponsibilityElementService {
     return this.toDto(updated);
   }
 
-  async softDelete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; userId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.responsibilityElement.findUnique({
       where: { id: args.id },
     });
@@ -211,11 +186,6 @@ export class ResponsibilityElementService {
     return { ok: true };
   }
 
-  /**
-   * Upsert «по имени» — используется RoleMapBuilderService при auto-extract
-   * из LLM. Если элемент с таким (roleId, name, kind) уже есть — обновляем,
-   * иначе создаём.
-   */
   async upsertByName(args: {
     tenantId: string;
     roleId: string;
@@ -239,10 +209,7 @@ export class ResponsibilityElementService {
         where: { id: existing.id },
         data: {
           description: args.description ?? existing.description,
-          sourceBlockIds: mergeSourceBlocks(
-            existing.sourceBlockIds,
-            args.sourceBlockIds,
-          ),
+          sourceBlockIds: mergeSourceBlocks(existing.sourceBlockIds, args.sourceBlockIds),
           confidence:
             args.confidence !== undefined && args.confidence !== null
               ? new Prisma.Decimal(args.confidence)
@@ -269,12 +236,7 @@ export class ResponsibilityElementService {
     return this.toDto(created);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -346,14 +308,7 @@ export class ResponsibilityElementService {
   }
 }
 
-/**
- * Объединение двух списков provenance-блоков без дублей, capped 50.
- * Используется upsert'ами всех 5 wave-2 сервисов.
- */
-export function mergeSourceBlocks(
-  current: string[],
-  incoming?: string[] | null,
-): string[] {
+export function mergeSourceBlocks(current: string[], incoming?: string[] | null): string[] {
   if (!incoming || incoming.length === 0) return current;
   const set = new Set(current);
   for (const id of incoming) set.add(id);

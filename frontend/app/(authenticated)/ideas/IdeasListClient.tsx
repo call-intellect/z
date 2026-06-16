@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
-import useSWR from 'swr';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
+import useSWR from "swr";
+import { toast } from "sonner";
 import {
   ChevronDown,
   ChevronRight,
@@ -11,18 +11,18 @@ import {
   Search,
   Target,
   ThumbsUp,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { goalsApi } from '@/api/goals.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { goalsApi } from "@/api/goals.api";
 import {
   ideasApi,
   type IdeaClusterApi,
   type IdeaKindApi,
   type IdeaStatusApi,
-} from '@/api/ideas.api';
-import { useAuth } from '@/contexts/auth-context';
-import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
+} from "@/api/ideas.api";
+import { useAuth } from "@/contexts/auth-context";
+import { GoalPickerDialog } from "@/ui/components/shared/GoalPickerDialog";
 import {
   IDEA_KIND_LABEL,
   IDEA_STATUS_CHIP,
@@ -35,31 +35,23 @@ import {
   type IdeaDetail,
   type IdeaListItem,
   type IdeaStatus,
-} from '@/domain/idea';
-import { Chip } from '@/ui/components/shared/Chip';
-import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/idea";
+import { Chip } from "@/ui/components/shared/Chip";
+import { ConfirmDialog } from "@/ui/components/shared/ConfirmDialog";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-type TabKey = 'all' | 'clusters' | 'mine';
-type MineRole = 'author' | 'supporter';
+type TabKey = "all" | "clusters" | "mine";
+type MineRole = "author" | "supporter";
 
-/**
- * `/ideas` (SBA β-5, ТЗ 2026-05-26 §2) — реестр идей и запросов клиентов.
- *
- * Вкладки:
- *   - «Все идеи»    — master-detail с фильтрами kind / status / search.
- *   - «По кластерам» — список IdeaCluster + раскрытие идей внутри.
- *   - «Мои идеи»    — переключатель «Я автор / Я поддержал».
- */
 export function IdeasListClient(): JSX.Element {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -75,7 +67,7 @@ export function IdeasListClient(): JSX.Element {
 }
 
 function IdeasContent(): JSX.Element {
-  const [tab, setTab] = useState<TabKey>('all');
+  const [tab, setTab] = useState<TabKey>("all");
   const [selected, setSelected] = useState<IdeaDetail | null>(null);
 
   return (
@@ -89,7 +81,7 @@ function IdeasContent(): JSX.Element {
       </header>
 
       <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-border-subtle">
-        {(['all', 'clusters', 'mine'] as TabKey[]).map((t) => (
+        {(["all", "clusters", "mine"] as TabKey[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -98,50 +90,51 @@ function IdeasContent(): JSX.Element {
               setSelected(null);
             }}
             className={cn(
-              '-mb-px border-b-2 px-3 py-2 text-sm transition-colors',
+              "-mb-px border-b-2 px-3 py-2 text-sm transition-colors",
               tab === t
-                ? 'border-accent text-accent'
-                : 'border-transparent text-fg-secondary hover:text-fg-primary',
+                ? "border-accent text-accent"
+                : "border-transparent text-fg-secondary hover:text-fg-primary",
             )}
           >
-            {t === 'all'
-              ? 'Все идеи'
-              : t === 'clusters'
-                ? 'По кластерам'
-                : 'Мои идеи'}
+            {t === "all"
+              ? "Все идеи"
+              : t === "clusters"
+                ? "По кластерам"
+                : "Мои идеи"}
           </button>
         ))}
       </div>
 
-      {tab === 'all' && (
+      {tab === "all" && (
         <IdeasAllTab selected={selected} setSelected={setSelected} />
       )}
-      {tab === 'clusters' && (
+      {tab === "clusters" && (
         <IdeasClustersTab selected={selected} setSelected={setSelected} />
       )}
-      {tab === 'mine' && (
+      {tab === "mine" && (
         <IdeasMineTab selected={selected} setSelected={setSelected} />
       )}
     </div>
   );
 }
 
-// ──────────────────────────── Вкладка «Все идеи» ────────────────────────────
-
-const KIND_FILTERS: ReadonlyArray<{ value: 'all' | IdeaKindApi; label: string }> = [
-  { value: 'all', label: 'Все виды' },
-  { value: 'internal', label: 'Внутренние' },
-  { value: 'client_request', label: 'Запросы клиентов' },
+const KIND_FILTERS: ReadonlyArray<{
+  value: "all" | IdeaKindApi;
+  label: string;
+}> = [
+  { value: "all", label: "Все виды" },
+  { value: "internal", label: "Внутренние" },
+  { value: "client_request", label: "Запросы клиентов" },
 ];
 
 const ALL_STATUSES: ReadonlyArray<IdeaStatus> = [
-  'captured',
-  'in_discussion',
-  'accepted',
-  'in_progress',
-  'shipped',
-  'rejected',
-  'archived',
+  "captured",
+  "in_discussion",
+  "accepted",
+  "in_progress",
+  "shipped",
+  "rejected",
+  "archived",
 ];
 
 function IdeasAllTab({
@@ -151,10 +144,10 @@ function IdeasAllTab({
   selected: IdeaDetail | null;
   setSelected: (d: IdeaDetail | null) => void;
 }) {
-  const [kindFilter, setKindFilter] = useState<'all' | IdeaKindApi>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | IdeaStatus>('all');
-  const [q, setQ] = useState('');
-  const [qDebounced, setQDebounced] = useState('');
+  const [kindFilter, setKindFilter] = useState<"all" | IdeaKindApi>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | IdeaStatus>("all");
+  const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
   const [items, setItems] = useState<IdeaListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,20 +164,18 @@ function IdeasAllTab({
     setForbidden(false);
     try {
       const resp = await ideasApi.list({
-        kind: kindFilter === 'all' ? undefined : kindFilter,
-        status: statusFilter === 'all' ? undefined : statusFilter,
+        kind: kindFilter === "all" ? undefined : kindFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
         q: qDebounced || undefined,
         page: 1,
         limit: 100,
       });
       setItems(resp.items.map(mapIdeaListItem));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(
-          humanizeApiError(e, 'Не удалось загрузить идеи'),
-        );
+        setError(humanizeApiError(e, "Не удалось загрузить идеи"));
       }
     } finally {
       setIsLoading(false);
@@ -215,7 +206,7 @@ function IdeasAllTab({
         </div>
         <select
           value={kindFilter}
-          onChange={(e) => setKindFilter(e.target.value as 'all' | IdeaKindApi)}
+          onChange={(e) => setKindFilter(e.target.value as "all" | IdeaKindApi)}
           className="rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
         >
           {KIND_FILTERS.map((f) => (
@@ -226,7 +217,9 @@ function IdeasAllTab({
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as 'all' | IdeaStatus)}
+          onChange={(e) =>
+            setStatusFilter(e.target.value as "all" | IdeaStatus)
+          }
           className="rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
         >
           <option value="all">Любой статус</option>
@@ -251,8 +244,6 @@ function IdeasAllTab({
   );
 }
 
-// ──────────────────────────── Вкладка «По кластерам» ────────────────────────
-
 function IdeasClustersTab({
   selected,
   setSelected,
@@ -274,12 +265,10 @@ function IdeasClustersTab({
       const resp = await ideasApi.listClusters(1, 100);
       setClusters(resp.items.map(mapIdeaCluster));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(
-          humanizeApiError(e, 'Не удалось загрузить кластеры'),
-        );
+        setError(humanizeApiError(e, "Не удалось загрузить кластеры"));
       }
     } finally {
       setIsLoading(false);
@@ -363,23 +352,22 @@ function ClusterRow({
         setLoaded(true);
       })
       .catch((e) => {
-        toast.error(
-          humanizeApiError(e, 'Не удалось загрузить идеи'),
-        );
+        toast.error(humanizeApiError(e, "Не удалось загрузить идеи"));
       })
       .finally(() => setLoading(false));
   }, [isExpanded, loaded, cluster.id]);
 
-  const selectIdea = useCallback(async (id: string) => {
-    try {
-      const dto = await ideasApi.getById(id);
-      onSelectIdea(mapIdeaDetail(dto));
-    } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось загрузить деталь'),
-      );
-    }
-  }, [onSelectIdea]);
+  const selectIdea = useCallback(
+    async (id: string) => {
+      try {
+        const dto = await ideasApi.getById(id);
+        onSelectIdea(mapIdeaDetail(dto));
+      } catch (e) {
+        toast.error(humanizeApiError(e, "Не удалось загрузить деталь"));
+      }
+    },
+    [onSelectIdea],
+  );
 
   return (
     <li className="rounded-lg border border-border-subtle bg-bg-card">
@@ -403,8 +391,8 @@ function ClusterRow({
             </p>
           ) : null}
           <div className="mt-1 text-xs text-fg-tertiary">
-            {cluster.ideaCount}{' '}
-            {pluralize(cluster.ideaCount, 'идея', 'идеи', 'идей')} · вес{' '}
+            {cluster.ideaCount}{" "}
+            {pluralize(cluster.ideaCount, "идея", "идеи", "идей")} · вес{" "}
             {cluster.clusterWeight.toFixed(1)}
           </div>
         </div>
@@ -425,10 +413,10 @@ function ClusterRow({
                     type="button"
                     onClick={() => void selectIdea(i.id)}
                     className={cn(
-                      'flex w-full flex-col gap-1 px-4 py-2 text-left transition-colors',
+                      "flex w-full flex-col gap-1 px-4 py-2 text-left transition-colors",
                       selectedIdeaId === i.id
-                        ? 'bg-accent/5'
-                        : 'hover:bg-bg-overlay/40',
+                        ? "bg-accent/5"
+                        : "hover:bg-bg-overlay/40",
                     )}
                   >
                     <span className="line-clamp-2 text-sm text-fg-primary">
@@ -451,8 +439,6 @@ function ClusterRow({
   );
 }
 
-// ──────────────────────────── Вкладка «Мои идеи» ────────────────────────────
-
 function IdeasMineTab({
   selected,
   setSelected,
@@ -460,7 +446,7 @@ function IdeasMineTab({
   selected: IdeaDetail | null;
   setSelected: (d: IdeaDetail | null) => void;
 }) {
-  const [role, setRole] = useState<MineRole>('author');
+  const [role, setRole] = useState<MineRole>("author");
   const [items, setItems] = useState<IdeaListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -472,9 +458,7 @@ function IdeasMineTab({
       const resp = await ideasApi.myIdeas({ role, page: 1, limit: 100 });
       setItems(resp.items.map(mapIdeaListItem));
     } catch (e) {
-      setError(
-        humanizeApiError(e, 'Не удалось загрузить идеи'),
-      );
+      setError(humanizeApiError(e, "Не удалось загрузить идеи"));
     } finally {
       setIsLoading(false);
     }
@@ -489,19 +473,19 @@ function IdeasMineTab({
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        {(['author', 'supporter'] as MineRole[]).map((r) => (
+        {(["author", "supporter"] as MineRole[]).map((r) => (
           <button
             key={r}
             type="button"
             onClick={() => setRole(r)}
             className={cn(
-              'rounded-full border px-3 py-1 text-xs transition',
+              "rounded-full border px-3 py-1 text-xs transition",
               role === r
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border-subtle text-fg-secondary hover:border-border-strong',
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-subtle text-fg-secondary hover:border-border-strong",
             )}
           >
-            {r === 'author' ? 'Я автор' : 'Я поддержал'}
+            {r === "author" ? "Я автор" : "Я поддержал"}
           </button>
         ))}
       </div>
@@ -512,14 +496,16 @@ function IdeasMineTab({
         selected={selected}
         setSelected={setSelected}
         onListRefresh={load}
-        emptyTitle={role === 'author' ? 'Вы пока не предлагали идей' : 'Вы пока никого не поддерживали'}
+        emptyTitle={
+          role === "author"
+            ? "Вы пока не предлагали идей"
+            : "Вы пока никого не поддерживали"
+        }
         emptyDescription="Когда Кора зафиксирует или вы поддержите идею — она появится в этом списке."
       />
     </div>
   );
 }
-
-// ──────────────────────────── Master-detail ────────────────────────────────
 
 function IdeasMasterDetail({
   items,
@@ -543,16 +529,17 @@ function IdeasMasterDetail({
     [items],
   );
 
-  const selectIdea = useCallback(async (id: string) => {
-    try {
-      const dto = await ideasApi.getById(id);
-      setSelected(mapIdeaDetail(dto));
-    } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось загрузить деталь'),
-      );
-    }
-  }, [setSelected]);
+  const selectIdea = useCallback(
+    async (id: string) => {
+      try {
+        const dto = await ideasApi.getById(id);
+        setSelected(mapIdeaDetail(dto));
+      } catch (e) {
+        toast.error(humanizeApiError(e, "Не удалось загрузить деталь"));
+      }
+    },
+    [setSelected],
+  );
 
   return (
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
@@ -571,8 +558,8 @@ function IdeasMasterDetail({
                     type="button"
                     onClick={() => void selectIdea(i.id)}
                     className={cn(
-                      'flex w-full flex-col gap-1.5 px-4 py-3 text-left transition',
-                      isSelected ? 'bg-accent/5' : 'hover:bg-bg-overlay/40',
+                      "flex w-full flex-col gap-1.5 px-4 py-3 text-left transition",
+                      isSelected ? "bg-accent/5" : "hover:bg-bg-overlay/40",
                     )}
                   >
                     <div className="flex flex-wrap items-center gap-1.5">
@@ -591,8 +578,8 @@ function IdeasMasterDetail({
                       {i.statement}
                     </span>
                     <span className="text-xs text-fg-tertiary">
-                      Впервые {i.firstProposedAt.toLocaleDateString('ru-RU')} ·
-                      Последнее {i.lastDiscussedAt.toLocaleDateString('ru-RU')}
+                      Впервые {i.firstProposedAt.toLocaleDateString("ru-RU")} ·
+                      Последнее {i.lastDiscussedAt.toLocaleDateString("ru-RU")}
                     </span>
                   </button>
                 </li>
@@ -619,9 +606,6 @@ function IdeasMasterDetail({
   );
 }
 
-// ──────────────────────────── Деталь идеи ──────────────────────────────────
-
-// #80 — экспортируется для отдельного роута /ideas/[id] (deep-link из виджетов).
 export function IdeaDetailPane({
   idea,
   onUpdated,
@@ -632,16 +616,15 @@ export function IdeaDetailPane({
   onListChanged: () => Promise<void> | void;
 }) {
   const { currentOrgId, currentOrgRole } = useAuth();
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const [statusDialog, setStatusDialog] = useState<IdeaStatus | null>(null);
-  const [statusReason, setStatusReason] = useState('');
+  const [statusReason, setStatusReason] = useState("");
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
 
-  // Имя привязанной цели — ленивый одиночный запрос только при наличии goalId.
   const { data: linkedGoal } = useSWR(
     idea.goalId && currentOrgId
-      ? (['idea-linked-goal', currentOrgId, idea.goalId] as const)
+      ? (["idea-linked-goal", currentOrgId, idea.goalId] as const)
       : null,
     async ([, oid, gid]) => goalsApi.get(oid, gid),
   );
@@ -651,32 +634,30 @@ export function IdeaDetailPane({
       const fresh = await ideasApi.getById(idea.id);
       onUpdated(mapIdeaDetail(fresh));
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось обновить идею'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось обновить идею"));
     }
   }, [idea.id, onUpdated]);
 
   const handleLinkGoal = useCallback(
     async (goalId: string | null) => {
       if (!currentOrgId) {
-        toast.error('Сначала выберите организацию');
+        toast.error("Сначала выберите организацию");
         return;
       }
       try {
         await ideasApi.linkGoal(currentOrgId, idea.id, goalId);
-        toast.success(goalId ? 'Идея привязана к цели' : 'Идея отвязана от цели');
+        toast.success(
+          goalId ? "Идея привязана к цели" : "Идея отвязана от цели",
+        );
         await refreshIdea();
         await onListChanged();
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'forbidden') {
-          toast.error('Привязывать цель могут только owner / admin');
-        } else if (e instanceof ApiError && e.code === 'goal_not_found') {
-          toast.error('Выбранная цель не найдена');
+        if (e instanceof ApiError && e.code === "forbidden") {
+          toast.error("Привязывать цель могут только owner / admin");
+        } else if (e instanceof ApiError && e.code === "goal_not_found") {
+          toast.error("Выбранная цель не найдена");
         } else {
-          toast.error(
-            humanizeApiError(e, 'Не удалось привязать цель'),
-          );
+          toast.error(humanizeApiError(e, "Не удалось привязать цель"));
         }
         throw e;
       }
@@ -687,14 +668,12 @@ export function IdeaDetailPane({
   const handleSupport = useCallback(async () => {
     try {
       const r = await ideasApi.support(idea.id);
-      toast.success('Вы поддержали идею');
+      toast.success("Вы поддержали идею");
       await refreshIdea();
       await onListChanged();
       void r;
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось поддержать'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось поддержать"));
     }
   }, [idea.id, refreshIdea, onListChanged]);
 
@@ -707,16 +686,14 @@ export function IdeaDetailPane({
         statusReason.trim() || null,
       );
       toast.success(`Статус изменён: ${IDEA_STATUS_LABEL[statusDialog]}`);
-      setStatusReason('');
+      setStatusReason("");
       await refreshIdea();
       await onListChanged();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
-        toast.error('Изменять статус могут только owner / admin');
+      if (e instanceof ApiError && e.code === "forbidden") {
+        toast.error("Изменять статус могут только owner / admin");
       } else {
-        toast.error(
-          humanizeApiError(e, 'Не удалось изменить статус'),
-        );
+        toast.error(humanizeApiError(e, "Не удалось изменить статус"));
       }
       throw e;
     }
@@ -761,7 +738,7 @@ export function IdeaDetailPane({
                 key={`${s.kind}:${s.entityId}`}
                 className="rounded-md bg-bg-overlay/60 px-2 py-1 text-fg-secondary"
               >
-                {s.kind === 'person' ? 'Сотрудник' : 'Клиент'} ·{' '}
+                {s.kind === "person" ? "Сотрудник" : "Клиент"} ·{" "}
                 <span className="text-fg-tertiary">
                   {s.entityId.slice(0, 8)}
                 </span>
@@ -772,7 +749,7 @@ export function IdeaDetailPane({
       </section>
 
       <section className="text-xs text-fg-tertiary">
-        Источников: {idea.sourceBlockIds.length} · Уверенность Коры:{' '}
+        Источников: {idea.sourceBlockIds.length} · Уверенность Коры:{" "}
         {(idea.confidence * 100).toFixed(0)}%
       </section>
 
@@ -789,7 +766,7 @@ export function IdeaDetailPane({
               size="sm"
               onClick={() => setGoalDialogOpen(true)}
             >
-              {idea.goalId ? 'Изменить' : 'Привязать цель…'}
+              {idea.goalId ? "Изменить" : "Привязать цель…"}
             </Button>
           ) : null}
         </div>
@@ -798,7 +775,7 @@ export function IdeaDetailPane({
             href={`/goals/${encodeURIComponent(idea.goalId)}`}
             className="text-sm font-medium text-accent hover:underline"
           >
-            {linkedGoal?.name ?? 'Открыть цель'}
+            {linkedGoal?.name ?? "Открыть цель"}
           </Link>
         ) : (
           <p className="text-sm text-fg-tertiary">—</p>
@@ -850,13 +827,13 @@ export function IdeaDetailPane({
         onOpenChange={(open) => {
           if (!open) {
             setStatusDialog(null);
-            setStatusReason('');
+            setStatusReason("");
           }
         }}
         title={
           statusDialog
             ? `Изменить статус: ${IDEA_STATUS_LABEL[statusDialog]}`
-            : ''
+            : ""
         }
         description={
           <div className="space-y-2">

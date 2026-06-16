@@ -1,24 +1,9 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 
-import { usePendingActionsCount } from '@/hooks/usePendingActionsCount';
-
-/**
- * RequiresActionBanner (Action Center B2) — компактный баннер
- * «Требует подтверждения: N → Открыть» на «Панели операций».
- *
- * Источник данных — `usePendingActionsCount` (тот же счётчик, что бейдж и
- * колокольчик), потому что страница операций не тянет director-dashboard DTO.
- *
- * Тон (парные цветовые токены — memory: feedback_paired_color_tokens):
- *   - есть конфликты → красный (chip-danger);
- *   - иначе при total>0 → янтарный (chip-warning);
- *   - при total=0 → баннер скрыт (никакого красного при нуле).
- *
- * Клик → deep-link `/actions`.
- */
+import { usePendingActionsCount } from "@/hooks/usePendingActionsCount";
 
 type Props = {
   orgId: string | null | undefined;
@@ -34,22 +19,28 @@ export function RequiresActionBanner({ orgId }: Props) {
 
   const isDanger = bySource.conflict > 0;
   const plural =
-    total === 1 ? 'подтверждение' : total < 5 ? 'подтверждения' : 'подтверждений';
+    total === 1
+      ? "подтверждение"
+      : total < 5
+        ? "подтверждения"
+        : "подтверждений";
 
   return (
     <button
       type="button"
-      onClick={() => router.push('/actions')}
+      onClick={() => router.push("/actions")}
       aria-label={`Требует подтверждения: ${total}. Открыть центр действий.`}
       className={
         isDanger
-          ? 'group flex w-full items-center gap-3 rounded-lg border-l-4 border-chip-danger-fg/60 bg-chip-danger-bg/20 px-4 py-3 text-left transition-colors hover:bg-chip-danger-bg/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chip-danger-fg'
-          : 'group flex w-full items-center gap-3 rounded-lg border-l-4 border-chip-warning-fg/60 bg-chip-warning-bg/20 px-4 py-3 text-left transition-colors hover:bg-chip-warning-bg/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chip-warning-fg'
+          ? "group flex w-full items-center gap-3 rounded-lg border-l-4 border-chip-danger-fg/60 bg-chip-danger-bg/20 px-4 py-3 text-left transition-colors hover:bg-chip-danger-bg/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chip-danger-fg"
+          : "group flex w-full items-center gap-3 rounded-lg border-l-4 border-chip-warning-fg/60 bg-chip-warning-bg/20 px-4 py-3 text-left transition-colors hover:bg-chip-warning-bg/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chip-warning-fg"
       }
     >
       <span
         className={
-          isDanger ? 'shrink-0 text-chip-danger-fg' : 'shrink-0 text-chip-warning-fg'
+          isDanger
+            ? "shrink-0 text-chip-danger-fg"
+            : "shrink-0 text-chip-warning-fg"
         }
         aria-hidden="true"
       >
@@ -58,8 +49,8 @@ export function RequiresActionBanner({ orgId }: Props) {
       <span
         className={
           isDanger
-            ? 'flex-1 text-sm font-medium text-chip-danger-fg'
-            : 'flex-1 text-sm font-medium text-chip-warning-fg'
+            ? "flex-1 text-sm font-medium text-chip-danger-fg"
+            : "flex-1 text-sm font-medium text-chip-warning-fg"
         }
       >
         Требует подтверждения: {total} {plural}

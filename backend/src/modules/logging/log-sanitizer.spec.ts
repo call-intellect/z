@@ -35,7 +35,7 @@ describe('sanitizePayload', () => {
   it('ограничивает массивы 200 элементами', () => {
     const arr = Array.from({ length: 500 }, (_, i) => i);
     const out = sanitizePayload(arr) as unknown[];
-    expect(out.length).toBe(201); // 200 + маркер
+    expect(out.length).toBe(201);
     expect(out[200]).toContain('more');
   });
 

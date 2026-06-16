@@ -1,26 +1,21 @@
-/**
- * Утилиты работы с датами для Calendar MVP.
- * Локаль ru-RU, неделя начинается с понедельника (ISO-8601).
- */
-
-export const WEEKDAY_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+export const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 export const MONTH_NAMES = [
-  'январь',
-  'февраль',
-  'март',
-  'апрель',
-  'май',
-  'июнь',
-  'июль',
-  'август',
-  'сентябрь',
-  'октябрь',
-  'ноябрь',
-  'декабрь',
+  "январь",
+  "февраль",
+  "март",
+  "апрель",
+  "май",
+  "июнь",
+  "июль",
+  "август",
+  "сентябрь",
+  "октябрь",
+  "ноябрь",
+  "декабрь",
 ];
 
-export const HOUR_HEIGHT_PX = 48; // высота одной часовой строки в Day/Week
-export const FIRST_HOUR = 6; // показываем 06:00..22:00
+export const HOUR_HEIGHT_PX = 48;
+export const FIRST_HOUR = 6;
 export const LAST_HOUR = 22;
 export const VISIBLE_HOURS = LAST_HOUR - FIRST_HOUR + 1;
 
@@ -48,10 +43,9 @@ export function addMonths(d: Date, months: number): Date {
   return x;
 }
 
-/** Понедельник той же недели, что d. ISO: неделя Пн..Вс. */
 export function startOfWeek(d: Date): Date {
   const x = startOfDay(d);
-  const dow = x.getDay(); // 0..6, где 0 = воскресенье
+  const dow = x.getDay();
   const offset = dow === 0 ? -6 : 1 - dow;
   x.setDate(x.getDate() + offset);
   return x;
@@ -74,7 +68,6 @@ export function endOfMonth(d: Date): Date {
   return endOfDay(x);
 }
 
-/** Сетка месяца — 6 недель × 7 дней, начиная с понедельника недели первого числа. */
 export function monthGridStart(d: Date): Date {
   return startOfWeek(startOfMonth(d));
 }
@@ -92,10 +85,10 @@ export function isSameMonth(a: Date, b: Date): boolean {
 }
 
 export function formatDayLabel(d: Date): string {
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    weekday: 'long',
+  return d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    weekday: "long",
   });
 }
 
@@ -114,16 +107,12 @@ export function formatWeekRangeLabel(d: Date): string {
 }
 
 export function formatTimeHM(d: Date): string {
-  return d.toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
+  return d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
-/**
- * Вернуть position+height (в px) для блока события на дневной шкале FIRST..LAST.
- * Если событие выходит за границы — обрезаем.
- */
 export function eventDayPositionPx(
   startAt: Date,
   endAt: Date,
@@ -144,10 +133,6 @@ export function eventDayPositionPx(
   return { topPx, heightPx };
 }
 
-/**
- * При drag-and-drop события на другой день мы сохраняем «то же» время.
- * Возвращает новую startAt; endAt получается прибавлением durationMs.
- */
 export function moveDateToDay(source: Date, targetDay: Date): Date {
   const r = new Date(targetDay);
   r.setHours(source.getHours(), source.getMinutes(), source.getSeconds(), 0);

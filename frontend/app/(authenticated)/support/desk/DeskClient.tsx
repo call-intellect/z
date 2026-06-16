@@ -1,33 +1,28 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
+import Link from "next/link";
+import { useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import type { DeskView } from '@/api/support.api';
-import { useDeskTickets } from '@/hooks/useDeskTickets';
-import { useSupportStatus } from '@/hooks/useSupportStatus';
-import type { DeskTicketListItem } from '@/domain/support';
-import { Badge } from '@/ui/shadcn/badge';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import type { DeskView } from "@/api/support.api";
+import { useDeskTickets } from "@/hooks/useDeskTickets";
+import { useSupportStatus } from "@/hooks/useSupportStatus";
+import type { DeskTicketListItem } from "@/domain/support";
+import { Badge } from "@/ui/shadcn/badge";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const VIEWS: { id: DeskView; label: string }[] = [
-  { id: 'unassigned', label: 'Новые' },
-  { id: 'mine', label: 'Мои' },
-  { id: 'all', label: 'Все' },
-  { id: 'closed', label: 'Закрытые' },
-  { id: 'spam', label: 'Спам' },
+  { id: "unassigned", label: "Новые" },
+  { id: "mine", label: "Мои" },
+  { id: "all", label: "Все" },
+  { id: "closed", label: "Закрытые" },
+  { id: "spam", label: "Спам" },
 ];
 
-/**
- * DeskClient — очередь тикетов деска с переключателем view. Гейт по
- * `isAgent`: не-сотруднику показываем заглушку (не падаем на 403). Все 4
- * UX-состояния списка.
- */
 export function DeskClient() {
   const { isAgent, isLoading: statusLoading } = useSupportStatus();
-  const [view, setView] = useState<DeskView>('unassigned');
+  const [view, setView] = useState<DeskView>("unassigned");
 
   const { data, error, isLoading } = useDeskTickets(view, isAgent);
 
@@ -36,23 +31,20 @@ export function DeskClient() {
 
   return (
     <div>
-      <nav
-        aria-label="Фильтр очереди"
-        className="mb-4 flex flex-wrap gap-1.5"
-      >
+      <nav aria-label="Фильтр очереди" className="mb-4 flex flex-wrap gap-1.5">
         {VIEWS.map((v) => (
           <button
             key={v.id}
             type="button"
             onClick={() => setView(v.id)}
             className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
               view === v.id
-                ? 'bg-accent/15 text-accent-fg'
-                : 'bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
+                ? "bg-accent/15 text-accent-fg"
+                : "bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary",
             )}
-            aria-current={view === v.id ? 'page' : undefined}
+            aria-current={view === v.id ? "page" : undefined}
           >
             {v.label}
           </button>
@@ -131,8 +123,7 @@ function EmptyState() {
 }
 
 function ErrorView({ error }: { error: unknown }) {
-  const message =
-    humanizeApiError(error, 'Не удалось загрузить очередь.');
+  const message = humanizeApiError(error, "Не удалось загрузить очередь.");
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}
@@ -151,7 +142,7 @@ function ListSkeleton() {
 }
 
 function formatDate(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}`

@@ -13,10 +13,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -38,17 +35,6 @@ import {
 } from '../dto/imports/start-import.dto';
 import { ImportService } from '../services/import.service';
 
-/**
- * Wave 3 / Tracker Phase 5 part 1 (2026-05-24).
- *
- * REST `/api/v1/tracker/imports/*` — миграционный wizard под трекер.
- *
- * Все эндпоинты под TenantGuard + RBAC ResourceType='import_tracker'.
- * Trello — единственный source с полной реализацией; Bitrix24 / Я.Трекер —
- * заглушки (worker сразу throw'ит NotImplemented, ImportLog → 'failed').
- *
- * Контракты совпадают с frontend wizard'ом (см. ТЗ §UX).
- */
 @ApiTags('tracker / imports')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -81,8 +67,7 @@ export class ImportsController {
   @Post('tracker/imports/bitrix24')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Запустить импорт из Битрикс24 (TODO Phase 5 part 2 — worker сразу падает)',
+    summary: 'Запустить импорт из Битрикс24 (TODO Phase 5 part 2 — worker сразу падает)',
   })
   async startBitrix24(
     @Body(new ZodValidationPipe(StartBitrix24ImportSchema))
@@ -103,8 +88,7 @@ export class ImportsController {
   @Post('tracker/imports/yandex-tracker')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Запустить импорт из Я.Трекера (TODO Phase 5 part 2 — worker сразу падает)',
+    summary: 'Запустить импорт из Я.Трекера (TODO Phase 5 part 2 — worker сразу падает)',
   })
   async startYandexTracker(
     @Body(new ZodValidationPipe(StartYandexTrackerImportSchema))
@@ -166,8 +150,6 @@ export class ImportsController {
     return this.svc.cancel({ tenantId: t, importLogId: id });
   }
 
-  // ── helpers ──
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -201,8 +183,7 @@ export class ImportsController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Только admin / owner Org могут запускать/отменять импорты',
+          message: 'Только admin / owner Org могут запускать/отменять импорты',
         },
       });
     }

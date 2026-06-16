@@ -1,9 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import type {
-  LlmCompleteInput,
-  LlmCompleteOutput,
-} from '../../llm.types';
+import type { LlmCompleteInput, LlmCompleteOutput } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import type {
   LlmProtocolAdapter,
@@ -11,17 +8,6 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
-/**
- * SBA α-10 wave 3 — Custom HTTP адаптер (generic).
- *
- * Минимальная реализация для внутренних корпоративных моделей: POST {baseUrl},
- * JSON body { system, user, model, maxTokens }, ответ { text, inputTokens?,
- * outputTokens? }. На MVP не используется в проде, но регистрируется для
- * расширяемости (см. ТЗ §3.5).
- *
- * Если в будущем понадобится индивидуальная карта полей — заводить
- * подкласс или хранить mapping в LlmProvider.defaultHeaders/config.
- */
 @Injectable()
 export class CustomHttpProtocolAdapter implements LlmProtocolAdapter {
   readonly protocolKind: ProtocolKind = 'custom-http';
@@ -44,7 +30,6 @@ export class CustomHttpProtocolAdapter implements LlmProtocolAdapter {
 
     let resp: Response;
     try {
-      // T7-F3: распаковка LlmUserInput (см. openai-chat.adapter.ts).
       const userText = typeof input.user === 'string' ? input.user : input.user.text;
       resp = await fetch(provider.baseUrl, {
         method: 'POST',
@@ -58,11 +43,7 @@ export class CustomHttpProtocolAdapter implements LlmProtocolAdapter {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new LlmError(
-        `custom-http ${provider.name}: network error: ${message}`,
-        undefined,
-        err,
-      );
+      throw new LlmError(`custom-http ${provider.name}: network error: ${message}`, undefined, err);
     }
     if (!resp.ok) {
       const body = await resp.text().catch(() => '');

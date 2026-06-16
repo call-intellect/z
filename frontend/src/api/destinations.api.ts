@@ -1,26 +1,16 @@
-import { apiClient } from './api-client';
-
-/**
- * API DTO для IntegrationDestinations (куда отправлять задачи / webhooks).
- * Контракт — `backend/src/modules/destinations/`.
- *
- * Backend никогда не возвращает плейн секреты — вместо них флаги
- * `url_present: true`, `bot_token_present: true`. Email-адрес — не секрет
- * и приходит как есть.
- */
+import { apiClient } from "./api-client";
 
 export type DestinationType =
-  | 'email'
-  | 'slack_webhook'
-  | 'telegram_bot'
-  | 'generic_webhook';
+  | "email"
+  | "slack_webhook"
+  | "telegram_bot"
+  | "generic_webhook";
 
 export type DestinationConfigView = {
   recipient_email?: string;
   url_present?: true;
   bot_token_present?: true;
   chat_id?: string | number;
-  // На случай если бэк добавит публичные поля — оставляем расширяемость.
   [key: string]: unknown;
 };
 
@@ -37,22 +27,22 @@ export type DestinationsListApiResponse = { items: DestinationApi[] };
 
 export type CreateDestinationRequest =
   | {
-      type: 'email';
+      type: "email";
       name: string;
       config: { recipient_email: string };
     }
   | {
-      type: 'slack_webhook';
+      type: "slack_webhook";
       name: string;
       config: { url: string };
     }
   | {
-      type: 'telegram_bot';
+      type: "telegram_bot";
       name: string;
       config: { bot_token: string; chat_id: string | number };
     }
   | {
-      type: 'generic_webhook';
+      type: "generic_webhook";
       name: string;
       config: { url: string };
     };
@@ -63,10 +53,11 @@ export type UpdateDestinationRequest = {
 };
 
 export const destinationsApi = {
-  list: () => apiClient.get<DestinationsListApiResponse>('/api/v1/destinations'),
+  list: () =>
+    apiClient.get<DestinationsListApiResponse>("/api/v1/destinations"),
 
   create: (body: CreateDestinationRequest) =>
-    apiClient.post<DestinationApi>('/api/v1/destinations', body),
+    apiClient.post<DestinationApi>("/api/v1/destinations", body),
 
   update: (id: string, body: UpdateDestinationRequest) =>
     apiClient.patch<DestinationApi>(

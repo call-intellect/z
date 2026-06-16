@@ -1,14 +1,3 @@
-/**
- * Unit-тест промта `meeting-report-fast`.
- *
- * Проверяет:
- *   - builder работает для ВСЕХ значений MeetingType (12 типов из schema.prisma).
- *   - системный промпт включает шаблон секции summary_markdown по типу.
- *   - JSON Schema корректно описывает 4 секции (chapters/tasks/summary/quality_score).
- *   - Zod-схема валидирует «хороший» выход и отбраковывает «плохой».
- *   - Snapshot системного промта для одного из типов (sales) — guard от
- *     случайных правок.
- */
 import type { MeetingType } from '@prisma/client';
 import { describe, expect, it } from 'vitest';
 
@@ -66,43 +55,31 @@ describe('meeting-report-fast — constants', () => {
 });
 
 describe('meeting-report-fast — builder по типу встречи', () => {
-  it.each(ALL_MEETING_TYPES)(
-    'строит system для типа %s',
-    (type) => {
-      const system = buildMeetingReportFastSystemPrompt({ meetingType: type });
-      expect(system.length).toBeGreaterThan(0);
-      // Тип фигурирует в роли русским ярлыком (§3.0): «(тип: командную встречу)».
-      expect(system).toContain(`(тип: ${meetingTypeLabelRu(type)})`);
-      // Все 5 секций присутствуют как маркеры.
-      expect(system).toContain('Секция 1: chapters');
-      expect(system).toContain('Секция 2: tasks');
-      expect(system).toContain('Секция 3: summary_markdown');
-      expect(system).toContain('Секция 4: quality_score');
-      expect(system).toContain('Секция 5: data_quality');
-      // Tool name присутствует.
-      expect(system).toContain(MEETING_REPORT_FAST_TOOL_NAME);
-      // Шаблон по типу инжектирован в секцию 3.
-      const template = getSummaryTemplateForType(type);
-      const firstLineOfTemplate = template.split('\n')[0] ?? '';
-      // Длинная сигнатура шаблона уникальна — проверим, что она в system есть.
-      expect(system).toContain(firstLineOfTemplate);
-      // C1 — ASR-нота (withAsrNote) применена ко всем типам.
-      expect(system).toContain('автоматического распознавания речи');
-      // C5 — единая шкала confidence (withConfidenceCalibration).
-      expect(system).toContain('Шкала confidence (0..1)');
-      // C6 — правило анти-галлюцинации имён (статичный текст в SYSTEM).
-      expect(system).toContain(
-        'Имена участников бери ТОЛЬКО из переданного в конце сообщения списка',
-      );
-    },
-  );
+  it.each(ALL_MEETING_TYPES)('строит system для типа %s', (type) => {
+    const system = buildMeetingReportFastSystemPrompt({ meetingType: type });
+    expect(system.length).toBeGreaterThan(0);
+    expect(system).toContain(`(тип: ${meetingTypeLabelRu(type)})`);
+    expect(system).toContain('Секция 1: chapters');
+    expect(system).toContain('Секция 2: tasks');
+    expect(system).toContain('Секция 3: summary_markdown');
+    expect(system).toContain('Секция 4: quality_score');
+    expect(system).toContain('Секция 5: data_quality');
+    expect(system).toContain(MEETING_REPORT_FAST_TOOL_NAME);
+    const template = getSummaryTemplateForType(type);
+    const firstLineOfTemplate = template.split('\n')[0] ?? '';
+    expect(system).toContain(firstLineOfTemplate);
+    expect(system).toContain('автоматического распознавания речи');
+    expect(system).toContain('Шкала confidence (0..1)');
+    expect(system).toContain(
+      'Имена участников бери ТОЛЬКО из переданного в конце сообщения списка',
+    );
+  });
 
   it('у каждого типа свой шаблон summary_markdown (нет коллизий)', () => {
     const templates = new Set<string>();
     for (const type of ALL_MEETING_TYPES) {
       templates.add(getSummaryTemplateForType(type));
     }
-    // 12 типов → 12 уникальных шаблонов.
     expect(templates.size).toBe(ALL_MEETING_TYPES.length);
   });
 
@@ -116,7 +93,6 @@ describe('meeting-report-fast — builder по типу встречи', () => {
     expect(user).toContain('Sync 2026-05-25');
     expect(user).toContain('[00:00-00:05] Alice: Привет.');
     expect(user).toContain(MEETING_REPORT_FAST_TOOL_NAME);
-    // C6/C2 — переменный хвост user-сообщения (cache-friendly).
     expect(user).toContain('Участники встречи (используй ТОЛЬКО эти имена): Alice, Боб');
     expect(user).toContain('Дата встречи (ISO): 2026-05-25');
   });
@@ -214,7 +190,6 @@ describe('meeting-report-fast — Zod validation', () => {
         {
           title: 'Введение',
           summary: 'Текст.',
-          // startMs отсутствует
           endMs: 60000,
         },
       ],
@@ -241,7 +216,7 @@ describe('meeting-report-fast — Zod validation', () => {
         recommendations: [
           {
             text: 'Что-то.',
-            severity: 'panic', // неизвестный enum
+            severity: 'panic',
             category: 'preparation',
           },
         ],
@@ -265,31 +240,21 @@ describe('meeting-report-fast — Zod validation', () => {
 describe('meeting-report-fast — input_schema согласован с Zod', () => {
   it('top-level required списки совпадают', () => {
     expect(MEETING_REPORT_FAST_INPUT_SCHEMA.required?.sort()).toEqual(
-      [
-        'chapters',
-        'tasks',
-        'summary_markdown',
-        'quality_score',
-        'data_quality',
-      ].sort(),
+      ['chapters', 'tasks', 'summary_markdown', 'quality_score', 'data_quality'].sort(),
     );
   });
 
   it('chapters items требуют title/summary/startMs/endMs', () => {
-    const chapters = (
-      MEETING_REPORT_FAST_INPUT_SCHEMA.properties as Record<string, unknown>
-    ).chapters as {
+    const chapters = (MEETING_REPORT_FAST_INPUT_SCHEMA.properties as Record<string, unknown>)
+      .chapters as {
       items: { required: string[] };
     };
-    expect(chapters.items.required.sort()).toEqual(
-      ['title', 'summary', 'startMs', 'endMs'].sort(),
-    );
+    expect(chapters.items.required.sort()).toEqual(['title', 'summary', 'startMs', 'endMs'].sort());
   });
 
   it('tasks items требуют title и confidence', () => {
-    const tasks = (
-      MEETING_REPORT_FAST_INPUT_SCHEMA.properties as Record<string, unknown>
-    ).tasks as {
+    const tasks = (MEETING_REPORT_FAST_INPUT_SCHEMA.properties as Record<string, unknown>)
+      .tasks as {
       items: { required: string[] };
     };
     expect(tasks.items.required.sort()).toEqual(['title', 'confidence'].sort());

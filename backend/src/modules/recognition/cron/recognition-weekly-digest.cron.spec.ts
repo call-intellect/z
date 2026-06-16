@@ -17,8 +17,8 @@ function mkCron(opts: {
     contributionSnapshot: {
       findUnique: vi
         .fn()
-        .mockImplementation(async ({ where }: { where: { userId: string } }) =>
-          opts.snapshots[where.userId] ?? null,
+        .mockImplementation(
+          async ({ where }: { where: { userId: string } }) => opts.snapshots[where.userId] ?? null,
         ),
     },
   };
@@ -88,7 +88,6 @@ describe('RecognitionWeeklyDigestCron', () => {
     const calls = recognition.enqueueFormulate.mock.calls;
     const types = calls.map((c) => (c[0] as { type: string }).type);
     expect(types).toContain('thanks_helpfulness');
-    // Weekly summary тоже эмитится (helpfulComments > 0).
     expect(types).toContain('weekly_summary');
   });
 

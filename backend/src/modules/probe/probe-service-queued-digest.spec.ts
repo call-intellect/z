@@ -1,11 +1,3 @@
-/**
- * Probe-система Фаза 3 (2026-06-11) — ProbeService.suggest при исчерпанном
- * бюджете получателя.
- *
- * R5: deferrable-probe сверх лимита → status='queued_digest' (НЕ
- * dropped_rate_limit), dispatcher НЕ enqueue'ится. R6: immediate-probe при
- * лимите сохраняет drop. Детерминизм: Redis/Prisma/Queue/Cfg/Metrics мокированы.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -21,22 +13,17 @@ function makeService(): {
   create: ReturnType<typeof vi.fn>;
   enqueue: ReturnType<typeof vi.fn>;
 } {
-  const create = vi
-    .fn()
-    .mockImplementation(async (args: { data: { status: string } }) => ({
-      id: 'probe-new-1',
-      ...args.data,
-    }));
+  const create = vi.fn().mockImplementation(async (args: { data: { status: string } }) => ({
+    id: 'probe-new-1',
+    ...args.data,
+  }));
   const prisma = {
     probeEvent: { create, findFirst: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaService;
 
   const redis = {
     client: {
-      // dedup SET NX → '1' (не дубль, проходим дальше).
       set: vi.fn().mockResolvedValue('1'),
-      // GET зависит от ключа: rate-limit-счётчики выше лимита (бюджет исчерпан),
-      // cooldown/engagement — отсутствуют (null), чтобы не было ложного drop.
       get: vi.fn().mockImplementation(async (key: string) => {
         if (key.includes(':ratelimit:')) return '99';
         return null;
@@ -57,7 +44,6 @@ function makeService(): {
       expiryDays: 14,
       coldStartModeHours: 0,
     },
-    // Probe Фаза 5 — filterByRateLimit читает probe.adaptiveFatigueEnabled.
     getDynamic: vi.fn().mockResolvedValue(true),
   } as unknown as TypedConfigService;
 
@@ -86,7 +72,7 @@ describe('ProbeService.suggest — бюджет исчерпан', () => {
     const res = await env.service.suggest({
       tenantId: 'org-1',
       emittedByService: '3-6-ideas',
-      reason: 'idea.status_unclear', // deferrable
+      reason: 'idea.status_unclear',
       payload: { message: 'Идея зависла' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.4,
@@ -95,7 +81,6 @@ describe('ProbeService.suggest — бюджет исчерпан', () => {
     expect('ok' in res && res.ok).toBe(true);
     const created = env.create.mock.calls[0]![0] as { data: { status: string } };
     expect(created.data.status).toBe('queued_digest');
-    // Dispatcher НЕ ставится в очередь — дайджест-cron подберёт.
     expect(env.enqueue).not.toHaveBeenCalled();
   });
 
@@ -103,7 +88,7 @@ describe('ProbeService.suggest — бюджет исчерпан', () => {
     const res = await env.service.suggest({
       tenantId: 'org-1',
       emittedByService: '3-3-decisions',
-      reason: 'decision.overdue', // immediate
+      reason: 'decision.overdue',
       payload: { message: 'Решение просрочено' },
       recipientCandidates: ['user-1'],
       priorityHint: 0.7,

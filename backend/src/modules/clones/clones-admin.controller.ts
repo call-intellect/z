@@ -22,10 +22,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminAuditInterceptor } from '../admin/admin.audit.interceptor';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { OrgAdminGuard } from '../auth/guards/org-admin.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
@@ -49,25 +46,6 @@ import {
 } from './dto/clone-access-grant.dto';
 import { ClonesAdminService } from './services/clones-admin.service';
 
-/**
- * Clones=Roles Ф2 — admin-роутер для ручных операций над клонами ролей.
- *
- * Эндпоинты:
- *   - POST /api/v1/admin/clones/:roleId/force-new-version — принудительно
- *     создать новую версию ExecutablePersona(scope='role') для роли (старый).
- *
- *   ТЗ 2026-05-26 (clone-access-grant-admin-api) — admin CRUD для
- *   `CloneAccessGrant` (§2.1–§2.5):
- *   - GET    /api/v1/admin/clones/access-grants                       — list с фильтрами + pagination.
- *   - POST   /api/v1/admin/clones/access-grants                       — выдать грант.
- *   - DELETE /api/v1/admin/clones/access-grants/:id                   — soft-revoke.
- *   - PATCH  /api/v1/admin/clones/access-grants/:id                   — продлить / поменять expiresAt.
- *   - GET    /api/v1/admin/clones/:cloneType/:cloneRefId/access-grants — per-clone view.
- *
- * RBAC: owner / admin Org / super_admin (через `OrgAdminGuard`); audit —
- * через `AdminAuditInterceptor` (см. `classifyAction` для трёх новых действий).
- * Все тексты ошибок — на русском.
- */
 const ForceNewVersionBodySchema = z.object({
   newPersonId: z.string().min(1).optional(),
 });
@@ -90,13 +68,10 @@ export class ClonesAdminController {
     private readonly admin: ClonesAdminService,
   ) {}
 
-  // ─────────────────────────── force-new-version (legacy) ───────────────────────────
-
   @Post(':roleId/force-new-version')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Clones=Roles Ф2: вручную создать новую версию клона роли (owner/admin)',
+    summary: 'Clones=Roles Ф2: вручную создать новую версию клона роли (owner/admin)',
   })
   async forceNewVersion(
     @Param('roleId') roleId: string,
@@ -107,7 +82,6 @@ export class ClonesAdminController {
   ): Promise<{ ok: true; personaId: string | null; reason?: string }> {
     const t = this.requireTenant(tenantId);
 
-    // RBAC: clone_persona write — owner/admin Org.
     const allowed = await this.rbac.check({
       userId: user.id,
       tenantId: t,
@@ -125,7 +99,6 @@ export class ClonesAdminController {
       });
     }
 
-    // Если newPersonId не передан — берём текущего активного носителя.
     let newPersonId: string | null = body.newPersonId ?? null;
     if (!newPersonId) {
       const active = await this.prisma.appointment.findFirst({
@@ -136,7 +109,6 @@ export class ClonesAdminController {
       newPersonId = active?.personId ?? null;
     }
 
-    // Определяем oldPersonId из текущей active persona (если есть).
     const prevActive = await this.prisma.executablePersona.findFirst({
       where: {
         tenantId: t,
@@ -168,12 +140,9 @@ export class ClonesAdminController {
     return { ok: true, personaId };
   }
 
-  // ─────────────────────────── §2.1 GET list ───────────────────────────
-
   @Get('access-grants')
   @ApiOperation({
-    summary:
-      'ТЗ 2026-05-26 §2.1: список грантов доступа к клонам с фильтрами и pagination.',
+    summary: 'ТЗ 2026-05-26 §2.1: список грантов доступа к клонам с фильтрами и pagination.',
   })
   @ApiResponse({ status: 200, description: 'Список грантов с enrichment' })
   async listAccessGrants(
@@ -185,14 +154,11 @@ export class ClonesAdminController {
     return this.admin.listAccessGrants({ tenantId: t, query });
   }
 
-  // ─────────────────────────── §2.2 POST create ───────────────────────────
-
   @Post('access-grants')
   @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary:
-      'ТЗ 2026-05-26 §2.2: выдать грант доступа к клону (owner/admin Org).',
+    summary: 'ТЗ 2026-05-26 §2.2: выдать грант доступа к клону (owner/admin Org).',
   })
   @ApiResponse({ status: 201, description: 'Грант создан (или возвращён существующий)' })
   @ApiResponse({ status: 400, description: 'user_not_in_org / invalid_payload' })
@@ -211,14 +177,11 @@ export class ClonesAdminController {
     });
   }
 
-  // ─────────────────────────── §2.3 DELETE revoke ───────────────────────────
-
   @Delete('access-grants/:id')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary:
-      'ТЗ 2026-05-26 §2.3: soft-revoke гранта (запись остаётся для audit-trail).',
+    summary: 'ТЗ 2026-05-26 §2.3: soft-revoke гранта (запись остаётся для audit-trail).',
   })
   @ApiResponse({ status: 200, description: 'Грант помечен как отозванный' })
   @ApiResponse({ status: 400, description: 'already_revoked' })
@@ -236,14 +199,11 @@ export class ClonesAdminController {
     });
   }
 
-  // ─────────────────────────── §2.4 PATCH extend ───────────────────────────
-
   @Patch('access-grants/:id')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary:
-      'ТЗ 2026-05-26 §2.4: продление / изменение expiresAt гранта (нельзя для отозванных).',
+    summary: 'ТЗ 2026-05-26 §2.4: продление / изменение expiresAt гранта (нельзя для отозванных).',
   })
   @ApiResponse({ status: 200, description: 'expiresAt обновлён' })
   @ApiResponse({ status: 400, description: 'cannot_update_revoked / invalid_payload' })
@@ -257,8 +217,6 @@ export class ClonesAdminController {
     const t = this.requireTenant(tenantId);
     return this.admin.extendAccessGrant({ tenantId: t, id, dto });
   }
-
-  // ─────────────────────────── §2.5 GET per-clone ───────────────────────────
 
   @Get(':cloneType/:cloneRefId/access-grants')
   @ApiOperation({

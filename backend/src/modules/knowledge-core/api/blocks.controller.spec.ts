@@ -1,19 +1,3 @@
-/**
- * Integration spec для KnowledgeBlocksController (Phase F.2).
- *
- * Использует РЕАЛЬНЫЙ Postgres из docker-compose.dev.yml через PrismaClient
- * с driver-adapter pg. Если БД недоступна — все тесты файла skip'аются
- * (через `it.skipIf`).
- *
- * Что проверяем:
- *   - happy: GET /blocks/:id возвращает блок + evidence + entities.
- *   - happy: GET /blocks/:id/links возвращает outgoing + incoming.
- *   - 403 cross-tenant: запрос блока, принадлежащего другой Org → ForbiddenException
- *     (RBAC) или NotFound (tenant-fence). Главное: НЕ 200 с данными чужой Org.
- *   - 403 forbidden (RBAC.canRead → false).
- *   - 404 на несуществующий блок.
- *   - tenant_required (без X-Org-Id).
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -71,10 +55,6 @@ function makeRbacDeny(): RbacService {
   } as unknown as RbacService;
 }
 
-/**
- * KC-Temporal W3.2 (2026-05-25) — stub ReasoningChainService: пустые цепочки.
- * Покрытие reasoning-chain endpoint'а — в reasoning-chain.service.spec.ts.
- */
 function makeReasoningChainStub(): ReasoningChainService {
   return {
     buildChain: async () => ({ nodes: [], edges: [] }),
@@ -119,7 +99,11 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
+    );
 
     const res = await ctrl.byId(f.blockAId, userA, f.orgAId);
     expect(res.block.id).toBe(f.blockAId);
@@ -132,12 +116,13 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
-
-    // userB пытается прочитать блок Org A через свой X-Org-Id = orgB.
-    await expect(ctrl.byId(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(
-      NotFoundException,
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
     );
+
+    await expect(ctrl.byId(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('403 forbidden если RBAC.canRead вернул false', async (testCtx) => {
@@ -146,16 +131,18 @@ describe('KnowledgeBlocksController (integration)', () => {
     const f = ctx.fixture!;
     const ctrl = new KnowledgeBlocksController(prisma, makeRbacDeny(), makeReasoningChainStub());
 
-    await expect(ctrl.byId(f.blockAId, userA, f.orgAId)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.byId(f.blockAId, userA, f.orgAId)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required если X-Org-Id не передан', async (testCtx) => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
+    );
 
     await expect(ctrl.byId(f.blockAId, userA, undefined)).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -166,18 +153,26 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
+    );
 
-    await expect(
-      ctrl.byId(`${PREFIX}-missing-block`, userA, f.orgAId),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.byId(`${PREFIX}-missing-block`, userA, f.orgAId)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('GET /blocks/:id/links возвращает outgoing+incoming (пустые при отсутствии связей)', async (testCtx) => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
+    );
 
     const res = await ctrl.links(f.blockAId, userA, f.orgAId);
     expect(Array.isArray(res.outgoing)).toBe(true);
@@ -188,19 +183,15 @@ describe('KnowledgeBlocksController (integration)', () => {
     if (skipIfNoDb(testCtx)) return;
     const prisma = (await getPrismaClient()) as unknown as PrismaService;
     const f = ctx.fixture!;
-    const ctrl = new KnowledgeBlocksController(prisma, makeRbacAllowAll(), makeReasoningChainStub());
-
-    await expect(ctrl.links(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(
-      NotFoundException,
+    const ctrl = new KnowledgeBlocksController(
+      prisma,
+      makeRbacAllowAll(),
+      makeReasoningChainStub(),
     );
+
+    await expect(ctrl.links(f.blockAId, userB, f.orgBId)).rejects.toBeInstanceOf(NotFoundException);
   });
 });
-
-// ───────────────── Ф4 knowledge-access — гейт блока (unit) ──────────────────
-//
-// Юнит-тесты (без БД): мокаем prisma/rbac/resolver/cfg/metrics. Проверяем
-// GET /blocks/:id (деталка), /blocks/:id/links (соседи), /blocks/:id/reasoning-
-// chain (root + accessWhere в BFS).
 
 const GATE_USER: CurrentUserPayload = {
   id: 'blk-gate-user',
@@ -209,11 +200,6 @@ const GATE_USER: CurrentUserPayload = {
 };
 const GATE_TENANT = 'blk-gate-org';
 
-/**
- * Реальное правило `canAccessKnowledgeGroup` (как в RbacService): closed-группы
- * требуют членства во ВСЕХ; иначе dept — хотя бы одна доступна; нет групп →
- * открыто. Используем для честной проверки гейта в юнитах.
- */
 function gateRbac(): RbacService {
   return {
     canRead: async () => true,
@@ -252,17 +238,9 @@ function gateCfg(enf: 'off' | 'shadow' | 'enforce'): TypedConfigService {
   return { knowledgeAccess: { enforcement: enf } } as unknown as TypedConfigService;
 }
 
-/**
- * resolver-мок: resolveAccessibleGroups → ctx; loadBlockAccessGroups →
- * blockGroupsMap; partitionBlockIdsByAccess → по blockGroupsMap + ctx
- * (реальное правило); buildAccessWhere → маркер.
- */
 function gateResolver(opts: {
   ctx: KnowledgeAccessContext | null;
-  blockGroups?: Map<
-    string,
-    Array<{ groupId: string; isClosed: boolean; kind: string }>
-  >;
+  blockGroups?: Map<string, Array<{ groupId: string; isClosed: boolean; kind: string }>>;
 }): {
   resolver: KnowledgeAccessResolver;
   resolveSpy: ReturnType<typeof vi.fn>;
@@ -285,10 +263,7 @@ function gateResolver(opts: {
   };
   const resolveSpy = vi.fn(async () => ctxVal);
   const loadSpy = vi.fn(async (ids: string[]) => {
-    const m = new Map<
-      string,
-      Array<{ groupId: string; isClosed: boolean; kind: string }>
-    >();
+    const m = new Map<string, Array<{ groupId: string; isClosed: boolean; kind: string }>>();
     for (const id of ids) m.set(id, groups.get(id) ?? []);
     return m;
   });
@@ -311,7 +286,6 @@ function gateResolver(opts: {
   return { resolver, resolveSpy, loadSpy, partitionSpy, buildWhereSpy };
 }
 
-/** prisma-мок для byId: один canonical-блок, без evidence/entities/mergedFrom. */
 function byIdPrisma(blockId: string): PrismaService {
   return {
     ideaBlock: {
@@ -357,7 +331,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
   it('enforce + недоступный блок → NotFound (block_not_found)', async () => {
     const ctx: KnowledgeAccessContext = {
       deptGroupIds: [],
-      closedGroupIds: [], // не член Совета
+      closedGroupIds: [],
       isBypass: false,
     };
     const blockGroups = new Map([
@@ -373,9 +347,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
       gateCfg('enforce'),
       metrics,
     );
-    await expect(ctrl.byId('b1', GATE_USER, GATE_TENANT)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(ctrl.byId('b1', GATE_USER, GATE_TENANT)).rejects.toBeInstanceOf(NotFoundException);
     expect(incDenied).toHaveBeenCalledWith({ surface: 'blocks' }, 1);
   });
 
@@ -400,7 +372,7 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
     );
     const res = await ctrl.byId('b1', GATE_USER, GATE_TENANT);
     expect(res.block.id).toBe('b1');
-    expect(loadSpy).not.toHaveBeenCalled(); // bypass — без обращения к группам
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 
   it('shadow + недоступный блок → блок отдаётся + incAccessShadowDiff', async () => {
@@ -453,10 +425,6 @@ describe('KnowledgeBlocksController.byId — Ф4 гейт (unit)', () => {
   });
 });
 
-/**
- * prisma-мок для links: root b1 (открыт), сосед-out b2 (закрытый Совет),
- * сосед-in b3 (своя dept-группа). Гейт root проходит, фильтр соседей режет b2.
- */
 function linksPrisma(): PrismaService {
   return {
     ideaBlock: {
@@ -530,12 +498,12 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
   it('enforce → связь с недоступным соседом отфильтрована + incAccessDenied', async () => {
     const ctx: KnowledgeAccessContext = {
       deptGroupIds: ['g-logistics'],
-      closedGroupIds: [], // не член Совета
+      closedGroupIds: [],
       isBypass: false,
     };
     const blockGroups = new Map([
-      ['b2', [{ groupId: 'g-council', isClosed: true, kind: 'council' }]], // недоступен
-      ['b3', [{ groupId: 'g-logistics', isClosed: false, kind: 'department' }]], // доступен
+      ['b2', [{ groupId: 'g-council', isClosed: true, kind: 'council' }]],
+      ['b3', [{ groupId: 'g-logistics', isClosed: false, kind: 'department' }]],
     ]);
     const { resolver } = gateResolver({ ctx, blockGroups });
     const { metrics, incDenied } = gateMetrics();
@@ -548,7 +516,6 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
       metrics,
     );
     const res = await ctrl.links('b1', GATE_USER, GATE_TENANT);
-    // outgoing к b2 (Совет) — вырезан; incoming от b3 (своя dept) — остался.
     expect(res.outgoing).toEqual([]);
     expect(res.incoming.map((l) => l.fromBlockId)).toEqual(['b3']);
     expect(incDenied).toHaveBeenCalledWith({ surface: 'blocks' }, 1);
@@ -606,7 +573,6 @@ describe('KnowledgeBlocksController.links — Ф4 гейт (unit)', () => {
   });
 });
 
-/** prisma-мок для reasoning-chain: root b1 (открыт). */
 function chainPrisma(): PrismaService {
   return {
     ideaBlock: {
@@ -615,7 +581,6 @@ function chainPrisma(): PrismaService {
   } as unknown as PrismaService;
 }
 
-/** ReasoningChainService-стуб, фиксирующий переданный accessWhere. */
 function chainStub(): {
   svc: ReasoningChainService;
   buildSpy: ReturnType<typeof vi.fn>;
@@ -650,7 +615,6 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       closedGroupIds: [],
       isBypass: false,
     };
-    // root b1 без групп → доступен (открыт).
     const { resolver, buildWhereSpy } = gateResolver({ ctx, blockGroups: new Map() });
     const { metrics } = gateMetrics();
     const { svc, buildSpy } = chainStub();
@@ -719,8 +683,6 @@ describe('KnowledgeBlocksController.reasoningChain — Ф4 гейт (unit)', () 
       metrics,
     );
     await ctrl.reasoningChainEndpoint('b1', {}, GATE_USER, GATE_TENANT);
-    // bypass: root доступен, buildAccessWhere вернёт {} но accessWhere всё равно
-    // передаётся (resolver вызван); главное — root не режется, цепочка строится.
     expect(buildWhereSpy).toHaveBeenCalledWith(ctx);
     expect(buildSpy).toHaveBeenCalled();
   });

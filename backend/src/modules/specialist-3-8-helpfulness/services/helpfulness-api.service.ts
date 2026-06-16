@@ -26,20 +26,6 @@ import {
   Specialist38HelpfulnessService,
 } from './specialist-3-8-helpfulness.service';
 
-/**
- * SBA Wave 2 — HelpfulnessApiService.
- *
- * Бизнес-логика REST API специалиста 3.8 (read + actions, без LLM).
- * Используется HelpfulnessController. Все методы — best-effort с throw
- * NotFoundException/ForbiddenException на business-violations.
- *
- * ⚠ Этические защиты:
- *   - listSpotlights: по умолчанию только status='published'.
- *   - getMyProfile: показывает ВСЕ trait'ы (включая restricted) — самому
- *     пользователю можно видеть всё про себя.
- *   - getProfileForPerson: показывает только public-friendly traits.
- *   - listUnanswered: только admin/manager (проверка в контроллере).
- */
 @Injectable()
 export class HelpfulnessApiService {
   private readonly logger = new Logger(HelpfulnessApiService.name);
@@ -53,12 +39,7 @@ export class HelpfulnessApiService {
     private readonly recognition: RecognitionService | null = null,
   ) {}
 
-  // ─────────────────────────── SocialContribution ───────────────────────
-
-  async getMyProfile(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<{
+  async getMyProfile(args: { tenantId: string; userId: string }): Promise<{
     profile: SocialContributionProfileDto | null;
     recentTraits: HelpfulnessTraitDto[];
   }> {
@@ -68,7 +49,6 @@ export class HelpfulnessApiService {
       },
     });
 
-    // Все trait'ы — включая restricted (свои данные user'у видеть можно).
     const traits = await this.prisma.helpfulnessTrait.findMany({
       where: {
         tenantId: args.tenantId,
@@ -89,15 +69,7 @@ export class HelpfulnessApiService {
     };
   }
 
-  /**
-   * ТЗ-E Ф4 — счётчик «Фидбек» (конструктивная обратная связь). Отдельной
-   * колонки в SocialContributionProfile нет, поэтому считаем активные trait'ы
-   * того же типа тем же фильтром, что и публичные счётчики профиля.
-   */
-  private countConstructiveFeedback(
-    tenantId: string,
-    userId: string,
-  ): Promise<number> {
+  private countConstructiveFeedback(tenantId: string, userId: string): Promise<number> {
     return this.prisma.helpfulnessTrait.count({
       where: {
         tenantId,
@@ -108,10 +80,7 @@ export class HelpfulnessApiService {
     });
   }
 
-  async getProfileForPerson(args: {
-    tenantId: string;
-    targetUserId: string;
-  }): Promise<{
+  async getProfileForPerson(args: { tenantId: string; targetUserId: string }): Promise<{
     profile: SocialContributionProfileDto | null;
     publicTraits: HelpfulnessTraitDto[];
   }> {
@@ -124,7 +93,6 @@ export class HelpfulnessApiService {
       },
     });
 
-    // ТОЛЬКО public-friendly traits (не restricted).
     const traits = await this.prisma.helpfulnessTrait.findMany({
       where: {
         tenantId: args.tenantId,
@@ -148,8 +116,6 @@ export class HelpfulnessApiService {
     };
   }
 
-  // ─────────────────────────── Spotlights ───────────────────────────────
-
   async listSpotlights(args: {
     tenantId: string;
     query: ListSpotlightsQuery;
@@ -171,7 +137,6 @@ export class HelpfulnessApiService {
       }),
     ]);
 
-    // Имена helper'ов одним запросом.
     const userIds = [...new Set(items.map((i) => i.helperUserId))];
     const persons = userIds.length
       ? await this.prisma.person.findMany({
@@ -223,7 +188,6 @@ export class HelpfulnessApiService {
       });
     }
 
-    // Атомарно: spotlight → approved+published + ActivityFeedItem.
     const updated = await this.prisma.$transaction(async (tx) => {
       const feedItem = await tx.activityFeedItem.create({
         data: {
@@ -259,12 +223,6 @@ export class HelpfulnessApiService {
       status: 'spotlight_published',
     });
 
-    // Wave 2 A1 bridge — после успешного publish enqueue Recognition
-    // type='thanks_helpfulness'. Идемпотентность гарантирует BullMQ jobId
-    // (`recognition_thanks_helpfulness_<spotlightId>_ai`), повторный approve
-    // (теоретически невозможный — отсекается status≠'pending' выше) тоже
-    // не создаст дубль. Best-effort: ошибка enqueue не валит approve —
-    // ActivityFeedItem уже опубликован, spotlight в 'published'.
     if (this.recognition) {
       try {
         await this.recognition.enqueueFormulate({
@@ -299,10 +257,7 @@ export class HelpfulnessApiService {
     return { ok: true, spotlight: toSpotlightDto(updated, null) };
   }
 
-  async hideSpotlight(args: {
-    tenantId: string;
-    spotlightId: string;
-  }): Promise<{ ok: true }> {
+  async hideSpotlight(args: { tenantId: string; spotlightId: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.helpfulnessSpotlight.findFirst({
       where: { id: args.spotlightId, tenantId: args.tenantId },
     });
@@ -357,8 +312,6 @@ export class HelpfulnessApiService {
     return { ok: true, spotlight: toSpotlightDto(updated, null) };
   }
 
-  // ─────────────────────────── Admin views ──────────────────────────────
-
   async getTeamMap(args: { tenantId: string }): Promise<TeamHelperRow[]> {
     const profiles = await this.prisma.socialContributionProfile.findMany({
       where: { tenantId: args.tenantId },
@@ -392,13 +345,7 @@ export class HelpfulnessApiService {
     }));
   }
 
-  /**
-   * ⚠ PRIVATE — admin/manager only. Контроллер должен проверить RBAC.
-   * Список question_unanswered + question_acknowledged_no_action за 30 дней.
-   */
-  async listUnanswered(args: {
-    tenantId: string;
-  }): Promise<UnansweredQuestionRow[]> {
+  async listUnanswered(args: { tenantId: string }): Promise<UnansweredQuestionRow[]> {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400 * 1000);
     const traits = await this.prisma.helpfulnessTrait.findMany({
       where: {
@@ -435,9 +382,7 @@ export class HelpfulnessApiService {
     return traits.map((t) => ({
       id: t.id,
       recipientUserId: t.recipientUserId,
-      recipientName: t.recipientUserId
-        ? nameByUserId.get(t.recipientUserId) ?? null
-        : null,
+      recipientName: t.recipientUserId ? (nameByUserId.get(t.recipientUserId) ?? null) : null,
       helperUserId: t.helperUserId,
       helperName: nameByUserId.get(t.helperUserId) ?? null,
       topicHint: t.topicHint,
@@ -446,12 +391,6 @@ export class HelpfulnessApiService {
     }));
   }
 
-  // ─────────────────────────── Mark-as-misleading ───────────────────────
-
-  /**
-   * Пользователь помечает trait как «это про меня неправда». Возможно
-   * только для своих trait'ов (helperUserId === userId).
-   */
   async markTraitAsMisleading(args: {
     tenantId: string;
     traitId: string;
@@ -486,8 +425,6 @@ export class HelpfulnessApiService {
     return { ok: true };
   }
 }
-
-// ─────────────────────────── mappers ──────────────────────────────────
 
 function toProfileDto(
   p: {

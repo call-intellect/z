@@ -1,21 +1,17 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { meetingReportsApi } from '@/api/meeting-reports.api';
+import { meetingReportsApi } from "@/api/meeting-reports.api";
 import {
   availableTemplateFromApi,
   hasInProgress,
   reportListItemFromApi,
   type AvailableTemplateDomain,
   type ReportListItemDomain,
-} from '@/domain/meeting-report';
+} from "@/domain/meeting-report";
 
-/**
- * Список отчётов встречи (primary + additional). Polling 5 сек пока есть
- * pending/running. ТЗ E §8.7.
- */
 export function useMeetingReports(meetingId: string | null | undefined): {
   reports: ReportListItemDomain[];
   isLoading: boolean;
@@ -23,9 +19,9 @@ export function useMeetingReports(meetingId: string | null | undefined): {
   mutate: () => void;
 } {
   const swr = useSWR(
-    meetingId ? ['meeting-reports', meetingId] : null,
+    meetingId ? ["meeting-reports", meetingId] : null,
     async () => {
-      if (!meetingId) throw new Error('meetingId is required');
+      if (!meetingId) throw new Error("meetingId is required");
       return meetingReportsApi.list(meetingId);
     },
     {
@@ -53,7 +49,6 @@ export function useMeetingReports(meetingId: string | null | undefined): {
   };
 }
 
-/** Список доступных шаблонов для модалки «Добавить отчёт». */
 export function useAvailableReportTemplates(
   meetingId: string | null | undefined,
   enabled = true,
@@ -63,9 +58,9 @@ export function useAvailableReportTemplates(
   error: unknown;
 } {
   const swr = useSWR(
-    meetingId && enabled ? ['meeting-reports-templates', meetingId] : null,
+    meetingId && enabled ? ["meeting-reports-templates", meetingId] : null,
     async () => {
-      if (!meetingId) throw new Error('meetingId is required');
+      if (!meetingId) throw new Error("meetingId is required");
       return meetingReportsApi.availableTemplates(meetingId);
     },
     { revalidateOnFocus: false },

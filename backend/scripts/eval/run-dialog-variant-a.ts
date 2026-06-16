@@ -1,15 +1,3 @@
-/**
- * Variant A для диалоговой цепочки — 5 раздельных вызовов.
- *
- *   fixture (history+question+mock_blocks)
- *     → 1. contextualize  (text out: standalone-вопрос)
- *     → 2. classify       (tool out: {intent})
- *     → 3. multi-query    (tool out: {queries}) — только exploratory/analytical
- *     → 4. confidence     (tool out: {confidence, reason})
- *     → 5. answer         (text out: markdown — factual или synthetic)
- *
- * Запуск: cd backend && bun run scripts/eval/run-dialog-variant-a.ts <fixture-id>
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -33,20 +21,15 @@ import {
   DIALOG_CONFIDENCE_JSON_SCHEMA,
   buildConfidenceUserPrompt,
 } from '../../src/modules/dialog-layer/prompts/confidence.prompt';
-// ТЗ 2026-06-15 — единый промпт-ответчик заменил режимы factual/synthetic/
-// clone_style; берём его напрямую из chat-v2.service.ts.
 import { BASE_SYSTEM_PROMPT } from '../../src/modules/knowledge-core/services/chat-v2.service';
 
 const MODEL = 'deepseek-v4-pro';
-// DeepSeek-V4-Pro со скидкой 75%.
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
 const FIXTURE_ID = process.argv[2] ?? 'dialog-01-factual';
-const FIXTURE_PATH = path.resolve(
-  `test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`,
-);
+const FIXTURE_PATH = path.resolve(`test/eval/dialog-experiment/fixtures/${FIXTURE_ID}.json`);
 const REPORT_PATH = path.resolve(
   `test/eval/dialog-experiment/reports/${FIXTURE_ID}-variant-a.json`,
 );
@@ -191,8 +174,7 @@ async function callDeepseek(opts: {
     usage.prompt_tokens_details?.cached_tokens ??
     0;
   const uncached = Math.max(0, tokensIn - cachedTokens);
-  const costUsd =
-    uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
+  const costUsd = uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + tokensOut * PRICE_OUT;
 
   console.log(
     `    ${error ? '✗' : '✓'} ${ms} мс | вход=${tokensIn} (кэш=${cachedTokens}) выход=${tokensOut} | $${costUsd.toFixed(4)}${error ? ` | ${error}` : ''}`,
@@ -210,7 +192,6 @@ async function callDeepseek(opts: {
   };
 }
 
-// ── формирование контекстного блока для answer-шагов ────────────────────────
 function buildBlocksContext(blocks: MockBlock[]): string {
   return blocks
     .map(
@@ -224,16 +205,11 @@ async function main(): Promise<void> {
   console.log('=== Variant A — раздельные вызовы диалоговой цепочки ===');
   console.log(`  модель:    ${MODEL}`);
   console.log(`  фикстура:  ${path.basename(FIXTURE_PATH)}`);
-  const fixture: DialogFixture = JSON.parse(
-    await fs.readFile(FIXTURE_PATH, 'utf-8'),
-  );
-  console.log(
-    `  сценарий:  ${fixture.scenario}\n  блоков:    ${fixture.mock_blocks.length}\n`,
-  );
+  const fixture: DialogFixture = JSON.parse(await fs.readFile(FIXTURE_PATH, 'utf-8'));
+  console.log(`  сценарий:  ${fixture.scenario}\n  блоков:    ${fixture.mock_blocks.length}\n`);
 
   const totalStart = Date.now();
 
-  // Шаг 1: contextualize
   const ctxUser = buildContextualizeUserPrompt({
     summary: fixture.conversation_summary,
     history: fixture.history,
@@ -246,17 +222,15 @@ async function main(): Promise<void> {
     maxTokens: 4000,
   });
   const standalone =
-    typeof rCtx.output === 'string' && rCtx.output.length > 0
-      ? rCtx.output
-      : fixture.user_question;
+    typeof rCtx.output === 'string' && rCtx.output.length > 0 ? rCtx.output : fixture.user_question;
 
-  // Шаги 2 и 4 — параллельно (classify не зависит от multi-query, confidence не зависит от classify)
   console.log('\n→ параллельно: classify | confidence');
   const [rClassify, rConfidence] = await Promise.all([
     callDeepseek({
       step: '2. classify',
       system: DIALOG_CLASSIFY_SYSTEM_PROMPT,
-      user: buildClassifyUserPrompt({ question: standalone }) +
+      user:
+        buildClassifyUserPrompt({ question: standalone }) +
         '\n\nВажно: верни результат через вызов инструмента submit_intent.',
       maxTokens: 2000,
       tool: {
@@ -268,10 +242,11 @@ async function main(): Promise<void> {
     callDeepseek({
       step: '4. confidence',
       system: DIALOG_CONFIDENCE_SYSTEM_PROMPT,
-      user: buildConfidenceUserPrompt({
-        originalQuestion: fixture.user_question,
-        standaloneQuestion: standalone,
-      }) + '\n\nВажно: верни результат через вызов инструмента submit_confidence.',
+      user:
+        buildConfidenceUserPrompt({
+          originalQuestion: fixture.user_question,
+          standaloneQuestion: standalone,
+        }) + '\n\nВажно: верни результат через вызов инструмента submit_confidence.',
       maxTokens: 2000,
       tool: {
         name: 'submit_confidence',
@@ -281,17 +256,16 @@ async function main(): Promise<void> {
     }),
   ]);
 
-  const intent =
-    (rClassify.output as { intent?: string })?.intent ?? fixture.intent_expected;
+  const intent = (rClassify.output as { intent?: string })?.intent ?? fixture.intent_expected;
 
-  // Шаг 3: multi-query — только для exploratory/analytical
   let rMulti: CallReport | null = null;
   if (intent === 'exploratory' || intent === 'analytical') {
     console.log('\n→ multi-query (intent требует)');
     rMulti = await callDeepseek({
       step: '3. multi-query',
       system: DIALOG_MULTI_QUERY_SYSTEM_PROMPT,
-      user: buildMultiQueryUserPrompt({ question: standalone }) +
+      user:
+        buildMultiQueryUserPrompt({ question: standalone }) +
         '\n\nВажно: верни результат через вызов инструмента submit_queries.',
       maxTokens: 4000,
       tool: {
@@ -304,9 +278,6 @@ async function main(): Promise<void> {
     console.log('\n  (multi-query пропущен — intent=factual)');
   }
 
-  // Шаг 5: answer — единый промпт-ответчик (ТЗ 2026-06-15; режимов больше нет,
-  // глубину модель выбирает по вопросу). answerMode из фикстуры оставляем
-  // только как метку отчёта.
   const answerMode = fixture.expected_answer_mode;
   const systemAnswer = BASE_SYSTEM_PROMPT;
   const blocksCtx = buildBlocksContext(fixture.mock_blocks);

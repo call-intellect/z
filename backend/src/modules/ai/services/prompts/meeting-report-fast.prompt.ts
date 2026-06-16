@@ -1,31 +1,3 @@
-/**
- * Промпт `meeting-report-fast` (ТЗ 2026-05-25, Фаза 1).
- *
- * Источник: plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md §4.1.
- * Эталон: backend/scripts/eval/run-variant-b-single.ts — там обкатан
- * системный промпт + tool-схема `submit_meeting_analysis`, экспериментально
- * доказана эффективность (см. SUMMARY-ALL.md).
- *
- * Один LLM-вызов по СЫРОМУ транскрипту выдаёт ОДНОВРЕМЕННО:
- *   1. chapters (главы встречи)
- *   2. tasks (явные поручения / action items)
- *   3. summary_markdown (итоговая сводка ПО ТИПУ встречи)
- *   4. quality_score (оценка качества встречи)
- *
- * Структура промта:
- *   - Builder с параметром `meetingType: MeetingType`.
- *   - Общие 3 секции (chapters, tasks, quality_score) — единые для всех типов.
- *   - Секция summary_markdown — шаблон ЗАВИСИТ от типа встречи.
- *     Шаблоны — в `SUMMARY_TEMPLATE_BY_TYPE`.
- *
- * Code-fallback. Прокачка в admin-editable БД-registry (`PromptTemplate`/
- * `PromptResolverService`) — в Фазе 4 (см. ТЗ §5).
- *
- * Связанный voркер: `MeetingReportFastWorker`
- *   (`backend/src/modules/knowledge-core/workers/meeting-report-fast.worker.ts`).
- * Связанный route LlmTaskType: `meeting-report-fast` (см. seed-скрипт).
- */
-
 import type { MeetingType } from '@prisma/client';
 import { z } from 'zod';
 
@@ -33,20 +5,11 @@ import type { LlmTool } from '../llm.types';
 
 import { meetingTypeLabelRu, withAsrNote, withConfidenceCalibration } from './common';
 
-/** taskType для LlmRouter (см. llm-router.service.ts ALL_LLM_TASK_TYPES). */
 export const MEETING_REPORT_FAST_TASK_TYPE = 'meeting-report-fast' as const;
 
-/** Имя tool'а для structured output (LLM-tool-use). */
 export const MEETING_REPORT_FAST_TOOL_NAME = 'submit_meeting_analysis';
 
-/**
- * Дефолтный лимит выходных токенов. Объединённый вывод (chapters + tasks +
- * summary + quality_score) — большой; для DeepSeek-V4-Pro с thinking стоит
- * 32k (см. `backend/scripts/eval/run-variant-b-single.ts`).
- */
 export const MEETING_REPORT_FAST_MAX_TOKENS = 32000;
-
-// ──────────────────────────── Zod-схема ────────────────────────────
 
 const ScoreInt = z.number().int().min(0).max(100);
 
@@ -75,10 +38,6 @@ export const MeetingReportFastTaskSchema = z
     assigneeRaw: z.string().nullable().optional(),
     dueDateIso: z.string().nullable().optional(),
     sourceQuote: z.string().optional(),
-    /**
-     * Confidence [0..1] — defensive: НЕ ограничиваем строго .min/.max,
-     * caller (worker) обязан clamp'ить перед сохранением. См. F16 / common.ts.
-     */
     confidence: z.number(),
   })
   .strict();
@@ -113,10 +72,6 @@ export const MeetingReportFastSchema = z
     tasks: z.array(MeetingReportFastTaskSchema),
     summary_markdown: z.string(),
     quality_score: MeetingReportFastQualityScoreSchema,
-    /**
-     * Заметка о полноте/надёжности входного транскрипта (1-2 фразы) или null.
-     * ADDITIVE / optional — обратная совместимость со старыми результатами.
-     */
     data_quality: z.string().nullable().optional(),
   })
   .strict();
@@ -124,30 +79,12 @@ export const MeetingReportFastSchema = z
 export type MeetingReportFastOutput = z.infer<typeof MeetingReportFastSchema>;
 export type MeetingReportFastChapter = z.infer<typeof MeetingReportFastChapterSchema>;
 export type MeetingReportFastTask = z.infer<typeof MeetingReportFastTaskSchema>;
-export type MeetingReportFastQualityScore = z.infer<
-  typeof MeetingReportFastQualityScoreSchema
->;
+export type MeetingReportFastQualityScore = z.infer<typeof MeetingReportFastQualityScoreSchema>;
 
-// ──────────────────────────── JSON Schema (для tool_use) ────────────────────────────
-
-/**
- * JSON Schema аргументов tool'а `submit_meeting_analysis`. Совпадает с
- * `MeetingReportFastSchema`, но в native-JSON-Schema форме — Anthropic /
- * DeepSeek / OpenAI / Ollama умеют только её.
- *
- * Эталон формата — `run-variant-b-single.ts`. Здесь же по unit-test'у
- * валидируем zod-форму через тот же layout.
- */
 export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
   type: 'object',
   additionalProperties: false,
-  required: [
-    'chapters',
-    'tasks',
-    'summary_markdown',
-    'quality_score',
-    'data_quality',
-  ],
+  required: ['chapters', 'tasks', 'summary_markdown', 'quality_score', 'data_quality'],
   properties: {
     chapters: {
       type: 'array',
@@ -237,13 +174,7 @@ export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
         categories: {
           type: 'object',
           additionalProperties: false,
-          required: [
-            'preparation',
-            'structure',
-            'clarity',
-            'outcomes',
-            'engagement',
-          ],
+          required: ['preparation', 'structure', 'clarity', 'outcomes', 'engagement'],
           properties: {
             preparation: { type: 'integer', minimum: 0, maximum: 100 },
             structure: { type: 'integer', minimum: 0, maximum: 100 },
@@ -268,13 +199,7 @@ export const MEETING_REPORT_FAST_INPUT_SCHEMA: LlmTool['input_schema'] = {
               },
               category: {
                 type: 'string',
-                enum: [
-                  'preparation',
-                  'structure',
-                  'clarity',
-                  'outcomes',
-                  'engagement',
-                ],
+                enum: ['preparation', 'structure', 'clarity', 'outcomes', 'engagement'],
               },
             },
           },
@@ -301,18 +226,6 @@ export const MEETING_REPORT_FAST_TOOL: LlmTool = {
   input_schema: MEETING_REPORT_FAST_INPUT_SCHEMA,
 };
 
-// ──────────────────────────── Шаблоны summary_markdown по типу ────────────────────────────
-
-/**
- * Шаблон секции "summary_markdown" для каждого `MeetingType`.
- *
- * 3 первые секции (chapters, tasks, quality_score) — общие.
- * Секция summary_markdown — единственное, что отличается по типу:
- * структура markdown-а ориентирована на формат встречи.
- *
- * Все 12 значений `MeetingType` из schema.prisma поддержаны явно
- * (защита от пропуска при добавлении нового типа — см. assertExhaustive).
- */
 const SUMMARY_TEMPLATE_BY_TYPE: Record<MeetingType, string> = {
   sales: `Markdown-сводка продажной встречи. Структура:
 - Стадия сделки или разговора (lead → discovery → demo → negotiation → close).
@@ -403,22 +316,12 @@ const SUMMARY_TEMPLATE_BY_TYPE: Record<MeetingType, string> = {
 - План следующего спринта (если уже обсудили) или открытые кандидаты задач.`,
 };
 
-/**
- * Compile-time exhaustiveness check: если в `MeetingType` добавили новое
- * значение — здесь будет ошибка тайпчека (никаких лежачих типов).
- */
 function assertExhaustiveSummaryTemplates(): void {
   const _check: Record<MeetingType, string> = SUMMARY_TEMPLATE_BY_TYPE;
   void _check;
 }
 assertExhaustiveSummaryTemplates();
 
-// ──────────────────────────── System prompt builder ────────────────────────────
-
-/**
- * Возвращает текст шаблона summary_markdown для указанного типа.
- * Экспортируется для тестов и для прокидывания в БД-registry на Фазе 4.
- */
 export function getSummaryTemplateForType(type: MeetingType): string {
   return SUMMARY_TEMPLATE_BY_TYPE[type];
 }
@@ -427,14 +330,7 @@ interface BuildSystemPromptArgs {
   meetingType: MeetingType;
 }
 
-/**
- * Строит system-промпт для `meeting-report-fast`. Идентичен по структуре
- * проверенному в эксперименте `run-variant-b-single.ts`, но секция
- * summary_markdown инжектится из шаблона по `meetingType`.
- */
-export function buildMeetingReportFastSystemPrompt(
-  args: BuildSystemPromptArgs,
-): string {
+export function buildMeetingReportFastSystemPrompt(args: BuildSystemPromptArgs): string {
   const summaryTemplate = getSummaryTemplateForType(args.meetingType);
   const label = meetingTypeLabelRu(args.meetingType);
   const base = `Ты — аналитик деловых встреч в Коре, памяти компании. Получаешь транскрипт встречи (тип: ${label}) и возвращаешь полный разбор через инструмент ${MEETING_REPORT_FAST_TOOL_NAME}.
@@ -544,42 +440,16 @@ strengths (2-4): что было хорошо. Не добивай список 
   return withAsrNote(withConfidenceCalibration(base));
 }
 
-// ──────────────────────────── User prompt builder ────────────────────────────
-
 export interface MeetingReportFastUserContext {
-  /** Например, `team — Sync 2026-05-21`. */
   meetingTitle: string;
-  /** Полный транскрипт встречи (склейка `[mm:ss-mm:ss] Speaker: text`). */
   transcript: string;
-  /**
-   * C6 (анти-галлюцинация имён) — отображаемые имена участников встречи.
-   * Подаются в КОНЦЕ user-сообщения (переменные данные, cache-friendly).
-   * Пустой массив → «список участников недоступен».
-   */
   participants: readonly string[];
-  /**
-   * C2 (meetingDateIso) — дата встречи в формате ISO (YYYY-MM-DD) для
-   * разрешения относительных сроков. null если неизвестна.
-   */
   meetingDateIso: string | null;
 }
 
-/**
- * User-сообщение LLM. Передаёт заголовок встречи + полный транскрипт, а в
- * самом КОНЦЕ — переменный блок с участниками и датой встречи (cache-friendly:
- * стабильный SYSTEM, переменные данные только в хвосте user).
- *
- * ВАЖНО: воркер ДОЛЖЕН обернуть результат в `wrapUserData(...)` из
- * `common.ts` (защита от prompt-injection — F1.2). Здесь возвращаем
- * текст без маркеров — добавление маркеров — ответственность воркера.
- */
-export function buildMeetingReportFastUserPrompt(
-  ctx: MeetingReportFastUserContext,
-): string {
+export function buildMeetingReportFastUserPrompt(ctx: MeetingReportFastUserContext): string {
   const participantsLine =
-    ctx.participants.length > 0
-      ? ctx.participants.join(', ')
-      : 'список участников недоступен';
+    ctx.participants.length > 0 ? ctx.participants.join(', ') : 'список участников недоступен';
   return [
     `Заголовок встречи: ${ctx.meetingTitle}`,
     '',
@@ -594,9 +464,6 @@ export function buildMeetingReportFastUserPrompt(
   ].join('\n');
 }
 
-/**
- * Полный вызов (system + user) — удобный wrapper для тестов и для воркера.
- */
 export function buildMeetingReportFastPrompt(args: {
   meetingType: MeetingType;
   meetingTitle: string;

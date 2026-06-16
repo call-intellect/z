@@ -1,26 +1,3 @@
-/**
- * ТЗ-2 Ф2 (daily-value-dashboards) — Seed AdminSetting для новой раскладки
- * COO-дашборда («операционный директор»).
- *
- * Регистрирует kill-switch новой компоновки overview-дашборда (редактируется
- * super_admin'ом в админке, code-fallback `true` в самом сервисе):
- *
- *   - `operations.dashboard_rework.enabled` (bool, default true) — kill-switch.
- *     Едет в overview DTO как `reworkEnabled`; гейтит только инфо-перекомпоновку
- *     на фронте (capacity по командам, «сколько закрыли», хронические блокеры
- *     с «Причиной», приём переносов). Современный визуал — безусловно.
- *     OFF возвращает прежнюю раскладку.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-operations-dashboard.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -79,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

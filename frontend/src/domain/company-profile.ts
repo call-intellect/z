@@ -1,27 +1,21 @@
-/**
- * SBA α-9 wave 3 — доменная модель CompanyProfile.
- *
- * Слой UiModel: дата как Date, добавлены display-метки.
- */
-
 import type {
   CompanyProfileApi,
   CompanyStageApi,
   StrategyHorizonApi,
-} from '@/api/company.api';
+} from "@/api/company.api";
 
 export const COMPANY_STAGE_LABEL: Record<CompanyStageApi, string> = {
-  early_stage: 'Ранняя стадия',
-  growth: 'Рост',
-  scale: 'Масштабирование',
-  enterprise: 'Зрелая компания',
+  early_stage: "Ранняя стадия",
+  growth: "Рост",
+  scale: "Масштабирование",
+  enterprise: "Зрелая компания",
 };
 
 export const STRATEGY_HORIZON_LABEL: Record<StrategyHorizonApi, string> = {
-  operational: 'Операционный',
-  tactical: 'Тактический',
-  strategic: 'Стратегический',
-  long_term: 'Долгосрочный',
+  operational: "Операционный",
+  tactical: "Тактический",
+  strategic: "Стратегический",
+  long_term: "Долгосрочный",
 };
 
 export interface CompanyProfileDomain {
@@ -38,7 +32,6 @@ export interface CompanyProfileDomain {
   stage: CompanyStageApi | null;
   stageLabel: string | null;
   maturityScore: number | null;
-  /** Округлённое до целого 0..100. */
   maturityPercent: number | null;
   lastMaturityCalcAt: Date | null;
   updatedAt: Date;
@@ -53,7 +46,8 @@ export function toCompanyProfileDomain(
     tenantId: api.tenantId,
     displayName: api.displayName,
     missionContentMd: api.mission?.contentMd ?? null,
-    missionHorizon: (api.mission?.horizon as StrategyHorizonApi | undefined) ?? null,
+    missionHorizon:
+      (api.mission?.horizon as StrategyHorizonApi | undefined) ?? null,
     visionContentMd: api.vision?.contentMd ?? null,
     visionHorizonYears: api.vision?.horizonYears ?? null,
     strategyContentMd: api.strategy?.contentMd ?? null,

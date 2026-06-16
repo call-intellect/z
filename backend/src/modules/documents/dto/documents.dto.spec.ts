@@ -7,13 +7,6 @@ import {
   toRegulationProvenance,
 } from './documents.dto';
 
-/**
- * Фаза C1 «метка доверия»: провенанс-мапперы критических карточек
- * (process / decision / regulation / policy) должны пробрасывать
- * `currentVersion.trustTier`, а при `currentVersion = null` падать на 'human'.
- *
- * Мапперы чистые — тесты детерминированы, без системного времени.
- */
 describe('documents provenance mappers — trustTier (Фаза C1)', () => {
   it('toDecisionProvenance: currentVersion.trustTier=provisional → trustTier=provisional', () => {
     const out = toDecisionProvenance({
@@ -35,7 +28,6 @@ describe('documents provenance mappers — trustTier (Фаза C1)', () => {
       currentVersion: null,
     });
     expect(out.trustTier).toBe('human');
-    // SBA β-3: text пуст → fallback на statement.
     expect(out.text).toBe('fallback на statement');
   });
 

@@ -1,23 +1,15 @@
-'use client';
-
-/**
- * Tracker Project Overview (2026-05-27) — шапка вкладки «Обзор».
- *
- * Показывает название проекта, описание, бэйдж «архив», аватары участников
- * (≤8 + «+N»). Быстрые кнопки «+ Задача» / «Начать встречу» отложены до
- * Phase 2 (вне scope этого ТЗ, чтобы не множить точки интеграции).
- */
+"use client";
 
 import type {
   OverviewProjectMiniApi,
   OverviewUserMiniApi,
-} from '@/domain/tracker/overview';
+} from "@/domain/tracker/overview";
 
 function avatarInitials(name: string | null, email: string | null): string {
-  const src = name?.trim() || email?.split('@')[0] || '?';
+  const src = name?.trim() || email?.split("@")[0] || "?";
   const parts = src.split(/\s+/).filter(Boolean);
   if (parts.length >= 2 && parts[0] && parts[1]) {
-    return (parts[0][0] ?? '') + (parts[1][0] ?? '');
+    return (parts[0][0] ?? "") + (parts[1][0] ?? "");
   }
   return src.slice(0, 2).toUpperCase();
 }
@@ -33,23 +25,28 @@ export function ProjectHeader({
 }) {
   const isArchived = Boolean(project.archivedAt);
   const visible = members.slice(0, 8);
-  const overflow = Math.max(0, (totalMembersCount ?? members.length) - visible.length);
+  const overflow = Math.max(
+    0,
+    (totalMembersCount ?? members.length) - visible.length,
+  );
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-elevated p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-xl font-semibold text-fg-primary">{project.name}</h2>
+        <h2 className="text-xl font-semibold text-fg-primary">
+          {project.name}
+        </h2>
         <span className="rounded bg-bg-overlay px-2 py-0.5 text-xs text-fg-tertiary">
           {project.identifier}
         </span>
         <span
           className={
             isArchived
-              ? 'rounded bg-chip-warning-bg px-2 py-0.5 text-xs text-chip-warning-fg'
-              : 'rounded bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg'
+              ? "rounded bg-chip-warning-bg px-2 py-0.5 text-xs text-chip-warning-fg"
+              : "rounded bg-chip-success-bg px-2 py-0.5 text-xs text-chip-success-fg"
           }
         >
-          {isArchived ? 'Архив' : 'В работе'}
+          {isArchived ? "Архив" : "В работе"}
         </span>
       </div>
 

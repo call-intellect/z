@@ -1,17 +1,13 @@
-/**
- * SBA α-9 wave 3 — доменная модель Maturity.
- */
-
 import type {
   MaturityOverviewApi,
   MaturityScopeApi,
   MaturityScopeDetailApi,
-} from '@/api/maturity.api';
+} from "@/api/maturity.api";
 
 export const MATURITY_SCOPE_LABEL: Record<MaturityScopeApi, string> = {
-  role: 'Должность',
-  department: 'Отдел',
-  company: 'Компания',
+  role: "Должность",
+  department: "Отдел",
+  company: "Компания",
 };
 
 export interface MaturityOverviewDomain {

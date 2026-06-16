@@ -1,15 +1,3 @@
-/**
- * Фаза A.3 — Integration-тест на расширенную RBAC + entitlement-логику
- * AdminPromptTemplatesService.
- *
- * Покрытие (DoD A.3):
- *   1) Org-admin может создать scope=org для своей Org (есть feature) — OK.
- *   2) Org-admin без feature.custom_prompt_templates → 403.
- *   3) Org-admin пытается создать scope=org для ЧУЖОЙ Org → 403.
- *   4) Org-admin пытается создать scope=system → 403 system_scope_super_admin_only.
- *   5) Лимит prompt_templates_per_org enforced (current = limit → 403).
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -27,16 +15,14 @@ function buildPrismaMock(): {
   const prisma = {
     promptTemplate: {
       findFirst: vi.fn(async () => null),
-      findUnique: vi.fn(async (args: { where: { id: string } }) =>
-        templates.get(args.where.id) ?? null,
+      findUnique: vi.fn(
+        async (args: { where: { id: string } }) => templates.get(args.where.id) ?? null,
       ),
-      create: vi.fn(
-        async ({ data }: { data: Record<string, unknown> }) => {
-          const t = { id: `t-${templates.size + 1}`, ...data };
-          templates.set(t.id as string, t);
-          return t;
-        },
-      ),
+      create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+        const t = { id: `t-${templates.size + 1}`, ...data };
+        templates.set(t.id as string, t);
+        return t;
+      }),
       count: vi.fn(async () => currentCount),
       update: vi.fn(async () => ({})),
     },

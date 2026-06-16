@@ -1,73 +1,35 @@
-/**
- * ReferralPayoutService — начисление реф-комиссии при invoice.paid + cron 10-го.
- *
- * Поток (ТЗ §9):
- *   1. Подписан на `billing.invoice.paid` (через @OnEvent).
- *   2. При paymentMode='paid' и существующем ClientReferralLink → создаёт
- *      ReferralPayout(amountKopecks=2 000 000, status=pending,
- *      periodMonth=YYYY-MM из paidAt).
- *   3. Если ClientReferralLink ещё нет — резолвит pending-атрибуцию через
- *      AttributionService.resolvePendingForOrg → создаёт ClientReferralLink
- *      с firstPaidAt=now + Payout → очищает Org.pendingAttribution*.
- *   4. При paymentMode='bonus' — НЕ создаёт payout (Б6, реф НЕ идёт).
- *
- * Cron `0 10 10 * *` Europe/Moscow:
- *   - Все pending-payout'ы прошлого месяца переводятся в `paid` только если
- *     реферал верифицирован (innVerifiedAt) и принял оферту (contractAcceptedAt).
- *     Остальные → `void` с voidReason='referral_not_verified'.
- *   - Реальная выплата делается админом руками через банковский интерфейс;
- *     cron только закрывает периоды и отмечает payouts для аудита.
- *
- * Идемпотентность:
- *   - Проверка `existing payout по triggerInvoiceId` перед create — повторный
- *     emit invoice.paid (например через retry) не задвоит начисление.
- *   - Cron работает по filter status='pending', повторный запуск ничего не меняет.
- *
- * audit С4 (2026-05-29): @OnEvent INVOICE_PAID теперь ставит persistent
- * BullMQ-job (queue `billing.referral-payout`), а не обрабатывает inline.
- * Гарантия не-потерять начисление при рестарте main-процесса между
- * emit и create-payout. Worker крутится в том же процессе через onModuleInit;
- * jobId=`invoice:${invoiceId}` даёт дедуп. Retry=5, backoff exponential 10s.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §9 + §14 Фаза 6.
- */
-
-import { Inject, Injectable, Logger, NotFoundException, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Cron } from '@nestjs/schedule';
-import {
-  Prisma,
-  type ReferralPayout,
-  type ReferralPayoutStatus,
-} from '@prisma/client';
+import { Prisma, type ReferralPayout, type ReferralPayoutStatus } from '@prisma/client';
 import { type Job, Queue, Worker } from 'bullmq';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  BillingEvent,
-  type InvoicePaidPayload,
-} from '../../billing/events/billing.events';
+import { BillingEvent, type InvoicePaidPayload } from '../../billing/events/billing.events';
 
 import { AttributionService } from './attribution.service';
 
-/** Фиксированная сумма комиссии: 20 000 ₽ × 100. */
 export const REFERRAL_COMMISSION_KOPECKS = 2_000_000;
 
 const PAYOUT_CRON_LOCK_KEY = 'referral:payout-cron:lock';
-const PAYOUT_CRON_LOCK_TTL_SECONDS = 1800; // 30 минут
+const PAYOUT_CRON_LOCK_TTL_SECONDS = 1800;
 
-/** audit С4: имя BullMQ-очереди для отложенных payout-job'ов. */
 export const REFERRAL_PAYOUT_QUEUE_NAME = 'billing.referral-payout';
 
 @Injectable()
 export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ReferralPayoutService.name);
 
-  /** audit С4: persistent queue для INVOICE_PAID payload'ов. */
   private payoutQueue: Queue<InvoicePaidPayload> | null = null;
-  /** audit С4: worker крутится в том же процессе (концерн — payout). */
   private payoutWorker: Worker<InvoicePaidPayload> | null = null;
 
   constructor(
@@ -77,13 +39,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     @Inject(BusinessMetricsService) private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * audit С4 (2026-05-29): инициализация BullMQ Queue + Worker. Worker крутится
-   * в main-процессе — это намеренно: payout-логика короткая (<200ms), не
-   * требует отдельного процесса. Главное — persistence в Redis: если main
-   * упадёт между emit и create-payout, job останется в очереди и будет
-   * подхвачен после рестарта.
-   */
   onModuleInit(): void {
     const connection = this.redis.client;
     this.payoutQueue = new Queue<InvoicePaidPayload>(REFERRAL_PAYOUT_QUEUE_NAME, {
@@ -126,55 +81,37 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.payoutQueue?.close();
     } catch (err) {
-      this.logger.warn(
-        `Закрытие payoutQueue: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.warn(`Закрытие payoutQueue: ${err instanceof Error ? err.message : String(err)}`);
     }
     this.payoutWorker = null;
     this.payoutQueue = null;
   }
 
-  /**
-   * audit С4 (2026-05-29): @OnEvent теперь ТОЛЬКО ставит job в очередь.
-   * Реальная обработка — в `processInvoicePaid`, который запускается worker'ом
-   * (тот же процесс, но через BullMQ → persistent retry при рестарте).
-   *
-   * Идемпотентность: jobId=`invoice:${invoiceId}` — повторный emit (или
-   * retry от Точки на тот же webhook) дедуплицируется на уровне очереди.
-   */
   @OnEvent(BillingEvent.INVOICE_PAID, { async: true })
   async onInvoicePaid(payload: InvoicePaidPayload): Promise<void> {
     if (!this.payoutQueue) {
-      this.logger.warn(
-        'onInvoicePaid: payoutQueue ещё не инициализирован, fallback inline',
-      );
+      this.logger.warn('onInvoicePaid: payoutQueue ещё не инициализирован, fallback inline');
       await this.processInvoicePaid(payload);
       return;
     }
     try {
       await this.payoutQueue.add('invoice-paid', payload, {
-        // BullMQ 5.x: ':' в jobId допустим только при ровно 3 частях — '_'.
         jobId: `invoice_${payload.invoiceId}`,
       });
     } catch (err) {
       this.logger.error(
         `onInvoicePaid: не удалось enqueue payout job (invoice=${payload.invoiceId}): ${err instanceof Error ? err.message : String(err)}`,
       );
-      // Не throw — caller (BillingService.safeEmit) не должен ловить.
     }
   }
 
-  /**
-   * audit С4: обработчик job'а. Вынесен как `protected` чтобы был доступен
-   * для unit-тестов inline без поднятия BullMQ.
-   */
   async processInvoicePaid(payload: InvoicePaidPayload): Promise<void> {
     try {
       if (payload.paymentMode !== 'paid') {
-        return; // bonus — реф НЕ идёт (Б6)
+        return;
       }
       if (!payload.subscriptionId) {
-        return; // адхок-инвойсы без подписки — не реф-кейс
+        return;
       }
 
       const sub = await this.prisma.subscription.findUnique({
@@ -183,14 +120,8 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
       });
       if (!sub) return;
 
-      // audit Б7 (2026-05-29): атомарную защиту от двойного payout даёт
-      // unique-индекс ReferralPayout.triggerInvoiceId. Здесь мы НЕ делаем
-      // findFirst+create (TOCTOU при параллельных onInvoicePaid-обработчиках).
-      // Если параллельный вызов уже создал payout — наш create поймает P2002,
-      // catch ниже превратит это в idempotent skip.
       let clientLink = sub.clientReferralLink;
 
-      // Если линка ещё нет — пытаемся резолвить pending-атрибуцию Org.
       if (!clientLink) {
         const pending = await this.attribution.resolvePendingForOrg(payload.tenantId);
         if (!pending) {
@@ -212,9 +143,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
           `First-touch ClientReferralLink создан (org=${payload.tenantId}, referral=${pending.referralId})`,
         );
       } else if (!clientLink.firstPaidAt) {
-        // Уже есть link, но без firstPaidAt — это аномалия (link создавался
-        // при втором сценарии: при manual-activate когда атрибуция была).
-        // Проставляем сейчас.
         clientLink = await this.prisma.clientReferralLink.update({
           where: { id: clientLink.id },
           data: { firstPaidAt: new Date() },
@@ -233,8 +161,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
             status: 'pending',
           },
         });
-        // commercial-reliability pack (2026-05-30, Фаза 4) — реф-payout метрики.
-        // cron_run_date = YYYY-MM-DD UTC момента создания (для outlier-детекции).
         this.metrics.incReferralPayoutCreated({
           cronRunDate: payload.paidAt.toISOString().slice(0, 10),
         });
@@ -243,8 +169,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
           `ReferralPayout pending создан: ${REFERRAL_COMMISSION_KOPECKS}коп для referral=${clientLink.referralId} period=${periodMonth}`,
         );
       } catch (createErr) {
-        // audit Б7: P2002 на triggerInvoiceId — параллельный вызов уже создал
-        // payout. Это нормально, не ошибка.
         if (
           createErr instanceof Prisma.PrismaClientKnownRequestError &&
           createErr.code === 'P2002'
@@ -263,15 +187,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Cron 10-го числа в 10:00 МСК — финализация payout'ов прошлого месяца.
-   *
-   * Логика:
-   *   - Для верифицированных рефералов (innVerifiedAt + contractAcceptedAt) —
-   *     status='paid' + paidAt=now (фактический перевод делает админ руками,
-   *     это закрытие периода в нашей БД).
-   *   - Для не-верифицированных — status='void' + voidReason='referral_not_verified'.
-   */
   @Cron('0 10 10 * *', { timeZone: 'Europe/Moscow' })
   async runMonthlyClose(): Promise<void> {
     const acquired = await this.redis.client.set(
@@ -282,9 +197,7 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
       'NX',
     );
     if (acquired !== 'OK') {
-      this.logger.warn(
-        `ReferralPayoutCron: лок занят — пропускаем`,
-      );
+      this.logger.warn(`ReferralPayoutCron: лок занят — пропускаем`);
       return;
     }
 
@@ -297,9 +210,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Закрыть период вручную (admin-эндпоинт + cron). Идемпотентно.
-   */
   async closePeriod(periodMonth: string): Promise<{
     paid: number;
     voided: number;
@@ -313,8 +223,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
             id: true,
             innVerifiedAt: true,
             contractAcceptedAt: true,
-            // ТЗ referrals-cabinet-revamp §6.3 + §7.7: учитываем payoutDetails
-            // в условии verified (без реквизитов выплачивать некуда).
             payoutDetails: true,
             slug: true,
           },
@@ -328,10 +236,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     const now = new Date();
 
     for (const payout of pending) {
-      // ТЗ referrals-cabinet-revamp §6.3: payoutDetails должен быть не-null
-      // и не-пустым объектом. Без реквизитов фактический перевод невозможен,
-      // поэтому payout аннулируется (имя voidReason оставляем то же —
-      // 'referral_not_verified' — для обратной совместимости с аналитикой).
       const payoutDetails = payout.referral.payoutDetails;
       const hasPayoutDetails =
         payoutDetails != null &&
@@ -370,15 +274,10 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
-      `closePeriod ${periodMonth}: paid=${paid} voided=${voided} skipped=${skipped}`,
-    );
+    this.logger.log(`closePeriod ${periodMonth}: paid=${paid} voided=${voided} skipped=${skipped}`);
     return { paid, voided, skipped };
   }
 
-  /**
-   * Admin: пометить конкретный payout как paid (с привязкой акта/чека НПД).
-   */
   async markPaidByAdmin(args: {
     payoutId: string;
     payoutDocumentUrl?: string | null;
@@ -391,9 +290,7 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     }
     if (payout.status === 'paid') return payout;
     if (payout.status === 'void') {
-      throw new Error(
-        `Payout ${args.payoutId} в статусе void — нельзя пометить paid`,
-      );
+      throw new Error(`Payout ${args.payoutId} в статусе void — нельзя пометить paid`);
     }
     return this.prisma.referralPayout.update({
       where: { id: payout.id },
@@ -405,11 +302,7 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Admin: аннулировать payout с reason'ом. */
-  async voidByAdmin(args: {
-    payoutId: string;
-    voidReason: string;
-  }): Promise<ReferralPayout> {
+  async voidByAdmin(args: { payoutId: string; voidReason: string }): Promise<ReferralPayout> {
     const payout = await this.prisma.referralPayout.findUnique({
       where: { id: args.payoutId },
     });
@@ -426,7 +319,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /** Список payout'ов по статусу + периоду (для админ-UI). */
   async list(args: {
     status?: ReferralPayoutStatus;
     periodMonth?: string;
@@ -452,9 +344,6 @@ export class ReferralPayoutService implements OnModuleInit, OnModuleDestroy {
     return { items, total };
   }
 
-  // ──────────────────────── private ────────────────────────
-
-  /** Формат периодa: 'YYYY-MM' (UTC). */
   private formatPeriodMonth(d: Date): string {
     const y = d.getUTCFullYear();
     const m = String(d.getUTCMonth() + 1).padStart(2, '0');

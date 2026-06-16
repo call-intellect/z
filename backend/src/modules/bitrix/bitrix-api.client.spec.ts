@@ -4,10 +4,6 @@ import type { TypedConfigService } from '../../common/config/index';
 
 import { BitrixApiClient, BitrixApiError } from './bitrix-api.client';
 
-/**
- * Unit-тесты BitrixApiClient: глобальный fetch замокан, сети нет.
- */
-
 function makeCfg(over: Partial<{ clientId: string; clientSecret: string }> = {}) {
   return {
     bitrix: {
@@ -92,11 +88,7 @@ describe('BitrixApiClient', () => {
   it('refresh: error в теле → BitrixApiError с code, isTokenExpired для invalid_token', async () => {
     const client = new BitrixApiClient(makeCfg());
     fetchMock.mockResolvedValue(
-      jsonResponse(
-        { error: 'invalid_token', error_description: 'token bad' },
-        false,
-        401,
-      ),
+      jsonResponse({ error: 'invalid_token', error_description: 'token bad' }, false, 401),
     );
 
     try {

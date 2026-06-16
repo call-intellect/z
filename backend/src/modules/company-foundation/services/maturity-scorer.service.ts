@@ -13,27 +13,6 @@ import { tenantTopLabel } from '../utils/tenant-top';
 
 import { CompanyProfileService } from './company-profile.service';
 
-/**
- * SBA α-9 wave 3 — MaturityScorerService.
- *
- * Формула v1 (sub-TZ §3.4):
- *   - Role.maturityScore = (completeness * 0.4) + (cardCount_capped/10 * 0.3)
- *     + (probeClosedRatio * 0.3). Все capped 0..1.
- *   - Department.completeness = avg(roles.maturityScore) поднимаемое в
- *     Department.completeness (используем как maturity Department, отдельного
- *     поля нет).
- *   - CompanyProfile.maturityScore = weighted avg(departments.completeness).
- *
- * Для probeClosedRatio считаем «доля закрытых probe ответом» в окне 90 дней
- * для этой Role (ProbeEvent.role связь не существует — поэтому пока берём
- * глобальный показатель Org). Это первая итерация — будут уточнения после
- * подключения Specialist 3.7 SkillProfile (γ-1).
- *
- * Завязки:
- *   - role.completeness — пока нет такого поля в Role; используем
- *     RoleProfile.summaryCache.metrics?.completeness, если есть, иначе
- *     эвристика из числа активных responsibilityElements / authorityBoundaries.
- */
 @Injectable()
 export class MaturityScorerService {
   private readonly logger = new Logger(MaturityScorerService.name);
@@ -46,9 +25,6 @@ export class MaturityScorerService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Полный пересчёт по всем Org. Используется cron'ом + admin-эндпоинтом.
-   */
   async rebuildAllOrgs(): Promise<{
     orgsScanned: number;
     rolesUpdated: number;
@@ -73,16 +49,10 @@ export class MaturityScorerService {
     };
   }
 
-  /**
-   * Пересчёт для одного tenant'а. Возвращает агрегированную статистику.
-   */
-  async rebuildForTenant(args: {
-    tenantId: string;
-  }): Promise<RebuildMaturityResponseDto> {
+  async rebuildForTenant(args: { tenantId: string }): Promise<RebuildMaturityResponseDto> {
     const startedAt = Date.now();
     const stop = this.metrics.startMaturityScorerTimer({ scope: 'tenant' });
 
-    // 1. Все активные роли.
     const roles = await this.prisma.role.findMany({
       where: { tenantId: args.tenantId, deletedAt: null },
       include: {
@@ -92,22 +62,17 @@ export class MaturityScorerService {
       },
     });
 
-    // 2. probeClosedRatio (общий по Org за 90 дней). Бьём один SELECT.
     const probeRatio = await this.computeProbeClosedRatio(args.tenantId);
 
-    // 3. cardCount per role — на MVP считаем количество ResponsibilityElement +
-    //    AuthorityBoundary. Это «опорные карточки» Role.
     let rolesUpdated = 0;
     const roleScoreById = new Map<string, number>();
     for (const role of roles) {
       const completeness = this.estimateRoleCompleteness(role);
       const cardCount = role.responsibilityElements.length + role.authorityBoundaries.length;
       const cardScore = Math.min(cardCount / 10, 1);
-      const score =
-        completeness * 0.4 + cardScore * 0.3 + probeRatio * 0.3;
+      const score = completeness * 0.4 + cardScore * 0.3 + probeRatio * 0.3;
       const capped = Math.max(0, Math.min(1, score));
       roleScoreById.set(role.id, capped);
-      // Обновляем только если изменилось > 0.001
       const prev = role.maturityScore ? Number(role.maturityScore) : null;
       if (prev === null || Math.abs(prev - capped) >= 0.001) {
         await this.prisma.role.update({
@@ -118,7 +83,6 @@ export class MaturityScorerService {
       }
     }
 
-    // 4. Departments — completeness = avg(roles.maturityScore).
     const departments = await this.prisma.department.findMany({
       where: { tenantId: args.tenantId, deletedAt: null },
       include: { roles: { where: { deletedAt: null }, select: { id: true } } },
@@ -130,7 +94,6 @@ export class MaturityScorerService {
         .map((r) => roleScoreById.get(r.id))
         .filter((v): v is number => typeof v === 'number');
       if (scores.length === 0) {
-        // Если в отделе нет ролей — completeness не считаем (оставляем как есть).
         continue;
       }
       const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
@@ -146,8 +109,6 @@ export class MaturityScorerService {
       }
     }
 
-    // 5. Company — weighted avg(departments). Веса = размер отдела (#roles),
-    //    минимум 1 чтобы пустые не уносили средний.
     const totalWeight = departments.reduce((acc, d) => acc + Math.max(1, d.roles.length), 0);
     let companyUpdated = false;
     if (totalWeight > 0 && departmentScoreById.size > 0) {
@@ -171,7 +132,6 @@ export class MaturityScorerService {
         });
         companyUpdated = true;
       }
-      // 6. Метрики (cardinality-safe). tenant_top — top-100 + 'other'.
       const tenantTop = await tenantTopLabel(this.prisma, args.tenantId);
       this.metrics.setMaturityScoreAvg({
         tenantTop,
@@ -220,9 +180,6 @@ export class MaturityScorerService {
     };
   }
 
-  /**
-   * Overview виджет: считает агрегаты для UI.
-   */
   async overview(tenantId: string): Promise<MaturityOverviewDto> {
     const [profile, roles, departments, domains] = await Promise.all([
       this.companyProfile.getRaw(tenantId),
@@ -249,7 +206,6 @@ export class MaturityScorerService {
       ? depsScored.reduce((a, b) => a + Number(b.completeness), 0) / depsScored.length
       : null;
 
-    // Distribution по корзинам 0–0.2, 0.2–0.4, ..., 0.8–1.0 для ролей.
     const buckets = [
       { bucket: '0.0-0.2', min: 0, max: 0.2 },
       { bucket: '0.2-0.4', min: 0.2, max: 0.4 },
@@ -267,9 +223,7 @@ export class MaturityScorerService {
 
     return {
       companyScore: profile?.maturityScore ? Number(profile.maturityScore) : null,
-      lastCalcAt: profile?.lastMaturityCalcAt
-        ? profile.lastMaturityCalcAt.toISOString()
-        : null,
+      lastCalcAt: profile?.lastMaturityCalcAt ? profile.lastMaturityCalcAt.toISOString() : null,
       averageRoleScore: avgRole,
       averageDepartmentScore: avgDep,
       rolesTotal: roles.length,
@@ -313,9 +267,7 @@ export class MaturityScorerService {
           {
             label: 'Опорные карточки',
             value: Math.min(
-              (role.responsibilityElements.length +
-                role.authorityBoundaries.length) /
-                10,
+              (role.responsibilityElements.length + role.authorityBoundaries.length) / 10,
               1,
             ),
             weight: 0.3,
@@ -354,7 +306,6 @@ export class MaturityScorerService {
         })),
       };
     }
-    // company
     const profile = await this.companyProfile.getRaw(args.tenantId);
     const departments = await this.prisma.department.findMany({
       where: { tenantId: args.tenantId, deletedAt: null },
@@ -374,15 +325,12 @@ export class MaturityScorerService {
     };
   }
 
-  // ─────────────────────────── internal ─────────────────────────────
-
   private estimateRoleCompleteness(role: {
     missionStatement: string | null;
     responsibilityElements: { id: string }[];
     authorityBoundaries: { id: string }[];
     roleProfile?: { summaryCache: Prisma.JsonValue } | null;
   }): number {
-    // Если RoleProfile есть и в его summaryCache есть metrics.completeness — берём.
     const cache = role.roleProfile?.summaryCache;
     if (cache && typeof cache === 'object' && !Array.isArray(cache)) {
       const metrics = (cache as Record<string, unknown>).metrics;
@@ -391,9 +339,6 @@ export class MaturityScorerService {
         if (typeof m === 'number' && m >= 0 && m <= 1) return m;
       }
     }
-    // Иначе — эвристика: до 0.6 за наличие missionStatement +
-    // responsibilities + authority. Точно неполная — это явно signal'ит,
-    // что нужно заполнить.
     let v = 0;
     if (role.missionStatement && role.missionStatement.trim().length > 0) v += 0.2;
     if (role.responsibilityElements.length > 0) v += 0.2;
@@ -402,8 +347,6 @@ export class MaturityScorerService {
   }
 
   private async computeProbeClosedRatio(tenantId: string): Promise<number> {
-    // Окно 90 дней. Не каждая Z-сборка имеет ProbeEvent (β-5), поэтому
-    // делаем graceful — если модель пустая, возвращаем 0.5 (нейтрально).
     try {
       const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const [total, dispatched] = await Promise.all([
@@ -414,8 +357,6 @@ export class MaturityScorerService {
           where: {
             tenantId,
             createdAt: { gte: since },
-            // Successfully dispatched = доставлено получателю
-            // (proxy для closed-loop пока нет отдельного closed-статуса).
             status: 'dispatched',
           },
         }),

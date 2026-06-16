@@ -1,14 +1,3 @@
-/**
- * Контроллер quality-score (Фаза C §7).
- *
- * Endpoints:
- *   GET   /api/v1/meetings/:id/quality-score
- *   POST  /api/v1/meetings/:id/quality-score/regenerate
- *   PATCH /api/v1/org/settings/quality-score
- *   GET   /api/v1/org/settings/quality-score
- *   GET   /api/v1/org/dashboard/quality-score
- */
-
 import {
   Body,
   Controller,
@@ -27,10 +16,7 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 
 import {
@@ -58,8 +44,6 @@ export class QualityScoreController {
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
 
-  // ──────────────────────── meeting-level ────────────────────────
-
   @Get('meetings/:id/quality-score')
   @ApiOperation({ summary: 'AI-оценка качества встречи (host / org-admin).' })
   @ApiOkResponse({ type: QualityScoreResponseDto })
@@ -85,8 +69,6 @@ export class QualityScoreController {
     return { status: 'queued', meetingId: out.meetingId };
   }
 
-  // ──────────────────────── org settings ─────────────────────────
-
   @Get('org/settings/quality-score')
   @ApiOperation({ summary: 'Текущие настройки quality-score Org (owner / admin).' })
   @ApiOkResponse({ type: OrgQualityScoreSettingsResponseDto })
@@ -100,8 +82,7 @@ export class QualityScoreController {
 
   @Patch('org/settings/quality-score')
   @ApiOperation({
-    summary:
-      'Обновить список типов встреч, для которых НЕ считаем AI-оценку (owner / admin).',
+    summary: 'Обновить список типов встреч, для которых НЕ считаем AI-оценку (owner / admin).',
   })
   @ApiOkResponse({ type: OrgQualityScoreSettingsResponseDto })
   async updateOrgSettings(
@@ -109,13 +90,11 @@ export class QualityScoreController {
     body: UpdateQualityScoreSettingsBody,
     @CurrentUser() user: CurrentUserPayload,
   ): Promise<OrgQualityScoreSettingsResponse & { tenantId: string }> {
-    void UpdateQualityScoreSettingsBodyDto; // оставить импорт для tree-shaker'а Swagger'а
+    void UpdateQualityScoreSettingsBodyDto;
     const orgId = await this.resolveOrgIdOrThrow(user.id);
     const updated = await this.svc.updateOrgSettings(orgId, user.id, body);
     return { ...updated, tenantId: orgId };
   }
-
-  // ──────────────────────── dashboard aggregate ──────────────────
 
   @Get('org/dashboard/quality-score')
   @ApiOperation({ summary: 'Агрегат AI-оценок качества встреч Org за период.' })
@@ -130,12 +109,6 @@ export class QualityScoreController {
     return { ...dash, tenantId: orgId };
   }
 
-  // ──────────────────────── helpers ──────────────────────────────
-
-  /**
-   * Резолвит активную Org пользователя. Используется во всех org-эндпоинтах
-   * этого контроллера (по аналогии с BehaviorMetricsController).
-   */
   private async resolveOrgIdOrThrow(userId: string): Promise<string> {
     const member = await this.prisma.membership.findFirst({
       where: { userId },

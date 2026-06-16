@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Save, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useMemo, useState } from "react";
+import { Save, X } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminSystemMessagesApi } from '@/api/admin-system-messages.api';
-import type { AdminOrgRowDomain } from '@/domain/admin-org';
+import { ApiError } from "@/api/api-error";
+import { adminSystemMessagesApi } from "@/api/admin-system-messages.api";
+import type { AdminOrgRowDomain } from "@/domain/admin-org";
 import type {
   CreateSystemMessageRequest,
   SystemMessageItemDomain,
   UpdateSystemMessageRequest,
-} from '@/domain/admin-system-message';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-system-message";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -21,18 +21,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 type Props = {
   item: SystemMessageItemDomain | null;
@@ -43,11 +43,6 @@ type Props = {
   onSaved: () => void;
 };
 
-/**
- * Диалог CRUD SystemMessage. targetOrgs — multiselect через input filter +
- * чипы (упрощённый вариант, без отдельного multi-combobox-компонента).
- * Пустой targetOrgs = «показать всем Org».
- */
 export function MessageEditDialog({
   item,
   defaultType,
@@ -59,13 +54,13 @@ export function MessageEditDialog({
   const isEdit = item !== null;
 
   const [type, setType] = useState<string>(defaultType);
-  const [severity, setSeverity] = useState<string>('info');
-  const [body, setBody] = useState('');
-  const [startsAt, setStartsAt] = useState<string>('');
-  const [endsAt, setEndsAt] = useState<string>('');
+  const [severity, setSeverity] = useState<string>("info");
+  const [body, setBody] = useState("");
+  const [startsAt, setStartsAt] = useState<string>("");
+  const [endsAt, setEndsAt] = useState<string>("");
   const [isActive, setIsActive] = useState(true);
   const [targetOrgs, setTargetOrgs] = useState<string[]>([]);
-  const [orgFilter, setOrgFilter] = useState('');
+  const [orgFilter, setOrgFilter] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,14 +77,14 @@ export function MessageEditDialog({
       setTargetOrgs([...item.targetOrgs]);
     } else {
       setType(defaultType);
-      setSeverity('info');
-      setBody('');
-      setStartsAt('');
-      setEndsAt('');
+      setSeverity("info");
+      setBody("");
+      setStartsAt("");
+      setEndsAt("");
       setIsActive(true);
       setTargetOrgs([]);
     }
-    setOrgFilter('');
+    setOrgFilter("");
   }, [open, item, defaultType]);
 
   const filteredOrgs = useMemo(() => {
@@ -130,7 +125,7 @@ export function MessageEditDialog({
         if (startsAt) payload.startsAt = new Date(startsAt).toISOString();
         if (endsAt) payload.endsAt = new Date(endsAt).toISOString();
         await adminSystemMessagesApi.create(payload);
-        toast.success('Сообщение создано');
+        toast.success("Сообщение создано");
       } else {
         const payload: UpdateSystemMessageRequest = {
           type,
@@ -142,7 +137,7 @@ export function MessageEditDialog({
           endsAt: endsAt ? new Date(endsAt).toISOString() : null,
         };
         await adminSystemMessagesApi.update(item!.id, payload);
-        toast.success('Сообщение обновлено');
+        toast.success("Сообщение обновлено");
       }
       onSaved();
       onOpenChange(false);
@@ -152,7 +147,7 @@ export function MessageEditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -171,7 +166,7 @@ export function MessageEditDialog({
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? 'Редактировать сообщение' : 'Создать сообщение'}
+            {isEdit ? "Редактировать сообщение" : "Создать сообщение"}
           </DialogTitle>
           <DialogDescription>
             Пустой список «Получатели» = показать всем Org. Пустые даты =
@@ -309,7 +304,7 @@ export function MessageEditDialog({
                       className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-bg-overlay"
                       onClick={() => {
                         setTargetOrgs((prev) => [...prev, o.id]);
-                        setOrgFilter('');
+                        setOrgFilter("");
                       }}
                     >
                       <span className="font-medium">{o.name}</span>
@@ -350,7 +345,7 @@ export function MessageEditDialog({
             onClick={() => void handleSave()}
           >
             <Save size={14} />
-            {saving ? 'Сохраняем…' : isEdit ? 'Сохранить' : 'Создать'}
+            {saving ? "Сохраняем…" : isEdit ? "Сохранить" : "Создать"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -359,8 +354,8 @@ export function MessageEditDialog({
 }
 
 function toInputDateTime(d: Date | null): string {
-  if (!d) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
+  if (!d) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
   const yyyy = d.getFullYear();
   const mm = pad(d.getMonth() + 1);
   const dd = pad(d.getDate());

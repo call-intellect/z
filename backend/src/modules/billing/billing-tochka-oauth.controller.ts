@@ -1,29 +1,4 @@
-/**
- * BillingTochkaOAuthController — OAuth2 callback от Точки.
- *
- * Маршрут: `GET /api/v1/internal/billing/tochka/oauth/callback` (public).
- *
- * Точка редиректит сюда после авторизации в браузере с параметрами
- * `?code=...&state=...` или `?error=...`. Сервис обменивает code на токены
- * и сохраняет их в `BillingProviderConfig`.
- *
- * Возвращает HTML-страничку с результатом (для отображения в браузере).
- *
- * Также содержит admin-эндпоинт `GET /api/v1/admin/billing/tochka/oauth/authorize-url`
- * — отдаёт URL для подключения Точки. Только super_admin.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.3 + §11.4.
- */
-
-import {
-  Controller,
-  Get,
-  Inject,
-  Post,
-  Query,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Inject, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
@@ -35,11 +10,8 @@ import { TochkaOAuthService } from './providers/tochka/tochka-oauth.service';
 @ApiTags('billing-tochka-oauth')
 @Controller('api/v1')
 export class BillingTochkaOAuthController {
-  constructor(
-    @Inject(TochkaOAuthService) private readonly oauth: TochkaOAuthService,
-  ) {}
+  constructor(@Inject(TochkaOAuthService) private readonly oauth: TochkaOAuthService) {}
 
-  /** Public-callback от Точки после авторизации. */
   @Get('internal/billing/tochka/oauth/callback')
   @ApiOperation({ summary: 'OAuth callback от Точки (public).' })
   async handleCallback(
@@ -78,7 +50,6 @@ export class BillingTochkaOAuthController {
     }
   }
 
-  /** Admin: получить URL для подключения Точки (открыть в браузере). */
   @Get('admin/billing/tochka/oauth/authorize-url')
   @UseGuards(CookieAuthGuard, SuperAdminGuard)
   @ApiBearerAuth()
@@ -90,7 +61,6 @@ export class BillingTochkaOAuthController {
     return { url };
   }
 
-  /** Admin: ручной trigger ensureOAuthReady (полезно после изменения ENV). */
   @Post('admin/billing/tochka/oauth/ensure-ready')
   @UseGuards(CookieAuthGuard, SuperAdminGuard)
   @ApiBearerAuth()

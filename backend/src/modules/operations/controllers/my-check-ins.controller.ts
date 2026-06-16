@@ -29,16 +29,6 @@ import {
 } from '../dto/daily-check-in.dto';
 import { DailyCheckInService } from '../services/daily-checkin.service';
 
-/**
- * SBA β-8 — `/api/v1/me/check-ins`.
- *
- *   GET /?date=YYYY-MM-DD&kind=morning|evening — список своих
- *   POST / — manual create (плюс upsert по уникальности дня+kind)
- *   GET /history?days=30 — окно
- *
- * Auth: CookieAuthGuard + TenantGuard. Self-only: чтения и записи —
- * только своих чек-инов (через Person.userId = currentUserId).
- */
 @ApiTags('me-check-ins')
 @Controller('api/v1/me/check-ins')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -68,9 +58,6 @@ export class MyCheckInsController {
       date: q.date,
       kind: q.kind,
     });
-    // SBA β-8.1 — `/me/check-ins` всегда отдаётся без полей `sentiment*`.
-    // Маппер вызываем с role=null (не из whitelist'а) — гарантирует, что
-    // сотрудник никогда не увидит своё настроение.
     return { items: items.map((it) => stripSentimentForRole(it, null)) };
   }
 

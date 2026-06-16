@@ -1,35 +1,14 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ComponentType } from 'react';
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
 
 import {
   edgeColorByConfidence,
   type EntityGraph,
   type EntityGraphEdge,
   type EntityGraphNode,
-} from '@/domain/entity-graph';
-
-/**
- * ForceGraphCanvas — обёртка над `react-force-graph-2d` с dynamic import
- * через `next/dynamic` (ssr:false). Библиотека использует Canvas/WebGL — она
- * не работает на сервере, плюс тяжёлая (~600KB).
- *
- * Зависимость `react-force-graph-2d` должна быть установлена через
- * `bun install` после merge'а (см. package.json). До установки —
- * рендерится fallback-каркас (узлы списком), чтобы typecheck/UX не падали.
- *
- * Узлы:
- *   - center (depth=0) — крупный, mint #5EEAD4.
- *   - depth=1 — средний, светло-голубой.
- *   - depth=2..3 — мельче, серый.
- *
- * Рёбра:
- *   - цвет — по confidence (red < 0.4 ≤ amber < 0.7 ≤ mint).
- *   - истекшие (validUntil < now) — пунктир + полупрозрачные.
- *
- * Hover на ребро — встроенный tooltip библиотеки. Клик — `onEdgeClick`.
- */
+} from "@/domain/entity-graph";
 
 interface GraphLibNode {
   id: string;
@@ -37,7 +16,6 @@ interface GraphLibNode {
   entityType: string;
   depth: number;
   isCenter: boolean;
-  /** Visual size (1..12). */
   val: number;
   color: string;
 }
@@ -74,15 +52,13 @@ interface ForceGraphProps {
   backgroundColor?: string;
 }
 
-// Импорт через next/dynamic — ssr:false. Используем `unknown as` для
-// typecheck-safe объявления (react-force-graph-2d может быть не установлен).
 let CachedForceGraph2D: ComponentType<ForceGraphProps> | null = null;
 
 async function loadForceGraph(): Promise<ComponentType<ForceGraphProps> | null> {
   if (CachedForceGraph2D) return CachedForceGraph2D;
   try {
     const mod = (await import(
-      /* webpackIgnore: true */ 'react-force-graph-2d' as string
+      /* webpackIgnore: true */ "react-force-graph-2d" as string
     )) as { default: ComponentType<ForceGraphProps> };
     CachedForceGraph2D = mod.default;
     return mod.default;
@@ -134,10 +110,7 @@ export function ForceGraphCanvas({
     return () => ro.disconnect();
   }, []);
 
-  const data = useMemo(
-    () => buildGraphData(graph),
-    [graph],
-  );
+  const data = useMemo(() => buildGraphData(graph), [graph]);
 
   const handleLinkClick = (lnk: GraphLibLink) => {
     const edge = graph.edges.find((e) => e.edgeId === lnk.edgeId);
@@ -189,8 +162,6 @@ export function ForceGraphCanvas({
   );
 }
 
-// ──────────────────────── Helpers ─────────────────────────────────────
-
 function buildGraphData(graph: EntityGraph): {
   nodes: GraphLibNode[];
   links: GraphLibLink[];
@@ -202,24 +173,20 @@ function buildGraphData(graph: EntityGraph): {
     depth: n.depth,
     isCenter: n.isCenter,
     val: n.isCenter ? 12 : n.depth === 1 ? 6 : 3,
-    color: n.isCenter
-      ? '#5EEAD4'
-      : n.depth === 1
-        ? '#93C5FD'
-        : '#94A3B8',
+    color: n.isCenter ? "#5EEAD4" : n.depth === 1 ? "#93C5FD" : "#94A3B8",
   }));
   const links: GraphLibLink[] = graph.edges.map((e) => {
-    const evidenceQuote = e.evidence[0]?.quote ?? '';
+    const evidenceQuote = e.evidence[0]?.quote ?? "";
     return {
       source: e.from,
       target: e.to,
       edgeId: e.edgeId,
       color: e.isExpired
-        ? 'rgba(148,163,184,0.4)'
+        ? "rgba(148,163,184,0.4)"
         : edgeColorByConfidence(e.confidence),
       label: e.relationLabel,
       tooltip: `${e.relationLabel} (${e.confidencePercent}%) — ${e.periodLabel}${
-        evidenceQuote ? `\n«${evidenceQuote}»` : ''
+        evidenceQuote ? `\n«${evidenceQuote}»` : ""
       }`,
       isExpired: e.isExpired,
     };
@@ -227,10 +194,6 @@ function buildGraphData(graph: EntityGraph): {
   return { nodes, links };
 }
 
-/**
- * Fallback на случай, если `react-force-graph-2d` не установлен (например,
- * на CI до `bun install`) — простой список с кликабельными рёбрами.
- */
 function FallbackList({
   graph,
   onEdgeClick,
@@ -258,8 +221,8 @@ function FallbackList({
                 onClick={() => onNodeClick(n)}
                 className={`rounded border px-2 py-1 text-xs ${
                   n.isCenter
-                    ? 'border-[#5EEAD4]/60 bg-[#5EEAD4]/10 text-[#5EEAD4]'
-                    : 'border-border-subtle bg-bg-overlay text-foreground hover:bg-bg-subtle'
+                    ? "border-[#5EEAD4]/60 bg-[#5EEAD4]/10 text-[#5EEAD4]"
+                    : "border-border-subtle bg-bg-overlay text-foreground hover:bg-bg-subtle"
                 }`}
               >
                 {n.label}
@@ -279,7 +242,7 @@ function FallbackList({
                 type="button"
                 onClick={() => onEdgeClick(e)}
                 className={`w-full rounded border border-border-subtle bg-bg-overlay px-3 py-2 text-left text-xs hover:bg-bg-subtle ${
-                  e.isExpired ? 'opacity-60' : ''
+                  e.isExpired ? "opacity-60" : ""
                 }`}
               >
                 <span className="font-medium text-foreground">

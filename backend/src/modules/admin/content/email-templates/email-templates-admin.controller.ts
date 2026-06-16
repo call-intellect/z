@@ -31,13 +31,6 @@ import {
 } from './dto/email-templates-admin.dto';
 import { EmailTemplatesAdminService } from './email-templates-admin.service';
 
-/**
- * Admin-redesign Фаза 5 — `EmailTemplatesAdminController`.
- *
- * Управление шаблонами писем под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`. При первом GET (БД пустая) — bootstrap из
- * `mail.templates.ts`. test-send защищён in-memory rate-limit'ом 5/мин.
- */
 @ApiTags('admin-content-email-templates')
 @Controller('api/v1/admin/content/email-templates')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -50,8 +43,7 @@ export class EmailTemplatesAdminController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Список EmailTemplate. На пустой БД — bootstrap-sync констант из mail.templates.ts.',
+    summary: 'Список EmailTemplate. На пустой БД — bootstrap-sync констант из mail.templates.ts.',
   })
   list() {
     return this.svc.list();

@@ -6,10 +6,6 @@ import {
   normalizeBusFactorLevel,
 } from './knowledge-at-risk.scoring';
 
-/**
- * TZ-1 Фаза 4.C (daily-value-engine) — unit-тесты синтеза знание-под-риском.
- * Без БД.
- */
 describe('knowledge-at-risk.scoring', () => {
   describe('computeCombinedSeverity', () => {
     it('critical bus-factor + high риск ухода → critical', () => {
@@ -61,21 +57,15 @@ describe('knowledge-at-risk.scoring', () => {
     });
 
     it('низкий engagementScore (<0.4) без флагов → medium', () => {
-      expect(
-        derivePersonRiskLevel({ riskFlags: [], engagementScore: 0.3 }),
-      ).toBe('medium');
+      expect(derivePersonRiskLevel({ riskFlags: [], engagementScore: 0.3 })).toBe('medium');
     });
 
     it('нет флагов + хороший engagement → low', () => {
-      expect(
-        derivePersonRiskLevel({ riskFlags: [], engagementScore: 0.8 }),
-      ).toBe('low');
+      expect(derivePersonRiskLevel({ riskFlags: [], engagementScore: 0.8 })).toBe('low');
     });
 
     it('engagementScore=null + нет флагов → low', () => {
-      expect(
-        derivePersonRiskLevel({ riskFlags: [], engagementScore: null }),
-      ).toBe('low');
+      expect(derivePersonRiskLevel({ riskFlags: [], engagementScore: null })).toBe('low');
     });
   });
 

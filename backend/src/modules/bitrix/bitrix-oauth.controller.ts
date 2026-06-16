@@ -6,15 +6,6 @@ import { TypedConfigService } from '../../common/config/index';
 
 import { BitrixIntegrationService } from './bitrix-integration.service';
 
-/**
- * Public OAuth2-callback Bitrix24 (способ A).
- * ТЗ: plans/tz/2026-06-09-bitrix24-integration-install.md.
- *
- * Маршрут: `GET /api/v1/bitrix/oauth/callback` (без авторизации — Bitrix
- * редиректит сюда браузер). Меняет `code` на токены (tenantId берётся из
- * подписанного `state`), затем 302-редиректит браузер на страницу настроек
- * фронта с `?bitrix=connected|error`.
- */
 @ApiExcludeController()
 @Controller('api/v1/bitrix/oauth')
 export class BitrixOAuthController {
@@ -44,9 +35,7 @@ export class BitrixOAuthController {
         scope,
         error,
       });
-      res.redirect(
-        `${base}?bitrix=connected&domain=${encodeURIComponent(portalDomain)}`,
-      );
+      res.redirect(`${base}?bitrix=connected&domain=${encodeURIComponent(portalDomain)}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Bitrix OAuth callback error: ${message}`);

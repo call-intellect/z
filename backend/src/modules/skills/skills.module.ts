@@ -7,14 +7,6 @@ import { SkillsService } from './services/skills.service';
 import { SkillTraitCategoriesController } from './skill-trait-categories.controller';
 import { SkillsController } from './skills.controller';
 
-/**
- * SkillsModule.
- *
- *   - `SkillsService` — справочник компетенций Org (Skill).
- *   - `SkillTraitCategoryService` — SBA γ-1 доделки: эмерджентные категории
- *     `SkillTrait` (CRUD + merge). Экспортируется глобально, чтобы
- *     CurationService мог инжектить его без circular import.
- */
 @Global()
 @Module({
   imports: [PrismaModule],

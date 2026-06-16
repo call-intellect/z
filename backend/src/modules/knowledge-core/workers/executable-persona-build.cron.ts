@@ -6,26 +6,9 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ExecutablePersonaBuildService } from '../services/executable-persona-build.service';
 
-/**
- * SBA γ-1 — ExecutablePersonaBuildCron.
- *
- * Раз в неделю (default '0 6 * * SUN') собирает snapshots ExecutablePersona:
- *   - scope='person' для каждого active SkillProfile с >= PERSONA_MIN_TRAITS.
- *   - scope='role': клон-снимок ТЕКУЩЕГО носителя каждой Role (Раздел 7 — один
- *     носитель, без агрегации). buildForRole сам резолвит носителя и не оживляет
- *     frozen-версии бывших (Р6) — отдельной фильтрации в cron не требуется.
- *
- * Б14: выборка проходит ВЕСЬ хвост курсорной пагинацией (orderBy «самые
- *      несвежие первыми» + cursor), а не первые MAX по scan-order — иначе хвост
- *      профилей/ролей не пересобирается никогда. MAX_*_PER_SWEEP — размер
- *      страницы, не глобальный потолок.
- *
- * NB: `@Cron` принимает литерал; cfg.persona.buildCron — read-only при старте.
- */
 @Injectable()
 export class ExecutablePersonaBuildCron {
   private readonly logger = new Logger(ExecutablePersonaBuildCron.name);
-  /** Б14 — размер страницы курсора (не глобальный потолок). */
   private static readonly MAX_PROFILES_PER_SWEEP = 500;
   private static readonly MAX_ROLES_PER_SWEEP = 200;
 
@@ -40,17 +23,13 @@ export class ExecutablePersonaBuildCron {
 
   @Cron('0 6 * * SUN')
   async sweep(): Promise<void> {
-    // SBA γ-1 доделки — мастер-тумблер weekly snapshot.
     if (!this.cfg.persona.scheduledRebuildEnabled) {
       this.logger.debug('executable-persona-build.cron: scheduledRebuildEnabled=false — skip');
       return;
     }
     try {
       const summary = await this.runOnce();
-      this.logger.debug(
-        summary,
-        'executable-persona-build.cron: проход завершён',
-      );
+      this.logger.debug(summary, 'executable-persona-build.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -59,7 +38,6 @@ export class ExecutablePersonaBuildCron {
     }
   }
 
-  /** Public — для возможного админ-эндпоинта / ручного запуска. */
   async runOnce(): Promise<{
     profilesBuilt: number;
     profilesSkipped: number;
@@ -71,12 +49,6 @@ export class ExecutablePersonaBuildCron {
     let rolesBuilt = 0;
     let rolesSkipped = 0;
 
-    // 1. Person-level personas — все active SkillProfile с >= minTraits.
-    // Б15: предфильтр считает только layer='skill' (как гейтит buildForProfile),
-    //      иначе профиль с value/process-чертами но 0 skill тратит вызов → null.
-    // Б14: orderBy lastBuildAt asc nulls first (никогда-не-собранные и самые
-    //      несвежие — первыми) + курсор по id, чтобы пройти ВЕСЬ хвост, а не
-    //      первые MAX по scan-order (иначе хвост не пересобирается никогда).
     let profileCursor: string | undefined;
     for (;;) {
       const profileCandidates = await this.prisma.skillProfile.findMany({
@@ -122,10 +94,6 @@ export class ExecutablePersonaBuildCron {
       profileCursor = profileCandidates[profileCandidates.length - 1]!.id;
     }
 
-    // 2. Role-level personas — клон ТЕКУЩЕГО носителя каждой Role (Раздел 7).
-    // Б14: деттерминированный orderBy + курсор по всем ролям, чтобы хвост
-    //      пересобирался (Role не имеет lastBuildAt — берём updatedAt asc как
-    //      стабильный «самые давно не трогавшиеся первыми» прокси).
     let roleCursor: string | undefined;
     for (;;) {
       const roles = await this.prisma.role.findMany({
@@ -160,7 +128,6 @@ export class ExecutablePersonaBuildCron {
       roleCursor = roles[roles.length - 1]!.id;
     }
 
-    // Обновить gauge активных персон.
     const activePersonByPerson = await this.prisma.executablePersona.count({
       where: { status: 'active', scope: 'person' },
     });

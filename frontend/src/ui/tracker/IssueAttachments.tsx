@@ -1,19 +1,10 @@
-'use client';
+"use client";
 
-/**
- * IssueAttachments — список приложенных файлов + кнопка загрузки.
- *
- * Phase 2 — заглушка для UI. Реальный список грузится с issue.id, но
- * separate GET endpoint для списка приложений нет — оно идёт inline через
- * GET /issues/:id (если включить include в backend). До тех пор список
- * пустой, кнопка upload работает.
- */
-
-import { useState, useRef } from 'react';
-import { Upload, Loader2 } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { issuesApi } from '@/api/tracker/issues.api';
-import { humanizeApiError } from '@/api/api-error';
+import { useState, useRef } from "react";
+import { Upload, Loader2 } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { issuesApi } from "@/api/tracker/issues.api";
+import { humanizeApiError } from "@/api/api-error";
 
 export function IssueAttachments({
   orgId,
@@ -36,9 +27,9 @@ export function IssueAttachments({
     try {
       await issuesApi.uploadAttachment(orgId, issueId, file);
       await onUploaded?.();
-      if (fileRef.current) fileRef.current.value = '';
+      if (fileRef.current) fileRef.current.value = "";
     } catch (err) {
-      setError(humanizeApiError(err, 'Не удалось загрузить файл'));
+      setError(humanizeApiError(err, "Не удалось загрузить файл"));
     } finally {
       setUploading(false);
     }

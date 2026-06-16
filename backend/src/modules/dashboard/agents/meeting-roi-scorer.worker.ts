@@ -8,52 +8,17 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { PRESENT_PARTICIPANT_WHERE } from '../../participants/participant-presence';
-import {
-  DASHBOARD_QUEUE_NAMES,
-  type MeetingRoiJobData,
-} from '../queues';
+import { DASHBOARD_QUEUE_NAMES, type MeetingRoiJobData } from '../queues';
 
-/**
- * Pulse Wave 6 §6.3 — Meeting-ROI-Scorer.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.3.
- *
- * Event-driven worker (`dashboard.meeting-roi`). Producer — `analyze.worker`
- * после ai_ready (см. шаг 13a там), а также любые ручные regenerate-флоу,
- * которые ходят через `DashboardQueueService.enqueueMeetingRoi`.
- *
- * Формула:
- *   roiScore = (decisions × 10 + commitments × 5 + tasks × 3) /
- *              (avgParticipants × durationMinutes / 60)
- *
- * Где:
- *   - decisions    = Decision.count где sourceMeetingId = meetingId
- *                    (legacy single-link; для β-3 multi-source — расширим
- *                    при подключении join-таблицы).
- *   - commitments  = IdeaBlock.count где signalType='commitment' И связан с
- *                    встречей через цепочку IdeaBlockEvidence → RawEvent
- *                    (sourceType='meeting', sourceExternalId = meetingId).
- *   - tasks        = Task.count где meetingId = meetingId.
- *   - avgParticipants = max(1, participants.count) — реальные участники.
- *   - durationMinutes = durationMs / 60_000.
- *
- * Защита от деления на 0: если знаменатель ≤ 0 (нет участников или нет
- * длительности) — roiScore = 0.
- *
- * Без LLM-вызовов. Идемпотентность: повторный запуск пересчитывает (значение
- * детерминистическое от состояния БД).
- */
 @Injectable()
 export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MeetingRoiScorerWorker.name);
   private worker: Worker<MeetingRoiJobData> | null = null;
 
-  /** Веса формулы — экспортируем константами для удобства тестов. */
   static readonly WEIGHT_DECISIONS = 10;
   static readonly WEIGHT_COMMITMENTS = 5;
   static readonly WEIGHT_TASKS = 3;
@@ -88,9 +53,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
         'meeting-roi-scorer: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.debug(
-      `MeetingRoiScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.MEETING_ROI})`,
-    );
+    this.logger.debug(`MeetingRoiScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.MEETING_ROI})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -100,10 +63,6 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Главный handler. Экспортирован публичным методом — integration-тест
-   * вызывает напрямую без BullMQ.
-   */
   async process(job: Job<MeetingRoiJobData>): Promise<void> {
     const { meetingId } = job.data;
     const startedAt = Date.now();
@@ -128,22 +87,13 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
       where: { sourceMeetingId: meetingId, tenantId: meeting.tenantId },
     });
 
-    // commitments — IdeaBlock.count(signalType='commitment') через RawEvent
-    // (sourceType='meeting', sourceExternalId=meetingId).
-    const commitments = await this.countCommitments(
-      meetingId,
-      meeting.tenantId,
-    );
+    const commitments = await this.countCommitments(meetingId, meeting.tenantId);
 
     const tasks = await this.prisma.task.count({
       where: { meetingId, tenantId: meeting.tenantId },
     });
 
-    const durationMs = computeDurationMs(
-      meeting.startedAt,
-      meeting.endedAt,
-      meeting.durationMs,
-    );
+    const durationMs = computeDurationMs(meeting.startedAt, meeting.endedAt, meeting.durationMs);
     const durationHours = durationMs / 3_600_000;
     const participantCount = Math.max(1, meeting._count.participants);
     const denominator = participantCount * durationHours;
@@ -154,7 +104,6 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
       tasks * MeetingRoiScorerWorker.WEIGHT_TASKS;
 
     const roiScoreFloat = denominator > 0 ? numerator / denominator : 0;
-    // Decimal(8,3) — округляем до 3 знаков (как и хранится в БД).
     const roiScore = new Prisma.Decimal(roiScoreFloat.toFixed(3));
 
     await this.prisma.meeting.update({
@@ -180,17 +129,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * Считает IdeaBlock'и встречи с signalType='commitment'.
-   * Канон: RawEvent(sourceType='meeting', sourceExternalId=meetingId) →
-   * IdeaBlockEvidence.rawEventId → IdeaBlock.id (status='canonical').
-   *
-   * Берём только canonical-блоки, чтобы не считать дубликаты до distill'а.
-   */
-  private async countCommitments(
-    meetingId: string,
-    tenantId: string,
-  ): Promise<number> {
+  private async countCommitments(meetingId: string, tenantId: string): Promise<number> {
     const rawEvents = await this.prisma.rawEvent.findMany({
       where: {
         tenantId,
@@ -220,12 +159,6 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/**
- * Длительность встречи в мс. Приоритет:
- *   1. `durationMs` (если уже посчитано в БД при ended);
- *   2. `endedAt - startedAt` (fallback);
- *   3. 0 — даст roiScore=0 (защита от деления на 0).
- */
 function computeDurationMs(
   startedAt: Date | null,
   endedAt: Date | null,

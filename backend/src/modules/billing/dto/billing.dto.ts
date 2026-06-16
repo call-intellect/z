@@ -1,12 +1,5 @@
-/**
- * DTO для биллинговых эндпоинтов (кабинет + админ).
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.
- */
-
 import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
-
-// ────────────────────────── Кабинет ──────────────────────────
 
 export const SubscriptionViewSchema = z.object({
   status: z.enum(['DEMO', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED', 'EXPIRED']),
@@ -29,9 +22,7 @@ export const InvoiceViewSchema = z.object({
   id: z.string(),
   invoiceNumber: z.string(),
   status: z.enum(['draft', 'issued', 'paid', 'bonus', 'void']),
-  paymentMethod: z
-    .enum(['card_recurring', 'bank_invoice', 'manual_admin', 'bonus'])
-    .nullable(),
+  paymentMethod: z.enum(['card_recurring', 'bank_invoice', 'manual_admin', 'bonus']).nullable(),
   totalKopecks: z.number().int(),
   periodStart: z.string().datetime(),
   periodEnd: z.string().datetime(),
@@ -69,8 +60,6 @@ export const QuotaResponseSchema = z.object({
 export type QuotaResponseBody = z.infer<typeof QuotaResponseSchema>;
 export class QuotaResponseDto extends createZodDto(QuotaResponseSchema) {}
 
-// ────────────────────────── Админ ──────────────────────────
-
 export const AdminActivateBodySchema = z.object({
   billingPeriod: z.enum(['monthly', 'yearly']),
   seatsBase: z.number().int().min(0).max(10_000).optional(),
@@ -90,25 +79,14 @@ export const AdminAdjustSeatsBodySchema = z.object({
   monthsLeftInYearlyPeriod: z.number().int().min(0).max(12).optional(),
 });
 export type AdminAdjustSeatsBody = z.infer<typeof AdminAdjustSeatsBodySchema>;
-export class AdminAdjustSeatsBodyDto extends createZodDto(
-  AdminAdjustSeatsBodySchema,
-) {}
+export class AdminAdjustSeatsBodyDto extends createZodDto(AdminAdjustSeatsBodySchema) {}
 
 export const AdminForceStatusBodySchema = z.object({
-  newStatus: z.enum([
-    'DEMO',
-    'ACTIVE',
-    'PAST_DUE',
-    'SUSPENDED',
-    'CANCELED',
-    'EXPIRED',
-  ]),
+  newStatus: z.enum(['DEMO', 'ACTIVE', 'PAST_DUE', 'SUSPENDED', 'CANCELED', 'EXPIRED']),
   reason: z.string().trim().min(3),
 });
 export type AdminForceStatusBody = z.infer<typeof AdminForceStatusBodySchema>;
-export class AdminForceStatusBodyDto extends createZodDto(
-  AdminForceStatusBodySchema,
-) {}
+export class AdminForceStatusBodyDto extends createZodDto(AdminForceStatusBodySchema) {}
 
 export const AdminMarkPaidBodySchema = z.object({
   externalRef: z.string().trim().optional(),
@@ -121,9 +99,7 @@ export const AdminVoidInvoiceBodySchema = z.object({
   reason: z.string().trim().min(3),
 });
 export type AdminVoidInvoiceBody = z.infer<typeof AdminVoidInvoiceBodySchema>;
-export class AdminVoidInvoiceBodyDto extends createZodDto(
-  AdminVoidInvoiceBodySchema,
-) {}
+export class AdminVoidInvoiceBodyDto extends createZodDto(AdminVoidInvoiceBodySchema) {}
 
 export const AdminActivateResultSchema = z.object({
   subscriptionId: z.string(),
@@ -131,11 +107,7 @@ export const AdminActivateResultSchema = z.object({
   grantedMeetings: z.number().int().nonnegative(),
 });
 export type AdminActivateResultBody = z.infer<typeof AdminActivateResultSchema>;
-export class AdminActivateResultDto extends createZodDto(
-  AdminActivateResultSchema,
-) {}
-
-// ────────────────────────── Pay-flow (Tochka) ──────────────────────────
+export class AdminActivateResultDto extends createZodDto(AdminActivateResultSchema) {}
 
 export const StartCardPaymentBodySchema = z.object({
   billingPeriod: z.enum(['monthly', 'yearly']),
@@ -143,9 +115,7 @@ export const StartCardPaymentBodySchema = z.object({
   autoRenew: z.boolean().default(true),
 });
 export type StartCardPaymentBody = z.infer<typeof StartCardPaymentBodySchema>;
-export class StartCardPaymentBodyDto extends createZodDto(
-  StartCardPaymentBodySchema,
-) {}
+export class StartCardPaymentBodyDto extends createZodDto(StartCardPaymentBodySchema) {}
 
 export const StartBankInvoicePaymentBodySchema = z.object({
   billingPeriod: z.enum(['monthly', 'yearly']),
@@ -153,9 +123,7 @@ export const StartBankInvoicePaymentBodySchema = z.object({
   dueInDays: z.number().int().min(1).max(30).default(14),
   sendToEmail: z.boolean().default(false),
 });
-export type StartBankInvoicePaymentBody = z.infer<
-  typeof StartBankInvoicePaymentBodySchema
->;
+export type StartBankInvoicePaymentBody = z.infer<typeof StartBankInvoicePaymentBodySchema>;
 export class StartBankInvoicePaymentBodyDto extends createZodDto(
   StartBankInvoicePaymentBodySchema,
 ) {}

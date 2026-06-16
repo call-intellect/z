@@ -1,25 +1,4 @@
-/**
- * ТЗ 2026-05-26 §8.2 — unit-тесты ClonesAdminService.
- *
- * Кейсы (см. §8.2):
- *  - createAccessGrant happy path (создаёт + notification + DTO).
- *  - createAccessGrant — user не в org → 400 user_not_in_org.
- *  - createAccessGrant — cloneRef не существует → 404 role_not_found.
- *  - createAccessGrant — идемпотентность поверх active → возвращает существующий,
- *    БЕЗ повторного INSERT и notification.
- *  - createAccessGrant — re-grant поверх revoked → удаляет старую, создаёт новую.
- *  - revokeAccessGrant happy path → revokedAt/revokedBy выставлены.
- *  - revokeAccessGrant — already_revoked → 400.
- *  - revokeAccessGrant — not found → 404.
- *  - extendAccessGrant happy path + revoked → 400 cannot_update_revoked.
- *  - getMyCloneAccess — отдаёт только активные.
- *
- * PrismaService полностью замокан — нас интересует поведение веток.
- */
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { CloneAccessGrant } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -28,15 +7,10 @@ import type { ConversationalService } from '../../conversational/conversational.
 
 import { ClonesAdminService } from './clones-admin.service';
 
-/**
- * Минимальный фабричный билдер для CloneAccessGrant — поля, которых нет
- * в нашем сервисе, заполняем заглушками с типом `as unknown as`.
- */
 function buildGrant(over: Partial<CloneAccessGrant> = {}): CloneAccessGrant {
   return {
     id: 'grant-1',
     tenantId: 'org-1',
-    // audit Б3 (2026-05-29): added field on CloneAccessGrant.
     externalSource: null,
     grantedToUserId: 'user-recipient',
     cloneType: 'role',
@@ -59,9 +33,7 @@ interface BuildOpts {
   updatedGrant?: CloneAccessGrant;
   user?: { name: string } | null;
   persona?: { publicName: string | null } | null;
-  /** Кастомный мок findFirst для cloneAccessGrant (например, для getMyCloneAccess). */
   findManyGrants?: Array<{ cloneType: string; cloneRefId: string }>;
-  /** Мок sendNotification: throw → fall into try/catch. */
   notificationThrows?: boolean;
 }
 
@@ -90,16 +62,11 @@ function build(opts: BuildOpts = {}): {
   svc: ClonesAdminService;
   ctx: MockCtx;
 } {
-  // Внутренние помощники для transactional client.
-  const createMock = vi.fn(async (_args: { data: Record<string, unknown> }) =>
-    opts.createdGrant ?? buildGrant(),
+  const createMock = vi.fn(
+    async (_args: { data: Record<string, unknown> }) => opts.createdGrant ?? buildGrant(),
   );
-  const deleteMock = vi.fn(async (_args: { where: { id: string } }) =>
-    buildGrant(),
-  );
+  const deleteMock = vi.fn(async (_args: { where: { id: string } }) => buildGrant());
 
-  // audit В15 (2026-05-29): re-grant теперь через UPDATE существующей row,
-  // а не DELETE+CREATE. Mock'у нужен .update.
   const updateMock = vi.fn(async () => opts.updatedGrant ?? buildGrant());
   const txClient = {
     cloneAccessGrant: {
@@ -141,9 +108,7 @@ function build(opts: BuildOpts = {}): {
       findFirst: vi.fn(async () => opts.persona ?? null),
       findMany: vi.fn(async () => []),
     },
-    $transaction: vi.fn(async (fn: (tx: typeof txClient) => Promise<unknown>) =>
-      fn(txClient),
-    ),
+    $transaction: vi.fn(async (fn: (tx: typeof txClient) => Promise<unknown>) => fn(txClient)),
   };
 
   const sendNotification = opts.notificationThrows
@@ -186,7 +151,6 @@ describe('ClonesAdminService.createAccessGrant', () => {
       },
     });
 
-    // Проверки.
     expect(ctx.prisma.membership.findFirst).toHaveBeenCalledOnce();
     expect(ctx.prisma.role.findFirst).toHaveBeenCalledOnce();
     expect(ctx.prisma.cloneAccessGrant.findUnique).toHaveBeenCalledOnce();
@@ -268,7 +232,6 @@ describe('ClonesAdminService.createAccessGrant', () => {
     });
 
     expect(dto.id).toBe('grant-old');
-    // Транзакция и notification не должны вызываться.
     expect(ctx.prisma.$transaction).not.toHaveBeenCalled();
     expect(ctx.sendNotification).not.toHaveBeenCalled();
   });
@@ -279,7 +242,6 @@ describe('ClonesAdminService.createAccessGrant', () => {
       revokedAt: new Date('2026-05-25T00:00:00.000Z'),
       revokedBy: 'admin-x',
     });
-    // updatedGrant — то, что возвращает tx.update; id сохраняется.
     const updated = buildGrant({ id: 'grant-revoked', revokedAt: null });
     const { svc, ctx } = build({
       membership: { id: 'm1' },
@@ -301,7 +263,6 @@ describe('ClonesAdminService.createAccessGrant', () => {
 
     expect(dto.id).toBe('grant-revoked');
     expect(ctx.prisma.$transaction).toHaveBeenCalledOnce();
-    // sendNotification — да, это считается новым выданным доступом.
     expect(ctx.sendNotification).toHaveBeenCalledOnce();
   });
 
@@ -446,7 +407,6 @@ describe('ClonesAdminService.getMyCloneAccess', () => {
     expect(out.personClones).toEqual(['person-2']);
     expect(out.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
-    // Проверяем что where содержит active-filter.
     const call = ctx.prisma.cloneAccessGrant.findMany.mock.calls[0]![0] as {
       where: Record<string, unknown>;
     };

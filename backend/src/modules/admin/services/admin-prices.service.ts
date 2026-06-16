@@ -6,15 +6,6 @@ import { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { AdminCacheService } from './admin-cache.service';
 
-/**
- * AdminPricesService (Z-Admin Фаза 7 шаг 6).
- *
- *   - `listPrices({activeOnly})` — все записи `LlmModelPrice`. activeOnly=true
- *     → только `effectiveTo IS NULL`. Сортировка: provider, model, effectiveFrom DESC.
- *   - `setPrice(...)` — транзакция: закрыть текущую активную (effectiveTo=now),
- *     создать новую с effectiveFrom=now (или переданным). Сбрасывает price-cache
- *     LlmRouter и AdminCache(`usage:`).
- */
 @Injectable()
 export class AdminPricesService {
   constructor(
@@ -38,11 +29,7 @@ export class AdminPricesService {
     };
     const items = await this.prisma.llmModelPrice.findMany({
       where,
-      orderBy: [
-        { provider: 'asc' },
-        { model: 'asc' },
-        { effectiveFrom: 'desc' },
-      ],
+      orderBy: [{ provider: 'asc' }, { model: 'asc' }, { effectiveFrom: 'desc' }],
     });
     return {
       items: items.map((p) => ({
@@ -72,7 +59,6 @@ export class AdminPricesService {
     const effectiveFrom = args.effectiveFrom ?? new Date();
 
     await this.prisma.$transaction(async (tx) => {
-      // Закрываем все актуальные (effectiveTo IS NULL) записи для пары provider+model.
       await tx.llmModelPrice.updateMany({
         where: {
           provider: args.provider,
@@ -81,14 +67,11 @@ export class AdminPricesService {
         },
         data: { effectiveTo: effectiveFrom },
       });
-      // Создаём новую активную.
       await tx.llmModelPrice.create({
         data: {
           provider: args.provider,
           model: args.model,
-          inputCostPerMillionTokens: new Prisma.Decimal(
-            args.inputCostPerMillionTokens.toFixed(6),
-          ),
+          inputCostPerMillionTokens: new Prisma.Decimal(args.inputCostPerMillionTokens.toFixed(6)),
           outputCostPerMillionTokens: new Prisma.Decimal(
             args.outputCostPerMillionTokens.toFixed(6),
           ),

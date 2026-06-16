@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** События, на которые можно подписать webhook. Сервер валидирует строго. */
 export const WEBHOOK_EVENT_VALUES = [
   'issue.created',
   'issue.updated',

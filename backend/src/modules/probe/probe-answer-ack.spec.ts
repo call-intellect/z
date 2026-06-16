@@ -1,13 +1,3 @@
-/**
- * Probe-система Фаза 6 (2026-06-11) — видимое следствие ответа.
- *
- * R11: после закрытия probe ответом отправляется подтверждение
- * `probe.answer_acknowledged` с русским текстом «ваш ответ записан в память
- * компании» + название объекта. Best-effort: ошибка подтверждения не валит
- * closing-loop (RawEvent всё равно создан).
- *
- * Детерминизм: Prisma/LLM/Ingest/Conversational/Cfg/Metrics мокированы.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -138,7 +128,6 @@ describe('ProbeResponseHandler — видимое следствие (Фаза 6
   it('ошибка ack не валит closing-loop (RawEvent всё равно создан)', async () => {
     const env = build({ title: 'X', ackThrows: true });
     await env.handler.handle(event);
-    // ack упал, но ingest (closing-loop) выполнен ДО ack.
     expect(env.ingest).toHaveBeenCalledTimes(1);
   });
 });

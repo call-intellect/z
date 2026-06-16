@@ -1,26 +1,6 @@
-/**
- * Wave 3 / Tracker Phase 4 — seed системных TeamTemplate.
- *
- * Идемпотентно по `@@unique([tenantId, slug])` (tenantId=null для системных).
- *
- * Защита admin-edited (skill `safe-seed-rules`):
- *   - У TeamTemplate нет поля `editedByAdmin`. Эвристика: если запись
- *     существует и `updatedAt > createdAt + 1ч` — значит её правили через
- *     админку (вручную). НЕ перезаписываем `name/description/definition`.
- *   - Если запись существует, но `updatedAt ≈ createdAt` (в пределах часа) —
- *     можно безопасно обновить (это наш предыдущий seed без правок).
- *
- * Используется:
- *   - `backend/scripts/seed-team-templates.ts` — standalone seed.
- *   - Тесты — для подготовки фикстур.
- */
-
 import type { PrismaClient } from '@prisma/client';
 
-import {
-  ALL_TEAM_TEMPLATES,
-  type TeamTemplateSeedEntry,
-} from './team-templates-data';
+import { ALL_TEAM_TEMPLATES, type TeamTemplateSeedEntry } from './team-templates-data';
 
 export interface TeamTemplatesSeedStats {
   inserted: number;
@@ -28,15 +8,8 @@ export interface TeamTemplatesSeedStats {
   skippedAdminEdited: number;
 }
 
-const ADMIN_EDIT_THRESHOLD_MS = 60 * 60 * 1000; // 1 час
+const ADMIN_EDIT_THRESHOLD_MS = 60 * 60 * 1000;
 
-/**
- * Прогон seed'а для системных TeamTemplate (tenantId=null).
- *
- * @param prisma — PrismaClient.
- * @param opts.entries — список шаблонов (по умолчанию все 15). Тесты могут передать подмножество.
- * @param opts.log — функция логирования. По умолчанию `console.log`.
- */
 export async function seedSystemTeamTemplates(
   prisma: PrismaClient,
   opts?: {
@@ -53,8 +26,6 @@ export async function seedSystemTeamTemplates(
   };
 
   for (const entry of entries) {
-    // tenantId=null — composite unique, использовать findFirst (не findUnique:
-    // Prisma не поддерживает null в @@unique через findUnique).
     const existing = await prisma.teamTemplate.findFirst({
       where: { tenantId: null, slug: entry.slug },
     });
@@ -77,14 +48,11 @@ export async function seedSystemTeamTemplates(
     }
 
     const editedManually =
-      existing.updatedAt.getTime() - existing.createdAt.getTime() >
-      ADMIN_EDIT_THRESHOLD_MS;
+      existing.updatedAt.getTime() - existing.createdAt.getTime() > ADMIN_EDIT_THRESHOLD_MS;
 
     if (editedManually) {
       stats.skippedAdminEdited += 1;
-      log(
-        `[skipped] team-template "${entry.slug}" — admin-edited (updatedAt > createdAt + 1h)`,
-      );
+      log(`[skipped] team-template "${entry.slug}" — admin-edited (updatedAt > createdAt + 1h)`);
       continue;
     }
 

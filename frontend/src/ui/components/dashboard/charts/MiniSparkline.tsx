@@ -1,35 +1,23 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
+import { useMemo } from "react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { toneVars, type ChartTone } from './tones';
+import { toneVars, type ChartTone } from "./tones";
 
 type Props = {
-  /** Не-пустой массив значений. Если пустой — компонент ничего не рисует. */
   data: number[];
   tone?: ChartTone;
   width?: number;
   height?: number;
-  /** Заполненная область под линией. */
   filled?: boolean;
   className?: string;
 };
 
-/**
- * MiniSparkline — крошечный SVG-график тренда 60×20.
- *
- * Чистый SVG, без зависимостей. Цвет — через `var(--chip-{tone}-fg)` /
- * `var(--accent)` (см. `tones.ts`). Подходит для фоновой подсказки внутри
- * KPI-карточек, рядом с числом в строке, в hero-strip.
- *
- * Декоративный: `aria-hidden`. Если значения одинаковые — горизонтальная
- * линия по центру.
- */
 export function MiniSparkline({
   data,
-  tone = 'accent',
+  tone = "accent",
   width = 60,
   height = 20,
   filled = true,
@@ -51,7 +39,7 @@ export function MiniSparkline({
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       aria-hidden="true"
-      className={cn('block', className)}
+      className={cn("block", className)}
     >
       {filled && !isFlat && (
         <path d={areaPath} fill={bg} fillOpacity={0.4} stroke="none" />
@@ -70,14 +58,13 @@ export function MiniSparkline({
 
 function buildPath(data: number[], width: number, height: number) {
   if (data.length === 0) {
-    return { linePath: '', areaPath: '', isFlat: true };
+    return { linePath: "", areaPath: "", isFlat: true };
   }
 
   const min = Math.min(...data);
   const max = Math.max(...data);
   const flat = max === min;
 
-  // Отступ сверху/снизу, чтобы линия не «лизала» границы viewBox.
   const padY = 1.5;
   const usableH = height - padY * 2;
 
@@ -92,8 +79,8 @@ function buildPath(data: number[], width: number, height: number) {
   });
 
   const linePath = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(2)},${p.y.toFixed(2)}`)
-    .join(' ');
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)},${p.y.toFixed(2)}`)
+    .join(" ");
 
   const first = points[0]!;
   const last = points[points.length - 1]!;

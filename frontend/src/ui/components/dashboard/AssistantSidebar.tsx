@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 import {
   X,
   Sparkles,
@@ -8,46 +8,27 @@ import {
   HelpCircle,
   ChevronRight,
   MessageCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   proactiveApi,
   type ProactiveNotificationApi,
-} from '@/api/proactive.api';
-import { activityFeedApi } from '@/api/activity-feed.api';
-import type { FeedItemApi } from '@/domain/activity-feed';
-import { useAuth } from '@/contexts/auth-context';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { OrgChatPanel } from '@/ui/components/chat/OrgChatPanel';
+} from "@/api/proactive.api";
+import { activityFeedApi } from "@/api/activity-feed.api";
+import type { FeedItemApi } from "@/domain/activity-feed";
+import { useAuth } from "@/contexts/auth-context";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { OrgChatPanel } from "@/ui/components/chat/OrgChatPanel";
 
-type SidebarTab = 'urgent' | 'feed' | 'probes' | 'ask';
+type SidebarTab = "urgent" | "feed" | "probes" | "ask";
 
-/**
- * Pulse §9 + Фаза 4 умбреллы — Sidebar Помощник с 4 pill-табами.
- *
- * Floating-panel справа (default closed → FAB-кнопка в правом нижнем углу).
- * Открывается по клику или через event `assistant-sidebar:open-ask`
- * (из Hero «Спросите Кору» — открыть и переключиться на таб «Спросить»).
- *
- * Табы:
- *   1. «Срочное» (`urgent`) — proactive notifications (`severity ∈ {medium, high}`).
- *   2. «Сигналы» (`feed`) — feed `insight` со `severity ∈ {critical, high}`.
- *   3. «Вопросы» (`probes`) — feed `probe_question` со `status='emitted'`.
- *   4. «Спросить» (`ask`) — AI-чат компании через `OrgChatPanel`.
- *
- * Polling каждые 60 сек (WS оставим на следующую волну).
- * Источники объединяются на клиенте: бэк отдаёт два независимых эндпоинта
- * (`GET /me/proactive-notifications` и `GET /feed/:type`), мы дергаем оба
- * в параллель и считаем общий счётчик для FAB-бейджа
- * (proactives + probes + otherUrgent; вкладка «Спросить» в unread не входит).
- */
 const POLL_MS = 60_000;
 
 export function AssistantSidebar() {
   const { currentOrgId } = useAuth();
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<SidebarTab>('urgent');
+  const [activeTab, setActiveTab] = useState<SidebarTab>("urgent");
   const [proactives, setProactives] = useState<ProactiveNotificationApi[]>([]);
   const [probes, setProbes] = useState<FeedItemApi[]>([]);
   const [otherUrgent, setOtherUrgent] = useState<FeedItemApi[]>([]);
@@ -69,7 +50,7 @@ export function AssistantSidebar() {
           .list(currentOrgId)
           .catch(() => ({ items: [] as ProactiveNotificationApi[] })),
         activityFeedApi
-          .list({ feedType: 'probe_question', status: 'emitted', limit: 10 })
+          .list({ feedType: "probe_question", status: "emitted", limit: 10 })
           .catch(() => ({
             items: [] as FeedItemApi[],
             total: 0,
@@ -78,7 +59,7 @@ export function AssistantSidebar() {
             totalPages: 1,
           })),
         activityFeedApi
-          .list({ feedType: 'insight', status: 'emitted', limit: 10 })
+          .list({ feedType: "insight", status: "emitted", limit: 10 })
           .catch(() => ({
             items: [] as FeedItemApi[],
             total: 0,
@@ -91,11 +72,11 @@ export function AssistantSidebar() {
       setProbes(probeRes.items);
       setOtherUrgent(
         urgentRes.items.filter(
-          (i) => i.severity === 'critical' || i.severity === 'high',
+          (i) => i.severity === "critical" || i.severity === "high",
         ),
       );
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить'));
+      setError(humanizeApiError(e, "Не удалось загрузить"));
     } finally {
       setLoading(false);
     }
@@ -109,16 +90,15 @@ export function AssistantSidebar() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Слушаем событие из Hero «Спросите Кору» — открыть Sidebar и таб «Спросить».
   useEffect(() => {
     function handleOpenAsk() {
       setOpen(true);
-      setActiveTab('ask');
+      setActiveTab("ask");
     }
-    if (typeof window !== 'undefined') {
-      window.addEventListener('assistant-sidebar:open-ask', handleOpenAsk);
+    if (typeof window !== "undefined") {
+      window.addEventListener("assistant-sidebar:open-ask", handleOpenAsk);
       return () => {
-        window.removeEventListener('assistant-sidebar:open-ask', handleOpenAsk);
+        window.removeEventListener("assistant-sidebar:open-ask", handleOpenAsk);
       };
     }
     return undefined;
@@ -131,37 +111,35 @@ export function AssistantSidebar() {
     try {
       await proactiveApi.dismiss(currentOrgId, id);
       setProactives((prev) => prev.filter((p) => p.id !== id));
-    } catch {
-      // silent — повторный poll через 60s подтянет актуальное состояние
-    }
+    } catch {}
   };
 
   return (
     <>
-      {/* FAB-кнопка */}
+      {}
       <button
         type="button"
         onClick={() => setOpen(!open)}
         data-tour-target="welcome.concierge"
         className={cn(
-          'fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105',
-          open && 'rotate-90',
+          "fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-accent-fg shadow-lg transition-transform hover:scale-105",
+          open && "rotate-90",
         )}
         aria-label="Помощник компании"
       >
         {open ? <X size={20} /> : <Sparkles size={20} />}
         {!open && unreadCount > 0 && (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-chip-danger-bg px-1 text-[10px] font-semibold text-chip-danger-fg">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
-      {/* Sidebar panel */}
+      {}
       <aside
         className={cn(
-          'fixed right-0 top-0 z-30 h-full w-[360px] transform border-l border-border-subtle bg-bg-base shadow-2xl transition-transform duration-200',
-          open ? 'translate-x-0' : 'translate-x-full',
+          "fixed right-0 top-0 z-30 h-full w-[360px] transform border-l border-border-subtle bg-bg-base shadow-2xl transition-transform duration-200",
+          open ? "translate-x-0" : "translate-x-full",
         )}
         aria-hidden={!open}
       >
@@ -187,29 +165,29 @@ export function AssistantSidebar() {
             aria-label="Разделы помощника"
             className="-mx-2 flex gap-1 overflow-x-auto border-b border-border-subtle px-2 pb-2 pt-2 scrollbar-none"
           >
-            {(['urgent', 'feed', 'probes', 'ask'] as const).map((tab) => {
+            {(["urgent", "feed", "probes", "ask"] as const).map((tab) => {
               const label =
-                tab === 'urgent'
-                  ? 'Срочное'
-                  : tab === 'feed'
-                    ? 'Сигналы'
-                    : tab === 'probes'
-                      ? 'Вопросы'
-                      : 'Спросить';
+                tab === "urgent"
+                  ? "Срочное"
+                  : tab === "feed"
+                    ? "Сигналы"
+                    : tab === "probes"
+                      ? "Вопросы"
+                      : "Спросить";
               const Icon =
-                tab === 'urgent'
+                tab === "urgent"
                   ? AlertTriangle
-                  : tab === 'feed'
+                  : tab === "feed"
                     ? Sparkles
-                    : tab === 'probes'
+                    : tab === "probes"
                       ? HelpCircle
                       : MessageCircle;
               const count =
-                tab === 'urgent'
+                tab === "urgent"
                   ? proactives.length
-                  : tab === 'feed'
+                  : tab === "feed"
                     ? otherUrgent.length
-                    : tab === 'probes'
+                    : tab === "probes"
                       ? probes.length
                       : 0;
               const isActive = activeTab === tab;
@@ -219,13 +197,13 @@ export function AssistantSidebar() {
                   type="button"
                   onClick={() => setActiveTab(tab)}
                   className={cn(
-                    'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                    "inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                     isActive
-                      ? 'bg-accent/15 text-accent-fg'
-                      : 'bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary',
+                      ? "bg-accent/15 text-accent-fg"
+                      : "bg-bg-overlay/60 text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary",
                   )}
-                  aria-current={isActive ? 'page' : undefined}
+                  aria-current={isActive ? "page" : undefined}
                 >
                   <Icon size={12} strokeWidth={1.75} className="shrink-0" />
                   <span>{label}</span>
@@ -240,7 +218,7 @@ export function AssistantSidebar() {
           </nav>
 
           <div className="flex-1 overflow-y-auto p-4">
-            {activeTab === 'urgent' && (
+            {activeTab === "urgent" && (
               <UrgentSection
                 proactives={proactives}
                 loading={loading}
@@ -248,13 +226,17 @@ export function AssistantSidebar() {
                 onDismiss={(id) => void handleDismiss(id)}
               />
             )}
-            {activeTab === 'feed' && (
-              <FeedSection items={otherUrgent} loading={loading} error={error} />
+            {activeTab === "feed" && (
+              <FeedSection
+                items={otherUrgent}
+                loading={loading}
+                error={error}
+              />
             )}
-            {activeTab === 'probes' && (
+            {activeTab === "probes" && (
               <ProbesSection items={probes} loading={loading} error={error} />
             )}
-            {activeTab === 'ask' && <AskSection />}
+            {activeTab === "ask" && <AskSection />}
           </div>
         </div>
       </aside>
@@ -339,9 +321,7 @@ function ProbesSection({
   if (items.length === 0) {
     return (
       <div className="rounded-xl bg-bg-overlay/40 p-6 text-center">
-        <p className="text-sm text-fg-secondary">
-          Уточнений от Коры пока нет.
-        </p>
+        <p className="text-sm text-fg-secondary">Уточнений от Коры пока нет.</p>
         <p className="mt-2 text-xs text-fg-tertiary">
           Когда появятся уточняющие вопросы — они будут здесь.
         </p>
@@ -402,18 +382,18 @@ function ProactiveItem({
   onDismiss: () => void;
 }) {
   const severityClass =
-    item.severity === 'high'
-      ? 'border-l-chip-danger-fg/60 bg-chip-danger-bg/20'
-      : item.severity === 'medium'
-        ? 'border-l-chip-warning-fg/60 bg-chip-warning-bg/20'
-        : 'border-l-fg-tertiary/30';
+    item.severity === "high"
+      ? "border-l-chip-danger-fg/60 bg-chip-danger-bg/20"
+      : item.severity === "medium"
+        ? "border-l-chip-warning-fg/60 bg-chip-warning-bg/20"
+        : "border-l-fg-tertiary/30";
   const title =
     (item.payload as { title?: string } | null)?.title ??
     humanizeRule(item.ruleType);
   return (
     <li
       className={cn(
-        'group flex items-start gap-2 rounded-md border-l-2 bg-bg-card p-2 shadow-card-soft',
+        "group flex items-start gap-2 rounded-md border-l-2 bg-bg-card p-2 shadow-card-soft",
         severityClass,
       )}
     >
@@ -461,14 +441,14 @@ function FeedItemRow({
 
 function humanizeRule(ruleType: string): string {
   const map: Record<string, string> = {
-    decision_no_owner: 'Решение без ответственного',
-    insight_no_mitigation: 'Сигнал без плана действий',
-    experiment_running_too_long: 'Эксперимент идёт слишком долго',
-    process_stale_review: 'Процесс давно не проверяли',
-    role_low_completeness: 'Роль описана не полностью',
-    department_no_domain: 'Отдел без области ответственности',
-    insights_siloed_in_domain: 'Сигналы накапливаются в одной области',
-    plan_item_overdue: 'Пункт плана просрочен',
+    decision_no_owner: "Решение без ответственного",
+    insight_no_mitigation: "Сигнал без плана действий",
+    experiment_running_too_long: "Эксперимент идёт слишком долго",
+    process_stale_review: "Процесс давно не проверяли",
+    role_low_completeness: "Роль описана не полностью",
+    department_no_domain: "Отдел без области ответственности",
+    insights_siloed_in_domain: "Сигналы накапливаются в одной области",
+    plan_item_overdue: "Пункт плана просрочен",
   };
   return map[ruleType] ?? ruleType;
 }
@@ -476,7 +456,7 @@ function humanizeRule(ruleType: string): string {
 function relativeTime(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return 'только что';
+  if (min < 1) return "только что";
   if (min < 60) return `${min} мин назад`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h} ч назад`;

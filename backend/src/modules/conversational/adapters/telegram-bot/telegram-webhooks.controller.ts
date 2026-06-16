@@ -28,53 +28,13 @@ import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../topics';
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import type { TelegramUpdate } from './telegram.types';
 
-/**
- * Webhook-приёмник Telegram Bot Updates.
- *
- * URL'ы:
- *   - `POST /api/v1/webhooks/telegram-bot`           — β-9, основной
- *     путь после миграции на глобальный бот (`@kora_bot`).
- *     Лукапит `Channel WHERE tenantId IS NULL AND kind='telegram_bot'`.
- *   - `POST /api/v1/webhooks/telegram-bot/:tenantId` — legacy, оставлен
- *     на переходное окно (~30 дней) для старых per-tenant ботов. Пишет
- *     `logger.warn` про deprecation; затем переходит на тот же глобальный
- *     канал (если есть). Если глобального канала нет — пробует per-tenant
- *     `Channel` (старое поведение).
- *
- * Авторизация (две модели — обе сверяют `Channel.config.webhookSecret`
- * timing-safe):
- *   - **proxy-режим** (`telegram.crossmark.ru`): прокси POST-ит апдейты на
- *     `POST /api/v1/webhooks/telegram-bot/s/:secret` — секрет в пути.
- *     Прокси НЕ отдаёт свой webhook-secret через REST, поэтому мы кладём
- *     СВОЙ секрет в путь `targetWebhookUrl` при регистрации бота.
- *   - **direct-режим** (`TELEGRAM_PROXY_ENABLED=false`, dev/rollback):
- *     Telegram шлёт `X-Telegram-Bot-Api-Secret-Token` на базовый
- *     `POST /api/v1/webhooks/telegram-bot` — сверяем заголовок.
- *   - На любой неуспех парсинга/диспетча возвращаем 200 (Telegram/прокси
- *     спамят retry'ями на non-2xx) — кроме отсутствия канала / невалидного
- *     secret'а (403/404).
- *
- * `@ApiExcludeController` — это служебный endpoint, не публикуется в Swagger
- * (тот же паттерн, что у `TelegramWebhookController` из ingest/).
- */
 @ApiExcludeController()
 @Controller('api/v1/webhooks/telegram-bot')
 export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TelegramWebhooksController.name);
 
-  /**
-   * Кэш глобального Channel'а — один на процесс. Сбрасывается:
-   *   - на старте процесса (значение null),
-   *   - при изменении Channel.config (через Redis pub/sub
-   *     `TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC`).
-   *
-   * ТЗ §2: иначе после ротации `webhookSecret` через `/admin/.../webhook`
-   * входящие webhook'и продолжат проверяться против старого секрета и
-   * отвергаться с `invalid_webhook_secret` до рестарта.
-   */
   private globalChannelCache: Channel | null = null;
 
-  /** Subscriber connection для pub/sub (отдельный от основного). */
   private subscriber: Redis | null = null;
 
   constructor(
@@ -90,19 +50,13 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Отдельное подключение для subscribe (ioredis блокирует канал для
-    // других операций когда сделан subscribe). При ошибке инициализации —
-    // логируем и работаем без invalidation (cache сбрасывается только на
-    // рестарт). Это деградация, не блокер.
     try {
       this.subscriber = this.redis.client.duplicate();
       await this.subscriber.subscribe(TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC);
       this.subscriber.on('message', (channel) => {
         if (channel === TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC) {
           this.globalChannelCache = null;
-          this.logger.log(
-            'telegram webhook: globalChannelCache сброшен по pub/sub-сигналу',
-          );
+          this.logger.log('telegram webhook: globalChannelCache сброшен по pub/sub-сигналу');
         }
       });
     } catch (err) {
@@ -127,10 +81,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     }
   }
 
-  /**
-   * β-9 — Главный путь. Без `:tenantId` в URL. Лукапит глобальный
-   * `Channel WHERE tenantId IS NULL AND kind='telegram_bot'`.
-   */
   @Post()
   @HttpCode(HttpStatus.OK)
   async receiveGlobal(
@@ -139,8 +89,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
   ): Promise<{ ok: true }> {
     const channel = await this.findGlobalChannel();
     if (!channel || channel.status !== 'active') {
-      // Глобального канала ещё нет / выключен главным админом. Telegram
-      // получит 404 — после нескольких подряд он сам прекратит слать.
       throw new NotFoundException({
         ok: false,
         error: {
@@ -163,14 +111,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     });
   }
 
-  /**
-   * proxy-режим — прокси `telegram.crossmark.ru` POST-ит апдейты сюда,
-   * секрет передаётся в пути (`/s/:secret`). Сверяем `:secret` с
-   * `Channel.config.webhookSecret`. Резолвит глобальный канал.
-   *
-   * Двусегментный путь (`s/:secret`) не конфликтует с односегментным
-   * legacy `:tenantId` — NestJS матчит по числу сегментов.
-   */
   @Post('s/:secret')
   @HttpCode(HttpStatus.OK)
   async receiveViaProxy(
@@ -201,16 +141,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     });
   }
 
-  /**
-   * Legacy путь с `:tenantId` в URL. Оставлен на переходное окно ~30 дней.
-   *
-   * Поведение:
-   *   1. Сначала пытается найти глобальный канал — если он есть, использует
-   *      его (без учёта `:tenantId`). Пишет warn про deprecation один раз
-   *      на процесс (`globalChannelCache` — флажок).
-   *   2. Если глобального нет — fallback на старое поведение: ищет
-   *      `Channel WHERE tenantId=:tenantId AND kind='telegram_bot'`.
-   */
   @Post(':tenantId')
   @HttpCode(HttpStatus.OK)
   async receive(
@@ -218,7 +148,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     @Body() body: TelegramUpdate,
     @Headers('x-telegram-bot-api-secret-token') secretHeader: string | undefined,
   ): Promise<{ ok: true }> {
-    // 1. Сначала пытаемся через глобальный канал.
     const globalChannel = await this.findGlobalChannel();
     if (globalChannel && globalChannel.status === 'active') {
       this.logger.warn(
@@ -232,12 +161,10 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
         channel: globalChannel,
         body,
         providedSecret: secretHeader,
-        // Игнорируем `:tenantId` из URL — резолвим из Membership отправителя.
         tenantId: undefined,
       });
     }
 
-    // 2. Fallback на старое поведение — per-tenant Channel.
     const channel = await this.prisma.channel.findUnique({
       where: { tenantId_kind: { tenantId, kind: 'telegram_bot' } },
     });
@@ -258,13 +185,8 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     });
   }
 
-  // ─────────────────────────────── helpers ──────────────────────────
-
-  /** Лукап глобального канала с in-process кэшем (TTL = жизни процесса). */
   private async findGlobalChannel(): Promise<Channel | null> {
     if (this.globalChannelCache) return this.globalChannelCache;
-    // Prisma не умеет фильтровать по `tenantId IS NULL` через composite
-    // unique-where с null, поэтому используем findFirst.
     const channel = await this.prisma.channel.findFirst({
       where: { tenantId: null, kind: 'telegram_bot' },
     });
@@ -274,15 +196,12 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     return channel;
   }
 
-  /** Общая обработка после резолва канала: verify secret + dispatch. */
   private async processUpdate(args: {
     channel: Channel;
     body: TelegramUpdate;
-    /** Секрет из заголовка (direct) либо из пути `/s/:secret` (proxy). */
     providedSecret: string | undefined;
     tenantId: string | undefined;
   }): Promise<{ ok: true }> {
-    // 1. Verify secret.
     let expectedSecret: string;
     try {
       expectedSecret = this.adapter.readWebhookSecret(args.channel);
@@ -314,7 +233,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
       });
     }
 
-    // 2. Parse + dispatch.
     let inbound;
     try {
       inbound = await this.adapter.ingestUpdate({
@@ -331,7 +249,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
         },
         'telegram webhook: ingestUpdate failed',
       );
-      // 200 чтобы Telegram не ретраил.
       return { ok: true };
     }
 
@@ -355,7 +272,6 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
   }
 }
 
-/** Timing-safe сравнение строк (utf-8). */
 function constantTimeStringEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   const ba = Buffer.from(a, 'utf8');

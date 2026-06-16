@@ -8,16 +8,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * NB: тумблер CONSISTENCY_CHECKER_ENABLED и
- * CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS читаются через `process.env`, а НЕ
- * через TypedConfigService. Причина — длинная .merge цепочка `EnvSchema`
- * (~50 разделов) уже близка к лимиту TS2589 (Type instantiation is
- * excessively deep); добавление новых ключей переполняет distribution
- * `keyof Env` в generic `private get<K>` сервиса. Эти значения опц.;
- * дефолты — ВКЛ / 4 часа.
- */
-const DEFAULT_DEDUP_TTL_SECONDS = 14_400; // 4 часа = период cron'а
+const DEFAULT_DEDUP_TTL_SECONDS = 14_400;
 function readDedupTtl(): number {
   const raw = process.env.CONSISTENCY_CHECKER_DEDUP_TTL_SECONDS;
   const n = Number(raw);
@@ -28,26 +19,9 @@ function readEnabled(): boolean {
   return !['false', '0', 'no', 'off'].includes(raw);
 }
 
-/**
- * SBA α-4 wave 2 — ConsistencyCheckerCron.
- *
- * Раз в 4 часа сканирует граф знаний и проверяет 6 структурных правил
- * (см. sub-TZ §3 п.5). На каждое нарушение:
- *   1. Дедуп через Redis SETNX по (tenantId + ruleId + entityId), TTL = 4ч.
- *   2. Эмит probe-event через ProbeService.suggest (kind=consistency_violation,
- *      severity=medium, recipientCandidates = owner/admin Org).
- *   3. Counter `consistency_violations_total{rule}`.
- *
- * Cron-литерал `'0 *\/4 * * *'` (каждые 4 часа). Тумблер
- * `CONSISTENCY_CHECKER_ENABLED` отключает работу без выгрузки из DI.
- */
-
 interface ViolationRow {
-  /** ID нарушающей сущности (Document.id / ProcessStep.id / Role.id / …). */
   entityId: string;
-  /** Тип сущности для probe (`document` / `process_step` / `role` / …). */
   entityType: string;
-  /** Человеко-читаемое имя для probe. */
   entityName?: string | null;
 }
 
@@ -63,7 +37,6 @@ const RULE_DESCRIPTIONS: Record<RuleId, string> = {
   R6: 'У компании не заполнены миссия, видение и стратегия',
 };
 
-/** RU-слова для типов сущностей — фолбэк имени в probe вместо cuid. */
 const ENTITY_TYPE_WORD_RU: Record<string, string> = {
   document: 'документ',
   process_step: 'шаг процесса',
@@ -73,7 +46,6 @@ const ENTITY_TYPE_WORD_RU: Record<string, string> = {
   company_profile: 'профиль компании',
 };
 
-/** Человеческое слово по типу сущности; неизвестный — как есть. */
 function entityTypeWordRu(entityType: string): string {
   return ENTITY_TYPE_WORD_RU[entityType] ?? entityType;
 }
@@ -87,11 +59,11 @@ export class ConsistencyCheckerService {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probe?: ProbeService,
   ) {}
 
-  /** Запуск всех 6 правил по всем Org. */
   async runForAllOrgs(): Promise<{
     scannedOrgs: number;
     violationsTotal: number;
@@ -102,7 +74,12 @@ export class ConsistencyCheckerService {
       select: { id: true },
     });
     const perRule: Record<RuleId, number> = {
-      R1: 0, R2: 0, R3: 0, R4: 0, R5: 0, R6: 0,
+      R1: 0,
+      R2: 0,
+      R3: 0,
+      R4: 0,
+      R5: 0,
+      R6: 0,
     };
     let violationsTotal = 0;
 
@@ -125,12 +102,7 @@ export class ConsistencyCheckerService {
             continue;
           }
           for (const v of rows) {
-            // Dedup через Redis SETNX по (tenant + rule + entityId).
-            const isFirstTime = await this.dedupAcquire(
-              org.id,
-              ruleId,
-              v.entityId,
-            );
+            const isFirstTime = await this.dedupAcquire(org.id, ruleId, v.entityId);
             if (!isFirstTime) continue;
             this.metrics.incConsistencyViolation({ rule: ruleId });
             perRule[ruleId] += 1;
@@ -161,8 +133,6 @@ export class ConsistencyCheckerService {
     };
   }
 
-  /** ── 6 правил ──────────────────────────────────────────────── */
-
   private async executeRule(rule: RuleId, tenantId: string): Promise<ViolationRow[]> {
     switch (rule) {
       case 'R1':
@@ -180,14 +150,7 @@ export class ConsistencyCheckerService {
     }
   }
 
-  /**
-   * R1: Document без EntityLink {fromType:'process', toType:'document',
-   * relationType:'produces'}. Этот link — обратный к нашему «document
-   * produced_by process». В коде enum'а имя `produces` (Process -> Document).
-   */
-  private async ruleR1ArtifactsWithoutSourceProcess(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR1ArtifactsWithoutSourceProcess(tenantId: string): Promise<ViolationRow[]> {
     const docs = await this.prisma.document.findMany({
       where: { tenantId },
       select: { id: true, name: true },
@@ -216,13 +179,7 @@ export class ConsistencyCheckerService {
       }));
   }
 
-  /**
-   * R2: ProcessStep без output artifact (нет EntityLink fromType:'process_step',
-   * toType:'document', relationType:'produces').
-   */
-  private async ruleR2ProcessStepsWithoutOutput(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR2ProcessStepsWithoutOutput(tenantId: string): Promise<ViolationRow[]> {
     const steps = await this.prisma.processStep.findMany({
       where: { tenantId },
       select: { id: true, name: true },
@@ -251,14 +208,7 @@ export class ConsistencyCheckerService {
       }));
   }
 
-  /**
-   * R3: ProcessStep без owner Role. В схеме `ProcessStep` нет колонки
-   * `assigneeRoleId`; владение выражается через EntityLink fromType:'role',
-   * toType:'process_step', relationType:'responsible_for' (или 'owned_by').
-   */
-  private async ruleR3ProcessStepsWithoutOwnerRole(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR3ProcessStepsWithoutOwnerRole(tenantId: string): Promise<ViolationRow[]> {
     const steps = await this.prisma.processStep.findMany({
       where: { tenantId },
       select: { id: true, name: true },
@@ -288,19 +238,7 @@ export class ConsistencyCheckerService {
       }));
   }
 
-  /**
-   * R4: Role с непривязанным ResponsibilityElement — иными словами,
-   * у Role существует ResponsibilityElement (RE), а у RE нет EntityLink
-   * fromType:'responsibility_element' → toType in ('process' | 'outcome'),
-   * relationType='responsible_for'.
-   *
-   * NB: т.к. RE может ссылаться на Process через `Role`-граф (RACI),
-   * мы детектим «осиротевшие» RE без явной графовой привязки —
-   * это структурная незавершённость карты ответственности.
-   */
-  private async ruleR4ResponsibilityWithoutLink(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR4ResponsibilityWithoutLink(tenantId: string): Promise<ViolationRow[]> {
     const elements = await this.prisma.responsibilityElement.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true },
@@ -329,13 +267,7 @@ export class ConsistencyCheckerService {
       }));
   }
 
-  /**
-   * R5: ResponsibilityElement без метрики — нет EntityLink fromType:
-   * 'responsibility_element', toType:'metric', relationType:'measured_by'.
-   */
-  private async ruleR5ResponsibilityWithoutMetric(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR5ResponsibilityWithoutMetric(tenantId: string): Promise<ViolationRow[]> {
     const elements = await this.prisma.responsibilityElement.findMany({
       where: { tenantId, deletedAt: null },
       select: { id: true, name: true },
@@ -365,13 +297,7 @@ export class ConsistencyCheckerService {
       }));
   }
 
-  /**
-   * R6: CompanyProfile с пустыми mission / vision / strategy.
-   * Возвращает не более 1 нарушения (CompanyProfile — singleton на Org).
-   */
-  private async ruleR6CompanyProfileMissingMVS(
-    tenantId: string,
-  ): Promise<ViolationRow[]> {
+  private async ruleR6CompanyProfileMissingMVS(tenantId: string): Promise<ViolationRow[]> {
     const cp = await this.prisma.companyProfile.findUnique({
       where: { tenantId },
       select: {
@@ -395,21 +321,13 @@ export class ConsistencyCheckerService {
     return [];
   }
 
-  /** ── helpers ──────────────────────────────────────────────── */
-
-  private async dedupAcquire(
-    tenantId: string,
-    rule: RuleId,
-    entityId: string,
-  ): Promise<boolean> {
+  private async dedupAcquire(tenantId: string, rule: RuleId, entityId: string): Promise<boolean> {
     const ttl = readDedupTtl();
     const key = `consistency:dedup:${tenantId}:${rule}:${this.hash(entityId)}`;
     try {
       const res = await this.redis.client.set(key, '1', 'EX', ttl, 'NX');
       return res !== null;
     } catch (err) {
-      // Redis недоступен — пропускаем дедуп (вернём true, чтобы probe ушли);
-      // на проде это не катастрофа, рейт-лимит ProbeService поможет.
       this.logger.warn(
         {
           tenantId,
@@ -426,7 +344,6 @@ export class ConsistencyCheckerService {
     return createHash('sha1').update(v).digest('hex').slice(0, 16);
   }
 
-  /** Кандидаты-получатели probe — owner/admin Org (без personId). */
   private async findOwnerCandidates(tenantId: string): Promise<string[]> {
     const rows = await this.prisma.membership.findMany({
       where: {
@@ -454,8 +371,7 @@ export class ConsistencyCheckerService {
     }
     if (args.ownerCandidates.length === 0) return;
     const ruleDescription = RULE_DESCRIPTIONS[args.rule];
-    const entityName =
-      args.violation.entityName || entityTypeWordRu(args.violation.entityType);
+    const entityName = args.violation.entityName || entityTypeWordRu(args.violation.entityType);
     try {
       await this.probe.suggest({
         tenantId: args.tenantId,
@@ -473,7 +389,7 @@ export class ConsistencyCheckerService {
           actionUrl: `/curation?consistency=${args.rule}&entityId=${encodeURIComponent(args.violation.entityId)}`,
         },
         recipientCandidates: args.ownerCandidates,
-        priorityHint: 0.4, // medium
+        priorityHint: 0.4,
         dataClass: 'internal',
       });
     } catch (err) {
@@ -490,9 +406,6 @@ export class ConsistencyCheckerService {
   }
 }
 
-/**
- * Cron-обёртка вокруг ConsistencyCheckerService.
- */
 @Injectable()
 export class ConsistencyCheckerCron {
   private readonly logger = new Logger(ConsistencyCheckerCron.name);

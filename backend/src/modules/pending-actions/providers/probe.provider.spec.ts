@@ -4,15 +4,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { ProbePendingProvider } from './probe.provider';
 
-/**
- * Unit-тесты ProbePendingProvider (Action Center B0).
- *
- * Покрытие:
- *   - count/list фильтрует по recipientUserId + eventType='probe.question'
- *     + responseStatus='pending' (любая роль — свои вопросы);
- *   - snoozed исключается;
- *   - severity urgent по просроченному expiresAt.
- */
 describe('ProbePendingProvider (B0)', () => {
   let prisma: PrismaService;
   let provider: ProbePendingProvider;
@@ -56,9 +47,7 @@ describe('ProbePendingProvider (B0)', () => {
 
   it('list: severity urgent по просроченному expiresAt; actionUrl ведёт к конкретному вопросу в /me/notifications', async () => {
     const past = new Date(Date.now() - 60_000);
-    findManyMock.mockResolvedValue([
-      { id: 'nt-9', expiresAt: past, createdAt: new Date() },
-    ]);
+    findManyMock.mockResolvedValue([{ id: 'nt-9', expiresAt: past, createdAt: new Date() }]);
     const items = await provider.listForUser({
       tenantId: 't-1',
       userId: 'u-1',
@@ -85,8 +74,6 @@ describe('ProbePendingProvider (B0)', () => {
     });
     expect(items[0]!.severity).toBe('normal');
   });
-
-  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
 
   it('Ф4: title = текст вопроса из payload; detail.kind=probe с question/context/notificationId', async () => {
     findManyMock.mockResolvedValue([

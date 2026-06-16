@@ -16,19 +16,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  CreateWebhookSchema,
-  type CreateWebhookDto,
-} from '../dto/webhooks/create-webhook.dto';
+import { CreateWebhookSchema, type CreateWebhookDto } from '../dto/webhooks/create-webhook.dto';
 import {
   UpdateWebhookSchema,
   type UpdateWebhookDto,
@@ -42,11 +36,6 @@ import type {
 } from '../services/webhooks.service';
 import { WebhooksService } from '../services/webhooks.service';
 
-/**
- * REST `/api/v1/tracker/webhooks` — исходящие webhook'и трекера.
- * Префикс `tracker/` чтобы не конфликтовать с уже существующим `/api/v1/webhooks`
- * (LiveKit-вебхуки). RBAC ResourceType='issue_webhook' (admin/owner).
- */
 @ApiTags('tracker / webhooks')
 @ApiBearerAuth()
 @Controller('api/v1/tracker')
@@ -126,8 +115,7 @@ export class TrackerWebhooksController {
   @RequireSubscription()
   @HttpCode(202)
   @ApiOperation({
-    summary:
-      'Поставить тестовую доставку в очередь webhook-delivery (HMAC + лог). 202 Accepted',
+    summary: 'Поставить тестовую доставку в очередь webhook-delivery (HMAC + лог). 202 Accepted',
   })
   async test(
     @Param('id') id: string,

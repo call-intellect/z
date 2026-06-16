@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { Network, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Network, Search } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { entitiesApi, type EntityTypeApi } from '@/api/entities.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { entitiesApi, type EntityTypeApi } from "@/api/entities.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   ENTITY_TYPE_TABS,
   entityRelationLabel,
@@ -19,29 +19,21 @@ import {
   type EntityLink,
   type EntityLinksGrouped,
   type EntityListItem,
-} from '@/domain/entity';
-import { Chip } from '@/ui/components/shared/Chip';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/entity";
+import { Chip } from "@/ui/components/shared/Chip";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 const PAGE_SIZE = 20;
 
-/**
- * `/entities` (ТЗ 2026-05-26 §3) — master-detail browser сущностей.
- *
- * Левая колонка: горизонтальные tabs по типу + строка поиска + список
- * с пагинацией «Показать ещё».
- * Правая колонка: деталь — псевдонимы, связи (outgoing + incoming),
- * до 5 блоков знаний.
- */
 export function EntitiesListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -57,9 +49,9 @@ export function EntitiesListClient() {
 }
 
 function EntitiesContent() {
-  const [typeFilter, setTypeFilter] = useState<EntityTypeApi | 'all'>('all');
-  const [q, setQ] = useState('');
-  const [qDebounced, setQDebounced] = useState('');
+  const [typeFilter, setTypeFilter] = useState<EntityTypeApi | "all">("all");
+  const [q, setQ] = useState("");
+  const [qDebounced, setQDebounced] = useState("");
   const [items, setItems] = useState<EntityListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -74,7 +66,6 @@ function EntitiesContent() {
     return () => clearTimeout(t);
   }, [q]);
 
-  // При смене фильтра — сбрасываем пагинацию.
   useEffect(() => {
     setOffset(0);
   }, [typeFilter, qDebounced]);
@@ -90,7 +81,7 @@ function EntitiesContent() {
       setForbidden(false);
       try {
         const resp = await entitiesApi.list({
-          type: typeFilter === 'all' ? undefined : typeFilter,
+          type: typeFilter === "all" ? undefined : typeFilter,
           q: qDebounced || undefined,
           limit: PAGE_SIZE,
           offset: currentOffset,
@@ -99,12 +90,10 @@ function EntitiesContent() {
         const mapped = resp.items.map(mapEntityListItem);
         setItems((prev) => (replace ? mapped : [...prev, ...mapped]));
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'forbidden') {
+        if (e instanceof ApiError && e.code === "forbidden") {
           setForbidden(true);
         } else {
-          setError(
-            humanizeApiError(e, 'Не удалось загрузить список'),
-          );
+          setError(humanizeApiError(e, "Не удалось загрузить список"));
         }
       } finally {
         setIsLoading(false);
@@ -114,7 +103,6 @@ function EntitiesContent() {
     [typeFilter, qDebounced],
   );
 
-  // Reload при смене фильтра/поиска.
   useEffect(() => {
     void load(0, true);
   }, [load]);
@@ -141,20 +129,20 @@ function EntitiesContent() {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold">Сущности</h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Компании, люди, проекты, продукты и темы, которые Кора выделила
-          из встреч и разговоров. Всего: {total}.
+          Компании, люди, проекты, продукты и темы, которые Кора выделила из
+          встреч и разговоров. Всего: {total}.
         </p>
       </header>
 
       <div className="mb-3 flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => setTypeFilter('all')}
+          onClick={() => setTypeFilter("all")}
           className={cn(
-            'rounded-full border px-3 py-1 text-xs transition',
-            typeFilter === 'all'
-              ? 'border-accent bg-accent/10 text-accent'
-              : 'border-border-subtle text-fg-secondary hover:border-border-strong',
+            "rounded-full border px-3 py-1 text-xs transition",
+            typeFilter === "all"
+              ? "border-accent bg-accent/10 text-accent"
+              : "border-border-subtle text-fg-secondary hover:border-border-strong",
           )}
         >
           Все
@@ -165,10 +153,10 @@ function EntitiesContent() {
             type="button"
             onClick={() => setTypeFilter(t.value)}
             className={cn(
-              'rounded-full border px-3 py-1 text-xs transition',
+              "rounded-full border px-3 py-1 text-xs transition",
               typeFilter === t.value
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border-subtle text-fg-secondary hover:border-border-strong',
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-subtle text-fg-secondary hover:border-border-strong",
             )}
           >
             {t.label}
@@ -209,10 +197,10 @@ function EntitiesContent() {
                       type="button"
                       onClick={() => setSelectedId(e.id)}
                       className={cn(
-                        'flex w-full flex-col gap-0.5 px-4 py-3 text-left transition',
+                        "flex w-full flex-col gap-0.5 px-4 py-3 text-left transition",
                         selectedId === e.id
-                          ? 'bg-accent/5'
-                          : 'hover:bg-bg-overlay/40',
+                          ? "bg-accent/5"
+                          : "hover:bg-bg-overlay/40",
                       )}
                     >
                       <div className="flex items-center gap-1.5">
@@ -228,7 +216,7 @@ function EntitiesContent() {
                       </div>
                       {e.aliases.length > 0 ? (
                         <div className="line-clamp-1 text-xs text-fg-tertiary">
-                          псевдонимы: {e.aliases.join(', ')}
+                          псевдонимы: {e.aliases.join(", ")}
                         </div>
                       ) : null}
                     </button>
@@ -244,7 +232,7 @@ function EntitiesContent() {
                     disabled={loadingMore}
                     onClick={showMore}
                   >
-                    {loadingMore ? 'Загружаем…' : 'Показать ещё'}
+                    {loadingMore ? "Загружаем…" : "Показать ещё"}
                   </Button>
                 </div>
               ) : null}
@@ -294,9 +282,7 @@ function EntityDetailPane({
       setDetail(mapEntityDetail(d));
       setLinks(mapEntityLinks(l));
     } catch (e) {
-      setError(
-        humanizeApiError(e, 'Не удалось загрузить сущность'),
-      );
+      setError(humanizeApiError(e, "Не удалось загрузить сущность"));
     } finally {
       setLoading(false);
     }
@@ -337,7 +323,7 @@ function EntityDetailPane({
         <h2 className="text-lg font-semibold">{detail.entity.canonicalName}</h2>
         {detail.entity.aliases.length > 0 ? (
           <p className="text-xs text-fg-tertiary">
-            Псевдонимы: {detail.entity.aliases.join(', ')}
+            Псевдонимы: {detail.entity.aliases.join(", ")}
           </p>
         ) : null}
         <p className="text-xs text-fg-tertiary">
@@ -345,7 +331,7 @@ function EntityDetailPane({
         </p>
         {detail.mergedIntoId ? (
           <p className="text-xs text-warning">
-            Эта сущность объединена с другой — каноническая запись id:{' '}
+            Эта сущность объединена с другой — каноническая запись id:{" "}
             <button
               type="button"
               onClick={() => onSelectOther(detail.mergedIntoId!)}
@@ -412,8 +398,8 @@ function EntityDetailPane({
                   {b.trustedAnswer}
                 </p>
                 <p className="mt-1 text-xs text-fg-tertiary">
-                  {b.evidenceCount} источников ·{' '}
-                  {b.createdAt.toLocaleDateString('ru-RU')}
+                  {b.evidenceCount} источников ·{" "}
+                  {b.createdAt.toLocaleDateString("ru-RU")}
                 </p>
               </li>
             ))}
@@ -428,7 +414,7 @@ function EntityDetailPane({
             className="text-xs"
           >
             {showAllBlocks
-              ? 'Свернуть'
+              ? "Свернуть"
               : `Показать все ${detail.blocks.length}`}
           </Button>
         ) : null}
@@ -444,7 +430,7 @@ function LinkRow({
   link: EntityLink;
   onClickPeer: () => void;
 }) {
-  const arrow = link.direction === 'outgoing' ? '⟶' : '←';
+  const arrow = link.direction === "outgoing" ? "⟶" : "←";
   const showConfidence = link.confidence >= 0.85;
   return (
     <li className="flex flex-wrap items-baseline gap-1 text-fg-secondary">
@@ -468,4 +454,3 @@ function LinkRow({
     </li>
   );
 }
-

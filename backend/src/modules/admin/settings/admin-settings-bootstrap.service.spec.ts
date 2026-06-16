@@ -1,14 +1,3 @@
-/**
- * Unit-тесты `AdminSettingsBootstrapService` (Фаза 1
- * env-to-admin-setting-call-sites-migration).
- *
- * Покрываем:
- *   1) onApplicationBootstrap читает строки из mock prisma и вызывает
- *      cfg.hydrateSync с правильным набором.
- *   2) При throw'е из prisma.findMany — НЕ падает, логирует, продолжает
- *      (cacheMap не трогается).
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';

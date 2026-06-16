@@ -16,10 +16,7 @@ import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { AuditLogService } from '../audit/audit-log.service';
 import { AUDIT } from '../audit/audit.types';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -28,21 +25,6 @@ import { RbacService } from '../rbac/rbac.service';
 
 import { RetentionPolicyService } from './retention-policy.service';
 
-/**
- * REST API для конфигурации `OrgRetentionPolicy` (Фаза 11 knowledge-core).
- *
- *   - GET   /api/v1/settings/retention   — текущая политика (owner-only).
- *   - PATCH /api/v1/settings/retention   — частичный update (owner-only).
- *
- * RBAC: owner Org (через `RbacService.canManageOrg` — owner или super_admin).
- *
- * Минимумы:
- *   - rawEventDays >= 30  — защита от случайного wipe (нельзя стереть RawEvent
- *     за день/неделю).
- *   - chatMessageDays >= 7.
- *   - archivedBlockDays и auditLogDays — без жёсткого нижнего лимита (admin
- *     может выбрать <30 для compliance), но не меньше 1.
- */
 const ARCHIVED_BLOCK_ACTIONS = ['archive_then_delete', 'keep_forever'] as const;
 
 const PatchRetentionSchema = z
@@ -133,8 +115,6 @@ export class RetentionPolicyController {
     return this.toDto(updated);
   }
 
-  // ────────────────────────── helpers ──────────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -152,8 +132,7 @@ export class RetentionPolicyController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Управление retention-политикой доступно только владельцу Org или super_admin.',
+          message: 'Управление retention-политикой доступно только владельцу Org или super_admin.',
         },
       });
     }

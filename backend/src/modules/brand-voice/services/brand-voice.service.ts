@@ -15,21 +15,6 @@ import {
 } from '../dto/brand-voice.dto';
 import { brandVoiceTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-7 — CRUD-сервис над BrandVoiceProfile.
- *
- *   - `getOrCreate(tenantId)` — lazy-create (1:1 запись на Org).
- *   - `update(args)` — admin-override (PATCH). Зашивает changes в audit log.
- *   - `applyExtracted(args)` — apply hook для `BrandVoiceExtractorService`
- *     (cron'у не нужен PATCH-flow с audit, только серверная запись).
- *   - `listArtifacts(tenantId)` — Document'ы с useCases includes 'brand_corpus'.
- *
- * Бизнес-правила:
- *   - completeness = 0..1, доля заполненных секций (tone/values/taboos/examples).
- *   - Профиль = JSON-поля (toneJson/valuesJson/taboosJson), чтобы расширение
- *     без alter table; парсинг — здесь, не в JSON-helpers per file.
- *   - corpusSize вычисляется при каждом get() — это count, не gauge-snapshot.
- */
 @Injectable()
 export class BrandVoiceService {
   private readonly logger = new Logger(BrandVoiceService.name);
@@ -42,9 +27,6 @@ export class BrandVoiceService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Lazy-load либо создаём пустой профиль на лету.
-   */
   async getOrCreate(tenantId: string): Promise<BrandVoiceProfileDto> {
     const existing = await this.prisma.brandVoiceProfile.findUnique({
       where: { tenantId },
@@ -56,19 +38,12 @@ export class BrandVoiceService {
       row = await this.prisma.brandVoiceProfile.create({
         data: { tenantId },
       });
-      this.logger.log(
-        { tenantId, brandVoiceProfileId: row.id },
-        'BrandVoiceProfile создан lazily',
-      );
+      this.logger.log({ tenantId, brandVoiceProfileId: row.id }, 'BrandVoiceProfile создан lazily');
     }
     const corpusSize = await this.corpusSize(tenantId);
     return this.toDto(row, corpusSize);
   }
 
-  /**
-   * Возвращает (или null) сырой row — для extractor'а (нужен version и
-   * последний lastBuiltAt для dedup'а 6-часовой idempotency-window).
-   */
   async getRaw(tenantId: string): Promise<BrandVoiceProfile | null> {
     return this.prisma.brandVoiceProfile.findUnique({ where: { tenantId } });
   }
@@ -121,11 +96,6 @@ export class BrandVoiceService {
     return this.toDto(updated, corpusSize);
   }
 
-  /**
-   * Apply hook для `BrandVoiceExtractorService`: пишет извлечённые tone/values/
-   * taboos + поднимает version + builtAt. Не пишет audit log
-   * (это автомат, не пользовательское действие).
-   */
   async applyExtracted(args: {
     tenantId: string;
     tone: BrandVoiceTone | null;
@@ -181,7 +151,6 @@ export class BrandVoiceService {
       update: data,
     });
 
-    // Пересчитать completeness и записать.
     const completeness = computeCompleteness(upserted);
     const finalRow = await this.prisma.brandVoiceProfile.update({
       where: { tenantId: args.tenantId },
@@ -196,10 +165,6 @@ export class BrandVoiceService {
     return finalRow;
   }
 
-  /**
-   * Сколько в Org Document'ов помечены как brand_corpus (через useCases).
-   * PostgreSQL: `useCases` — String[]; `has='brand_corpus'`.
-   */
   async corpusSize(tenantId: string): Promise<number> {
     return this.prisma.document.count({
       where: {
@@ -210,10 +175,6 @@ export class BrandVoiceService {
     });
   }
 
-  /**
-   * Список документов из brand_corpus для UI (admin видит, какие документы
-   * использовались экстрактором).
-   */
   async listArtifacts(tenantId: string): Promise<BrandVoiceArtifactDto[]> {
     const rows = await this.prisma.document.findMany({
       where: {
@@ -242,10 +203,6 @@ export class BrandVoiceService {
     }));
   }
 
-  /**
-   * Patch use-cases у Document'а. Не часть BrandVoiceProfile, но логически
-   * рядом — admin тегает документы как brand_corpus через UI /brand-voice.
-   */
   async updateDocumentUseCases(args: {
     tenantId: string;
     userId: string;
@@ -275,8 +232,6 @@ export class BrandVoiceService {
         useCases: args.useCases,
       },
     });
-    // Обновим gauge corpus_size — он мог измениться (документ ушёл/пришёл в
-    // brand_corpus).
     const corpusSize = await this.corpusSize(args.tenantId);
     this.metrics.setBrandVoiceCorpusSize({
       tenantTop: brandVoiceTenantTop(args.tenantId),
@@ -284,8 +239,6 @@ export class BrandVoiceService {
     });
     return updated;
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private updateMetrics(args: {
     tenantId: string;
@@ -303,10 +256,7 @@ export class BrandVoiceService {
     });
   }
 
-  private toDto(
-    row: BrandVoiceProfile,
-    corpusSize: number,
-  ): BrandVoiceProfileDto {
+  private toDto(row: BrandVoiceProfile, corpusSize: number): BrandVoiceProfileDto {
     const minCorpusSize = this.cfg.brandVoice.minCorpusSize;
     return {
       id: row.id,
@@ -328,8 +278,6 @@ export class BrandVoiceService {
   }
 }
 
-// ─────────────────────────── JSON helpers ──────────────────────────
-
 function extractTone(json: Prisma.JsonValue | null): BrandVoiceTone | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   const obj = json as Record<string, unknown>;
@@ -343,9 +291,7 @@ function extractTone(json: Prisma.JsonValue | null): BrandVoiceTone | null {
   return Object.keys(out).length > 0 ? out : null;
 }
 
-function extractValues(
-  json: Prisma.JsonValue | null,
-): BrandVoiceValueItem[] | null {
+function extractValues(json: Prisma.JsonValue | null): BrandVoiceValueItem[] | null {
   if (!Array.isArray(json)) return null;
   const out: BrandVoiceValueItem[] = [];
   for (const it of json) {
@@ -357,18 +303,14 @@ function extractValues(
         ? Math.max(0, Math.min(1, obj.weight))
         : 0.5;
     const exampleBlockIds = Array.isArray(obj.exampleBlockIds)
-      ? obj.exampleBlockIds.filter(
-          (x): x is string => typeof x === 'string' && x.length > 0,
-        )
+      ? obj.exampleBlockIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
       : [];
     out.push({ value: obj.value.slice(0, 120), weight, exampleBlockIds });
   }
   return out.length > 0 ? out : null;
 }
 
-function extractTaboos(
-  json: Prisma.JsonValue | null,
-): BrandVoiceTabooItem[] | null {
+function extractTaboos(json: Prisma.JsonValue | null): BrandVoiceTabooItem[] | null {
   if (!Array.isArray(json)) return null;
   const out: BrandVoiceTabooItem[] = [];
   for (const it of json) {
@@ -387,10 +329,6 @@ function extractTaboos(
   return out.length > 0 ? out : null;
 }
 
-/**
- * Доля заполненных секций (tone/values/taboos/examples) — простая 4-точечная
- * метрика. Каждая секция вносит 0.25 при непустоте.
- */
 function computeCompleteness(row: BrandVoiceProfile): number {
   let score = 0;
   if (extractTone(row.toneJson) !== null) score += 0.25;

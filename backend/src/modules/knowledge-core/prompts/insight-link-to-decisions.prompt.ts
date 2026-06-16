@@ -1,17 +1,3 @@
-/**
- * SBA β-4 — Specialist 3.5 (Insights Radar).
- *
- * LLM-промпт `insight-link-to-decisions` — арбитр на пары (Insight, Decision):
- * получает statement сигнала и до 10 candidate-Decision'ов того же tenant'а,
- * возвращает массив id Decision'ов, которые могли спровоцировать сигнал
- * (relatedDecisionIds для Insight).
- *
- * Возвращаемый JSON Schema strict — см. `INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA`.
- *
- * Главное правило: не выдумывать связи; если ни один Decision не подходит —
- * вернуть пустой массив.
- */
-
 export const INSIGHT_LINK_TO_DECISIONS_SYSTEM_PROMPT = [
   'Ты — knowledge-инженер. Тебе дают суть сигнала компании (Insight: problem / risk / blocker / inefficiency) и список кандидатов-решений (Decision), которые могли его спровоцировать.',
   'Твоя задача — отобрать только те Decision, которые с высокой долей вероятности привели к появлению этого сигнала.',
@@ -51,9 +37,6 @@ export const INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-/**
- * JSON Schema strict для `insight-link-to-decisions`.
- */
 export const INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -63,12 +46,12 @@ export const INSIGHT_LINK_TO_DECISIONS_JSON_SCHEMA: Record<string, unknown> = {
       type: 'array',
       maxItems: 10,
       items: { type: 'string', minLength: 1, maxLength: 60 },
-      description: 'id Decision\'ов из списка кандидатов, которые привели к сигналу.',
+      description: "id Decision'ов из списка кандидатов, которые привели к сигналу.",
     },
     reasoning: {
       type: 'string',
       maxLength: 2_000,
-      description: 'Короткое пояснение почему именно эти Decision\'ы.',
+      description: "Короткое пояснение почему именно эти Decision'ы.",
     },
   },
 };

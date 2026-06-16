@@ -1,10 +1,3 @@
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins §Backend.4 / DoD:
- *   «checkinFallbackHeuristic покрыт unit-тестами (5 morning + 5 evening
- *   + 5 ловушек)».
- *
- * Тестируем чистую функцию: ввод → kind | null. LLM/DB не используются.
- */
 import { describe, expect, it } from 'vitest';
 
 import { checkinFallbackHeuristic } from './checkin-fallback-triggers';
@@ -37,15 +30,10 @@ describe('checkinFallbackHeuristic — позитивные кейсы evening',
 
 describe('checkinFallbackHeuristic — ловушки (триггер не в начале / не план/отчёт)', () => {
   it.each([
-    // Ловушка 1: триггер в середине фразы — не должен ловиться.
     'Не забудь напомнить про план на день к 9 утра',
-    // Ловушка 2: про «план на отпуск» (длиннее 30 символов слово «отпуск» далеко).
     'Договоримся обсудить план на отпуск в пятницу с командой',
-    // Ловушка 3: «итоги встречи» — не дневной отчёт.
     'Итоги встречи с клиентом — всё ок, договорились',
-    // Ловушка 4: «отчёт квартальный» — это не дневной отчёт.
     'Отчёт квартальный собран, отправлю руководству',
-    // Ловушка 5: пустая строка.
     '',
   ])('«%s» → null', (input) => {
     const result = checkinFallbackHeuristic(input);
@@ -60,8 +48,6 @@ describe('checkinFallbackHeuristic — ловушки (триггер не в н
   });
 
   it('case-insensitive: «ПЛАН НА ДЕНЬ ...» → morning', () => {
-    expect(checkinFallbackHeuristic('ПЛАН НА ДЕНЬ: А, Б')?.kind).toBe(
-      'morning',
-    );
+    expect(checkinFallbackHeuristic('ПЛАН НА ДЕНЬ: А, Б')?.kind).toBe('morning');
   });
 });

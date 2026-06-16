@@ -6,16 +6,6 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { GoalsPulseService } from './goals-pulse.service';
 
-/**
- * Goals OKR v2 (Фаза 4) — unit-тесты GoalsPulseService.
- *
- * Покрываем (§ТЗ Фаза 4 C):
- *   - aggregate считает счётчики по progressStatus + newThisWeek корректно;
- *   - getOrGenerate идемпотентен (повтор → getStored, без повторного llm.call);
- *   - generate при падении llm → fallback markdown (llmTaskRouteId=null),
- *     digest всё равно создан.
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 interface PrismaStub {
@@ -27,8 +17,8 @@ interface PrismaStub {
   };
 }
 
-const WEEK_START = new Date('2026-05-25T21:00:00.000Z'); // пн 00:00 МСК
-const WEEK_END = new Date('2026-06-01T21:00:00.000Z'); // след. пн 00:00 МСК
+const WEEK_START = new Date('2026-05-25T21:00:00.000Z');
+const WEEK_END = new Date('2026-06-01T21:00:00.000Z');
 
 function makeGoal(over: {
   id: string;
@@ -118,7 +108,6 @@ describe('GoalsPulseService', () => {
       makeGoal({ id: 'g4', progressStatus: 'stalled' }),
       makeGoal({ id: 'g5', progressStatus: 'achieved' }),
       makeGoal({ id: 'g6', progressStatus: 'dropped' }),
-      // создана в окне недели → newThisWeek++
       makeGoal({
         id: 'g7',
         progressStatus: 'on_track',
@@ -129,11 +118,7 @@ describe('GoalsPulseService', () => {
       goal: { findMany: vi.fn(async () => goals) },
     });
     const { metrics } = makeMetrics();
-    const svc = new GoalsPulseService(
-      prisma as unknown as PrismaService,
-      baseLlm.llm,
-      metrics,
-    );
+    const svc = new GoalsPulseService(prisma as unknown as PrismaService, baseLlm.llm, metrics);
 
     const agg = await svc.aggregate({
       tenantId: 't1',
@@ -154,7 +139,6 @@ describe('GoalsPulseService', () => {
 
   it('aggregate: avgKrProgress — clamp 0..100, среднее по KR; null без KR', async () => {
     const goals = [
-      // KR1 50%, KR2 100% (clamp) → среднее 75%
       makeGoal({
         id: 'g1',
         progressStatus: 'on_track',
@@ -163,17 +147,13 @@ describe('GoalsPulseService', () => {
           { startValue: 0, targetValue: 100, currentValue: 200 },
         ],
       }),
-      makeGoal({ id: 'g2', progressStatus: 'on_track' }), // нет KR
+      makeGoal({ id: 'g2', progressStatus: 'on_track' }),
     ];
     const { prisma } = makePrisma({
       goal: { findMany: vi.fn(async () => goals) },
     });
     const { metrics } = makeMetrics();
-    const svc = new GoalsPulseService(
-      prisma as unknown as PrismaService,
-      baseLlm.llm,
-      metrics,
-    );
+    const svc = new GoalsPulseService(prisma as unknown as PrismaService, baseLlm.llm, metrics);
 
     const agg = await svc.aggregate({
       tenantId: 't1',
@@ -206,11 +186,7 @@ describe('GoalsPulseService', () => {
       },
     });
     const { metrics } = makeMetrics();
-    const svc = new GoalsPulseService(
-      prisma as unknown as PrismaService,
-      baseLlm.llm,
-      metrics,
-    );
+    const svc = new GoalsPulseService(prisma as unknown as PrismaService, baseLlm.llm, metrics);
 
     const out = await svc.getOrGenerate({
       tenantId: 't1',
@@ -227,17 +203,11 @@ describe('GoalsPulseService', () => {
   it('generate: успех LLM → парсит body + shortSummary + llmTaskRouteId', async () => {
     const { prisma, upsert } = makePrisma({
       goal: {
-        findMany: vi.fn(async () => [
-          makeGoal({ id: 'g1', progressStatus: 'on_track' }),
-        ]),
+        findMany: vi.fn(async () => [makeGoal({ id: 'g1', progressStatus: 'on_track' })]),
       },
     });
     const { metrics } = makeMetrics();
-    const svc = new GoalsPulseService(
-      prisma as unknown as PrismaService,
-      baseLlm.llm,
-      metrics,
-    );
+    const svc = new GoalsPulseService(prisma as unknown as PrismaService, baseLlm.llm, metrics);
 
     const out = await svc.generate({
       tenantId: 't1',
@@ -262,17 +232,11 @@ describe('GoalsPulseService', () => {
     const { llm } = makeLlm(new Error('llm down'));
     const { prisma, upsert } = makePrisma({
       goal: {
-        findMany: vi.fn(async () => [
-          makeGoal({ id: 'g1', progressStatus: 'at_risk' }),
-        ]),
+        findMany: vi.fn(async () => [makeGoal({ id: 'g1', progressStatus: 'at_risk' })]),
       },
     });
     const { metrics } = makeMetrics();
-    const svc = new GoalsPulseService(
-      prisma as unknown as PrismaService,
-      llm,
-      metrics,
-    );
+    const svc = new GoalsPulseService(prisma as unknown as PrismaService, llm, metrics);
 
     const out = await svc.generate({
       tenantId: 't1',
@@ -281,7 +245,6 @@ describe('GoalsPulseService', () => {
       weekEnd: WEEK_END,
     });
 
-    // fallback пишет заголовок «# Пульс целей за неделю ...»
     expect(out.bodyMarkdown).toContain('Пульс целей за неделю');
     expect(out.llmTaskRouteId).toBeNull();
     expect(upsert).toHaveBeenCalledTimes(1);

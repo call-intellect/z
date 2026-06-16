@@ -4,17 +4,9 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { SupportAccessService } from './support-access.service';
 
-/** Дефолтные SLA-таймеры, если для вендор-Org нет SupportSlaPolicy. */
 const DEFAULT_FIRST_RESPONSE_MINS = 60;
 const DEFAULT_RESOLUTION_MINS = 480;
 
-/**
- * SupportSlaService — расчёт SLA-дедлайнов тикета и фиксация нарушений.
- * ТЗ 2026-06-09 support-desk Ф1 (R11/R12).
- *
- * Упрощение v1: `businessHoursOnly` игнорируется — дедлайны считаются как
- * createdAt + N минут календарно (рабочие часы — fast-follow).
- */
 @Injectable()
 export class SupportSlaService {
   private readonly logger = new Logger(SupportSlaService.name);
@@ -25,12 +17,6 @@ export class SupportSlaService {
     private readonly access: SupportAccessService,
   ) {}
 
-  /**
-   * Дедлайны первого ответа и решения для нового тикета. Грузит
-   * `SupportSlaPolicy` вендор-Org (синглтон); fallback на дефолты 60/480 мин.
-   *
-   * NB (v1): `businessHoursOnly` не учитывается — календарное прибавление минут.
-   */
   async computeDueDates(
     vendorOrgId: string,
     createdAt: Date,
@@ -59,14 +45,6 @@ export class SupportSlaService {
     };
   }
 
-  /**
-   * Пометить нарушения SLA первого ответа. Находит открытые support-тикеты
-   * вендор-Org с истёкшим `firstResponseDueAt`, ещё не отвеченные клиенту и
-   * без зафиксированного нарушения → проставляет `slaBreachedAt=now`.
-   *
-   * Возвращает число помеченных. Tenant-scoped по вендор-Org. «Открытый» =
-   * state.category НЕ ∈ {completed, cancelled} (или state отсутствует).
-   */
   async markBreaches(now: Date): Promise<number> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) return 0;
@@ -79,11 +57,7 @@ export class SupportSlaService {
         firstRespondedAt: null,
         firstResponseDueAt: { lt: now },
         deletedAt: null,
-        // Открытый тикет: статус не закрыт/не отменён (или статус не задан).
-        OR: [
-          { stateId: null },
-          { state: { category: { notIn: ['completed', 'cancelled'] } } },
-        ],
+        OR: [{ stateId: null }, { state: { category: { notIn: ['completed', 'cancelled'] } } }],
       },
       select: { id: true },
     });

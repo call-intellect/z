@@ -4,9 +4,6 @@ import { validateEventPayload } from '../../conversational/types/event-payload.r
 
 import { ProviderSmokeTestCron } from './provider-smoke-test.cron';
 
-/**
- * SBA α-10 wave 3 — ProviderSmokeTestCron: metrics + fail streak alert.
- */
 describe('ProviderSmokeTestCron', () => {
   const findMany = vi.fn();
   const update = vi.fn(async () => ({}));
@@ -132,7 +129,6 @@ describe('ProviderSmokeTestCron', () => {
       metrics,
     );
     await cron.testProvider('deepseek');
-    // maxTokens === 64 (>= OpenAI floor 16) — проверяем через objectContaining
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
         input: expect.objectContaining({ maxTokens: 64 }),
@@ -155,9 +151,7 @@ describe('ProviderSmokeTestCron', () => {
         throw new Error('max_output_tokens too small');
       }),
     });
-    userFindMany.mockResolvedValueOnce([
-      { id: 'u1', memberships: [{ orgId: 'org1' }] },
-    ] as never);
+    userFindMany.mockResolvedValueOnce([{ id: 'u1', memberships: [{ orgId: 'org1' }] }] as never);
     const cron = new ProviderSmokeTestCron(
       prisma,
       cfg,
@@ -166,7 +160,6 @@ describe('ProviderSmokeTestCron', () => {
       conversational,
       metrics,
     );
-    // threshold=3 → нужно 3 провала подряд, чтобы сработал алерт
     await cron.testProvider('openai');
     await cron.testProvider('openai');
     await cron.testProvider('openai');
@@ -182,10 +175,7 @@ describe('ProviderSmokeTestCron', () => {
     expect(arg.payload).toHaveProperty('severity', 'error');
     expect(arg.payload).not.toHaveProperty('kind');
     expect(arg.payload).not.toHaveProperty('streak');
-    // payload должен пройти валидацию реальной схемы system.message без throw
-    expect(() =>
-      validateEventPayload('system.message', arg.payload),
-    ).not.toThrow();
+    expect(() => validateEventPayload('system.message', arg.payload)).not.toThrow();
   });
 
   it('runOnce пропускает провайдер с пустым baseUrl', async () => {
@@ -221,7 +211,6 @@ describe('ProviderSmokeTestCron', () => {
     expect(resolveByName).toHaveBeenCalledWith('configured');
   });
 
-  // ── Ф6 Часть 3 — checkCacheHitRatio ────────────────────────────────────
   describe('checkCacheHitRatio', () => {
     function makeCron() {
       return new ProviderSmokeTestCron(
@@ -242,11 +231,7 @@ describe('ProviderSmokeTestCron', () => {
       });
       const cron = makeCron();
       const warnSpy = vi
-        .spyOn(
-          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
-            .logger,
-          'warn',
-        )
+        .spyOn((cron as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger, 'warn')
         .mockImplementation(() => undefined);
 
       await cron.checkCacheHitRatio();
@@ -267,11 +252,7 @@ describe('ProviderSmokeTestCron', () => {
       });
       const cron = makeCron();
       const warnSpy = vi
-        .spyOn(
-          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
-            .logger,
-          'warn',
-        )
+        .spyOn((cron as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger, 'warn')
         .mockImplementation(() => undefined);
 
       await cron.checkCacheHitRatio();
@@ -291,11 +272,7 @@ describe('ProviderSmokeTestCron', () => {
       });
       const cron = makeCron();
       const warnSpy = vi
-        .spyOn(
-          (cron as unknown as { logger: { warn: (...a: unknown[]) => void } })
-            .logger,
-          'warn',
-        )
+        .spyOn((cron as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger, 'warn')
         .mockImplementation(() => undefined);
 
       await cron.checkCacheHitRatio();

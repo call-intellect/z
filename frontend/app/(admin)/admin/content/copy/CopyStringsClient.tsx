@@ -1,50 +1,37 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { History as HistoryIcon, Save, Upload } from 'lucide-react';
-import { toast } from 'sonner';
+import { useMemo, useState } from "react";
+import { History as HistoryIcon, Save, Upload } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   adminCopyStringsApi,
   COPY_SECTIONS,
   type AdminSettingRowApi,
   type CopySection,
-} from '@/api/admin-copy-strings.api';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+} from "@/api/admin-copy-strings.api";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const TABS: AdminTabDef[] = [
-  { value: 'glossary', label: 'Термины' },
-  { value: 'copy-strings', label: 'UI-строки' },
-  { value: 'history', label: 'История' },
+  { value: "glossary", label: "Термины" },
+  { value: "copy-strings", label: "UI-строки" },
+  { value: "history", label: "История" },
 ];
 
-/**
- * `/admin/content/copy` — глоссарий и UI-строки.
- *
- * Записи живут в `AdminSetting` (category='content', section=
- * 'glossary' | 'copy-strings'). value — строка. На бэкенде эти секции
- * могут быть ещё не засеяны (Phase 5 backend ещё в работе) — в этом
- * случае показываем AdminEmpty с подсказкой про bulk-import.
- *
- * Каждая строка редактируется inline через простой Input + кнопка
- * «Сохранить». Используется прямой POST на `/admin/settings/:key`
- * (а не общий хук `useAdminSettingEditor`) — чтобы не плодить 100+ SWR
- * подписок на странице.
- */
 export function CopyStringsClient() {
   const [historyKey, setHistoryKey] = useState<string | null>(null);
 
@@ -52,15 +39,15 @@ export function CopyStringsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Контент' },
-        { label: 'Глоссарий и UI-строки' },
+        { label: "Контент" },
+        { label: "Глоссарий и UI-строки" },
       ]}
       title="Глоссарий и UI-строки"
       description="Термины Z (Concierge, Кора, Org → «компания»…) и UI-копия. Хранятся в AdminSetting (category=content). Можно править значения inline, история — через выезжающую панель."
     >
       <AdminTabs tabs={TABS} defaultTab="glossary">
         {(active) => {
-          if (active === 'history') {
+          if (active === "history") {
             return (
               <AdminEmpty
                 title="История по конкретной строке"
@@ -116,13 +103,13 @@ function SectionPanel({
       <AdminEmpty
         title={
           section === COPY_SECTIONS.GLOSSARY
-            ? 'Терминов пока нет'
-            : 'UI-строк пока нет'
+            ? "Терминов пока нет"
+            : "UI-строк пока нет"
         }
         description={
           section === COPY_SECTIONS.GLOSSARY
-            ? 'Добавьте через bulk-import из second-brain/13_glossary/ui-glossary.md или создайте записи руками.'
-            : 'Добавьте через bulk-import из second-brain/13_glossary/copy-strings.ru.md или создайте записи руками.'
+            ? "Добавьте через bulk-import из second-brain/13_glossary/ui-glossary.md или создайте записи руками."
+            : "Добавьте через bulk-import из second-brain/13_glossary/copy-strings.ru.md или создайте записи руками."
         }
       />
     );
@@ -170,8 +157,6 @@ function SectionPanel({
   );
 }
 
-// ─────────────────────────────── CopyRow ────────────────────────────────────
-
 function CopyRow({
   row,
   onOpenHistory,
@@ -200,7 +185,7 @@ function CopyRow({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -226,7 +211,7 @@ function CopyRow({
         />
       </td>
       <td className="px-3 py-3 text-xs text-fg-tertiary">
-        {new Date(row.updatedAt).toLocaleString('ru-RU')}
+        {new Date(row.updatedAt).toLocaleString("ru-RU")}
       </td>
       <td className="px-3 py-3">
         <div className="flex items-center gap-1">
@@ -236,7 +221,7 @@ function CopyRow({
             onClick={() => void handleSave()}
           >
             <Save size={14} />
-            {saving ? 'Сохраняем…' : 'Сохранить'}
+            {saving ? "Сохраняем…" : "Сохранить"}
           </Button>
           <Button
             type="button"
@@ -254,8 +239,8 @@ function CopyRow({
 }
 
 function coerceToString(v: unknown): string {
-  if (typeof v === 'string') return v;
-  if (v === null || v === undefined) return '';
+  if (typeof v === "string") return v;
+  if (v === null || v === undefined) return "";
   try {
     return JSON.stringify(v);
   } catch {

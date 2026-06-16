@@ -7,15 +7,6 @@ import {
   shouldHideRate,
 } from './chat-usage-stats.scoring';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — unit-тесты формул метрики чата.
- *
- * Чистые функции, без БД. Покрываем:
- *   - helped-rate = helpedUp/rated (НЕ /answered);
- *   - скрытие % при rated < min («мало данных»);
- *   - feedbackCoverage = rated/answered; groundedRate = withCitation/answered;
- *   - граничные/негативные кейсы.
- */
 describe('chat-usage-stats.scoring', () => {
   describe('computeHelpedRate', () => {
     it('helpedUp/rated в процентах (НЕ /answered)', () => {
@@ -68,7 +59,6 @@ describe('chat-usage-stats.scoring', () => {
         helpedUp: 15,
       });
       expect(s.helpedRateHidden).toBe(false);
-      // 15/20 = 75% (НЕ 15/38).
       expect(s.helpedRatePercent).toBe(75);
     });
 
@@ -80,8 +70,8 @@ describe('chat-usage-stats.scoring', () => {
         rated: 20,
         helpedUp: 10,
       });
-      expect(s.feedbackCoveragePercent).toBe(50); // 20/40
-      expect(s.groundedRatePercent).toBe(75); // 30/40
+      expect(s.feedbackCoveragePercent).toBe(50);
+      expect(s.groundedRatePercent).toBe(75);
     });
 
     it('answered=0 → coverage/grounded = 0, helped скрыт', () => {
@@ -101,7 +91,7 @@ describe('chat-usage-stats.scoring', () => {
       const s = buildChatUsageStats({
         asked: 10,
         answered: 5,
-        answeredWithCitation: 99, // > answered
+        answeredWithCitation: 99,
         rated: 0,
         helpedUp: 0,
       });
@@ -121,7 +111,7 @@ describe('chat-usage-stats.scoring', () => {
         3,
       );
       expect(s.helpedRateHidden).toBe(false);
-      expect(s.helpedRatePercent).toBe(75); // 3/4
+      expect(s.helpedRatePercent).toBe(75);
     });
   });
 });

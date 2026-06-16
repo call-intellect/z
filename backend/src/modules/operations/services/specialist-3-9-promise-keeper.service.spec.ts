@@ -2,19 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Specialist39PromiseKeeperService } from './specialist-3-9-promise-keeper.service';
 
-/**
- * SBA β-8.2 — Specialist 3.9 (Promise Keeper) unit-тесты.
- *
- * Покрываем:
- *   1. findFollowupCandidates пропускает блоки, у которых ещё не прошёл
- *      следующий рабочий день после `commitmentDueDate`.
- *   2. findFollowupCandidates возвращает блок если nextBusinessDay уже
- *      сегодня (или раньше) — обещание просрочено.
- *   3. findEscalationCandidates фильтрует по threshold = now - escalationDays.
- *   4. sendFollowupForBlock при успешном probe обновляет
- *      commitmentStatus='asked' + commitmentAskedAt.
- *   5. sendFollowupForBlock при dropped probe НЕ обновляет статус.
- */
 describe('Specialist39PromiseKeeperService', () => {
   function build(overrides: {
     blocks?: Array<{
@@ -41,8 +28,6 @@ describe('Specialist39PromiseKeeperService', () => {
     const prisma = {
       ideaBlock: {
         findMany: vi.fn().mockImplementation((args: { where?: { commitmentStatus?: unknown } }) => {
-          // Выбираем разный список в зависимости от того, asked ли это
-          // (escalation) или open (followup).
           const status = args?.where?.commitmentStatus;
           if (status === 'asked') {
             return Promise.resolve(overrides.escalationBlocks ?? []);
@@ -74,9 +59,7 @@ describe('Specialist39PromiseKeeperService', () => {
     const probe = {
       suggest: vi
         .fn()
-        .mockResolvedValue(
-          overrides.probeResult ?? { ok: true, probeEventId: 'p-1' },
-        ),
+        .mockResolvedValue(overrides.probeResult ?? { ok: true, probeEventId: 'p-1' }),
     };
     const holidays = {
       nextBusinessDay: vi
@@ -104,8 +87,6 @@ describe('Specialist39PromiseKeeperService', () => {
   }
 
   it('findFollowupCandidates: пропускает блок, у которого следующий рабочий день после dueDate ещё не прошёл (>= today)', async () => {
-    // dueDate = вчера; nextBusinessDay(dueDate + 1) = today → ещё рано
-    // (cron спрашивает только когда nextWorkday < today: рабочий день уже прошёл).
     const today = utc(2026, 5, 20);
     const yesterday = utc(2026, 5, 19);
     const { svc, holidays } = build({
@@ -118,7 +99,7 @@ describe('Specialist39PromiseKeeperService', () => {
           commitmentDueDate: yesterday,
         },
       ],
-      holidaysNextWorkdayReturn: today, // следующий рабочий день = today
+      holidaysNextWorkdayReturn: today,
     });
     const result = await svc.findFollowupCandidates({
       tenantId: 't1',
@@ -131,7 +112,6 @@ describe('Specialist39PromiseKeeperService', () => {
   it('findFollowupCandidates: возвращает блок, если следующий рабочий день уже прошёл (< today)', async () => {
     const today = utc(2026, 5, 20);
     const twoDaysAgo = utc(2026, 5, 18);
-    // nextBusinessDay(twoDaysAgo + 1 = 2026-05-19) = 2026-05-19 (вчера), < today.
     const { svc } = build({
       blocks: [
         {
@@ -166,7 +146,7 @@ describe('Specialist39PromiseKeeperService', () => {
         },
       ],
       holidaysNextWorkdayReturn: utc(2026, 5, 18),
-      employeeUserIds: [], // нет employee-авторов
+      employeeUserIds: [],
     });
     const result = await svc.findFollowupCandidates({
       tenantId: 't1',
@@ -177,7 +157,7 @@ describe('Specialist39PromiseKeeperService', () => {
 
   it('findEscalationCandidates: фильтрует threshold = now - escalationDays', async () => {
     const now = utc(2026, 5, 20);
-    const longAgo = new Date(now.getTime() - 4 * 24 * 3600 * 1000); // 4 дня назад
+    const longAgo = new Date(now.getTime() - 4 * 24 * 3600 * 1000);
     const { svc, prisma } = build({
       escalationBlocks: [
         {
@@ -195,7 +175,6 @@ describe('Specialist39PromiseKeeperService', () => {
       now,
     });
     expect(result).toHaveLength(1);
-    // Проверим, что в where включён threshold lt с разумной датой.
     const args = prisma.ideaBlock.findMany.mock.calls.at(-1)?.[0] as {
       where: { commitmentAskedAt?: { lt: Date } };
     };
@@ -240,11 +219,10 @@ describe('Specialist39PromiseKeeperService', () => {
     await svc.sendEscalationForBlock({
       blockId: 'b1',
       tenantId: 't1',
-      authorUserIds: ['coo-1'], // тот же, что и в membership
+      authorUserIds: ['coo-1'],
       questionText: 'Q',
       contextSummary: 'C',
     });
-    // probe должен НЕ вызваться, т.к. recipientCandidates пуст.
     expect(probe.suggest).not.toHaveBeenCalled();
   });
 });

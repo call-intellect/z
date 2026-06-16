@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useState } from "react";
 import {
   ArrowDown,
   ArrowLeft,
@@ -11,62 +11,51 @@ import {
   Plus,
   Save,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   adminLlmRoutesApi,
   LLM_PROVIDERS,
   type LlmProvider,
   type LlmRouteProvider,
-} from '@/api/admin-llm-routes.api';
-import { adminFunctionsApi } from '@/api/admin-experiments.api';
-import { adminUsageApi } from '@/api/admin-usage.api';
+} from "@/api/admin-llm-routes.api";
+import { adminFunctionsApi } from "@/api/admin-experiments.api";
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   adminCallsLogFromApi,
   formatDurationMs,
   formatUsd,
-} from '@/domain/admin-usage';
+} from "@/domain/admin-usage";
 import {
   adminFunctionDetailFromApi,
   taskTypeLabel,
-} from '@/domain/admin-experiment';
-import { toast } from 'sonner';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-experiment";
+import { toast } from "sonner";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
   AdminLoadingInline,
-} from '../../../AdminStateViews';
-import { useAdminQuery } from '../../../useAdminQuery';
-import { ExperimentStartDialog } from '../../../experiments/ExperimentStartDialog';
+} from "../../../AdminStateViews";
+import { useAdminQuery } from "../../../useAdminQuery";
+import { ExperimentStartDialog } from "../../../experiments/ExperimentStartDialog";
 
-/**
- * Детальная карточка функции (taskType) LLM. Переехала с
- * `/admin/usage/functions/[taskType]`, обёрнута в `AdminSection`, добавлен CSV
- * последних вызовов. Здесь оставлено редактирование цепочки провайдеров —
- * это специфичный инструмент аналитика+оператора, не «чистая» аналитика.
- */
 export function FunctionDetailAnalyticsClient({
   taskType,
 }: {
@@ -96,7 +85,6 @@ export function FunctionDetailAnalyticsClient({
     [taskType],
   );
 
-  // При загрузке detail — синхронизируем state редактирования.
   if (detailQ.data && providers === null) {
     setProviders(detailQ.data.providers as LlmRouteProvider[]);
     setIsActive(detailQ.data.isActive);
@@ -104,7 +92,7 @@ export function FunctionDetailAnalyticsClient({
 
   const handleSave = useCallback(async () => {
     if (!providers || providers.length === 0) {
-      toast.error('Нужен хотя бы один provider');
+      toast.error("Нужен хотя бы один provider");
       return;
     }
     setSaving(true);
@@ -113,11 +101,11 @@ export function FunctionDetailAnalyticsClient({
         providers,
         isActive,
       });
-      toast.success('Сохранено. Применится через ~60 секунд.');
+      toast.success("Сохранено. Применится через ~60 секунд.");
       setDirty(false);
       detailQ.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
     } finally {
       setSaving(false);
     }
@@ -132,14 +120,14 @@ export function FunctionDetailAnalyticsClient({
     outputTokens: c.outputTokens,
     costUsd: c.costUsd.toFixed(6),
     durationMs: c.durationMs,
-    success: c.success ? 'ok' : 'fail',
+    success: c.success ? "ok" : "fail",
   }));
 
   return (
     <AdminSection
       breadcrumbs={[
-        { label: 'Аналитика' },
-        { label: 'Функции LLM', href: '/admin/analytics/functions' },
+        { label: "Аналитика" },
+        { label: "Функции LLM", href: "/admin/analytics/functions" },
         { label: taskTypeLabel(taskType) },
       ]}
       title={taskTypeLabel(taskType)}
@@ -161,7 +149,7 @@ export function FunctionDetailAnalyticsClient({
 
         {!detailQ.isLoading && detailQ.data && providers && (
           <>
-            {/* Experiment status (если активен) */}
+            {}
             {detailQ.data.experiment && (
               <Card className="border-accent/40 bg-accent-muted/20">
                 <CardHeader>
@@ -172,19 +160,19 @@ export function FunctionDetailAnalyticsClient({
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
                   <div>
-                    Model A:{' '}
+                    Model A:{" "}
                     <code className="font-mono">
                       {detailQ.data.experiment.modelA}
                     </code>
                   </div>
                   <div>
-                    Model B:{' '}
+                    Model B:{" "}
                     <code className="font-mono">
                       {detailQ.data.experiment.modelB}
                     </code>
                   </div>
                   <div>
-                    Split: {detailQ.data.experiment.splitPercent}% /{' '}
+                    Split: {detailQ.data.experiment.splitPercent}% /{" "}
                     {100 - detailQ.data.experiment.splitPercent}%
                   </div>
                   <Button asChild size="sm" variant="outline" className="mt-2">
@@ -198,12 +186,10 @@ export function FunctionDetailAnalyticsClient({
               </Card>
             )}
 
-            {/* Provider chain */}
+            {}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base">
-                  Цепочка провайдеров
-                </CardTitle>
+                <CardTitle className="text-base">Цепочка провайдеров</CardTitle>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-fg-tertiary">Активна</span>
                   <Switch
@@ -248,7 +234,7 @@ export function FunctionDetailAnalyticsClient({
               </CardContent>
             </Card>
 
-            {/* Recent calls */}
+            {}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-base">
@@ -257,13 +243,13 @@ export function FunctionDetailAnalyticsClient({
                 <AdminCsvDownloadButton
                   rows={callsRows}
                   columns={[
-                    { key: 'createdAt', label: 'Когда' },
-                    { key: 'model', label: 'Модель' },
-                    { key: 'inputTokens', label: 'In tokens' },
-                    { key: 'outputTokens', label: 'Out tokens' },
-                    { key: 'costUsd', label: 'Cost, USD' },
-                    { key: 'durationMs', label: 'Latency, ms' },
-                    { key: 'success', label: 'Статус' },
+                    { key: "createdAt", label: "Когда" },
+                    { key: "model", label: "Модель" },
+                    { key: "inputTokens", label: "In tokens" },
+                    { key: "outputTokens", label: "Out tokens" },
+                    { key: "costUsd", label: "Cost, USD" },
+                    { key: "durationMs", label: "Latency, ms" },
+                    { key: "success", label: "Статус" },
                   ]}
                   filename={`admin-fn-calls-${taskType}.csv`}
                 />
@@ -292,7 +278,7 @@ export function FunctionDetailAnalyticsClient({
                             className="border-t border-border-subtle"
                           >
                             <td className="px-2 py-1 text-fg-tertiary">
-                              {c.createdAt.toLocaleString('ru-RU')}
+                              {c.createdAt.toLocaleString("ru-RU")}
                             </td>
                             <td className="px-2 py-1 font-mono">
                               {c.provider}:{c.model}
@@ -358,8 +344,8 @@ function ProviderEditor({
   providers: LlmRouteProvider[];
   onChange: (next: LlmRouteProvider[]) => void;
 }) {
-  const [newProvider, setNewProvider] = useState<LlmProvider>('anthropic');
-  const [newModel, setNewModel] = useState('');
+  const [newProvider, setNewProvider] = useState<LlmProvider>("anthropic");
+  const [newModel, setNewModel] = useState("");
 
   const move = (idx: number, dir: -1 | 1) => {
     const next = [...providers];
@@ -380,7 +366,7 @@ function ProviderEditor({
         ? { provider: newProvider, model: newModel }
         : { provider: newProvider },
     ]);
-    setNewModel('');
+    setNewModel("");
   };
 
   return (

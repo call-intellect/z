@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   CreditCard,
@@ -7,7 +7,7 @@ import {
   UserPlus,
   Users,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
 import {
   funnelConversion,
@@ -15,15 +15,15 @@ import {
   type FunnelDomain,
   type FunnelPeriod,
   type FunnelRow,
-} from '@/domain/referral';
-import { CardTitle, GRAD, glass } from '@/ui/components/dashboard/modern';
+} from "@/domain/referral";
+import { CardTitle, GRAD, glass } from "@/ui/components/dashboard/modern";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 interface Props {
   funnel: FunnelDomain;
@@ -31,28 +31,18 @@ interface Props {
   onPeriodChange: (p: FunnelPeriod) => void;
 }
 
-/** Иконка + градиент для каждой ступени воронки. */
-const STEP_VISUAL: Record<FunnelRow['key'], { icon: LucideIcon; grad: string }> = {
+const STEP_VISUAL: Record<
+  FunnelRow["key"],
+  { icon: LucideIcon; grad: string }
+> = {
   clicks: { icon: MousePointerClick, grad: GRAD.violet },
   signups: { icon: UserPlus, grad: GRAD.blue },
   firstPayments: { icon: CreditCard, grad: GRAD.teal },
   activeNow: { icon: Users, grad: GRAD.amber },
 };
 
-/**
- * FunnelCard — воронка партнёра за выбранный период (ТЗ §8.1 C), редизайн B8.
- *
- * 4 ступени горизонтальными градиент-барами, ширина пропорциональна значению
- * относительно первого шага (кликов). У каждой ступени — иконка на градиенте
- * и процент конверсии «от предыдущего» парным статус-токеном.
- *
- * Период выбирается селектом (30d / 90d / all) — это передаётся в SWR-ключ
- * родителем (`ReferralsClient`), поэтому смена периода триггерит refetch.
- * Контракт пропсов НЕ меняется.
- */
 export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
   const rows = funnelConversion(funnel);
-  // Масштаб ширины бара: относительно максимума (первый шаг — кликов).
   const max = Math.max(...rows.map((r) => r.value), 1);
 
   return (
@@ -69,9 +59,9 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
             <SelectValue placeholder={funnelPeriodLabel(period)} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="30d">{funnelPeriodLabel('30d')}</SelectItem>
-            <SelectItem value="90d">{funnelPeriodLabel('90d')}</SelectItem>
-            <SelectItem value="all">{funnelPeriodLabel('all')}</SelectItem>
+            <SelectItem value="30d">{funnelPeriodLabel("30d")}</SelectItem>
+            <SelectItem value="90d">{funnelPeriodLabel("90d")}</SelectItem>
+            <SelectItem value="all">{funnelPeriodLabel("all")}</SelectItem>
           </SelectContent>
         </Select>
       </header>
@@ -84,7 +74,6 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
         {rows.map((row, idx) => {
           const visual = STEP_VISUAL[row.key];
           const Icon = visual.icon;
-          // Минимум 6% ширины, чтобы ненулевая ступень была видна.
           const widthPct =
             row.value > 0 ? Math.max((row.value / max) * 100, 6) : 0;
 
@@ -92,7 +81,10 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
             <div key={row.key} className="flex items-center gap-3">
               <span
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
-                style={{ background: visual.grad, color: 'oklch(0.99 0.005 280)' }}
+                style={{
+                  background: visual.grad,
+                  color: "oklch(0.99 0.005 280)",
+                }}
                 aria-hidden="true"
               >
                 <Icon className="h-4 w-4" />
@@ -104,14 +96,14 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
                     {row.label}
                   </span>
                   <span className="text-base font-semibold text-fg-primary">
-                    {row.value.toLocaleString('ru-RU')}
+                    {row.value.toLocaleString("ru-RU")}
                   </span>
                 </div>
 
-                {/* Пропорциональный градиент-бар на «вдавленной» дорожке. */}
+                {}
                 <div
                   className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full"
-                  style={{ background: 'var(--surface-inset)' }}
+                  style={{ background: "var(--surface-inset)" }}
                 >
                   <div
                     className="h-full rounded-full transition-all"
@@ -123,7 +115,7 @@ export function FunnelCard({ funnel, period, onPeriodChange }: Props) {
               <span className="w-24 shrink-0 text-right text-xs text-fg-secondary">
                 {idx > 0 && row.conversionPercent !== null
                   ? `${row.conversionPercent}% от пред.`
-                  : ''}
+                  : ""}
               </span>
             </div>
           );

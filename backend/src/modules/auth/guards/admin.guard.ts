@@ -3,15 +3,6 @@ import type { Request } from 'express';
 
 import { NotAuthorizedError } from '../../../common/errors/domain-errors';
 
-
-/**
- * Guard, требующий `req.user.role === 'admin'`.
- *
- * Должен использоваться ПОСЛЕ `CookieAuthGuard`:
- *   `@UseGuards(CookieAuthGuard, AdminGuard)`
- *
- * При несоблюдении — `NotAuthorizedError('admin_required')` (403).
- */
 @Injectable()
 export class AdminGuard implements CanActivate {
   canActivate(ctx: ExecutionContext): boolean {

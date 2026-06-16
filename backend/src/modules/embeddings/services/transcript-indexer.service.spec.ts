@@ -4,12 +4,11 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import type { EmbeddingFallbackService } from './embedding-fallback.service';
-import {
-  TranscriptIndexerService,
-  formatVectorLiteral,
-} from './transcript-indexer.service';
+import { TranscriptIndexerService, formatVectorLiteral } from './transcript-indexer.service';
 
-function makeCfg(over: Partial<{ batchSize: number; chunkTargetTokens: number; chunkOverlapTokens: number }> = {}): TypedConfigService {
+function makeCfg(
+  over: Partial<{ batchSize: number; chunkTargetTokens: number; chunkOverlapTokens: number }> = {},
+): TypedConfigService {
   return {
     ai: {
       embeddings: {
@@ -30,7 +29,9 @@ function makeCfg(over: Partial<{ batchSize: number; chunkTargetTokens: number; c
 interface BuildOpts {
   meeting?: {
     ownerId?: string;
-    transcript?: { turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> } | null;
+    transcript?: {
+      turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
+    } | null;
   } | null;
   mergedTurns?: Array<{ speaker: string; text: string; startSec: number; endSec: number }>;
   embedFn?: ReturnType<typeof vi.fn>;
@@ -45,7 +46,12 @@ function build(opts: BuildOpts) {
           ownerId: opts.meeting?.ownerId ?? 'u-1',
           transcript: opts.meeting?.transcript ?? {
             turns: opts.mergedTurns ?? [
-              { speaker: 'Alice', text: 'one two three four five six seven eight', startSec: 0, endSec: 8 },
+              {
+                speaker: 'Alice',
+                text: 'one two three four five six seven eight',
+                startSec: 0,
+                endSec: 8,
+              },
             ],
           },
         },
@@ -60,9 +66,7 @@ function build(opts: BuildOpts) {
     $executeRawUnsafe: executeRawUnsafe,
   } as unknown as PrismaService;
 
-  const embed =
-    opts.embedFn ??
-    vi.fn(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3]));
+  const embed = opts.embedFn ?? vi.fn(async (texts: string[]) => texts.map(() => [0.1, 0.2, 0.3]));
   const embeddings = { embed } as unknown as EmbeddingFallbackService;
 
   const svc = new TranscriptIndexerService(prisma, embeddings, makeCfg());
@@ -72,7 +76,6 @@ function build(opts: BuildOpts) {
 describe('TranscriptIndexerService', () => {
   it('chunkTurns: разбивает на чанки с overlap', () => {
     const { svc } = build({});
-    // 8 слов, target=5, overlap=1 → [0..5], [4..8]
     const chunks = svc.chunkTurns(
       [{ speaker: 'A', text: 'a b c d e f g h', startSec: 0, endSec: 8 }],
       { targetTokens: 5, overlapTokens: 1 },
@@ -93,7 +96,6 @@ describe('TranscriptIndexerService', () => {
     expect(result.chunksIndexed).toBeGreaterThan(0);
     expect(ctx.chunkDeleteMany).toHaveBeenCalledWith({ where: { meetingId: 'm-1' } });
     expect(ctx.executeRawUnsafe).toHaveBeenCalled();
-    // последний meeting.update — статус ready.
     const lastUpdate = ctx.meetingUpdate.mock.calls.at(-1) as
       | [{ where: unknown; data: { embeddingsStatus: string } }]
       | undefined;
@@ -113,7 +115,6 @@ describe('TranscriptIndexerService', () => {
     });
     const ctx = build({ embedFn: embedFail });
     await expect(ctx.svc.indexMeeting('m-1')).rejects.toThrow(/embed boom/);
-    // Должны увидеть update с embeddingsStatus=failed.
     const updateCalls = (ctx.meetingUpdate as ReturnType<typeof vi.fn>).mock.calls as unknown[][];
     const failedCall = updateCalls.find(
       (c) => (c[0] as { data: { embeddingsStatus?: string } }).data.embeddingsStatus === 'failed',
@@ -127,11 +128,9 @@ describe('TranscriptIndexerService', () => {
   });
 
   it('indexMeeting: provider вернул не то количество — ошибка', async () => {
-    const embedShort = vi.fn(async () => [[0.1]]); // вернёт 1, а ждём столько же сколько чанков
+    const embedShort = vi.fn(async () => [[0.1]]);
     const ctx = build({
-      mergedTurns: [
-        { speaker: 'A', text: 'a b c d e f g h i j', startSec: 0, endSec: 10 },
-      ],
+      mergedTurns: [{ speaker: 'A', text: 'a b c d e f g h i j', startSec: 0, endSec: 10 }],
       embedFn: embedShort,
     });
     await expect(ctx.svc.indexMeeting('m-1')).rejects.toThrow();

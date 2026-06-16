@@ -1,18 +1,15 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import {
-  curationApi,
-  type CurationDecisionTypeApi,
-} from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { curationApi, type CurationDecisionTypeApi } from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   curationDecisionLabel,
   curationLevelLabel,
@@ -20,69 +17,55 @@ import {
   mapCurationItemDetail,
   type CurationDecisionType,
   type CurationLevel,
-} from '@/domain/curation';
-import { resourceTypeRu } from '@/domain/resource-type';
-import { Button } from '@/ui/shadcn/button';
-import { ReadablePayload } from '@/ui/readable-payload';
+} from "@/domain/curation";
+import { resourceTypeRu } from "@/domain/resource-type";
+import { Button } from "@/ui/shadcn/button";
+import { ReadablePayload } from "@/ui/readable-payload";
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * Какие типы решений требуют обязательного обоснования (reasoning) независимо
- * от уровня. Для `deep`-уровня обоснование обязательно для ЛЮБОГО типа.
- *
- * Вынесено отдельным экспортом, чтобы покрыть чистой unit-логикой
- * (см. `CurationDetailClient.spec.ts`).
- */
 const REASONING_REQUIRED_TYPES: ReadonlySet<CurationDecisionType> = new Set([
-  'split',
-  'merge',
-  'supersede',
-  'merge_categories',
-  'escalate',
+  "split",
+  "merge",
+  "supersede",
+  "merge_categories",
+  "escalate",
 ]);
 
 export function isReasoningRequired(
   level: CurationLevel,
   decisionType: CurationDecisionType,
 ): boolean {
-  if (level === 'deep') return true;
+  if (level === "deep") return true;
   return REASONING_REQUIRED_TYPES.has(decisionType);
 }
 
-/**
- * Полный список типов решений, доступных куратору на detail-странице.
- * Совпадает с `CurationDecisionType` из domain-слоя (8 значений).
- */
 const DECISION_TYPES: readonly CurationDecisionType[] = [
-  'approve',
-  'approve_with_edits',
-  'reject',
-  'split',
-  'merge',
-  'supersede',
-  'merge_categories',
-  'escalate',
+  "approve",
+  "approve_with_edits",
+  "reject",
+  "split",
+  "merge",
+  "supersede",
+  "merge_categories",
+  "escalate",
 ];
 
-/**
- * Org-роли, которым разрешён доступ к курации помимо curator-кандидата.
- *
- * Должно совпадать с backend RBAC (`policy.csv`): чтение/решение по
- * `curation_item` имеют ТОЛЬКО owner/admin. Грант manager-self покрывается на
- * фронте проверкой `candidateCuratorIds`, поэтому coo здесь быть НЕ должно —
- * иначе coo проходит клиентский гейт, но получает 403 от `getItem`/`decide`.
- */
-const CURATOR_ORG_ROLES = new Set<string>(['owner', 'admin']);
+const CURATOR_ORG_ROLES = new Set<string>(["owner", "admin"]);
 
 export function CurationDetailClient({ itemId }: { itemId: string }) {
-  const { user, isLoading: authLoading, currentOrgId, currentOrgRole, isSuperAdmin } =
-    useAuth();
+  const {
+    user,
+    isLoading: authLoading,
+    currentOrgId,
+    currentOrgRole,
+    isSuperAdmin,
+  } = useAuth();
 
-  const itemSwr = useSWR(['curation-item', itemId], async () => {
+  const itemSwr = useSWR(["curation-item", itemId], async () => {
     const api = await curationApi.getItem(itemId);
     return mapCurationItemDetail(api);
   });
@@ -109,10 +92,10 @@ export function CurationDetailClient({ itemId }: { itemId: string }) {
   if (itemSwr.error) {
     const notFound =
       itemSwr.error instanceof ApiError &&
-      (itemSwr.error.code === 'curation_item_not_found' ||
-        itemSwr.error.code === 'http_404' ||
-        itemSwr.error.code === 'forbidden' ||
-        itemSwr.error.code === 'http_403');
+      (itemSwr.error.code === "curation_item_not_found" ||
+        itemSwr.error.code === "http_404" ||
+        itemSwr.error.code === "forbidden" ||
+        itemSwr.error.code === "http_403");
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         {notFound ? (
@@ -125,7 +108,7 @@ export function CurationDetailClient({ itemId }: { itemId: string }) {
             message={
               itemSwr.error instanceof ApiError
                 ? itemSwr.error.message
-                : 'Не удалось загрузить карточку курации'
+                : "Не удалось загрузить карточку курации"
             }
             onRetry={() => void itemSwr.mutate()}
           />
@@ -148,10 +131,7 @@ export function CurationDetailClient({ itemId }: { itemId: string }) {
     );
   }
 
-  // Роль-гейт: owner/admin ИЛИ super-admin ИЛИ curator-кандидат по этой
-  // конкретной карточке (user.id ∈ candidateCuratorIds).
-  const hasOrgRole =
-    !!currentOrgRole && CURATOR_ORG_ROLES.has(currentOrgRole);
+  const hasOrgRole = !!currentOrgRole && CURATOR_ORG_ROLES.has(currentOrgRole);
   const isCandidate = !!user && item.candidateCuratorIds.includes(user.id);
   const allowed = isSuperAdmin || hasOrgRole || isCandidate;
 
@@ -189,40 +169,37 @@ function CurationDetailView({
   const router = useRouter();
 
   const [decisionType, setDecisionType] =
-    useState<CurationDecisionTypeApi>('approve');
-  const [reasoning, setReasoning] = useState('');
+    useState<CurationDecisionTypeApi>("approve");
+  const [reasoning, setReasoning] = useState("");
   const [payloadText, setPayloadText] = useState(() =>
     JSON.stringify(item.proposedPayload, null, 2),
   );
-  const [escalateToUserId, setEscalateToUserId] = useState('');
-  const [sourceCategoryId, setSourceCategoryId] = useState('');
-  const [targetCategoryId, setTargetCategoryId] = useState('');
+  const [escalateToUserId, setEscalateToUserId] = useState("");
+  const [sourceCategoryId, setSourceCategoryId] = useState("");
+  const [targetCategoryId, setTargetCategoryId] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isPending = item.status === 'pending';
+  const isPending = item.status === "pending";
   const reasoningRequired = isReasoningRequired(item.level, decisionType);
 
-  // Блокирующая валидация submit. Возвращает текст подсказки (почему нельзя) или
-  // null если всё валидно.
   const blockReason = useMemo<string | null>(() => {
     if (reasoningRequired && !reasoning.trim()) {
-      return 'Для этого решения обоснование обязательно.';
+      return "Для этого решения обоснование обязательно.";
     }
-    if (decisionType === 'escalate' && !escalateToUserId.trim()) {
-      return 'Укажите, кому передать карточку (ID куратора).';
+    if (decisionType === "escalate" && !escalateToUserId.trim()) {
+      return "Укажите, кому передать карточку (ID куратора).";
     }
     if (
-      decisionType === 'merge_categories' &&
+      decisionType === "merge_categories" &&
       (!sourceCategoryId.trim() || !targetCategoryId.trim())
     ) {
-      return 'Укажите ID исходной и целевой категорий.';
+      return "Укажите ID исходной и целевой категорий.";
     }
     if (
-      decisionType === 'merge_categories' &&
+      decisionType === "merge_categories" &&
       sourceCategoryId.trim() === targetCategoryId.trim()
     ) {
-      // Backend (`curation.service.ts`) отклоняет src === tgt — ловим заранее.
-      return 'Категории должны быть разными.';
+      return "Категории должны быть разными.";
     }
     return null;
   }, [
@@ -238,25 +215,27 @@ function CurationDetailView({
     if (blockReason) return;
 
     let payload: Record<string, unknown> | undefined;
-    if (decisionType === 'approve_with_edits') {
+    if (decisionType === "approve_with_edits") {
       try {
         const parsed = JSON.parse(payloadText) as unknown;
         if (
           parsed === null ||
-          typeof parsed !== 'object' ||
+          typeof parsed !== "object" ||
           Array.isArray(parsed)
         ) {
-          toast.error('Правки должны быть JSON-объектом, а не списком или значением');
+          toast.error(
+            "Правки должны быть JSON-объектом, а не списком или значением",
+          );
           return;
         }
         payload = parsed as Record<string, unknown>;
       } catch {
-        toast.error('Правки должны быть валидным JSON-объектом');
+        toast.error("Правки должны быть валидным JSON-объектом");
         return;
       }
-    } else if (decisionType === 'escalate') {
+    } else if (decisionType === "escalate") {
       payload = { escalateToUserId: escalateToUserId.trim() };
-    } else if (decisionType === 'merge_categories') {
+    } else if (decisionType === "merge_categories") {
       payload = {
         sourceCategoryId: sourceCategoryId.trim(),
         targetCategoryId: targetCategoryId.trim(),
@@ -270,13 +249,11 @@ function CurationDetailView({
         ...(payload ? { payload } : {}),
         ...(reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
       });
-      toast.success('Решение применено');
+      toast.success("Решение применено");
       onAfterDecide();
-      router.push('/curation');
+      router.push("/curation");
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось применить решение'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось применить решение"));
     } finally {
       setSubmitting(false);
     }
@@ -296,14 +273,19 @@ function CurationDetailView({
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-fg-tertiary"
+        >
           <Link href="/curation">
             <ChevronLeft size={16} /> К очереди проверки
           </Link>
         </Button>
       </div>
 
-      {/* Заголовок */}
+      {}
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
           {resourceTypeRu(item.resourceType)}
@@ -328,29 +310,31 @@ function CurationDetailView({
           )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
-          <span>создана {item.createdAt.toLocaleString('ru-RU')}</span>
+          <span>создана {item.createdAt.toLocaleString("ru-RU")}</span>
           {item.decidedAt && (
-            <span>решение {item.decidedAt.toLocaleString('ru-RU')}</span>
+            <span>решение {item.decidedAt.toLocaleString("ru-RU")}</span>
           )}
           {item.expiresAt && (
-            <span>истекает {item.expiresAt.toLocaleString('ru-RU')}</span>
+            <span>истекает {item.expiresAt.toLocaleString("ru-RU")}</span>
           )}
         </div>
       </header>
 
-      {/* Почему сюда попала */}
+      {}
       <section className="mb-6">
         <h2 className="mb-1 text-sm font-medium">Почему сюда попала</h2>
         <ReadablePayload value={item.triageReason} />
       </section>
 
-      {/* Предлагаемые данные */}
+      {}
       <section className="mb-6">
-        <h2 className="mb-1 text-sm font-medium">Предлагается канонизировать</h2>
+        <h2 className="mb-1 text-sm font-medium">
+          Предлагается канонизировать
+        </h2>
         <ReadablePayload value={item.proposedPayload} />
       </section>
 
-      {/* Связанные конфликты */}
+      {}
       {item.relatedConflictIds.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2 text-sm font-medium">Связанные конфликты</h2>
@@ -369,7 +353,7 @@ function CurationDetailView({
         </section>
       )}
 
-      {/* История решений */}
+      {}
       {item.decisions.length > 0 && (
         <section className="mb-6">
           <h2 className="mb-2 text-sm font-medium">История решений</h2>
@@ -384,11 +368,13 @@ function CurationDetailView({
                     {curationDecisionLabel(d.decisionType)}
                   </span>
                   <span className="text-xs text-fg-tertiary">
-                    {d.createdAt.toLocaleString('ru-RU')}
+                    {d.createdAt.toLocaleString("ru-RU")}
                   </span>
                 </div>
                 {d.reasoning && (
-                  <p className="mt-1 text-xs text-fg-secondary">{d.reasoning}</p>
+                  <p className="mt-1 text-xs text-fg-secondary">
+                    {d.reasoning}
+                  </p>
                 )}
               </li>
             ))}
@@ -396,7 +382,7 @@ function CurationDetailView({
         </section>
       )}
 
-      {/* Панель решения */}
+      {}
       {isPending ? (
         <section className="space-y-3 rounded-lg border border-border-subtle bg-bg-card p-5">
           <h2 className="text-sm font-medium">Принять решение</h2>
@@ -424,7 +410,7 @@ function CurationDetailView({
             </select>
           </div>
 
-          {decisionType === 'approve_with_edits' && (
+          {decisionType === "approve_with_edits" && (
             <div>
               <label
                 htmlFor="curation-payload"
@@ -442,7 +428,7 @@ function CurationDetailView({
             </div>
           )}
 
-          {decisionType === 'escalate' && (
+          {decisionType === "escalate" && (
             <div>
               <label
                 htmlFor="curation-escalate-to"
@@ -460,7 +446,7 @@ function CurationDetailView({
             </div>
           )}
 
-          {decisionType === 'merge_categories' && (
+          {decisionType === "merge_categories" && (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <label
@@ -500,7 +486,7 @@ function CurationDetailView({
               htmlFor="curation-reasoning"
               className="mb-1 block text-xs text-fg-tertiary"
             >
-              Обоснование {reasoningRequired ? '(обязательно)' : '(опц.)'}
+              Обоснование {reasoningRequired ? "(обязательно)" : "(опц.)"}
             </label>
             <textarea
               id="curation-reasoning"
@@ -512,16 +498,14 @@ function CurationDetailView({
             />
           </div>
 
-          {blockReason && (
-            <p className="text-xs text-warning">{blockReason}</p>
-          )}
+          {blockReason && <p className="text-xs text-warning">{blockReason}</p>}
 
           <div className="flex justify-end">
             <Button
               onClick={() => void submit()}
               disabled={submitting || !!blockReason}
             >
-              {submitting ? 'Применяем…' : 'Применить решение'}
+              {submitting ? "Применяем…" : "Применить решение"}
             </Button>
           </div>
         </section>

@@ -1,14 +1,3 @@
-/**
- * ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — snapshot-тест
- * сборки промта `multi-query-clone.prompt.ts`.
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT` (guard от случайных
- *     правок «3 формулировок: точная / ситуационный аналог / общий принцип»);
- *   - сборку user-prompt'а `buildMultiQueryCloneUserPrompt`.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

@@ -1,26 +1,15 @@
-'use client';
+"use client";
 
-/**
- * Диалог быстрого добавления / изменения одного Org-override для FeatureFlag.
- *
- * Используется как точечная альтернатива большому `FlagEditDialog` — когда
- * оператору надо «включить флаг X только для Org Y». Сохраняет остальные
- * поля флага неизменными.
- *
- * Сейчас не используется в основном FeatureFlagsClient (там общий edit-flow),
- * но оставлен для будущих deep-link сценариев (например, из карточки Org).
- */
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Save } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminFeatureFlagsApi } from '@/api/admin-feature-flags.api';
-import { adminOrgsApi } from '@/api/admin-orgs.api';
-import { ApiError } from '@/api/api-error';
-import { type FeatureFlagDomain } from '@/domain/admin-feature-flag';
-import { adminOrgListFromApi } from '@/domain/admin-org';
-import { Button } from '@/ui/shadcn/button';
+import { adminFeatureFlagsApi } from "@/api/admin-feature-flags.api";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
+import { ApiError } from "@/api/api-error";
+import { type FeatureFlagDomain } from "@/domain/admin-feature-flag";
+import { adminOrgListFromApi } from "@/domain/admin-org";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -28,23 +17,22 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { useAdminQuery } from '../../useAdminQuery';
+import { useAdminQuery } from "../../useAdminQuery";
 
 type Props = {
-  /** Если задан — диалог в «edit override» для конкретного флага. */
   flag: FeatureFlagDomain | null;
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -57,14 +45,14 @@ export function FlagOverrideDialog({
   onOpenChange,
   onSaved,
 }: Props) {
-  const [orgId, setOrgId] = useState('');
+  const [orgId, setOrgId] = useState("");
   const [value, setValue] = useState(true);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const orgsQuery = useAdminQuery(
-    open ? 'admin-flag-override-orgs' : '',
+    open ? "admin-flag-override-orgs" : "",
     async () => {
       const res = await adminOrgsApi.list({ limit: 200 });
       return adminOrgListFromApi(res);
@@ -75,9 +63,9 @@ export function FlagOverrideDialog({
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setOrgId('');
+    setOrgId("");
     setValue(true);
-    setReason('');
+    setReason("");
   }, [open]);
 
   const canSave = useMemo(
@@ -99,7 +87,7 @@ export function FlagOverrideDialog({
         reason: reason.trim() || undefined,
       });
       toast.success(
-        `Override для «${flag.key}» сохранён: ${orgId} → ${value ? 'вкл' : 'выкл'}`,
+        `Override для «${flag.key}» сохранён: ${orgId} → ${value ? "вкл" : "выкл"}`,
       );
       onSaved();
     } catch (e) {
@@ -108,7 +96,7 @@ export function FlagOverrideDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -132,8 +120,8 @@ export function FlagOverrideDialog({
             Override: <code className="font-mono">{flag.key}</code>
           </DialogTitle>
           <DialogDescription>
-            Перекрывает глобальный default ({flag.defaultValue ? 'вкл' : 'выкл'})
-            для выбранной Org. Остальные поля флага сохраняются.
+            Перекрывает глобальный default ({flag.defaultValue ? "вкл" : "выкл"}
+            ) для выбранной Org. Остальные поля флага сохраняются.
           </DialogDescription>
         </DialogHeader>
 
@@ -178,7 +166,7 @@ export function FlagOverrideDialog({
             />
             <div className="min-w-0 text-xs">
               <p className="font-medium text-fg-primary">
-                Значение: {value ? 'вкл' : 'выкл'}
+                Значение: {value ? "вкл" : "выкл"}
               </p>
             </div>
           </div>

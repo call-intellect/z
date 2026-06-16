@@ -12,34 +12,18 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { DeskAssignSchema, type DeskAssignDto } from '../dto/desk-assign.dto';
-import {
-  DeskListQuerySchema,
-  type DeskListQueryDto,
-} from '../dto/desk-list-query.dto';
+import { DeskListQuerySchema, type DeskListQueryDto } from '../dto/desk-list-query.dto';
 import { DeskNoteSchema, type DeskNoteDto } from '../dto/desk-note.dto';
 import { DeskReplySchema, type DeskReplyDto } from '../dto/desk-reply.dto';
-import {
-  DeskTransitionSchema,
-  type DeskTransitionDto,
-} from '../dto/desk-transition.dto';
+import { DeskTransitionSchema, type DeskTransitionDto } from '../dto/desk-transition.dto';
 import { SupportAccessGuard } from '../guards/support-access.guard';
 import { SupportCloneService } from '../services/support-clone.service';
 import { SupportDeskService } from '../services/support-desk.service';
 import { SupportLearningService } from '../services/support-learning.service';
 
-/**
- * REST `/api/v1/support/desk/*` — сторона сотрудника поддержки.
- *
- * `SupportAccessGuard` (после CookieAuthGuard) проверяет членство в группе-
- * контуре вендор-Org (403 SUPPORT_NOT_AGENT для не-членов) и выставляет
- * `req.tenantId = vendorOrgId`. ТЗ 2026-06-09 support-desk Ф1.
- */
 @ApiTags('support / desk')
 @ApiBearerAuth()
 @Controller('api/v1/support/desk')

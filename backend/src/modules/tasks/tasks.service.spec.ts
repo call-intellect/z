@@ -48,7 +48,6 @@ describe('TasksService', () => {
     } as unknown as TypedConfigService;
     dispatcher = { sendTask: vi.fn(async () => undefined) };
     audit = { log: vi.fn(async () => undefined) };
-    // Ф5.2 — по дефолту флаг OFF: listByMeeting читает Task через repo.
     actionItems = {
       isTrackerOnly: vi.fn(async () => false),
       listForMeeting: vi.fn(async () => []),
@@ -90,9 +89,9 @@ describe('TasksService', () => {
         deletedAt: null,
       });
       const svc = make();
-      await expect(
-        svc.create('m1', 'u1', { title: 't' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.create('m1', 'u1', { title: 't' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
       expect(repo.create).not.toHaveBeenCalled();
     });
 
@@ -102,9 +101,9 @@ describe('TasksService', () => {
         deletedAt: new Date(),
       });
       const svc = make();
-      await expect(
-        svc.create('m1', 'u1', { title: 't' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.create('m1', 'u1', { title: 't' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -170,10 +169,7 @@ describe('TasksService', () => {
       repo.findById.mockResolvedValue({ id: 't1', userId: 'u1' });
       const svc = make();
       const r = await svc.send('t1', 'u1', 'd1');
-      expect(dispatcher.sendTask).toHaveBeenCalledWith(
-        { id: 't1', userId: 'u1' },
-        'd1',
-      );
+      expect(dispatcher.sendTask).toHaveBeenCalledWith({ id: 't1', userId: 'u1' }, 'd1');
       expect(r).toEqual({ ok: true });
     });
 

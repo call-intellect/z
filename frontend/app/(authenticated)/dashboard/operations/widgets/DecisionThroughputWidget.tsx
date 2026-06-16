@@ -1,27 +1,22 @@
-'use client';
+"use client";
 
-import { CheckCircle2 } from 'lucide-react';
-import Link from 'next/link';
-import useSWR from 'swr';
+import { CheckCircle2 } from "lucide-react";
+import Link from "next/link";
+import useSWR from "swr";
 
-import { operationsDashboardApi } from '@/api/operations-dashboard.api';
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
 import {
   fromDecisionThroughputApi,
   fromStalledDecisionsApi,
-} from '@/domain/decision-throughput';
-import { CardTitle, CHART, GlassCard, GRAD } from '@/ui/components/dashboard/modern';
+} from "@/domain/decision-throughput";
+import {
+  CardTitle,
+  CHART,
+  GlassCard,
+  GRAD,
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ coo-orphan-agents Ф3 — виджет «Доведение решений» на COO-доске
- * `/dashboard/operations`.
- *
- * Два независимых self-fetch SWR (`.catch`-safe — провал не валит доску):
- *   - `getDecisionThroughput()` — % решений, доведённых до результата за 90 дней;
- *   - `getStalledDecisions()` — решения без движения (stalled), список под баром.
- */
-
-// Тон прогресс-бара → CSS-цвет нового языка.
-const PROGRESS_COLOR: Record<'teal' | 'warn' | 'risk', string> = {
+const PROGRESS_COLOR: Record<"teal" | "warn" | "risk", string> = {
   teal: CHART.mint,
   warn: CHART.amber,
   risk: CHART.red,
@@ -29,18 +24,22 @@ const PROGRESS_COLOR: Record<'teal' | 'warn' | 'risk', string> = {
 
 export function DecisionThroughputWidget() {
   const throughputSwr = useSWR(
-    ['operations-decision-throughput'],
+    ["operations-decision-throughput"],
     () => operationsDashboardApi.getDecisionThroughput().catch(() => null),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
   const stalledSwr = useSWR(
-    ['operations-decisions-stalled'],
+    ["operations-decisions-stalled"],
     () => operationsDashboardApi.getStalledDecisions().catch(() => null),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  const tp = throughputSwr.data ? fromDecisionThroughputApi(throughputSwr.data) : null;
-  const stalled = stalledSwr.data ? fromStalledDecisionsApi(stalledSwr.data) : null;
+  const tp = throughputSwr.data
+    ? fromDecisionThroughputApi(throughputSwr.data)
+    : null;
+  const stalled = stalledSwr.data
+    ? fromStalledDecisionsApi(stalledSwr.data)
+    : null;
 
   return (
     <GlassCard>
@@ -49,7 +48,9 @@ export function DecisionThroughputWidget() {
       </CardTitle>
       <div className="mt-4">
         {throughputSwr.isLoading ? (
-          <p className="text-sm" style={{ color: CHART.dim }}>Загрузка…</p>
+          <p className="text-sm" style={{ color: CHART.dim }}>
+            Загрузка…
+          </p>
         ) : !tp ? (
           <p className="text-sm" style={{ color: CHART.dim }}>
             Данные появятся, когда наберётся история решений.
@@ -76,7 +77,7 @@ export function DecisionThroughputWidget() {
             </p>
             <div
               className="mt-3 h-1.5 w-full overflow-hidden rounded-full"
-              style={{ background: 'var(--surface-inset-strong)' }}
+              style={{ background: "var(--surface-inset-strong)" }}
             >
               <div
                 className="h-full rounded-full"
@@ -90,10 +91,16 @@ export function DecisionThroughputWidget() {
           </>
         )}
 
-        {/* Застрявшие решения — отдельный блок под прогрессом. */}
+        {}
         {stalled && stalled.length > 0 ? (
-          <div className="mt-4 border-t pt-3" style={{ borderColor: 'var(--surface-inset-strong)' }}>
-            <p className="mb-2 text-xs font-medium" style={{ color: CHART.red }}>
+          <div
+            className="mt-4 border-t pt-3"
+            style={{ borderColor: "var(--surface-inset-strong)" }}
+          >
+            <p
+              className="mb-2 text-xs font-medium"
+              style={{ color: CHART.red }}
+            >
               Застряло без движения: {stalled.length}
             </p>
             <ul className="space-y-1.5">
@@ -104,7 +111,9 @@ export function DecisionThroughputWidget() {
                     className="hover:underline"
                     style={{ color: CHART.text }}
                   >
-                    <span className="line-clamp-1">{d.statement || 'Без формулировки'}</span>
+                    <span className="line-clamp-1">
+                      {d.statement || "Без формулировки"}
+                    </span>
                   </Link>
                   <span className="text-xs" style={{ color: CHART.faint }}>
                     {d.ageDays} дн. без движения

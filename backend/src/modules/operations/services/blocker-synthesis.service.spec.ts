@@ -6,16 +6,6 @@ import {
   parseBlockersJson,
 } from './blocker-synthesis.service';
 
-/**
- * TZ-1 Фаза 3.A (daily-value-engine) — unit-тесты BlockerSynthesisService.
- *
- * Mock Prisma/cfg/llm/insights, без сети/времени. Покрываем:
- *   1. computeForTenant — кластеризация + статусы new/recurring + upsert.
- *   2. recurring + daysOpen ≥ N → мост в Insight (bridgeRecurringBlocker).
- *   3. resolved — кластер из окна, не замеченный сегодня.
- *   4. идемпотентность — повторный прогон = upsert (без дублей).
- *   5. parseBlockersJson / detectImpactSignals.
- */
 describe('BlockerSynthesisService', () => {
   function buildCfg(overrides?: Record<string, unknown>) {
     const map: Record<string, unknown> = {
@@ -29,9 +19,8 @@ describe('BlockerSynthesisService', () => {
       ...overrides,
     };
     return {
-      getDynamic: vi.fn(
-        async (key: string, _env: string, def: unknown) =>
-          key in map ? map[key] : def,
+      getDynamic: vi.fn(async (key: string, _env: string, def: unknown) =>
+        key in map ? map[key] : def,
       ),
     };
   }
@@ -53,8 +42,7 @@ describe('BlockerSynthesisService', () => {
       status: string;
     }>;
   }) {
-    const upserts: Array<{ where: unknown; create: unknown; update: unknown }> =
-      [];
+    const upserts: Array<{ where: unknown; create: unknown; update: unknown }> = [];
     const updates: Array<{ where: unknown; data: unknown }> = [];
     const prisma = {
       dailyCheckIn: {
@@ -92,9 +80,7 @@ describe('BlockerSynthesisService', () => {
 
   it('новый блокер дня → status=new, upsert вызван', async () => {
     const { svc, upserts, metrics } = build({
-      checkIns: [
-        { personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] },
-      ],
+      checkIns: [{ personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] }],
     });
     const res = await svc.computeForTenant({
       tenantId: 't1',
@@ -111,9 +97,7 @@ describe('BlockerSynthesisService', () => {
 
   it('повторяющийся блокер ≥ N дней → recurring + мост в Insight', async () => {
     const { svc, insights } = build({
-      checkIns: [
-        { personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] },
-      ],
+      checkIns: [{ personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] }],
       existing: [
         {
           id: 'bs-prior',
@@ -136,7 +120,7 @@ describe('BlockerSynthesisService', () => {
 
   it('кластер из окна, не замеченный сегодня → resolved', async () => {
     const { svc, updates, metrics } = build({
-      checkIns: [], // сегодня ничего
+      checkIns: [],
       ideaBlocks: [],
       existing: [
         {
@@ -154,9 +138,7 @@ describe('BlockerSynthesisService', () => {
       dateLocal: '2026-06-08',
     });
     expect(res.resolvedCount).toBe(1);
-    expect(updates.some((u) => (u.data as { status?: string }).status === 'resolved')).toBe(
-      true,
-    );
+    expect(updates.some((u) => (u.data as { status?: string }).status === 'resolved')).toBe(true);
     expect(metrics.incBlockerSynthesisRecurring).toHaveBeenCalledWith({
       status: 'resolved',
     });
@@ -164,9 +146,7 @@ describe('BlockerSynthesisService', () => {
 
   it('идемпотентность: тот же блокер второй прогон → снова upsert (не дубль)', async () => {
     const { svc, upserts } = build({
-      checkIns: [
-        { personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] },
-      ],
+      checkIns: [{ personId: 'p1', blockersJson: [{ text: 'жду доступ к базе' }] }],
       existing: [
         {
           id: 'bs-prior',
@@ -179,15 +159,12 @@ describe('BlockerSynthesisService', () => {
       ],
     });
     await svc.computeForTenant({ tenantId: 't1', dateLocal: '2026-06-08' });
-    // upsert по unique (tenantId, clusterKey) — один вызов, не два create.
     expect(upserts).toHaveLength(1);
   });
 
   describe('parseBlockersJson', () => {
     it('массив объектов { text }', () => {
-      expect(
-        parseBlockersJson([{ text: 'a' }, { text: ' b ' }] as never),
-      ).toEqual(['a', 'b']);
+      expect(parseBlockersJson([{ text: 'a' }, { text: ' b ' }] as never)).toEqual(['a', 'b']);
     });
     it('массив строк', () => {
       expect(parseBlockersJson(['x', '  y '] as never)).toEqual(['x', 'y']);
@@ -200,9 +177,11 @@ describe('BlockerSynthesisService', () => {
 
   describe('detectImpactSignals', () => {
     it('детектит клиента/дедлайн/обещание по ключевым словам', () => {
-      expect(detectImpactSignals('срываем дедлайн по клиенту, я обещал')).toEqual(
-        { customer: true, deadline: true, commitment: true },
-      );
+      expect(detectImpactSignals('срываем дедлайн по клиенту, я обещал')).toEqual({
+        customer: true,
+        deadline: true,
+        commitment: true,
+      });
     });
     it('бытовой блокер → всё false', () => {
       expect(detectImpactSignals('кофемашина сломалась')).toEqual({

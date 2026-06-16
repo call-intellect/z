@@ -5,20 +5,16 @@ import type { Request } from 'express';
 
 import { MyDailyBriefController } from './my-daily-brief.controller';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — unit-тесты `/me/daily-brief`, `/me/knows-who`.
- *
- * Главный инвариант — self-scope (Р8): personId резолвится сервером из сессии,
- * не из query/param. Чужой бриф открыть нельзя (404). knows-who исключает себя.
- */
 describe('MyDailyBriefController', () => {
   const req = { user: { id: 'user-1' } } as unknown as Request;
 
-  function make(over: {
-    commitments?: Record<string, unknown>;
-    briefs?: Record<string, unknown>;
-    knowsWho?: Record<string, unknown>;
-  } = {}) {
+  function make(
+    over: {
+      commitments?: Record<string, unknown>;
+      briefs?: Record<string, unknown>;
+      knowsWho?: Record<string, unknown>;
+    } = {},
+  ) {
     const commitments = over.commitments ?? {
       resolveSelfPerson: vi.fn().mockResolvedValue({ id: 'person-mine' }),
     };
@@ -76,9 +72,7 @@ describe('MyDailyBriefController', () => {
 
     it('нет tenantId → BadRequest', async () => {
       const { ctrl } = make();
-      await expect(
-        ctrl.getBrief(undefined, req, { date: '2026-06-08' }),
-      ).rejects.toThrow();
+      await expect(ctrl.getBrief(undefined, req, { date: '2026-06-08' })).rejects.toThrow();
     });
   });
 

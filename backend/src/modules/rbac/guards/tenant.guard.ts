@@ -13,23 +13,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { KnowledgeAccessResolver } from '../knowledge-access-resolver.service';
 import { RbacService } from '../rbac.service';
 
-/**
- * TenantGuard — проверяет, что текущий пользователь имеет Membership в Org,
- * выбранной для запроса. Подключается ПОСЛЕ CookieAuthGuard.
- *
- * Алгоритм извлечения tenantId:
- *   1. `req.tenantId`, уже выставленный TenantMiddleware (X-Org-Id /
- *      :orgId / body.tenantId).
- *   2. Single-org fallback: если у пользователя ровно одна активная Org —
- *      она дефолт. Делается только здесь, т.к. требует `req.user.id`
- *      после CookieAuthGuard.
- *
- * Если tenantId не разрезолвлен → 403 tenant_required.
- * Если tenantId есть, но membership нет → 403 no_membership.
- *
- * После успеха кладёт `req.tenantId = <orgId>` для удобства downstream-кода
- * (идемпотентно — middleware могло уже выставить то же значение).
- */
 @Injectable()
 export class TenantGuard implements CanActivate {
   private readonly logger = new Logger(TenantGuard.name);
@@ -61,10 +44,8 @@ export class TenantGuard implements CanActivate {
       });
     }
 
-    // Middleware уже могло выставить req.tenantId (из header/param/body).
     let tenantId = req.tenantId;
     if (!tenantId) {
-      // Single-org fallback — единственная стратегия, требующая БД и user.id.
       tenantId = (await this.singleOrgFallback(user.id)) ?? undefined;
     }
 
@@ -89,21 +70,17 @@ export class TenantGuard implements CanActivate {
       });
     }
 
-    // Кладём в req для downstream-кода (даже если уже стояло — идемпотентно).
     req.tenantId = tenantId;
-    // 2026-06-01 (ТЗ shared-demo-org-model §4.3) — кэшируем rbacCtx для
-    // downstream guards/handlers, чтобы избежать повторного loadContext.
     req.rbacContext = {
       role: rbacCtx.role,
       visibility: rbacCtx.visibility,
       isSuperAdmin: rbacCtx.isSuperAdmin,
     };
-    // Ф2 knowledge-access — лениво кладём группы пользователя ТОЛЬКО при включённом
-    // гейте (off → ничего не делаем, поведение неизменно).
     if (this.cfg.knowledgeAccess.enforcement !== 'off') {
       try {
         const groups = await this.accessResolver.resolveAccessibleGroups({
-          tenantId, userId: user.id,
+          tenantId,
+          userId: user.id,
         });
         (req.rbacContext as Record<string, unknown>)['groups'] = groups;
       } catch (err) {

@@ -1,25 +1,15 @@
-/**
- * API DTO для quality-score (Фаза C §7).
- *
- * Источник правды — backend/src/modules/quality-score/.
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export type QualityScoreStatusApi =
-  | 'pending'
-  | 'ready'
-  | 'failed'
-  | 'disabled';
+export type QualityScoreStatusApi = "pending" | "ready" | "failed" | "disabled";
 
 export type QualityScoreCategoryApi =
-  | 'preparation'
-  | 'structure'
-  | 'clarity'
-  | 'outcomes'
-  | 'engagement';
+  | "preparation"
+  | "structure"
+  | "clarity"
+  | "outcomes"
+  | "engagement";
 
-export type QualityScoreSeverityApi = 'info' | 'warning' | 'critical';
+export type QualityScoreSeverityApi = "info" | "warning" | "critical";
 
 export type QualityScoreRecommendationApi = {
   text: string;
@@ -70,30 +60,34 @@ export const qualityScoreApi = {
     ),
 
   regenerate: (meetingId: string) =>
-    apiClient.post<{ status: 'queued'; meetingId: string }>(
+    apiClient.post<{ status: "queued"; meetingId: string }>(
       `/api/v1/meetings/${encodeURIComponent(meetingId)}/quality-score/regenerate`,
       {},
     ),
 
   getOrgSettings: () =>
     apiClient.get<OrgQualityScoreSettingsResponseApi>(
-      '/api/v1/org/settings/quality-score',
+      "/api/v1/org/settings/quality-score",
     ),
 
   updateOrgSettings: (body: { disabledForTypes: string[] }) =>
     apiClient.patch<OrgQualityScoreSettingsResponseApi>(
-      '/api/v1/org/settings/quality-score',
+      "/api/v1/org/settings/quality-score",
       body,
     ),
 
-  getOrgDashboard: (params: { from?: string; to?: string; meetingType?: string }) => {
+  getOrgDashboard: (params: {
+    from?: string;
+    to?: string;
+    meetingType?: string;
+  }) => {
     const qs = new URLSearchParams();
-    if (params.from) qs.set('from', params.from);
-    if (params.to) qs.set('to', params.to);
-    if (params.meetingType) qs.set('meetingType', params.meetingType);
+    if (params.from) qs.set("from", params.from);
+    if (params.to) qs.set("to", params.to);
+    if (params.meetingType) qs.set("meetingType", params.meetingType);
     const suffix = qs.toString();
     return apiClient.get<OrgDashboardQualityScoreResponseApi>(
-      `/api/v1/org/dashboard/quality-score${suffix ? `?${suffix}` : ''}`,
+      `/api/v1/org/dashboard/quality-score${suffix ? `?${suffix}` : ""}`,
     );
   },
 };

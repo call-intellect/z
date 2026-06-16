@@ -1,13 +1,3 @@
-/**
- * Судья гипотезы 1 — сравнивает два weekly-digest markdown:
- *   A: код агрегирует, LLM пишет.
- *   Б: LLM делает всё (агрегацию + текст) на сырых данных.
- *
- * Метки A/Б маскируются как X/Y случайно. Судья видит ИСХОДНЫЕ сырые данные
- * недели — чтобы оценить, кто точнее, глубже, не выдумал ли.
- *
- * Запуск: cd backend && bun run scripts/eval/judge-weekly-digest.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -17,13 +7,34 @@ const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const CHECKINS_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/checkins-week.json');
-const CONTEXT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/week-context.json');
-const A_MD_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.md');
-const B_MD_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.md');
-const A_JSON = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.json');
-const B_JSON = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.json');
-const SUMMARY_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/SUMMARY-WEEKLY-DIGEST.md');
+const CHECKINS_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/checkins-week.json',
+);
+const CONTEXT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/week-context.json',
+);
+const A_MD_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.md',
+);
+const B_MD_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.md',
+);
+const A_JSON = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-a-weekly-digest.json',
+);
+const B_JSON = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.json',
+);
+const SUMMARY_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/SUMMARY-WEEKLY-DIGEST.md',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -71,7 +82,15 @@ const TOOL = {
     description: 'Сравнительная оценка двух версий weekly-digest.',
     parameters: {
       type: 'object',
-      required: ['accuracy', 'depth', 'actionability', 'privacy', 'clarity', 'winner_overall', 'reasoning'],
+      required: [
+        'accuracy',
+        'depth',
+        'actionability',
+        'privacy',
+        'clarity',
+        'winner_overall',
+        'reasoning',
+      ],
       additionalProperties: false,
       properties: {
         accuracy: CRIT,
@@ -95,7 +114,6 @@ async function main(): Promise<void> {
   const aMeta = JSON.parse(await fs.readFile(A_JSON, 'utf-8'));
   const bMeta = JSON.parse(await fs.readFile(B_JSON, 'utf-8'));
 
-  // Маскировка.
   const swap = Math.random() < 0.5;
   const xLabel: 'A' | 'B' = swap ? 'B' : 'A';
   const yLabel: 'A' | 'B' = swap ? 'A' : 'B';
@@ -103,10 +121,15 @@ async function main(): Promise<void> {
   const yMd = swap ? aMd : bMd;
   console.log(`  Маскировка: X = ${xLabel}, Y = ${yLabel}\n`);
 
-  // Краткая сериализация сырых данных (без длинных чек-инов — оставим только заголовки).
   const checkinSummaries = checkinsRaw.checkins
     .map(
-      (c: { id: string; date: string; personName: string; expectedSentiment: string; rawText: string }) =>
+      (c: {
+        id: string;
+        date: string;
+        personName: string;
+        expectedSentiment: string;
+        rawText: string;
+      }) =>
         `[${c.id}] ${c.date} ${c.personName} (${c.expectedSentiment}): ${c.rawText.slice(0, 250)}${c.rawText.length > 250 ? '…' : ''}`,
     )
     .join('\n\n');
@@ -198,7 +221,9 @@ ${yMd}
   const tokensIn = usage.prompt_tokens ?? 0;
   const tokensOut = usage.completion_tokens ?? 0;
   const cost = tokensIn * PRICE_IN + tokensOut * PRICE_OUT;
-  console.log(`  ${error ? '✗' : '✓'} ${ms} мс | вход=${tokensIn} выход=${tokensOut} | $${cost.toFixed(4)}${error ? ` | ${error}` : ''}\n`);
+  console.log(
+    `  ${error ? '✗' : '✓'} ${ms} мс | вход=${tokensIn} выход=${tokensOut} | $${cost.toFixed(4)}${error ? ` | ${error}` : ''}\n`,
+  );
   if (error || !j) {
     process.exit(1);
   }

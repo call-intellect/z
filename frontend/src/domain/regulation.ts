@@ -1,16 +1,3 @@
-/**
- * Доменная модель Regulation / Process / Policy (SBA α-7).
- *
- * Контракт: `backend/src/modules/regulations/dto/regulations.dto.ts`.
- *
- * Слои:
- *   - `Regulation*Api` — что приходит с бэка (см. `src/api/regulations.api.ts`).
- *   - `Regulation*Domain` — UI-friendly: Date вместо string, готовые лейблы.
- *
- * Под капотом — 3 разные Prisma-таблицы (Regulation/Process/Policy),
- * объединённые единым DTO с дискриминатором `kind`.
- */
-
 import type {
   ExtractionStatusApi,
   PolicySeverityApi,
@@ -26,7 +13,7 @@ import type {
   RegulationSummaryApi,
   RegulationVersionItemApi,
   TrustTierApi,
-} from '@/api/regulations.api';
+} from "@/api/regulations.api";
 
 export type RegulationKind = RegulationKindApi;
 export type RegulationStatus = RegulationStatusApi;
@@ -36,40 +23,38 @@ export type ExtractionStatus = ExtractionStatusApi;
 export type RegulationChangeSource = RegulationChangeSourceApi;
 
 export const REGULATION_KIND_LABEL: Record<RegulationKind, string> = {
-  regulation: 'Регламент',
-  process: 'Процесс',
-  policy: 'Политика',
-  standard: 'Стандарт',
-  instruction: 'Инструкция',
+  regulation: "Регламент",
+  process: "Процесс",
+  policy: "Политика",
+  standard: "Стандарт",
+  instruction: "Инструкция",
 };
 
 export const REGULATION_STATUS_LABEL: Record<RegulationStatus, string> = {
-  active: 'Действует',
-  deprecated: 'Устарел',
-  archived: 'В архиве',
+  active: "Действует",
+  deprecated: "Устарел",
+  archived: "В архиве",
 };
 
-/** Лейблы статуса извлечения (B2.2). */
 export const EXTRACTION_STATUS_LABEL: Record<ExtractionStatus, string> = {
-  exists: 'Существует',
-  needed: 'Нужен',
-  discussed: 'Обсуждается',
+  exists: "Существует",
+  needed: "Нужен",
+  discussed: "Обсуждается",
 };
 
-/** Лейблы источника изменения (B2.5). */
 export const REGULATION_CHANGE_SOURCE_LABEL: Record<
   RegulationChangeSource,
   string
 > = {
-  agent: 'Извлечено Корой',
-  manual: 'Изменено вручную',
-  imported: 'Импортировано',
+  agent: "Извлечено Корой",
+  manual: "Изменено вручную",
+  imported: "Импортировано",
 };
 
 export const POLICY_SEVERITY_LABEL: Record<PolicySeverity, string> = {
-  advisory: 'Рекомендация',
-  mandatory: 'Обязательная',
-  blocking: 'Критическая',
+  advisory: "Рекомендация",
+  mandatory: "Обязательная",
+  blocking: "Критическая",
 };
 
 export interface RegulationListItem {
@@ -77,28 +62,23 @@ export interface RegulationListItem {
   kind: RegulationKind;
   name: string;
   statement: string | null;
-  category: 'regulation' | 'standard' | null;
+  category: "regulation" | "standard" | null;
   severity: PolicySeverity | null;
   scope: string | null;
   status: RegulationStatus;
   ownerPersonId: string | null;
   confidence: number | null;
   trustTier: TrustTier;
-  /** Статус извлечения (B2.2). null — поле не пришло с бэка. */
   extractionStatus: ExtractionStatus | null;
   lastConfirmedAt: Date | null;
   updatedAt: Date;
   createdAt: Date;
 }
 
-/**
- * Запись считается черновиком/обсуждаемой (B2.3): для неё нельзя показывать
- * lifecycle-статус «Действует».
- */
 export function isDraftExtraction(
   extractionStatus: ExtractionStatus | null,
 ): boolean {
-  return extractionStatus === 'needed' || extractionStatus === 'discussed';
+  return extractionStatus === "needed" || extractionStatus === "discussed";
 }
 
 export interface RegulationDetail extends RegulationListItem {
@@ -123,25 +103,18 @@ export interface RegulationVersion {
   version: number;
   previousVersionId: string | null;
   payload: Record<string, unknown>;
-  /**
-   * Причина изменения (B2.5). Для process бэк присылает `changeNote` —
-   * маппер сводит оба источника в это единое поле.
-   */
   changeReason: string | null;
-  /** Источник изменения (B2.5). null — поле не пришло. */
   source: RegulationChangeSource | null;
   createdAt: Date;
   createdByUserId: string | null;
 }
-
-// ─── mappers ────────────────────────────────────────────────────────
 
 export function mapRegulationListItem(
   api: RegulationListItemApi,
 ): RegulationListItem {
   return {
     ...api,
-    trustTier: api.trustTier ?? 'human',
+    trustTier: api.trustTier ?? "human",
     extractionStatus: api.extractionStatus ?? null,
     lastConfirmedAt: api.lastConfirmedAt ? new Date(api.lastConfirmedAt) : null,
     updatedAt: new Date(api.updatedAt),
@@ -149,7 +122,9 @@ export function mapRegulationListItem(
   };
 }
 
-export function mapRegulationDetail(api: RegulationDetailApi): RegulationDetail {
+export function mapRegulationDetail(
+  api: RegulationDetailApi,
+): RegulationDetail {
   return {
     ...mapRegulationListItem(api),
     contentMd: api.contentMd,
@@ -177,9 +152,6 @@ export function mapVersionsFromHistory(
   return api.items.map(mapVersionItem);
 }
 
-// ─── provenance (C3) ────────────────────────────────────────────────
-
-/** Цитата-источник записи с разобранной датой встречи. */
 export interface RegulationSource {
   blockId: string;
   quote: string;
@@ -208,17 +180,12 @@ export function mapRegulationSources(
   return api.items.map(mapRegulationSource);
 }
 
-// ─── summary (C4) ───────────────────────────────────────────────────
-
-/** Счётчики «оцифрованного» по видам + дельта за неделю. */
 export interface RegulationSummary {
   regulations: number;
   processes: number;
   instructions: number;
   policies: number;
-  /** Сколько записей добавилось за последнюю неделю (может быть 0). */
   weekDelta: number;
-  /** Всего записей по всем видам — производное, чтобы не считать в UI. */
   total: number;
 }
 
@@ -239,13 +206,14 @@ export function mapRegulationSummary(
   };
 }
 
-export function mapVersionItem(api: RegulationVersionItemApi): RegulationVersion {
+export function mapVersionItem(
+  api: RegulationVersionItemApi,
+): RegulationVersion {
   return {
     id: api.id,
     version: api.version,
     previousVersionId: api.previousVersionId,
     payload: api.payload,
-    // process → changeNote, regulation/policy → changeReason; сводим в одно.
     changeReason: api.changeReason ?? api.changeNote ?? null,
     source: api.source ?? null,
     createdAt: new Date(api.createdAt),

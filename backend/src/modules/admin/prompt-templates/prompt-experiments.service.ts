@@ -1,29 +1,3 @@
-/**
- * Фаза A.3 — PromptExperimentsService.
- *
- * Источник: ТЗ A §7.2 и §10.
- *
- * Жизненный цикл prompt-эксперимента:
- *   draft (создан) → running (start) → stopped (manual) | completed (cron по endsAt).
- *
- * Бизнес-правила:
- *   - templateAId и templateBId должны принадлежать одному `PromptTemplate`
- *     (это две версии одного шаблона), либо обе быть system-шаблонами с
- *     совпадающим taskType (cross-template A/B — допускается для super_admin).
- *   - splitPercent: 0..100, sticky-allocation `hash(meetingId+experimentId) % 100 < splitPercent` → B.
- *   - endsAt: не раньше «сейчас + 1 час», не позже «сейчас + 30 дней» (§10.3).
- *   - Лимит одновременных running-экспериментов на Org — через
- *     `EntitlementService.getQuota('prompt_experiments_concurrent')`.
- *
- * RBAC:
- *   - super_admin может создавать с `orgId=null` (глобальный) и с любым orgId.
- *   - owner/admin — только для своей Org и с `feature.prompt_experiments`.
- *
- * Метрики:
- *   - `z_prompt_experiment_active_count` (gauge) обновляется при start/stop/expire.
- *   - `z_prompt_experiment_completed_total{reason}` — на каждое завершение.
- */
-
 import {
   BadRequestException,
   ForbiddenException,
@@ -46,15 +20,12 @@ import type {
   StopPromptExperimentDto,
 } from './dto/prompt-experiments.dto';
 
-/** Не раньше «сейчас + 1 час», не позже «сейчас + 30 дней». */
-export const EXPERIMENT_MIN_DURATION_MS = 60 * 60 * 1000; // 1 час
-export const EXPERIMENT_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // 30 дней
+export const EXPERIMENT_MIN_DURATION_MS = 60 * 60 * 1000;
+export const EXPERIMENT_MAX_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Доступ к Org-эксперименту: super_admin или owner/admin данной Org. */
 export interface ExperimentRbacContext {
   userId: string;
   isSuperAdmin: boolean;
-  /** Список Org, в которых пользователь owner/admin. */
   ownedOrgIds: string[];
 }
 
@@ -71,8 +42,6 @@ export class PromptExperimentsService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  // ─── list / detail ────────────────────────────────────────────────────
-
   async list(
     filters: ListPromptExperimentsQueryDto,
     rbac: ExperimentRbacContext,
@@ -80,7 +49,6 @@ export class PromptExperimentsService {
     const where: Record<string, unknown> = {};
     if (filters.status) where['status'] = filters.status;
     if (!rbac.isSuperAdmin) {
-      // Org-Admin видит только эксперименты своих Org.
       where['orgId'] = { in: rbac.ownedOrgIds };
     } else if (filters.orgId !== undefined) {
       where['orgId'] = filters.orgId;
@@ -104,13 +72,10 @@ export class PromptExperimentsService {
     return exp;
   }
 
-  // ─── create ──────────────────────────────────────────────────────────
-
   async create(
     dto: CreatePromptExperimentDto,
     rbac: ExperimentRbacContext,
   ): Promise<PromptExperiment> {
-    // Доступ: super_admin может null orgId или любую; org-admin — только свои.
     const orgId = dto.orgId ?? null;
     if (orgId !== null) {
       if (!rbac.isSuperAdmin && !rbac.ownedOrgIds.includes(orgId)) {
@@ -119,13 +84,7 @@ export class PromptExperimentsService {
           error: { code: 'no_access_to_org', orgId },
         });
       }
-      // Entitlement-гейт для Org-уровня (super_admin тоже проверяет, чтобы не
-      // плодить эксперименты на тарифе без фичи; super_admin может временно
-      // переопределить через `OrgEntitlement.featureOverrides`).
-      const hasFeature = await this.entitlements.hasFeature(
-        orgId,
-        'feature.prompt_experiments',
-      );
+      const hasFeature = await this.entitlements.hasFeature(orgId, 'feature.prompt_experiments');
       if (!hasFeature) {
         throw new ForbiddenException({
           ok: false,
@@ -137,7 +96,6 @@ export class PromptExperimentsService {
         });
       }
     } else if (!rbac.isSuperAdmin) {
-      // Глобальный эксперимент (orgId=null) — только super_admin.
       throw new ForbiddenException({
         ok: false,
         error: { code: 'global_experiment_super_admin_only' },
@@ -151,9 +109,6 @@ export class PromptExperimentsService {
       });
     }
 
-    // Валидация версий: должны существовать и быть связаны с шаблоном того же
-    // taskType. orgId шаблона должен соответствовать experimentу: либо null
-    // (system), либо равно experiment.orgId.
     const [verA, verB] = await Promise.all([
       this.prisma.promptTemplateVersion.findUnique({
         where: { id: dto.templateAId },
@@ -176,25 +131,16 @@ export class PromptExperimentsService {
         error: { code: 'experiment_a_b_task_type_mismatch' },
       });
     }
-    // meetingType должен совпадать (или оба null = универсальные).
     if (verA.template.meetingType !== verB.template.meetingType) {
       throw new BadRequestException({
         ok: false,
         error: { code: 'experiment_a_b_meeting_type_mismatch' },
       });
     }
-    // Каждый шаблон должен быть доступен в данном scope:
-    //   - orgId эксперимента null: оба шаблона должны быть scope=system.
-    //   - orgId эксперимента не null: каждый шаблон scope=org с тем же orgId,
-    //     либо scope=system (можно сравнивать system vs org).
     this.assertTemplateBelongsToExperiment(verA.template, orgId, 'A');
     this.assertTemplateBelongsToExperiment(verB.template, orgId, 'B');
 
-    // endsAt валидация (если задан).
     const endsAt = this.parseEndsAt(dto.endsAt ?? null);
-
-    // Лимит на одновременные running-эксперименты считаем при `start`,
-    // не при `create` (создание draft'ов разрешено без лимита).
 
     const created = await this.prisma.promptExperiment.create({
       data: {
@@ -223,12 +169,10 @@ export class PromptExperimentsService {
     return created;
   }
 
-  // ─── start / stop ────────────────────────────────────────────────────
-
   async start(id: string, rbac: ExperimentRbacContext): Promise<PromptExperiment> {
     const exp = await this.detail(id, rbac);
     if (exp.status === 'running') {
-      return exp; // идемпотентность
+      return exp;
     }
     if (exp.status === 'completed' || exp.status === 'stopped') {
       throw new BadRequestException({
@@ -237,10 +181,9 @@ export class PromptExperimentsService {
       });
     }
 
-    // Лимит одновременных running-экспериментов на Org (либо глобально для null).
     const limit = exp.orgId
       ? await this.entitlements.getQuota(exp.orgId, 'prompt_experiments_concurrent')
-      : 3; // глобальный — фикс 3 (см. ТЗ §10.3)
+      : 3;
     if (limit > 0) {
       const activeCount = await this.prisma.promptExperiment.count({
         where: { orgId: exp.orgId, status: 'running' },
@@ -297,8 +240,6 @@ export class PromptExperimentsService {
     return updated;
   }
 
-  // ─── analytics ──────────────────────────────────────────────────────
-
   async analytics(
     id: string,
     rbac: ExperimentRbacContext,
@@ -315,9 +256,6 @@ export class PromptExperimentsService {
   }> {
     const exp = await this.detail(id, rbac);
 
-    // Подсчёт по AiResult, попавшим в эксперимент. Идентификация: связь
-    // PromptTemplateVersion + experimentGroup. Один meeting может быть только
-    // в одном из них (sticky-allocation).
     const where: Record<string, unknown> = {
       promptTemplateVersionId: { in: [exp.templateAId, exp.templateBId] },
     };
@@ -337,7 +275,6 @@ export class PromptExperimentsService {
       },
     });
 
-    // Группируем по experimentGroup и считаем feedback по этим aiResult.id.
     const groupAIds = aiResults
       .filter((r) => r.experimentGroup === 'A' && r.promptTemplateVersionId === exp.templateAId)
       .map((r) => r.id);
@@ -393,18 +330,6 @@ export class PromptExperimentsService {
     };
   }
 
-  // ─── allocation (для PromptResolver) ──────────────────────────────────
-
-  /**
-   * Sticky-allocation: ` hash(meetingId + experimentId) % 100 < splitPercent`
-   * → группа B, иначе A. На retry/regenerate одного meeting'а попадает в ту же группу.
-   *
-   * Реализация хэша — FNV-1a 32-bit. Не криптостойкий, но детерминированный и
-   * быстрый. Достаточно для распределения трафика.
-   *
-   * Возвращает null если эксперимента нет или он не в статусе 'running' —
-   * вызывающий должен использовать обычный резолв.
-   */
   async resolveAllocation(args: {
     meetingId: string;
     orgId: string;
@@ -420,7 +345,6 @@ export class PromptExperimentsService {
       for (const exp of experiments) {
         const group = stickyAllocate(args.meetingId, exp.id, exp.splitPercent);
         const versionId = group === 'A' ? exp.templateAId : exp.templateBId;
-        // Также удостоверимся, что верcия и шаблон ещё актуальны.
         return { experimentId: exp.id, group, versionId };
       }
       return null;
@@ -436,11 +360,6 @@ export class PromptExperimentsService {
     }
   }
 
-  /**
-   * Cron-helper — переводит эксперименты с `endsAt < now` в `completed`.
-   * Должен вызываться workers/scheduler'ом (отдельный @Cron не входит в A.3:
-   * orchestrator может запускать вручную в смок-тестах).
-   */
   async expireDue(): Promise<{ expired: number }> {
     const now = new Date();
     const due = await this.prisma.promptExperiment.findMany({
@@ -460,8 +379,6 @@ export class PromptExperimentsService {
     return { expired: due.length };
   }
 
-  // ─── internals ────────────────────────────────────────────────────────
-
   private async findActiveForOrg(args: {
     orgId: string;
     taskType: string;
@@ -469,12 +386,15 @@ export class PromptExperimentsService {
   }): Promise<
     Array<
       PromptExperiment & {
-        templateA: PromptTemplateVersion & { template: { taskType: string; meetingType: string | null } };
-        templateB: PromptTemplateVersion & { template: { taskType: string; meetingType: string | null } };
+        templateA: PromptTemplateVersion & {
+          template: { taskType: string; meetingType: string | null };
+        };
+        templateB: PromptTemplateVersion & {
+          template: { taskType: string; meetingType: string | null };
+        };
       }
     >
   > {
-    // 1) Org-эксперименты этой Org'и; 2) глобальные (orgId=null) — fallback.
     const candidates = await this.prisma.promptExperiment.findMany({
       where: {
         status: 'running',
@@ -526,7 +446,6 @@ export class PromptExperimentsService {
     label: 'A' | 'B',
   ): void {
     if (expOrgId === null) {
-      // Глобальный — только system-шаблоны.
       if (template.scope !== 'system') {
         throw new BadRequestException({
           ok: false,
@@ -538,7 +457,6 @@ export class PromptExperimentsService {
       }
       return;
     }
-    // Org-эксперимент: каждый шаблон должен быть либо system, либо org с тем же orgId.
     if (template.scope === 'system') return;
     if (template.scope === 'org' && template.orgId === expOrgId) return;
     throw new BadRequestException({
@@ -574,9 +492,6 @@ export class PromptExperimentsService {
   }
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────
-
-/** FNV-1a 32-bit детерминированный хэш. */
 function fnv1a(input: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
@@ -586,14 +501,6 @@ function fnv1a(input: string): number {
   return hash >>> 0;
 }
 
-/**
- * Sticky-allocation. ВНИМАНИЕ: экспортируется ради юнит-тестов.
- *
- *   group = hash(meetingId + experimentId) % 100 < splitPercent ? 'B' : 'A'.
- *
- * splitPercent=0  → всегда 'A'.
- * splitPercent=100 → всегда 'B'.
- */
 export function stickyAllocate(
   meetingId: string,
   experimentId: string,

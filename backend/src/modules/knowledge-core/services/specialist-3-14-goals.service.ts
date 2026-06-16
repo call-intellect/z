@@ -12,10 +12,7 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
 import { LogService } from '../../logging/log.service';
@@ -36,7 +33,6 @@ import { KnowledgeEmbeddingService } from './embedding.service';
 import { GoalTaskLinkerService } from './goal-task-linker.service';
 import { GoalThemeLinkerService } from './goal-theme-linker.service';
 
-/** Метрика-тип для core_specialist_*. */
 const METRIC_TYPE = 'goal';
 
 const VALID_HORIZONS: ReadonlySet<string> = new Set([
@@ -47,60 +43,20 @@ const VALID_HORIZONS: ReadonlySet<string> = new Set([
   'sprint',
 ]);
 
-/**
- * Goals OKR v2 (2026-06-02, Фаза 2) — Specialist314GoalsService.
- *
- * Логика специалиста 3-14: блок (signalType ∈ {commitment, plan_item}) →
- * черновик Goal (LLM `goal-extract`, может вернуть «не цель») → KNN-кандидаты
- * существующих целей → LLM-арбитр `goal-hierarchy-link` (duplicate / child_of /
- * standalone) → создание Goal (source='ai', promotionState=suggested|active по
- * confidence) + опц. измеримый GoalKeyResult.
- *
- * Зафиксированные решения (см. ТЗ §5 Фаза 2 + промпт оркестратора):
- *   - Триггер: commitment + plan_item (НЕ decision).
- *   - promotionState: 'suggested'; confidence >= AUTO_PROMOTE → 'active'.
- *   - duplicate → promote existing (если suggested) / skip; child_of →
- *     parentGoalId; standalone → root. Нет KNN-кандидатов → standalone без LLM.
- *   - Cap фокуса MAX_ACTIVE_GOALS_PER_HORIZON: при превышении не плодим.
- *   - MIN_EXTRACT_CONFIDENCE — ниже = «не цель», skip.
- *   - Entity{type=goal} в этой фазе НЕ создаём (entityId=null; backfill — вне scope).
- *   - У Goal НЕТ embedding-колонки → KNN через ILIKE-fallback (как у decisions
- *     при отсутствии вектора).
- *   - Goal.createdById обязателен (FK на User onDelete:Restrict) — подставляем
- *     owner'а Org (Membership role='owner'). Нет owner → skip создания.
- *
- * Метрики — переиспользуем `core_specialist_*{type='goal'}`.
- */
 @Injectable()
 export class Specialist314GoalsService {
   private readonly logger = new Logger(Specialist314GoalsService.name);
 
   static readonly SPECIALIST_NAME = '3-14-goals';
-  /** Top-K для KNN-кандидатов дедупа/иерархии. */
   private static readonly KNN_TOP_K = 5;
-  /** Минимальная уверенность extraction, ниже которой блок — «не цель». */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
-  /** Confidence, при которой AI-цель сразу промоутится в 'active'. */
   private static readonly AUTO_PROMOTE_CONFIDENCE = 0.8;
-  /** Cap фокуса: > N active+suggested целей одного горизонта — не плодим. */
   private static readonly MAX_ACTIVE_GOALS_PER_HORIZON = 7;
 
-  /**
-   * Agent-chain overhaul Фаза 4.2 (2026-06-07) — детерминированный линкер
-   * Goal↔Theme. Инжектится property-injection'ом (не через конструктор), чтобы
-   * не сдвигать позиционные аргументы существующих unit-тестов. @Optional:
-   * в spec-конструкторе (positional) сервис не передаётся — хук тогда no-op.
-   */
   @Optional()
   @Inject(GoalThemeLinkerService)
   private readonly goalThemeLinker?: GoalThemeLinkerService;
 
-  /**
-   * Agent-chain overhaul Фаза 4.1 (2026-06-08) — LLM-привязка задач встречи к
-   * новой AI-цели (`goal-task-link`, DEFAULT OFF). Тот же property-injection
-   * паттерн, что и goalThemeLinker (не сдвигаем позиционные аргументы тестов).
-   * @Optional: в spec-конструкторе сервис не передаётся → хук no-op.
-   */
   @Optional()
   @Inject(GoalTaskLinkerService)
   private readonly goalTaskLinker?: GoalTaskLinkerService;
@@ -118,7 +74,6 @@ export class Specialist314GoalsService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /** ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection. */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -127,22 +82,7 @@ export class Specialist314GoalsService {
     }
   }
 
-  // ───────────────────── публичный метод (вызывается из воркера) ─────────────
-
-  /**
-   * Обработка одного IdeaBlock. Последовательность (ТЗ §5 Фаза 2):
-   *   1. load block (+ evidence).
-   *   2. extract draft (LLM goal-extract; null если «не цель» / низкий confidence).
-   *   3. KNN-кандидаты существующих целей.
-   *   4. арбитр иерархии (LLM goal-hierarchy-link) либо standalone (нет кандидатов).
-   *   5. применить verdict: duplicate→promote/skip; child_of→create с parentGoalId;
-   *      standalone→create root. Cap-проверка перед созданием.
-   *   6. опц. создать GoalKeyResult (если draft.measurable).
-   */
-  async processBlock(args: {
-    tenantId: string;
-    blockId: string;
-  }): Promise<void> {
+  async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: args.blockId },
       include: { evidence: true },
@@ -186,7 +126,6 @@ export class Specialist314GoalsService {
               parentId: null,
             };
 
-      // ── duplicate: НЕ создаём новую; промоутим existing suggested → active. ──
       if (verdict.verdict === 'duplicate' && verdict.targetId) {
         await this.handleDuplicate({
           tenantId: block.tenantId,
@@ -208,15 +147,12 @@ export class Specialist314GoalsService {
         return;
       }
 
-      // ── child_of / standalone: создаём новую цель. ──
       let parentGoalId: string | null = null;
       if (verdict.verdict === 'child_of' && verdict.parentId) {
-        // Sanity: parent должен принадлежать candidates и tenant'у.
         const parent = candidates.find((c) => c.id === verdict.parentId);
         if (parent) parentGoalId = parent.id;
       }
 
-      // Cap фокуса по горизонту перед созданием.
       const overCap = await this.isOverFocusCap({
         tenantId: block.tenantId,
         horizon: draft.horizon,
@@ -242,7 +178,6 @@ export class Specialist314GoalsService {
         return;
       }
 
-      // Owner Org для обязательного createdById.
       const ownerUserId = await this.resolveOwnerUserId(block.tenantId);
       if (!ownerUserId) {
         this.logger.warn(
@@ -290,7 +225,6 @@ export class Specialist314GoalsService {
         status: promotionState,
       });
 
-      // Опц. измеримый KR.
       if (draft.measurable) {
         await this.createKeyResult({
           tenantId: block.tenantId,
@@ -300,10 +234,6 @@ export class Specialist314GoalsService {
         });
       }
 
-      // Agent-chain overhaul Фаза 4.2 — on-event авто-привязка тем к новой
-      // AI-цели (провенанс + co-mention). Best-effort: не критично для создания
-      // цели, ошибка только логируется. Без тем strategic-alignment.worker
-      // делает ранний return (themesCount===0) → cachedAlignment не считается.
       if (this.goalThemeLinker) {
         try {
           await this.goalThemeLinker.linkGoalThemes(block.tenantId, goal.id);
@@ -318,10 +248,6 @@ export class Specialist314GoalsService {
         }
       }
 
-      // Agent-chain overhaul Фаза 4.1 — on-event LLM-привязка задач встречи к
-      // новой AI-цели (DEFAULT OFF — линкер сам no-op при выключенном флаге).
-      // Best-effort: ошибка только логируется. На момент создания цели задач
-      // может ещё не быть (триаж позже) — это ок, GoalTaskLinkerCron догонит.
       if (this.goalTaskLinker) {
         try {
           await this.goalTaskLinker.linkGoalTasks(block.tenantId, goal.id);
@@ -360,8 +286,6 @@ export class Specialist314GoalsService {
       );
     }
   }
-
-  // ─────────────────────────── extraction ───────────────────────────
 
   private async extractGoalDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
@@ -455,7 +379,6 @@ export class Specialist314GoalsService {
       });
       return null;
     }
-    // «Не цель» — анти-плодёж.
     if (parsed.isGoal === false) {
       this.logger.debug(
         { blockId: block.id },
@@ -463,8 +386,7 @@ export class Specialist314GoalsService {
       );
       return null;
     }
-    const confidence =
-      typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+    const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
     if (confidence < Specialist314GoalsService.MIN_EXTRACT_CONFIDENCE) {
       this.logger.debug(
         { blockId: block.id, confidence },
@@ -506,25 +428,12 @@ export class Specialist314GoalsService {
     if (targetValue === null) return null;
     return {
       name: m.name.trim().slice(0, 300),
-      unit:
-        typeof m.unit === 'string' && m.unit.trim()
-          ? m.unit.trim().slice(0, 100)
-          : null,
+      unit: typeof m.unit === 'string' && m.unit.trim() ? m.unit.trim().slice(0, 100) : null,
       startValue,
       targetValue,
     };
   }
 
-  // ─────────────────────────── KNN-кандидаты ───────────────────────────
-
-  /**
-   * Ближайшие существующие цели для дедупа/иерархии. У Goal НЕТ embedding-колонки
-   * (проверено в schema.prisma), поэтому используем ILIKE-fallback по name/description
-   * (паттерн fallback из specialist-3-3-decisions). embedQuery дёргаем лишь для
-   * единообразия будущего апгрейда — результат не используется без вектор-колонки.
-   *
-   * Фильтр: tenantId, promotionState != 'dismissed', validUntil IS NULL.
-   */
   private async knnCandidates(args: {
     tenantId: string;
     queryText: string;
@@ -566,8 +475,6 @@ export class Specialist314GoalsService {
       promotionState: r.promotionState,
     }));
   }
-
-  // ─────────────────────────── hierarchy-арбитр ───────────────────────────
 
   private async hierarchyArbiter(args: {
     tenantId: string;
@@ -663,16 +570,7 @@ export class Specialist314GoalsService {
     return standalone;
   }
 
-  // ─────────────────────────── apply verdict ───────────────────────────
-
-  /**
-   * duplicate — новую цель НЕ создаём. Повторное упоминание: если existing цель
-   * в состоянии 'suggested' → промоутим её в 'active' (метрика dedup).
-   */
-  private async handleDuplicate(args: {
-    tenantId: string;
-    targetId: string;
-  }): Promise<void> {
+  private async handleDuplicate(args: { tenantId: string; targetId: string }): Promise<void> {
     const existing = await this.prisma.goal.findFirst({
       where: { id: args.targetId, tenantId: args.tenantId },
       select: { id: true, promotionState: true },
@@ -694,10 +592,7 @@ export class Specialist314GoalsService {
     });
   }
 
-  private async isOverFocusCap(args: {
-    tenantId: string;
-    horizon: GoalHorizon;
-  }): Promise<boolean> {
+  private async isOverFocusCap(args: { tenantId: string; horizon: GoalHorizon }): Promise<boolean> {
     const count = await this.prisma.goal.count({
       where: {
         tenantId: args.tenantId,
@@ -729,9 +624,7 @@ export class Specialist314GoalsService {
         promotionState: args.promotionState,
         progressStatus,
         sourceBlockIds: args.sourceBlockIds,
-        confidence: new Prisma.Decimal(
-          Math.max(0, Math.min(1, args.draft.confidence)),
-        ),
+        confidence: new Prisma.Decimal(Math.max(0, Math.min(1, args.draft.confidence))),
         recordedAt: new Date(),
         createdById: args.createdById,
       },
@@ -754,7 +647,6 @@ export class Specialist314GoalsService {
           startValue: new Prisma.Decimal(args.measurable.startValue),
           targetValue: new Prisma.Decimal(args.measurable.targetValue),
           currentValue: new Prisma.Decimal(args.measurable.startValue),
-          // Авто-прогресс KR — Фаза 3. Пока sourceKind='manual'.
           sourceKind: 'manual',
           source: 'ai',
           createdById: args.createdById,
@@ -771,13 +663,6 @@ export class Specialist314GoalsService {
     }
   }
 
-  // ─────────────────────────── owner resolver ───────────────────────────
-
-  /**
-   * Goal.createdById обязателен (FK на User, onDelete:Restrict). У AI-специалиста
-   * нет реального пользователя — подставляем owner'а Org (Membership role='owner').
-   * Нет owner → null (caller пропускает создание, не падает).
-   */
   private async resolveOwnerUserId(tenantId: string): Promise<string | null> {
     const owner = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, role: 'owner' },
@@ -787,8 +672,6 @@ export class Specialist314GoalsService {
     return owner?.userId ?? null;
   }
 }
-
-// ─────────────────────────── shared types ───────────────────────────
 
 interface RawGoalDraft {
   isGoal?: boolean;

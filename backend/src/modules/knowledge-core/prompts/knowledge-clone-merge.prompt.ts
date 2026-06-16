@@ -1,10 +1,3 @@
-/**
- * SBA β-2 — Specialist 3.2 (Knowledge Clone).
- *
- * LLM-промпт `knowledge-clone-merge` — старый профиль + новый черновик →
- * объединённый профиль с decay для категорий, которые давно не подтверждались.
- */
-
 import {
   KNOWLEDGE_CLONE_EXTRACT_JSON_SCHEMA,
   KNOWLEDGE_CLONE_EXTRACT_SCHEMA_NAME,
@@ -52,9 +45,6 @@ export const KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-// Схема результата merge'а — точно такая же, как у extract.
-export const KNOWLEDGE_CLONE_MERGE_JSON_SCHEMA =
-  KNOWLEDGE_CLONE_EXTRACT_JSON_SCHEMA;
+export const KNOWLEDGE_CLONE_MERGE_JSON_SCHEMA = KNOWLEDGE_CLONE_EXTRACT_JSON_SCHEMA;
 
-export const KNOWLEDGE_CLONE_MERGE_SCHEMA_NAME =
-  KNOWLEDGE_CLONE_EXTRACT_SCHEMA_NAME;
+export const KNOWLEDGE_CLONE_MERGE_SCHEMA_NAME = KNOWLEDGE_CLONE_EXTRACT_SCHEMA_NAME;

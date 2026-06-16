@@ -1,9 +1,3 @@
-/**
- * W2 autonomy (2026-06-12) — OwnerResolverService («лестница владельца»).
- *
- * 5 ветвей: parentOwnerUserId → roleId (1 держатель / >1 держателей) →
- * authorUserId → candidatePool → none. Prisma мокирована.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -25,14 +19,10 @@ function makeResolver(args?: {
 } {
   const appointmentFindMany = vi
     .fn()
-    .mockResolvedValue(
-      (args?.appointmentHolders ?? []).map((person) => ({ person })),
-    );
+    .mockResolvedValue((args?.appointmentHolders ?? []).map((person) => ({ person })));
   const personRoleFindMany = vi
     .fn()
-    .mockResolvedValue(
-      (args?.personRoleHolders ?? []).map((person) => ({ person })),
-    );
+    .mockResolvedValue((args?.personRoleHolders ?? []).map((person) => ({ person })));
   const prisma = {
     appointment: { findMany: appointmentFindMany },
     personRole: { findMany: personRoleFindMany },
@@ -50,7 +40,7 @@ describe('OwnerResolverService.resolve — лестница владельца',
     const res = await env.resolver.resolve({
       tenantId: 'org-1',
       parentOwnerUserId: 'user-parent',
-      roleId: 'role-1', // роль есть, но родитель выше по лестнице
+      roleId: 'role-1',
     });
     expect(res).toEqual({ kind: 'resolved', userId: 'user-parent' });
     expect(env.appointmentFindMany).not.toHaveBeenCalled();
@@ -65,7 +55,6 @@ describe('OwnerResolverService.resolve — лестница владельца',
       roleId: 'role-1',
     });
     expect(res).toEqual({ kind: 'resolved', userId: 'user-holder' });
-    // Appointment — primary; fallback PersonRole не понадобился.
     expect(env.personRoleFindMany).not.toHaveBeenCalled();
   });
 

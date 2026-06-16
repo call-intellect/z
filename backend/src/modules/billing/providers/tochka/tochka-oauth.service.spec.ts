@@ -8,16 +8,6 @@ import type { PrismaService } from '../../../../common/prisma/prisma.service';
 
 import { TochkaOAuthService } from './tochka-oauth.service';
 
-/**
- * audit Б5 (2026-05-29) — спецификация storeTokens / getStoredTokens
- * на шифрование/расшифровку OAuth-токенов Точки.
- *
- * Покрытие:
- *   - storeTokens пишет `{ enc: 'gcm:v1:...' }` (а не plain),
- *   - getStoredTokens расшифровывает обратно,
- *   - getStoredTokens с legacy plain-форматом возвращает оригинал (fallback).
- */
-
 function makeCryptoCfg(): TypedConfigService {
   const key32 = randomBytes(32).toString('base64');
   return {
@@ -53,10 +43,11 @@ describe('TochkaOAuthService storeTokens / getStoredTokens (audit Б5)', () => {
 
   it('storeTokens записывает зашифрованный конверт { enc: gcm:v1:... }', async () => {
     const svc = makeSvc();
-    // Дёргаем приватный метод через as-any (тест на инфраструктуру).
-    const stored = await (svc as unknown as {
-      storeTokens: (r: unknown, fallback?: string) => Promise<unknown>;
-    }).storeTokens({
+    const stored = await (
+      svc as unknown as {
+        storeTokens: (r: unknown, fallback?: string) => Promise<unknown>;
+      }
+    ).storeTokens({
       access_token: 'AT-secret',
       refresh_token: 'RT-secret',
       expires_in: 3600,
@@ -69,7 +60,6 @@ describe('TochkaOAuthService storeTokens / getStoredTokens (audit Б5)', () => {
       create: { valueJson: { enc?: string } };
     };
     expect(call.create.valueJson.enc).toMatch(/^gcm:v1:/);
-    // Plain-секреты не должны попасть в БД.
     expect(JSON.stringify(call.create.valueJson)).not.toContain('AT-secret');
     expect(JSON.stringify(call.create.valueJson)).not.toContain('RT-secret');
   });
@@ -87,9 +77,11 @@ describe('TochkaOAuthService storeTokens / getStoredTokens (audit Б5)', () => {
       valueJson: { enc },
     });
     const svc = makeSvc();
-    const tokens = await (svc as unknown as {
-      getStoredTokens: () => Promise<unknown>;
-    }).getStoredTokens();
+    const tokens = await (
+      svc as unknown as {
+        getStoredTokens: () => Promise<unknown>;
+      }
+    ).getStoredTokens();
     expect(tokens).toMatchObject(original);
   });
 
@@ -99,9 +91,11 @@ describe('TochkaOAuthService storeTokens / getStoredTokens (audit Б5)', () => {
       valueJson: { accessToken: 'AT-legacy', refreshToken: 'RT-legacy' },
     });
     const svc = makeSvc();
-    const tokens = await (svc as unknown as {
-      getStoredTokens: () => Promise<unknown>;
-    }).getStoredTokens();
+    const tokens = await (
+      svc as unknown as {
+        getStoredTokens: () => Promise<unknown>;
+      }
+    ).getStoredTokens();
     expect(tokens).toMatchObject({ accessToken: 'AT-legacy', refreshToken: 'RT-legacy' });
   });
 });

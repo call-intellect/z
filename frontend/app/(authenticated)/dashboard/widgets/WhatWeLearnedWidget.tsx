@@ -1,30 +1,20 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import type { ReactNode } from 'react';
-import { BrainCircuit } from 'lucide-react';
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { BrainCircuit } from "lucide-react";
 
 import {
   signalTypeLabel,
   type DirectorDashboardSignalDomain,
   type DirectorDashboardThemeDomain,
-} from '@/domain/director-dashboard';
+} from "@/domain/director-dashboard";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
-
-/**
- * ТЗ-2 Ф1 — «Что мы узнали»: единый блок вместо трёх отдельных карточек
- * (Темы / Сигналы / Решения). Для сигналов и решений показываем строку
- * «Причина: встреча "…"» (provenance) со ссылкой на встречу, когда у элемента
- * есть `reasonSourceRef`.
- *
- * Пустая секция рисует тусклый «—». Современный визуальный язык (стекло +
- * градиентный заголовок), токены из `modern/`.
- */
+} from "@/ui/components/dashboard/modern";
 
 export type WhatWeLearnedDecision = {
   id: string;
@@ -48,7 +38,7 @@ export function WhatWeLearnedWidget({
       </CardTitle>
 
       <div className="mt-4 space-y-5">
-        {/* Темы */}
+        {}
         <Section label="Темы">
           {themes.length === 0 ? (
             <Dash />
@@ -77,7 +67,7 @@ export function WhatWeLearnedWidget({
           )}
         </Section>
 
-        {/* Сигналы */}
+        {}
         <Section label="Сигналы">
           {signals.length === 0 ? (
             <Dash />
@@ -106,7 +96,7 @@ export function WhatWeLearnedWidget({
           )}
         </Section>
 
-        {/* Решения */}
+        {}
         <Section label="Решения">
           {decisions.length === 0 ? (
             <Dash />
@@ -130,13 +120,7 @@ export function WhatWeLearnedWidget({
   );
 }
 
-function Section({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function Section({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <div
@@ -150,17 +134,13 @@ function Section({
   );
 }
 
-/**
- * Строка «Причина: встреча "…"» — provenance-ссылка. Рендерится только если
- * `reasonSourceRef` указывает на встречу с `meetingId`.
- */
 function Reason({
   reasonSourceRef,
 }: {
-  reasonSourceRef: DirectorDashboardSignalDomain['reasonSourceRef'];
+  reasonSourceRef: DirectorDashboardSignalDomain["reasonSourceRef"];
 }) {
   if (!reasonSourceRef?.meetingId) return null;
-  const title = reasonSourceRef.meetingTitle ?? 'встреча';
+  const title = reasonSourceRef.meetingTitle ?? "встреча";
   return (
     <Link
       href={`/meetings/${encodeURIComponent(reasonSourceRef.meetingId)}`}

@@ -1,28 +1,3 @@
-/**
- * Migrate (ТЗ 2026-05-27 billing-tochka-referral-dadata-z) — миграция legacy
- * тарифов `tier_basic` / `tier_pro` / `tier_enterprise` → целевой `tier_standard`.
- *
- * После реализации ТЗ продукт идёт на едином тарифе `tier_standard` (все фичи
- * `true`, единая цена 60 000 ₽/мес + 1 000 ₽/доп.место). См.
- * `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` Фаза 1.4.
- *
- * Что делает:
- *   1. Находит все `OrgEntitlement` с `tier IN ('tier_basic','tier_pro','tier_enterprise')`.
- *   2. Обновляет `tier='tier_standard'`. `featureOverrides`/`quotaOverrides`
- *      сохраняем как есть — они продолжают работать поверх `tier_standard`.
- *   3. Логирует каждое изменение (orgId, oldTier → 'tier_standard').
- *
- * Идемпотентность: повторный запуск не меняет уже мигрированные записи
- * (`where: { tier: { in: [legacy...] } }`).
- *
- * Запуск:
- *   bun run scripts/migrate-entitlements-to-standard.ts          — реальная миграция
- *   bun run scripts/migrate-entitlements-to-standard.ts --dry-run — только подсчёт
- *
- * Через docker compose (prod):
- *   docker compose exec backend bun run scripts/migrate-entitlements-to-standard.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -45,9 +20,7 @@ async function main(): Promise<void> {
   };
 
   // eslint-disable-next-line no-console
-  console.log(
-    `=== migrate-entitlements-to-standard START (dryRun=${DRY_RUN}) ===`,
-  );
+  console.log(`=== migrate-entitlements-to-standard START (dryRun=${DRY_RUN}) ===`);
 
   try {
     const candidates = await prisma.orgEntitlement.findMany({

@@ -1,10 +1,3 @@
-/**
- * Probe-система Фаза 5 (2026-06-11) — adaptive fatigue + topic cooldown.
- *
- * R9: низко-отзывчивому получателю (engagement < порога) filterByRateLimit
- * отдаёт меньше слотов; тема (contentHash) на cooldown → suggest() дропает.
- * Детерминизм: Redis/Prisma/Queue/Cfg/Metrics мокированы.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -55,8 +48,6 @@ function makeService(
 
 describe('ProbeService.filterByRateLimit — adaptive fatigue', () => {
   it('низкий engagement → урезанный бюджет → получатель отфильтрован', async () => {
-    // count=3; обычный лимит 5 (прошёл бы), но engagement 0.1 < 0.2 → лимит
-    // режется до floor(5*0.5)=2 → 3 >= 2 → отфильтрован.
     const s = makeService((key) => {
       if (key.includes(':ratelimit:')) return '3';
       if (key.includes('probe:engagement:')) return '0.1';
@@ -75,14 +66,11 @@ describe('ProbeService.filterByRateLimit — adaptive fatigue', () => {
   });
 
   it('adaptiveFatigue выключен → engagement игнорируется (полный бюджет)', async () => {
-    const s = makeService(
-      (key) => {
-        if (key.includes(':ratelimit:')) return '3';
-        if (key.includes('probe:engagement:')) return '0.05';
-        return null;
-      },
-      false, // kill-switch off
-    );
+    const s = makeService((key) => {
+      if (key.includes(':ratelimit:')) return '3';
+      if (key.includes('probe:engagement:')) return '0.05';
+      return null;
+    }, false);
     expect(await s.filterByRateLimit(['u'])).toEqual(['u']);
   });
 });
@@ -102,7 +90,6 @@ describe('ProbeService.suggest — topic cooldown', () => {
   });
 
   it('тема не на cooldown → проходит дальше (cooldown не дропает)', async () => {
-    // cooldown null, rate-limit в норме (count=0) → создаётся pending.
     const s = makeService((key) => {
       if (key.includes(':cooldown:')) return null;
       if (key.includes(':ratelimit:')) return null;

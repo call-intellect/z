@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import {
   ArrowLeft,
   Building2,
@@ -12,48 +12,46 @@ import {
   RefreshCw,
   Trash2,
   Users,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { bitrixApi, type BitrixSyncScope } from '@/api/bitrix.api';
+import { ApiError } from "@/api/api-error";
+import { bitrixApi, type BitrixSyncScope } from "@/api/bitrix.api";
 import {
   mapBitrixIntegration,
   mapBitrixStatus,
   type BitrixIntegrationView,
-} from '@/domain/bitrix';
+} from "@/domain/bitrix";
 import {
   CardTitle,
   GlassCard,
   GRAD,
   STATUS_TONE,
-} from '@/ui/components/dashboard/modern';
-import { TierGate } from '@/ui/components/TierGate';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/components/dashboard/modern";
+import { TierGate } from "@/ui/components/TierGate";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Switch } from "@/ui/shadcn/switch";
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
 }
 
 function formatDate(d: Date | null): string {
-  return d ? d.toLocaleString('ru-RU') : '—';
+  return d ? d.toLocaleString("ru-RU") : "—";
 }
 
-// Принудительный синк — по scope. Bitrix-диалоги тянутся «свежими» (im.recent),
-// отдельного периода-бэкафилла пока нет (Этап 2 — событийный инкремент).
 const SYNC_SCOPES: ReadonlyArray<{
   scope: BitrixSyncScope;
   label: string;
   icon: typeof Users;
 }> = [
-  { scope: 'users', label: 'Сотрудники', icon: Users },
-  { scope: 'dialogs', label: 'Диалоги', icon: Plug },
-  { scope: 'crm', label: 'CRM', icon: Building2 },
-  { scope: 'all', label: 'Всё', icon: RefreshCw },
+  { scope: "users", label: "Сотрудники", icon: Users },
+  { scope: "dialogs", label: "Диалоги", icon: Plug },
+  { scope: "crm", label: "CRM", icon: Building2 },
+  { scope: "all", label: "Всё", icon: RefreshCw },
 ];
 
 export function BitrixIntegrationClient() {
@@ -66,25 +64,22 @@ export function BitrixIntegrationClient() {
 
 function BitrixIntegrationContent() {
   const { data, error, isLoading, mutate } = useSWR(
-    ['bitrix-integration'],
+    ["bitrix-integration"],
     () => bitrixApi.getIntegration().then(mapBitrixIntegration),
     { revalidateOnFocus: false },
   );
 
-  // Тост после возврата из OAuth-редиректа (?bitrix=connected|error). Сам
-  // OAuth-round-trip и есть persist прогресса: интеграция создаётся на бэке в
-  // callback, на возврате getIntegration отдаёт её → ConnectedView.
   const handledRef = useRef(false);
   useEffect(() => {
-    if (handledRef.current || typeof window === 'undefined') return;
-    const status = new URLSearchParams(window.location.search).get('bitrix');
-    if (status === 'connected') {
+    if (handledRef.current || typeof window === "undefined") return;
+    const status = new URLSearchParams(window.location.search).get("bitrix");
+    if (status === "connected") {
       handledRef.current = true;
-      toast.success('Bitrix24 подключён');
+      toast.success("Bitrix24 подключён");
       void mutate();
-    } else if (status === 'error') {
+    } else if (status === "error") {
       handledRef.current = true;
-      toast.error('Не удалось подключить Bitrix24');
+      toast.error("Не удалось подключить Bitrix24");
     }
   }, [mutate]);
 
@@ -99,7 +94,7 @@ function BitrixIntegrationContent() {
       <header className="mb-6 flex items-center gap-3">
         <span
           className="grid h-10 w-10 shrink-0 place-items-center rounded-xl"
-          style={{ background: GRAD.blue, color: 'oklch(0.99 0.005 280)' }}
+          style={{ background: GRAD.blue, color: "oklch(0.99 0.005 280)" }}
         >
           <Building2 size={20} />
         </span>
@@ -115,7 +110,7 @@ function BitrixIntegrationContent() {
 
       {error && !isLoading ? (
         <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {errMessage(error, 'Не удалось загрузить интеграцию')}
+          {errMessage(error, "Не удалось загрузить интеграцию")}
         </div>
       ) : isLoading ? (
         <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
@@ -130,24 +125,22 @@ function BitrixIntegrationContent() {
   );
 }
 
-// ─────────────────────────── Не подключено (шаг 1: домен → OAuth) ─────────
-
 function ConnectForm() {
-  const [domain, setDomain] = useState('');
+  const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
 
   const handleConnect = async () => {
     const normalized = domain.trim();
     if (!normalized) {
-      toast.error('Введите домен портала, например acme.bitrix24.ru');
+      toast.error("Введите домен портала, например acme.bitrix24.ru");
       return;
     }
     setBusy(true);
     try {
       const { url } = await bitrixApi.getAuthorizeUrl(normalized);
-      window.location.href = url; // полностраничный редирект на authorize Bitrix24
+      window.location.href = url;
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось начать подключение'));
+      toast.error(errMessage(e, "Не удалось начать подключение"));
       setBusy(false);
     }
   };
@@ -185,8 +178,6 @@ function ConnectForm() {
   );
 }
 
-// ─────────────────────────── Подключено (стекло) ─────────────────────────
-
 function ConnectedView({
   integration,
   onChanged,
@@ -196,21 +187,21 @@ function ConnectedView({
 }) {
   const [analysisEnabled, setAnalysisEnabled] = useState(false);
   const [savingAnalysis, setSavingAnalysis] = useState(false);
-  const [syncingScope, setSyncingScope] = useState<BitrixSyncScope | null>(null);
+  const [syncingScope, setSyncingScope] = useState<BitrixSyncScope | null>(
+    null,
+  );
   const [syncing, setSyncing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const syncBaselineRef = useRef<string | null>(null);
   const syncStartMsRef = useRef<number>(0);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
-  // Статус источника (счётчики + синки + анализ). Пока syncing — поллим.
   const { data: status, mutate: mutateStatus } = useSWR(
-    ['bitrix-status'],
+    ["bitrix-status"],
     () => bitrixApi.getStatus().then(mapBitrixStatus),
     { refreshInterval: syncing ? 2500 : 0, revalidateOnFocus: false },
   );
 
-  // Синхронизируем локальный тумблер анализа с сервером после загрузки статуса.
   const analysisSyncedRef = useRef(false);
   useEffect(() => {
     if (!analysisSyncedRef.current && status) {
@@ -219,7 +210,6 @@ function ConnectedView({
     }
   }, [status]);
 
-  // Завершение синка: lastIncrementalSyncAt сдвинулся либо таймаут 4 минуты.
   useEffect(() => {
     if (!syncing) return;
     const cur = status?.lastIncrementalSyncAt?.toISOString() ?? null;
@@ -228,15 +218,15 @@ function ConnectedView({
       Date.now() - syncStartMsRef.current > 240_000;
     if (done) {
       setSyncing(false);
-      toast.success('Синхронизация завершена');
+      toast.success("Синхронизация завершена");
       onChanged();
     }
   }, [syncing, status, onChanged]);
 
   const statusTone =
-    integration.status === 'connected'
+    integration.status === "connected"
       ? STATUS_TONE.ok
-      : integration.status === 'error'
+      : integration.status === "error"
         ? STATUS_TONE.risk
         : STATUS_TONE.warning;
 
@@ -245,11 +235,11 @@ function ConnectedView({
     setSavingAnalysis(true);
     try {
       await bitrixApi.setAnalysis(next);
-      toast.success(next ? 'AI-анализ включён' : 'AI-анализ выключен');
+      toast.success(next ? "AI-анализ включён" : "AI-анализ выключен");
       void mutateStatus();
     } catch (e) {
       setAnalysisEnabled(!next);
-      toast.error(errMessage(e, 'Не удалось сохранить'));
+      toast.error(errMessage(e, "Не удалось сохранить"));
     } finally {
       setSavingAnalysis(false);
     }
@@ -259,13 +249,14 @@ function ConnectedView({
     setSyncingScope(scope);
     try {
       await bitrixApi.sync(scope);
-      syncBaselineRef.current = status?.lastIncrementalSyncAt?.toISOString() ?? null;
+      syncBaselineRef.current =
+        status?.lastIncrementalSyncAt?.toISOString() ?? null;
       syncStartMsRef.current = Date.now();
       setSyncing(true);
       void mutateStatus();
-      toast.success('Синхронизация запущена');
+      toast.success("Синхронизация запущена");
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось запустить синхронизацию'));
+      toast.error(errMessage(e, "Не удалось запустить синхронизацию"));
     } finally {
       setSyncingScope(null);
     }
@@ -273,20 +264,20 @@ function ConnectedView({
 
   const handleDelete = async () => {
     const ok = await ask({
-      title: 'Отключить Bitrix24?',
+      title: "Отключить Bitrix24?",
       description:
-        'Токены портала будут удалены, синхронизация прекратится. Уже собранные данные останутся в памяти компании.',
-      confirmLabel: 'Отключить',
+        "Токены портала будут удалены, синхронизация прекратится. Уже собранные данные останутся в памяти компании.",
+      confirmLabel: "Отключить",
       destructive: true,
     });
     if (!ok) return;
     setDeleting(true);
     try {
       await bitrixApi.deleteIntegration();
-      toast.success('Bitrix24 отключён');
+      toast.success("Bitrix24 отключён");
       onChanged();
     } catch (e) {
-      toast.error(errMessage(e, 'Не удалось отключить'));
+      toast.error(errMessage(e, "Не удалось отключить"));
     } finally {
       setDeleting(false);
     }
@@ -296,7 +287,7 @@ function ConnectedView({
 
   return (
     <div className="space-y-5">
-      {/* Источник: статус + ручной синк + AI-анализ */}
+      {}
       <GlassCard className="space-y-5">
         <div className="flex items-center justify-between gap-3">
           <CardTitle icon={<Building2 size={16} />} grad={GRAD.blue}>
@@ -310,10 +301,13 @@ function ConnectedView({
           </span>
         </div>
 
-        {integration.status === 'error' && integration.lastError && (
+        {integration.status === "error" && integration.lastError && (
           <div
             className="rounded-xl px-3 py-2.5 text-sm"
-            style={{ color: STATUS_TONE.risk.c, background: STATUS_TONE.risk.bg }}
+            style={{
+              color: STATUS_TONE.risk.c,
+              background: STATUS_TONE.risk.bg,
+            }}
           >
             {integration.lastError}
           </div>
@@ -357,16 +351,16 @@ function ConnectedView({
               </span>
               {c && (
                 <span className="text-fg-secondary">
-                  собрано: {c.users.toLocaleString('ru-RU')} сотрудников ·{' '}
-                  {c.dialogs.toLocaleString('ru-RU')} диалогов ·{' '}
-                  {c.sessions.toLocaleString('ru-RU')} сессий
+                  собрано: {c.users.toLocaleString("ru-RU")} сотрудников ·{" "}
+                  {c.dialogs.toLocaleString("ru-RU")} диалогов ·{" "}
+                  {c.sessions.toLocaleString("ru-RU")} сессий
                 </span>
               )}
             </div>
           )}
         </div>
 
-        {/* AI-анализ — строкой с тумблером */}
+        {}
         <div className="flex items-start justify-between gap-4 border-t border-border-subtle pt-5">
           <div className="min-w-0 max-w-[68ch]">
             <p className="text-sm font-medium text-fg-primary">
@@ -374,7 +368,8 @@ function ConnectedView({
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-fg-tertiary">
               Включено: Кора строит посуточные summary диалогов и добавляет
-              знания в граф (расходует LLM). Выключено: диалоги просто зеркалятся.
+              знания в граф (расходует LLM). Выключено: диалоги просто
+              зеркалятся.
             </p>
           </div>
           <div className="flex items-center gap-2 pt-0.5">
@@ -390,7 +385,7 @@ function ConnectedView({
         </div>
       </GlassCard>
 
-      {/* Связи с сотрудниками */}
+      {}
       <GlassCard className="space-y-3">
         <CardTitle icon={<Users size={16} />} grad={GRAD.teal}>
           Связи с сотрудниками
@@ -407,7 +402,7 @@ function ConnectedView({
         </Button>
       </GlassCard>
 
-      {/* Статус собранных данных */}
+      {}
       <GlassCard className="space-y-4">
         <CardTitle icon={<Database size={16} />} grad={GRAD.violet}>
           Статус данных
@@ -417,14 +412,14 @@ function ConnectedView({
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
               {(
                 [
-                  { key: 'users', label: 'Сотрудники' },
-                  { key: 'dialogs', label: 'Диалоги' },
-                  { key: 'sessions', label: 'Сессии' },
-                  { key: 'contacts', label: 'Контакты' },
-                  { key: 'companies', label: 'Компании' },
-                  { key: 'deals', label: 'Сделки' },
-                  { key: 'leads', label: 'Лиды' },
-                  { key: 'notes', label: 'Заметки' },
+                  { key: "users", label: "Сотрудники" },
+                  { key: "dialogs", label: "Диалоги" },
+                  { key: "sessions", label: "Сессии" },
+                  { key: "contacts", label: "Контакты" },
+                  { key: "companies", label: "Компании" },
+                  { key: "deals", label: "Сделки" },
+                  { key: "leads", label: "Лиды" },
+                  { key: "notes", label: "Заметки" },
                 ] as const
               ).map(({ key, label }) => (
                 <div
@@ -432,7 +427,7 @@ function ConnectedView({
                   className="rounded-xl border border-border-subtle bg-[oklch(1_0_0/0.03)] px-3 py-2.5"
                 >
                   <div className="text-xl font-semibold tabular-nums text-fg-primary">
-                    {c[key].toLocaleString('ru-RU')}
+                    {c[key].toLocaleString("ru-RU")}
                   </div>
                   <div className="mt-0.5 text-[11px] text-fg-tertiary">
                     {label}
@@ -447,7 +442,7 @@ function ConnectedView({
                   Инкрементальная: {formatDate(status.lastIncrementalSyncAt)}
                 </span>
                 <span>
-                  Сессии: {status.sessionsByStatus.done} проанализировано ·{' '}
+                  Сессии: {status.sessionsByStatus.done} проанализировано ·{" "}
                   {status.sessionsByStatus.pending} в очереди
                 </span>
               </div>
@@ -460,7 +455,7 @@ function ConnectedView({
         )}
       </GlassCard>
 
-      {/* Отключение */}
+      {}
       <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
         <div className="min-w-0">
           <p className="text-sm font-medium text-fg-primary">

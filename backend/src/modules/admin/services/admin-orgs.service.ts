@@ -1,10 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import {
-  type OrgTier,
-  type PaymentMode,
-  Prisma,
-  type SubscriptionStatus,
-} from '@prisma/client';
+import { type OrgTier, type PaymentMode, Prisma, type SubscriptionStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { AdminPeriod } from '../dto/admin-usage.dto';
@@ -16,9 +11,7 @@ export interface AdminOrgRow {
   name: string;
   slug: string;
   tier: OrgTier;
-  /** Реальное состояние оплаты — из Subscription (collapse-to-standard). null = нет подписки → трактуем как DEMO. */
   subscriptionStatus: SubscriptionStatus | null;
-  /** paid/bonus/reference; null если статус не ACTIVE или подписки нет. */
   paymentMode: PaymentMode | null;
   ownerId: string;
   ownerEmail: string | null;
@@ -30,8 +23,6 @@ export interface AdminOrgRow {
   createdAt: string;
 }
 
-/** Admin-redesign Фаза 4 — карточки вкладок страницы `/admin/orgs/[id]`. */
-
 export interface OrgOverview {
   id: string;
   name: string;
@@ -41,9 +32,7 @@ export interface OrgOverview {
   ownerEmail: string | null;
   membersCount: number;
   meetingsCount: number;
-  /** Сумма costUsd за последние 30 дней (по AiUsageLog). */
   totalSpendUsd: number;
-  /** Заполнено `totalRevenueRub`, если есть Plan + monthlyPriceRub. */
   totalRevenueRub: number | null;
   isFrozen: boolean;
 }
@@ -58,9 +47,7 @@ export interface OrgMemberItem {
 }
 
 export interface OrgSourceItem {
-  /** "channel" | "webhook_subscription". */
   kind: string;
-  /** Технический тип (telegram_bot/email_smtp/url/...). */
   type: string;
   id: string;
   status: string;
@@ -87,16 +74,6 @@ interface OrgMembersCursorPayload {
   id: string;
 }
 
-/**
- * AdminOrgsService (Z-Admin Фаза 7 шаг 6).
- *
- *   - listOrgs({period, search?, limit}): Org + counts + cost за период.
- *   - updateOrg(id, {tier?, freeze?}): tier / freeze (deletedAt = now).
- *   - deleteOrg(id): soft-delete (deletedAt = now). Cascade — vNext.
- *
- * NB: cursor-pagination по Org опущен — Org обычно <100. Простой `take=limit`.
- * Если в production вырастет — добавить.
- */
 @Injectable()
 export class AdminOrgsService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -131,7 +108,6 @@ export class AdminOrgsService {
     if (orgs.length === 0) return { items: [] };
 
     const orgIds = orgs.map((o) => o.id);
-    // Cost / call count за период по каждой Org.
     const usage = await this.prisma.aiUsageLog.groupBy({
       by: ['tenantId'],
       where: {
@@ -151,7 +127,6 @@ export class AdminOrgsService {
       ]),
     );
 
-    // Реальное состояние оплаты (collapse-to-standard): Subscription.tenantId @unique.
     const subs = await this.prisma.subscription.findMany({
       where: { tenantId: { in: orgIds } },
       select: { tenantId: true, status: true, paymentMode: true },
@@ -184,9 +159,6 @@ export class AdminOrgsService {
     const data: Prisma.OrgUpdateInput = {};
     if (args.tier !== undefined) data.tier = args.tier;
     if (args.freeze === true) {
-      // ТЗ 2026-06-01-demo-shared-org-model §7 (edge-case): эталонную демо-Org
-      // нельзя «заморозить» (soft-delete через freeze=true). Она должна
-      // оставаться видимой всем `demo_observer`-наблюдателям.
       await this.assertNotReferenceDemo(orgId, 'freeze');
       data.deletedAt = new Date();
     }
@@ -197,9 +169,6 @@ export class AdminOrgsService {
   }
 
   async deleteOrg(orgId: string): Promise<{ ok: true }> {
-    // ТЗ 2026-06-01-demo-shared-org-model §7 (edge-case): эталонная Org
-    // (`isReferenceDemo=true`) НЕ удаляется. Иначе все memberships
-    // `demo_observer` повисли бы orphan'ами, getMe вернёт null currentOrgId.
     await this.assertNotReferenceDemo(orgId, 'delete');
     await this.prisma.org.update({
       where: { id: orgId },
@@ -227,11 +196,6 @@ export class AdminOrgsService {
     }
   }
 
-  // ─────────────────────────── Admin-redesign Фаза 4 ───────────────────────
-  //
-  // Вкладки страницы `/admin/orgs/[id]`: overview / members / sources / audit.
-  // Каждая вкладка — отдельный GET-эндпоинт, чтобы UI грузил их параллельно.
-
   async getOrgOverview(orgId: string): Promise<OrgOverview> {
     const org = await this.prisma.org.findUnique({
       where: { id: orgId },
@@ -255,8 +219,6 @@ export class AdminOrgsService {
     });
     const totalSpendUsd = decimalToNumber(usage._sum.costUsd);
 
-    // totalRevenueRub: если активная Plan + monthlyPriceRub → берём цену плана.
-    // Иначе null (бесплатный тариф или Plan без цены).
     let totalRevenueRub: number | null = null;
     const ent = await this.prisma.orgEntitlement.findUnique({
       where: { tenantId: orgId },
@@ -300,10 +262,7 @@ export class AdminOrgsService {
         { joinedAt: { lt: cursorDate } },
         { joinedAt: cursorDate, id: { lt: decoded.id } },
       ];
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : []),
-        { OR: orConditions },
-      ];
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: orConditions }];
     }
 
     const rows = await this.prisma.membership.findMany({
@@ -390,10 +349,7 @@ export class AdminOrgsService {
         { createdAt: { lt: cursorDate } },
         { createdAt: cursorDate, id: { lt: decoded.id } },
       ];
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : []),
-        { OR: orConditions },
-      ];
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: orConditions }];
     }
 
     const rows = await this.prisma.superAdminAccessLog.findMany({
@@ -422,8 +378,6 @@ export class AdminOrgsService {
       : null;
     return { items, nextCursor };
   }
-
-  // ─────────────────────────── private cursor helpers ─────────────────────
 
   private encodeAuditCursor(p: OrgAuditCursorPayload): string {
     return Buffer.from(JSON.stringify(p), 'utf8').toString('base64');

@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  Query,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Get, Inject, Query, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { z } from 'zod';
 
@@ -31,9 +24,7 @@ export class AiUsageAdminController {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   @Get()
-  async query(
-    @Query(new ZodValidationPipe(QuerySchema)) q: AiUsageQuery,
-  ): Promise<{
+  async query(@Query(new ZodValidationPipe(QuerySchema)) q: AiUsageQuery): Promise<{
     from: string;
     to: string;
     group_by: 'day' | 'model' | 'meeting_type';
@@ -61,7 +52,6 @@ export class AiUsageAdminController {
     }
 
     if (q.group_by === 'meeting_type') {
-      // Тип встречи — только в AiResult, поэтому сводим по нему.
       const rows = await this.prisma.aiResult.groupBy({
         by: ['meetingType'],
         where: { createdAt: range },
@@ -79,7 +69,6 @@ export class AiUsageAdminController {
       };
     }
 
-    // group_by === 'day' — групировка через date_trunc на стороне Postgres.
     type DayRow = { day: Date; count: bigint; cost_sum: string | null };
     const rows = await this.prisma.$queryRaw<DayRow[]>`
       SELECT date_trunc('day', "createdAt") AS day,
@@ -114,9 +103,7 @@ export class AiUsageAdminController {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());

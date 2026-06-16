@@ -1,27 +1,3 @@
-/**
- * Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §4.3) — smoke-скрипт.
- *
- * Что проверяем:
- *   1. Создание Project с одним из 4 scope-полей (departmentId) — DB-инвариант
- *      работает.
- *   2. Создание Cycle и Issue (3 шт. с разным качеством — без срока, без
- *      описания, нормальная).
- *   3. Создание Meeting с linkedCycleId — relation работает (двусторонняя).
- *   4. Создание SprintHint руками (имитация результата 3-13-sprint-helper) —
- *      и dismiss → status='dismissed'.
- *   5. SprintAnalystService.getSprintDashboard выдаёт корректные счётчики:
- *      progress.total / progress.byCategory / tasksWithoutDueDate / etc.
- *   6. Cleanup всех созданных записей по cuid-префиксу.
- *
- * НЕ проверяем (требует живой LLM):
- *   - Полный путь SprintHelperService.runForCycle (LLM-вызов).
- *   - SprintReviewService.generateReview (LLM-вызов).
- *   Эти сервисы — best-effort и тестируются через unit-тесты с моками.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/smoke-sprints.ts
- */
-
 import { Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -33,7 +9,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`=== smoke-sprints START (runId=${runId}) ===`);
 
-  // ── 0. Найти любую существующую Org для теста (нужна tenant). ──
   const org = await prisma.org.findFirst({ where: {}, select: { id: true } });
   if (!org) {
     throw new Error('smoke-sprints: no Org found — создайте Org через UI/seed');
@@ -42,7 +17,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[setup] tenantId=${tenantId}`);
 
-  // ── 1. Создать тестовый Department (для scope). ──
   const dept = await prisma.department.create({
     data: {
       tenantId,
@@ -51,7 +25,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 2. Создать тестовый Project с departmentId scope. ──
   const project = await prisma.project.create({
     data: {
       tenantId,
@@ -65,8 +38,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 2.1 IssueState'ы (трекер создаёт автоматически через service, но тут
-  // делаем напрямую, потому что Prisma — без сервисной логики).
   const stateBacklog = await prisma.issueState.create({
     data: {
       tenantId,
@@ -91,7 +62,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // Default board (нужна для Issue.boardId).
   const board = await prisma.board.create({
     data: {
       tenantId,
@@ -103,9 +73,8 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 3. Создать Cycle. ──
   const now = new Date();
-  const endDate = new Date(now.getTime() + 14 * 86400_000); // 2 недели
+  const endDate = new Date(now.getTime() + 14 * 86400_000);
   const cycle = await prisma.cycle.create({
     data: {
       tenantId,
@@ -117,7 +86,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 4. Создать 3 Issue с разным качеством. ──
   const issueA = await prisma.issue.create({
     data: {
       tenantId,
@@ -125,7 +93,6 @@ async function main(): Promise<void> {
       identifier: 'SMK-1',
       sequenceId: 1,
       title: `${runId}-issue-no-due-date`,
-      // dueDate: null — намеренно
       cycleId: cycle.id,
       boardId: board.id,
       stateId: stateBacklog.id,
@@ -139,7 +106,6 @@ async function main(): Promise<void> {
       identifier: 'SMK-2',
       sequenceId: 2,
       title: `${runId}-issue-no-description`,
-      // description: null — намеренно
       dueDate: new Date(now.getTime() + 3 * 86400_000),
       cycleId: cycle.id,
       boardId: board.id,
@@ -164,7 +130,6 @@ async function main(): Promise<void> {
     select: { id: true, identifier: true },
   });
 
-  // ── 5. Создать Meeting с linkedCycleId. ──
   const ownerId = (await prisma.user.findFirst({ select: { id: true } }))!.id;
   const meeting = await prisma.meeting.create({
     data: {
@@ -180,7 +145,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 6. Создать SprintHint руками (имитация LLM). ──
   const hint = await prisma.sprintHint.create({
     data: {
       tenantId,
@@ -198,7 +162,6 @@ async function main(): Promise<void> {
     select: { id: true },
   });
 
-  // ── 7. Простая dismiss-операция (без сервиса). ──
   await prisma.sprintHint.update({
     where: { id: hint.id },
     data: {
@@ -215,7 +178,6 @@ async function main(): Promise<void> {
     throw new Error('smoke-sprints: dismiss не сработал');
   }
 
-  // ── 8. Проверки: prisma.cycle.findFirst с linkedMeetings + sprintHints. ──
   const cycleWithRelations = await prisma.cycle.findFirst({
     where: { id: cycle.id, tenantId },
     include: {
@@ -243,7 +205,6 @@ async function main(): Promise<void> {
     throw new Error('smoke-sprints: doneCount != 1');
   }
 
-  // ── 9. Project.departmentId scope-проверка. ──
   const projectFresh = await prisma.project.findFirst({
     where: { id: project.id },
     select: {
@@ -261,9 +222,7 @@ async function main(): Promise<void> {
     projectFresh?.vendorId !== null ||
     projectFresh?.subjectPersonId !== null
   ) {
-    throw new Error(
-      'smoke-sprints: scope-invariant violation — only 1 scope field allowed',
-    );
+    throw new Error('smoke-sprints: scope-invariant violation — only 1 scope field allowed');
   }
 
   // eslint-disable-next-line no-console
@@ -276,12 +235,6 @@ async function main(): Promise<void> {
     scope: 'department',
   });
 
-  // ── 9.1. Sprints (2026-05-28) §1.7 — проверка через REST /api/v1/sprints. ──
-  // Не дёргаем HTTP (smoke-runner внутри backend контейнера, REST на этом же
-  // процессе), а проверяем сервисный layer напрямую через Prisma — это
-  // соответствует контракту list-фильтров (status=all / scopeKind=department / q).
-  //
-  // Имитация SprintsService.list через прямой SQL (упрощённо):
   const sprintsListCheck = await prisma.cycle.findMany({
     where: {
       tenantId,
@@ -296,8 +249,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('[step 9.1] sprints list (scope=department) видит наш cycle: ok');
 
-  // ── 9.2. Sprints (2026-05-28) §1.7 — quick-create Vendor + scope=vendor. ──
-  // Создаём через прямой Prisma (имитация POST /api/v1/vendors).
   const vendorEntity = await prisma.entity.create({
     data: {
       tenantId,
@@ -320,8 +271,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('[step 9.2] vendor создан inline: ok', { vendorId: vendor.id });
 
-  // ── 9.3. quick-create scope=vendor (имитация POST /api/v1/sprints/quick-create). ──
-  // Создаём Project с vendorId + Cycle в той же логике, что SprintsService.quickCreate.
   const vendorProject = await prisma.project.create({
     data: {
       tenantId,
@@ -350,14 +299,12 @@ async function main(): Promise<void> {
     cycleId: vendorCycle.id,
   });
 
-  // ── 10. Cleanup. ──
   await prisma.sprintHint.delete({ where: { id: hint.id } });
   await prisma.meeting.delete({ where: { id: meeting.id } });
   await prisma.issue.deleteMany({
     where: { id: { in: [issueA.id, issueB.id, issueC.id] } },
   });
   await prisma.cycle.delete({ where: { id: cycle.id } });
-  // Sprints (2026-05-28) — cleanup vendor + project + cycle, созданные в шагах 9.2/9.3.
   await prisma.cycle.delete({ where: { id: vendorCycle.id } });
   await prisma.project.delete({ where: { id: vendorProject.id } });
   await prisma.vendor.delete({ where: { id: vendor.id } });

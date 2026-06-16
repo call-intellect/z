@@ -2,22 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * G.2 KC-Temporal — `SignalTypeMonitorService`.
- *
- * Источник: `SignalTypeStatsCron` (`backend/src/modules/knowledge-core/workers/
- * signal-type-stats.cron.ts`) — ежедневно (`0 2 * * *`) пишет в `AdminSetting`
- * под ключом `signal_type_transition_matrix:<orgId>` JSON:
- *
- *   { matrix: Record<from, Record<to, count>>,
- *     distribution7d: Record<signalType, count>,
- *     calculatedAt: string (ISO) }
- *
- * Этот сервис только читает — никаких прав на расчёт у админ-UI нет; чтобы
- * пересчитать «прямо сейчас», нужно вручную дёрнуть `runOnce` из cron-сервиса
- * (отдельная фаза).
- */
-
 const KEY_PREFIX = 'signal_type_transition_matrix:';
 
 export interface SignalTypeMonitorItem {
@@ -26,7 +10,6 @@ export interface SignalTypeMonitorItem {
   matrix: Record<string, Record<string, number>>;
   distribution7d: Record<string, number>;
   calculatedAt: string | null;
-  /** UTC-время записи в `AdminSetting.updatedAt` (фактический момент cron-прогона). */
   updatedAt: string;
 }
 
@@ -34,10 +17,6 @@ export interface SignalTypeMonitorItem {
 export class SignalTypeMonitorService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Список всех матриц переходов signalType по всем Org (по одной записи на Org).
-   * Пустые Org (нет рассчитанных данных) — не возвращаются.
-   */
   async listAll(): Promise<SignalTypeMonitorItem[]> {
     const settings = await this.prisma.adminSetting.findMany({
       where: { key: { startsWith: KEY_PREFIX } },
@@ -52,12 +31,9 @@ export class SignalTypeMonitorService {
     });
     const orgNameById = new Map(orgs.map((o) => [o.id, o.name]));
 
-    return settings.map((s) =>
-      this.toItem(s.key, s.value, s.updatedAt, orgNameById),
-    );
+    return settings.map((s) => this.toItem(s.key, s.value, s.updatedAt, orgNameById));
   }
 
-  /** Одна Org — для drill-down страницы. Если матрицы нет — `null`. */
   async findByTenant(tenantId: string): Promise<SignalTypeMonitorItem | null> {
     const setting = await this.prisma.adminSetting.findUnique({
       where: { key: `${KEY_PREFIX}${tenantId}` },

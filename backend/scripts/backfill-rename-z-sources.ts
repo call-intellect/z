@@ -1,17 +1,3 @@
-/**
- * Backfill: переименование устаревших Source-записей «Встречи Z» → «Встречи»
- * и «Трекер Z» → «Трекер» в БД (брендинг Z → Кора).
- *
- * Запуск:
- *   bun run scripts/backfill-rename-z-sources.ts
- *
- * Идемпотентен: повторный запуск безопасен — старых имён уже не будет,
- * updateMany с where вернёт count=0.
- *
- * Новые Org получают правильные имена автоматически (MeetingIngestAdapter
- * и TrackerAdapter обновлены в рамках этого же изменения).
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();

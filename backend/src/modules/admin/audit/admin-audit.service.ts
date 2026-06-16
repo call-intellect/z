@@ -3,18 +3,6 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Admin-redesign Фаза 1 — `AdminAuditService`.
- *
- * Читает `SuperAdminAccessLog` (журнал действий super_admin'а) для UI
- * Z-Admin. Никакого write-API — записи туда пишет `SuperAdminAuditInterceptor`
- * и сервисы при mutating-операциях (см. `AdminSettingsService.set`,
- * `CronManagerService.updateSchedule`).
- *
- * Cursor-based pagination через `createdAt + id` (composite key для
- * стабильности при коллизиях по timestamp).
- */
-
 export interface AuditItem {
   id: string;
   superAdminUserId: string;
@@ -58,18 +46,8 @@ interface CursorPayload {
 export class AdminAuditService {
   private readonly logger = new Logger(AdminAuditService.name);
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  // ─────────────────────────── public api ──────────────────────────────
-
-  /**
-   * Список записей с фильтрами и cursor-based pagination. Сортировка:
-   * createdAt DESC, id DESC (стабильно). Cursor указывает на «следующую
-   * страницу» (записи СТАРШЕ указанной). Если `nextCursor === null` —
-   * страница последняя.
-   */
   async list(filters: {
     adminUserId?: string;
     tenantId?: string;
@@ -93,8 +71,6 @@ export class AdminAuditService {
 
     const decoded = filters.cursor ? this.decodeCursor(filters.cursor) : null;
     if (decoded) {
-      // Тянем записи СТАРШЕ cursor'а (createdAt < cursor.createdAt) ИЛИ
-      // (createdAt = cursor.createdAt И id < cursor.id) — стабильный keyset.
       const cursorDate = new Date(decoded.createdAt);
       const orConditions: Prisma.SuperAdminAccessLogWhereInput[] = [
         { createdAt: { lt: cursorDate } },
@@ -137,10 +113,6 @@ export class AdminAuditService {
     return { items, nextCursor };
   }
 
-  /**
-   * Сводка по super_admin'ам: сколько действий и когда было последнее.
-   * Простой group-by по superAdminUserId + JOIN с User для email/name.
-   */
   async listAdmins(): Promise<AdminSummary[]> {
     const grouped = await this.prisma.superAdminAccessLog.groupBy({
       by: ['superAdminUserId'],
@@ -165,17 +137,12 @@ export class AdminAuditService {
         lastActionAt: g._max.createdAt ?? null,
       }))
       .sort((a, b) => {
-        // Свежие первыми.
         const aTime = a.lastActionAt?.getTime() ?? 0;
         const bTime = b.lastActionAt?.getTime() ?? 0;
         return bTime - aTime;
       });
   }
 
-  /**
-   * Агрегированная статистика за период: топ routes + распределение по
-   * методам. Использует groupBy.
-   */
   async stats(period: 'day' | 'week' | 'month'): Promise<AuditStats> {
     const to = new Date();
     const from = this.periodStart(to, period);
@@ -212,8 +179,6 @@ export class AdminAuditService {
     };
   }
 
-  // ─────────────────────────── private ─────────────────────────────────
-
   private periodStart(now: Date, period: 'day' | 'week' | 'month'): Date {
     const d = new Date(now);
     if (period === 'day') {
@@ -224,7 +189,6 @@ export class AdminAuditService {
       d.setUTCDate(d.getUTCDate() - 7);
       return d;
     }
-    // month
     d.setUTCMonth(d.getUTCMonth() - 1);
     return d;
   }

@@ -12,14 +12,8 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
@@ -49,17 +43,6 @@ interface IdeaDraft {
   confidence: number;
 }
 
-/**
- * SBA β-5 — Specialist36Service (Specialist 3.6 — Ideas Collector).
- *
- * Обрабатывает блок с signalType ∈ {idea, feature_request}:
- *   1. embedding → KNN top-10 existing Idea (threshold IDEA_CLUSTER_THRESHOLD).
- *   2. Match → update existing (добавить supporter / sourceBlockId / weight).
- *   3. Miss  → LLM idea-extract → resolve supporters → CurationService.triage
- *      → create Idea (статус 'captured'); EventEmitter 'idea.created'.
- *
- * Веc идеи: `supporterCount * 1.0 + recency_factor * 0.5 + specificity_factor`.
- */
 @Injectable()
 export class Specialist36Service {
   private readonly logger = new Logger(Specialist36Service.name);
@@ -81,15 +64,11 @@ export class Specialist36Service {
     @Inject(CoreQueueService) private readonly coreQueue: CoreQueueService,
     @Inject(EventEmitter2) private readonly events: EventEmitter2,
     @Inject(LogService) private readonly logs: LogService,
-    // W4.1 — DataClassPolicyService для shadow-compare.
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -98,10 +77,7 @@ export class Specialist36Service {
     }
   }
 
-  async processBlock(args: {
-    tenantId: string;
-    blockId: string;
-  }): Promise<void> {
+  async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: args.blockId },
       include: { evidence: true },
@@ -126,11 +102,6 @@ export class Specialist36Service {
       return;
     }
 
-    // Ф1 idea direct-path dedup (2026-06-08): если Idea уже материализована из
-    // ЭТОГО блока (block-ingest direct-path ИЛИ прошлый прогон специалиста при
-    // ретрае джоба) — НЕ создаём дубль. Обогащаем существующую (supporters /
-    // sourceBlockIds / weight), как KNN-merge, и выходим. Детерминированно по
-    // sourceBlockId — не зависит от наличия embedding'а у direct-path идеи.
     const alreadyMaterialized = await this.prisma.idea.findFirst({
       where: {
         tenantId: block.tenantId,
@@ -202,7 +173,6 @@ export class Specialist36Service {
         return;
       }
 
-      // Resolve supporters and ownerUserId.
       const { supporters, ownerUserId } = await this.resolveSupportersAndOwner({
         tenantId: block.tenantId,
         blockId: block.id,
@@ -215,10 +185,6 @@ export class Specialist36Service {
         hasRationale: Boolean(draft.rationale),
       });
 
-      // W4.1/W4.2 — derive DataClass.
-      // legacy = block.dataClass (passthrough); proposed — derive с
-      // floor=internal по kind='idea'. На 'enforce' — пишем derive + audit;
-      // иначе legacy.
       const legacyDc = block.dataClass;
       const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
       const proposed = this.dataClassPolicy?.derive({
@@ -239,8 +205,7 @@ export class Specialist36Service {
           sourceIds: [block.id],
         });
       }
-      const finalDc =
-        enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
+      const finalDc = enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
       const audit =
         enforcement === 'enforce' && proposed
           ? (proposed.audit as unknown as Prisma.InputJsonValue)
@@ -259,12 +224,8 @@ export class Specialist36Service {
           lastDiscussedAt: block.createdAt,
           status: 'captured',
           sourceBlockIds: [block.id],
-          personSubjectIds: supporters
-            .filter((s) => s.kind === 'person')
-            .map((s) => s.entityId),
-          confidence: new Prisma.Decimal(
-            Math.max(0, Math.min(1, draft.confidence)),
-          ),
+          personSubjectIds: supporters.filter((s) => s.kind === 'person').map((s) => s.entityId),
+          confidence: new Prisma.Decimal(Math.max(0, Math.min(1, draft.confidence))),
           dataClass: finalDc,
           dataClassAudit: audit,
           createdByUserId: ownerUserId,
@@ -283,7 +244,6 @@ export class Specialist36Service {
 
       await this.tryWriteEmbedding({ id: idea.id, text: queryText });
 
-      // Triage (idea НЕ в critical-types — auto при confidence>=0.85).
       await this.triageProposed({
         tenantId: block.tenantId,
         resourceId: idea.id,
@@ -304,23 +264,17 @@ export class Specialist36Service {
         status: 'captured',
       });
 
-      // EventEmitter — 'idea.created' (для последующих cron'ов / аналитики).
       try {
         this.events.emit('idea.created', {
           tenantId: idea.tenantId,
           ideaId: idea.id,
           kind: idea.kind,
         });
-      } catch {
-        // graceful
-      }
+      } catch {}
 
-      // Постановка в очередь idea-clusterer (1 job в минуту на Org).
       try {
         await this.coreQueue.enqueueIdeaClusterer({ tenantId: block.tenantId });
-      } catch {
-        // graceful
-      }
+      } catch {}
     } catch (err) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'idea',
@@ -336,11 +290,6 @@ export class Specialist36Service {
     }
   }
 
-  /**
-   * Изменить статус идеи. Вызывается из IdeasController (POST /ideas/:id/status).
-   * Создаёт CardVersion, обновляет Idea и эмитит EventEmitter
-   * 'idea.status_changed' для closing-loop handler'а.
-   */
   async changeStatus(args: {
     tenantId: string;
     ideaId: string;
@@ -367,7 +316,6 @@ export class Specialist36Service {
       },
     });
 
-    // EventEmitter — для closing-loop handler'а.
     try {
       this.events.emit('idea.status_changed', {
         tenantId: existing.tenantId,
@@ -377,14 +325,10 @@ export class Specialist36Service {
         reason: args.reason,
         changedByUserId: args.changedByUserId,
       });
-    } catch {
-      // graceful
-    }
+    } catch {}
 
     return updated;
   }
-
-  // ─────────────────────────── KNN / update ─────────────────────────────
 
   private async findMatchingIdea(args: {
     tenantId: string;
@@ -402,9 +346,7 @@ export class Specialist36Service {
     const threshold = this.cfg.ideas.clusterThreshold;
     try {
       const vec = `[${embedding.join(',')}]`;
-      const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ id: string; distance: number }>
-      >(
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; distance: number }>>(
         `SELECT "id", ("embedding" <=> $2::vector) AS distance
          FROM "ideas"
          WHERE "tenantId" = $1
@@ -440,10 +382,7 @@ export class Specialist36Service {
     existing: Idea;
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] };
   }): Promise<void> {
-    // Добавим supporter (если новый Person/Customer).
-    const newSourceBlockIds = Array.from(
-      new Set([...args.existing.sourceBlockIds, args.block.id]),
-    );
+    const newSourceBlockIds = Array.from(new Set([...args.existing.sourceBlockIds, args.block.id]));
     const { supporters: newSupporters } = await this.resolveSupportersAndOwner({
       tenantId: args.block.tenantId,
       blockId: args.block.id,
@@ -468,8 +407,6 @@ export class Specialist36Service {
     });
   }
 
-  // ─────────────────────────── LLM extract ─────────────────────────────
-
   private async extractDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
   ): Promise<IdeaDraft | null> {
@@ -478,7 +415,6 @@ export class Specialist36Service {
       .slice(0, 6)
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = IDEA_EXTRACT_USER_TEMPLATE({
       blockName: block.name,
@@ -552,8 +488,6 @@ export class Specialist36Service {
       });
       return null;
     }
-    // C3 anti-плодёж: явный булев гейт. Срабатывает ТОЛЬКО на явный false —
-    // модель не обязана фабриковать карточку, если идеи в блоке нет.
     if (parsed.isIdea === false) {
       this.logger.debug(
         { blockId: block.id },
@@ -567,8 +501,6 @@ export class Specialist36Service {
     return parsed;
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────
-
   private async resolveSupportersAndOwner(args: {
     tenantId: string;
     blockId: string;
@@ -578,7 +510,6 @@ export class Specialist36Service {
     let ownerUserId: string | null = null;
 
     if (args.kind === 'internal') {
-      // subject-Person с relationship='employee' → supporter person.
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           blockId: args.blockId,
@@ -607,7 +538,6 @@ export class Specialist36Service {
         if (!ownerUserId && p.userId) ownerUserId = p.userId;
       }
     } else {
-      // client_request — mentioned Customer entities.
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           blockId: args.blockId,
@@ -637,14 +567,11 @@ export class Specialist36Service {
       }
       const s = item as Record<string, Prisma.JsonValue>;
       const kindRaw = typeof s.kind === 'string' ? s.kind : 'person';
-      const kind: IdeaSupporter['kind'] =
-        kindRaw === 'customer' ? 'customer' : 'person';
+      const kind: IdeaSupporter['kind'] = kindRaw === 'customer' ? 'customer' : 'person';
       const entityId = typeof s.entityId === 'string' ? s.entityId : '';
       if (entityId.length === 0) continue;
       const firstSupportedAt =
-        typeof s.firstSupportedAt === 'string'
-          ? s.firstSupportedAt
-          : new Date().toISOString();
+        typeof s.firstSupportedAt === 'string' ? s.firstSupportedAt : new Date().toISOString();
       const dto: IdeaSupporter = { kind, entityId, firstSupportedAt };
       if (typeof s.blockId === 'string') dto.blockId = s.blockId;
       result.push(dto);
@@ -652,10 +579,7 @@ export class Specialist36Service {
     return result;
   }
 
-  private mergeSupporters(
-    existing: IdeaSupporter[],
-    incoming: IdeaSupporter[],
-  ): IdeaSupporter[] {
+  private mergeSupporters(existing: IdeaSupporter[], incoming: IdeaSupporter[]): IdeaSupporter[] {
     const seen = new Map<string, IdeaSupporter>();
     for (const s of [...existing, ...incoming]) {
       const key = `${s.kind}:${s.entityId}`;
@@ -669,23 +593,16 @@ export class Specialist36Service {
     recencyDate: Date;
     hasRationale: boolean;
   }): number {
-    const days = Math.max(
-      0,
-      (Date.now() - args.recencyDate.getTime()) / (1000 * 86400),
-    );
-    const recencyFactor = Math.max(0.1, 1 - days / 60); // декей за 60 дней.
+    const days = Math.max(0, (Date.now() - args.recencyDate.getTime()) / (1000 * 86400));
+    const recencyFactor = Math.max(0.1, 1 - days / 60);
     const specificityFactor = args.hasRationale ? 1 : 0.5;
     const base = Math.max(1, args.supporterCount) * 1.0;
     const value = base + recencyFactor * 0.5 + specificityFactor;
     return Math.round(value * 1000) / 1000;
   }
 
-  private buildQueryText(
-    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
-  ): string {
-    const parts = [block.name, block.trustedAnswer]
-      .filter((s) => s && s.length > 0)
-      .join('. ');
+  private buildQueryText(block: IdeaBlock & { evidence: IdeaBlockEvidence[] }): string {
+    const parts = [block.name, block.trustedAnswer].filter((s) => s && s.length > 0).join('. ');
     return parts.slice(0, 2_000);
   }
 
@@ -718,10 +635,7 @@ export class Specialist36Service {
     }
   }
 
-  private async tryWriteEmbedding(args: {
-    id: string;
-    text: string;
-  }): Promise<void> {
+  private async tryWriteEmbedding(args: { id: string; text: string }): Promise<void> {
     try {
       const text = args.text.trim().slice(0, 2_000);
       if (!text) return;
@@ -733,8 +647,6 @@ export class Specialist36Service {
         vecStr,
         args.id,
       );
-    } catch {
-      // graceful
-    }
+    } catch {}
   }
 }

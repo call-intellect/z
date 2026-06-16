@@ -7,34 +7,14 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type RoleProfileJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type RoleProfileJobData } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { RoleProfileService } from '../../role-profiles/services/role-profile.service';
 
 const WORKER_NAME = 'role-profile';
 
-/**
- * RoleProfileWorker (Фаза 0d, см. plans/tz/2026-05-21-phase-0d-role-profile-agent.md §4).
- *
- * Consumer очереди `core.role-profile`. Один job =
- * `{ tenantId, roleId, triggerReason, triggeredByUserId? }`.
- *
- * Concurrency = 1 (LLM-вызовы дороги; parallel не даёт прироста при cron-режиме).
- * Idempotency через jobId = `role_profile_<roleId>_v<buildVersion>` — повторный
- * enqueue в течение коротких интервалов не создаёт дубликат job'а.
- *
- * При фейле — BullMQ retry с exponential backoff (5 attempts). После 3 retry —
- * `RoleProfile.status='error'` (выставляется в `RoleProfileService.build`).
- *
- * WorkerOrgGate: проверяет `Org.workersEnabled['role-profile'] !== false` —
- * Org-Admin может приостановить агент через UI.
- */
 @Injectable()
 export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoleProfileWorker.name);
@@ -88,7 +68,6 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
   private async process(job: Job<RoleProfileJobData>): Promise<void> {
     const { tenantId, roleId, triggerReason } = job.data;
 
-    // Org-Admin тумблер.
     await this.gate.checkOrThrow(tenantId, WORKER_NAME);
 
     this.logger.debug(
@@ -111,7 +90,6 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     if (result.status === 'failed') {
-      // Бросаем — BullMQ retry с exponential backoff (см. CORE_DEFAULT_JOB_OPTIONS).
       throw new Error('role-profile build failed (LLM/parse)');
     }
   }

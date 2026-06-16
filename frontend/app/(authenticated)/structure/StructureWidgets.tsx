@@ -1,45 +1,22 @@
-'use client';
+"use client";
 
-/**
- * ТЗ редизайн Ф7а (фронт) — блок аналитических виджетов раздела «Команда».
- *
- * Размещается под табами `/structure`, виден только руководителю
- * (owner / admin / coo) — ровно как доступ к dashboard-эндпоинтам
- * (`team-health`, `people-at-risk`), которые отдают 403 для manager.
- *
- * Состав (источник правды — прототип
- * `plans/analysis/2026-06-13-cabinet-redesign-prototypes/_parts/part-team.html`):
- *   1. «Здоровье команд» — таблица команд с cohort ≥3; если таких нет — Б-6-схлоп
- *      в одну строку-объяснение «считается от 3 человек» + CTA «к отделам».
- *   2. «Кому помочь» — карточки people-at-risk БЕЗ рейтинга/чисел, только повод
- *      для 1:1 (формулировка-действие). Б-6 пусто → «все в норме».
- *   3. «Зрелость компании» — gauge с числом; если companyScore null
- *      («не определено») → плашка «идёт сбор данных», без «30%».
- *   4. «Дисциплина чек-инов» — переиспользуем готовый `CheckinDisciplineWidget`.
- *
- * Виджеты используют «современный» визуальный язык (modern/*): стеклянные
- * карточки, парные токены, без text-white/hex/slate. Поэтому весь блок сидит на
- * собственной тёмной modern-подложке (как страницы дашбордов), чтобы стекло
- * читалось корректно поверх обычной светлой/тёмной темы кабинета.
- */
+import { HeartPulse, Layers, Users } from "lucide-react";
+import { Fragment, useState } from "react";
+import useSWR from "swr";
 
-import { HeartPulse, Layers, Users } from 'lucide-react';
-import { Fragment, useState } from 'react';
-import useSWR from 'swr';
-
-import { dashboardApi } from '@/api/dashboard.api';
-import { maturityApi } from '@/api/maturity.api';
+import { dashboardApi } from "@/api/dashboard.api";
+import { maturityApi } from "@/api/maturity.api";
 import {
   peopleAtRiskFromApi,
   type PeopleAtRiskItemDomain,
-} from '@/domain/people-at-risk';
+} from "@/domain/people-at-risk";
 import {
   teamHealthFromApi,
   type HealthToneDomain,
   type TeamHealthRowDomain,
-} from '@/domain/team-health';
-import { toMaturityOverviewDomain } from '@/domain/maturity';
-import { CheckinDisciplineWidget } from '@app/(authenticated)/week/CheckinDisciplineWidget';
+} from "@/domain/team-health";
+import { toMaturityOverviewDomain } from "@/domain/maturity";
+import { CheckinDisciplineWidget } from "@app/(authenticated)/week/CheckinDisciplineWidget";
 import {
   CardTitle,
   CHART,
@@ -47,52 +24,54 @@ import {
   GlassCard,
   GRAD,
   MODERN_PAGE_BG,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/* ── Хелперы ───────────────────────────────────────────────────────────── */
-
-/** Понедельник текущей недели (UTC, YYYY-MM-DD) — окно для дисциплины чек-инов. */
 function mondayThisWeekUtc(): string {
   const d = new Date();
-  const dow = d.getUTCDay(); // 0=вс, 1=пн, …
+  const dow = d.getUTCDay();
   const offset = dow === 0 ? -6 : -(dow - 1);
   const monday = new Date(d);
   monday.setUTCDate(monday.getUTCDate() + offset);
   const y = monday.getUTCFullYear();
-  const m = String(monday.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(monday.getUTCDate()).padStart(2, '0');
+  const m = String(monday.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(monday.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
 
 const TONE_CHIP: Record<HealthToneDomain, { c: string; bg: string }> = {
-  success: { c: CHART.mint, bg: 'oklch(0.85 0.15 165 / 0.14)' },
-  warning: { c: CHART.amber, bg: 'oklch(0.84 0.16 80 / 0.14)' },
-  danger: { c: CHART.red, bg: 'oklch(0.66 0.22 25 / 0.16)' },
-  neutral: { c: CHART.dim, bg: 'var(--surface-inset)' },
+  success: { c: CHART.mint, bg: "oklch(0.85 0.15 165 / 0.14)" },
+  warning: { c: CHART.amber, bg: "oklch(0.84 0.16 80 / 0.14)" },
+  danger: { c: CHART.red, bg: "oklch(0.66 0.22 25 / 0.16)" },
+  neutral: { c: CHART.dim, bg: "var(--surface-inset)" },
 };
 
-/* Факторы вовлечённости (ТЗ coo-orphan Ф6) — ежедневный LLM-расчёт. */
 const FACTOR_ORDER = [
-  'manager_support', 'workload_fairness', 'communication', 'time_pressure', 'role_clarity',
+  "manager_support",
+  "workload_fairness",
+  "communication",
+  "time_pressure",
+  "role_clarity",
 ] as const;
 const FACTOR_LABEL: Record<(typeof FACTOR_ORDER)[number], string> = {
-  manager_support: 'Поддержка руководителя',
-  workload_fairness: 'Справедливость нагрузки',
-  communication: 'Открытость общения',
-  time_pressure: 'Давление сроков',
-  role_clarity: 'Ясность ролей',
+  manager_support: "Поддержка руководителя",
+  workload_fairness: "Справедливость нагрузки",
+  communication: "Открытость общения",
+  time_pressure: "Давление сроков",
+  role_clarity: "Ясность ролей",
 };
-const FACTOR_LEVEL_LABEL: Record<'low' | 'medium' | 'high', string> = {
-  low: 'низко', medium: 'средне', high: 'высоко',
+const FACTOR_LEVEL_LABEL: Record<"low" | "medium" | "high", string> = {
+  low: "низко",
+  medium: "средне",
+  high: "высоко",
 };
-// low→danger, medium→warning, high→success (ТЗ). Реюзаем TONE_CHIP по тону.
-const FACTOR_TONE: Record<'low' | 'medium' | 'high', { c: string; bg: string }> = {
+const FACTOR_TONE: Record<
+  "low" | "medium" | "high",
+  { c: string; bg: string }
+> = {
   low: TONE_CHIP.danger,
   medium: TONE_CHIP.warning,
   high: TONE_CHIP.success,
 };
-
-/* ── Корневой блок ─────────────────────────────────────────────────────── */
 
 export function StructureWidgets({ orgId }: { orgId: string }) {
   const weekStart = mondayThisWeekUtc();
@@ -128,16 +107,13 @@ export function StructureWidgets({ orgId }: { orgId: string }) {
   );
 }
 
-/* ── 1. Здоровье команд ────────────────────────────────────────────────── */
-
 function TeamHealthWidget({ orgId }: { orgId: string }) {
   const { data, error, isLoading } = useSWR(
-    ['structure-team-health', orgId],
+    ["structure-team-health", orgId],
     async () => teamHealthFromApi(await dashboardApi.getTeamHealth(orgId)),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // Команды, по которым здоровье реально считается (cohort ≥3).
   const cohortTeams = (data?.teams ?? []).filter((t) => !t.belowCohort);
 
   return (
@@ -151,18 +127,16 @@ function TeamHealthWidget({ orgId }: { orgId: string }) {
           Загрузка…
         </p>
       ) : error ? (
-        // Б-6 — ошибка (виджет некритичен). Нейтральный текст, без падения.
         <p className="mt-4 text-sm" style={{ color: CHART.dim }}>
           Не удалось загрузить здоровье команд.
         </p>
       ) : cohortTeams.length === 0 ? (
-        // Б-6 — схлоп: нет ни одной команды cohort ≥3.
         <div
           className="mt-4 rounded-2xl p-6"
-          style={{ background: 'var(--surface-inset)' }}
+          style={{ background: "var(--surface-inset)" }}
         >
           <p className="text-sm leading-relaxed" style={{ color: CHART.dim }}>
-            Здоровье команды Кора считает, когда в отделе{' '}
+            Здоровье команды Кора считает, когда в отделе{" "}
             <b style={{ color: CHART.text }}>от 3 человек</b> — иначе сравнивать
             не с чем. Сейчас таких отделов нет: люди разнесены по одиночке.
             Объедините близкие отделы — и здоровье посчитается само.
@@ -214,10 +188,15 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
                       className="mt-0.5 text-[11px] hover:underline"
                       style={{ color: CHART.cyan }}
                     >
-                      {expandedId === row.departmentId ? 'Скрыть' : 'Почему такая оценка'}
+                      {expandedId === row.departmentId
+                        ? "Скрыть"
+                        : "Почему такая оценка"}
                     </button>
                   ) : (
-                    <div className="mt-0.5 text-[11px]" style={{ color: CHART.faint }}>
+                    <div
+                      className="mt-0.5 text-[11px]"
+                      style={{ color: CHART.faint }}
+                    >
                       оценка ещё не посчитана
                     </div>
                   )}
@@ -244,18 +223,24 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
               {expandedId === row.departmentId && row.healthSummary ? (
                 <tr key={`${row.departmentId}-factors`}>
                   <td colSpan={4} className="pb-3">
-                    <div className="rounded-xl p-3" style={{ background: 'var(--surface-inset)' }}>
+                    <div
+                      className="rounded-xl p-3"
+                      style={{ background: "var(--surface-inset)" }}
+                    >
                       <div className="flex flex-wrap gap-2">
                         {FACTOR_ORDER.map((k) => (
                           <span
                             key={k}
                             className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
                             style={{
-                              color: FACTOR_TONE[row.healthSummary!.factors[k]].c,
-                              background: FACTOR_TONE[row.healthSummary!.factors[k]].bg,
+                              color:
+                                FACTOR_TONE[row.healthSummary!.factors[k]].c,
+                              background:
+                                FACTOR_TONE[row.healthSummary!.factors[k]].bg,
                             }}
                           >
-                            {FACTOR_LABEL[k]}: {FACTOR_LEVEL_LABEL[row.healthSummary!.factors[k]]}
+                            {FACTOR_LABEL[k]}:{" "}
+                            {FACTOR_LEVEL_LABEL[row.healthSummary!.factors[k]]}
                           </span>
                         ))}
                       </div>
@@ -263,9 +248,14 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
                         {row.healthSummary.summary}
                       </p>
                       {row.healthSummary.generatedAt ? (
-                        <p className="mt-1 text-[11px]" style={{ color: CHART.faint }}>
-                          оценка от{' '}
-                          {new Date(row.healthSummary.generatedAt).toLocaleDateString('ru-RU')}
+                        <p
+                          className="mt-1 text-[11px]"
+                          style={{ color: CHART.faint }}
+                        >
+                          оценка от{" "}
+                          {new Date(
+                            row.healthSummary.generatedAt,
+                          ).toLocaleDateString("ru-RU")}
                         </p>
                       ) : null}
                     </div>
@@ -280,7 +270,13 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
   );
 }
 
-function HealthChip({ tone, label }: { tone: HealthToneDomain; label: string }) {
+function HealthChip({
+  tone,
+  label,
+}: {
+  tone: HealthToneDomain;
+  label: string;
+}) {
   const t = TONE_CHIP[tone];
   return (
     <span
@@ -296,11 +292,9 @@ function formatSigned(v: number): string {
   return v > 0 ? `+${v}` : String(v);
 }
 
-/* ── 2. Кому помочь (people-at-risk, без чисел) ────────────────────────── */
-
 function PeopleToHelpWidget({ orgId }: { orgId: string }) {
   const { data, error, isLoading } = useSWR(
-    ['structure-people-at-risk', orgId],
+    ["structure-people-at-risk", orgId],
     async () => peopleAtRiskFromApi(await dashboardApi.peopleAtRisk(orgId, 6)),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -324,17 +318,19 @@ function PeopleToHelpWidget({ orgId }: { orgId: string }) {
           Не удалось загрузить.
         </p>
       ) : !data || data.items.length === 0 ? (
-        // Б-6 — никто не под риском.
         <div
           className="mt-4 rounded-2xl p-6 text-center"
-          style={{ background: 'var(--surface-inset)' }}
+          style={{ background: "var(--surface-inset)" }}
         >
           <p className="text-sm font-medium" style={{ color: CHART.mint }}>
             Все в норме
           </p>
-          <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed" style={{ color: CHART.faint }}>
-            Нет сотрудников, кому сейчас особенно нужна помощь. Заглядывайте сюда
-            время от времени.
+          <p
+            className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed"
+            style={{ color: CHART.faint }}
+          >
+            Нет сотрудников, кому сейчас особенно нужна помощь. Заглядывайте
+            сюда время от времени.
           </p>
         </div>
       ) : (
@@ -353,22 +349,28 @@ function PersonHelpCard({ item }: { item: PeopleAtRiskItemDomain }) {
     .split(/\s+/)
     .map((w) => w[0])
     .slice(0, 2)
-    .join('')
+    .join("")
     .toUpperCase();
   return (
     <div
       className="flex flex-col rounded-2xl p-4"
-      style={{ background: 'var(--surface-inset)', border: '1px solid var(--border-inset)' }}
+      style={{
+        background: "var(--surface-inset)",
+        border: "1px solid var(--border-inset)",
+      }}
     >
       <div className="flex items-center gap-3">
         <span
           className="grid h-10 w-10 place-items-center rounded-xl text-sm font-semibold"
           style={{ background: GRAD.teal, color: CHART.text }}
         >
-          {initials || '?'}
+          {initials || "?"}
         </span>
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium" style={{ color: CHART.text }}>
+          <div
+            className="truncate text-sm font-medium"
+            style={{ color: CHART.text }}
+          >
             {item.name}
           </div>
           {item.department ? (
@@ -380,27 +382,27 @@ function PersonHelpCard({ item }: { item: PeopleAtRiskItemDomain }) {
       </div>
       <span
         className="mt-3 inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-        style={{ color: CHART.amber, background: 'oklch(0.84 0.16 80 / 0.14)' }}
+        style={{ color: CHART.amber, background: "oklch(0.84 0.16 80 / 0.14)" }}
       >
         повод для короткого 1:1
       </span>
-      <p className="mt-2 text-[13px] leading-relaxed" style={{ color: CHART.dim }}>
+      <p
+        className="mt-2 text-[13px] leading-relaxed"
+        style={{ color: CHART.dim }}
+      >
         {item.topReason}
       </p>
     </div>
   );
 }
 
-/* ── 3. Зрелость компании ──────────────────────────────────────────────── */
-
 function MaturityWidget({ orgId }: { orgId: string }) {
   const { data, error, isLoading } = useSWR(
-    ['structure-maturity', orgId],
+    ["structure-maturity", orgId],
     async () => toMaturityOverviewDomain(await maturityApi.overview(orgId)),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // companyScore null → «не определено» (идёт сбор данных). Иначе процент.
   const percent = data?.companyPercent ?? null;
   const defined = !isLoading && !error && percent !== null;
 
@@ -428,12 +430,15 @@ function MaturityWidget({ orgId }: { orgId: string }) {
       ) : (
         <div
           className="mt-4 rounded-2xl p-6 text-center"
-          style={{ background: 'var(--surface-inset)' }}
+          style={{ background: "var(--surface-inset)" }}
         >
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Пока не определено
           </p>
-          <p className="mx-auto mt-1.5 max-w-xs text-xs leading-relaxed" style={{ color: CHART.faint }}>
+          <p
+            className="mx-auto mt-1.5 max-w-xs text-xs leading-relaxed"
+            style={{ color: CHART.faint }}
+          >
             Кора ещё собирает данные о том, как компания принимает и доводит
             решения. Оценка появится, когда наберётся история нескольких недель.
           </p>

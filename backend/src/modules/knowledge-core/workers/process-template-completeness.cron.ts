@@ -6,19 +6,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProcessTemplateCompletenessService } from '../../processes/services/process-template-completeness.service';
 import { resolveProcessTenantTop } from '../../processes/services/tenant-top';
 
-/**
- * SBA α-7 wave 2 — ProcessTemplateCompletenessCron.
- *
- * Раз в сутки (по умолчанию 03:00 UTC, см. ENV PROCESS_TEMPLATE_COMPLETENESS_CRON)
- * пересчитывает completeness для всех `ProcessTemplate` с `status != 'archived'`
- * и обновляет gauge'и Prometheus:
- *   - `process_templates_total{tenant_top, status}`
- *   - `process_template_completeness_avg{tenant_top}`
- *
- * Не бросает наружу. Один упавший template не валит проход. Cron-выражение
- * литералом в декораторе (`'0 3 * * *'`), фактический ENV хранится для логов
- * и будущей перерегистрации через SchedulerRegistry.
- */
 @Injectable()
 export class ProcessTemplateCompletenessCron {
   private readonly logger = new Logger(ProcessTemplateCompletenessCron.name);
@@ -35,10 +22,7 @@ export class ProcessTemplateCompletenessCron {
   async sweep(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.debug(
-        stats,
-        'process-template-completeness: проход завершён',
-      );
+      this.logger.debug(stats, 'process-template-completeness: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -94,8 +78,6 @@ export class ProcessTemplateCompletenessCron {
         }
       }
 
-      // Также подтянем archived count (без recalc — completeness для archived
-      // не имеет смысла) для полноты gauge'а.
       const archivedCount = await this.prisma.processTemplate.count({
         where: { tenantId, status: 'archived', deletedAt: null },
       });

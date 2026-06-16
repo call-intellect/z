@@ -1,29 +1,4 @@
-/**
- * ТЗ 2026-05-26 §2.7 (Волна 2C) — controller + service tests для
- * `GET /api/v1/clones/conversations`.
- *
- * Тестируем оба слоя:
- *   1) Controller-уровень: `ClonesController.listMyCloneConversations`
- *      делегирует в `ClonesService.listMyCloneConversations` с правильными
- *      аргументами и возвращает результат как есть; 400 при отсутствии
- *      tenantId (от `requireTenant`).
- *   2) Service-уровень: `ClonesService.listMyCloneConversations` — happy path
- *      с двумя диалогами; 403 при отсутствии активного гранта; 404 при
- *      несуществующем `cloneRefId`; cursor pagination (51 диалог, limit=50).
- *
- * Логика моков:
- *   - ChatV2Conversation хранит clone-диалоги со `scope='card'` +
- *     `scopeRefId=cloneRefId` (см. `createCloneConversation`).
- *   - У `ChatV2Conversation` нет `deletedAt`/`messageCount`/`lastMessageAt` —
- *     spec проверяет именно фактический маппинг сервиса (updatedAt →
- *     lastMessageAt, `_count.messages` → messageCount, фильтр `status='active'`).
- */
-
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config';
@@ -45,11 +20,11 @@ const TENANT_ID = 'tenant-1';
 const ROLE_ID = 'role-cuid-1';
 const PERSON_ID = 'person-cuid-1';
 
-// ───────────────────────────── controller layer ─────────────────────────────
-
-function buildController(opts: {
-  serviceImpl?: Partial<ClonesService>;
-} = {}) {
+function buildController(
+  opts: {
+    serviceImpl?: Partial<ClonesService>;
+  } = {},
+) {
   const svc = {
     listMyCloneConversations: vi.fn(
       async (): Promise<CloneConversationsListResponseDto> => ({
@@ -67,8 +42,6 @@ function buildController(opts: {
     ),
     ...opts.serviceImpl,
   } as unknown as ClonesService;
-  // audit В17: ClonesController теперь требует ClonesAdminService для
-  // requestAccess. В тестах этого spec'а он не используется — заглушка.
   const admin = {} as unknown as import('./services/clones-admin.service').ClonesAdminService;
   const ctrl = new ClonesController(svc, admin);
   return { ctrl, svc };
@@ -106,8 +79,7 @@ describe('ClonesController.listMyCloneConversations', () => {
       sampleUser,
       TENANT_ID,
     );
-    const call = (svc.listMyCloneConversations as ReturnType<typeof vi.fn>).mock
-      .calls[0]![0];
+    const call = (svc.listMyCloneConversations as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(call.cursor).toBe('conv-cursor-x');
     expect(call.cloneType).toBe('person');
     expect(call.limit).toBe(20);
@@ -125,13 +97,6 @@ describe('ClonesController.listMyCloneConversations', () => {
   });
 });
 
-// ───────────────────────────── service layer ─────────────────────────────
-
-/**
- * Создаёт ClonesService с минимально достаточными мок-зависимостями.
- * Остальные ~10 dependency'ев — заглушки (метод не использует их в
- * `listMyCloneConversations`).
- */
 function buildService(opts: {
   roleExists?: boolean;
   personExists?: boolean;
@@ -145,11 +110,9 @@ function buildService(opts: {
   }>;
   cloneV2Enabled?: boolean;
 }) {
-  const roleFindFirst = vi.fn(
-    async () => (opts.roleExists !== false ? { id: ROLE_ID } : null),
-  );
-  const personFindFirst = vi.fn(
-    async () => (opts.personExists !== false ? { id: PERSON_ID } : null),
+  const roleFindFirst = vi.fn(async () => (opts.roleExists !== false ? { id: ROLE_ID } : null));
+  const personFindFirst = vi.fn(async () =>
+    opts.personExists !== false ? { id: PERSON_ID } : null,
   );
   const conversationFindMany = vi.fn(async () => opts.conversations ?? []);
 
@@ -170,15 +133,10 @@ function buildService(opts: {
     })),
   } as unknown as RbacService;
 
-  // cfg.cloneV2.enabled читается через `isCloneV2Enabled()` private —
-  // дефолт true чтобы RBAC v2 ходил в `canAccessRoleClone`.
   const cfg = {
     cloneV2: { enabled: opts.cloneV2Enabled ?? true },
   } as unknown as TypedConfigService;
 
-  // Остальные зависимости — undefined; метод их не трогает.
-  // Порядок: prisma, aiChatQuota, cfg, llm, metrics, personaBuilder,
-  // personaVersioning, rbac, accessResolver (Ф5), embedder, dialog.
   const svc = new ClonesService(
     prisma,
     undefined as never,
@@ -239,7 +197,6 @@ describe('ClonesService.listMyCloneConversations', () => {
     expect(out.items[1]!.title).toBeNull();
     expect(out.items[1]!.messageCount).toBe(1);
 
-    // findMany — проверяем фильтры и порядок (scope='card' + scopeRefId).
     expect(mocks.conversationFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -250,7 +207,7 @@ describe('ClonesService.listMyCloneConversations', () => {
           status: 'active',
         }),
         orderBy: { updatedAt: 'desc' },
-        take: 51, // limit + 1
+        take: 51,
       }),
     );
   });
@@ -317,11 +274,8 @@ describe('ClonesService.listMyCloneConversations', () => {
     });
 
     expect(out.items).toHaveLength(50);
-    expect(out.nextCursor).toBe('conv-49'); // последний из 50 (slice 0..49)
-    // take должно быть limit + 1 = 51
-    expect(mocks.conversationFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 51 }),
-    );
+    expect(out.nextCursor).toBe('conv-49');
+    expect(mocks.conversationFindMany).toHaveBeenCalledWith(expect.objectContaining({ take: 51 }));
   });
 
   it('pagination: запрос с cursor добавляет cursor + skip:1', async () => {

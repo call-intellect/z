@@ -1,24 +1,20 @@
-'use client';
+"use client";
 
-import { useId } from 'react';
+import { useId } from "react";
 
 type Props = {
   data: number[];
-  variant?: 'bar' | 'line';
+  variant?: "bar" | "line";
   color?: string;
   width?: number;
   height?: number;
   className?: string;
 };
 
-/**
- * Sparkline — лёгкий SVG (без recharts). Bar или line, без осей и подписей.
- * Цвет через token-css-var: по умолчанию `var(--accent)`.
- */
 export function Sparkline({
   data,
-  variant = 'line',
-  color = 'var(--accent)',
+  variant = "line",
+  color = "var(--accent)",
   width = 96,
   height = 28,
   className,
@@ -44,7 +40,7 @@ export function Sparkline({
 
   const norm = (v: number) => height - ((v - min) / range) * height;
 
-  if (variant === 'bar') {
+  if (variant === "bar") {
     const slot = data.length > 0 ? width / data.length : width;
     const barW = Math.max(2, slot * 0.7);
     return (
@@ -75,11 +71,11 @@ export function Sparkline({
     );
   }
 
-  const points = data.map((v, i) => `${i * stepX},${norm(v)}`).join(' ');
+  const points = data.map((v, i) => `${i * stepX},${norm(v)}`).join(" ");
   const area = `M0,${height} L${points
-    .split(' ')
+    .split(" ")
     .map((p) => p)
-    .join(' L')} L${width},${height} Z`;
+    .join(" L")} L${width},${height} Z`;
 
   return (
     <svg

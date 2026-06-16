@@ -1,15 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  type ConflictItem,
-  type ConflictResolution,
-  Prisma,
-} from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { type ConflictItem, type ConflictResolution, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -49,21 +39,6 @@ export interface ConflictResolveInput {
   reasoning?: string;
 }
 
-/**
- * ConflictService — публичный API для специалистов Слоя 3 + воркера block-linker.
- *
- *   - `report(input)` — создаёт `ConflictItem`. Если есть уже открытый конфликт
- *     на ту же пару `(resourceType, existingId, newId)` — возвращает его
- *     (идемпотентность).
- *   - `resolve(input)` — резолвит конфликт. Для `evolving` обязателен
- *     `evolvingMeta`. После резолюции — нотифицируем всех кандидатов CurationItem,
- *     если конфликт был связан с открытыми curation-задачами.
- *
- * См. plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md §4, §6.
- *
- * TODO (α-?, опционально): LLM-арбитр curation-conflict-suggest-resolution
- * — подсказывает accept_new/keep_old/merge/evolving + reasoning. См. sub-TZ §11.
- */
 @Injectable()
 export class ConflictService {
   private readonly logger = new Logger(ConflictService.name);
@@ -79,18 +54,12 @@ export class ConflictService {
   ) {}
 
   async report(input: ConflictReportInput): Promise<ConflictItem> {
-    if (
-      !input.tenantId ||
-      !input.resourceType ||
-      !input.existingId ||
-      !input.newId
-    ) {
+    if (!input.tenantId || !input.resourceType || !input.existingId || !input.newId) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'invalid_conflict_input',
-          message:
-            'tenantId / resourceType / existingId / newId обязательны для conflict.report',
+          message: 'tenantId / resourceType / existingId / newId обязательны для conflict.report',
         },
       });
     }
@@ -104,7 +73,6 @@ export class ConflictService {
       });
     }
 
-    // Идемпотентность: если уже есть открытый конфликт на ту же пару — вернём его.
     const existing = await this.prisma.conflictItem.findFirst({
       where: {
         tenantId: input.tenantId,
@@ -131,10 +99,6 @@ export class ConflictService {
         evidence: input.evidence as Prisma.InputJsonValue,
         relationType: input.relationType,
         detectedBy: input.detectedBy,
-        // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
-        // открытый конфликт после TTL (cfg.pendingActions.conflictTtlDays).
-        // TODO: крутилка живёт в TypedConfigService.pendingActions, позже
-        // уедет в AdminSetting UI (наравне с urgentAgeDays).
         expiresAt: computeExpiresAt(this.cfg.pendingActions.conflictTtlDays),
       },
     });
@@ -209,8 +173,6 @@ export class ConflictService {
       resolution: input.resolution,
     });
 
-    // Нотификация связанным кураторам (тех CurationItem'ов, что трогали
-    // одну из карточек) — best-effort.
     await this.notifyLinkedCurators(resolved, input.reviewerUserId);
 
     this.logger.log(
@@ -226,9 +188,6 @@ export class ConflictService {
     return resolved;
   }
 
-  /**
-   * Помечает конфликт как `dismissed` (отказ резолвить).
-   */
   async dismiss(args: {
     tenantId: string;
     conflictId: string;
@@ -272,8 +231,6 @@ export class ConflictService {
     return dismissed;
   }
 
-  // ──────────────────────────── list / get ────────────────────────
-
   async list(args: {
     tenantId: string;
     query: ListConflictsQuery;
@@ -305,10 +262,7 @@ export class ConflictService {
     };
   }
 
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<ConflictItemDto> {
+  async getById(args: { tenantId: string; id: string }): Promise<ConflictItemDto> {
     const conflict = await this.prisma.conflictItem.findUnique({
       where: { id: args.id },
     });
@@ -324,12 +278,6 @@ export class ConflictService {
     return this.toDto(conflict);
   }
 
-  // ──────────────────────────── helpers ─────────────────────────
-
-  /**
-   * Нотификация всех candidateCuratorIds из связанных CurationItem'ов
-   * о том, кто и как разрешил конфликт.
-   */
   private async notifyLinkedCurators(
     conflict: ConflictItem,
     reviewerUserId: string,
@@ -339,10 +287,7 @@ export class ConflictService {
         tenantId: conflict.tenantId,
         resourceType: conflict.resourceType,
         status: 'pending',
-        OR: [
-          { resourceId: conflict.existingId },
-          { resourceId: conflict.newId },
-        ],
+        OR: [{ resourceId: conflict.existingId }, { resourceId: conflict.newId }],
       },
       select: { candidateCuratorIds: true, assignedToUserId: true, id: true },
     });
@@ -352,7 +297,7 @@ export class ConflictService {
       for (const id of it.candidateCuratorIds) recipients.add(id);
       if (it.assignedToUserId) recipients.add(it.assignedToUserId);
     }
-    recipients.delete(reviewerUserId); // самого решившего не нотифицируем
+    recipients.delete(reviewerUserId);
 
     for (const userId of recipients) {
       try {

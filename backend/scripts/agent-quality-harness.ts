@@ -1,31 +1,3 @@
-/**
- * agent-quality-harness — GOLDEN-ХАРНЕСС КАЧЕСТВА ИЗВЛЕЧЕНИЯ задач/решений.
- *
- * Регрессионный ИЗМЕРИТЕЛЬ (не фикс): прогоняет эталонные транскрипты
- * (чистые + ASR-гарблед) через РЕАЛЬНЫЙ AI-пайплайн встречи и считает
- * полноту/точность/долю дублей извлечённых задач и решений против golden.
- * Записывает baseline-снимок и печатает дельту ДО/ПОСЛЕ.
- *
- * Строится на готовом `_lib/combat-harness.ts`: prod-guard (`ALLOW_PROD`),
- * bootstrap/teardown синтетического тенанта, `createPrismaClient`, тот же
- * паттерн внешнего инжектора + поллера.
- *
- * ВАЖНО (как и combat-harness): backend С ВОРКЕРАМИ должен быть УЖЕ запущен
- * (`bun run dev` + `bun run worker:dev`, или `docker compose up -d backend`).
- * Этот скрипт — ВНЕШНИЙ инжектор + поллер, он НЕ поднимает свой Nest-контекст
- * (иначе второй раз зарегистрирует те же BullMQ-воркеры). Никакого
- * `NestFactory.create`.
- *
- * Запуск (из backend/, нужен живой backend+LLM):
- *   bun run scripts/agent-quality-harness.ts
- *   FIXTURES_GLOB='scripts/fixtures/agent-golden/sales-*.json' bun run scripts/agent-quality-harness.ts
- *   BASELINE_PATH=scripts/fixtures/agent-golden/.baseline.json VERIFY_TIMEOUT_MS=180000 \
- *     bun run scripts/agent-quality-harness.ts
- *   ALLOW_PROD=1 ...   # осознанный обход prod-guard
- *
- * НЕ регистрируется в apply-prod-deploy.ts STEPS — это QA-инструмент (как combat-harness).
- */
-
 import { readFileSync, readdirSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 
@@ -60,8 +32,6 @@ function log(msg: string): void {
   console.log(msg);
 }
 
-// ───────────────────────── fixtures ────────────────────────────────
-
 interface FixtureTurn {
   speaker: string;
   text: string;
@@ -80,12 +50,6 @@ interface GoldenFixture {
 
 const FIXTURES_DIR = 'scripts/fixtures/agent-golden';
 
-/**
- * Загрузка фикстур из `scripts/fixtures/agent-golden/*.json`. Зависимость на
- * `glob` не тянем — берём `readdirSync` + фильтр (как scripts/eval/*).
- * `FIXTURES_GLOB` (опц.) — подстрока-фильтр по имени файла (напр. `sales-` или
- * `clean`), чтобы прогнать подмножество; пусто → все *.json.
- */
 function loadFixtures(): GoldenFixture[] {
   const dir = resolve(process.cwd(), FIXTURES_DIR);
   const filter = process.env['FIXTURES_GLOB'];
@@ -111,25 +75,8 @@ function loadFixtures(): GoldenFixture[] {
   return out;
 }
 
-// ───────────────────────── meeting injector ────────────────────────
-
-// Имя очереди AI-analyze — зеркало src/modules/ai/queues.ts QUEUE_NAMES.ANALYZE.
-// Не импортируем из ../src чтобы не тянуть Nest-граф в внешний инжектор.
 const ANALYZE_QUEUE = 'ai.analyze';
 
-/**
- * Прямой вброс Meeting + Transcript(turns) и enqueue `ai.analyze` ровно так,
- * как это делает FSM встречи после транскрибации. Зеркалит структуру локального
- * `injectMeetingDirect` из smoke-pipeline-e2e.ts, но:
- *   - кладёт реальные turns фикстуры;
- *   - выставляет Meeting.status='transcription_ready' (предусловие analyze.worker);
- *   - вместо RawEvent(meeting) для knowledge-core ставит job в `ai.analyze`,
- *     чтобы прошёл ПОЛНЫЙ AI-отчёт-путь: summary → structuredData → Task →
- *     transition ai_ready (именно его и меряет golden-харнесс).
- *
- * jobId формата `analyze:<meetingId>:<attempt>` — как в AiQueueService (':'
- * допустим вне dispatch-дедупа; attempt=1 первичная постановка).
- */
 async function injectMeetingForAnalyze(
   infra: HarnessInfra,
   analyzeQueue: Queue,
@@ -146,22 +93,19 @@ async function injectMeetingForAnalyze(
   const startedAt = new Date(Date.now() - 30 * 60_000);
   const endedAt = new Date();
   const turns = fx.transcript.turns;
-  const totalWords = turns.reduce(
-    (acc, x) => acc + x.text.split(/\s+/).filter(Boolean).length,
-    0,
-  );
+  const totalWords = turns.reduce((acc, x) => acc + x.text.split(/\s+/).filter(Boolean).length, 0);
   const totalDurationSeconds = turns.reduce((m, x) => Math.max(m, x.endSec), 0);
   const meetingType = (fx.meetingType ?? 'team') as never;
 
   await prisma.meeting.create({
     data: {
       id: meetingId,
-      roomName: meetingId, // @unique, равен id
+      roomName: meetingId,
       title: fx.title ?? `Golden ${fx.id}/${fx.variant} ${t.tag}`,
       type: meetingType,
       tenantId: t.orgId,
       ownerId: t.userId,
-      status: 'transcription_ready', // предусловие analyze.worker
+      status: 'transcription_ready',
       startedAt,
       endedAt,
       durationMs: endedAt.getTime() - startedAt.getTime(),
@@ -176,15 +120,10 @@ async function injectMeetingForAnalyze(
     },
   });
 
-  await analyzeQueue.add(
-    'analyze',
-    { meetingId, attempt: 1 },
-    { jobId: `analyze:${meetingId}:1` },
-  );
+  await analyzeQueue.add('analyze', { meetingId, attempt: 1 }, { jobId: `analyze:${meetingId}:1` });
   return meetingId;
 }
 
-/** Поллинг Meeting.status до ai_ready/ai_failed/failed или таймаута. */
 async function pollMeetingReady(
   infra: HarnessInfra,
   meetingId: string,
@@ -207,14 +146,11 @@ async function pollMeetingReady(
   return status;
 }
 
-// ───────────────────────── extraction read ─────────────────────────
-
 interface ExtractedResult {
   taskTitles: string[];
   decisions: string[];
 }
 
-/** Достаёт массив строк из произвольного места structuredData по набору ключей. */
 function pickStringArray(obj: unknown, keys: string[]): string[] {
   if (!obj || typeof obj !== 'object') return [];
   const rec = obj as Record<string, unknown>;
@@ -225,9 +161,6 @@ function pickStringArray(obj: unknown, keys: string[]): string[] {
         .map((x) => {
           if (typeof x === 'string') return x;
           if (x && typeof x === 'object') {
-            // Толерантность к БРЕЙК-объектам провенанс (Волна 3b): элемент
-            // может быть { text|item|what|title, ... }. Берём первое строковое
-            // из приоритетного набора ключей.
             const rec = x as Record<string, unknown>;
             for (const key of ['title', 'text', 'item', 'what']) {
               const val = rec[key];
@@ -242,14 +175,7 @@ function pickStringArray(obj: unknown, keys: string[]): string[] {
   return [];
 }
 
-/**
- * Читает фактически извлечённое: Task.title (по meetingId) для задач,
- * AiResult.structuredData.decisions для решений (с tolerant-fallback по ключам).
- */
-async function readExtraction(
-  infra: HarnessInfra,
-  meetingId: string,
-): Promise<ExtractedResult> {
+async function readExtraction(infra: HarnessInfra, meetingId: string): Promise<ExtractedResult> {
   const tasks = await infra.prisma.task.findMany({
     where: { meetingId },
     select: { title: true },
@@ -260,16 +186,12 @@ async function readExtraction(
   });
   const sd = aiResult?.structuredData ?? null;
   const decisions = pickStringArray(sd, ['decisions', 'решения', 'decision']);
-  // Если Task пуст (tasks-extract ещё не отработал/выключен) — fallback на
-  // structuredData.tasks, чтобы харнесс мерял хоть что-то.
   let taskTitles = tasks.map((x) => x.title).filter(Boolean);
   if (taskTitles.length === 0) {
     taskTitles = pickStringArray(sd, ['tasks', 'задачи', 'action_items']);
   }
   return { taskTitles, decisions };
 }
-
-// ───────────────────────── aggregate ───────────────────────────────
 
 interface PerFixtureScore {
   fixtureId: string;
@@ -278,7 +200,6 @@ interface PerFixtureScore {
   decisions: ExtractionScore;
 }
 
-/** Среднее по группе ExtractionScore (для агрегата по variant). */
 function avgScores(scores: ExtractionScore[]): ExtractionScore {
   if (scores.length === 0) {
     return {
@@ -329,8 +250,6 @@ function buildVariantScores(rows: PerFixtureScore[]): VariantScore[] {
   return out;
 }
 
-// ───────────────────────── main ────────────────────────────────────
-
 async function main(): Promise<void> {
   const cfg: HarnessConfig = readConfig();
   assertNotProd(cfg);
@@ -355,7 +274,6 @@ async function main(): Promise<void> {
       const meetingId = await injectMeetingForAnalyze(infra, analyzeQueue, tenant, fx);
       const finalStatus = await pollMeetingReady(infra, meetingId, cfg.verifyTimeoutMs);
       log(`  [${label}] status=${finalStatus}`);
-      // добор: tasks-extract идёт ОТДЕЛЬНОЙ job'ой после ai_ready.
       await sleep(Math.min(15_000, cfg.verifyTimeoutMs / 4));
 
       const extracted = await readExtraction(infra, meetingId);
@@ -379,7 +297,6 @@ async function main(): Promise<void> {
       });
     }
 
-    // Агрегат по variant (clean vs asr_garbled).
     const variantScores = buildVariantScores(rows);
     log('\n=== Агрегат по variant ===');
     for (const v of variantScores) {
@@ -388,7 +305,6 @@ async function main(): Promise<void> {
       log(`  decisions ${fmtScore(v.decisions)}`);
     }
 
-    // Baseline + дельта.
     const baselinePath =
       process.env['BASELINE_PATH'] ??
       resolve(process.cwd(), 'scripts/fixtures/agent-golden/.baseline.json');

@@ -4,42 +4,18 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Pulse Wave 6 §6.7 — Knowledge-Velocity-Tracker cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.7.
- *
- * Weekly (`@Cron('0 5 * * 1')`). Для каждой Org:
- *   1. Загружает `IdeaBlock` с `signalType='knowledge_gap'` за 90 дней.
- *   2. Считает «отвеченным» блок, у которого `trustedAnswer` непустой,
- *      длиннее порога (`MIN_ANSWER_LEN`) и `updatedAt - createdAt > 1 минута`.
- *   3. Median(answerHours) среди resolved.
- *   4. Top responders — Person'ы, упомянутые в IdeaBlockEntity блоков-ответов
- *      (role IN 'subject'|'object'), агрегированные по resolvedCount.
- *
- * Без LLM. Best-effort: ошибка по одной Org не валит остальных.
- *
- * Замечание про источник «когда появился ответ»: в текущей схеме нет
- * отдельной модели `IdeaBlockAnswer`, поэтому используем proxy:
- * `updatedAt > createdAt + 1 минута` при наличии нетривиального
- * `trustedAnswer`. Это даёт верхнюю оценку времени до ответа.
- */
 @Injectable()
 export class KnowledgeVelocityTrackerCron {
   private readonly logger = new Logger(KnowledgeVelocityTrackerCron.name);
   private static readonly WINDOW_DAYS = 90;
-  private static readonly WINDOW_MS =
-    KnowledgeVelocityTrackerCron.WINDOW_DAYS * 24 * 3600 * 1000;
-  private static readonly RESOLVE_DELAY_MS = 60 * 1000; // 1 минута
-  /** Минимальная длина trustedAnswer, чтобы считать блок отвеченным. */
+  private static readonly WINDOW_MS = KnowledgeVelocityTrackerCron.WINDOW_DAYS * 24 * 3600 * 1000;
+  private static readonly RESOLVE_DELAY_MS = 60 * 1000;
   private static readonly MIN_ANSWER_LEN = 8;
-  /** Сколько responders сохранить в snapshot. */
   private static readonly TOP_RESPONDERS = 10;
   private static readonly MAX_ORGS_PER_RUN = 5_000;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Weekly Mon 05:00 UTC. */
   @Cron('0 5 * * 1')
   async run(): Promise<void> {
     try {
@@ -58,9 +34,7 @@ export class KnowledgeVelocityTrackerCron {
     errors: number;
   }> {
     const now = new Date();
-    const windowStart = new Date(
-      now.getTime() - KnowledgeVelocityTrackerCron.WINDOW_MS,
-    );
+    const windowStart = new Date(now.getTime() - KnowledgeVelocityTrackerCron.WINDOW_MS);
 
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -131,23 +105,15 @@ export class KnowledgeVelocityTrackerCron {
 
     const answeredHours: number[] = [];
     let openGapsCount = 0;
-    const respondersCount = new Map<
-      string,
-      { name: string; count: number }
-    >();
+    const respondersCount = new Map<string, { name: string; count: number }>();
 
     for (const g of gaps) {
       if (this.isResolved(g)) {
-        const hours =
-          (g.updatedAt.getTime() - g.createdAt.getTime()) / 3600 / 1000;
+        const hours = (g.updatedAt.getTime() - g.createdAt.getTime()) / 3600 / 1000;
         answeredHours.push(hours);
-        // Responders — те, кто связан с блоком (role='subject'|'object'),
-        // но не его автор. В нашей схеме автор гэпа = subject, ответчик чаще
-        // помечается mentioned/object. Если нет таких связей — пропускаем.
         for (const e of g.entities) {
           const person = e.entity?.persons?.[0];
           if (!person) continue;
-          // Учитываем только role !== 'subject' как responder (subject = автор гэпа).
           if (e.role === 'subject') continue;
           const cur = respondersCount.get(person.id);
           if (cur) {
@@ -162,8 +128,7 @@ export class KnowledgeVelocityTrackerCron {
     }
 
     const resolvedGapsCount = answeredHours.length;
-    const medianHoursToAnswer =
-      resolvedGapsCount > 0 ? median(answeredHours) : null;
+    const medianHoursToAnswer = resolvedGapsCount > 0 ? median(answeredHours) : null;
 
     const topResponders = [...respondersCount.entries()]
       .map(([personId, v]) => ({
@@ -182,9 +147,7 @@ export class KnowledgeVelocityTrackerCron {
       data: {
         tenantId,
         medianHoursToAnswer:
-          medianHoursToAnswer !== null
-            ? new Prisma.Decimal(round2(medianHoursToAnswer))
-            : null,
+          medianHoursToAnswer !== null ? new Prisma.Decimal(round2(medianHoursToAnswer)) : null,
         resolvedGapsCount,
         openGapsCount,
         topRespondersJson: {
@@ -197,18 +160,13 @@ export class KnowledgeVelocityTrackerCron {
     return true;
   }
 
-  private isResolved(g: {
-    createdAt: Date;
-    updatedAt: Date;
-    trustedAnswer: string;
-  }): boolean {
+  private isResolved(g: { createdAt: Date; updatedAt: Date; trustedAnswer: string }): boolean {
     if (!g.trustedAnswer) return false;
     if (g.trustedAnswer.trim().length < KnowledgeVelocityTrackerCron.MIN_ANSWER_LEN) {
       return false;
     }
     return (
-      g.updatedAt.getTime() - g.createdAt.getTime() >=
-      KnowledgeVelocityTrackerCron.RESOLVE_DELAY_MS
+      g.updatedAt.getTime() - g.createdAt.getTime() >= KnowledgeVelocityTrackerCron.RESOLVE_DELAY_MS
     );
   }
 }

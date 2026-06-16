@@ -9,11 +9,6 @@ import type { RbacService } from '../../rbac/rbac.service';
 
 import { ChatV2ConversationsService } from './conversations.service';
 
-/**
- * audit-fixes Б13 (2026-05-29) — getById для clone-conversations re-check'ит
- * актуальный CloneAccessGrant. Если грант revoked/expired — 404.
- */
-
 interface FakeConv {
   id: string;
   tenantId: string;
@@ -205,7 +200,7 @@ describe('ChatV2ConversationsService.getById — Б13 clone-access re-check', ()
     const { svc } = makeService({
       conv,
       cloneV2Enabled: true,
-      personAllowed: false, // даже если revoked — не должно проверяться
+      personAllowed: false,
       roleAllowed: false,
     });
     const result = await svc.getById({

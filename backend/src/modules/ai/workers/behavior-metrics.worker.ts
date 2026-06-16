@@ -1,23 +1,3 @@
-/**
- * Воркер `ai.behavior-metrics` (Фаза B).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §6.
- *
- * Поток:
- *   1. Читает Meeting + Transcript.mergedS3Url + Participants.
- *   2. Поднимает merged.json (DialogTurn[]).
- *   3. Вычисляет behavior-метрики через pure-функцию.
- *   4. Опционально (по флагу) уточняет через LLM (`BehaviorLlmRefineService`).
- *   5. Делает upsert в `MeetingBehaviorMetrics` + перезаписывает связанные
- *      `MeetingParticipantBehavior` в одной транзакции.
- *   6. Обновляет `Meeting.behaviorMetricsStatus = 'ready' | 'low_confidence'`.
- *
- * Concurrency: 4 (детерминистский расчёт дешёв, узким местом будет I/O
- * к S3 + опц. LLM-вызов).
- * Retry: 3 попытки с экспоненциальным backoff (см. `BEHAVIOR_METRICS_JOB_OPTIONS`).
- * После исчерпания → `behaviorMetricsStatus = 'failed'` + метрика _failed_total.
- */
-
 import {
   Inject,
   Injectable,
@@ -26,7 +6,6 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
-
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -71,8 +50,11 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<AiJobData>(
       QUEUE_NAMES.BEHAVIOR_METRICS,
       async (job) =>
-        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'ai.behavior-metrics', job.data.meetingId, () =>
-          this.process(job),
+        this.pipe.meeting(
+          SystemLogPipeline.AI_ANALYSIS,
+          'ai.behavior-metrics',
+          job.data.meetingId,
+          () => this.process(job),
         ),
       {
         connection: this.redis.client,
@@ -124,16 +106,13 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Помечаем pending в начале (UI получает loading-state).
     await this.prisma.meeting.update({
       where: { id: meetingId },
       data: { behaviorMetricsStatus: 'pending' },
     });
 
-    // 1. Тянем merged.json.
     const merged = await this.s3.getJson<MergedDoc>(meeting.transcript.mergedS3Url);
 
-    // 2. Готовим вход для калькулятора.
     const totalDurationMs = computeTotalDurationMs(
       meeting.startedAt,
       meeting.endedAt,
@@ -144,21 +123,15 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       id: p.id,
       identity: p.livekitIdentity,
       displayName: p.name,
-      // role='guest' соответствует isGuest=true.
       isGuest: p.role === 'guest',
     }));
 
-    // Тайминги доступны, если у дорожки есть пословные ИЛИ посегментные
-    // тайм-коды (оба точны для речевых метрик: union/crosstalk/доли). Иначе
-    // поведение посчитано по длительности дорожек (приблизительно) →
-    // помечаем lowConfidence (Б5). Имя параметра калькулятора не меняем.
     const wordTimingsAvailable = (meeting.transcript?.tracks ?? []).some(
       (t) =>
         (Array.isArray(t.words) && (t.words as unknown[]).length > 0) ||
         (Array.isArray(t.segments) && (t.segments as unknown[]).length > 0),
     );
 
-    // 3. Расчёт.
     const base = this.calculator.calculate({
       meetingId,
       tenantId: meeting.tenantId,
@@ -166,16 +139,12 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       diarization: segments,
       participants,
       wordTimingsAvailable,
-      // confidence из merged.json (если когда-нибудь появится) — пока undefined.
-      // Калькулятор сам fallback'нёт на 1.0.
     });
 
-    // 4. Опц. LLM-refine (под флагом).
     const speakerKeyToParticipantId = new Map<string, string | null>();
     for (const p of participants) {
       speakerKeyToParticipantId.set(p.identity.toLowerCase(), p.id);
     }
-    // Если voice-имя в merged отличается от identity — добавим mapping по имени.
     for (const p of participants) {
       speakerKeyToParticipantId.set(p.displayName.toLowerCase(), p.id);
     }
@@ -183,14 +152,11 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       meetingId,
       tenantId: meeting.tenantId,
       segments,
-      speakerKeyByParticipantId: new Map(
-        participants.map((p) => [p.id, p.identity.toLowerCase()]),
-      ),
+      speakerKeyByParticipantId: new Map(participants.map((p) => [p.id, p.identity.toLowerCase()])),
       speakerKeyToParticipantId,
       baseResult: base,
     });
 
-    // 5. Транзакция: upsert MeetingBehaviorMetrics + перезапись participants.
     await this.prisma.$transaction(async (tx) => {
       const main = await tx.meetingBehaviorMetrics.upsert({
         where: { meetingId },
@@ -251,7 +217,6 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       data: { behaviorMetricsStatus: finalStatus },
     });
 
-    // 6. Метрики.
     const durationSeconds = (Date.now() - startedAt) / 1000;
     this.metrics.observeBehaviorMetricsDuration(durationSeconds);
     this.metrics.incBehaviorMetricsComputed();
@@ -294,12 +259,6 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-/**
- * Считает totalDurationMs встречи. В порядке приоритета:
- *   1. (endedAt - startedAt) если оба есть.
- *   2. Максимальный endSec диалога (× 1000).
- *   3. 0 (граничный случай).
- */
 function computeTotalDurationMs(
   startedAt: Date | null,
   endedAt: Date | null,
@@ -315,10 +274,6 @@ function computeTotalDurationMs(
   return Math.round(maxEndSec * 1000);
 }
 
-/**
- * Преобразует merged.json (DialogTurn[]) в формат калькулятора
- * (BehaviorDiarizationSegment[]).
- */
 function turnsToSegments(turns: DialogTurn[]): BehaviorDiarizationSegment[] {
   return turns.map((t) => ({
     speaker: t.speaker,

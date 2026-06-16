@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
+import { useMemo } from "react";
 import {
   Gauge,
   GitBranch,
@@ -8,7 +8,7 @@ import {
   ScrollText,
   ShieldCheck,
   Target,
-} from 'lucide-react';
+} from "lucide-react";
 
 import type {
   AuthorityBoundaryApi,
@@ -17,60 +17,51 @@ import type {
   RequiredKnowledgeApi,
   ResponsibilityElementApi,
   RoleMapApi,
-} from '@/api/role-map.api';
-import { Badge } from '@/ui/shadcn/badge';
-
-/**
- * Презентационные карточки карты должности (6 категорий) — общий компонент,
- * переиспользуемый на `/roles/[id]/map` (RoleMapClient) и `/me` (RoleProfileBlock).
- *
- * Чистый presentational-слой: на вход — `RoleMapApi` (тот же формат, что отдаёт
- * `GET /api/v1/roles/:id/map`), наружу — сетка из 6 `CategoryCard`. Никаких
- * data-fetching и состояний — это решают страницы-владельцы.
- */
+} from "@/api/role-map.api";
+import { Badge } from "@/ui/shadcn/badge";
 
 export const RESP_KIND_LABEL: Record<string, string> = {
-  outcome: 'Результат',
-  function: 'Функция',
-  activity: 'Действие',
+  outcome: "Результат",
+  function: "Функция",
+  activity: "Действие",
 };
 
 export const AUTH_KIND_LABEL: Record<string, string> = {
-  allowed: 'Разрешено',
-  requires_approval: 'Согласование',
-  forbidden: 'Запрещено',
+  allowed: "Разрешено",
+  requires_approval: "Согласование",
+  forbidden: "Запрещено",
 };
 
 export const IMPORTANCE_LABEL: Record<string, string> = {
-  mandatory: 'Обязательно',
-  preferred: 'Желательно',
-  nice_to_have: 'Плюсом',
+  mandatory: "Обязательно",
+  preferred: "Желательно",
+  nice_to_have: "Плюсом",
 };
 
 export const LEVEL_LABEL: Record<string, string> = {
-  beginner: 'начинающий',
-  intermediate: 'уверенный',
-  expert: 'эксперт',
+  beginner: "начинающий",
+  intermediate: "уверенный",
+  expert: "эксперт",
 };
 
 export const FREQ_LABEL: Record<string, string> = {
-  daily: 'ежедневно',
-  weekly: 'еженедельно',
-  monthly: 'ежемесячно',
-  ad_hoc: 'эпизодически',
+  daily: "ежедневно",
+  weekly: "еженедельно",
+  monthly: "ежемесячно",
+  ad_hoc: "эпизодически",
 };
 
 export const INTERACTION_KIND_LABEL: Record<string, string> = {
-  reports_to: 'отчитывается перед',
-  collaborates_with: 'сотрудничает с',
-  delegates_to: 'делегирует',
-  receives_handoff_from: 'принимает от',
-  escalates_to: 'эскалирует к',
-  customer_facing: 'работа с клиентом',
-  supplier_facing: 'работа с поставщиком',
-  mentor_to: 'наставник для',
-  mentored_by: 'наставляется',
-  other: 'другое',
+  reports_to: "отчитывается перед",
+  collaborates_with: "сотрудничает с",
+  delegates_to: "делегирует",
+  receives_handoff_from: "принимает от",
+  escalates_to: "эскалирует к",
+  customer_facing: "работа с клиентом",
+  supplier_facing: "работа с поставщиком",
+  mentor_to: "наставник для",
+  mentored_by: "наставляется",
+  other: "другое",
 };
 
 export function CategoryCard({
@@ -162,7 +153,7 @@ export function AuthorityCard({ items }: { items: AuthorityBoundaryApi[] }) {
         {items.map((a) => (
           <li key={a.id} className="leading-snug">
             <Badge
-              variant={a.kind === 'forbidden' ? 'danger' : 'secondary'}
+              variant={a.kind === "forbidden" ? "danger" : "secondary"}
               className="mr-2"
             >
               {AUTH_KIND_LABEL[a.kind] ?? a.kind}
@@ -197,7 +188,7 @@ export function KnowledgeCard({ items }: { items: RequiredKnowledgeApi[] }) {
         {items.map((k) => (
           <li key={k.id} className="leading-snug">
             <Badge
-              variant={k.importance === 'mandatory' ? 'default' : 'secondary'}
+              variant={k.importance === "mandatory" ? "default" : "secondary"}
               className="mr-2"
             >
               {IMPORTANCE_LABEL[k.importance] ?? k.importance}
@@ -218,7 +209,11 @@ export function KnowledgeCard({ items }: { items: RequiredKnowledgeApi[] }) {
   );
 }
 
-export function DecisionPoliciesCard({ items }: { items: DecisionPolicyApi[] }) {
+export function DecisionPoliciesCard({
+  items,
+}: {
+  items: DecisionPolicyApi[];
+}) {
   return (
     <CategoryCard
       title="Политики решений"
@@ -257,12 +252,12 @@ export function InteractionsCard({ items }: { items: InteractionApi[] }) {
             i.counterpartRoleName ??
             i.counterpartDepartmentName ??
             i.counterpartExternal ??
-            '—';
+            "—";
           return (
             <li key={i.id} className="leading-snug">
               <span className="text-fg-secondary">
                 {INTERACTION_KIND_LABEL[i.kind] ?? i.kind}
-              </span>{' '}
+              </span>{" "}
               <span className="font-medium text-fg-primary">{counterpart}</span>
               {i.frequency && (
                 <span className="ml-1 text-xs text-fg-tertiary">
@@ -282,7 +277,7 @@ export function InteractionsCard({ items }: { items: InteractionApi[] }) {
   );
 }
 
-export function MetricsCard({ items }: { items: RoleMapApi['metrics'] }) {
+export function MetricsCard({ items }: { items: RoleMapApi["metrics"] }) {
   return (
     <CategoryCard
       title="KPI и метрики"
@@ -296,9 +291,9 @@ export function MetricsCard({ items }: { items: RoleMapApi['metrics'] }) {
             <span className="font-medium text-fg-primary">{m.name}</span>
             {(m.currentValue !== null || m.targetValue !== null) && (
               <span className="ml-1 text-fg-tertiary">
-                {m.currentValue !== null ? m.currentValue : '—'}
-                {m.targetValue !== null ? ` / ${m.targetValue}` : ''}
-                {m.unit ? ` ${m.unit}` : ''}
+                {m.currentValue !== null ? m.currentValue : "—"}
+                {m.targetValue !== null ? ` / ${m.targetValue}` : ""}
+                {m.unit ? ` ${m.unit}` : ""}
               </span>
             )}
           </li>
@@ -308,10 +303,6 @@ export function MetricsCard({ items }: { items: RoleMapApi['metrics'] }) {
   );
 }
 
-/**
- * Сетка из 6 карточек карты должности. Единый рендер для `/roles/[id]/map`
- * и `/me`. `data-testid="role-map-grid"` — якорь для unit-тестов.
- */
 export function RoleMapGrid({
   map,
   className,
@@ -322,9 +313,7 @@ export function RoleMapGrid({
   return (
     <div
       data-testid="role-map-grid"
-      className={
-        className ?? 'grid grid-cols-1 gap-4 lg:grid-cols-2'
-      }
+      className={className ?? "grid grid-cols-1 gap-4 lg:grid-cols-2"}
     >
       <ResponsibilitiesCard items={map.responsibilities} />
       <AuthorityCard items={map.authority} />
@@ -336,7 +325,6 @@ export function RoleMapGrid({
   );
 }
 
-/** Признак «карта пустая» — все 6 категорий без элементов. */
 export function isRoleMapEmpty(map: RoleMapApi): boolean {
   const c = map.counts;
   return (

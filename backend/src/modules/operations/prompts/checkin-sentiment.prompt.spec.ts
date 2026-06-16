@@ -2,19 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { parseCheckinSentimentBatchToolInput } from './checkin-sentiment.prompt';
 
-/**
- * Unit-тесты для `parseCheckinSentimentBatchToolInput`.
- *
- * Источник:
- *   - plans/tz/2026-05-26-checkin-batch-cron-tests.md §2.2 (8 кейсов).
- *   - plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md §6
- *     (batch-инфраструктура для checkin-sentiment).
- *   - Коммит 3cba11d (Фаза 2 миграции LLM на DeepSeek-V4-Pro).
- *
- * Тесты фиксируют ФАКТИЧЕСКОЕ поведение парсера (silent-skip кривых
- * элементов + throw на дубликат checkInId — решение пользователя
- * 2026-05-26).
- */
 describe('parseCheckinSentimentBatchToolInput', () => {
   it('кейс 1: валидный input с 10 элементами — массив 10 в исходном порядке', () => {
     const sentiments = ['green', 'yellow', 'red'] as const;
@@ -37,15 +24,11 @@ describe('parseCheckinSentimentBatchToolInput', () => {
     expect(parseCheckinSentimentBatchToolInput(undefined)).toEqual([]);
     expect(parseCheckinSentimentBatchToolInput('строка')).toEqual([]);
     expect(parseCheckinSentimentBatchToolInput(42)).toEqual([]);
-    // массив — !objet, проходит проверку `typeof === 'object'`, но `.results`
-    // у него undefined → не Array → []
     expect(parseCheckinSentimentBatchToolInput([])).toEqual([]);
   });
 
   it('кейс 3: input.results не массив → []', () => {
-    expect(parseCheckinSentimentBatchToolInput({ results: 'строка' })).toEqual(
-      [],
-    );
+    expect(parseCheckinSentimentBatchToolInput({ results: 'строка' })).toEqual([]);
     expect(parseCheckinSentimentBatchToolInput({ results: null })).toEqual([]);
     expect(parseCheckinSentimentBatchToolInput({ results: {} })).toEqual([]);
     expect(parseCheckinSentimentBatchToolInput({ results: 42 })).toEqual([]);
@@ -125,8 +108,6 @@ describe('parseCheckinSentimentBatchToolInput', () => {
         { checkInId: 'a', sentiment: 'red', rationale: '!' },
       ],
     };
-    expect(() => parseCheckinSentimentBatchToolInput(input)).toThrow(
-      /дубликат/,
-    );
+    expect(() => parseCheckinSentimentBatchToolInput(input)).toThrow(/дубликат/);
   });
 });

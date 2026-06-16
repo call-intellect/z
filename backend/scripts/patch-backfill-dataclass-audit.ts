@@ -1,23 +1,3 @@
-/**
- * W4.2 KC-Temporal (2026-05-25) — patch-backfill для `dataClassAudit`.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §W4.2.
- *
- * Для каждой проекции (13 моделей) — загружает существующие записи, восстанавливает
- * `sourceBlockIds[]` → блоки → `DataClassPolicyService.derive(blocks, {kind})` →
- * сохраняет `dataClassAudit` с `policyVersion='backfill_v1'`.
- *
- * ⚠ ВАЖНО: dataClass НЕ меняется — только audit-trail. Если расходится с
- * derive — пишем warn в лог, но реальное значение оставляем (это совместимо
- * с DoD W4.2 «Не понижай dataClass нигде»).
- *
- * Идемпотентность: записи с `dataClassAudit IS NOT NULL` пропускаются.
- *
- * Запуск:
- *   bun run scripts/patch-backfill-dataclass-audit.ts --dry-run
- *   bun run scripts/patch-backfill-dataclass-audit.ts
- */
-
 import { NestFactory } from '@nestjs/core';
 import { Prisma } from '@prisma/client';
 
@@ -45,10 +25,6 @@ interface ProjectionStats {
 const BATCH = 500;
 const POLICY_VERSION_BACKFILL = 'backfill_v1';
 
-/**
- * Map проекций → конфиг с моделью Prisma + DerivedKind + способом извлечения
- * blockIds (поле `sourceBlockIds` существует не у всех моделей).
- */
 const PROJECTIONS: Array<{
   kind: DerivedKind;
   modelKey:
@@ -66,56 +42,88 @@ const PROJECTIONS: Array<{
     | 'aiUsageLog'
     | 'probeEvent';
   hasDataClassColumn: boolean;
-  blockIdsField:
-    | 'sourceBlockIds'
-    | 'includedTraitIds'
-    | 'evidenceJson'
-    | 'payloadJson'
-    | null;
+  blockIdsField: 'sourceBlockIds' | 'includedTraitIds' | 'evidenceJson' | 'payloadJson' | null;
 }> = [
-  { kind: 'insight', modelKey: 'insight', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
-  { kind: 'decision', modelKey: 'decision', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
-  { kind: 'card_rollup', modelKey: 'card', hasDataClassColumn: false, blockIdsField: 'sourceBlockIds' },
-  { kind: 'skill_trait', modelKey: 'skillTrait', hasDataClassColumn: false, blockIdsField: 'sourceBlockIds' },
-  { kind: 'skill_profile', modelKey: 'skillProfile', hasDataClassColumn: false, blockIdsField: null },
-  { kind: 'executable_persona', modelKey: 'executablePersona', hasDataClassColumn: false, blockIdsField: 'includedTraitIds' },
+  {
+    kind: 'insight',
+    modelKey: 'insight',
+    hasDataClassColumn: true,
+    blockIdsField: 'sourceBlockIds',
+  },
+  {
+    kind: 'decision',
+    modelKey: 'decision',
+    hasDataClassColumn: true,
+    blockIdsField: 'sourceBlockIds',
+  },
+  {
+    kind: 'card_rollup',
+    modelKey: 'card',
+    hasDataClassColumn: false,
+    blockIdsField: 'sourceBlockIds',
+  },
+  {
+    kind: 'skill_trait',
+    modelKey: 'skillTrait',
+    hasDataClassColumn: false,
+    blockIdsField: 'sourceBlockIds',
+  },
+  {
+    kind: 'skill_profile',
+    modelKey: 'skillProfile',
+    hasDataClassColumn: false,
+    blockIdsField: null,
+  },
+  {
+    kind: 'executable_persona',
+    modelKey: 'executablePersona',
+    hasDataClassColumn: false,
+    blockIdsField: 'includedTraitIds',
+  },
   { kind: 'idea', modelKey: 'idea', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
-  { kind: 'regulation', modelKey: 'regulation', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
-  { kind: 'process', modelKey: 'process', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
+  {
+    kind: 'regulation',
+    modelKey: 'regulation',
+    hasDataClassColumn: true,
+    blockIdsField: 'sourceBlockIds',
+  },
+  {
+    kind: 'process',
+    modelKey: 'process',
+    hasDataClassColumn: true,
+    blockIdsField: 'sourceBlockIds',
+  },
   { kind: 'policy', modelKey: 'policy', hasDataClassColumn: true, blockIdsField: 'sourceBlockIds' },
-  { kind: 'conflict_item', modelKey: 'conflictItem', hasDataClassColumn: false, blockIdsField: 'evidenceJson' },
+  {
+    kind: 'conflict_item',
+    modelKey: 'conflictItem',
+    hasDataClassColumn: false,
+    blockIdsField: 'evidenceJson',
+  },
   { kind: 'ai_usage_log', modelKey: 'aiUsageLog', hasDataClassColumn: false, blockIdsField: null },
-  { kind: 'probe_event', modelKey: 'probeEvent', hasDataClassColumn: false, blockIdsField: 'payloadJson' },
+  {
+    kind: 'probe_event',
+    modelKey: 'probeEvent',
+    hasDataClassColumn: false,
+    blockIdsField: 'payloadJson',
+  },
 ];
 
 async function main(args: RunArgs): Promise<void> {
-  // Лёгкий pre-check ДО подъёма AppModule: если во всех проекциях
-  // dataClassAudit уже проставлен — выходим, не поднимая Nest (BullMQ/Redis),
-  // иначе app.close() засыпает лог ioredis-флудом «Connection is closed» на
-  // каждом выкате. На уже-забэкфилленном проде это steady-state-случай.
-  // Набор modelKey, чьи таблицы реально имеют колонку dataClassAudit. Часть
-  // проекций (напр. insight) могли её потерять в эволюции схемы — Prisma-запрос
-  // `where:{dataClassAudit:null}` по ним падает валидацией. Пробуем count в
-  // try/catch: успех → колонка есть; ошибка → модель пропускаем везде.
   const supportedKeys = new Set<string>();
   const preCheck = createPrismaClient();
   try {
     let pending = 0;
     for (const p of PROJECTIONS) {
       const model = (
-        preCheck as unknown as Record<
-          string,
-          { count: (a: unknown) => Promise<number> }
-        >
+        preCheck as unknown as Record<string, { count: (a: unknown) => Promise<number> }>
       )[p.modelKey];
       try {
         const n = await model.count({ where: { dataClassAudit: null } });
         supportedKeys.add(p.modelKey);
         pending += n;
       } catch {
-        console.log(
-          `[${p.kind}] модель "${p.modelKey}" без колонки dataClassAudit — пропускаем`,
-        );
+        console.log(`[${p.kind}] модель "${p.modelKey}" без колонки dataClassAudit — пропускаем`);
       }
     }
     if (pending === 0) {
@@ -137,12 +145,9 @@ async function main(args: RunArgs): Promise<void> {
     const policy = app.get(DataClassPolicyService);
 
     // eslint-disable-next-line no-console
-    console.log(
-      `=== patch-backfill-dataclass-audit START (dryRun=${args.dryRun}) ===`,
-    );
+    console.log(`=== patch-backfill-dataclass-audit START (dryRun=${args.dryRun}) ===`);
 
     for (const projection of PROJECTIONS) {
-      // Пропускаем модели без колонки dataClassAudit (определено в pre-check).
       if (!supportedKeys.has(projection.modelKey)) continue;
 
       const stats: ProjectionStats = {
@@ -154,14 +159,11 @@ async function main(args: RunArgs): Promise<void> {
         errors: 0,
       };
 
-      // Делегат модели — динамически по ключу.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const delegate: any = (prisma as unknown as Record<string, unknown>)[projection.modelKey];
       if (!delegate || typeof delegate.findMany !== 'function') {
         // eslint-disable-next-line no-console
-        console.log(
-          `[${projection.kind}] delegate "${projection.modelKey}" не найден, пропускаем`,
-        );
+        console.log(`[${projection.kind}] delegate "${projection.modelKey}" не найден, пропускаем`);
         continue;
       }
 
@@ -183,15 +185,9 @@ async function main(args: RunArgs): Promise<void> {
           try {
             const id = String(row.id);
             const legacyDc = projection.hasDataClassColumn
-              ? (row.dataClass as
-                  | 'public'
-                  | 'internal'
-                  | 'sensitive'
-                  | 'private'
-                  | undefined)
+              ? (row.dataClass as 'public' | 'internal' | 'sensitive' | 'private' | undefined)
               : 'internal';
 
-            // Извлекаем sourceBlockIds.
             let blockIds: string[] = [];
             if (projection.blockIdsField === 'sourceBlockIds') {
               const v = row.sourceBlockIds;
@@ -207,12 +203,7 @@ async function main(args: RunArgs): Promise<void> {
               sourceKind: 'idea_block' | 'skill_trait' | 'other';
             }> = [];
 
-            if (
-              projection.kind === 'executable_persona' &&
-              blockIds.length > 0
-            ) {
-              // SkillTrait'ы — берём их dataClass (фактически всегда 'internal',
-              // но фиксируем сорсы для аудита).
+            if (projection.kind === 'executable_persona' && blockIds.length > 0) {
               const traits = await prisma.skillTrait.findMany({
                 where: { id: { in: blockIds } },
                 select: { id: true },
@@ -239,11 +230,7 @@ async function main(args: RunArgs): Promise<void> {
               context: { kind: projection.kind },
             });
 
-            if (
-              legacyDc &&
-              projection.hasDataClassColumn &&
-              legacyDc !== derived.dataClass
-            ) {
+            if (legacyDc && projection.hasDataClassColumn && legacyDc !== derived.dataClass) {
               stats.driftedFromLegacy++;
               if (args.dryRun) {
                 // eslint-disable-next-line no-console
@@ -259,12 +246,10 @@ async function main(args: RunArgs): Promise<void> {
             };
 
             if (!args.dryRun) {
-              // ВАЖНО: dataClass НЕ обновляем — только audit.
               await delegate.update({
                 where: { id },
                 data: {
-                  dataClassAudit:
-                    auditWithBackfillMark as unknown as Prisma.InputJsonValue,
+                  dataClassAudit: auditWithBackfillMark as unknown as Prisma.InputJsonValue,
                 },
               });
             }

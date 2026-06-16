@@ -1,20 +1,6 @@
-/**
- * Wave 3 / Tracker Phase 4 — seed HolidayCalendar для глобального РФ-календаря 2026.
- *
- * Идемпотентно по `@@unique([tenantId, date])` (tenantId=null для платформенного календаря).
- *
- * Защита admin-edited (skill `safe-seed-rules`): если запись существует и
- * `createdAt` старше 1 часа — считаем, что её мог поправить админ (per-tenant
- * override уже добавил аналогичную глобальную дату либо переименовал).
- * Skip с предупреждением.
- */
-
 import type { PrismaClient } from '@prisma/client';
 
-import {
-  HOLIDAYS_RU_2026,
-  type HolidaySeedEntry,
-} from './holiday-calendar-ru-2026-data';
+import { HOLIDAYS_RU_2026, type HolidaySeedEntry } from './holiday-calendar-ru-2026-data';
 
 export interface HolidayCalendarSeedStats {
   inserted: number;
@@ -22,16 +8,12 @@ export interface HolidayCalendarSeedStats {
   skippedAdminEdited: number;
 }
 
-const ADMIN_EDIT_THRESHOLD_MS = 60 * 60 * 1000; // 1 час
+const ADMIN_EDIT_THRESHOLD_MS = 60 * 60 * 1000;
 
-/** Парс YYYY-MM-DD в UTC-midnight Date (чтобы избежать TZ-сдвигов). */
 function parseIsoDateUtc(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00.000Z`);
 }
 
-/**
- * Прогон seed'а: вставка/обновление глобальных праздников (tenantId=null).
- */
 export async function seedHolidayCalendarRu2026(
   prisma: PrismaClient,
   opts?: {
@@ -68,13 +50,10 @@ export async function seedHolidayCalendarRu2026(
       continue;
     }
 
-    const editedManually =
-      now - existing.createdAt.getTime() > ADMIN_EDIT_THRESHOLD_MS;
+    const editedManually = now - existing.createdAt.getTime() > ADMIN_EDIT_THRESHOLD_MS;
     if (editedManually) {
       stats.skippedAdminEdited += 1;
-      log(
-        `[skipped] holiday ${entry.date} — запись создана >1ч назад, возможно отредактирована`,
-      );
+      log(`[skipped] holiday ${entry.date} — запись создана >1ч назад, возможно отредактирована`);
       continue;
     }
 

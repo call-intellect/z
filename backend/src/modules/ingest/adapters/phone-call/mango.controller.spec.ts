@@ -1,17 +1,3 @@
-/**
- * Spec для MangoCallWebhookController (Phase F.5).
- *
- * Mango Office присылает form-encoded body с полями:
- *   - json: raw JSON-строка payload'а;
- *   - sign: sha256(apiKey + json + apiSalt).
- *
- * Контроллер:
- *   - 403 invalid_mango_payload — нет json или sign.
- *   - 403 invalid_mango_signature — подпись не сошлась.
- *   - 403 invalid_mango_json — JSON.parse упал.
- *   - 200 ok (skip) для non-call events.
- *   - 200 ok+idempotent при повторном входе.
- */
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -34,13 +20,15 @@ const validBody = {
   sign: 'fake-sign-but-treated-as-valid-by-mock',
 };
 
-function build(opts: {
-  verifyOk?: boolean;
-  extensionFilter?: string[];
-  downloadThrows?: boolean;
-  recordingUrl?: string | null;
-  ingestIdempotent?: boolean;
-} = {}) {
+function build(
+  opts: {
+    verifyOk?: boolean;
+    extensionFilter?: string[];
+    downloadThrows?: boolean;
+    recordingUrl?: string | null;
+    ingestIdempotent?: boolean;
+  } = {},
+) {
   const mango = {
     loadActiveSource: vi.fn(async () => ({
       source: { id: 'src-1', tenantId: 't-1', dataClass: 'internal' as const },
@@ -76,23 +64,23 @@ describe('MangoCallWebhookController', () => {
 
   it('403 invalid_mango_payload если json отсутствует', async () => {
     const { ctrl } = build();
-    await expect(
-      ctrl.receive('src-1', { sign: 'x' } as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('src-1', { sign: 'x' } as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('403 invalid_mango_payload если sign отсутствует', async () => {
     const { ctrl } = build();
-    await expect(
-      ctrl.receive('src-1', { json: '{}' } as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('src-1', { json: '{}' } as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('403 invalid_mango_signature если verifySignature вернул false', async () => {
     const { ctrl } = build({ verifyOk: false });
-    await expect(
-      ctrl.receive('src-1', validBody as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('src-1', validBody as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('403 invalid_mango_json если JSON.parse упал', async () => {
@@ -135,9 +123,7 @@ describe('MangoCallWebhookController', () => {
       json: JSON.stringify({ entry: 'call' }),
       sign: 'ok',
     };
-    await expect(
-      ctrl.receive('src-1', body as never),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receive('src-1', body as never)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('downloadRecording fail НЕ ломает webhook (recordS3Key=null)', async () => {

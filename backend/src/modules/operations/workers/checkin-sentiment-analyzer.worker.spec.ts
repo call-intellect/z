@@ -2,15 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CheckinSentimentAnalyzerWorker } from './checkin-sentiment-analyzer.worker';
 
-/**
- * SBA β-8.1 — CheckinSentimentAnalyzerWorker unit-тесты.
- *
- *   - три кейса (зелёный / жёлтый / красный) — корректно парсится JSON и
- *     `DailyCheckIn` обновляется через Prisma.
- *   - случай отказа модели — `sentiment` остаётся null, метрика failed++,
- *     update НЕ вызывается.
- *   - утренний чек-ин — анализ пропускается (только evening анализируем).
- */
 describe('CheckinSentimentAnalyzerWorker', () => {
   const baseCfg = {
     betaOps: { sentimentEnabled: true },

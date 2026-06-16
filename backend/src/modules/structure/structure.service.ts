@@ -9,8 +9,6 @@ export interface StructureSummaryDto {
   documents: number;
   roleProfiles: {
     total: number;
-    // #85 — ключ статуса RoleProfile = 'forming' (как в БД и на фронте);
-    // раньше DTO отдавал 'building' → фронт читал undefined → «undefined формируется».
     forming: number;
     ready: number;
     stale: number;
@@ -18,44 +16,32 @@ export interface StructureSummaryDto {
   };
 }
 
-/**
- * Сервис агрегатных счётчиков структуры компании.
- *
- * Все запросы tenant-scoped, считают только активные (deletedAt IS NULL)
- * записи там, где soft-delete поддерживается.
- */
 @Injectable()
 export class StructureService {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async summary(tenantId: string): Promise<StructureSummaryDto> {
-    const [
-      departments,
-      roles,
-      persons,
-      documents,
-      roleProfilesByStatus,
-      roleProfilesTotal,
-    ] = await Promise.all([
-      this.prisma.department.count({
-        where: { tenantId, deletedAt: null },
-      }),
-      this.prisma.role.count({
-        where: { tenantId, deletedAt: null },
-      }),
-      this.prisma.person.count({
-        where: { tenantId, deletedAt: null },
-      }),
-      this.prisma.document.count({
-        where: { tenantId, deletedAt: null },
-      }),
-      this.prisma.roleProfile.groupBy({
-        by: ['status'],
-        where: { tenantId },
-        _count: { _all: true },
-      }),
-      this.prisma.roleProfile.count({ where: { tenantId } }),
-    ]);
+    const [departments, roles, persons, documents, roleProfilesByStatus, roleProfilesTotal] =
+      await Promise.all([
+        this.prisma.department.count({
+          where: { tenantId, deletedAt: null },
+        }),
+        this.prisma.role.count({
+          where: { tenantId, deletedAt: null },
+        }),
+        this.prisma.person.count({
+          where: { tenantId, deletedAt: null },
+        }),
+        this.prisma.document.count({
+          where: { tenantId, deletedAt: null },
+        }),
+        this.prisma.roleProfile.groupBy({
+          by: ['status'],
+          where: { tenantId },
+          _count: { _all: true },
+        }),
+        this.prisma.roleProfile.count({ where: { tenantId } }),
+      ]);
 
     const grouped: Record<string, number> = {
       forming: 0,

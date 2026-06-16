@@ -1,17 +1,3 @@
-/**
- * Snapshot-тест сборки промта `value-motivation-detect.prompt.ts`
- * (TZ clone-method Э1.3 — детектор ценностей/мотивации из trade-off).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил: «ценность видна ТОЛЬКО в
- *     выборе-в-ущерб», запрет научного жаргона (Schwartz/SDT), запрет
- *     негативных формулировок и правило пустого результата должны быть
- *     стабильны; плюс SYSTEM cache-friendly — правка ломает prompt-кэш);
- *   - сборку `VALUE_MOTIVATION_DETECT_USER_TEMPLATE` для типичного входа.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -33,9 +19,7 @@ describe('value-motivation-detect — snapshot сборки промта', () =>
 
   it('system запрещает научный жаргон (греп «Schwartz»)', () => {
     expect(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT).toContain('Schwartz');
-    expect(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT).toContain(
-      'ЗАПРЕЩЁН научный жаргон',
-    );
+    expect(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT).toContain('ЗАПРЕЩЁН научный жаргон');
   });
 
   it('system фиксирует правило пустого результата (нет trade-off → sourceBlockIds=[])', () => {
@@ -49,9 +33,7 @@ describe('value-motivation-detect — snapshot сборки промта', () =>
   });
 
   it('system разводит revealed vs stated (заявленное ≠ проявленное)', () => {
-    expect(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT).toContain(
-      'Заявленное ≠ проявленное',
-    );
+    expect(VALUE_MOTIVATION_DETECT_SYSTEM_PROMPT).toContain('Заявленное ≠ проявленное');
   });
 
   it('schema strict: layer ∈ {value, motivation}, все поля required, additionalProperties=false', () => {
@@ -75,9 +57,7 @@ describe('value-motivation-detect — snapshot сборки промта', () =>
       'firstObservedAt',
       'lastConfirmedAt',
     ]);
-    expect(VALUE_MOTIVATION_DETECT_SCHEMA_NAME).toBe(
-      'value_motivation_detect_v1',
-    );
+    expect(VALUE_MOTIVATION_DETECT_SCHEMA_NAME).toBe('value_motivation_detect_v1');
   });
 
   it('user prompt стабилен для 3 цитат (переменные в конце — cache-friendly)', () => {
@@ -99,8 +79,7 @@ describe('value-motivation-detect — snapshot сборки промта', () =>
         },
         {
           blockId: 'b3',
-          quote:
-            'Пусть фича выйдет позже, но с мониторингом — я не повезу клиентам сырое.',
+          quote: 'Пусть фича выйдет позже, но с мониторингом — я не повезу клиентам сырое.',
           observedAt: '2026-05-18T11:00:00.000Z',
         },
       ],

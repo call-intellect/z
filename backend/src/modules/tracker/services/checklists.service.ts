@@ -1,14 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import type {
-  IssueChecklist,
-  IssueChecklistItem,
-} from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import type { IssueChecklist, IssueChecklistItem } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -26,20 +17,6 @@ import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 import { TrackerEventsService } from './tracker-events.service';
 
-/**
- * ChecklistsService — чек-листы внутри задачи (2026-05-27).
- *
- * Контракт: plans/tz/2026-05-27-tracker-checklists.md.
- *
- * Ключевые правила:
- *   - Чек-листы и пункты привязаны к Issue; RBAC наследуется от Issue
- *     (нет отдельного ResourceType).
- *   - При любом CRUD по пунктам — `recountCounters(issueId)` пересчитывает
- *     `Issue.checklistTotalCount` / `checklistDoneCount` (денормализованные).
- *   - Активность пишется только на «все пункты выполнены» (verb=checklist_completed).
- *     Мелкие события «item done/undone» не пишем — забивают feed.
- *   - WS-события — через TrackerEventsService (fire-and-forget).
- */
 @Injectable()
 export class ChecklistsService {
   private readonly logger = new Logger(ChecklistsService.name);
@@ -55,13 +32,7 @@ export class ChecklistsService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ── Checklists CRUD ────────────────────────────────────────────────────
-
-  /** Все чек-листы задачи (без удалённых) с items inline. */
-  async listForIssue(
-    issueId: string,
-    tenantId: string,
-  ): Promise<ChecklistResponseDto[]> {
+  async listForIssue(issueId: string, tenantId: string): Promise<ChecklistResponseDto[]> {
     await this.issues.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issueChecklist.findMany({
       where: { issueId, tenantId, deletedAt: null },
@@ -73,14 +44,12 @@ export class ChecklistsService {
     return rows.map((r) => this.toChecklistResponse(r, r.items));
   }
 
-  /** Создать чек-лист на задаче. */
   async createChecklist(
     issueId: string,
     dto: CreateChecklistDto,
     tenantId: string,
   ): Promise<ChecklistResponseDto> {
     const issue = await this.issues.requireIssue(issueId, tenantId);
-    // sequence = max+1 (стабильный порядок).
     const max = await this.prisma.issueChecklist.aggregate({
       where: { issueId, tenantId, deletedAt: null },
       _max: { sequence: true },
@@ -103,7 +72,6 @@ export class ChecklistsService {
     return response;
   }
 
-  /** PATCH чек-листа (только title). */
   async updateChecklist(
     checklistId: string,
     dto: UpdateChecklistDto,
@@ -124,11 +92,7 @@ export class ChecklistsService {
     return response;
   }
 
-  /** Soft-delete чек-листа (deletedAt). Items уйдут вместе по cascade на read. */
-  async deleteChecklist(
-    checklistId: string,
-    tenantId: string,
-  ): Promise<{ ok: true }> {
+  async deleteChecklist(checklistId: string, tenantId: string): Promise<{ ok: true }> {
     const existing = await this.requireChecklist(checklistId, tenantId);
     await this.prisma.issueChecklist.update({
       where: { id: checklistId },
@@ -143,14 +107,12 @@ export class ChecklistsService {
     return { ok: true };
   }
 
-  /** Reorder чек-листов внутри одной задачи (массив id в нужном порядке). */
   async reorderChecklists(args: {
     issueId: string;
     checklistIds: string[];
     tenantId: string;
   }): Promise<ChecklistResponseDto[]> {
     await this.issues.requireIssue(args.issueId, args.tenantId);
-    // Проверяем, что все id из этой задачи.
     const existing = await this.prisma.issueChecklist.findMany({
       where: {
         id: { in: args.checklistIds },
@@ -169,8 +131,6 @@ export class ChecklistsService {
         },
       });
     }
-    // audit В11 (2026-05-29): callback-tx + SELECT FOR UPDATE против гонки
-    // двух reorder'ов на одних чек-листах. См. boards.service.reorder().
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`
         SELECT id FROM "IssueChecklist"
@@ -191,9 +151,6 @@ export class ChecklistsService {
     return this.listForIssue(args.issueId, args.tenantId);
   }
 
-  // ── Checklist items CRUD ───────────────────────────────────────────────
-
-  /** Создать один пункт. */
   async createItem(
     checklistId: string,
     dto: CreateChecklistItemDto,
@@ -230,7 +187,6 @@ export class ChecklistsService {
     return response;
   }
 
-  /** Bulk-create пунктов (до 50 строк). */
   async bulkCreateItems(
     checklistId: string,
     dto: BulkCreateChecklistItemsDto,
@@ -244,7 +200,6 @@ export class ChecklistsService {
       _max: { sequence: true },
     });
     const startSeq = (max._max.sequence ?? -1) + 1;
-    // createMany не возвращает строки в Postgres — используем последовательные create в транзакции.
     const created = await this.prisma.$transaction(
       dto.lines.map((text, idx) =>
         this.prisma.issueChecklistItem.create({
@@ -277,7 +232,6 @@ export class ChecklistsService {
     return responses;
   }
 
-  /** PATCH пункта (text/isDone/sequence). */
   async updateItem(
     itemId: string,
     dto: UpdateChecklistItemDto,
@@ -288,8 +242,7 @@ export class ChecklistsService {
     const checklist = await this.requireChecklist(existing.checklistId, tenantId);
     const issue = await this.issues.requireIssue(checklist.issueId, tenantId);
 
-    const willToggleDone =
-      dto.isDone !== undefined && dto.isDone !== existing.isDone;
+    const willToggleDone = dto.isDone !== undefined && dto.isDone !== existing.isDone;
     const willBecomeDone = willToggleDone && dto.isDone === true;
 
     const updated = await this.prisma.issueChecklistItem.update({
@@ -312,7 +265,6 @@ export class ChecklistsService {
       });
     }
 
-    // recount + activity на all-completed.
     if (willToggleDone) {
       await this.maybeMarkChecklistCompleted({
         tenantId,
@@ -332,11 +284,7 @@ export class ChecklistsService {
     return response;
   }
 
-  /** Удалить пункт. */
-  async deleteItem(
-    itemId: string,
-    tenantId: string,
-  ): Promise<{ ok: true }> {
+  async deleteItem(itemId: string, tenantId: string): Promise<{ ok: true }> {
     const existing = await this.requireItem(itemId, tenantId);
     const checklist = await this.requireChecklist(existing.checklistId, tenantId);
     await this.prisma.issueChecklistItem.delete({ where: { id: itemId } });
@@ -350,7 +298,6 @@ export class ChecklistsService {
     return { ok: true };
   }
 
-  /** Reorder пунктов внутри одного чек-листа. */
   async reorderItems(args: {
     checklistId: string;
     itemIds: string[];
@@ -374,8 +321,6 @@ export class ChecklistsService {
         },
       });
     }
-    // audit В11 (2026-05-29): callback-tx + SELECT FOR UPDATE против
-    // параллельных reorder'ов пунктов одного checklist'а.
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`
         SELECT id FROM "IssueChecklistItem"
@@ -396,7 +341,6 @@ export class ChecklistsService {
       where: { checklistId: args.checklistId, tenantId: args.tenantId },
       orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
     });
-    // emit updates (мелкие — один батч-евент, но проще много).
     for (const item of refreshed) {
       this.events.publishChecklistItemUpdated({
         tenantId: args.tenantId,
@@ -408,22 +352,8 @@ export class ChecklistsService {
     return refreshed.map((r) => this.toItemResponse(r));
   }
 
-  // ── Counters ───────────────────────────────────────────────────────────
-
-  /**
-   * Пересчёт денормализованных счётчиков `Issue.checklistTotalCount` /
-   * `checklistDoneCount` по фактическим item'ам активных (deletedAt=null)
-   * чек-листов. Эмитит `issue.checklist_progress_changed` для оптимистичного
-   * обновления карточек на канбане.
-   */
   async recountCounters(issueId: string, tenantId: string): Promise<void> {
-    // audit С16 (2026-05-29): без advisory lock возможна race —
-    // параллельные toggle разных item'ов одного issue читают одинаковый
-    // groupBy snapshot и пишут устаревшее значение в issue.*Count.
-    // Все шаги (groupBy + update) в одной tx + pg_advisory_xact_lock(hashtext(issueId))
-    // сериализует пересчёт для конкретного issue.
     const updated = await this.prisma.$transaction(async (tx) => {
-      // Lock на уровне tx: автоматически освобождается при commit/rollback.
       await tx.$executeRawUnsafe(
         `SELECT pg_advisory_xact_lock(hashtext($1))`,
         `checklist-recount:${issueId}`,
@@ -461,14 +391,6 @@ export class ChecklistsService {
     });
   }
 
-  // ── internal ──────────────────────────────────────────────────────────
-
-  /**
-   * Если после пересчёта все активные пункты задачи выполнены (total>0 и
-   * total==done) — пишем IssueActivity verb='checklist_completed'.
-   *
-   * NB: должен вызываться ДО recountCounters; читает свежие данные напрямую.
-   */
   private async maybeMarkChecklistCompleted(args: {
     tenantId: string;
     issueId: string;
@@ -489,9 +411,6 @@ export class ChecklistsService {
       if (row.isDone) done += row._count._all;
     }
     if (total === 0 || total !== done) return;
-    // Защита от дублей: если предыдущая запись с verb=checklist_completed
-    // была за последние ~5 секунд — пропускаем (анти-флэппинг при быстром
-    // toggle done/undone/done).
     const recent = await this.prisma.issueActivity.findFirst({
       where: {
         issueId: args.issueId,
@@ -511,10 +430,7 @@ export class ChecklistsService {
     });
   }
 
-  private async requireChecklist(
-    id: string,
-    tenantId: string,
-  ): Promise<IssueChecklist> {
+  private async requireChecklist(id: string, tenantId: string): Promise<IssueChecklist> {
     const c = await this.prisma.issueChecklist.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -530,13 +446,7 @@ export class ChecklistsService {
     return c;
   }
 
-  private async requireItem(
-    id: string,
-    tenantId: string,
-  ): Promise<IssueChecklistItem> {
-    // ТЗ audit-fixes Б11: soft-deleted checklist должен скрывать свои items.
-    // Без `checklist: { deletedAt: null }` PATCH/DELETE item у удалённого
-    // чек-листа отдаёт 200, мутируя «призрачные» данные.
+  private async requireItem(id: string, tenantId: string): Promise<IssueChecklistItem> {
     const i = await this.prisma.issueChecklistItem.findFirst({
       where: {
         id,
@@ -596,4 +506,3 @@ export class ChecklistsService {
     };
   }
 }
-

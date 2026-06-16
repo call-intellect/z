@@ -1,10 +1,5 @@
 import { z } from 'zod';
 
-/**
- * ТЗ «Команда + доступы» Фаза 2 — строка объединённого ростера команды:
- * все Person ⊕ участники (Membership) без связанной карточки. Источник
- * правды для раздела «Команда» → вкладка «Сотрудники».
- */
 export const TeamRosterItemSchema = z.object({
   personId: z.string().nullable(),
   userId: z.string().nullable(),

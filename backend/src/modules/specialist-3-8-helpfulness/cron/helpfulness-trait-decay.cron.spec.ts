@@ -2,12 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HelpfulnessTraitDecayCron } from './helpfulness-trait-decay.cron';
 
-/**
- * SBA Wave 2 — unit-тесты для HelpfulnessTraitDecayCron.
- *
- * Проверяем: cron вызывает updateMany с правильным WHERE-фильтром.
- * Полную интеграцию с БД оставляем для integration-теста.
- */
 describe('HelpfulnessTraitDecayCron', () => {
   const updateManyMock = vi.fn(async (_args: unknown) => ({ count: 0 }));
   const mockPrisma = {
@@ -36,9 +30,7 @@ describe('HelpfulnessTraitDecayCron', () => {
     const after = Date.now();
 
     expect(updateManyMock).toHaveBeenCalledOnce();
-    const args = updateManyMock.mock.calls[0]?.[0] as
-      | undefined
-      | UpdateManyArgs;
+    const args = updateManyMock.mock.calls[0]?.[0] as undefined | UpdateManyArgs;
     expect(args).toBeDefined();
     expect(args!.where.status).toBe('active');
     expect(args!.where.lastObservedAt.lt).toBeInstanceOf(Date);
@@ -53,9 +45,7 @@ describe('HelpfulnessTraitDecayCron', () => {
   it('обновляет status=decayed и проставляет decayedAt=now', async () => {
     const cron = new HelpfulnessTraitDecayCron(mockPrisma, mockMetrics);
     await cron.runOnce();
-    const args = updateManyMock.mock.calls[0]?.[0] as
-      | undefined
-      | UpdateManyArgs;
+    const args = updateManyMock.mock.calls[0]?.[0] as undefined | UpdateManyArgs;
     expect(args!.data.status).toBe('decayed');
     expect(args!.data.decayedAt).toBeInstanceOf(Date);
   });

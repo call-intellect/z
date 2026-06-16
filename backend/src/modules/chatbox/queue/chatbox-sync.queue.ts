@@ -1,19 +1,12 @@
 import type { JobsOptions } from 'bullmq';
 
-/** Имя очереди синка ChatBox. Не префиксуем `ai.` — отдельный домен. */
 export const CHATBOX_SYNC_QUEUE = 'chatbox.sync';
 
-export type ChatboxSyncScope =
-  | 'all'
-  | 'customers'
-  | 'managers'
-  | 'chats'
-  | 'incremental';
+export type ChatboxSyncScope = 'all' | 'customers' | 'managers' | 'chats' | 'incremental';
 
 export interface ChatboxSyncJobData {
   tenantId: string;
   scope: ChatboxSyncScope;
-  /** Бэкафилл: тянуть чаты не старше этой даты (ISO). Только для scope chats/all. */
   since?: string;
 }
 

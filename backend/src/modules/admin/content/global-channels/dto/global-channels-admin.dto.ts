@@ -1,13 +1,3 @@
-/**
- * Admin-redesign Фаза 5 — DTO для `GlobalChannelsAdminController`.
- *
- * Глобальные каналы — `Channel` с `tenantId IS NULL`. Один на kind
- * (partial unique index `channels_global_unique` в postgres-init.sql).
- *
- * `secrets` приходят отдельным полем — сервис их зашифрует через
- * `CryptoService` перед записью в `config`. Возвращаем `config` без секретов.
- */
-
 import { ChannelDirection, ChannelKind, ChannelStatus, DataClass } from '@prisma/client';
 import { z } from 'zod';
 
@@ -16,10 +6,6 @@ const ChannelDirectionSchema = z.nativeEnum(ChannelDirection);
 const ChannelStatusSchema = z.nativeEnum(ChannelStatus);
 const DataClassSchema = z.nativeEnum(DataClass);
 
-/**
- * Конфиг канала без секретов. Свободная JSON-структура, специфичная для
- * kind (например для telegram_bot: `{ botUsername: '@kora_bot' }`).
- */
 const PublicConfigSchema = z.record(
   z.string(),
   z.union([z.string(), z.number(), z.boolean(), z.null()]),

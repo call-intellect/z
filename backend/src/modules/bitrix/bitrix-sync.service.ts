@@ -13,7 +13,6 @@ import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
 import { PersonsService } from '../persons/services/persons.service';
 
-
 import type {
   BitrixCrmCompany,
   BitrixCrmContact,
@@ -29,31 +28,15 @@ import type {
   BitrixUserGetParams,
 } from './bitrix-api.types';
 import { BitrixIntegrationService } from './bitrix-integration.service';
-import type {
-  BitrixUserDto,
-  BitrixUsersResponseDto,
-} from './dto/bitrix-integration.dto';
+import type { BitrixUserDto, BitrixUsersResponseDto } from './dto/bitrix-integration.dto';
 import { BitrixAnalyzeQueueService } from './queue/bitrix-analyze.queue.service';
 
-/**
- * BitrixSyncService — синк данных портала Bitrix24 в зеркальные таблицы Коры
- * (ТЗ plans/tz/2026-06-17-bitrix24-source-sync.md, Ф2). По образцу
- * ChatboxSyncService: сотрудники (IM-участники) → диалоги/сообщения → CRM.
- *
- * Все вызовы REST идут через `BitrixIntegrationService.callApi(List)` —
- * там валидный токен + refresh-on-401. Все запросы/ответы Bitrix типизированы
- * (`bitrix-api.types.ts`, формы сверены с докой). Kill-switch `bitrix.enabled`.
- * Анализ диалогов и мост в knowledge-core — отдельная фаза (Ф4).
- */
-
-/** Bitrix отдаёт значения часто строкой (даже числа) — нормализуем в строку|null. */
 function str(v: unknown): string | null {
   if (v === null || v === undefined) return null;
   const s = String(v).trim();
   return s.length > 0 ? s : null;
 }
 
-/** Парс даты Bitrix (DATE_MODIFY и т.п.) в Date|null. */
 function parseDate(v: unknown): Date | null {
   const s = str(v);
   if (!s) return null;
@@ -61,12 +44,6 @@ function parseDate(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Ф4b — окно бэкафилла CRM (дни): на первом синке тянем изменения за столько
- * дней назад, и за столько же закрытых дней строим посуточные дайджесты. 7 дней
- * — компромисс контекст/стоимость (≤7 LLM-цепочек block-ingest при включении).
- * Менять тут одной строкой.
- */
 export const CRM_BACKFILL_DAYS = 7;
 
 @Injectable()
@@ -82,31 +59,19 @@ export class BitrixSyncService {
     @Inject(EntityResolutionService)
     private readonly entityResolution: EntityResolutionService,
     @Inject(PersonsService) private readonly persons: PersonsService,
-    // Ф4 — после синка ставим анализ закрытых сессий (если analysisEnabled).
-    // @Optional — unit-тесты синка без полного DI не падают.
     @Optional()
     @Inject(BitrixAnalyzeQueueService)
     private readonly analyzeQueue?: BitrixAnalyzeQueueService,
   ) {}
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private async isEnabled(): Promise<boolean> {
-    return (
-      (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true
-    );
+    return (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;
   }
 
   private async isNameFuzzyEnabled(): Promise<boolean> {
-    return (
-      (await this.adminSettings.get<boolean>(
-        'bitrix.match.name_fuzzy_enabled',
-        true,
-      )) ?? true
-    );
+    return (await this.adminSettings.get<boolean>('bitrix.match.name_fuzzy_enabled', true)) ?? true;
   }
 
-  /** Подключённая интеграция tenant'а или throw `bitrix_not_configured`. */
   private async requireRow(tenantId: string): Promise<BitrixIntegration> {
     const row = await this.prisma.bitrixIntegration.findFirst({
       where: { tenantId, status: 'connected' },
@@ -124,38 +89,24 @@ export class BitrixSyncService {
     return row;
   }
 
-  /** CRM-поля EMAIL/PHONE приходят массивом `[{VALUE,…}]` — берём первое значение. */
-  private firstMultiField(
-    v: BitrixCrmMultifield[] | string | null | undefined,
-  ): string | null {
+  private firstMultiField(v: BitrixCrmMultifield[] | string | null | undefined): string | null {
     if (Array.isArray(v)) {
       return v.length > 0 ? str(v[0]?.VALUE) : null;
     }
     return str(v);
   }
 
-  // ─────────────────────────── users (сотрудники) ───────────────────
-
-  /**
-   * Синк сотрудников портала (`user.get`, пагинация) → `BitrixUser`.
-   * Связку (`linkedPersonId`/`linkMode`) в upsert НЕ трогаем — каскад ниже.
-   */
   async syncUsers(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
     const params: BitrixUserGetParams = {};
-    const users = await this.integration.callApiList<BitrixUser>(
-      row,
-      'user.get',
-      params,
-    );
+    const users = await this.integration.callApiList<BitrixUser>(row, 'user.get', params);
 
     const now = new Date();
     for (const u of users) {
       const externalId = str(u.ID);
       if (!externalId) continue;
-      const name =
-        [str(u.NAME), str(u.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
+      const name = [str(u.NAME), str(u.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
       const data = {
         email: str(u.EMAIL),
         name,
@@ -176,10 +127,6 @@ export class BitrixSyncService {
     return users.length;
   }
 
-  /**
-   * Каскад автосвязки BitrixUser → Person: email (батч, case-insensitive) →
-   * имя-fuzzy (за флагом). Ручную связку (`manual`) не трогаем.
-   */
   private async autoLinkUsers(tenantId: string): Promise<void> {
     const candidates = await this.prisma.bitrixUser.findMany({
       where: { tenantId, linkMode: { not: 'manual' } },
@@ -188,9 +135,7 @@ export class BitrixSyncService {
     if (candidates.length === 0) return;
 
     const emails = [
-      ...new Set(
-        candidates.map((c) => c.email?.trim()).filter((e): e is string => !!e),
-      ),
+      ...new Set(candidates.map((c) => c.email?.trim()).filter((e): e is string => !!e)),
     ];
     const personByEmail = new Map<string, string>();
     if (emails.length > 0) {
@@ -225,10 +170,7 @@ export class BitrixSyncService {
       for (const row of unlinkedAfterEmail) {
         const name = row.name?.trim();
         if (!name) continue;
-        const personId = await this.entityResolution.resolvePersonByHint(
-          tenantId,
-          name,
-        );
+        const personId = await this.entityResolution.resolvePersonByHint(tenantId, name);
         if (!personId) continue;
         await this.prisma.bitrixUser.update({
           where: { id: row.id },
@@ -238,7 +180,6 @@ export class BitrixSyncService {
     }
   }
 
-  /** Несопоставленные сотрудники → создаём карточку Person и связываем. */
   private async autoCreateUsersUnlinked(tenantId: string): Promise<void> {
     const ownerUserId = await this.resolveOwnerUserId(tenantId);
     if (!ownerUserId) return;
@@ -288,13 +229,6 @@ export class BitrixSyncService {
     return owner?.userId ?? null;
   }
 
-  // ─────────────────────────── IM-диалоги + сообщения ───────────────
-
-  /**
-   * Синк недавних IM-диалогов (`im.recent.get`, `result` — массив) + их
-   * сообщений (`im.dialog.messages.get`). Для каждого диалога — upsert
-   * `BitrixDialog`, сообщения, единая сессия (seq=1) для анализа (Ф4).
-   */
   async syncDialogs(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
@@ -333,7 +267,6 @@ export class BitrixSyncService {
     return synced;
   }
 
-  /** Сообщения одного диалога + пересборка единой сессии (seq=1). */
   private async syncDialogMessages(
     tenantId: string,
     row: BitrixIntegration,
@@ -342,7 +275,7 @@ export class BitrixSyncService {
   ): Promise<void> {
     const params: BitrixImMessagesParams = {
       DIALOG_ID: dialogExternalId,
-      LIMIT: 100, // максимум по доке
+      LIMIT: 100,
     };
     const res = await this.integration.callApi<BitrixImMessagesResult>(
       row,
@@ -362,13 +295,11 @@ export class BitrixSyncService {
         tenantId,
         dialogId: dialogDbId,
         authorExternalId: str(m.author_id),
-        authorName: null as string | null, // имя — в result.users[], мапим через BitrixUser
+        authorName: null as string | null,
         text: str(m.text),
         externalCreatedAt: ts,
         raw: m as unknown as Prisma.InputJsonValue,
       };
-      // sessionId на create НЕ ставим (null) — привязка в rebuildDialogSessions;
-      // на update НЕ трогаем, чтобы старое сообщение сохранило свою сессию.
       await this.prisma.bitrixMessage.upsert({
         where: { tenantId_externalId: { tenantId, externalId } },
         create: { externalId, ...data },
@@ -383,18 +314,7 @@ export class BitrixSyncService {
     await this.rebuildDialogSessions(tenantId, dialogDbId);
   }
 
-  /**
-   * Нарезка НОВЫХ (`sessionId=null`) сообщений диалога на сессии-сутки — как в
-   * ChatBox: новые сообщения с прошлого синка группируем по календарному дню
-   * (UTC), на каждый день создаём НОВУЮ ЗАКРЫТУЮ сессию (`endedAt` выставлен) →
-   * сразу анализируема (Ф4). Сквозной (бесконечный) диалог не висит открытым:
-   * каждый синк закрывает прошедшие сутки. Уже привязанные сообщения и их
-   * сессии не трогаем. Идемпотентно (нет новых → no-op).
-   */
-  private async rebuildDialogSessions(
-    tenantId: string,
-    dialogId: string,
-  ): Promise<void> {
+  private async rebuildDialogSessions(tenantId: string, dialogId: string): Promise<void> {
     const fresh = await this.prisma.bitrixMessage.findMany({
       where: { tenantId, dialogId, sessionId: null },
       orderBy: { externalCreatedAt: 'asc' },
@@ -402,10 +322,7 @@ export class BitrixSyncService {
     });
     if (fresh.length === 0) return;
 
-    const groups = new Map<
-      string,
-      { startedAt: Date; endedAt: Date; ids: string[] }
-    >();
+    const groups = new Map<string, { startedAt: Date; endedAt: Date; ids: string[] }>();
     for (const m of fresh) {
       const dayKey = m.externalCreatedAt.toISOString().slice(0, 10);
       const g = groups.get(dayKey);
@@ -435,7 +352,7 @@ export class BitrixSyncService {
           dialogId,
           seq,
           startedAt: g.startedAt,
-          endedAt: g.endedAt, // закрыта сразу → анализируема
+          endedAt: g.endedAt,
           messageCount: g.ids.length,
           analysisStatus: 'pending',
         },
@@ -448,20 +365,9 @@ export class BitrixSyncService {
     }
   }
 
-  // ─────────────────────────── CRM (дельта по DATE_MODIFY, Ф4b) ──────
-
-  /**
-   * Дельта-фильтр CRM: берём изменённые с курсора `lastCrmSyncAt` (или за
-   * последние `CRM_BACKFILL_DAYS` дней на первом синке). Bitrix принимает
-   * `>=DATE_MODIFY` в ISO. Возвращает фильтр + базовый select (с DATE_MODIFY).
-   */
-  private crmListParams(
-    row: BitrixIntegration,
-    select: string[],
-  ): BitrixCrmListParams {
+  private crmListParams(row: BitrixIntegration, select: string[]): BitrixCrmListParams {
     const since =
-      row.lastCrmSyncAt ??
-      new Date(Date.now() - CRM_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
+      row.lastCrmSyncAt ?? new Date(Date.now() - CRM_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
     return {
       select: [...select, 'DATE_MODIFY'],
       filter: { '>=DATE_MODIFY': since.toISOString() },
@@ -480,8 +386,7 @@ export class BitrixSyncService {
     for (const c of items) {
       const externalId = str(c.ID);
       if (!externalId) continue;
-      const name =
-        [str(c.NAME), str(c.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
+      const name = [str(c.NAME), str(c.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
       const data = {
         name,
         email: this.firstMultiField(c.EMAIL),
@@ -566,8 +471,7 @@ export class BitrixSyncService {
     for (const l of items) {
       const externalId = str(l.ID);
       if (!externalId) continue;
-      const name =
-        [str(l.NAME), str(l.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
+      const name = [str(l.NAME), str(l.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
       const data = {
         title: str(l.TITLE),
         name,
@@ -585,10 +489,7 @@ export class BitrixSyncService {
     return items.length;
   }
 
-  /** Синк всей CRM-ветки одним проходом + сдвиг дельта-курсора (Ф4b). */
   private async syncCrm(tenantId: string): Promise<Record<string, number>> {
-    // Курсор сдвигаем на момент СТАРТА (минус минута форы) — изменения во время
-    // прохода попадут в следующую дельту (upsert идемпотентен, дубль не страшен).
     const cursor = new Date(Date.now() - 60_000);
     const contacts = await this.syncContacts(tenantId);
     const companies = await this.syncCompanies(tenantId);
@@ -601,8 +502,6 @@ export class BitrixSyncService {
     return { contacts, companies, deals, leads };
   }
 
-  // ─────────────────────────── оркестрация ──────────────────────────
-
   async fullSync(tenantId: string): Promise<Record<string, number>> {
     const users = await this.syncUsers(tenantId);
     const dialogs = await this.syncDialogs(tenantId);
@@ -612,15 +511,7 @@ export class BitrixSyncService {
     return { users, dialogs, ...crm };
   }
 
-  /**
-   * Ф4 — после синка ставит анализ закрытых сессий-суток (`pending` +
-   * `endedAt != null`). Гейт по per-integration `analysisEnabled`: пока выключено
-   * — диалоги зеркалятся, но LLM не дёргаем. Дедуп — на уровне jobId BullMQ
-   * (`bitrix-analyze-${sessionId}`). Best-effort: ошибки enqueue не валят синк.
-   */
-  private async enqueuePendingAnalysisIfEnabled(
-    tenantId: string,
-  ): Promise<void> {
+  private async enqueuePendingAnalysisIfEnabled(tenantId: string): Promise<void> {
     if (!this.analyzeQueue) return;
     const integ = await this.prisma.bitrixIntegration.findFirst({
       where: { tenantId, status: 'connected' },
@@ -676,10 +567,7 @@ export class BitrixSyncService {
     }
   }
 
-  private async markSynced(
-    tenantId: string,
-    kind: 'full' | 'incremental',
-  ): Promise<void> {
+  private async markSynced(tenantId: string, kind: 'full' | 'incremental'): Promise<void> {
     const now = new Date();
     await this.prisma.bitrixIntegration.updateMany({
       where: { tenantId, status: 'connected' },
@@ -690,12 +578,6 @@ export class BitrixSyncService {
     });
   }
 
-  // ─────────────────────────── сопоставление сотрудников ────────────
-
-  /**
-   * Список Bitrix-сотрудников + кандидаты Person для ручного сопоставления
-   * (визард шаг 2 + страница маппинга). Активные сверху, по имени.
-   */
   async listUsers(tenantId: string): Promise<BitrixUsersResponseDto> {
     const users = await this.prisma.bitrixUser.findMany({
       where: { tenantId },
@@ -712,11 +594,7 @@ export class BitrixSyncService {
     });
 
     const linkedIds = [
-      ...new Set(
-        users
-          .map((u) => u.linkedPersonId)
-          .filter((id): id is string => id !== null),
-      ),
+      ...new Set(users.map((u) => u.linkedPersonId).filter((id): id is string => id !== null)),
     ];
     const nameById = new Map<string, string | null>();
     if (linkedIds.length > 0) {
@@ -737,21 +615,12 @@ export class BitrixSyncService {
     return {
       users: users.map((u) => ({
         ...u,
-        linkedPersonName: u.linkedPersonId
-          ? (nameById.get(u.linkedPersonId) ?? null)
-          : null,
+        linkedPersonName: u.linkedPersonId ? (nameById.get(u.linkedPersonId) ?? null) : null,
       })),
       personCandidates,
     };
   }
 
-  /**
-   * Ручное сопоставление сотрудника (визард/страница маппинга):
-   *   - `link`   — привязать к существующему Person (валидируем принадлежность org);
-   *   - `unlink` — снять связку (`linkMode='manual'` → автосвязка не вернёт);
-   *   - `create` — создать карточку Person по имени/email и привязать.
-   * Всегда ставит `linkMode='manual'` (ручное решение приоритетнее автокаскада).
-   */
   async linkUser(
     tenantId: string,
     externalId: string,
@@ -810,7 +679,6 @@ export class BitrixSyncService {
       });
       linkedPersonId = created.id;
     }
-    // mode==='unlink' → linkedPersonId остаётся null.
 
     const updated = await this.prisma.bitrixUser.update({
       where: { id: user.id },

@@ -1,22 +1,21 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Flag, Pencil } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { Flag, Pencil } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Textarea } from '@/ui/shadcn/textarea';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { ConfirmDialog } from "@/ui/components/shared/ConfirmDialog";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   correctConfirmLabel,
   correctSuccessMessage,
   pickChangedFields,
-} from './card-correction.helpers';
+} from "./card-correction.helpers";
 
-/** Одно редактируемое поле карточки в форме «Исправить». */
 export type CorrectionField = {
   key: string;
   label: string;
@@ -25,35 +24,17 @@ export type CorrectionField = {
 };
 
 export type CardCorrectionActionsProps = {
-  /** Поля для формы «Исправить», предзаполнены текущими значениями. */
   fields: CorrectionField[];
-  /** owner/admin → подпись «Сохранить как проверенную версию»; иначе «Предложить правку». */
   canApplyDirectly: boolean;
-  /** Текущая метка доверия — для подсказки в диалоге (опц.). */
-  trustTier?: 'auto' | 'provisional' | 'human';
-  /** Применить правку. Возвращает applied (true=применено сразу, false=ушло предложением). */
+  trustTier?: "auto" | "provisional" | "human";
   onCorrect: (
     values: Record<string, string>,
     reason: string | undefined,
   ) => Promise<{ applied: boolean }>;
-  /** Оспорить («это неверно»). */
   onDispute: (reason: string | undefined) => Promise<void>;
-  /** Перезагрузка карточки/списка после успеха. */
   onDone?: () => void;
 };
 
-/**
- * CardCorrectionActions — две кнопки + два диалога (Фаза E2, лестница доверия).
- *
- * Общий для карточек регуляций и решений компонент:
- *   - «Исправить» — форма с предзаполненными полями; owner/admin применяют
- *     сразу (карточка становится человеко-проверенной), остальные шлют правку
- *     куратору.
- *   - «Это неверно» — оспаривание с опц. причиной (всегда уходит куратору).
- *
- * Сетевые ошибки ловятся как ApiError → toast.error + throw, чтобы
- * ConfirmDialog не закрывался (см. RegulationsListClient.handleSupersede).
- */
 export function CardCorrectionActions({
   fields,
   canApplyDirectly,
@@ -65,30 +46,28 @@ export function CardCorrectionActions({
   const [correctOpen, setCorrectOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
 
-  // Значения формы «Исправить» — инициализируются из fields при открытии.
   const [values, setValues] = useState<Record<string, string>>({});
-  const [correctReason, setCorrectReason] = useState('');
-  const [disputeReason, setDisputeReason] = useState('');
+  const [correctReason, setCorrectReason] = useState("");
+  const [disputeReason, setDisputeReason] = useState("");
 
   function openCorrect() {
     const initial: Record<string, string> = {};
     for (const f of fields) initial[f.key] = f.value;
     setValues(initial);
-    setCorrectReason('');
+    setCorrectReason("");
     setCorrectOpen(true);
   }
 
   function openDispute() {
-    setDisputeReason('');
+    setDisputeReason("");
     setDisputeOpen(true);
   }
 
   async function handleCorrect() {
     const changed = pickChangedFields(fields, values);
     if (Object.keys(changed).length === 0) {
-      // Ничего не изменено — оставляем диалог открытым.
-      toast.error('Вы ничего не изменили');
-      throw new Error('no-changes');
+      toast.error("Вы ничего не изменили");
+      throw new Error("no-changes");
     }
     const reason = correctReason.trim() ? correctReason.trim() : undefined;
     try {
@@ -96,10 +75,8 @@ export function CardCorrectionActions({
       toast.success(correctSuccessMessage(applied));
       onDone?.();
     } catch (e) {
-      if (e instanceof Error && e.message === 'no-changes') throw e;
-      toast.error(
-        humanizeApiError(e, 'Не удалось сохранить правку'),
-      );
+      if (e instanceof Error && e.message === "no-changes") throw e;
+      toast.error(humanizeApiError(e, "Не удалось сохранить правку"));
       throw e;
     }
   }
@@ -108,19 +85,17 @@ export function CardCorrectionActions({
     const reason = disputeReason.trim() ? disputeReason.trim() : undefined;
     try {
       await onDispute(reason);
-      toast.success('Спасибо! Карточку отправили куратору на разбор');
+      toast.success("Спасибо! Карточку отправили куратору на разбор");
       onDone?.();
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось отправить карточку'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось отправить карточку"));
       throw e;
     }
   }
 
   const trustHint =
-    trustTier && trustTier !== 'human'
-      ? 'Сейчас эта карточка ещё не проверена человеком.'
+    trustTier && trustTier !== "human"
+      ? "Сейчас эта карточка ещё не проверена человеком."
       : null;
 
   return (
@@ -169,17 +144,23 @@ export function CardCorrectionActions({
                 {f.multiline ? (
                   <Textarea
                     id={`correct-${f.key}`}
-                    value={values[f.key] ?? ''}
+                    value={values[f.key] ?? ""}
                     onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [f.key]: e.target.value }))
+                      setValues((prev) => ({
+                        ...prev,
+                        [f.key]: e.target.value,
+                      }))
                     }
                   />
                 ) : (
                   <Input
                     id={`correct-${f.key}`}
-                    value={values[f.key] ?? ''}
+                    value={values[f.key] ?? ""}
                     onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [f.key]: e.target.value }))
+                      setValues((prev) => ({
+                        ...prev,
+                        [f.key]: e.target.value,
+                      }))
                     }
                   />
                 )}

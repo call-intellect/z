@@ -33,9 +33,6 @@ import { CookieAuthGuard } from './guards/cookie-auth.guard';
 import { AdminLoginService } from './services/admin-login.service';
 import { JwtService } from './services/jwt.service';
 
-/**
- * Имя cookie session — синхронизировано с `CookieAuthGuard`.
- */
 const SESSION_COOKIE = 'z_session';
 
 const ExchangeQuerySchema = z.object({
@@ -54,13 +51,6 @@ const SwitchOrgBodySchema = z.object({
 });
 type SwitchOrgBody = z.infer<typeof SwitchOrgBodySchema>;
 
-/**
- * Auth-контроллер.
- *
- *   GET  /api/v1/auth/exchange — обмен deep-link JWT на session cookie.
- *   GET  /api/v1/auth/me       — кто я по cookie (или `null`).
- *   POST /api/v1/auth/logout   — погасить cookie.
- */
 @ApiExcludeController()
 @Controller('api/v1/auth')
 export class AuthController {
@@ -85,7 +75,6 @@ export class AuthController {
       if (err instanceof jwt.TokenExpiredError) {
         throw new DeepLinkExpiredError();
       }
-      // Любые другие ошибки верификации — трактуем как невалидный токен.
       throw new NotAuthorizedError('deep_link_invalid');
     }
 
@@ -116,12 +105,8 @@ export class AuthController {
   @Get('me')
   @UseGuards(CookieAuthGuard)
   @OptionalAuth()
-  async me(
-    @CurrentUser() user: CurrentUserPayload | null | undefined,
-  ): Promise<{
-    user:
-      | { id: string; email: string; name: string; role: 'user' | 'admin' }
-      | null;
+  async me(@CurrentUser() user: CurrentUserPayload | null | undefined): Promise<{
+    user: { id: string; email: string; name: string; role: 'user' | 'admin' } | null;
   }> {
     if (!user) return { user: null };
     const fresh = await this.users.findById(user.id);
@@ -164,16 +149,6 @@ export class AuthController {
     return { ok: true };
   }
 
-  /**
-   * `POST /api/v1/auth/switch-org` — переключение текущей Org.
-   *
-   * Проверяет, что у пользователя есть активная Membership в указанной Org.
-   * STUB Фазы 0a: ответ — успешный, но реальное обновление session-стейта
-   * откладывается. На фронте Org выбирается заголовком `X-Org-Id` на каждом
-   * запросе (см. `TenantGuard.resolveTenantId`), поэтому клиент уже сейчас
-   * может переключаться, просто меняя значение заголовка. Полное обновление
-   * сессии (Redis-state / re-issue JWT) — Фаза 0a.3 шаг 2.
-   */
   @Post('switch-org')
   @UseGuards(CookieAuthGuard)
   @HttpCode(HttpStatus.OK)
@@ -198,7 +173,6 @@ export class AuthController {
       },
     });
     if (!membership) {
-      // super_admin может переключаться без Membership.
       const u = await this.users.findById(user.id);
       if (!u) {
         throw new NotFoundException({

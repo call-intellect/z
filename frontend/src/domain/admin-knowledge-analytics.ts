@@ -1,15 +1,4 @@
-/**
- * Доменная модель для админ-аналитики Knowledge-Core (Фаза 2 редизайна).
- *
- * Контракт: backend `GET /api/v1/admin/analytics/knowledge/{overview,by-org,growth}`.
- * Бэкенд готовится параллельно — здесь только TypeScript-типы.
- *
- * Слой: ApiDto (raw, числа/строки) → DomainModel (Date / нормализованные поля).
- */
-
-import type { AdminPeriod } from './admin-usage';
-
-// ─── Overview ───────────────────────────────────────────────────────────────
+import type { AdminPeriod } from "./admin-usage";
 
 export type AdminKnowledgeOverviewApi = {
   period: { from: string; to: string; kind: AdminPeriod };
@@ -41,8 +30,8 @@ export type AdminKnowledgeOverviewApi = {
 
 export type AdminKnowledgeOverviewDomain = {
   period: { from: Date; to: Date; kind: AdminPeriod };
-  totals: AdminKnowledgeOverviewApi['totals'];
-  growth7d: AdminKnowledgeOverviewApi['growth7d'];
+  totals: AdminKnowledgeOverviewApi["totals"];
+  growth7d: AdminKnowledgeOverviewApi["growth7d"];
 };
 
 export function adminKnowledgeOverviewFromApi(
@@ -58,8 +47,6 @@ export function adminKnowledgeOverviewFromApi(
     growth7d: api.growth7d,
   };
 }
-
-// ─── By Org ─────────────────────────────────────────────────────────────────
 
 export type AdminKnowledgeByOrgRowApi = {
   tenantId: string;
@@ -78,7 +65,7 @@ export type AdminKnowledgeByOrgApi = {
 
 export type AdminKnowledgeByOrgRowDomain = Omit<
   AdminKnowledgeByOrgRowApi,
-  'lastIngestAt'
+  "lastIngestAt"
 > & {
   lastIngestAt: Date | null;
 };
@@ -98,10 +85,7 @@ export function adminKnowledgeByOrgFromApi(
   };
 }
 
-// ─── Growth (timeseries) ────────────────────────────────────────────────────
-
 export type AdminKnowledgeGrowthPointApi = {
-  /** ISO-дата (YYYY-MM-DD) или начало интервала. */
   date: string;
   ideaBlocks: number;
   entities: number;
@@ -116,7 +100,7 @@ export type AdminKnowledgeGrowthApi = {
 
 export type AdminKnowledgeGrowthPointDomain = Omit<
   AdminKnowledgeGrowthPointApi,
-  'date'
+  "date"
 > & {
   date: Date;
 };

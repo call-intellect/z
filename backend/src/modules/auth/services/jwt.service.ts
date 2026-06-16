@@ -3,17 +3,6 @@ import jwt, { type SignOptions, type VerifyOptions } from 'jsonwebtoken';
 
 import { TypedConfigService } from '../../../common/config/index';
 
-/**
- * JWT-сервис для двух потоков:
- *
- *  - **session JWT** (`signSession` / `verifySession`) — кладётся в cookie `z_session`.
- *  - **deep-link JWT** (`signDeepLink` / `verifyDeepLink`) — однократный токен,
- *    приходит в URL и обменивается на cookie на первом GET'е страницы встречи.
- *
- * Алгоритм фиксирован — `HS256`. `issuer` и `audience` = `'z'` для обоих потоков.
- * Секреты и TTL — из ENV через `TypedConfigService`.
- */
-
 const ISSUER = 'z';
 const AUDIENCE = 'z';
 const ALGORITHM: jwt.Algorithm = 'HS256';
@@ -22,12 +11,6 @@ export interface SessionPayload {
   sub: string;
   email: string;
   role: 'user' | 'admin';
-  /**
-   * JWT ID. Опциональное поле — заполняется только для standalone-сессий
-   * (создаются в `AccountsService.login`), чтобы привязать JWT к записи
-   * `UserSession` и иметь возможность принудительного отзыва.
-   * Для legacy Crossmark-сессий и admin-логина — отсутствует.
-   */
   jti?: string;
 }
 
@@ -41,15 +24,10 @@ export interface GuestSessionPayload {
   meetingId: string;
 }
 
-/**
- * State для OAuth-коннекта Bitrix24 (способ A). Подписывается `sessionSecret`,
- * живёт коротко (BITRIX_STATE_TTL_SECONDS). Поле `purpose` отделяет его от
- * прочих JWT, `sub` = tenantId инициатора, `domain` = домен портала.
- */
 export interface BitrixStatePayload {
   purpose: 'bitrix_oauth';
-  sub: string; // tenantId
-  domain: string; // портал, напр. acme.bitrix24.ru
+  sub: string;
+  domain: string;
 }
 
 export interface VerifiedBitrixStatePayload extends BitrixStatePayload {
@@ -69,10 +47,8 @@ export interface VerifiedGuestSessionPayload extends GuestSessionPayload {
   exp: number;
 }
 
-/** TTL гостевой cookie — 24 часа. Это «прошёл капчу/ввёл имя один раз — не повторяем». */
 const GUEST_SESSION_TTL_SECONDS = 24 * 60 * 60;
 
-/** TTL Bitrix OAuth-state — 15 минут (как у Tochka). */
 const BITRIX_STATE_TTL_SECONDS = 15 * 60;
 
 @Injectable()
@@ -87,7 +63,6 @@ export class JwtService {
       expiresIn: this.cfg.auth.sessionTtlSeconds,
       ...(payload.jti ? { jwtid: payload.jti } : {}),
     };
-    // jti кладём через `jwtid` опцию — иначе jsonwebtoken игнорирует поле в payload.
     const { jti: _jti, ...rest } = payload;
     return jwt.sign(rest, this.cfg.auth.sessionSecret, options);
   }
@@ -122,11 +97,6 @@ export class JwtService {
     return this.assertDeepLinkPayload(decoded);
   }
 
-  /**
-   * Гостевая cookie `guest_session_<meetingId>`. Подписывается тем же
-   * `sessionSecret` (отдельный issuer/audience не нужен — поле `meetingId`
-   * однозначно отделяет её от обычной session JWT).
-   */
   signGuestSession(payload: GuestSessionPayload): string {
     const options: SignOptions = {
       algorithm: ALGORITHM,
@@ -147,12 +117,10 @@ export class JwtService {
     return this.assertGuestSessionPayload(decoded);
   }
 
-  /** TTL guest-сессии в секундах — для подсчёта `maxAge` cookie в контроллере. */
   get guestSessionTtlSeconds(): number {
     return GUEST_SESSION_TTL_SECONDS;
   }
 
-  /** Подписать state для OAuth-коннекта Bitrix24 (короткоживущий). */
   signBitrixState(payload: Omit<BitrixStatePayload, 'purpose'>): string {
     const options: SignOptions = {
       algorithm: ALGORITHM,
@@ -164,7 +132,6 @@ export class JwtService {
     return jwt.sign(full, this.cfg.auth.sessionSecret, options);
   }
 
-  /** Проверить state из Bitrix-callback. Бросает на истёкшем/чужом токене. */
   verifyBitrixState(token: string): VerifiedBitrixStatePayload {
     const verifyOptions: VerifyOptions = {
       algorithms: [ALGORITHM],

@@ -1,27 +1,19 @@
-'use client';
-
-/**
- * Человекочитаемый рендер payload-объекта вместо сырого `JSON.stringify`.
- * Закрывает класс raw-json в курации (proposedPayload / triageReason) и
- * в карте знаний (атрибуты ребра графа):
- * верхнеуровневые осмысленные поля показываем списком «поле: значение»,
- * вложенные структуры прячем под «Технические детали» (details/summary).
- */
+"use client";
 
 const FIELD_LABEL_RU: Record<string, string> = {
-  name: 'Название',
-  title: 'Заголовок',
-  text: 'Текст',
-  content: 'Содержание',
-  description: 'Описание',
-  summary: 'Краткое описание',
-  reason: 'Причина',
-  confidence: 'Уверенность',
-  status: 'Статус',
-  type: 'Тип',
-  category: 'Категория',
-  value: 'Значение',
-  note: 'Заметка',
+  name: "Название",
+  title: "Заголовок",
+  text: "Текст",
+  content: "Содержание",
+  description: "Описание",
+  summary: "Краткое описание",
+  reason: "Причина",
+  confidence: "Уверенность",
+  status: "Статус",
+  type: "Тип",
+  category: "Категория",
+  value: "Значение",
+  note: "Заметка",
 };
 
 function labelRu(key: string): string {
@@ -29,22 +21,24 @@ function labelRu(key: string): string {
 }
 
 function renderValue(v: unknown): string {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'number') return String(v);
-  if (typeof v === 'boolean') return v ? 'да' : 'нет';
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "да" : "нет";
   return String(v);
 }
 
 export function ReadablePayload({ value }: { value: unknown }) {
-  if (value === null || value === undefined || typeof value !== 'object') {
+  if (value === null || value === undefined || typeof value !== "object") {
     return <p className="text-sm text-fg-secondary">{renderValue(value)}</p>;
   }
 
   const entries = Object.entries(value as Record<string, unknown>);
   const simple = entries.filter(
-    ([, v]) => v !== null && v !== '' && typeof v !== 'object',
+    ([, v]) => v !== null && v !== "" && typeof v !== "object",
   );
-  const complex = entries.filter(([, v]) => v !== null && typeof v === 'object');
+  const complex = entries.filter(
+    ([, v]) => v !== null && typeof v === "object",
+  );
 
   if (simple.length === 0 && complex.length === 0) {
     return <p className="text-sm text-fg-tertiary">—</p>;

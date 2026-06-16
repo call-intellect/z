@@ -1,38 +1,24 @@
-'use client';
+"use client";
 
-/**
- * Фаза 3 редизайна — `/admin/ai/catalog?tab=smoke`.
- *
- * Кнопка «Запустить» на каждом провайдере + «Запустить все» сверху +
- * таблица истории последних запусков (POST/GET через
- * `adminSmokeTestApi`).
- *
- * Список провайдеров — `ADMIN_SMOKE_TEST_PROVIDERS` (8 штук, см. ТЗ).
- *
- * Так как бэкенд `/admin/ai/smoke-test/*` ещё может быть не завершён,
- * страница безопасно обрабатывает ошибки: статус-плашка показывает
- * «нет данных», history-секция отображает пустое состояние.
- */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2, PlayCircle, Zap } from "lucide-react";
+import { toast } from "sonner";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Loader2, PlayCircle, Zap } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   ADMIN_SMOKE_TEST_PROVIDERS,
   type AdminSmokeTestProvider,
   adminSmokeTestApi,
-} from '@/api/admin-smoke-test.api';
+} from "@/api/admin-smoke-test.api";
 import {
   mapSmokeTestRun,
   providerLabel,
   type SmokeTestRunUi,
-} from '@/domain/admin-smoke-test';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-smoke-test";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
-import { AdminEmpty } from '../../AdminStateViews';
+import { AdminEmpty } from "../../AdminStateViews";
 
 type LastByProvider = Record<string, SmokeTestRunUi | null>;
 
@@ -49,12 +35,12 @@ export function SmokeTestClient() {
       const res = await adminSmokeTestApi.status();
       const map: LastByProvider = {};
       for (const item of res.providers) {
-        map[item.provider] = item.lastRun ? mapSmokeTestRun(item.lastRun) : null;
+        map[item.provider] = item.lastRun
+          ? mapSmokeTestRun(item.lastRun)
+          : null;
       }
       setLastByProvider(map);
-    } catch {
-      // Эндпоинт может ещё не быть на бэке — оставляем пустое состояние.
-    }
+    } catch {}
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -66,7 +52,7 @@ export function SmokeTestClient() {
     } catch (e) {
       setHistory([]);
       setHistoryError(
-        e instanceof ApiError ? e.message : 'Не удалось загрузить историю',
+        e instanceof ApiError ? e.message : "Не удалось загрузить историю",
       );
     } finally {
       setHistoryLoading(false);
@@ -91,7 +77,7 @@ export function SmokeTestClient() {
         await loadHistory();
       } catch (e) {
         toast.error(
-          e instanceof ApiError ? e.message : 'Не удалось запустить smoke-тест',
+          e instanceof ApiError ? e.message : "Не удалось запустить smoke-тест",
         );
       } finally {
         setBusy((b) => ({ ...b, [provider]: false }));
@@ -113,7 +99,7 @@ export function SmokeTestClient() {
       await loadHistory();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось запустить smoke-тесты',
+        e instanceof ApiError ? e.message : "Не удалось запустить smoke-тесты",
       );
     } finally {
       setAllBusy(false);
@@ -131,11 +117,15 @@ export function SmokeTestClient() {
               Smoke-тесты провайдеров
             </h2>
             <p className="text-xs text-fg-secondary">
-              Минимальный запрос к каждому провайдеру для проверки доступности
-              и латентности.
+              Минимальный запрос к каждому провайдеру для проверки доступности и
+              латентности.
             </p>
           </div>
-          <Button size="sm" onClick={() => void handleRunAll()} disabled={allBusy}>
+          <Button
+            size="sm"
+            onClick={() => void handleRunAll()}
+            disabled={allBusy}
+          >
             {allBusy ? (
               <Loader2 size={14} className="mr-1 animate-spin" />
             ) : (
@@ -151,7 +141,9 @@ export function SmokeTestClient() {
               <tr>
                 <th className="px-3 py-2 text-left font-medium">Провайдер</th>
                 <th className="px-3 py-2 text-left font-medium">Статус</th>
-                <th className="px-3 py-2 text-right font-medium">Латентность</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  Латентность
+                </th>
                 <th className="px-3 py-2 text-right font-medium">Время</th>
                 <th className="px-3 py-2 text-right font-medium">Действие</th>
               </tr>
@@ -174,22 +166,24 @@ export function SmokeTestClient() {
                         <Badge
                           variant="outline"
                           className={
-                            last.statusTone === 'success'
-                              ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
-                              : 'border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg'
+                            last.statusTone === "success"
+                              ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+                              : "border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg"
                           }
                         >
                           {last.statusLabel}
                         </Badge>
                       ) : (
-                        <span className="text-xs text-fg-tertiary">— не запускали —</span>
+                        <span className="text-xs text-fg-tertiary">
+                          — не запускали —
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right text-xs text-fg-secondary">
-                      {last ? last.latencyLabel : '—'}
+                      {last ? last.latencyLabel : "—"}
                     </td>
                     <td className="px-3 py-2 text-right text-xs text-fg-secondary">
-                      {last ? last.ranAtLabel : '—'}
+                      {last ? last.ranAtLabel : "—"}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <Button
@@ -246,7 +240,9 @@ export function SmokeTestClient() {
                   <th className="px-3 py-2 text-left font-medium">Время</th>
                   <th className="px-3 py-2 text-left font-medium">Провайдер</th>
                   <th className="px-3 py-2 text-left font-medium">Статус</th>
-                  <th className="px-3 py-2 text-right font-medium">Латентность</th>
+                  <th className="px-3 py-2 text-right font-medium">
+                    Латентность
+                  </th>
                   <th className="px-3 py-2 text-left font-medium">Сообщение</th>
                 </tr>
               </thead>
@@ -261,9 +257,9 @@ export function SmokeTestClient() {
                       <Badge
                         variant="outline"
                         className={
-                          row.statusTone === 'success'
-                            ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
-                            : 'border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg'
+                          row.statusTone === "success"
+                            ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+                            : "border-chip-danger-bg bg-chip-danger-bg text-chip-danger-fg"
                         }
                       >
                         {row.statusLabel}
@@ -273,7 +269,7 @@ export function SmokeTestClient() {
                       {row.latencyLabel}
                     </td>
                     <td className="px-3 py-2 text-xs text-fg-secondary">
-                      {row.message ?? '—'}
+                      {row.message ?? "—"}
                     </td>
                   </tr>
                 ))}

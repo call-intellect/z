@@ -1,14 +1,7 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.2 — `PromptEditor` — редактор разделов одного шаблона.
- *
- * Drag-n-drop пока через кнопки «Вверх / Вниз» (@dnd-kit в проекте нет).
- * Лимит 30 секций, лимит instruction 4000 символов, сумма maxTokens ≤ 16000.
- */
-
-import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Loader2, Plus, Trash2 } from "lucide-react";
 
 import {
   adminPromptTemplatesApi,
@@ -16,31 +9,31 @@ import {
   type OutputTypeApi,
   type PromptSectionApi,
   type PromptVersionWithSectionsApi,
-} from '@/api/admin-prompt-templates.api';
-import { outputTypeLabel } from '@/domain/admin-prompt-template';
-import { ApiError } from '@/api/api-error';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-prompt-templates.api";
+import { outputTypeLabel } from "@/domain/admin-prompt-template";
+import { ApiError } from "@/api/api-error";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 const SECTIONS_MAX = 30;
 const MAX_TOKENS_SUM = 16000;
 
-type SectionDraft = Omit<PromptSectionApi, 'id' | 'versionId'>;
+type SectionDraft = Omit<PromptSectionApi, "id" | "versionId">;
 
 function emptySection(order: number): SectionDraft {
   return {
     order,
-    key: '',
-    title: '',
-    instruction: '',
-    outputType: 'text' as OutputTypeApi,
+    key: "",
+    title: "",
+    instruction: "",
+    outputType: "text" as OutputTypeApi,
     required: true,
     maxTokens: null,
   };
@@ -57,17 +50,16 @@ export function PromptEditor({
   onSaved: () => void;
   onOpenPreview: () => void;
 }) {
-
-  const [systemPrompt, setSystemPrompt] = useState('');
-  const [toolName, setToolName] = useState<string>('');
-  const [notes, setNotes] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [toolName, setToolName] = useState<string>("");
+  const [notes, setNotes] = useState("");
   const [sections, setSections] = useState<SectionDraft[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (activeVersion) {
       setSystemPrompt(activeVersion.systemPrompt);
-      setToolName(activeVersion.toolName ?? '');
+      setToolName(activeVersion.toolName ?? "");
       setSections(
         activeVersion.sections.map((s) => ({
           order: s.order,
@@ -99,9 +91,7 @@ export function PromptEditor({
 
   const removeSection = (idx: number) => {
     setSections((prev) =>
-      prev
-        .filter((_, i) => i !== idx)
-        .map((s, i) => ({ ...s, order: i + 1 })),
+      prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, order: i + 1 })),
     );
   };
 
@@ -126,12 +116,14 @@ export function PromptEditor({
 
   const saveAs = async (activate: boolean) => {
     if (systemPrompt.trim().length < 10) {
-      toast.error('Системный промпт — минимум 10 символов');
+      toast.error("Системный промпт — минимум 10 символов");
       return;
     }
     for (const s of sections) {
       if (!s.key || !s.title || s.instruction.length < 10) {
-        toast.error('У каждого раздела должны быть ключ, название и инструкция от 10 символов');
+        toast.error(
+          "У каждого раздела должны быть ключ, название и инструкция от 10 символов",
+        );
         return;
       }
     }
@@ -151,11 +143,13 @@ export function PromptEditor({
         notes: notes.trim() || null,
         activate,
       });
-      toast.success(activate ? 'Версия сохранена и активирована' : 'Версия сохранена');
-      setNotes('');
+      toast.success(
+        activate ? "Версия сохранена и активирована" : "Версия сохранена",
+      );
+      setNotes("");
       onSaved();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось сохранить';
+      const msg = e instanceof ApiError ? e.message : "Не удалось сохранить";
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -165,7 +159,9 @@ export function PromptEditor({
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
-        <h2 className="mb-3 text-sm font-semibold text-fg-primary">Системный промпт</h2>
+        <h2 className="mb-3 text-sm font-semibold text-fg-primary">
+          Системный промпт
+        </h2>
         <textarea
           value={systemPrompt}
           onChange={(e) => setSystemPrompt(e.target.value)}
@@ -195,7 +191,7 @@ export function PromptEditor({
             Разделы отчёта ({sections.length} / {SECTIONS_MAX})
           </h2>
           <div className="flex items-center gap-3 text-xs">
-            <span className={overTokens ? 'text-danger' : 'text-fg-secondary'}>
+            <span className={overTokens ? "text-danger" : "text-fg-secondary"}>
               Сумма лимита токенов: {sumMaxTokens} / {MAX_TOKENS_SUM}
             </span>
             <Button variant="secondary" size="sm" onClick={addSection}>
@@ -206,13 +202,17 @@ export function PromptEditor({
 
         {sections.length === 0 && (
           <div className="rounded border border-dashed border-border-subtle p-6 text-center text-sm text-fg-secondary">
-            Пока нет разделов. Добавьте хотя бы один — он будет одним из полей итогового отчёта.
+            Пока нет разделов. Добавьте хотя бы один — он будет одним из полей
+            итогового отчёта.
           </div>
         )}
 
         <div className="space-y-3">
           {sections.map((s, idx) => (
-            <div key={idx} className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div
+              key={idx}
+              className="rounded-md border border-border-subtle bg-bg-subtle p-3"
+            >
               <div className="mb-2 flex items-center gap-2">
                 <span className="rounded bg-bg-overlay px-2 py-0.5 text-xs font-mono text-fg-secondary">
                   №{idx + 1}
@@ -220,7 +220,9 @@ export function PromptEditor({
                 <input
                   type="text"
                   value={s.title}
-                  onChange={(e) => updateSection(idx, { title: e.target.value })}
+                  onChange={(e) =>
+                    updateSection(idx, { title: e.target.value })
+                  }
                   placeholder="Название раздела"
                   className="h-8 flex-1 rounded border border-border-subtle bg-bg-card px-2 text-sm"
                   maxLength={160}
@@ -265,7 +267,9 @@ export function PromptEditor({
               </div>
               <textarea
                 value={s.instruction}
-                onChange={(e) => updateSection(idx, { instruction: e.target.value })}
+                onChange={(e) =>
+                  updateSection(idx, { instruction: e.target.value })
+                }
                 rows={3}
                 maxLength={4000}
                 placeholder="Инструкция для ИИ: что именно писать в этом разделе."
@@ -276,7 +280,9 @@ export function PromptEditor({
                   <span>Тип вывода:</span>
                   <Select
                     value={s.outputType}
-                    onValueChange={(v) => updateSection(idx, { outputType: v as OutputTypeApi })}
+                    onValueChange={(v) =>
+                      updateSection(idx, { outputType: v as OutputTypeApi })
+                    }
                   >
                     <SelectTrigger className="h-7 w-40 bg-bg-card text-xs">
                       <SelectValue />
@@ -294,7 +300,9 @@ export function PromptEditor({
                   <input
                     type="checkbox"
                     checked={s.required}
-                    onChange={(e) => updateSection(idx, { required: e.target.checked })}
+                    onChange={(e) =>
+                      updateSection(idx, { required: e.target.checked })
+                    }
                   />
                   <span>Обязательный</span>
                 </label>
@@ -304,16 +312,20 @@ export function PromptEditor({
                     type="number"
                     min={0}
                     max={8000}
-                    value={s.maxTokens ?? ''}
+                    value={s.maxTokens ?? ""}
                     onChange={(e) =>
                       updateSection(idx, {
-                        maxTokens: e.target.value ? Number(e.target.value) : null,
+                        maxTokens: e.target.value
+                          ? Number(e.target.value)
+                          : null,
                       })
                     }
                     className="h-7 w-20 rounded border border-border-subtle bg-bg-card px-2 text-xs"
                   />
                 </label>
-                <span className="text-fg-secondary">{s.instruction.length} / 4000</span>
+                <span className="text-fg-secondary">
+                  {s.instruction.length} / 4000
+                </span>
               </div>
             </div>
           ))}
@@ -321,7 +333,9 @@ export function PromptEditor({
       </section>
 
       <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
-        <h2 className="mb-2 text-sm font-semibold text-fg-primary">Заметка к версии</h2>
+        <h2 className="mb-2 text-sm font-semibold text-fg-primary">
+          Заметка к версии
+        </h2>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -333,11 +347,21 @@ export function PromptEditor({
       </section>
 
       <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-card p-3">
-        <Button variant="ghost" size="sm" onClick={onOpenPreview} disabled={saving}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onOpenPreview}
+          disabled={saving}
+        >
           Предпросмотр на демо-встрече
         </Button>
         <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => saveAs(false)} disabled={saving}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => saveAs(false)}
+            disabled={saving}
+          >
             {saving && <Loader2 size={14} className="mr-1 animate-spin" />}
             Сохранить как новую версию
           </Button>

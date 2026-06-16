@@ -1,23 +1,3 @@
-/**
- * Patch (SBA α-6) — backfill CardVersion + Card.currentVersionId.
- *
- * После SBA α-6 каждая Card с непустым `summaryCache` должна иметь связанную
- * `CardVersion(version=1, payload=<snapshot>, changeReason='initial-backfill')`
- * и `Card.currentVersionId` указывающий на неё. Это нужно для:
- *   - истории изменений из admin UI (страница версий карточки);
- *   - корректной работы CurationService.triage() (auto-canonical создаёт
- *     `CardVersion(version=next)`, и без v1 нумерация будет 2/3/4 без 1);
- *   - chat-v2 citations (отображение источника текущего rollup'а).
- *
- * Запуск:
- *   bun run scripts/patch-backfill-card-versions.ts           — реальный backfill
- *   bun run scripts/patch-backfill-card-versions.ts --dry-run — только подсчёт
- *
- * Идемпотентно (фильтр `currentVersionId IS NULL AND summaryCache IS NOT NULL`).
- * Батч 500 карточек за раз. tenantId=NULL карточки (legacy без orga) пропускаем —
- * для них CardVersion нельзя создать (CardVersion.tenantId обязателен).
- */
-
 import { type Prisma, PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -45,9 +25,6 @@ async function main(): Promise<void> {
     `=== patch-backfill-card-versions START (dryRun=${DRY_RUN}, batch=${BATCH_SIZE}) ===`,
   );
 
-  // Курсор по id: в dry-run записи не получают currentVersionId и не
-  // покидают фильтр, поэтому без курсора цикл крутился бы вечно на одном
-  // и том же первом батче. Курсор продвигает выборку в обоих режимах.
   let cursor: string | null = null;
 
   try {
@@ -83,9 +60,6 @@ async function main(): Promise<void> {
           continue;
         }
 
-        // Защита от гонки: ещё раз проверим внутри транзакции, что версии нет.
-        // unique-индекс (resourceType, resourceId, version) защищает от
-        // двойной вставки v1, но проверка экономит retry-цикл.
         if (DRY_RUN) {
           counters.backfilled++;
           continue;
@@ -100,7 +74,6 @@ async function main(): Promise<void> {
             });
 
             if (existing) {
-              // Версия уже есть — просто проставим currentVersionId.
               counters.skippedExistingVersion++;
               await tx.card.update({
                 where: { id: card.id },
@@ -120,7 +93,7 @@ async function main(): Promise<void> {
 
             const v1 = await tx.cardVersion.create({
               data: {
-                tenantId: card.tenantId!, // checked above
+                tenantId: card.tenantId!,
                 resourceType: 'card',
                 resourceId: card.id,
                 version: 1,
@@ -138,8 +111,6 @@ async function main(): Promise<void> {
               where: { id: card.id },
               data: {
                 currentVersionId: v1.id,
-                // lastConfirmedAt — не трогаем: backfill ≠ свежее
-                // подтверждение, оставим прежнее (либо null).
               },
             });
 

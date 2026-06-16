@@ -5,8 +5,6 @@ import type { TypedConfigService } from '../../common/config/index';
 import { PasswordService } from './password.service';
 
 function makeCfg(): TypedConfigService {
-  // argon2: memoryCost min=1024, timeCost min=2. Минимально допустимые
-  // значения = быстро в тестах.
   return {
     argon: { memoryKb: 1024, iterations: 2, parallelism: 1 },
   } as unknown as TypedConfigService;

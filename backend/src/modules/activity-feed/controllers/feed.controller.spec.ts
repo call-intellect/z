@@ -1,27 +1,10 @@
-/**
- * Controller-level integration тест для FeedController (Wave 2 Поток D).
- *
- * Не поднимает full NestJS-app (без БД), но создаёт контроллер с
- * мокнутыми зависимостями и проверяет, что:
- *   - GET /api/v1/feed — делегирует svc.getFeed с tenantId, userId и
- *     загруженным userTeamIds / userRoleIds через loadUserScope.
- *   - POST /api/v1/feed/:id/react — делегирует svc.react с userId и body.
- *   - POST /api/v1/feed/:id/dismiss — делегирует svc.dismiss.
- *   - Tenant_required — BadRequest, если X-Org-Id не определён.
- *   - Forbidden — если RbacService.canRead вернул false.
- */
-
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
-import type {
-  FeedItemDto,
-  ListFeedQuery,
-  ReactBody,
-} from '../dto/activity-feed.dto';
+import type { FeedItemDto, ListFeedQuery, ReactBody } from '../dto/activity-feed.dto';
 import type { ActivityFeedService } from '../services/activity-feed.service';
 import type { CoraFeedService } from '../services/cora-feed.service';
 
@@ -75,9 +58,7 @@ function build(opts: { canRead?: boolean } = {}) {
       limit: 50,
       totalPages: 1,
     })),
-    react: vi.fn(async () =>
-      makeDto({ reactions: { thanks: ['u-1'], votes: [] } }),
-    ),
+    react: vi.fn(async () => makeDto({ reactions: { thanks: ['u-1'], votes: [] } })),
     markSeen: vi.fn(async () => makeDto({ status: 'seen' })),
     markResponded: vi.fn(async () => makeDto({ status: 'responded' })),
     dismiss: vi.fn(async () => makeDto({ status: 'dismissed' })),
@@ -181,15 +162,15 @@ describe('FeedController', () => {
 
   it('Tenant_required — если CurrentOrg возвращает undefined', async () => {
     const { ctrl } = build();
-    await expect(
-      ctrl.listAll(baseQuery, sampleUser, undefined),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(ctrl.listAll(baseQuery, sampleUser, undefined)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 
   it('Forbidden — если RbacService.canRead вернул false', async () => {
     const { ctrl } = build({ canRead: false });
-    await expect(
-      ctrl.listAll(baseQuery, sampleUser, 't-1'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.listAll(baseQuery, sampleUser, 't-1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 });

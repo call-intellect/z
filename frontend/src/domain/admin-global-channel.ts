@@ -1,40 +1,29 @@
-/**
- * Доменная модель глобального Channel для Z-Admin (Фаза 5 редизайна).
- *
- * Глобальный канал = `Channel.tenantId IS NULL` (см. partial-unique индекс
- * `channels_global_unique`). На один `kind` допустима ровно одна глобальная
- * строка. Используется, например, для глобального Telegram-бота @kora_bot.
- *
- * Контракт сервера: `backend/src/modules/admin/content/global-channels/...`
- * (префикс `/api/v1/admin/content/global-channels`).
- */
-
 export type GlobalChannelKind =
-  | 'telegram_bot'
-  | 'max_bot'
-  | 'email_smtp'
-  | 'email_imap'
-  | 'in_app'
+  | "telegram_bot"
+  | "max_bot"
+  | "email_smtp"
+  | "email_imap"
+  | "in_app"
   | (string & {});
 
 export const GLOBAL_CHANNEL_KIND_LABELS: Record<string, string> = {
-  telegram_bot: 'Telegram бот',
-  max_bot: 'Max бот',
-  email_smtp: 'Email SMTP',
-  email_imap: 'Email IMAP',
-  in_app: 'В приложении',
+  telegram_bot: "Telegram бот",
+  max_bot: "Max бот",
+  email_smtp: "Email SMTP",
+  email_imap: "Email IMAP",
+  in_app: "В приложении",
 };
 
 export type GlobalChannelStatus =
-  | 'active'
-  | 'broken'
-  | 'disabled'
+  | "active"
+  | "broken"
+  | "disabled"
   | (string & {});
 
 export const GLOBAL_CHANNEL_STATUS_LABELS: Record<string, string> = {
-  active: 'Активен',
-  broken: 'Сломан',
-  disabled: 'Выключен',
+  active: "Активен",
+  broken: "Сломан",
+  disabled: "Выключен",
 };
 
 export type GlobalChannelItemApi = {
@@ -42,10 +31,7 @@ export type GlobalChannelItemApi = {
   kind: string;
   status: string;
   direction: string;
-  /** Произвольный JSON. Секреты в `config.secrets`, мы их редактируем
-   *  отдельным password-полем и не отображаем в превью. */
   config: unknown;
-  /** Сколько ChannelBinding ссылаются на этот канал. */
   subscribersCount: number;
   brokenReason: string | null;
   createdAt: string;
@@ -60,7 +46,7 @@ export type GlobalChannelConfigPreview = Record<string, unknown>;
 
 export type GlobalChannelItemDomain = Omit<
   GlobalChannelItemApi,
-  'config' | 'createdAt' | 'updatedAt'
+  "config" | "createdAt" | "updatedAt"
 > & {
   config: GlobalChannelConfigPreview;
   createdAt: Date;
@@ -72,13 +58,11 @@ export type GlobalChannelListDomain = {
 };
 
 function asConfigPreview(v: unknown): GlobalChannelConfigPreview {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
   const out: GlobalChannelConfigPreview = {};
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    // Маскируем потенциально чувствительные ключи на этапе мэппинга,
-    // чтобы UI не показывал «звёздочки» в превью даже случайно.
     if (/(token|secret|password|key)/i.test(k)) {
-      out[k] = '••••••';
+      out[k] = "••••••";
     } else {
       out[k] = val;
     }
@@ -112,9 +96,7 @@ export type CreateGlobalChannelRequest = {
   kind: string;
   direction?: string;
   status?: string;
-  /** Произвольный конфиг (botToken, etc). */
   config?: Record<string, unknown>;
-  /** Отдельное поле для секрета (botToken / SMTP password / …). */
   secret?: string;
 };
 
@@ -122,6 +104,5 @@ export type UpdateGlobalChannelRequest = {
   status?: string;
   direction?: string;
   config?: Record<string, unknown>;
-  /** При непустом — обновляет секрет. Пустая строка / отсутствие → не трогать. */
   secret?: string;
 };

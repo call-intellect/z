@@ -1,36 +1,3 @@
-/**
- * SBA β-8.1 — Seed маршрутов LLM для добивки панели операционного директора.
- *
- *   - checkin-sentiment — определение настроения чек-ина (green/yellow/red)
- *     по тексту вечернего ответа сотрудника. Дешёвый частый вызов; fallback
- *     event-driven worker (CheckinSentimentAnalyzerWorker) — мгновенная
- *     реакция на одиночный чек-ин.
- *   - checkin-sentiment-batch — batch-вариант (10 чек-инов = 1 вызов через
- *     tool `submit_batch_sentiments`). ТЗ 2026-05-25 LLM-architecture §6
- *     (эксперимент 4: точность 100% vs 96%, в 2× дешевле, на 20% быстрее).
- *     Primary `deepseek-v4-pro` (capable + thinking; max_tokens=8000 в коде).
- *     Используется основным механизмом — `CheckinSentimentBatchCron`.
- *   - operations-weekly-digest — связный текст недельного дайджеста
- *     (markdown, 5-7 коротких разделов). Один вызов в неделю на Org —
- *     не критично к скорости. ТЗ 2026-05-25 §6 — primary `deepseek-v4-pro`
- *     (цена $0.0016 на сводку).
- *
- * ТЗ 2026-05-25 LLM-architecture §6 — переключение моделей:
- *   - checkin-sentiment        primary deepseek-chat → deepseek-v4-pro
- *   - checkin-sentiment-batch  новый maршрут        primary deepseek-v4-pro
- *   - operations-weekly-digest primary deepseek-chat → deepseek-v4-pro
- *   - secondary openai-via-proxy gpt-4o-mini → gpt-5.4-mini (актуальная).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-beta-8-1.ts
- *   bun run scripts/seed-llm-task-routes-beta-8-1.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → НЕ перезаписываем.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -121,17 +88,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -156,18 +119,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-beta-8-1 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-beta-8-1 START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

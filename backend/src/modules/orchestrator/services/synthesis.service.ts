@@ -7,21 +7,11 @@ import type {
   OrchestratorSynthesis,
 } from '../orchestrator.types';
 
-/**
- * SBA δ-1 — SynthesisService.
- *
- * LLM-step (taskType='orchestrator-synthesize'): объединить результаты
- * subagent'ов в один связанный ответ.
- *
- * Гарантия: если LLM упадёт — возвращаем concat fallback (бэкап).
- */
 @Injectable()
 export class SynthesisService {
   private readonly logger = new Logger(SynthesisService.name);
 
-  constructor(
-    @Inject(LlmRouterService) private readonly llm: LlmRouterService,
-  ) {}
+  constructor(@Inject(LlmRouterService) private readonly llm: LlmRouterService) {}
 
   async synthesize(args: {
     task: string;
@@ -39,7 +29,6 @@ export class SynthesisService {
         allCitations.push(c);
       }
     }
-    // dedup citations по type+id.
     const dedupedCitations = Array.from(
       new Map(allCitations.map((c) => [`${c.type}:${c.id}`, c])).values(),
     );
@@ -61,17 +50,16 @@ export class SynthesisService {
       `Исходный запрос: ${args.task}`,
       '',
       '=== РЕЗУЛЬТАТЫ SUBAGENT-ОВ ===',
-      ...args.results.map(
-        (r, i) =>
-          [
-            `--- Subagent ${i + 1} (${r.step.agentType}; ${r.step.description}) ---`,
-            r.result.text,
-            r.result.confidence !== undefined
-              ? `(self-confidence: ${r.result.confidence.toFixed(2)})`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('\n'),
+      ...args.results.map((r, i) =>
+        [
+          `--- Subagent ${i + 1} (${r.step.agentType}; ${r.step.description}) ---`,
+          r.result.text,
+          r.result.confidence !== undefined
+            ? `(self-confidence: ${r.result.confidence.toFixed(2)})`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
       ),
       '',
       'Финальный ответ:',
@@ -114,9 +102,7 @@ export class SynthesisService {
       result: OrchestratorSubagentResult;
     }>;
   }): string {
-    const blocks = args.results.map(
-      (r) => `## ${r.step.description}\n${r.result.text}`,
-    );
+    const blocks = args.results.map((r) => `## ${r.step.description}\n${r.result.text}`);
     return [
       `# Результат: ${args.task}`,
       '',

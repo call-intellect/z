@@ -1,10 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   type Insight,
@@ -38,32 +32,15 @@ import type {
   TopInsightsResponse,
 } from '../dto/insights.dto';
 
-/**
- * InsightsService (SBA β-4) — реестр повторяющихся сигналов компании.
- *
- *   - list / getById — master-detail.
- *   - getChart — данные для виджета stacked-bar (kind × неделя).
- *   - getTop — топ-N для Director Dashboard widget.
- *   - updateStatus / updateMitigation / updateSeverity — действия пользователя.
- *
- * Все user-facing строки — на русском. RBAC и tenant filter — в контроллере.
- */
 @Injectable()
 export class InsightsService {
   private readonly logger = new Logger(InsightsService.name);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    /**
-     * SBA α-5 dialog-layer — эмит `card-version.created` для cache invalidation.
-     */
     @Optional()
     @Inject(EventEmitter2)
     private readonly events: EventEmitter2 | null = null,
-    /**
-     * Ф6 knowledge-access (R12) — гейт проекций по группам спрашивающего.
-     * @Optional — spec-и конструируют сервис позиционно; null → гейт off.
-     */
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -75,14 +52,6 @@ export class InsightsService {
     private readonly metrics: BusinessMetricsService | null = null,
   ) {}
 
-  /**
-   * Ф6 knowledge-access — гейт проекций по доступу спрашивающего. Группы
-   * проекции выводятся ON-READ из sourceBlockIds (Ф3 материализовал
-   * IdeaBlockAccess блоков). off → выдача байт-в-байт; shadow → только метрика;
-   * enforce → отфильтровываем недоступные. ВАЖНО про пагинацию: при enforce
-   * страница может стать короче, total остаётся посчитанным до фильтра —
-   * лёгкий over-count; приемлемый трейд-офф on-read подхода.
-   */
   private async gateProjections<T extends { id: string; sourceBlockIds: string[] }>(
     items: T[],
     args: { tenantId: string; userId?: string; surface: string },
@@ -96,11 +65,10 @@ export class InsightsService {
       userId: args.userId,
     });
     if (accessCtx.isBypass) return items;
-    const { accessibleIds, denied } =
-      await this.accessResolver.partitionProjectionsByAccess(
-        accessCtx,
-        items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
-      );
+    const { accessibleIds, denied } = await this.accessResolver.partitionProjectionsByAccess(
+      accessCtx,
+      items.map((i) => ({ id: i.id, sourceBlockIds: i.sourceBlockIds ?? [] })),
+    );
     if (enf === 'enforce') {
       this.metrics?.incAccessDenied({ surface: args.surface }, denied);
       return items.filter((i) => accessibleIds.has(i.id));
@@ -108,8 +76,6 @@ export class InsightsService {
     this.metrics?.incAccessShadowDiff({ surface: args.surface }, denied);
     return items;
   }
-
-  // ───────────────────────────── list ─────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -121,23 +87,13 @@ export class InsightsService {
     const [items, total] = await Promise.all([
       this.prisma.insight.findMany({
         where,
-        orderBy: [
-          // dynamicLabel='spike' first — это самый важный фильтр для триажа.
-          // Сортировка по enum в Postgres — лексикографическая. dynamicLabel
-          // только используется как тай-брейкер, основная сортировка — по
-          // severity desc и frequencyScore desc.
-          { severity: 'desc' },
-          { frequencyScore: 'desc' },
-          { lastObservedAt: 'desc' },
-        ],
+        orderBy: [{ severity: 'desc' }, { frequencyScore: 'desc' }, { lastObservedAt: 'desc' }],
         skip: (q.page - 1) * q.limit,
         take: q.limit,
       }),
       this.prisma.insight.count({ where }),
     ]);
-    // Принудительно поднимаем 'spike' в начало (не покрывается enum-сортировкой).
     const sorted = this.sortSpikesFirst(items);
-    // Ф6 — гейт доступа по проекционным группам (наследование из sourceBlockIds).
     const visible = await this.gateProjections(sorted, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -152,20 +108,13 @@ export class InsightsService {
     };
   }
 
-  // ───────────────────────────── get by id ─────────────────────────────
-
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<InsightDetailDto> {
+  async getById(args: { tenantId: string; id: string }): Promise<InsightDetailDto> {
     const insight = await this.prisma.insight.findFirst({
       where: { id: args.id, tenantId: args.tenantId },
     });
     if (!insight) this.notFound(args.id);
     return this.toDetail(insight);
   }
-
-  // ─────────────────────── chart ───────────────────────
 
   async getChart(args: {
     tenantId: string;
@@ -175,7 +124,6 @@ export class InsightsService {
     const now = new Date();
     const start = new Date(now.getTime() - days * 24 * 3600_000);
 
-    // Группируем по неделям. labels — начало каждой недели (понедельник).
     const insights = await this.prisma.insight.findMany({
       where: {
         tenantId: args.tenantId,
@@ -186,7 +134,6 @@ export class InsightsService {
       take: 10_000,
     });
 
-    // Бакеты.
     const buckets: Date[] = [];
     const cursor = this.startOfWeek(start);
     while (cursor <= now) {
@@ -194,13 +141,7 @@ export class InsightsService {
       cursor.setUTCDate(cursor.getUTCDate() + 7);
     }
 
-    const KINDS: InsightKindDto[] = [
-      'problem',
-      'risk',
-      'blocker',
-      'inefficiency',
-    ];
-    // Инициализация счётчиков kind → buckets.length.
+    const KINDS: InsightKindDto[] = ['problem', 'risk', 'blocker', 'inefficiency'];
     const counts = new Map<string, number[]>();
     for (const k of KINDS) counts.set(k, new Array(buckets.length).fill(0));
 
@@ -220,14 +161,11 @@ export class InsightsService {
     };
   }
 
-  // ─────────────────────── top (for dashboard widget) ───────────────────────
-
   async getTop(args: {
     tenantId: string;
     userId?: string;
     query: TopInsightsQuery;
   }): Promise<TopInsightsResponse> {
-    // SBA β-4 wave 2 — фильтр виджета «Топ-5 проблем» по причине.
     const where: Prisma.InsightWhereInput = {
       tenantId: args.tenantId,
       status: { in: ['active', 'mitigating'] },
@@ -235,18 +173,12 @@ export class InsightsService {
     if (args.query.cause_category) {
       where.causeCategory = args.query.cause_category;
     }
-    // Приоритет: spike → severity desc → frequencyScore desc.
     const items = await this.prisma.insight.findMany({
       where,
-      orderBy: [
-        { severity: 'desc' },
-        { frequencyScore: 'desc' },
-        { lastObservedAt: 'desc' },
-      ],
+      orderBy: [{ severity: 'desc' }, { frequencyScore: 'desc' }, { lastObservedAt: 'desc' }],
       take: Math.max(args.query.limit * 3, args.query.limit),
     });
     const sorted = this.sortSpikesFirst(items);
-    // Ф6 — гейт доступа ДО slice (иначе недоступные съедали бы слоты топ-N).
     const visible = await this.gateProjections(sorted, {
       tenantId: args.tenantId,
       userId: args.userId,
@@ -256,8 +188,6 @@ export class InsightsService {
       items: visible.slice(0, args.query.limit).map((d) => this.toListItem(d)),
     };
   }
-
-  // ─────────────────────── update actions ───────────────────────
 
   async updateStatus(args: {
     tenantId: string;
@@ -283,9 +213,7 @@ export class InsightsService {
         tenantId: args.tenantId,
         insight: updated,
         reviewerUserId: args.reviewerUserId,
-        changeReason:
-          args.body.reason ??
-          `status: ${existing.status} → ${args.body.newStatus}`,
+        changeReason: args.body.reason ?? `status: ${existing.status} → ${args.body.newStatus}`,
       });
     } catch (err) {
       this.logger.warn(
@@ -314,11 +242,7 @@ export class InsightsService {
       where: { id: existing.id },
       data: {
         mitigationPlan: args.body.mitigationPlan,
-        // если был active — автоматически переводим в mitigating.
-        status:
-          existing.status === 'active'
-            ? ('mitigating' as InsightStatus)
-            : existing.status,
+        status: existing.status === 'active' ? ('mitigating' as InsightStatus) : existing.status,
       },
     });
 
@@ -353,7 +277,6 @@ export class InsightsService {
     if (!existing) this.notFound(args.id);
 
     if (existing.severity === args.body.newSeverity) {
-      // ничего не меняется — короткий путь.
       return { ok: true, severity: existing.severity as InsightSeverityDto };
     }
 
@@ -371,8 +294,7 @@ export class InsightsService {
         insight: updated,
         reviewerUserId: args.reviewerUserId,
         changeReason:
-          args.body.reason ??
-          `severity: ${existing.severity} → ${args.body.newSeverity}`,
+          args.body.reason ?? `severity: ${existing.severity} → ${args.body.newSeverity}`,
       });
     } catch (err) {
       this.logger.warn(
@@ -386,12 +308,7 @@ export class InsightsService {
     return { ok: true, severity: updated.severity as InsightSeverityDto };
   }
 
-  // ─────────────────────── helpers ───────────────────────
-
-  private buildWhere(
-    tenantId: string,
-    q: ListInsightsQuery,
-  ): Prisma.InsightWhereInput {
+  private buildWhere(tenantId: string, q: ListInsightsQuery): Prisma.InsightWhereInput {
     const where: Prisma.InsightWhereInput = { tenantId };
     if (q.kind) where.kind = q.kind as InsightKind;
     if (q.severity) where.severity = q.severity as InsightSeverity;
@@ -400,7 +317,6 @@ export class InsightsService {
     if (q.affected_entity_id) {
       where.affectedEntityIds = { has: q.affected_entity_id };
     }
-    // SBA β-4 wave 2 — фильтр по категории первопричины.
     if (q.cause_category) {
       where.causeCategory = q.cause_category;
     }
@@ -446,18 +362,11 @@ export class InsightsService {
     };
   }
 
-  /**
-   * Поднимаем dynamicLabel='spike' в начало списка. Это самый важный сигнал
-   * для триажа: чтобы пользователь сразу видел его, даже если severity
-   * относительно низкий.
-   */
   private sortSpikesFirst(items: Insight[]): Insight[] {
     return [...items].sort((a, b) => {
       const aSpike = a.dynamicLabel === 'spike' ? 1 : 0;
       const bSpike = b.dynamicLabel === 'spike' ? 1 : 0;
       if (aSpike !== bSpike) return bSpike - aSpike;
-      // tie-breaker — severity ранжируем вручную (Prisma sort по enum
-      // лексикографический: critical > low, потому используем явный rank).
       return this.severityRank(b.severity) - this.severityRank(a.severity);
     });
   }
@@ -477,10 +386,6 @@ export class InsightsService {
     }
   }
 
-  /**
-   * Записать новую CardVersion для Insight. Уникальный constraint на
-   * (resourceType, resourceId, version) — сами считаем next version.
-   */
   private async writeCardVersion(args: {
     tenantId: string;
     insight: Insight;
@@ -522,7 +427,6 @@ export class InsightsService {
       where: { id: args.insight.id },
       data: { currentVersionId: created.id },
     });
-    // SBA α-5 dialog-layer — эмит для CacheInvalidationService (best-effort).
     try {
       this.events?.emit('card-version.created', {
         tenantId: args.tenantId,
@@ -542,7 +446,6 @@ export class InsightsService {
     const dt = new Date(d);
     dt.setUTCHours(0, 0, 0, 0);
     const day = dt.getUTCDay();
-    // Понедельник = 1 (ISO).
     const diff = day === 0 ? -6 : 1 - day;
     dt.setUTCDate(dt.getUTCDate() + diff);
     return dt;
@@ -571,4 +474,3 @@ export class InsightsService {
     });
   }
 }
-

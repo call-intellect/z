@@ -35,27 +35,8 @@ import {
   NarrativeCitationsParserService,
   type CitationSource,
 } from './narrative-citations-parser.service';
-import {
-  SAMPLE_STORY_DATASET,
-  SAMPLE_STORY_NARRATIVE,
-} from './sample-story.dataset';
+import { SAMPLE_STORY_DATASET, SAMPLE_STORY_NARRATIVE } from './sample-story.dataset';
 import { SentimentIndexService } from './sentiment-index.service';
-
-/**
- * DirectorDashboardService (Фаза 8 knowledge-core).
- *
- * Формирует агрегированный срез знаний компании за период (week=7д, month=30д)
- * для дашборда директора. Один публичный метод `getDirectorView({tenantId, period})`
- * возвращает 6 виджетов в одном объекте + опциональный `narrativeSummary` (LLM).
- *
- * Архитектура:
- *   - Все 6 запросов к БД — параллельно через Promise.all (см. ТЗ §«критерий DoD»).
- *   - Кэш через `AdminCacheService` (in-memory, TTL 60s) — ключ `dashboard:director:${tenantId}:${period}`.
- *   - `narrativeSummary` в этом коммите — заглушка (null). LLM-часть — Шаг 2.
- *
- * Совместимость: полагается на структуру моделей Theme/IdeaBlock/Entity/IdeaBlockEntity/
- * IdeaBlockEvidence/RawEvent (Фазы 2-4 knowledge-core).
- */
 
 const SIGNAL_TYPES_FOR_NEW_SIGNALS: SignalType[] = [
   'pain',
@@ -97,19 +78,11 @@ export class DirectorDashboardService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главный метод: возвращает срез знаний компании за период.
-   * Кэш 60s по ключу (tenantId, period). На повторный запрос внутри окна —
-   * не дёргает БД.
-   */
   async getDirectorView(args: {
     tenantId: string;
     period: 'week' | 'month';
     userId?: string;
   }): Promise<DirectorDashboardDto> {
-    // userId входит в ключ — блок requiresAction персональный (pending-
-    // подтверждения текущего пользователя), нельзя отдавать чужой счётчик
-    // из кэша. Без userId (старые вызовы) — ключ без суффикса.
     const cacheKey = `dashboard:director:${args.tenantId}:${args.period}${
       args.userId ? `:u:${args.userId}` : ''
     }`;
@@ -118,23 +91,12 @@ export class DirectorDashboardService {
       return cached;
     }
 
-    // Action Center B2 — блок «Требует вашего подтверждения». Best-effort:
-    // ошибка PendingActionsService не должна валить весь дашборд.
     const requiresAction = args.userId
       ? await this.fetchRequiresAction(args.tenantId, args.userId)
       : undefined;
 
     const since = this.calcSince(args.period);
 
-    // Б-1 устойчивость: главная директора — витрина продукта, не должна
-    // «умирать» целиком из-за падения одного виджета. Каждый запрос ниже
-    // оборачиваем в safe(): при ошибке БД виджет деградирует до нейтрального
-    // fallback'а, а в логах остаётся ИМЯ упавшего виджета (раньше глобальный
-    // фильтр отдавал общий db_error без детализации). Тот же best-effort уже
-    // применён к requiresAction и narrativeSummary в этом же сервисе.
-    // NoInfer<T> на fallback гарантирует, что T выводится строго из fn (возврат
-    // сервисного метода), а object-literal fallback контекстно типизируется
-    // под него (иначе trend:'flat' расширилось бы до string и сломало вывод).
     const failures: string[] = [];
     const safe = async <T>(
       label: string,
@@ -173,46 +135,40 @@ export class DirectorDashboardService {
     ] = await Promise.all([
       safe('newThemes', () => this.fetchNewThemes(args.tenantId, since), []),
       safe('newSignals', () => this.fetchNewSignals(args.tenantId, since), []),
-      safe(
-        'signalCounters',
-        () => this.fetchSignalCounters(args.tenantId, since),
-        {
-          pain: 0,
-          feature_request: 0,
-          churn_risk: 0,
-          objection: 0,
-          risk: 0,
-          decision: 0,
-          commitment: 0,
-          other: 0,
-        },
-      ),
+      safe('signalCounters', () => this.fetchSignalCounters(args.tenantId, since), {
+        pain: 0,
+        feature_request: 0,
+        churn_risk: 0,
+        objection: 0,
+        risk: 0,
+        decision: 0,
+        commitment: 0,
+        other: 0,
+      }),
       safe('activeThemes', () => this.fetchActiveThemes(args.tenantId), []),
       safe('hotEntities', () => this.fetchHotEntities(args.tenantId, since), []),
       safe('openQuestions', () => this.fetchOpenQuestions(args.tenantId), []),
-      safe(
-        'strategicAlignment',
-        () => this.fetchStrategicAlignment(args.tenantId),
-        { average: null, goalsCount: 0, alertGoals: [] },
-      ),
+      safe('strategicAlignment', () => this.fetchStrategicAlignment(args.tenantId), {
+        average: null,
+        goalsCount: 0,
+        alertGoals: [],
+      }),
       safe('goalsTree', () => this.fetchGoalsTree(args.tenantId), []),
-      safe(
-        'goalsPulse',
-        () => this.fetchGoalsPulse(args.tenantId),
-        {
-          onTrackCount: 0,
-          atRiskCount: 0,
-          stalledCount: 0,
-          achievedCount: 0,
-          droppedCount: 0,
-          total: 0,
-        },
-      ),
-      safe(
-        'sentiment',
-        () => this.sentimentSvc.getIndex({ tenantId: args.tenantId }),
-        { value: 0, trend: 'flat', sparkline12w: [], totalCheckIns: 0, days: 7 },
-      ),
+      safe('goalsPulse', () => this.fetchGoalsPulse(args.tenantId), {
+        onTrackCount: 0,
+        atRiskCount: 0,
+        stalledCount: 0,
+        achievedCount: 0,
+        droppedCount: 0,
+        total: 0,
+      }),
+      safe('sentiment', () => this.sentimentSvc.getIndex({ tenantId: args.tenantId }), {
+        value: 0,
+        trend: 'flat',
+        sparkline12w: [],
+        totalCheckIns: 0,
+        days: 7,
+      }),
       safe(
         'commitment',
         () =>
@@ -234,38 +190,26 @@ export class DirectorDashboardService {
           sparkline12w: [],
         },
       ),
-      safe(
-        'hangingDecisions',
-        () => this.hangingSvc.count({ tenantId: args.tenantId }),
-        { count: 0, minAgeDays: 7, minRaisedCount: 2, sparkline12w: [] },
-      ),
-      // ТЗ-2 Ф1 — «Полоса пользы» (всегда считается, в т.ч. для пустого tenant'а).
-      safe(
-        'valueStrip',
-        () => this.fetchValueStrip(args.tenantId, args.period),
-        {
-          meetingsProtocoled: 0,
-          tasksExtracted: 0,
-          decisionsExtracted: 0,
-          questionsAnsweredByMemory: 0,
-          commitmentsKept: 0,
-        },
-      ),
-      // ТЗ-2 Ф1 — kill-switch новой компоновки главной (default ON).
+      safe('hangingDecisions', () => this.hangingSvc.count({ tenantId: args.tenantId }), {
+        count: 0,
+        minAgeDays: 7,
+        minRaisedCount: 2,
+        sparkline12w: [],
+      }),
+      safe('valueStrip', () => this.fetchValueStrip(args.tenantId, args.period), {
+        meetingsProtocoled: 0,
+        tasksExtracted: 0,
+        decisionsExtracted: 0,
+        questionsAnsweredByMemory: 0,
+        commitmentsKept: 0,
+      }),
       safe(
         'mainReworkEnabled',
-        () =>
-          this.config.getDynamic<boolean>(
-            'dashboard.main_rework.enabled',
-            undefined,
-            true,
-          ),
+        () => this.config.getDynamic<boolean>('dashboard.main_rework.enabled', undefined, true),
         true,
       ),
     ]);
 
-    // ТЗ-2 Ф1 — метрики отдачи: каждый собранный «Полосы пользы» + размер
-    // первого экрана новой компоновки (7 величин). tenant_top — cardinality-safe.
     const tenantTop = tenantTopOf(args.tenantId);
     this.metrics.incDashboardValueStripServed({ tenantTop });
     this.metrics.setDashboardMainFirstScreenWidgetCount({
@@ -273,7 +217,6 @@ export class DirectorDashboardService {
       count: 7,
     });
 
-    // Pulse Wave 1 §1.5 — три KPI-hero для главной.
     const kpiSentimentIndex: DirectorDashboardKpiDto = {
       value: sentimentRes.value,
       sparkline: sentimentRes.sparkline12w,
@@ -291,10 +234,6 @@ export class DirectorDashboardService {
       delta: null,
     };
 
-    // Sample story для пустых tenant'ов (ТЗ §1.2 принцип 4). Если у tenant'а
-    // 0 сигналов и 0 тем за период — подменяем массивы на синтетический
-    // пример и используем статичный narrative вместо LLM. Frontend рисует
-    // watermark «образец».
     const totalSignals =
       signalCounters.pain +
       signalCounters.feature_request +
@@ -305,11 +244,7 @@ export class DirectorDashboardService {
       signalCounters.commitment +
       signalCounters.other;
     const totalThemes = newThemes.length + activeThemes.length;
-    // Если виджеты упали и деградировали до пустых fallback'ов — это НЕ «пустой
-    // tenant». Не подменять реальные (частичные) данные синтетическим «образцом»:
-    // показываем что есть + degraded=true.
-    const isEmpty =
-      failures.length === 0 && totalSignals === 0 && totalThemes === 0;
+    const isEmpty = failures.length === 0 && totalSignals === 0 && totalThemes === 0;
 
     if (isEmpty) {
       const sampleResult: DirectorDashboardDto = {
@@ -322,8 +257,6 @@ export class DirectorDashboardService {
         hotEntities: [...SAMPLE_STORY_DATASET.hotEntities],
         openQuestions: [...SAMPLE_STORY_DATASET.openQuestions],
         narrativeSummary: { text: SAMPLE_STORY_NARRATIVE, citations: [] },
-        // Pulse Wave 1 §1.5 — синтетические оптимистичные KPI для пустого
-        // tenant'а. Frontend всё равно подсветит баннер «образец».
         kpiSentimentIndex: {
           value: 42,
           sparkline: [25, 28, 30, 32, 35, 38, 38, 40, 41, 42, 42, 42],
@@ -345,8 +278,6 @@ export class DirectorDashboardService {
         goalsTree,
         goalsPulse,
         isEmpty: true,
-        // ТЗ-2 Ф1 — реальные счётчики пользы за период (без подмены на sample;
-        // у пустого tenant'а они закономерно нулевые / минимальные).
         valueStrip,
         mainReworkEnabled,
         degraded: failures.length > 0,
@@ -384,7 +315,6 @@ export class DirectorDashboardService {
       goalsTree,
       goalsPulse,
       isEmpty: false,
-      // ТЗ-2 Ф1 — «Полоса пользы» + флаг новой компоновки.
       valueStrip,
       mainReworkEnabled,
       degraded: failures.length > 0,
@@ -394,29 +324,12 @@ export class DirectorDashboardService {
     return result;
   }
 
-  /**
-   * Cron — раз в сутки в 06:00 сбрасывает все narrative-ключи.
-   * Виджет-кэш (60s TTL) сбрасывать не нужно — он сам истекает.
-   */
   @Cron('0 6 * * *')
   invalidateNarrativeCron(): void {
     this.logger.debug('Cron 06:00 — сбрасываем кэш narrative-сводок дашборда');
     this.cache.invalidate(NARRATIVE_CACHE_PREFIX);
   }
 
-  // ─────────────────────────── narrative summary ───────────────────────────
-
-  /**
-   * Получить «Главное за неделю/месяц» через `LlmRouterService.call({taskType:
-   * 'dashboard-summary', ...})`. На любую ошибку LLM — возвращает `null`
-   * (UI скрывает блок, см. ТЗ §«Архитектурные решения» #5).
-   *
-   * Кэш — отдельный, ключ `dashboard:director:narrative:${tenantId}:${period}`,
-   * TTL 24 часа. Сброс — раз в сутки cron'ом `invalidateNarrativeCron`.
-   * Виджет-кэш (60s) и narrative-кэш живут независимо: первый перезапросит
-   * виджеты из БД через минуту, второй — переиспользует текущую сводку
-   * до 06:00 следующего дня.
-   */
   private async getNarrativeSummary(args: {
     tenantId: string;
     period: 'week' | 'month';
@@ -431,7 +344,6 @@ export class DirectorDashboardService {
     const cached = this.cache.get<NarrativeSummaryDto>(cacheKey);
     if (cached !== null) return cached;
 
-    // Если данных совсем нет — нечего и просить LLM.
     const totalSignals =
       args.signalCounters.pain +
       args.signalCounters.feature_request +
@@ -463,9 +375,6 @@ export class DirectorDashboardService {
         systemPrompt: DASHBOARD_SUMMARY_SYSTEM_PROMPT,
         userMessage,
         sourceRef: { type: 'dashboard', id: args.tenantId },
-        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — 600 → 4000.
-        // Текст нарратива 200-500 слов + резерв на thinking при переключении
-        // primary на Pro.
         maxTokens: 4_000,
       });
       const text = (out.text ?? '').trim();
@@ -473,7 +382,6 @@ export class DirectorDashboardService {
         return null;
       }
 
-      // Собираем список валидных источников (то же, что отдали в USER).
       const sources: CitationSource[] = [];
       for (const t of [...args.newThemes, ...args.activeThemes].slice(0, 6)) {
         sources.push({ type: 'theme', id: t.id, label: t.name });
@@ -506,13 +414,6 @@ export class DirectorDashboardService {
     }
   }
 
-  // ──────────────────────── requires action (B2) ───────────────────────────
-
-  /**
-   * Action Center B2 — сводка pending-подтверждений текущего пользователя.
-   * Best-effort: на любую ошибку PendingActionsService возвращает нулевую
-   * сводку, чтобы не валить дашборд. Frontend при total=0 плитку не рисует.
-   */
   private async fetchRequiresAction(
     tenantId: string,
     userId: string,
@@ -541,8 +442,6 @@ export class DirectorDashboardService {
     }
   }
 
-  // ─────────────────────────── widgets ──────────────────────────────────────
-
   private async fetchNewThemes(
     tenantId: string,
     since: Date,
@@ -553,10 +452,7 @@ export class DirectorDashboardService {
         status: 'active',
         createdAt: { gte: since },
       },
-      orderBy: [
-        { weight: 'desc' },
-        { lastSignalAt: 'desc' },
-      ],
+      orderBy: [{ weight: 'desc' }, { lastSignalAt: 'desc' }],
       take: 10,
       select: {
         id: true,
@@ -578,19 +474,14 @@ export class DirectorDashboardService {
     }));
   }
 
-  private async fetchActiveThemes(
-    tenantId: string,
-  ): Promise<DirectorDashboardThemeDto[]> {
+  private async fetchActiveThemes(tenantId: string): Promise<DirectorDashboardThemeDto[]> {
     const rows = await this.prisma.theme.findMany({
       where: {
         tenantId,
         status: 'active',
         dynamic: 'growing',
       },
-      orderBy: [
-        { weight: 'desc' },
-        { lastSignalAt: 'desc' },
-      ],
+      orderBy: [{ weight: 'desc' }, { lastSignalAt: 'desc' }],
       take: 10,
       select: {
         id: true,
@@ -624,10 +515,7 @@ export class DirectorDashboardService {
         createdAt: { gte: since },
         signalType: { in: SIGNAL_TYPES_FOR_NEW_SIGNALS },
       },
-      orderBy: [
-        { confidence: 'desc' },
-        { dynamicScore: 'desc' },
-      ],
+      orderBy: [{ confidence: 'desc' }, { dynamicScore: 'desc' }],
       take: 10,
       select: {
         id: true,
@@ -646,9 +534,6 @@ export class DirectorDashboardService {
         },
       },
     });
-    // ТЗ-2 Ф1 — резолв `reasonSourceRef`: для сигналов, чьё первое evidence
-    // ссылается на встречу, подтягиваем заголовок встречи batch'ем (одним
-    // findMany, без N+1).
     const meetingIds = new Set<string>();
     for (const r of rows) {
       const firstEv = r.evidence[0];
@@ -675,18 +560,14 @@ export class DirectorDashboardService {
       const firstEv = r.evidence[0];
       const evidenceMeetingId =
         firstEv && firstEv.rawEvent.sourceType === 'meeting'
-          ? firstEv.rawEvent.sourceExternalId ?? null
+          ? (firstEv.rawEvent.sourceExternalId ?? null)
           : null;
-      // reasonSourceRef: встреча → {meetingId, meetingTitle}; иначе null.
-      // (Модель evidence не несёт прямой ссылки на Decision — ветка
-      // `{ decisionId }` зарезервирована в DTO под будущий источник-решение.)
-      const reasonSourceRef: DirectorDashboardSignalDto['reasonSourceRef'] =
-        evidenceMeetingId
-          ? {
-              meetingId: evidenceMeetingId,
-              meetingTitle: titleById.get(evidenceMeetingId) ?? undefined,
-            }
-          : null;
+      const reasonSourceRef: DirectorDashboardSignalDto['reasonSourceRef'] = evidenceMeetingId
+        ? {
+            meetingId: evidenceMeetingId,
+            meetingTitle: titleById.get(evidenceMeetingId) ?? undefined,
+          }
+        : null;
       return {
         id: r.id,
         name: r.name,
@@ -750,20 +631,12 @@ export class DirectorDashboardService {
           counters.commitment += cnt;
           break;
         default:
-          // mood / drift / competitor_move / metric_change / idea / fact / knowledge_gap
-          // + SBA α-2: reasoning / rationale / decision_basis / regulation / process_step
           counters.other += cnt;
       }
     }
     return counters;
   }
 
-  /**
-   * Топ-10 сущностей по числу упоминаний в canonical-блоках за период.
-   * RAW SQL для гибкого groupBy + DISTINCT по blockId (один блок может упоминать
-   * сущность несколько раз через IdeaBlockEntity, но мы считаем отдельные блоки).
-   * Исключаем merged (mergedIntoId IS NULL).
-   */
   private async fetchHotEntities(
     tenantId: string,
     since: Date,
@@ -797,9 +670,7 @@ export class DirectorDashboardService {
     }));
   }
 
-  private async fetchOpenQuestions(
-    tenantId: string,
-  ): Promise<DirectorDashboardOpenQuestionDto[]> {
+  private async fetchOpenQuestions(tenantId: string): Promise<DirectorDashboardOpenQuestionDto[]> {
     const rows = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -823,24 +694,6 @@ export class DirectorDashboardService {
     }));
   }
 
-  /**
-   * ТЗ-2 Ф1 — «Полоса пользы» (Value Strip): 5 твёрдых счётчиков за период.
-   * Окно (`since`) — то же, что у остальных fetch*-методов (см. `calcSince`).
-   *
-   *   - `meetingsProtocoled`        — `Meeting` tenant'а в окне с готовым AI-отчётом
-   *                                   (через relation `aiResult`: summaryFast OR
-   *                                   summary заполнены);
-   *   - `tasksExtracted`            — `Task` tenant'а, созданные в окне;
-   *   - `decisionsExtracted`        — `Decision` tenant'а, созданные в окне;
-   *   - `questionsAnsweredByMemory` — assistant-сообщения `ChatV2Message` с непустым
-   *                                   citations-массивом (та же техника, что у
-   *                                   `ChatV2FeedbackService.getChatUsageStats`:
-   *                                   CASE WHEN jsonb_typeof='array' THEN
-   *                                   jsonb_array_length>0 ELSE false — guard от
-   *                                   22023 на скалярных citations, QA B2);
-   *   - `commitmentsKept`           — `IdeaBlock` signalType='commitment' AND
-   *                                   commitmentStatus='fulfilled', созданные в окне.
-   */
   private async fetchValueStrip(
     tenantId: string,
     period: 'week' | 'month',
@@ -849,37 +702,25 @@ export class DirectorDashboardService {
 
     type CountRow = { cnt: bigint | number };
 
-    const [
-      meetingsProtocoled,
-      tasksExtracted,
-      decisionsExtracted,
-      questionsRows,
-      commitmentsKept,
-    ] = await Promise.all([
-      // Встречи с готовым AI-отчётом: aiResult.summaryFast OR summary заполнены.
-      // createdAt в окне. (v2-ветка analyzeV2Status удалена 2026-06-10 — мёртвый
-      // стек; колонка осталась в БД, но больше не участвует в подсчёте.)
-      this.prisma.meeting.count({
-        where: {
-          tenantId,
-          createdAt: { gte: since },
-          OR: [
-            { aiResult: { is: { summaryFast: { not: null } } } },
-            { aiResult: { is: { summary: { not: '' } } } },
-          ],
-        },
-      }),
-      this.prisma.task.count({
-        where: { tenantId, createdAt: { gte: since } },
-      }),
-      this.prisma.decision.count({
-        where: { tenantId, createdAt: { gte: since } },
-      }),
-      // Ответы AI-чата с привязкой к источнику — та же техника, что в
-      // ChatV2FeedbackService.getChatUsageStats (jsonb-type-guard массива
-      // citations). ChatV2Message не несёт tenantId напрямую — join к
-      // ChatV2Conversation.
-      this.prisma.$queryRaw<CountRow[]>`
+    const [meetingsProtocoled, tasksExtracted, decisionsExtracted, questionsRows, commitmentsKept] =
+      await Promise.all([
+        this.prisma.meeting.count({
+          where: {
+            tenantId,
+            createdAt: { gte: since },
+            OR: [
+              { aiResult: { is: { summaryFast: { not: null } } } },
+              { aiResult: { is: { summary: { not: '' } } } },
+            ],
+          },
+        }),
+        this.prisma.task.count({
+          where: { tenantId, createdAt: { gte: since } },
+        }),
+        this.prisma.decision.count({
+          where: { tenantId, createdAt: { gte: since } },
+        }),
+        this.prisma.$queryRaw<CountRow[]>`
         SELECT COUNT(*)::bigint AS cnt
         FROM "ChatV2Message" m
         JOIN "ChatV2Conversation" c ON c."id" = m."conversationId"
@@ -893,15 +734,15 @@ export class DirectorDashboardService {
                 ELSE false
               END
       `,
-      this.prisma.ideaBlock.count({
-        where: {
-          tenantId,
-          signalType: 'commitment',
-          commitmentStatus: 'fulfilled',
-          createdAt: { gte: since },
-        },
-      }),
-    ]);
+        this.prisma.ideaBlock.count({
+          where: {
+            tenantId,
+            signalType: 'commitment',
+            commitmentStatus: 'fulfilled',
+            createdAt: { gte: since },
+          },
+        }),
+      ]);
 
     const questionsAnsweredByMemory = Number(questionsRows[0]?.cnt ?? 0);
 
@@ -914,16 +755,6 @@ export class DirectorDashboardService {
     };
   }
 
-  /**
-   * Phase 9: блок «Согласованность стратегии».
-   *
-   * Загружает все активные не-archived `Goal[]` Org. Считает взвешенное
-   * среднее `cachedAlignment` по `weight`. `alertGoals` — цели с резким
-   * падением (`cachedAlignmentDelta <= -15 AND cachedAlignment <= 60`).
-   *
-   * Если у Org нет активных целей — `goalsCount=0, average=null, alertGoals=[]`.
-   * Если есть, но никто ещё не считался — `average=null`.
-   */
   private async fetchStrategicAlignment(
     tenantId: string,
   ): Promise<DirectorDashboardStrategicAlignmentDto> {
@@ -972,23 +803,12 @@ export class DirectorDashboardService {
       }
     }
 
-    const average =
-      weightTotal > 0 ? Math.round(weightedSum / weightTotal) : null;
+    const average = weightTotal > 0 ? Math.round(weightedSum / weightTotal) : null;
 
     return { average, goalsCount, alertGoals };
   }
 
-  /**
-   * Goals OKR v2 Фаза 4 — дерево active-целей с KR-прогрессом и progressStatus.
-   *
-   * Берём active+живые цели (`status='active'`, `promotionState='active'`,
-   * `validUntil=null`, `archivedAt=null`) с их KR. Строим дерево
-   * parent→children: корни — цели с `parentGoalId=null` ИЛИ чей родитель не
-   * входит в активный набор (сирота → корень).
-   */
-  private async fetchGoalsTree(
-    tenantId: string,
-  ): Promise<DirectorDashboardGoalTreeNodeDto[]> {
+  private async fetchGoalsTree(tenantId: string): Promise<DirectorDashboardGoalTreeNodeDto[]> {
     const goals = await this.prisma.goal.findMany({
       where: {
         tenantId,
@@ -1018,7 +838,6 @@ export class DirectorDashboardService {
       },
     });
 
-    // Узлы по id (без children — заполним вторым проходом).
     const nodeById = new Map<string, DirectorDashboardGoalTreeNodeDto>();
     for (const g of goals) {
       nodeById.set(g.id, {
@@ -1043,11 +862,9 @@ export class DirectorDashboardService {
       });
     }
 
-    // Сборка дерева: цель с родителем в наборе → ребёнок; иначе корень.
     const roots: DirectorDashboardGoalTreeNodeDto[] = [];
     for (const node of nodeById.values()) {
-      const parent =
-        node.parentGoalId !== null ? nodeById.get(node.parentGoalId) : undefined;
+      const parent = node.parentGoalId !== null ? nodeById.get(node.parentGoalId) : undefined;
       if (parent) {
         parent.children.push(node);
       } else {
@@ -1058,13 +875,7 @@ export class DirectorDashboardService {
     return roots;
   }
 
-  /**
-   * Goals OKR v2 Фаза 4 — счётчики недели по progressStatus для виджета
-   * «Пульс целей». Active+живые цели Org.
-   */
-  private async fetchGoalsPulse(
-    tenantId: string,
-  ): Promise<DirectorDashboardGoalsPulseDto> {
+  private async fetchGoalsPulse(tenantId: string): Promise<DirectorDashboardGoalsPulseDto> {
     const rows = await this.prisma.goal.groupBy({
       by: ['progressStatus'],
       where: {
@@ -1111,14 +922,7 @@ export class DirectorDashboardService {
     return pulse;
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────────
-
-  /** Прогресс KR в %: clamp 0..100, защита от деления на 0 (target==start → 0). */
-  private krProgressPercent(
-    start: number,
-    target: number,
-    current: number,
-  ): number {
+  private krProgressPercent(start: number, target: number, current: number): number {
     const span = target - start;
     if (span === 0) return 0;
     const pct = ((current - start) / span) * 100;
@@ -1152,9 +956,7 @@ export class DirectorDashboardService {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());

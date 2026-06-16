@@ -1,11 +1,3 @@
-/**
- * LoggingModule — DTO (Zod) для `SystemLogsController`.
- *
- * Проект на nestjs-zod + GlobalZodValidationPipe — class-validator НЕ используем.
- * Footgun `z.coerce.boolean()` (Boolean("false")===true) обходим кастомным
- * `zFlexBool` (как `zBool` в env.schema.ts).
- * См. plans/tz/2026-06-01-logging-module.md §11.
- */
 import {
   SystemLogCategory,
   SystemLogContour,
@@ -16,7 +8,6 @@ import { z } from 'zod';
 
 import { LOGGING_BOUNDS } from '../log.constants';
 
-/** Гибкий boolean: 'true'/'1'/'yes'/'on' → true; 'false'/'0'/'no'/'off' → false. */
 const zFlexBool = z.preprocess((v) => {
   if (typeof v === 'boolean') return v;
   if (typeof v === 'string') {
@@ -24,12 +15,11 @@ const zFlexBool = z.preprocess((v) => {
     if (['true', '1', 'yes', 'on'].includes(s)) return true;
     if (['false', '0', 'no', 'off'].includes(s)) return false;
   }
-  return v; // мусор → z.boolean() даст внятную ошибку
+  return v;
 }, z.boolean());
 
 const MAX_FREE_STR = 256;
 
-// ───────────────────────────── список ─────────────────────────────
 export const SystemLogQuerySchema = z.object({
   level: z.nativeEnum(SystemLogLevel).optional(),
   levelAtLeast: z.nativeEnum(SystemLogLevel).optional(),
@@ -52,22 +42,18 @@ export const SystemLogQuerySchema = z.object({
 });
 export type SystemLogQueryDto = z.infer<typeof SystemLogQuerySchema>;
 
-// ───────────────────────────── агрегаты ─────────────────────────────
 export const AggregatesQuerySchema = z.object({
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
 });
 export type AggregatesQueryDto = z.infer<typeof AggregatesQuerySchema>;
 
-// ───────────────────────────── цепочка (chain) ──────────────────────
-/** Все записи одной цепочки по `traceId`, по времени (asc). */
 export const ChainQuerySchema = z.object({
   traceId: z.string().trim().min(1).max(MAX_FREE_STR),
   limit: z.coerce.number().int().min(1).max(1000).default(500),
 });
 export type ChainQueryDto = z.infer<typeof ChainQuerySchema>;
 
-// ───────────────────────────── настройки (PATCH) ──────────────────────
 export const UpdateLoggingSettingsSchema = z
   .object({
     dbLoggingEnabled: zFlexBool.optional(),

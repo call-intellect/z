@@ -1,26 +1,7 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
-
-/**
- * Admin-redesign Фаза 4 — `AdminEntitlementsService`.
- *
- *   - listOverview(...) — глобальный обзор OrgEntitlement: tier + count'ы
- *     ключей в featureOverrides/quotaOverrides. По умолчанию только Org
- *     с override'ами (hasOverrides=true).
- *   - upsertForOrg(orgId, body) — upsert OrgEntitlement (создаёт, если нет).
- *   - removeFeatureKey(orgId, key) — удаляет ключ из featureOverrides.
- *   - removeQuotaKey(orgId, key) — то же для quotaOverrides.
- *   - resolveForOrg(orgId) — возвращает effective entitlements (Plan + overrides).
- *
- * Cursor pagination через `updatedAt + id`.
- */
 
 export interface EntitlementOverviewItem {
   tenantId: string;
@@ -45,12 +26,9 @@ export interface ResolvedEntitlements {
     id: string;
     displayName: string;
     isActive: boolean;
-    /** features из Plan (без override). */
     features: Record<string, unknown>;
-    /** quotas из Plan (без override). */
     quotas: Record<string, unknown>;
   } | null;
-  /** Финальные features = plan.features ∪ featureOverrides (override побеждает). */
   features: Record<string, unknown>;
   quotas: Record<string, unknown>;
   featureOverrides: Record<string, unknown>;
@@ -81,8 +59,6 @@ export class AdminEntitlementsService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  // ──────────────────────────── public api ───────────────────────────────
-
   async listOverview(filters: {
     hasOverrides: boolean;
     plan?: string;
@@ -102,9 +78,6 @@ export class AdminEntitlementsService {
       where.AND = [...(Array.isArray(where.AND) ? where.AND : []), { OR: orConditions }];
     }
 
-    // hasOverrides делаем post-фильтром: Prisma не умеет «хотя бы один ключ
-    // в jsonb». Берём с запасом (limit * 4), фильтруем в памяти. Если
-    // больше limit — отдаём первые `limit` и формируем nextCursor.
     const takeRaw = filters.hasOverrides ? Math.min(filters.limit * 4, 500) : filters.limit + 1;
     const rows = await this.prisma.orgEntitlement.findMany({
       where,
@@ -116,10 +89,7 @@ export class AdminEntitlementsService {
     });
 
     const filtered = filters.hasOverrides
-      ? rows.filter(
-          (r) =>
-            countKeys(r.featureOverrides) > 0 || countKeys(r.quotaOverrides) > 0,
-        )
+      ? rows.filter((r) => countKeys(r.featureOverrides) > 0 || countKeys(r.quotaOverrides) > 0)
       : rows;
 
     const hasMore = filtered.length > filters.limit;
@@ -146,11 +116,6 @@ export class AdminEntitlementsService {
     return { items, nextCursor };
   }
 
-  /**
-   * Upsert OrgEntitlement для конкретной Org. Если записи нет — создаём с
-   * tier по умолчанию `tier_pro` (см. schema.prisma) и применяем переданные
-   * поля. Org должна существовать.
-   */
   async upsertForOrg(
     orgId: string,
     input: {
@@ -217,30 +182,14 @@ export class AdminEntitlementsService {
     return { ok: true, tenantId: ent.tenantId, tier: ent.tier };
   }
 
-  /**
-   * Удаляет конкретный ключ из featureOverrides (jsonb).
-   */
-  async removeFeatureKey(
-    orgId: string,
-    key: string,
-  ): Promise<{ ok: true; removed: boolean }> {
+  async removeFeatureKey(orgId: string, key: string): Promise<{ ok: true; removed: boolean }> {
     return this.removeKey(orgId, 'featureOverrides', key);
   }
 
-  async removeQuotaKey(
-    orgId: string,
-    key: string,
-  ): Promise<{ ok: true; removed: boolean }> {
+  async removeQuotaKey(orgId: string, key: string): Promise<{ ok: true; removed: boolean }> {
     return this.removeKey(orgId, 'quotaOverrides', key);
   }
 
-  /**
-   * Возвращает effective entitlements для Org. Алгоритм:
-   *   1) Достаём Plan по tier (если есть запись OrgEntitlement) или
-   *      возвращаем «нет плана».
-   *   2) features = plan.features ∪ featureOverrides (override побеждает).
-   *   3) quotas = plan.quotas ∪ quotaOverrides.
-   */
   async resolveForOrg(orgId: string): Promise<ResolvedEntitlements> {
     const org = await this.prisma.org.findUnique({ where: { id: orgId } });
     if (!org) {
@@ -252,7 +201,6 @@ export class AdminEntitlementsService {
     const ent = await this.prisma.orgEntitlement.findUnique({
       where: { tenantId: orgId },
     });
-    // Если OrgEntitlement нет — tier по умолчанию из схемы (tier_pro).
     const tier = ent?.tier ?? 'tier_pro';
     const plan = await this.prisma.plan.findUnique({ where: { id: tier } });
 
@@ -281,8 +229,6 @@ export class AdminEntitlementsService {
     };
   }
 
-  // ──────────────────────────── private ──────────────────────────────────
-
   private async removeKey(
     orgId: string,
     field: 'featureOverrides' | 'quotaOverrides',
@@ -310,9 +256,7 @@ export class AdminEntitlementsService {
       where: { tenantId: orgId },
       data: {
         [field]:
-          Object.keys(current).length === 0
-            ? Prisma.JsonNull
-            : (current as Prisma.InputJsonValue),
+          Object.keys(current).length === 0 ? Prisma.JsonNull : (current as Prisma.InputJsonValue),
       },
     });
     return { ok: true, removed: true };

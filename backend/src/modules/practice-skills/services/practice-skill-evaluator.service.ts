@@ -12,26 +12,6 @@ import {
   PRACTICE_SKILL_ADVERSARIAL_VERIFY_USER_TEMPLATE,
 } from '../prompts/practice-skill-extract.prompt';
 
-/**
- * Agents v2 Фаза C1 (2026-05-30) — PracticeSkillEvaluatorService.
- *
- * Запускается `PracticeSkillEvaluatorCron` (`@Cron('0 4 * * *')` — daily 04:00).
- * Для каждой shadow-skill с ≥`cfg.practiceSkills.evalMinRuns` SkillUsage за
- * последние 24-48 часов:
- *   1. Считает composite score:
- *      `0.5 * (1 - mean(editDistance)) + 0.3 * meanOutcomeSuccess + 0.2 * adversarialOK`
- *   2. Считает baseline (composite на conversations БЕЗ retrieval'а этого skill'а
- *      за 30 дней).
- *   3. Если composite > baseline + `evalPromoteDelta` → promote (status='active',
- *      trafficShare=1.0).
- *   4. Если composite < baseline - `evalArchiveDelta` → archive
- *      (status='archived', archivedReason='shadow_metrics_worse_than_baseline').
- *   5. Иначе — оставляем в shadow ещё цикл.
- *
- * Adversarial verify — отдельный LLM-вызов `practice-skill-adversarial-verify`
- * (deepseek-v4-flash) на 5 случайных usages: проверяет, что ответ клона не
- * нарушает redFlags и не противоречит шагам.
- */
 @Injectable()
 export class PracticeSkillEvaluatorService {
   private readonly logger = new Logger(PracticeSkillEvaluatorService.name);
@@ -46,11 +26,6 @@ export class PracticeSkillEvaluatorService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главный entry-point. Возвращает summary прохода. Безопасен к повторному
-   * запуску (idempotent — promote/archive выставляют статус, повторный вызов
-   * найдёт другой набор shadow-skill'ов).
-   */
   async runOnce(): Promise<{
     skillsEvaluated: number;
     promoted: number;
@@ -62,10 +37,7 @@ export class PracticeSkillEvaluatorService {
     const promoteDelta = this.cfg.practiceSkills.evalPromoteDelta;
     const archiveDelta = this.cfg.practiceSkills.evalArchiveDelta;
 
-    // Кандидаты: shadow skills с ≥ minRuns usages за последние 48ч.
-    const candidates = await this.prisma.$queryRawUnsafe<
-      Array<{ id: string; cnt: bigint }>
-    >(
+    const candidates = await this.prisma.$queryRawUnsafe<Array<{ id: string; cnt: bigint }>>(
       `SELECT ps.id, COUNT(su.id)::bigint AS cnt
          FROM "practice_skills" ps
          JOIN "skill_usages" su ON su."practiceSkillId" = ps.id
@@ -107,9 +79,6 @@ export class PracticeSkillEvaluatorService {
     };
   }
 
-  /**
-   * Оценка одного skill'а. Возвращает action — promote/archive/hold.
-   */
   async evaluateOne(skillId: string): Promise<'promote' | 'archive' | 'hold'> {
     const skill = await this.prisma.practiceSkill.findUnique({
       where: { id: skillId },
@@ -145,9 +114,7 @@ export class PracticeSkillEvaluatorService {
 
     try {
       this.metrics.observePracticeSkillsCompositeVsBaseline({ delta });
-    } catch {
-      /* observability */
-    }
+    } catch {}
 
     const shadowMetrics = {
       runs: usages.length,
@@ -173,9 +140,7 @@ export class PracticeSkillEvaluatorService {
       });
       try {
         this.metrics.incPracticeSkillsPromoted();
-      } catch {
-        /* observability */
-      }
+      } catch {}
       this.logger.log(
         `practice-skill-evaluator: skill=${skill.id} PROMOTED (composite=${composite.value.toFixed(3)} vs baseline=${baseline.toFixed(3)})`,
       );
@@ -194,15 +159,12 @@ export class PracticeSkillEvaluatorService {
       });
       try {
         this.metrics.incPracticeSkillsArchived();
-      } catch {
-        /* observability */
-      }
+      } catch {}
       this.logger.log(
         `practice-skill-evaluator: skill=${skill.id} ARCHIVED (composite=${composite.value.toFixed(3)} vs baseline=${baseline.toFixed(3)})`,
       );
       return 'archive';
     }
-    // Hold — обновляем только metrics, не трогаем status.
     await this.prisma.practiceSkill.update({
       where: { id: skill.id },
       data: {
@@ -216,18 +178,6 @@ export class PracticeSkillEvaluatorService {
     return 'hold';
   }
 
-  // ─────────────────────── composite ───────────────────────
-
-  /**
-   * composite = 0.5 * (1 - mean(editDistance)) + 0.3 * meanOutcomeSuccess + 0.2 * adversarialOK
-   *
-   * Пустые поля:
-   *   - editDistance == null → исключается из mean.
-   *   - outcome == 'pending' → исключается из meanOutcomeSuccess.
-   *
-   * Если adversarialOK не удалось посчитать (LLM упал на ВСЕХ 5 sample) —
-   * берём консервативно 0.5 (нейтрально, не promote и не archive).
-   */
   private async composite(args: {
     tenantId: string;
     usages: ReadonlyArray<{
@@ -243,33 +193,21 @@ export class PracticeSkillEvaluatorService {
     meanOutcomeSuccess: number;
     adversarialOK: number;
   }> {
-    // mean(editDistance)
     const eds = args.usages
       .map((u) => u.editDistance)
       .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-    const meanEditDistance =
-      eds.length > 0 ? eds.reduce((a, b) => a + b, 0) / eds.length : 0;
+    const meanEditDistance = eds.length > 0 ? eds.reduce((a, b) => a + b, 0) / eds.length : 0;
 
-    // meanOutcomeSuccess
-    const decided = args.usages.filter(
-      (u) => u.outcome && u.outcome !== 'pending',
-    );
-    const successCount = decided.filter(
-      (u) => u.outcome === 'accepted_as_is',
-    ).length;
-    const meanOutcomeSuccess =
-      decided.length > 0 ? successCount / decided.length : 0;
+    const decided = args.usages.filter((u) => u.outcome && u.outcome !== 'pending');
+    const successCount = decided.filter((u) => u.outcome === 'accepted_as_is').length;
+    const meanOutcomeSuccess = decided.length > 0 ? successCount / decided.length : 0;
 
-    // adversarialOK на 5 случайных usage'ах.
     const adversarialOK = await this.adversarialOK({
       tenantId: args.tenantId,
       usages: args.usages,
     });
 
-    const value =
-      0.5 * (1 - meanEditDistance) +
-      0.3 * meanOutcomeSuccess +
-      0.2 * adversarialOK;
+    const value = 0.5 * (1 - meanEditDistance) + 0.3 * meanOutcomeSuccess + 0.2 * adversarialOK;
     return {
       value,
       meanEditDistance,
@@ -278,11 +216,6 @@ export class PracticeSkillEvaluatorService {
     };
   }
 
-  /**
-   * Adversarial OK — доля sample usages, в которых ответ клона не нарушает
-   * redFlags и не противоречит шагам skill'а. На N=5; если все 5 LLM-вызовов
-   * упали — возвращаем 0.5 (нейтрально).
-   */
   private async adversarialOK(args: {
     tenantId: string;
     usages: ReadonlyArray<{
@@ -290,13 +223,9 @@ export class PracticeSkillEvaluatorService {
       messageId: string;
     }>;
   }): Promise<number> {
-    const sample = sampleN(
-      args.usages,
-      PracticeSkillEvaluatorService.ADVERSARIAL_SAMPLE_SIZE,
-    );
+    const sample = sampleN(args.usages, PracticeSkillEvaluatorService.ADVERSARIAL_SAMPLE_SIZE);
     if (sample.length === 0) return 0.5;
 
-    // Загружаем skill один раз (по первому usage).
     const firstUsage = await this.prisma.skillUsage.findUnique({
       where: { id: sample[0]!.id },
       include: {
@@ -324,9 +253,7 @@ export class PracticeSkillEvaluatorService {
           .map((s) => ({ order: s.order, action: s.action }))
       : [];
     const redFlagsArr = Array.isArray(skill.redFlags)
-      ? (skill.redFlags as unknown[]).filter(
-          (v): v is string => typeof v === 'string',
-        )
+      ? (skill.redFlags as unknown[]).filter((v): v is string => typeof v === 'string')
       : [];
 
     let okCount = 0;
@@ -361,9 +288,7 @@ export class PracticeSkillEvaluatorService {
           violatesRedFlags?: unknown;
           contradictsSteps?: unknown;
         };
-        const violates =
-          parsed.violatesRedFlags === true ||
-          parsed.contradictsSteps === true;
+        const violates = parsed.violatesRedFlags === true || parsed.contradictsSteps === true;
         if (!violates) okCount++;
         evaluated++;
       } catch (err) {
@@ -387,24 +312,9 @@ export class PracticeSkillEvaluatorService {
     }
   }
 
-  // ─────────────────────── baseline ───────────────────────
-
-  /**
-   * Baseline: composite score на conversations за последние 30 дней, в которых
-   * этот skill НЕ участвовал (нет SkillUsage[skillId=current] для conversationId).
-   *
-   * Упрощённая версия для Фазы C1: вместо полного «как бы выглядел ответ без
-   * skill'а» — берём средний editDistance + meanOutcomeSuccess по всем
-   * ChatV2Message(role='assistant', mode='clone_style') данного scope'а.
-   * adversarialOK для baseline не считаем (предполагаем 1.0 — без skill'а
-   * нечему противоречить).
-   *
-   * Если baseline посчитать не удалось — возвращаем 0.5 как нейтральный.
-   */
   private async baselineFor(skill: PracticeSkill): Promise<number> {
     const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     try {
-      // Все skill_usages этого skill (исключим эти conversations).
       const usedConvs = await this.prisma.skillUsage.findMany({
         where: { practiceSkillId: skill.id },
         select: { conversationId: true },
@@ -412,8 +322,6 @@ export class PracticeSkillEvaluatorService {
       });
       const excludeConv = new Set(usedConvs.map((u) => u.conversationId));
 
-      // ChatV2Conversation в рамках scope'а skill'а (по scopeRefId == person/role).
-      // Упрощённо: scope='card', scopeRefId = personId/roleId/orgId.
       const conversations = await this.prisma.chatV2Conversation.findMany({
         where: {
           tenantId: skill.tenantId,
@@ -424,13 +332,9 @@ export class PracticeSkillEvaluatorService {
         select: { id: true },
         take: 2_000,
       });
-      const convIds = conversations
-        .map((c) => c.id)
-        .filter((id) => !excludeConv.has(id));
+      const convIds = conversations.map((c) => c.id).filter((id) => !excludeConv.has(id));
       if (convIds.length === 0) return 0.5;
 
-      // Усредняем по SkillUsage из ДРУГИХ skill'ов в этих conversation'ах,
-      // если есть. Если нет — возвращаем условный 0.5 (нет данных).
       const otherUsages = await this.prisma.skillUsage.findMany({
         where: {
           conversationId: { in: convIds },
@@ -445,20 +349,11 @@ export class PracticeSkillEvaluatorService {
       const eds = otherUsages
         .map((u) => u.editDistance)
         .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-      const meanEditDistance =
-        eds.length > 0 ? eds.reduce((a, b) => a + b, 0) / eds.length : 0;
-      const decided = otherUsages.filter(
-        (u) => u.outcome && u.outcome !== 'pending',
-      );
-      const successCount = decided.filter(
-        (u) => u.outcome === 'accepted_as_is',
-      ).length;
-      const meanOutcomeSuccess =
-        decided.length > 0 ? successCount / decided.length : 0;
-      // adversarialOK baseline = 1.0 — без skill'а нечего нарушать.
-      return (
-        0.5 * (1 - meanEditDistance) + 0.3 * meanOutcomeSuccess + 0.2 * 1.0
-      );
+      const meanEditDistance = eds.length > 0 ? eds.reduce((a, b) => a + b, 0) / eds.length : 0;
+      const decided = otherUsages.filter((u) => u.outcome && u.outcome !== 'pending');
+      const successCount = decided.filter((u) => u.outcome === 'accepted_as_is').length;
+      const meanOutcomeSuccess = decided.length > 0 ? successCount / decided.length : 0;
+      return 0.5 * (1 - meanEditDistance) + 0.3 * meanOutcomeSuccess + 0.2 * 1.0;
     } catch (err) {
       this.logger.debug(
         `baselineFor skill=${skill.id} failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -467,8 +362,6 @@ export class PracticeSkillEvaluatorService {
     }
   }
 }
-
-// ───────────────────────────── helpers ─────────────────────────────
 
 function sampleN<T>(arr: ReadonlyArray<T>, n: number): T[] {
   if (arr.length <= n) return [...arr];

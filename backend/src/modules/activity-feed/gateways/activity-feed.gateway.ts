@@ -20,37 +20,13 @@ interface SocketContext {
   tenantId: string;
 }
 
-/**
- * ActivityFeedGateway (Wave 2 Поток D, 2026-05-24).
- *
- * Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md §"WebSocket events".
- *
- * Live-канал ленты активности. Namespace `/ws/feed`. Каждый коннект
- * автоматически попадает в:
- *   - tenant-room: `tenant:${tenantId}` — глобальная подписка на ленту Org;
- *   - user-room:   `user:${userId}`     — личные probe-вопросы (private).
- *
- * Дополнительно клиент может подписаться на команду:
- *   - `team:${teamId}` через `subscribe.team` (для виджета руководителя
- *     команды на дашборде).
- *
- * Auth handshake — тот же session JWT, что REST: cookie `z_session` /
- * `handshake.auth.token` / `Authorization: Bearer …`. После verify
- * проверяется membership в tenant'е (иначе disconnect).
- *
- * Паттерн полностью копирует `TrackerGateway` (см. tracker/gateways/tracker.gateway.ts).
- */
 @Injectable()
 @WebSocketGateway({
   namespace: '/ws/feed',
-  // CORS закрывается fail-fast в `handleConnection` по `cfg.cors.allowed`
-  // (в декораторе нет доступа к DI).
   cors: { origin: true, credentials: true },
   transports: ['websocket', 'polling'],
 })
-export class ActivityFeedGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class ActivityFeedGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(ActivityFeedGateway.name);
 
   @WebSocketServer()
@@ -63,8 +39,6 @@ export class ActivityFeedGateway
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
-
-  // ── lifecycle ────────────────────────────────────────────────────────
 
   async handleConnection(client: Socket): Promise<void> {
     try {
@@ -105,14 +79,6 @@ export class ActivityFeedGateway
     );
   }
 
-  // ── client-side messages ─────────────────────────────────────────────
-
-  /**
-   * Подписка на дополнительный room команды. Защита: проверяем, что
-   * команда (`Team`) принадлежит tenant'у. Если модели Team нет — fallback
-   * на трюк «client сам отвечает за корректный teamId» (мы всё равно
-   * фильтруем visibility в сервисе перед публикацией в team-room).
-   */
   @SubscribeMessage('subscribe.team')
   async onSubscribeTeam(
     @ConnectedSocket() client: Socket,
@@ -123,11 +89,6 @@ export class ActivityFeedGateway
     if (!body?.teamId || typeof body.teamId !== 'string') {
       return { ok: false, error: 'invalid_team_id' };
     }
-    // NB (Wave 2): отдельной модели Team пока нет — её роль исполняет
-    // комбинация Org + Department + role-membership. Поэтому на этапе
-    // подписки мы не можем проверить «teamId принадлежит tenant'у» из БД
-    // запросом к одной таблице. Доверяем клиенту и фильтруем visibility
-    // в publish() сервиса (team rooms заполняются только нами, не извне).
     const room = this.teamRoom(body.teamId);
     await client.join(room);
     return { ok: true, room };
@@ -143,13 +104,10 @@ export class ActivityFeedGateway
     return { ok: true };
   }
 
-  /** Простой ping для отладочного клиента. */
   @SubscribeMessage('ping')
   onPing(): { ok: true; t: number } {
     return { ok: true, t: Date.now() };
   }
-
-  // ── server-side helpers (используются ActivityFeedService) ───────────
 
   tenantRoom(tenantId: string): string {
     return `tenant:${tenantId}`;
@@ -163,23 +121,14 @@ export class ActivityFeedGateway
     return `user:${userId}`;
   }
 
-  /**
-   * Опубликовать событие в один или несколько rooms. Безопасный no-op,
-   * если `server` ещё не инициализирован (актуально для unit-тестов).
-   */
   emitToRooms(rooms: string[], eventName: string, payload: unknown): void {
     if (!this.server) {
-      this.logger.debug(
-        { eventName, rooms },
-        'feed WS server not ready, event dropped',
-      );
+      this.logger.debug({ eventName, rooms }, 'feed WS server not ready, event dropped');
       return;
     }
     if (rooms.length === 0) return;
     this.server.to(rooms).emit(eventName, payload);
   }
-
-  // ── internals ────────────────────────────────────────────────────────
 
   private async authenticate(client: Socket): Promise<SocketContext | null> {
     const origin = (client.handshake.headers.origin ?? '').toString();
@@ -213,15 +162,9 @@ export class ActivityFeedGateway
       const us = await this.prisma.userSession.findUnique({
         where: { jti: session.jti },
       });
-      const valid =
-        us !== null &&
-        us.revokedAt === null &&
-        us.expiresAt.getTime() > Date.now();
+      const valid = us !== null && us.revokedAt === null && us.expiresAt.getTime() > Date.now();
       if (!valid) {
-        this.logger.warn(
-          { socketId: client.id, jti: session.jti },
-          'feed WS: session revoked',
-        );
+        this.logger.warn({ socketId: client.id, jti: session.jti }, 'feed WS: session revoked');
         return null;
       }
     }
@@ -259,19 +202,14 @@ export class ActivityFeedGateway
       }
     }
 
-    const authHeader = (
-      client.handshake.headers.authorization ?? ''
-    ).toString();
+    const authHeader = (client.handshake.headers.authorization ?? '').toString();
     if (authHeader.toLowerCase().startsWith('bearer ')) {
       return authHeader.slice(7).trim() || null;
     }
     return null;
   }
 
-  private async resolveTenantId(
-    client: Socket,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveTenantId(client: Socket, userId: string): Promise<string | null> {
     const auth = client.handshake.auth as { tenantId?: string } | undefined;
     if (auth?.tenantId && typeof auth.tenantId === 'string') return auth.tenantId;
 

@@ -1,18 +1,3 @@
-/**
- * Seed для таблицы OrgEntitlement (Фаза 12 knowledge-core).
- *
- * Создаёт OrgEntitlement для каждой Org, у которой её ещё нет.
- * Дефолт — `tier_pro` (см. п.7 Принципиальных решений Фазы 12: на MVP не лочим
- * существующих юзеров до полноценной биллинг-интеграции).
- *
- * Идемпотентность: per-Org check (`findUnique by tenantId`) перед `create`.
- * Можно запускать сколько угодно раз. Существующие записи (с другим tier'ом
- * или override'ами) НЕ перезаписываются.
- *
- * Запуск:
- *   bun run scripts/seed-entitlements.ts
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

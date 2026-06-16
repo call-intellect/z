@@ -1,13 +1,3 @@
-/**
- * Unit-тесты TochkaWebhookVerifierService.
- *
- * Покрытие:
- *   - extractToken: string / Buffer / {token} / {jwt} / {body} / invalid → throw
- *   - parseWebhookEvent: формирует eventId, amountKopecks=rub*100,
- *     fallback на 'unknown' при отсутствии полей
- *   - verify: с подменённым publicKeyPromise (true/false ветки)
- */
-
 import { generateKeyPairSync, type KeyObject } from 'node:crypto';
 
 import jwt from 'jsonwebtoken';
@@ -46,16 +36,17 @@ describe('TochkaWebhookVerifierService.extractToken / parseWebhookEvent', () => 
   });
 
   function payloadBase64(payload: Record<string, unknown>): string {
-    // header.payload.signature — для extractToken нам важна только payload-часть.
-    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString(
-      'base64url',
-    );
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
     return `${header}.${body}.sig`;
   }
 
   it('extractToken: string', () => {
-    const token = payloadBase64({ webhookType: 'acquiringInternetPayment', operationId: 'op-1', status: 'APPROVED' });
+    const token = payloadBase64({
+      webhookType: 'acquiringInternetPayment',
+      operationId: 'op-1',
+      status: 'APPROVED',
+    });
     const event = svc.parseWebhookEvent({}, token);
     expect(event.eventType).toBe('acquiringInternetPayment');
     expect(event.providerInvoiceId).toBe('op-1');
@@ -138,7 +129,6 @@ describe('TochkaWebhookVerifierService.verify', () => {
     publicKey = keypair.publicKey;
   });
 
-  /** Подсунуть готовый ключ + взвести «свежесть» кэша, чтобы не было fetch. */
   function injectKey(svc: TochkaWebhookVerifierService): void {
     (svc as unknown as { publicKeyPromise: Promise<KeyObject> }).publicKeyPromise =
       Promise.resolve(publicKey);
@@ -163,7 +153,6 @@ describe('TochkaWebhookVerifierService.verify', () => {
     const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
     injectKey(svc);
 
-    // Подписан другим ключом — RS256 не пройдёт verify.
     const anotherKeypair = generateKeyPairSync('rsa', { modulusLength: 2048 });
     const token = jwt.sign(
       { webhookType: 't', operationId: 'op', status: 'APPROVED' },
@@ -185,28 +174,19 @@ describe('TochkaWebhookVerifierService.verify', () => {
 
   it('fetch JWK failed → false (graceful)', async () => {
     const svc = new TochkaWebhookVerifierService(makeCfg(), makeMetrics());
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response('error', { status: 500 })),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('error', { status: 500 })));
 
     const result = await svc.verify({}, 'header.body.sig');
     expect(result).toBe(false);
     vi.unstubAllGlobals();
   });
 
-  // audit Б4 (2026-05-29) — защита от replay через JWT-claims.
   it('expired (iat старше 5 минут) → false + метрика reason=expired', async () => {
     const metrics = makeMetrics();
     const svc = new TochkaWebhookVerifierService(makeCfg(), metrics);
     injectKey(svc);
 
-    // iat 10 минут назад → maxAge '5m' отсечёт. Передаём iat через
-    // payload + mutatePayload=true (по докам jsonwebtoken 9.x так
-    // payload-iat сохраняется в результирующем JWT).
     const tenMinAgoSec = Math.floor(Date.now() / 1000) - 10 * 60;
-    // jsonwebtoken: чтобы iat из payload не был перетёрт, передаём
-    // mutatePayload=true. noTimestamp удалит наш iat — НЕ ставим.
     const manualToken = jwt.sign(
       {
         webhookType: 't',
@@ -230,7 +210,7 @@ describe('TochkaWebhookVerifierService.verify', () => {
     const token = jwt.sign(
       { webhookType: 't', operationId: 'op', status: 'APPROVED' },
       privateKey.export({ type: 'pkcs8', format: 'pem' }),
-      { algorithm: 'RS256' /* iat выставится автоматически */ },
+      { algorithm: 'RS256' },
     );
 
     expect(await svc.verify({}, token)).toBe(true);

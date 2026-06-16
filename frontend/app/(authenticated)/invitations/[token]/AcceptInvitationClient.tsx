@@ -1,29 +1,21 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { orgsApi } from '@/api/orgs.api';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { orgsApi } from "@/api/orgs.api";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 
-/**
- * Страница принятия приглашения в Org.
- *
- * Сценарий:
- *   - middleware.ts уже редиректит неавторизованного на /login?next=…
- *   - Авторизованный — видит кнопку «Принять приглашение».
- *   - При успехе → редирект на /dashboard (или /settings/organization).
- *
- * Не делаем автоматический accept на mount: даём юзеру осознанно подтвердить
- * (защита от phishing-подобных кейсов, когда токен в URL мог быть подменён).
- */
 export function AcceptInvitationClient({ token }: { token: string }) {
   const router = useRouter();
   const [accepting, setAccepting] = useState(false);
-  const [accepted, setAccepted] = useState<{ orgId: string; role: string } | null>(null);
+  const [accepted, setAccepted] = useState<{
+    orgId: string;
+    role: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleAccept = async () => {
@@ -32,11 +24,10 @@ export function AcceptInvitationClient({ token }: { token: string }) {
     try {
       const res = await orgsApi.acceptInvitation(token);
       setAccepted({ orgId: res.orgId, role: res.membership.role });
-      toast.success('Вы добавлены в организацию');
-      // Редирект через 1.5 секунды чтобы юзер увидел подтверждение.
-      setTimeout(() => router.push('/dashboard'), 1500);
+      toast.success("Вы добавлены в организацию");
+      setTimeout(() => router.push("/dashboard"), 1500);
     } catch (e) {
-      const msg = humanizeApiError(e, 'Не удалось принять приглашение');
+      const msg = humanizeApiError(e, "Не удалось принять приглашение");
       setError(msg);
       toast.error(msg);
     } finally {
@@ -49,7 +40,8 @@ export function AcceptInvitationClient({ token }: { token: string }) {
       <div className="mx-auto max-w-md py-16 text-center">
         <h1 className="mb-2 text-xl font-semibold">Готово</h1>
         <p className="text-sm text-fg-secondary">
-          Вы добавлены как <strong>{accepted.role}</strong>. Сейчас перенесём вас на дашборд…
+          Вы добавлены как <strong>{accepted.role}</strong>. Сейчас перенесём
+          вас на дашборд…
         </p>
       </div>
     );
@@ -59,8 +51,8 @@ export function AcceptInvitationClient({ token }: { token: string }) {
     <div className="mx-auto max-w-md py-16">
       <h1 className="mb-2 text-2xl font-semibold">Приглашение в организацию</h1>
       <p className="mb-6 text-sm text-fg-secondary">
-        Вы получили приглашение присоединиться к организации в Z. Нажмите «Принять»,
-        чтобы стать участником.
+        Вы получили приглашение присоединиться к организации в Z. Нажмите
+        «Принять», чтобы стать участником.
       </p>
       <Button
         size="lg"
@@ -73,7 +65,7 @@ export function AcceptInvitationClient({ token }: { token: string }) {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Принимаем…
           </>
         ) : (
-          'Принять приглашение'
+          "Принять приглашение"
         )}
       </Button>
       {error ? (

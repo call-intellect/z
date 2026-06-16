@@ -1,7 +1,3 @@
-/**
- * Whitelist валидных webhook-событий. Любое значение вне списка
- * → 400 при создании подписки и игнор при dispatch.
- */
 export const WEBHOOK_EVENTS = [
   'meeting.completed',
   'meeting.regenerated',

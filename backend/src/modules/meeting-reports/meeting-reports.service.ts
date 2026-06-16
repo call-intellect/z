@@ -1,16 +1,3 @@
-/**
- * MeetingReportsService — Фаза E §7.
- *
- * Источник: plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md.
- *
- * Отвечает за CRUD-операции над `MeetingReport` + enqueue в `ai.custom-report`:
- *   - list       — primary `AiResult` + additional `MeetingReport[]` (primary первым).
- *   - get        — полный отчёт (с output).
- *   - create     — entitlement + rate-limit + partial-unique guard + enqueue.
- *   - regenerate — снова enqueue с rate-limit 3/час per report.
- *   - remove     — soft-delete (status='archived').
- */
-
 import {
   ConflictException,
   ForbiddenException,
@@ -37,10 +24,6 @@ import type {
   ReportListItemDto,
 } from './dto/meeting-reports.dto';
 
-/**
- * Максимум одновременно живущих (не archived) отчётов на встречу — общий
- * rate-limit, который применяется поверх tier-лимита. ТЗ §7.1.
- */
 const TOTAL_REPORTS_LIMIT_PER_MEETING = 10;
 
 const REGENERATE_LIMIT_PER_HOUR = 3;
@@ -62,12 +45,6 @@ export class MeetingReportsService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────────── public ──────────────────────────
-
-  /**
-   * Список отчётов встречи: primary (синтетически из AiResult) + additional
-   * (MeetingReport). Primary всегда первым. ТЗ §6.
-   */
   async list(meetingId: string, userId: string): Promise<ReportListItemDto[]> {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrOrgAdmin(meeting, userId);
@@ -92,11 +69,9 @@ export class MeetingReportsService {
         kind: 'primary',
         id: aiResult.id,
         meetingId: meeting.id,
-        templateId:
-          aiResult.promptTemplateVersion?.templateId ?? null,
+        templateId: aiResult.promptTemplateVersion?.templateId ?? null,
         templateName:
-          aiResult.promptTemplateVersion?.template.name ??
-          `Системный шаблон ${meeting.type}`,
+          aiResult.promptTemplateVersion?.template.name ?? `Системный шаблон ${meeting.type}`,
         status: 'ready',
         outputPreview: makePreview(pickPrimarySummary(aiResult)),
         createdAt: aiResult.createdAt.toISOString(),
@@ -112,19 +87,10 @@ export class MeetingReportsService {
     return out;
   }
 
-  /** Полный отчёт. */
-  async get(
-    meetingId: string,
-    reportId: string,
-    userId: string,
-  ): Promise<ReportDetailDto> {
+  async get(meetingId: string, reportId: string, userId: string): Promise<ReportDetailDto> {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrOrgAdmin(meeting, userId);
 
-    // S6-07 (Р4): primary-отчёт list() синтезирует из AiResult с id=aiResult.id.
-    // get() обязан отдавать его по тому же id — иначе «Открыть» основного
-    // отчёта даёт 404. Ветка только при reportId === aiResult.id (additional
-    // отчёты остаются на пути meetingReport.findFirst ниже).
     const aiResult = await this.prisma.aiResult.findUnique({
       where: { meetingId: meeting.id },
       include: { promptTemplateVersion: { include: { template: true } } },
@@ -140,8 +106,7 @@ export class MeetingReportsService {
         meetingId: meeting.id,
         templateId: aiResult.promptTemplateVersion?.templateId ?? null,
         templateName:
-          aiResult.promptTemplateVersion?.template.name ??
-          `Системный шаблон ${meeting.type}`,
+          aiResult.promptTemplateVersion?.template.name ?? `Системный шаблон ${meeting.type}`,
         status: 'ready',
         outputPreview: makePreview(canonicalSummary),
         createdAt: aiResult.createdAt.toISOString(),
@@ -168,16 +133,6 @@ export class MeetingReportsService {
     };
   }
 
-  /**
-   * Создать новый отчёт по выбранному шаблону. Enqueue в `ai.custom-report`.
-   * Проверки (в порядке):
-   *   1. RBAC: хост или Org-Admin.
-   *   2. Entitlement-фича `feature.multi_reports_per_meeting`.
-   *   3. Tier-лимит (`multi_reports_limit_per_meeting`).
-   *   4. Общий лимит 10 на встречу.
-   *   5. Шаблон существует, не archived, доступен Org (system или своя Org).
-   *   6. Partial-unique: нет pending/running с тем же templateId.
-   */
   async create(
     meetingId: string,
     userId: string,
@@ -191,8 +146,7 @@ export class MeetingReportsService {
           ok: false,
           error: {
             code: 'meeting_without_tenant',
-            message:
-              'У встречи нет привязки к Org (legacy). Доп. отчёты недоступны.',
+            message: 'У встречи нет привязки к Org (legacy). Доп. отчёты недоступны.',
           },
         },
         HttpStatus.BAD_REQUEST,
@@ -200,15 +154,13 @@ export class MeetingReportsService {
     }
     const tenantId = meeting.tenantId;
 
-    // 1. Entitlement: фича.
     const ent = await this.entitlements.getEntitlement(tenantId);
     if (ent.features['feature.multi_reports_per_meeting'] !== true) {
       throw new ForbiddenException({
         ok: false,
         error: {
           code: 'entitlement_required',
-          message:
-            'Дополнительные отчёты доступны на тарифах Pro / Business / Enterprise.',
+          message: 'Дополнительные отчёты доступны на тарифах Pro / Business / Enterprise.',
           feature: 'feature.multi_reports_per_meeting',
           currentTier: ent.tier,
           upgradeUrl: '/settings/billing',
@@ -216,7 +168,6 @@ export class MeetingReportsService {
       });
     }
 
-    // 2. Tier-лимит.
     const tierLimit = ent.quotas['multi_reports_limit_per_meeting'] ?? 0;
     const liveCount = await this.prisma.meetingReport.count({
       where: { meetingId, deletedAt: null },
@@ -233,7 +184,6 @@ export class MeetingReportsService {
       });
     }
 
-    // 3. Общий жёсткий лимит 10 (защита от спама поверх tier'а).
     if (liveCount >= TOTAL_REPORTS_LIMIT_PER_MEETING) {
       throw new HttpException(
         {
@@ -247,7 +197,6 @@ export class MeetingReportsService {
       );
     }
 
-    // 4. Шаблон.
     const template = await this.prisma.promptTemplate.findFirst({
       where: {
         id: body.templateId,
@@ -279,10 +228,6 @@ export class MeetingReportsService {
       );
     }
 
-    // 5. Создание + защита от дубля (pending/running по тому же шаблону).
-    //    Полагаемся на partial unique-индекс meeting_report_pending_unique
-    //    (см. apply-postgres-init.sql). Если он не применён в окружении —
-    //    дополнительно делаем soft-check ниже.
     const existingActive = await this.prisma.meetingReport.findFirst({
       where: {
         meetingId,
@@ -296,8 +241,7 @@ export class MeetingReportsService {
         ok: false,
         error: {
           code: 'meeting_report_already_pending',
-          message:
-            'Для этого шаблона уже идёт генерация отчёта. Дождитесь её завершения.',
+          message: 'Для этого шаблона уже идёт генерация отчёта. Дождитесь её завершения.',
           reportId: existingActive.id,
         },
       });
@@ -318,24 +262,18 @@ export class MeetingReportsService {
         },
       });
     } catch (err) {
-      // Если partial unique сработал (race) — переводим в 409.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
             code: 'meeting_report_already_pending',
-            message:
-              'Для этого шаблона уже идёт генерация отчёта. Дождитесь её завершения.',
+            message: 'Для этого шаблона уже идёт генерация отчёта. Дождитесь её завершения.',
           },
         });
       }
       throw err;
     }
 
-    // 6. Enqueue.
     await this.queue.enqueueCustomReport(created.id, meetingId);
     this.metrics?.incMeetingReportCreated?.({ kind: 'additional' });
     this.logger.log(
@@ -351,10 +289,6 @@ export class MeetingReportsService {
     return { id: created.id, status: 'pending' };
   }
 
-  /**
-   * Регенерация отчёта (rate-limit 3/час). Сбрасывает output, статус → pending,
-   * заново ставит в очередь.
-   */
   async regenerate(
     meetingId: string,
     reportId: string,
@@ -379,7 +313,6 @@ export class MeetingReportsService {
       });
     }
 
-    // Rate-limit 3/час per report.
     const key = `mr:regen:${reportId}`;
     const client = this.redis.client;
     const current = await client.incr(key);
@@ -399,7 +332,6 @@ export class MeetingReportsService {
       );
     }
 
-    // Резолв версии: явный useVersionId или текущая active версия шаблона.
     let versionId = report.promptTemplateVersionId;
     if (body.useVersionId) {
       const v = await this.prisma.promptTemplateVersion.findFirst({
@@ -442,12 +374,7 @@ export class MeetingReportsService {
     return { id: report.id, status: 'pending' };
   }
 
-  /** Soft-delete отчёта. ТЗ §7.1. */
-  async remove(
-    meetingId: string,
-    reportId: string,
-    userId: string,
-  ): Promise<void> {
+  async remove(meetingId: string, reportId: string, userId: string): Promise<void> {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrOrgAdmin(meeting, userId);
 
@@ -461,16 +388,9 @@ export class MeetingReportsService {
       data: { status: 'archived', deletedAt: new Date() },
     });
     this.metrics?.incMeetingReportDeleted?.();
-    this.logger.log(
-      { meetingId, reportId: report.id, userId },
-      'meeting-reports: archived',
-    );
+    this.logger.log({ meetingId, reportId: report.id, userId }, 'meeting-reports: archived');
   }
 
-  /**
-   * Список доступных Org шаблонов для модалки «Добавить отчёт».
-   * Системные + Org-овские, status='active', deletedAt=null.
-   */
   async listAvailableTemplates(
     meetingId: string,
     userId: string,
@@ -514,12 +434,7 @@ export class MeetingReportsService {
     }));
   }
 
-  // ─────────────────────────── private ──────────────────────────
-
-  private toListItem(
-    r: MeetingReport,
-    templateName: string,
-  ): ReportListItemDto {
+  private toListItem(r: MeetingReport, templateName: string): ReportListItemDto {
     return {
       kind: r.kind === 'primary' ? 'primary' : 'additional',
       id: r.id,
@@ -544,10 +459,7 @@ export class MeetingReportsService {
     return meeting;
   }
 
-  private async ensureHostOrOrgAdmin(
-    meeting: Meeting,
-    userId: string,
-  ): Promise<void> {
+  private async ensureHostOrOrgAdmin(meeting: Meeting, userId: string): Promise<void> {
     if (meeting.ownerId === userId) return;
     if (meeting.tenantId && (await this.isOrgAdminOrOwner(meeting.tenantId, userId))) {
       return;
@@ -555,10 +467,7 @@ export class MeetingReportsService {
     throw new ForbiddenException('not_authorised_for_meeting_reports');
   }
 
-  private async isOrgAdminOrOwner(
-    tenantId: string,
-    userId: string,
-  ): Promise<boolean> {
+  private async isOrgAdminOrOwner(tenantId: string, userId: string): Promise<boolean> {
     const m = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, userId },
       select: { role: true },
@@ -568,21 +477,13 @@ export class MeetingReportsService {
   }
 }
 
-// ────────────────────────── helpers ──────────────────────────
-
 function makePreview(text: string | null | undefined): string | null {
   if (!text) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
-  return trimmed.length > PREVIEW_MAX_CHARS
-    ? trimmed.slice(0, PREVIEW_MAX_CHARS) + '…'
-    : trimmed;
+  return trimmed.length > PREVIEW_MAX_CHARS ? trimmed.slice(0, PREVIEW_MAX_CHARS) + '…' : trimmed;
 }
 
-/**
- * Сжать первое строковое поле из JSON-output для отображения превью.
- * Берём первое не-пустое строковое значение из верхнего уровня объекта.
- */
 function makePreviewFromOutput(output: unknown): string | null {
   if (!output || typeof output !== 'object') return null;
   for (const v of Object.values(output as Record<string, unknown>)) {

@@ -94,8 +94,6 @@ describe('ParticipantContextService.loadForMeeting', () => {
     });
   });
 
-  // Ф0.2 acceptance: зарегистрированный приглашённый (role='guest',
-  // isRegisteredUser=true) теперь отдаёт userId/fullName, а не null.
   it('зарегистрированный гость (isRegisteredUser=true, userId=u1) → userId=u1, fullName из User', async () => {
     const svc = makeService({
       participants: [
@@ -121,7 +119,6 @@ describe('ParticipantContextService.loadForMeeting', () => {
     });
   });
 
-  // Ф0.2 регресс: анонимный гость остаётся без userId.
   it('регресс: анонимный гость (isRegisteredUser=false, userId=null) → userId=null', async () => {
     const svc = makeService({
       participants: [

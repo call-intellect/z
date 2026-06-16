@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-/** ТЗ «Команда + доступы» Фаза 5 — канонический список капабилити (подмножество
- *  «что человек видит», без биллинговых осей). */
 export const CAPABILITIES = [
   'memory:regulations',
   'memory:entities',

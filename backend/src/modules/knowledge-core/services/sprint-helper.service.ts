@@ -5,10 +5,7 @@ import { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { wrapUserData } from '../../ai/services/prompts/common';
 import {
   SPRINT_HELPER_SUGGEST_JSON_SCHEMA,
@@ -26,15 +23,6 @@ interface SuggestedHint {
   confidence: number;
 }
 
-/**
- * Sprints (2026-05-27) — Specialist 3-13 «Помощник по спринтам».
- *
- * Главная логика воркера и cron'а: собрать контекст спринта (название/scope/
- * прогресс/задачи/блоки/история подсказок) → LLM `sprint-helper-suggest` →
- * массив `SprintHint`. Дедуп через `(cycleId, kind, contentHash)`.
- *
- * Не бросает исключения: на любой fail метрика и log, возвращает 0.
- */
 @Injectable()
 export class SprintHelperService {
   private readonly logger = new Logger(SprintHelperService.name);
@@ -53,10 +41,6 @@ export class SprintHelperService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главный метод воркера: один прогон по спринту. Возвращает количество
-   * созданных подсказок (включая update'ы существующих).
-   */
   async runForCycle(args: {
     cycleId: string;
     tenantId: string;
@@ -113,7 +97,6 @@ export class SprintHelperService {
         },
       });
 
-      // carryOverCount по каждой задаче (один SQL).
       const carryOverByIssue = new Map<string, number>();
       if (issues.length > 0) {
         const rows = await this.prisma.issueActivity.groupBy({
@@ -129,7 +112,6 @@ export class SprintHelperService {
         }
       }
 
-      // Активность по задачам.
       const lastActivityByIssue = new Map<string, Date | null>();
       if (issues.length > 0) {
         const rows = await this.prisma.issueActivity.groupBy({
@@ -142,7 +124,6 @@ export class SprintHelperService {
         }
       }
 
-      // Последние блоки графа знаний — из встреч спринта и из задач.
       const meetingIds = await this.prisma.meeting
         .findMany({
           where: {
@@ -158,8 +139,6 @@ export class SprintHelperService {
       for (const i of issues) {
         for (const b of i.sourceBlockIds) sourceBlockIds.add(b);
       }
-      // Блоки встреч — через evidence → rawEvent → source. На MVP опускаем
-      // (берём только Issue.sourceBlockIds — этого достаточно для подсказок).
       void meetingIds;
 
       const blocks =
@@ -181,10 +160,7 @@ export class SprintHelperService {
             })
           : [];
 
-      // История подсказок за последние 7 дней (для дедупликации в промпте).
-      const recentCutoff = new Date(
-        Date.now() - SprintHelperService.RECENT_HINTS_DAYS * 86400_000,
-      );
+      const recentCutoff = new Date(Date.now() - SprintHelperService.RECENT_HINTS_DAYS * 86400_000);
       const recentHints = await this.prisma.sprintHint.findMany({
         where: {
           cycleId: cycle.id,
@@ -222,8 +198,7 @@ export class SprintHelperService {
           checklistDoneCount: i.checklistDoneCount,
           childrenCount: i.children.length,
           createdAt: i.createdAt.toISOString(),
-          lastActivityAt:
-            lastActivityByIssue.get(i.id)?.toISOString() ?? null,
+          lastActivityAt: lastActivityByIssue.get(i.id)?.toISOString() ?? null,
           carryOverCount: carryOverByIssue.get(i.id) ?? 0,
         })),
         recentBlocks: blocks,
@@ -237,12 +212,6 @@ export class SprintHelperService {
         now: new Date().toISOString(),
       });
 
-      // A2 анти-инъекция: userMessage содержит сырой пользовательский ввод
-      // (название/описание спринта, заголовки задач) — оборачиваем в маркеры
-      // данных. SYSTEM уже несёт INJECTION_GUARD_NOTE (withInjectionGuard в
-      // промпте), поэтому здесь оборачиваем ТОЛЬКО user (иначе нота задвоится
-      // и сломается prompt-кэш). Глобальный kill-switch тут не гейтит: у
-      // сервиса нет TypedConfigService.
       const guardedUser = wrapUserData(userMessage);
 
       let result: LlmCallResult;
@@ -316,9 +285,7 @@ export class SprintHelperService {
               : [],
             sourceBlockIds: [],
             status: 'active',
-            confidence: new Prisma.Decimal(
-              Math.max(0, Math.min(1, h.confidence)),
-            ),
+            confidence: new Prisma.Decimal(Math.max(0, Math.min(1, h.confidence))),
             contentHash,
           },
         });
@@ -343,9 +310,11 @@ export class SprintHelperService {
     }
   }
 
-  private computeProgressSummary(
-    issues: ReadonlyArray<{ state: { category: string } | null }>,
-  ): { total: number; completed: number; inProgress: number } {
+  private computeProgressSummary(issues: ReadonlyArray<{ state: { category: string } | null }>): {
+    total: number;
+    completed: number;
+    inProgress: number;
+  } {
     let completed = 0;
     let inProgress = 0;
     for (const i of issues) {
@@ -365,8 +334,7 @@ export class SprintHelperService {
   }): string {
     if (project.customerCard) return `Клиент: ${project.customerCard.name}`;
     if (project.vendor) return `Поставщик: ${project.vendor.name}`;
-    if (project.subjectPerson)
-      return `Сотрудник: ${project.subjectPerson.name}`;
+    if (project.subjectPerson) return `Сотрудник: ${project.subjectPerson.name}`;
     if (project.department) return `Отдел: ${project.department.name}`;
     return `Проект: ${project.name}`;
   }

@@ -3,37 +3,14 @@ import { $Enums } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   EXTRACT_PLAN_JSON_SCHEMA,
   EXTRACT_PLAN_SYSTEM_PROMPT,
   buildExtractPlanUserPrompt,
 } from '../prompts/extract-plan.prompt';
 
-import {
-  type PeriodExpr,
-  resolvePeriod,
-} from './period-resolver';
-
-/**
- * Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0) — QueryPlanExtractorService.
- *
- * Извлекает СТРУКТУРУ вопроса к AI-чату (период / типы сигналов / ветки тем /
- * сущности / «я» / агрегация / нужно-действие) через LLM-агент
- * `dialog-extract-plan`, затем детерминированно резолвит период в пару
- * UTC-инстантов. Результат (`QueryPlanFilters`) позже (Ф2/Ф3) станет
- * recall-safe фильтром retrieval.
- *
- * Фаза 1 (эта): строит ТОЛЬКО извлекатель + резолвер. Прокси в retrieval (Ф2)
- * и SQL-фильтр (Ф3) — отдельные фазы.
- *
- * FAIL-OPEN: любой сбой (LLM упал / невалидный JSON / низкая уверенность) →
- * возвращаем пустой план с `applied=false`. Поиск тогда работает как раньше,
- * без фильтра — лучше «не сузить», чем «потерять релевантное».
- */
+import { type PeriodExpr, resolvePeriod } from './period-resolver';
 
 export interface QueryPlanFilters {
   dateFrom: Date | null;
@@ -44,20 +21,9 @@ export interface QueryPlanFilters {
   personScope: boolean;
   aggregation: boolean;
   needsAction: boolean;
-  /**
-   * true, если вопрос про ТЕКУЩЕЕ/действующее состояние «сейчас» («сейчас»,
-   * «актуальные», «действующие»). Ф3 превратит это в bitemporal-фильтр
-   * «только активное на момент запроса».
-   */
   activeNow: boolean;
 }
 
-/**
- * Query Understanding Волна 1 (Ф2) — резолвнутые структурные фильтры для
- * recall-safe ретрива. В отличие от `QueryPlanFilters` (entityHints — строки),
- * здесь entityIds уже резолвнуты в Entity.id, а activeNow → bitemporalActiveOnly.
- * Ф3 потребляет это в SQL-фильтре retrieval; Ф2 только переносит.
- */
 export interface StructuralRetrievalFilters {
   dateFrom: Date | null;
   dateTo: Date | null;
@@ -77,28 +43,15 @@ export interface QueryPlanResult {
 export interface QueryPlanExtractInput {
   tenantId: string;
   userId: string;
-  /**
-   * ТЗ 2026-06-14: ТРИ самодостаточных формулировки запроса (выход модуля
-   * понимания запроса) — извлекатель собирает по ним ОБЪЕДИНЁННЫЙ план. Может
-   * быть и меньше 3 (если расширитель выключен/упал — отдаётся что есть).
-   */
   questions: string[];
-  /** ISO момента «сейчас» (для детерминированного резолва периода). */
   todayIso: string;
   orgTimezone: string | null;
   conversationId: string | null;
 }
 
-/**
- * R3 code-fallback порог: план применяется только при confidence ≥ этого
- * значения. Источник правды для прода — AdminSetting (следующие фазы), здесь —
- * безопасный дефолт.
- */
 export const QUERY_PLAN_MIN_CONFIDENCE = 0.6;
 
-/** Максимальная длина одной entity-подсказки (защита от мусора LLM). */
 const ENTITY_HINT_MAX_LENGTH = 200;
-/** Максимальное число entity-подсказок. */
 const ENTITY_HINT_MAX_COUNT = 10;
 
 interface RawPlan {
@@ -129,13 +82,8 @@ const VALID_PERIOD_EXPRS: ReadonlySet<PeriodExpr> = new Set<PeriodExpr>([
 export class QueryPlanExtractorService {
   private readonly logger = new Logger(QueryPlanExtractorService.name);
 
-  // Runtime-наборы валидных enum-значений для санитизации ответа LLM.
-  private readonly validSignalTypes = new Set<string>(
-    Object.values($Enums.SignalType),
-  );
-  private readonly validThemeBranches = new Set<string>(
-    Object.values($Enums.ThemeBranch),
-  );
+  private readonly validSignalTypes = new Set<string>(Object.values($Enums.SignalType));
+  private readonly validThemeBranches = new Set<string>(Object.values($Enums.ThemeBranch));
 
   constructor(
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
@@ -148,9 +96,6 @@ export class QueryPlanExtractorService {
 
     let rawText: string;
     try {
-      // Защита от prompt-injection — всегда (см. query-classifier). SYSTEM
-      // оборачиваем guard'ом, user-вопрос — маркерами данных. Гард включён
-      // безусловно: для извлекателя это безопасно и проще, чем тянуть cfg.
       const rawUser = buildExtractPlanUserPrompt({
         questions: input.questions,
         todayIso: input.todayIso,
@@ -188,21 +133,13 @@ export class QueryPlanExtractorService {
 
     const parsed = this.parsePlanJson(rawText);
     if (parsed === null) {
-      // JSON не распарсился — fail-open.
       return this.failOpen(startedAt);
     }
 
-    // ── Санитизация и валидация ────────────────────────────────────────
     const periodExpr = this.coercePeriodExpr(parsed.periodExpr);
     const periodDays = this.coercePeriodDays(parsed.periodDays);
-    const signalTypes = this.sanitizeEnumArray(
-      parsed.signalTypes,
-      this.validSignalTypes,
-    );
-    const themeBranches = this.sanitizeEnumArray(
-      parsed.themeBranches,
-      this.validThemeBranches,
-    );
+    const signalTypes = this.sanitizeEnumArray(parsed.signalTypes, this.validSignalTypes);
+    const themeBranches = this.sanitizeEnumArray(parsed.themeBranches, this.validThemeBranches);
     const entityHints = this.sanitizeEntityHints(parsed.entityHints);
     const personScope = this.coerceBool(parsed.personScope);
     const aggregation = this.coerceBool(parsed.aggregation);
@@ -210,12 +147,7 @@ export class QueryPlanExtractorService {
     const activeNow = this.coerceBool(parsed.activeNow);
     const confidence = this.coerceConfidence(parsed.confidence);
 
-    const period = resolvePeriod(
-      periodExpr,
-      input.todayIso,
-      orgTimezone,
-      periodDays,
-    );
+    const period = resolvePeriod(periodExpr, input.todayIso, orgTimezone, periodDays);
 
     const hasAnyFilter =
       !!(period.dateFrom || period.dateTo) ||
@@ -229,8 +161,6 @@ export class QueryPlanExtractorService {
     const durationSeconds = (Date.now() - startedAt) / 1000;
 
     if (!applied) {
-      // Не применяем → отдаём пустой план, чтобы downstream случайно ничего
-      // не отфильтровал. confidence сохраняем для наблюдаемости.
       return {
         filters: this.emptyFilters(),
         confidence,
@@ -257,15 +187,7 @@ export class QueryPlanExtractorService {
     };
   }
 
-  /**
-   * Резолв «своего» Person по userId — НЕ мутирующий (read-only). Используется
-   * Ф2 для personScope-фильтра. НЕ применять ensurePersonForUser — она создаёт
-   * строки, что недопустимо в read-пути.
-   */
-  async resolveSelfPersonId(
-    tenantId: string,
-    userId: string,
-  ): Promise<string | null> {
+  async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, userId, deletedAt: null },
       select: { id: true },
@@ -273,17 +195,6 @@ export class QueryPlanExtractorService {
     return person?.id ?? null;
   }
 
-  /**
-   * Query Understanding Волна 1 (Ф2) — резолв сырого плана в структурные
-   * фильтры retrieval. Все Prisma-вызовы НЕ мутирующие (read-only). FAIL-OPEN:
-   * любая ошибка БД → возвращаем null (без фильтра), а не бросаем.
-   *
-   * Возвращает null, если:
-   *   - план не применился (`!plan.applied`), или
-   *   - фильтровать нечем (после резолва entity ничего значимого не осталось).
-   *
-   * Ф2 только переносит результат до RetrievalInput; SQL-фильтрацию делает Ф3.
-   */
   async resolveStructuralFilters(args: {
     tenantId: string;
     userId: string;
@@ -293,10 +204,7 @@ export class QueryPlanExtractorService {
     if (!plan.applied) return null;
 
     try {
-      const entityIds = await this.resolveEntityHints(
-        tenantId,
-        plan.filters.entityHints,
-      );
+      const entityIds = await this.resolveEntityHints(tenantId, plan.filters.entityHints);
 
       if (plan.filters.personScope) {
         const selfEntityId = await this.resolveSelfEntityId(tenantId, userId);
@@ -334,16 +242,7 @@ export class QueryPlanExtractorService {
     }
   }
 
-  /**
-   * Резолв entity-подсказок (имён как написано) в Entity.id. НЕ мутирующий.
-   * Каждую подсказку матчим по canonicalName (case-insensitive) или по
-   * массиву aliases (точное вхождение). Промахи молча пропускаем (не бросаем),
-   * dedupe + cap 10. mergedIntoId=null — берём только «живые» сущности.
-   */
-  private async resolveEntityHints(
-    tenantId: string,
-    hints: string[],
-  ): Promise<string[]> {
+  private async resolveEntityHints(tenantId: string, hints: string[]): Promise<string[]> {
     const out: string[] = [];
     const seen = new Set<string>();
     for (const rawHint of hints) {
@@ -369,22 +268,13 @@ export class QueryPlanExtractorService {
     return out;
   }
 
-  /**
-   * Резолв «своего» Entity.id по userId (через Person.entityId). НЕ мутирующий.
-   * Используется для personScope-фильтра. null если Person/entityId нет.
-   */
-  private async resolveSelfEntityId(
-    tenantId: string,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveSelfEntityId(tenantId: string, userId: string): Promise<string | null> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, userId, deletedAt: null },
       select: { entityId: true },
     });
     return person?.entityId ?? null;
   }
-
-  // ─────────────────────────── helpers ─────────────────────────────────
 
   private emptyFilters(): QueryPlanFilters {
     return {
@@ -438,10 +328,7 @@ export class QueryPlanExtractorService {
     return null;
   }
 
-  private sanitizeEnumArray(
-    raw: unknown,
-    valid: ReadonlySet<string>,
-  ): string[] {
+  private sanitizeEnumArray(raw: unknown, valid: ReadonlySet<string>): string[] {
     if (!Array.isArray(raw)) return [];
     const out: string[] = [];
     const seen = new Set<string>();

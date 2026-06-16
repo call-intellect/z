@@ -1,15 +1,13 @@
-import { apiClient } from './api-client';
-import { ApiError } from './api-error';
+import { apiClient } from "./api-client";
+import { ApiError } from "./api-error";
 import type {
   AccessApi,
   MeetingApi,
   MeetingSummaryApi,
   ParticipantApi,
-} from '@/domain/meeting';
-import type { AiResultApi } from '@/domain/ai-result';
-import type { MeetingStatus, MeetingType } from '@/domain/enums';
-
-// ─────────────────── DTO returned by backend ──────────────────
+} from "@/domain/meeting";
+import type { AiResultApi } from "@/domain/ai-result";
+import type { MeetingStatus, MeetingType } from "@/domain/enums";
 
 export type ListMeetingsApiResponse = {
   items: MeetingSummaryApi[];
@@ -23,29 +21,15 @@ export type CreateMeetingApiRequest = {
   title: string;
   custom_prompt?: string | null;
   templateId?: string | null;
-  /**
-   * Опциональная привязка к карточке. Если задано — встреча создаётся уже
-   * привязанной к карточке (deeplink-сценарий «Создать встречу из карточки»).
-   */
   card_id?: string | null;
   record_by_default?: boolean;
-  /**
-   * Приглашённые сотрудники/контакты (Фаза 2). Backend (Фаза 2.1) pre-seed'ит
-   * `Participant` с `userId`/`personId` и шлёт приглашение по выбранным
-   * каналам `sendVia` (почта / Telegram).
-   */
   invitees?: Array<{
     userId?: string | null;
     personId?: string | null;
     email?: string | null;
-    sendVia?: ('email' | 'telegram')[];
+    sendVia?: ("email" | "telegram")[];
   }>;
-  /**
-   * ТЗ 2026-06-06 knowledge-access (Ф7) — закрытость встречи. Опционально.
-   * null/опущено = знание встречи открыто; иначе блоки встречи привязываются
-   * к закрытой группе: «руководство» / «совет» / «личное».
-   */
-  closed_group_kind?: 'leadership' | 'council' | 'personal' | null;
+  closed_group_kind?: "leadership" | "council" | "personal" | null;
 };
 
 export type ListMeetingsApiRequest = {
@@ -72,17 +56,12 @@ export type RegenerateSectionApiRequest = {
 
 export type CreateMeetingApiResponse = { id: string; url: string };
 
-/**
- * Тело POST /meetings/:id/invitees (Фаза B5) — добавить приглашённых к уже
- * созданной встрече. Backend host-only, идемпотентен (повторные дубликаты
- * пропускаются), разрешён для joinable-встречи.
- */
 export type AddInviteesApiRequest = {
   invitees: Array<{
     userId?: string | null;
     personId?: string | null;
     email?: string | null;
-    sendVia?: ('email' | 'telegram')[];
+    sendVia?: ("email" | "telegram")[];
   }>;
 };
 
@@ -90,18 +69,12 @@ export type AddInviteesApiResponse = { added: number; skipped: number };
 
 export type JoinMeetingApiRequest = {
   guest_name?: string;
-  /**
-   * Персональный токен приглашения (Ф3.1, backend DTO `JoinMeetingSchema`).
-   * Передаётся при входе по ссылке `/m/:id?inv=<inviteToken>` — backend
-   * резолвит pre-seeded `Participant` по токену вместо создания нового
-   * анонимного гостя.
-   */
   invite_token?: string;
 };
 
 export type JoinMeetingApiResponse = {
   participant_id: string;
-  role: 'host' | 'guest';
+  role: "host" | "guest";
   livekit_identity: string;
   livekit: { url: string; token: string; identity: string };
 };
@@ -119,10 +92,6 @@ export type MeetingDetailApi = MeetingApi & {
 
 export type ResultApiResponse = {
   meeting: MeetingApi;
-  /**
-   * Commercial-reliability pack (Фаза 3) — `isRegisteredUser` нужен UI для
-   * показа inline-edit «карандашика» только у гостей.
-   */
   participants: Array<ParticipantApi & { isRegisteredUser: boolean }>;
   aiResult: AiResultApi | null;
   recording: {
@@ -157,9 +126,8 @@ export type TranscriptApiResponse = {
   roomChat?: Array<{ sentAt: string; authorName: string; content: string }>;
 };
 
-/** Ответ POST /meetings/:id/transcript/clean. */
 export type CleanTranscriptApiResponse = {
-  status: 'queued' | 'already_clean';
+  status: "queued" | "already_clean";
 };
 
 export type AudioTrackApi = {
@@ -175,22 +143,16 @@ export type AudioTracksApiResponse = {
   tracks: AudioTrackApi[];
 };
 
-// ─────────────── Загрузка готовой записи (ТЗ-5 Ф5) ───────────────
-
-/** Тело POST /meetings/upload — заявка на загрузку готовой записи. */
 export type CreateUploadApiRequest = {
   type: MeetingType;
   title: string;
   customPrompt?: string | null;
   fileName: string;
   contentType: string;
-  /** Размер файла в байтах (бэк не принимает больше 2 ГБ). */
   sizeBytes: number;
-  /** Подсказка о количестве говорящих (опционально). */
   numSpeakersHint?: number | null;
 };
 
-/** Ответ POST /meetings/upload — координаты прямой загрузки в S3. */
 export type CreateUploadApiResponse = {
   meetingId: string;
   uploadUrl: string;
@@ -198,15 +160,13 @@ export type CreateUploadApiResponse = {
   expiresAt: string;
 };
 
-/** Способ подписи говорящего (DTO бэка, не переводить — это идентификаторы). */
 export type SpeakerAssignmentApi =
-  | 'unassigned'
-  | 'employee'
-  | 'external'
-  | 'excluded'
-  | 'merged';
+  | "unassigned"
+  | "employee"
+  | "external"
+  | "excluded"
+  | "merged";
 
-/** Один говорящий из расшифровки загруженной записи. */
 export type UploadSpeakerApi = {
   label: string;
   displayLabel: string;
@@ -226,7 +186,6 @@ export type SpeakersApiResponse = {
   turns: TranscriptTurn[];
 };
 
-/** Тело PUT /meetings/:id/speakers — черновик подписей. */
 export type PutSpeakersApiRequest = {
   assignments: Array<{
     label: string;
@@ -243,52 +202,41 @@ export type PutSpeakersApiResponse = {
   speakers: UploadSpeakerApi[];
 };
 
-/** Ответ GET /meetings/:id/upload/playback — источник для плеера. */
 export type UploadPlaybackApiResponse = {
-  kind: 'video' | 'audio';
+  kind: "video" | "audio";
   url: string;
   expiresAt: string;
 };
 
-// ─────────────────── helpers ──────────────────
-
 function buildListQuery(opts: ListMeetingsApiRequest): string {
   const params = new URLSearchParams();
-  if (opts.page) params.set('page', String(opts.page));
-  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.page) params.set("page", String(opts.page));
+  if (opts.limit) params.set("limit", String(opts.limit));
   if (opts.status) {
     if (Array.isArray(opts.status)) {
-      for (const s of opts.status) params.append('status', s);
+      for (const s of opts.status) params.append("status", s);
     } else {
-      params.set('status', opts.status);
+      params.set("status", opts.status);
     }
   }
   if (opts.type) {
     if (Array.isArray(opts.type)) {
-      for (const tt of opts.type) params.append('type', tt);
+      for (const tt of opts.type) params.append("type", tt);
     } else {
-      params.set('type', opts.type);
+      params.set("type", opts.type);
     }
   }
-  if (opts.query) params.set('query', opts.query);
-  if (opts.dateFrom) params.set('dateFrom', opts.dateFrom);
-  if (opts.dateTo) params.set('dateTo', opts.dateTo);
+  if (opts.query) params.set("query", opts.query);
+  if (opts.dateFrom) params.set("dateFrom", opts.dateFrom);
+  if (opts.dateTo) params.set("dateTo", opts.dateTo);
   if (opts.tagIds) {
-    for (const id of opts.tagIds) params.append('tagId', id);
+    for (const id of opts.tagIds) params.append("tagId", id);
   }
-  if (opts.cardId) params.set('cardId', opts.cardId);
+  if (opts.cardId) params.set("cardId", opts.cardId);
   const qs = params.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
-/**
- * Прямая загрузка файла в S3 по presigned-URL — В ОБХОД apiClient (он
- * JSON-only и не даёт прогресса). Используем XHR ради события `upload.progress`.
- *
- * ВАЖНО: заголовок `Content-Type` обязан совпадать с тем `contentType`, что был
- * передан в `createUpload` — иначе S3 отвергнет подпись. Никаких auth-куки /
- * X-Org-Id сюда слать нельзя — это запрос напрямую в хранилище.
- */
 export function uploadFileToPresignedUrl(opts: {
   url: string;
   file: File | Blob;
@@ -299,8 +247,8 @@ export function uploadFileToPresignedUrl(opts: {
   const { url, file, contentType, onProgress, signal } = opts;
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('PUT', url, true);
-    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.open("PUT", url, true);
+    xhr.setRequestHeader("Content-Type", contentType);
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) {
@@ -314,7 +262,7 @@ export function uploadFileToPresignedUrl(opts: {
       } else {
         reject(
           new ApiError({
-            code: 'upload_put_failed',
+            code: "upload_put_failed",
             message: `Хранилище отклонило загрузку (код ${xhr.status}).`,
           }),
         );
@@ -323,13 +271,13 @@ export function uploadFileToPresignedUrl(opts: {
     xhr.onerror = () =>
       reject(
         new ApiError({
-          code: 'upload_network_error',
-          message: 'Не удалось загрузить файл. Проверьте подключение.',
+          code: "upload_network_error",
+          message: "Не удалось загрузить файл. Проверьте подключение.",
         }),
       );
     xhr.onabort = () =>
       reject(
-        new ApiError({ code: 'upload_aborted', message: 'Загрузка отменена.' }),
+        new ApiError({ code: "upload_aborted", message: "Загрузка отменена." }),
       );
 
     if (signal) {
@@ -337,19 +285,16 @@ export function uploadFileToPresignedUrl(opts: {
         xhr.abort();
         return;
       }
-      signal.addEventListener('abort', () => xhr.abort(), { once: true });
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
 
     xhr.send(file);
   });
 }
 
-/** Заголовок X-Org-Id для per-call (на случай admin cross-org / надёжности). */
 function orgHeader(orgId: string): { headers: Record<string, string> } {
-  return { headers: { 'X-Org-Id': orgId } };
+  return { headers: { "X-Org-Id": orgId } };
 }
-
-// ─────────────────── api ──────────────────
 
 export const meetingsApi = {
   list: (opts: ListMeetingsApiRequest) =>
@@ -357,35 +302,24 @@ export const meetingsApi = {
       `/api/v1/meetings${buildListQuery(opts)}`,
     ),
 
-  // X-Org-Id добавляется api-client'ом по умолчанию (текущая Org из auth-context).
-  // Нужен глобальному SubscriptionGuard на бэке. См. api-client.setApiClientOrgId.
   create: (body: CreateMeetingApiRequest) =>
-    apiClient.post<CreateMeetingApiResponse>('/api/v1/meetings', body),
+    apiClient.post<CreateMeetingApiResponse>("/api/v1/meetings", body),
 
-  /**
-   * Фаза B5 — добавить приглашённых к существующей встрече. Host-only,
-   * идемпотентно. Возвращает счётчики `added` / `skipped`.
-   */
   addInvitees: (id: string, body: AddInviteesApiRequest) =>
     apiClient.post<AddInviteesApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/invitees`,
       body,
     ),
 
-  /**
-   * ТЗ 2026-06-06 knowledge-access (Ф7) — задать закрытость встречи постфактум
-   * (host-only). null = открыто; 'leadership' | 'council' | 'personal'.
-   */
   setClosedGroup: (
     id: string,
-    closedGroupKind: 'leadership' | 'council' | 'personal' | null,
+    closedGroupKind: "leadership" | "council" | "personal" | null,
   ) =>
     apiClient.patch<{ id: string; closedGroupKind: string | null }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/closed-group`,
       { closedGroupKind },
     ),
 
-  /** Soft-delete встречи. */
   softDelete: (id: string) =>
     apiClient.del<{ ok: true }>(`/api/v1/meetings/${encodeURIComponent(id)}`),
 
@@ -402,7 +336,9 @@ export const meetingsApi = {
     ),
 
   get: (id: string) =>
-    apiClient.get<MeetingDetailApi>(`/api/v1/meetings/${encodeURIComponent(id)}`),
+    apiClient.get<MeetingDetailApi>(
+      `/api/v1/meetings/${encodeURIComponent(id)}`,
+    ),
 
   access: (id: string) =>
     apiClient.get<AccessApi>(
@@ -420,21 +356,12 @@ export const meetingsApi = {
       `/api/v1/meetings/${encodeURIComponent(id)}/finish`,
     ),
 
-  // ─────────── Видимость встречи «Кому видно» (ТЗ Ф4) ───────────
-  // host-only: backend отдаёт 403 не-хосту (GET и PATCH). UI ловит 403 и
-  // переключается в read-only-режим.
-
-  /** Текущий режим видимости + список грантов (host-only). */
   getVisibility: (id: string) =>
     apiClient.get<{
       scope: string;
       grants: { granteeType: string; granteeId: string; name: string }[];
     }>(`/api/v1/meetings/${encodeURIComponent(id)}/visibility`),
 
-  /**
-   * Полная замена режима видимости и набора грантов (host-only).
-   * Для scope='custom' grants обязателен непустой (иначе 400).
-   */
   setVisibility: (
     id: string,
     body: {
@@ -487,10 +414,6 @@ export const meetingsApi = {
       `/api/v1/meetings/${encodeURIComponent(id)}/participants/${encodeURIComponent(pid)}/lower-hand`,
     ),
 
-  /**
-   * Commercial-reliability pack (Фаза 3) — Zoom-модель: хост переименовывает
-   * гостя (`isRegisteredUser=false`) после встречи.
-   */
   renameParticipant: (id: string, pid: string, body: { name: string }) =>
     apiClient.patch<{ id: string; name: string }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/participants/${encodeURIComponent(pid)}`,
@@ -515,14 +438,10 @@ export const meetingsApi = {
   transcript: (id: string, opts?: { cleaned?: boolean }) =>
     apiClient.get<TranscriptApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/transcript${
-        opts?.cleaned ? '?cleaned=true' : ''
+        opts?.cleaned ? "?cleaned=true" : ""
       }`,
     ),
 
-  /**
-   * Фаза D — запустить очистку транскрипта от слов-паразитов.
-   * Rate-limit на сервере: 1 в час на пользователя.
-   */
   cleanTranscript: (id: string) =>
     apiClient.post<CleanTranscriptApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/transcript/clean`,
@@ -533,20 +452,13 @@ export const meetingsApi = {
       `/api/v1/meetings/${encodeURIComponent(id)}/recording/audio-tracks`,
     ),
 
-  // ─────────── Загрузка готовой записи (ТЗ-5 Ф5) ───────────
-
-  /**
-   * Заявка на загрузку готовой записи. Возвращает presigned-URL, в который
-   * файл потом кладётся напрямую через `uploadFileToPresignedUrl`.
-   */
   createUpload: (orgId: string, body: CreateUploadApiRequest) =>
     apiClient.post<CreateUploadApiResponse>(
-      '/api/v1/meetings/upload',
+      "/api/v1/meetings/upload",
       body,
       orgHeader(orgId),
     ),
 
-  /** Сигнал «файл залит» — бэк запускает распознавание речи. */
   completeUpload: (orgId: string, id: string) =>
     apiClient.post<{ status: string }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/upload/complete`,
@@ -554,18 +466,16 @@ export const meetingsApi = {
       orgHeader(orgId),
     ),
 
-  /** Говорящие + расшифровка для экрана подписи. */
   getSpeakers: (orgId: string, id: string) =>
     apiClient.get<SpeakersApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/speakers`,
       orgHeader(orgId),
     ),
 
-  /** Сохранить черновик подписей говорящих. */
   putSpeakers: (
     orgId: string,
     id: string,
-    assignments: PutSpeakersApiRequest['assignments'],
+    assignments: PutSpeakersApiRequest["assignments"],
   ) =>
     apiClient.put<PutSpeakersApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/speakers`,
@@ -573,7 +483,6 @@ export const meetingsApi = {
       orgHeader(orgId),
     ),
 
-  /** Подтвердить подписи — запустить AI-отчёт. */
   confirmSpeakers: (orgId: string, id: string) =>
     apiClient.post<{ status: string }>(
       `/api/v1/meetings/${encodeURIComponent(id)}/speakers/confirm`,
@@ -581,7 +490,6 @@ export const meetingsApi = {
       orgHeader(orgId),
     ),
 
-  /** Источник для плеера (видео или аудио). */
   getPlayback: (orgId: string, id: string) =>
     apiClient.get<UploadPlaybackApiResponse>(
       `/api/v1/meetings/${encodeURIComponent(id)}/upload/playback`,

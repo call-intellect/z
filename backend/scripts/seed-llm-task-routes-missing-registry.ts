@@ -1,39 +1,8 @@
-/**
- * Сид «потерянных» taskType — цепочки для 5 taskType, у которых в проде НЕТ
- * ни одного маршрута `LlmTaskRoute` (зарегистрированы в `ALL_LLM_TASK_TYPES`,
- * но ни один seed их не покрыл → роутер падает на code-fallback / 0 маршрутов).
- *
- * Стандарт цепочки (2026-06-05): `deepseek → openai(gpt) → kie:gemini-3.1-pro`.
- *
- * Покрытые taskType:
- *   - knowledge-specialists-combined  (heavyReasoning: deepseek-v4-pro)
- *   - dialog-multi-query-clone        (deepseek-v4-pro)
- *   - checkin-sentiment-batch         (deepseek-v4-pro)
- *   - experiment-extract              (deepseek-v4-flash)
- *   - experiment-summarize-lessons    (deepseek-v4-flash)
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются (нужен `--force`).
- *   - Если для taskType уже есть запись в `LlmTaskRouteChange` (tenantId=null) —
- *     админ менял маршрут вручную: пропускаем весь taskType (нужен `--force`).
- *   - Существующая tier-запись с теми же значениями (model/priority/isActive) — skip.
- *   - Флаг `--force` — переписываем ВСЁ (для CI / ручной починки).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/seed-llm-task-routes-missing-registry.ts
- *   docker compose exec backend bun run scripts/seed-llm-task-routes-missing-registry.ts --force
- *
- * Совместимость: одна нормализованная запись = ОДИН провайдер + tier + priority,
- * legacy-поле `providers` остаётся `null`. priority: primary=0, secondary=0,
- * tertiary=0 (по образцу seed-llm-task-routes-default.ts: tier различает уровни).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
-/** Один уровень цепочки. */
 interface TierEntry {
   tier: LlmRouteTier;
   providerName: string;
@@ -41,14 +10,11 @@ interface TierEntry {
   priority?: number;
 }
 
-/** Цепочка для одного taskType. */
 interface TaskRouteSeed {
   taskType: string;
   chain: TierEntry[];
 }
 
-// Стандарт deepseek → openai(gpt) → kie. priority всех уровней = 0 (tier
-// различает приоритет, как в seed-llm-task-routes-default.ts).
 const ROUTES: TaskRouteSeed[] = [
   {
     taskType: 'knowledge-specialists-combined',
@@ -104,8 +70,6 @@ async function applySeedForTask(
   force: boolean,
   stats: SeedStats,
 ): Promise<void> {
-  // Защита: если есть LlmTaskRouteChange для taskType — админ менял цепочку.
-  // Без --force ничего не делаем.
   if (!force) {
     const auditCount = await prisma.llmTaskRouteChange.count({
       where: { taskType: seed.taskType, tenantId: null },
@@ -213,6 +177,4 @@ main()
     await prisma.$disconnect();
   });
 
-// Экспортируем массив для тестов (unit-test проверяет, что 5 taskType'ов
-// и у каждого 3 tier'а вида deepseek → openai → kie).
 export { ROUTES };

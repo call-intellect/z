@@ -1,24 +1,18 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-import { ApiError } from '@/api/api-error';
-import { gamificationApi } from '@/api/gamification.api';
+import { ApiError } from "@/api/api-error";
+import { gamificationApi } from "@/api/gamification.api";
 import {
   contributionFromApi,
   ideasInDevLabel,
   streakLabel,
   thanksLabel,
   type Contribution,
-} from '@/domain/contribution';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/domain/contribution";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
-/**
- * T1 (2026-05-23) — компактный виджет «Мой вклад» (для `/me`, `/dashboard`).
- *
- * Показывает три цифры: идеи в работе, спасибо за неделю, текущий стрик
- * чек-инов. БЕЗ топа, БЕЗ сравнения с другими.
- */
 export function MyContributionsWidget() {
   const [data, setData] = useState<Contribution | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +36,7 @@ export function MyContributionsWidget() {
             ? err.message
             : err instanceof Error
               ? err.message
-              : 'Не удалось загрузить мой вклад';
+              : "Не удалось загрузить мой вклад";
         setError(msg);
       })
       .finally(() => {

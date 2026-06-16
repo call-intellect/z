@@ -5,43 +5,12 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Agents v2 Фаза C2 (2026-05-30) — gepa-ab-monitor cron (каждые 15 минут).
- *
- * Для каждого PromptCandidate(status='testing'):
- *   - Считает composite score за последние 48ч на двух наборах invocations:
- *     A = `experimentGroup != 'gepa_candidate'` (контроль) для того же
- *         (promptKey, tenantId).
- *     B = `experimentGroup = 'gepa_candidate'` (вариант) для того же
- *         (promptKey, tenantId).
- *   - Composite метрика: `1 - avg(editDistance)` за окно (через
- *     PromptFeedback с editedOutput). Если данных мало (< abMin... B) —
- *     ждём. Если данных нет даже у A — лог + skip.
- *
- *   Решения:
- *     - `compositeB < compositeA - cfg.gepa.abRejectThreshold` (default 0.10):
- *       → status='rejected', rejectedReason='ab_deg_detected'.
- *       Метрика `incGepaRollback({reason:'ab_deg'})`.
- *     - `compositeB > compositeA + cfg.gepa.abPromoteThreshold` (default 0.05)
- *       AND B invocations ≥ cfg.gepa.abMinInvocationsBeforeDecision (100):
- *       → promote: запись candidate.promptText в LlmTaskRoute.promptOverride +
- *         pinnedVersionNote='Auto-promoted by GEPA YYYY-MM-DD'.
- *         candidate.status='promoted', promotedAt=NOW.
- *         Метрика `incGepaPromoted({promptKey})`.
- *     - Иначе: продолжаем тестировать.
- *
- * Master-флаг: cfg.gepa.enabled. Если выключен — no-op.
- *
- * См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
- */
 @Injectable()
 export class GepaAbMonitorCron {
   private readonly logger = new Logger(GepaAbMonitorCron.name);
 
-  /** Окно агрегации (48ч). */
   private readonly windowHours = 48;
 
-  /** Метка experimentGroup, которую LlmRouter ставит invocations'у с candidate'ом. */
   static readonly EXPERIMENT_GROUP_LABEL = 'gepa_candidate';
 
   constructor(
@@ -75,20 +44,14 @@ export class GepaAbMonitorCron {
       }
     }
 
-    // Обновим gauge активных A/B.
     try {
       const stillTesting = await this.prisma.promptCandidate.count({
         where: { status: 'testing' },
       });
       this.metrics.setGepaAbActive({ value: stillTesting });
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  /**
-   * Оценка одного candidate'а. Принимает решение promote / reject / continue.
-   */
   private async evaluateOne(c: {
     id: string;
     tenantId: string | null;
@@ -97,9 +60,6 @@ export class GepaAbMonitorCron {
   }): Promise<void> {
     const since = new Date(Date.now() - this.windowHours * 60 * 60 * 1000);
 
-    // A: invocations без gepa_candidate group. B: с gepa_candidate.
-    // experimentGroup живёт на AiUsageLog. PromptFeedback ссылается на
-    // AiUsageLog.id через invocationId — берём через subquery.
     const groupRows = await this.prisma.$queryRawUnsafe<
       Array<{ grp: 'A' | 'B'; cnt: bigint; avg_dist: number | null }>
     >(
@@ -137,12 +97,9 @@ export class GepaAbMonitorCron {
       }
     }
 
-    // Composite score: 1 - avgEditDistance. Чем меньше правок, тем выше score.
-    // Это упрощённая метрика — sub-TZ §C2 допускает расширение в будущем.
     const compositeA = countA > 0 ? 1 - avgDistA : 0;
     const compositeB = countB > 0 ? 1 - avgDistB : 0;
 
-    // Обновим candidate state (evaluations + compositeScore) для админ-UI.
     try {
       await this.prisma.promptCandidate.update({
         where: { id: c.id },
@@ -151,9 +108,7 @@ export class GepaAbMonitorCron {
           compositeScore: compositeB,
         },
       });
-    } catch {
-      // best-effort
-    }
+    } catch {}
 
     if (countA === 0) {
       this.logger.debug(
@@ -162,11 +117,7 @@ export class GepaAbMonitorCron {
       return;
     }
 
-    // Решение reject: B заметно хуже A. Делаем даже при малом N (защита).
-    if (
-      countB >= 10 &&
-      compositeB < compositeA - this.cfg.gepa.abRejectThreshold
-    ) {
+    if (countB >= 10 && compositeB < compositeA - this.cfg.gepa.abRejectThreshold) {
       await this.prisma.promptCandidate.update({
         where: { id: c.id },
         data: {
@@ -183,7 +134,6 @@ export class GepaAbMonitorCron {
       return;
     }
 
-    // Решение promote: B заметно лучше + достаточно invocations.
     if (
       countB >= this.cfg.gepa.abMinInvocationsBeforeDecision &&
       compositeB > compositeA + this.cfg.gepa.abPromoteThreshold
@@ -197,14 +147,6 @@ export class GepaAbMonitorCron {
     );
   }
 
-  /**
-   * Промоут candidate'а в LlmTaskRoute.promptOverride. Если existing route
-   * нет — создаёт legacy запись с tenantId+taskType (одна без tier).
-   *
-   * Не трогает editedByAdmin (если бы он был true — gepa-promote cron не
-   * перевёл бы candidate в testing). По итогу промоута выставляем
-   * `pinnedVersionNote='Auto-promoted by GEPA YYYY-MM-DD'` для audit.
-   */
   private async promoteToLlmRoute(
     c: {
       id: string;
@@ -217,8 +159,6 @@ export class GepaAbMonitorCron {
     const today = new Date().toISOString().slice(0, 10);
     const note = `Auto-promoted by GEPA ${today} (score ${compositeB.toFixed(3)})`;
 
-    // Берём primary route. Если несколько — обновляем все primary одной
-    // транзакцией: promptOverride + pinnedVersionNote.
     const routes = await this.prisma.llmTaskRoute.findMany({
       where: {
         taskType: c.promptKey,
@@ -229,7 +169,6 @@ export class GepaAbMonitorCron {
     });
 
     if (routes.length === 0) {
-      // Нет primary route → создаём legacy entry (один в одном).
       try {
         await this.prisma.llmTaskRoute.create({
           data: {

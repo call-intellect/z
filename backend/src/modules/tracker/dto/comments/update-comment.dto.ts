@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/**
- * PATCH комментария — только автор. Сервис проставляет `editedAt = now()`.
- */
 export const UpdateCommentSchema = z
   .object({
     content: z.string().min(1).max(50_000),

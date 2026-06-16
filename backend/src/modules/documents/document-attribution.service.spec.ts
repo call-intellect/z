@@ -6,19 +6,6 @@ import type { LlmRouterService } from '../ai/services/llm-router.service';
 
 import { DocumentAttributionService } from './document-attribution.service';
 
-/**
- * ТЗ-4 Ф10 — unit-тесты `DocumentAttributionService` (LLM-подсказка атрибуции).
- *
- * Случаи:
- *  (a) распарсенный документ без явной атрибуции + есть темы → LLM возвращает
- *      валидный {docType, themeId} → пишем в Document.suggested* (НЕ docType);
- *  (b) kill-switch OFF → LLM не вызывается, запись не делается;
- *  (c) идемпотентность: suggestedDocType уже стоит → LLM не вызывается, skip;
- *  (d) документ уже атрибутирован вручную (docType != null) → skip;
- *  (e) LLM вернул выдуманный themeId / неизвестный docType → отбрасываем
- *      (themeId → null; docType → null), при пустой подсказке запись не делаем;
- *  (f) LLM бросил → best-effort: не пробрасываем исключение, записи нет.
- */
 describe('DocumentAttributionService', () => {
   const TENANT = 'org-1';
   const DOC = 'doc-1';
@@ -35,7 +22,6 @@ describe('DocumentAttributionService', () => {
   let themeFindMany: ReturnType<typeof vi.fn>;
   let svc: DocumentAttributionService;
 
-  /** Дефолтный документ: распарсен, без явной атрибуции, без подсказки. */
   function makeDoc(overrides?: Record<string, unknown>) {
     return {
       tenantId: TENANT,
@@ -61,7 +47,7 @@ describe('DocumentAttributionService', () => {
 
   beforeEach(() => {
     call = vi.fn();
-    getDynamic = vi.fn(async () => true); // kill-switch ON по умолчанию
+    getDynamic = vi.fn(async () => true);
     docFindUnique = vi.fn(async () => makeDoc());
     docUpdateMany = vi.fn(async () => ({ count: 1 }));
     themeFindMany = vi.fn(async () => THEMES);
@@ -89,14 +75,12 @@ describe('DocumentAttributionService', () => {
 
     expect(docUpdateMany).toHaveBeenCalledTimes(1);
     const update = docUpdateMany.mock.calls[0]?.[0];
-    // Пишем ТОЛЬКО в suggested*, не в docType/attachedThemeId.
     expect(update.data).toEqual({
       suggestedDocType: 'regulation',
       suggestedThemeId: 'theme-a',
     });
     expect(update.data).not.toHaveProperty('docType');
     expect(update.data).not.toHaveProperty('attachedThemeId');
-    // where-фенс защищает от перезаписи ручной атрибуции/гонок.
     expect(update.where).toMatchObject({
       id: DOC,
       docType: null,
@@ -115,9 +99,7 @@ describe('DocumentAttributionService', () => {
   });
 
   it('(c) идемпотентность: suggestedDocType уже стоит → skip', async () => {
-    docFindUnique.mockResolvedValueOnce(
-      makeDoc({ suggestedDocType: 'policy' }),
-    );
+    docFindUnique.mockResolvedValueOnce(makeDoc({ suggestedDocType: 'policy' }));
 
     await svc.suggestForDocument({ documentId: DOC, tenantId: TENANT });
 
@@ -141,7 +123,6 @@ describe('DocumentAttributionService', () => {
 
     await svc.suggestForDocument({ documentId: DOC, tenantId: TENANT });
 
-    // Ни тип, ни тема не валидны → подсказку не пишем (нет мусора).
     expect(docUpdateMany).not.toHaveBeenCalled();
   });
 

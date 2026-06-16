@@ -1,37 +1,18 @@
-/**
- * REST-клиент «Ленты Коры» и контроля вопросов Коры (probe/control).
- *
- * Контракт бэка (commit 35237ae4):
- *   - GET  /api/v1/feed/cora?type=&window=&limit=
- *       → { items, counters, unreadCount }
- *   - POST /api/v1/feed/cora/seen
- *       → { ok, lastSeenAt }  (обнуляет unread)
- *   - GET  /api/v1/probe/control?window=&limit=
- *       → { items, counts }
- *
- * Защита: CookieAuthGuard + TenantGuard. `tenantId` берётся из X-Org-Id,
- * который api-client подставляет из auth-context. Сигнатура `(orgId, …)`
- * сохранена явно для совместимости со слоем вызова и cross-org-сценариев.
- */
-
-import { apiClient } from './api-client';
-
-// ─── ApiDto: Лента Коры ──────────────────────────────────────────────────────
+import { apiClient } from "./api-client";
 
 export type CoraFeedTypeApi =
-  | 'idea'
-  | 'insight'
-  | 'decision'
-  | 'conflict'
-  | 'blocker'
-  | 'activity'
-  | 'probe_question'
-  | 'open_question';
+  | "idea"
+  | "insight"
+  | "decision"
+  | "conflict"
+  | "blocker"
+  | "activity"
+  | "probe_question"
+  | "open_question";
 
-/** Значение `type`-параметра запроса: `all` или конкретный тип. */
-export type CoraFeedTypeFilterApi = 'all' | CoraFeedTypeApi;
+export type CoraFeedTypeFilterApi = "all" | CoraFeedTypeApi;
 
-export type CoraFeedSeverityApi = 'info' | 'warn' | 'risk';
+export type CoraFeedSeverityApi = "info" | "warn" | "risk";
 
 export interface CoraFeedSourceRefApi {
   meetingId?: string;
@@ -61,13 +42,11 @@ export interface CoraFeedSeenResponseApi {
   lastSeenAt: string;
 }
 
-// ─── ApiDto: контроль вопросов Коры (probe/control) ──────────────────────────
-
 export type ProbeControlStateApi =
-  | 'answered'
-  | 'read_silent'
-  | 'unseen'
-  | 'expired';
+  | "answered"
+  | "read_silent"
+  | "unseen"
+  | "expired";
 
 export interface ProbeControlItemApi {
   notificationId: string;
@@ -91,45 +70,40 @@ export interface ProbeControlListApi {
   counts: ProbeControlCountsApi;
 }
 
-// ─── Параметры запросов ──────────────────────────────────────────────────────
-
 export type CoraFeedListParams = {
   type?: CoraFeedTypeFilterApi;
-  /** Окно в днях (число) или `'all'`. */
-  window?: number | 'all';
+  window?: number | "all";
   limit?: number;
 };
 
 export type ProbeControlListParams = {
-  window?: number | 'all';
+  window?: number | "all";
   limit?: number;
 };
 
 function withOrgHeader(orgId: string | null | undefined): {
   headers?: Record<string, string>;
 } {
-  return orgId ? { headers: { 'X-Org-Id': orgId } } : {};
+  return orgId ? { headers: { "X-Org-Id": orgId } } : {};
 }
-
-// ─── Клиенты ──────────────────────────────────────────────────────────────────
 
 export const coraFeedApi = {
   list: (orgId: string | null, params?: CoraFeedListParams) => {
     const p = new URLSearchParams();
-    if (params?.type && params.type !== 'all') p.set('type', params.type);
-    else p.set('type', 'all');
-    if (params?.window !== undefined) p.set('window', String(params.window));
-    if (params?.limit !== undefined) p.set('limit', String(params.limit));
+    if (params?.type && params.type !== "all") p.set("type", params.type);
+    else p.set("type", "all");
+    if (params?.window !== undefined) p.set("window", String(params.window));
+    if (params?.limit !== undefined) p.set("limit", String(params.limit));
     const qs = p.toString();
     return apiClient.get<CoraFeedListApi>(
-      `/api/v1/feed/cora${qs ? `?${qs}` : ''}`,
+      `/api/v1/feed/cora${qs ? `?${qs}` : ""}`,
       withOrgHeader(orgId),
     );
   },
 
   markSeen: (orgId: string | null) =>
     apiClient.post<CoraFeedSeenResponseApi>(
-      '/api/v1/feed/cora/seen',
+      "/api/v1/feed/cora/seen",
       {},
       withOrgHeader(orgId),
     ),
@@ -138,11 +112,11 @@ export const coraFeedApi = {
 export const probeControlApi = {
   list: (orgId: string | null, params?: ProbeControlListParams) => {
     const p = new URLSearchParams();
-    if (params?.window !== undefined) p.set('window', String(params.window));
-    if (params?.limit !== undefined) p.set('limit', String(params.limit));
+    if (params?.window !== undefined) p.set("window", String(params.window));
+    if (params?.limit !== undefined) p.set("limit", String(params.limit));
     const qs = p.toString();
     return apiClient.get<ProbeControlListApi>(
-      `/api/v1/probe/control${qs ? `?${qs}` : ''}`,
+      `/api/v1/probe/control${qs ? `?${qs}` : ""}`,
       withOrgHeader(orgId),
     );
   },

@@ -1,23 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { findForbiddenMetricKeys } from './value-recap.scoring';
-import {
-  monthBounds,
-  shiftPeriod,
-  ValueRecapService,
-} from './value-recap.service';
+import { monthBounds, shiftPeriod, ValueRecapService } from './value-recap.service';
 
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — unit-тесты ValueRecapService.build.
- *
- * Mock Prisma/cfg/metrics/llm/chatFeedback/decisions. Покрываем:
- *   1. build собирает payload на твёрдых счётчиках; ЧЕСТНОСТЬ — НЕТ запрещённых
- *      метрик (assert findForbiddenMetricKeys === []);
- *   2. дельта к прошлому месяцу из снимка прошлого периода;
- *   3. baseline (нет прошлого снимка) → isBaseline=true, delta=null;
- *   4. LLM упал → детерминированный fallback narrative (build не падает);
- *   5. границы месяца / сдвиг периода (чистые helpers).
- */
 describe('ValueRecapService', () => {
   const now = new Date('2026-06-01T07:00:00.000Z');
 
@@ -28,8 +13,6 @@ describe('ValueRecapService', () => {
     llmThrows?: boolean;
   }) {
     const upsert = vi.fn(async () => ({ id: 'recap1' }));
-    // findUnique вызывается дважды: 1) prev-snapshot (loadPreviousRoutine),
-    // 2) existing (deliveredAt). Маршрутизируем по where.tenantId_periodYm.periodYm.
     const findUnique = vi.fn(
       async (arg: {
         where: { tenantId_periodYm: { periodYm: string } };
@@ -37,13 +20,11 @@ describe('ValueRecapService', () => {
       }) => {
         const period = arg.where.tenantId_periodYm.periodYm;
         if (period === shiftPeriod('2026-05', -1)) {
-          // прошлый месяц (апрель)
           if (opts.prevSnapshotRoutine == null) return null;
           return {
             payloadJson: { routine: opts.prevSnapshotRoutine },
           };
         }
-        // текущий период (existing для deliveredAt)
         return { id: 'recap1', deliveredAt: opts.existingDelivered ? new Date() : null };
       },
     );
@@ -97,8 +78,18 @@ describe('ValueRecapService', () => {
         throughputPercent: 50,
       })),
       listDecisionsForMonth: vi.fn(async () => [
-        { id: 'd1', statement: 'Перейти на ежедневные планёрки', status: 'done', throughputPercent: 100 },
-        { id: 'd2', statement: 'Нанять второго маркетолога', status: 'in_progress', throughputPercent: 50 },
+        {
+          id: 'd1',
+          statement: 'Перейти на ежедневные планёрки',
+          status: 'done',
+          throughputPercent: 100,
+        },
+        {
+          id: 'd2',
+          statement: 'Нанять второго маркетолога',
+          status: 'in_progress',
+          throughputPercent: 50,
+        },
         { id: 'd3', statement: 'Сменить CRM', status: 'stalled', throughputPercent: 0 },
       ]),
     };
@@ -121,20 +112,16 @@ describe('ValueRecapService', () => {
     expect(res.payload.routine.meetingsAutoProtocoled).toBe(12);
     expect(res.payload.routine.tasksExtracted).toBe(40);
     expect(res.payload.routine.questionsAnsweredWithCitation).toBe(22);
-    // надёжность: 3 fulfilled / (3+1) = 75%, знаменатель 4 >= min 3.
     expect(res.payload.team.reliabilityPercent).toBe(75);
     expect(res.payload.team.reliabilityDenominator).toBe(4);
-    // count решений в паре с throughput.
     expect(res.payload.team.decisionsTotal).toBe(8);
     expect(res.payload.team.decisionsThroughputPercent).toBe(50);
-    // Ф3 редизайн — список решений месяца в payload (топ-N со статусом).
     expect(res.payload.decisions).toHaveLength(3);
     expect(res.payload.decisions[0]).toMatchObject({
       id: 'd1',
       status: 'done',
       throughputPercent: 100,
     });
-    // КЛЮЧЕВОЙ assert честности (decisions[].throughputPercent в allow-list).
     expect(findForbiddenMetricKeys(res.payload)).toEqual([]);
     expect(metrics.incValueRecapBuilt).toHaveBeenCalledTimes(1);
     expect(upsert).toHaveBeenCalledTimes(1);
@@ -161,15 +148,14 @@ describe('ValueRecapService', () => {
     });
     const res = await svc.build({ tenantId: 't1', periodYm: '2026-05', now });
     expect(res.payload.isBaseline).toBe(false);
-    expect(res.payload.delta?.meetingsAutoProtocoled).toBe(4); // 12-8
-    expect(res.payload.delta?.tasksExtracted).toBe(10); // 40-30
+    expect(res.payload.delta?.meetingsAutoProtocoled).toBe(4);
+    expect(res.payload.delta?.tasksExtracted).toBe(10);
   });
 
   it('LLM упал → детерминированный fallback narrative (build не падает)', async () => {
     const { svc } = buildService({ prevSnapshotRoutine: null, llmThrows: true });
     const res = await svc.build({ tenantId: 't1', periodYm: '2026-05', now });
     expect(res.payload.narrative.length).toBeGreaterThan(0);
-    // fallback упоминает период и счётчики, без ₽.
     expect(res.payload.narrative).toContain('2026-05');
     expect(findForbiddenMetricKeys(res.payload)).toEqual([]);
   });

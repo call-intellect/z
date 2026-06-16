@@ -1,6 +1,3 @@
-/**
- * IDOR-fence spec для InsightsController (Phase F.7).
- */
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -15,8 +12,8 @@ const userA: CurrentUserPayload = { id: 'u-1', email: 'u@x', role: 'user' };
 
 function build(opts: { canRead?: boolean } = {}) {
   const svc = {
-    list: vi.fn(async () => ({ items: [], total: 0 } as never)),
-    getById: vi.fn(async () => ({ id: 'in-1' } as never)),
+    list: vi.fn(async () => ({ items: [], total: 0 }) as never),
+    getById: vi.fn(async () => ({ id: 'in-1' }) as never),
   } as unknown as InsightsService;
   const rbac = {
     canRead: vi.fn(async () => opts.canRead ?? true),
@@ -29,17 +26,13 @@ describe('InsightsController (IDOR fence)', () => {
   it('BadRequest tenant_required без X-Org-Id', async () => {
     const { ctrl } = build();
     const q = ListInsightsQuerySchema.parse({});
-    await expect(ctrl.list(q, userA, undefined)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(ctrl.list(q, userA, undefined)).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('403 forbidden cross-tenant (canRead=false)', async () => {
     const { ctrl } = build({ canRead: false });
     const q = ListInsightsQuerySchema.parse({});
-    await expect(ctrl.list(q, userA, 'org-B')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.list(q, userA, 'org-B')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('happy list: tenantId из @CurrentOrg передаётся в сервис', async () => {

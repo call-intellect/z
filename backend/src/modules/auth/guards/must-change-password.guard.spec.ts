@@ -6,19 +6,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { MustChangePasswordGuard } from './must-change-password.guard';
 
-/**
- * audit Б2 (2026-05-29) — guard для глобального enforcement флага
- * `User.mustChangePassword`.
- *
- * Покрытие:
- *   - публичный роут (req.user == null) пропускается,
- *   - mustChangePassword=false → пропуск,
- *   - mustChangePassword=true + whitelist (/me, change-password, …) → пропуск,
- *   - mustChangePassword=true + non-whitelist → 403 + метрика,
- *   - deletedAt user → пропуск (CookieAuthGuard сам разберётся),
- *   - missing user record → пропуск (тот же случай).
- */
-
 describe('MustChangePasswordGuard (audit Б2)', () => {
   let prisma: { user: { findUnique: ReturnType<typeof vi.fn> } };
   let metrics: { incMustChangePasswordBlock: ReturnType<typeof vi.fn> };
@@ -89,16 +76,14 @@ describe('MustChangePasswordGuard (audit Б2)', () => {
     ['GET', '/api/v1/entitlements/me'],
   ])('пропускает whitelist %s %s', async (method, path) => {
     prisma.user.findUnique.mockResolvedValue({ mustChangePassword: true, deletedAt: null });
-    await expect(
-      guard.canActivate(ctx({ user: { id: 'u-1' }, method, path })),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(ctx({ user: { id: 'u-1' }, method, path }))).resolves.toBe(true);
     expect(metrics.incMustChangePasswordBlock).not.toHaveBeenCalled();
   });
 
   it.each([
     ['GET', '/api/v1/meetings'],
     ['POST', '/api/v1/orgs/abc/invitations'],
-    ['DELETE', '/api/v1/me'], // важно: DELETE /me — не из whitelist (только GET)
+    ['DELETE', '/api/v1/me'],
     ['GET', '/api/v1/meet-out-of-whitelist/me'],
   ])('блокирует не-whitelist %s %s → 403 + метрика', async (method, path) => {
     prisma.user.findUnique.mockResolvedValue({ mustChangePassword: true, deletedAt: null });

@@ -7,18 +7,6 @@ import { IcsFeedController } from './ics-feed.controller';
 import type { EventsService } from './services/events.service';
 import { IcsFeedService } from './services/ics-feed.service';
 
-/**
- * Тесты IcsFeedController + IcsFeedService (Calendar MVP Фаза 2.2).
- *
- * Покрытие:
- *  1. invalid token → 404 (NotFoundException, не палим существование user).
- *  2. valid token, 2 events + 1 issue → правильное число VEVENT,
- *     корректное экранирование SUMMARY (запятая, точка с запятой,
- *     перенос строки).
- *  3. visibility=personal у owner — отдаётся в его собственном feed.
- *  4. Headers: Content-Type, Cache-Control, Content-Disposition.
- *  5. Структура VCALENDAR: BEGIN/END, VERSION, PRODID, CALSCALE, METHOD.
- */
 describe('IcsFeedController + IcsFeedService', () => {
   let userFindUnique: ReturnType<typeof vi.fn>;
   let getEventsForFeed: ReturnType<typeof vi.fn>;
@@ -67,9 +55,9 @@ describe('IcsFeedController + IcsFeedService', () => {
     it('invalid token (user не найден) → 404', async () => {
       userFindUnique.mockResolvedValue(null);
       const { res } = makeRes();
-      await expect(
-        ctrl.feed('u-1', 'bad-token', res as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(ctrl.feed('u-1', 'bad-token', res as never)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('invalid token (mismatch) → 404', async () => {
@@ -78,24 +66,22 @@ describe('IcsFeedController + IcsFeedService', () => {
         calendarFeedToken: 'real-token',
       });
       const { res } = makeRes();
-      await expect(
-        ctrl.feed('u-1', 'wrong-token', res as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(ctrl.feed('u-1', 'wrong-token', res as never)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('пустой token query → 404', async () => {
       const { res } = makeRes();
-      await expect(
-        ctrl.feed('u-1', undefined, res as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(ctrl.feed('u-1', undefined, res as never)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('null token у user (не сгенерирован) → 404', async () => {
       userFindUnique.mockResolvedValue({ id: 'u-1', calendarFeedToken: null });
       const { res } = makeRes();
-      await expect(
-        ctrl.feed('u-1', 'any', res as never),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(ctrl.feed('u-1', 'any', res as never)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('valid token: 2 events + 1 issue → 3 VEVENT блока + правильные headers', async () => {
@@ -151,13 +137,11 @@ describe('IcsFeedController + IcsFeedService', () => {
       expect(calls.status).toBe(200);
 
       const body = String(calls.body);
-      // 3 VEVENT блока (2 события + 1 задача).
       const veventCount = (body.match(/BEGIN:VEVENT/g) ?? []).length;
       const veventEndCount = (body.match(/END:VEVENT/g) ?? []).length;
       expect(veventCount).toBe(3);
       expect(veventEndCount).toBe(3);
 
-      // Структура VCALENDAR.
       expect(body).toContain('BEGIN:VCALENDAR');
       expect(body).toContain('VERSION:2.0');
       expect(body).toContain('PRODID:-//Kora//Calendar MVP//RU');
@@ -165,21 +149,16 @@ describe('IcsFeedController + IcsFeedService', () => {
       expect(body).toContain('METHOD:PUBLISH');
       expect(body).toContain('END:VCALENDAR');
 
-      // UIDs.
       expect(body).toContain('UID:event-e-1@kora.app');
       expect(body).toContain('UID:event-e-2@kora.app');
       expect(body).toContain('UID:issue-i-1@kora.app');
 
-      // STATUS mapping.
       expect(body).toContain('STATUS:CONFIRMED');
       expect(body).toContain('STATUS:TENTATIVE');
-      // Issue → TRANSP:TRANSPARENT.
       expect(body).toContain('TRANSP:TRANSPARENT');
 
-      // Project name prefix у issue.
       expect(body).toContain('[Z] Подготовить отчёт');
 
-      // CRLF разделители.
       expect(body).toContain('\r\n');
     });
 
@@ -211,7 +190,6 @@ describe('IcsFeedController + IcsFeedService', () => {
       await ctrl.feed('u-1', 'good-token', res as never);
 
       const body = String(calls.body);
-      // RFC 5545: , → \, ; → \; \ → \\ \n → \n (литерал).
       expect(body).toContain('SUMMARY:A\\, B\\; C\\\\D\\nE');
       expect(body).toContain('DESCRIPTION:line1\\nline2');
       expect(body).toContain('LOCATION:Москва\\, Кремль');
@@ -245,7 +223,6 @@ describe('IcsFeedController + IcsFeedService', () => {
       await ctrl.feed('u-1', 'good-token', res as never);
 
       const body = String(calls.body);
-      // Личный заголовок отдаётся, не маскируется как «Занято».
       expect(body).toContain('SUMMARY:Личное время');
       expect(body).toContain('DESCRIPTION:тайное');
     });
@@ -280,7 +257,6 @@ describe('IcsFeedController + IcsFeedService', () => {
       const body = String(calls.body);
       expect(body).toContain('DTSTART:20260603T123456Z');
       expect(body).toContain('DTEND:20260603T133456Z');
-      // DTSTAMP должен быть UTC формата
       expect(body).toMatch(/DTSTAMP:\d{8}T\d{6}Z/);
     });
   });
@@ -307,7 +283,6 @@ describe('IcsFeedController + IcsFeedService', () => {
         issues: [],
         now: new Date('2026-05-25T00:00:00Z'),
       });
-      // После фолдинга — должна быть последовательность "\r\n " (CRLF + space).
       expect(out).toMatch(/\r\n /);
     });
   });

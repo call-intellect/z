@@ -5,16 +5,6 @@ import type { RoleMapBuilderService } from '../role-map/services/role-map-builde
 
 import { MeService } from './me.service';
 
-/**
- * Юнит-тесты `MeService.getProfile` — фокус на поле `roleMap` (полная карта
- * должности на /me, self-scoped, мягкая деградация).
- *
- *   - заполнен для пользователя с primaryRole и собранной картой;
- *   - null когда у пользователя нет роли;
- *   - null когда RoleMapBuilderService падает (мягкая деградация);
- *   - null когда сервис карты не зарезолвился (@Optional).
- */
-
 type PersonRow = {
   id: string;
   name: string;
@@ -146,7 +136,6 @@ describe('MeService.getProfile — roleMap', () => {
 
   it('roleMap=null когда сервис карты не зарезолвился (@Optional → null)', async () => {
     const prisma = makePrisma(personWithRole('role-1'));
-    // builder не передан — эмулируем отсутствие провайдера.
     const svc = new MeService(prisma);
     const res = await svc.getProfile({ tenantId: 't1', userId: 'u1' });
 

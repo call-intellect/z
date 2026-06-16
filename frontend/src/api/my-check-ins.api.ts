@@ -1,12 +1,4 @@
-import { apiClient } from './api-client';
-
-/**
- * SBA β-8 — API-клиент `/api/v1/me/check-ins`.
- *
- *   GET /                         — список моих чек-инов
- *   POST /                        — manual create / upsert
- *   GET /history?days=30          — окно последних N дней
- */
+import { apiClient } from "./api-client";
 
 export interface CheckInPlanItemApi {
   text: string;
@@ -22,7 +14,7 @@ export interface CheckInDoneItemApi {
 
 export interface CheckInBlockerItemApi {
   text: string;
-  severity?: 'low' | 'medium' | 'high';
+  severity?: "low" | "medium" | "high";
   ownerHint?: string;
 }
 
@@ -30,15 +22,9 @@ export interface DailyCheckInApi {
   id: string;
   tenantId: string;
   personId: string;
-  kind: 'morning' | 'evening';
+  kind: "morning" | "evening";
   dateLocal: string;
-  /**
-   * ТЗ 2026-05-29 telegram-self-initiated-checkins — источник записи:
-   *   - cron_prompted — ответ на DailyCheckInPromptCron;
-   *   - self_initiated — сотрудник сам написал боту план/отчёт;
-   *   - manual — создан вручную через `POST /me/check-ins`.
-   */
-  source: 'cron_prompted' | 'self_initiated' | 'manual';
+  source: "cron_prompted" | "self_initiated" | "manual";
   plans: CheckInPlanItemApi[];
   dones: CheckInDoneItemApi[];
   blockers: CheckInBlockerItemApi[];
@@ -51,7 +37,7 @@ export interface DailyCheckInApi {
 }
 
 export interface CreateCheckInBody {
-  kind: 'morning' | 'evening';
+  kind: "morning" | "evening";
   dateLocal?: string;
   plans?: CheckInPlanItemApi[];
   dones?: CheckInDoneItemApi[];
@@ -60,17 +46,17 @@ export interface CreateCheckInBody {
 }
 
 export const myCheckInsApi = {
-  list: (params?: { date?: string; kind?: 'morning' | 'evening' }) => {
+  list: (params?: { date?: string; kind?: "morning" | "evening" }) => {
     const q = new URLSearchParams();
-    if (params?.date) q.set('date', params.date);
-    if (params?.kind) q.set('kind', params.kind);
+    if (params?.date) q.set("date", params.date);
+    if (params?.kind) q.set("kind", params.kind);
     const suffix = q.toString();
     return apiClient.get<{ items: DailyCheckInApi[] }>(
-      `/api/v1/me/check-ins${suffix ? `?${suffix}` : ''}`,
+      `/api/v1/me/check-ins${suffix ? `?${suffix}` : ""}`,
     );
   },
   create: (body: CreateCheckInBody) =>
-    apiClient.post<DailyCheckInApi>('/api/v1/me/check-ins', body),
+    apiClient.post<DailyCheckInApi>("/api/v1/me/check-ins", body),
   history: (days = 30) =>
     apiClient.get<{ items: DailyCheckInApi[] }>(
       `/api/v1/me/check-ins/history?days=${days}`,

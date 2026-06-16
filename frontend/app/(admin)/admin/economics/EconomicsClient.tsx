@@ -1,29 +1,20 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
+import Link from "next/link";
+import { useState } from "react";
 
-import { adminEconomicsApi } from '@/api/admin-economics.api';
-import type { AdminEconomicsGlobalApi } from '@/domain/admin-economics';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+import { adminEconomicsApi } from "@/api/admin-economics.api";
+import type { AdminEconomicsGlobalApi } from "@/domain/admin-economics";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+} from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
-/**
- * SBA α-10 wave 3 — /admin/economics.
- * Global dashboard: totals + top orgs + breakdown по taskType.
- */
 export function EconomicsClient() {
   const [days, setDays] = useState(30);
   const q = useAdminQuery(
@@ -38,8 +29,8 @@ export function EconomicsClient() {
         <div>
           <h1 className="text-2xl font-semibold">Юнит-экономика</h1>
           <p className="text-sm text-fg-tertiary">
-            Глобальные затраты AI за период, топ организаций, разрез по
-            типу задачи.
+            Глобальные затраты AI за период, топ организаций, разрез по типу
+            задачи.
           </p>
         </div>
         <select
@@ -58,9 +49,7 @@ export function EconomicsClient() {
       {!q.isLoading && q.error && (
         <AdminError message={q.error} onRetry={q.refetch} />
       )}
-      {!q.isLoading && q.data && (
-        <EconomicsDashboard data={q.data} />
-      )}
+      {!q.isLoading && q.data && <EconomicsDashboard data={q.data} />}
     </div>
   );
 }
@@ -83,11 +72,11 @@ function EconomicsDashboard({ data }: { data: AdminEconomicsGlobalApi }) {
         />
         <SummaryCard
           title="Стоимость, RUB"
-          value={`${data.totals.costRub.toLocaleString('ru-RU')} ₽`}
+          value={`${data.totals.costRub.toLocaleString("ru-RU")} ₽`}
         />
         <SummaryCard
           title="Вызовов"
-          value={data.totals.callsCount.toLocaleString('ru-RU')}
+          value={data.totals.callsCount.toLocaleString("ru-RU")}
         />
       </div>
 
@@ -110,10 +99,10 @@ function EconomicsDashboard({ data }: { data: AdminEconomicsGlobalApi }) {
                 <tr key={o.tenantId} className="border-t border-border-subtle">
                   <td className="px-3 py-2">{o.orgName}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {o.costRub.toLocaleString('ru-RU')}
+                    {o.costRub.toLocaleString("ru-RU")}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {o.calls.toLocaleString('ru-RU')}
+                    {o.calls.toLocaleString("ru-RU")}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <Link
@@ -148,10 +137,10 @@ function EconomicsDashboard({ data }: { data: AdminEconomicsGlobalApi }) {
                 <tr key={t.taskType} className="border-t border-border-subtle">
                   <td className="px-3 py-2 font-mono text-xs">{t.taskType}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {t.costRub.toLocaleString('ru-RU')}
+                    {t.costRub.toLocaleString("ru-RU")}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {t.calls.toLocaleString('ru-RU')}
+                    {t.calls.toLocaleString("ru-RU")}
                   </td>
                 </tr>
               ))}

@@ -10,8 +10,6 @@ function makeServices(): {
   create: ReturnType<typeof vi.fn>;
   addCost: ReturnType<typeof vi.fn>;
 } {
-  // Agents v2 Фаза B1 (2026-05-30): `record()` теперь возвращает id записи
-  // (через `select: { id: true }`). Мокаем создание с фиктивным id.
   const create = vi.fn(async () => ({ id: 'log-1' }));
   const addCost = vi.fn();
   const prisma = {
@@ -35,7 +33,7 @@ describe('AiUsageLogService.record', () => {
       provider: 'anthropic',
       inputTokens: 100,
       outputTokens: 50,
-      costUsd: 0.001050,
+      costUsd: 0.00105,
       durationMs: 800,
       success: true,
     });
@@ -47,7 +45,7 @@ describe('AiUsageLogService.record', () => {
     expect(call.data['inputTokens']).toBe(100);
     expect(call.data['outputTokens']).toBe(50);
     expect(call.data['success']).toBe(true);
-    expect(addCost).toHaveBeenCalledWith(0.001050);
+    expect(addCost).toHaveBeenCalledWith(0.00105);
   });
 
   it('костов 0 → не инкрементит метрику', async () => {
@@ -76,8 +74,6 @@ describe('AiUsageLogService.record', () => {
     const metrics = { addAiCostUsd: vi.fn() } as unknown as BusinessMetricsService;
     const svc = new AiUsageLogService(prisma, metrics);
 
-    // Agents v2 Фаза B1: при ошибке БД возвращаем null (вместо undefined),
-    // чтобы caller'ы могли уверенно проверять truthy для emit'а событий.
     await expect(
       svc.record({
         agentType: 'summary',

@@ -1,38 +1,3 @@
-/**
- * Seed LlmTaskRoute для Query Understanding Волна 1 (ТЗ 2026-06-10 Tier 0).
- *
- * Источник: plans/tz/2026-06-10-query-understanding-tier0-tier1.md §Р9.
- *
- * TaskType (1 шт.):
- *   - dialog-extract-plan — извлечение структуры вопроса (период / типы
- *     сигналов / ветки тем / сущности / «я» / агрегация / нужно-действие)
- *     для recall-safe фильтрации chat-v2.
- *
- * Цепочка (Р9 — это дешёвый частый сервисный шаг, поэтому primary = FLASH,
- * не Pro). Модели согласно second-brain/01_projects/llm-providers-verified.md:
- *   primary    deepseek          deepseek-v4-flash   (cheap, частый сервисный шаг)
- *   secondary  openai-via-proxy  gpt-5.4-mini        (reserve)
- *   tertiary   ollama            qwen3.5:9b          (local fallback)
- *
- * Anthropic НЕ используем (нет ключа). См. project_z_infra_and_ai.
- *
- * requiredDataClass: primary/secondary = 'internal' (вопрос может содержать
- * internal-факты), tertiary ollama = 'private' (локальная модель, можно всё).
- *
- * Идемпотентность:
- *   - upsert по (taskType, tenantId=null, tier, providerName).
- *   - existing + editedByAdmin=true → skip ВСЕГДА;
- *   - existing + editedByAdmin=false → skip без флага; обновить с
- *     `--update-existing`.
- *
- * Порядок в apply-prod-deploy: фаза `seed-llm-routes` ПЕРЕД глобальным
- * default-pro seed, чтобы flash-primary пережил как exists-different.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-dialog-extract-plan.ts
- *   bun run scripts/seed-llm-task-routes-dialog-extract-plan.ts --update-existing
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -105,9 +70,7 @@ async function main(): Promise<void> {
         if (!updateExisting) {
           skipped++;
           // eslint-disable-next-line no-console
-          console.log(
-            `[skipped:exists] ${taskType} ${r.tier} ${r.provider}:${r.model}`,
-          );
+          console.log(`[skipped:exists] ${taskType} ${r.tier} ${r.provider}:${r.model}`);
           continue;
         }
         if (
@@ -130,9 +93,7 @@ async function main(): Promise<void> {
         });
         updated++;
         // eslint-disable-next-line no-console
-        console.log(
-          `[updated] ${taskType} ${r.tier} ${r.provider}:${r.model}`,
-        );
+        console.log(`[updated] ${taskType} ${r.tier} ${r.provider}:${r.model}`);
         continue;
       }
       await prisma.llmTaskRoute.create({

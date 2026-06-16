@@ -1,17 +1,9 @@
-'use client';
+"use client";
 
-/**
- * DepartmentSection — сворачиваемая секция группировки карточек клонов
- * по департаменту (ТЗ §3.4).
- *
- * Заголовок — кнопка со стрелкой и бейджем количества. Контент — grid
- * адаптивный (1/2/3 кол.). При collapsed скрывается через `hidden`.
- */
+import { ChevronDown, ChevronRight } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
 
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import type { ReactElement, ReactNode } from 'react';
-
-import { Badge } from '@/ui/shadcn/badge';
+import { Badge } from "@/ui/shadcn/badge";
 
 export interface DepartmentSectionProps {
   departmentName: string;
@@ -46,8 +38,8 @@ export function DepartmentSection({
       <div
         className={
           collapsed
-            ? 'hidden'
-            : 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
+            ? "hidden"
+            : "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
         }
       >
         {children}

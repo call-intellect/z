@@ -14,21 +14,10 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { AddAgentSchema, type AddAgentDto } from '../dto/add-agent.dto';
-import {
-  ContourSeedSchema,
-  type ContourSeedDto,
-} from '../dto/contour-seed.dto';
+import { ContourSeedSchema, type ContourSeedDto } from '../dto/contour-seed.dto';
 import { SupportAdminGuard } from '../guards/support-admin.guard';
 import { SupportContourService } from '../services/support-contour.service';
 
-/**
- * REST `/api/v1/support/admin/*` — управление контуром поддержки (Р-7, Р-4):
- * галочка «сотрудник поддержки» (членство) + ручной засев базы.
- *
- * `SupportAdminGuard` (после CookieAuthGuard) пускает только владельца
- * вендор-Org / супер-админа и выставляет `req.tenantId = vendorOrgId`.
- * ТЗ 2026-06-09 support-desk Ф2.
- */
 @ApiTags('support / admin')
 @ApiBearerAuth()
 @Controller('api/v1/support/admin')

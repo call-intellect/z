@@ -1,32 +1,6 @@
-/**
- * ТЗ 2026-05-25 user-feedback-with-ai-clustering, Фаза 4 — seed маршрута LLM
- * для taskType `feedback.cluster` (канал «Ваши предложения», ночной AI-прогон).
- *
- * Цепочка (см. §«LLM-router и админка» ТЗ + verified-карта
- * `second-brain/01_projects/llm-providers-verified.md`):
- *   primary    — deepseek `deepseek-v4-pro`    (DeepSeek прямой, JSON mode)
- *   secondary  — openai-via-proxy `gpt-5.4`    (proxy.agent-lia.ru)
- *   tertiary   — kie `gemini-3-pro`            (мульти-провайдер прокси)
- *   quaternary — grsai `gemini-3-pro`          (SSE, через grsai прокси)
- *
- * NB: LlmRouteTier поддерживает 'primary'|'secondary'|'tertiary'. Четвёртый
- * провайдер кладём с tier='tertiary' и priority=1 — внутри одного tier'а
- * сортировка идёт по `priority asc`, так что grsai возьмётся после kie.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-feedback-cluster.ts
- *   bun run scripts/seed-llm-task-routes-feedback-cluster.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются.
- *   - Без флага — пропускаем существующие.
- *   - С `--update-existing` — обновляем model/priority/isActive.
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 
-// Prisma 7 driver adapter — см. prisma/seed.ts. URL — из env (bun грузит .env).
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL ?? '' }),
 });
@@ -35,7 +9,6 @@ interface TierEntry {
   tier: LlmRouteTier;
   providerName: string;
   model: string;
-  /** Позиция внутри одного tier'а (для разрыва ничьих). */
   priorityWithinTier: number;
 }
 
@@ -95,9 +68,6 @@ async function applySeed(
   for (let i = 0; i < seed.chain.length; i++) {
     const entry = seed.chain[i];
     if (!entry) continue;
-    // Глобальный priority по позиции в массиве: запись с меньшим priority
-    // выбирается раньше внутри одного tier'а. Между tier'ами ранжирует
-    // LlmRouter (TIER_RANK).
     const priority = i;
     const existing = await prisma.llmTaskRoute.findFirst({
       where: {
@@ -123,17 +93,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -158,9 +124,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

@@ -1,23 +1,3 @@
-/**
- * SBA δ-1 — Seed маршрутов LLM для Orchestrator (multi-agent research).
- *
- *   - orchestrator-plan:        primary gpt-4o (важно качество reasoning плана).
- *   - orchestrator-subagent:    primary deepseek (массово+дёшево).
- *   - orchestrator-synthesize:  primary gpt-4o (качество финального синтеза).
- *   - orchestrator-verify:      primary ollama qwen3.5:9b (быстро+локально, дёшево).
- *
- * maxDataClass: 'internal' (запросы пользователя через UI — обычно internal).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-orchestrator.ts
- *   bun run scripts/seed-llm-task-routes-orchestrator.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → не перезаписываем.
- *   - без --update-existing → пропускаем существующие.
- *   - с --update-existing → обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -62,8 +42,7 @@ const SEEDS: TaskRouteSeed[] = [
   },
   {
     taskType: 'orchestrator-synthesize',
-    playbookSection:
-      '§δ-1 — финальный синтез: primary gpt-4o, fallback deepseek + ollama.',
+    playbookSection: '§δ-1 — финальный синтез: primary gpt-4o, fallback deepseek + ollama.',
     chain: [
       { tier: 'primary', providerName: 'openai-via-proxy', model: 'gpt-4o' },
       { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
@@ -126,17 +105,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -161,18 +136,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-orchestrator START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-orchestrator START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

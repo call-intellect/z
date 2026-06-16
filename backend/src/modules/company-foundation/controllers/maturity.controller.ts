@@ -13,10 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -30,16 +27,6 @@ import {
 } from '../dto/maturity.dto';
 import { MaturityScorerService } from '../services/maturity-scorer.service';
 
-/**
- * SBA α-9 wave 3 — REST API `/api/v1/maturity`.
- *
- *   GET  /overview            — org-level metrics (companyScore + avg + distribution).
- *   GET  /scope/:scope/:id    — детализация по конкретному unit'у.
- *   POST /rebuild             — ручной триггер пересчёта (admin).
- *
- * RBAC ResourceType — `maturity`. read — все members (распределение зрелости —
- * shared knowledge), rebuild — только admin/owner.
- */
 @ApiTags('maturity')
 @Controller('api/v1/maturity')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -110,8 +97,6 @@ export class MaturityController {
     return this.svc.rebuildForTenant({ tenantId: t });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -134,8 +119,7 @@ export class MaturityController {
       obj: 'maturity',
       act: 'manage',
     });
-    if (!ok)
-      throw this.forbidden('Пересчёт зрелости доступен только владельцу/администратору Org');
+    if (!ok) throw this.forbidden('Пересчёт зрелости доступен только владельцу/администратору Org');
   }
 
   private forbidden(message: string): ForbiddenException {

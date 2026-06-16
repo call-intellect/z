@@ -1,32 +1,11 @@
-/**
- * API-клиент для модулей структуры компании Фазы 0c:
- *   - departments (CRUD)
- *   - roles-domain (CRUD; «должности» Фазы 0, не путать с Membership.role)
- *   - persons-domain (CRUD сотрудников Org; не путать с knowledge entity `person`)
- *   - structure summary (виджет «Структура компании»)
- *   - role-profiles (карта должности из 0d)
- *   - me/profile (личный кабинет /me)
- *
- * Источник правды — backend API группы А (sub-TZ 0a/0d). На момент 0c часть
- * endpoint'ов может быть ещё не готова: ApiClient в этом случае вернёт
- * `http_404` / `forbidden` / `network_error` — UI обрабатывает graceful.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
-import type { RoleMapApi } from './role-map.api';
-
-// ─── Department ─────────────────────────────────────────────────────────────
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
+import type { RoleMapApi } from "./role-map.api";
 
 export interface DepartmentApi {
   id: string;
   orgId: string;
   name: string;
-  /**
-   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — глава отдела.
-   * Person.id главы либо null. Probe-уведомления специалистов клона идут
-   * сначала ему, и только при null — admin/owner Org.
-   */
   headPersonId?: string | null;
   rolesCount?: number;
   personsCount?: number;
@@ -45,16 +24,10 @@ export interface UpdateDepartmentRequest {
   name?: string;
 }
 
-/** ТЗ 2026-05-25 Фаза 3 — body для PATCH /api/v1/departments/:id/head. */
 export interface SetDepartmentHeadRequest {
-  /** Person.id главы отдела или null чтобы снять. */
   headPersonId: string | null;
 }
 
-/**
- * ТЗ редизайн Ф7а — ответ `POST /api/v1/departments/:id/merge`.
- * `target` — отдел, в который влили; `moved` — счётчики перенесённого.
- */
 export interface MergeDepartmentResponse {
   ok: boolean;
   target: DepartmentApi;
@@ -65,8 +38,6 @@ export interface MergeDepartmentResponse {
   };
 }
 
-// ─── Role (бизнес-должность) ────────────────────────────────────────────────
-
 export interface RoleDomainApi {
   id: string;
   orgId: string;
@@ -74,8 +45,7 @@ export interface RoleDomainApi {
   departmentId: string | null;
   departmentName?: string | null;
   personsCount?: number;
-  /** Статус карты должности (RoleProfile) — может отсутствовать. */
-  profileStatus?: 'ready' | 'forming' | 'stale' | 'error' | 'absent' | null;
+  profileStatus?: "ready" | "forming" | "stale" | "error" | "absent" | null;
   hasJobDescription?: boolean;
   createdAt: string;
 }
@@ -98,8 +68,6 @@ export interface ListRolesQuery {
   departmentId?: string;
 }
 
-// ─── Person (сотрудник Org) ─────────────────────────────────────────────────
-
 export interface PersonDomainApi {
   id: string;
   orgId: string;
@@ -110,7 +78,7 @@ export interface PersonDomainApi {
   departmentId: string | null;
   departmentName?: string | null;
   userId: string | null;
-  invitationStatus: 'none' | 'pending' | 'accepted' | 'revoked' | 'expired';
+  invitationStatus: "none" | "pending" | "accepted" | "revoked" | "expired";
   createdAt: string;
 }
 
@@ -124,11 +92,9 @@ export interface CreatePersonRequest {
   email?: string;
   roleId?: string | null;
   departmentId?: string | null;
-  /** ТЗ «Команда + доступы» Фаза 2 — привязать карточку к участнику без Person. */
   linkUserId?: string | null;
 }
 
-// ─── Team roster (объединённый список раздела «Команда») ───
 export interface TeamRosterItemApi {
   personId: string | null;
   userId: string | null;
@@ -138,15 +104,15 @@ export interface TeamRosterItemApi {
   roleName: string | null;
   departmentId: string | null;
   departmentName: string | null;
-  invitationStatus: 'none' | 'pending' | 'accepted' | 'revoked' | 'expired';
+  invitationStatus: "none" | "pending" | "accepted" | "revoked" | "expired";
   invitationId: string | null;
   systemRole:
-    | 'owner'
-    | 'admin'
-    | 'manager'
-    | 'coo'
-    | 'hr_partner'
-    | 'demo_observer'
+    | "owner"
+    | "admin"
+    | "manager"
+    | "coo"
+    | "hr_partner"
+    | "demo_observer"
     | null;
   telegramLinked: boolean;
   hasPersonCard: boolean;
@@ -162,10 +128,8 @@ export interface UpdatePersonRequest {
 export interface ListPersonsQuery {
   departmentId?: string;
   roleId?: string;
-  invitationStatus?: PersonDomainApi['invitationStatus'];
+  invitationStatus?: PersonDomainApi["invitationStatus"];
 }
-
-// ─── Structure summary ──────────────────────────────────────────────────────
 
 export interface StructureSummaryApi {
   departments: number;
@@ -179,50 +143,27 @@ export interface StructureSummaryApi {
   };
 }
 
-// ─── Role-profile (карта должности) ─────────────────────────────────────────
-
 export interface RoleProfileApi {
   roleId: string;
-  status: 'ready' | 'forming' | 'stale' | 'error' | 'absent';
-  /**
-   * Сырое содержимое `RoleProfile.summaryCache` (backend `RoleProfileDetailDto.summary`,
-   * Json произвольной формы). НЕ имеет поля `blocks` — рендер карты должности
-   * на `/roles/[id]` и `/me` идёт через нормализованный Role Map
-   * (`roleMapApi.getMap`), а не отсюда (см. plans/tz/2026-06-15-me-role-map-card-contract.md).
-   */
+  status: "ready" | "forming" | "stale" | "error" | "absent";
   summary?: unknown;
   sources?: Array<{
-    type: 'meeting' | 'document' | 'dump';
+    type: "meeting" | "document" | "dump";
     id: string;
     title: string;
   }>;
   updatedAt?: string | null;
-  /** Кол-во материалов в обработке (для UI «N материалов ждут анализа»). */
   pending?: number;
 }
 
 export interface RoleProfileBuildStatusApi {
-  status: 'idle' | 'queued' | 'running';
+  status: "idle" | "queued" | "running";
   since?: string | null;
 }
 
-// ─── /me/profile ────────────────────────────────────────────────────────────
-
-// Контракт выровнен по факту ответа `GET /api/v1/me/profile`
-// (backend `MeProfileDto` / `MeProfileRoleProfileDto`, me.service.ts):
-//   - `primaryRole`/`primaryDepartment` и `person.{id,name,email}` — раньше тип
-//     лгал (`role`/`department`/`person.fullName`), из-за чего раздел «Я» всегда
-//     показывал «Должность не назначена» (QA B3 2026-06-15);
-//   - `roleProfile` отдаёт `{id,status,buildVersion,lastBuildAt,roleMap}` —
-//     БЕЗ `summaryCache`. Раньше тип указывал на богатый `RoleProfileApi`
-//     (с `summaryCache.blocks`, которого в ответе нет) → «Моя карта должности»
-//     всегда показывала заглушку. Теперь карта приходит готовой в `roleMap`
-//     (тот же формат `RoleMapApi`, что и `GET /api/v1/roles/:id/map`), self-scoped;
-//     `null` — нет primaryRole / сервис карты недоступен (мягкая деградация).
-//     См. plans/tz/2026-06-15-me-role-map-card-contract.md.
 export interface MyProfileRoleProfileApi {
   id: string;
-  status: 'forming' | 'ready' | 'stale' | 'error';
+  status: "forming" | "ready" | "stale" | "error";
   buildVersion: number;
   lastBuildAt: string | null;
   roleMap: RoleMapApi | null;
@@ -235,20 +176,16 @@ export interface MyProfileApi {
   roleProfile: MyProfileRoleProfileApi | null;
 }
 
-// ─── API surface ────────────────────────────────────────────────────────────
-
 export const departmentsApi = {
   list: (orgId: string) =>
-    apiClient.get<ListDepartmentsResponseApi>('/api/v1/departments', {
+    apiClient.get<ListDepartmentsResponseApi>("/api/v1/departments", {
       headers: orgHeaders(orgId),
     }),
 
   create: (orgId: string, body: CreateDepartmentRequest) =>
-    apiClient.post<{ department: DepartmentApi }>(
-      '/api/v1/departments',
-      body,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.post<{ department: DepartmentApi }>("/api/v1/departments", body, {
+      headers: orgHeaders(orgId),
+    }),
 
   update: (orgId: string, id: string, body: UpdateDepartmentRequest) =>
     apiClient.patch<{ department: DepartmentApi }>(
@@ -263,7 +200,6 @@ export const departmentsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /** ТЗ 2026-05-25 Фаза 3 — назначить/снять главу отдела. */
   setHead: (orgId: string, id: string, body: SetDepartmentHeadRequest) =>
     apiClient.patch<DepartmentApi>(
       `/api/v1/departments/${encodeURIComponent(id)}/head`,
@@ -271,13 +207,6 @@ export const departmentsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * ТЗ редизайн Ф7а — слияние отделов. Переносит должности и сотрудников из
-   * `sourceId` в `intoId` (target) и soft-delete'ит source. Используется
-   * мастером «Наведём порядок в отделах» для дедупа похожих отделов.
-   * Backend: `POST /api/v1/departments/:id/merge` body `{ intoId }`
-   * (commit 201b16e8).
-   */
   merge: (orgId: string, sourceId: string, intoId: string) =>
     apiClient.post<MergeDepartmentResponse>(
       `/api/v1/departments/${encodeURIComponent(sourceId)}/merge`,
@@ -300,7 +229,7 @@ export const rolesDomainApi = {
     ),
 
   create: (orgId: string, body: CreateRoleRequest) =>
-    apiClient.post<{ role: RoleDomainApi }>('/api/v1/roles', body, {
+    apiClient.post<{ role: RoleDomainApi }>("/api/v1/roles", body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -312,19 +241,11 @@ export const rolesDomainApi = {
     ),
 
   remove: (orgId: string, id: string) =>
-    apiClient.del<{ ok: true }>(
-      `/api/v1/roles/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.del<{ ok: true }>(`/api/v1/roles/${encodeURIComponent(id)}`, {
+      headers: orgHeaders(orgId),
+    }),
 };
 
-/**
- * Сырой ответ бэка `/api/v1/persons` (PersonListItemDto). Поля `name` /
- * `primaryDepartmentId` / `currentRoleId` НЕ совпадают с UI-моделью
- * PersonDomainApi (`fullName` / `departmentId` / `roleId`) — у read-методов
- * раньше не было обратного маппера (пустые имена в 5 поверхностях). Маппим
- * здесь, в api-слое (ApiDto→DomainModel), зеркало write-маппера create/update.
- */
 interface PersonListItemApi {
   id: string;
   name: string | null;
@@ -334,15 +255,18 @@ interface PersonListItemApi {
   primaryDepartmentName: string | null;
   currentRoleId: string | null;
   currentRoleName: string | null;
-  invitationStatus: PersonDomainApi['invitationStatus'];
+  invitationStatus: PersonDomainApi["invitationStatus"];
   createdAt: string;
 }
 
-function mapPersonFromApi(raw: PersonListItemApi, orgId: string): PersonDomainApi {
+function mapPersonFromApi(
+  raw: PersonListItemApi,
+  orgId: string,
+): PersonDomainApi {
   return {
     id: raw.id,
     orgId,
-    fullName: raw.name ?? '',
+    fullName: raw.name ?? "",
     email: raw.email,
     roleId: raw.currentRoleId,
     roleName: raw.currentRoleName,
@@ -355,12 +279,15 @@ function mapPersonFromApi(raw: PersonListItemApi, orgId: string): PersonDomainAp
 }
 
 export const personsDomainApi = {
-  list: (orgId: string, query: ListPersonsQuery = {}): Promise<ListPersonsResponseApi> =>
+  list: (
+    orgId: string,
+    query: ListPersonsQuery = {},
+  ): Promise<ListPersonsResponseApi> =>
     apiClient
-      .get<{ items: PersonListItemApi[]; total?: number }>(
-        `/api/v1/persons${buildQuery({ ...query })}`,
-        { headers: orgHeaders(orgId) },
-      )
+      .get<{
+        items: PersonListItemApi[];
+        total?: number;
+      }>(`/api/v1/persons${buildQuery({ ...query })}`, { headers: orgHeaders(orgId) })
       .then((r) => ({
         items: r.items.map((p) => mapPersonFromApi(p, orgId)),
         total: r.total,
@@ -368,17 +295,14 @@ export const personsDomainApi = {
 
   byId: (orgId: string, id: string): Promise<{ person: PersonDomainApi }> =>
     apiClient
-      .get<{ person: PersonListItemApi }>(
-        `/api/v1/persons/${encodeURIComponent(id)}`,
-        { headers: orgHeaders(orgId) },
-      )
+      .get<{
+        person: PersonListItemApi;
+      }>(`/api/v1/persons/${encodeURIComponent(id)}`, { headers: orgHeaders(orgId) })
       .then((r) => ({ person: mapPersonFromApi(r.person, orgId) })),
 
-  // Бэкенд-контракт: { name, email, primaryDepartmentId, roleId } (CreatePersonSchema).
-  // UI-модель использует fullName/departmentId — мапим имена полей здесь.
   create: (orgId: string, body: CreatePersonRequest) =>
     apiClient.post<{ person: PersonDomainApi }>(
-      '/api/v1/persons',
+      "/api/v1/persons",
       {
         name: body.fullName,
         email: body.email,
@@ -404,10 +328,9 @@ export const personsDomainApi = {
     ),
 
   remove: (orgId: string, id: string) =>
-    apiClient.del<{ ok: true }>(
-      `/api/v1/persons/${encodeURIComponent(id)}`,
-      { headers: orgHeaders(orgId) },
-    ),
+    apiClient.del<{ ok: true }>(`/api/v1/persons/${encodeURIComponent(id)}`, {
+      headers: orgHeaders(orgId),
+    }),
 
   invite: (orgId: string, personId: string) =>
     apiClient.post<{ ok: true }>(
@@ -427,7 +350,7 @@ export const teamRosterApi = {
 
 export const structureApi = {
   summary: (orgId: string) =>
-    apiClient.get<StructureSummaryApi>('/api/v1/structure/summary', {
+    apiClient.get<StructureSummaryApi>("/api/v1/structure/summary", {
       headers: orgHeaders(orgId),
     }),
 };
@@ -455,7 +378,7 @@ export const roleProfilesApi = {
 
 export const meProfileApi = {
   get: (orgId: string) =>
-    apiClient.get<MyProfileApi>('/api/v1/me/profile', {
+    apiClient.get<MyProfileApi>("/api/v1/me/profile", {
       headers: orgHeaders(orgId),
     }),
 };

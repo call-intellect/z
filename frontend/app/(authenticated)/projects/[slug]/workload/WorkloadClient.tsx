@@ -1,18 +1,20 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import Link from "next/link";
+import { useMemo, useState } from "react";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useProjectWorkload } from '@/hooks/tracker/useProjectOverview';
-import type { WorkloadRow } from '@/domain/tracker';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useProjectWorkload } from "@/hooks/tracker/useProjectOverview";
+import type { WorkloadRow } from "@/domain/tracker";
 
-type SortKey = 'name' | 'open' | 'inProgress' | 'overdue' | 'completed7';
-type SortDir = 'asc' | 'desc';
+type SortKey = "name" | "open" | "inProgress" | "overdue" | "completed7";
+type SortDir = "asc" | "desc";
 
 function userLabel(r: WorkloadRow): string {
-  return r.userName?.trim() || r.userEmail?.split('@')[0] || r.userId.slice(0, 8);
+  return (
+    r.userName?.trim() || r.userEmail?.split("@")[0] || r.userId.slice(0, 8)
+  );
 }
 
 function makeIssueListUrl(slug: string, userId: string): string {
@@ -28,24 +30,24 @@ export function WorkloadClient({ slug }: { slug: string }) {
     projectId,
   );
 
-  const [sortKey, setSortKey] = useState<SortKey>('open');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [sortKey, setSortKey] = useState<SortKey>("open");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const sortedRows = useMemo<WorkloadRow[]>(() => {
     if (!workload) return [];
     const rows = [...workload.items];
     rows.sort((a, b) => {
-      const dir = sortDir === 'asc' ? 1 : -1;
+      const dir = sortDir === "asc" ? 1 : -1;
       switch (sortKey) {
-        case 'name':
-          return userLabel(a).localeCompare(userLabel(b), 'ru') * dir;
-        case 'open':
+        case "name":
+          return userLabel(a).localeCompare(userLabel(b), "ru") * dir;
+        case "open":
           return (a.openCount - b.openCount) * dir;
-        case 'inProgress':
+        case "inProgress":
           return (a.inProgressCount - b.inProgressCount) * dir;
-        case 'overdue':
+        case "overdue":
           return (a.overdueCount - b.overdueCount) * dir;
-        case 'completed7':
+        case "completed7":
           return (a.completedLast7dCount - b.completedLast7dCount) * dir;
       }
     });
@@ -62,9 +64,7 @@ export function WorkloadClient({ slug }: { slug: string }) {
   }, [workload]);
 
   if (isLoading) {
-    return (
-      <div className="h-72 animate-pulse rounded-lg bg-bg-overlay" />
-    );
+    return <div className="h-72 animate-pulse rounded-lg bg-bg-overlay" />;
   }
   if (error) {
     return (
@@ -83,10 +83,10 @@ export function WorkloadClient({ slug }: { slug: string }) {
 
   const handleSort = (k: SortKey): void => {
     if (sortKey === k) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(k);
-      setSortDir('desc');
+      setSortDir("desc");
     }
   };
 
@@ -95,29 +95,58 @@ export function WorkloadClient({ slug }: { slug: string }) {
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold text-fg-primary">Загруженность</h1>
         <p className="text-sm text-fg-tertiary">
-          Кто чем занят в проекте. В среднем — {workload.avgOpenPerMember}{' '}
+          Кто чем занят в проекте. В среднем — {workload.avgOpenPerMember}{" "}
           открытых задач на участника.
         </p>
       </header>
 
-      {/* desktop table */}
+      {}
       <div className="hidden overflow-x-auto rounded-lg border border-border-subtle bg-bg-elevated md:block">
         <table className="w-full text-sm">
           <thead className="border-b border-border-subtle text-left text-xs uppercase tracking-wide text-fg-tertiary">
             <tr>
-              <Th k="name" sortKey={sortKey} sortDir={sortDir} onClick={handleSort}>
+              <Th
+                k="name"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onClick={handleSort}
+              >
                 Участник
               </Th>
-              <Th k="open" sortKey={sortKey} sortDir={sortDir} onClick={handleSort} align="right">
+              <Th
+                k="open"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onClick={handleSort}
+                align="right"
+              >
                 Открыто
               </Th>
-              <Th k="inProgress" sortKey={sortKey} sortDir={sortDir} onClick={handleSort} align="right">
+              <Th
+                k="inProgress"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onClick={handleSort}
+                align="right"
+              >
                 В работе
               </Th>
-              <Th k="overdue" sortKey={sortKey} sortDir={sortDir} onClick={handleSort} align="right">
+              <Th
+                k="overdue"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onClick={handleSort}
+                align="right"
+              >
                 Просрочено
               </Th>
-              <Th k="completed7" sortKey={sortKey} sortDir={sortDir} onClick={handleSort} align="right">
+              <Th
+                k="completed7"
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onClick={handleSort}
+                align="right"
+              >
                 Завершено 7д
               </Th>
             </tr>
@@ -130,8 +159,8 @@ export function WorkloadClient({ slug }: { slug: string }) {
                   key={r.userId}
                   className={
                     isTop
-                      ? 'border-b border-border-subtle bg-chip-lavender-bg/30'
-                      : 'border-b border-border-subtle'
+                      ? "border-b border-border-subtle bg-chip-lavender-bg/30"
+                      : "border-b border-border-subtle"
                   }
                 >
                   <td className="px-3 py-2 text-fg-primary">{userLabel(r)}</td>
@@ -150,8 +179,8 @@ export function WorkloadClient({ slug }: { slug: string }) {
                     <span
                       className={
                         r.overdueCount > 0
-                          ? 'text-chip-danger-fg'
-                          : 'text-fg-tertiary'
+                          ? "text-chip-danger-fg"
+                          : "text-fg-tertiary"
                       }
                     >
                       {r.overdueCount}
@@ -167,7 +196,7 @@ export function WorkloadClient({ slug }: { slug: string }) {
         </table>
       </div>
 
-      {/* mobile cards */}
+      {}
       <ul className="flex flex-col gap-2 md:hidden">
         {sortedRows.map((r) => {
           const isTop = topOpenIds.has(r.userId);
@@ -176,8 +205,8 @@ export function WorkloadClient({ slug }: { slug: string }) {
               key={r.userId}
               className={
                 isTop
-                  ? 'rounded-lg border border-border-subtle bg-chip-lavender-bg/30 p-3'
-                  : 'rounded-lg border border-border-subtle bg-bg-elevated p-3'
+                  ? "rounded-lg border border-border-subtle bg-chip-lavender-bg/30 p-3"
+                  : "rounded-lg border border-border-subtle bg-bg-elevated p-3"
               }
             >
               <div className="font-medium text-fg-primary">{userLabel(r)}</div>
@@ -194,8 +223,8 @@ export function WorkloadClient({ slug }: { slug: string }) {
                 <dd
                   className={
                     r.overdueCount > 0
-                      ? 'text-right tabular-nums text-chip-danger-fg'
-                      : 'text-right tabular-nums text-fg-tertiary'
+                      ? "text-right tabular-nums text-chip-danger-fg"
+                      : "text-right tabular-nums text-fg-tertiary"
                   }
                 >
                   {r.overdueCount}
@@ -219,23 +248,23 @@ function Th({
   sortKey,
   sortDir,
   onClick,
-  align = 'left',
+  align = "left",
 }: {
   children: React.ReactNode;
   k: SortKey;
   sortKey: SortKey;
   sortDir: SortDir;
   onClick: (k: SortKey) => void;
-  align?: 'left' | 'right';
+  align?: "left" | "right";
 }) {
   const active = k === sortKey;
-  const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
+  const arrow = active ? (sortDir === "asc" ? "↑" : "↓") : "";
   return (
     <th
       className={
-        align === 'right'
-          ? 'cursor-pointer select-none px-3 py-2 text-right font-medium'
-          : 'cursor-pointer select-none px-3 py-2 font-medium'
+        align === "right"
+          ? "cursor-pointer select-none px-3 py-2 text-right font-medium"
+          : "cursor-pointer select-none px-3 py-2 font-medium"
       }
       onClick={() => onClick(k)}
     >

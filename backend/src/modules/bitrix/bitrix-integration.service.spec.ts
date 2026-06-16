@@ -10,11 +10,6 @@ import type { JwtService } from '../auth/services/jwt.service';
 import type { BitrixApiClient } from './bitrix-api.client';
 import { BitrixIntegrationService } from './bitrix-integration.service';
 
-/**
- * Детерминированные unit-тесты BitrixIntegrationService: Prisma / Crypto /
- * BitrixApiClient / Jwt полностью замоканы. БД и сети нет.
- */
-
 function makeRow(over: Partial<BitrixIntegration> = {}): BitrixIntegration {
   return {
     id: 'b1',
@@ -84,7 +79,6 @@ describe('BitrixIntegrationService', () => {
         update: vi.fn(),
         deleteMany: vi.fn(),
       },
-      // ensureBitrixSource (connect/claim) + деактивация при remove (Ф5).
       source: {
         upsert: vi.fn().mockResolvedValue({ id: 'src-bitrix' }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -146,7 +140,7 @@ describe('BitrixIntegrationService', () => {
       exp: 9999999999,
     });
     clientMock.exchangeCode.mockResolvedValue(tokenResp());
-    prismaMock.bitrixIntegration.findFirst.mockResolvedValue(null); // no foreign binding
+    prismaMock.bitrixIntegration.findFirst.mockResolvedValue(null);
     prismaMock.bitrixIntegration.upsert.mockResolvedValue(makeRow());
 
     const res = await service.handleOAuthCallback({
@@ -160,7 +154,6 @@ describe('BitrixIntegrationService', () => {
     expect(upsertArg.where).toEqual({ memberId: 'M1' });
     expect(upsertArg.create.status).toBe('connected');
     expect(upsertArg.create.tenantId).toBe('t1');
-    // токены зашифрованы
     expect(cryptoMock.encrypt).toHaveBeenCalledWith('AT');
     expect(cryptoMock.encrypt).toHaveBeenCalledWith('RT');
   });
@@ -169,9 +162,9 @@ describe('BitrixIntegrationService', () => {
     jwtMock.verifyBitrixState.mockImplementation(() => {
       throw new Error('bad');
     });
-    await expect(
-      service.handleOAuthCallback({ code: 'c1', state: 'x' }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.handleOAuthCallback({ code: 'c1', state: 'x' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(clientMock.exchangeCode).not.toHaveBeenCalled();
   });
 
@@ -184,9 +177,7 @@ describe('BitrixIntegrationService', () => {
 
   it('getValidAccessToken: протух → refresh + persist', async () => {
     const row = makeRow({ accessExpiresAt: new Date(Date.now() - 1000) });
-    clientMock.refresh.mockResolvedValue(
-      tokenResp({ access_token: 'AT2', refresh_token: 'RT2' }),
-    );
+    clientMock.refresh.mockResolvedValue(tokenResp({ access_token: 'AT2', refresh_token: 'RT2' }));
     prismaMock.bitrixIntegration.upsert.mockResolvedValue(makeRow());
 
     const at = await service.getValidAccessToken(row);
@@ -201,9 +192,7 @@ describe('BitrixIntegrationService', () => {
     clientMock.refresh.mockRejectedValue(new Error('boom'));
     prismaMock.bitrixIntegration.update.mockResolvedValue(makeRow());
 
-    await expect(service.getValidAccessToken(row)).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(service.getValidAccessToken(row)).rejects.toBeInstanceOf(BadRequestException);
     expect(prismaMock.bitrixIntegration.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'error' }),
@@ -216,8 +205,8 @@ describe('BitrixIntegrationService', () => {
       makeRow({ tenantId: null, status: 'pending' }),
     );
     prismaMock.bitrixIntegration.findFirst
-      .mockResolvedValueOnce(null) // assertNoForeignActiveBinding
-      .mockResolvedValueOnce(makeRow()); // getIntegration в конце
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRow());
     prismaMock.bitrixIntegration.update.mockResolvedValue(makeRow());
 
     await service.claim('t1', 'M1');
@@ -232,9 +221,7 @@ describe('BitrixIntegrationService', () => {
     prismaMock.bitrixIntegration.findUnique.mockResolvedValue(
       makeRow({ tenantId: 'other', status: 'connected' }),
     );
-    await expect(service.claim('t1', 'M1')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(service.claim('t1', 'M1')).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('getIntegration: не утекает токен (hasTokens=true, без *Enc)', async () => {
@@ -250,8 +237,6 @@ describe('BitrixIntegrationService', () => {
       makeRow({ tenantId: null, status: 'pending' }),
     );
     prismaMock.bitrixIntegration.findFirst.mockResolvedValueOnce({ id: 'other' });
-    await expect(service.claim('t1', 'M1')).rejects.toBeInstanceOf(
-      ConflictException,
-    );
+    await expect(service.claim('t1', 'M1')).rejects.toBeInstanceOf(ConflictException);
   });
 });

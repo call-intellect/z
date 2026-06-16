@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -40,18 +37,6 @@ import {
 } from '../dto/functional-domain.dto';
 import { FunctionalDomainService } from '../services/functional-domain.service';
 
-/**
- * SBA α-9 wave 3 — REST API `/api/v1/domains`.
- *
- *   GET    /                — tree-view (опц. includeChildren).
- *   POST   /                — создать домен (admin).
- *   GET    /:id             — один домен.
- *   PATCH  /:id             — обновить (admin).
- *   DELETE /:id             — soft-archive (admin).
- *   POST   /seed-template   — admin: дополнить базовыми + per-industry доменами.
- *
- * RBAC: read — все members; write — owner/admin; seed-template — super_admin/admin/owner.
- */
 @ApiTags('domains')
 @Controller('api/v1/domains')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -134,8 +119,6 @@ export class DomainsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<SeedTemplateResponseDto> {
     const t = this.requireTenant(tenantId);
-    // seed-template — повышенное право (как `manage`), но проще закрыть через write +
-    // явную проверку: только admin/owner. RBAC `domain:manage` доступен только им.
     await this.requireManage(user.id, t);
     return this.svc.seedTemplate({
       tenantId: t,
@@ -143,8 +126,6 @@ export class DomainsController {
       industry: body.industry,
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -163,8 +144,7 @@ export class DomainsController {
 
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'functional_domain');
-    if (!ok)
-      throw this.forbidden('Изменять домены может только владелец/администратор Org');
+    if (!ok) throw this.forbidden('Изменять домены может только владелец/администратор Org');
   }
 
   private async requireDelete(userId: string, tenantId: string): Promise<void> {

@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   documentKindLabel,
   documentTypeLabel,
@@ -13,57 +13,46 @@ import {
   type DocumentDetailApi,
   type DocumentEntityKindApi,
   type DocumentStatusApi,
-} from '@/api/documents.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { TrustBadge } from '@/ui/components/shared/TrustBadge';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
+} from "@/api/documents.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { TrustBadge } from "@/ui/components/shared/TrustBadge";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-import {
-  SuggestionBanner,
-  hasPendingSuggestion,
-} from '../DocumentsListClient';
+import { SuggestionBanner, hasPendingSuggestion } from "../DocumentsListClient";
 
 const STATUS_LABELS: Record<DocumentStatusApi, string> = {
-  uploaded: 'загружен',
-  parsing: 'обрабатывается',
-  parsed: 'готов',
-  failed: 'ошибка',
+  uploaded: "загружен",
+  parsing: "обрабатывается",
+  parsed: "готов",
+  failed: "ошибка",
 };
 
 const ENTITY_GROUP_LABELS: Record<DocumentEntityKindApi, string> = {
-  process: 'Процессы',
-  decision: 'Решения',
-  regulation: 'Регламенты',
-  policy: 'Политики',
-  metric: 'Метрики',
-  tool: 'Инструменты',
+  process: "Процессы",
+  decision: "Решения",
+  regulation: "Регламенты",
+  policy: "Политики",
+  metric: "Метрики",
+  tool: "Инструменты",
 };
 
-/**
- * Метку доверия (Фаза C1) показываем только у критических карточек —
- * process / decision / regulation / policy. metric / tool не версионируются.
- */
 const TRUST_TIER_KINDS = new Set<DocumentEntityKindApi>([
-  'process',
-  'decision',
-  'regulation',
-  'policy',
+  "process",
+  "decision",
+  "regulation",
+  "policy",
 ]);
 
-export function DocumentDetailClient({
-  documentId,
-}: {
-  documentId: string;
-}) {
+export function DocumentDetailClient({ documentId }: { documentId: string }) {
   const { currentOrgId, currentOrgRole, isLoading } = useAuth();
   if (isLoading) return null;
   if (!currentOrgId) {
@@ -75,7 +64,7 @@ export function DocumentDetailClient({
     );
   }
   const canSeeEntities =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+    currentOrgRole === "owner" || currentOrgRole === "admin";
   return (
     <Content
       orgId={currentOrgId}
@@ -95,13 +84,13 @@ function Content({
   canSeeEntities: boolean;
 }) {
   const swr = useSWR(
-    ['document-detail', orgId, documentId],
+    ["document-detail", orgId, documentId],
     () => documentsApi.byId(orgId, documentId),
     {
       revalidateOnFocus: false,
       refreshInterval: (latest) => {
         const s = latest?.document.status;
-        return s === 'uploaded' || s === 'parsing' ? 2000 : 0;
+        return s === "uploaded" || s === "parsing" ? 2000 : 0;
       },
     },
   );
@@ -116,7 +105,7 @@ function Content({
   }
 
   if (swr.error) {
-    if (swr.error instanceof ApiError && swr.error.code === 'http_404') {
+    if (swr.error instanceof ApiError && swr.error.code === "http_404") {
       return (
         <div className="mx-auto w-full max-w-4xl px-6 py-8">
           <AdminEmpty
@@ -129,7 +118,7 @@ function Content({
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         <AdminError
-          message={swr.error instanceof Error ? swr.error.message : 'Ошибка'}
+          message={swr.error instanceof Error ? swr.error.message : "Ошибка"}
           onRetry={() => void swr.mutate()}
         />
       </div>
@@ -180,13 +169,15 @@ function Detail({
               {documentTypeLabel(document.docType)}
             </Badge>
           )}
-          <span className="text-fg-tertiary">{documentKindLabel(document.kind)}</span>
+          <span className="text-fg-tertiary">
+            {documentKindLabel(document.kind)}
+          </span>
           {document.attachedRoleId && (
             <Link
               href={`/roles/${encodeURIComponent(document.attachedRoleId)}`}
               className="text-fg-tertiary hover:text-accent"
             >
-              {document.attachedRoleName ?? 'должность'}
+              {document.attachedRoleName ?? "должность"}
             </Link>
           )}
           {document.uploaderName && (
@@ -194,7 +185,7 @@ function Detail({
               Загрузил: {document.uploaderName}
             </span>
           )}
-          {typeof document.sizeBytes === 'number' && (
+          {typeof document.sizeBytes === "number" && (
             <span className="text-fg-tertiary">
               {formatBytes(document.sizeBytes)}
             </span>
@@ -218,11 +209,11 @@ function Detail({
             <CardTitle className="text-base">Распознанный текст</CardTitle>
           </CardHeader>
           <CardContent>
-            {document.status === 'failed' ? (
+            {document.status === "failed" ? (
               <p className="text-sm text-danger">
                 Ошибка парсинга. Проверьте файл и попробуйте загрузить ещё раз.
               </p>
-            ) : document.status === 'parsed' && parsedText ? (
+            ) : document.status === "parsed" && parsedText ? (
               <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg-primary">
                 {parsedText}
               </pre>
@@ -240,9 +231,7 @@ function Detail({
             <TabsList>
               <TabsTrigger value="ideas">Блоки идей</TabsTrigger>
               {canSeeEntities && (
-                <TabsTrigger value="entities">
-                  Извлечённые сущности
-                </TabsTrigger>
+                <TabsTrigger value="entities">Извлечённые сущности</TabsTrigger>
               )}
             </TabsList>
 
@@ -265,7 +254,7 @@ function Detail({
                               {b.excerpt}
                             </p>
                           )}
-                          {typeof b.confidence === 'number' && (
+                          {typeof b.confidence === "number" && (
                             <p className="mt-1 text-[10px] text-fg-tertiary">
                               уверенность {Math.round(b.confidence * 100)}%
                             </p>

@@ -1,45 +1,30 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useState, type JSX } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   brandVoiceApi,
   type BrandVoiceArtifactApi,
   type BrandVoiceTabooApi,
   type BrandVoiceValueApi,
   type UpdateBrandVoiceProfileRequest,
-} from '@/api/brand-voice.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/brand-voice.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   brandVoiceArtifactStatusLabel,
   toBrandVoiceProfileDomain,
   type BrandVoiceProfileDomain,
-} from '@/domain/brand-voice';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
+} from "@/domain/brand-voice";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/brand-voice` UI — read-only display + edit modal для admin.
- *
- * Структура:
- *   - заголовок + completeness + version;
- *   - tone (10 осей с прогресс-барами);
- *   - values (карточки с весами);
- *   - taboos (список с alternative и причинами);
- *   - example artifacts (документы brand_corpus + tagging UI для admin);
- *   - rebuild button.
- *
- * MVP: всё read-only кроме artifact tagging + rebuild (через POST). Полный
- * PATCH-flow для tone/values/taboos будет в δ-1; пока admin может только
- * перетегать документы.
- */
 export function BrandVoiceClient(): JSX.Element {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -51,7 +36,7 @@ export function BrandVoiceClient(): JSX.Element {
       />
     );
   }
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
   return <BrandVoiceContent orgId={currentOrgId} canEdit={canEdit} />;
 }
 
@@ -81,8 +66,7 @@ function BrandVoiceContent({
       setProfile(toBrandVoiceProfileDomain(p));
       setArtifacts(a.items);
     } catch (err) {
-      const msg =
-        humanizeApiError(err, 'Не удалось загрузить голос бренда');
+      const msg = humanizeApiError(err, "Не удалось загрузить голос бренда");
       setError(msg);
     } finally {
       setLoading(false);
@@ -100,11 +84,10 @@ function BrandVoiceContent({
     try {
       const r = await brandVoiceApi.rebuild(orgId);
       setRebuildMessage(r.reason);
-      // Перезагрузим профиль, чтобы сразу увидеть новые tone/values/taboos.
       await load();
     } catch (err) {
       setRebuildMessage(
-        humanizeApiError(err, 'Не удалось запустить пересборку'),
+        humanizeApiError(err, "Не удалось запустить пересборку"),
       );
     } finally {
       setRebuilding(false);
@@ -134,8 +117,8 @@ function BrandVoiceContent({
           </h1>
           <p className="mt-1 text-sm text-fg-tertiary">
             Tone, values и табу-фразы компании. Автоматически собирается раз в
-            сутки из документов, помеченных «корпус бренда», и принципов
-            бренда (signalType=brand_principle).
+            сутки из документов, помеченных «корпус бренда», и принципов бренда
+            (signalType=brand_principle).
           </p>
         </div>
         <div className="rounded-lg bg-bg-overlay px-4 py-2 text-right">
@@ -157,10 +140,10 @@ function BrandVoiceContent({
             Корпус бренда меньше порога
           </div>
           <p className="mt-1 text-sm text-fg-tertiary">
-            Сейчас {profile.corpusSize} документ(а/ов) с пометкой «brand_corpus», нужно
-            минимум {profile.minCorpusSize}. Пока порог не достигнут, экстрактор
-            не собирает профиль. Пометьте больше документов через раздел
-            «Артефакты» ниже.
+            Сейчас {profile.corpusSize} документ(а/ов) с пометкой
+            «brand_corpus», нужно минимум {profile.minCorpusSize}. Пока порог не
+            достигнут, экстрактор не собирает профиль. Пометьте больше
+            документов через раздел «Артефакты» ниже.
           </p>
         </Card>
       )}
@@ -189,7 +172,7 @@ function BrandVoiceContent({
       {canEdit && (
         <Card className="flex flex-wrap items-center gap-3 p-4">
           <Button onClick={() => void handleRebuild()} disabled={rebuilding}>
-            {rebuilding ? 'Запускаем…' : 'Пересобрать сейчас'}
+            {rebuilding ? "Запускаем…" : "Пересобрать сейчас"}
           </Button>
           <Button
             variant="outline"
@@ -236,10 +219,10 @@ function CorpusStatusCard({
         </dd>
         <dt className="text-fg-tertiary">Последняя сборка</dt>
         <dd className="text-fg-primary">
-          {lastBuiltAt ? lastBuiltAt.toLocaleString('ru-RU') : '—'}
+          {lastBuiltAt ? lastBuiltAt.toLocaleString("ru-RU") : "—"}
         </dd>
         <dt className="text-fg-tertiary">Версия экстрактора</dt>
-        <dd className="text-fg-primary">{builderAgentVersion ?? '—'}</dd>
+        <dd className="text-fg-primary">{builderAgentVersion ?? "—"}</dd>
       </dl>
     </Card>
   );
@@ -248,7 +231,7 @@ function CorpusStatusCard({
 function ToneCard({
   tone,
 }: {
-  tone: BrandVoiceProfileDomain['tone'];
+  tone: BrandVoiceProfileDomain["tone"];
 }): JSX.Element {
   return (
     <Card className="p-4">
@@ -277,11 +260,7 @@ function ToneCard({
   );
 }
 
-function ValuesCard({
-  values,
-}: {
-  values: BrandVoiceValueApi[];
-}): JSX.Element {
+function ValuesCard({ values }: { values: BrandVoiceValueApi[] }): JSX.Element {
   return (
     <Card className="p-4">
       <h2 className="text-sm font-semibold text-fg-primary">Ценности</h2>
@@ -310,18 +289,12 @@ function ValuesCard({
   );
 }
 
-function TaboosCard({
-  taboos,
-}: {
-  taboos: BrandVoiceTabooApi[];
-}): JSX.Element {
+function TaboosCard({ taboos }: { taboos: BrandVoiceTabooApi[] }): JSX.Element {
   return (
     <Card className="p-4">
       <h2 className="text-sm font-semibold text-fg-primary">Табу-фразы</h2>
       {taboos.length === 0 ? (
-        <p className="mt-2 text-sm text-fg-tertiary">
-          Табу ещё не извлечены.
-        </p>
+        <p className="mt-2 text-sm text-fg-tertiary">Табу ещё не извлечены.</p>
       ) : (
         <ul className="mt-3 space-y-2">
           {taboos.map((t) => (
@@ -370,14 +343,13 @@ function ArtifactsCard({
       if (!canEdit) return;
       setPendingId(artifact.id);
       try {
-        const without = artifact.useCases.filter((u) => u !== 'brand_corpus');
-        // Если документ уже tagged — снимаем; иначе добавляем + reference как дефолт.
-        const has = artifact.useCases.includes('brand_corpus');
+        const without = artifact.useCases.filter((u) => u !== "brand_corpus");
+        const has = artifact.useCases.includes("brand_corpus");
         const next = has
           ? without.length > 0
             ? without
-            : ['reference']
-          : [...without, 'brand_corpus'];
+            : ["reference"]
+          : [...without, "brand_corpus"];
         await brandVoiceApi.patchDocumentUseCases(orgId, artifact.id, next);
         onChanged();
       } finally {
@@ -412,7 +384,7 @@ function ArtifactsCard({
                   </div>
                   <div className="text-xs text-fg-tertiary">
                     {a.mimeType} · {brandVoiceArtifactStatusLabel(a.status)}
-                    {isUsed && ' · использован в последней сборке'}
+                    {isUsed && " · использован в последней сборке"}
                   </div>
                 </div>
                 {canEdit && (
@@ -443,15 +415,12 @@ function EditModal({
   onSave: (body: UpdateBrandVoiceProfileRequest) => Promise<void>;
 }): JSX.Element {
   const [valuesText, setValuesText] = useState(
-    profile.values.map((v) => `${v.value}|${v.weight}`).join('\n'),
+    profile.values.map((v) => `${v.value}|${v.weight}`).join("\n"),
   );
   const [taboosText, setTaboosText] = useState(
     profile.taboos
-      .map(
-        (t) =>
-          `${t.phrase}||${t.alternative ?? ''}||${t.reason}`,
-      )
-      .join('\n'),
+      .map((t) => `${t.phrase}||${t.alternative ?? ""}||${t.reason}`)
+      .join("\n"),
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -461,14 +430,14 @@ function EditModal({
     setSaving(true);
     try {
       const values: BrandVoiceValueApi[] = valuesText
-        .split('\n')
+        .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => {
-          const [value, weightRaw] = line.split('|').map((s) => s.trim());
-          const weight = Number.parseFloat(weightRaw ?? '0.5');
+          const [value, weightRaw] = line.split("|").map((s) => s.trim());
+          const weight = Number.parseFloat(weightRaw ?? "0.5");
           return {
-            value: value ?? '',
+            value: value ?? "",
             weight: Number.isFinite(weight)
               ? Math.max(0, Math.min(1, weight))
               : 0.5,
@@ -477,15 +446,15 @@ function EditModal({
         })
         .filter((v) => v.value.length > 0);
       const taboos: BrandVoiceTabooApi[] = taboosText
-        .split('\n')
+        .split("\n")
         .map((line) => line.trim())
         .filter(Boolean)
         .map((line) => {
-          const parts = line.split('||').map((s) => s.trim());
+          const parts = line.split("||").map((s) => s.trim());
           const [phrase, alt, reason] = parts;
           const out: BrandVoiceTabooApi = {
-            phrase: phrase ?? '',
-            reason: reason ?? '',
+            phrase: phrase ?? "",
+            reason: reason ?? "",
           };
           if (alt) out.alternative = alt;
           return out;
@@ -497,9 +466,7 @@ function EditModal({
         taboos: taboos.length > 0 ? taboos : null,
       });
     } catch (error) {
-      setErr(
-        humanizeApiError(error, 'Не удалось сохранить'),
-      );
+      setErr(humanizeApiError(error, "Не удалось сохранить"));
     } finally {
       setSaving(false);
     }
@@ -548,7 +515,7 @@ function EditModal({
 
         <div className="flex gap-2">
           <Button onClick={() => void submit()} disabled={saving}>
-            {saving ? 'Сохраняем…' : 'Сохранить'}
+            {saving ? "Сохраняем…" : "Сохранить"}
           </Button>
           <Button variant="outline" onClick={onCancel} disabled={saving}>
             Отмена

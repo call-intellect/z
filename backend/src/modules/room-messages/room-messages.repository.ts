@@ -3,7 +3,6 @@ import { type Meeting, type MeetingRoomMessage, type Participant } from '@prisma
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/** Жёсткий потолок выдачи истории — защита от перебора. */
 const HISTORY_LIMIT = 1_000;
 
 @Injectable()
@@ -20,11 +19,6 @@ export class RoomMessagesRepository {
     return this.prisma.meeting.findUnique({ where: { id: meetingId } });
   }
 
-  /**
-   * Найти Participant'а в рамках встречи. Сначала по `userId` (зарегистрированный
-   * юзер / host), затем по `livekitIdentity` (гость без userId).
-   * Возвращает первого подходящего или null.
-   */
   async findParticipant(args: {
     meetingId: string;
     userId?: string;
@@ -61,10 +55,7 @@ export class RoomMessagesRepository {
     return this.prisma.meetingRoomMessage.create({ data });
   }
 
-  list(
-    meetingId: string,
-    opts: { since?: Date } = {},
-  ): Promise<MeetingRoomMessage[]> {
+  list(meetingId: string, opts: { since?: Date } = {}): Promise<MeetingRoomMessage[]> {
     return this.prisma.meetingRoomMessage.findMany({
       where: {
         meetingId,

@@ -1,69 +1,44 @@
-'use client';
+"use client";
 
-/**
- * MobileOverviewClient — мобильный экран «Обзор» руководителя (ТЗ B1/Ф2
- * `2026-06-11-remaining-handoff-finishable-now.md` блок B; полный контракт —
- * `2026-06-11-mobile-cora-exec-manager.md` §Ф2, Б4).
- *
- * Инвариант №1: мобайл = тот же web-app, читает СУЩЕСТВУЮЩИЕ эндпоинты, десктоп
- * НЕ меняем. Источники (оба уже есть):
- *   - `GET /dashboard/director` → `DirectorDashboardDomain` (requiresAction,
- *     valueStrip, strategicAlignment/goalsPulse, kpiCommitmentReliability,
- *     signalCounters, isEmpty);
- *   - `GET /dashboard/operations/overview` → `OperationsOverviewDomain`
- *     (teamTemperature, blockersCount).
- *
- * Раскладка (один столбец, glance): строка «Требует тебя: N» → 4 зоны
- * (Команда/Дела/Главная цель/Что мешает) → полоса «Кора за неделю» (valueStrip)
- * → кнопка «Спросить». Cold-start (Р6) при пустом графе замещает плитки.
- * Финансы/себестоимость НЕ показываем.
- *
- * Чистая логика зон вынесена в `overview-zones.ts` (тестируется юнитом).
- */
+import Link from "next/link";
+import useSWR from "swr";
+import { AlertCircle, MessageCircle, Sparkles } from "lucide-react";
 
-import Link from 'next/link';
-import useSWR from 'swr';
-import { AlertCircle, MessageCircle, Sparkles } from 'lucide-react';
-
-import { dashboardApi } from '@/api/dashboard.api';
-import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { humanizeApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { directorDashboardFromApi } from '@/domain/director-dashboard';
-import { fromOperationsOverviewApi } from '@/domain/operations-dashboard';
+import { dashboardApi } from "@/api/dashboard.api";
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { directorDashboardFromApi } from "@/domain/director-dashboard";
+import { fromOperationsOverviewApi } from "@/domain/operations-dashboard";
 import {
   fromCheckinDisciplineApi,
   localDateString,
   type CheckinDisciplineDomain,
-} from '@/domain/checkin-discipline';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { EnableMorningRemindersButton } from '@/ui/pwa/EnableMorningRemindersButton';
-import { ZoneTile } from '@/ui/mobile/shared/ZoneTile';
-import { GlanceGauge } from '@/ui/mobile/shared/GlanceGauge';
+} from "@/domain/checkin-discipline";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { EnableMorningRemindersButton } from "@/ui/pwa/EnableMorningRemindersButton";
+import { ZoneTile } from "@/ui/mobile/shared/ZoneTile";
+import { GlanceGauge } from "@/ui/mobile/shared/GlanceGauge";
 import {
   isOverviewColdStart,
   overviewZonesFromDomain,
   requiresYouCount,
-} from './overview-zones';
+} from "./overview-zones";
 
 export function MobileOverviewClient() {
   const { currentOrgId } = useAuth();
 
-  // Зеркало десктопного фетча: тот же эндпоинт `/dashboard/director?period=week`
-  // через тот же маппер. Десктоп грузит тем же путём (без SWR), здесь SWR —
-  // рендерится РОВНО ОДНО дерево (MobileShell), двойного fetch на экране нет.
   const directorSwr = useSWR(
-    currentOrgId ? ['mobile-overview-director', currentOrgId, 'week'] : null,
+    currentOrgId ? ["mobile-overview-director", currentOrgId, "week"] : null,
     async () => {
-      const res = await dashboardApi.getDirectorView(currentOrgId!, 'week');
+      const res = await dashboardApi.getDirectorView(currentOrgId!, "week");
       return directorDashboardFromApi(res);
     },
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // Операционка — тот же контракт, что у десктопной COO-панели.
   const operationsSwr = useSWR(
-    currentOrgId ? ['operations-overview', currentOrgId] : null,
+    currentOrgId ? ["operations-overview", currentOrgId] : null,
     async () => {
       const res = await operationsDashboardApi.getOverview();
       return fromOperationsOverviewApi(res);
@@ -71,10 +46,11 @@ export function MobileOverviewClient() {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // Дисциплина чек-инов за сегодня (быстрый взгляд: «не сдали утром/вечером»).
   const todayDate = localDateString();
   const checkinSwr = useSWR<CheckinDisciplineDomain | null>(
-    currentOrgId ? ['mobile-checkin-discipline', currentOrgId, todayDate] : null,
+    currentOrgId
+      ? ["mobile-checkin-discipline", currentOrgId, todayDate]
+      : null,
     async () => {
       const res = await operationsDashboardApi.getCheckinDiscipline(
         currentOrgId!,
@@ -90,10 +66,9 @@ export function MobileOverviewClient() {
   const operations = operationsSwr.data ?? null;
   const checkin = checkinSwr.data ?? null;
 
-  // Loading: ждём директорский (первичный источник раскладки).
   const loading = !!currentOrgId && directorSwr.isLoading && !director;
   const error = directorSwr.error
-    ? humanizeApiError(directorSwr.error, 'Не удалось загрузить обзор')
+    ? humanizeApiError(directorSwr.error, "Не удалось загрузить обзор")
     : null;
 
   const requiresYou = requiresYouCount(director);
@@ -104,7 +79,9 @@ export function MobileOverviewClient() {
   return (
     <div className="mx-auto w-full max-w-md px-4 py-5">
       <h1 className="mb-1 text-xl font-semibold text-fg-primary">Обзор</h1>
-      <p className="mb-4 text-sm text-fg-secondary">Главное за неделю — одним взглядом.</p>
+      <p className="mb-4 text-sm text-fg-secondary">
+        Главное за неделю — одним взглядом.
+      </p>
 
       {loading && <OverviewSkeleton />}
 
@@ -120,8 +97,14 @@ export function MobileOverviewClient() {
           data-testid="overview-coldstart"
           className="mb-4 rounded-2xl border border-border-subtle bg-bg-card p-5 text-center"
         >
-          <Sparkles size={24} className="mx-auto mb-2 text-accent" aria-hidden />
-          <p className="text-base font-medium text-fg-primary">Граф ещё наполняется</p>
+          <Sparkles
+            size={24}
+            className="mx-auto mb-2 text-accent"
+            aria-hidden
+          />
+          <p className="text-base font-medium text-fg-primary">
+            Граф ещё наполняется
+          </p>
           <p className="mt-1 text-sm text-fg-secondary">
             Добавьте встречи и чаты — и Обзор оживёт.
           </p>
@@ -130,7 +113,7 @@ export function MobileOverviewClient() {
 
       {!loading && !error && !coldStart && (
         <>
-          {/* Строка «Требует тебя: N» — только при N>0 (gotcha: total=0 → нет). */}
+          {}
           {requiresYou > 0 && (
             <Link
               href="/me/notifications"
@@ -141,19 +124,17 @@ export function MobileOverviewClient() {
             </Link>
           )}
 
-          {/* 4 зоны (Команда/Дела/Главная цель/Что мешает). */}
+          {}
           <div className="grid grid-cols-2 gap-3">
             {zones.map((zone) =>
-              zone.key === 'goal' ? (
+              zone.key === "goal" ? (
                 <ZoneTile
                   key={zone.key}
                   title={zone.title}
                   tone={zone.tone}
                   href={zone.href}
                   caption={zone.caption}
-                  value={
-                    <GlanceGauge percent={zone.gaugePercent ?? null} />
-                  }
+                  value={<GlanceGauge percent={zone.gaugePercent ?? null} />}
                 />
               ) : (
                 <ZoneTile
@@ -168,7 +149,7 @@ export function MobileOverviewClient() {
             )}
           </div>
 
-          {/* Полоса «Кора за неделю» (valueStrip) — компактная строка чисел. */}
+          {}
           {valueStrip && (
             <div className="mt-4 rounded-2xl border border-border-subtle bg-bg-card p-4">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-fg-secondary">
@@ -178,18 +159,21 @@ export function MobileOverviewClient() {
                 <ValueStat n={valueStrip.meetingsProtocoled} label="встреч" />
                 <ValueStat n={valueStrip.tasksExtracted} label="задач" />
                 <ValueStat n={valueStrip.decisionsExtracted} label="решений" />
-                <ValueStat n={valueStrip.questionsAnsweredByMemory} label="ответов" />
+                <ValueStat
+                  n={valueStrip.questionsAnsweredByMemory}
+                  label="ответов"
+                />
                 <ValueStat n={valueStrip.commitmentsKept} label="обещаний" />
               </div>
             </div>
           )}
 
-          {/* Дисциплина чек-инов сегодня — плашка быстрого взгляда. */}
+          {}
           <CheckinPill checkin={checkin} />
         </>
       )}
 
-      {/* Кнопка «Спросить» — переход на AI-чат. Доступна всегда. */}
+      {}
       <Link
         href="/chat"
         className="mt-5 flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 text-sm font-medium text-accent-fg active:opacity-90"
@@ -198,9 +182,7 @@ export function MobileOverviewClient() {
         Спросить Кору
       </Link>
 
-      {/* Ф7: установка PWA + подписка на утренний push «Требует тебя: N»
-          (доставляет ExecMorningPushCron). На устройствах без поддержки —
-          компонент сам себя прячет. */}
+      {}
       <div className="mt-3">
         <EnableMorningRemindersButton />
       </div>
@@ -211,17 +193,14 @@ export function MobileOverviewClient() {
 function ValueStat({ n, label }: { n: number; label: string }) {
   return (
     <div className="flex flex-col">
-      <span className="text-lg font-semibold tabular-nums text-fg-primary">{n}</span>
+      <span className="text-lg font-semibold tabular-nums text-fg-primary">
+        {n}
+      </span>
       <span className="text-xs text-fg-tertiary">{label}</span>
     </div>
   );
 }
 
-/**
- * Плашка «Чек-ины сегодня» (Ф8.7). Б-6: выключены/нет данных → причина без
- * чисел; все сдали → спокойный текст; есть пропуски → «не сдали утром/вечером».
- * Тон «вернуть в ритм», не наказание.
- */
 function CheckinPill({ checkin }: { checkin: CheckinDisciplineDomain | null }) {
   if (!checkin) return null;
   if (!checkin.enabled) {
@@ -237,15 +216,16 @@ function CheckinPill({ checkin }: { checkin: CheckinDisciplineDomain | null }) {
     <div
       className={
         allDone
-          ? 'mt-3 rounded-2xl bg-chip-success-bg px-4 py-3 text-sm font-medium text-chip-success-fg'
-          : 'mt-3 rounded-2xl bg-chip-warning-bg px-4 py-3 text-sm font-medium text-chip-warning-fg'
+          ? "mt-3 rounded-2xl bg-chip-success-bg px-4 py-3 text-sm font-medium text-chip-success-fg"
+          : "mt-3 rounded-2xl bg-chip-warning-bg px-4 py-3 text-sm font-medium text-chip-warning-fg"
       }
     >
       {allDone ? (
         <span>Чек-ины сегодня: все сдали</span>
       ) : (
         <span>
-          Чек-ины сегодня: не сдали утром {morningMissed} · вечером {eveningMissed}
+          Чек-ины сегодня: не сдали утром {morningMissed} · вечером{" "}
+          {eveningMissed}
         </span>
       )}
     </div>

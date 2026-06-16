@@ -4,19 +4,6 @@ import type { ExtractedBlock } from '../services/block-extraction.service';
 
 import { BlockIngestWorker } from './block-ingest.worker';
 
-/**
- * KC-Temporal W1.1 / W1.4 (2026-05-25) — юнит-тесты для:
- *   1. Проставления `validFrom = event.occurredAt` при
- *      `cfg.bitemporal.enabled = true`.
- *   2. Игнорирования `validFrom` при `cfg.bitemporal.enabled = false` (legacy).
- *   3. Маппинга `mentionedEntities[*].sourceSpan` в `propertySpans`.
- *
- * Тест дёргает `persistBlock` напрямую через рефлексию (private), чтобы
- * не поднимать всю pipeline ingest'а. BlockIngestWorker конструируется
- * с замоканными зависимостями (PrismaService.$transaction подсовывает
- * fake-tx, который возвращает заранее заготовленные записи).
- */
-
 interface InsertedIdeaBlock {
   id: string;
   data: Record<string, unknown>;
@@ -29,7 +16,11 @@ interface InsertedEvidence {
 
 function buildFakeTx(): {
   tx: any;
-  inserted: { block: InsertedIdeaBlock | null; evidence: InsertedEvidence | null; updates: Array<{ where: any; data: any }> };
+  inserted: {
+    block: InsertedIdeaBlock | null;
+    evidence: InsertedEvidence | null;
+    updates: Array<{ where: any; data: any }>;
+  };
 } {
   let blockSeq = 0;
   let evSeq = 0;
@@ -72,24 +63,21 @@ function buildWorker(cfgEnabled: boolean) {
   const cfg = {
     bitemporal: { enabled: cfgEnabled, supersedeEnabled: false, factSignalTypes: [] },
   } as any;
-  // Минимум DI — остальные сервисы не дёргаются в persistBlock.
   const worker = new BlockIngestWorker(
-    {} as any, // redis
-    prisma, // prisma
-    {} as any, // s3
-    {} as any, // segments
-    {} as any, // extractor
-    {} as any, // embeddings
-    {} as any, // entities (linkEntity вызывается ВНЕ persistBlock — после)
-    {} as any, // coreQueue
-    {} as any, // gate
-    {} as any, // graph
-    {} as any, // metrics
-    // Ф3 МТЗ — RouterService больше НЕ инжектится в BlockIngestWorker
-    // (диспатч специалистов перенесён в block-distill на canonical-переход).
-    {} as any, // axisClassifier
+    {} as any,
+    prisma,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
     cfg,
-    {} as any, // blockAccessDeriver (Ф3 — не дёргается в persistBlock)
+    {} as any,
   );
   return { worker, fakeTx };
 }
@@ -111,16 +99,6 @@ function buildBlock(overrides: Partial<ExtractedBlock> = {}): ExtractedBlock {
   };
 }
 
-/**
- * Фикс cross-attribution chatbox — субъект атрибутируется ПО ГОВОРЯЩЕМУ
- * сегмента (per-message), а не session-level менеджером:
- *   - tryGetActorIdentity: chatbox с transcript.turns (authorPersonId) НЕ
- *     отдаёт session-level authorPersonId; legacy chatbox (без turns) — отдаёт.
- *   - attributeSubject: блок в client-сегменте (authorPersonId=null) → subject
- *     НЕ пишется; блок в manager-сегменте → resolveSubjectEntityId(personId
- *     менеджера); meeting-сегмент (без authorPersonId) → прежний путь
- *     (speakerParticipantId).
- */
 function buildAttributionWorker() {
   const resolveSubjectEntityId = vi.fn(async () => 'ent-1');
   const upsert = vi.fn(async () => ({}));
@@ -133,30 +111,24 @@ function buildAttributionWorker() {
   const metrics = { incSubjectAttribution } as any;
   const cfg = { getDynamic } as any;
   const worker = new BlockIngestWorker(
-    {} as any, // redis
-    prisma, // prisma
-    {} as any, // s3
-    {} as any, // segments
-    {} as any, // extractor
-    {} as any, // embeddings
-    entities, // entities
-    {} as any, // coreQueue
-    {} as any, // gate
-    {} as any, // graph
-    metrics, // metrics
-    {} as any, // axisClassifier
-    cfg, // cfg
-    {} as any, // blockAccessDeriver
+    {} as any,
+    prisma,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    entities,
+    {} as any,
+    {} as any,
+    {} as any,
+    metrics,
+    {} as any,
+    cfg,
+    {} as any,
   );
   return { worker, resolveSubjectEntityId, upsert, incSubjectAttribution };
 }
 
-/**
- * ТЗ-4 Ф4 — документная привязка влияет на граф. Харнесс для
- * `applyDocumentAttribution`: экспонирует моки `ideaBlock.updateMany` и
- * `themeIdeaBlock.createMany`, чтобы проверить детерминированную запись
- * привязки роли/темы из payload документа.
- */
 function buildDocAttributionWorker() {
   const updateMany = vi.fn(async (_args: any) => ({ count: 0 }));
   const createMany = vi.fn(async (_args: any) => ({ count: 0 }));
@@ -165,20 +137,20 @@ function buildDocAttributionWorker() {
     themeIdeaBlock: { createMany },
   } as any;
   const worker = new BlockIngestWorker(
-    {} as any, // redis
-    prisma, // prisma
-    {} as any, // s3
-    {} as any, // segments
-    {} as any, // extractor
-    {} as any, // embeddings
-    {} as any, // entities
-    {} as any, // coreQueue
-    {} as any, // gate
-    {} as any, // graph
-    {} as any, // metrics
-    {} as any, // axisClassifier
-    {} as any, // cfg
-    {} as any, // blockAccessDeriver
+    {} as any,
+    prisma,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
   );
   return { worker, updateMany, createMany };
 }
@@ -221,7 +193,6 @@ describe('BlockIngestWorker.applyDocumentAttribution — ТЗ-4 Ф4', () => {
         themeId: 'theme-9',
         blockId: blockIds[i],
       });
-      // weight=0.8 хранится как Prisma.Decimal — сверяем строковое представление.
       expect(String(row['weight'])).toBe('0.8');
     }
   });
@@ -311,10 +282,23 @@ describe('BlockIngestWorker.attributeSubject — атрибуция по гов�
 
   it('блок в client-сегменте (authorPersonId=null) → subject НЕ пишется', async () => {
     const { worker, resolveSubjectEntityId, upsert } = buildAttributionWorker();
-    // chatbox per-message сегменты: первый — клиентский (author=null).
     const segments = [
-      { startMs: 0, endMs: 900, speakers: ['Клиент'], text: 'q', speakerParticipantId: null, authorPersonId: null },
-      { startMs: 1000, endMs: 1900, speakers: ['Менеджер'], text: 'a', speakerParticipantId: null, authorPersonId: 'p-manager' },
+      {
+        startMs: 0,
+        endMs: 900,
+        speakers: ['Клиент'],
+        text: 'q',
+        speakerParticipantId: null,
+        authorPersonId: null,
+      },
+      {
+        startMs: 1000,
+        endMs: 1900,
+        speakers: ['Менеджер'],
+        text: 'a',
+        speakerParticipantId: null,
+        authorPersonId: 'p-manager',
+      },
     ];
     await (worker as any).attributeSubject({
       event: tenantEvent,
@@ -332,8 +316,22 @@ describe('BlockIngestWorker.attributeSubject — атрибуция по гов�
   it('блок в manager-сегменте → resolveSubjectEntityId(authorPersonId=менеджер); subject пишется', async () => {
     const { worker, resolveSubjectEntityId, upsert } = buildAttributionWorker();
     const segments = [
-      { startMs: 0, endMs: 900, speakers: ['Клиент'], text: 'q', speakerParticipantId: null, authorPersonId: null },
-      { startMs: 1000, endMs: 1900, speakers: ['Менеджер'], text: 'a', speakerParticipantId: null, authorPersonId: 'p-manager' },
+      {
+        startMs: 0,
+        endMs: 900,
+        speakers: ['Клиент'],
+        text: 'q',
+        speakerParticipantId: null,
+        authorPersonId: null,
+      },
+      {
+        startMs: 1000,
+        endMs: 1900,
+        speakers: ['Менеджер'],
+        text: 'a',
+        speakerParticipantId: null,
+        authorPersonId: 'p-manager',
+      },
     ];
     await (worker as any).attributeSubject({
       event: tenantEvent,
@@ -359,9 +357,14 @@ describe('BlockIngestWorker.attributeSubject — атрибуция по гов�
 
   it('REGRESSION: meeting-сегмент (без authorPersonId, со speakerParticipantId) → прежний путь', async () => {
     const { worker, resolveSubjectEntityId } = buildAttributionWorker();
-    // meeting-сегмент: поле authorPersonId ОТСУТСТВУЕТ.
     const segments = [
-      { startMs: 0, endMs: 5000, speakers: ['Алиса'], text: 'рассуждение', speakerParticipantId: 'pt-1' },
+      {
+        startMs: 0,
+        endMs: 5000,
+        speakers: ['Алиса'],
+        text: 'рассуждение',
+        speakerParticipantId: 'pt-1',
+      },
     ];
     await (worker as any).attributeSubject({
       event: { ...tenantEvent, sourceType: 'meeting' },
@@ -395,7 +398,6 @@ describe('BlockIngestWorker — KC-Temporal W1.1 validFrom', () => {
       dataClass: 'internal',
     } as any;
 
-    // persistBlock — private; обращаемся через any-cast.
     const result = await (worker as any).persistBlock({
       event,
       block: buildBlock(),
@@ -431,7 +433,6 @@ describe('BlockIngestWorker — KC-Temporal W1.1 validFrom', () => {
 
     const data = fakeTx.inserted.block?.data;
     expect(data).toBeDefined();
-    // При выключенном флаге поле validFrom вообще не передаётся в create.
     expect(Object.prototype.hasOwnProperty.call(data ?? {}, 'validFrom')).toBe(false);
   });
 });
@@ -456,7 +457,6 @@ describe('BlockIngestWorker — KC-Temporal W1.4 propertySpans', () => {
           sourceSpan: { startMs: 1500, endMs: 1800 },
         },
         {
-          // Без sourceSpan — должна быть пропущена.
           type: 'vendor',
           name: 'Z',
           mentionContext: 'компания Z',
@@ -472,8 +472,6 @@ describe('BlockIngestWorker — KC-Temporal W1.4 propertySpans', () => {
       roleId: null,
     });
 
-    // propertySpans пишется ОТДЕЛЬНЫМ update'ом после insert'а evidence,
-    // потому что требует evidenceId.
     expect(fakeTx.inserted.updates.length).toBe(1);
     const update = fakeTx.inserted.updates[0];
     const spans = update?.data?.propertySpans as Array<Record<string, unknown>>;

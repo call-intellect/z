@@ -4,14 +4,8 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import {
@@ -32,36 +26,12 @@ import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { Specialist32ProbeService } from './specialist-3-2-probe.service';
 
-/**
- * SBA β-2 — Specialist 3.2 (Knowledge Clone).
- *
- * Логика специалиста: набор IdeaBlock'ов сотрудника → LLM-extraction →
- * (опц. LLM-merge со старым профилем) → triage через CurationService →
- * auto-canonical (`Person.knowledgeProfile = profile`) или pending (CurationItem
- * для admin/manager review).
- *
- * Контракт §5 зонтичного — те же шаги, что у α-6 / α-7:
- *   1. consumer `core.knowledge-clone-rebuild` jobName='rebuild-knowledge-profile'
- *      (см. `KnowledgeCloneRebuildWorker`).
- *   2. Prisma — Person.knowledgeProfile (Json) + lastProfileBuildAt + profileBuildVersion.
- *   3. triage перед канонизацией — `resourceType='knowledge_profile'` НЕ
- *      в `CURATION_CRITICAL_TYPES_DEFAULT` → auto-canonical при confidence ≥ 0.85.
- *   4. probe-events — `Specialist32ProbeService` (new_expertise_detected /
- *      contradiction_detected).
- *   5. conflict-events — `ConflictService.report` при явных противоречиях
- *      («X не знает Y» vs «X знает Y»).
- *   6. chat-v2 support — `Specialist32CardHandler` (через CardSpecialistRegistry).
- *   7. metrics — `core_specialist_*` + `knowledge_clone_*`.
- */
 @Injectable()
 export class Specialist32Service {
   private readonly logger = new Logger(Specialist32Service.name);
 
-  /** Имя специалиста (соответствует RouterService.SPECIALIST.KNOWLEDGE_CLONE). */
   static readonly SPECIALIST_NAME = '3-2-knowledge-clone';
-  /** Тип ресурса для CurationService/ConflictService. */
   static readonly RESOURCE_TYPE = 'knowledge_profile';
-  /** Тип для core_specialist_* меток (label `type`). */
   static readonly METRIC_TYPE = 'knowledge_profile';
 
   constructor(
@@ -76,15 +46,11 @@ export class Specialist32Service {
     private readonly metrics: BusinessMetricsService,
     @Inject(KnowledgeEmbeddingService)
     private readonly embeddings: KnowledgeEmbeddingService,
-    // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -93,17 +59,7 @@ export class Specialist32Service {
     }
   }
 
-  /**
-   * Главный метод rebuild'а. Вызывается из `KnowledgeCloneRebuildWorker`.
-   *
-   * Best-effort: ловит ошибки на каждом шаге, фиксирует метрику
-   * `core_specialist_extraction_failures_total`, не пробрасывает наружу
-   * (воркер сам решает re-enqueue по политике BullMQ).
-   */
-  async rebuildForPerson(args: {
-    tenantId: string;
-    personId: string;
-  }): Promise<void> {
+  async rebuildForPerson(args: { tenantId: string; personId: string }): Promise<void> {
     const start = Date.now();
     try {
       const person = await this.prisma.person.findUnique({
@@ -138,8 +94,6 @@ export class Specialist32Service {
         return;
       }
       if (person.relationship !== 'employee') {
-        // Knowledge Profile строится только для сотрудников. Для external
-        // / candidate / former — пропускаем (это знание не наше).
         this.logger.debug(
           { personId: person.id, relationship: person.relationship },
           'specialist-3-2: Person не сотрудник — skip',
@@ -147,7 +101,6 @@ export class Specialist32Service {
         return;
       }
 
-      // 1. Собрать блоки Person'а за окно lookbackMonths.
       const blocks = await this.loadBlocksForPerson({
         tenantId: args.tenantId,
         personId: person.id,
@@ -163,17 +116,15 @@ export class Specialist32Service {
         return;
       }
 
-      // 2. LLM-extract → черновик.
       const draft = await this.extractDraft({
         tenantId: args.tenantId,
         personName: person.name,
         blocks,
       });
       if (!draft) {
-        return; // метрика уже инкрементирована внутри extractDraft.
+        return;
       }
 
-      // 3. Если есть старый профиль — LLM-merge.
       let merged: KnowledgeProfileDraft = draft;
       const existingProfile = parseExistingProfile(person.knowledgeProfile);
       if (existingProfile && existingProfile.categories.length > 0) {
@@ -186,10 +137,8 @@ export class Specialist32Service {
         if (mergedDraft) merged = mergedDraft;
       }
 
-      // 4. Confidence профиля — берём «средне-взвешенный» по категориям.
       const profileConfidence = computeProfileConfidence(merged);
 
-      // 5. Conflict detection (явные противоречия между старым и новым).
       let conflictSignal: 'none' | 'soft' | 'hard' = 'none';
       if (existingProfile && existingProfile.categories.length > 0) {
         const contradiction = detectContradictions(existingProfile, merged);
@@ -224,7 +173,6 @@ export class Specialist32Service {
         }
       }
 
-      // 6. Сериализованный профиль (для CurationItem.proposedPayload + apply).
       const nextVersion = person.profileBuildVersion + 1;
       const builtAt = new Date().toISOString();
       const serialized: SerializedKnowledgeProfile = {
@@ -234,13 +182,6 @@ export class Specialist32Service {
         experienceHighlights: merged.experienceHighlights,
       };
 
-      // W4.1/W4.2 — derive DataClass.
-      // knowledge_profile хранится в `Person.knowledgeProfile` (Json) и сам
-      // не имеет колонки `dataClass`. Поэтому в enforce-режиме мы лишь
-      // продолжаем эмитить compareWithLegacy (для shadow_diff метрик), но
-      // payload остаётся 'internal' — это корректно: floor для skill_profile
-      // равен 'internal', а проекция без источников не может быть выше
-      // floor'а.
       if (this.dataClassPolicy) {
         const proposed = this.dataClassPolicy.derive({
           sources: [],
@@ -254,8 +195,6 @@ export class Specialist32Service {
         });
       }
 
-      // 7. Triage. knowledge_profile НЕ в critical-types → auto-canonical
-      //    при confidence ≥ autoThresholdDefault.
       let triageDecision: 'auto' | 'provisional' | 'light' | 'deep' = 'deep';
       try {
         const res = await this.curation.triage({
@@ -283,7 +222,6 @@ export class Specialist32Service {
         return;
       }
 
-      // 8. На auto — пишем профиль в Person.
       if (triageDecision === 'auto') {
         try {
           await this.prisma.person.update({
@@ -294,20 +232,12 @@ export class Specialist32Service {
               profileBuildVersion: nextVersion,
             },
           });
-          // Метрики профиля.
-          this.metrics.observeKnowledgeCloneCategoriesPerProfile(
-            merged.categories.length,
-          );
-          this.metrics.observeKnowledgeCloneProfileSizeKb(
-            estimateProfileSizeKb(serialized),
-          );
+          this.metrics.observeKnowledgeCloneCategoriesPerProfile(merged.categories.length);
+          this.metrics.observeKnowledgeCloneProfileSizeKb(estimateProfileSizeKb(serialized));
           this.metrics.incCoreSpecialistCards({
             type: Specialist32Service.METRIC_TYPE,
             status: 'canonical',
           });
-          // ТЗ 2026-05-25 Фаза 4 — обновить семантический индекс категорий.
-          // Best-effort: если embedding-сервис упал, не валим rebuild —
-          // следующая успешная пересборка перетрёт.
           await this.rebuildCategoryEmbeddings({
             tenantId: args.tenantId,
             personId: person.id,
@@ -334,9 +264,6 @@ export class Specialist32Service {
         });
       }
 
-      // 9. Probe-events. На auto — направление direct manager'у про новый
-      //    expertise (с low/medium тоже отправляем, чтобы менеджер мог
-      //    подсветить).
       await this.probes.checkAndEmitProbes({
         tenantId: args.tenantId,
         personId: person.id,
@@ -364,26 +291,6 @@ export class Specialist32Service {
     }
   }
 
-  /**
-   * ТЗ 2026-05-25 Фаза 4 — пересборка семантического индекса категорий
-   * `PersonKnowledgeCategoryEmbedding` после успешного обновления
-   * `Person.knowledgeProfile`.
-   *
-   * Шаги:
-   *   1. Удалить все старые embedding-строки этого Person'а (где
-   *      profileBuildVersion < newVersion).
-   *   2. Для каждой категории посчитать embedding из
-   *      `categoryName + ' ' + sampleStatements[0].quote`.
-   *   3. Записать новые строки.
-   *
-   * Best-effort:
-   *   - Если embedding-сервис упал — пропускаем (поправится при следующем
-   *     успешном rebuild).
-   *   - На каждую запись — try/catch (нет уникального constraint, дубликаты
-   *     допустимы и перетрутся на следующем rebuild).
-   *
-   * Публичный — чтобы backfill-скрипт мог его переиспользовать.
-   */
   async rebuildCategoryEmbeddings(args: {
     tenantId: string;
     personId: string;
@@ -430,9 +337,6 @@ export class Specialist32Service {
       if (!vec || vec.length === 0) continue;
 
       try {
-        // Сначала создаём строку без embedding (Prisma сгенерирует id и
-        // builtAt). Затем — UPDATE с raw SQL для pgvector-колонки,
-        // т.к. Unsupported-тип нельзя выставить через стандартный API.
         const created = await this.prisma.personKnowledgeCategoryEmbedding.create({
           data: {
             tenantId: args.tenantId,
@@ -473,17 +377,6 @@ export class Specialist32Service {
     return { built };
   }
 
-  // ──────────────────── приватные методы ────────────────────
-
-  /**
-   * Загружает блоки Person'а за окно `lookbackMonths` (Слой 2):
-   *   - IdeaBlockEntity, где Person.entityId упомянут с role IN ('subject', 'mentioned');
-   *   - block.status = 'canonical';
-   *   - createdAt >= now - lookbackMonths.
-   *
-   * Возвращает массив (свежие → старые), ограниченный 60 блоками
-   * (это LLM-budget; больше — будет выходить токен-лимит).
-   */
   private async loadBlocksForPerson(args: {
     tenantId: string;
     personId: string;
@@ -497,8 +390,7 @@ export class Specialist32Service {
       return [];
     }
 
-    const lookbackMs =
-      this.cfg.knowledgeClone.lookbackMonths * 30 * 24 * 60 * 60 * 1000;
+    const lookbackMs = this.cfg.knowledgeClone.lookbackMonths * 30 * 24 * 60 * 60 * 1000;
     const since = new Date(Date.now() - lookbackMs);
 
     const mentions = await this.prisma.ideaBlockEntity.findMany({
@@ -547,15 +439,11 @@ export class Specialist32Service {
     }));
   }
 
-  /**
-   * LLM-extraction набора блоков в черновик профиля. Best-effort.
-   */
   private async extractDraft(args: {
     tenantId: string;
     personName: string;
     blocks: readonly KnowledgeCloneExtractBlockInput[];
   }): Promise<KnowledgeProfileDraft | null> {
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (имя + блоки сотрудника) в маркеры.
     const guardOnExtract = this.isPromptInjectionGuardEnabled();
     const rawUserExtract = KNOWLEDGE_CLONE_EXTRACT_USER_TEMPLATE({
       personName: args.personName,
@@ -605,16 +493,12 @@ export class Specialist32Service {
     });
   }
 
-  /**
-   * LLM-merge старого профиля и нового черновика.
-   */
   private async mergeWithExisting(args: {
     tenantId: string;
     personName: string;
     oldProfile: KnowledgeProfileDraft;
     newDraft: KnowledgeProfileDraft;
   }): Promise<KnowledgeProfileDraft | null> {
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (старый профиль + новый draft) в маркеры.
     const guardOnMerge = this.isPromptInjectionGuardEnabled();
     const rawUserMerge = KNOWLEDGE_CLONE_MERGE_USER_TEMPLATE({
       personName: args.personName,
@@ -668,8 +552,6 @@ export class Specialist32Service {
   }
 }
 
-// ──────────────────────── shared types ────────────────────────
-
 export interface KnowledgeProfileCategory {
   name: string;
   confidence: 'low' | 'medium' | 'high';
@@ -689,16 +571,10 @@ export interface KnowledgeProfileDraft {
   experienceHighlights: KnowledgeProfileHighlight[];
 }
 
-/**
- * Финальная Json-форма, которую пишем в `Person.knowledgeProfile`.
- * Включает `version` (= profileBuildVersion) и `builtAt`.
- */
 export interface SerializedKnowledgeProfile extends KnowledgeProfileDraft {
   version: number;
   builtAt: string;
 }
-
-// ──────────────────────── helpers ────────────────────────
 
 function parseDraft(
   text: string,
@@ -717,16 +593,17 @@ function parseDraft(
   }
   const obj = parsed as Record<string, unknown>;
   const categoriesRaw = Array.isArray(obj.categories) ? obj.categories : [];
-  const highlightsRaw = Array.isArray(obj.experienceHighlights)
-    ? obj.experienceHighlights
-    : [];
+  const highlightsRaw = Array.isArray(obj.experienceHighlights) ? obj.experienceHighlights : [];
 
   const categories: KnowledgeProfileCategory[] = [];
   for (const c of categoriesRaw) {
     if (!c || typeof c !== 'object') continue;
     const cat = c as Record<string, unknown>;
     if (typeof cat.name !== 'string' || cat.name.length < 2) continue;
-    const conf = cat.confidence === 'low' || cat.confidence === 'medium' || cat.confidence === 'high' ? cat.confidence : 'low';
+    const conf =
+      cat.confidence === 'low' || cat.confidence === 'medium' || cat.confidence === 'high'
+        ? cat.confidence
+        : 'low';
     const obsCount =
       typeof cat.observationCount === 'number' && cat.observationCount > 0
         ? Math.min(1_000, Math.floor(cat.observationCount))
@@ -790,9 +667,7 @@ function parseDraft(
   return { categories, experienceHighlights };
 }
 
-function parseExistingProfile(
-  raw: Prisma.JsonValue | null,
-): KnowledgeProfileDraft | null {
+function parseExistingProfile(raw: Prisma.JsonValue | null): KnowledgeProfileDraft | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   return parseDraft(JSON.stringify(raw), () => void 0);
 }
@@ -808,11 +683,9 @@ function computeProfileConfidence(profile: KnowledgeProfileDraft): number {
   }
   if (count === 0) return 0.4;
   const avg = sum / count;
-  // На высокое число категорий и наблюдений — лёгкий boost.
   const obsBoost = Math.min(
     0.05,
-    profile.categories.reduce((acc, c) => acc + Math.log2(1 + c.observationCount), 0) /
-      200,
+    profile.categories.reduce((acc, c) => acc + Math.log2(1 + c.observationCount), 0) / 200,
   );
   return Math.min(1, avg + obsBoost);
 }
@@ -831,13 +704,6 @@ interface Contradiction {
   newStatement: string;
 }
 
-/**
- * Эвристика поиска явных противоречий: если в новом профиле появилось имя
- * категории, противоположное старому (например, «не знает X» vs «знает X»
- * — через токен `не` в начале). Очень осторожная — не должна давать ложных
- * срабатываний, поэтому ловит только обратные пары «знает/не знает» в
- * sampleStatements одной категории.
- */
 function detectContradictions(
   oldProfile: KnowledgeProfileDraft,
   newProfile: KnowledgeProfileDraft,
@@ -875,4 +741,3 @@ function isNegativeStatement(text: string): boolean {
     t.includes(' не разбирается')
   );
 }
-

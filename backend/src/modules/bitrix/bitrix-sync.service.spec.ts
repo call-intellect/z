@@ -9,10 +9,6 @@ import type { PersonsService } from '../persons/services/persons.service';
 import type { BitrixIntegrationService } from './bitrix-integration.service';
 import { BitrixSyncService } from './bitrix-sync.service';
 
-/**
- * Unit-тесты сопоставления сотрудников BitrixSyncService (ТЗ 2026-06-17, Ф5):
- * listUsers + linkUser (link/unlink/create). Prisma/Persons замоканы.
- */
 function makeService(over: { prisma?: Record<string, unknown> } = {}): {
   service: BitrixSyncService;
   prisma: any;
@@ -60,8 +56,8 @@ describe('BitrixSyncService.listUsers', () => {
       },
     ]);
     prisma.person.findMany
-      .mockResolvedValueOnce([{ id: 'p1', name: 'Иван Иванов' }]) // linked names
-      .mockResolvedValueOnce([{ id: 'p1', name: 'Иван Иванов', email: 'i@x.ru' }]); // candidates
+      .mockResolvedValueOnce([{ id: 'p1', name: 'Иван Иванов' }])
+      .mockResolvedValueOnce([{ id: 'p1', name: 'Иван Иванов', email: 'i@x.ru' }]);
 
     const res = await service.listUsers('t1');
 
@@ -82,8 +78,8 @@ describe('BitrixSyncService.linkUser', () => {
       email: 'i@x.ru',
     });
     prisma.person.findFirst
-      .mockResolvedValueOnce({ id: 'p1' }) // валидация принадлежности org
-      .mockResolvedValueOnce({ name: 'Иван Иванов' }); // имя для ответа
+      .mockResolvedValueOnce({ id: 'p1' })
+      .mockResolvedValueOnce({ name: 'Иван Иванов' });
     prisma.bitrixUser.update.mockResolvedValue({
       externalId: '1',
       name: 'Иван',
@@ -170,9 +166,7 @@ describe('BitrixSyncService.linkUser', () => {
   it('сотрудник не найден → NotFoundException', async () => {
     const { service, prisma } = makeService();
     prisma.bitrixUser.findUnique.mockResolvedValue(null);
-    await expect(service.linkUser('t1', 'X', 'unlink')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(service.linkUser('t1', 'X', 'unlink')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('mode=link с несуществующим Person → BadRequestException', async () => {
@@ -183,8 +177,8 @@ describe('BitrixSyncService.linkUser', () => {
       email: null,
     });
     prisma.person.findFirst.mockResolvedValue(null);
-    await expect(
-      service.linkUser('t1', '1', 'link', 'ghost'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.linkUser('t1', '1', 'link', 'ghost')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 });

@@ -17,29 +17,28 @@ interface Mocks {
   enqueueAnalyze: ReturnType<typeof vi.fn>;
   meetingUpdate: ReturnType<typeof vi.fn>;
   meetingEventCreate: ReturnType<typeof vi.fn>;
-  setMeeting: (m: {
+  setMeeting: (
+    m: {
+      id: string;
+      status: string;
+      transcript: { turns: unknown; tracks: { id: string }[] } | null;
+      aiResult: { id: string } | null;
+    } | null,
+  ) => void;
+}
+
+function makeMocks(): Mocks {
+  let currentMeeting: {
     id: string;
     status: string;
     transcript: { turns: unknown; tracks: { id: string }[] } | null;
     aiResult: { id: string } | null;
-  } | null) => void;
-}
-
-function makeMocks(): Mocks {
-  let currentMeeting:
-    | {
-        id: string;
-        status: string;
-        transcript: { turns: unknown; tracks: { id: string }[] } | null;
-        aiResult: { id: string } | null;
-      }
-    | null = null;
+  } | null = null;
 
   const findUnique = vi.fn(async () => currentMeeting);
   const meetingUpdate = vi.fn(async () => undefined);
   const meetingEventCreate = vi.fn(async () => undefined);
   const $transaction = vi.fn(async (ops: unknown[]) => {
-    // Просто прогоняем в Promise.all для имитации.
     return Promise.all(ops as Promise<unknown>[]);
   });
 
@@ -120,7 +119,10 @@ describe('RetryService.retry', () => {
     mocks.setMeeting({
       id: 'm-3',
       status: 'failed',
-      transcript: { turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }], tracks: [{ id: 'trk-1' }] },
+      transcript: {
+        turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }],
+        tracks: [{ id: 'trk-1' }],
+      },
       aiResult: null,
     });
     const result = await svc.retry('m-3', 'user', 'u-1');
@@ -132,7 +134,10 @@ describe('RetryService.retry', () => {
     mocks.setMeeting({
       id: 'm-4',
       status: 'failed',
-      transcript: { turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }], tracks: [{ id: 'trk-1' }] },
+      transcript: {
+        turns: [{ speaker: 'A', text: 'hi', startSec: 0, endSec: 1 }],
+        tracks: [{ id: 'trk-1' }],
+      },
       aiResult: { id: 'a-1' },
     });
     await expect(svc.retry('m-4', 'user', 'u-1')).rejects.toThrow();
@@ -156,7 +161,11 @@ describe('RetryService.retry', () => {
       aiResult: null,
     });
     const incr = vi.fn();
-    incr.mockResolvedValueOnce(1).mockResolvedValueOnce(2).mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+    incr
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(2)
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(4);
     (mocks.redis.client as unknown as { incr: typeof incr }).incr = incr;
     await svc.retry('m-6', 'user', 'u-1');
     await svc.retry('m-6', 'user', 'u-1');

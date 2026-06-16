@@ -3,18 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingReingestCron } from './meeting-reingest.cron';
 
-/**
- * Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — reingest-fallback.
- *
- * Проверяем:
- *   1. Встреча с готовым транскриптом и БЕЗ RawEvent(meeting) → ingestMeeting
- *      вызван.
- *   2. Встреча с уже существующим RawEvent → ingestMeeting НЕ вызван (нет
- *      намерения плодить дубли).
- *   3. Упавший ingestMeeting одной встречи не прерывает обработку остальных
- *      (try/catch per-candidate), на провале — incIngestFailed.
- */
-
 interface Candidate {
   id: string;
   tenantId: string;
@@ -22,15 +10,14 @@ interface Candidate {
 
 function makeCron(args: {
   candidates: Candidate[];
-  /** Set из meetingId, у которых УЖЕ есть RawEvent (findFirst вернёт строку). */
   withRawEvent: Set<string>;
-  /** meetingId, для которых ingestMeeting должен бросить. */
   ingestThrowsFor?: Set<string>;
 }) {
   const findMany = vi.fn(async () => args.candidates);
-  const findFirst = vi.fn(
-    async (q: { where: { sourceExternalId: string } }) =>
-      args.withRawEvent.has(q.where.sourceExternalId) ? { id: `re-${q.where.sourceExternalId}` } : null,
+  const findFirst = vi.fn(async (q: { where: { sourceExternalId: string } }) =>
+    args.withRawEvent.has(q.where.sourceExternalId)
+      ? { id: `re-${q.where.sourceExternalId}` }
+      : null,
   );
   const prisma = {
     meeting: { findMany },
@@ -85,7 +72,6 @@ describe('MeetingReingestCron.sweep', () => {
 
     await cron.sweep();
 
-    // Проверка наличия RawEvent была сделана по sourceExternalId=meetingId.
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ sourceExternalId: 'm-1', sourceType: 'meeting' }),
@@ -107,14 +93,11 @@ describe('MeetingReingestCron.sweep', () => {
 
     await cron.sweep();
 
-    // Все три встречи без RawEvent → ingest вызван для каждой, несмотря на
-    // падение m-2.
     expect(ingestMeeting).toHaveBeenCalledTimes(3);
     expect(ingestMeeting).toHaveBeenCalledWith('m-1');
     expect(ingestMeeting).toHaveBeenCalledWith('m-2');
     expect(ingestMeeting).toHaveBeenCalledWith('m-3');
 
-    // Метрика провала — ровно один раз, с классифицированным reason.
     expect(incIngestFailed).toHaveBeenCalledTimes(1);
     expect(incIngestFailed).toHaveBeenCalledWith(
       expect.objectContaining({ reason: 'source_inactive' }),
@@ -124,8 +107,8 @@ describe('MeetingReingestCron.sweep', () => {
   it('смешанный batch: часть с RawEvent (skip), часть без (reingest)', async () => {
     const { cron, ingestMeeting } = makeCron({
       candidates: [
-        { id: 'm-1', tenantId: 'org-1' }, // есть RawEvent → skip
-        { id: 'm-2', tenantId: 'org-1' }, // нет → reingest
+        { id: 'm-1', tenantId: 'org-1' },
+        { id: 'm-2', tenantId: 'org-1' },
       ],
       withRawEvent: new Set(['m-1']),
     });

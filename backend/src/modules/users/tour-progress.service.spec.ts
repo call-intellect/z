@@ -1,16 +1,3 @@
-/**
- * Unit-тест для TourProgressService.
- *
- * Что проверяем:
- *   - get: вытаскивает tourProgress, нормализует мусор / пропуски / массивы.
- *   - update: merge — не теряет другие туры, не теряет другие поля у того же тура.
- *   - update: started_total инкрементируется только на первый PATCH (без completedAt/skipped).
- *   - update: completed_total инкрементируется только когда completedAt появляется впервые.
- *   - update: skipped_total инкрементируется только когда skipped:true появляется впервые.
- *   - reset: пишет пустой объект.
- *   - user_not_found → NotFoundException.
- */
-
 import { NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -106,7 +93,6 @@ describe('TourProgressService.update', () => {
         },
       },
     });
-    // completedAt появился впервые → completed_total +1, started — нет.
     expect(metrics.incTourCompleted).toHaveBeenCalledWith({
       tenant: 'org-1',
       tour_id: 'welcome',
@@ -156,9 +142,9 @@ describe('TourProgressService.update', () => {
 
   it('бросает NotFoundException если пользователь не найден', async () => {
     const { svc } = buildDeps(undefined);
-    await expect(
-      svc.update('u-1', null, { tourId: 'welcome' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.update('u-1', null, { tourId: 'welcome' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('update для overview больше не 400 — пишет и возвращает запись', async () => {

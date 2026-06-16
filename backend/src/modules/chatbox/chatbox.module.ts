@@ -21,22 +21,6 @@ import { CrossSourceTaskDedupeService } from './cross-source-task-dedupe.service
 import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * ChatboxModule — интеграция с ChatBox (app.agent-lia.ru / «Call Intellect:
- * Чаты»). ТЗ: plans/tz/2026-06-05-chatbox-integration.md.
- *
- * Фаза 2: конфиг интеграции + типизированный API-клиент + выбор воркспейса.
- * Фазы 3/4/6 (синк/webhook/отправка) добавят провайдеры в этот модуль.
- *
- * Зависимости (все @Global, в imports не нужны):
- *   - PrismaModule — PrismaService.
- *   - CryptoModule — CryptoService (шифрование токена).
- *   - RbacModule — RbacService.
- *   - EntitlementsModule — EntitlementService (гейтинг feature.chatbox).
- *   - ConfigModule — TypedConfigService (CHATBOX_API_BASE_URL).
- *   - IngestModule — IngestService (Ф5: мост сессии → RawEvent, @Global).
- *   - AiModule — LlmRouterService (Ф5: LLM-summary сессии, @Global).
- */
 @Module({
   imports: [PersonsModule],
   controllers: [
@@ -59,9 +43,6 @@ import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
     ChatboxIngestService,
     ChatboxAnalyzeQueueService,
     ChatboxAnalyzeCron,
-    // ТЗ 2026-06-11 chatbox-tasks Ф6 — единый межисточниковый дедуп задач
-    // (link vs create). Инжектится в ChatboxAnalyzeWorker (WorkersModule
-    // импортирует ChatboxModule → провайдер виден в DI).
     CrossSourceTaskDedupeService,
   ],
   exports: [

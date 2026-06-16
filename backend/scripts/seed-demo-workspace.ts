@@ -1,13 +1,3 @@
-/**
- * seed-demo-workspace.ts
- *
- * Сидирование демо-воркспейса «ТехноСтрим» для онбординга.
- * Запуск: bun run scripts/seed-demo-workspace.ts --tenant <orgId> --owner <userId>
- *
- * Создаёт полный набор реалистичных данных: орг-структуру, трекер, встречи,
- * граф знаний, клоны, чек-ины, дайджесты, чат, уведомления и др.
- * Все данные помечаются externalSource: 'demo' (где поле доступно).
- */
 import type { PrismaClient } from '@prisma/client';
 
 import { runAllSeedSteps } from '../src/modules/onboarding/demo-data';
@@ -25,16 +15,6 @@ function getArg(name: string): string | undefined {
   return idx !== -1 ? process.argv[idx + 1] : undefined;
 }
 
-/**
- * audit В9 (2026-05-29): guard'ы перед сидированием демо-воркспейса.
- *   1. Идемпотентность — если `demoWorkspaceSeededAt != null`, выходим без
- *      изменений (повторный запуск из CI / Z-Admin не дублирует данные).
- *   2. «Свежая Org» — если в тенанте уже есть НЕ-demo Person'ы или Project'ы
- *      (boevye external'ы / реальные пользователи добавили данные), сидирование
- *      ОТКАЗЫВАЕТСЯ. Иначе seed может пересечься с production данными и сломать
- *      реальную работу клиента. Передача `--force` снимает guard (для admin
- *      override; пишет warn в лог).
- */
 async function ensureOrgEligibleForDemoSeed(
   prisma: PrismaClient,
   tenantId: string,
@@ -59,7 +39,6 @@ async function ensureOrgEligibleForDemoSeed(
     );
     return { skip: false };
   }
-  // Проверяем не-demo сущности. Хотя бы один Person/Project из реальной работы → отказ.
   const [nonDemoPersons, nonDemoProjects] = await Promise.all([
     prisma.person.count({
       where: {
@@ -101,18 +80,13 @@ async function seedDemoWorkspace(
   const ids: IdMap = createEmptyIdMap();
   const ctx: SeedContext = { prisma, tenantId, ownerUserId };
 
-  // ТЗ 2026-06-01-demo-shared-org-model §4.7: один список 23 модулей в
-  // `backend/src/modules/onboarding/demo-data/index.ts` (DEMO_SEED_STEPS).
   await runAllSeedSteps(ctx, ids, (step, i, total) => {
     console.log(`── [${i + 1}/${total}] ${step.label} (${step.key}) ──`);
   });
 
-  // audit Б3 (2026-05-29): помечаем externalSource='demo' — без этого
-  // resetDemoWorkspace потом не сможет адресно почистить.
   const marked = await markAllDemoEntitiesForTenant(prisma, tenantId);
   console.log(`── externalSource='demo' проставлен: updated=${marked.updated} ──`);
 
-  // ── Пометка Org ─────────────────────────────────────────
   await prisma.org.update({
     where: { id: tenantId },
     data: { demoWorkspaceSeededAt: new Date() },
@@ -144,33 +118,25 @@ async function seedDemoWorkspace(
   return stats;
 }
 
-/**
- * Сброс демо-данных: удаляет все записи с externalSource = 'demo'.
- */
-export async function resetDemoWorkspace(
-  prisma: PrismaClient,
-  tenantId: string,
-): Promise<void> {
+export async function resetDemoWorkspace(prisma: PrismaClient, tenantId: string): Promise<void> {
   console.log(`Сброс демо-данных для tenant ${tenantId}...`);
 
-  // Удаляем в порядке обратных зависимостей
-  // IssueActivity, IssueComment, IssueLabel, IssueAssignee, IssueRelation, IssueChecklistItem, IssueChecklist → Issue
   await prisma.issueActivity.deleteMany({ where: { tenantId, issue: { externalSource: 'demo' } } });
-  // audit С10 (2026-05-29): убран бесполезный фильтр `content: { not: undefined }`
-  // (всегда true для NOT NULL колонки). Фильтр по demo-issue делает удаление
-  // безопасным — не сносит комментарии в реальных задачах одного и того же tenantId.
   await prisma.issueComment.deleteMany({
     where: { issue: { tenantId, externalSource: 'demo' } },
   });
-  await prisma.issueChecklistItem.deleteMany({ where: { checklist: { tenantId, issue: { externalSource: 'demo' } } } });
-  await prisma.issueChecklist.deleteMany({ where: { tenantId, issue: { externalSource: 'demo' } } });
+  await prisma.issueChecklistItem.deleteMany({
+    where: { checklist: { tenantId, issue: { externalSource: 'demo' } } },
+  });
+  await prisma.issueChecklist.deleteMany({
+    where: { tenantId, issue: { externalSource: 'demo' } },
+  });
   await prisma.issueLabel.deleteMany({ where: { issue: { project: { tenantId } } } });
   await prisma.issueAssignee.deleteMany({ where: { issue: { project: { tenantId } } } });
   await prisma.issueRelation.deleteMany({ where: { source: { project: { tenantId } } } });
   await prisma.sprintHint.deleteMany({ where: { tenantId } });
   await prisma.issue.deleteMany({ where: { tenantId, externalSource: 'demo' } });
 
-  // Meetings
   await prisma.meetingParticipantBehavior.deleteMany({ where: { tenantId } });
   await prisma.meetingBehaviorMetrics.deleteMany({ where: { meeting: { tenantId } } });
   await prisma.meetingQualityScore.deleteMany({ where: { meeting: { tenantId } } });
@@ -181,7 +147,6 @@ export async function resetDemoWorkspace(
   await prisma.participant.deleteMany({ where: { meeting: { tenantId } } });
   await prisma.meeting.deleteMany({ where: { tenantId, roomName: { startsWith: 'demo-room-' } } });
 
-  // Knowledge graph
   await prisma.themeIdeaBlock.deleteMany({ where: { theme: { tenantId } } });
   await prisma.themeEntity.deleteMany({ where: { theme: { tenantId } } });
   await prisma.ideaBlockLink.deleteMany({ where: { tenantId } });
@@ -190,28 +155,23 @@ export async function resetDemoWorkspace(
   await prisma.entity.deleteMany({ where: { tenantId } });
   await prisma.theme.deleteMany({ where: { tenantId } });
 
-  // Goals
   await prisma.goalAlignmentSnapshot.deleteMany({ where: { tenantId } });
   await prisma.goalTheme.deleteMany({ where: { goal: { tenantId } } });
   await prisma.goal.deleteMany({ where: { tenantId } });
 
-  // Clones
   await prisma.executablePersona.deleteMany({ where: { tenantId } });
   await prisma.skillTrait.deleteMany({ where: { profile: { tenantId } } });
   await prisma.skillProfile.deleteMany({ where: { tenantId } });
   await prisma.cloneAccessGrant.deleteMany({ where: { tenantId } });
 
-  // Operations
   await prisma.dailyCheckIn.deleteMany({ where: { tenantId } });
   await prisma.weeklyOperationsDigest.deleteMany({ where: { tenantId } });
   await prisma.dailyOperationsDigest.deleteMany({ where: { tenantId } });
 
-  // Chat & Notifications
   await prisma.chatV2Message.deleteMany({ where: { conversation: { tenantId } } });
   await prisma.chatV2Conversation.deleteMany({ where: { tenantId } });
   await prisma.notification.deleteMany({ where: { tenantId } });
 
-  // Polish
   await prisma.recognition.deleteMany({ where: { tenantId } });
   await prisma.helpfulnessSpotlight.deleteMany({ where: { tenantId } });
   await prisma.userBadge.deleteMany({});
@@ -221,7 +181,6 @@ export async function resetDemoWorkspace(
   await prisma.insight.deleteMany({ where: { tenantId } });
   await prisma.decision.deleteMany({ where: { tenantId } });
 
-  // Org structure
   await prisma.appointment.deleteMany({ where: { tenantId } });
   await prisma.person.deleteMany({ where: { tenantId } });
   await prisma.role.deleteMany({ where: { tenantId } });
@@ -229,7 +188,6 @@ export async function resetDemoWorkspace(
   await prisma.companyProfile.deleteMany({ where: { tenantId } });
   await prisma.functionalDomain.deleteMany({ where: { tenantId } });
 
-  // Tracker structure
   await prisma.projectDocument.deleteMany({ where: { tenantId } });
   await prisma.board.deleteMany({ where: { project: { tenantId } } });
   await prisma.issueState.deleteMany({ where: { tenantId } });
@@ -237,7 +195,6 @@ export async function resetDemoWorkspace(
   await prisma.label.deleteMany({ where: { project: { tenantId } } });
   await prisma.project.deleteMany({ where: { tenantId } });
 
-  // Reset flag
   await prisma.org.update({
     where: { id: tenantId },
     data: { demoWorkspaceSeededAt: null },
@@ -250,10 +207,6 @@ async function main() {
   const tenantId = getArg('tenant');
   const ownerUserId = getArg('owner');
   const reset = process.argv.includes('--reset');
-  // audit В9: --force снимает проверку «свежей Org» (опасно — может затереть
-  // боевые данные). Идемпотентность по demoWorkspaceSeededAt всё равно
-  // сохраняется: повторный запуск без --reset на уже сидированной Org
-  // ничего не делает.
   const force = process.argv.includes('--force');
 
   if (!tenantId) {
@@ -280,10 +233,6 @@ async function main() {
   }
 }
 
-// Запускаем CLI ТОЛЬКО когда файл вызван напрямую (`bun run scripts/seed-demo-workspace.ts`).
-// Без этого guard'а любой `import { resetDemoWorkspace } from './seed-demo-workspace'`
-// (например, в patch-migrate-old-demo-orgs.ts) исполнял бы main() при импорте —
-// читал пустой process.argv, печатал Usage и делал process.exit(1), роняя вызывающий скрипт.
 if (import.meta.main) {
   main().catch((err) => {
     console.error('seed-demo-workspace failed:', err);

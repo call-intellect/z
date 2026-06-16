@@ -5,20 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { HolidayService } from './holiday.service';
 
-/**
- * Mock PrismaService.holidayCalendar.findFirst — лукап по {tenantId, date}.
- *
- * Покрываем:
- *   1. isHoliday: per-tenant override побеждает глобальный.
- *   2. isHoliday: per-tenant override isWorking=true делает дату НЕ-праздником
- *      даже если день недели — суббота/воскресенье.
- *   3. isHoliday: fallback к глобальной записи при отсутствии override.
- *   4. isHoliday: без записей — выходные по дню недели.
- *   5. nextBusinessDay: пропускает выходные.
- *   6. adjustDueDate: если рабочий день — возвращает без сдвига и БЕЗ метрики.
- *   7. adjustDueDate: если праздник — сдвигает + инкремент метрики.
- */
-
 interface HolidayRow {
   id: string;
   tenantId: string | null;
@@ -34,10 +20,8 @@ function makeService(holidays: HolidayRow[]): {
   const findFirst = vi.fn(async (args: { where: { tenantId: string | null; date: Date } }) => {
     const targetTime = args.where.date.getTime();
     return (
-      holidays.find(
-        (h) =>
-          h.tenantId === args.where.tenantId && h.date.getTime() === targetTime,
-      ) ?? null
+      holidays.find((h) => h.tenantId === args.where.tenantId && h.date.getTime() === targetTime) ??
+      null
     );
   });
   const prisma = {
@@ -46,10 +30,7 @@ function makeService(holidays: HolidayRow[]): {
   const metrics = {
     incHolidayDueDateAdjusted: vi.fn(),
   };
-  const svc = new HolidayService(
-    prisma,
-    metrics as unknown as BusinessMetricsService,
-  );
+  const svc = new HolidayService(prisma, metrics as unknown as BusinessMetricsService);
   return { svc, metrics };
 }
 
@@ -71,7 +52,6 @@ describe('HolidayService.isHoliday', () => {
         name: 'Тенант-выходной',
         isWorking: false,
       },
-      // Глобальной для этой даты нет — но per-tenant override обязан сработать.
     ]);
     const result = await svc.isHoliday({
       tenantId: 'tenant-A',
@@ -81,7 +61,7 @@ describe('HolidayService.isHoliday', () => {
   });
 
   it('per-tenant override isWorking=true делает Sat/Sun рабочим', async () => {
-    const sat = utcDate('2026-03-07'); // суббота
+    const sat = utcDate('2026-03-07');
     const { svc } = makeService([
       {
         id: 'h2',
@@ -117,13 +97,13 @@ describe('HolidayService.isHoliday', () => {
     expect(
       await svc.isHoliday({
         tenantId: null,
-        date: utcDate('2026-03-07'), // суббота
+        date: utcDate('2026-03-07'),
       }),
     ).toBe(true);
     expect(
       await svc.isHoliday({
         tenantId: null,
-        date: utcDate('2026-03-09'), // понедельник
+        date: utcDate('2026-03-09'),
       }),
     ).toBe(false);
   });
@@ -145,7 +125,6 @@ describe('HolidayService.nextBusinessDay', () => {
   });
 
   it('пропускает праздник и переходит на следующий рабочий день', async () => {
-    // 1 января 2026 = чт, 2-8 — праздники. Первый рабочий день — 9 января (пт).
     const { svc } = makeService([
       { id: 'h1', tenantId: null, date: utcDate('2026-01-01'), name: 'НГ', isWorking: false },
       { id: 'h2', tenantId: null, date: utcDate('2026-01-02'), name: 'НГ', isWorking: false },
@@ -153,14 +132,19 @@ describe('HolidayService.nextBusinessDay', () => {
       { id: 'h4', tenantId: null, date: utcDate('2026-01-04'), name: 'НГ', isWorking: false },
       { id: 'h5', tenantId: null, date: utcDate('2026-01-05'), name: 'НГ', isWorking: false },
       { id: 'h6', tenantId: null, date: utcDate('2026-01-06'), name: 'НГ', isWorking: false },
-      { id: 'h7', tenantId: null, date: utcDate('2026-01-07'), name: 'Рождество', isWorking: false },
+      {
+        id: 'h7',
+        tenantId: null,
+        date: utcDate('2026-01-07'),
+        name: 'Рождество',
+        isWorking: false,
+      },
       { id: 'h8', tenantId: null, date: utcDate('2026-01-08'), name: 'НГ', isWorking: false },
     ]);
     const result = await svc.nextBusinessDay({
       tenantId: null,
       date: utcDate('2026-01-01'),
     });
-    // 9 января 2026 — пятница.
     expect(result.toISOString()).toBe(utcDate('2026-01-09').toISOString());
   });
 });
@@ -191,12 +175,10 @@ describe('HolidayService.adjustDueDate', () => {
         isWorking: false,
       },
     ]);
-    // 1 янв — праздник, 2 янв — праздник, 3-4 янв = Sat/Sun (выходные по дню недели — но в seed они есть; здесь не добавлены, проверим только до 5 янв; 5 янв 2026 = пн).
     const result = await svc.adjustDueDate({
       tenantId: null,
       dueDate: utcDate('2026-01-01'),
     });
-    // 3 янв = сб, 4 янв = вс. nextBusinessDay начинает с 2 янв (праздник)→3 (сб)→4 (вс)→5 янв (пн, рабочий).
     expect(result.toISOString()).toBe(utcDate('2026-01-05').toISOString());
     expect(metrics.incHolidayDueDateAdjusted).toHaveBeenCalledWith({
       tenantTop: expect.any(String),
@@ -204,7 +186,7 @@ describe('HolidayService.adjustDueDate', () => {
   });
 
   it('per-tenant override побеждает global для tenant', async () => {
-    const friday = utcDate('2026-05-22'); // пятница, рабочая по дню недели
+    const friday = utcDate('2026-05-22');
     const { svc, metrics } = makeService([
       {
         id: 'h1',
@@ -218,7 +200,6 @@ describe('HolidayService.adjustDueDate', () => {
       tenantId: 'tenant-A',
       dueDate: friday,
     });
-    // Сдвиг на понедельник 25.05.
     expect(result.toISOString()).toBe(utcDate('2026-05-25').toISOString());
     expect(metrics.incHolidayDueDateAdjusted).toHaveBeenCalledTimes(1);
   });

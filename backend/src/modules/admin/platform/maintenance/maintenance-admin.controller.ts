@@ -16,12 +16,6 @@ import { SuperAdminAuditInterceptor } from '../../super-admin.audit.interceptor'
 
 import { MaintenanceAdminService } from './maintenance-admin.service';
 
-/**
- * Admin-redesign Фаза 8 — `MaintenanceAdminController`.
- *
- * UI `/admin/platform/maintenance` — статус бэкапов и активные maintenance
- * windows. Manual бэкап/реиндекс — заглушки (501).
- */
 @ApiTags('admin-platform-maintenance')
 @Controller('api/v1/admin/platform/maintenance')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)

@@ -2,21 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportLearningService } from './services/support-learning.service';
 
-/**
- * support-desk Ф3 — unit-тесты SupportLearningService:
- *   - accept: внешний IssueComment(access=external, authorType=human) +
- *     draftState=accepted + SupportDraftOutcome(accepted) +
- *     LlmPreferenceSample(correct); внешний текст БЕЗ цитат `[BLOCK:`;
- *   - reject: draftState=rejected + outcome=rejected + label=wrong; БЕЗ
- *     внешнего комментария;
- *   - recordEdit: editClassify.classify вызван; outcome=edited + editType;
- *   - maybePromote: CSAT 3 (<4) → promoteAnswer НЕ вызван, {promoted:0};
- *     CSAT 5 + один accepted-неотпромоученный → promoteAnswer вызван +
- *     outcome.promotedToContour=true.
- *
- * Все зависимости замоканы. `$transaction(fn)` делегирует тому же prisma-стабу
- * (tx === prismaStub), поэтому create/update внутри транзакции видны мокам.
- */
 describe('SupportLearningService', () => {
   const TENANT = 'vendor-org-1';
   const ISSUE_ID = 'issue-1';
@@ -70,10 +55,7 @@ describe('SupportLearningService', () => {
       },
       llmPreferenceSample: { create: vi.fn(async () => ({ id: 'pref-1' })) },
       issueRating: { findUnique: vi.fn() },
-      // tx === prismaStub: вызовы create/update внутри транзакции видны мокам.
-      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) =>
-        fn(prismaStub),
-      ),
+      $transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(prismaStub)),
     };
     editClassifyStub = { classify: vi.fn(async () => 'tone') };
     contourStub = { promoteAnswer: vi.fn() };
@@ -116,7 +98,6 @@ describe('SupportLearningService', () => {
       const res = await svc.accept(DRAFT_ID, AGENT);
       expect(res).toEqual({ ok: true });
 
-      // Внешний IssueComment.
       expect(prismaStub.issueComment.create).toHaveBeenCalledTimes(1);
       const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
@@ -125,25 +106,22 @@ describe('SupportLearningService', () => {
       expect(createArg.data.authorType).toBe('human');
       expect(createArg.data.issueId).toBe(ISSUE_ID);
 
-      // draftState=accepted.
       expect(prismaStub.issueComment.update).toHaveBeenCalledWith({
         where: { id: DRAFT_ID },
         data: { draftState: 'accepted' },
       });
 
-      // SupportDraftOutcome(accepted).
-      const outcomeArg = prismaStub.supportDraftOutcome.create.mock
-        .calls[0]?.[0] as { data: Record<string, unknown> };
+      const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      };
       expect(outcomeArg.data.outcome).toBe('accepted');
 
-      // LlmPreferenceSample(correct).
       const prefArg = prismaStub.llmPreferenceSample.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
       };
       expect(prefArg.data.label).toBe('correct');
       expect(prefArg.data.taskType).toBe('support-clone-draft');
 
-      // ActivityRecorder.
       expect(activityStub.record).toHaveBeenCalledWith(
         expect.objectContaining({ verb: 'draft_accepted', actorType: 'user' }),
       );
@@ -221,8 +199,9 @@ describe('SupportLearningService', () => {
         data: { draftState: 'rejected' },
       });
 
-      const outcomeArg = prismaStub.supportDraftOutcome.create.mock
-        .calls[0]?.[0] as { data: Record<string, unknown> };
+      const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      };
       expect(outcomeArg.data.outcome).toBe('rejected');
       expect(outcomeArg.data.finalText).toBeNull();
 
@@ -231,8 +210,6 @@ describe('SupportLearningService', () => {
       };
       expect(prefArg.data.label).toBe('wrong');
 
-      // Внешнего ответа быть не должно — issueComment.create НЕ вызван
-      // (в reject-ветке внешний комментарий не создаётся).
       expect(prismaStub.issueComment.create).not.toHaveBeenCalled();
 
       expect(activityStub.record).toHaveBeenCalledWith(
@@ -268,8 +245,9 @@ describe('SupportLearningService', () => {
         }),
       );
 
-      const outcomeArg = prismaStub.supportDraftOutcome.create.mock
-        .calls[0]?.[0] as { data: Record<string, unknown> };
+      const outcomeArg = prismaStub.supportDraftOutcome.create.mock.calls[0]?.[0] as {
+        data: Record<string, unknown>;
+      };
       expect(outcomeArg.data.outcome).toBe('edited');
       expect(outcomeArg.data.editType).toBe('factual');
 

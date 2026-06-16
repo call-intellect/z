@@ -192,6 +192,67 @@ describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
 });
 
 /**
+ * Б21 [K13] — одиночный сверхдлинный turn РАНЬШЕ уходил в LLM-окно целиком
+ * (без усечения) → таймаут/обрезка JSON → потеря всего окна. Теперь длинный
+ * turn режется посимвольно на куски ≤ лимита (maxTokens*4 символов с поправкой
+ * на `speaker: ` префикс), каждый — отдельный сегмент того же speaker'а.
+ */
+describe('SegmentBuilderService — длинный turn усекается до лимита (Б21)', () => {
+  const makeSvc = (maxTokens: number) =>
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('один turn длиннее лимита → несколько сегментов, каждый ≤ лимита по символам', () => {
+    // maxTokens=10 → лимит ≈ 40 символов на сегмент. Один turn в 200 символов.
+    const maxTokens = 10;
+    const svc = makeSvc(maxTokens);
+    const speaker = 'Алиса';
+    const longText = 'я'.repeat(200);
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker, text: longText, startSec: 0, endSec: 5 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // Раньше был бы РОВНО 1 сегмент в 200+ символов (вся «дыра»).
+    expect(segments.length).toBeGreaterThan(1);
+    const maxChars = maxTokens * 4; // 40
+    for (const s of segments) {
+      // Каждый сегмент (включая префикс `speaker: `) укладывается в лимит.
+      expect(s.text.length).toBeLessThanOrEqual(maxChars);
+      // Префикс speaker'а сохранён в каждом куске.
+      expect(s.text.startsWith(`${speaker}: `)).toBe(true);
+    }
+    // Восстановленный текст (без префиксов) равен исходному — ничего не потеряли.
+    const reconstructed = segments
+      .map((s) => s.text.slice(`${speaker}: `.length))
+      .join('');
+    expect(reconstructed).toBe(longText);
+  });
+
+  it('turn в пределах лимита → ровно 1 сегмент (без дробления)', () => {
+    const svc = makeSvc(2000);
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker: 'Боб', text: 'Короткая фраза', startSec: 0, endSec: 1 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Боб: Короткая фраза');
+  });
+});
+
+/**
  * Фаза 1 (meeting-identity) — сегмент несёт identity спикера
  * (participantId дорожки) для атрибуции авторства (role='subject').
  */

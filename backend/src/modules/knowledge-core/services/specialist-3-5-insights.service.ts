@@ -152,6 +152,27 @@ export class Specialist35Service {
     if (!supportedSignal.has(block.signalType)) return;
 
     try {
+      // Б27 [K4] — детерминированный дедуп ПЕРЕД KNN.
+      // KNN недетерминирован (промах при ретрае / отсутствии embedding / ниже
+      // порога) → один и тот же block мог породить дубль Insight. Сначала
+      // прямой pre-check по GIN-массиву sourceBlockIds: если уже есть активный
+      // Insight, ссылающийся на этот block, — обогащаем его (как guard
+      // ideas/decisions через `sourceBlockIds: { has: ... }`) и выходим.
+      const dedupExisting = await this.prisma.insight.findFirst({
+        where: {
+          tenantId: block.tenantId,
+          sourceBlockIds: { has: block.id },
+          status: { notIn: ['archived'] },
+        },
+      });
+      if (dedupExisting) {
+        await this.updateExistingInsight({
+          existing: dedupExisting,
+          block,
+        });
+        return;
+      }
+
       const queryText = this.buildQueryText(block);
       const matched = await this.findMatchingInsight({
         tenantId: block.tenantId,

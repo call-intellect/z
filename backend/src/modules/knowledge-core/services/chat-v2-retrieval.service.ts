@@ -248,7 +248,11 @@ export class ChatV2RetrievalService {
     }
 
     // 1) Собираем pool кандидатов в зависимости от scope.
-    let poolBlockIds = await this.collectPool(input);
+    // Б26 [K3] — qvec прокидываем в pool: org-scope при наличии вектора берёт
+    // детерминированный HNSW-срез (ORDER BY embedding <=> qvec), а не случайные
+    // 5000. Остальные scope сортируются детерминированно перед take (см.
+    // collectPool).
+    let poolBlockIds = await this.collectPool(input, qvec);
     if (poolBlockIds.length === 0) return [];
 
     // SBA α-5 dialog-layer — temporal-фильтр: оставляем только блоки,
@@ -340,7 +344,10 @@ export class ChatV2RetrievalService {
 
   // ─────────────────────────── pool по scope ───────────────────────────
 
-  private async collectPool(input: RetrievalInput): Promise<string[]> {
+  private async collectPool(
+    input: RetrievalInput,
+    qvec: number[] | null,
+  ): Promise<string[]> {
     const { tenantId, scope, scopeId } = input;
     const accessWhere = input.accessWhere;
     // Support-desk Ф2 (R-INV-1) — позитивный pre-filter закрытого контура.
@@ -352,8 +359,56 @@ export class ChatV2RetrievalService {
       ? { blockAccess: { some: { groupId: input.contourGroupId } } }
       : {};
     if (scope === 'org') {
-      // Для org pool — все canonical-блоки тенанта. Дальше rankByCosineOrRecency
-      // обрежет до limit'а через ORDER BY embedding<->qvec.
+      // Б26 [K3] — детерминированный org-pool.
+      // Раньше: `findMany take 5000` без orderBy → Postgres отдавал произвольное
+      // подмножество, ответ нестабилен между прогонами. Теперь:
+      //  - есть qvec И нет структурного фильтра → pgvector HNSW
+      //    `ORDER BY embedding <=> qvec LIMIT 5000`: стабильный recall ближайших
+      //    к запросу, а не случайный срез;
+      //  - нет qvec (или есть структурный фильтр) → `ORDER BY updatedAt DESC`
+      //    (детерминированная свежесть). При структурном фильтре HNSW-срез
+      //    НЕЛЬЗЯ: rankByStructuralFilter делает recall-safe полный скан по
+      //    pool'у, а pre-narrow до 5000 ближайших уронил бы recall (см. Ф3).
+      // Дальше rankByCosineOrRecency обрежет до limit'а тем же вектором.
+      if (qvec && !hasStructuralFilter(input)) {
+        try {
+          const params: unknown[] = [];
+          const pushParam = (v: unknown): string => {
+            params.push(v);
+            return `$${params.length}`;
+          };
+          const pTenant = pushParam(tenantId);
+          const pVec = pushParam(toVectorLiteral(qvec));
+          const sql = `
+            SELECT b.id
+            FROM "IdeaBlock" b
+            WHERE b."tenantId" = ${pTenant}
+              AND b.status = 'canonical'
+              AND b.embedding IS NOT NULL
+            ORDER BY b.embedding <=> ${pVec}::vector(1536)
+            LIMIT 5000
+          `;
+          const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+            sql,
+            ...params,
+          );
+          // accessWhere/contourWhere применяются ниже единым re-фильтром, чтобы
+          // не дублировать Prisma-форму доступа в сыром SQL.
+          const ids = rows.map((r) => r.id);
+          return this.applyOrgPoolFilters(
+            tenantId,
+            ids,
+            accessWhere,
+            contourWhere,
+          );
+        } catch (err) {
+          this.logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'chat-v2 retrieval: org-pool HNSW упал — fallback на recency-orderBy',
+          );
+        }
+      }
+      // qvec нет (или HNSW упал) — детерминированная свежесть.
       const rows = await this.prisma.ideaBlock.findMany({
         where: {
           tenantId,
@@ -362,6 +417,7 @@ export class ChatV2RetrievalService {
           ...contourWhere,
         },
         select: { id: true },
+        orderBy: { updatedAt: 'desc' },
         // Лимит pool'а: 5000 — защита от org с десятками тысяч блоков.
         // Дальнейший ранжирующий SQL уже идёт по этому подмножеству.
         take: 5000,
@@ -391,6 +447,39 @@ export class ChatV2RetrievalService {
     }
     const _exhaustive: never = scope;
     throw new Error(`chat-v2 retrieval: unknown scope ${String(_exhaustive)}`);
+  }
+
+  /**
+   * Б26 [K3] — re-применение accessWhere/contourWhere к HNSW-выбранному
+   * org-pool'у, СОХРАНЯЯ порядок HNSW (по близости к запросу). Сырой SQL отдаёт
+   * id в порядке `embedding <=> qvec`; чтобы не дублировать Prisma-форму доступа
+   * в SQL, фильтруем недоступные блоки отдельной findMany и пересобираем по
+   * исходному порядку. Если фильтров нет — возвращаем id как есть (byte-identical).
+   */
+  private async applyOrgPoolFilters(
+    tenantId: string,
+    orderedIds: string[],
+    accessWhere: Record<string, unknown> | undefined,
+    contourWhere: Record<string, unknown>,
+  ): Promise<string[]> {
+    if (orderedIds.length === 0) return [];
+    const hasAccess = accessWhere && Object.keys(accessWhere).length > 0;
+    const hasContour = Object.keys(contourWhere).length > 0;
+    if (!hasAccess && !hasContour) return orderedIds;
+
+    const allowed = await this.prisma.ideaBlock.findMany({
+      where: {
+        id: { in: orderedIds },
+        tenantId,
+        status: 'canonical',
+        ...(accessWhere ?? {}),
+        ...contourWhere,
+      },
+      select: { id: true },
+    });
+    const allowedSet = new Set(allowed.map((r) => r.id));
+    // Сохраняем HNSW-порядок.
+    return orderedIds.filter((id) => allowedSet.has(id));
   }
 
   /**
@@ -424,6 +513,9 @@ export class ChatV2RetrievalService {
         },
       },
       select: { blockId: true },
+      // Б26 [K3] — детерминированный срез: без orderBy `take 1000` отдавал
+      // случайное подмножество. Берём самые свежие блоки (по block.updatedAt).
+      orderBy: { block: { updatedAt: 'desc' } },
       take: 1000,
     });
     return uniqueIds(evRows.map((e) => e.blockId));
@@ -481,6 +573,8 @@ export class ChatV2RetrievalService {
           },
         },
         select: { blockId: true },
+        // Б26 [K3] — детерминированный срез (см. poolByMeeting).
+        orderBy: { block: { updatedAt: 'desc' } },
         take: 1000,
       });
       for (const r of evRows) blockIdSet.add(r.blockId);
@@ -502,6 +596,8 @@ export class ChatV2RetrievalService {
           },
         },
         select: { blockId: true },
+        // Б26 [K3] — детерминированный срез (см. poolByMeeting).
+        orderBy: { block: { updatedAt: 'desc' } },
         take: 1000,
       });
       for (const r of entRows) blockIdSet.add(r.blockId);
@@ -532,6 +628,8 @@ export class ChatV2RetrievalService {
         },
       },
       select: { blockId: true },
+      // Б26 [K3] — детерминированный срез (см. poolByMeeting).
+      orderBy: { block: { updatedAt: 'desc' } },
       take: 1000,
     });
     return uniqueIds(rows.map((r) => r.blockId));
@@ -565,6 +663,8 @@ export class ChatV2RetrievalService {
         },
       },
       select: { blockId: true },
+      // Б26 [K3] — детерминированный срез (см. poolByMeeting).
+      orderBy: { block: { updatedAt: 'desc' } },
       take: 1000,
     });
     return uniqueIds(rows.map((r) => r.blockId));

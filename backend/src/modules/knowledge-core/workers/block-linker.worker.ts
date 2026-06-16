@@ -173,6 +173,14 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
             confidence: confidenceDecimal,
             explanation: verdict.explanation,
             status: 'active',
+            // Б16 — единый контракт «оживления» ребра: re-upsert по тому же
+            // (from,to,relationType) сбрасывает soft-delete, как это делает
+            // fact-supersede.service (applyContradicts/applySupersedes). Без
+            // этого состояние ребра зависело от того, какой воркер сработал:
+            // fact-supersede оживлял удалённое ребро, а linker — нет. Теперь
+            // оживление детерминировано независимо от источника upsert'а.
+            deletedAt: null,
+            deletedBy: null,
             // Обновляем temporal-поля только если LLM явно их вернул
             // (не затираем существующие значения null'ом).
             ...(validFrom !== null ? { validFrom } : {}),

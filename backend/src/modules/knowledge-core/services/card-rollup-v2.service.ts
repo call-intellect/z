@@ -491,7 +491,12 @@ export class CardRollupV2Service {
     const cardVersionId: string | null = triage.cardVersionId;
     const curationItemId: string | null = triage.curationItemId;
 
-    if (triage.decision === 'auto') {
+    // Б5 [K9] — `provisional` (системно канонизировано AI-судьёй для критических
+    // типов, см. triageDecision 'provisional') обновляет Card так же, как 'auto'.
+    // Раньше провижн трактовался как «не auto» → Card не обновлялся, а
+    // CardVersion создавалась внутри triage → summaryCache/currentVersionId
+    // дрейфовали от фактической версии.
+    if (triage.decision === 'auto' || triage.decision === 'provisional') {
       const updatedCard = await this.prisma.card.update({
         where: { id: card.id },
         data: {
@@ -526,8 +531,13 @@ export class CardRollupV2Service {
     // SBA α-6 — conflict detection: статус контрадикция между старым summary
     // и новым. Если карточка резко поменяла знак («закрыт» → «активен» и
     // наоборот) — это сигнал к ConflictItem(relationType='contradicts').
+    // Б6 [K9] — conflict.report только когда новое summary ФАКТИЧЕСКИ применено
+    // (applied). На light/deep/provisional-not-applied summaryCache карточки не
+    // менялся → сравнивать «старое vs новое» бессмысленно, а ConflictItem ушёл
+    // бы ложно (новое summary ещё ждёт approve, противоречия в graph нет).
     let conflictReported = false;
     if (
+      applied &&
       summary &&
       card.summaryCache &&
       this.detectStatusContradiction(card.summaryCache, summary)

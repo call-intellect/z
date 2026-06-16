@@ -299,23 +299,59 @@ export class SegmentBuilderService {
         buffer = [];
         bufferChars = 0;
       };
+      // Б21 — лимит в символах: 1 токен ≈ 4 символа. Запас под `speaker: `
+      // префикс и перевод строки учитывается тем, что turnChars их прибавляет.
+      const maxChars = Math.max(1, maxTokens * 4);
       for (const turn of group) {
-        const turnChars = turn.text.length + speaker.length + 3;
-        // Если уже есть содержимое и добавление этого turn перегонит лимит —
-        // флашим и начинаем новый сегмент. Если один turn сам больше лимита —
-        // попадает в свой сегмент целиком (резать turn посимвольно опаснее
-        // для семантики, чем оставить большой сегмент).
-        const projectedChars = bufferChars + turnChars;
-        if (buffer.length > 0 && Math.ceil(projectedChars / 4) > maxTokens) {
-          flush();
+        // Б21 — одиночный сверхдлинный turn РАНЬШЕ уходил в LLM-окно целиком
+        // (комментарий «резать опаснее» оставлял дыру): провайдер ловил
+        // таймаут/обрезку JSON и терялось ВСЁ окно. Теперь длинный turn режем
+        // посимвольно на куски ≤ лимита, каждый — отдельный turn того же
+        // speaker'а. Семантика сохраняется лучше, чем полная потеря окна.
+        const chunks = this.splitTurnByChars(turn, maxChars, speaker);
+        for (const chunk of chunks) {
+          const turnChars = chunk.text.length + speaker.length + 3;
+          // Если уже есть содержимое и добавление этого turn перегонит лимит —
+          // флашим и начинаем новый сегмент.
+          const projectedChars = bufferChars + turnChars;
+          if (buffer.length > 0 && Math.ceil(projectedChars / 4) > maxTokens) {
+            flush();
+          }
+          buffer.push(chunk);
+          bufferChars += turnChars;
         }
-        buffer.push(turn);
-        bufferChars += turnChars;
       }
       flush();
     }
 
     return segments;
+  }
+
+  /**
+   * Б21 — режет один turn на куски так, чтобы каждый кусок (вместе с
+   * `speaker: ` префиксом и переводом строки) укладывался в `maxChars`.
+   * Возвращает массив turn'ов того же speaker'а с теми же тайм-границами и
+   * атрибуцией (startSec/endSec/speakerParticipantId/authorPersonId не дробим —
+   * для under-лимита turn'ов это исходный turn без изменений). Если turn
+   * помещается целиком — возвращает `[turn]` (без аллокаций по символам).
+   */
+  private splitTurnByChars(
+    turn: MeetingTurn,
+    maxChars: number,
+    speaker: string,
+  ): MeetingTurn[] {
+    // Бюджет на чистый текст внутри одного сегмента: лимит минус префикс
+    // `${speaker}: ` (длина speaker + 2) — он добавляется в flush() на КАЖДУЮ
+    // строку. Минимум 1, чтобы не зациклиться при гигантском speaker.
+    const textBudget = Math.max(1, maxChars - speaker.length - 2);
+    if (turn.text.length <= textBudget) {
+      return [turn];
+    }
+    const pieces: MeetingTurn[] = [];
+    for (let i = 0; i < turn.text.length; i += textBudget) {
+      pieces.push({ ...turn, text: turn.text.slice(i, i + textBudget) });
+    }
+    return pieces;
   }
 
   // ─────────────────────────── fallback ────────────────────────────────────

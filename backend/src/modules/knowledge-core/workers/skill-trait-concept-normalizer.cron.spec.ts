@@ -43,6 +43,14 @@ function buildCron(args: {
   conceptRows: FakeConceptRow[];
   /** count для archive updateMany — сколько концептов попадает под архивацию. */
   archiveCount?: number;
+  /**
+   * Б6: живой COUNT(active) по conceptId, который вернёт skillTrait.groupBy.
+   * Если не задан — каждому концепту проставится его исходный trait_count
+   * (т.е. поведение «как было», live-override фактически нейтрален).
+   */
+  liveCounts?: Record<string, number>;
+  /** Б8: что вернёт mergeConcepts (по умолчанию true — реальное слияние). */
+  mergeReturns?: boolean;
 }) {
   const concepts = args.conceptRows;
   // Side-effect логи.
@@ -58,6 +66,18 @@ function buildCron(args: {
       groupBy: vi.fn(async () => [
         { status: 'active', _count: { _all: concepts.length } },
       ]),
+      findMany: vi.fn(async () => []),
+    },
+    skillTrait: {
+      // Б6: live COUNT(active) по conceptId.
+      groupBy: vi.fn(async () =>
+        concepts.map((c) => ({
+          conceptId: c.id,
+          _count: {
+            _all: args.liveCounts ? (args.liveCounts[c.id] ?? 0) : c.trait_count,
+          },
+        })),
+      ),
     },
     membership: {
       findMany: vi.fn(async () => [{ userId: 'admin-1' }]),
@@ -101,11 +121,14 @@ function buildCron(args: {
     })),
   } as any;
   const concepts$ = {
-    mergeConcepts: vi.fn(async (args: any) => {
-      mergeCalls.push({ targetId: args.targetId, sourceIds: args.sourceIds });
+    mergeConcepts: vi.fn(async (a: any) => {
+      mergeCalls.push({ targetId: a.targetId, sourceIds: a.sourceIds });
+      // Б8: cron инкрементит clustersMerged / шлёт probe только при true.
+      return args.mergeReturns ?? true;
     }),
     findOrCreateConcept: vi.fn(),
     recomputeConceptForTrait: vi.fn(),
+    recomputeTraitCount: vi.fn(),
   } as any;
   const probe = {
     suggest: vi.fn(async (args: any) => {
@@ -193,7 +216,7 @@ describe('SkillTraitConceptNormalizerCron', () => {
     expect(mergeCalls).toHaveLength(0);
   });
 
-  it('сценарий 3: концепт без активных traits старше 6 мес — архивируется', async () => {
+  it('сценарий 3: концепт без активных traits старше 6 мес — архивируется по traits.none (Б7), не по счётчику', async () => {
     // Никаких концептов для merge — пустая выборка.
     const { cron, prisma } = buildCron({
       conceptRows: [],
@@ -205,8 +228,74 @@ describe('SkillTraitConceptNormalizerCron', () => {
     expect(prisma.skillTraitConcept.updateMany).toHaveBeenCalledTimes(1);
     const call = (prisma.skillTraitConcept.updateMany as any).mock.calls[0][0];
     expect(call.where.status).toBe('active');
-    expect(call.where.traitCount).toBe(0);
+    // Б7: фильтр по фактическому отсутствию active-черты, а НЕ по traitCount.
+    expect(call.where.traitCount).toBeUndefined();
+    expect(call.where.traits).toEqual({ none: { status: 'active' } });
     expect(call.where.lastSeenAt.lt).toBeInstanceOf(Date);
     expect(call.data.status).toBe('archived');
+  });
+
+  it('Б6: опорный концепт выбирается по ЖИВОМУ COUNT(active), а не по дрейфующему traitCount', async () => {
+    const { a, b } = similarVectors(0.95);
+    // Денормализованный trait_count говорит, что c-a сильнее (10 vs 3),
+    // но живой COUNT(active) — наоборот: c-b=8, c-a=1 (дрейф). Опорным должен
+    // стать c-b.
+    const rows: FakeConceptRow[] = [
+      {
+        id: 'c-a',
+        canonical_name: 'имя A',
+        trait_count: 10,
+        variants: ['имя A'],
+        embedding_text: vec(a),
+      },
+      {
+        id: 'c-b',
+        canonical_name: 'имя B',
+        trait_count: 3,
+        variants: ['имя B'],
+        embedding_text: vec(b),
+      },
+    ];
+    const { cron, mergeCalls } = buildCron({
+      conceptRows: rows,
+      liveCounts: { 'c-a': 1, 'c-b': 8 },
+    });
+    const summary = await cron.runOnce();
+
+    expect(summary.clustersMerged).toBe(1);
+    expect(mergeCalls).toHaveLength(1);
+    expect(mergeCalls[0]!.targetId).toBe('c-b');
+    expect(mergeCalls[0]!.sourceIds).toEqual(['c-a']);
+  });
+
+  it('Б8: mergeConcepts вернул false (no-op) — clustersMerged НЕ инкрементится, probe не шлётся', async () => {
+    const { a, b } = similarVectors(0.95);
+    const rows: FakeConceptRow[] = [
+      {
+        id: 'c-strong',
+        canonical_name: 'имя один',
+        trait_count: 10,
+        variants: ['имя один'],
+        embedding_text: vec(a),
+      },
+      {
+        id: 'c-weak',
+        canonical_name: 'имя два',
+        trait_count: 3,
+        variants: ['имя два'],
+        embedding_text: vec(b),
+      },
+    ];
+    const { cron, mergeCalls, probeCalls } = buildCron({
+      conceptRows: rows,
+      mergeReturns: false,
+    });
+    const summary = await cron.runOnce();
+
+    // mergeConcepts вызван, но слияния не было.
+    expect(mergeCalls).toHaveLength(1);
+    expect(summary.clustersMerged).toBe(0);
+    expect(summary.probesSent).toBe(0);
+    expect(probeCalls).toHaveLength(0);
   });
 });

@@ -481,9 +481,16 @@ export class RolePrincipleSynthesisService {
       0,
       RolePrincipleSynthesisService.MAX_SOURCE_BLOCK_IDS,
     );
+    // Б9 — confidence из разброса РАЗНЫХ ДАТ union-блоков (не сырой вердикт
+    // LLM); уже достигнутый уровень не понижаем (MAX(текущий, evidence-floor)).
+    // Fail-open внутри хелпера: при ошибке вернётся текущий уровень existing.
+    const evidenceLevel = await this.confidenceFromDistinctDays(
+      [...union],
+      args.existing.confidence,
+    );
     const confidence = this.maxConfidence(
       args.existing.confidence,
-      args.draft.confidence,
+      evidenceLevel,
     );
     const vec = `[${args.embedding.join(',')}]`;
     await this.prisma.$transaction(async (tx) => {
@@ -515,6 +522,14 @@ export class RolePrincipleSynthesisService {
     draft: PrincipleDraft;
     embedding: number[] | null;
   }): Promise<void> {
+    // Б9 — confidence из разброса РАЗНЫХ ДАТ блоков-источников, НЕ сырой
+    // вердикт LLM (принцип создаётся сразу active, без pending-гейта — ложный
+    // `high` от одной болтливой встречи сразу попал бы в персону). Fail-open
+    // внутри хелпера: при ошибке вернётся `low`.
+    const confidence = await this.confidenceFromDistinctDays(
+      args.draft.sourceBlockIds,
+      'low',
+    );
     const created = await this.prisma.rolePrinciple.create({
       data: {
         tenantId: args.tenantId,
@@ -523,18 +538,43 @@ export class RolePrincipleSynthesisService {
         statement: args.draft.statement.slice(0, 2_000),
         sourceBlockIds: args.draft.sourceBlockIds,
         observationCount: args.draft.sourceBlockIds.length,
-        confidence: args.draft.confidence,
+        confidence,
         status: 'active',
         lastSynthesizedAt: new Date(),
       },
     });
+    // Б10 — raw-апдейт вектора best-effort (try/catch, как createNewTraitRaw
+    // 3.7): сбой записи embedding НЕ должен валить уже созданный принцип; но и
+    // строка с embedding=NULL невидима дедупу (`findClosestActivePrinciple`
+    // фильтрует IS NOT NULL) → каждый прогон плодит дубль. Поэтому при сбое
+    // вектора best-effort удаляем только что созданную строку (компенсация):
+    // лучше «нет принципа в этот прогон» (подхватит следующий), чем «active
+    // без вектора, вечный дубль».
     if (args.embedding) {
       const vec = `[${args.embedding.join(',')}]`;
-      await this.prisma.$executeRawUnsafe(
-        `UPDATE "role_principles" SET "embedding" = $1::vector WHERE "id" = $2`,
-        vec,
-        created.id,
-      );
+      try {
+        await this.prisma.$executeRawUnsafe(
+          `UPDATE "role_principles" SET "embedding" = $1::vector WHERE "id" = $2`,
+          vec,
+          created.id,
+        );
+      } catch (err) {
+        this.logger.warn(
+          {
+            roleId: args.roleId,
+            principleId: created.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'role-principle-synthesis.createNewPrincipleRaw: запись embedding упала — откатываю принцип (иначе active без вектора невидим дедупу → дубль)',
+        );
+        try {
+          await this.prisma.rolePrinciple.delete({ where: { id: created.id } });
+        } catch {
+          // best-effort: не смогли откатить — оставляем строку, дедуп
+          // подхватит её по statement-merge на следующем прогоне в худшем
+          // случае; throw не делаем, чтобы не валить остальные принципы.
+        }
+      }
     }
   }
 
@@ -545,6 +585,40 @@ export class RolePrincipleSynthesisService {
   ): SkillConfidence {
     const RANK: Record<SkillConfidence, number> = { low: 0, medium: 1, high: 2 };
     return RANK[a] >= RANK[b] ? a : b;
+  }
+
+  /**
+   * Б9 (контракт M5) — confidence принципа = функция РАЗБРОСА РАЗНЫХ ДАТ
+   * наблюдений (число различных дней по `createdAt` блоков), НЕ сырой вердикт
+   * LLM и НЕ число блоков: одна болтливая встреча (N блоков одной даты) не
+   * должна дать ложный `high`. Лестница как в `specialist-3-7-skill`
+   * (≥4 дней → high / ≥2 → medium / иначе low).
+   *
+   * Fail-open: не смогли пересчитать (нет блоков / ошибка БД) → `fallback`
+   * (для create — `low`, для merge — текущий уровень existing).
+   */
+  private async confidenceFromDistinctDays(
+    blockIds: string[],
+    fallback: SkillConfidence,
+  ): Promise<SkillConfidence> {
+    if (blockIds.length === 0) return fallback;
+    try {
+      const blocks = await this.prisma.ideaBlock.findMany({
+        where: { id: { in: blockIds } },
+        select: { createdAt: true },
+      });
+      if (blocks.length === 0) return fallback;
+      const distinctDays = new Set(
+        blocks.map((b) => b.createdAt.toISOString().slice(0, 10)),
+      ).size;
+      return distinctDays >= 4 ? 'high' : distinctDays >= 2 ? 'medium' : 'low';
+    } catch (err) {
+      this.logger.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        'role-principle-synthesis.confidenceFromDistinctDays: пересчёт из дат упал — fallback',
+      );
+      return fallback;
+    }
   }
 
   // ───────────────────── embeddings + группировка ─────────────────────

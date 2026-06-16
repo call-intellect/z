@@ -32,6 +32,19 @@ export class RolePrincipleSynthesisCron {
   private static readonly LOCK_TTL_SEC = 60 * 60;
   /** Общий бюджет ролей на один проход (по всем Org суммарно). */
   private static readonly MAX_ROLES_PER_SWEEP = 100;
+  /**
+   * Б11 — причины `skipped` из `synthesizeForRole`, на которых LLM НЕ
+   * вызывался (skip ДО synthesize): не жгут бюджет. `llm_error` сюда НЕ
+   * входит — там вызов уже состоялся. Держать в синхроне с
+   * `RolePrincipleSynthesisService.synthesizeForRole`.
+   */
+  private static readonly PRE_LLM_SKIP_REASONS: ReadonlySet<string> = new Set([
+    'role_not_found',
+    'no_persons',
+    'no_entities',
+    'below_threshold',
+    'no_groups',
+  ]);
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -112,13 +125,17 @@ export class RolePrincipleSynthesisCron {
 
     for (const org of orgs) {
       if (budget <= 0) break;
+      // Б11 — бюджет = число РЕАЛЬНЫХ LLM-вызовов, а не выбранных ролей. Берём
+      // все роли Org (skip-ветки внутри `synthesizeForRole` ничего не тратят);
+      // лимит выборки одного Org держим на уровне MAX_ROLES_PER_SWEEP, чтобы
+      // одна гигантская Org не вытащила несоразмерный список за раз.
       const roles = await this.prisma.role.findMany({
         where: { tenantId: org.id, deletedAt: null },
         select: { id: true },
-        take: budget,
+        take: RolePrincipleSynthesisCron.MAX_ROLES_PER_SWEEP,
       });
-      budget -= roles.length;
       for (const role of roles) {
+        if (budget <= 0) break;
         try {
           const res = await this.synthesis.synthesizeForRole({
             tenantId: org.id,
@@ -128,6 +145,14 @@ export class RolePrincipleSynthesisCron {
           created += res.created;
           merged += res.merged;
           if (res.skipped) skipped++;
+          // Декремент бюджета ТОЛЬКО когда LLM реально вызывался: skip ДО
+          // synthesize (PRE_LLM_SKIP_REASONS) роль не зовёт модель и бюджет не
+          // тратит. `skipped===null` (создано/смержено) и `llm_error` (вызов
+          // состоялся, но упал) — оба тратят бюджет.
+          const calledLlm =
+            res.skipped === null ||
+            !RolePrincipleSynthesisCron.PRE_LLM_SKIP_REASONS.has(res.skipped);
+          if (calledLlm) budget--;
         } catch (err) {
           failures++;
           this.logger.warn(

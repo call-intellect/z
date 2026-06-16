@@ -184,8 +184,14 @@ export class Specialist37Service {
 
   /**
    * Ф3(D) — grounding-проверка pending_verification черт перед попаданием в
-   * персону. grounded=true → active; иначе остаётся pending (decay уберёт).
+   * персону. grounded=true → active; иначе остаётся pending до тех пор, пока
+   * не устареет (Б1: runDecay/recalibrate переводят pending старше archiveCutoff
+   * → archived — раньше «decay уберёт» было ложью, перехода не было нигде).
    * Fail-open (Р2): ошибка/таймаут LLM → промоут в active (как было до D).
+   *
+   * Б2 (2026-06-16): выборка идёт FIFO (orderBy createdAt asc) и исключает
+   * безнадёжные черты старше archiveCutoff — иначе при >limit застрявших pending
+   * окно крутило их же, а новые черты не доходили до verify и были невидимы клону.
    *
    * Вызывается из SkillTraitVerifyCron батчем (default limit 100).
    */
@@ -196,16 +202,28 @@ export class Specialist37Service {
     let promoted = 0;
     let held = 0;
     try {
+      // Б2 — безнадёжные (старше archiveCutoff) исключаем: их заберёт
+      // runDecay/recalibrate в archived, нет смысла снова жечь на них LLM.
+      const archiveCutoff = new Date(
+        Date.now() - this.cfg.skill.archiveMonths * 30 * 24 * 60 * 60 * 1000,
+      );
       const pending = await this.prisma.skillTrait.findMany({
-        where: { status: 'pending_verification' },
+        where: {
+          status: 'pending_verification',
+          createdAt: { gte: archiveCutoff },
+        },
         select: {
           id: true,
+          conceptId: true,
           category: true,
           statement: true,
           sourceBlockIds: true,
           profileId: true,
           profile: { select: { tenantId: true } },
         },
+        // Б2 — FIFO: старейшие непроверенные первыми, чтобы окно не застревало
+        // на одних и тех же и новые черты доходили до verify.
+        orderBy: { createdAt: 'asc' },
         take: limit,
       });
 
@@ -229,6 +247,16 @@ export class Specialist37Service {
             blockId: b.id,
             quote: `${b.criticalQuestion} ${b.trustedAnswer}`.slice(0, 600),
           }));
+
+          // Г3 (2026-06-16) — предфильтр в коде: grounded=true требует ≥2 цитат
+          // (это проверяемый кодом порог, не доверяем дешёвой модели). При <2
+          // цитатах черта заведомо не грунтуется — держим pending (held) БЕЗ
+          // вызова LLM. Раньше LLM звался даже при 0–1 цитате, а при сбое
+          // fail-open промоутил такую черту в active.
+          if (quotes.length < 2) {
+            held++;
+            continue;
+          }
 
           const res = await this.llm.call({
             taskType: 'skill-trait-verify',
@@ -257,8 +285,17 @@ export class Specialist37Service {
               data: { status: 'active' },
             });
             promoted++;
+            // Б6 — promote меняет COUNT(active) концепта: пересчитываем
+            // traitCount (единый источник = COUNT(active)). Best-effort.
+            if (trait.conceptId) {
+              await this.concepts
+                .recomputeTraitCount(trait.conceptId)
+                .catch(() => undefined);
+            }
           } else {
-            // Не грунтовано — оставляем pending (decay уберёт).
+            // Не грунтовано — оставляем pending. Безнадёжные (старше
+            // archiveCutoff) заберёт runDecay/recalibrate в archived (Б1);
+            // выборка их уже не подхватывает (Б2), LLM повторно не жжётся.
             held++;
           }
         } catch (err) {
@@ -277,6 +314,11 @@ export class Specialist37Service {
               data: { status: 'active' },
             });
             promoted++;
+            if (trait.conceptId) {
+              await this.concepts
+                .recomputeTraitCount(trait.conceptId)
+                .catch(() => undefined);
+            }
           } catch (updErr) {
             this.logger.warn(
               {
@@ -791,12 +833,19 @@ export class Specialist37Service {
       });
     }
 
-    return parseTraitDraft(result.text, (reason) => {
+    const draft = parseTraitDraft(result.text, (reason) => {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: Specialist37Service.METRIC_TYPE,
         reason,
       });
     });
+    if (!draft) return null;
+    // Г4 (2026-06-16) — пустой sourceBlockIds = «нет ПОЧЕМУ / недостаточно
+    // сигнала» (контракт промпта skill-trait-detect) — это НОРМА, не черта.
+    // Раньше skill-путь (в отличие от value-пути и process-пути) НЕ отбрасывал
+    // пустой sourceBlockIds → «недостаточно сигнала» создавалось как черта.
+    if (draft.sourceBlockIds.length === 0) return null;
+    return draft;
   }
 
   /**
@@ -1043,12 +1092,16 @@ export class Specialist37Service {
             distance: number;
           }>
         >(
+          // Б4 (2026-06-16) — KNN-кандидаты merge включают и pending_verification,
+          // не только active: новая черта рождается pending, несколько rebuild за
+          // день (debounce 60s) до ночного verify иначе плодят дубли pending одного
+          // навыка. Повторный rebuild теперь мёрджит в существующий pending.
           `SELECT "id", "category", "statement", "confidence", "lastConfirmedAt",
                   "observationCount", "sourceBlockIds",
                   ("embedding" <=> $2::vector) AS "distance"
            FROM "skill_traits"
            WHERE "profileId" = $1
-             AND "status" = 'active'
+             AND "status" IN ('active', 'pending_verification')
              AND "layer" = $3::"SkillTraitLayer"
              AND "embedding" IS NOT NULL
            ORDER BY "embedding" <=> $2::vector
@@ -1104,6 +1157,38 @@ export class Specialist37Service {
       candidates,
     });
 
+    // Г2 (2026-06-16) — код-гард над вердиктом LLM: если есть hard-кандидат
+    // (cosine ≥ traitSimilarityThreshold = проверяемый кодом порог), а модель
+    // вернула "new" — НЕ доверяем слепо, форсим merge к топ-hard кандидату
+    // (candidates отсортированы по similarity desc → первый hard и есть топ).
+    // Возврат "new" при наличии hard-совпадения — баг кумулятивности профиля.
+    if (verdict.verdict === 'new') {
+      const topHard = candidates.find((c) => c.bucket === 'hard');
+      if (topHard) {
+        this.logger.debug(
+          {
+            profileId: args.profile.id,
+            targetId: topHard.id,
+            arbiterReasoning: verdict.reasoning,
+          },
+          'specialist-3-7.mergeOrCreate: Г2 — арбитр вернул new при hard-кандидате, форсим merge',
+        );
+        await this.mergeIntoExisting({
+          profileId: args.profile.id,
+          existing: {
+            id: topHard.id,
+            sourceBlockIds: topHard.sourceBlockIds,
+            observationCount: topHard.observationCount,
+            confidence: topHard.confidence,
+            lastConfirmedAt: topHard.lastConfirmedAt,
+          },
+          draft: args.draft,
+          embedding,
+        });
+        return 'merged';
+      }
+    }
+
     if (verdict.verdict === 'merge' && verdict.targetId) {
       const target = candidates.find((c) => c.id === verdict.targetId);
       if (!target) {
@@ -1121,6 +1206,9 @@ export class Specialist37Service {
           sourceBlockIds: target.sourceBlockIds,
           observationCount: target.observationCount,
           confidence: target.confidence,
+          // Б3 — пробрасываем текущую дату подтверждения цели, чтобы мердж
+          // старой группы не откатил lastConfirmedAt назад (MAX в mergeIntoExisting).
+          lastConfirmedAt: target.lastConfirmedAt,
         },
         draft: args.draft,
         embedding,
@@ -1361,6 +1449,9 @@ export class Specialist37Service {
       sourceBlockIds: string[];
       observationCount: number;
       confidence: SkillConfidence;
+      /** Б3 (2026-06-16) — текущая дата подтверждения цели; нужна, чтобы при
+       *  мердже группы из СТАРЫХ блоков не откатить lastConfirmedAt назад. */
+      lastConfirmedAt?: Date;
     };
     draft: TraitDraft;
     embedding: number[] | null;
@@ -1403,6 +1494,18 @@ export class Specialist37Service {
     // откатываются вместе.
     const updateAnchor =
       args.embedding != null && args.draft.statement.trim().length > 0;
+
+    // Б3 (2026-06-16) — lastConfirmedAt НЕ откатываем назад: берём MAX из
+    // существующей даты подтверждения и даты черновика. Раньше безусловно
+    // ставился draft.lastConfirmedAt (мог быть СТАРШЕ при мердже группы из
+    // старых блоков) → дата отъезжала назад → decay/recalibrate ошибочно
+    // понижали confidence / архивировали живую черту.
+    const draftConfirmedAt = this.safeDate(args.draft.lastConfirmedAt);
+    const nextConfirmedAt =
+      args.existing.lastConfirmedAt &&
+      args.existing.lastConfirmedAt.getTime() > draftConfirmedAt.getTime()
+        ? args.existing.lastConfirmedAt
+        : draftConfirmedAt;
     try {
       await this.prisma.$transaction(async (tx) => {
         await tx.skillTrait.update({
@@ -1411,7 +1514,7 @@ export class Specialist37Service {
             sourceBlockIds: [...merged],
             observationCount: Math.min(1_000, merged.size),
             confidence: newConfidence,
-            lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
+            lastConfirmedAt: nextConfirmedAt,
             ...(updateAnchor
               ? { statement: args.draft.statement.slice(0, 2_000) }
               : {}),
@@ -1464,6 +1567,22 @@ export class Specialist37Service {
           profileId,
           status: 'active',
           lastConfirmedAt: { lt: archiveCutoff },
+        },
+        data: { status: 'archived' },
+      });
+
+      // Б1 (2026-06-16) — застрявшие pending_verification (verify-вердикт
+      // grounded=false держит черту в pending НАВСЕГДА: ни decay, ни
+      // recalibrate её раньше не матчили, перехода pending→archived не было —
+      // каждую ночь verify снова жёг LLM на безнадёжной черте). Age-based
+      // выход: pending_verification старше archiveCutoff → archived. Колонку
+      // счётчика попыток (verifyAttempts) НЕ вводим (schema.prisma вне scope) —
+      // ограничиваем по возрасту createdAt.
+      await this.prisma.skillTrait.updateMany({
+        where: {
+          profileId,
+          status: 'pending_verification',
+          createdAt: { lt: archiveCutoff },
         },
         data: { status: 'archived' },
       });

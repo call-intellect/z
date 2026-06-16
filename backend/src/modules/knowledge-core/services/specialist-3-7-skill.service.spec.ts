@@ -44,7 +44,8 @@ function pendingTrait(overrides: Record<string, unknown> = {}) {
 function buildService(m: Mocks): Specialist37Service {
   return new Specialist37Service(
     m.prisma as never,
-    {} as never, // cfg
+    // cfg — Б2 verifyPendingTraits читает skill.archiveMonths для archiveCutoff.
+    { skill: { archiveMonths: 12 } } as never,
     m.llm as never,
     {} as never, // embedder
     {} as never, // metrics
@@ -155,6 +156,8 @@ function buildMergeService(mm: MergeMocks): {
       sourceBlockIds: string[];
       observationCount: number;
       confidence: 'low' | 'medium' | 'high';
+      // Б3 — lastConfirmedAt проброшен из KNN-кандидата для MAX-защиты от отката.
+      lastConfirmedAt?: Date;
     };
     draft: {
       category: string;
@@ -345,17 +348,22 @@ describe('Specialist37Service.runDecay — Ф2-C один шаг за прохо
       svc as unknown as { runDecay: (id: string) => Promise<void> }
     ).runDecay('profile-1');
 
-    // 3 вызова: archive, затем medium→low, затем high→medium.
-    expect(updateMany).toHaveBeenCalledTimes(3);
+    // 4 вызова: archive(active), archive(pending — Б1), medium→low, high→medium.
+    expect(updateMany).toHaveBeenCalledTimes(4);
     const calls = updateMany.mock.calls;
-    // [0] archive
+    // [0] archive active
+    expect(calls[0]![0].where.status).toBe('active');
     expect(calls[0]![0].data).toEqual({ status: 'archived' });
-    // [1] medium→low (раньше)
-    expect(calls[1]![0].where.confidence).toBe('medium');
-    expect(calls[1]![0].data).toEqual({ confidence: 'low' });
-    // [2] high→medium (позже)
-    expect(calls[2]![0].where.confidence).toBe('high');
-    expect(calls[2]![0].data).toEqual({ confidence: 'medium' });
+    // [1] archive pending_verification (Б1) — старше archiveCutoff по createdAt.
+    expect(calls[1]![0].where.status).toBe('pending_verification');
+    expect(calls[1]![0].where.createdAt.lt).toBeInstanceOf(Date);
+    expect(calls[1]![0].data).toEqual({ status: 'archived' });
+    // [2] medium→low (раньше high→medium)
+    expect(calls[2]![0].where.confidence).toBe('medium');
+    expect(calls[2]![0].data).toEqual({ confidence: 'low' });
+    // [3] high→medium (позже)
+    expect(calls[3]![0].where.confidence).toBe('high');
+    expect(calls[3]![0].data).toEqual({ confidence: 'medium' });
   });
 });
 
@@ -1079,5 +1087,310 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
 
     expect(m.llmCall).toHaveBeenCalledTimes(1);
     expect(m.skillTraitCreate).not.toHaveBeenCalled();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б2 (2026-06-16) — verifyPendingTraits: FIFO orderBy createdAt asc + исключение
+// безнадёжных (createdAt < archiveCutoff). Г3 — предфильтр <2 цитат → held без LLM.
+// ───────────────────────────────────────────────────────────────────────────
+
+function buildVerifyService(m: Mocks, archiveMonths = 12): Specialist37Service {
+  return new Specialist37Service(
+    m.prisma as never,
+    { skill: { archiveMonths } } as never, // cfg — нужен archiveMonths
+    m.llm as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+}
+
+describe('Specialist37Service.verifyPendingTraits — Б2 FIFO + исключение безнадёжных', () => {
+  let m: Mocks;
+  beforeEach(() => {
+    m = makeMocks();
+  });
+
+  it('findMany идёт с orderBy createdAt asc и where createdAt>=archiveCutoff', async () => {
+    m.llm.call.mockResolvedValue({
+      text: JSON.stringify({ grounded: true, reason: 'ок' }),
+    });
+    const svc = buildVerifyService(m);
+
+    await svc.verifyPendingTraits();
+
+    const q = m.prisma.skillTrait.findMany.mock.calls[0]![0];
+    expect(q.orderBy).toEqual({ createdAt: 'asc' });
+    expect(q.where.status).toBe('pending_verification');
+    expect(q.where.createdAt.gte).toBeInstanceOf(Date);
+    // archiveCutoff ≈ 12 мес назад (грубая проверка — раньше now).
+    expect(q.where.createdAt.gte.getTime()).toBeLessThan(Date.now());
+  });
+});
+
+describe('Specialist37Service.verifyPendingTraits — Г3 предфильтр <2 цитат', () => {
+  let m: Mocks;
+  beforeEach(() => {
+    m = makeMocks();
+  });
+
+  it('<2 цитат → held без вызова LLM (update НЕ зовётся)', async () => {
+    // Только 1 цитата.
+    m.prisma.ideaBlock.findMany.mockResolvedValue([
+      { id: 'b1', criticalQuestion: 'Почему?', trustedAnswer: 'Потому.' },
+    ]);
+    const svc = buildVerifyService(m);
+
+    const res = await svc.verifyPendingTraits();
+
+    expect(res).toEqual({ checked: 1, promoted: 0, held: 1 });
+    expect(m.llm.call).not.toHaveBeenCalled();
+    expect(m.prisma.skillTrait.update).not.toHaveBeenCalled();
+  });
+
+  it('0 цитат (пустой sourceBlockIds) → held без LLM', async () => {
+    m.prisma.skillTrait.findMany.mockResolvedValue([
+      pendingTrait({ sourceBlockIds: [] }),
+    ]);
+    const svc = buildVerifyService(m);
+
+    const res = await svc.verifyPendingTraits();
+
+    expect(res).toEqual({ checked: 1, promoted: 0, held: 1 });
+    expect(m.llm.call).not.toHaveBeenCalled();
+  });
+
+  it('≥2 цитат → LLM зовётся как раньше (grounded=true → promote)', async () => {
+    m.llm.call.mockResolvedValue({
+      text: JSON.stringify({ grounded: true, reason: 'ок' }),
+    });
+    const svc = buildVerifyService(m);
+
+    const res = await svc.verifyPendingTraits();
+
+    expect(res).toEqual({ checked: 1, promoted: 1, held: 0 });
+    expect(m.llm.call).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б3 (2026-06-16) — mergeIntoExisting: lastConfirmedAt = MAX(existing, draft),
+// не откатывается назад при мердже старой группы.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', () => {
+  it('draft.lastConfirmedAt СТАРШЕ existing → берётся existing (дата не откатывается)', async () => {
+    const mm = makeMergeMocks();
+    mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }]);
+    const { mergeIntoExisting } = buildMergeService(mm);
+
+    const existingDate = daysAgo(1); // новее
+    const draftOld = { ...DRAFT, lastConfirmedAt: daysAgo(100).toISOString() }; // старее
+
+    await mergeIntoExisting({
+      profileId: 'profile-1',
+      existing: {
+        id: 'trait-1',
+        sourceBlockIds: ['b1'],
+        observationCount: 1,
+        confidence: 'low',
+        lastConfirmedAt: existingDate,
+      },
+      draft: draftOld,
+      embedding: null,
+    });
+
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
+      .lastConfirmedAt as Date;
+    expect(writtenDate.getTime()).toBe(existingDate.getTime());
+  });
+
+  it('draft.lastConfirmedAt НОВЕЕ existing → берётся draft (нормальное продвижение)', async () => {
+    const mm = makeMergeMocks();
+    mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }]);
+    const { mergeIntoExisting } = buildMergeService(mm);
+
+    const existingDate = daysAgo(100); // старее
+    const draftNew = { ...DRAFT, lastConfirmedAt: daysAgo(1).toISOString() }; // новее
+
+    await mergeIntoExisting({
+      profileId: 'profile-1',
+      existing: {
+        id: 'trait-1',
+        sourceBlockIds: ['b1'],
+        observationCount: 1,
+        confidence: 'low',
+        lastConfirmedAt: existingDate,
+      },
+      draft: draftNew,
+      embedding: null,
+    });
+
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
+      .lastConfirmedAt as Date;
+    // Должна быть дата черновика (новее), а не existing.
+    expect(writtenDate.getTime()).toBeGreaterThan(existingDate.getTime());
+  });
+
+  it('existing.lastConfirmedAt не передан → используется draft (обратная совместимость)', async () => {
+    const mm = makeMergeMocks();
+    mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }]);
+    const { mergeIntoExisting } = buildMergeService(mm);
+
+    const draftDate = daysAgo(5);
+    await mergeIntoExisting({
+      profileId: 'profile-1',
+      existing: {
+        id: 'trait-1',
+        sourceBlockIds: ['b1'],
+        observationCount: 1,
+        confidence: 'low',
+        // lastConfirmedAt отсутствует
+      },
+      draft: { ...DRAFT, lastConfirmedAt: draftDate.toISOString() },
+      embedding: null,
+    });
+
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
+      .lastConfirmedAt as Date;
+    expect(writtenDate.getTime()).toBe(draftDate.getTime());
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б4 (2026-06-16) — KNN-кандидаты merge включают pending_verification.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Specialist37Service.mergeOrCreate — Б4 KNN включает pending_verification', () => {
+  function buildKnnSqlService(): {
+    queryRawUnsafe: ReturnType<typeof vi.fn>;
+    mergeOrCreate: (a: unknown) => Promise<string>;
+  } {
+    const queryRawUnsafe = vi.fn().mockResolvedValue([]);
+    const prisma = { $queryRawUnsafe: queryRawUnsafe };
+    const cfg = { skill: { traitSimilarityThreshold: 0.85 } };
+    const embedder = { embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+    const svc = new Specialist37Service(
+      prisma as never,
+      cfg as never,
+      {} as never,
+      embedder as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const internal = svc as unknown as Record<string, unknown>;
+    internal.createNewTrait = vi.fn().mockResolvedValue('created');
+    const mergeOrCreate = (
+      internal.mergeOrCreate as (a: unknown) => Promise<string>
+    ).bind(svc);
+    return { queryRawUnsafe, mergeOrCreate };
+  }
+
+  it('SQL кандидатов содержит status IN (active, pending_verification)', async () => {
+    const t = buildKnnSqlService();
+    await t.mergeOrCreate({ profile: ARBITER_PROFILE, draft: ARBITER_DRAFT });
+
+    const sql = t.queryRawUnsafe.mock.calls[0]![0] as string;
+    expect(sql).toContain("'active'");
+    expect(sql).toContain("'pending_verification'");
+    // Не должно быть старого жёсткого `"status" = 'active'`.
+    expect(sql).not.toMatch(/"status"\s*=\s*'active'/);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Г2 (2026-06-16) — код-гард: hard-кандидат (cosine ≥ threshold) + verdict=new
+// → форс-merge к топ-hard (не доверяем LLM слепо).
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Specialist37Service.mergeOrCreate — Г2 форс-merge при hard + verdict=new', () => {
+  it('cosine 0.90 (hard) + арбитр вернул new → mergeIntoExisting (НЕ createNewTrait)', async () => {
+    const t = buildArbiterService(0.1); // distance 0.10 → cosine 0.90 ≥ 0.85 → hard
+    // Арбитр по умолчанию возвращает verdict:new — Г2 должен перехватить.
+    const res = await t.mergeOrCreate({
+      profile: ARBITER_PROFILE,
+      draft: ARBITER_DRAFT,
+    });
+
+    expect(t.callMergeArbiterSpy).toHaveBeenCalledTimes(1);
+    // Г2 форсит merge к топ-hard кандидату.
+    expect(t.mergeIntoExistingSpy).toHaveBeenCalledTimes(1);
+    expect(t.mergeIntoExistingSpy.mock.calls[0]![0].existing.id).toBe('cand-1');
+    expect(t.createNewTraitSpy).not.toHaveBeenCalled();
+    expect(res).toBe('merged');
+  });
+
+  it('cosine 0.80 (band, не hard) + verdict=new → createNewTrait (Г2 НЕ срабатывает)', async () => {
+    const t = buildArbiterService(0.2); // distance 0.20 → cosine 0.80 < 0.85 → band
+    const res = await t.mergeOrCreate({
+      profile: ARBITER_PROFILE,
+      draft: ARBITER_DRAFT,
+    });
+
+    // band-кандидат не форсится: verdict=new → createNewTrait.
+    expect(t.mergeIntoExistingSpy).not.toHaveBeenCalled();
+    expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
+    expect(res).toBe('created');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Г4 (2026-06-16) — detectTrait skill-путь отбрасывает draft с sourceBlockIds=[]
+// (как value-путь и process-путь). «Недостаточно сигнала» не создаётся как черта.
+// ───────────────────────────────────────────────────────────────────────────
+
+describe('Specialist37Service — Г4 detectTrait пустой sourceBlockIds', () => {
+  it('skill-detect отдаёт sourceBlockIds=[] → trait НЕ создаётся (mergeOrCreate не зовётся)', async () => {
+    const m: VmMocks = {
+      // detect отдаёт пустой sourceBlockIds — раньше это становилось чертой.
+      llmCall: vi.fn().mockResolvedValue({
+        text: JSON.stringify({
+          category: 'недостаточно сигнала',
+          statement: 'В цитатах не звучит ПОЧЕМУ.',
+          confidence: 'low',
+          sourceBlockIds: [],
+          firstObservedAt: new Date().toISOString(),
+          lastConfirmedAt: new Date().toISOString(),
+        }),
+      }),
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn(),
+    };
+    const mergeOrCreate = vi.fn().mockResolvedValue('created');
+    // value/process выключены → изолируем skill-путь.
+    const { svc } = buildVmRebuildService({
+      flagEnabled: false,
+      m,
+      mergeOrCreate,
+    });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    // detect вызван (1 группа), но draft с пустым sourceBlockIds отброшен →
+    // mergeOrCreate НЕ вызван.
+    expect(m.llmCall).toHaveBeenCalledTimes(1);
+    expect(m.llmCall.mock.calls[0]![0].taskType).toBe('skill-trait-detect');
+    expect(mergeOrCreate).not.toHaveBeenCalled();
+  });
+
+  it('skill-detect отдаёт непустой sourceBlockIds → trait создаётся (mergeOrCreate зовётся)', async () => {
+    const m: VmMocks = {
+      llmCall: vi.fn().mockResolvedValue({ text: skillDraftJson() }), // sourceBlockIds=['b1']
+      skillTraitCreate: vi.fn(),
+      embedQuery: vi.fn(),
+    };
+    const mergeOrCreate = vi.fn().mockResolvedValue('created');
+    const { svc } = buildVmRebuildService({
+      flagEnabled: false,
+      m,
+      mergeOrCreate,
+    });
+
+    await svc.rebuildProfile({ profileId: PROFILE_ID });
+
+    expect(mergeOrCreate).toHaveBeenCalledTimes(1);
   });
 });

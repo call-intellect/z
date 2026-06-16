@@ -333,6 +333,24 @@ export interface CustomerRiskListApi {
   warningCount: number;
 }
 
+/**
+ * ТЗ coo-orphan-agents Ф5 — знания под риском (bus-factor × уход носителя).
+ * Контракт: GET /api/v1/dashboard/operations/knowledge-at-risk
+ */
+export interface KnowledgeAtRiskItemApi {
+  categoryName: string;
+  soleExpertPersonId: string | null;
+  soleExpertPersonName: string | null;
+  busFactorLevel: string;
+  personRiskLevel: string | null;
+  combinedSeverity: string;
+  snapshotAt: string;
+}
+
+export interface KnowledgeAtRiskListApi {
+  items: KnowledgeAtRiskItemApi[];
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -440,6 +458,11 @@ export const operationsDashboardApi = {
   getStalledDecisions: () =>
     apiClient.get<StalledDecisionsApi>(
       '/api/v1/dashboard/operations/decisions/stalled',
+    ),
+  /** ТЗ coo-orphan-agents Ф5 — знания под риском (critical→warning→ok). */
+  getKnowledgeAtRisk: () =>
+    apiClient.get<KnowledgeAtRiskListApi>(
+      '/api/v1/dashboard/operations/knowledge-at-risk',
     ),
   /**
    * ТЗ Ф8.7 — `GET /dashboard/operations/checkin-discipline?from=&to=`.

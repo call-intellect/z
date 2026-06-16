@@ -144,6 +144,7 @@ export class KnowledgeAtRiskService {
     items: Array<{
       categoryName: string;
       soleExpertPersonId: string | null;
+      soleExpertPersonName: string | null;
       busFactorLevel: string;
       personRiskLevel: string | null;
       combinedSeverity: string;
@@ -154,6 +155,7 @@ export class KnowledgeAtRiskService {
       where: { tenantId: args.tenantId },
       orderBy: { snapshotAt: 'desc' },
       take: 1_000,
+      include: { soleExpert: { select: { name: true } } },
     });
     const latestByCategory = new Map<string, (typeof rows)[number]>();
     for (const r of rows) {
@@ -172,6 +174,7 @@ export class KnowledgeAtRiskService {
       .map((r) => ({
         categoryName: r.categoryName,
         soleExpertPersonId: r.soleExpertPersonId,
+        soleExpertPersonName: r.soleExpert?.name ?? null,
         busFactorLevel: r.busFactorLevel,
         personRiskLevel: r.personRiskLevel,
         combinedSeverity: r.combinedSeverity,

@@ -46,6 +46,7 @@ import { MaturityWidget } from './widgets/MaturityWidget';
 import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
 import { DecisionThroughputWidget } from './widgets/DecisionThroughputWidget';
 import { CustomerRiskRadarWidget } from './widgets/CustomerRiskRadarWidget';
+import { KnowledgeAtRiskWidget } from './widgets/KnowledgeAtRiskWidget';
 import { dashboardApi } from '@/api/dashboard.api';
 import { pulsePatternsFromApi } from '@/domain/pulse-patterns';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
@@ -302,6 +303,8 @@ export function OperationsDashboardClient({
           <DecisionThroughputWidget />
           {/* ТЗ coo-orphan-agents Ф4 — «Клиенты под риском оттока» (self-fetch). */}
           <CustomerRiskRadarWidget />
+          {/* ТЗ coo-orphan-agents Ф5 — «Знания под риском» (self-fetch). */}
+          <KnowledgeAtRiskWidget />
         </div>
       </AnalyticsSection>
 

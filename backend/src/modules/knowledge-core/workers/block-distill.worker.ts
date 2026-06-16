@@ -310,29 +310,29 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
 
       // 3. Переносим entity-mention'ы. Composite PK (blockId, entityId) может
       //    конфликтовать, если canonical уже линкован к той же entity —
-      //    делаем по одному с try/skip P2002.
+      //    делаем по одному с pre-check целевой пары, иначе update
+      //    (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { blockId: block.id },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 4 (обновление
+        // canonical) не выполнится. Проверяем целевую пару (canonicalId, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: { blockId_entityId: { blockId: canonicalId, entityId: m.entityId } },
+        });
+        if (conflicting) {
+          // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
+          await tx.ideaBlockEntity.delete({
             where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            data: { blockId: canonicalId },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
-            await tx.ideaBlockEntity.delete({
-              where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
+          data: { blockId: canonicalId },
+        });
       }
 
       // 4. Обновляем canonical: evidenceCount, confidence (weighted average),
@@ -485,33 +485,37 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         where: { blockId: reportCanonicalId },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 5 (canonical-носитель)
+        // не выполнится. Проверяем целевую пару (transcriptBlock.id, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: {
+              blockId: transcriptBlock.id,
+              entityId: m.entityId,
+            },
+          },
+        });
+        if (conflicting) {
+          await tx.ideaBlockEntity.delete({
             where: {
               blockId_entityId: {
                 blockId: reportCanonicalId,
                 entityId: m.entityId,
               },
             },
-            data: { blockId: transcriptBlock.id },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: {
-                  blockId: reportCanonicalId,
-                  entityId: m.entityId,
-                },
-              },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: {
+            blockId_entityId: {
+              blockId: reportCanonicalId,
+              entityId: m.entityId,
+            },
+          },
+          data: { blockId: transcriptBlock.id },
+        });
       }
 
       // 5. Транскрипт делаем canonical-носителем: статус, evidenceCount (сумма),

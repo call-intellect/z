@@ -27,6 +27,7 @@ import {
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 
 import {
   type GraphEdgeDto,
@@ -241,11 +242,11 @@ export class KnowledgeGraphController {
 
     const [blockLinksFrom, blockLinksTo, entityMentions] = await Promise.all([
       this.prisma.ideaBlockLink.findMany({
-        where: { fromBlockId: node.id, status: 'active', tenantId },
+        where: { fromBlockId: node.id, ...ACTIVE_LINK_FILTER, tenantId },
         include: { toBlock: true },
       }),
       this.prisma.ideaBlockLink.findMany({
-        where: { toBlockId: node.id, status: 'active', tenantId },
+        where: { toBlockId: node.id, ...ACTIVE_LINK_FILTER, tenantId },
         include: { fromBlock: true },
       }),
       this.prisma.ideaBlockEntity.findMany({
@@ -323,7 +324,7 @@ export class KnowledgeGraphController {
       this.prisma.entityLink.findMany({
         where: {
           fromEntityId: node.id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ fromType: null }, { fromType: 'entity' }],
           AND: { OR: [{ toType: null }, { toType: 'entity' }] },
@@ -332,7 +333,7 @@ export class KnowledgeGraphController {
       this.prisma.entityLink.findMany({
         where: {
           toEntityId: node.id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ toType: null }, { toType: 'entity' }],
           AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },

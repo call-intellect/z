@@ -198,10 +198,11 @@ export class EntityMergeService {
    *      без mergedIntoId, оба того же type (если разные — ошибка).
    *   2. Транзакция:
    *      - перенос IdeaBlockEntity entityId=fromEntity.id → intoEntity.id;
-   *        composite PK (blockId, entityId) — try update, на P2002 → delete.
+   *        composite PK (blockId, entityId) — pre-check целевой пары, при
+   *        конфликте delete дубля-источника, иначе update (Б1: без catch P2002 в tx).
    *      - перенос EntityLink (fromEntityId / toEntityId) → intoEntity.id;
-   *        unique (fromEntityId, toEntityId, relationType) — try update,
-   *        на P2002 → delete.
+   *        composite unique — pre-check целевого ключа, при конфликте delete,
+   *        иначе update (Б1).
    *      - intoEntity.mentionsCount += fromEntity.mentionsCount,
    *        aliases = union(into.aliases, [from.canonicalName, ...from.aliases]),
    *        updatedAt=now.
@@ -241,25 +242,26 @@ export class EntityMergeService {
         where: { entityId: fromEntityId },
       });
       for (const m of mentions) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и перенос/слияние ниже
+        // не выполняется. Проверяем целевую пару (blockId, intoEntityId) заранее.
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: { blockId: m.blockId, entityId: intoEntityId },
+          },
+        });
+        if (conflicting) {
+          // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
+          await tx.ideaBlockEntity.delete({
+            where: {
+              blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
+            },
+          });
+        } else {
           await tx.ideaBlockEntity.update({
             where: { blockId_entityId: { blockId: m.blockId, entityId: fromEntityId } },
             data: { entityId: intoEntityId },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
-              },
-            });
-          } else {
-            throw err;
-          }
         }
       }
 
@@ -268,20 +270,27 @@ export class EntityMergeService {
         where: { toEntityId: fromEntityId },
       });
       for (const l of linksTo) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx (catch абортил бы
+        // транзакцию — PostgreSQL 25P02). findFirst, а не findUnique:
+        // composite-ключ включает nullable fromType/toType, вход findUnique
+        // их не принимает. id:{not} исключает саму переносимую запись.
+        const conflicting = await tx.entityLink.findFirst({
+          where: {
+            fromEntityId: l.fromEntityId,
+            fromType: l.fromType,
+            toEntityId: intoEntityId,
+            toType: l.toType,
+            relationType: l.relationType,
+            id: { not: l.id },
+          },
+        });
+        if (conflicting) {
+          await tx.entityLink.delete({ where: { id: l.id } });
+        } else {
           await tx.entityLink.update({
             where: { id: l.id },
             data: { toEntityId: intoEntityId },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            await tx.entityLink.delete({ where: { id: l.id } });
-          } else {
-            throw err;
-          }
         }
       }
       // Перенос EntityLink (исходящие).
@@ -289,20 +298,26 @@ export class EntityMergeService {
         where: { fromEntityId: fromEntityId },
       });
       for (const l of linksFrom) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx (см. выше). findFirst
+        // из-за nullable fromType/toType в composite-ключе; id:{not} исключает
+        // саму переносимую запись.
+        const conflicting = await tx.entityLink.findFirst({
+          where: {
+            fromEntityId: intoEntityId,
+            fromType: l.fromType,
+            toEntityId: l.toEntityId,
+            toType: l.toType,
+            relationType: l.relationType,
+            id: { not: l.id },
+          },
+        });
+        if (conflicting) {
+          await tx.entityLink.delete({ where: { id: l.id } });
+        } else {
           await tx.entityLink.update({
             where: { id: l.id },
             data: { fromEntityId: intoEntityId },
           });
-        } catch (err) {
-          if (
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          ) {
-            await tx.entityLink.delete({ where: { id: l.id } });
-          } else {
-            throw err;
-          }
         }
       }
 

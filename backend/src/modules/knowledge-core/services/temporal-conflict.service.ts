@@ -9,6 +9,8 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
+
 /**
  * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
  *
@@ -58,7 +60,7 @@ export class TemporalConflictService {
         fromBlockId: link.fromBlockId,
         toBlockId: link.toBlockId,
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
         // Исключаем сам новый link — на случай если по какой-то причине
         // relationType совпал (теоретически не должно: пары disjoint).
@@ -121,7 +123,7 @@ export class TemporalConflictService {
         fromType: link.fromType,
         toType: link.toType,
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
         NOT: { id: link.id },
       },

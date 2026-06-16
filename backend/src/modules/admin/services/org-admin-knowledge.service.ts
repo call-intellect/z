@@ -189,7 +189,9 @@ export class OrgAdminKnowledgeService {
       if (!link) throw new Error('Link not found');
       await this.prisma.ideaBlockLink.update({
         where: { id: linkId },
-        data: { deletedAt: new Date(), deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2): даже ридер, забывший
+        // фильтр deletedAt, не покажет soft-deleted ребро (он фильтрует status).
+        data: { deletedAt: new Date(), deletedBy: actor.userId, status: 'archived' },
       });
     } else {
       const link = await this.prisma.entityLink.findFirst({
@@ -198,7 +200,9 @@ export class OrgAdminKnowledgeService {
       if (!link) throw new Error('Link not found');
       await this.prisma.entityLink.update({
         where: { id: linkId },
-        data: { deletedAt: new Date(), deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2): даже ридер, забывший
+        // фильтр deletedAt, не покажет soft-deleted ребро (он фильтрует status).
+        data: { deletedAt: new Date(), deletedBy: actor.userId, status: 'archived' },
       });
     }
     await this.prisma.auditLog.create({
@@ -232,7 +236,8 @@ export class OrgAdminKnowledgeService {
       if (args.beforeDate) where.createdAt = { lt: args.beforeDate };
       const result = await this.prisma.ideaBlockLink.updateMany({
         where,
-        data: { deletedAt: now, deletedBy: actor.userId },
+        // status:'archived' — defense-in-depth (Б2/K2), см. deleteLink.
+        data: { deletedAt: now, deletedBy: actor.userId, status: 'archived' },
       });
       await this.prisma.auditLog.create({
         data: {
@@ -252,7 +257,8 @@ export class OrgAdminKnowledgeService {
     if (args.beforeDate) where.createdAt = { lt: args.beforeDate };
     const result = await this.prisma.entityLink.updateMany({
       where,
-      data: { deletedAt: now, deletedBy: actor.userId },
+      // status:'archived' — defense-in-depth (Б2/K2), см. deleteLink.
+      data: { deletedAt: now, deletedBy: actor.userId, status: 'archived' },
     });
     await this.prisma.auditLog.create({
       data: {

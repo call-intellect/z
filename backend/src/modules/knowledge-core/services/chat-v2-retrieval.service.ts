@@ -5,6 +5,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
 
 /**
  * ChatV2RetrievalService — retrieval-слой Фазы 6 (chat v2).
@@ -754,7 +755,7 @@ export class ChatV2RetrievalService {
     const linksFrom = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId,
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         fromBlockId: { in: seedBlockIds },
         ...temporalWhere,
       },
@@ -765,7 +766,7 @@ export class ChatV2RetrievalService {
     const linksTo = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId,
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         toBlockId: { in: seedBlockIds },
         ...temporalWhere,
       },

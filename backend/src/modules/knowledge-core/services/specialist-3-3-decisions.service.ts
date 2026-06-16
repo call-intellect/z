@@ -173,6 +173,62 @@ export class Specialist33Service {
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
       const sourceBlockIds = [block.id];
 
+      // Б3/Б48 source-block dedup (эталон specialist-3-6-ideas.service.ts:129-169):
+      // если Decision уже материализован из ЭТОГО блока (block-ingest direct-path
+      // создал «тонкий» Decision с sourceIdeaBlockId=blockId ИЛИ прошлый прогон
+      // специалиста при re-dispatch) — НЕ создаём дубль. Без этого guard'а
+      // createNewDecision пишет sourceIdeaBlockId=block.id → P2002 на @unique →
+      // внешний catch инкрементит метрику и return без re-throw → богатое решение
+      // теряется. notIn по статусам НЕ ставим намеренно: @unique sourceIdeaBlockId
+      // конфликтует независимо от статуса существующего Decision (в т.ч.
+      // superseded/rejected/cancelled), поэтому guard обязан ловить ЛЮБОЙ Decision
+      // с этим sourceIdeaBlockId, иначе terminal-Decision снова уронит P2002.
+      const alreadyMaterialized = await this.prisma.decision.findFirst({
+        where: {
+          tenantId: block.tenantId,
+          OR: [
+            { sourceIdeaBlockId: block.id },
+            { sourceBlockIds: { has: block.id } },
+          ],
+        },
+      });
+      if (alreadyMaterialized) {
+        try {
+          await this.mergeIntoExisting({
+            existing: alreadyMaterialized,
+            draft,
+            decidedByPersonIds,
+            affectsEntityIds,
+            sourceBlockIds,
+            personSubjectIds,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              blockId: block.id,
+              decisionId: alreadyMaterialized.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-3: обогащение уже-материализованного решения упало — пропуск',
+          );
+        }
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-3-decisions',
+          action: 'merged',
+          message: `Decision уже материализован из блока ${block.id} — обогащён ${alreadyMaterialized.id}`,
+          orgId: block.tenantId,
+          details: {
+            type: 'decision',
+            intoId: alreadyMaterialized.id,
+            blockId: block.id,
+            reason: 'source_block_dedup',
+          },
+        });
+        return;
+      }
+
       // KNN-кандидаты + LLM supersede-detect.
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
@@ -261,30 +317,40 @@ export class Specialist33Service {
             newValidFrom: newValidFrom.toISOString(),
           };
 
-          // 1. Создаём новый Decision со ссылкой supersedesId.
-          decision = await this.createNewDecision({
-            block,
-            draft,
-            decidedByPersonIds,
-            affectsEntityIds,
-            sourceBlockIds,
-            personSubjectIds,
-            status,
-            decidedAt,
-            deadline,
-            supersedesId: existing.id,
-            validFrom: newValidFrom,
+          // Б49 — две критичные записи (create нового supersedesId=existing.id и
+          // update старого → superseded + validUntil) обёрнуты в одну транзакцию,
+          // чтобы не было рассинхрона (новый есть, старый не помечен) при сбое
+          // между ними. reportEvolvingConflict и computeSupersedeChainLength —
+          // follow-up, оставлены ПОСЛЕ транзакции. Внутри tx НЕ ловим P2002
+          // (анти-паттерн Б1: абортит транзакцию); коллизию sourceIdeaBlockId уже
+          // снял guard Б3 выше по методу для текущего block.id.
+          decision = await this.prisma.$transaction(async (tx) => {
+            // 1. Создаём новый Decision со ссылкой supersedesId.
+            const created = await this.createNewDecision({
+              block,
+              draft,
+              decidedByPersonIds,
+              affectsEntityIds,
+              sourceBlockIds,
+              personSubjectIds,
+              status,
+              decidedAt,
+              deadline,
+              supersedesId: existing.id,
+              validFrom: newValidFrom,
+              tx,
+            });
+            // 2. Старый — помечаем superseded + validUntil.
+            await tx.decision.update({
+              where: { id: existing.id },
+              data: {
+                status: 'superseded',
+                validUntil: new Date(evolvingMeta.existingValidUntil),
+              },
+            });
+            return created;
           });
           createdNew = true;
-
-          // 2. Старый — помечаем superseded + validUntil.
-          await this.prisma.decision.update({
-            where: { id: existing.id },
-            data: {
-              status: 'superseded',
-              validUntil: new Date(evolvingMeta.existingValidUntil),
-            },
-          });
 
           // 3. ConflictItem (evolving).
           await this.reportEvolvingConflict({
@@ -827,6 +893,9 @@ export class Specialist33Service {
     deadline: Date | null;
     supersedesId?: string;
     validFrom?: Date;
+    // Б49 — опциональный tx-клиент: чтобы create нового и update(старый→superseded)
+    // в supersedes-ветке прошли в одной транзакции. По умолчанию this.prisma.
+    tx?: Prisma.TransactionClient;
   }): Promise<Decision> {
     // W4.1/W4.2 — derive DataClass. Поведение зависит от
     // cfg.dataClassPolicy.enforcement:
@@ -862,7 +931,8 @@ export class Specialist33Service {
         ? (proposed.audit as unknown as Prisma.InputJsonValue)
         : Prisma.JsonNull;
 
-    return this.prisma.decision.create({
+    const db = args.tx ?? this.prisma;
+    return db.decision.create({
       data: {
         tenantId: args.block.tenantId,
         // legacy text-поле — первые 1000 символов (для обратной совместимости).

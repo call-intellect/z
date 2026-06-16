@@ -30,6 +30,7 @@ import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 
 import {
   type EntityDetailDto,
@@ -278,7 +279,7 @@ export class KnowledgeEntitiesController {
       this.prisma.entityLink.findMany({
         where: {
           fromEntityId: id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ fromType: null }, { fromType: 'entity' }],
           AND: { OR: [{ toType: null }, { toType: 'entity' }] },
@@ -288,7 +289,7 @@ export class KnowledgeEntitiesController {
       this.prisma.entityLink.findMany({
         where: {
           toEntityId: id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ toType: null }, { toType: 'entity' }],
           AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
@@ -436,7 +437,7 @@ export class KnowledgeEntitiesController {
         this.prisma.entityLink.findMany({
           where: {
             fromEntityId: { in: frontier },
-            status: 'active',
+            ...ACTIVE_LINK_FILTER,
             tenantId,
             OR: [{ fromType: null }, { fromType: 'entity' }],
             AND: { OR: [{ toType: null }, { toType: 'entity' }] },
@@ -445,7 +446,7 @@ export class KnowledgeEntitiesController {
         this.prisma.entityLink.findMany({
           where: {
             toEntityId: { in: frontier },
-            status: 'active',
+            ...ACTIVE_LINK_FILTER,
             tenantId,
             OR: [{ toType: null }, { toType: 'entity' }],
             AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
@@ -542,7 +543,7 @@ export class KnowledgeEntitiesController {
           },
         }),
         this.prisma.entityLink.findMany({
-          where: { id: { in: Array.from(edgesById.keys()) } },
+          where: { id: { in: Array.from(edgesById.keys()) }, ...ACTIVE_LINK_FILTER },
           select: { id: true, sourceBlockIds: true },
         }),
       ]);

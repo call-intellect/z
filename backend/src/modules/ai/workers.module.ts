@@ -16,6 +16,7 @@ import { DocumentImportWorker } from '../documents/document-import.worker';
 import { DocumentsModule } from '../documents/documents.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
+import { BlockDistillReconcileCron } from '../knowledge-core/workers/block-distill-reconcile.cron';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
@@ -204,6 +205,14 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // → метрика kc_materialization_gap_total + WARN-лог. GraphMaterializationService
     // берётся из @Global KnowledgeCoreModule.
     GraphMaterializationVerifyCron,
+    // Аудит-баг Б4 (high, класс K7) — cron каждые 30 мин: реконсиляция
+    // застрявших draft-блоков. block-ingest.worker помечает RawEvent=ingested
+    // ДО best-effort enqueueBlockDistill; краш/сбой Redis между ними оставляет
+    // блок навсегда в status='draft' (повторный заход — ранний skip). Этот cron
+    // догоняет: находит draft старше 10 мин и идемпотентно ре-enqueue'ит distill
+    // (jobId-дедуп + skip not-draft в distill-worker). WorkerOrgGate / CoreQueue —
+    // из @Global CoreQueueModule.
+    BlockDistillReconcileCron,
     // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
     // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
     // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых

@@ -40,6 +40,7 @@ import {
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { Specialist35ProbeService } from './specialist-3-5-probe.service';
 
 /**
@@ -790,6 +791,7 @@ export class Specialist35Service {
       const links = await this.prisma.ideaBlockLink.findMany({
         where: {
           tenantId: args.tenantId,
+          ...ACTIVE_LINK_FILTER,
           relationType: 'consequences_of',
           fromBlockId: { in: [...args.blockIds] },
         },

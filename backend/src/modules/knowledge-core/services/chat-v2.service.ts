@@ -26,6 +26,7 @@ import {
 } from './chat-v2-retrieval.service';
 import { ChatV2TableContextService } from './chat-v2-table-context.service';
 import { DataClassPolicyService } from './dataclass-policy.service';
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { ReasoningChainService } from './reasoning-chain.service';
 
 /**
@@ -1510,7 +1511,7 @@ export class ChatV2Service {
     const links = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId,
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         relationType: 'contradicts',
         OR: [
           { fromBlockId: { in: blockIds } },

@@ -26,6 +26,7 @@ import {
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 import { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
@@ -274,12 +275,12 @@ export class KnowledgeBlocksController {
     }
 
     let outgoing = await this.prisma.ideaBlockLink.findMany({
-      where: { fromBlockId: id, status: 'active', tenantId },
+      where: { fromBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { toBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });
     let incoming = await this.prisma.ideaBlockLink.findMany({
-      where: { toBlockId: id, status: 'active', tenantId },
+      where: { toBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { fromBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });

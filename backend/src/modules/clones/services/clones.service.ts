@@ -39,6 +39,8 @@ import type {
   CloneConversationsListResponseDto,
 } from '../dto/clone-conversations.dto';
 import type {
+  AskAllFormersAnswerDto,
+  AskAllFormersResponseDto,
   AskCloneResponseDto,
   CloneCitationDto,
   CloneHistoryResponseDto,
@@ -459,6 +461,8 @@ export class ClonesService {
     roleId: string;
     question: string;
     conversationId?: string;
+    /** Раздел 7 (Р4) — конкретная версия клона роли (frozen бывший носитель). */
+    roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
     if (this.isCloneV2Enabled()) {
       return this.askRoleV2(args);
@@ -501,30 +505,49 @@ export class ClonesService {
     }
 
     // 3. Active role-persona.
-    let persona = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: args.tenantId,
-        scope: 'role',
-        scopeRefId: args.roleId,
-        status: 'active',
-      },
-      orderBy: { version: 'desc' },
-    });
-    if (!persona) {
+    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
+    // бывший носитель); иначе текущая active + on-demand сборка.
+    let persona =
+      args.roleVersion != null
+        ? await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              roleVersion: args.roleVersion,
+              status: { in: ['active', 'frozen'] },
+            },
+            orderBy: { version: 'desc' },
+          })
+        : await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              status: 'active',
+            },
+            orderBy: { version: 'desc' },
+          });
+    if (!persona && args.roleVersion == null) {
       persona = await this.personaBuilder.buildForRole({
         tenantId: args.tenantId,
         roleId: args.roleId,
       });
-      if (!persona) {
-        throw new NotFoundException({
-          ok: false,
-          error: {
-            code: 'role_persona_unavailable',
-            message:
-              'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
-          },
-        });
-      }
+    }
+    if (!persona) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code:
+            args.roleVersion != null
+              ? 'role_persona_version_not_found'
+              : 'role_persona_unavailable',
+          message:
+            args.roleVersion != null
+              ? 'Запрошенная версия клона роли не найдена.'
+              : 'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
+        },
+      });
     }
 
     // 4. Retrieval — top reasoning от всех employee'ев этой роли.
@@ -996,6 +1019,8 @@ export class ClonesService {
     roleId: string;
     question: string;
     conversationId?: string;
+    /** Раздел 7 (Р4) — конкретная версия клона роли (active или frozen). */
+    roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
     // 1. RBAC через CloneAccessGrant.
     const accessCheck = await this.rbac.canAccessRoleClone({
@@ -1032,30 +1057,49 @@ export class ClonesService {
       });
     }
 
-    let persona = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: args.tenantId,
-        scope: 'role',
-        scopeRefId: args.roleId,
-        status: 'active',
-      },
-      orderBy: { version: 'desc' },
-    });
-    if (!persona) {
+    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
+    // бывший носитель); иначе текущая active + on-demand сборка.
+    let persona =
+      args.roleVersion != null
+        ? await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              roleVersion: args.roleVersion,
+              status: { in: ['active', 'frozen'] },
+            },
+            orderBy: { version: 'desc' },
+          })
+        : await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              status: 'active',
+            },
+            orderBy: { version: 'desc' },
+          });
+    if (!persona && args.roleVersion == null) {
       persona = await this.personaBuilder.buildForRole({
         tenantId: args.tenantId,
         roleId: args.roleId,
       });
-      if (!persona) {
-        throw new NotFoundException({
-          ok: false,
-          error: {
-            code: 'role_persona_unavailable',
-            message:
-              'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
-          },
-        });
-      }
+    }
+    if (!persona) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code:
+            args.roleVersion != null
+              ? 'role_persona_version_not_found'
+              : 'role_persona_unavailable',
+          message:
+            args.roleVersion != null
+              ? 'Запрошенная версия клона роли не найдена.'
+              : 'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
+        },
+      });
     }
 
     const dialog = await this.runDialogLayer({
@@ -2197,6 +2241,88 @@ export class ClonesService {
     });
 
     return { roleId: role.id, roleName: role.name, versions };
+  }
+
+  /**
+   * Раздел 7 §7.5 — «совет бывших»: один вопрос → ответы ВСЕХ версий клона роли
+   * (текущая active + замороженные бывшие) рядом для сравнения. Переиспользует
+   * askRoleV2 per-версия (те же анти-дипфейк/grounding-гейты, квота). ФИО не
+   * выводим. Best-effort: упавшая версия (квота/недоступна) → entry с error,
+   * остальные отвечают. Cap 8 версий.
+   */
+  async askAllFormers(args: {
+    tenantId: string;
+    requesterUserId: string;
+    roleId: string;
+    question: string;
+  }): Promise<AskAllFormersResponseDto> {
+    const accessCheck = await this.rbac.canAccessRoleClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      roleId: args.roleId,
+      cloneV2Enabled: true,
+    });
+    if (!accessCheck.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Нет доступа к клону этой роли.' },
+      });
+    }
+    const role = await this.prisma.role.findUnique({
+      where: { id: args.roleId },
+      select: { id: true, name: true, tenantId: true, deletedAt: true },
+    });
+    if (!role || role.deletedAt || role.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'role_not_found', message: 'Роль не найдена' },
+      });
+    }
+
+    const versions = await this.prisma.executablePersona.findMany({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: { in: ['active', 'frozen'] },
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      take: 8,
+      select: { id: true, roleVersion: true, publicName: true, status: true },
+    });
+
+    const answers: AskAllFormersAnswerDto[] = [];
+    for (const v of versions) {
+      const version = v.roleVersion ?? 1;
+      const base = {
+        personaId: v.id,
+        version,
+        publicName: v.publicName ?? `Клон ${role.name} v${version}`,
+        status: v.status as 'active' | 'frozen',
+      };
+      try {
+        const response = await this.askRoleV2({
+          tenantId: args.tenantId,
+          requesterUserId: args.requesterUserId,
+          roleId: args.roleId,
+          question: args.question,
+          roleVersion: v.roleVersion ?? undefined,
+        });
+        answers.push({ ...base, response, error: null });
+      } catch (err) {
+        answers.push({
+          ...base,
+          response: null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return {
+      roleId: role.id,
+      roleName: role.name,
+      question: args.question,
+      answers,
+    };
   }
 
   /**

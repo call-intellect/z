@@ -16,6 +16,11 @@ export const AskCloneBodySchema = z.object({
     .max(2_000, 'Слишком длинный вопрос'),
   /** Опционально: продолжить существующий диалог ChatV2Conversation. */
   conversationId: z.string().min(1).max(64).optional(),
+  /**
+   * Раздел 7 (Р4) — спросить КОНКРЕТНУЮ версию клона роли (в т.ч. бывшего
+   * носителя, статус frozen). Не задано → текущий active носитель.
+   */
+  roleVersion: z.coerce.number().int().min(1).optional(),
 });
 export type AskCloneBody = z.infer<typeof AskCloneBodySchema>;
 
@@ -284,4 +289,41 @@ export interface CloneQueryLogListResponseDto {
  */
 export interface CreateCloneConversationResponseDto {
   conversationId: string;
+}
+
+// ─────────────── Раздел 7 §7.5 — «Совет бывших» (ask-all-formers) ───────────────
+
+/** Раздел 7 §7.5 — тело запроса «спросить всех бывших носителей должности». */
+export const AskAllFormersBodySchema = z.object({
+  question: z
+    .string({ error: 'Вопрос обязателен' })
+    .trim()
+    .min(3, 'Слишком короткий вопрос')
+    .max(2_000, 'Слишком длинный вопрос'),
+});
+export type AskAllFormersBody = z.infer<typeof AskAllFormersBodySchema>;
+
+/** Один ответ версии клона в «совете бывших». */
+export interface AskAllFormersAnswerDto {
+  personaId: string;
+  /** roleVersion (1, 2, 3…). */
+  version: number;
+  /** «Клон <Должность> v<N>» (без ФИО носителя). */
+  publicName: string;
+  status: 'active' | 'frozen';
+  /** Полный ответ клона этой версии или null при ошибке (квота/недоступна). */
+  response: AskCloneResponseDto | null;
+  /** Текст ошибки, если версия не ответила — иначе null. */
+  error: string | null;
+}
+
+/**
+ * Раздел 7 §7.5 — «совет бывших»: один вопрос → ответы всех версий клона роли
+ * (текущая active + замороженные бывшие) рядом для сравнения. ФИО не выводим.
+ */
+export interface AskAllFormersResponseDto {
+  roleId: string;
+  roleName: string;
+  question: string;
+  answers: AskAllFormersAnswerDto[];
 }

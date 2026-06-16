@@ -56,6 +56,9 @@ function makePrismaBase(args: {
     $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
       cb({
         executablePersona: {
+          // Раздел 7 — buildForRole внутри транзакции читает prevActive +
+          // lastForVersion. По умолчанию нет ни active, ни прежних версий.
+          findFirst: vi.fn(async () => null),
           updateMany: args.updateManySpy,
           create: args.createSpy,
         },
@@ -146,37 +149,27 @@ const makeProfileRow = () => ({
 });
 
 describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation', () => {
-  it('создаёт ExecutablePersona(scope=role) с dataClass=internal', async () => {
+  it('Раздел 7 — создаёт ExecutablePersona(scope=role) из ЕДИНСТВЕННОГО носителя с версионными полями + dataClass=internal', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A' },
-          { personId: 'person-B' },
+          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
         ]),
       },
+      // Раздел 7 — единственный текущий носитель (findFirst, не агрегация findMany).
       skillProfile: {
-        findMany: vi.fn(async () => [
-          {
-            id: 'sp-A',
-            person: { name: 'A', relationship: 'employee' },
-            traits: [
-              makeSkillTraitRow('t1', { conceptId: undefined }),
-              makeSkillTraitRow('t2', { conceptId: undefined }),
-              makeSkillTraitRow('t3', { conceptId: undefined }),
-            ],
-          },
-          {
-            id: 'sp-B',
-            person: { name: 'B', relationship: 'employee' },
-            traits: [
-              makeSkillTraitRow('t4', { conceptId: undefined }),
-              makeSkillTraitRow('t5', { conceptId: undefined }),
-            ],
-          },
-        ]),
+        findFirst: vi.fn(async () => ({
+          id: 'sp-A',
+          person: { name: 'A', relationship: 'employee' },
+          traits: [
+            makeSkillTraitRow('t1', { conceptId: undefined }),
+            makeSkillTraitRow('t2', { conceptId: undefined }),
+            makeSkillTraitRow('t3', { conceptId: undefined }),
+          ],
+        })),
       },
     };
 
@@ -191,20 +184,25 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     expect(result).not.toBeNull();
     expect(createSpy).toHaveBeenCalledTimes(1);
     const createArg = (createSpy.mock.calls[0] as unknown as [
-      { data: { scope: string; scopeRefId: string; dataClassAudit?: unknown } },
+      {
+        data: {
+          scope: string;
+          scopeRefId: string;
+          currentBearerPersonId: string;
+          roleVersion: number;
+          publicName: string;
+          dataClassAudit?: unknown;
+        };
+      },
     ])[0];
     expect(createArg.data.scope).toBe('role');
     expect(createArg.data.scopeRefId).toBe('role-1');
+    // Раздел 7 — клон строится из носителя person-A; версионные поля проставлены.
+    expect(createArg.data.currentBearerPersonId).toBe('person-A');
+    expect(createArg.data.roleVersion).toBe(1);
+    expect(createArg.data.publicName).toContain('Клон');
     // dataClassAudit JSON содержит результат derive (kind='executable_persona').
     expect(createArg.data.dataClassAudit).toBeDefined();
-
-    // updateMany должен погасить pending_rebuild И active.
-    expect(updateManySpy).toHaveBeenCalled();
-    const updateArg = (updateManySpy.mock.calls[0] as unknown as [
-      { where: { status: { in: string[] } } },
-    ])[0];
-    expect(updateArg.where.status.in).toContain('active');
-    expect(updateArg.where.status.in).toContain('pending_rebuild');
 
     // derive должен быть вызван с правильным kind.
     expect(dataClassPolicy.derive).toHaveBeenCalledWith(
@@ -214,69 +212,44 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     );
   });
 
-  it('Ф7 (H) — схлопывает черты с одинаковым conceptId (3 носителя → 1 черта)', async () => {
+  it('Ф7 (H) — схлопывает черты с одинаковым conceptId внутри профиля носителя (Раздел 7)', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A' },
-          { personId: 'person-B' },
-          { personId: 'person-C' },
+          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
         ]),
       },
       skillProfile: {
-        findMany: vi.fn(async () => [
-          {
-            id: 'sp-A',
-            person: { name: 'A', relationship: 'employee' },
-            traits: [
-              // общий концепт — представитель с max observationCount (3)
-              makeSkillTraitRow('shared-A', {
-                confidence: 'medium',
-                observationCount: 3,
-                conceptId: 'concept-1',
-              }),
-              // уникальная черта A (свой conceptId)
-              makeSkillTraitRow('uniq-A', {
-                observationCount: 1,
-                conceptId: 'concept-A',
-              }),
-            ],
-          },
-          {
-            id: 'sp-B',
-            person: { name: 'B', relationship: 'employee' },
-            traits: [
-              makeSkillTraitRow('shared-B', {
-                observationCount: 1,
-                conceptId: 'concept-1',
-              }),
-              // уникальная черта B без conceptId (не схлопывается)
-              makeSkillTraitRow('uniq-B', {
-                confidence: 'low',
-                observationCount: 1,
-                conceptId: null,
-              }),
-            ],
-          },
-          {
-            id: 'sp-C',
-            person: { name: 'C', relationship: 'employee' },
-            traits: [
-              makeSkillTraitRow('shared-C', {
-                confidence: 'low',
-                observationCount: 2,
-                conceptId: 'concept-1',
-              }),
-              makeSkillTraitRow('uniq-C', {
-                observationCount: 4,
-                conceptId: 'concept-C',
-              }),
-            ],
-          },
-        ]),
+        findFirst: vi.fn(async () => ({
+          id: 'sp-A',
+          person: { name: 'A', relationship: 'employee' },
+          traits: [
+            // два варианта одного концепта — представитель с max observationCount (3)
+            makeSkillTraitRow('shared-hi', {
+              observationCount: 3,
+              conceptId: 'concept-1',
+            }),
+            makeSkillTraitRow('shared-lo', {
+              confidence: 'low',
+              observationCount: 1,
+              conceptId: 'concept-1',
+            }),
+            // уникальный концепт
+            makeSkillTraitRow('uniq-1', {
+              observationCount: 2,
+              conceptId: 'concept-2',
+            }),
+            // без conceptId — не схлопывается
+            makeSkillTraitRow('uniq-null', {
+              confidence: 'low',
+              observationCount: 1,
+              conceptId: null,
+            }),
+          ],
+        })),
       },
     };
 
@@ -296,21 +269,18 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     ])[0];
     const includedIds = createArg.data.includedTraitIds;
 
-    // concept-1 представлен РОВНО одной чертой — представитель shared-A
-    // (max observationCount=3 среди shared-A/B/C).
+    // concept-1 представлен РОВНО одной чертой — shared-hi (max observationCount=3).
     const sharedIds = includedIds.filter((id) => id.startsWith('shared-'));
-    expect(sharedIds).toEqual(['shared-A']);
+    expect(sharedIds).toEqual(['shared-hi']);
 
-    // Все остальные (разные conceptId + null) — на месте.
-    expect(includedIds).toContain('uniq-A');
-    expect(includedIds).toContain('uniq-B'); // conceptId=null, не схлопнут
-    expect(includedIds).toContain('uniq-C');
+    // Остальные (другой conceptId + null) — на месте.
+    expect(includedIds).toContain('uniq-1');
+    expect(includedIds).toContain('uniq-null'); // conceptId=null, не схлопнут
 
-    // Итог: 1 (shared) + 3 (uniq) = 4 черты, без дублей по concept-1.
-    expect(includedIds).toHaveLength(4);
-    expect(createArg.data.builtFromTraitsCount).toBe(4);
+    // Итог: 1 (shared) + 2 (uniq) = 3 черты, без дублей по concept-1.
+    expect(includedIds).toHaveLength(3);
+    expect(createArg.data.builtFromTraitsCount).toBe(3);
 
-    // В compile уходит дедуплицированный список (длина traits = 4).
     expect(llm.call).toHaveBeenCalledTimes(1);
   });
 });
@@ -459,34 +429,26 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     );
   });
 
-  it('buildForRole: practiceSkills — union scope role+person; values агрегируются по профилям', async () => {
+  it('buildForRole: practiceSkills — union scope role + person носителя; values из профиля носителя (Раздел 7)', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A' },
-          { personId: 'person-B' },
+          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
         ]),
       },
       skillProfile: {
-        findMany: vi.fn(async () => [
-          {
-            id: 'sp-A',
-            person: { name: 'A', relationship: 'employee' },
-            traits: [
-              makeSkillTraitRow('t1'),
-              makeSkillTraitRow('t2'),
-              makeSkillTraitRow('t3'),
-            ],
-          },
-          {
-            id: 'sp-B',
-            person: { name: 'B', relationship: 'employee' },
-            traits: [makeSkillTraitRow('t4')],
-          },
-        ]),
+        findFirst: vi.fn(async () => ({
+          id: 'sp-A',
+          person: { name: 'A', relationship: 'employee' },
+          traits: [
+            makeSkillTraitRow('t1'),
+            makeSkillTraitRow('t2'),
+            makeSkillTraitRow('t3'),
+          ],
+        })),
       },
       skillTrait: {
         findMany: vi.fn(async (q: { where: { layer: string } }) =>
@@ -498,7 +460,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
                   statement: 'выбирает качество при конфликте со сроком',
                 }),
                 makeSkillTraitRow('val-B', {
-                  profileId: 'sp-B',
+                  profileId: 'sp-A',
                   category: 'прозрачность',
                   statement: 'предпочитает ранние плохие новости поздним',
                   observationCount: 2,
@@ -527,15 +489,15 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
 
     expect(result).not.toBeNull();
 
-    // Union процедур: scope='role' (roleId) + scope='person' (люди роли).
+    // Раздел 7 — union процедур: scope='role' (roleId) + scope='person' носителя person-A.
     const psArg = prisma.practiceSkill.findMany.mock
       .calls[0]?.[0] as unknown as { where: { OR: unknown[] } };
     expect(psArg.where.OR).toEqual([
       { scope: 'role', scopeRefId: 'role-1' },
-      { scope: 'person', scopeRefId: { in: ['person-A', 'person-B'] } },
+      { scope: 'person', scopeRefId: 'person-A' },
     ]);
 
-    // values агрегированы (оба профиля) и попали в userMessage + аудит.
+    // values из профиля носителя попали в userMessage + аудит.
     const userMessage = getUserMessage(llm);
     expect(userMessage).toContain('Ценности из проявленных выборов (2)');
     expect(userMessage).toContain('Процедуры');

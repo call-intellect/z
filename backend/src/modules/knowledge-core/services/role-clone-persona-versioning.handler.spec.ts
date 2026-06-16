@@ -1,20 +1,23 @@
 /**
- * Clones=Roles Ф2 — unit-тесты `RoleClonePersonaVersioningHandler`.
+ * Clones=Roles Ф2 + Раздел 7 (2026-06-16) — unit-тесты
+ * `RoleClonePersonaVersioningHandler` в модели «один человек = один клон должности».
  *
  * Покрытие:
- *   1. Первое событие на роль без прежней active persona — создаётся
- *      pending_rebuild с roleVersion=1 (или next от последнего, если уже
- *      есть archived от backfill).
- *   2. Смена носителя: existing active(personA) → новый personB. Старая
- *      становится superseded, новая создаётся (roleVersion=prev+1).
- *   3. Идемпотентность: повторный event с тем же newPersonId, когда уже
- *      есть active на этого носителя — НЕ создаёт новой версии.
+ *   A. Новый носитель (existing active personA → personB): handler делегирует
+ *      `buildForRole(bearerPersonId=personB)`; именно build (а не handler)
+ *      атомарно замораживает прошлую active и создаёт новую. Handler не создаёт
+ *      персон напрямую.
+ *   A2. Новый носитель, но build вернул null (мало traits) → handler возвращает
+ *       null; прошлая active НЕ трогается (остаётся доступной).
+ *   B. Идемпотентность: active уже указывает на newPersonId → skip.
+ *   C. Роль освободилась (newPersonId=null): текущая active замораживается
+ *      (→frozen, read-only), новый клон НЕ создаётся.
+ *   D. Role не существует/удалена → skip.
  *
  * Prisma + builder мокаются — handler работает только с моками.
  */
 
 import { describe, expect, it, vi } from 'vitest';
-
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -32,7 +35,7 @@ interface PersonaRow {
   roleVersion: number | null;
   version: number;
   currentBearerPersonId: string | null;
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  status: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
   scope: 'person' | 'role';
   scopeRefId: string | null;
   succeedsPersonaId: string | null;
@@ -88,7 +91,9 @@ function buildPrismaMock(args: {
       updateMany: vi.fn(async (q: { where: unknown; data: unknown }) => {
         updateManyCalls.push(q);
         const w = q.where as { id?: string; status?: string };
-        const d = q.data as { status?: 'active' | 'superseded' | 'pending_rebuild' };
+        const d = q.data as {
+          status?: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
+        };
         for (const p of personas) {
           if (w.id && p.id !== w.id) continue;
           if (w.status && p.status !== w.status) continue;
@@ -107,7 +112,7 @@ function buildPrismaMock(args: {
           version: (data.version as number) ?? 1,
           currentBearerPersonId:
             (data.currentBearerPersonId as string | null) ?? null,
-          status: data.status as 'active' | 'pending_rebuild' | 'superseded',
+          status: data.status as PersonaRow['status'],
           succeedsPersonaId: (data.succeedsPersonaId as string | null) ?? null,
           snapshotAt: new Date(),
         };
@@ -122,18 +127,36 @@ function buildPrismaMock(args: {
   return { prisma, createdPersonas, updateManyCalls };
 }
 
-function buildBuilderMock(): ExecutablePersonaBuildService {
-  return {
-    buildForRole: vi.fn(async () => null), // нет реальной пересборки — ок для unit
+/**
+ * Билдер-мок. По умолчанию `buildForRole` возвращает null (как при нехватке
+ * traits). `builtPersona` — что вернуть на успешную сборку.
+ */
+function buildBuilderMock(builtPersona?: {
+  id: string;
+  status: string;
+  roleVersion: number | null;
+}): {
+  builder: ExecutablePersonaBuildService;
+  buildForRole: ReturnType<typeof vi.fn>;
+} {
+  const buildForRole = vi.fn(async () => builtPersona ?? null);
+  const builder = {
+    buildForRole,
     buildForProfile: vi.fn(async () => null),
   } as unknown as ExecutablePersonaBuildService;
+  return { builder, buildForRole };
 }
 
-function buildMetricsMock(): BusinessMetricsService {
-  return {
-    incCloneRoleVersionCreated: vi.fn(),
+function buildMetricsMock(): {
+  metrics: BusinessMetricsService;
+  incCloneRoleVersionCreated: ReturnType<typeof vi.fn>;
+} {
+  const incCloneRoleVersionCreated = vi.fn();
+  const metrics = {
+    incCloneRoleVersionCreated,
     setCloneRoleVersionsTotal: vi.fn(),
   } as unknown as BusinessMetricsService;
+  return { metrics, incCloneRoleVersionCreated };
 }
 
 const ROLE = {
@@ -145,8 +168,57 @@ const ROLE = {
 
 // ─────────────────────────── tests ───────────────────────────
 
-describe('RoleClonePersonaVersioningHandler', () => {
-  it('Сценарий A: первая смена носителя при существующей active(personA) → новая pending_rebuild v2, старая superseded', async () => {
+describe('RoleClonePersonaVersioningHandler (Раздел 7)', () => {
+  it('Сценарий A: новый носитель → делегирует buildForRole(bearerPersonId=personB); handler сам персон не создаёт', async () => {
+    const existingActive: PersonaRow = {
+      id: 'persona-v1',
+      roleVersion: 1,
+      version: 1,
+      currentBearerPersonId: 'person-A',
+      status: 'active',
+      scope: 'role',
+      scopeRefId: 'role-1',
+      succeedsPersonaId: null,
+      snapshotAt: new Date('2026-05-01T00:00:00Z'),
+      tenantId: 't-1',
+    };
+    const { prisma, createdPersonas } = buildPrismaMock({
+      role: ROLE,
+      existingPersonas: [existingActive],
+    });
+    const { builder, buildForRole } = buildBuilderMock({
+      id: 'persona-v2',
+      status: 'active',
+      roleVersion: 2,
+    });
+    const { metrics, incCloneRoleVersionCreated } = buildMetricsMock();
+    const handler = new RoleClonePersonaVersioningHandler(prisma, builder, metrics);
+
+    const event: RoleBearerChangedEvent = {
+      tenantId: 't-1',
+      roleId: 'role-1',
+      oldPersonId: 'person-A',
+      newPersonId: 'person-B',
+      changedAt: new Date('2026-05-25T10:00:00Z'),
+    };
+    const personaId = await handler.handle(event);
+
+    expect(personaId).toBe('persona-v2');
+    // build вызван с явным носителем person-B.
+    expect(buildForRole).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 't-1',
+        roleId: 'role-1',
+        bearerPersonId: 'person-B',
+      }),
+    );
+    // Метрика «создана версия» инкрементирована.
+    expect(incCloneRoleVersionCreated).toHaveBeenCalledTimes(1);
+    // Раздел 7 — handler НЕ создаёт персон напрямую (freeze+create внутри build).
+    expect(createdPersonas).toHaveLength(0);
+  });
+
+  it('Сценарий A2: новый носитель, но build вернул null (мало traits) → handler возвращает null, прошлая active не трогается', async () => {
     const existingActive: PersonaRow = {
       id: 'persona-v1',
       roleVersion: 1,
@@ -163,38 +235,27 @@ describe('RoleClonePersonaVersioningHandler', () => {
       role: ROLE,
       existingPersonas: [existingActive],
     });
-    const handler = new RoleClonePersonaVersioningHandler(
-      prisma,
-      buildBuilderMock(),
-      buildMetricsMock(),
-    );
+    const { builder } = buildBuilderMock(); // buildForRole → null
+    const { metrics, incCloneRoleVersionCreated } = buildMetricsMock();
+    const handler = new RoleClonePersonaVersioningHandler(prisma, builder, metrics);
 
-    const event: RoleBearerChangedEvent = {
+    const personaId = await handler.handle({
       tenantId: 't-1',
       roleId: 'role-1',
       oldPersonId: 'person-A',
       newPersonId: 'person-B',
-      changedAt: new Date('2026-05-25T10:00:00Z'),
-    };
-    const personaId = await handler.handle(event);
+      changedAt: new Date(),
+    });
 
-    expect(personaId).not.toBeNull();
-    expect(createdPersonas).toHaveLength(1);
-    expect(createdPersonas[0]?.roleVersion).toBe(2);
-    expect(createdPersonas[0]?.currentBearerPersonId).toBe('person-B');
-    expect(createdPersonas[0]?.status).toBe('pending_rebuild');
-    expect(createdPersonas[0]?.succeedsPersonaId).toBe('persona-v1');
-
-    // Старая active должна быть помечена superseded — updateMany по id=persona-v1.
-    const supersedeCall = updateManyCalls.find(
-      (c) =>
-        (c.where as { id?: string }).id === 'persona-v1' &&
-        (c.data as { status?: string }).status === 'superseded',
-    );
-    expect(supersedeCall).toBeDefined();
+    expect(personaId).toBeNull();
+    expect(createdPersonas).toHaveLength(0);
+    expect(incCloneRoleVersionCreated).not.toHaveBeenCalled();
+    // Прошлая active не заморожена handler'ом (build сам бы это сделал при успехе).
+    expect(updateManyCalls).toHaveLength(0);
+    expect(existingActive.status).toBe('active');
   });
 
-  it('Сценарий B: повторный event на того же newPersonId, когда уже есть active(personB) → skip (no new persona)', async () => {
+  it('Сценарий B: повторный event на того же newPersonId, когда уже есть active(personB) → skip (no build)', async () => {
     const existingActive: PersonaRow = {
       id: 'persona-v2',
       roleVersion: 2,
@@ -211,11 +272,9 @@ describe('RoleClonePersonaVersioningHandler', () => {
       role: ROLE,
       existingPersonas: [existingActive],
     });
-    const handler = new RoleClonePersonaVersioningHandler(
-      prisma,
-      buildBuilderMock(),
-      buildMetricsMock(),
-    );
+    const { builder, buildForRole } = buildBuilderMock();
+    const { metrics } = buildMetricsMock();
+    const handler = new RoleClonePersonaVersioningHandler(prisma, builder, metrics);
 
     const personaId = await handler.handle({
       tenantId: 't-1',
@@ -227,9 +286,10 @@ describe('RoleClonePersonaVersioningHandler', () => {
 
     expect(personaId).toBeNull();
     expect(createdPersonas).toHaveLength(0);
+    expect(buildForRole).not.toHaveBeenCalled();
   });
 
-  it('Сценарий C: пара (newPersonId=null = роль освободилась) при existing active(personA) → создаётся новая pending_rebuild v2 с bearer=null', async () => {
+  it('Сценарий C: роль освободилась (newPersonId=null) при active(personA) → текущий клон заморожен (frozen), новый не строится', async () => {
     const existingActive: PersonaRow = {
       id: 'persona-v1',
       roleVersion: 1,
@@ -242,15 +302,13 @@ describe('RoleClonePersonaVersioningHandler', () => {
       snapshotAt: new Date('2026-05-01T00:00:00Z'),
       tenantId: 't-1',
     };
-    const { prisma, createdPersonas } = buildPrismaMock({
+    const { prisma, createdPersonas, updateManyCalls } = buildPrismaMock({
       role: ROLE,
       existingPersonas: [existingActive],
     });
-    const handler = new RoleClonePersonaVersioningHandler(
-      prisma,
-      buildBuilderMock(),
-      buildMetricsMock(),
-    );
+    const { builder, buildForRole } = buildBuilderMock();
+    const { metrics } = buildMetricsMock();
+    const handler = new RoleClonePersonaVersioningHandler(prisma, builder, metrics);
 
     const personaId = await handler.handle({
       tenantId: 't-1',
@@ -260,23 +318,28 @@ describe('RoleClonePersonaVersioningHandler', () => {
       changedAt: new Date(),
     });
 
-    expect(personaId).not.toBeNull();
-    expect(createdPersonas).toHaveLength(1);
-    expect(createdPersonas[0]?.currentBearerPersonId).toBeNull();
-    expect(createdPersonas[0]?.status).toBe('pending_rebuild');
-    expect(createdPersonas[0]?.roleVersion).toBe(2);
+    // Возвращает id замороженного клона; новый клон не создаётся; build не зовётся.
+    expect(personaId).toBe('persona-v1');
+    expect(createdPersonas).toHaveLength(0);
+    expect(buildForRole).not.toHaveBeenCalled();
+    // Заморозка: updateMany по id=persona-v1, status active → frozen.
+    const freezeCall = updateManyCalls.find(
+      (c) =>
+        (c.where as { id?: string }).id === 'persona-v1' &&
+        (c.data as { status?: string }).status === 'frozen',
+    );
+    expect(freezeCall).toBeDefined();
+    expect(existingActive.status).toBe('frozen');
   });
 
-  it('Сценарий D: Role не существует / удалена → skip (без exceptions, без create)', async () => {
+  it('Сценарий D: Role не существует / удалена → skip (без exceptions, без build)', async () => {
     const { prisma, createdPersonas } = buildPrismaMock({
       role: null,
       existingPersonas: [],
     });
-    const handler = new RoleClonePersonaVersioningHandler(
-      prisma,
-      buildBuilderMock(),
-      buildMetricsMock(),
-    );
+    const { builder, buildForRole } = buildBuilderMock();
+    const { metrics } = buildMetricsMock();
+    const handler = new RoleClonePersonaVersioningHandler(prisma, builder, metrics);
 
     const personaId = await handler.handle({
       tenantId: 't-1',
@@ -288,5 +351,6 @@ describe('RoleClonePersonaVersioningHandler', () => {
 
     expect(personaId).toBeNull();
     expect(createdPersonas).toHaveLength(0);
+    expect(buildForRole).not.toHaveBeenCalled();
   });
 });

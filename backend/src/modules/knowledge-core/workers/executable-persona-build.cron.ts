@@ -11,7 +11,9 @@ import { ExecutablePersonaBuildService } from '../services/executable-persona-bu
  *
  * Раз в неделю (default '0 6 * * SUN') собирает snapshots ExecutablePersona:
  *   - scope='person' для каждого active SkillProfile с >= PERSONA_MIN_TRAITS.
- *   - scope='role' для каждой Role с >= PERSONA_ROLE_AGG_MIN_PERSONS employee'ев.
+ *   - scope='role': клон-снимок ТЕКУЩЕГО носителя каждой Role (Раздел 7 — один
+ *     носитель, без агрегации). buildForRole сам резолвит носителя и не оживляет
+ *     frozen-версии бывших (Р6) — отдельной фильтрации в cron не требуется.
  *
  * NB: `@Cron` принимает литерал; cfg.persona.buildCron — read-only при старте.
  */

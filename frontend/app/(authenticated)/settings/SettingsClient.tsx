@@ -1,9 +1,6 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback } from 'react';
-
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
+import { useSearchParams } from 'next/navigation';
 
 import { ProfileSection } from './sections/ProfileSection';
 import { SecuritySection } from './sections/SecuritySection';
@@ -18,27 +15,16 @@ function isSettingsTab(value: string | null): value is SettingsTab {
 }
 
 /**
- * Страница «Настройки» в три таба:
- *   - Профиль (PATCH /me)
- *   - Безопасность (POST /me/change-password)
- *   - Внешний вид (тема через ThemeProvider)
+ * Страница «Настройки»: разделы Профиль / Безопасность / Внешний вид / Знакомство.
  *
- * Активный таб синхронизирован с `?tab=` — это позволяет dropdown в sidebar
- * вести `Сменить пароль` на `/settings?tab=security`.
+ * Навигация — через левый сайдбар настроек (`SettingsSidebar`); активный раздел
+ * синхронизирован с `?tab=`. Горизонтальные табы убраны — они дублировали
+ * сайдбар (QA-фикс 2026-06-16).
  */
 export function SettingsClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams?.get('tab');
   const activeTab: SettingsTab = isSettingsTab(tabParam) ? tabParam : 'profile';
-
-  const onTabChange = useCallback(
-    (value: string) => {
-      const url = value === 'profile' ? '/settings' : `/settings?tab=${value}`;
-      router.replace(url, { scroll: false });
-    },
-    [router],
-  );
 
   return (
     <div className="w-full">
@@ -51,27 +37,10 @@ export function SettingsClient() {
         </p>
       </header>
 
-      <Tabs value={activeTab} onValueChange={onTabChange}>
-        <TabsList>
-          <TabsTrigger value="profile">Профиль</TabsTrigger>
-          <TabsTrigger value="security">Безопасность</TabsTrigger>
-          <TabsTrigger value="appearance">Внешний вид</TabsTrigger>
-          <TabsTrigger value="tours">Знакомство</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="profile">
-          <ProfileSection />
-        </TabsContent>
-        <TabsContent value="security">
-          <SecuritySection />
-        </TabsContent>
-        <TabsContent value="appearance">
-          <AppearanceSection />
-        </TabsContent>
-        <TabsContent value="tours">
-          <OnboardingSection />
-        </TabsContent>
-      </Tabs>
+      {activeTab === 'profile' && <ProfileSection />}
+      {activeTab === 'security' && <SecuritySection />}
+      {activeTab === 'appearance' && <AppearanceSection />}
+      {activeTab === 'tours' && <OnboardingSection />}
     </div>
   );
 }

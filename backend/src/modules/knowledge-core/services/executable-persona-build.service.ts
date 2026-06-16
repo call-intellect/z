@@ -8,6 +8,7 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { RedisService } from '../../../common/redis/redis.service';
 import {
   type LlmCallResult,
   LlmRouterService,
@@ -68,6 +69,11 @@ export class ExecutablePersonaBuildService {
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    // Раздел 7 (Б13) — Redis-лок на role-путь buildForRole. @Optional: в тестах
+    // без Redis лок пропускается (fail-open), корректность держит partial-unique индекс.
+    @Optional()
+    @Inject(RedisService)
+    private readonly redis?: RedisService,
   ) {}
 
   /**
@@ -302,61 +308,78 @@ export class ExecutablePersonaBuildService {
   }
 
   /**
-   * Сборка role-persona. Аггрегирует top traits всех employee'ев Role.
-   * Возвращает новый snapshot (или null если employee'ев недостаточно).
+   * Раздел 7 (2026-06-16) «один человек = один клон должности» — клон роли это
+   * снимок ЕДИНСТВЕННОГО текущего носителя должности (без агрегации нескольких
+   * людей). Возвращает новую active-версию или null (нет носителя / мало traits /
+   * build упал). Прошлую active замораживает (frozen, read-only) ТОЛЬКО после
+   * подтверждённой новой active — атомарно в транзакции (закрывает Б12/Б16/Б17
+   * по построению). Версионные поля (roleVersion/currentBearerPersonId/publicName/
+   * succeedsPersonaId) проставляются всегда.
    */
   async buildForRole(args: {
     tenantId: string;
     roleId: string;
+    /**
+     * Раздел 7 — явный носитель (передаётся из RoleClonePersonaVersioningHandler
+     * при смене носителя). Если не задан — резолвим текущего носителя по
+     * PersonRole/Appointment (cron / on-demand путь).
+     */
+    bearerPersonId?: string | null;
     triggerReason?: PersonaTriggerReason;
     triggerEventAt?: Date | null;
   }): Promise<ExecutablePersona | null> {
     const start = Date.now();
     const triggerReason: PersonaTriggerReason = args.triggerReason ?? 'on_demand';
     const triggerEventAt = args.triggerEventAt ?? null;
+
+    // Б13 — лок на role-путь: одновременно одна сборка клона роли (weekly cron +
+    // on-demand askRole + bearer-changed могут совпасть). Финальный гард —
+    // partial-unique индекс executable_personas_one_active_per_role; лок лишь
+    // экономит холостой LLM-вызов. fail-open (нет Redis → строим).
+    const roleLockKey = `persona:rebuild:role:${args.roleId}`;
+    const roleLockAcquired = await this.acquireRoleLock(roleLockKey);
+    if (!roleLockAcquired) {
+      this.logger.debug(
+        { roleId: args.roleId },
+        'buildForRole: role-lock занят — skip (параллельная сборка идёт)',
+      );
+      return null;
+    }
     try {
-      // Найти всех employee'ев Role с активным SkillProfile.
-      const personRoles = await this.prisma.personRole.findMany({
-        where: {
+      // Р1 — единственный текущий носитель должности.
+      const bearerPersonId =
+        args.bearerPersonId ??
+        (await this.resolveCurrentBearer({
           tenantId: args.tenantId,
           roleId: args.roleId,
-          validTo: null,
-        },
-        select: { personId: true },
-        take: 50,
-      });
-      if (personRoles.length === 0) return null;
+        }));
+      if (!bearerPersonId) {
+        // Нет текущего носителя — активный клон не строим (бывшие остаются frozen).
+        return null;
+      }
 
-      const personIds = [...new Set(personRoles.map((p) => p.personId))];
-      const profiles = await this.prisma.skillProfile.findMany({
+      // Профиль ЕДИНСТВЕННОГО носителя (employee, active) + его skill-черты.
+      const profile = await this.prisma.skillProfile.findFirst({
         where: {
           tenantId: args.tenantId,
-          personId: { in: personIds },
+          personId: bearerPersonId,
           status: 'active',
         },
         include: {
           person: { select: { name: true, relationship: true } },
           traits: {
-            // ИНТ.1 (R9) — агрегация «черт подхода» только по слою skill.
+            // ИНТ.1 (R9) — «черты подхода» только слой skill.
             where: { status: 'active', layer: 'skill' },
             orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
             take: 10,
           },
         },
       });
-      const activeProfiles = profiles.filter(
-        (p) => p.person.relationship === 'employee' && p.traits.length > 0,
-      );
-      if (activeProfiles.length < this.cfg.persona.roleAggMinPersons) return null;
+      if (!profile || profile.person.relationship !== 'employee') return null;
 
-      // Aggregate top-N traits (combined).
-      const aggregatedTraits: SkillTrait[] = [];
-      for (const p of activeProfiles) {
-        aggregatedTraits.push(...p.traits.slice(0, 5));
-      }
-      // Ф7 (H) — схлопнуть черты по conceptId: одна и та же черта от N
-      // сотрудников не должна повторяться N раз в персоне роли.
-      const dedupedTraits = this.dedupeTraitsByConcept(aggregatedTraits);
+      // Р2 — порога roleAggMinPersons больше нет; гейт — minTraits профиля носителя.
+      // dedupeTraitsByConcept на одном человеке идемпотентен (схлопывает дубль-концепты).
+      const dedupedTraits = this.dedupeTraitsByConcept(profile.traits);
       if (dedupedTraits.length < this.cfg.persona.minTraits) return null;
 
       const role = await this.prisma.role.findUnique({
@@ -364,21 +387,20 @@ export class ExecutablePersonaBuildService {
         select: { name: true },
       });
 
-      // ИНТ.1 (R9) — слои метода для роли: values/motivations/processMarkers
-      // агрегируются по тем же profiles (топ-3 на человека, cap 5 после
-      // dedupe по концепту); принципы — RolePrinciple роли напрямую;
-      // процедуры — union PracticeSkill(scope='role') + scope='person'
-      // людей роли (cap 5, приоритет pinned → successRate).
-      const profileIds = activeProfiles.map((p) => p.id);
+      // Раздел 7 (Р1) — слои метода для клона роли берём из профиля ТОГО ЖЕ
+      // единственного носителя (снимок одного человека, без агрегации по людям):
+      // values/motivations/processMarkers — топ-5 черт носителя; принципы —
+      // RolePrinciple роли напрямую (метод должности, переживает смену людей);
+      // процедуры — union PracticeSkill(scope='role') + scope='person' носителя.
       const [values, motivations, processMarkers, principles, practiceSkillRows] =
         await Promise.all([
-          this.aggregateLayerTraitsForProfiles({ profileIds, layer: 'value' }),
-          this.aggregateLayerTraitsForProfiles({
-            profileIds,
+          this.findTopTraitsByLayer({ profileId: profile.id, layer: 'value' }),
+          this.findTopTraitsByLayer({
+            profileId: profile.id,
             layer: 'motivation',
           }),
-          this.aggregateLayerTraitsForProfiles({
-            profileIds,
+          this.findTopTraitsByLayer({
+            profileId: profile.id,
             layer: 'process_marker',
           }),
           this.prisma.rolePrinciple.findMany({
@@ -396,7 +418,7 @@ export class ExecutablePersonaBuildService {
               status: 'active',
               OR: [
                 { scope: 'role', scopeRefId: args.roleId },
-                { scope: 'person', scopeRefId: { in: personIds } },
+                { scope: 'person', scopeRefId: bearerPersonId },
               ],
             },
             orderBy: [
@@ -437,12 +459,6 @@ export class ExecutablePersonaBuildService {
         ...processMarkers.map((t) => t.id),
       ];
 
-      const nextVersion = await this.nextVersion({
-        profileId: null,
-        scope: 'role',
-        scopeRefId: args.roleId,
-      });
-
       // Clones=Roles Ф5 (2026-05-25) — клон роли это shared-знание Org,
       // dataClass всегда `internal` (floor поднимает любой источник).
       // Используем `DataClassPolicyService.derive(kind='executable_persona')`.
@@ -467,17 +483,48 @@ export class ExecutablePersonaBuildService {
         dataClassAudit = derived.audit as unknown as Prisma.InputJsonValue;
       }
 
-      // Clones=Roles Ф2 — пересборка для role-scope должна также
-      // «погашать» pending_rebuild версии (создаваемые handler'ом при
-      // смене носителя). Иначе они останутся висеть в БД и портить count
-      // в `clones_role_versions_total`.
+      // Раздел 7 (Р1/Р3, Б12/Б16/Б17) — атомарно: внутри транзакции читаем текущую
+      // active, вычисляем версии, замораживаем прошлую active (frozen, остаётся
+      // доступной навсегда) и создаём новую active со всеми версионными полями.
+      // Прошлая active гасится ТОЛЬКО вместе с подтверждённой новой — нет «зазора
+      // без клона». Partial-unique индекс гарантирует ровно одну active на роль.
       const newPersona = await this.prisma.$transaction(async (tx) => {
+        const prevActive = await tx.executablePersona.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            scope: 'role',
+            scopeRefId: args.roleId,
+            status: 'active',
+          },
+          orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+          select: { id: true, roleVersion: true },
+        });
+        const lastForVersion = await tx.executablePersona.findFirst({
+          where: {
+            tenantId: args.tenantId,
+            scope: 'role',
+            scopeRefId: args.roleId,
+          },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        });
+        const nextVersion = (lastForVersion?.version ?? 0) + 1;
+        const nextRoleVersion = (prevActive?.roleVersion ?? 0) + 1;
+
+        // Прошлая active → frozen (read-only снимок бывшего носителя; не удаляется).
+        if (prevActive) {
+          await tx.executablePersona.updateMany({
+            where: { id: prevActive.id, status: 'active' },
+            data: { status: 'frozen' },
+          });
+        }
+        // Промежуточные pending_rebuild этой роли (legacy handler) → superseded.
         await tx.executablePersona.updateMany({
           where: {
             tenantId: args.tenantId,
             scope: 'role',
             scopeRefId: args.roleId,
-            status: { in: ['active', 'pending_rebuild'] },
+            status: 'pending_rebuild',
           },
           data: { status: 'superseded' },
         });
@@ -488,6 +535,10 @@ export class ExecutablePersonaBuildService {
             scope: 'role',
             scopeRefId: args.roleId,
             version: nextVersion,
+            roleVersion: nextRoleVersion,
+            currentBearerPersonId: bearerPersonId,
+            publicName: `Клон ${role?.name ?? 'роль'} v${nextRoleVersion}`,
+            succeedsPersonaId: prevActive?.id ?? null,
             personaPrompt,
             includedTraitIds,
             status: 'active',
@@ -540,6 +591,70 @@ export class ExecutablePersonaBuildService {
         'executable-persona-build.buildForRole: упал — skip',
       );
       return null;
+    } finally {
+      await this.releaseRoleLock(roleLockKey);
+    }
+  }
+
+  /**
+   * Раздел 7 (Р1) — текущий носитель должности: union активного
+   * PersonRole(validTo=null) и Appointment(validTo=null, status active/acting),
+   * самый свежий по validFrom. null — у роли нет текущего носителя.
+   */
+  private async resolveCurrentBearer(args: {
+    tenantId: string;
+    roleId: string;
+  }): Promise<string | null> {
+    const [personRoleRows, appointmentRows] = await Promise.all([
+      this.prisma.personRole.findMany({
+        where: { tenantId: args.tenantId, roleId: args.roleId, validTo: null },
+        select: { personId: true, validFrom: true },
+        orderBy: { validFrom: 'desc' },
+        take: 5,
+      }),
+      this.prisma.appointment.findMany({
+        where: {
+          tenantId: args.tenantId,
+          roleId: args.roleId,
+          validTo: null,
+          status: { in: ['active', 'acting'] },
+        },
+        select: { personId: true, validFrom: true },
+        orderBy: { validFrom: 'desc' },
+        take: 5,
+      }),
+    ]);
+    const all = [...personRoleRows, ...appointmentRows];
+    if (all.length === 0) return null;
+    all.sort((a, b) => b.validFrom.getTime() - a.validFrom.getTime());
+    return all[0]?.personId ?? null;
+  }
+
+  /**
+   * Б13 — SETNX-лок на role-путь buildForRole (TTL 120с, на время LLM-вызова).
+   * fail-open: нет Redis / ошибка → разрешаем сборку (корректность держит
+   * partial-unique индекс executable_personas_one_active_per_role).
+   */
+  private async acquireRoleLock(key: string): Promise<boolean> {
+    if (!this.redis) return true;
+    try {
+      const res = await this.redis.client.set(key, '1', 'EX', 120, 'NX');
+      return res === 'OK';
+    } catch (err) {
+      this.logger.warn(
+        { key, err: err instanceof Error ? err.message : String(err) },
+        'buildForRole: Redis lock упал — fail-open (разрешаем сборку)',
+      );
+      return true;
+    }
+  }
+
+  private async releaseRoleLock(key: string): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.client.del(key);
+    } catch {
+      // best-effort: лок и сам истечёт по TTL.
     }
   }
 

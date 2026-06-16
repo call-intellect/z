@@ -224,6 +224,31 @@ describe('Specialist37ProbeService.checkCdmInterview — TZ clone-method Э3.1',
     expect(mocks.suggest).not.toHaveBeenCalled();
   });
 
+  it('Б21: бюджет вопросов считается только по доставленным probe (status IN pending/dispatched)', async () => {
+    const svc = makeService(mocks);
+    await svc.checkCdmInterview(CDM_ARGS);
+
+    const countWhere = (
+      mocks.prisma.probeEvent.count as ReturnType<typeof vi.fn>
+    ).mock.calls[0]![0].where as { status?: { in?: string[] }; reason: string };
+    expect(countWhere.reason).toBe('skill.cdm_interview');
+    expect(countWhere.status).toEqual({ in: ['pending', 'dispatched'] });
+    // НЕдоставленные статусы (queued_digest/dropped_*/routed_to_digest/...) в
+    // бюджет НЕ входят — иначе deferrable-CDM копит queued_digest и не задаётся.
+    expect(countWhere.status?.in).not.toContain('queued_digest');
+    expect(countWhere.status?.in).not.toContain('dropped_rate_limit');
+  });
+
+  it('Б21: cooldown отсчитывается от доставленного probe (findFirst фильтрует status IN pending/dispatched)', async () => {
+    const svc = makeService(mocks);
+    await svc.checkCdmInterview(CDM_ARGS);
+
+    const ffWhere = (
+      mocks.prisma.probeEvent.findFirst as ReturnType<typeof vi.fn>
+    ).mock.calls[0]![0].where as { status?: { in?: string[] } };
+    expect(ffWhere.status).toEqual({ in: ['pending', 'dispatched'] });
+  });
+
   it('LLM упал → skip без throw, suggest НЕ вызван (best-effort)', async () => {
     mocks = makeMocks({ llmThrow: new Error('llm proxy 500') });
     const svc = makeService(mocks);

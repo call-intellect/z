@@ -40,7 +40,8 @@ describe('process-marker-detect — snapshot сборки промта', () => {
   it('system содержит ЖЁСТКИЙ ЗАПРЕТ оценочных осей («избегает решений» / «не решает сам» / «нерешителен»)', () => {
     expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain('ЖЁСТКИЙ ЗАПРЕТ');
     // Все три формулировки встречаются ТОЛЬКО внутри запрета (строка
-    // «НИКОГДА не выводи …») и adversarial-примера «НЕ извлекать».
+    // «НИКОГДА не выводи …»), adversarial-примера «НЕ извлекать» или
+    // чек-листа САМОПРОВЕРКИ (перечисляет те же осины как запрещённые).
     const forbidden = ['избегает решений', 'не решает сам', 'нерешителен'];
     for (const phrase of forbidden) {
       expect(PROCESS_MARKER_DETECT_SYSTEM_PROMPT).toContain(phrase);
@@ -50,7 +51,9 @@ describe('process-marker-detect — snapshot сборки промта', () => {
       expect(lines.length).toBeGreaterThan(0);
       for (const line of lines) {
         expect(
-          line.includes('НИКОГДА не выводи') || line.includes('НЕ извлекать'),
+          line.includes('НИКОГДА не выводи') ||
+            line.includes('НЕ извлекать') ||
+            line.includes('запрещённой оценочной оси'),
         ).toBe(true);
       }
     }

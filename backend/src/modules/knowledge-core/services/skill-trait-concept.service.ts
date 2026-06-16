@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { SkillTraitConcept } from '@prisma/client';
+import { Prisma, type SkillTraitConcept } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -110,6 +110,11 @@ export class SkillTraitConceptService {
     }
 
     // 3) Создаём новый концепт.
+    // Б6 (traitcount-drift): не инкрементим вслепую. Trait, ради которого
+    // создаётся концепт, ещё `pending_verification` и НЕ привязан к нему
+    // (привязка происходит у вызывающего после возврата), а денормализованный
+    // `traitCount` = COUNT(active). Поэтому стартуем с 0 — promote/cron
+    // доведут счётчик до фактического числа активных черт.
     try {
       const created = await this.prisma.skillTraitConcept.create({
         data: {
@@ -117,7 +122,7 @@ export class SkillTraitConceptService {
           canonicalName: category,
           variants: [category],
           status: 'active',
-          traitCount: 1,
+          traitCount: 0,
         },
       });
       if (embedding) {
@@ -210,9 +215,9 @@ export class SkillTraitConceptService {
     targetId: string;     // куда сливаем
     newCanonicalName?: string; // от агента skill-trait-concept-name
     newDescription?: string;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const sourceIds = args.sourceIds.filter((id) => id !== args.targetId);
-    if (sourceIds.length === 0) return;
+    if (sourceIds.length === 0) return false;
     const target = await this.prisma.skillTraitConcept.findUnique({
       where: { id: args.targetId },
     });
@@ -221,13 +226,13 @@ export class SkillTraitConceptService {
         { tenantId: args.tenantId, targetId: args.targetId },
         'skill-trait-concept.mergeConcepts: target отсутствует/не-active/чужой tenant — skip',
       );
-      return;
+      return false;
     }
 
     const sources = await this.prisma.skillTraitConcept.findMany({
       where: { id: { in: sourceIds }, tenantId: args.tenantId },
     });
-    if (sources.length === 0) return;
+    if (sources.length === 0) return false;
 
     // Объединяем variants (целевой + все источники + опц. старое canonical).
     const variantSet = new Set<string>(target.variants);
@@ -238,8 +243,41 @@ export class SkillTraitConceptService {
     }
     const mergedVariants = [...variantSet].slice(0, 200);
 
+    // Б8 (merge-canonical-name-unique-collision): новое каноническое имя от LLM
+    // может совпасть с canonicalName другого, НЕ участвующего в слиянии концепта
+    // (есть @@unique([tenantId, canonicalName]) на все статусы). Тогда update в
+    // транзакции падает P2002 → ВСЯ транзакция merge откатывается → молчаливый
+    // no-op (traits не перепривязаны, sources не помечены merged_into). Поэтому
+    // pre-write проверяем коллизию и при ней НЕ меняем имя (оставляем опорное) —
+    // слияние всё равно идёт. Сами sources (id ∈ sourceIds) коллизией не
+    // считаются: они в этой же транзакции уходят в merged_into.
+    const desiredName = args.newCanonicalName?.slice(0, 200);
+    const mergeIds = new Set<string>([target.id, ...sources.map((s) => s.id)]);
+    let canonicalName = desiredName;
+    if (desiredName && desiredName !== target.canonicalName) {
+      const collision = await this.prisma.skillTraitConcept.findFirst({
+        where: { tenantId: args.tenantId, canonicalName: desiredName },
+        select: { id: true },
+      });
+      if (collision && !mergeIds.has(collision.id)) {
+        this.logger.debug(
+          {
+            tenantId: args.tenantId,
+            targetId: target.id,
+            desiredName,
+            collisionId: collision.id,
+          },
+          'skill-trait-concept.mergeConcepts: новое имя занято другим концептом — оставляю опорное',
+        );
+        canonicalName = undefined; // не меняем имя
+      }
+    }
+
     // Транзакция: перепривязка traits + апдейт target + пометка sources.
-    try {
+    // Б8: при гонке (concurrent rename того же имени) update может всё равно
+    // упасть P2002 → один retry без смены имени, чтобы слияние не превратилось
+    // в no-op.
+    const runMerge = async (useName: string | undefined): Promise<void> => {
       await this.prisma.$transaction(async (tx) => {
         // Перепривязываем traits на target.
         await tx.skillTrait.updateMany({
@@ -260,9 +298,7 @@ export class SkillTraitConceptService {
           data: {
             variants: mergedVariants,
             traitCount: newCount,
-            ...(args.newCanonicalName
-              ? { canonicalName: args.newCanonicalName.slice(0, 200) }
-              : {}),
+            ...(useName ? { canonicalName: useName } : {}),
             ...(args.newDescription !== undefined
               ? { description: args.newDescription.slice(0, 2_000) }
               : {}),
@@ -270,7 +306,32 @@ export class SkillTraitConceptService {
           },
         });
       });
+    };
+
+    try {
+      try {
+        await runMerge(canonicalName);
+      } catch (err) {
+        // P2002 на canonicalName (гонка) — повторяем без смены имени.
+        if (
+          canonicalName &&
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          this.logger.warn(
+            {
+              targetId: target.id,
+              desiredName: canonicalName,
+            },
+            'skill-trait-concept.mergeConcepts: P2002 на имени — retry без смены имени',
+          );
+          await runMerge(undefined);
+        } else {
+          throw err;
+        }
+      }
       this.metrics.incSkillTraitConceptsMerged();
+      return true;
     } catch (err) {
       this.logger.warn(
         {
@@ -280,10 +341,45 @@ export class SkillTraitConceptService {
         },
         'skill-trait-concept.mergeConcepts: транзакция упала',
       );
+      return false;
+    }
+  }
+
+  /**
+   * Б6 (traitcount-drift): синхронный пересчёт денормализованного `traitCount`
+   * по фактическому числу active-черт. Точка вызова — promote/discard/supersede
+   * черты в соседних воркерах (skill-trait-verify / decay), чтобы счётчик не
+   * дрейфовал. Best-effort: возвращает посчитанное число (или null при сбое),
+   * не бросает.
+   */
+  async recomputeTraitCount(conceptId: string): Promise<number | null> {
+    try {
+      const count = await this.countActiveTraits(conceptId);
+      await this.prisma.skillTraitConcept.update({
+        where: { id: conceptId },
+        data: { traitCount: count },
+      });
+      return count;
+    } catch (err) {
+      this.logger.debug(
+        {
+          conceptId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'skill-trait-concept.recomputeTraitCount: update упал — skip',
+      );
+      return null;
     }
   }
 
   // ─────────────────────────── private ───────────────────────────
+
+  /** Единый источник истины для traitCount — число active-черт концепта. */
+  private async countActiveTraits(conceptId: string): Promise<number> {
+    return this.prisma.skillTrait.count({
+      where: { conceptId, status: 'active' },
+    });
+  }
 
   /**
    * Top-1 активный концепт по cosine-расстоянию embedding-а.
@@ -323,7 +419,14 @@ export class SkillTraitConceptService {
 
   /**
    * Привязка нового trait'а к существующему концепту:
-   * +1 traitCount, добавить category в variants (если новая), lastSeenAt=now().
+   * добавить category в variants (если новая), пересчитать traitCount по
+   * фактическому числу active-черт, lastSeenAt=now().
+   *
+   * Б6 (traitcount-drift): НЕ инкрементим вслепую `+1`. Новый trait, ради
+   * которого вызывается attach, ещё `pending_verification` и привязывается
+   * вызывающим уже ПОСЛЕ возврата — поэтому живой COUNT(active) его корректно
+   * не учитывает (pending в персону не идёт). Единый источник истины —
+   * `concept.traitCount = COUNT(active с этим conceptId)`.
    */
   private async attachTraitToConcept(args: {
     concept: SkillTraitConcept;
@@ -332,12 +435,13 @@ export class SkillTraitConceptService {
     const nextVariants = args.concept.variants.includes(args.category)
       ? args.concept.variants
       : [...args.concept.variants, args.category].slice(0, 200);
+    const activeCount = await this.countActiveTraits(args.concept.id);
     try {
       const updated = await this.prisma.skillTraitConcept.update({
         where: { id: args.concept.id },
         data: {
           variants: nextVariants,
-          traitCount: args.concept.traitCount + 1,
+          traitCount: activeCount,
           lastSeenAt: new Date(),
         },
       });

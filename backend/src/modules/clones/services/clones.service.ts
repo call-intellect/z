@@ -39,6 +39,8 @@ import type {
   CloneConversationsListResponseDto,
 } from '../dto/clone-conversations.dto';
 import type {
+  AskAllFormersAnswerDto,
+  AskAllFormersResponseDto,
   AskCloneResponseDto,
   CloneCitationDto,
   CloneHistoryResponseDto,
@@ -459,6 +461,8 @@ export class ClonesService {
     roleId: string;
     question: string;
     conversationId?: string;
+    /** Раздел 7 (Р4) — конкретная версия клона роли (frozen бывший носитель). */
+    roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
     if (this.isCloneV2Enabled()) {
       return this.askRoleV2(args);
@@ -501,30 +505,49 @@ export class ClonesService {
     }
 
     // 3. Active role-persona.
-    let persona = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: args.tenantId,
-        scope: 'role',
-        scopeRefId: args.roleId,
-        status: 'active',
-      },
-      orderBy: { version: 'desc' },
-    });
-    if (!persona) {
+    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
+    // бывший носитель); иначе текущая active + on-demand сборка.
+    let persona =
+      args.roleVersion != null
+        ? await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              roleVersion: args.roleVersion,
+              status: { in: ['active', 'frozen'] },
+            },
+            orderBy: { version: 'desc' },
+          })
+        : await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              status: 'active',
+            },
+            orderBy: { version: 'desc' },
+          });
+    if (!persona && args.roleVersion == null) {
       persona = await this.personaBuilder.buildForRole({
         tenantId: args.tenantId,
         roleId: args.roleId,
       });
-      if (!persona) {
-        throw new NotFoundException({
-          ok: false,
-          error: {
-            code: 'role_persona_unavailable',
-            message:
-              'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
-          },
-        });
-      }
+    }
+    if (!persona) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code:
+            args.roleVersion != null
+              ? 'role_persona_version_not_found'
+              : 'role_persona_unavailable',
+          message:
+            args.roleVersion != null
+              ? 'Запрошенная версия клона роли не найдена.'
+              : 'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
+        },
+      });
     }
 
     // 4. Retrieval — top reasoning от всех employee'ев этой роли.
@@ -603,16 +626,10 @@ export class ClonesService {
     // Clones=Roles Фаза 6 — подставляем roleName из Role.name и bearerName
     // из текущего носителя `ExecutablePersona.currentBearerPersonId`. Если
     // bearer не зафиксирован — null (промпт подставит дефолт).
-    let bearerName: string | null = null;
-    if (persona.currentBearerPersonId) {
-      const bearer = await this.prisma.person.findUnique({
-        where: { id: persona.currentBearerPersonId },
-        select: { name: true, tenantId: true },
-      });
-      if (bearer && bearer.tenantId === args.tenantId) {
-        bearerName = bearer.name;
-      }
-    }
+    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
+    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
+    const bearerName: string | null =
+      persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
     // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkills = await this.retrievePracticeSkills({
@@ -1002,6 +1019,8 @@ export class ClonesService {
     roleId: string;
     question: string;
     conversationId?: string;
+    /** Раздел 7 (Р4) — конкретная версия клона роли (active или frozen). */
+    roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
     // 1. RBAC через CloneAccessGrant.
     const accessCheck = await this.rbac.canAccessRoleClone({
@@ -1038,30 +1057,49 @@ export class ClonesService {
       });
     }
 
-    let persona = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: args.tenantId,
-        scope: 'role',
-        scopeRefId: args.roleId,
-        status: 'active',
-      },
-      orderBy: { version: 'desc' },
-    });
-    if (!persona) {
+    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
+    // бывший носитель); иначе текущая active + on-demand сборка.
+    let persona =
+      args.roleVersion != null
+        ? await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              roleVersion: args.roleVersion,
+              status: { in: ['active', 'frozen'] },
+            },
+            orderBy: { version: 'desc' },
+          })
+        : await this.prisma.executablePersona.findFirst({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              status: 'active',
+            },
+            orderBy: { version: 'desc' },
+          });
+    if (!persona && args.roleVersion == null) {
       persona = await this.personaBuilder.buildForRole({
         tenantId: args.tenantId,
         roleId: args.roleId,
       });
-      if (!persona) {
-        throw new NotFoundException({
-          ok: false,
-          error: {
-            code: 'role_persona_unavailable',
-            message:
-              'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
-          },
-        });
-      }
+    }
+    if (!persona) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code:
+            args.roleVersion != null
+              ? 'role_persona_version_not_found'
+              : 'role_persona_unavailable',
+          message:
+            args.roleVersion != null
+              ? 'Запрошенная версия клона роли не найдена.'
+              : 'Клон роли пока недоступен — нужно больше сотрудников с накопленными профилями.',
+        },
+      });
     }
 
     const dialog = await this.runDialogLayer({
@@ -1113,16 +1151,10 @@ export class ClonesService {
       });
     }
 
-    let bearerName: string | null = null;
-    if (persona.currentBearerPersonId) {
-      const bearer = await this.prisma.person.findUnique({
-        where: { id: persona.currentBearerPersonId },
-        select: { name: true, tenantId: true },
-      });
-      if (bearer && bearer.tenantId === args.tenantId) {
-        bearerName = bearer.name;
-      }
-    }
+    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
+    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
+    const bearerName: string | null =
+      persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
     // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkillsV2Role = await this.retrievePracticeSkills({
@@ -2070,7 +2102,11 @@ export class ClonesService {
         departmentId: role.department?.id ?? null,
         version: c.roleVersion ?? 1,
         publicName: c.publicName ?? `Клон ${role.name} v${c.roleVersion ?? 1}`,
-        status: c.status as 'active' | 'superseded' | 'pending_rebuild',
+        status: c.status as
+          | 'active'
+          | 'superseded'
+          | 'pending_rebuild'
+          | 'frozen',
         currentBearer: bearer
           ? { personId: bearer.id, personName: bearer.name }
           : null,
@@ -2156,21 +2192,8 @@ export class ClonesService {
       return { roleId: role.id, roleName: role.name, versions: [] };
     }
 
-    const bearerIds = [
-      ...new Set(
-        personas
-          .map((p) => p.currentBearerPersonId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-    const bearers =
-      bearerIds.length > 0
-        ? await this.prisma.person.findMany({
-            where: { id: { in: bearerIds }, tenantId: args.tenantId },
-            select: { id: true, name: true },
-          })
-        : [];
-    const bearerById = new Map(bearers.map((p) => [p.id, p]));
+    // Раздел 7 (Р7/И3/И8) — историю показываем как «Клон <Должность> v<N>» без
+    // ФИО носителя: личность бывших не раскрываем, версию идентифицирует publicName.
 
     // Сортируем по snapshotAt ASC для корректного вычисления validUntil:
     // validUntil[i] = snapshotAt[i+1] (или null для самой свежей).
@@ -2198,18 +2221,18 @@ export class ClonesService {
     }
 
     const versions: CloneVersionDto[] = personas.map((p) => {
-      const bearer = p.currentBearerPersonId
-        ? bearerById.get(p.currentBearerPersonId)
-        : undefined;
       return {
         personaId: p.id,
         roleId: role.id,
         version: p.roleVersion ?? 1,
         publicName: p.publicName ?? `Клон ${role.name} v${p.roleVersion ?? 1}`,
-        status: p.status as 'active' | 'superseded' | 'pending_rebuild',
-        bearer: bearer
-          ? { personId: bearer.id, personName: bearer.name }
-          : null,
+        status: p.status as
+          | 'active'
+          | 'superseded'
+          | 'pending_rebuild'
+          | 'frozen',
+        // Раздел 7 (И3/И8) — ФИО носителя НЕ выводим; версию идентифицирует publicName.
+        bearer: null,
         validFrom: p.snapshotAt.toISOString(),
         validUntil: validUntilByPersonaId.get(p.id) ?? null,
         confidence: Math.min(1, p.builtFromTraitsCount / 10),
@@ -2218,6 +2241,88 @@ export class ClonesService {
     });
 
     return { roleId: role.id, roleName: role.name, versions };
+  }
+
+  /**
+   * Раздел 7 §7.5 — «совет бывших»: один вопрос → ответы ВСЕХ версий клона роли
+   * (текущая active + замороженные бывшие) рядом для сравнения. Переиспользует
+   * askRoleV2 per-версия (те же анти-дипфейк/grounding-гейты, квота). ФИО не
+   * выводим. Best-effort: упавшая версия (квота/недоступна) → entry с error,
+   * остальные отвечают. Cap 8 версий.
+   */
+  async askAllFormers(args: {
+    tenantId: string;
+    requesterUserId: string;
+    roleId: string;
+    question: string;
+  }): Promise<AskAllFormersResponseDto> {
+    const accessCheck = await this.rbac.canAccessRoleClone({
+      tenantId: args.tenantId,
+      requesterUserId: args.requesterUserId,
+      roleId: args.roleId,
+      cloneV2Enabled: true,
+    });
+    if (!accessCheck.allowed) {
+      throw new ForbiddenException({
+        ok: false,
+        error: { code: 'forbidden', message: 'Нет доступа к клону этой роли.' },
+      });
+    }
+    const role = await this.prisma.role.findUnique({
+      where: { id: args.roleId },
+      select: { id: true, name: true, tenantId: true, deletedAt: true },
+    });
+    if (!role || role.deletedAt || role.tenantId !== args.tenantId) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'role_not_found', message: 'Роль не найдена' },
+      });
+    }
+
+    const versions = await this.prisma.executablePersona.findMany({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: { in: ['active', 'frozen'] },
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      take: 8,
+      select: { id: true, roleVersion: true, publicName: true, status: true },
+    });
+
+    const answers: AskAllFormersAnswerDto[] = [];
+    for (const v of versions) {
+      const version = v.roleVersion ?? 1;
+      const base = {
+        personaId: v.id,
+        version,
+        publicName: v.publicName ?? `Клон ${role.name} v${version}`,
+        status: v.status as 'active' | 'frozen',
+      };
+      try {
+        const response = await this.askRoleV2({
+          tenantId: args.tenantId,
+          requesterUserId: args.requesterUserId,
+          roleId: args.roleId,
+          question: args.question,
+          roleVersion: v.roleVersion ?? undefined,
+        });
+        answers.push({ ...base, response, error: null });
+      } catch (err) {
+        answers.push({
+          ...base,
+          response: null,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return {
+      roleId: role.id,
+      roleName: role.name,
+      question: args.question,
+      answers,
+    };
   }
 
   /**
@@ -3027,10 +3132,13 @@ export class ClonesService {
       if (seen.has(id)) continue; // общий dedup с BLOCK-веткой
       seen.add(id);
       const d = decisionMap.get(id);
-      // Даже если решения нет в subgraph — id не теряем (минимальная citation).
+      // Б20 (Раздел 8) — если решения нет в subgraph, НЕ засчитываем призрачную
+      // цитату: иначе [DECISION:x] обходит post-LLM grounding-гейт (isUngrounded
+      // видит citations.length>0). По аналогии с BLOCK-веткой (`if (!b) continue`).
+      if (!d) continue;
       out.push({
         blockId: id,
-        snippet: d?.statement ?? undefined,
+        snippet: d.statement ?? undefined,
       });
     }
 

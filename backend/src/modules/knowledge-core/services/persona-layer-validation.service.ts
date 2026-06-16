@@ -366,6 +366,9 @@ export class PersonaLayerValidationService {
       Date.now() -
         PersonaLayerValidationService.CASE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
     );
+    // Б19: собираем ВСЕ blockId за окно БЕЗ take (иначе scan-order по entityId
+    // урезает выборку до date-сортировки — «свежий ход роли» теряется), а
+    // take:MAX_CANDIDATE_BLOCKS + orderBy createdAt desc применяем уже на блоках.
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
         entityId: { in: entityIds },
@@ -378,7 +381,6 @@ export class PersonaLayerValidationService {
         },
       },
       select: { blockId: true },
-      take: PersonaLayerValidationService.MAX_CANDIDATE_BLOCKS,
     });
     const blockIds = [...new Set(mentions.map((m) => m.blockId))];
     if (blockIds.length === 0) return [];
@@ -392,6 +394,7 @@ export class PersonaLayerValidationService {
         trustedAnswer: true,
       },
       orderBy: { createdAt: 'desc' },
+      take: PersonaLayerValidationService.MAX_CANDIDATE_BLOCKS,
     });
   }
 

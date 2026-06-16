@@ -24,6 +24,7 @@ import {
   Plus,
   Sparkles,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -33,6 +34,7 @@ import useSWR from 'swr';
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import { clonesApi } from '@/api/clones.api';
 import { useAuth } from '@/contexts/auth-context';
+import { cloneVersionStatusBadge } from '@/domain/clone';
 import {
   useCloneByRoleId,
   useCloneConversations,
@@ -176,8 +178,10 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {item?.status === 'pending_rebuild' ? (
-                <Badge variant="secondary">Клон обновляется</Badge>
+              {item && item.status !== 'active' ? (
+                <Badge variant={cloneVersionStatusBadge(item.status).variant}>
+                  {cloneVersionStatusBadge(item.status).label}
+                </Badge>
               ) : null}
               {!hasGrant ? (
                 <Badge variant="outline" className="gap-1">
@@ -258,6 +262,14 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
               >
                 <History className="mr-2 h-4 w-4" />
                 История версий
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/roles/${encodeURIComponent(roleId)}/clone/history#council`}
+              >
+                <UsersRound className="mr-2 h-4 w-4" />
+                Совет бывших
               </Link>
             </Button>
           </div>

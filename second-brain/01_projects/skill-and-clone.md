@@ -250,3 +250,47 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 ### Новые taskType (5)
 
 `role-principle-synthesize` (capable) · `value-motivation-detect` (flash) · `process-marker-detect` (flash) · `cdm-case-interview` (capable) · `persona-behavior-judge` (flash) — все в union+`ALL_LLM_TASK_TYPES`, сид `backend/scripts/seed-llm-task-routes-clone-method.ts` (в `apply-prod-deploy.ts` STEPS, alias `'clone-method'`). Цепочки — [[ai-jobs]] §«Слой метода клона».
+
+## Доработки 2026-06-16 — «один человек = один клон должности» + ревизия промптов M5 + 21 баг конвейера
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (Раздел 7 + Раздел 8 + Приложения A–D). Ветка `devsv`, 9 коммитов (`80ce250a..8168d915`). Схема (новый enum + индекс) — [[../02_architecture/data-model]] §«PersonaStatus += frozen»; эндпоинты — [[api-layer]] §Clones; карта модуля — [[../02_architecture/module-map]] §«Один человек = один клон должности».
+
+### Раздел 7 — модель носителей клона (решение владельца)
+
+Клон роли (`ExecutablePersona.scope='role'`) теперь — **снимок ОДНОГО текущего носителя должности**, а не усреднённый агрегат нескольких людей. Инварианты:
+
+| # | Инвариант |
+|---|---|
+| И1 | Один активный носитель на должность (нужны главный + рядовой → это ДВЕ `Role`). |
+| И2 | Клон = снимок одного носителя, без смешивания (агрегация `dedupeTraitsByConcept` по нескольким людям УБРАНА). |
+| И3 | Имя `«Клон <Должность> v<N>»`, без ФИО (`publicName`). |
+| И4 | Смена носителя = `freeze` прошлой версии + новая `active` v(N+1). |
+| И5 | Ровно один `active` на должность; бывшие — `frozen` (read-only, доступны навсегда). |
+| И6 | Замороженный клон не дообучается (нет decay/recalibrate/rebuild/нормализации). |
+| И7 | На экране должности — список всех носителей + «спросить версию» + «совет бывших». |
+| **И8** | **Это НЕ персональные данные** — ФИО не хранится в выводе/истории; 152-ФЗ к модели НЕ применяем (решение владельца). НЕ даём владельцу Org управление сроком хранения/удалением клонов бывших. |
+
+**Реализация:**
+- `buildForRole` строит клон из единственного текущего носителя (активный `PersonRole`/`Appointment`, `validTo=null`); ВСЕГДА проставляет `roleVersion`/`currentBearerPersonId`/`publicName`/`succeedsPersonaId`; прошлую `active` → `frozen` атомарно ТОЛЬКО с подтверждённой новой `active`; Redis-лок `persona:rebuild:role:<id>`. Слои метода — из профиля носителя; принципы — role-level; процедуры — role+person носителя.
+- `role-clone-persona-versioning.handler.ts` — новый носитель → делегирует `buildForRole`; роль освободилась → `freeze`; промежуточный `pending_rebuild`-стаб больше НЕ создаётся.
+- Анонимизация: `clone-respond` получает ярлык `publicName` (НЕ ФИО) на обоих ролевых путях (Р8); `getCloneHistory` без ФИО (`bearer=null`, Р7).
+- Чтение версий: `askRole`/`askRoleV2` принимают `roleVersion` (active или frozen, Р4); новый `askAllFormers` («совет бывших», §7.5). Анти-дипфейк-гейты применяются per-версия.
+- Эндпоинты: `POST /clones/roles/:roleId/ask` += body `roleVersion`; новый `POST /clones/roles/:roleId/ask-all-formers` (см. [[api-layer]]).
+- Backfill `backend/scripts/backfill-role-clone-single-bearer.ts` (§7.6) — дедуп active-дублей → frozen, superseded → frozen, пересборка single-bearer'ом (в `apply-prod-deploy.ts` STEPS, `phase:'backfill'`, `--skip-rebuild` для прогона без LLM).
+- Этим **переопределён** кластер версионирования из Раздела 8 (Б12/Б16 — поля проставляются по построению; Б17 — `freeze` вместо гашения `superseded` до build; Б13 — partial-unique на `status='active'`).
+
+### Раздел 8 — 21 баг конвейера M5 (фиксы Б1–Б21 + код-гарды Г1–Г4)
+
+Состязательный аудит (8 ревьюеров + скептик): 27 находок → 21 подтверждён. Сведено по группам (`file:line` сверены по коду):
+
+- **Конвейер черт** (`specialist-3-7-skill.service.ts`, recalibrate cron): Б1 (`pending_verification` старше `archiveCutoff` → `archived` в `runDecay`/recalibrate, без вечного re-verify), Б2 (verify `findMany` FIFO `orderBy createdAt asc` + исключение безнадёжных), Б3 (`lastConfirmedAt = MAX(existing, draft)` — не откатывать дату назад), Б4 (KNN-merge включает `pending_verification`, не плодит дубли pending), Б5 (recalibrate `orderBy` по устареванию + курсор).
+- **Нормализация концептов** (`skill-trait-concept.service.ts`, normalizer cron): Б6 (`traitCount = COUNT(active)`: старт с 0, `recomputeTraitCount` на promote/discard/supersede, в cron живой COUNT), Б7 (архив концепта по `NOT EXISTS active-черта`, а не по счётчику-зомби), Б8 (pre-write проверка коллизии `canonicalName` + P2002-retry без смены имени; cron инкрементит `clustersMerged` только при реальном merge).
+- **Принципы роли** (`role-principle-synthesis.service.ts`, cron): Б9 (`confidence` из `distinctDays`, не сырой вердикт LLM), Б10 (raw `UPDATE embedding` обёрнут try/catch — нет NULL-вектора, невидимого дедупу), Б11 (бюджет декрементится ТОЛЬКО при фактическом LLM-вызове, skip-ветки не жгут бюджет).
+- **Сборка персоны** (build cron): Б14 (`orderBy` lastBuildAt asc nulls-first + курсор по всему хвосту, тот же в trigger-watcher), Б15 (предфильтр `layer='skill'` — как гейт `buildForProfile`).
+- **Прочее:** Б19 (`take:30` ПОСЛЕ `orderBy createdAt desc` в persona-validation), Б20 (`if(!d)continue` в DECISION-ветке `parseCitations` — ghost `[DECISION:x]` не обходит grounding-гейт), Б21 (CDM-бюджет считает только доставленные probe — `status IN delivered`, не `queued_digest`/`dropped`).
+- **Код-гарды:** Г1 (`targetId` → `required` в схеме `skill_trait_merge_v1`), Г2 (cosine≥0.85+категория → не `new`), Г3 (`<2` цитат → `held` без LLM-вызова), Г4 (skill-путь пропускает draft с пустым `sourceBlockIds`).
+- 6 находок опровергнуто состязательной проверкой (не баги — §8.9 ТЗ).
+
+### Приложения A–D — ревизия 12 LLM-промптов клона M5
+
+Во все 12 🟣 clone-only промптов (`skill-trait-detect` / `-merge` / `-verify`, `value-motivation-detect`, `process-marker-detect`, `role-principle-synthesize`, `cdm-case-interview`, `skill-trait-concept-name`, `executable-persona-compile` v2, `clone-respond`, `dialog-multi-query-clone`, `persona-behavior-judge`) добавлены: **якорь смысла «клон отвечает от лица должности»** (блок «ЗАЧЕМ ЭТО»), **few-shot** (главный пробел дешёвых гейтов), **self-check** перед ответом. Всё — в стабильный SYSTEM (prompt-caching-friendly; разовый cache-miss на выкате). Промпты — code-fallback (едут с билдом, не DB-редактируемые). Реестр статусов — [`docs/methodology/prompts/upgrade-progress.md`](../../docs/methodology/prompts/upgrade-progress.md).

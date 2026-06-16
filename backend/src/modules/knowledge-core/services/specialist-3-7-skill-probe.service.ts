@@ -55,6 +55,20 @@ export class Specialist37ProbeService {
   private static readonly CDM_CASE_WINDOW_DAYS = 30;
   /** Э3.1 — сколько последних reasoning-блоков идёт в кейс (top-цитаты). */
   private static readonly CDM_MAX_CASE_BLOCKS = 3;
+  /**
+   * Б21 — статусы ProbeEvent, означающие, что вопрос РЕАЛЬНО ушёл получателю
+   * (pending = поставлен в доставку, dispatched = доставлен). Бюджет и cooldown
+   * CDM считаем только по ним. Недоставочные статусы (dropped_dedup,
+   * dropped_rate_limit, dropped_cold_start, dropped_dataclass_gate,
+   * dropped_low_value, queued_digest, routed_to_digest, suppressed_stale,
+   * expired) в бюджет/cooldown НЕ входят — иначе deferrable-CDM при исчерпанном
+   * бюджете получателя копит queued_digest-строки и реальный вопрос не задаётся
+   * никогда.
+   */
+  private static readonly CDM_DELIVERED_STATUSES = [
+    'pending',
+    'dispatched',
+  ] as const;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -259,6 +273,8 @@ export class Specialist37ProbeService {
       where: {
         tenantId: args.tenantId,
         reason: Specialist37ProbeService.CDM_INTERVIEW_REASON,
+        // Б21 — только реально доставленные probe тратят бюджет вопросов.
+        status: { in: [...Specialist37ProbeService.CDM_DELIVERED_STATUSES] },
         payload: { path: ['contextCardId'], equals: args.profileId },
       },
     });
@@ -274,6 +290,8 @@ export class Specialist37ProbeService {
       where: {
         tenantId: args.tenantId,
         reason: Specialist37ProbeService.CDM_INTERVIEW_REASON,
+        // Б21 — cooldown отсчитываем от реально доставленного вопроса.
+        status: { in: [...Specialist37ProbeService.CDM_DELIVERED_STATUSES] },
         payload: { path: ['contextCardId'], equals: args.profileId },
       },
       orderBy: { createdAt: 'desc' },

@@ -37,6 +37,7 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
     cron: ExecutablePersonaTriggerWatcherCron;
     triggerRebuild: ReturnType<typeof vi.fn>;
     incPersonaRebuildTriggered: ReturnType<typeof vi.fn>;
+    profileFindMany: ReturnType<typeof vi.fn>;
   } {
     const triggerRebuild = vi.fn(
       async (args: { profileId: string; reason: string }) =>
@@ -45,9 +46,10 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
           : { built: true, personaId: `p_${args.profileId}` },
     );
     const incPersonaRebuildTriggered = vi.fn();
+    const profileFindMany = vi.fn(async () => opts.profiles);
     const prisma = {
       skillProfile: {
-        findMany: vi.fn(async () => opts.profiles),
+        findMany: profileFindMany,
       },
       executablePersona: {
         findFirst: vi.fn(async ({ where }: { where: { profileId: string } }) =>
@@ -86,7 +88,7 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
       versioning as never,
       metrics as never,
     );
-    return { cron, triggerRebuild, incPersonaRebuildTriggered };
+    return { cron, triggerRebuild, incPersonaRebuildTriggered, profileFindMany };
   }
 
   it('skip: нет snapshot ещё → skippedNoSnapshotYet++', async () => {
@@ -195,6 +197,24 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
     expect(r.triggeredMaxAge).toBe(0);
     expect(triggerRebuild).not.toHaveBeenCalled();
     expect(incPersonaRebuildTriggered).not.toHaveBeenCalled();
+  });
+
+  it('Б14: профили выбираются с orderBy lastBuildAt asc nulls first + id asc (не scan-order)', async () => {
+    const { cron, profileFindMany } = makeCron({
+      profiles: [{ id: 'p1', tenantId: 't1' }],
+      findFirstLatest: () => ({
+        snapshotAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
+      }),
+      findCriticalMisleading: () => null,
+      newTraitsCount: () => 0,
+      findNewestTrait: () => null,
+    });
+    await cron.runOnce();
+    const arg = profileFindMany.mock.calls[0]![0] as { orderBy: unknown };
+    expect(arg.orderBy).toEqual([
+      { lastBuildAt: { sort: 'asc', nulls: 'first' } },
+      { id: 'asc' },
+    ]);
   });
 
   it('locked: VersioningService возвращает built=false reason=locked → skippedLocked++', async () => {

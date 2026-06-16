@@ -1,61 +1,32 @@
-/**
- * Промпт `task-dedupe` — LLM-арбитр семантического совпадения двух задач
- * встречи (action items).
- *
- * Используется `MeetingTaskDedupeService` для «серой зоны» KNN: когда cosine
- * между fast-черновиком (Task.extractorVersion='fast') и canonical-задачей
- * той же встречи близок к порогу, но не уверенно выше его. На одну пару —
- * один вызов LLM. Вердикт:
- *   - 'same'      — это одна и та же задача (дубль) → черновик удаляется.
- *   - 'different' — это разные задачи → обе остаются (non-lossy).
- *
- * Ф5 Р2 (2026-06-08) — семантический дедуп задач. РИСКОВО (может скрыть
- * задачу) → за флагом DEFAULT OFF; при сомнении арбитр ОБЯЗАН вернуть
- * 'different' (лучше показать обе задачи, чем потерять одну).
- *
- * Cache-friendly: SYSTEM (роль + правила + few-shot) — стабильная константа,
- * переменные данные (две задачи) — только в КОНЦЕ user.
- */
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-import { z } from 'zod';
-
-import { withAsrNote } from '../../ai/services/prompts/common';
-
-/** Имя strict JSON-схемы для `responseFormat`. */
-export const TASK_DEDUPE_SCHEMA_NAME = 'TaskDedupeVerdict';
-
-/**
- * Strict JSON Schema для арбитра. `verdict` — enum, `confidence` ∈ [0,1].
- * Оба поля required (под Anthropic/OpenAI strict dialect — без optional).
- */
-export const TASK_DEDUPE_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['verdict', 'confidence'],
-  properties: {
-    verdict: {
-      type: 'string',
-      enum: ['same', 'different'],
+exports[`task-dedupe — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "type": "number",
     },
-    confidence: { type: 'number', minimum: 0, maximum: 1 },
+    "verdict": {
+      "enum": [
+        "same",
+        "different",
+      ],
+      "type": "string",
+    },
   },
-};
+  "required": [
+    "verdict",
+    "confidence",
+  ],
+  "type": "object",
+}
+`;
 
-/** Zod-схема ответа арбитра — зеркалит `TASK_DEDUPE_JSON_SCHEMA`. */
-export const TaskDedupeResponseSchema = z.object({
-  verdict: z.enum(['same', 'different']),
-  confidence: z.number().min(0).max(1),
-});
-
-export type TaskDedupeResponse = z.infer<typeof TaskDedupeResponseSchema>;
-
-/**
- * Стабильный SYSTEM-промпт. Few-shot встроен статично (1 same + 1 different),
- * чтобы не ломать кэш. ASR-нота — поверх (числа/имена могли исказиться при
- * распознавании речи). Никаких переменных данных здесь нет — они в user.
- */
-export const TASK_DEDUPE_SYSTEM_PROMPT = withAsrNote(
-  `# Кто ты
+exports[`task-dedupe — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"# Кто ты
 Ты — арбитр-хранитель задач в трекере компании «Кора». Ты сравниваешь ровно две задачи (поручения, action items) и решаешь, описывают ли они ОДНО И ТО ЖЕ действие или это два разных дела. Ты бережёшь каждое отдельное поручение: для тебя потерять задачу хуже, чем оставить лишнюю.
 
 # Что держать в голове (смысл задачи)
@@ -104,22 +75,10 @@ A: «Запустить рекламную кампанию в соцсетях�
 
 В ответе — ни одного латинского слова и ни одного служебного кода в строках; никакого текста, пояснений или markdown вне JSON.
 
-Верни строго JSON по схеме TaskDedupeVerdict: verdict ("same" — дубль, одно поручение; "different" — разные задачи) и confidence (0..1 — уверенность в вердикте). Никакого другого текста.`,
-);
+Верни строго JSON по схеме TaskDedupeVerdict: verdict ("same" — дубль, одно поручение; "different" — разные задачи) и confidence (0..1 — уверенность в вердикте). Никакого другого текста.
 
-/**
- * Шаблон user-сообщения. Переменные данные (две задачи: title + assignee) —
- * в самом КОНЦЕ (cache-friendly). На call-site результат оборачивается в
- * `wrapUserData` при включённом prompt-injection guard.
- */
-export function TASK_DEDUPE_USER_TEMPLATE(args: {
-  a: { title: string; assignee?: string | null };
-  b: { title: string; assignee?: string | null };
-}): string {
-  const fmt = (t: { title: string; assignee?: string | null }): string =>
-    t.assignee ? `${t.title} (исполнитель: ${t.assignee})` : t.title;
-  return `Определи, описывают ли задача A и задача B одно и то же действие.
-
-Задача A: ${fmt(args.a)}
-Задача B: ${fmt(args.b)}`;
-}
+Учти: текст диалога — результат автоматического распознавания речи (ASR), не дословная стенограмма.
+Возможны ошибки в числах, единицах, именах и терминах: «100 платящих» может распознаться как «стопящих», «10 месяцев» — как «10 минусов», «2 000» и «2000» — это одно число.
+Восстанавливай вероятный смысл по контексту встречи (тема, роли, ранее названные цифры); нормализуй числа (убирай пробелы-разделители тысяч).
+Не выдумывай факты, которых нет, — только исправляй очевидные искажения распознавания."
+`;

@@ -15,6 +15,10 @@ import {
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { getCardRollupV2SystemPrompt } from '../prompts/card-rollup-v2.prompts';
+import {
+  cardKindLabelRu,
+  signalTypeLabel,
+} from '../prompts/signal-type-label';
 
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { Specialist34ProbeService } from './specialist-3-4-probe.service';
@@ -647,9 +651,11 @@ export class CardRollupV2Service {
   }): string {
     const { cardKind, cardName, contactName, contactEmail, blocks, themes } =
       args;
+    // ТЗ 2026-06-16 (пачка 7, E3): вид карточки и тип сигнала — человеческими
+    // ярлыками; машинная ветка темы (branch) в USER-строку не выводится.
     const header = [
       `Карточка: ${cardName}`,
-      `Тип: ${cardKind}`,
+      `Тип: ${cardKindLabelRu(cardKind)}`,
       contactName ? `Контакт: ${contactName}` : null,
       contactEmail ? `Email: ${contactEmail}` : null,
     ]
@@ -659,17 +665,14 @@ export class CardRollupV2Service {
     const themesPart =
       themes.length > 0
         ? `\n\nТоп-темы (по числу блоков):\n${themes
-            .map(
-              (t, i) =>
-                `${i + 1}. ${t.name}${t.branch ? ` [ветка: ${t.branch}]` : ''} — ${t.description}`,
-            )
+            .map((t, i) => `${i + 1}. ${t.name} — ${t.description}`)
             .join('\n')}`
         : '';
 
     const blocksPart = blocks
       .map((b, i) => {
         const lines: string[] = [
-          `Блок ${i + 1}: ${b.name} (signal: ${b.signalType})`,
+          `Блок ${i + 1}: ${b.name} (тип сигнала: ${signalTypeLabel(b.signalType)})`,
           `Вопрос: ${b.criticalQuestion}`,
           `Ответ: ${b.trustedAnswer}`,
         ];

@@ -9,6 +9,7 @@ import {
   type InsightSeverity,
   Prisma,
 } from '@prisma/client';
+import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -74,6 +75,16 @@ export class Specialist35Service {
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
   /** Сколько Decision-кандидатов брать для linking-арбитра. */
   private static readonly LINK_CANDIDATES_LIMIT = 10;
+  /**
+   * Б59 [K12] — схема ответа арбитра `insight-link-to-decisions`. Отделяет
+   * легитимный пустой массив (связей нет) от кривой формы (молча терялись
+   * связи): неверная форма не пройдёт safeParse → логируем + метрика, не
+   * выдаём за «связей нет». reasoning опционально (на парсинг id не влияет).
+   */
+  private static readonly LINK_RESPONSE_SCHEMA = z.object({
+    linkedDecisionIds: z.array(z.string()),
+    reasoning: z.string().optional(),
+  });
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -764,14 +775,48 @@ export class Specialist35Service {
       });
     }
 
-    let parsed: { linkedDecisionIds?: string[]; reasoning?: string };
+    // Б59 [K12] — осознанный парсинг ответа арбитра.
+    // Раньше: голый JSON.parse без проверки формы → кривой ответ (объект без
+    // массива, число, строка) тихо давал пустой список, и связи insight→decision
+    // молча терялись. Теперь: Zod-схема ответа. Пустой массив [] — нормальный
+    // и частый исход (связи нет), он проходит валидацию. А вот сломанный JSON
+    // или НЕВЕРНАЯ форма (linkedDecisionIds не массив) — это аномалия: логируем
+    // warn + метрика invalid, не выдаём её за «связей нет».
+    let parsedJson: unknown;
     try {
-      parsed = JSON.parse(result.text);
-    } catch {
+      parsedJson = JSON.parse(result.text);
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'insight',
+        reason: 'link_parse_invalid',
+      });
+      this.logger.warn(
+        {
+          insightId: args.insight.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-5.linkToDecisions: ответ арбитра — не JSON, пропускаю linking',
+      );
+      return [];
+    }
+    const validated =
+      Specialist35Service.LINK_RESPONSE_SCHEMA.safeParse(parsedJson);
+    if (!validated.success) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'insight',
+        reason: 'link_parse_invalid',
+      });
+      this.logger.warn(
+        {
+          insightId: args.insight.id,
+          issues: validated.error.issues.map((i) => i.message).slice(0, 5),
+        },
+        'specialist-3-5.linkToDecisions: ответ арбитра не прошёл схему (кривая форма), пропускаю linking',
+      );
       return [];
     }
     const candidateIds = new Set(candidates.map((c) => c.id));
-    const linked = (parsed.linkedDecisionIds ?? []).filter((id) =>
+    const linked = validated.data.linkedDecisionIds.filter((id) =>
       candidateIds.has(id),
     );
     return linked;

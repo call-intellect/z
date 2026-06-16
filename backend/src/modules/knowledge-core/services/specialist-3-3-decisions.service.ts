@@ -7,6 +7,7 @@ import {
   type IdeaBlockEvidence,
   Prisma,
 } from '@prisma/client';
+import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -761,9 +762,9 @@ export class Specialist33Service {
       });
     }
 
-    let parsed: SupersedeVerdict;
+    let rawParsed: unknown;
     try {
-      parsed = JSON.parse(result.text) as SupersedeVerdict;
+      rawParsed = JSON.parse(result.text);
     } catch {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'decision',
@@ -775,6 +776,34 @@ export class Specialist33Service {
         reasoning: 'arbiter_parse_failed',
       };
     }
+
+    // Б40 [K12] — структурная валидация verdict. Невалидный verdict (вне enum)
+    // раньше тихо трактовался как 'new' и терял supersede-намерение. Теперь —
+    // метрика + WARN-лог + ОСОЗНАННЫЙ fallback на самый консервативный 'new'.
+    const validated = SupersedeVerdictSchema.safeParse(rawParsed);
+    if (!validated.success) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'decision',
+        reason: 'arbiter_invalid_verdict',
+      });
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          blockId: args.blockId,
+          rawVerdict: (rawParsed as { verdict?: unknown } | null)?.verdict,
+          issues: validated.error.issues
+            .map((i) => `${i.path.join('.')}: ${i.message}`)
+            .join('; '),
+        },
+        'specialist-3-3.supersedeDetect: невалидный verdict арбитра — осознанный fallback к "new"',
+      );
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: 'arbiter_invalid_verdict',
+      };
+    }
+    const parsed: SupersedeVerdict = validated.data;
 
     // Sanity: target должен принадлежать candidates.
     const candidateIds = new Set(args.candidates.map((c) => c.id));
@@ -1406,3 +1435,25 @@ interface SupersedeVerdict {
     newValidFrom: string;
   };
 }
+
+/**
+ * Б40 [K12] — строгая валидация ответа арбитра supersede.
+ *
+ * Раньше ответ парсился голым `JSON.parse(...) as SupersedeVerdict`: если
+ * модель вернёт `verdict` вне enum (русский ярлык, опечатка), он молча
+ * проходил дальше и трактовался как 'new' — supersede-намерение терялось без
+ * следа. Теперь невалидный verdict ловится Zod-ом → метрика
+ * `arbiter_invalid_verdict` + WARN-лог, и только потом ОСОЗНАННЫЙ fallback на
+ * 'new'. `targetId`/`reasoning`/`evolvingMeta` зеркалят {@link SupersedeVerdict}.
+ */
+const SupersedeVerdictSchema = z.object({
+  verdict: z.enum(['new', 'merge', 'supersedes']),
+  targetId: z.string().nullable().default(null),
+  reasoning: z.string().default(''),
+  evolvingMeta: z
+    .object({
+      existingValidUntil: z.string(),
+      newValidFrom: z.string(),
+    })
+    .optional(),
+});

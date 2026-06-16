@@ -11,6 +11,10 @@ import {
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import {
+  entityTypeLabelRu,
+  signalTypeLabel,
+} from '../prompts/signal-type-label';
+import {
   THEME_BRANCH_VALUES as THEME_BRANCH_VALUES_FROM_PROMPT,
   THEME_CLASSIFY_JSON_SCHEMA,
   THEME_CLASSIFY_SYSTEM_PROMPT,
@@ -84,18 +88,18 @@ export class ThemeClassificationService {
     const { tenantId, blocks, entities } = input;
     if (blocks.length === 0) return null;
 
+    // ТЗ 2026-06-16 (пачка 7, E1): подаём человеческие ярлыки типа сигнала и
+    // вида сущности; машинные id блоков/сущностей в payload не кладём (шум).
     const userPayload = {
       blocks: blocks.map((b) => ({
-        id: b.id,
         name: b.name,
         criticalQuestion: b.criticalQuestion,
         trustedAnswer: b.trustedAnswer,
-        signalType: b.signalType,
+        тип_сигнала: signalTypeLabel(b.signalType),
         tags: b.tags,
       })),
       entities: entities.map((e) => ({
-        id: e.id,
-        type: e.type,
+        вид: entityTypeLabelRu(e.type),
         canonicalName: e.canonicalName,
       })),
     };

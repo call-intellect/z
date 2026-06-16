@@ -1,147 +1,7 @@
-/**
- * structured-document-compiler.prompt — Волна 6 Стадия C, A7.
- *
- * Агент-компилятор организационного документа: единый владелец сборки
- * `contentMd` для типов regulation / process / policy / instruction. Получает
- * тип, название и материал (накопленные блоки темы) + текущее тело документа,
- * собирает готовый структурный markdown по шаблону типа в двух режимах:
- *   - СОЗДАНИЕ (existingContentMd пуст) — каркас с нуля по структуре типа;
- *   - ДОПОЛНЕНИЕ (existingContentMd непустой) — слияние без потери старого.
- *
- * Источник полного текста SYSTEM:
- *   plans/analysis/2026-06-09-prompt-rewrites/22-org-entities-COMPARE-and-compiler.md §3
- *   (режимы, правила слияния, структуры по типам, маркеры, чек-лист).
- *
- * Контракт (tool `compile_org_document`):
- *   - contentMd:     string  — готовый markdown по структуре типа.
- *   - steps:         array of {title, description} — ТОЛЬКО для kind=process,
- *                    иначе []. Синхронизируются downstream с ProcessStep.
- *   - changeReason:  string  — что и почему изменено («первичная сборка из
- *                    материала» для СОЗДАНИЯ) → ложится в changelog версии.
- *   - signals:       array of string — type-mismatch / no-info / конфликты
- *                    (для триажа).
- *
- * Cache-friendly: SYSTEM стабильный (одинаков для всех вызовов); переменные
- * kind / name / blocks / existingContentMd — целиком в user (см.
- * applyInputGuards на call-site). withDocumentCompilerMode (A0.7) дописан в
- * КОНЕЦ SYSTEM, чтобы не ломать кэш префикса.
- *
- * E1/E2: newSourceBlocks / existingContentMd — пользовательский контент →
- * оборачиваются wrapUserData + withInjectionGuard на call-site (через
- * applyInputGuards). В тело SYSTEM пользовательские данные не вшиваются.
- *
- * Все строки на русском.
- */
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-import { z } from 'zod';
-
-import type { LlmTool } from '../../ai/services/llm.types';
-import { withDocumentCompilerMode } from '../../ai/services/prompts/common';
-
-import { orgDocumentKindLabelRu } from './signal-type-label';
-
-// ──────────────────────────── Метаданные ────────────────────────────
-
-/** taskType для LlmRouter (см. llm-router.service.ts LlmTaskType). */
-export const COMPILE_ORG_DOCUMENT_TASK_TYPE = 'compile-org-document' as const;
-
-/** Имя tool'а для structured output (LLM tool-use). */
-export const COMPILE_ORG_DOCUMENT_TOOL_NAME = 'compile_org_document';
-
-/**
- * Лимит выходных токенов. Документ + шаги + changelog — компактны (обычно
- * 2-6k), но запас на длинные регламенты с большой таблицей «кто-что-когда».
- */
-export const COMPILE_ORG_DOCUMENT_MAX_TOKENS = 12_000;
-
-/** Поддерживаемые типы документа (kind). */
-export const ORG_DOCUMENT_KINDS = [
-  'regulation',
-  'process',
-  'policy',
-  'instruction',
-] as const;
-export type OrgDocumentKind = (typeof ORG_DOCUMENT_KINDS)[number];
-
-// ──────────────────────────── Zod-схема парсинга ────────────────────────────
-
-export const CompiledStepSchema = z
-  .object({
-    title: z.string().min(1),
-    description: z.string(),
-  })
-  .strict();
-export type CompiledStep = z.infer<typeof CompiledStepSchema>;
-
-/**
- * Output одного LLM-вызова. `steps` — массив (для не-process типов LLM вернёт
- * []). Все поля обязательны (steps/signals могут быть пустыми массивами).
- */
-export const CompileOrgDocumentOutputSchema = z
-  .object({
-    contentMd: z.string(),
-    steps: z.array(CompiledStepSchema),
-    changeReason: z.string(),
-    signals: z.array(z.string()),
-  })
-  .strict();
-export type CompileOrgDocumentOutput = z.infer<
-  typeof CompileOrgDocumentOutputSchema
->;
-
-// ──────────────────────────── Tool schema (LlmTool) ────────────────────────────
-
-export const COMPILE_ORG_DOCUMENT_TOOL: LlmTool = {
-  name: COMPILE_ORG_DOCUMENT_TOOL_NAME,
-  description:
-    'Собрать готовый структурный организационный документ (markdown) из материала по шаблону его типа.',
-  input_schema: {
-    type: 'object',
-    required: ['contentMd', 'steps', 'changeReason', 'signals'],
-    additionalProperties: false,
-    properties: {
-      contentMd: {
-        type: 'string',
-        description:
-          'Готовый markdown документа по структуре его типа (с маркерами [требует уточнения]/[конфликт]/[изменено] там, где нужно).',
-      },
-      steps: {
-        type: 'array',
-        description:
-          'Шаги процесса — ТОЛЬКО для kind=process (синхронизируются с таблицей шагов); для остальных типов — пустой массив.',
-        items: {
-          type: 'object',
-          required: ['title', 'description'],
-          additionalProperties: false,
-          properties: {
-            title: { type: 'string' },
-            description: { type: 'string' },
-          },
-        },
-      },
-      changeReason: {
-        type: 'string',
-        description:
-          'Короткая запись «что и почему изменилось в этой версии» (для СОЗДАНИЯ — «первичная сборка из материала»).',
-      },
-      signals: {
-        type: 'array',
-        description:
-          'Сигналы для триажа: «материал больше похож на <тип>…», «в материале нет информации по теме», конфликты и т.п.',
-        items: { type: 'string' },
-      },
-    },
-  },
-};
-
-// ──────────────────────────── System prompt ────────────────────────────
-
-/**
- * Тело SYSTEM — текст СТАЛО из анализа 22 §3 (режимы, алгоритм, правила
- * слияния, общие принципы, структуры по типам, краевые случаи, чек-лист,
- * формат вывода). Стабильный, без переменных — cache-friendly.
- */
-const COMPILE_ORG_DOCUMENT_SYSTEM_BODY = `# Кто ты
+exports[`structured-document-compiler — snapshot сборки промта > system стабилен (E3-body + document-compiler mode note) > system 1`] = `
+"# Кто ты
 Ты — методист корпоративной документации компании Кора. Твоя зона ответственности — превращать сырой материал (накопленные блоки темы: вопросы, сути, цитаты) в готовый рабочий организационный документ одного из четырёх типов: Инструкция, Регламент, Описание процесса, Политика.
 
 Характер у тебя как у педантичного архивиста-методолога: ты бережёшь каждый уже существующий пункт документа и скорее честно поставишь пометку «[требует уточнения]», чем выдумаешь срок, ответственного или название системы «для красоты». Ты не пересказываешь и не украшаешь материал — собираешь сухой рабочий документ, который сразу можно дать сотруднику как руководство.
@@ -208,130 +68,32 @@ const COMPILE_ORG_DOCUMENT_SYSTEM_BODY = `# Кто ты
 - steps — массив шагов (title, description) ТОЛЬКО для «Описание процесса»; иначе [];
 - changeReason — 1–3 строки «что и почему изменилось» (СОЗДАНИЕ — «первичная сборка из материала»);
 - signals — массив строк-сигналов для разбора русскими фразами; [], если сигналов нет.
-Никакого текста вне инструмента. Все поля — свободный русский текст и markdown, поэтому соблюдай структуру разделов своего типа, а не какой-либо код.`;
+Никакого текста вне инструмента. Все поля — свободный русский текст и markdown, поэтому соблюдай структуру разделов своего типа, а не какой-либо код.
 
-/**
- * Полный SYSTEM-промпт компилятора. withDocumentCompilerMode (A0.7) дописывает
- * в КОНЕЦ блок про режимы/маркеры/«ничего не теряй»/версию — стабильно,
- * cache-friendly.
- */
-export function buildCompileOrgDocumentSystemPrompt(): string {
-  return withDocumentCompilerMode(COMPILE_ORG_DOCUMENT_SYSTEM_BODY);
-}
+Режим компиляции документа:
+- СОЗДАНИЕ (нет существующего текста): собери структуру с нуля по типу документа.
+- ДОПОЛНЕНИЕ (есть существующий текст): встрой новое в существующий, НИЧЕГО НЕ ТЕРЯЯ из старого. Не переписывай заново — дополняй и уточняй.
+Маркеры прямо в тексте документа:
+- [требует уточнения] — место, где данных недостаточно или они неоднозначны;
+- [конфликт] — новое противоречит старому (оставь оба варианта, помеченные);
+- [изменено] — пункт, обновлённый относительно предыдущей версии.
+Всегда: повышай версию и добавляй короткую запись в changelog/changeReason — что и почему изменилось."
+`;
 
-// ──────────────────────────── User message ────────────────────────────
+exports[`structured-document-compiler — snapshot сборки промта > user для kind=regulation: kind подан ярлыком + технический ключ маршрутизации сохранён > user-regulation 1`] = `
+"Тип документа: Регламент
+kind: regulation
+name: Согласование договоров
+mode: СОЗДАНИЕ
 
-/** Минимальное представление блока-источника для user-сообщения. */
-export interface CompileSourceBlock {
-  name: string;
-  /** Вопрос/тема блока (criticalQuestion). */
-  question?: string | null;
-  /** Подтверждённый ответ/суть (trustedAnswer / statement). */
-  answer?: string | null;
-  /** Дословные цитаты-опоры. */
-  quotes?: string[];
-}
+Материал (накопленные блоки темы):
+[Блок 1] Маршрут договора
+  Вопрос: Кто проверяет договор перед подписанием?
+  Суть: Юрист проверяет за 3 дня, затем подписывает руководитель.
+  Цитаты: «юрист проверяет договор»
 
-/** Существующий шаг процесса (для синхронизации в ДОПОЛНЕНИИ). */
-export interface CompileExistingStep {
-  title: string;
-  description?: string | null;
-}
+existingContentMd (текущее тело документа):
+(пусто — это СОЗДАНИЕ)
 
-export interface CompileOrgDocumentInput {
-  kind: OrgDocumentKind;
-  name: string;
-  newSourceBlocks: CompileSourceBlock[];
-  /** Текущее тело документа. Пусто/undefined → СОЗДАНИЕ; иначе ДОПОЛНЕНИЕ. */
-  existingContentMd?: string | null;
-  /** Существующие шаги (для kind=process). */
-  existingSteps?: CompileExistingStep[];
-  /** ISO «сейчас» (для относительных сроков). */
-  nowIso?: string | null;
-}
-
-function formatSourceBlock(block: CompileSourceBlock, idx: number): string {
-  const lines = [`[Блок ${idx + 1}] ${block.name}`];
-  if (block.question) lines.push(`  Вопрос: ${block.question}`);
-  if (block.answer) lines.push(`  Суть: ${block.answer}`);
-  const quotes = (block.quotes ?? []).filter((q) => q && q.trim().length > 0);
-  if (quotes.length > 0) {
-    lines.push(`  Цитаты: ${quotes.map((q) => `«${q}»`).join('; ')}`);
-  }
-  return lines.join('\n');
-}
-
-/**
- * Сборка RAW user-сообщения (БЕЗ guard-обёртки — её добавляет applyInputGuards
- * на call-site). Переменная часть целиком здесь — SYSTEM остаётся стабильным.
- */
-export function buildCompileOrgDocumentUserMessage(
-  input: CompileOrgDocumentInput,
-): string {
-  const mode =
-    input.existingContentMd && input.existingContentMd.trim().length > 0
-      ? 'ДОПОЛНЕНИЕ'
-      : 'СОЗДАНИЕ';
-
-  const parts: string[] = [];
-  parts.push(`Тип документа: ${orgDocumentKindLabelRu(input.kind)}`);
-  parts.push(`kind: ${input.kind}`);
-  parts.push(`name: ${input.name}`);
-  parts.push(`mode: ${mode}`);
-  if (input.nowIso) parts.push(`nowIso: ${input.nowIso}`);
-
-  parts.push('');
-  parts.push('Материал (накопленные блоки темы):');
-  if (input.newSourceBlocks.length > 0) {
-    parts.push(input.newSourceBlocks.map(formatSourceBlock).join('\n\n'));
-  } else {
-    parts.push('(новых блоков нет)');
-  }
-
-  parts.push('');
-  parts.push('existingContentMd (текущее тело документа):');
-  parts.push(
-    input.existingContentMd && input.existingContentMd.trim().length > 0
-      ? input.existingContentMd
-      : '(пусто — это СОЗДАНИЕ)',
-  );
-
-  if (input.kind === 'process') {
-    parts.push('');
-    parts.push('existingSteps (текущие шаги процесса):');
-    const steps = input.existingSteps ?? [];
-    if (steps.length > 0) {
-      parts.push(
-        steps
-          .map(
-            (s, i) =>
-              `  ${i + 1}. ${s.title}${s.description ? ` — ${s.description}` : ''}`,
-          )
-          .join('\n'),
-      );
-    } else {
-      parts.push('(шагов пока нет)');
-    }
-  }
-
-  parts.push('');
-  parts.push(
-    `Собери документ типа «${orgDocumentKindLabelRu(input.kind)}» по его структуре и верни через инструмент ${COMPILE_ORG_DOCUMENT_TOOL_NAME}.`,
-  );
-
-  return parts.join('\n');
-}
-
-/**
- * Удобный билдер пары (system, user) — НЕ применяет guard'ы (это делает
- * сервис через applyInputGuards). Возвращает RAW system/user.
- */
-export function buildCompileOrgDocumentPrompt(input: CompileOrgDocumentInput): {
-  system: string;
-  user: string;
-} {
-  return {
-    system: buildCompileOrgDocumentSystemPrompt(),
-    user: buildCompileOrgDocumentUserMessage(input),
-  };
-}
+Собери документ типа «Регламент» по его структуре и верни через инструмент compile_org_document."
+`;

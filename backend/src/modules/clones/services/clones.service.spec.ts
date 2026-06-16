@@ -467,10 +467,14 @@ describe('ClonesService Ф6 (G) — clone-respond hardening', () => {
       expect(dec?.snippet).toBe('Перешли на недельные спринты');
     });
 
-    it('вход с [DECISION:id] которого НЕТ в subgraph → id всё равно сохраняется (минимальная citation)', () => {
+    it('Б20 — вход с [DECISION:id] которого НЕТ в subgraph → НЕ засчитывается (призрак не обходит grounding-гейт)', () => {
       const svc = buildBareService();
       const out = parse(svc, 'См. [DECISION:ghost].', emptySubgraph());
-      expect(out.map((c) => c.blockId)).toContain('ghost');
+      // Раздел 8 Б20: ghost-DECISION (нет в subgraph) не должен попадать в
+      // citations, иначе isUngrounded увидит citations.length>0 и пропустит
+      // галлюцинацию. По аналогии с BLOCK-веткой.
+      expect(out.map((c) => c.blockId)).not.toContain('ghost');
+      expect(out).toHaveLength(0);
     });
 
     it('вход с [BLOCK:id] работает как раньше', () => {

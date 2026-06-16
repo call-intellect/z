@@ -603,16 +603,10 @@ export class ClonesService {
     // Clones=Roles Фаза 6 — подставляем roleName из Role.name и bearerName
     // из текущего носителя `ExecutablePersona.currentBearerPersonId`. Если
     // bearer не зафиксирован — null (промпт подставит дефолт).
-    let bearerName: string | null = null;
-    if (persona.currentBearerPersonId) {
-      const bearer = await this.prisma.person.findUnique({
-        where: { id: persona.currentBearerPersonId },
-        select: { name: true, tenantId: true },
-      });
-      if (bearer && bearer.tenantId === args.tenantId) {
-        bearerName = bearer.name;
-      }
-    }
+    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
+    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
+    const bearerName: string | null =
+      persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
     // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkills = await this.retrievePracticeSkills({
@@ -1113,16 +1107,10 @@ export class ClonesService {
       });
     }
 
-    let bearerName: string | null = null;
-    if (persona.currentBearerPersonId) {
-      const bearer = await this.prisma.person.findUnique({
-        where: { id: persona.currentBearerPersonId },
-        select: { name: true, tenantId: true },
-      });
-      if (bearer && bearer.tenantId === args.tenantId) {
-        bearerName = bearer.name;
-      }
-    }
+    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
+    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
+    const bearerName: string | null =
+      persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
     // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkillsV2Role = await this.retrievePracticeSkills({
@@ -2070,7 +2058,11 @@ export class ClonesService {
         departmentId: role.department?.id ?? null,
         version: c.roleVersion ?? 1,
         publicName: c.publicName ?? `Клон ${role.name} v${c.roleVersion ?? 1}`,
-        status: c.status as 'active' | 'superseded' | 'pending_rebuild',
+        status: c.status as
+          | 'active'
+          | 'superseded'
+          | 'pending_rebuild'
+          | 'frozen',
         currentBearer: bearer
           ? { personId: bearer.id, personName: bearer.name }
           : null,
@@ -2156,21 +2148,8 @@ export class ClonesService {
       return { roleId: role.id, roleName: role.name, versions: [] };
     }
 
-    const bearerIds = [
-      ...new Set(
-        personas
-          .map((p) => p.currentBearerPersonId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-    const bearers =
-      bearerIds.length > 0
-        ? await this.prisma.person.findMany({
-            where: { id: { in: bearerIds }, tenantId: args.tenantId },
-            select: { id: true, name: true },
-          })
-        : [];
-    const bearerById = new Map(bearers.map((p) => [p.id, p]));
+    // Раздел 7 (Р7/И3/И8) — историю показываем как «Клон <Должность> v<N>» без
+    // ФИО носителя: личность бывших не раскрываем, версию идентифицирует publicName.
 
     // Сортируем по snapshotAt ASC для корректного вычисления validUntil:
     // validUntil[i] = snapshotAt[i+1] (или null для самой свежей).
@@ -2198,18 +2177,18 @@ export class ClonesService {
     }
 
     const versions: CloneVersionDto[] = personas.map((p) => {
-      const bearer = p.currentBearerPersonId
-        ? bearerById.get(p.currentBearerPersonId)
-        : undefined;
       return {
         personaId: p.id,
         roleId: role.id,
         version: p.roleVersion ?? 1,
         publicName: p.publicName ?? `Клон ${role.name} v${p.roleVersion ?? 1}`,
-        status: p.status as 'active' | 'superseded' | 'pending_rebuild',
-        bearer: bearer
-          ? { personId: bearer.id, personName: bearer.name }
-          : null,
+        status: p.status as
+          | 'active'
+          | 'superseded'
+          | 'pending_rebuild'
+          | 'frozen',
+        // Раздел 7 (И3/И8) — ФИО носителя НЕ выводим; версию идентифицирует publicName.
+        bearer: null,
         validFrom: p.snapshotAt.toISOString(),
         validUntil: validUntilByPersonaId.get(p.id) ?? null,
         confidence: Math.min(1, p.builtFromTraitsCount / 10),
@@ -3027,10 +3006,13 @@ export class ClonesService {
       if (seen.has(id)) continue; // общий dedup с BLOCK-веткой
       seen.add(id);
       const d = decisionMap.get(id);
-      // Даже если решения нет в subgraph — id не теряем (минимальная citation).
+      // Б20 (Раздел 8) — если решения нет в subgraph, НЕ засчитываем призрачную
+      // цитату: иначе [DECISION:x] обходит post-LLM grounding-гейт (isUngrounded
+      // видит citations.length>0). По аналогии с BLOCK-веткой (`if (!b) continue`).
+      if (!d) continue;
       out.push({
         blockId: id,
-        snippet: d?.statement ?? undefined,
+        snippet: d.statement ?? undefined,
       });
     }
 

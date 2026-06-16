@@ -380,4 +380,35 @@ describe('HangingDecisionsService', () => {
       );
     });
   });
+
+  describe('listHangingWithAuthors (ТЗ coo-orphan-agents Ф2)', () => {
+    it('пробрасывает результат findMany и фильтрует по where (status/raisedCount/createdAt)', async () => {
+      const { service, prisma } = buildService();
+      prisma.decision.findMany.mockResolvedValueOnce([
+        { id: 'd-1', decidedByPersonIds: ['p-1'] },
+      ]);
+
+      const res = await service.listHangingWithAuthors({
+        tenantId: 't-1',
+        now: NOW,
+      });
+
+      // (а) результат проброшен как есть.
+      expect(res).toEqual([{ id: 'd-1', decidedByPersonIds: ['p-1'] }]);
+
+      // (б) where содержит критерий «висящего».
+      const expectedThreshold = new Date(NOW.getTime() - 7 * DAY_MS);
+      expect(prisma.decision.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tenantId: 't-1',
+            status: { in: ['proposed', 'approved', 'active'] },
+            raisedCount: { gte: 2 },
+            createdAt: { lte: expectedThreshold },
+          }),
+          select: { id: true, decidedByPersonIds: true },
+        }),
+      );
+    });
+  });
 });

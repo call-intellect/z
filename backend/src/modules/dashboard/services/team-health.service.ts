@@ -5,6 +5,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { OperationsDashboardService } from '../../operations/services/operations-dashboard.service';
 
 import { CommitmentReliabilityService } from './commitment-reliability.service';
+import { HangingDecisionsService } from './hanging-decisions.service';
 
 /**
  * Health tone — цвет UI-чипа. `neutral` используется когда отдел ниже cohort
@@ -39,10 +40,7 @@ export interface TeamHealthRowDto {
   promises: TeamHealthAttrDto;
   /** Число пар-конфликтов внутри отдела. */
   conflicts: TeamHealthAttrDto;
-  /**
-   * Висящие решения per-dept — в v1 не считаем (TZ Wave 1 §1.6).
-   * Полная импл — в Wave 6.x. Возвращаем neutral-плейсхолдер.
-   */
+  /** Число висящих решений, атрибутированных отделу (ТЗ Ф2). */
   decisions: TeamHealthAttrDto;
 }
 
@@ -87,6 +85,8 @@ export class TeamHealthService {
     private readonly commits: CommitmentReliabilityService,
     @Inject(OperationsDashboardService)
     private readonly ops: OperationsDashboardService,
+    @Inject(HangingDecisionsService)
+    private readonly hanging: HangingDecisionsService,
   ) {}
 
   async getHealth(args: { tenantId: string }): Promise<TeamHealthDto> {
@@ -141,6 +141,33 @@ export class TeamHealthService {
       select: { fromEntityId: true, toEntityId: true },
     });
 
+    // Висящие решения с авторами — ОДНА выборка за tenant (запрет N+1).
+    // Раскладка по отделам in-memory ниже (как conflictLinks). Правило
+    // атрибуции (ТЗ Ф2): решение «висит» для отдела, если хотя бы один автор из
+    // decidedByPersonIds — из этого отдела (primaryDepartmentId == dept.id).
+    // Overlap допускается: одно решение может попасть в 2 отдела.
+    const hangingDecisions = await this.hanging.listHangingWithAuthors({
+      tenantId: args.tenantId,
+    });
+    // Обратная карта personId → departmentId (по primaryDepartment relation).
+    const personToDept = new Map<string, string>();
+    for (const dept of departments) {
+      for (const p of dept.persons) personToDept.set(p.id, dept.id);
+    }
+    // Раскладка: для каждого решения — множество отделов-владельцев (dedup,
+    // одно решение считается отделу не более одного раза).
+    const decisionsByDept = new Map<string, number>();
+    for (const d of hangingDecisions) {
+      const depts = new Set<string>();
+      for (const pid of d.decidedByPersonIds) {
+        const deptId = personToDept.get(pid);
+        if (deptId) depts.add(deptId);
+      }
+      for (const deptId of depts) {
+        decisionsByDept.set(deptId, (decisionsByDept.get(deptId) ?? 0) + 1);
+      }
+    }
+
     const teams: TeamHealthRowDto[] = [];
 
     for (const dept of departments) {
@@ -187,10 +214,11 @@ export class TeamHealthService {
         tone: this.toneConflicts(conflictsInDept),
       };
 
-      // Decisions: v1 — neutral plug (per-dept hanging-decisions в Wave 6.x).
+      // Decisions: висящие решения, атрибутированные отделу (ТЗ Ф2).
+      const decisionsCount = decisionsByDept.get(dept.id) ?? 0;
       const decisions: TeamHealthAttrDto = {
-        value: 0,
-        tone: 'neutral',
+        value: decisionsCount,
+        tone: this.toneDecisions(decisionsCount),
       };
 
       teams.push({
@@ -265,6 +293,12 @@ export class TeamHealthService {
   }
 
   private toneConflicts(v: number): HealthTone {
+    if (v === 0) return 'success';
+    if (v <= 2) return 'warning';
+    return 'danger';
+  }
+
+  private toneDecisions(v: number): HealthTone {
     if (v === 0) return 'success';
     if (v <= 2) return 'warning';
     return 'danger';

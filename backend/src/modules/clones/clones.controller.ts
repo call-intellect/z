@@ -29,10 +29,13 @@ import {
   type CloneConversationsListResponseDto,
 } from './dto/clone-conversations.dto';
 import {
+  AskAllFormersBodySchema,
   AskCloneBodySchema,
   CloneQueryLogQuerySchema,
   ClonesListQuerySchema,
   MarkTraitMisleadingBodySchema,
+  type AskAllFormersBody,
+  type AskAllFormersResponseDto,
   type AskCloneBody,
   type AskCloneResponseDto,
   type CloneHistoryResponseDto,
@@ -228,6 +231,28 @@ export class ClonesController {
       roleId,
       question: body.question,
       conversationId: body.conversationId,
+      roleVersion: body.roleVersion,
+    });
+  }
+
+  @Post('roles/:roleId/ask-all-formers')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Раздел 7 §7.5 «совет бывших»: один вопрос → ответы всех версий клона роли (текущая active + бывшие frozen) рядом для сравнения. ФИО не выводятся.',
+  })
+  async askAllFormers(
+    @Param('roleId') roleId: string,
+    @Body(new ZodValidationPipe(AskAllFormersBodySchema)) body: AskAllFormersBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<AskAllFormersResponseDto> {
+    const t = this.requireTenant(tenantId);
+    return this.clones.askAllFormers({
+      tenantId: t,
+      requesterUserId: user.id,
+      roleId,
+      question: body.question,
     });
   }
 

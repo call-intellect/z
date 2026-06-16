@@ -52,6 +52,19 @@ function buildService(opts?: {
   const blockCount = opts?.blockCount ?? 6;
   const blockIds = Array.from({ length: blockCount }, (_, i) => `b${i + 1}`);
 
+  // Б19 — спаи для проверки порядка выборки кейсов (take/orderBy).
+  const mentionsFindMany = vi.fn(async () =>
+    blockIds.map((id) => ({ blockId: id })),
+  );
+  const ideaBlockFindMany = vi.fn(async () =>
+    blockIds.map((id) => ({
+      id,
+      name: `блок ${id}`,
+      criticalQuestion: `что делать при ${id}?`,
+      trustedAnswer: `реальный ход ${id}: сначала эскалация с вариантами, потом резать scope`,
+    })),
+  );
+
   const personaFindFirst = vi.fn(async () =>
     hasPersona
       ? {
@@ -103,17 +116,10 @@ function buildService(opts?: {
       findMany: vi.fn(async () => [{ entityId: 'e1' }, { entityId: 'e2' }]),
     },
     ideaBlockEntity: {
-      findMany: vi.fn(async () => blockIds.map((id) => ({ blockId: id }))),
+      findMany: mentionsFindMany,
     },
     ideaBlock: {
-      findMany: vi.fn(async () =>
-        blockIds.map((id) => ({
-          id,
-          name: `блок ${id}`,
-          criticalQuestion: `что делать при ${id}?`,
-          trustedAnswer: `реальный ход ${id}: сначала эскалация с вариантами, потом резать scope`,
-        })),
-      ),
+      findMany: ideaBlockFindMany,
     },
   } as unknown as PrismaService;
 
@@ -189,6 +195,8 @@ function buildService(opts?: {
       observePersonaLayerScore,
       incPersonaLayerValidationCase,
       warnSpy,
+      mentionsFindMany,
+      ideaBlockFindMany,
     },
   };
 }
@@ -313,5 +321,25 @@ describe('PersonaLayerValidationService ВАЛ.1 — поведенческая 
 
     expect(mocks.personaUpdate).not.toHaveBeenCalled();
     expect(mocks.personaUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('Б19: кейсы берутся свежими сверху — mentions БЕЗ take, ideaBlock с take:30 + orderBy createdAt desc', async () => {
+    const { svc, mocks } = buildService();
+
+    await run(svc);
+
+    // mentions (ideaBlockEntity): take НЕ задан (иначе scan-order урезает до date-sort).
+    const mentionsArg = (mocks.mentionsFindMany.mock.calls[0] as unknown[])[0] as {
+      take?: number;
+    };
+    expect(mentionsArg.take).toBeUndefined();
+
+    // ideaBlock: лимит и сортировка по дате применяются здесь, на полном наборе.
+    const blockArg = (mocks.ideaBlockFindMany.mock.calls[0] as unknown[])[0] as {
+      take?: number;
+      orderBy?: unknown;
+    };
+    expect(blockArg.take).toBe(30); // MAX_CANDIDATE_BLOCKS
+    expect(blockArg.orderBy).toEqual({ createdAt: 'desc' });
   });
 });

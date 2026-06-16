@@ -519,4 +519,19 @@ LLM-judge текстового подтверждения мутаций в ка
 - Все 5 в union `LlmTaskType` + `ALL_LLM_TASK_TYPES`. Сид — `backend/scripts/seed-llm-task-routes-clone-method.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'clone-method'`, phase `seed-llm-routes`, идемпотентен, защищает `editedByAdmin`).
 - Также в этом пакете (НЕ новые taskType): `clone-respond` получил пост-LLM **grounding-гейт** (factual без валидных цитат `[BLOCK:]`/`[DECISION:]` → программный отказ `'ungrounded'`, флаг `CLONE_RESPOND_GROUNDING_ENABLED`) + журнал `CloneQueryLog`; `executable-persona-compile` переписан на **v2** (секционная сборка 5 слоёв, пустые секции опускаются — деградация к v1; v1-промпт deprecated для rollback).
 
+## Ревизия 12 промптов клона M5 + фиксы конвейера/кронов (2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) (Приложения A–D + Раздел 8). Ветка `devsv`, 9 коммитов. **Новых taskType / провайдеров НЕТ.** Карта модуля — [[skill-and-clone]] §«Доработки 2026-06-16»; кроны — [[workers-queues]] §История 2026-06-16.
+
+**Промпты (12 🟣 clone-only):** `skill-trait-detect`/`-merge`/`-verify`, `value-motivation-detect`, `process-marker-detect`, `role-principle-synthesize`, `cdm-case-interview`, `skill-trait-concept-name`, `executable-persona-compile` v2, `clone-respond`, `dialog-multi-query-clone`, `persona-behavior-judge` — добавлены **якорь смысла** «клон отвечает от лица должности» + **few-shot** + **self-check**, всё в стабильный SYSTEM (prompt-caching-friendly, разовый cache-miss). Промпты — code-fallback, едут с билдом. Без anthropic.
+
+**Фиксы конвейера/кронов (Раздел 8, без смены расписаний):**
+- `SkillProfileRecalibrateCron` / `runDecay` — `pending_verification` старше `archiveCutoff` → `archived` (Б1, без вечного re-verify); `orderBy` по устареванию + курсор (Б5).
+- `verifyPendingTraits` — выборка FIFO `orderBy createdAt asc` + исключение безнадёжных (Б2); предфильтр `<2` цитат → `held` без LLM-вызова (Г3); KNN-merge включает `pending_verification` (Б4); `lastConfirmedAt = MAX` (Б3).
+- Нормализатор концептов — `traitCount = COUNT(active)` (старт 0 + `recomputeTraitCount` на promote/discard/supersede; в cron живой COUNT, Б6); архив концепта по `NOT EXISTS active` (Б7); pre-write проверка коллизии `canonicalName` + P2002-retry (Б8).
+- `RolePrincipleSynthesisCron` — `confidence` из `distinctDays` (Б9); raw `UPDATE embedding` обёрнут try/catch (Б10); бюджет декрементится только при фактическом LLM-вызове (Б11).
+- `ExecutablePersonaBuildCron` + `ExecutablePersonaTriggerWatcherCron` — `orderBy lastBuildAt asc nulls-first` + курсор по всему хвосту (Б14); предфильтр build `layer='skill'` (Б15).
+- Прочее: `persona-layer-validation` `take` ПОСЛЕ `orderBy` (Б19); `clone-respond` `parseCitations` `if(!d)continue` в DECISION-ветке — ghost-цитата не обходит grounding (Б20); CDM-бюджет считает только доставленные probe (Б21).
+- Код-гарды Г1 (`targetId` required в схеме merge), Г2 (cosine≥0.85 → не `new`), Г4 (skill-путь пропускает пустой `sourceBlockIds`).
+
 [[../index|← index]]

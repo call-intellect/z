@@ -16,6 +16,11 @@ export const AskCloneBodySchema = z.object({
     .max(2_000, 'Слишком длинный вопрос'),
   /** Опционально: продолжить существующий диалог ChatV2Conversation. */
   conversationId: z.string().min(1).max(64).optional(),
+  /**
+   * Раздел 7 (Р4) — спросить КОНКРЕТНУЮ версию клона роли (в т.ч. бывшего
+   * носителя, статус frozen). Не задано → текущий active носитель.
+   */
+  roleVersion: z.coerce.number().int().min(1).optional(),
 });
 export type AskCloneBody = z.infer<typeof AskCloneBodySchema>;
 
@@ -106,8 +111,8 @@ export interface SkillProfileDto {
     version: number;
     snapshotAt: string;
     builtFromTraitsCount: number;
-    /** Clones=Roles Ф2 — добавлен pending_rebuild (см. CloneListItemDto.status). */
-    status: 'active' | 'superseded' | 'pending_rebuild';
+    /** Clones=Roles Ф2 — добавлен pending_rebuild; Раздел 7 — `frozen` (бывший носитель, read-only). */
+    status: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
   }>;
 }
 
@@ -143,7 +148,7 @@ export interface RoleSkillProfileDto {
  */
 export const ClonesListQuerySchema = z.object({
   status: z
-    .enum(['active', 'superseded', 'pending_rebuild'])
+    .enum(['active', 'superseded', 'pending_rebuild', 'frozen'])
     .optional()
     .default('active'),
   q: z.string().trim().min(1).max(200).optional(),
@@ -173,12 +178,14 @@ export interface CloneListItemDto {
   /** Публичное имя клона «Клон Маркетолога v2» (ExecutablePersona.publicName). */
   publicName: string;
   /**
-   * ExecutablePersona.status — active/superseded/pending_rebuild.
+   * ExecutablePersona.status — active/superseded/pending_rebuild/frozen.
    * Clones=Roles Ф2 (2026-05-25) — добавлен `pending_rebuild`: после смены
    * носителя роли создаётся новая версия без personaPrompt; следующий
    * `executable-persona-build` его дозаполнит и переключит на `active`.
+   * Раздел 7 (2026-06-16) — `frozen`: снимок бывшего носителя должности
+   * (read-only, доступен для вопросов навсегда, не активен).
    */
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  status: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
   /** Текущий носитель роли (Person.id + name) или null. */
   currentBearer: { personId: string; personName: string } | null;
   /** confidence клона — эвристика min(1, builtFromTraitsCount / 10), 0..1. */
@@ -206,10 +213,10 @@ export interface CloneVersionDto {
   version: number;
   publicName: string;
   /**
-   * ExecutablePersona.status — active/superseded/pending_rebuild
-   * (Clones=Roles Ф2, см. CloneListItemDto.status).
+   * ExecutablePersona.status — active/superseded/pending_rebuild/frozen
+   * (Clones=Roles Ф2 + Раздел 7, см. CloneListItemDto.status).
    */
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  status: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
   /** Носитель роли в эту версию (если был зафиксирован). */
   bearer: { personId: string; personName: string } | null;
   /** Старт периода — snapshotAt этой версии. */
@@ -282,4 +289,41 @@ export interface CloneQueryLogListResponseDto {
  */
 export interface CreateCloneConversationResponseDto {
   conversationId: string;
+}
+
+// ─────────────── Раздел 7 §7.5 — «Совет бывших» (ask-all-formers) ───────────────
+
+/** Раздел 7 §7.5 — тело запроса «спросить всех бывших носителей должности». */
+export const AskAllFormersBodySchema = z.object({
+  question: z
+    .string({ error: 'Вопрос обязателен' })
+    .trim()
+    .min(3, 'Слишком короткий вопрос')
+    .max(2_000, 'Слишком длинный вопрос'),
+});
+export type AskAllFormersBody = z.infer<typeof AskAllFormersBodySchema>;
+
+/** Один ответ версии клона в «совете бывших». */
+export interface AskAllFormersAnswerDto {
+  personaId: string;
+  /** roleVersion (1, 2, 3…). */
+  version: number;
+  /** «Клон <Должность> v<N>» (без ФИО носителя). */
+  publicName: string;
+  status: 'active' | 'frozen';
+  /** Полный ответ клона этой версии или null при ошибке (квота/недоступна). */
+  response: AskCloneResponseDto | null;
+  /** Текст ошибки, если версия не ответила — иначе null. */
+  error: string | null;
+}
+
+/**
+ * Раздел 7 §7.5 — «совет бывших»: один вопрос → ответы всех версий клона роли
+ * (текущая active + замороженные бывшие) рядом для сравнения. ФИО не выводим.
+ */
+export interface AskAllFormersResponseDto {
+  roleId: string;
+  roleName: string;
+  question: string;
+  answers: AskAllFormersAnswerDto[];
 }

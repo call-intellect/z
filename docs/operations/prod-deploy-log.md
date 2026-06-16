@@ -95,6 +95,27 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧬 2026-06-16 — Один человек = один клон должности (Раздел 7) + ревизия 12 промптов клона + 21 баг конвейера M5
+
+> Контракт: ветка `devsv`, 9 коммитов (`80ce250a..8168d915`). ТЗ: `plans/tz/2026-06-16-clone-agents-prompt-revision.md` (Раздел 7 + Раздел 8 + Приложения A–D). second-brain: `02_architecture/data-model.md` §«PersonaStatus += frozen», `02_architecture/module-map.md`, `02_architecture/agent-modules.md`, `01_projects/skill-and-clone.md` §«Доработки 2026-06-16», `01_projects/api-layer.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.
+>
+> **Зачем для прода:** клон роли переосмыслен как снимок ОДНОГО текущего носителя должности (без агрегации нескольких людей); прошлый носитель замораживается (`frozen`, read-only) и остаётся доступным навсегда («совет бывших»), имя — «Клон <Должность> v<N>» без ФИО. Плюс ревизия 12 промптов клона (якорь смысла + few-shot + self-check, всё в стабильный SYSTEM) и фиксы 21 бага конвейера M5 (застой черт, дрейф traitCount, версионирование, бюджеты кронов).
+
+- **Шаг 1 — ENV / флаги — НЕТ** (новых ENV и флагов нет; промпты — code-fallback, едут с билдом).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260616160000_add_frozen_persona_status`, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): `ALTER TYPE "PersonaStatus" ADD VALUE IF NOT EXISTS 'frozen'`. Аддитивна, идемпотентна (`IF NOT EXISTS`). ⚠ `ADD VALUE` **не-транзакционна** → вынесена в отдельную миграцию (нельзя использовать новое enum-значение в той же транзакции). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы).
+- **Шаг 5 — postgres-init.sql — partial-unique (новый, self-skip):** `executable_personas_one_active_per_role` — `UNIQUE (scopeRefId) WHERE scope='role' AND status='active'` (ровно одна active-персона на должность; образец self-skip — `persons_tenant_email_active_uniq`). **Self-skip:** если на момент прогона есть роли с >1 active-клоном — блок делает `RAISE NOTICE` и пропускает создание; индекс встанет на следующем прогоне `postgres-init` **после** backfill Шага 8 (он заморозит лишние active). Применяется: `docker compose exec backend bun run apply-postgres-init` (идемпотентно, `CREATE INDEX IF NOT EXISTS`; на штатном `up -d` агрегатор гоняет его сам).
+- **Шаг 8 — Backfill** — **1 новый, идемпотентный, в STEPS** (`phase:'backfill'`, `skipBootstrap:true`): `docker compose exec backend bun run scripts/backfill-role-clone-single-bearer.ts` — дедуп active-дублей клона роли → frozen, `superseded` → frozen, пересборка агрегатов snapshot'ом единственного текущего носителя (single-bearer). Идемпотентен (повтор → 0). Флаг `--skip-rebuild` — прогнать без LLM-пересборки (только дедуп/freeze). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`. **Порядок:** backfill → затем повторный `apply-postgres-init` (чтобы self-skip-индекс Шага 5 встал).
+- **Шаг 11 — Docker rebuild** — обязателен (переписаны промпты клона M5, `clones`-сервис/контроллер, конвейер черт/концептов/принципов/кронов, фронт — frozen-бейдж/спросить версию/совет бывших): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит `POST /api/v1/clones/roles/{roleId}/ask-all-formers`; у `POST /api/v1/clones/roles/{roleId}/ask` в схеме body есть опц. `roleVersion`.
+  - (б) `psql`/`diag`: `SELECT enum_range(NULL::"PersonaStatus")` содержит `frozen`; индекс `executable_personas_one_active_per_role` существует (или `RAISE NOTICE` о дублях — тогда прогнать Шаг 8 и повторить Шаг 5).
+  - (в) на экране должности с несколькими бывшими носителями — список версий (active + frozen) без ФИО, кнопка «спросить версию» и экран «Совет бывших» отвечают.
+  - (г) в логах backend — нет вечного re-verify застрявших черт (Б1) и runaway-реэмита `role.bearer_changed` (Б16).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐛 2026-06-16 — QA-багфиксы кабинета (пакет по итогам полного обхода)
 
 > Контракт: ветка `fix/qa-cabinet-bugfix-2026-06-16`, коммиты `e42b4ec3` (фронт), `9fa1ea12` (навигация настроек), `cf20473c` (бэкенд). ТЗ: `plans/tz/2026-06-16-qa-cabinet-bugfix-pack.md`.

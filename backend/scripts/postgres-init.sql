@@ -755,3 +755,45 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Раздел 7 (2026-06-16) «один человек = один клон должности», Б13 + инвариант И5:
+-- РОВНО одна `active` ExecutablePersona на должность (scope='role'). Прошлые версии
+-- держим как `frozen` (read-only), не удаляем. Prisma не выражает partial unique
+-- (WHERE), поэтому индекс живёт здесь.
+--   SELF-SKIP: schema-фаза apply-prod-deploy идёт РАНЬШЕ backfill-фазы (§7.6
+--   backfill-role-clone-single-bearer замораживает лишние active-дубли гонки Б13).
+--   Если на момент прогона дубли ещё есть — индекс не встанет (ошибка), поэтому
+--   считаем группы-дубли и при >0 пишем RAISE NOTICE и пропускаем; индекс встанет
+--   на СЛЕДУЮЩЕМ прогоне postgres-init уже после backfill. Идемпотентно.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  dup_groups integer := 0;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'executable_personas'
+  ) THEN
+    EXECUTE $sql$
+      SELECT count(*) FROM (
+        SELECT 1
+        FROM "executable_personas"
+        WHERE "status" = 'active' AND "scope" = 'role'
+        GROUP BY "scopeRefId"
+        HAVING count(*) > 1
+      ) d
+    $sql$ INTO dup_groups;
+
+    IF dup_groups > 0 THEN
+      RAISE NOTICE 'executable_personas_one_active_per_role: % ролей с >1 active-клоном — индекс пропущен (§7.6 backfill заморозит лишние, индекс встанет на следующем прогоне postgres-init)', dup_groups;
+    ELSE
+      EXECUTE $sql$
+        CREATE UNIQUE INDEX IF NOT EXISTS "executable_personas_one_active_per_role"
+          ON "executable_personas" ("scopeRefId")
+          WHERE "status" = 'active' AND "scope" = 'role'
+      $sql$;
+    END IF;
+  END IF;
+END $$;

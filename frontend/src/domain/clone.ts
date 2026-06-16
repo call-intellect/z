@@ -6,7 +6,9 @@
  */
 
 import type {
+  AskAllFormersResponseApi,
   AskCloneResponseApi,
+  AskFormerAnswerApi,
   CloneCitationApi,
   CloneConversationListItemApi,
   CloneListItemApi,
@@ -152,11 +154,12 @@ export interface CloneListUiItem {
   version: number;
   publicName: string;
   /**
-   * Clones=Roles Ф2 — три состояния: `active`/`superseded`/`pending_rebuild`.
-   * UI на /clones отдаёт только `active`, но pending_rebuild может прилететь,
-   * если бэк отдал его в выборке — рисуем бейдж «Клон обновляется».
+   * Clones=Roles Ф2 — состояния: `active`/`superseded`/`pending_rebuild`;
+   * Раздел 7 добавил `frozen` (снимок бывшего носителя). UI на /clones
+   * отдаёт только `active`, но прочие могут прилететь в выборке — рисуем
+   * соответствующий бейдж.
    */
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  status: CloneVersionStatus;
   bearerName: string | null;
   bearerPersonId: string | null;
   /** 0..100 — для прогресс-бара. */
@@ -183,12 +186,23 @@ export function mapCloneListItem(api: CloneListItemApi): CloneListUiItem {
   };
 }
 
+/** Раздел 7 — все статусы версии клона должности. */
+export type CloneVersionStatus =
+  | 'active'
+  | 'superseded'
+  | 'pending_rebuild'
+  | 'frozen';
+
 export interface CloneVersionUiItem {
   personaId: string;
   roleId: string;
   version: number;
   publicName: string;
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  status: CloneVersionStatus;
+  /**
+   * Раздел 7 (2026-06-16) — ФИО носителя больше НЕ показываем (bearer=null
+   * с бэка). Поле оставлено null для обратной совместимости типов.
+   */
   bearerName: string | null;
   bearerPersonId: string | null;
   validFrom: Date;
@@ -204,11 +218,82 @@ export function mapCloneVersion(api: CloneVersionApi): CloneVersionUiItem {
     version: api.version,
     publicName: api.publicName,
     status: api.status,
+    // Раздел 7: bearer всегда null — носителя по ФИО не раскрываем.
     bearerName: api.bearer?.personName ?? null,
     bearerPersonId: api.bearer?.personId ?? null,
     validFrom: new Date(api.validFrom),
     validUntil: api.validUntil ? new Date(api.validUntil) : null,
     confidencePct: Math.round((api.confidence ?? 0) * 100),
     traitsCount: api.traitsCount,
+  };
+}
+
+/**
+ * Раздел 7 — человеко-читаемая метка статуса версии + вариант бейджа.
+ * Парные токены берёт сам Badge (success/warning/secondary).
+ */
+export interface CloneStatusBadge {
+  label: string;
+  variant: 'success' | 'warning' | 'secondary' | 'default';
+}
+
+export function cloneVersionStatusBadge(
+  status: CloneVersionStatus,
+): CloneStatusBadge {
+  switch (status) {
+    case 'active':
+      return { label: 'Текущий', variant: 'success' };
+    case 'frozen':
+      return { label: 'Заморожен (бывший носитель)', variant: 'warning' };
+    case 'pending_rebuild':
+      return { label: 'Клон обновляется', variant: 'secondary' };
+    case 'superseded':
+      return { label: 'Архив', variant: 'secondary' };
+    default:
+      return { label: 'Версия', variant: 'secondary' };
+  }
+}
+
+// ─────────── Раздел 7 (2026-06-16) — «Совет бывших» (DomainModel) ───────────
+
+/**
+ * UiModel одного ответа версии клона на общий вопрос «совета бывших».
+ * `answer` = null, когда версия не смогла ответить (тогда `error` заполнен).
+ */
+export interface FormerAnswerUiItem {
+  personaId: string;
+  version: number;
+  publicName: string;
+  status: 'active' | 'frozen';
+  answer: CloneAnswer | null;
+  error: string | null;
+}
+
+export function mapFormerAnswer(api: AskFormerAnswerApi): FormerAnswerUiItem {
+  return {
+    personaId: api.personaId,
+    version: api.version,
+    publicName: api.publicName,
+    status: api.status,
+    answer: api.response ? mapCloneAnswer(api.response) : null,
+    error: api.error,
+  };
+}
+
+export interface AllFormersUiResult {
+  roleId: string;
+  roleName: string;
+  question: string;
+  answers: FormerAnswerUiItem[];
+}
+
+export function mapAllFormers(
+  api: AskAllFormersResponseApi,
+): AllFormersUiResult {
+  return {
+    roleId: api.roleId,
+    roleName: api.roleName,
+    question: api.question,
+    answers: api.answers.map(mapFormerAnswer),
   };
 }

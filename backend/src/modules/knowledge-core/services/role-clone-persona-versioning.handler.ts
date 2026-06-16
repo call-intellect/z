@@ -32,24 +32,21 @@ export interface RoleBearerChangedEvent {
 }
 
 /**
- * Clones=Roles Ф2 — обработчик `role.bearer_changed`.
+ * Clones=Roles Ф2 + Раздел 7 (2026-06-16) — обработчик `role.bearer_changed`.
  *
- * Задача:
- *   1. Найти текущую `ExecutablePersona(scope='role', scopeRefId=roleId,
- *      status='active')`. Если есть — пометить `superseded`.
- *   2. Создать новую `ExecutablePersona(roleVersion=prev+1, succeedsPersonaId=prev.id,
- *      currentBearerPersonId=newPersonId, publicName='Клон <Role.name> v<N+1>',
- *      status='pending_rebuild')` с пустым `personaPrompt` (rebuild дозаполнит).
- *   3. Запросить немедленную пересборку через `ExecutablePersonaBuildService.buildForRole`
- *      (bypass idempotency-lock — это singleton-event, не шквал).
+ * Модель «один человек = один клон должности»:
+ *   - Новый носитель (newPersonId≠null): `ExecutablePersonaBuildService.buildForRole`
+ *     атомарно замораживает прошлую active (→`frozen`, read-only, остаётся доступной)
+ *     и создаёт новую active vN+1 из профиля нового носителя. Версионные поля —
+ *     по построению (закрывает Б12/Б16/Б17). Промежуточный `pending_rebuild`-стаб
+ *     БОЛЬШЕ НЕ создаётся (устраняет Б17-зазор «нет active до build» и Б18-дубли).
+ *   - Роль освободилась (newPersonId=null): текущую active замораживаем
+ *     (→`frozen`), новый клон не строим. Клон ушедшего остаётся доступен навсегда.
  *
- * Идемпотентность: если уже существует `ExecutablePersona(scope='role',
- * scopeRefId=roleId, status='pending_rebuild', currentBearerPersonId=newPersonId)`
- * с тем же `succeedsPersonaId`, новую запись НЕ создаём (повторный эмит того
- * же события не должен плодить версии).
+ * Идемпотентность: если active уже указывает на newPersonId — skip.
  *
- * Failure-mode: всё в try/catch + warn-лог. Сбой rebuild'а оставляет персону
- * в `pending_rebuild` — следующая итерация cron'а её доберёт.
+ * Failure-mode: всё в try/catch + warn-лог. Если у нового носителя мало traits и
+ * build вернул null — прошлая active остаётся доступной, следующий cron доберёт.
  */
 @Injectable()
 export class RoleClonePersonaVersioningHandler {
@@ -107,20 +104,14 @@ export class RoleClonePersonaVersioningHandler {
         status: 'active',
       },
       orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
-      select: {
-        id: true,
-        roleVersion: true,
-        version: true,
-        currentBearerPersonId: true,
-      },
+      select: { id: true, currentBearerPersonId: true },
     });
 
-    // Идемпотентность 1: если активная уже указывает на newPersonId — ничего не делаем
-    // (это «то же самое» состояние, эмиттер дёрнул нас впустую).
+    // Идемпотентность: active уже указывает на newPersonId — эмиттер дёрнул впустую.
     if (
       prevActive &&
-      prevActive.currentBearerPersonId === event.newPersonId &&
-      event.newPersonId !== null
+      event.newPersonId !== null &&
+      prevActive.currentBearerPersonId === event.newPersonId
     ) {
       this.logger.debug(
         { roleId: event.roleId, newPersonId: event.newPersonId },
@@ -129,131 +120,59 @@ export class RoleClonePersonaVersioningHandler {
       return null;
     }
 
-    // Идемпотентность 2: если уже есть pending_rebuild для этого newPersonId,
-    // которая указывает на тот же succeedsPersonaId — повторный эмит, skip.
-    const existingPending = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: event.tenantId,
-        scope: 'role',
-        scopeRefId: event.roleId,
-        status: 'pending_rebuild',
-        currentBearerPersonId: event.newPersonId,
-        succeedsPersonaId: prevActive?.id ?? null,
-      },
-      select: { id: true },
-    });
-    if (existingPending) {
-      this.logger.debug(
-        { roleId: event.roleId, personaId: existingPending.id },
-        'role.bearer_changed: pending_rebuild уже есть — skip создания дубля',
-      );
-      return null;
-    }
-
-    // Рассчитываем roleVersion новой версии.
-    const nextRoleVersion = (prevActive?.roleVersion ?? 0) + 1;
-    // Также корректный «глобальный» version (старое поле, NOT NULL).
-    const lastForVersion = await this.prisma.executablePersona.findFirst({
-      where: {
-        tenantId: event.tenantId,
-        scope: 'role',
-        scopeRefId: event.roleId,
-      },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (lastForVersion?.version ?? 0) + 1;
-
-    const publicName = `Клон ${role.name} v${nextRoleVersion}`;
-
-    const newPersona = await this.prisma.$transaction(async (tx) => {
-      // Архивируем текущую активную (если есть).
+    // Раздел 7 (Р3/Р5) — роль освободилась (носитель ушёл, замены нет):
+    // замораживаем текущую active (frozen, read-only — клон ушедшего остаётся
+    // доступным для вопросов навсегда), новый клон НЕ строим (не из кого).
+    // Промежуточный pending_rebuild-стаб не создаём (устраняет Б17/Б18).
+    if (event.newPersonId === null) {
       if (prevActive) {
-        await tx.executablePersona.updateMany({
+        await this.prisma.executablePersona.updateMany({
           where: { id: prevActive.id, status: 'active' },
-          data: { status: 'superseded' },
+          data: { status: 'frozen' },
         });
-      }
-
-      // Создаём pending_rebuild. personaPrompt — заглушка минимум 50 символов
-      // (compilePersonaPrompt отбраковывает короткие), rebuild перезапишет
-      // содержимое и проставит status='active'.
-      return tx.executablePersona.create({
-        data: {
-          tenantId: event.tenantId,
-          profileId: null,
-          scope: 'role',
-          scopeRefId: event.roleId,
-          version: nextVersion,
-          roleVersion: nextRoleVersion,
-          currentBearerPersonId: event.newPersonId,
-          publicName,
-          succeedsPersonaId: prevActive?.id ?? null,
-          status: 'pending_rebuild',
-          personaPrompt:
-            'Заглушка pending_rebuild: клон роли создан при смене носителя, ' +
-            'будет пересобран при ближайшем запуске executable-persona-build.',
-          includedTraitIds: [],
-          builtFromTraitsCount: 0,
-          triggerReason: 'on_demand',
-          triggerEventAt: event.changedAt,
-          // Clones=Roles Ф5 — клон роли это shared-знание Org, dataClass='internal'.
-          // Полный audit будет вычислен на следующем rebuild через DataClassPolicyService.
-          dataClassAudit: {
-            rule: 'pending-rebuild-placeholder',
-            result: 'internal',
-            derivedAt: event.changedAt.toISOString(),
-          } as unknown as Prisma.InputJsonValue,
-        },
-      });
-    });
-
-    // Метрика: создана новая версия клона роли.
-    this.metrics?.incCloneRoleVersionCreated({ roleId: event.roleId });
-
-    this.logger.log(
-      {
-        roleId: event.roleId,
-        roleName: role.name,
-        roleVersion: nextRoleVersion,
-        oldPersonId: event.oldPersonId,
-        newPersonId: event.newPersonId,
-        personaId: newPersona.id,
-      },
-      'role.bearer_changed: создана новая версия клона роли (pending_rebuild)',
-    );
-
-    // Best-effort немедленная пересборка (если новый носитель назначен).
-    // Если builder возвращает null (мало traits) — pending_rebuild остаётся,
-    // следующий cron-проход доберёт.
-    if (event.newPersonId) {
-      try {
-        const built = await this.builder.buildForRole({
-          tenantId: event.tenantId,
-          roleId: event.roleId,
-          triggerReason: 'on_demand',
-          triggerEventAt: event.changedAt,
-        });
-        if (built && built.status === 'active') {
-          // builder уже сам пометил предыдущие active как superseded — наш
-          // pending_rebuild тоже должен стать superseded (он промежуточный).
-          await this.prisma.executablePersona.updateMany({
-            where: { id: newPersona.id, status: 'pending_rebuild' },
-            data: { status: 'superseded' },
-          });
-        }
-      } catch (err) {
-        this.logger.warn(
+        this.logger.log(
           {
             roleId: event.roleId,
-            err: err instanceof Error ? err.message : String(err),
+            roleName: role.name,
+            frozenPersonaId: prevActive.id,
           },
-          'role.bearer_changed: immediate buildForRole упал — pending_rebuild сохранён',
+          'role.bearer_changed: роль освободилась — текущий клон заморожен (frozen, остаётся доступным)',
         );
       }
+      return prevActive?.id ?? null;
     }
 
-    return newPersona.id;
+    // Раздел 7 (Р1/Р3) — новый носитель: buildForRole атомарно заморозит прошлую
+    // active и создаст новую active vN+1 из профиля нового носителя (версионные
+    // поля — по построению). Если у нового носителя мало traits, build вернёт null
+    // и прошлая active останется доступной («пропажи клона» нет); weekly cron доберёт.
+    const built = await this.builder.buildForRole({
+      tenantId: event.tenantId,
+      roleId: event.roleId,
+      bearerPersonId: event.newPersonId,
+      triggerReason: 'on_demand',
+      triggerEventAt: event.changedAt,
+    });
+    if (built) {
+      this.metrics?.incCloneRoleVersionCreated({ roleId: event.roleId });
+      this.logger.log(
+        {
+          roleId: event.roleId,
+          roleName: role.name,
+          oldPersonId: event.oldPersonId,
+          newPersonId: event.newPersonId,
+          personaId: built.id,
+          roleVersion: built.roleVersion,
+        },
+        'role.bearer_changed: создана новая active-версия клона роли',
+      );
+    } else {
+      this.logger.debug(
+        { roleId: event.roleId, newPersonId: event.newPersonId },
+        'role.bearer_changed: buildForRole вернул null (мало traits) — прошлый клон остаётся доступным, cron доберёт',
+      );
+    }
+    return built?.id ?? null;
   }
 
   /**

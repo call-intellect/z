@@ -8074,16 +8074,22 @@ enum PersonaScope {
 }
 
 /// PersonaStatus — статус снапшота персоны.
-///   - active: используется ClonesService.
-///   - superseded: заменён более новой версией.
+///   - active: используется ClonesService (текущий носитель должности; ровно один на роль).
+///   - superseded: заменён более новой версией (legacy-семантика «скрыт»; для новых
+///     клонов роли НЕ используется — см. `frozen`).
 ///   - pending_rebuild: Clones=Roles Ф2 (2026-05-25) — создан при смене
 ///     носителя роли, ждёт пересборки `personaPrompt` через
 ///     `ExecutablePersonaBuildService.buildForRole`. Активным НЕ считается
 ///     (clone-API не использует), но виден в `/history`.
+///   - frozen: Раздел 7 (2026-06-16) «один человек = один клон должности» — снимок
+///     БЫВШЕГО носителя должности. Read-only: доступен для вопросов навсегда, но НЕ
+///     активен, НЕ дообучается и НЕ декеится (И5/И6). Уходящий клон → `frozen` (не
+///     `superseded`/удаление): «пропажи клона» при смене носителя не возникает.
 enum PersonaStatus {
   active
   superseded
   pending_rebuild
+  frozen
 }
 
 /// SkillProfile — навыковый профиль сотрудника. 1:1 с Person (только relationship='employee').

@@ -15,7 +15,10 @@ import { Lock, MessageCircle, Sparkles, Users } from 'lucide-react';
 import Link from 'next/link';
 import type { ReactElement } from 'react';
 
-import type { CloneListUiItem } from '@/domain/clone';
+import {
+  cloneVersionStatusBadge,
+  type CloneListUiItem,
+} from '@/domain/clone';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { cn } from '@/ui/shadcn/lib/utils';
@@ -79,10 +82,11 @@ export function CloneCard({
       </div>
 
       {item.status !== 'active' ? (
-        <Badge variant="secondary" className="self-start text-[10px]">
-          {item.status === 'pending_rebuild'
-            ? 'Клон обновляется'
-            : 'Архив'}
+        <Badge
+          variant={cloneVersionStatusBadge(item.status).variant}
+          className="self-start text-[10px]"
+        >
+          {cloneVersionStatusBadge(item.status).label}
         </Badge>
       ) : null}
 

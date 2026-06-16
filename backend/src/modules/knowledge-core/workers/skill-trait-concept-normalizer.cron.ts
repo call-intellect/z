@@ -207,6 +207,30 @@ export class SkillTraitConceptNormalizerCron {
       embedding: r.embedding_text ? parseVector(r.embedding_text) : null,
     }));
 
+    // Б6 (traitcount-drift): денормализованный `traitCount` дрейфует (инкремент
+    // на pending-черте, отсутствие декремента при decay/supersede). Для выбора
+    // опорного концепта и probe-порога берём ЖИВОЙ COUNT(active) — единый
+    // источник истины. Одним groupBy по всем концептам тенанта.
+    if (concepts.length > 0) {
+      try {
+        const liveCounts = await this.prisma.skillTrait.groupBy({
+          by: ['conceptId'],
+          where: { conceptId: { in: concepts.map((c) => c.id) }, status: 'active' },
+          _count: { _all: true },
+        });
+        const byConcept = new Map<string, number>();
+        for (const lc of liveCounts) {
+          if (lc.conceptId) byConcept.set(lc.conceptId, lc._count._all);
+        }
+        for (const c of concepts) c.trait_count = byConcept.get(c.id) ?? 0;
+      } catch (err) {
+        this.logger.debug(
+          { tenantId, err: err instanceof Error ? err.message : String(err) },
+          'skill-trait-concept-normalizer: live trait-count groupBy упал — использую денормализованный',
+        );
+      }
+    }
+
     // 2) Union-find кластеризация.
     const threshold = this.cfg.skill.conceptMergeThreshold;
     const parents = new Map<string, string>();
@@ -278,12 +302,23 @@ export class SkillTraitConceptNormalizerCron {
           'skill-trait-concept-normalizer: LLM concept-name упал — оставляю старое имя',
         );
       }
-      await this.concepts.mergeConcepts({
+      // Б8 (merge-canonical-name-collision): merge может стать no-op (коллизия
+      // имени / упавшая транзакция). Инкрементим clustersMerged и шлём probe
+      // ТОЛЬКО при реальном слиянии — иначе кластер «застревает» как merged и
+      // каждую ночь снова зовёт платный LLM.
+      const merged = await this.concepts.mergeConcepts({
         tenantId,
         sourceIds: sources.map((s) => s.id),
         targetId: target.id,
         ...(newCanonicalName ? { newCanonicalName } : {}),
       });
+      if (!merged) {
+        this.logger.debug(
+          { tenantId, targetId: target.id, sourceIds: sources.map((s) => s.id) },
+          'skill-trait-concept-normalizer: mergeConcepts вернул false — кластер не слит, пропускаю',
+        );
+        continue;
+      }
       clustersMerged++;
 
       // Probe-event: если canonicalName-ы различались и совокупный traitCount ≥ 5.
@@ -305,6 +340,11 @@ export class SkillTraitConceptNormalizerCron {
     }
 
     // 4) Архивация концептов без активных traits старше N месяцев.
+    // Б7 (concept-leak): денормализованный `traitCount` декрементится только в
+    // mergeConcepts, но НЕ при decay/supersede/удалении черт → застревает ≥1 →
+    // концепт-зомби вечно active (грузится в union-find O(n²), завышает gauge).
+    // Архивируем по фактическому отсутствию active-черты (`traits.none`), а не
+    // по счётчику.
     const archiveCutoff = new Date(
       Date.now() -
         this.cfg.skill.conceptArchiveAfterMonths * 30 * 24 * 60 * 60 * 1000,
@@ -313,7 +353,7 @@ export class SkillTraitConceptNormalizerCron {
       where: {
         tenantId,
         status: 'active',
-        traitCount: 0,
+        traits: { none: { status: 'active' } },
         lastSeenAt: { lt: archiveCutoff },
       },
       data: { status: 'archived' },

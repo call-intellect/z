@@ -536,6 +536,17 @@ const STEPS: Step[] = [
     hint: "Task.sourceType='meeting' где пусто (chatbox-tasks Ф5)",
     skipBootstrap: true,
   },
+  // 2026-06-16 Раздел 7 «один человек = один клон должности» (§7.6) — привести
+  // клоны ролей к single-bearer: дедуп active-дублей→frozen (под partial-index
+  // executable_personas_one_active_per_role), superseded→frozen (читаемость
+  // бывших Р3/Р5), пересборка агрегатов (currentBearerPersonId=null) через
+  // buildForRole. Идемпотентен. --skip-rebuild — без LLM (cron доберёт).
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-role-clone-single-bearer.ts',
+    hint: 'клоны ролей → single-bearer + freeze бывших (Раздел 7 §7.6)',
+    skipBootstrap: true,
+  },
 
   // === Migrate (β-9 Telegram, legacy Task → Issue) ===
   { phase: 'migrate', script: 'scripts/migrate-telegram-channels-to-global.ts', skipBootstrap: true },

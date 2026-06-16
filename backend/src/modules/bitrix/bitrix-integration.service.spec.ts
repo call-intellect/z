@@ -57,6 +57,7 @@ describe('BitrixIntegrationService', () => {
       update: ReturnType<typeof vi.fn>;
       deleteMany: ReturnType<typeof vi.fn>;
     };
+    source: { upsert: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
   };
   let cryptoMock: {
     encrypt: ReturnType<typeof vi.fn>;
@@ -82,6 +83,11 @@ describe('BitrixIntegrationService', () => {
         upsert: vi.fn(),
         update: vi.fn(),
         deleteMany: vi.fn(),
+      },
+      // ensureBitrixSource (connect/claim) + деактивация при remove (Ф5).
+      source: {
+        upsert: vi.fn().mockResolvedValue({ id: 'src-bitrix' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     };
     cryptoMock = {

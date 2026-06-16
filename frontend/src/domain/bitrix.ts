@@ -1,6 +1,8 @@
 import type {
   BitrixIntegrationApi,
   BitrixIntegrationStatus,
+  BitrixLinkMode,
+  BitrixStatusApi,
 } from '@/api/bitrix.api';
 
 /**
@@ -56,4 +58,41 @@ export function mapBitrixIntegration(
     createdAt: toDate(api.createdAt),
     updatedAt: toDate(api.updatedAt),
   };
+}
+
+// ─────────────────────────── статус источника ──────────────────────────────
+
+export interface BitrixStatusView {
+  integration: BitrixIntegrationView;
+  analysisEnabled: boolean;
+  lastFullSyncAt: Date | null;
+  lastIncrementalSyncAt: Date | null;
+  counts: BitrixStatusApi['counts'];
+  sessionsByStatus: BitrixStatusApi['sessionsByStatus'];
+}
+
+export function mapBitrixStatus(
+  api: BitrixStatusApi | null,
+): BitrixStatusView | null {
+  if (!api) return null;
+  return {
+    integration: mapBitrixIntegration(api.integration)!,
+    analysisEnabled: api.analysisEnabled,
+    lastFullSyncAt: toDate(api.lastFullSyncAt),
+    lastIncrementalSyncAt: toDate(api.lastIncrementalSyncAt),
+    counts: api.counts,
+    sessionsByStatus: api.sessionsByStatus,
+  };
+}
+
+// ─────────────────────────── режим связки сотрудника ───────────────────────
+
+const LINK_MODE_LABELS: Record<BitrixLinkMode, string> = {
+  none: 'Не связан',
+  auto: 'Авто',
+  manual: 'Вручную',
+};
+
+export function bitrixLinkModeLabel(mode: BitrixLinkMode): string {
+  return LINK_MODE_LABELS[mode] ?? mode;
 }

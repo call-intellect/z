@@ -1,20 +1,39 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { Loader2, Plug, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Building2,
+  Database,
+  Loader2,
+  Plug,
+  RefreshCw,
+  Trash2,
+  Users,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
-import { bitrixApi } from '@/api/bitrix.api';
-import { mapBitrixIntegration } from '@/domain/bitrix';
+import { bitrixApi, type BitrixSyncScope } from '@/api/bitrix.api';
+import {
+  mapBitrixIntegration,
+  mapBitrixStatus,
+  type BitrixIntegrationView,
+} from '@/domain/bitrix';
+import {
+  CardTitle,
+  GlassCard,
+  GRAD,
+  STATUS_TONE,
+} from '@/ui/components/dashboard/modern';
 import { TierGate } from '@/ui/components/TierGate';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
+import { Switch } from '@/ui/shadcn/switch';
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
@@ -23,6 +42,19 @@ function errMessage(e: unknown, fallback: string): string {
 function formatDate(d: Date | null): string {
   return d ? d.toLocaleString('ru-RU') : '—';
 }
+
+// Принудительный синк — по scope. Bitrix-диалоги тянутся «свежими» (im.recent),
+// отдельного периода-бэкафилла пока нет (Этап 2 — событийный инкремент).
+const SYNC_SCOPES: ReadonlyArray<{
+  scope: BitrixSyncScope;
+  label: string;
+  icon: typeof Users;
+}> = [
+  { scope: 'users', label: 'Сотрудники', icon: Users },
+  { scope: 'dialogs', label: 'Диалоги', icon: Plug },
+  { scope: 'crm', label: 'CRM', icon: Building2 },
+  { scope: 'all', label: 'Всё', icon: RefreshCw },
+];
 
 export function BitrixIntegrationClient() {
   return (
@@ -33,13 +65,15 @@ export function BitrixIntegrationClient() {
 }
 
 function BitrixIntegrationContent() {
-  const { data, error, isLoading, mutate } = useSWR(['bitrix-integration'], () =>
-    bitrixApi.getIntegration().then(mapBitrixIntegration),
+  const { data, error, isLoading, mutate } = useSWR(
+    ['bitrix-integration'],
+    () => bitrixApi.getIntegration().then(mapBitrixIntegration),
+    { revalidateOnFocus: false },
   );
 
-  // Тост после возврата из OAuth-редиректа (?bitrix=connected|error). Читаем
-  // window.location.search в useEffect — без useSearchParams, чтобы не тянуть
-  // Suspense-границу при сборке.
+  // Тост после возврата из OAuth-редиректа (?bitrix=connected|error). Сам
+  // OAuth-round-trip и есть persist прогресса: интеграция создаётся на бэке в
+  // callback, на возврате getIntegration отдаёт её → ConnectedView.
   const handledRef = useRef(false);
   useEffect(() => {
     if (handledRef.current || typeof window === 'undefined') return;
@@ -55,45 +89,48 @@ function BitrixIntegrationContent() {
   }, [mutate]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Plug size={18} className="text-accent" />
-          Bitrix24
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="mb-4 text-sm text-fg-secondary">
-          Подключите портал Bitrix24, чтобы Кора собирала знания компании из
-          CRM. Сейчас доступно подключение портала; синхронизация данных —
-          следующим этапом.
-        </p>
+    <div className="mx-auto w-full max-w-3xl px-4 py-6">
+      <Link
+        href="/company-admin/sources"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm text-fg-secondary hover:text-fg-primary"
+      >
+        <ArrowLeft size={15} /> К источникам
+      </Link>
+      <header className="mb-6 flex items-center gap-3">
+        <span
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl"
+          style={{ background: GRAD.blue, color: 'oklch(0.99 0.005 280)' }}
+        >
+          <Building2 size={20} />
+        </span>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+            Bitrix24
+          </h1>
+          <p className="text-sm text-fg-secondary">
+            Внутренние чаты и CRM портала Bitrix24 — в память компании.
+          </p>
+        </div>
+      </header>
 
-        {isLoading && (
-          <div className="flex items-center py-8 text-sm text-fg-tertiary">
-            <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем…
-          </div>
-        )}
-
-        {error && !isLoading && (
-          <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-            {errMessage(error, 'Не удалось загрузить интеграцию')}
-          </div>
-        )}
-
-        {!isLoading && !error && !data && (
-          <ConnectForm />
-        )}
-
-        {!isLoading && !error && data && (
-          <ConnectedView integration={data} onChanged={() => void mutate()} />
-        )}
-      </CardContent>
-    </Card>
+      {error && !isLoading ? (
+        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+          {errMessage(error, 'Не удалось загрузить интеграцию')}
+        </div>
+      ) : isLoading ? (
+        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+        </div>
+      ) : data ? (
+        <ConnectedView integration={data} onChanged={() => void mutate()} />
+      ) : (
+        <ConnectForm />
+      )}
+    </div>
   );
 }
 
-// ─────────────────────────── Не подключено ───────────────────────────────
+// ─────────────────────────── Не подключено (шаг 1: домен → OAuth) ─────────
 
 function ConnectForm() {
   const [domain, setDomain] = useState('');
@@ -108,8 +145,7 @@ function ConnectForm() {
     setBusy(true);
     try {
       const { url } = await bitrixApi.getAuthorizeUrl(normalized);
-      // Полностраничный редирект на authorize Bitrix24.
-      window.location.href = url;
+      window.location.href = url; // полностраничный редирект на authorize Bitrix24
     } catch (e) {
       toast.error(errMessage(e, 'Не удалось начать подключение'));
       setBusy(false);
@@ -117,7 +153,15 @@ function ConnectForm() {
   };
 
   return (
-    <div className="space-y-3">
+    <GlassCard className="space-y-4">
+      <CardTitle icon={<Building2 size={16} />} grad={GRAD.blue}>
+        Подключить портал
+      </CardTitle>
+      <p className="max-w-[68ch] text-sm text-fg-secondary">
+        Введите домен портала Bitrix24 — откроется окно авторизации. После
+        подтверждения вернётесь сюда: свяжете сотрудников и запустите первую
+        синхронизацию.
+      </p>
       <div className="space-y-1.5">
         <Label htmlFor="bitrix-domain">Домен портала</Label>
         <Input
@@ -126,56 +170,117 @@ function ConnectForm() {
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
           disabled={busy}
+          className="max-w-sm"
         />
       </div>
-      <Button onClick={() => void handleConnect()} disabled={busy}>
+      <Button onClick={() => void handleConnect()} disabled={busy} size="sm">
         {busy ? (
-          <Loader2 size={16} className="mr-2 animate-spin" />
+          <Loader2 size={16} className="animate-spin" />
         ) : (
-          <Plug size={16} className="mr-2" />
+          <Plug size={16} />
         )}
         Подключить Bitrix24
       </Button>
-    </div>
+    </GlassCard>
   );
 }
 
-// ─────────────────────────── Подключено ──────────────────────────────────
+// ─────────────────────────── Подключено (стекло) ─────────────────────────
 
 function ConnectedView({
   integration,
   onChanged,
 }: {
-  integration: NonNullable<ReturnType<typeof mapBitrixIntegration>>;
+  integration: BitrixIntegrationView;
   onChanged: () => void;
 }) {
-  const [testing, setTesting] = useState(false);
-  const [removing, setRemoving] = useState(false);
-  const { ask, dialog } = useConfirmDialog();
+  const [analysisEnabled, setAnalysisEnabled] = useState(false);
+  const [savingAnalysis, setSavingAnalysis] = useState(false);
+  const [syncingScope, setSyncingScope] = useState<BitrixSyncScope | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const syncBaselineRef = useRef<string | null>(null);
+  const syncStartMsRef = useRef<number>(0);
+  const { ask, dialog: confirmDialog } = useConfirmDialog();
 
-  const handleTest = async () => {
-    setTesting(true);
+  // Статус источника (счётчики + синки + анализ). Пока syncing — поллим.
+  const { data: status, mutate: mutateStatus } = useSWR(
+    ['bitrix-status'],
+    () => bitrixApi.getStatus().then(mapBitrixStatus),
+    { refreshInterval: syncing ? 2500 : 0, revalidateOnFocus: false },
+  );
+
+  // Синхронизируем локальный тумблер анализа с сервером после загрузки статуса.
+  const analysisSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!analysisSyncedRef.current && status) {
+      analysisSyncedRef.current = true;
+      setAnalysisEnabled(status.analysisEnabled);
+    }
+  }, [status]);
+
+  // Завершение синка: lastIncrementalSyncAt сдвинулся либо таймаут 4 минуты.
+  useEffect(() => {
+    if (!syncing) return;
+    const cur = status?.lastIncrementalSyncAt?.toISOString() ?? null;
+    const done =
+      (cur && cur !== syncBaselineRef.current) ||
+      Date.now() - syncStartMsRef.current > 240_000;
+    if (done) {
+      setSyncing(false);
+      toast.success('Синхронизация завершена');
+      onChanged();
+    }
+  }, [syncing, status, onChanged]);
+
+  const statusTone =
+    integration.status === 'connected'
+      ? STATUS_TONE.ok
+      : integration.status === 'error'
+        ? STATUS_TONE.risk
+        : STATUS_TONE.warning;
+
+  const handleToggleAnalysis = async (next: boolean) => {
+    setAnalysisEnabled(next);
+    setSavingAnalysis(true);
     try {
-      await bitrixApi.test();
-      toast.success('Соединение с Bitrix24 в порядке');
-      onChanged();
+      await bitrixApi.setAnalysis(next);
+      toast.success(next ? 'AI-анализ включён' : 'AI-анализ выключен');
+      void mutateStatus();
     } catch (e) {
-      toast.error(errMessage(e, 'Проверка соединения не удалась'));
-      onChanged();
+      setAnalysisEnabled(!next);
+      toast.error(errMessage(e, 'Не удалось сохранить'));
     } finally {
-      setTesting(false);
+      setSavingAnalysis(false);
     }
   };
 
-  const handleRemove = async () => {
+  const handleSync = async (scope: BitrixSyncScope) => {
+    setSyncingScope(scope);
+    try {
+      await bitrixApi.sync(scope);
+      syncBaselineRef.current = status?.lastIncrementalSyncAt?.toISOString() ?? null;
+      syncStartMsRef.current = Date.now();
+      setSyncing(true);
+      void mutateStatus();
+      toast.success('Синхронизация запущена');
+    } catch (e) {
+      toast.error(errMessage(e, 'Не удалось запустить синхронизацию'));
+    } finally {
+      setSyncingScope(null);
+    }
+  };
+
+  const handleDelete = async () => {
     const ok = await ask({
       title: 'Отключить Bitrix24?',
-      description: 'Токены портала будут удалены. Подключить можно будет заново.',
+      description:
+        'Токены портала будут удалены, синхронизация прекратится. Уже собранные данные останутся в памяти компании.',
       confirmLabel: 'Отключить',
       destructive: true,
     });
     if (!ok) return;
-    setRemoving(true);
+    setDeleting(true);
     try {
       await bitrixApi.deleteIntegration();
       toast.success('Bitrix24 отключён');
@@ -183,66 +288,204 @@ function ConnectedView({
     } catch (e) {
       toast.error(errMessage(e, 'Не удалось отключить'));
     } finally {
-      setRemoving(false);
+      setDeleting(false);
     }
   };
 
-  const statusVariant =
-    integration.status === 'connected' ? 'default' : 'secondary';
-  const statusClassName =
-    integration.status === 'error' ? 'border-danger/40 text-danger' : undefined;
+  const c = status?.counts;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium text-fg-primary">
-          {integration.portalDomain}
-        </span>
-        <Badge variant={statusVariant} className={statusClassName}>
-          {integration.statusLabel}
-        </Badge>
-      </div>
-
-      {integration.status === 'error' && integration.lastError && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {integration.lastError}
+    <div className="space-y-5">
+      {/* Источник: статус + ручной синк + AI-анализ */}
+      <GlassCard className="space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle icon={<Building2 size={16} />} grad={GRAD.blue}>
+            {integration.portalDomain}
+          </CardTitle>
+          <span
+            className="shrink-0 rounded-full px-3 py-1 text-xs font-medium"
+            style={{ color: statusTone.c, background: statusTone.bg }}
+          >
+            {integration.statusLabel}
+          </span>
         </div>
-      )}
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        <dt className="text-fg-tertiary">Права (scope)</dt>
-        <dd className="text-fg-secondary">{integration.scope || '—'}</dd>
-        <dt className="text-fg-tertiary">Последняя проверка</dt>
-        <dd className="text-fg-secondary">
-          {formatDate(integration.lastConnectedAt)}
-        </dd>
-      </dl>
+        {integration.status === 'error' && integration.lastError && (
+          <div
+            className="rounded-xl px-3 py-2.5 text-sm"
+            style={{ color: STATUS_TONE.risk.c, background: STATUS_TONE.risk.bg }}
+          >
+            {integration.lastError}
+          </div>
+        )}
 
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          onClick={() => void handleTest()}
-          disabled={testing}
-        >
-          {testing ? (
-            <Loader2 size={16} className="mr-2 animate-spin" />
-          ) : (
-            <RefreshCw size={16} className="mr-2" />
+        <p className="text-sm text-fg-secondary">
+          Автоматическая синхронизация — раз в сутки в 00:00.
+        </p>
+
+        <div className="space-y-2.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Синхронизировать вручную
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {SYNC_SCOPES.map(({ scope, label, icon: Icon }) => (
+              <Button
+                key={scope}
+                variant="outline"
+                size="sm"
+                onClick={() => void handleSync(scope)}
+                disabled={syncingScope !== null || syncing}
+              >
+                {syncingScope === scope ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Icon size={14} />
+                )}
+                {label}
+              </Button>
+            ))}
+          </div>
+
+          {syncing && (
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
+              style={{ background: STATUS_TONE.ok.bg }}
+            >
+              <Loader2 size={14} className="animate-spin text-accent" />
+              <span className="font-medium text-fg-primary">
+                Идёт синхронизация…
+              </span>
+              {c && (
+                <span className="text-fg-secondary">
+                  собрано: {c.users.toLocaleString('ru-RU')} сотрудников ·{' '}
+                  {c.dialogs.toLocaleString('ru-RU')} диалогов ·{' '}
+                  {c.sessions.toLocaleString('ru-RU')} сессий
+                </span>
+              )}
+            </div>
           )}
-          Проверить соединение
+        </div>
+
+        {/* AI-анализ — строкой с тумблером */}
+        <div className="flex items-start justify-between gap-4 border-t border-border-subtle pt-5">
+          <div className="min-w-0 max-w-[68ch]">
+            <p className="text-sm font-medium text-fg-primary">
+              AI-анализ переписок
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-fg-tertiary">
+              Включено: Кора строит посуточные summary диалогов и добавляет
+              знания в граф (расходует LLM). Выключено: диалоги просто зеркалятся.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-0.5">
+            {savingAnalysis && (
+              <Loader2 size={14} className="animate-spin text-fg-tertiary" />
+            )}
+            <Switch
+              checked={analysisEnabled}
+              onCheckedChange={(v) => void handleToggleAnalysis(v)}
+              disabled={savingAnalysis}
+            />
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* Связи с сотрудниками */}
+      <GlassCard className="space-y-3">
+        <CardTitle icon={<Users size={16} />} grad={GRAD.teal}>
+          Связи с сотрудниками
+        </CardTitle>
+        <p className="max-w-[68ch] text-sm text-fg-secondary">
+          Свяжите сотрудников портала Bitrix24 с людьми компании, чтобы Кора
+          верно приписывала знания из внутренних переписок.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/company-admin/sources/bitrix/managers">
+            <Users size={14} />
+            Сопоставить сотрудников
+          </Link>
         </Button>
+      </GlassCard>
+
+      {/* Статус собранных данных */}
+      <GlassCard className="space-y-4">
+        <CardTitle icon={<Database size={16} />} grad={GRAD.violet}>
+          Статус данных
+        </CardTitle>
+        {c ? (
+          <>
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              {(
+                [
+                  { key: 'users', label: 'Сотрудники' },
+                  { key: 'dialogs', label: 'Диалоги' },
+                  { key: 'sessions', label: 'Сессии' },
+                  { key: 'contacts', label: 'Контакты' },
+                  { key: 'companies', label: 'Компании' },
+                  { key: 'deals', label: 'Сделки' },
+                  { key: 'leads', label: 'Лиды' },
+                  { key: 'notes', label: 'Заметки' },
+                ] as const
+              ).map(({ key, label }) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-border-subtle bg-[oklch(1_0_0/0.03)] px-3 py-2.5"
+                >
+                  <div className="text-xl font-semibold tabular-nums text-fg-primary">
+                    {c[key].toLocaleString('ru-RU')}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-fg-tertiary">
+                    {label}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {status && (
+              <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border-subtle pt-3 text-xs text-fg-tertiary">
+                <span>Полная: {formatDate(status.lastFullSyncAt)}</span>
+                <span>
+                  Инкрементальная: {formatDate(status.lastIncrementalSyncAt)}
+                </span>
+                <span>
+                  Сессии: {status.sessionsByStatus.done} проанализировано ·{' '}
+                  {status.sessionsByStatus.pending} в очереди
+                </span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex items-center text-sm text-fg-tertiary">
+            <Loader2 size={14} className="mr-2 animate-spin" /> Загружаем...
+          </div>
+        )}
+      </GlassCard>
+
+      {/* Отключение */}
+      <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-fg-primary">
+            Отключить интеграцию
+          </p>
+          <p className="mt-0.5 text-xs text-fg-tertiary">
+            Синхронизация прекратится. Собранные данные останутся в памяти.
+          </p>
+        </div>
         <Button
-          variant="ghost"
-          className="text-danger hover:text-danger"
-          onClick={() => void handleRemove()}
-          disabled={removing}
+          variant="destructive"
+          size="sm"
+          onClick={() => void handleDelete()}
+          disabled={deleting}
         >
-          <Trash2 size={16} className="mr-2" />
+          {deleting ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Trash2 size={14} />
+          )}
           Отключить
         </Button>
-      </div>
+      </GlassCard>
 
-      {dialog}
+      {confirmDialog}
     </div>
   );
 }

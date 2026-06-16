@@ -1,6 +1,7 @@
 # ТЗ: Bitrix24 как источник — синк IM-чатов + CRM + визард
 
-> Статус: **в работе** (2026-06-17). Фундамент (установка/OAuth/токены) готов —
+> Статус: **Этап 1 готов (Ф0–Ф6, 2026-06-17)**; Ф4b (CRM-дайджест) отложен.
+> Фундамент (установка/OAuth/токены) готов —
 > [ТЗ установки](2026-06-09-bitrix24-integration-install.md). Это Этап 1 из
 > [next-steps](../analysis/2026-06-09-bitrix24-next-steps.md): портал → память компании.
 > Модель — по образцу ChatBox-источника (мастер, сопоставление, бэкафилл, анализ).
@@ -142,9 +143,26 @@ CRM-сущностей, AI-анализ переписок (как ChatBox), у�
   occurredAt=начало дня)` (идемпотентность по дню, без новой таблицы). Вынесено
   отдельной фазой, чтобы не выкатывать половинчатый дайджест на ненадёжном
   «полный список каждый раз» сигнале. Предложить владельцу глубину/период.
-- [ ] Ф5 — визард (домен→OAuth→сопоставление→бэкафилл, persist) + страница источника
-  (стекло) + страница сопоставления сотрудников + `ensureBitrixSource` + hardDelete-сброс.
-- [ ] Ф6 — RBAC/фича (есть `feature.bitrix`) + статус-эндпоинт + тесты + verify + докум.
+- [x] Ф5 — визард + страница источника + сопоставление сотрудников.
+  Подключение = OAuth (домен→`authorize`→callback→`?bitrix=connected`); сам
+  round-trip и есть persist (интеграция создаётся на бэке в callback, на возврате
+  `getIntegration` → ConnectedView — без sessionStorage-визарда). **Стеклянная**
+  страница источника `BitrixIntegrationClient` (ConnectedView на `GlassCard`/
+  `CardTitle`/`GRAD`/`STATUS_TONE`, как одобренный ChatBox): статус портала,
+  ручной синк по scope (Сотрудники/Диалоги/CRM/Всё) с поллингом прогресса,
+  тумблер AI-анализа, счётчики данных (8 зеркал + разбивка сессий), отключение.
+  Страница сопоставления `company-admin/sources/bitrix/managers` (единый селект
+  связать/не связывать/создать). `ensureBitrixSource` (lazy `Source(type=bitrix)`
+  при connect/claim) + деактивация при `remove`. **hardDelete-сброс** bitrix в
+  `SourcesService.hardDelete` (полный каскад зеркал + интеграция, FK-safe).
+  Фронт: `bitrix.api.ts` (getStatus/listUsers/linkUser/sync/setAnalysis) +
+  `domain/bitrix.ts` (mapBitrixStatus + bitrixLinkModeLabel). ✅
+- [x] Ф6 — статус-эндпоинт + RBAC/фича + тесты + verify. `GET /bitrix/integration/
+  status` (счётчики/синки/анализ), `PATCH /analysis` (тумблер), `GET /users` +
+  `PATCH /users/:externalId/link` (сопоставление) — все за `feature.bitrix` +
+  RBAC (`requireRead`/`requireManage`). Юнит-тесты: `linkUser` (link/unlink/create
+  + ошибки), `listUsers`, `setAnalysisEnabled`. Verify: typecheck 0 (back+front),
+  lint чисто, 142 теста (bitrix+chatbox+sources) зелёные. ✅
 
 ## Открытые вопросы (по ходу)
 - Какие типы IM-диалогов брать: личные + групповые чаты, или только рабочие группы?
@@ -152,4 +170,18 @@ CRM-сущностей, AI-анализ переписок (как ChatBox), у�
 - Scope OAuth: добавить `im` к `crm,user,profile` (финализировать в кабинете Bitrix).
 
 ## Итог
-(заполняется по завершении)
+**Этап 1 реализован целиком (Ф0–Ф6).** Bitrix24 подключается как источник Коры:
+OAuth-коннект → синк сотрудников/IM-диалогов/CRM в зеркала → нарезка диалогов на
+сессии-сутки → посуточный AI-анализ (1 LLM-вызов: `daySummary` + накопительное
+`rollingSummary`) → мост в knowledge-core (RawEvent `sourceType=bitrix` с
+`fullText` + per-message `authorPersonId`). Управление — стеклянная страница
+источника (синк по scope, тумблер анализа, счётчики, сопоставление сотрудников,
+отключение) + hardDelete-сброс. Та же ревизия доработала ChatBox (сессии-сутки +
+`rollingSummary`). Verify: typecheck 0 (back+front), lint, 142 unit-теста зелёные.
+
+**Осталось (отдельными фазами, вне Этапа 1):**
+- **Ф4b** — CRM посуточный дайджест (дельта по `DATE_MODIFY` + `BitrixLead`/
+  `BitrixCrmNote` синк + дневной LLM-дайджест → блок). Нужна схема-дельта
+  (`modifiedAt`/курсор) + решение владельца по глубине/периоду CRM-импорта.
+- Этап 2 — событийный инкремент (`event.bind`); Этап 3 — placement-виджеты;
+  Этап 5 — self-hosted box. (См. «Вне объёма».)

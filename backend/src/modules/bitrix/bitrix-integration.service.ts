@@ -103,6 +103,7 @@ export class BitrixIntegrationService {
       portalDomain,
       status: 'connected',
     });
+    await this.ensureBitrixSource(tenantId);
 
     this.logger.log(
       `Bitrix OAuth connected: tenant=${tenantId} member=${tokens.member_id} domain=${portalDomain}`,
@@ -226,6 +227,7 @@ export class BitrixIntegrationService {
       where: { memberId },
       data: { tenantId, status: 'connected', lastError: null },
     });
+    await this.ensureBitrixSource(tenantId);
     const result = await this.getIntegration(tenantId);
     return result as BitrixIntegrationResponseDto;
   }
@@ -270,10 +272,150 @@ export class BitrixIntegrationService {
     }
   }
 
-  /** Отключить интеграцию org (удалить запись). */
+  /**
+   * Отключить интеграцию org (удалить запись). Зеркала (BitrixUser/Dialog/…)
+   * НЕ трогаем — это «мягкое» отключение; полный сброс источника делает
+   * `SourcesService.hardDelete` (кнопка «удалить источник»). Деактивируем
+   * `Source(type='bitrix')`, чтобы он не «висел активным» в списке источников.
+   */
   async remove(tenantId: string): Promise<{ ok: true }> {
     await this.prisma.bitrixIntegration.deleteMany({ where: { tenantId } });
+    await this.prisma.source
+      .updateMany({
+        where: { tenantId, type: 'bitrix', name: 'Bitrix24' },
+        data: { isActive: false },
+      })
+      .catch(() => undefined);
     return { ok: true };
+  }
+
+  /**
+   * Lazy upsert `Source(type='bitrix', name='Bitrix24')` для tenant'а — чтобы
+   * Bitrix24 появился в «Источниках» сразу при подключении. Тот же natural-key,
+   * что у `BitrixIngestService.upsertSource` (idempotent). Best-effort: ошибка
+   * не должна валить connect/claim.
+   */
+  private async ensureBitrixSource(tenantId: string): Promise<void> {
+    await this.prisma.source
+      .upsert({
+        where: {
+          tenantId_type_name: { tenantId, type: 'bitrix', name: 'Bitrix24' },
+        },
+        create: {
+          tenantId,
+          type: 'bitrix',
+          name: 'Bitrix24',
+          dataClass: 'sensitive',
+          isActive: true,
+        },
+        update: { isActive: true },
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `ensureBitrixSource: не удалось создать Source для tenant=${tenantId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+  }
+
+  /**
+   * Статус источника Bitrix24 для UI: счётчики зеркал, отметки синков, тумблер
+   * анализа и разбивка сессий по статусу анализа. Возвращает null, если
+   * интеграции нет.
+   */
+  async getStatus(tenantId: string): Promise<{
+    integration: BitrixIntegrationResponseDto;
+    analysisEnabled: boolean;
+    lastFullSyncAt: string | null;
+    lastIncrementalSyncAt: string | null;
+    counts: {
+      users: number;
+      dialogs: number;
+      sessions: number;
+      contacts: number;
+      companies: number;
+      deals: number;
+      leads: number;
+      notes: number;
+    };
+    sessionsByStatus: { pending: number; analyzing: number; done: number; failed: number };
+  } | null> {
+    const row = await this.prisma.bitrixIntegration.findFirst({
+      where: { tenantId },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!row) return null;
+
+    const [
+      users,
+      dialogs,
+      sessions,
+      contacts,
+      companies,
+      deals,
+      leads,
+      notes,
+      pending,
+      analyzing,
+      done,
+      failed,
+    ] = await Promise.all([
+      this.prisma.bitrixUser.count({ where: { tenantId } }),
+      this.prisma.bitrixDialog.count({ where: { tenantId } }),
+      this.prisma.bitrixDialogSession.count({ where: { tenantId } }),
+      this.prisma.bitrixContact.count({ where: { tenantId } }),
+      this.prisma.bitrixCompany.count({ where: { tenantId } }),
+      this.prisma.bitrixDeal.count({ where: { tenantId } }),
+      this.prisma.bitrixLead.count({ where: { tenantId } }),
+      this.prisma.bitrixCrmNote.count({ where: { tenantId } }),
+      this.prisma.bitrixDialogSession.count({
+        where: { tenantId, analysisStatus: 'pending' },
+      }),
+      this.prisma.bitrixDialogSession.count({
+        where: { tenantId, analysisStatus: 'analyzing' },
+      }),
+      this.prisma.bitrixDialogSession.count({
+        where: { tenantId, analysisStatus: 'done' },
+      }),
+      this.prisma.bitrixDialogSession.count({
+        where: { tenantId, analysisStatus: 'failed' },
+      }),
+    ]);
+
+    return {
+      integration: this.sanitize(row),
+      analysisEnabled: row.analysisEnabled,
+      lastFullSyncAt: row.lastFullSyncAt?.toISOString() ?? null,
+      lastIncrementalSyncAt: row.lastIncrementalSyncAt?.toISOString() ?? null,
+      counts: { users, dialogs, sessions, contacts, companies, deals, leads, notes },
+      sessionsByStatus: { pending, analyzing, done, failed },
+    };
+  }
+
+  /**
+   * Тумблер AI-анализа диалогов (как у ChatBox). OFF → синк зеркалит диалоги,
+   * но LLM (rollup + мост в knowledge-core) не дёргается; ON → крон/пост-синк
+   * ставят анализ закрытых сессий. Возвращает новое значение.
+   */
+  async setAnalysisEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ ok: true; analysisEnabled: boolean }> {
+    const res = await this.prisma.bitrixIntegration.updateMany({
+      where: { tenantId },
+      data: { analysisEnabled: enabled },
+    });
+    if (res.count === 0) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'bitrix_not_configured',
+          message: 'Интеграция Bitrix24 не подключена',
+        },
+      });
+    }
+    return { ok: true, analysisEnabled: enabled };
   }
 
   // ─────────────────────────── токены ───────────────────────────────

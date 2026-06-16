@@ -8,6 +8,8 @@ import {
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -26,12 +28,20 @@ import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
 import { BitrixIntegrationService } from './bitrix-integration.service';
+import { BitrixSyncService } from './bitrix-sync.service';
 import {
+  BitrixAnalysisToggleSchema,
   BitrixAuthorizeUrlQuerySchema,
   BitrixClaimSchema,
+  BitrixUserLinkSchema,
+  type BitrixAnalysisToggleDto,
   type BitrixAuthorizeUrlQueryDto,
   type BitrixClaimDto,
   type BitrixIntegrationResponseDto,
+  type BitrixStatusResponseDto,
+  type BitrixUserDto,
+  type BitrixUserLinkDto,
+  type BitrixUsersResponseDto,
 } from './dto/bitrix-integration.dto';
 import { type BitrixSyncScope } from './queue/bitrix-sync.queue';
 import { BitrixSyncQueueService } from './queue/bitrix-sync.queue.service';
@@ -64,6 +74,8 @@ export class BitrixIntegrationController {
   constructor(
     @Inject(BitrixIntegrationService)
     private readonly service: BitrixIntegrationService,
+    @Inject(BitrixSyncService)
+    private readonly syncService: BitrixSyncService,
     @Inject(BitrixSyncQueueService)
     private readonly syncQueue: BitrixSyncQueueService,
     @Inject(RbacService) private readonly rbac: RbacService,
@@ -94,6 +106,64 @@ export class BitrixIntegrationController {
     await this.requireManage(user.id, t);
     await this.requireFeature(t);
     return { url: this.service.buildAuthorizeUrl(t, query.domain) };
+  }
+
+  @Get('status')
+  @ApiOperation({
+    summary: 'Статус источника Bitrix24: счётчики зеркал, синки, анализ',
+  })
+  async status(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<BitrixStatusResponseDto | null> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.service.getStatus(t);
+  }
+
+  @Patch('analysis')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Тумблер AI-анализа диалогов Bitrix24 (вкл/выкл)' })
+  async setAnalysis(
+    @Body(new ZodValidationPipe(BitrixAnalysisToggleSchema))
+    body: BitrixAnalysisToggleDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; analysisEnabled: boolean }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    await this.requireFeature(t);
+    return this.service.setAnalysisEnabled(t, body.enabled);
+  }
+
+  @Get('users')
+  @ApiOperation({
+    summary: 'Сотрудники Bitrix24 + кандидаты Person (сопоставление)',
+  })
+  async users(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<BitrixUsersResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireRead(user.id, t);
+    return this.syncService.listUsers(t);
+  }
+
+  @Patch('users/:externalId/link')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Сопоставить сотрудника Bitrix24 с Person (link/unlink/create)',
+  })
+  async linkUser(
+    @Param('externalId') externalId: string,
+    @Body(new ZodValidationPipe(BitrixUserLinkSchema)) body: BitrixUserLinkDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<BitrixUserDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    await this.requireFeature(t);
+    return this.syncService.linkUser(t, externalId, body.mode, body.personId);
   }
 
   @Post('test')

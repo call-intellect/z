@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   Optional,
 } from '@nestjs/common';
 import type { BitrixIntegration, Prisma } from '@prisma/client';
@@ -27,6 +28,10 @@ import type {
   BitrixUserGetParams,
 } from './bitrix-api.types';
 import { BitrixIntegrationService } from './bitrix-integration.service';
+import type {
+  BitrixUserDto,
+  BitrixUsersResponseDto,
+} from './dto/bitrix-integration.dto';
 import { BitrixAnalyzeQueueService } from './queue/bitrix-analyze.queue.service';
 
 /**
@@ -607,5 +612,152 @@ export class BitrixSyncService {
           ? { lastFullSyncAt: now, lastIncrementalSyncAt: now }
           : { lastIncrementalSyncAt: now },
     });
+  }
+
+  // ─────────────────────────── сопоставление сотрудников ────────────
+
+  /**
+   * Список Bitrix-сотрудников + кандидаты Person для ручного сопоставления
+   * (визард шаг 2 + страница маппинга). Активные сверху, по имени.
+   */
+  async listUsers(tenantId: string): Promise<BitrixUsersResponseDto> {
+    const users = await this.prisma.bitrixUser.findMany({
+      where: { tenantId },
+      orderBy: [{ active: 'desc' }, { name: 'asc' }],
+      select: {
+        externalId: true,
+        name: true,
+        email: true,
+        position: true,
+        active: true,
+        linkMode: true,
+        linkedPersonId: true,
+      },
+    });
+
+    const linkedIds = [
+      ...new Set(
+        users
+          .map((u) => u.linkedPersonId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const nameById = new Map<string, string | null>();
+    if (linkedIds.length > 0) {
+      const linked = await this.prisma.person.findMany({
+        where: { tenantId, id: { in: linkedIds } },
+        select: { id: true, name: true },
+      });
+      for (const p of linked) nameById.set(p.id, p.name);
+    }
+
+    const personCandidates = await this.prisma.person.findMany({
+      where: { tenantId, deletedAt: null },
+      orderBy: { name: 'asc' },
+      take: 500,
+      select: { id: true, name: true, email: true },
+    });
+
+    return {
+      users: users.map((u) => ({
+        ...u,
+        linkedPersonName: u.linkedPersonId
+          ? (nameById.get(u.linkedPersonId) ?? null)
+          : null,
+      })),
+      personCandidates,
+    };
+  }
+
+  /**
+   * Ручное сопоставление сотрудника (визард/страница маппинга):
+   *   - `link`   — привязать к существующему Person (валидируем принадлежность org);
+   *   - `unlink` — снять связку (`linkMode='manual'` → автосвязка не вернёт);
+   *   - `create` — создать карточку Person по имени/email и привязать.
+   * Всегда ставит `linkMode='manual'` (ручное решение приоритетнее автокаскада).
+   */
+  async linkUser(
+    tenantId: string,
+    externalId: string,
+    mode: 'link' | 'unlink' | 'create',
+    personId?: string,
+  ): Promise<BitrixUserDto> {
+    const user = await this.prisma.bitrixUser.findUnique({
+      where: { tenantId_externalId: { tenantId, externalId } },
+      select: { id: true, name: true, email: true },
+    });
+    if (!user) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'bitrix_user_not_found',
+          message: 'Сотрудник Bitrix24 не найден',
+        },
+      });
+    }
+
+    let linkedPersonId: string | null = null;
+    if (mode === 'link') {
+      const p = await this.prisma.person.findFirst({
+        where: { id: personId, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!p) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'person_not_found',
+            message: 'Сотрудник (Person) не найден в этой компании',
+          },
+        });
+      }
+      linkedPersonId = p.id;
+    } else if (mode === 'create') {
+      const ownerUserId = await this.resolveOwnerUserId(tenantId);
+      if (!ownerUserId) {
+        throw new BadRequestException({
+          ok: false,
+          error: {
+            code: 'no_owner',
+            message: 'Не найден владелец компании для создания карточки',
+          },
+        });
+      }
+      const email = user.email?.trim() || null;
+      const created = await this.persons.create({
+        tenantId,
+        userId: ownerUserId,
+        body: {
+          name: user.name?.trim() || email || 'Без имени',
+          ...(email ? { email } : {}),
+        },
+      });
+      linkedPersonId = created.id;
+    }
+    // mode==='unlink' → linkedPersonId остаётся null.
+
+    const updated = await this.prisma.bitrixUser.update({
+      where: { id: user.id },
+      data: { linkedPersonId, linkMode: 'manual' },
+      select: {
+        externalId: true,
+        name: true,
+        email: true,
+        position: true,
+        active: true,
+        linkMode: true,
+        linkedPersonId: true,
+      },
+    });
+
+    let linkedPersonName: string | null = null;
+    if (updated.linkedPersonId) {
+      const p = await this.prisma.person.findFirst({
+        where: { id: updated.linkedPersonId, tenantId },
+        select: { name: true },
+      });
+      linkedPersonName = p?.name ?? null;
+    }
+    return { ...updated, linkedPersonName };
   }
 }

@@ -256,6 +256,21 @@ export class SourcesService {
         await tx.chatboxMember.deleteMany({ where: { tenantId } });
         await tx.chatboxIntegration.deleteMany({ where: { tenantId } });
       }
+      // bitrix-источник = интеграция: тот же ПОЛНЫЙ сброс (ТЗ 2026-06-17, Ф5).
+      // Порядок FK-safe: сообщения → сессии → диалоги → сотрудники → CRM-зеркала
+      // → интеграция (токены). Иначе страница Bitrix покажет «Подключено».
+      if (source.type === 'bitrix') {
+        await tx.bitrixMessage.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialogSession.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialog.deleteMany({ where: { tenantId } });
+        await tx.bitrixUser.deleteMany({ where: { tenantId } });
+        await tx.bitrixContact.deleteMany({ where: { tenantId } });
+        await tx.bitrixCompany.deleteMany({ where: { tenantId } });
+        await tx.bitrixDeal.deleteMany({ where: { tenantId } });
+        await tx.bitrixLead.deleteMany({ where: { tenantId } });
+        await tx.bitrixCrmNote.deleteMany({ where: { tenantId } });
+        await tx.bitrixIntegration.deleteMany({ where: { tenantId } });
+      }
       return del.count;
     });
     await this.audit.log({

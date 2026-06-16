@@ -2233,6 +2233,18 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - `bitrix-install.controller.ts` — `@ApiExcludeController`, `POST /bitrix/install/event` (public, `ONAPPINSTALL`/`ONAPPUNINSTALL`, kill-switch `bitrix.enabled`, всегда 200).
 - Фронт: `frontend/app/(authenticated)/settings/integrations/BitrixIntegrationClient.tsx` (секция) + `app/(public)/bitrix/install/page.tsx` (iframe-handler с `BX24.installFinish()`).
 
+### Bitrix24 как источник — синк IM+CRM + анализ (2026-06-17, Ф0–Ф6)
+
+**Источник:** [`plans/tz/2026-06-17-bitrix24-source-sync.md`](../../plans/tz/2026-06-17-bitrix24-source-sync.md). Развитие домена `bitrix/` из «установки» в полноценный **источник памяти** (как ChatBox). Зеркала: `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal/Lead/CrmNote` ([[data-model]] §«Bitrix24»). `SourceType.bitrix`.
+
+- `bitrix-sync.service.ts` — `syncUsers` (`user.get` + автосвязка email→fuzzy + авто-создание Person), `syncDialogs` (`im.recent.get`→`im.dialog.messages.get`) + `rebuildDialogSessions` (**сессии-сутки**: новые сообщения группируются по UTC-дню → новая закрытая сессия), `syncContacts/Companies/Deals` (`crm.*.list`), `syncByScope`/`fullSync`. **Сопоставление сотрудников**: `listUsers` (+ кандидаты Person), `linkUser` (link/unlink/create). После синка — `enqueuePendingAnalysisIfEnabled` (гейт `analysisEnabled`).
+- `bitrix-ingest.service.ts` — мост в knowledge-core (как ChatBox): `generateDayRollup` (**1 LLM-вызов** `накопительное + сообщения дня → {daySummary, rollingSummary}`, plain-text JSON + `validate`+retry, taskType `chatbox-summary`, `dataClass:sensitive`; `daySummary`→сессия, `rollingSummary`→`BitrixDialog`), `ingestSession` → `RawEvent(sourceType=bitrix)` с `fullText` + `transcript.turns[*].authorPersonId` (из `BitrixUser.linkedPersonId`).
+- Очереди (BullMQ, in-process в `WorkersModule`): `bitrix.sync` (`BitrixSyncWorker`+`BitrixSyncCron` 00:00) и `bitrix.analyze` (`BitrixAnalyzeWorker`+`BitrixAnalyzeCron` 00:00, гейт `bitrix.enabled`+`analysisEnabled`). Producer'ы — `queue/bitrix-{sync,analyze}.queue.service.ts` (jobId через `-`). См. [[../01_projects/workers-queues]], [[../01_projects/ai-jobs]].
+- `bitrix-integration.service.ts` (+Ф5): `ensureBitrixSource` (lazy `Source(type=bitrix)` при connect/claim), `getStatus` (счётчики 8 зеркал + синки + разбивка сессий), `setAnalysisEnabled`. `remove` деактивирует Source; **полный сброс** — `SourcesService.hardDelete` (каскад зеркал+интеграция, FK-safe).
+- Контроллер (+Ф5/Ф6): `GET .../status`, `PATCH .../analysis`, `GET .../users`, `PATCH .../users/:externalId/link`, `POST .../sync?scope=` (RBAC `bitrix`, `feature.bitrix`).
+- Фронт: стеклянная страница источника `BitrixIntegrationClient` (ConnectedView на `GlassCard`, синк по scope + тумблер анализа + счётчики), страница сопоставления `company-admin/sources/bitrix/managers/`, `src/api/bitrix.api.ts` + `src/domain/bitrix.ts`. См. [[../01_projects/frontend-pages]].
+- **Та же ревизия — ChatBox**: `rebuildSessions` переведён на сессии-сутки; `generateSummary` → посуточный rollup с `ChatboxChat.rollingSummary`.
+
 ## ChatBox-интеграция (2026-06-05)
 
 **Источник:** [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md) (10 фаз). Ветка `feature/chatbox-integration`. Профильная заметка — [[../01_projects/chatbox-integration]]. Схема — [[data-model]] §«ChatBox», AI/очереди — [[../01_projects/ai-jobs]] / [[../01_projects/workers-queues]], REST — [[../01_projects/api-layer]], фронт — [[../01_projects/frontend-pages]].

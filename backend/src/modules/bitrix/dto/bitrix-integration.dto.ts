@@ -43,6 +43,55 @@ export const BitrixClaimSchema = z.object({
 });
 export type BitrixClaimDto = z.infer<typeof BitrixClaimSchema>;
 
+/** Тело `PATCH /bitrix/integration/analysis` — тумблер AI-анализа диалогов. */
+export const BitrixAnalysisToggleSchema = z.object({
+  enabled: z.boolean(),
+});
+export type BitrixAnalysisToggleDto = z.infer<typeof BitrixAnalysisToggleSchema>;
+
+/**
+ * Тело `PATCH /bitrix/integration/users/:externalId/link` — ручное сопоставление
+ * Bitrix-сотрудника с Person Коры (как ChatBox-менеджеры). Режимы:
+ *   - `link`   — привязать к существующему Person (`personId` обязателен);
+ *   - `unlink` — снять связку (linkMode='manual', чтобы автосвязка не вернула);
+ *   - `create` — создать карточку Person по имени/email сотрудника и привязать.
+ */
+export const BitrixUserLinkSchema = z
+  .object({
+    mode: z.enum(['link', 'unlink', 'create']),
+    personId: z.string().trim().min(1).optional(),
+  })
+  .refine((v) => v.mode !== 'link' || !!v.personId, {
+    message: 'personId обязателен для mode=link',
+    path: ['personId'],
+  });
+export type BitrixUserLinkDto = z.infer<typeof BitrixUserLinkSchema>;
+
+/** Bitrix-сотрудник для UI сопоставления. */
+export interface BitrixUserDto {
+  externalId: string;
+  name: string | null;
+  email: string | null;
+  position: string | null;
+  active: boolean;
+  linkMode: 'none' | 'auto' | 'manual';
+  linkedPersonId: string | null;
+  linkedPersonName: string | null;
+}
+
+/** Кандидат Person для селекта связки. */
+export interface BitrixPersonOptionDto {
+  id: string;
+  name: string | null;
+  email: string | null;
+}
+
+/** Ответ `GET /bitrix/integration/users` — список сотрудников + кандидаты Person. */
+export interface BitrixUsersResponseDto {
+  users: BitrixUserDto[];
+  personCandidates: BitrixPersonOptionDto[];
+}
+
 /**
  * Сериализованная интеграция для UI. БЕЗ токенов — только `hasTokens`.
  */
@@ -57,4 +106,28 @@ export interface BitrixIntegrationResponseDto {
   lastConnectedAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Ответ `GET /bitrix/integration/status` — для стеклянной страницы источника. */
+export interface BitrixStatusResponseDto {
+  integration: BitrixIntegrationResponseDto;
+  analysisEnabled: boolean;
+  lastFullSyncAt: string | null;
+  lastIncrementalSyncAt: string | null;
+  counts: {
+    users: number;
+    dialogs: number;
+    sessions: number;
+    contacts: number;
+    companies: number;
+    deals: number;
+    leads: number;
+    notes: number;
+  };
+  sessionsByStatus: {
+    pending: number;
+    analyzing: number;
+    done: number;
+    failed: number;
+  };
 }

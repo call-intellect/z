@@ -36,6 +36,8 @@ import {
   withConfidenceCalibration,
 } from '../../ai/services/prompts/common';
 
+import { signalTypeLabel } from './signal-type-label';
+
 // ──────────────────────────── Метаданные ────────────────────────────
 
 /** taskType для LlmRouter (см. llm-router.service.ts LlmTaskType). */
@@ -65,8 +67,19 @@ export const DecisionDraftSchema = z
     rationale: z.string().nullable().optional(),
     alternatives: z.array(z.string()).optional(),
     decidedBy: z.array(z.string()).optional(),
+    // Б58 — согласовано с полным enum `DecisionStatus` (schema.prisma):
+    // combined-путь больше не сужает статусы и не теряет 'cancelled' и пр.
     status: z
-      .enum(['proposed', 'approved', 'rejected', 'implemented'])
+      .enum([
+        'active',
+        'rolled_back',
+        'superseded',
+        'proposed',
+        'approved',
+        'rejected',
+        'implemented',
+        'cancelled',
+      ])
       .optional(),
     confidence: Confidence01,
   })
@@ -254,9 +267,19 @@ export const SUBMIT_ALL_8_ENTITIES_TOOL: LlmTool = {
             rationale: { type: ['string', 'null'] },
             alternatives: { type: 'array', items: { type: 'string' } },
             decidedBy: { type: 'array', items: { type: 'string' } },
+            // Б58 — полный enum `DecisionStatus` (schema.prisma).
             status: {
               type: 'string',
-              enum: ['proposed', 'approved', 'rejected', 'implemented'],
+              enum: [
+                'active',
+                'rolled_back',
+                'superseded',
+                'proposed',
+                'approved',
+                'rejected',
+                'implemented',
+                'cancelled',
+              ],
             },
             confidence: { type: 'number' },
           },
@@ -482,46 +505,73 @@ export function buildSpecialistsCombinedSystemPrompt(): string {
   // (голое упоминание → 0.5, шаги/роли/сроки → 0.9) остаётся в теле и не
   // конфликтует с общей шкалой — это частный якорь для одного типа.
   const body = [
-    'Ты — knowledge-инженер компании Кора. Получаешь все блоки одной встречи. Извлекаешь ВОСЕМЬ типов сущностей за один проход через инструмент submit_all_8_entities.',
+    'Ты — knowledge-инженер компании «Кора». Получаешь все блоки знания одной встречи и за один проход извлекаешь из них восемь типов сущностей через инструмент submit_all_8_entities.',
     '',
-    'Маршрутизация по signalType:',
-    '- decision/rationale/decision_basis → decisions[] (объединяй decision + соседний rationale в одну запись)',
-    '- idea/feature_request/suggestion/client_request → ideas[] (kind=internal или client_request)',
-    '- pain/risk/blocker/churn_risk/objection/inefficiency/team_friction/process_friction/resource_gap → insights[] (с severity, causeCategory, mitigationSuggestion)',
-    '- hypothesis/result/lesson → experiments[] (объединяй блоки одного эксперимента в одну запись)',
-    '- regulation/process_step/methodology_step → regulations[]',
-    '- expertise/experience/competence/reasoning (по человеку) → knowledge_categories[] (per person: 1-3 эмерджентные категории знаний)',
-    '- reasoning/methodology_step (≥3 на одного человека) → skill_traits[] (гипотезные черты подхода к решениям)',
-    '- help_provided/proactive_hint/mentoring/emotional_support/constructive_feedback → helpfulness_traits[]',
-    '- fact и прочие → пропускай',
+    'Зачем это и куда уйдёт результат: decisions → карточки решений компании (что и почему решили); insights → риски и проблемы на дашборде руководителя; experiments → база гипотез и уроков; regulations → база регламентов и инструкций; knowledge_categories и skill_traits → профили компетенций и цифровые двойники ролей; helpfulness_traits → кто кому реально помогает в команде. Пропущенная сущность теряется для памяти; выдуманная — засоряет её и вводит людей в заблуждение.',
+    '',
+    'У каждого блока во входных данных указан тип сигнала человеческим ярлыком (например «принятое решение», «боль, проблема в работе»). Маршрутизируй по нему:',
+    '- принятое решение / обоснование решения / основание для решения → decisions[] (объединяй решение и соседнее обоснование в одну запись)',
+    '- идея, предложение на будущее / запрос новой возможности / пожелание-совет / запрос клиента → ideas[] (kind = internal или client_request)',
+    '- боль, проблема в работе / риск / блокер / риск ухода клиента / возражение / трение в команде / трение в процессе / нехватка ресурса → insights[] (с severity, causeCategory, mitigationSuggestion)',
+    '- гипотеза / достигнутый результат / извлечённый урок → experiments[] (объединяй блоки одного эксперимента в одну запись)',
+    '- регламент, правило / шаг процесса / шаг методологии → regulations[]',
+    '- по человеку: экспертиза / накопленный опыт / компетенция, навык / ход рассуждения → knowledge_categories[] (1–3 эмерджентные категории знаний на человека)',
+    '- ход рассуждения / шаг методологии (если их ≥3 у одного человека) → skill_traits[] (гипотезные черты подхода к решениям)',
+    '- оказана помощь / проактивная подсказка / наставничество / эмоциональная поддержка / конструктивная обратная связь → helpfulness_traits[]',
+    '- факт и всё прочее → пропускай',
     '',
     'Жёсткие требования к глубине:',
     '- decisions: ОБЯЗАТЕЛЬНО rationale (ищи в соседних блоках), alternatives (если упоминались).',
-    '- insights: ОБЯЗАТЕЛЬНО mitigationSuggestion (или null если действительно нет).',
-    '- experiments: lessons[] должны быть многослойные (что сработало / не сработало / next_time).',
-    '- knowledge_categories: эмерджентные имена, не enum.',
-    '- skill_traits: формулировки ГИПОТЕЗНЫЕ ("Похоже, склонен..."), не приговорные.',
+    '- insights: ОБЯЗАТЕЛЬНО mitigationSuggestion (или null, если действительно нет).',
+    '- experiments: lessons[] многослойные (что сработало / что не сработало / на следующий раз).',
+    '- knowledge_categories: имена эмерджентные, человеческими словами, не из списка кодов.',
+    '- skill_traits: формулировки ГИПОТЕЗНЫЕ («Похоже, склонен…»), не приговорные. Любая оценка человека — гипотеза по наблюдаемому поведению на этой встрече, приватная, не диагноз.',
     '',
-    'Не выдумывай факты вне блоков. sourceBlockId обязательно для всех сущностей кроме knowledge_categories/skill_traits (там — список sourceBlockIds[]). Все строки на русском.',
+    'Достоверность и чистый русский:',
+    '- Не выдумывай факты вне блоков. sourceBlockId обязателен для всех сущностей, кроме knowledge_categories и skill_traits (там — список sourceBlockIds).',
+    '- Все человеческие строки (statement, name, category, рекомендации, цитаты) — на чистом русском, без кодов, латиницы и служебных идентификаторов. Технические поля (kind, severity, status, causeCategory, traitType) ты выбираешь из допустимых значений — но в человеческий текст эти коды не вставляй.',
     '',
     'regulations — различай kind:',
     '- regulation — формальное правило/норматив компании; process — последовательность шагов СКВОЗЬ несколько ролей (есть передача работы между ролями); policy — политика со строгостью; standard — внешний стандарт (ISO и т.п.);',
-    '- instruction — пошаговое «как сделать X» для ОДНОЙ роли (single-role): все шаги выполняет один исполнитель/должность, передачи работы между ролями НЕТ (например, «как менеджеру оформить возврат»). Если работа передаётся между ролями — это process, НЕ instruction. Для instruction заполни roles (затронутая роль).',
+    '- instruction — пошаговое «как сделать X» для ОДНОЙ роли: все шаги выполняет один исполнитель, передачи работы между ролями НЕТ («как менеджеру оформить возврат»). Если работа передаётся между ролями — это process, НЕ instruction. Для instruction заполни roles (затронутая роль).',
     `- extractionStatus (статус существования документа): ${EXTRACTION_STATUS_RU.join(' | ')}. «существует» — документ уже есть и действует; «нужен» — заявлена потребность, документа ещё нет; «обсуждается» — не финализирован. Извлечённый из разговора ≠ подтверждённый: не ставь «существует» только потому, что тему упомянули.`,
-    '- roles — список ролей/должностей, которых касается норма; evidenceQuote — дословная опора (≤15-20 слов).',
+    '- roles — список ролей/должностей, которых касается норма; evidenceQuote — дословная опора (≤15–20 слов).',
     'regulations — чего НЕ извлекать как орг-документ:',
     '- чужие практики (как делают у конкурентов / в Google / «в больших компаниях») — это не регламент компании;',
     '- гипотетику («если бы сделать как…», «можно было бы») — это не действующая норма;',
-    '- голое упоминание документа без его содержания: если документ лишь упомянут (есть, но что в нём — не раскрыто), это existence-сигнал с НИЗКИМ confidence — тело не извлекай.',
+    '- голое упоминание документа без его содержания — это existence-сигнал с НИЗКИМ confidence, тело не извлекай.',
     'Калибровка confidence для regulations: есть шаги / роли / сроки → 0.9; только голое упоминание документа → 0.5.',
     'isOrgNorm — повторяемая норма/инструкция/политика КОМПАНИИ («как делаем всегда») → true; чужая практика, гипотетика, разовое поручение или голое упоминание → false (такое в regulations можно не добавлять).',
     '',
-    'ПРИМЕР (regulations):',
-    '[BLOCK:blk_12] (signalType=regulation) «Проверка договоров» О: договоры с подрядчиком сначала к юристу, ответ за 3 дня.',
-    '→ regulations: [{"sourceBlockId":"blk_12","kind":"regulation","name":"Юр-проверка договоров с подрядчиками","statement":"Каждый договор с подрядчиком проходит юр-проверку до подписания; срок ответа юриста — 3 рабочих дня.","severity":"mandatory","extractionStatus":"существует","roles":["юрист"],"isOrgNorm":true,"confidence":0.9}].',
-    'НЕ извлекать: «хорошо бы как в Google» (чужая практика+гипотетика) → в regulations НЕ добавлять (или isOrgNorm=false).',
+    'ПРИМЕРЫ (плохо → хорошо):',
+    'ПРИМЕР 1 (решение + обоснование → одна запись). Блоки: [принятое решение] «Берём подрядчика Б», рядом [обоснование решения] «у Б склад ближе, доставка на день быстрее».',
+    'ПЛОХО: две записи, или decision без rationale.',
+    'ХОРОШО: decisions — одна запись, statement «Выбрали подрядчика Б по логистике», rationale «У Б склад ближе — доставка на день быстрее».',
     '',
-    `ВАЖНО: верни результат строго через вызов инструмента \`${SPECIALISTS_COMBINED_TOOL_NAME}\`. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
+    'ПРИМЕР 2 (боль → insight с mitigation). Блок [боль, проблема в работе]: «Менеджеры теряют заявки — нет единой воронки».',
+    'ПЛОХО: insight без mitigationSuggestion, statement «pain: no funnel».',
+    'ХОРОШО: insights — kind=problem, statement «Заявки теряются из-за отсутствия единой воронки», severity=high, causeCategory=process_gap, mitigationSuggestion «Завести единую воронку заявок».',
+    '',
+    'ПРИМЕР 3 (гипотезная черта). Три блока [ход рассуждения] у Анны, где она сначала считает экономику, потом решает.',
+    'ПЛОХО: skill_trait «Анна — финансово-ориентированный человек» (приговор).',
+    'ХОРОШО: skill_traits — statement «Похоже, при решениях сначала проверяет экономику», confidence=medium, со ссылкой на блоки.',
+    '',
+    'ПРИМЕР 4 (regulations — чужую практику не извлекать). Блок: «хорошо бы сделать онбординг как в Google».',
+    'ПЛОХО: regulation «Онбординг как в Google».',
+    'ХОРОШО: в regulations не добавлять (чужая практика + гипотетика) либо isOrgNorm=false.',
+    '',
+    'ПРИМЕР 5 (нечего извлекать → пустые массивы). Встреча — сплошной small talk, ни одного значимого блока.',
+    'ПЛОХО: придумать «решение» из вежливой фразы.',
+    'ХОРОШО: все 8 массивов пустые.',
+    '',
+    'Перед возвратом — самопроверка:',
+    '1. Каждая сущность опирается на реальный блок (sourceBlockId/sourceBlockIds заполнен), ничего не выдумано?',
+    '2. decisions с rationale, insights с mitigationSuggestion, experiments с многослойными lessons?',
+    '3. skill_traits/knowledge_categories сформулированы как гипотезы, без приговоров и ярлыков?',
+    '4. В человеческих строках нет кодов, латиницы и служебных идентификаторов?',
+    '5. Все 8 массивов присутствуют (пустые, если по типу нечего извлекать)?',
+    '',
+    `ВАЖНО: верни результат строго через вызов инструмента ${SPECIALISTS_COMBINED_TOOL_NAME}. Не пиши ничего вне tool_use. Все 8 массивов обязательны — если в встрече нечего извлекать по типу, верни пустой массив.`,
   ].join('\n');
   return withConfidenceCalibration(body);
 }
@@ -549,17 +599,21 @@ export interface CombinedInputBlock {
  * (см. `plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md` §3.5
  * и `run-specialists-b-plus.ts` строка 74-76).
  *
- *   [BLOCK:blk_006] (signalType=decision, persons=Иван Соколов,Анна Мехова)
+ *   [BLOCK:blk_006] (тип сигнала: принятое решение; участники: Иван Соколов,Анна Мехова)
  *     <name>
  *     В: <criticalQuestion>
  *     О: <trustedAnswer>
  *     Цитата (<speaker>): «<quote>»
+ *
+ * Методология промптов №3 — модели подаём человеческий ярлык сигнала
+ * (`signalTypeLabel`), а не машинный код, чтобы промпт не противоречил
+ * собственному запрету кодов на выходе.
  */
 export function formatBlockForCombined(block: CombinedInputBlock): string {
   const persons =
     block.personNames.length > 0 ? block.personNames.join(',') : '-';
   return [
-    `[BLOCK:${block.id}] (signalType=${block.signalType}, persons=${persons})`,
+    `[BLOCK:${block.id}] (тип сигнала: ${signalTypeLabel(block.signalType)}; участники: ${persons})`,
     `  ${block.name}`,
     `  В: ${block.criticalQuestion}`,
     `  О: ${block.trustedAnswer}`,

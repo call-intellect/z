@@ -21,6 +21,7 @@ import {
   BLOCK_DISTILL_SYSTEM_PROMPT,
   BlockDistillJudgeResponseSchema,
 } from '../prompts/block-distill.prompt';
+import { signalTypeLabel } from '../prompts/signal-type-label';
 
 /**
  * Кандидат — canonical-блок, ближайший к новому по cosine. similarity ∈ [0,1].
@@ -253,12 +254,17 @@ export class BlockMergeService {
       name: b.name,
       criticalQuestion: b.criticalQuestion,
       trustedAnswer: b.trustedAnswer,
-      signalType: b.signalType,
+      // Методология промптов №3 — модели подаём человеческий ярлык сигнала,
+      // не машинный код (`pain`/`churn_risk`…). Источник: signal-type-label.ts.
+      signalType: signalTypeLabel(b.signalType),
       tags: b.tags,
       // Report-to-graph Ф4 ГАРД B — источник кандидата для LLM-арбитра
       // (report — вторичный, transcript — первичный). Исторические блоки без
-      // признака трактуем как транскриптные.
-      primarySource: b.primarySource ?? 'transcript',
+      // признака трактуем как транскриптные. Подаём человеческим ярлыком.
+      primarySource:
+        (b.primarySource ?? 'transcript') === 'report'
+          ? 'сводка/отчёт'
+          : 'живой разговор',
     };
   }
 

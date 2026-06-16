@@ -268,15 +268,21 @@ const ExtractedToolSchema = z.object({
   sourceBlockIndex: z.number().int().min(0).nullable().optional(),
 });
 
-const BlockIngestResponseSchema = z.object({
-  blocks: z.array(ExtractedBlockSchema),
-  // Все группы Б — опц. (старые модели могут не вернуть). Дефолт — пустой массив.
-  processes: z.array(ExtractedProcessSchema).optional().default([]),
-  decisions: z.array(ExtractedDecisionSchema).optional().default([]),
-  regulations: z.array(ExtractedRegulationSchema).optional().default([]),
-  policies: z.array(ExtractedPolicySchema).optional().default([]),
-  metrics: z.array(ExtractedMetricSchema).optional().default([]),
-  tools: z.array(ExtractedToolSchema).optional().default([]),
+/**
+ * Б38 (ТЗ 2026-06-16): конверт ответа парсим в «мягком» режиме — массивы
+ * блоков и типизированных сущностей принимаем как `unknown[]`, а каждый элемент
+ * валидируем поэлементно (см. `parseAndValidate`). Раньше один невалидный блок
+ * ронял парсинг всего окна (`safeParse` массива целиком), и терялись валидные
+ * блоки + типизированные сущности. Теперь отбрасываем только битые элементы.
+ */
+const BlockIngestEnvelopeSchema = z.object({
+  blocks: z.array(z.unknown()).optional().default([]),
+  processes: z.array(z.unknown()).optional().default([]),
+  decisions: z.array(z.unknown()).optional().default([]),
+  regulations: z.array(z.unknown()).optional().default([]),
+  policies: z.array(z.unknown()).optional().default([]),
+  metrics: z.array(z.unknown()).optional().default([]),
+  tools: z.array(z.unknown()).optional().default([]),
   // Mission/Vision/Strategy — ожидаем null (EXTRACTION_ENABLE_TOP_LEVEL=false).
   mission: z.null().optional(),
   vision: z.null().optional(),
@@ -293,6 +299,25 @@ const BlockIngestResponseSchema = z.object({
     })
     .optional(),
 });
+
+/**
+ * Поэлементно валидирует массив `unknown[]` указанной Zod-схемой: возвращает
+ * только валидные элементы + число отброшенных. Б38: один битый элемент больше
+ * не теряет всё окно.
+ */
+function parseEachItem<T>(
+  items: unknown[],
+  schema: z.ZodType<T>,
+): { valid: T[]; dropped: number } {
+  const valid: T[] = [];
+  let dropped = 0;
+  for (const item of items) {
+    const r = schema.safeParse(item);
+    if (r.success) valid.push(r.data);
+    else dropped += 1;
+  }
+  return { valid, dropped };
+}
 
 interface ExtractArgs {
   tenantId: string;
@@ -485,12 +510,53 @@ export class BlockExtractionService {
     } catch {
       return null;
     }
-    const parsed = BlockIngestResponseSchema.safeParse(raw);
-    if (!parsed.success) {
+    // Б38: конверт парсим мягко (массивы как unknown[]), затем валидируем
+    // каждый элемент отдельно — один битый блок/сущность больше не теряет
+    // всё окно (раньше падал `safeParse` массива целиком).
+    const envelope = BlockIngestEnvelopeSchema.safeParse(raw);
+    if (!envelope.success) {
       return null;
     }
-    const data = parsed.data;
-    const blocks: ExtractedBlock[] = data.blocks.map((b) => ({
+    const data = envelope.data;
+
+    const blocksParsed = parseEachItem(data.blocks, ExtractedBlockSchema);
+    const processesParsed = parseEachItem(data.processes, ExtractedProcessSchema);
+    const decisionsParsed = parseEachItem(data.decisions, ExtractedDecisionSchema);
+    const regulationsParsed = parseEachItem(
+      data.regulations,
+      ExtractedRegulationSchema,
+    );
+    const policiesParsed = parseEachItem(data.policies, ExtractedPolicySchema);
+    const metricsParsed = parseEachItem(data.metrics, ExtractedMetricSchema);
+    const toolsParsed = parseEachItem(data.tools, ExtractedToolSchema);
+
+    const droppedTotal =
+      blocksParsed.dropped +
+      processesParsed.dropped +
+      decisionsParsed.dropped +
+      regulationsParsed.dropped +
+      policiesParsed.dropped +
+      metricsParsed.dropped +
+      toolsParsed.dropped;
+    if (droppedTotal > 0) {
+      // Метрики тут нет (сервис без MetricsService) — фиксируем warn'ом
+      // с разбивкой, чтобы видеть, какой тип отбрасывается чаще.
+      this.logger.warn(
+        {
+          droppedBlocks: blocksParsed.dropped,
+          droppedProcesses: processesParsed.dropped,
+          droppedDecisions: decisionsParsed.dropped,
+          droppedRegulations: regulationsParsed.dropped,
+          droppedPolicies: policiesParsed.dropped,
+          droppedMetrics: metricsParsed.dropped,
+          droppedTools: toolsParsed.dropped,
+          keptBlocks: blocksParsed.valid.length,
+        },
+        'block-ingest: отброшены невалидные элементы окна (валидные сохранены)',
+      );
+    }
+
+    const blocks: ExtractedBlock[] = blocksParsed.valid.map((b) => ({
       name: b.name,
       criticalQuestion: b.criticalQuestion,
       trustedAnswer: b.trustedAnswer,
@@ -511,7 +577,7 @@ export class BlockExtractionService {
       blocks,
       dataQuality: data.dataQuality ?? undefined,
       typed: {
-        processes: data.processes.map((p) => ({
+        processes: processesParsed.valid.map((p) => ({
           name: p.name,
           description: p.description ?? null,
           ownerRoleHint: p.ownerRoleHint ?? null,
@@ -519,7 +585,7 @@ export class BlockExtractionService {
           confidence: p.confidence,
           sourceBlockIndex: p.sourceBlockIndex ?? null,
         })),
-        decisions: data.decisions.map((d) => ({
+        decisions: decisionsParsed.valid.map((d) => ({
           text: d.text,
           rationale: d.rationale ?? null,
           decidedByPersonHint: d.decidedByPersonHint ?? null,
@@ -527,21 +593,21 @@ export class BlockExtractionService {
           confidence: d.confidence,
           sourceBlockIndex: d.sourceBlockIndex ?? null,
         })),
-        regulations: data.regulations.map((r) => ({
+        regulations: regulationsParsed.valid.map((r) => ({
           name: r.name,
           contentMd: r.contentMd,
           category: r.category,
           confidence: r.confidence,
           sourceBlockIndex: r.sourceBlockIndex ?? null,
         })),
-        policies: data.policies.map((p) => ({
+        policies: policiesParsed.valid.map((p) => ({
           name: p.name,
           contentMd: p.contentMd,
           severity: p.severity,
           confidence: p.confidence,
           sourceBlockIndex: p.sourceBlockIndex ?? null,
         })),
-        metrics: data.metrics.map((m) => ({
+        metrics: metricsParsed.valid.map((m) => ({
           name: m.name,
           description: m.description ?? null,
           unit: m.unit,
@@ -550,7 +616,7 @@ export class BlockExtractionService {
           confidence: m.confidence,
           sourceBlockIndex: m.sourceBlockIndex ?? null,
         })),
-        tools: data.tools.map((t) => ({
+        tools: toolsParsed.valid.map((t) => ({
           name: t.name,
           kind: t.kind,
           externalUrl: t.externalUrl ?? null,

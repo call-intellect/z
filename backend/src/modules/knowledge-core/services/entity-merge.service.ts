@@ -18,6 +18,79 @@ import {
   ENTITY_MERGE_ARBITER_SYSTEM_PROMPT,
   EntityMergeArbiterResponseSchema,
 } from '../prompts/entity-merge-arbiter.prompt';
+import { signalTypeLabel } from '../prompts/signal-type-label';
+
+/**
+ * Человеческие ярлыки вида сущности (Прил. A3): подаём арбитру «человек»,
+ * «заказчик», а не код `person`/`customer` — методология промптов №3
+ * (человеческий вход). Fallback — сам код.
+ */
+const ENTITY_TYPE_LABEL_RU: Record<string, string> = {
+  person: 'человек',
+  customer: 'заказчик',
+  vendor: 'поставщик',
+  project: 'проект',
+  product: 'продукт',
+  document: 'документ',
+  goal: 'цель',
+  event: 'событие',
+  topic: 'тема',
+  location: 'место',
+  technology: 'технология',
+  metric: 'показатель',
+  market: 'рынок',
+  org_unit: 'подразделение',
+  client: 'заказчик',
+};
+
+function entityTypeLabelRu(code: string): string {
+  return ENTITY_TYPE_LABEL_RU[code] ?? code;
+}
+
+/**
+ * Человеческие ярлыки частых ключей metadata сущности (Прил. A3). Известные
+ * ключи переводим, неизвестные — оставляем как есть (не теряем данные).
+ */
+const ENTITY_METADATA_KEY_LABEL_RU: Record<string, string> = {
+  role: 'должность',
+  title: 'должность',
+  position: 'должность',
+  email: 'почта',
+  phone: 'телефон',
+  inn: 'ИНН',
+  domain: 'домен',
+  city: 'город',
+  codeName: 'кодовое имя',
+  code: 'кодовое имя',
+  sku: 'артикул',
+  article: 'артикул',
+};
+
+/**
+ * Превращает metadata сущности (произвольный JSON-объект) в человекочитаемые
+ * пары «ярлык: значение». Не объект / пусто → null (арбитру нечего показывать).
+ */
+function humaniseMetadata(
+  metadata: unknown,
+): Record<string, unknown> | null {
+  if (
+    metadata == null ||
+    typeof metadata !== 'object' ||
+    Array.isArray(metadata)
+  ) {
+    return null;
+  }
+  const entries = Object.entries(metadata as Record<string, unknown>).filter(
+    ([, v]) => v != null && v !== '',
+  );
+  if (entries.length === 0) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of entries) {
+    const label = ENTITY_METADATA_KEY_LABEL_RU[key] ?? key;
+    out[label] = value;
+  }
+  return out;
+}
 
 /**
  * Кандидат для merge'а Entity — другая сущность того же tenant'а / type,
@@ -395,15 +468,17 @@ export class EntityMergeService {
   ): Record<string, unknown> {
     return {
       id: e.id,
-      type: e.type,
-      canonicalName: e.canonicalName,
-      aliases: e.aliases,
-      metadata: e.metadata ?? null,
-      mentionsCount: e.mentionsCount,
-      recentMentions: recentBlocks.slice(0, 5).map((b) => ({
-        name: b.name,
-        criticalQuestion: b.criticalQuestion,
-        signalType: b.signalType,
+      // Прил. A3: подаём ЧЕЛОВЕЧЕСКИЕ ярлыки (вид сущности, тип упоминания,
+      // человекочитаемые свойства), а не машинные коды — методология №3.
+      вид: entityTypeLabelRu(e.type),
+      название: e.canonicalName,
+      другиеНаписания: e.aliases,
+      свойства: humaniseMetadata(e.metadata),
+      числоУпоминаний: e.mentionsCount,
+      недавниеУпоминания: recentBlocks.slice(0, 5).map((b) => ({
+        блок: b.name,
+        вопрос: b.criticalQuestion,
+        типСигнала: signalTypeLabel(b.signalType),
       })),
     };
   }

@@ -1,49 +1,86 @@
-/**
- * SBA α-3 wave 3 — AxisClassifierService.
- *
- * LLM-промпт `axis-classify` — берёт IdeaBlock и whitelist'ы (functional domains
- * + temporal periods) и возвращает множества axis-меток по 4 осям знания
- * (who / functional / contextual / temporal).
- *
- * who/contextual — почти всегда покрываются статикой (IdeaBlockEntity + Person
- * relationship). LLM добивает только functional/temporal — для них кода нет.
- *
- * Источник: plans/tz/2026-05-23-sba-alpha-3-wave3-axis-classifier-full.md §3.4.
- */
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-import {
-  withConfidenceCalibration,
-} from '../../ai/services/prompts/common';
+exports[`axis-classify — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "functional": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "label",
+          "confidence",
+        ],
+        "type": "object",
+      },
+      "maxItems": 4,
+      "type": "array",
+    },
+    "temporal": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "label": {
+            "enum": [
+              "постоянное",
+              "текущее",
+              "прошлое",
+              "будущее",
+              "повторяющееся",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "label",
+          "confidence",
+        ],
+        "type": "object",
+      },
+      "maxItems": 1,
+      "type": "array",
+    },
+  },
+  "required": [
+    "functional",
+    "temporal",
+  ],
+  "type": "object",
+}
+`;
 
-import { signalTypeLabel } from './signal-type-label';
+exports[`axis-classify — snapshot сборки промта > USER подаёт человеческий ярлык типа сигнала, а не код > user 1`] = `
+"Блок «Выбор подрядчика» (тип сигнала: принятое решение).
+Вопрос: Какого подрядчика выбрали?
+Ответ: Решили работать с подрядчиком Б
+Теги: логистика
+Нужно проставить оси: функциональную и временную.
 
-/**
- * Русские ярлыки временной оси (выход модели) ↔ коды `temporal:<period>`,
- * под которыми ось хранится в `IdeaBlockAxisLabel.label`.
- *
- * ТЗ 2026-06-16 (Прил. A2): модель отдаёт человеческий ярлык («постоянное»),
- * сервис (`axis-classifier.service.ts`) маппит обратно в код через
- * `TEMPORAL_RU_TO_CODE` перед записью. Жёсткое требование методологии №3 —
- * не показывать модели машинные коды и не просить их на выходе.
- */
-export const TEMPORAL_CODE_TO_RU: Record<string, string> = {
-  'temporal:permanent': 'постоянное',
-  'temporal:current': 'текущее',
-  'temporal:past': 'прошлое',
-  'temporal:future': 'будущее',
-  'temporal:periodic': 'повторяющееся',
-};
+Области компании (выбирай ярлыки только отсюда):
+  - ops: Операции
 
-/** Обратный маппер: русский ярлык временной оси → код `temporal:<period>`. */
-export const TEMPORAL_RU_TO_CODE: Record<string, string> = Object.fromEntries(
-  Object.entries(TEMPORAL_CODE_TO_RU).map(([code, ru]) => [ru, code]),
-);
+Верни JSON-объект по схеме \`axis_classify_v2\`."
+`;
 
-/** Допустимые русские ярлыки временной оси на выходе модели (enum схемы). */
-export const TEMPORAL_RU_LABELS = Object.values(TEMPORAL_CODE_TO_RU);
-
-export const AXIS_CLASSIFY_SYSTEM_PROMPT = withConfidenceCalibration(
-  `# Кто ты
+exports[`axis-classify — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"# Кто ты
 Ты — разметчик осей памяти компании «Кора». Тебе дают один блок знания, уже извлечённый из встречи или документа: его имя, критический вопрос, доверенный ответ и теги. Твоя задача — отнести этот блок к функциональным областям компании и определить его временной характер.
 
 # Что держать в голове (смысл задачи)
@@ -93,84 +130,14 @@ export const AXIS_CLASSIFY_SYSTEM_PROMPT = withConfidenceCalibration(
 3. Ни одного кода, латиницы или идентификатора в ярлыках?
 4. Уверенность по каждой метке проставлена осторожно (при сомнении ниже)?
 
-Верни строго JSON по схеме axis_classify_v2. Никакого markdown, преамбул и текста вне JSON.`,
-);
+Верни строго JSON по схеме axis_classify_v2. Никакого markdown, преамбул и текста вне JSON.
 
-export const AXIS_CLASSIFY_USER_TEMPLATE = (args: {
-  blockName: string;
-  signalType: string;
-  criticalQuestion: string;
-  trustedAnswer: string;
-  tags: readonly string[];
-  domainWhitelist: ReadonlyArray<{ slug: string; name: string }>;
-  /** Человеческое описание, какие оси нужно проставить (functional / temporal). */
-  axesRequested?: string;
-}): string => {
-  const tags = args.tags.length ? args.tags.join(', ') : '(нет)';
-  // Ф4-pre: подаём ЧЕЛОВЕЧЕСКИЙ ярлык типа сигнала, а не машинный код.
-  const signalLabel = signalTypeLabel(args.signalType);
-  const domains = args.domainWhitelist.length
-    ? args.domainWhitelist.map((d) => `  - ${d.slug}: ${d.name}`).join('\n')
-    : '  (список областей пуст — верни пустой functional)';
-  const axesLine = args.axesRequested
-    ? `Нужно проставить оси: ${args.axesRequested}.`
-    : 'Нужно проставить оси: функциональную и временную.';
-  return [
-    `Блок «${args.blockName}» (тип сигнала: ${signalLabel}).`,
-    `Вопрос: ${args.criticalQuestion}`,
-    `Ответ: ${args.trustedAnswer}`,
-    `Теги: ${tags}`,
-    axesLine,
-    '',
-    'Области компании (выбирай ярлыки только отсюда):',
-    domains,
-    '',
-    'Верни JSON-объект по схеме `axis_classify_v2`.',
-  ].join('\n');
-};
+Шкала confidence (0..1):
+- 0.3 — намёк, одиночная фраза, нет подтверждения вторым высказыванием.
+- 0.6 — явное высказывание одного участника, без обсуждения.
+- 0.85 — обсуждённое решение / явное поручение с ответственным и сроком.
+- 0.95+ — обсуждено двумя+ участниками, согласовано, зафиксировано.
 
-/**
- * JSON Schema strict для `axis-classify` (v2). Поддерживается DeepSeek V4 +
- * OpenAI; Ollama (qwen3) — фоллбэк, может выдать «свободный» JSON, парсер
- * устойчив к лишним полям.
- *
- * v2 (ТЗ 2026-06-16): временной ярлык — русское слово (методология №3, чистый
- * русский). Сервис маппит его обратно в код `temporal:<period>` через
- * `TEMPORAL_RU_TO_CODE`. temporal — ровно один ярлык (`maxItems: 1`).
- */
-export const AXIS_CLASSIFY_JSON_SCHEMA: Record<string, unknown> = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['functional', 'temporal'],
-  properties: {
-    functional: {
-      type: 'array',
-      maxItems: 4,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['label', 'confidence'],
-        properties: {
-          label: { type: 'string', minLength: 1, maxLength: 80 },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-        },
-      },
-    },
-    temporal: {
-      type: 'array',
-      maxItems: 1,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['label', 'confidence'],
-        properties: {
-          label: {
-            type: 'string',
-            enum: [...TEMPORAL_RU_LABELS],
-          },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-        },
-      },
-    },
-  },
-};
+ПРАВИЛО: лучше осторожнее. 0.5 честных лучше 0.9 с галлюцинацией.
+Если не уверен — снижай confidence, не повышай."
+`;

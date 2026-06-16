@@ -24,6 +24,7 @@ import {
   BLOCK_LINKER_SYSTEM_PROMPT,
   BlockLinkerResponseSchema,
 } from '../prompts/block-linker.prompt';
+import { signalTypeLabel } from '../prompts/signal-type-label';
 
 /**
  * Результат LLM-арбитра типизированной связи между двумя блоками.
@@ -254,7 +255,8 @@ export class BlockLinkService {
       name: b.name,
       criticalQuestion: b.criticalQuestion,
       trustedAnswer: b.trustedAnswer,
-      signalType: b.signalType,
+      // Методология промптов №3 — человеческий ярлык сигнала, не машинный код.
+      signalType: signalTypeLabel(b.signalType),
       tags: b.tags,
     };
   }

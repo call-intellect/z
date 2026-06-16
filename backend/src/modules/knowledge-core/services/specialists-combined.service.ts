@@ -33,6 +33,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   type DataClass,
+  type DecisionStatus,
   type IdeaKind,
   type InsightKind,
   type InsightSeverity,
@@ -318,11 +319,12 @@ export class SpecialistsCombinedService {
                 : Prisma.JsonNull,
             sourceBlockIds: [d.sourceBlockId],
             sourceIdeaBlockId: d.sourceBlockId,
-            status: (d.status ?? 'approved') as
-              | 'proposed'
-              | 'approved'
-              | 'rejected'
-              | 'implemented',
+            // Б58: каст согласован с полным enum `DecisionStatus`
+            // (active/rolled_back/superseded/proposed/approved/rejected/
+            // implemented/cancelled), чтобы combined-путь не терял статусы
+            // (в т.ч. 'cancelled') в отличие от single-пути. Источник enum —
+            // schema.prisma; контракт извлечения — DecisionDraftSchema.
+            status: (d.status ?? 'approved') as DecisionStatus,
             confidence: new Prisma.Decimal(this.clamp01(d.confidence)),
           },
         });

@@ -1,0 +1,705 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`block-ingest — snapshot сборки промта > JSON Schema стабилен > schema 1`] = `
+{
+  "additionalProperties": false,
+  "properties": {
+    "blocks": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "commitmentDueDateGuess": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "commitmentRecipientNameGuess": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "criticalQuestion": {
+            "type": "string",
+          },
+          "evidenceEndMs": {
+            "minimum": 0,
+            "type": "integer",
+          },
+          "evidenceQuote": {
+            "type": "string",
+          },
+          "evidenceStartMs": {
+            "minimum": 0,
+            "type": "integer",
+          },
+          "mentionedEntities": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "mentionContext": {
+                  "type": "string",
+                },
+                "metadata": {
+                  "type": "object",
+                },
+                "name": {
+                  "type": "string",
+                },
+                "sourceSpan": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "endMs": {
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                    "startMs": {
+                      "minimum": 0,
+                      "type": "integer",
+                    },
+                  },
+                  "required": [
+                    "startMs",
+                    "endMs",
+                  ],
+                  "type": "object",
+                },
+                "type": {
+                  "enum": [
+                    "person",
+                    "customer",
+                    "vendor",
+                    "project",
+                    "product",
+                    "document",
+                    "goal",
+                    "event",
+                    "topic",
+                    "location",
+                    "technology",
+                    "metric",
+                    "market",
+                    "org_unit",
+                    "client",
+                    "custom",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "type",
+                "name",
+                "mentionContext",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "name": {
+            "maxLength": 200,
+            "type": "string",
+          },
+          "roleHint": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "role_relevant": {
+            "type": "boolean",
+          },
+          "sideHint": {
+            "enum": [
+              "our",
+              "client",
+              "unknown",
+              null,
+            ],
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "signalType": {
+            "enum": [
+              "fact",
+              "pain",
+              "feature_request",
+              "objection",
+              "churn_risk",
+              "idea",
+              "risk",
+              "commitment",
+              "decision",
+              "mood",
+              "drift",
+              "competitor_move",
+              "metric_change",
+              "knowledge_gap",
+              "reasoning",
+              "rationale",
+              "decision_basis",
+              "regulation",
+              "process_step",
+              "expertise",
+              "experience",
+              "competence",
+              "methodology_step",
+              "hypothesis",
+              "result",
+              "lesson",
+              "brand_principle",
+              "content_artifact",
+              "commitment_status",
+              "plan_item",
+              "done_item",
+              "blocker",
+              "team_friction",
+              "process_friction",
+              "resource_gap",
+              "suggestion",
+              "client_request",
+              "question",
+              "task_created",
+              "task_status_changed",
+              "task_blocked",
+              "task_completed",
+              "task_overdue",
+              "task_reassigned",
+              "task_comment",
+              "task_mention",
+              "help_provided",
+              "proactive_hint",
+              "mentoring",
+              "emotional_support",
+              "constructive_feedback",
+              "question_unanswered",
+              "question_acknowledged_no_action",
+              "helped_by",
+              "helped_to",
+              "thanks_explicit",
+            ],
+            "type": "string",
+          },
+          "tags": {
+            "items": {
+              "type": "string",
+            },
+            "maxItems": 10,
+            "minItems": 0,
+            "type": "array",
+          },
+          "trustedAnswer": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+          "criticalQuestion",
+          "trustedAnswer",
+          "signalType",
+          "tags",
+          "confidence",
+          "evidenceQuote",
+          "evidenceStartMs",
+          "evidenceEndMs",
+          "mentionedEntities",
+          "role_relevant",
+          "roleHint",
+          "commitmentDueDateGuess",
+          "commitmentRecipientNameGuess",
+          "sideHint",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "dataQuality": {
+      "additionalProperties": false,
+      "properties": {
+        "lowConfidenceBlockCount": {
+          "minimum": 0,
+          "type": "integer",
+        },
+        "speakerCoveragePercent": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null",
+          ],
+        },
+        "transcriptTruncated": {
+          "type": "boolean",
+        },
+      },
+      "required": [
+        "speakerCoveragePercent",
+        "transcriptTruncated",
+        "lowConfidenceBlockCount",
+      ],
+      "type": "object",
+    },
+    "decisions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "decidedAt": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "decidedByPersonHint": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "rationale": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+          "text": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "text",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "fromIndex": {
+            "minimum": 0,
+            "type": "integer",
+          },
+          "fromType": {
+            "type": "string",
+          },
+          "linkType": {
+            "type": "string",
+          },
+          "toIndex": {
+            "minimum": 0,
+            "type": "integer",
+          },
+          "toType": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "fromIndex",
+          "fromType",
+          "toIndex",
+          "toType",
+          "linkType",
+          "confidence",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "metrics": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "description": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "name": {
+            "maxLength": 200,
+            "type": "string",
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+          "target": {
+            "type": [
+              "number",
+              "null",
+            ],
+          },
+          "unit": {
+            "maxLength": 50,
+            "type": "string",
+          },
+          "valueType": {
+            "enum": [
+              "count",
+              "ratio",
+              "duration_seconds",
+              "money",
+              "other",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+          "unit",
+          "valueType",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "mission": {
+      "type": "null",
+    },
+    "policies": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "contentMd": {
+            "type": "string",
+          },
+          "name": {
+            "maxLength": 300,
+            "type": "string",
+          },
+          "severity": {
+            "enum": [
+              "advisory",
+              "mandatory",
+              "blocking",
+            ],
+            "type": "string",
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "name",
+          "contentMd",
+          "severity",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "processes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "description": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "name": {
+            "maxLength": 300,
+            "type": "string",
+          },
+          "ownerRoleHint": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+          "triggerDescription": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "name",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "regulations": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "regulation",
+              "standard",
+            ],
+            "type": "string",
+          },
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "contentMd": {
+            "type": "string",
+          },
+          "name": {
+            "maxLength": 300,
+            "type": "string",
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "name",
+          "contentMd",
+          "category",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "strategy": {
+      "type": "null",
+    },
+    "tools": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "confidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "externalUrl": {
+            "type": [
+              "string",
+              "null",
+            ],
+          },
+          "kind": {
+            "enum": [
+              "software",
+              "hardware",
+              "template",
+              "document",
+              "service",
+              "other",
+            ],
+            "type": "string",
+          },
+          "name": {
+            "maxLength": 200,
+            "type": "string",
+          },
+          "sourceBlockIndex": {
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null",
+            ],
+          },
+        },
+        "required": [
+          "name",
+          "kind",
+          "confidence",
+          "sourceBlockIndex",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "vision": {
+      "type": "null",
+    },
+  },
+  "required": [
+    "blocks",
+    "processes",
+    "decisions",
+    "regulations",
+    "policies",
+    "metrics",
+    "tools",
+    "mission",
+    "vision",
+    "strategy",
+    "links",
+    "dataQuality",
+  ],
+  "type": "object",
+}
+`;
+
+exports[`block-ingest — snapshot сборки промта > system prompt стабилен > system 1`] = `
+"# Кто ты
+Ты — извлекающий слой памяти компании «Кора». Тебе дают кусок живого разговора (расшифровку встречи), документа или переписки, а ты превращаешь его в атомарные блоки знания и типизированные сущности, из которых строится граф знаний компании. Ты не пересказываешь и не суммируешь — ты вычленяешь отдельные значимые утверждения и аккуратно их классифицируешь.
+
+# Что держать в голове (смысл задачи)
+- Зачем это: твои блоки — кирпичи долговременной памяти компании. По ним другие части Коры собирают решения, обязательства, цели, профили навыков, риски и отвечают сотрудникам на вопрос «что у нас с X» спустя месяцы. Лишний/неверный блок засоряет память; пропущенное значимое утверждение теряется навсегда.
+- Кому уйдёт результат: часть полей (имя блока, ответ, контекст упоминания) показывается живым людям в кабинете как карточки. Значит формулировки должны читаться человеком, без служебных слов.
+- Что делает блок ценным: через месяц по нему можно ответить на конкретный рабочий вопрос. Если фраза не переживёт неделю — это не блок.
+- Ты НЕ решаешь, «делать ли с этим что-то» и «создавать ли задачу». Твоё дело — точно извлечь и классифицировать. Дальнейшие действия и пороги — на стороне системы.
+
+# Что извлекать, а что нет
+- Извлекай значимые рабочие утверждения: факты, решения, обязательства, идеи, риски, боли, метрики, обоснования, регламенты, уроки.
+- Пропускай: small talk, приветствия, погоду, шутки, повторы, технический шум, навигационные реплики.
+- Одно утверждение = один блок. Если один смысл повторяется в нескольких репликах — собери в один блок, не дробя.
+- Пустое или мусорное окно (только filler-слова, нет ни одного значимого утверждения) → верни пустые массивы, ничего не выдумывай.
+
+# Главные различия классов (соблюдай — здесь чаще всего ошибаются)
+1. Обязательство (commitment) ≠ намерение/пожелание. Обязательство — КОНКРЕТНЫЙ человек берёт на себя конкретное действие («я подготовлю смету к пятнице»). Пожелание/намерение без взявшего на себя («надо бы обновить договор», «хорошо бы посмотреть метрики») — это НЕ обязательство; если оно несёт смысл — это идея, предложение или просто факт обсуждения, но не commitment.
+2. Решение (decision) ≠ обязательство ≠ идея. Решение — сделанный ВЫБОР, к которому пришли и зафиксировали («решили остановиться на варианте Б»). Обязательство — кто-то лично обещает сделать. Идея — ещё НЕ принятое предложение («а давайте попробуем Б»).
+3. Идея (idea) ≠ совет ≠ запрос фичи. Идея — набросок НОВОГО подхода/инициативы. Совет (suggestion) — общая рекомендация без новизны. Запрос фичи (feature_request) — просьба сделать конкретную функцию.
+4. Вопрос (question) ≠ обязательство. Реплика, которая что-то спрашивает и не получает ответа в окне («а кто займётся переносом склада?»), — это вопрос, а не чьё-то обещание. Не приписывай вопрос как обязательство и не назначай за него ответственного.
+5. Шаг процесса (process_step, «как это делается вообще») ≠ обязательство («я сделаю это сейчас»).
+
+# Достоверность и сроки (анти-выдумка)
+- Бери только то, что прозвучало. Не додумывай мотивы, цифры, имена, сроки.
+- Имена людей (адресат обещания, кто принял решение, упомянутые лица) бери ТОЛЬКО из реплик и из имён спикеров. Если имя не звучало явно — оставляй пусто (null), не подставляй вероятное.
+- Если спикеры — только технические метки (вид «Speaker_0», «unknown»), авторство реплики НЕИЗВЕСТНО: не приписывай реплику человеку и не указывай адресата обещания.
+- Срок обязательства указывай только если он назван («к пятнице», «до конца месяца», «к 25-му») — переведи в дату формата ГГГГ-ММ-ДД относительно даты разговора. «Скоро», «на днях», «как-нибудь» — это не срок, оставляй пусто.
+
+# Цитата-доказательство
+- К каждому блоку приложи короткую дословную цитату из текста (по возможности 15–20 слов, не длинную склейку) и её таймкоды в миллисекундах из границ соответствующего сегмента. Начало ≤ конец.
+
+# Чистый русский на выходе (жёсткий запрет)
+Все строки, которые увидит человек или сохранится в память (имя блока, вопрос, ответ, контекст упоминания, тексты сущностей), — на чистом русском. Категорически запрещено переносить в эти строки служебные коды и латиницу, даже если они есть во входе или в названиях полей: не пиши в текст «decision», «commitment», «idea», «CompanyProfile», «churn_risk», логины, длинные идентификаторы, имена систем латиницей. Код типа (signalType, тип сущности) выбирай в служебном поле — но в человеческие строки его словом-кодом не вставляй. Если в расшифровке мелькнул распознанный латинский мусор — не тащи его в текст.
+
+# Типизированные сущности группы Б
+Возвращай только то, что ЯВНО прозвучало (процессы, решения, регламенты, политики, метрики, инструменты). Не выдумывай. Если уверенность низкая — лучше не возвращай сущность вовсе, чем зашумить граф. У каждой сущности укажи, из какого блока она взята.
+
+# Уровни (mission / vision / strategy)
+Эти три верхнеуровневых поля ВСЕГДА возвращай пустыми (null) — их извлечение сейчас отключено, даже если в тексте звучит миссия.
+
+# Связи (links)
+Рёбра между сущностями возвращай только если связь очевидна; иначе — пустой массив. Лучше пусто, чем неверно.
+
+# Самооценка качества окна (dataQuality)
+В конце оцени: какую долю реплик удалось привязать к известному (не техническому) спикеру; выглядит ли окно обрезанным (обрывается на полуслове); сколько блоков ты извлёк с низкой уверенностью.
+
+# Уверенность
+Проставляй уверенность осторожно. Намёк одной фразой без подтверждения — низкая; явное высказывание одного человека — средняя; обсуждённое и согласованное несколькими — высокая. При сомнении снижай, а не повышай: честная средняя лучше высокой с домыслом.
+
+# Примеры (плохо → хорошо)
+Все примеры — на реальных репликах. Показывают разбор спорных случаев; формат полей упрощён для наглядности (в ответе — полная схема).
+
+ПРИМЕР 1 (живой провал «Идеи=0»). Реплика: «Слушайте, а давайте попробуем перейти на нового подрядчика по логистике — по-моему дешевле выйдет.»
+ПЛОХО: пропустить (нет блока) ИЛИ signalType=fact, name «Подрядчик по логистике».
+ХОРОШО: signalType=idea; name «Идея сменить подрядчика по логистике»; trustedAnswer «Предложили попробовать нового подрядчика по логистике, ожидают экономию». Это набросок нового шага, а не свершившийся факт и не принятое решение.
+
+ПРИМЕР 2 (обязательство ≠ решение ≠ план). Реплика: «Хорошо, я к пятнице подготовлю смету и пришлю Марине.»
+ПЛОХО: signalType=decision ИЛИ signalType=plan_item.
+ХОРОШО: signalType=commitment; commitmentDueDateGuess=ближайшая пятница в формате ГГГГ-ММ-ДД; commitmentRecipientNameGuess «Марине». Конкретный человек лично взял действие на себя — это обязательство, а не выбор группы и не пункт плана.
+
+ПРИМЕР 3 (намерение/пожелание — НЕ обязательство). Реплика: «Надо бы нам когда-нибудь обновить договор с арендодателем.»
+ПЛОХО: signalType=commitment с выдуманным адресатом и сроком «скоро».
+ХОРОШО: либо не извлекать (если это проброс без веса), либо signalType=suggestion/idea с уверенностью низкой, БЕЗ срока и БЕЗ адресата. Нет взявшего на себя и нет фиксации — обязательства нет.
+
+ПРИМЕР 4 (вопрос — НЕ обязательство). Реплика: «А кто вообще займётся переносом склада?» (ответа в окне нет).
+ПЛОХО: signalType=commitment, приписать ответственного.
+ХОРОШО: signalType=question; name «Открытый вопрос: кто отвечает за перенос склада»; ответственного не назначать.
+
+ПРИМЕР 5 (запрет кодов/латиницы в тексте). Реплика: «Клиент опять жалуется на риск оттока из-за медленной поддержки.»
+ПЛОХО: name «churn_risk: slow support», trustedAnswer «CompanyProfile: support slow».
+ХОРОШО: signalType=churn_risk; name «Риск оттока клиента из-за медленной поддержки»; trustedAnswer «Клиент жалуется на медленную поддержку, есть риск ухода». Код типа — в служебном поле, в тексте — человеческие слова.
+
+ПРИМЕР 6 (неизвестный спикер). Сегмент: speakers=[«Speaker_0»], text «Сделаю отчёт к среде.»
+ПЛОХО: подставить реальное имя автора/адресата.
+ХОРОШО: signalType=commitment; срок=среда в формате ГГГГ-ММ-ДД; адресат пусто (null); автор не приписан конкретному человеку — спикер не идентифицирован.
+
+# Перед тем как вернуть ответ — самопроверка
+Пройди по списку; если хоть один пункт нарушен — исправь, не выдавай как есть:
+1. Каждый блок — отдельное значимое утверждение, переживёт неделю; small talk и повторы убраны.
+2. У каждого блока ровно один тип, и он не путает обязательство/решение/идею/вопрос (см. различия выше).
+3. Намерения и пожелания без взявшего на себя НЕ помечены как обязательство.
+4. Ни одного выдуманного имени, срока или цифры; при технических метках спикеров — никаких приписанных людей.
+5. В человеческих строках (имя, вопрос, ответ, контекст) нет ни одного кода, латинского слова, идентификатора или служебного названия.
+6. К каждому блоку есть короткая дословная цитата и корректные таймкоды (начало ≤ конец).
+7. Уверенность не завышена; при сомнении она снижена.
+
+Верни строго JSON по схеме block_ingest_v2. Никакого markdown, преамбул и пояснений вне JSON.
+
+
+Шкала confidence (0..1):
+- 0.3 — намёк, одиночная фраза, нет подтверждения вторым высказыванием.
+- 0.6 — явное высказывание одного участника, без обсуждения.
+- 0.85 — обсуждённое решение / явное поручение с ответственным и сроком.
+- 0.95+ — обсуждено двумя+ участниками, согласовано, зафиксировано.
+
+ПРАВИЛО: лучше осторожнее. 0.5 честных лучше 0.9 с галлюцинацией.
+Если не уверен — снижай confidence, не повышай.
+
+Учти: текст диалога — результат автоматического распознавания речи (ASR), не дословная стенограмма.
+Возможны ошибки в числах, единицах, именах и терминах: «100 платящих» может распознаться как «стопящих», «10 месяцев» — как «10 минусов», «2 000» и «2000» — это одно число.
+Восстанавливай вероятный смысл по контексту встречи (тема, роли, ранее названные цифры); нормализуй числа (убирай пробелы-разделители тысяч).
+Не выдумывай факты, которых нет, — только исправляй очевидные искажения распознавания."
+`;

@@ -68,9 +68,9 @@ export class PersonaLayerValidationCron {
         );
         return;
       }
-      this.logger.log('persona-layer-validation.cron: START');
+      this.logger.debug('persona-layer-validation.cron: START');
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         `persona-layer-validation.cron: DONE orgs=${summary.orgsScanned} roles=${summary.rolesProcessed} cases=${summary.cases} skippedRoles=${summary.skippedRoles} failures=${summary.failures}`,
       );
     } catch (err) {

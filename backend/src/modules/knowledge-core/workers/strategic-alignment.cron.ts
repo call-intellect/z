@@ -31,7 +31,7 @@ export class StrategicAlignmentCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'strategic-alignment.cron: проход завершён');
+      this.logger.debug(summary, 'strategic-alignment.cron: проход завершён');
       void this.audit.log({
         action: 'goal.alignment.scheduled',
         metadata: summary,

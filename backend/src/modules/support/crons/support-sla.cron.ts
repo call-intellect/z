@@ -28,7 +28,7 @@ export class SupportSlaCron {
       }
       const breached = await this.sla.markBreaches(new Date());
       if (breached > 0) {
-        this.logger.log(
+        this.logger.debug(
           { breached },
           'support-sla.cron: помечены нарушения SLA первого ответа',
         );

@@ -76,7 +76,7 @@ export class CheckinSentimentBatchCron {
     try {
       const stats = await this.runOnce(now);
       if (stats.totalCheckIns > 0) {
-        this.logger.log(stats, 'checkin-sentiment-batch.cron: проход завершён');
+        this.logger.debug(stats, 'checkin-sentiment-batch.cron: проход завершён');
       }
     } catch (err) {
       this.logger.error(

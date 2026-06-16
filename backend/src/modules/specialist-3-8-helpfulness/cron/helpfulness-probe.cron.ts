@@ -34,7 +34,7 @@ export class HelpfulnessProbeCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'helpfulness-probe.cron: проход завершён');
+      this.logger.debug(summary, 'helpfulness-probe.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

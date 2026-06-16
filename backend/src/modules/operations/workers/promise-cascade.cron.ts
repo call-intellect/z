@@ -50,7 +50,7 @@ export class PromiseCascadeCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'promise-cascade.cron: проход завершён');
+      this.logger.debug(stats, 'promise-cascade.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

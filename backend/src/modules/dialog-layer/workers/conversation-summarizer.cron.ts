@@ -81,7 +81,7 @@ export class ConversationSummarizerCron {
         this.logger.debug('ConversationSummarizer: нет кандидатов на сжатие');
         return;
       }
-      this.logger.log(
+      this.logger.debug(
         `ConversationSummarizer: запуск для ${candidates.length} conversation(s)`,
       );
       for (const conv of candidates) {
@@ -243,7 +243,7 @@ export class ConversationSummarizerCron {
     this.metrics.incConversationSummary({
       tenantTop: tenantTopOf(conv.tenantId),
     });
-    this.logger.log(
+    this.logger.debug(
       {
         conversationId: conv.id,
         compressedMessages: toCompressCount,

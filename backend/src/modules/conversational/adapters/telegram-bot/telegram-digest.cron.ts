@@ -85,7 +85,7 @@ export class TelegramDigestCron {
   async digestTick(): Promise<void> {
     try {
       const stats = await this.run();
-      this.logger.log(
+      this.logger.debug(
         stats,
         'telegram-digest-cron: цикл завершён',
       );

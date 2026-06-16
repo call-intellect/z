@@ -85,7 +85,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
     });
-    this.logger.log(
+    this.logger.debug(
       `BlockLinkerWorker запущен (${CORE_QUEUE_NAMES.BLOCK_LINKER})`,
     );
   }
@@ -125,7 +125,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       where: { tenantId: block.tenantId, status: 'canonical' },
     });
     if (canonicalCount < minBlocks) {
-      this.logger.log(
+      this.logger.debug(
         { blockId, tenantId: block.tenantId, canonicalCount, threshold: minBlocks },
         'block-linker: канонических блоков меньше порога — skip',
       );
@@ -251,7 +251,7 @@ export class BlockLinkerWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         blockId: block.id,
         tenantId: block.tenantId,

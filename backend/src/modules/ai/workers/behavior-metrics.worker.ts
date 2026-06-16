@@ -259,7 +259,7 @@ export class BehaviorMetricsWorker implements OnModuleInit, OnModuleDestroy {
       this.metrics.incBehaviorMetricsLowConfidence();
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         durationMs: Date.now() - startedAt,

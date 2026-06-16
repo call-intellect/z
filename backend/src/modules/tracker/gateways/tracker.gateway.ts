@@ -87,7 +87,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       if (!ctx.presenceIssueIds) ctx.presenceIssueIds = new Set();
       this.socketContext.set(client.id, ctx);
       await client.join(this.tenantRoom(ctx.tenantId));
-      this.logger.log(
+      this.logger.debug(
         { socketId: client.id, userId: ctx.userId, tenantId: ctx.tenantId },
         'tracker WS: client connected',
       );
@@ -116,7 +116,7 @@ export class TrackerGateway implements OnGatewayConnection, OnGatewayDisconnect 
       }
     }
     this.socketContext.delete(client.id);
-    this.logger.log(
+    this.logger.debug(
       { socketId: client.id, userId: ctx?.userId, tenantId: ctx?.tenantId },
       'tracker WS: client disconnected',
     );

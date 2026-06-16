@@ -7,10 +7,11 @@ import {
   Inject,
   Logger,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
@@ -108,7 +109,23 @@ export class BitrixInstallController {
    * блокирует встраивание в портал).
    */
   @All('handler')
-  async handler(@Body() body: unknown, @Res() res: Response): Promise<void> {
+  async handler(
+    @Req() req: Request,
+    @Body() body: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    // Глобальный helmet ставит X-Frame-Options: DENY (+ в prod CSP frame-ancestors
+    // 'none') — снимаем для этого роута и разрешаем встраивание доменам Bitrix24.
+    res.removeHeader('X-Frame-Options');
+    res.setHeader('Content-Security-Policy', BITRIX_FRAME_CSP);
+
+    // При создании/проверке приложения Bitrix шлёт HEAD на handler URL, ожидая
+    // 200 (валидация доступности). Отвечаем сразу, без тела и побочной логики.
+    if (req.method === 'HEAD') {
+      res.status(HttpStatus.OK).end();
+      return;
+    }
+
     try {
       const enabled =
         (await this.adminSettings.get<boolean>('bitrix.enabled', true)) ?? true;
@@ -145,10 +162,6 @@ export class BitrixInstallController {
       );
     }
 
-    // Глобальный helmet ставит X-Frame-Options: DENY (+ в prod CSP frame-ancestors
-    // 'none') — снимаем для этого роута и разрешаем встраивание доменам Bitrix24.
-    res.removeHeader('X-Frame-Options');
-    res.setHeader('Content-Security-Policy', BITRIX_FRAME_CSP);
     res.type('html').send(renderInstallHtml());
   }
 }

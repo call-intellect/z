@@ -78,7 +78,7 @@ export class ConversationalSendWorker implements OnModuleInit, OnModuleDestroy {
         'ConversationalSendWorker: job failed (BullMQ-side)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `ConversationalSendWorker запущен (concurrency=${this.cfg.conversational.outboundConcurrency})`,
     );
   }

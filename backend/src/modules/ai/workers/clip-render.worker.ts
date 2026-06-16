@@ -168,7 +168,7 @@ export class ClipRenderWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
       status = 'success';
-      this.logger.log(
+      this.logger.debug(
         {
           highlightId,
           meetingId: highlight.meetingId,

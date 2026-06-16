@@ -55,7 +55,7 @@ export class ThemeClustererCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'theme-clusterer: проход завершён');
+      this.logger.debug(summary, 'theme-clusterer: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -212,7 +212,7 @@ export class ThemeClustererCron {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         tenantId,
         candidateBlocks: clusterables.length,

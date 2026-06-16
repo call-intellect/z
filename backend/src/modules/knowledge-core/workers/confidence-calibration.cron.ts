@@ -76,7 +76,7 @@ export class ConfidenceCalibrationCron {
   async run(): Promise<void> {
     try {
       if (!this.cfg.confidenceCalibration.enabled) {
-        this.logger.log(
+        this.logger.debug(
           'confidence-calibration.cron: ENABLED=false, skip',
         );
         return;
@@ -139,13 +139,13 @@ export class ConfidenceCalibrationCron {
       await this.calibration.setParams(taskType, fit.params);
       this.lossGauge.set({ task_type: taskType }, fit.brier);
       updatedTasks++;
-      this.logger.log(
+      this.logger.debug(
         { taskType, n: fit.n, a: fit.params.a, b: fit.params.b, brier: fit.brier },
         'confidence-calibration: параметры обновлены',
       );
     }
 
-    this.logger.log(
+    this.logger.debug(
       { updatedTasks, skippedTasks },
       'confidence-calibration: weekly проход завершён',
     );

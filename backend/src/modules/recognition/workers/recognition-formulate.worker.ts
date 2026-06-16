@@ -119,7 +119,7 @@ export class RecognitionFormulateWorker
         'recognition-formulate: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `RecognitionFormulateWorker запущен (${CORE_QUEUE_NAMES.RECOGNITION_FORMULATE})`,
     );
   }
@@ -176,7 +176,7 @@ export class RecognitionFormulateWorker
         visibility,
       },
     });
-    this.logger.log(
+    this.logger.debug(
       `recognition created: id=${created.id} type=${data.type} toUserId=${data.toUserId} from=${data.fromUserId ?? 'ai'} visibility=${visibility}`,
     );
 

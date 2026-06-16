@@ -41,7 +41,7 @@ export class DailyCostAggregatorCron {
     try {
       const yesterday = this.yesterdayUtcDate();
       const result = await this.runForDate(yesterday);
-      this.logger.log(
+      this.logger.debug(
         { ...result, durationMs: Date.now() - startedAt },
         'daily-cost-aggregator.cron: проход завершён',
       );

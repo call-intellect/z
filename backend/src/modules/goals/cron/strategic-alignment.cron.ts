@@ -51,7 +51,7 @@ export class StrategicAlignmentCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'strategic-alignment-issues.cron: проход завершён',
       );

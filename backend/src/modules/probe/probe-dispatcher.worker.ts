@@ -110,7 +110,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'probe-dispatcher: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `ProbeDispatcherWorker запущен (${CORE_QUEUE_NAMES.PROBE_EVENTS})`,
     );
   }
@@ -192,7 +192,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         reason: probe.reason,
         status: 'queued_digest',
       });
-      this.logger.log(
+      this.logger.debug(
         `probe отложен в дайджест: priority < immediatePushMinPriority (id=${probe.id} priority=${probe.priority} порог=${minPriority})`,
       );
       return;
@@ -228,7 +228,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             reason: probe.reason,
             status: 'suppressed_stale',
           });
-          this.logger.log(
+          this.logger.debug(
             `probe suppressed_stale: id=${probe.id} reason=${probe.reason} (повод закрылся между suggest и dispatch)`,
           );
           return;
@@ -292,7 +292,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       // Probe Фаза 5 (R9) — topic cooldown: тема поднята → не доставать тем же
       // вопросом сразу повторно. Best-effort, не валит dispatch.
       await this.setTopicCooldown(probe.tenantId, probe.contentHash);
-      this.logger.log(
+      this.logger.debug(
         `probe dispatched: id=${probe.id} userId=${selectedUserId} reason=${probe.reason}`,
       );
     } catch (err) {

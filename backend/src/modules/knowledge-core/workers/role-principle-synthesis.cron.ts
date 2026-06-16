@@ -67,9 +67,9 @@ export class RolePrincipleSynthesisCron {
         );
         return;
       }
-      this.logger.log('role-principle-synthesis.cron: START');
+      this.logger.debug('role-principle-synthesis.cron: START');
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         `role-principle-synthesis.cron: DONE orgs=${summary.orgsScanned} roles=${summary.rolesProcessed} created=${summary.created} merged=${summary.merged} skipped=${summary.skipped} failures=${summary.failures}`,
       );
     } catch (err) {

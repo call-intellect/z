@@ -198,7 +198,7 @@ export class Specialist34ProjectCustomerWorker {
         }
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           entityIds: entityIds.length,

@@ -115,7 +115,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
         'strategic-alignment: job failed',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `StrategicAlignmentWorker запущен (${CORE_QUEUE_NAMES.STRATEGIC_ALIGNMENT})`,
     );
   }
@@ -342,7 +342,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         goalId,
         tenantId,

@@ -515,7 +515,7 @@ export class ConsistencyCheckerCron {
       const summary = await this.checker.runForAllOrgs();
       const seconds = (Date.now() - startedAt) / 1000;
       this.metrics.observeConsistencyCheckerDuration(seconds);
-      this.logger.log(
+      this.logger.debug(
         { ...summary, durationSeconds: seconds },
         'consistency-checker: проход завершён',
       );

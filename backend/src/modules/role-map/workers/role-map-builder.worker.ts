@@ -119,7 +119,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     if (!this.cfg.roleMap.builderEnabled) {
-      this.logger.log(
+      this.logger.debug(
         'RoleMapBuilderWorker: disabled (ROLE_MAP_BUILDER_ENABLED=false), таймер батчей не запускаю',
       );
       return;
@@ -316,7 +316,7 @@ export class RoleMapBuilderWorker implements OnModuleInit, OnModuleDestroy {
     if (blockIds.length === 0) return;
 
     const tenantTop = resolveRoleMapTenantTop(args.tenantId);
-    this.logger.log(
+    this.logger.debug(
       { tenantId: args.tenantId, roleId: args.roleId, batchSize: blockIds.length },
       'role-map-builder: flush batch',
     );

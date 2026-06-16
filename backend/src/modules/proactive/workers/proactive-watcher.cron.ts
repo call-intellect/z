@@ -35,7 +35,7 @@ export class ProactiveWatcherCron {
     const startedAt = Date.now();
     try {
       const summary = await this.svc.runOnce(new Date());
-      this.logger.log(
+      this.logger.debug(
         { ...summary, durationMs: Date.now() - startedAt },
         'proactive-watcher.cron: проход завершён',
       );

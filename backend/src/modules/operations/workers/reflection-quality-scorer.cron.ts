@@ -86,7 +86,7 @@ export class ReflectionQualityScorerCron {
     try {
       const stats = await this.runOnce();
       if (stats.processed > 0 || stats.errors > 0) {
-        this.logger.log(stats, 'reflection-quality-scorer.cron: проход завершён');
+        this.logger.debug(stats, 'reflection-quality-scorer.cron: проход завершён');
       }
     } catch (err) {
       this.logger.error(

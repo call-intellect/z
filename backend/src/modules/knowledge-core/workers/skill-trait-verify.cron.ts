@@ -48,9 +48,9 @@ export class SkillTraitVerifyCron {
         );
         return;
       }
-      this.logger.log('skill-trait-verify.cron: START');
+      this.logger.debug('skill-trait-verify.cron: START');
       const s = await this.specialist.verifyPendingTraits();
-      this.logger.log(
+      this.logger.debug(
         `skill-trait-verify.cron: DONE checked=${s.checked} promoted=${s.promoted} held=${s.held}`,
       );
     } catch (err) {

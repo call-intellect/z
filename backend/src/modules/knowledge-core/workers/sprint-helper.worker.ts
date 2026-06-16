@@ -59,7 +59,7 @@ export class SprintHelperWorker {
         tenantId,
         reason,
       });
-      this.logger.log(
+      this.logger.debug(
         { cycleId, tenantId, reason, created, reused },
         `sprint-helper: завершено — создано ${created}, повтор ${reused}`,
       );

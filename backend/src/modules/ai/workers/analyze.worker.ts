@@ -256,7 +256,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         seconds: (Date.now() - summaryStarted) / 1000,
       });
     } else {
-      this.logger.log(
+      this.logger.debug(
         { meetingId },
         'analyze: summary-агент выключен (Р6) — пишем summary="" , каноническая сводка из summaryFast',
       );
@@ -567,7 +567,7 @@ export class AnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       { meetingId, type: meeting.type, model: aiResult.modelUsed, cardId: meeting.cardId ?? null },
       'analyze: успешно — notify + post-analyze jobs поставлены',
     );

@@ -68,7 +68,7 @@ export class ExperimentTransitionsCron {
           );
         }
       }
-      this.logger.log(
+      this.logger.debug(
         { orgs: orgs.length, totalResultLinks, totalLessonLinks },
         'experiment-transitions: проход завершён',
       );

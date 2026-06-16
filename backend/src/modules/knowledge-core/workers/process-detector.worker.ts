@@ -244,7 +244,7 @@ export class ProcessDetectorWorker implements OnModuleInit, OnModuleDestroy {
     const blockIds = (results?.[0]?.[1] as string[] | undefined) ?? [];
     if (blockIds.length === 0) return;
 
-    this.logger.log(
+    this.logger.debug(
       { tenantId: args.tenantId, batchSize: blockIds.length },
       'process-detector: flush batch',
     );

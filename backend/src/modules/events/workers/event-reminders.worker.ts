@@ -91,7 +91,7 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
         'EventRemindersWorker — job упал',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `EventRemindersWorker запущен (${CORE_QUEUE_NAMES.EVENT_REMINDERS})`,
     );
   }
@@ -221,7 +221,7 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       data: { sentAt: new Date() },
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         reminderId,
         eventId: reminder.eventId,

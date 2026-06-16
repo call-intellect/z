@@ -40,7 +40,7 @@ export class AutoRuleExtractCron {
       this.logger.debug('autorule-extract cron: disabled (AUTORULE_ENABLED=false)');
       return;
     }
-    this.logger.log('autorule-extract cron: START');
+    this.logger.debug('autorule-extract cron: START');
 
     const minFeedback = this.cfg.autorule.minFeedbackForExtract;
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -94,7 +94,7 @@ export class AutoRuleExtractCron {
       );
     }
 
-    this.logger.log('autorule-extract cron: DONE');
+    this.logger.debug('autorule-extract cron: DONE');
   }
 
   /**
@@ -119,7 +119,7 @@ export class AutoRuleExtractCron {
       }
       locked = true;
       const rules = await this.extractor.extractForPromptKey(promptKey, tenantId);
-      this.logger.log(
+      this.logger.debug(
         `autorule-extract: promptKey=${promptKey} tenant=${tenantId ?? 'global'} new rules=${rules.length}`,
       );
     } catch (err) {

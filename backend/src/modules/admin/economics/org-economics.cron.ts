@@ -36,7 +36,7 @@ export class OrgEconomicsCron {
     const startedAt = Date.now();
     try {
       const result = await this.runForAll();
-      this.logger.log(
+      this.logger.debug(
         { ...result, durationMs: Date.now() - startedAt },
         'org-economics.cron: проход завершён',
       );

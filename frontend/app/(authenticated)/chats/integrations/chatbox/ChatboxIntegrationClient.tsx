@@ -4,30 +4,28 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import {
+  ArrowLeft,
   Contact,
+  Database,
   Loader2,
   MessagesSquare,
-  RefreshCw,
   Trash2,
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
+import { chatboxApi, type ChatboxSyncScope } from '@/api/chatbox.api';
+import { mapIntegration } from '@/domain/chatbox';
 import {
-  chatboxApi,
-  type ChatboxSyncMode,
-  type ChatboxSyncScope,
-  type ChatboxWorkspaceApi,
-} from '@/api/chatbox.api';
-import { CHATBOX_SYNC_MODES, mapIntegration } from '@/domain/chatbox';
+  CardTitle,
+  GlassCard,
+  GRAD,
+  STATUS_TONE,
+} from '@/ui/components/dashboard/modern';
 import { TierGate } from '@/ui/components/TierGate';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
 import {
   Select,
   SelectContent,
@@ -37,6 +35,10 @@ import {
 } from '@/ui/shadcn/select';
 import { Switch } from '@/ui/shadcn/switch';
 
+import {
+  ChatboxConnectWizard,
+  WIZARD_STORAGE_KEY,
+} from './ChatboxConnectWizard';
 import { ChatboxMemorySummaryCard } from './ChatboxMemorySummaryCard';
 
 function errMessage(e: unknown, fallback: string): string {
@@ -48,11 +50,27 @@ function formatDate(d: Date | null): string {
   return d.toLocaleString('ru-RU');
 }
 
-const SYNC_SCOPES: ReadonlyArray<{ scope: ChatboxSyncScope; label: string }> = [
-  { scope: 'all', label: 'Синхронизировать всё' },
-  { scope: 'customers', label: 'Клиентов' },
-  { scope: 'managers', label: 'Менеджеров' },
-  { scope: 'chats', label: 'Чаты' },
+// Принудительная синхронизация — по отдельности. «Всё» и «Чаты» убраны:
+// чаты НЕ дёргаются мгновенно — только по периоду (бэкафилл ниже), т.к. новые
+// и так подтягиваются раз в сутки. Здесь — только точечные справочники.
+const SYNC_SCOPES: ReadonlyArray<{
+  scope: ChatboxSyncScope;
+  label: string;
+  icon: typeof Users;
+}> = [
+  { scope: 'customers', label: 'Клиенты', icon: Contact },
+  { scope: 'managers', label: 'Менеджеры', icon: Users },
+];
+
+// Период бэкафилла чатов — в ДНЯХ (как в мастере подключения). 'all' — всё.
+const CHAT_PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '1', label: 'Последний 1 день' },
+  { value: '7', label: 'Последние 7 дней' },
+  { value: '30', label: 'Последний 1 месяц' },
+  { value: '90', label: 'Последние 3 месяца' },
+  { value: '180', label: 'Последние 6 месяцев' },
+  { value: '365', label: 'Последний год' },
+  { value: 'all', label: 'Вся история' },
 ];
 
 export function ChatboxIntegrationClient() {
@@ -67,200 +85,85 @@ function ChatboxIntegrationContent() {
   const { data, error, isLoading, mutate } = useSWR(
     ['chatbox-integration'],
     () => chatboxApi.getIntegration().then(mapIntegration),
+    { revalidateOnFocus: false },
   );
+
+  // Латч режима: решаем один раз после первой загрузки.
+  //   - визард активен, если он «в процессе» (есть сохранённый прогресс в
+  //     sessionStorage) ИЛИ интеграции ещё нет (data === null);
+  //   - иначе ConnectedView.
+  // Это держит мастер открытым на шагах 3–4 даже после создания интеграции
+  // (data !== null) и переживает уход со страницы и возврат — прогресс
+  // восстанавливается из sessionStorage внутри визарда.
+  const [wizardMode, setWizardMode] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (isLoading || error) return;
+    setWizardMode((prev) => {
+      if (prev !== null) return prev;
+      // Визард активен, если он «в процессе» (есть сохранённый прогресс) ИЛИ
+      // интеграции ещё нет. НИКАКОГО stale-guard по шагу: после «Подключить»
+      // SWR-кэш ещё показывает data=null (mutate не звали), и guard ошибочно
+      // принимал это за «удалённую интеграцию» и стирал прогресс → сброс на шаг 1.
+      const inProgress =
+        typeof window !== 'undefined' &&
+        sessionStorage.getItem(WIZARD_STORAGE_KEY) !== null;
+      return inProgress || data === null;
+    });
+  }, [isLoading, error, data]);
+
+  const finishWizard = () => {
+    try {
+      sessionStorage.removeItem(WIZARD_STORAGE_KEY);
+    } catch {
+      /* noop */
+    }
+    setWizardMode(false);
+    void mutate();
+  };
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6">
-      <header className="mb-6 flex items-center gap-2">
-        <MessagesSquare size={20} className="text-accent" />
+      <Link
+        href="/company-admin/sources"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm text-fg-secondary hover:text-fg-primary"
+      >
+        <ArrowLeft size={15} /> К источникам
+      </Link>
+      <header className="mb-6 flex items-center gap-3">
+        <span
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl"
+          style={{ background: GRAD.violet, color: 'oklch(0.99 0.005 280)' }}
+        >
+          <MessagesSquare size={20} />
+        </span>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
             Чат бокс
           </h1>
           <p className="text-sm text-fg-secondary">
-            Подключите рабочее пространство Чат бокса, чтобы Кора собирала
-            знания из переписок с клиентами.
+            Переписки с клиентами из Чат бокса — в память компании.
           </p>
         </div>
       </header>
 
-      {isLoading && (
+      {error && !isLoading ? (
+        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+          {errMessage(error, 'Не удалось загрузить интеграцию')}
+        </div>
+      ) : isLoading || wizardMode === null ? (
+        <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
+          <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
+        </div>
+      ) : wizardMode ? (
+        <ChatboxConnectWizard onDone={finishWizard} />
+      ) : data ? (
+        <ConnectedView integration={data} onChanged={() => void mutate()} />
+      ) : (
         <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
           <Loader2 size={16} className="mr-2 animate-spin" /> Загружаем...
         </div>
       )}
-
-      {error && !isLoading && (
-        <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-          {errMessage(error, 'Не удалось загрузить интеграцию')}
-        </div>
-      )}
-
-      {!isLoading && !error && data === null && (
-        <ConnectForm onConnected={() => void mutate()} />
-      )}
-
-      {!isLoading && !error && data && (
-        <ConnectedView integration={data} onChanged={() => void mutate()} />
-      )}
     </div>
-  );
-}
-
-// ─────────────────────────── Не настроено ────────────────────────────────
-
-function ConnectForm({ onConnected }: { onConnected: () => void }) {
-  const [token, setToken] = useState('');
-  const [workspaces, setWorkspaces] = useState<ChatboxWorkspaceApi[] | null>(
-    null,
-  );
-  const [workspaceId, setWorkspaceId] = useState('');
-  const [syncMode, setSyncMode] = useState<ChatboxSyncMode>('hourly');
-  const [checking, setChecking] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-
-  const handleCheck = async () => {
-    if (!token.trim()) {
-      toast.error('Введите токен');
-      return;
-    }
-    setChecking(true);
-    try {
-      const res = await chatboxApi.listWorkspaces(token.trim());
-      setWorkspaces(res);
-      if (res.length > 0) {
-        setWorkspaceId(res[0]!.id);
-      }
-      if (res.length === 0) {
-        toast.error('В этом аккаунте нет доступных пространств');
-      }
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'chatbox_token_invalid') {
-        toast.error('Неверный токен');
-      } else {
-        toast.error(errMessage(e, 'Не удалось проверить токен'));
-      }
-      setWorkspaces(null);
-    } finally {
-      setChecking(false);
-    }
-  };
-
-  const handleConnect = async () => {
-    if (!workspaceId) {
-      toast.error('Выберите рабочее пространство');
-      return;
-    }
-    setConnecting(true);
-    try {
-      await chatboxApi.saveIntegration({
-        token: token.trim(),
-        workspaceId,
-        syncMode,
-      });
-      toast.success('Интеграция подключена');
-      onConnected();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'chatbox_token_invalid') {
-        toast.error('Неверный токен');
-      } else if (
-        e instanceof ApiError &&
-        e.code === 'chatbox_workspace_not_found'
-      ) {
-        toast.error('Рабочее пространство не найдено');
-      } else {
-        toast.error(errMessage(e, 'Не удалось подключить'));
-      }
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Подключение</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="space-y-1.5">
-          <Label htmlFor="chatbox-token">API-токен Чат бокса</Label>
-          <div className="flex gap-2">
-            <Input
-              id="chatbox-token"
-              type="password"
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value);
-                setWorkspaces(null);
-              }}
-              placeholder="Вставьте токен"
-              autoComplete="off"
-            />
-            <Button
-              variant="outline"
-              onClick={() => void handleCheck()}
-              disabled={checking || connecting}
-            >
-              {checking && <Loader2 size={14} className="animate-spin" />}
-              Проверить токен
-            </Button>
-          </div>
-        </div>
-
-        {workspaces && workspaces.length > 0 && (
-          <>
-            <div className="space-y-1.5">
-              <Label>Рабочее пространство</Label>
-              <Select
-                value={workspaceId}
-                onValueChange={setWorkspaceId}
-                disabled={connecting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите пространство" />
-                </SelectTrigger>
-                <SelectContent>
-                  {workspaces.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                      {w.role ? ` — ${w.role}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Режим синхронизации</Label>
-              <Select
-                value={syncMode}
-                onValueChange={(v) => setSyncMode(v as ChatboxSyncMode)}
-                disabled={connecting}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHATBOX_SYNC_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={() => void handleConnect()}
-              disabled={connecting || !workspaceId}
-            >
-              {connecting && <Loader2 size={14} className="animate-spin" />}
-              Подключить
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -273,20 +176,18 @@ function ConnectedView({
   integration: NonNullable<ReturnType<typeof mapIntegration>>;
   onChanged: () => void;
 }) {
-  const [syncMode, setSyncMode] = useState<ChatboxSyncMode>(
-    integration.syncMode,
-  );
   const [analysisEnabled, setAnalysisEnabled] = useState(
     integration.analysisEnabled,
   );
   const [savingAnalysis, setSavingAnalysis] = useState(false);
-  const [savingMode, setSavingMode] = useState(false);
   const [syncingScope, setSyncingScope] = useState<ChatboxSyncScope | null>(
     null,
   );
   const [deleting, setDeleting] = useState(false);
   // Идёт ли синхронизация (для прогресса): пока true — опрашиваем статус.
   const [syncing, setSyncing] = useState(false);
+  // Период бэкафилла чатов (дни / 'all'). По умолчанию — 3 месяца.
+  const [chatPeriod, setChatPeriod] = useState('90');
   const syncBaselineRef = useRef<string | null>(null);
   const syncStartMsRef = useRef<number>(0);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
@@ -317,12 +218,12 @@ function ConnectedView({
     }
   }, [syncing, syncStatus, onChanged]);
 
-  const statusVariant =
+  const statusTone =
     integration.status === 'connected'
-      ? 'success'
+      ? STATUS_TONE.ok
       : integration.status === 'error'
-        ? 'danger'
-        : 'secondary';
+        ? STATUS_TONE.risk
+        : STATUS_TONE.warning;
 
   const handleToggleAnalysis = async (next: boolean) => {
     setAnalysisEnabled(next);
@@ -343,26 +244,10 @@ function ConnectedView({
     }
   };
 
-  const handleSaveMode = async () => {
-    setSavingMode(true);
-    try {
-      await chatboxApi.saveIntegration({
-        workspaceId: integration.workspaceId,
-        syncMode,
-      });
-      toast.success('Режим синхронизации сохранён');
-      onChanged();
-    } catch (e) {
-      toast.error(errMessage(e, 'Не удалось сохранить'));
-    } finally {
-      setSavingMode(false);
-    }
-  };
-
-  const handleSync = async (scope: ChatboxSyncScope) => {
+  const handleSync = async (scope: ChatboxSyncScope, since?: string) => {
     setSyncingScope(scope);
     try {
-      await chatboxApi.sync(scope);
+      await chatboxApi.sync(scope, since);
       // Точка отсчёта для детекта завершения.
       syncBaselineRef.current =
         syncStatus && 'lastFullSyncAt' in syncStatus
@@ -371,12 +256,25 @@ function ConnectedView({
       syncStartMsRef.current = Date.now();
       setSyncing(true);
       void mutateStatus();
-      toast.success('Синхронизация запущена');
+      toast.success(
+        since ? 'Запущен импорт прошлых чатов' : 'Синхронизация запущена',
+      );
     } catch (e) {
       toast.error(errMessage(e, 'Не удалось запустить синхронизацию'));
     } finally {
       setSyncingScope(null);
     }
+  };
+
+  // Бэкафилл чатов: период (дни) → since (ISO). 'all' → без границы.
+  const handleBackfillChats = () => {
+    const since =
+      chatPeriod === 'all'
+        ? undefined
+        : new Date(
+            Date.now() - Number(chatPeriod) * 24 * 60 * 60 * 1000,
+          ).toISOString();
+    void handleSync('chats', since);
   };
 
   const handleDelete = async () => {
@@ -401,106 +299,52 @@ function ConnectedView({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Карточка статуса */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle>{integration.workspaceName}</CardTitle>
-            <Badge variant={statusVariant}>{integration.statusLabel}</Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {integration.status === 'error' && integration.lastError && (
-            <div className="rounded-md border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
-              {integration.lastError}
-            </div>
-          )}
+    <div className="space-y-5">
+      {/* Источник: статус + ручной синк + чаты + AI-анализ — одной карточкой */}
+      <GlassCard className="space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle icon={<MessagesSquare size={16} />} grad={GRAD.violet}>
+            {integration.workspaceName}
+          </CardTitle>
+          <span
+            className="shrink-0 rounded-full px-3 py-1 text-xs font-medium"
+            style={{ color: statusTone.c, background: statusTone.bg }}
+          >
+            {integration.statusLabel}
+          </span>
+        </div>
 
-          <div className="space-y-1.5">
-            <Label>Режим синхронизации</Label>
-            <div className="flex gap-2">
-              <Select
-                value={syncMode}
-                onValueChange={(v) => setSyncMode(v as ChatboxSyncMode)}
-                disabled={savingMode}
-              >
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CHATBOX_SYNC_MODES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                onClick={() => void handleSaveMode()}
-                disabled={savingMode || syncMode === integration.syncMode}
-              >
-                {savingMode && <Loader2 size={14} className="animate-spin" />}
-                Сохранить
-              </Button>
-            </div>
+        {integration.status === 'error' && integration.lastError && (
+          <div
+            className="rounded-xl px-3 py-2.5 text-sm"
+            style={{ color: STATUS_TONE.risk.c, background: STATUS_TONE.risk.bg }}
+          >
+            {integration.lastError}
           </div>
+        )}
 
-          <div className="text-xs text-fg-tertiary">
-            Последняя полная синхронизация:{' '}
-            {formatDate(integration.lastFullSyncAt)}
-          </div>
-        </CardContent>
-      </Card>
+        <p className="text-sm text-fg-secondary">
+          Автоматическая синхронизация — раз в сутки в 00:00.
+        </p>
 
-      {/* AI-анализ */}
-      <Card>
-        <CardHeader>
-          <CardTitle>AI-анализ переписок</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-sm text-fg-secondary">
-                Когда включено, Кора строит summary диалогов и добавляет знания
-                из переписок в граф (расходует LLM). Выключено — чаты просто
-                зеркалятся без анализа.
-              </p>
-            </div>
-            <div className="flex items-center gap-2 pt-0.5">
-              {savingAnalysis && (
-                <Loader2 size={14} className="animate-spin text-fg-tertiary" />
-              )}
-              <Switch
-                checked={analysisEnabled}
-                onCheckedChange={(v) => void handleToggleAnalysis(v)}
-                disabled={savingAnalysis}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Синхронизация */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Синхронизация</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+        {/* Принудительный синк справочников */}
+        <div className="space-y-2.5">
+          <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Синхронизировать вручную
+          </span>
           <div className="flex flex-wrap gap-2">
-            {SYNC_SCOPES.map(({ scope, label }) => (
+            {SYNC_SCOPES.map(({ scope, label, icon: Icon }) => (
               <Button
                 key={scope}
-                variant={scope === 'all' ? 'default' : 'outline'}
+                variant="outline"
                 size="sm"
                 onClick={() => void handleSync(scope)}
                 disabled={syncingScope !== null || syncing}
               >
-                {syncingScope === scope || (syncing && scope === 'all') ? (
+                {syncingScope === scope ? (
                   <Loader2 size={14} className="animate-spin" />
                 ) : (
-                  <RefreshCw size={14} />
+                  <Icon size={14} />
                 )}
                 {label}
               </Button>
@@ -508,13 +352,16 @@ function ConnectedView({
           </div>
 
           {syncing && (
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-border-subtle bg-bg-card p-3 text-sm">
+            <div
+              className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
+              style={{ background: STATUS_TONE.ok.bg }}
+            >
               <Loader2 size={14} className="animate-spin text-accent" />
               <span className="font-medium text-fg-primary">
                 Идёт синхронизация…
               </span>
               {syncStatus && 'counts' in syncStatus && (
-                <span className="text-fg-tertiary">
+                <span className="text-fg-secondary">
                   собрано: {syncStatus.counts.chats.toLocaleString('ru-RU')} чатов ·{' '}
                   {syncStatus.counts.messages.toLocaleString('ru-RU')} сообщений ·{' '}
                   {syncStatus.counts.customers.toLocaleString('ru-RU')} клиентов ·{' '}
@@ -523,46 +370,101 @@ function ConnectedView({
               )}
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Менеджеры и сотрудники */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Менеджеры и сотрудники</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-fg-secondary">
-            Свяжите менеджеров Чат бокса с сотрудниками компании, чтобы Кора
-            верно приписывала знания из переписок.
+        {/* Чаты — только по периоду (новые подтягиваются раз в сутки) */}
+        <div className="space-y-2.5 border-t border-border-subtle pt-5">
+          <span className="text-xs font-medium uppercase tracking-wide text-fg-tertiary">
+            Забрать прошлые чаты за период
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={chatPeriod}
+              onValueChange={setChatPeriod}
+              disabled={syncingScope !== null || syncing}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CHAT_PERIOD_OPTIONS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBackfillChats()}
+              disabled={syncingScope !== null || syncing}
+            >
+              {syncingScope === 'chats' ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <MessagesSquare size={14} />
+              )}
+              Забрать чаты
+            </Button>
+          </div>
+          <p className="max-w-[68ch] text-xs leading-relaxed text-fg-tertiary">
+            Новые чаты подтягиваются автоматически раз в сутки. Здесь — добрать
+            прошлые за выбранный период, если при установке пропустили.
+            {analysisEnabled
+              ? ' Забранные диалоги уйдут в AI-анализ (без повторов уже разобранных).'
+              : ' Сейчас AI-анализ выключен: чаты просто зеркалятся.'}
           </p>
-          <Button asChild variant="outline">
+        </div>
+
+        {/* AI-анализ — строкой с тумблером */}
+        <div className="flex items-start justify-between gap-4 border-t border-border-subtle pt-5">
+          <div className="min-w-0 max-w-[68ch]">
+            <p className="text-sm font-medium text-fg-primary">
+              AI-анализ переписок
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-fg-tertiary">
+              Включено: Кора строит summary и добавляет знания из переписок в
+              граф (расходует LLM). Выключено: чаты просто зеркалятся.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 pt-0.5">
+            {savingAnalysis && (
+              <Loader2 size={14} className="animate-spin text-fg-tertiary" />
+            )}
+            <Switch
+              checked={analysisEnabled}
+              onCheckedChange={(v) => void handleToggleAnalysis(v)}
+              disabled={savingAnalysis}
+            />
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* Связи с сотрудниками — менеджеры + клиенты одной карточкой */}
+      <GlassCard className="space-y-3">
+        <CardTitle icon={<Users size={16} />} grad={GRAD.teal}>
+          Связи с сотрудниками
+        </CardTitle>
+        <p className="max-w-[68ch] text-sm text-fg-secondary">
+          Свяжите менеджеров и клиентов Чат бокса с людьми компании, чтобы Кора
+          верно приписывала знания из переписок.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm">
             <Link href="/chats/integrations/chatbox/managers">
               <Users size={14} />
-              Менеджеры и сотрудники
+              Менеджеры
             </Link>
           </Button>
-        </CardContent>
-      </Card>
-
-      {/* Клиенты и сотрудники */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Клиенты и сотрудники</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-fg-secondary">
-            Свяжите клиентов Чат бокса с карточками людей компании, чтобы Кора
-            верно приписывала знания из переписок.
-          </p>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" size="sm">
             <Link href="/chats/integrations/chatbox/customers">
               <Contact size={14} />
-              Клиенты и сотрудники
+              Клиенты
             </Link>
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </GlassCard>
 
       {/* Чаты в памяти — сводка анализа и графа */}
       <ChatboxMemorySummaryCard />
@@ -570,26 +472,30 @@ function ConnectedView({
       {/* Статус собранных данных */}
       <SyncStatusCard />
 
-      {/* Отключение */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Отключение</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Button
-            variant="destructive"
-            onClick={() => void handleDelete()}
-            disabled={deleting}
-          >
-            {deleting ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Trash2 size={14} />
-            )}
+      {/* Отключение — компактной строкой */}
+      <GlassCard className="flex flex-wrap items-center justify-between gap-3 !py-4">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-fg-primary">
             Отключить интеграцию
-          </Button>
-        </CardContent>
-      </Card>
+          </p>
+          <p className="mt-0.5 text-xs text-fg-tertiary">
+            Синхронизация прекратится. Собранные данные останутся в памяти.
+          </p>
+        </div>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => void handleDelete()}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Trash2 size={14} />
+          )}
+          Отключить
+        </Button>
+      </GlassCard>
 
       {confirmDialog}
     </div>
@@ -617,16 +523,14 @@ function SyncStatusCard() {
 
   if (isLoading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Статус данных</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center text-sm text-fg-tertiary">
-            <Loader2 size={14} className="mr-2 animate-spin" /> Загружаем...
-          </div>
-        </CardContent>
-      </Card>
+      <GlassCard className="space-y-4">
+        <CardTitle icon={<Database size={16} />} grad={GRAD.blue}>
+          Статус данных
+        </CardTitle>
+        <div className="flex items-center text-sm text-fg-tertiary">
+          <Loader2 size={14} className="mr-2 animate-spin" /> Загружаем...
+        </div>
+      </GlassCard>
     );
   }
 
@@ -635,35 +539,30 @@ function SyncStatusCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Статус данных</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {COUNT_LABELS.map(({ key, label }) => (
-            <div
-              key={key}
-              className="rounded-lg border border-border-subtle bg-bg-card p-3"
-            >
-              <div className="text-lg font-semibold text-fg-primary">
-                {(data.counts[key] ?? 0).toLocaleString('ru-RU')}
-              </div>
-              <div className="text-xs text-fg-tertiary">{label}</div>
+    <GlassCard className="space-y-4">
+      <CardTitle icon={<Database size={16} />} grad={GRAD.blue}>
+        Статус данных
+      </CardTitle>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        {COUNT_LABELS.map(({ key, label }) => (
+          <div
+            key={key}
+            className="rounded-xl border border-border-subtle bg-[oklch(1_0_0/0.03)] px-3 py-2.5"
+          >
+            <div className="text-xl font-semibold tabular-nums text-fg-primary">
+              {(data.counts[key] ?? 0).toLocaleString('ru-RU')}
             </div>
-          ))}
-        </div>
-        <div className="space-y-1 text-xs text-fg-tertiary">
-          <div>
-            Полная синхронизация: {formatDate(toDate(data.lastFullSyncAt))}
+            <div className="mt-0.5 text-[11px] text-fg-tertiary">{label}</div>
           </div>
-          <div>
-            Инкрементальная синхронизация:{' '}
-            {formatDate(toDate(data.lastIncrementalSyncAt))}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-border-subtle pt-3 text-xs text-fg-tertiary">
+        <span>Полная: {formatDate(toDate(data.lastFullSyncAt))}</span>
+        <span>
+          Инкрементальная: {formatDate(toDate(data.lastIncrementalSyncAt))}
+        </span>
+      </div>
+    </GlassCard>
   );
 }
 

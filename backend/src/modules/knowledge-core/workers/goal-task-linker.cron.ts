@@ -44,7 +44,7 @@ export class GoalTaskLinkerCron {
     try {
       const summary = await this.scanAllOrgs();
       if (summary.linkedGoals > 0) {
-        this.logger.log(
+        this.logger.debug(
           summary,
           'goal-task-linker-cron: догоночная привязка задач завершена',
         );

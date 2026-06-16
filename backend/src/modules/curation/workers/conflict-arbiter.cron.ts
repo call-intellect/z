@@ -86,7 +86,7 @@ export class ConflictArbiterCron {
   async runArbiter(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'conflict-arbiter: проход завершён');
+      this.logger.debug(summary, 'conflict-arbiter: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -106,7 +106,7 @@ export class ConflictArbiterCron {
     // Гейт Р1 — kill-switch (default TRUE, Ship-On). OFF → ни одного вызова
     // дебата, конфликты остаются на человеке (поведение до W1).
     if (this.cfg.curation.conflictArbiterEnabled !== true) {
-      this.logger.log(
+      this.logger.debug(
         'conflict-arbiter: выключен kill-switch\'ем (knowledge.curationConflictArbiterEnabled=false) — пропускаю проход',
       );
       return {
@@ -330,7 +330,7 @@ export class ConflictArbiterCron {
         verdict: decision,
         outcome: 'left_open',
       });
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           conflictId: conflict.id,
@@ -358,7 +358,7 @@ export class ConflictArbiterCron {
       verdict: decision,
       outcome: 'auto_resolved',
     });
-    this.logger.log(
+    this.logger.debug(
       {
         tenantId,
         conflictId: conflict.id,

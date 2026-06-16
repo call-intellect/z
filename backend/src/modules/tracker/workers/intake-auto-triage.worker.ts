@@ -168,7 +168,7 @@ export class IntakeAutoTriageWorker
         'intake-auto-triage: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `IntakeAutoTriageWorker запущен (${TRACKER_QUEUE_NAMES.INTAKE_AUTO_TRIAGE})`,
     );
   }
@@ -420,7 +420,7 @@ export class IntakeAutoTriageWorker
         status: 'auto_accepted',
         source: intake.source,
       });
-      this.logger.log(
+      this.logger.debug(
         {
           intakeIssueId,
           confidence,
@@ -449,7 +449,7 @@ export class IntakeAutoTriageWorker
       status: 'pending',
       source: intake.source,
     });
-    this.logger.log(
+    this.logger.debug(
       {
         intakeIssueId,
         confidence,

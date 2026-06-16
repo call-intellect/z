@@ -40,7 +40,7 @@ export class CurrencyRateSyncCron {
   async runScheduled(): Promise<void> {
     try {
       const result = await this.runOnce();
-      this.logger.log(result, 'currency-rate-sync.cron: проход завершён');
+      this.logger.debug(result, 'currency-rate-sync.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

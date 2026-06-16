@@ -65,7 +65,7 @@ export class CurationAutotuneCron {
   async runAutotune(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'curation-autotune: проход завершён');
+      this.logger.debug(summary, 'curation-autotune: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -257,7 +257,7 @@ export class CurationAutotuneCron {
     });
 
     this.metrics.incCurationAutotuneAdjustment({ resourceType, direction });
-    this.logger.log(
+    this.logger.debug(
       {
         tenantId,
         resourceType,

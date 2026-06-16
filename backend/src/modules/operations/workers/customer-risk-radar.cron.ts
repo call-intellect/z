@@ -61,7 +61,7 @@ export class CustomerRiskRadarCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'customer-risk-radar.cron: проход завершён');
+      this.logger.debug(stats, 'customer-risk-radar.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

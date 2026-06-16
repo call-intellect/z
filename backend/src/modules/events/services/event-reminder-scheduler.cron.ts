@@ -61,7 +61,7 @@ export class EventReminderSchedulerCron {
       }
 
       if (enqueued > 0) {
-        this.logger.log(
+        this.logger.debug(
           { candidates: candidates.length, enqueued },
           'EventReminderSchedulerCron — напоминания поставлены в очередь',
         );

@@ -1,13 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Activity,
+  Building2,
   CheckCircle2,
   Copy,
   Globe,
   Loader2,
   Mail,
+  MessagesSquare,
   Phone,
   Plus,
   PowerOff,
@@ -78,7 +81,43 @@ function isUiType(t: string): t is SourceUiType {
   return (SOURCE_UI_TYPES as readonly string[]).includes(t);
 }
 
+/**
+ * Источники-интеграции (ТЗ 2026-06-16: интеграция = источник). Управление
+ * вынесено на отдельные страницы под `/company-admin/sources/*` — там полный
+ * флоу подключения/синхронизации. В списке их «Настроить» ведёт туда же.
+ */
+const INTEGRATION_ROUTE_BY_TYPE: Record<string, string> = {
+  chatbox: '/company-admin/sources/chatbox',
+  meeting: '/company-admin/meetings',
+};
+
+type IntegrationTile = {
+  key: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  route: string;
+};
+
+const INTEGRATION_TILES: IntegrationTile[] = [
+  {
+    key: 'chatbox',
+    label: 'Чат бокс',
+    description: 'Переписки с клиентами: чаты, клиенты, менеджеры.',
+    icon: MessagesSquare,
+    route: '/company-admin/sources/chatbox',
+  },
+  {
+    key: 'bitrix',
+    label: 'Bitrix24',
+    description: 'CRM-портал: установка интеграции с нашей стороны.',
+    icon: Building2,
+    route: '/company-admin/sources/bitrix',
+  },
+];
+
 export function SourcesClient() {
+  const router = useRouter();
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
   const canManage =
     currentOrgRole === 'owner' || currentOrgRole === 'admin';
@@ -169,6 +208,42 @@ export function SourcesClient() {
     }
   };
 
+  const handleHardDelete = async (s: SourceDomain) => {
+    if (!currentOrgId) return;
+    const ok = await ask({
+      title: `Удалить источник «${s.name}»?`,
+      description:
+        'Источник и все его собранные события будут удалены безвозвратно. ' +
+        'Знания в графе останутся, но потеряют ссылку на эти события.',
+      confirmLabel: 'Удалить навсегда',
+      destructive: true,
+    });
+    if (!ok) return;
+    setPendingId(s.id);
+    try {
+      const res = await sourcesApi.purge(currentOrgId, s.id);
+      await fetchAll();
+      toast.success(
+        `Источник удалён (событий: ${res.deletedRawEvents.toLocaleString('ru-RU')})`,
+      );
+    } catch (e) {
+      toast.error(humanizeApiError(e, 'Не удалось удалить'));
+    } finally {
+      setPendingId(null);
+    }
+  };
+
+  // Интеграции-источники (chatbox/meeting) управляются на отдельных страницах —
+  // их «Настроить» ведёт туда; остальные типы — inline-диалог.
+  const handleConfigure = (s: SourceDomain) => {
+    const route = INTEGRATION_ROUTE_BY_TYPE[s.type];
+    if (route) {
+      router.push(route);
+      return;
+    }
+    setEditing(s);
+  };
+
   if (authLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-sm text-fg-tertiary">
@@ -238,10 +313,11 @@ export function SourcesClient() {
               key={s.id}
               source={s}
               isPending={pendingId === s.id}
-              onEdit={() => setEditing(s)}
+              onEdit={() => handleConfigure(s)}
               onTest={() => void handleTest(s)}
               onToggleActive={() => void handleToggleActive(s)}
               onDelete={() => void handleDelete(s)}
+              onHardDelete={() => void handleHardDelete(s)}
             />
           ))}
         </ul>
@@ -251,6 +327,10 @@ export function SourcesClient() {
         open={createOpen}
         orgId={currentOrgId}
         onClose={() => setCreateOpen(false)}
+        onPickIntegration={(route) => {
+          setCreateOpen(false);
+          router.push(route);
+        }}
         onCreated={async () => {
           setCreateOpen(false);
           await fetchAll();
@@ -280,6 +360,7 @@ function SourceRow({
   onTest,
   onToggleActive,
   onDelete,
+  onHardDelete,
 }: {
   source: SourceDomain;
   isPending: boolean;
@@ -287,6 +368,7 @@ function SourceRow({
   onTest: () => void;
   onToggleActive: () => void;
   onDelete: () => void;
+  onHardDelete: () => void;
 }) {
   const Icon = isUiType(source.type) ? TYPE_ICONS[source.type] : Activity;
   const typeLabel = isUiType(source.type)
@@ -370,8 +452,20 @@ function SourceRow({
           disabled={isPending}
           className="hover:text-danger"
           aria-label="Отключить"
+          title="Отключить (данные сохранятся)"
         >
           <PowerOff size={13} />
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={onHardDelete}
+          disabled={isPending}
+          className="hover:text-danger"
+          aria-label="Удалить"
+          title="Удалить навсегда (с событиями)"
+        >
+          <Trash2 size={13} />
         </Button>
       </div>
     </li>
@@ -404,11 +498,13 @@ function CreateSourceDialog({
   orgId,
   onClose,
   onCreated,
+  onPickIntegration,
 }: {
   open: boolean;
   orgId: string;
   onClose: () => void;
   onCreated: () => Promise<void> | void;
+  onPickIntegration: (route: string) => void;
 }) {
   const [type, setType] = useState<SourceUiType | null>(null);
 
@@ -427,7 +523,7 @@ function CreateSourceDialog({
         </DialogHeader>
 
         {type === null ? (
-          <TypePicker onPick={(t) => setType(t)} />
+          <TypePicker onPick={(t) => setType(t)} onPickIntegration={onPickIntegration} />
         ) : (
           <SourceForm
             type={type}
@@ -442,9 +538,38 @@ function CreateSourceDialog({
   );
 }
 
-function TypePicker({ onPick }: { onPick: (t: SourceUiType) => void }) {
+function TypePicker({
+  onPick,
+  onPickIntegration,
+}: {
+  onPick: (t: SourceUiType) => void;
+  onPickIntegration: (route: string) => void;
+}) {
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {INTEGRATION_TILES.map((tile) => {
+        const Icon = tile.icon;
+        return (
+          <button
+            key={tile.key}
+            type="button"
+            onClick={() => onPickIntegration(tile.route)}
+            className="flex items-start gap-3 rounded-lg border border-border-subtle bg-bg-card p-3 text-left transition-colors hover:border-accent-border hover:bg-accent-muted/20"
+          >
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border-subtle bg-bg-overlay text-fg-secondary">
+              <Icon size={16} strokeWidth={1.75} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-fg-primary">
+                {tile.label}
+              </div>
+              <div className="mt-0.5 text-xs text-fg-tertiary">
+                {tile.description}
+              </div>
+            </div>
+          </button>
+        );
+      })}
       {SOURCE_UI_TYPES.map((t) => {
         const Icon = TYPE_ICONS[t];
         return (

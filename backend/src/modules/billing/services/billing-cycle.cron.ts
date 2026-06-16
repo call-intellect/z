@@ -83,7 +83,7 @@ export class BillingCycleCron {
       counters.activeBonusToExpired = await this.processActiveBonusToExpired(now);
       counters.activePaidToPastDue = await this.processActivePaidToPastDue(now);
 
-      this.logger.log(
+      this.logger.debug(
         `BillingCycleCron OK: ${JSON.stringify(counters)}`,
       );
     } catch (err) {

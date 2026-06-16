@@ -115,7 +115,7 @@ export class RecognitionWeeklyDigestCron {
       }
       // 2. low_team_engagement — TODO: требует Department/Team aggregate.
       //    На β-8 / γ-фазе подключим через `OperationsDashboardService`.
-      this.logger.log(
+      this.logger.debug(
         `weekly-digest: members=${memberships.length} weeklyEnqueued=${weeklyEnqueued} unrecognized=${unrecognizedFlagged} in ${Date.now() - startedAt}ms`,
       );
     } catch (err) {

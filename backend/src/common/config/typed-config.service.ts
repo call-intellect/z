@@ -2879,11 +2879,10 @@ export class TypedConfigService {
     );
   }
 
-  private logSourceOnce(adminKey: string, source: 'cache' | 'env' | 'default'): void {
-    const tag = `${adminKey}:${source}`;
-    if (this.resolveSourceLogged.has(tag)) return;
-    this.resolveSourceLogged.add(tag);
-    this.logger.debug({ adminKey, source }, 'resolveSync');
+  private logSourceOnce(_adminKey: string, _source: 'cache' | 'env' | 'default'): void {
+    // No-op: раньше логировал источник каждого конфиг-ключа на DEBUG — это
+    // флудило консоль `resolveSync {adminKey,source}`. Источник виден в Swagger/
+    // admin-settings, отдельный лог не нужен (2026-06-16).
   }
 
   /**

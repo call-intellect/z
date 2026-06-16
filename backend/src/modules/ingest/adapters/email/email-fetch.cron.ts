@@ -87,7 +87,7 @@ export class EmailFetchCron {
         }
         try {
           const result = await this.svc.fetchOne(s.id);
-          this.logger.log(
+          this.logger.debug(
             {
               sourceId: s.id,
               tenantId: s.tenantId,

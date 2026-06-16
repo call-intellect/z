@@ -100,7 +100,7 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
     // POST .../transcript/clean, который перед enqueue сбросит cleaningStatus
     // на 'pending' (через MeetingsService — см. transcript-cleaning.service).
     if (meeting.transcript.cleaningStatus === 'ready' && meeting.transcript.cleanedS3Url) {
-      this.logger.log({ meetingId }, 'transcript-clean: уже ready — пропуск (idempotent)');
+      this.logger.debug({ meetingId }, 'transcript-clean: уже ready — пропуск (idempotent)');
       return;
     }
 
@@ -207,7 +207,7 @@ export class TranscriptCleanWorker implements OnModuleInit, OnModuleDestroy {
       this.metrics.observeTranscriptCleaningCharsReduced(reducedRatio);
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         durationSec,

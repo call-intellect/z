@@ -57,7 +57,7 @@ export class ForecasterCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'forecaster.cron: проход завершён');
+      this.logger.debug(stats, 'forecaster.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `forecaster.cron fail: ${err instanceof Error ? err.message : String(err)}`,

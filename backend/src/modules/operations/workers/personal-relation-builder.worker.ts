@@ -184,7 +184,7 @@ export class PersonalRelationBuilderWorker {
         tenantTop,
         result: linksProcessed > 0 ? 'link_created' : 'skipped_no_pair',
       });
-      this.logger.log(
+      this.logger.debug(
         { blockId: block.id, linksProcessed, signalType },
         'personal-relation-builder: обработан блок',
       );
@@ -323,7 +323,7 @@ export class CheckInConflictDetectorCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'checkin-conflict-detector: проход завершён');
+      this.logger.debug(stats, 'checkin-conflict-detector: проход завершён');
     } catch (err) {
       this.logger.error(
         `checkin-conflict-detector fail: ${err instanceof Error ? err.message : String(err)}`,

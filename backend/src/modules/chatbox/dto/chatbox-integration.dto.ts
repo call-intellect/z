@@ -40,6 +40,8 @@ export type ChatboxIntegrationUpsertDto = z.infer<
  */
 export const ChatboxSyncRequestSchema = z.object({
   scope: z.enum(['all', 'customers', 'managers', 'chats']),
+  /** Бэкафилл за период: тянуть чаты не старше этой даты (ISO). Опционально. */
+  since: z.string().datetime().optional(),
 });
 export type ChatboxSyncRequestDto = z.infer<typeof ChatboxSyncRequestSchema>;
 

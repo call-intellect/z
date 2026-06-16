@@ -385,7 +385,7 @@ export class CompletenessScannerCron {
     }
     try {
       const summary = await this.scanner.runForAllOrgs();
-      this.logger.log(summary, 'completeness-scanner: проход завершён');
+      this.logger.debug(summary, 'completeness-scanner: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

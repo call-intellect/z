@@ -88,7 +88,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
         'meeting-roi-scorer: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `MeetingRoiScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.MEETING_ROI})`,
     );
   }
@@ -165,7 +165,7 @@ export class MeetingRoiScorerWorker implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         decisions,

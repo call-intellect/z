@@ -75,7 +75,7 @@ export class OrgInvitationRemindersCron {
       const result = await this.sendOneReminder(invite);
       if (result) sent += 1;
     }
-    this.logger.log(
+    this.logger.debug(
       { found: candidates.length, sent },
       'OrgInvitationRemindersCron — напоминания сотрудникам отправлены',
     );
@@ -200,7 +200,7 @@ export class OrgInvitationRemindersCron {
       expiredMarked += 1;
     }
 
-    this.logger.log(
+    this.logger.debug(
       { found: candidates.length, notified, expiredMarked },
       'OrgInvitationRemindersCron — директора уведомлены, приглашения помечены expired',
     );

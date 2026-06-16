@@ -74,7 +74,7 @@ export class SkillTraitConceptNormalizerCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'skill-trait-concept-normalizer.cron: проход завершён');
+      this.logger.debug(summary, 'skill-trait-concept-normalizer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

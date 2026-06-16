@@ -35,7 +35,7 @@ export class SkillManagerDigestCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'skill-manager-digest.cron: проход завершён',
       );

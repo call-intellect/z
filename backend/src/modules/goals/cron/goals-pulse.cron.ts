@@ -68,7 +68,7 @@ export class GoalsPulseCron {
 
     try {
       const stats = await this.runOnce({ now: new Date(), deliverToTelegram });
-      this.logger.log(stats, 'goals-pulse.cron: проход завершён');
+      this.logger.debug(stats, 'goals-pulse.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

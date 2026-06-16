@@ -44,7 +44,7 @@ export class KnowledgeCloneRebuildCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'knowledge-clone-rebuild.cron: проход завершён',
       );

@@ -49,7 +49,7 @@ export class CurationItemLifecycleCron {
   async runLifecycle(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'curation-item-lifecycle: проход завершён');
+      this.logger.debug(summary, 'curation-item-lifecycle: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -227,7 +227,7 @@ export class CurationItemLifecycleCron {
     ]);
 
     if (conflicts.count > 0 || intakes.count > 0) {
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           conflictsDismissed: conflicts.count,

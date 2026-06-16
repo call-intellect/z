@@ -46,6 +46,15 @@ const MAX_DETAILS_PARAMS = 10;
 
 @Injectable()
 export class DbLoggerBridge extends ConsoleLogger implements LoggerService {
+  /**
+   * Печатать ли DEBUG/VERBOSE в консоль. Только при `LOG_LEVEL=debug` — иначе
+   * консоль флудит (resolveSync, embed-батчи и т.п.). В БД debug по-прежнему
+   * пишется отдельно (`LOG_DB_MIN_LEVEL`). process.env читаем напрямую: логгер
+   * — bootstrap-компонент, не может зависеть от TypedConfigService (тот сам логирует).
+   */
+  private readonly consoleDebugEnabled =
+    (process.env.LOG_LEVEL ?? 'info').toLowerCase() === 'debug';
+
   constructor(private readonly logs: LogService) {
     super();
   }
@@ -66,12 +75,16 @@ export class DbLoggerBridge extends ConsoleLogger implements LoggerService {
   }
 
   override debug(message: unknown, ...rest: unknown[]): void {
-    super.debug(message as string, ...(rest as string[]));
+    if (this.consoleDebugEnabled) {
+      super.debug(message as string, ...(rest as string[]));
+    }
     this.forward('DEBUG', message, rest, false);
   }
 
   override verbose(message: unknown, ...rest: unknown[]): void {
-    super.verbose(message as string, ...(rest as string[]));
+    if (this.consoleDebugEnabled) {
+      super.verbose(message as string, ...(rest as string[]));
+    }
     this.forward('DEBUG', message, rest, false);
   }
 

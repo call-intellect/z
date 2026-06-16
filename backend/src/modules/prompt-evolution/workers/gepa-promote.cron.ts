@@ -44,7 +44,7 @@ export class GepaPromoteCron {
       this.logger.debug('gepa-promote cron: disabled (PROMPT_EVOLUTION_ENABLED=false)');
       return;
     }
-    this.logger.log('gepa-promote cron: START');
+    this.logger.debug('gepa-promote cron: START');
 
     // ── Stale cleanup ──
     await this.markStaleAsRejected().catch((err) => {
@@ -92,7 +92,7 @@ export class GepaPromoteCron {
       // уважать ручную настройку.
       const blockedByAdmin = routes.some((r) => r.editedByAdmin);
       if (blockedByAdmin) {
-        this.logger.log(
+        this.logger.debug(
           `gepa-promote: candidate=${top.id} promptKey=${top.promptKey} tenant=${top.tenantId ?? 'global'} — blocked by editedByAdmin=true`,
         );
         // Stale-counter возьмёт через 30 дней.
@@ -109,7 +109,7 @@ export class GepaPromoteCron {
           },
         });
         promotedCount += 1;
-        this.logger.log(
+        this.logger.debug(
           `gepa-promote: candidate=${top.id} promptKey=${top.promptKey} tenant=${top.tenantId ?? 'global'} → status=testing share=${this.cfg.gepa.abTrafficShare}`,
         );
       } catch (err) {
@@ -119,7 +119,7 @@ export class GepaPromoteCron {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       `gepa-promote cron: DONE — ${promotedCount}/${groups.size} candidates → testing`,
     );
   }
@@ -172,7 +172,7 @@ export class GepaPromoteCron {
         );
       }
     }
-    this.logger.log(`gepa-promote: stale cleanup — ${stale.length} candidates → rejected`);
+    this.logger.debug(`gepa-promote: stale cleanup — ${stale.length} candidates → rejected`);
   }
 }
 

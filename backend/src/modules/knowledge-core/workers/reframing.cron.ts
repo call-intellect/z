@@ -73,7 +73,7 @@ export class ReframingCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'reframing: ночной проход завершён');
+      this.logger.debug(summary, 'reframing: ночной проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -259,7 +259,7 @@ export class ReframingCron {
         return;
       }
       // Логируем результат — таблица ReframingLog появится в Фазе 7 (Z-Admin).
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           analysis: parsed.analysis,
@@ -432,7 +432,7 @@ export class ReframingCron {
     // пересмотра owner'ом Org через UI (Фаза 5/6).
     for (const s of parsed.themeSplits ?? []) {
       if (!validIds.has(s.themeId)) continue;
-      this.logger.log(
+      this.logger.debug(
         {
           tenantId,
           themeId: s.themeId,
@@ -444,7 +444,7 @@ export class ReframingCron {
     }
 
     if (merged > 0 || archived > 0 || splitsLogged > 0) {
-      this.logger.log(
+      this.logger.debug(
         { tenantId, merged, archived, splitsLogged, analysis: parsed.analysis },
         'reframing-themes: применены изменения',
       );

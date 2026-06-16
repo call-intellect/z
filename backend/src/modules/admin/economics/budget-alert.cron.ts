@@ -50,7 +50,7 @@ export class BudgetAlertCron {
     }
     try {
       const result = await this.runOnce();
-      this.logger.log(result, 'budget-alert.cron: проход завершён');
+      this.logger.debug(result, 'budget-alert.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

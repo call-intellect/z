@@ -31,7 +31,7 @@ export class MaturityScorerCron {
     try {
       const startedAt = Date.now();
       const r = await this.svc.rebuildAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         { ...r, durationMs: Date.now() - startedAt },
         'maturity-scorer.cron: проход завершён',
       );

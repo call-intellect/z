@@ -76,7 +76,7 @@ export class ExperimentStatusResolverCron {
         }
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           orgs: orgs.length,
           totalTransitioned,

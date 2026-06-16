@@ -76,7 +76,7 @@ export class BadgeAwarderCron {
           }
         }
       }
-      this.logger.log(
+      this.logger.debug(
         `badge-awarder: snapshots=${snapshots.length} awarded=${awarded} in ${Date.now() - startedAt}ms`,
       );
     } catch (err) {

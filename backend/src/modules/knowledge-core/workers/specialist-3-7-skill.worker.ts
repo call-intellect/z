@@ -169,7 +169,7 @@ export class Specialist37SkillWorker {
         }
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           personsDispatched: persons.length,

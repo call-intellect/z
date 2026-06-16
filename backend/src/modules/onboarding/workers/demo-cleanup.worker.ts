@@ -107,13 +107,13 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    this.logger.log({ jobId: job.id, orgId }, 'demo-cleanup: starting cleanup');
+    this.logger.debug({ jobId: job.id, orgId }, 'demo-cleanup: starting cleanup');
     try {
       const result = await this.onboarding.resetDemoWorkspace({
         orgId,
         actorUserId,
       });
-      this.logger.log(
+      this.logger.debug(
         { jobId: job.id, orgId, deletedByTable: result.deletedByTable },
         'demo-cleanup: cleanup finished',
       );
@@ -123,7 +123,7 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
         err instanceof BadRequestException &&
         this.isNoDemoToReset(err)
       ) {
-        this.logger.log(
+        this.logger.debug(
           { jobId: job.id, orgId },
           'demo-cleanup: skip — нет демо-данных для удаления',
         );

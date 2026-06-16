@@ -46,7 +46,7 @@ export class SocialContributionProfileCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'social-contribution-profile.cron: проход завершён',
       );

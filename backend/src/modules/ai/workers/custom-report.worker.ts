@@ -258,7 +258,7 @@ export class CustomReportWorker implements OnModuleInit, OnModuleDestroy {
       this.metrics?.incMeetingReportLlmCost?.(estimatedCostUsd);
     }
     this.metrics?.observeMeetingReportDuration?.(durationMs / 1000);
-    this.logger.log(
+    this.logger.debug(
       {
         meetingReportId,
         meetingId: report.meetingId,

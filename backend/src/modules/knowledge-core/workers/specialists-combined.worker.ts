@@ -85,7 +85,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
         'specialists-combined: job failed',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `SpecialistsCombinedWorker запущен (${CORE_QUEUE_NAMES.SPECIALISTS_COMBINED})`,
     );
   }
@@ -200,7 +200,7 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
         blocks: inputBlocks,
         ...(job.id ? { jobId: job.id } : {}),
       });
-      this.logger.log(
+      this.logger.debug(
         {
           meetingId,
           tenantId,

@@ -127,10 +127,12 @@ export function DestinationsClient() {
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-            Интеграции
+            Доставка
           </h1>
           <p className="text-sm text-fg-secondary">
-            Куда отправлять задачи и уведомления из встреч.
+            Куда отправлять задачи и уведомления из встреч: почта, Telegram,
+            Slack, вебхуки. Подключение источников (CRM, чаты) — в «Админка
+            компании → Источники».
           </p>
         </div>
         <Button onClick={() => setDialog({ mode: 'create' })} size="sm">

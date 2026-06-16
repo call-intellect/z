@@ -155,7 +155,7 @@ export class Specialist32KnowledgeCloneWorker {
         }
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           personsDispatched: persons.length,

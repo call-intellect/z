@@ -69,7 +69,7 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
         'feedback-digest job failed',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `FeedbackDigestWorker запущен (${FEEDBACK_DIGEST_QUEUE_NAME})`,
     );
   }
@@ -90,12 +90,12 @@ export class FeedbackDigestWorker implements OnModuleInit, OnModuleDestroy {
 
   private async process(job: Job<FeedbackDigestJobData>): Promise<void> {
     const triggeredBy = job.data.triggeredBy ?? 'unknown';
-    this.logger.log(
+    this.logger.debug(
       { jobId: job.id, triggeredBy },
       'feedback-digest: starting run',
     );
     const result = await this.digest.runDigest();
-    this.logger.log(
+    this.logger.debug(
       { jobId: job.id, triggeredBy, ...result },
       'feedback-digest: run finished',
     );

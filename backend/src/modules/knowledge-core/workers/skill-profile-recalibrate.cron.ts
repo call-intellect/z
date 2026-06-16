@@ -37,7 +37,7 @@ export class SkillProfileRecalibrateCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'skill-profile-recalibrate.cron: проход завершён',
       );

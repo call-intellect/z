@@ -89,7 +89,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
     });
-    this.logger.log(
+    this.logger.debug(
       `EntityResolverWorker запущен (${CORE_QUEUE_NAMES.ENTITY_RESOLVER})`,
     );
   }
@@ -275,7 +275,7 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.logger.log(
+    this.logger.debug(
       { entityId: entity.id, targetId, explanation: args.explanation },
       'entity-resolver: merged',
     );

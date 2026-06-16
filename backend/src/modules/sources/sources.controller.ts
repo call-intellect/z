@@ -171,6 +171,19 @@ export class SourcesController {
     return this.sources.softDelete(t, user.id, id);
   }
 
+  @Delete(':id/purge')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Полное удаление источника + его RawEvent (необратимо)' })
+  async purge(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; deletedRawEvents: number }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireDelete(user.id, t);
+    return this.sources.hardDelete(t, user.id, id);
+  }
+
   @Post(':id/test')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Smoke-test адаптера' })

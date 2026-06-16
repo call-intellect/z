@@ -39,7 +39,7 @@ export class BusFactorAnalyzerCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'bus-factor-analyzer.cron: проход завершён');
+      this.logger.debug(stats, 'bus-factor-analyzer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `bus-factor-analyzer.cron fail: ${err instanceof Error ? err.message : String(err)}`,

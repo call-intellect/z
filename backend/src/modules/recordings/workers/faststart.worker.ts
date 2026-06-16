@@ -142,7 +142,7 @@ export class FaststartWorker implements OnModuleInit, OnModuleDestroy {
       // Перезаливаем по тому же ключу — mainVideoUrl/AudioTrack/presign не меняются.
       await this.s3.putObject({ key, body: outBuffer, contentType: 'video/mp4' });
 
-      this.logger.log(
+      this.logger.debug(
         { meetingId, key, bytes: outBuffer.byteLength },
         'faststart: composite переупакован (moov в начало)',
       );

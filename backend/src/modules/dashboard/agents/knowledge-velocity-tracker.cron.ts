@@ -44,7 +44,7 @@ export class KnowledgeVelocityTrackerCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'knowledge-velocity-tracker.cron: проход завершён');
+      this.logger.debug(stats, 'knowledge-velocity-tracker.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `knowledge-velocity-tracker.cron fail: ${err instanceof Error ? err.message : String(err)}`,

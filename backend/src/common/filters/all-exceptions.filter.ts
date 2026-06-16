@@ -93,6 +93,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const logMessage = `${mapped.payload.error.message} ${JSON.stringify(logBindings)}`;
     if (mapped.status >= 500) {
       this.logger.error(logMessage);
+    } else if (mapped.status === 404) {
+      // 404 (Cannot GET /, favicon, чужие пути) — клиентский шум, не в консоль.
+      // В БД остаётся через debug-форвард (LOG_DB_MIN_LEVEL). 2026-06-16.
+      this.logger.debug(logMessage);
     } else {
       this.logger.warn(logMessage);
     }

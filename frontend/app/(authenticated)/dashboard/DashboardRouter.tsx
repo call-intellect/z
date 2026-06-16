@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 
 import { useAuth } from '@/contexts/auth-context';
 import { TierGate } from '@/ui/components/TierGate';
-import { IncompleteSetupBanner } from '@/ui/components/IncompleteSetupBanner';
 import { MobileShell } from '@/ui/mobile/MobileShell';
 import { MobileOverviewClient } from '@/ui/mobile/exec/MobileOverviewClient';
 
@@ -43,11 +42,9 @@ export function DashboardRouter() {
   if (isDirector) {
     // Инвариант №1: десктоп НЕ меняем — десктоп-ветка MobileShell = дословно
     // `<DirectorDashboardClient />`. Ниже md рендерим мобильный «Обзор» на том
-    // же роуте/тех же эндпоинтах. TierGate + IncompleteSetupBanner — общая
-    // обёртка снаружи viewport-гейта.
+    // же роуте/тех же эндпоинтах.
     return (
       <TierGate feature="feature.dashboard_director">
-        <IncompleteSetupBanner />
         <MobileShell
           mobile={<MobileOverviewClient />}
           desktop={<DirectorDashboardClient />}

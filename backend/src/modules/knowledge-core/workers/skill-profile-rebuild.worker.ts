@@ -68,7 +68,7 @@ export class SkillProfileRebuildWorker
         'skill-profile-rebuild: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `SkillProfileRebuildWorker запущен (${CORE_QUEUE_NAMES.SKILL_PROFILE_REBUILD})`,
     );
   }

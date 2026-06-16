@@ -38,7 +38,7 @@ export class GoalThemeLinkerCron {
     try {
       const summary = await this.scanAllOrgs();
       if (summary.linkedGoals > 0) {
-        this.logger.log(
+        this.logger.debug(
           summary,
           'goal-theme-linker-cron: догоночная привязка завершена',
         );

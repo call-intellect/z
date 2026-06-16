@@ -72,7 +72,7 @@ export class OrchestratorSubagentWorker
         `subagent job failed jobId=${job?.id ?? 'unknown'}: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `OrchestratorSubagentWorker запущен (${ORCHESTRATOR_SUBAGENTS_QUEUE})`,
     );
   }

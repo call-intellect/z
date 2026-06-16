@@ -72,7 +72,7 @@ export class GoalVectorTrackerCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'goal-vector-tracker.cron: проход завершён');
+      this.logger.debug(stats, 'goal-vector-tracker.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `goal-vector-tracker.cron fail: ${err instanceof Error ? err.message : String(err)}`,

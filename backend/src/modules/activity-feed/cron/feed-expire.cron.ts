@@ -29,7 +29,7 @@ export class FeedExpireCron {
     try {
       const { updated } = await this.feed.expire({ now: new Date() });
       if (updated > 0) {
-        this.logger.log(
+        this.logger.debug(
           { updated },
           'FeedExpireCron — записи ленты помечены expired',
         );

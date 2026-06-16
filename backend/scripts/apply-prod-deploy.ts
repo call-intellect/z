@@ -358,6 +358,10 @@ const STEPS: Step[] = [
   // sourceBlockIds (Decision×Issue) + пересчитать Decision.linkedTaskCount.
   // Идемпотентно (skipDuplicates). На чистом старте — no-op → skipBootstrap.
   { phase: 'backfill', script: 'scripts/backfill-decision-linked-task-count.ts', hint: 'Decision.linkedTaskCount + DecisionTaskLink из sourceBlockIds (TZ-1 Ф3.B)', skipBootstrap: true },
+  // QA-фикс 2026-06-16 — ребренд Z→Кора: переименование дефолтных Source
+  // «Встречи Z»→«Встречи», «Трекер Z»→«Трекер» у существующих Org.
+  // Идемпотентно; на чистом старте новые Org уже с правильными именами → skipBootstrap.
+  { phase: 'backfill', script: 'scripts/backfill-rename-z-sources.ts', hint: 'Source «Встречи Z»→«Встречи», «Трекер Z»→«Трекер» (бренд Z→Кора)', skipBootstrap: true },
   // Tracker Boards (2026-05-27) — каждому проекту нужна default-доска
   // (`Board { isDefault: true }`), и все issues с boardId=NULL должны быть
   // привязаны к ней. Идемпотентно. ТЗ: plans/tz/2026-05-27-tracker-boards.md.

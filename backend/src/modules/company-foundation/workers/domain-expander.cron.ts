@@ -82,18 +82,22 @@ export class DomainExpanderCron {
     const maxNew = this.cfg.companyFoundation.domainExpanderMaxNewPerRun;
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // ── MVP-эвристика: groupBy theme в IdeaBlock'ах за неделю.
+    // ── MVP-эвристика: groupBy tag в IdeaBlock'ах за неделю.
+    // ВАЖНО: таблица Postgres — "IdeaBlock" (Prisma без @@map, PascalCase,
+    // колонки camelCase в кавычках). Группируем по массиву `tags` (String[]);
+    // `themes` у IdeaBlock — реляция (ThemeIdeaBlock[]), не колонка. Активные
+    // блоки = mergedIntoId IS NULL (soft-delete поля deletedAt в модели нет).
     let rows: { theme: string; count: number }[];
     try {
       const raw = await this.prisma.$queryRaw<
         { theme: string; count: bigint }[]
       >`
-        SELECT unnest(themes) AS theme, COUNT(*) AS count
-        FROM idea_blocks
-        WHERE tenant_id = ${tenantId}
-          AND created_at >= ${cutoff}
-          AND deleted_at IS NULL
-          AND cardinality(themes) > 0
+        SELECT unnest(tags) AS theme, COUNT(*) AS count
+        FROM "IdeaBlock"
+        WHERE "tenantId" = ${tenantId}
+          AND "createdAt" >= ${cutoff}
+          AND "mergedIntoId" IS NULL
+          AND cardinality(tags) > 0
         GROUP BY theme
         HAVING COUNT(*) >= ${minSize}
         ORDER BY count DESC
@@ -101,13 +105,13 @@ export class DomainExpanderCron {
       `;
       rows = raw.map((r) => ({ theme: r.theme, count: Number(r.count) }));
     } catch (err) {
-      // На свежей БД таблицы / поля могут отсутствовать (development) — graceful skip.
+      // Не должно падать после фикса имён; на всякий случай — graceful skip.
       this.logger.debug(
         {
           tenantId,
           err: err instanceof Error ? err.message : String(err),
         },
-        'domain-expander.cron: skip (idea_blocks unavailable or empty)',
+        'domain-expander.cron: skip (IdeaBlock query failed or empty)',
       );
       return 0;
     }

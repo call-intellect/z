@@ -14,6 +14,14 @@ import {
 } from './pending-actions-provider.types';
 
 /**
+ * Порог уверенности (confidence) для отображения intake-кандидатов.
+ * Кандидаты ниже этого порога (мусорные, напр. '/actions' или пустые тексты
+ * с confidence 0–10%) скрываются из UI. Null-confidence трактуется как
+ * «достаточно уверенно» (0.5) — исторические записи без оценки не скрываем.
+ */
+const MIN_INTAKE_CONFIDENCE = 0.3;
+
+/**
  * Провайдер «входящая задача ждёт триажа» (IntakeIssue, status='pending').
  *
  * Кому показываем: только owner/admin Org (триаж inbox — их прерогатива).
@@ -38,6 +46,12 @@ export class IntakePendingProvider implements PendingActionsProvider {
     const where: Prisma.IntakeIssueWhereInput = {
       tenantId: a.tenantId,
       status: 'pending',
+      // Фильтр мусорных кандидатов по уверенности AI-классификатора.
+      // confidence=NULL трактуем как «достаточно» (исторические записи без оценки).
+      OR: [
+        { confidence: null },
+        { confidence: { gte: MIN_INTAKE_CONFIDENCE } },
+      ],
     };
     if (a.snoozedResourceIds.size > 0) {
       where.id = { notIn: [...a.snoozedResourceIds] };

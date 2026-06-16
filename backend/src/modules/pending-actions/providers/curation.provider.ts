@@ -87,7 +87,14 @@ export class CurationPendingProvider implements PendingActionsProvider {
       // proposedPayload — что специалист предлагает зафиксировать (поля
       // зависят от типа карточки: name / title / statement / text).
       const payload = asObject(i.proposedPayload);
+      // knowledge_profile: knowledge-clone.service кладёт personName (Person.name)
+      // рядом с personId. Используем personName приоритетно — он содержит
+      // полное имя человека, а не логин (personName доступен из payload без доп.
+      // запроса в БД). Для card-rollup-v2 personId/personName в payload нет —
+      // там name = card.name; если card.name = логин, это проблема на стороне
+      // card-rollup-v2.service (вне данной задачи).
       const cardTitle =
+        strOrUndef(payload.personName) ??
         strOrUndef(payload.name) ??
         strOrUndef(payload.title) ??
         strOrUndef(payload.statement) ??

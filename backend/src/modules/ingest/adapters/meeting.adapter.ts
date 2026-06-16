@@ -39,7 +39,7 @@ interface MergedTranscript {
  * Адаптер источника `meeting`. Главная точка входа — `ingestMeeting(meetingId)`.
  *
  *   1. Читает `Meeting + Transcript + Participants + merged.json`.
- *   2. lazy-upsert дефолтного `Source(type=meeting, name='Встречи Z')` для tenant.
+ *   2. lazy-upsert дефолтного `Source(type=meeting, name='Встречи')` для tenant.
  *   3. Формирует канонический payload (метаданные встречи + transcript turns + roomChat).
  *   4. Вызывает `IngestService.ingest(...)` с `sourceExternalId = meetingId`.
  *
@@ -51,7 +51,7 @@ export class MeetingIngestAdapter {
   private readonly logger = new Logger(MeetingIngestAdapter.name);
 
   /** Канонический name дефолтного meeting-Source для каждой Org. */
-  static readonly DEFAULT_SOURCE_NAME = 'Встречи Z';
+  static readonly DEFAULT_SOURCE_NAME = 'Встречи';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,

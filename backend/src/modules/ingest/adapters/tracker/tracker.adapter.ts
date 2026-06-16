@@ -103,7 +103,7 @@ const SIGNAL_TYPE_MAP: Record<
  *   3. **signalTypeHint**: проставляется в `payload.signalTypeHint` —
  *      `BlockIngestWorker` предпочитает его LLM-определению (см.
  *      block-ingest.worker.ts §"signalTypeHint override").
- *   4. **Lazy Source upsert**: один `Source(type=tracker_event, name='Трекер Z')`
+ *   4. **Lazy Source upsert**: один `Source(type=tracker_event, name='Трекер')`
  *      на Org, создаётся при первом событии (как meeting/telegram адаптеры).
  *   5. **Best-effort**: любая ошибка логируется (warn), но НЕ выбрасывается —
  *      бизнес-транзакция Tracker'а не должна падать из-за ingest'а.
@@ -116,7 +116,7 @@ export class TrackerAdapter {
   private readonly logger = new Logger(TrackerAdapter.name);
 
   /** Канонический name дефолтного tracker-Source для каждой Org. */
-  static readonly DEFAULT_SOURCE_NAME = 'Трекер Z';
+  static readonly DEFAULT_SOURCE_NAME = 'Трекер';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,

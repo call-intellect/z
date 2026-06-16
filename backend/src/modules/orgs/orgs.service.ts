@@ -71,7 +71,7 @@ export class OrgsService {
    * Создать Org + Membership(owner) для текущего юзера.
    * Используется и в endpoint'е POST /orgs, и в хуке регистрации.
    *
-   * Также создаёт дефолтный `Source(type=meeting, name='Встречи Z')` —
+   * Также создаёт дефолтный `Source(type=meeting, name='Встречи')` —
    * единый канал ingest для встреч (knowledge-core Фаза 1). Управление
    * другими источниками (telegram/email/...) — Фаза 10.
    */
@@ -118,7 +118,7 @@ export class OrgsService {
       data: {
         tenantId: org.id,
         type: 'meeting',
-        name: 'Встречи Z',
+        name: 'Встречи',
         dataClass: 'internal',
         isActive: true,
       },

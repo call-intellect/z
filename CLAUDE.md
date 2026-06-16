@@ -14,12 +14,9 @@
 
 ## Tooling — use the MCP servers & plugins actively
 
-This repo is wired for several MCP servers/plugins. Reach for them *first* — they beat ad-hoc grep/Read/guessing on both relevance and token cost.
+**Полные правила по MCP-тулингу — единый источник [.claude/CLAUDE.md](.claude/CLAUDE.md), не дублируй их сюда.** Коротко: `vexp run_pipeline` — **первым для любой задачи по коду** (bug/feature/refactor/debug) вместо grep/glob/cat; PreToolUse-хук блокирует Grep/Glob при живом демоне; `get_skeleton` вместо `Read` для осмотра файлов. `context7` (`resolve-library-id` → `query-docs`) — для любого вопроса по API внешней библиотеки (стек пинит свежие версии — NestJS 11, Prisma 7, React 19 и т.д.; не полагайся на память). `playwright` (`browser_*`) — визуальная/поведенческая проверка фронта.
 
-- **vexp** (`run_pipeline`) — **call this FIRST for every code task** (bug, feature, refactor, debug) instead of grep/glob/cat. One call returns graph-ranked context + impact + memory. A PreToolUse hook blocks Grep/Glob while the vexp daemon runs. Prefer `get_skeleton` over `Read` for inspecting files. Full guidance lives in [.claude/CLAUDE.md](.claude/CLAUDE.md). If `run_pipeline` errors (daemon down), fall back to normal search.
-- **context7** (`resolve-library-id` → `query-docs`) — **use for any external library/API question** before relying on memory. This stack pins fast-moving versions (NestJS 11, Prisma 7, React 19, Ant Design 6, Socket.IO, class-validator, React Query, Zustand); training data drifts from current APIs. When writing or reviewing code against a library — decorators, config shapes, new/renamed APIs, migration notes — resolve the library and query its docs rather than guessing.
-- **playwright** (`browser_*`) — drive a real browser to verify frontend changes, capture screenshots/snapshots, and check network/console. Use for FE visual/behavioral verification (matches the seed-and-visual-audit workflow), not for backend-only tasks.
-- **Skills** (invoke via the Skill tool when relevant): `code-review` (review the branch diff), `commit`/`commit-push-pr`, `security-review`, `frontend-design`/`impeccable` (FE UI work), `deep-research`. Don't hand-roll what a skill already does.
+- **Skills** (через Skill tool, когда подходит): `code-review`, `commit`/`commit-push-pr`, `security-review`, `frontend-design`/`impeccable` (FE), `deep-research`. Не дублируй то, что уже умеет скилл.
 
 > **Категория:** «память компании» / memory layer для AI-агентов (бренд Z → Кора, ребренд M9-M12).
 > Полное позиционирование, антинарратив, tone, ICP, ответы на возражения — [second-brain/06_marketing/positioning.md](second-brain/06_marketing/positioning.md) и [second-brain/06_marketing/messaging.md](second-brain/06_marketing/messaging.md). Головной GTM — [plans/analysis/2026-05-20-gtm-700m.md](plans/analysis/2026-05-20-gtm-700m.md).
@@ -82,8 +79,8 @@ This repo is wired for several MCP servers/plugins. Reach for them *first* — t
 **Локальные зависимости** (из корня): `docker compose -f docker-compose.dev.yml up -d` (Postgres+pgvector :55435, Redis :56381, MinIO :59000/:59001). LiveKit для dev — `bun run livekit` (Linux-only, `network_mode: host`). Прод-деплой — единый корневой `docker-compose.yml` (`docker compose up -d --build backend`, порты через `.env`); медиа-стек отдельно — `infra/livekit/docker-compose.yml`.
 
 **Backend** (`cd backend`, слушает :3000, Swagger `/api/docs`, health `/health`, метрики `/metrics`):
-- Первый запуск: `bun install && bun run prisma:push && bun run prisma:generate` (+ опц. `bun run prisma:seed`)
-- Dev: `bun run dev` (HTTP) и `bun run worker:dev` (BullMQ-воркеры — **отдельный процесс**, `src/workers/main.ts`)
+- Первый запуск: `bun install && bun run prisma:migrate && bun run prisma:generate` (+ опц. `bun run prisma:seed`). `prisma:push` — только для черновых локальных проб, не коммитится.
+- Dev: `bun run dev` — HTTP **и** BullMQ-воркеры/cron в одном процессе (workers/cron **in-process** через `WorkersModule` в `AppModule`; отдельного worker-процесса и `worker:dev` нет)
 - Проверка: `bun run typecheck` · `bun run lint` · `bun run build`
 - Тесты (vitest): `bun run test:unit` / `test:integration` / `test:e2e`. Один файл: `bunx vitest run src/путь/файл.spec.ts`; по имени: `bunx vitest run -t "имя теста"`
 - pgvector-индексы (HNSW + GIN, не в schema.prisma): `bun run apply-postgres-init`
@@ -97,8 +94,8 @@ This repo is wired for several MCP servers/plugins. Reach for them *first* — t
 Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/Grafana/Prometheus/loadtest) + `second-brain/` (источник правды) + `plans/` (ТЗ и анализ) + `docs/`.
 
 **Backend** (`backend/src/`):
-- `main.ts` — HTTP-приложение; глобальный префикс API `/api/v1`. `workers/main.ts` — отдельный процесс воркеров/кронов BullMQ (поверх Redis).
-- `modules/*` — ~45 feature-модулей (meetings, livekit, recordings, ai, knowledge-core, orgs, rbac, admin, dashboard, goals, entitlements, …). Каждый эндпоинт — Zod-DTO (`nestjs-zod`) + Swagger.
+- `main.ts` — HTTP-приложение + BullMQ-воркеры/cron **in-process** (через `WorkersModule` в `AppModule`, поверх Redis); глобальный префикс API `/api/v1`. Отдельного worker-процесса нет.
+- `modules/*` — ~100 feature-модулей (meetings, livekit, recordings, ai, knowledge-core, orgs, rbac, admin, dashboard, goals, entitlements, …). Каждый эндпоинт — Zod-DTO (`nestjs-zod`) + Swagger.
 - `common/*` — cross-cutting: `config` (TypedConfigService), `prisma`, `redis`, `crypto` (AES-256-GCM), `metrics` (prom-client), `logger` (pino), `filters`/`interceptors`/`pipes`/`middleware`.
 - **knowledge-core — ядро продукта.** Pipeline `ingest → IdeaBlock + Entity → IdeaBlockLink/EntityLink (граф) → Theme (кластеры)`, всё через BullMQ-воркеры и `@Cron`. Карта модулей и потоков: [second-brain/02_architecture/module-map.md](second-brain/02_architecture/module-map.md), детали: [second-brain/02_architecture/knowledge-core.md](second-brain/02_architecture/knowledge-core.md).
 - **Multi-tenancy:** `orgs` + `rbac` (Casbin-совместимый, `policies/policy.csv`). `TenantGuard` достаёт `tenantId` из `X-Org-Id`/`:orgId`. Любой knowledge-запрос требует `tenantId`.

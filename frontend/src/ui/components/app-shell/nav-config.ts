@@ -149,6 +149,13 @@ const RHYTHMS_SECTION: NavConfigSection = {
       overviewTarget: 'overview.dashboard',
     },
     {
+      href: '/dashboard/operations',
+      label: 'Аналитика',
+      icon: BarChart3,
+      matchPrefix: '/dashboard/operations',
+      overviewTarget: 'overview.operations',
+    },
+    {
       href: '/week',
       label: 'Неделя',
       icon: CalendarRange,

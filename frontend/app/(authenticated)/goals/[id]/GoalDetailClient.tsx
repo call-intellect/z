@@ -64,6 +64,7 @@ import {
   type GoalThemeLinkDomain,
 } from '@/domain/goal';
 import { themeFromApi } from '@/domain/theme';
+import { pluralRu } from '@/domain/contribution';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -1593,7 +1594,7 @@ function AddThemesDialog({
                           {t.name}
                         </div>
                         <div className="mt-0.5 truncate text-[11px] text-fg-tertiary">
-                          {t.blocksCount} блоков · {t.entitiesCount} сущностей
+                          {pluralRu(t.blocksCount, 'блок', 'блока', 'блоков')} · {pluralRu(t.entitiesCount, 'сущность', 'сущности', 'сущностей')}
                         </div>
                       </div>
                     </button>

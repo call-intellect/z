@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Handshake, Target, Thermometer, UserX, Users } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
@@ -44,6 +44,17 @@ import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { ChronicBlockersWidget } from './widgets/ChronicBlockersWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
 import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
+import { DecisionThroughputWidget } from './widgets/DecisionThroughputWidget';
+import { CustomerRiskRadarWidget } from './widgets/CustomerRiskRadarWidget';
+import { KnowledgeAtRiskWidget } from './widgets/KnowledgeAtRiskWidget';
+import { dashboardApi } from '@/api/dashboard.api';
+import { pulsePatternsFromApi } from '@/domain/pulse-patterns';
+import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
+import { RecurringTopicsWidget } from '@/ui/components/dashboard/RecurringTopicsWidget';
+import { LowRoiMeetingsWidget } from '@/ui/components/dashboard/LowRoiMeetingsWidget';
+import { BottleneckHeatmapWidget } from '@/ui/components/dashboard/BottleneckHeatmapWidget';
+import { KnowledgeVelocityKpi } from '@/ui/components/dashboard/KnowledgeVelocityKpi';
+import { IrreversibleDecisionsAlert } from '@/ui/components/dashboard/IrreversibleDecisionsAlert';
 
 /**
  * SBA β-8 — клиентский COO-дашборд.
@@ -117,13 +128,23 @@ export function OperationsDashboardClient({
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
+  // ТЗ coo-orphan-agents Ф1 — единый SWR на 7 паттернов пульса (тот же тяжёлый
+  // эндпоинт, что на главной; здесь — второй независимый потребитель). Null-ключ
+  // при отсутствии orgId ставит SWR на паузу. Провал не валит доску: ошибка
+  // прокидывается в сами виджеты (у каждого свой error/empty-state).
+  const pulseSwr = useSWR(
+    currentOrgId ? ['operations-pulse-patterns', currentOrgId, 'week'] : null,
+    () => dashboardApi.getPulsePatterns(currentOrgId as string, 'week'),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
   if (loading) {
     return <div className="p-6 text-sm text-fg-secondary">Загрузка дашборда…</div>;
   }
   if (error) {
     return (
       <div className="p-6">
-        <h1 className="mb-2 text-2xl font-semibold">Операции</h1>
+        <h1 className="mb-2 text-2xl font-semibold">Аналитика</h1>
         <p className="rounded-lg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
           {error}
         </p>
@@ -133,6 +154,16 @@ export function OperationsDashboardClient({
   if (!data) {
     return <div className="p-6 text-sm text-fg-secondary">Нет данных</div>;
   }
+
+  // Производные pulse (ТЗ Ф1). pulse=null до загрузки/при ошибке — каждый виджет
+  // сам показывает loading/error/empty по своим props.
+  const pulse = pulseSwr.data ? pulsePatternsFromApi(pulseSwr.data) : null;
+  const pulseLoading = pulseSwr.isLoading;
+  const pulseError = pulseSwr.error
+    ? pulseSwr.error instanceof Error
+      ? pulseSwr.error.message
+      : 'Не удалось загрузить аналитику'
+    : null;
 
   // ТЗ-2 Ф2 — инфо-перекомпоновка под kill-switch (default true). При OFF
   // дашборд возвращается к легаси-раскладке («Свежие блокеры», без новых
@@ -166,6 +197,13 @@ export function OperationsDashboardClient({
       <div className="mb-4">
         <RequiresActionBanner orgId={currentOrgId} />
       </div>
+
+      {/* ТЗ coo-orphan-agents Ф1 — необратимые решения без альтернатив (flagship).
+          Самоскрывается при alertCount=0. Вне reworkEnabled (Р-4). */}
+      <IrreversibleDecisionsAlert
+        decisions={pulse?.irreversibleDecisions.decisions ?? []}
+        alertCount={pulse?.irreversibleDecisions.alertCount ?? 0}
+      />
 
       {/* §5.3/§5.4 — KPI-ряд из StatCard (новый стеклянный язык). Spark — только
           там, где у KPI есть свой недельный ряд (weeklyInflow); для целей и
@@ -248,6 +286,57 @@ export function OperationsDashboardClient({
           />
         )}
       </div>
+
+      {/* ═══ ТЗ coo-orphan-agents Ф1 — аналитический слой COO: подключение
+          готовых orphan-виджетов pulse-patterns. Секции — каркас, в который
+          Ф3/Ф4/Ф5/Ф7 домонтируют свои виджеты. Вне reworkEnabled (Р-4). ═══ */}
+
+      {/* СЕКЦИЯ: Риски и непрерывность — сюда Ф4 (CustomerRisk) и Ф5 (KnowledgeAtRisk) */}
+      <AnalyticsSection title="Риски и непрерывность" tone={CHART.red}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <BusFactorWidget
+            data={pulse?.busFactor ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+          {/* ТЗ coo-orphan-agents Ф3 — «Доведение решений» (self-fetch). */}
+          <DecisionThroughputWidget />
+          {/* ТЗ coo-orphan-agents Ф4 — «Клиенты под риском оттока» (self-fetch). */}
+          <CustomerRiskRadarWidget />
+          {/* ТЗ coo-orphan-agents Ф5 — «Знания под риском» (self-fetch). */}
+          <KnowledgeAtRiskWidget />
+        </div>
+      </AnalyticsSection>
+
+      {/* СЕКЦИЯ: Аналитика пульса */}
+      <AnalyticsSection title="Аналитика пульса" tone={CHART.cyan}>
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <KnowledgeVelocityKpi data={pulse?.knowledgeVelocity ?? null} />
+        </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <RecurringTopicsWidget
+            data={pulse?.recurringTopics ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+          <LowRoiMeetingsWidget
+            meetings={pulse?.lowRoiMeetings.meetings ?? []}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+      </AnalyticsSection>
+
+      {/* СЕКЦИЯ: Трения — тяжёлый heatmap во всю ширину, последним в аналитическом слое */}
+      <AnalyticsSection title="Трения" tone={CHART.amber}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <BottleneckHeatmapWidget
+            data={pulse?.bottlenecks ?? null}
+            loading={pulseLoading}
+            error={pulseError}
+          />
+        </div>
+      </AnalyticsSection>
 
       {/* Ф2 редизайн — hero-график «Операционная нагрузка» по недельному
           инфлоу. Скрыт, пока в обоих рядах нет ни одного значения. */}
@@ -430,13 +519,40 @@ export function OperationsDashboardClient({
 
   return (
     <ModernPageShell
-      title="Операции — пульс компании"
+      title="Аналитика"
       subtitle={`Обновлено ${data.generatedAt.toLocaleString('ru-RU')}`}
     >
       {/* §5.1 — Общая навигация по операционному разделу. */}
       <OperationsTabs />
       {body}
     </ModernPageShell>
+  );
+}
+
+/**
+ * ТЗ coo-orphan-agents Ф1 — обёртка-секция аналитического слоя: цветной
+ * uppercase-заголовок (как существующая секция «Сигналы») + контент. `tone` —
+ * цвет заголовка из палитры CHART (red/cyan/amber/violet).
+ */
+function AnalyticsSection({
+  title,
+  tone,
+  children,
+}: {
+  title: string;
+  tone: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="mt-8">
+      <h2
+        className="mb-3 text-xs font-medium uppercase tracking-wide"
+        style={{ color: tone }}
+      >
+        {title}
+      </h2>
+      {children}
+    </section>
   );
 }
 

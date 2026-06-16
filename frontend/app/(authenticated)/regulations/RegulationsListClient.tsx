@@ -17,6 +17,7 @@ import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
+import { pluralRu } from '@/domain/contribution';
 import {
   regulationsApi,
   type RegulationKindApi,
@@ -380,16 +381,16 @@ function RegulationsListContent() {
           {summary ? (
             <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-secondary">
               <Chip variant="info" size="sm">
-                {summary.regulations} регламентов
+                {pluralRu(summary.regulations, 'регламент', 'регламента', 'регламентов')}
               </Chip>
               <Chip variant="lavender" size="sm">
-                {summary.processes} процессов
+                {pluralRu(summary.processes, 'процесс', 'процесса', 'процессов')}
               </Chip>
               <Chip variant="sand" size="sm">
-                {summary.instructions} инструкций
+                {pluralRu(summary.instructions, 'инструкция', 'инструкции', 'инструкций')}
               </Chip>
               <Chip variant="warning" size="sm">
-                {summary.policies} политик
+                {pluralRu(summary.policies, 'политика', 'политики', 'политик')}
               </Chip>
               {summary.weekDelta > 0 ? (
                 <Chip variant="success" size="sm">

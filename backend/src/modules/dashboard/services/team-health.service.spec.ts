@@ -18,6 +18,7 @@ import type { OperationsTeamTemperatureDto } from '../../operations/dto/operatio
 import type { OperationsDashboardService } from '../../operations/services/operations-dashboard.service';
 
 import type { CommitmentReliabilityService } from './commitment-reliability.service';
+import type { HangingDecisionsService } from './hanging-decisions.service';
 import {
   TeamHealthService,
   type TeamHealthDto,
@@ -27,6 +28,7 @@ interface DepartmentRow {
   id: string;
   name: string;
   persons: Array<{ id: string; entityId: string | null }>;
+  healthSummaryJson?: unknown;
 }
 
 interface ConflictRow {
@@ -45,6 +47,7 @@ function buildService(opts: {
   cacheValue?: string | null;
   cacheGetError?: Error;
   cacheSetError?: Error;
+  hangingList?: Array<{ id: string; decidedByPersonIds: string[] }>;
 } = {}): {
   service: TeamHealthService;
   deptFindMany: ReturnType<typeof vi.fn>;
@@ -53,6 +56,7 @@ function buildService(opts: {
   redisSet: ReturnType<typeof vi.fn>;
   commitsGet: ReturnType<typeof vi.fn>;
   opsGet: ReturnType<typeof vi.fn>;
+  hangingList: ReturnType<typeof vi.fn>;
 } {
   const deptFindMany = vi.fn(async () => opts.departments ?? []);
   const entityLinkFindMany = vi.fn(async () => opts.conflicts ?? []);
@@ -108,7 +112,12 @@ function buildService(opts: {
     getReliability: commitsGet,
   } as unknown as CommitmentReliabilityService;
 
-  const service = new TeamHealthService(prisma, redis, commits, ops);
+  const hangingList = vi.fn(async () => opts.hangingList ?? []);
+  const hanging = {
+    listHangingWithAuthors: hangingList,
+  } as unknown as HangingDecisionsService;
+
+  const service = new TeamHealthService(prisma, redis, commits, ops, hanging);
 
   return {
     service,
@@ -118,6 +127,7 @@ function buildService(opts: {
     redisSet,
     commitsGet,
     opsGet,
+    hangingList,
   };
 }
 
@@ -166,6 +176,7 @@ describe('TeamHealthService', () => {
     expect(row.promises).toEqual({ value: 0, tone: 'neutral' });
     expect(row.conflicts).toEqual({ value: 0, tone: 'neutral' });
     expect(row.decisions).toEqual({ value: 0, tone: 'neutral' });
+    expect(row.healthSummary).toBeNull();
     // CommitmentReliabilityService не вызывался для below-cohort отделов.
     expect(commitsGet).not.toHaveBeenCalled();
   });
@@ -324,21 +335,153 @@ describe('TeamHealthService', () => {
     expect(byId.get('d-dang')!.conflicts.tone).toBe('danger');
   });
 
+  describe('decisions (висящие решения per-dept, ТЗ Ф2)', () => {
+    const persons3 = (prefix: string) => [
+      { id: `${prefix}-1`, entityId: null },
+      { id: `${prefix}-2`, entityId: null },
+      { id: `${prefix}-3`, entityId: null },
+    ];
+
+    it('отдел 3+ чел. с 2 висящими (авторы из отдела) → value=2, tone=warning', async () => {
+      const { service } = buildService({
+        departments: [{ id: 'd-1', name: 'Отдел', persons: persons3('p') }],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+        hangingList: [
+          { id: 'dec-1', decidedByPersonIds: ['p-1'] },
+          { id: 'dec-2', decidedByPersonIds: ['p-2', 'p-3'] },
+        ],
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      expect(res.teams[0]!.decisions.value).toBe(2);
+      expect(res.teams[0]!.decisions.tone).toBe('warning');
+    });
+
+    it('overlap: решение с авторами из двух отделов засчитано обоим', async () => {
+      const { service } = buildService({
+        departments: [
+          { id: 'd-1', name: 'Отдел 1', persons: persons3('p') },
+          { id: 'd-2', name: 'Отдел 2', persons: persons3('q') },
+        ],
+        reliabilityByDept: {
+          'd-1': { reliabilityPercent: 90, delta14d: null },
+          'd-2': { reliabilityPercent: 90, delta14d: null },
+        },
+        hangingList: [{ id: 'dec-x', decidedByPersonIds: ['p-1', 'q-1'] }],
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      const byId = new Map(res.teams.map((t) => [t.departmentId, t]));
+      expect(byId.get('d-1')!.decisions.value).toBe(1);
+      expect(byId.get('d-2')!.decisions.value).toBe(1);
+    });
+
+    it('запрет N+1: listHangingWithAuthors вызван РОВНО один раз при 2+ отделах', async () => {
+      const { service, hangingList } = buildService({
+        departments: [
+          { id: 'd-1', name: 'Отдел 1', persons: persons3('p') },
+          { id: 'd-2', name: 'Отдел 2', persons: persons3('q') },
+        ],
+        reliabilityByDept: {
+          'd-1': { reliabilityPercent: 90, delta14d: null },
+          'd-2': { reliabilityPercent: 90, delta14d: null },
+        },
+        hangingList: [],
+      });
+      await service.getHealth({ tenantId: 't-1' });
+      expect(hangingList).toHaveBeenCalledTimes(1);
+    });
+
+    it('>2 висящих → value=3, tone=danger', async () => {
+      const { service } = buildService({
+        departments: [{ id: 'd-1', name: 'Отдел', persons: persons3('p') }],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+        hangingList: [
+          { id: 'dec-1', decidedByPersonIds: ['p-1'] },
+          { id: 'dec-2', decidedByPersonIds: ['p-2'] },
+          { id: 'dec-3', decidedByPersonIds: ['p-3'] },
+        ],
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      expect(res.teams[0]!.decisions.value).toBe(3);
+      expect(res.teams[0]!.decisions.tone).toBe('danger');
+    });
+  });
+
+  describe('healthSummary (факторы вовлечённости, ТЗ coo-orphan Ф6)', () => {
+    const persons3 = [
+      { id: 'p-1', entityId: null },
+      { id: 'p-2', entityId: null },
+      { id: 'p-3', entityId: null },
+    ];
+
+    it('отдел 3+ с валидным healthSummaryJson → row.healthSummary распарсен', async () => {
+      const { service } = buildService({
+        departments: [
+          {
+            id: 'd-1',
+            name: 'Отдел',
+            persons: persons3,
+            healthSummaryJson: {
+              factors: {
+                manager_support: 'high',
+                workload_fairness: 'medium',
+                communication: 'high',
+                time_pressure: 'low',
+                role_clarity: 'high',
+              },
+              summary: 'всё ок',
+              generatedAt: '2026-06-15T05:00:00.000Z',
+            },
+          },
+        ],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      const row = res.teams[0]!;
+      expect(row.healthSummary?.factors.manager_support).toBe('high');
+      expect(row.healthSummary?.factors.time_pressure).toBe('low');
+      expect(row.healthSummary?.summary).toBe('всё ок');
+      expect(row.healthSummary?.generatedAt).toBe('2026-06-15T05:00:00.000Z');
+    });
+
+    it('битый healthSummaryJson (нет factors) → healthSummary=null', async () => {
+      const { service } = buildService({
+        departments: [
+          {
+            id: 'd-1',
+            name: 'Отдел',
+            persons: persons3,
+            healthSummaryJson: { summary: 'x' },
+          },
+        ],
+        reliabilityByDept: { 'd-1': { reliabilityPercent: 90, delta14d: null } },
+      });
+      const res = await service.getHealth({ tenantId: 't-1' });
+      expect(res.teams[0]!.healthSummary).toBeNull();
+    });
+  });
+
   it('cache hit → Prisma не дёргается', async () => {
     const cached: TeamHealthDto = {
       teams: [],
       totalDepartments: 0,
     };
-    const { service, deptFindMany, entityLinkFindMany, opsGet, commitsGet } =
-      buildService({
-        cacheValue: JSON.stringify(cached),
-      });
+    const {
+      service,
+      deptFindMany,
+      entityLinkFindMany,
+      opsGet,
+      commitsGet,
+      hangingList,
+    } = buildService({
+      cacheValue: JSON.stringify(cached),
+    });
     const res = await service.getHealth({ tenantId: 't-1' });
     expect(res).toEqual(cached);
     expect(deptFindMany).not.toHaveBeenCalled();
     expect(entityLinkFindMany).not.toHaveBeenCalled();
     expect(opsGet).not.toHaveBeenCalled();
     expect(commitsGet).not.toHaveBeenCalled();
+    expect(hangingList).not.toHaveBeenCalled();
   });
 
   it('Redis.get падает → fallback на Prisma (не падает)', async () => {

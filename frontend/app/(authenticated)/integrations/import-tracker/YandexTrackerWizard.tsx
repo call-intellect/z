@@ -54,7 +54,7 @@ type Step = 'connect' | 'queues' | 'mapping' | 'preview';
 const STEPS: WizardStepDef[] = [
   { id: 'connect', label: 'Подключение' },
   { id: 'queues', label: 'Очереди' },
-  { id: 'mapping', label: 'Маппинг' },
+  { id: 'mapping', label: 'Сопоставление' },
   { id: 'preview', label: 'Подтверждение' },
 ];
 
@@ -162,7 +162,7 @@ export function YandexTrackerWizard({
           parsed={parsedMappings}
           onBack={goBack}
           onNext={goNext}
-          stepTitle="Шаг 3: Маппинг пользователей Яндекс Трекера"
+          stepTitle="Шаг 3: Сопоставление пользователей Яндекс Трекера"
         />
       )}
 

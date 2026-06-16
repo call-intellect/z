@@ -18,6 +18,7 @@ import {
   CHRONIC_BLOCKER_STATUS_LABEL,
   fromDailyDigestApi,
   type DailyDigestChronicBlockerDomain,
+  type DailyDigestCustomerAtRiskDomain,
   type DailyDigestDomain,
   type DailyDigestEventDomain,
   type DailyDigestPersonShinedDomain,
@@ -35,6 +36,7 @@ import {
   Sparkles,
   Star,
   ThermometerSun,
+  TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 
@@ -260,7 +262,8 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
     data.urgentItems.length === 0 &&
     data.whoShined.length === 0 &&
     data.whoStruggled.length === 0 &&
-    data.chronicBlockers.length === 0;
+    data.chronicBlockers.length === 0 &&
+    data.customersAtRisk.length === 0;
 
   return (
     <div className="space-y-6">
@@ -299,6 +302,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
       <EventsTimelineSection items={data.eventsToday} />
       <WhoShinedSection items={data.whoShined} />
       <WhoStruggledSection items={data.whoStruggled} />
+      <CustomersAtRiskSection items={data.customersAtRisk} />
       <ChronicBlockersSection items={data.chronicBlockers} />
 
       {allRuntimeEmpty ? (
@@ -753,6 +757,56 @@ function WhoStruggledSection({
                 {p.detail}
               </span>
             </Link>
+          </li>
+        ))}
+      </ul>
+    </GlassCard>
+  );
+}
+
+function CustomersAtRiskSection({
+  items,
+}: {
+  items: DailyDigestCustomerAtRiskDomain[];
+}) {
+  if (items.length === 0) return null;
+  return (
+    <GlassCard>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <CardTitle icon={<TrendingDown size={16} />} grad={GRAD.pink}>
+          Клиенты под риском
+        </CardTitle>
+        <span className="text-xs" style={{ color: CHART.faint }}>
+          накопились сигналы оттока
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {items.map((c, i) => (
+          <li
+            key={`${c.customerName}-${i}`}
+            className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm"
+          >
+            <span
+              aria-hidden
+              style={{ color: c.riskLevel === 'critical' ? CHART.red : CHART.amber }}
+            >
+              ●
+            </span>
+            <span className="font-medium" style={{ color: CHART.text }}>
+              {c.customerName}
+            </span>
+            <span
+              className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+              style={{
+                color: c.riskLevel === 'critical' ? CHART.red : CHART.amber,
+                background: 'var(--surface-inset)',
+              }}
+            >
+              {c.riskLevel === 'critical' ? 'критично' : 'внимание'}
+            </span>
+            <span className="flex-1 truncate text-xs" style={{ color: CHART.dim }}>
+              {c.badge}
+            </span>
           </li>
         ))}
       </ul>

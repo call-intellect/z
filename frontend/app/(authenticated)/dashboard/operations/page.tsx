@@ -6,7 +6,7 @@ import { MobileTeamClient } from '@/ui/mobile/exec/MobileTeamClient';
 import { OperationsDashboardClient } from './OperationsDashboardClient';
 
 export const metadata: Metadata = {
-  title: 'Операции',
+  title: 'Аналитика',
 };
 
 /**

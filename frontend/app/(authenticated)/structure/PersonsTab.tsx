@@ -372,7 +372,7 @@ export function PersonsTab({
             <thead className="bg-bg-overlay/40 text-xs uppercase tracking-wider text-fg-tertiary">
               <tr>
                 <th className="px-4 py-2 text-left">Имя</th>
-                <th className="px-4 py-2 text-left">Email</th>
+                <th className="px-4 py-2 text-left">Эл. почта</th>
                 <th className="px-4 py-2 text-left">Должность</th>
                 <th className="px-4 py-2 text-left">Отдел</th>
                 <th className="px-4 py-2 text-left">Статус</th>

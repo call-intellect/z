@@ -2,6 +2,7 @@
 
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
+import remarkGfm from 'remark-gfm';
 
 import { stripContextMarkers } from '@/domain/chat-v2';
 
@@ -66,6 +67,7 @@ export function AssistantMarkdown({ text }: { text: string }): React.ReactElemen
   return (
     <div className="break-words leading-relaxed">
       <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
         components={MARKDOWN_COMPONENTS}
       >

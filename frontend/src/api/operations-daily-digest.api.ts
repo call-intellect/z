@@ -129,6 +129,16 @@ export interface DailyDigestChronicBlockerApi {
 }
 
 /**
+ * ТЗ coo-orphan-agents Ф4 — клиент под риском в дневном дайджесте (зеркало
+ * backend DailyDigestCustomerAtRiskDto). Без ₽.
+ */
+export interface DailyDigestCustomerAtRiskApi {
+  customerName: string;
+  riskLevel: 'critical' | 'warning';
+  badge: string;
+}
+
+/**
  * Ф1b редизайна дашбордов — точка исторического тренда (зеркало backend
  * `DailyDigestTrendPointDto`). Считается из persisted-снимков metricsJson.
  */
@@ -160,6 +170,8 @@ export interface DailyDigestApi {
   urgentItems: DailyDigestUrgentItemApi[];
   whoShined: DailyDigestPersonShinedApi[];
   whoStruggled: DailyDigestPersonStruggledApi[];
+  // ТЗ coo-orphan-agents Ф4 — клиенты под риском (runtime на backend).
+  customersAtRisk: DailyDigestCustomerAtRiskApi[];
   // ТЗ-2 Ф3 — хронические блокеры (runtime-вычислены на backend).
   chronicBlockers: DailyDigestChronicBlockerApi[];
   // Ф1b — исторический тренд (runtime из persisted-снимков на backend), old→new.

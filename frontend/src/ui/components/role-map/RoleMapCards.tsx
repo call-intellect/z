@@ -249,7 +249,7 @@ export function InteractionsCard({ items }: { items: InteractionApi[] }) {
       title="Взаимодействия"
       icon={<Handshake size={16} />}
       count={items.length}
-      emptyHint="Граф взаимодействий собирается из handoff'ов и совместных встреч."
+      emptyHint="Граф взаимодействий собирается из передач задач и совместных встреч."
     >
       <ul className="space-y-2 text-sm">
         {items.map((i) => {

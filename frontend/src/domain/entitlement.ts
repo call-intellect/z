@@ -14,7 +14,7 @@
 
 // ─── Tier / Feature / Quota — строго те же ключи, что у backend ────────────
 
-export type TierKey = 'tier_basic' | 'tier_pro' | 'tier_enterprise';
+export type TierKey = 'tier_standard' | 'tier_basic' | 'tier_pro' | 'tier_enterprise';
 
 export type FeatureKey =
   | 'feature.meeting'
@@ -44,7 +44,6 @@ export type FeatureKey =
   | 'feature.bitrix';
 
 export type QuotaKey =
-  | 'meetings_per_month'
   | 'blocks_per_org'
   | 'chat_requests_per_day_per_user'
   | 'sources_meeting'
@@ -79,7 +78,6 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
 ] as const;
 
 export const ALL_QUOTAS: readonly QuotaKey[] = [
-  'meetings_per_month',
   'blocks_per_org',
   'chat_requests_per_day_per_user',
   'sources_meeting',
@@ -90,6 +88,7 @@ export const ALL_QUOTAS: readonly QuotaKey[] = [
 ] as const;
 
 export const ALL_TIERS: readonly TierKey[] = [
+  'tier_standard',
   'tier_basic',
   'tier_pro',
   'tier_enterprise',
@@ -98,6 +97,7 @@ export const ALL_TIERS: readonly TierKey[] = [
 // ─── Лейблы для UI ──────────────────────────────────────────────────────────
 
 export const TIER_LABELS: Record<TierKey, string> = {
+  tier_standard: 'Стандартный',
   tier_basic: 'Basic',
   tier_pro: 'Pro',
   tier_enterprise: 'Enterprise',
@@ -139,7 +139,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
   'feature.chat_per_meeting': 'Чат по встрече',
   'feature.theme': 'AI-темы',
   'feature.graph': 'Граф связей',
-  'feature.chat_org': 'AI-чат по всей Org',
+  'feature.chat_org': 'AI-чат по всей компании',
   'feature.dashboard_director': 'Дашборд директора',
   'feature.adapter_telegram': 'Источник: Telegram',
   'feature.adapter_email': 'Источник: e-mail',
@@ -157,8 +157,7 @@ export const FEATURE_LABELS: Record<FeatureKey, string> = {
 };
 
 export const QUOTA_LABELS: Record<QuotaKey, string> = {
-  meetings_per_month: 'Встреч в месяц',
-  blocks_per_org: 'Блоков знаний на Org',
+  blocks_per_org: 'Блоков знаний на компанию',
   chat_requests_per_day_per_user: 'AI-запросов в день / пользователь',
   sources_meeting: 'Источников типа «Встреча»',
   sources_other: 'Источников остальных типов',

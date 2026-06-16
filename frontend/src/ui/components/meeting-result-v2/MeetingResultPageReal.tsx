@@ -300,6 +300,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         <AiFailedBanner
           status={meeting.status}
           hasRecording={isRecordingReady}
+          failureReason={meeting.failureReason}
         />
 
         <MeetingPlayer
@@ -761,13 +762,39 @@ function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
 function AiFailedBanner({
   status,
   hasRecording,
+  failureReason,
 }: {
   status: MeetingDomain['status'];
   hasRecording: boolean;
+  failureReason?: string | null;
 }) {
   const view = meetingStatusView(status);
   const shouldShow = view.isAiFailed || (view.isFailed && hasRecording);
   if (!shouldShow) return null;
+
+  // Встреча создана, но так и не была начата — нет ни записи, ни отчёта.
+  const neverHeld =
+    view.isFailed &&
+    (failureReason === 'never_activated' ||
+      failureReason === 'ended_before_start');
+
+  if (neverHeld) {
+    return (
+      <div
+        role="status"
+        className="flex items-start gap-3 rounded-md border border-chip-warning-bg bg-chip-warning-bg px-4 py-2.5 text-sm text-chip-warning-fg"
+      >
+        <AlertTriangle size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+        <div>
+          <div className="font-medium">Встреча не состоялась</div>
+          <div className="mt-0.5 opacity-90">
+            Запись не велась — встреча не была начата. Отчёта по ней нет.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="status"

@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 
 import { themesApi } from '@/api/themes.api';
+import { pluralRu } from '@/domain/contribution';
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
   THEME_BRANCH_LABELS,
@@ -106,7 +107,7 @@ function ThemeDetail({ detail }: { detail: ThemeDetailDomain }) {
               {statusLabel}
             </Badge>
             <span className="text-xs text-fg-tertiary">
-              {theme.blocksCount} блоков · {theme.entitiesCount} сущностей
+              {pluralRu(theme.blocksCount, 'блок', 'блока', 'блоков')} · {pluralRu(theme.entitiesCount, 'сущность', 'сущности', 'сущностей')}
             </span>
           </div>
           {theme.description && (

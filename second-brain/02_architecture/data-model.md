@@ -1742,4 +1742,37 @@ enum SkillTraitLayer {
 - Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
 - Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
 
+## `PersonaStatus += frozen` — модель «один человек = один клон должности» (Раздел 7, 2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) Раздел 7 (решение владельца). Ветка `devsv`. Миграция **`20260616160000_add_frozen_persona_status`**. Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-16», карта эндпоинтов — [[module-map]] §«Один человек = один клон должности».
+
+Семантика клона роли пересмотрена: `ExecutablePersona.scope='role'` теперь — **снимок ОДНОГО текущего носителя должности** (без агрегации черт нескольких людей), а не усреднённый агрегат. Каждый, кто занимал должность, остаётся отдельным читаемым клоном «Клон <Должность> v<N>» (без ФИО). **И8: это НЕ персональные данные** — ФИО носителя не хранится в выводе клона и в истории; 152-ФЗ к этой модели НЕ применяем (решение владельца).
+
+### Enum `PersonaStatus` (`schema.prisma`)
+
+```prisma
+enum PersonaStatus {
+  active           // текущий носитель должности — ровно один на роль
+  superseded       // (legacy-путь версионирования; не используется новым freeze-путём)
+  pending_rebuild  // (legacy; промежуточный стаб больше НЕ создаётся — Раздел 7)
+  frozen           // новое: read-only снимок БЫВШЕГО носителя; доступен навсегда, не активен, не дообучается, не декеится (И5/И6)
+}
+```
+
+- При смене носителя прошлая `active` атомарно переводится в **`frozen`** (а не `superseded`/удаление) — ТОЛЬКО вместе с подтверждённой новой `active` (закрывает корень Б17 «пропажа клона»). Frozen остаётся читаемым: у него можно спросить «как ты работал / как бы решил».
+- **`ALTER TYPE ... ADD VALUE 'frozen'`** вынесен ОТДЕЛЬНОЙ миграцией от любого использования значения (Postgres запрещает использовать новое enum-значение в той же транзакции, где оно добавлено).
+
+### Partial-unique индекс «ровно одна active на роль» (`postgres-init.sql`, НЕ Prisma-схема)
+
+`executable_personas_one_active_per_role` — `UNIQUE (scopeRefId) WHERE scope='role' AND status='active'`. Гарантирует один активный клон на должность (закрывает гонку Б13: для `scope='role'` `profileId=NULL`, поэтому составной Prisma-`@@unique` не конфликтует — NULL≠NULL в Postgres). Прошлые версии не удаляются, а переходят в `frozen` — индекс навешивается только на `status='active'`. **Self-skip** (образец `persons_tenant_email_active_uniq`): если на момент прогона есть роли с >1 active-клоном — блок делает `RAISE NOTICE` и пропускает создание; индекс встанет на следующем прогоне `postgres-init` **после** backfill §7.6 (`backfill-role-clone-single-bearer.ts`), который заморозит лишние.
+
+### Версионные поля `ExecutablePersona` (для `scope='role'`)
+
+`buildForRole` теперь ВСЕГДА проставляет их по построению (закрывает Б12/Б16 — раньше rebuild стирал версионную идентичность):
+
+- `roleVersion Int? @default(1)` — номер версии клона должности (`prevActive.roleVersion + 1` при смене носителя).
+- `currentBearerPersonId String?` — `Person.id` текущего носителя роли (для `scope='role'`); раз заполнен — `maybeEmitBearerChanged` не видит расхождения, runaway-реэмит `role.bearer_changed` устранён.
+- `publicName String?` — ярлык `«Клон <Должность> v<N>»` (без ФИО) — попадает в ответ `clone-respond` и в историю (Р7/Р8).
+- `succeedsPersonaId String?` — ссылка на предыдущую (frozen) версию: цепочка версий для экрана должности и «совета бывших».
+
 [[../index|← index]]

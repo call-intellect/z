@@ -1223,6 +1223,23 @@ PERSONA_ROLE_AGG_MIN_PERSONS=2
 
 Подробности: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]] и [[../01_projects/admin|01_projects/admin.md]].
 
+### Один человек = один клон должности + freeze бывших (Раздел 7, 2026-06-16)
+
+**Источник:** ТЗ [`plans/tz/2026-06-16-clone-agents-prompt-revision.md`](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md) Раздел 7 (решение владельца). Ветка `devsv`. Схема — [[data-model]] §«PersonaStatus += frozen»; эндпоинты — [[../01_projects/api-layer]] §Clones; карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-16».
+
+Клон роли (`ExecutablePersona.scope='role'`) переосмыслен как **снимок ОДНОГО текущего носителя должности** (без агрегации черт нескольких людей). Прошлый носитель не удаляется и не прячется, а замораживается (`PersonaStatus.frozen`, read-only) и остаётся доступным навсегда; новому носителю — клон следующей версии. Имя — `«Клон <Должность> v<N>»` без ФИО (**И8: НЕ персональные данные**).
+
+**Backend (модуль `clones/` + knowledge-core):**
+- `executable-persona-build.service.ts buildForRole` — строит клон из ЕДИНСТВЕННОГО текущего носителя (убрана агрегация `dedupeTraitsByConcept` по нескольким людям); ВСЕГДА проставляет `roleVersion`/`currentBearerPersonId`/`publicName`/`succeedsPersonaId`; прошлую `active` → `frozen` атомарно ТОЛЬКО вместе с подтверждённой новой `active`; Redis-лок `persona:rebuild:role:<id>` (Б13). Закрывает кластер версионирования Б12/Б16/Б17 по построению.
+- `role-clone-persona-versioning.handler.ts` — новый носитель → делегирует `buildForRole`; роль освободилась → `freeze`; промежуточный `pending_rebuild`-стаб больше НЕ создаётся (Б18 закрыт).
+- `clones.service.ts` — `askRole`/`askRoleV2` принимают `roleVersion` (спросить конкретную active/frozen версию, Р4); новый `askAllFormers` («совет бывших», §7.5); `clone-respond` получает ярлык `publicName` вместо ФИО (Р8), `getCloneHistory` без ФИО (Р7).
+- Контроллер `clones.controller.ts` — `POST /clones/roles/:roleId/ask` += body `roleVersion`; новый `POST /clones/roles/:roleId/ask-all-formers`.
+- Backfill `backend/scripts/backfill-role-clone-single-bearer.ts` (§7.6, в `apply-prod-deploy.ts` STEPS, `phase:'backfill'`) — дедуп active-дублей → frozen, superseded → frozen, пересборка агрегатов single-bearer'ом.
+
+**Frontend:** история роли показывает все версии (active + frozen, ярлык без ФИО) + кнопка «спросить версию»; frozen-бейдж; экран «Совет бывших».
+
+> Замороженные клоны не дообучаются: `runDecay` / `skill-profile-recalibrate` / `executable-persona-build` / нормализатор концептов исключают frozen-персоны (И6).
+
 ---
 
 Подробности базовой γ-1: [[../01_projects/skill-and-clone|01_projects/skill-and-clone.md]].

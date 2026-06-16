@@ -2,7 +2,7 @@
 type: handoff
 status: ready-for-pickup
 date: 2026-05-25
-supersedes: plans/sprints/2026-05-25-handoff-after-wave3-complete.md
+supersedes: plans/archive/2026-05-25-handoff-after-wave3-complete.md
 from: claude-orchestrator (Opus 4.7) — ревизия plans/tz/ vs реальный код 2026-05-24 (8 параллельных агентов на 64 ТЗ)
 to: next-orchestrator
 scope: финальное закрытие всего недоделанного scope Z/Кора, кроме Tracker Mobile native (внешний блокер)

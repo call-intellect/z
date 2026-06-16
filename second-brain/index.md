@@ -51,7 +51,7 @@
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
 - [[01_projects/meeting-report-pipeline]] — раздельные pipeline после встречи: быстрый отчёт пользователю (Б, `meeting-report-fast`) + память компании (A, `block-ingest` → специалисты 3-1…3-9). Подтверждено экспериментом sales-merge: Б в 3.5× быстрее и в 4.6× дешевле
 - [[01_projects/ai-value-director]] — **AI-директор по ценности** (Value Director) — первый агент в будущем AI-совете директоров CEO, работает на методологии из [[06_marketing/client-value-framework]]
-- [[01_projects/roles-and-permissions]] — роли host/guest и их права
+- [[01_projects/rbac-access-control]] — RBAC: роли (owner/admin/manager/coo/super_admin), матрица доступа, видимость встреч
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи
 - [[01_projects/capacity-and-infra]] — мощности, метрики, deployment-правила

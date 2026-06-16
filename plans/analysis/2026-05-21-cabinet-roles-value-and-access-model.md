@@ -167,7 +167,7 @@ related:
 - Поднимает руку.
 - **Не видит** AI-отчёт после встречи (это право только host'а).
 - **Не получает** никаких корпоративных данных, кроме того, что говорится в самой комнате.
-- LiveKit-токен — ограниченного типа, без admin-permissions комнаты. См. [roles-and-permissions.md](../../second-brain/01_projects/roles-and-permissions.md).
+- LiveKit-токен — ограниченного типа, без admin-permissions комнаты. См. [rbac-access-control.md](../../second-brain/01_projects/rbac-access-control.md).
 
 **Польза для гостя:** нет трения — не надо регистрироваться, чтобы попасть на встречу с компанией клиента. Это маркетинговое отличие vs Zoom/Teams (там тоже есть guest access, но в РФ-аналогах часто требуется регистрация).
 

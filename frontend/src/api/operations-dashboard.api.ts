@@ -269,6 +269,31 @@ export interface CheckinDisciplineApi {
   byPerson: CheckinDisciplinePersonApi[];
 }
 
+/**
+ * ТЗ coo-orphan-agents Ф3 — контролёр доведения решений.
+ * Контракт: GET /api/v1/dashboard/operations/decisions/throughput?from=&to=
+ *           GET /api/v1/dashboard/operations/decisions/stalled
+ */
+export interface DecisionThroughputApi {
+  total: number;
+  doneWithOutcomes: number;
+  throughputPercent: number;
+  from: string;
+  to: string;
+}
+
+export interface StalledDecisionApi {
+  id: string;
+  statement: string;
+  decidedAt: string | null;
+  ageDays: number;
+  implementationCheckedAt: string | null;
+}
+
+export interface StalledDecisionsApi {
+  items: StalledDecisionApi[];
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -346,6 +371,24 @@ export const operationsDashboardApi = {
       `/api/v1/dashboard/operations/blockers/chronic${suffix ? `?${suffix}` : ''}`,
     );
   },
+  /**
+   * ТЗ coo-orphan-agents Ф3 — % решений, доведённых до результата (за окно,
+   * дефолт сервера — 90 дней).
+   */
+  getDecisionThroughput: (params?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    const suffix = q.toString();
+    return apiClient.get<DecisionThroughputApi>(
+      `/api/v1/dashboard/operations/decisions/throughput${suffix ? `?${suffix}` : ''}`,
+    );
+  },
+  /** ТЗ coo-orphan-agents Ф3 — решения без движения (stalled). */
+  getStalledDecisions: () =>
+    apiClient.get<StalledDecisionsApi>(
+      '/api/v1/dashboard/operations/decisions/stalled',
+    ),
   /**
    * ТЗ Ф8.7 — `GET /dashboard/operations/checkin-discipline?from=&to=`.
    * Дисциплина чек-инов (ожидаемо/сдано/пропущено, суммарно и по людям).

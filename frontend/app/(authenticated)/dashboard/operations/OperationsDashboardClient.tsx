@@ -44,6 +44,7 @@ import { CauseCategoryMapWidget } from './widgets/CauseCategoryMapWidget';
 import { ChronicBlockersWidget } from './widgets/ChronicBlockersWidget';
 import { MaturityWidget } from './widgets/MaturityWidget';
 import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
+import { DecisionThroughputWidget } from './widgets/DecisionThroughputWidget';
 import { dashboardApi } from '@/api/dashboard.api';
 import { pulsePatternsFromApi } from '@/domain/pulse-patterns';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
@@ -296,6 +297,8 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
+          {/* ТЗ coo-orphan-agents Ф3 — «Доведение решений» (self-fetch). */}
+          <DecisionThroughputWidget />
         </div>
       </AnalyticsSection>
 

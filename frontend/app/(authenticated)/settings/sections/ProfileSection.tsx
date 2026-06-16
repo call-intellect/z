@@ -81,14 +81,14 @@ export function ProfileSection() {
         <CardHeader>
           <CardTitle>Профиль</CardTitle>
           <CardDescription>
-            Имя видно вам и участникам встреч. Email менять нельзя — это ваш
+            Имя видно вам и участникам встреч. Адрес почты менять нельзя — это ваш
             логин.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-md" noValidate>
             <div className="space-y-1.5">
-              <Label htmlFor="profile-email">Email</Label>
+              <Label htmlFor="profile-email">Эл. почта</Label>
               <Input
                 id="profile-email"
                 type="email"

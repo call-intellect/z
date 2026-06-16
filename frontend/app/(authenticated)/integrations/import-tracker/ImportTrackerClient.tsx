@@ -558,7 +558,7 @@ function WizardSteps({ current }: { current: WizardStep }) {
   const labels: Record<WizardStep, string> = {
     upload: '1. Подключение',
     boards: '2. Доски',
-    mapping: '3. Маппинг',
+    mapping: '3. Сопоставление',
     preview: '4. Подтверждение',
   };
   const idx = order.indexOf(current);
@@ -767,7 +767,7 @@ function MappingStep({
       <Card>
         <CardContent className="p-6">
           <h2 className="text-lg font-semibold text-fg-primary">
-            Шаг 3: Маппинг пользователей
+            Шаг 3: Сопоставление пользователей
           </h2>
           <p className="mt-2 text-sm text-fg-secondary">
             В выгрузке нет пользователей с email — этот шаг можно пропустить.
@@ -790,7 +790,7 @@ function MappingStep({
     <Card>
       <CardContent className="p-6">
         <h2 className="text-lg font-semibold text-fg-primary">
-          Шаг 3: Маппинг пользователей
+          Шаг 3: Сопоставление пользователей
         </h2>
         <p className="mt-1 text-sm text-fg-secondary">
           Найдено {emails.length} email-адресов в выгрузке. Для каждого выберите,

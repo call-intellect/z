@@ -146,7 +146,7 @@ export function PersonCardClient({ personId }: { personId: string }) {
                 <dl className="grid grid-cols-[180px_1fr] gap-y-3 text-sm">
                   <dt className="text-fg-tertiary">Имя</dt>
                   <dd className="text-fg-primary">{row.fullName}</dd>
-                  <dt className="text-fg-tertiary">Email</dt>
+                  <dt className="text-fg-tertiary">Эл. почта</dt>
                   <dd className="text-fg-secondary">{row.email ?? '—'}</dd>
                   <dt className="text-fg-tertiary">Должность</dt>
                   <dd className="text-fg-secondary">{row.roleName ?? '—'}</dd>

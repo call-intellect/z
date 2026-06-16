@@ -71,6 +71,19 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🐛 2026-06-16 — QA-багфиксы кабинета (пакет по итогам полного обхода)
+
+> Контракт: ветка `fix/qa-cabinet-bugfix-2026-06-16`, коммиты `e42b4ec3` (фронт), `9fa1ea12` (навигация настроек), `cf20473c` (бэкенд). ТЗ: `plans/tz/2026-06-16-qa-cabinet-bugfix-pack.md`.
+>
+> **Зачем для прода:** устранены видимые пользователю дефекты (сырой Markdown/таблицы в AI-отчётах встреч, биллинг «tier_standard», остатки бренда Z→Кора, англицизмы, склонения числительных, дубли навигации настроек, технический мусор в /actions) + критичный ночной ERROR 42P01 (`idea_blocks`).
+
+- **Backfill (НОВЫЙ, в STEPS):** `docker compose exec backend bun run scripts/backfill-rename-z-sources.ts` — переименование дефолтных `Source` «Встречи Z»→«Встречи», «Трекер Z»→«Трекер» у существующих Org. Идемпотентен (повтор → 0). Зарегистрирован в `apply-prod-deploy.ts` (`phase:'backfill'`, `skipBootstrap:true`) → прогон `--mode update` выполнит автоматически.
+- **Миграций / новых ENV / seed / patch — НЕТ.** Фикс `idea_blocks` — только raw SQL в коде (`domain-expander.cron.ts` → таблица `"IdeaBlock"`, колонка `tags`), схема НЕ менялась.
+- **Docker rebuild backend+frontend ОБЯЗАТЕЛЕН** (код фронта и бэка).
+- **Smoke:** (а) AI-отчёт встречи `/meetings/<id>/result` — Markdown и таблица «Возражения» рендерятся форматированными (не сырой `| col |`); (б) `/settings/billing` — тариф «Стандартный» (не «tier_standard»); (в) прод-логи в 04:00 UTC — нет ERROR `relation "idea_blocks" does not exist`.
+
+---
+
 ### 🧠 2026-06-15 — Помощник = единый мозг каналов: дедуп понимания/синтеза + единый промпт chat-v2 + таблицы (цепочка из 5 ТЗ)
 
 > Контракт: ветка `feature/dialog-chat-assistant-chain`, коммиты `3f63f7c1` (ТЗ#1 dialog-layer), `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B chat-v2), `f49e7212` (ТЗ#3 concierge), `33ae43aa` (ТЗ#4 channels-sync), `4e9f1fec` (ТЗ#5 cabinet) + доп-фиксы `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move). ТЗ: `plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`, `plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`, `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`, `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (синхр. каналов), `plans/tz/2026-06-15-cabinet-assistant-clone-selector.md`, `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `01_projects/api-layer.md`, `01_projects/tracker.md`, `01_projects/frontend-pages.md`. Реестр флагов / крутилок — `docs/operations/feature-flags.md`.

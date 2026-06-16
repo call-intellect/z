@@ -269,6 +269,88 @@ export interface CheckinDisciplineApi {
   byPerson: CheckinDisciplinePersonApi[];
 }
 
+/**
+ * ТЗ coo-orphan-agents Ф3 — контролёр доведения решений.
+ * Контракт: GET /api/v1/dashboard/operations/decisions/throughput?from=&to=
+ *           GET /api/v1/dashboard/operations/decisions/stalled
+ */
+export interface DecisionThroughputApi {
+  total: number;
+  doneWithOutcomes: number;
+  throughputPercent: number;
+  from: string;
+  to: string;
+}
+
+export interface StalledDecisionApi {
+  id: string;
+  statement: string;
+  decidedAt: string | null;
+  ageDays: number;
+  implementationCheckedAt: string | null;
+}
+
+export interface StalledDecisionsApi {
+  items: StalledDecisionApi[];
+}
+
+/**
+ * ТЗ coo-orphan-agents Ф4 — радар клиентов под риском оттока.
+ * Контракт: GET /api/v1/dashboard/operations/customer-risk?level=&limit=
+ */
+export interface CustomerRiskTopBlockApi {
+  blockId: string;
+  signalType: string;
+  excerpt: string;
+}
+
+export interface CustomerRiskSnapshotApi {
+  id: string;
+  customerEntityId: string;
+  customerName: string;
+  dateLocal: string;
+  signalCounts: {
+    churn_risk: number;
+    objection: number;
+    pain: number;
+    feature_request: number;
+  };
+  windowDays: number;
+  riskScore: number;
+  riskLevel: 'critical' | 'warning' | 'ok';
+  scoreDelta: number;
+  signalDelta: number;
+  responsiblePersonId: string | null;
+  responsiblePersonName: string | null;
+  topBlocks: CustomerRiskTopBlockApi[];
+  hint: string;
+  snapshotAt: string;
+}
+
+export interface CustomerRiskListApi {
+  items: CustomerRiskSnapshotApi[];
+  criticalCount: number;
+  warningCount: number;
+}
+
+/**
+ * ТЗ coo-orphan-agents Ф5 — знания под риском (bus-factor × уход носителя).
+ * Контракт: GET /api/v1/dashboard/operations/knowledge-at-risk
+ */
+export interface KnowledgeAtRiskItemApi {
+  categoryName: string;
+  soleExpertPersonId: string | null;
+  soleExpertPersonName: string | null;
+  busFactorLevel: string;
+  personRiskLevel: string | null;
+  combinedSeverity: string;
+  snapshotAt: string;
+}
+
+export interface KnowledgeAtRiskListApi {
+  items: KnowledgeAtRiskItemApi[];
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -346,6 +428,42 @@ export const operationsDashboardApi = {
       `/api/v1/dashboard/operations/blockers/chronic${suffix ? `?${suffix}` : ''}`,
     );
   },
+  /**
+   * ТЗ coo-orphan-agents Ф4 — клиенты под риском оттока (топ по riskScore).
+   * limit ≤ 20 (защита от лавины запросов на drill-down).
+   */
+  getCustomerRisk: (params?: { level?: 'critical' | 'warning' | 'ok'; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.level) q.set('level', params.level);
+    const limit = Math.min(20, params?.limit ?? 20);
+    q.set('limit', String(limit));
+    return apiClient.get<CustomerRiskListApi>(
+      `/api/v1/dashboard/operations/customer-risk?${q.toString()}`,
+    );
+  },
+  /**
+   * ТЗ coo-orphan-agents Ф3 — % решений, доведённых до результата (за окно,
+   * дефолт сервера — 90 дней).
+   */
+  getDecisionThroughput: (params?: { from?: string; to?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.from) q.set('from', params.from);
+    if (params?.to) q.set('to', params.to);
+    const suffix = q.toString();
+    return apiClient.get<DecisionThroughputApi>(
+      `/api/v1/dashboard/operations/decisions/throughput${suffix ? `?${suffix}` : ''}`,
+    );
+  },
+  /** ТЗ coo-orphan-agents Ф3 — решения без движения (stalled). */
+  getStalledDecisions: () =>
+    apiClient.get<StalledDecisionsApi>(
+      '/api/v1/dashboard/operations/decisions/stalled',
+    ),
+  /** ТЗ coo-orphan-agents Ф5 — знания под риском (critical→warning→ok). */
+  getKnowledgeAtRisk: () =>
+    apiClient.get<KnowledgeAtRiskListApi>(
+      '/api/v1/dashboard/operations/knowledge-at-risk',
+    ),
   /**
    * ТЗ Ф8.7 — `GET /dashboard/operations/checkin-discipline?from=&to=`.
    * Дисциплина чек-инов (ожидаемо/сдано/пропущено, суммарно и по людям).

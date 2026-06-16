@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Bell,
   Building2,
+  Compass,
   Download,
   Palette,
   Plug,
@@ -30,6 +31,7 @@ const ITEMS: Item[] = [
   { href: '/settings', label: 'Профиль', icon: User, matchExact: true },
   { href: '/settings', tab: 'security', label: 'Безопасность', icon: ShieldCheck },
   { href: '/settings', tab: 'appearance', label: 'Внешний вид', icon: Palette },
+  { href: '/settings', tab: 'tours', label: 'Знакомство', icon: Compass },
   { href: '/settings/organization', label: 'Организация', icon: Building2 },
   { href: '/settings/tags', label: 'Теги', icon: Tag },
   { href: '/settings/integrations', label: 'Интеграции', icon: Plug },

@@ -52,6 +52,35 @@ export class HangingDecisionsService {
     });
   }
 
+  /**
+   * ТЗ coo-orphan-agents Ф2 — список висящих решений с их авторами
+   * (`decidedByPersonIds`) для per-dept атрибуции в `TeamHealthService`.
+   * ОДНА выборка за tenant; раскладку по отделам делает вызывающий in-memory
+   * (запрет N+1). Критерий «висящего» — тот же, что в `count`.
+   */
+  async listHangingWithAuthors(args: {
+    tenantId: string;
+    minAgeDays?: number;
+    minRaisedCount?: number;
+    now?: Date;
+  }): Promise<Array<{ id: string; decidedByPersonIds: string[] }>> {
+    const minAgeDays = args.minAgeDays ?? 7;
+    const minRaisedCount = args.minRaisedCount ?? 2;
+    const now = args.now ?? new Date();
+    const ageThreshold = new Date(
+      now.getTime() - minAgeDays * 24 * 60 * 60 * 1000,
+    );
+    return this.prisma.decision.findMany({
+      where: {
+        tenantId: args.tenantId,
+        status: { in: [...HANGING_STATUSES] },
+        createdAt: { lte: ageThreshold },
+        raisedCount: { gte: minRaisedCount },
+      },
+      select: { id: true, decidedByPersonIds: true },
+    });
+  }
+
   /** Public для тестов — можно подменить `now`. */
   async compute(args: {
     tenantId: string;

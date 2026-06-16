@@ -83,6 +83,7 @@ import { InviteDialog } from '@/ui/shared/InviteDialog';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
 
 import { fmtDurationCompact } from '@/ui/components/meeting-result-v2/format-utils';
+import { MeetingSummaryRender } from '@/ui/components/meeting-result-v2/MeetingSummaryRender';
 
 const STATUS_LABEL: Partial<Record<MeetingStatus, string>> = {
   scheduled: 'Запланирована',
@@ -1159,9 +1160,7 @@ function MeetingDetailPane({ meetingId }: { meetingId: string }) {
                 <section>
                   <SectionHeader icon={<Sparkles size={14} />} title="Краткое содержание" />
                   <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
-                    <p className="m-0 text-sm leading-relaxed text-fg-primary">
-                      {summary}
-                    </p>
+                    <MeetingSummaryRender markdown={summary} />
                   </div>
                 </section>
               ) : (

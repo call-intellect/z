@@ -10,7 +10,7 @@
  *   POST   /api/v1/chat-v2/conversations/:id/archive
  */
 
-import { apiClient } from './api-client';
+import { apiClient, getApiClientOrgId } from './api-client';
 
 export type ChatV2ScopeApi =
   | 'org'
@@ -131,12 +131,14 @@ export async function* streamChatV2Message(
 ): AsyncGenerator<ChatV2StreamEvent, void, unknown> {
   const baseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+  const orgId = getApiClientOrgId();
   const res = await fetch(`${baseUrl}/api/v1/chat-v2/messages/stream`, {
     method: 'POST',
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
+      ...(orgId ? { 'X-Org-Id': orgId } : {}),
     },
     body: JSON.stringify(body),
     ...(signal ? { signal } : {}),

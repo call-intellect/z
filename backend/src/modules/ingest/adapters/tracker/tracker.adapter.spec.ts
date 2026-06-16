@@ -35,7 +35,7 @@ describe('TrackerAdapter', () => {
     id: 'src_tracker_1',
     tenantId: 'org_1',
     type: 'tracker_event',
-    name: 'Трекер Z',
+    name: 'Трекер',
     dataClass: 'internal',
     isActive: true,
     description: null,
@@ -218,7 +218,7 @@ describe('TrackerAdapter', () => {
       data: expect.objectContaining({
         tenantId: 'org_1',
         type: 'tracker_event',
-        name: 'Трекер Z',
+        name: 'Трекер',
         dataClass: 'internal',
         isActive: true,
       }),

@@ -105,7 +105,7 @@ export function ExportsClient() {
       <header className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">Экспорты</h1>
         <p className="text-sm text-fg-secondary">
-          Готовые файлы из встреч и bulk-операций.
+          Готовые файлы из встреч и массовых операций.
         </p>
       </header>
 

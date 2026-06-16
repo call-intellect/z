@@ -43,6 +43,10 @@ export function setApiClientOrgId(orgId: string | null): void {
   defaultOrgId = orgId;
 }
 
+export function getApiClientOrgId(): string | null {
+  return defaultOrgId;
+}
+
 function emitAuthExpired(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));

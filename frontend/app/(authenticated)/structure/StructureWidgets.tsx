@@ -24,6 +24,7 @@
  */
 
 import { HeartPulse, Layers, Users } from 'lucide-react';
+import { Fragment, useState } from 'react';
 import useSWR from 'swr';
 
 import { dashboardApi } from '@/api/dashboard.api';
@@ -68,6 +69,27 @@ const TONE_CHIP: Record<HealthToneDomain, { c: string; bg: string }> = {
   warning: { c: CHART.amber, bg: 'oklch(0.84 0.16 80 / 0.14)' },
   danger: { c: CHART.red, bg: 'oklch(0.66 0.22 25 / 0.16)' },
   neutral: { c: CHART.dim, bg: 'var(--surface-inset)' },
+};
+
+/* Факторы вовлечённости (ТЗ coo-orphan Ф6) — ежедневный LLM-расчёт. */
+const FACTOR_ORDER = [
+  'manager_support', 'workload_fairness', 'communication', 'time_pressure', 'role_clarity',
+] as const;
+const FACTOR_LABEL: Record<(typeof FACTOR_ORDER)[number], string> = {
+  manager_support: 'Поддержка руководителя',
+  workload_fairness: 'Справедливость нагрузки',
+  communication: 'Открытость общения',
+  time_pressure: 'Давление сроков',
+  role_clarity: 'Ясность ролей',
+};
+const FACTOR_LEVEL_LABEL: Record<'low' | 'medium' | 'high', string> = {
+  low: 'низко', medium: 'средне', high: 'высоко',
+};
+// low→danger, medium→warning, high→success (ТЗ). Реюзаем TONE_CHIP по тону.
+const FACTOR_TONE: Record<'low' | 'medium' | 'high', { c: string; bg: string }> = {
+  low: TONE_CHIP.danger,
+  medium: TONE_CHIP.warning,
+  high: TONE_CHIP.success,
 };
 
 /* ── Корневой блок ─────────────────────────────────────────────────────── */
@@ -154,6 +176,8 @@ function TeamHealthWidget({ orgId }: { orgId: string }) {
 }
 
 function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   return (
     <div className="mt-4 overflow-x-auto">
       <table className="w-full min-w-[560px] text-sm">
@@ -170,34 +194,85 @@ function TeamHealthTable({ rows }: { rows: TeamHealthRowDomain[] }) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.departmentId} className="border-b border-border-subtle/50">
-              <td className="py-2.5 pr-3">
-                <div className="font-medium" style={{ color: CHART.text }}>
-                  {row.departmentName}
-                </div>
-                <div className="text-[11px]" style={{ color: CHART.faint }}>
-                  {row.size} чел.
-                </div>
-              </td>
-              <td className="py-2.5 pr-3 text-center">
-                <HealthChip
-                  tone={row.sentiment.tone}
-                  label={formatSigned(row.sentiment.value)}
-                />
-              </td>
-              <td className="py-2.5 pr-3 text-center">
-                <HealthChip
-                  tone={row.promises.tone}
-                  label={`${row.promises.value}%`}
-                />
-              </td>
-              <td className="py-2.5 text-center">
-                <HealthChip
-                  tone={row.conflicts.tone}
-                  label={String(row.conflicts.value)}
-                />
-              </td>
-            </tr>
+            <Fragment key={row.departmentId}>
+              <tr className="border-b border-border-subtle/50">
+                <td className="py-2.5 pr-3">
+                  <div className="font-medium" style={{ color: CHART.text }}>
+                    {row.departmentName}
+                  </div>
+                  <div className="text-[11px]" style={{ color: CHART.faint }}>
+                    {row.size} чел.
+                  </div>
+                  {row.healthSummary ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedId((id) =>
+                          id === row.departmentId ? null : row.departmentId,
+                        )
+                      }
+                      className="mt-0.5 text-[11px] hover:underline"
+                      style={{ color: CHART.cyan }}
+                    >
+                      {expandedId === row.departmentId ? 'Скрыть' : 'Почему такая оценка'}
+                    </button>
+                  ) : (
+                    <div className="mt-0.5 text-[11px]" style={{ color: CHART.faint }}>
+                      оценка ещё не посчитана
+                    </div>
+                  )}
+                </td>
+                <td className="py-2.5 pr-3 text-center">
+                  <HealthChip
+                    tone={row.sentiment.tone}
+                    label={formatSigned(row.sentiment.value)}
+                  />
+                </td>
+                <td className="py-2.5 pr-3 text-center">
+                  <HealthChip
+                    tone={row.promises.tone}
+                    label={`${row.promises.value}%`}
+                  />
+                </td>
+                <td className="py-2.5 text-center">
+                  <HealthChip
+                    tone={row.conflicts.tone}
+                    label={String(row.conflicts.value)}
+                  />
+                </td>
+              </tr>
+              {expandedId === row.departmentId && row.healthSummary ? (
+                <tr key={`${row.departmentId}-factors`}>
+                  <td colSpan={4} className="pb-3">
+                    <div className="rounded-xl p-3" style={{ background: 'var(--surface-inset)' }}>
+                      <div className="flex flex-wrap gap-2">
+                        {FACTOR_ORDER.map((k) => (
+                          <span
+                            key={k}
+                            className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                            style={{
+                              color: FACTOR_TONE[row.healthSummary!.factors[k]].c,
+                              background: FACTOR_TONE[row.healthSummary!.factors[k]].bg,
+                            }}
+                          >
+                            {FACTOR_LABEL[k]}: {FACTOR_LEVEL_LABEL[row.healthSummary!.factors[k]]}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-xs" style={{ color: CHART.dim }}>
+                        {row.healthSummary.summary}
+                      </p>
+                      {row.healthSummary.generatedAt ? (
+                        <p className="mt-1 text-[11px]" style={{ color: CHART.faint }}>
+                          оценка от{' '}
+                          {new Date(row.healthSummary.generatedAt).toLocaleDateString('ru-RU')}
+                        </p>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           ))}
         </tbody>
       </table>

@@ -11,6 +11,7 @@
 export interface KnowledgeAtRiskItemDto {
   categoryName: string;
   soleExpertPersonId: string | null;
+  soleExpertPersonName: string | null;
   busFactorLevel: string;
   personRiskLevel: string | null;
   combinedSeverity: string;

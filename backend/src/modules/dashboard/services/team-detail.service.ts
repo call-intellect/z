@@ -17,7 +17,7 @@ import { CommitmentReliabilityService } from './commitment-reliability.service';
  *   - шапка отдела (имя, миссия, руководитель, размер),
  *   - состав с per-person sentiment-чипом (последний за 30 дней),
  *   - агрегатные health-метрики (sentiment 7d + trend, commitment reliability),
- *   - цели команды (см. оговорку ниже),
+ *   - цели команды (по Goal.ownerPersonId),
  *   - топ-темы команды (через IdeaBlockEntity → Entity{type=person} → Person).
  *
  * Принципы:
@@ -27,11 +27,10 @@ import { CommitmentReliabilityService } from './commitment-reliability.service';
  *   - Кэш Redis TTL 5 минут (`team_detail:<tenantId>:<departmentId>`).
  *     На ошибки Redis не падаем.
  *
- * v1-ограничения (см. ТЗ Wave 2 §2.5):
- *   - Goal в схеме связан с `createdBy: User`, а не с `ownerPersonId`.
- *     Поле «цели команды» в v1 возвращаем пустым массивом с TODO —
- *     до Wave 6.5 Promise Network, где цели будут связываться с Person
- *     явно. В UI секция показывается как пустое состояние.
+ * Заметки:
+ *   - Цели команды: связь `Goal.ownerPersonId → Person` (ТЗ coo-orphan-agents
+ *     Ф2). Берём активные не-архивные цели ответственных из отдела; иначе
+ *     секция показывается пустым состоянием.
  *   - «Конфликты внутри команды» и «Активность» опущены (v1 §2.5).
  */
 export interface TeamDetailMemberDto {
@@ -233,13 +232,34 @@ export class TeamDetailService {
       scopeId: args.departmentId,
     });
 
-    // Цели команды.
-    // TODO Wave 6.5 (Promise Network): в схеме Goal owner — это createdBy:User,
-    // а не Person; явной связи «Goal → Person из отдела» сейчас нет. Чтобы не
-    // выдавать заведомо неверные данные (по User.id невозможно надёжно
-    // выйти на Person.primaryDepartmentId), в v1 возвращаем пустой массив.
-    // UI рендерит секцию как «пока пусто, привяжем в Wave 6.5».
-    const goalsDto: TeamDetailGoalDto[] = [];
+    // Цели команды (ТЗ coo-orphan-agents Ф2). TODO Wave 6.5 закрыт: связь
+    // `Goal.ownerPersonId → Person` ЕСТЬ в схеме. Берём активные (promotionState
+    // 'active'), не-архивные цели, чей ответственный — из этого отдела.
+    const goalRows =
+      personIds.length === 0
+        ? []
+        : await this.prisma.goal.findMany({
+            where: {
+              tenantId: args.tenantId,
+              ownerPersonId: { in: personIds },
+              promotionState: 'active',
+              archivedAt: null,
+            },
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              ownerPersonId: true,
+              ownerPerson: { select: { name: true } },
+            },
+          });
+    const goalsDto: TeamDetailGoalDto[] = goalRows.map((g) => ({
+      goalId: g.id,
+      name: g.name,
+      status: g.status,
+      ownerPersonId: g.ownerPersonId,
+      ownerPersonName: g.ownerPerson?.name ?? null,
+    }));
 
     // Top темы команды: через IdeaBlockEntity → Entity{type=person} →
     // Entity.id ∈ entityIds. Берём блоки за 30 дней, агрегируем по их темам.

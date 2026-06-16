@@ -109,6 +109,16 @@ interface CardProps {
   onOpen: (action: PendingAction) => void;
 }
 
+/** Возвращает true, если context содержит сырые технические строки (идентификаторы, внутренние метки). */
+function isTechnicalContext(ctx: string): boolean {
+  if (ctx.includes('CompanyProfile')) return true;
+  if (ctx.includes('(Document)')) return true;
+  if (ctx.includes('без Mission')) return true;
+  // CUID-подобная строка в кавычках-ёлочках, длиной ≥20 символов
+  if (/«[a-z0-9]{20,}»/.test(ctx)) return true;
+  return false;
+}
+
 /** Группа «Вопросы Коры» (probe) — ответ своими словами (textarea, без кнопок выбора). */
 function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
   const d = action.detail?.kind === 'probe' ? action.detail : undefined;
@@ -136,7 +146,7 @@ function ProbeCard({ action, onConfirm, onSnooze }: CardProps) {
         {question}
       </CardTitle>
 
-      {d?.context && (
+      {d?.context && !isTechnicalContext(d.context) && (
         <p className="text-sm leading-relaxed text-fg-secondary">{d.context}</p>
       )}
 

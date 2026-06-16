@@ -351,6 +351,25 @@ export interface KnowledgeAtRiskListApi {
   items: KnowledgeAtRiskItemApi[];
 }
 
+/**
+ * ТЗ coo-orphan-agents Ф7 — перегруз ответственностью (сеть обещаний).
+ * Контракт: GET /api/v1/dashboard/operations/promise-network
+ */
+export interface PromiseNetworkNodeApi {
+  personId: string;
+  name: string;
+  inDegree: number;
+  outDegree: number;
+  balance: number;
+}
+
+export interface PromiseNetworkApi {
+  hasData: boolean;
+  snapshotAt: string | null;
+  totalCommitments: number;
+  accumulators: PromiseNetworkNodeApi[];
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -463,6 +482,11 @@ export const operationsDashboardApi = {
   getKnowledgeAtRisk: () =>
     apiClient.get<KnowledgeAtRiskListApi>(
       '/api/v1/dashboard/operations/knowledge-at-risk',
+    ),
+  /** ТЗ coo-orphan-agents Ф7 — перегруз ответственностью (accumulators). */
+  getPromiseNetwork: () =>
+    apiClient.get<PromiseNetworkApi>(
+      '/api/v1/dashboard/operations/promise-network',
     ),
   /**
    * ТЗ Ф8.7 — `GET /dashboard/operations/checkin-discipline?from=&to=`.

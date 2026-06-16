@@ -47,6 +47,7 @@ import { TeamCapacityWidget } from './widgets/TeamCapacityWidget';
 import { DecisionThroughputWidget } from './widgets/DecisionThroughputWidget';
 import { CustomerRiskRadarWidget } from './widgets/CustomerRiskRadarWidget';
 import { KnowledgeAtRiskWidget } from './widgets/KnowledgeAtRiskWidget';
+import { PromiseOverloadWidget } from './widgets/PromiseOverloadWidget';
 import { dashboardApi } from '@/api/dashboard.api';
 import { pulsePatternsFromApi } from '@/domain/pulse-patterns';
 import { BusFactorWidget } from '@/ui/components/dashboard/BusFactorWidget';
@@ -324,6 +325,14 @@ export function OperationsDashboardClient({
             loading={pulseLoading}
             error={pulseError}
           />
+        </div>
+      </AnalyticsSection>
+
+      {/* СЕКЦИЯ: Загрузка и распределение — ТЗ coo-orphan-agents Ф7 «Перегруз
+          ответственностью» (кто держит слишком много обещаний на себе). */}
+      <AnalyticsSection title="Загрузка и распределение" tone={CHART.violet}>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <PromiseOverloadWidget />
         </div>
       </AnalyticsSection>
 

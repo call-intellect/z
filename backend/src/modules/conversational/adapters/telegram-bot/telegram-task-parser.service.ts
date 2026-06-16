@@ -8,13 +8,14 @@ import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
+import { LlmRouterService } from '../../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
   withNotATaskDiscriminator,
   wrapUserData,
 } from '../../../ai/services/prompts/common';
-import { LlmRouterService } from '../../../ai/services/llm-router.service';
 import { computeExpiresAt } from '../../../pending-actions/expires-at.util';
+import { shouldMaterializeTask } from '../../../tracker/services/task-quality-gate.util';
 
 /** Code-fallback TTL (дни) intake, когда TypedConfigService недоступен (@Optional). */
 const INTAKE_TTL_DAYS_FALLBACK = 30;
@@ -446,6 +447,31 @@ export class TelegramTaskParserService {
     const suggestedDueDate = parseIsoDate(parsed.suggestedDueDate);
     const confidence = clampConfidence(parsed.confidence ?? 0);
 
+    // Ф0 (ТЗ 2026-06-16) — детерминированный гейт качества ПЕРЕД созданием
+    // задачи из AI-источника (Telegram): не материализуем «мусор» (вопрос /
+    // намерение без ответственного и срока). Чистые правила, без LLM. При
+    // сомнении — не создаём IntakeIssue (поток бота не падает).
+    const gate = shouldMaterializeTask({
+      title: parsed.title,
+      ownerUserId: suggestedAssigneeId,
+      ownerHint: parsed.suggestedAssigneeHint,
+      dueDate: suggestedDueDate,
+      source,
+    });
+    if (!gate.ok) {
+      this.logger.log(
+        { tenantId, source, reason: gate.reason, title: parsed.title },
+        'telegram-task-parser: гейт качества не пропустил задачу',
+      );
+      return {
+        intakeIssueId: null,
+        autoTriageEnqueued: false,
+        confidence,
+        suggested: null,
+        reason: 'quality_gate_rejected',
+      };
+    }
+
     let intakeIssueId: string | null;
     try {
       const created = await this.prisma.intakeIssue.create({
@@ -866,7 +892,8 @@ export interface TelegramTaskParseResult {
     | 'ok'
     | 'empty_text'
     | 'llm_failed'
-    | 'intake_create_failed';
+    | 'intake_create_failed'
+    | 'quality_gate_rejected';
 }
 
 export type TelegramReplyClassification =

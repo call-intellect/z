@@ -28,6 +28,7 @@ import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
+import { shouldMaterializeTask } from './task-quality-gate.util';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -327,6 +328,37 @@ export class IntakeService {
         'intake from next-step: дубль — возвращаем существующий',
       );
       return this.toResponse(existing);
+    }
+
+    // Ф0 (ТЗ 2026-06-16) — детерминированный гейт качества ПЕРЕД созданием
+    // задачи из AI-источника (следующий шаг отчёта встречи). Не материализуем
+    // «мусор» (вопрос/намерение без ответственного и срока). Чистые правила,
+    // без LLM. Прямые доверенные пути (email/in_app/self-task) сюда не заходят —
+    // они идут через generic `create()` с источником-человеком (§6 boundary).
+    // [ASSUMPTION: next-step отчёта — доверенный источник (report-агент уже
+    // отфильтровал болтовню), поэтому применяем только форм-гейт (отсеять
+    // вопрос/намерение), не требуя owner/срок — потому что эти поля на пути
+    // next-step не извлекаются вовсе, а строгое требование зарубило бы всю фичу]
+    const gate = shouldMaterializeTask({
+      title: text,
+      ownerUserId: null,
+      ownerHint: null,
+      dueDate: null,
+      source: 'meeting_next_step',
+    });
+    if (!gate.ok) {
+      this.logger.log(
+        { meetingId, reason: gate.reason },
+        'intake from next-step: гейт качества не пропустил задачу',
+      );
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_quality_gate_rejected',
+          message:
+            'Текст не похож на задачу с ответственным или сроком — не создаём карточку',
+        },
+      });
     }
 
     // A10 — провенанс: явный список от FE имеет приоритет, иначе резолвим по

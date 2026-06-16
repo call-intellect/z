@@ -516,6 +516,20 @@ describe('IntakeService.createFromMeetingNextStep', () => {
     expect(create).not.toHaveBeenCalled();
     expect(res.id).toBe('dup-1');
   });
+
+  // Ф0 (ТЗ 2026-06-16) — гейт качества: текст-вопрос НЕ материализуется в
+  // задачу (BadRequestException, create НЕ вызван).
+  it('гейт качества: текст-вопрос → BadRequestException, create НЕ вызван', async () => {
+    const { svc, create } = build({ meetingFound: true });
+    await expect(
+      svc.createFromMeetingNextStep({
+        meetingId: 'm-1',
+        text: 'Как нам ускорить релиз?',
+        tenantId: TENANT,
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 /**

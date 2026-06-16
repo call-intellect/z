@@ -49,7 +49,7 @@ export class GepaOptimizeCron {
       this.logger.debug('gepa-optimize cron: disabled (PROMPT_EVOLUTION_ENABLED=false)');
       return;
     }
-    this.logger.log('gepa-optimize cron: START');
+    this.logger.debug('gepa-optimize cron: START');
 
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     type Row = { tenantId: string; promptKey: string; cnt: bigint };
@@ -68,11 +68,11 @@ export class GepaOptimizeCron {
       this.logger.warn(
         `gepa-optimize: query failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      this.logger.log('gepa-optimize cron: DONE (errors)');
+      this.logger.debug('gepa-optimize cron: DONE (errors)');
       return;
     }
 
-    this.logger.log(
+    this.logger.debug(
       `gepa-optimize: ${rows.length} (tenant, promptKey) пар c ≥${this.minFeedbackPerWeek} feedback'ов`,
     );
 
@@ -91,7 +91,7 @@ export class GepaOptimizeCron {
       );
     });
 
-    this.logger.log('gepa-optimize cron: DONE');
+    this.logger.debug('gepa-optimize cron: DONE');
   }
 
   /**
@@ -127,7 +127,7 @@ export class GepaOptimizeCron {
       });
       const allDisabled = routes.length > 0 && routes.every((r) => !r.evolutionEnabled);
       if (allDisabled) {
-        this.logger.log(
+        this.logger.debug(
           `gepa-optimize: promptKey=${promptKey} tenant=${tenantId} — evolutionEnabled=false на всех routes, skip`,
         );
         return;
@@ -164,7 +164,7 @@ export class GepaOptimizeCron {
       });
 
       if (candidates.length === 0) {
-        this.logger.log(
+        this.logger.debug(
           `gepa-optimize: promptKey=${promptKey} tenant=${tenantId} → 0 candidates`,
         );
         return;
@@ -190,7 +190,7 @@ export class GepaOptimizeCron {
           );
         }
       }
-      this.logger.log(
+      this.logger.debug(
         `gepa-optimize: promptKey=${promptKey} tenant=${tenantId} → ${candidates.length} candidates saved`,
       );
     } finally {

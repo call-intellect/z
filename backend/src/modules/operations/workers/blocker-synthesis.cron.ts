@@ -47,7 +47,7 @@ export class BlockerSynthesisCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'blocker-synthesis.cron: проход завершён');
+      this.logger.debug(stats, 'blocker-synthesis.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

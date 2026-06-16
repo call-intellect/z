@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { AdminSettingsService } from '../admin/settings/admin-settings.service';
 import type { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
+import type { PersonsService } from '../persons/services/persons.service';
 
 import type { ChatboxApiClient } from './chatbox-api.client';
 import type { ChatboxIntegrationService } from './chatbox-integration.service';
 import type { ChatboxSessionService } from './chatbox-session.service';
 import { ChatboxSyncService } from './chatbox-sync.service';
+import type { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
 /**
  * Unit-тесты ChatboxSyncService с замоканными client / prisma / integration /
@@ -45,12 +47,18 @@ describe('ChatboxSyncService', () => {
       update: ReturnType<typeof vi.fn>;
     };
     chatboxChannel: { findMany: ReturnType<typeof vi.fn> };
-    person: { findMany: ReturnType<typeof vi.fn> };
+    person: {
+      findMany: ReturnType<typeof vi.fn>;
+      findFirst: ReturnType<typeof vi.fn>;
+    };
+    membership: { findFirst: ReturnType<typeof vi.fn> };
   };
   let integrationMock: { getConfigForSync: ReturnType<typeof vi.fn> };
   let sessionMock: { rebuildSessions: ReturnType<typeof vi.fn> };
   let adminMock: { get: ReturnType<typeof vi.fn> };
   let entityResolutionMock: { resolvePersonByHint: ReturnType<typeof vi.fn> };
+  let personsMock: { create: ReturnType<typeof vi.fn> };
+  let analyzeQueueMock: { enqueue: ReturnType<typeof vi.fn> };
   let service: ChatboxSyncService;
 
   beforeEach(() => {
@@ -79,7 +87,13 @@ describe('ChatboxSyncService', () => {
         update: vi.fn().mockResolvedValue({ id: 'cc1' }),
       },
       chatboxChannel: { findMany: vi.fn().mockResolvedValue([]) },
-      person: { findMany: vi.fn().mockResolvedValue([]) },
+      person: {
+        findMany: vi.fn().mockResolvedValue([]),
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
+      // owner=null → autoCreate*Unlinked делает ранний no-op (изолирует
+      // тесты автосвязки от ветки авто-создания Person).
+      membership: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     integrationMock = {
       getConfigForSync: vi.fn().mockResolvedValue(CFG),
@@ -88,6 +102,8 @@ describe('ChatboxSyncService', () => {
     // По умолчанию: chatbox.enabled=true, chatbox.match.name_fuzzy_enabled=true.
     adminMock = { get: vi.fn().mockResolvedValue(true) };
     entityResolutionMock = { resolvePersonByHint: vi.fn().mockResolvedValue(null) };
+    personsMock = { create: vi.fn().mockResolvedValue({ id: 'p1' }) };
+    analyzeQueueMock = { enqueue: vi.fn().mockResolvedValue({ jobId: 'j1' }) };
 
     service = new ChatboxSyncService(
       prismaMock as unknown as PrismaService,
@@ -96,6 +112,8 @@ describe('ChatboxSyncService', () => {
       sessionMock as unknown as ChatboxSessionService,
       adminMock as unknown as AdminSettingsService,
       entityResolutionMock as unknown as EntityResolutionService,
+      personsMock as unknown as PersonsService,
+      analyzeQueueMock as unknown as ChatboxAnalyzeQueueService,
     );
   });
 

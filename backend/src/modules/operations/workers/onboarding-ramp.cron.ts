@@ -52,7 +52,7 @@ export class OnboardingRampCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'onboarding-ramp.cron: проход завершён');
+      this.logger.debug(stats, 'onboarding-ramp.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

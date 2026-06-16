@@ -33,7 +33,7 @@ export class SupportCuratorCron {
       }
       const result = await this.curator.runOnce(new Date());
       if (!result.skipped) {
-        this.logger.log(
+        this.logger.debug(
           { proposed: result.proposed, applied: result.applied },
           'support-curator.cron: ночной прогон контура завершён',
         );

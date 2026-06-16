@@ -60,6 +60,6 @@ export class NotifyWorker implements OnModuleInit, OnModuleDestroy {
         payload: {} as Prisma.InputJsonValue,
       },
     });
-    this.logger.log({ meetingId }, 'notify: записан MeetingEvent ai_notified');
+    this.logger.debug({ meetingId }, 'notify: записан MeetingEvent ai_notified');
   }
 }

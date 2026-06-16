@@ -7,9 +7,9 @@ export const metadata: Metadata = {
 
 /**
  * Старый путь `/integrations` сохраняется для совместимости с закладками
- * пользователей и старыми ссылками в письмах. Перенаправляем на новый
- * подраздел в настройках, где живёт реальный UI destinations.
+ * пользователей и старыми ссылками в письмах. Перенаправляем на раздел
+ * «Доставка» (`/delivery`), где живёт реальный UI destinations.
  */
 export default function IntegrationsRedirect() {
-  redirect('/settings/integrations');
+  redirect('/delivery');
 }

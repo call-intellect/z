@@ -120,7 +120,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
 
     // Идемпотентность: turns уже склеены — сразу к analyze.
     if (meeting.transcript.turns !== null) {
-      this.logger.log({ meetingId }, 'merge: turns уже в БД — analyze');
+      this.logger.debug({ meetingId }, 'merge: turns уже в БД — analyze');
       // Бэкафилл merged.json для встреч, смерженных до появления S3-зеркала:
       // без `mergedS3Url` behavior-metrics/quality-score/custom-report
       // пропускаются («нет merged.json»).
@@ -265,7 +265,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         totalWords,
@@ -293,7 +293,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
       where: { meetingId },
       data: { mergedS3Url: mergedKey },
     });
-    this.logger.log({ meetingId, mergedKey }, 'merge: merged.json зеркалирован в S3 (backfill)');
+    this.logger.debug({ meetingId, mergedKey }, 'merge: merged.json зеркалирован в S3 (backfill)');
   }
 
   /**
@@ -316,7 +316,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
    */
   private async maybeEnqueueMeetingReportFast(meetingId: string): Promise<void> {
     if (!this.cfg.knowledgeCore.meetingReportFastEnabled) {
-      this.logger.log(
+      this.logger.debug(
         { meetingId },
         'merge: MEETING_REPORT_FAST_ENABLED=false — producer meeting-report-fast пропущен',
       );
@@ -333,7 +333,7 @@ export class MergeWorker implements OnModuleInit, OnModuleDestroy {
     }
     try {
       await this.coreQueue.enqueueMeetingReportFast(meetingId);
-      this.logger.log(
+      this.logger.debug(
         { meetingId },
         'merge: meeting-report-fast — job поставлен в core.meeting-report-fast',
       );

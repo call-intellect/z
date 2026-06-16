@@ -41,7 +41,7 @@ export class EntityResolverCronService {
     try {
       const enqueued = await this.scanAndEnqueue();
       if (enqueued > 0) {
-        this.logger.log(
+        this.logger.debug(
           { enqueued },
           'entity-resolver-cron: enqueue завершён',
         );

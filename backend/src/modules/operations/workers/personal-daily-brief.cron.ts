@@ -63,7 +63,7 @@ export class PersonalDailyBriefCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'personal-daily-brief.cron: проход завершён');
+      this.logger.debug(stats, 'personal-daily-brief.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

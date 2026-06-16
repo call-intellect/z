@@ -45,7 +45,7 @@ export class OrgKnowledgeIndexBuilderCron {
         );
       }
     }
-    this.logger.log(
+    this.logger.debug(
       `org-knowledge-index-builder: total=${orgs.length} ok=${ok} failed=${failed} duration_ms=${Date.now() - start}`,
     );
   }

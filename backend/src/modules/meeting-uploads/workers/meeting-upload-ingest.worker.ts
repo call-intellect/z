@@ -99,7 +99,7 @@ export class MeetingUploadIngestWorker implements OnModuleInit, OnModuleDestroy 
         concurrency: 1,
       },
     );
-    this.logger.log(
+    this.logger.debug(
       `MeetingUploadIngestWorker запущен (${MEETING_UPLOAD_QUEUE_NAMES.UPLOAD_INGEST})`,
     );
   }
@@ -206,7 +206,7 @@ export class MeetingUploadIngestWorker implements OnModuleInit, OnModuleDestroy 
       // 5. Дальше — диаризованный transcribe (Ф3).
       await this.queue.enqueueUploadTranscribe(meetingId);
 
-      this.logger.log(
+      this.logger.debug(
         { meetingId, nativeVideo: probe.nativeMp4 },
         'upload-ingest: медиа готово, transcribe поставлен',
       );

@@ -53,7 +53,7 @@ export class OperationsWeeklyDigestCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(
+      this.logger.debug(
         stats,
         'operations-weekly-digest.cron: проход завершён',
       );

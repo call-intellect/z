@@ -31,7 +31,7 @@ export class GoalKrProgressCron {
   async runForAllOrgs(): Promise<void> {
     try {
       const summary = await this.svc.runForAllOrgs();
-      this.logger.log(summary, 'goal-kr-progress.cron: проход завершён');
+      this.logger.debug(summary, 'goal-kr-progress.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

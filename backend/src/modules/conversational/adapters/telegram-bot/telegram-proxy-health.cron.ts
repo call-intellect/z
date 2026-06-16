@@ -52,13 +52,13 @@ export class TelegramProxyHealthCron implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     const interval = this.cfg.telegramProxy.healthIntervalSec;
     if (!this.cfg.telegramProxy.enabled) {
-      this.logger.log(
+      this.logger.debug(
         'TelegramProxyHealthCron: TELEGRAM_PROXY_ENABLED=false → cron не стартует',
       );
       return;
     }
     if (interval <= 0) {
-      this.logger.log(
+      this.logger.debug(
         'TelegramProxyHealthCron: TELEGRAM_PROXY_HEALTH_INTERVAL_SEC=0 → cron отключён (только для тестов)',
       );
       return;
@@ -77,7 +77,7 @@ export class TelegramProxyHealthCron implements OnModuleInit {
     try {
       this.scheduler.addCronJob(TelegramProxyHealthCron.JOB_NAME, job as never);
       job.start();
-      this.logger.log(
+      this.logger.debug(
         `TelegramProxyHealthCron: стартован с интервалом ${interval}s ("${cronExp}")`,
       );
     } catch (err) {

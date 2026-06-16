@@ -50,7 +50,7 @@ export class CommitmentFollowupCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'commitment-followup.cron: проход завершён');
+      this.logger.debug(stats, 'commitment-followup.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

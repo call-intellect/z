@@ -27,7 +27,7 @@ export class ConciergeQuotaResetCron {
   async resetDaily(): Promise<void> {
     try {
       const result = await this.quota.resetDaily();
-      this.logger.log(
+      this.logger.debug(
         `daily reset: tenants=${result.tenantsReset}`,
       );
     } catch (err) {
@@ -41,7 +41,7 @@ export class ConciergeQuotaResetCron {
   async resetMonthly(): Promise<void> {
     try {
       const result = await this.quota.resetMonthly();
-      this.logger.log(
+      this.logger.debug(
         `monthly reset: tenants=${result.tenantsReset}`,
       );
     } catch (err) {

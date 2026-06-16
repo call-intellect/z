@@ -31,7 +31,7 @@ export class ChatV2CleanupCron {
   async runCleanup(): Promise<void> {
     const ttlDays = this.cfg.chatV2.conversationTtlDays;
     const cutoff = new Date(Date.now() - ttlDays * 24 * 60 * 60 * 1000);
-    this.logger.log(
+    this.logger.debug(
       { ttlDays, cutoff: cutoff.toISOString() },
       'ChatV2CleanupCron: starting auto-archive sweep',
     );
@@ -49,7 +49,7 @@ export class ChatV2CleanupCron {
       for (let i = 0; i < result.count; i++) {
         this.metrics.incChatV2ConversationArchived({ reason: 'ttl' });
       }
-      this.logger.log(
+      this.logger.debug(
         { archived: result.count },
         'ChatV2CleanupCron: auto-archived conversations',
       );

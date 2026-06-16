@@ -142,7 +142,7 @@ export class ChatboxIntegrationController {
   ): Promise<{ ok: true; jobId: string }> {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
-    const { jobId } = await this.syncQueue.enqueue(t, body.scope);
+    const { jobId } = await this.syncQueue.enqueue(t, body.scope, body.since);
     return { ok: true, jobId };
   }
 

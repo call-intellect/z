@@ -528,6 +528,20 @@ Rate-limit `FeedbackRateLimitGuard`: Redis-ключ `feedback:ratelimit:{userId}
 |---|---|---|---|
 | POST | `/api/v1/meetings/:id/invitees` | **Допригласить участников на joinable-встречу** (`status ∈ {scheduled, active}` — единый критерий `isJoinableStatus`). Тело `{ invitees: [{ userId?, personId?, email?, sendVia: ('email'\|'telegram')[] }] }`. **Идемпотентно** (повтор уже приглашённого `userId`/`personId` = no-op). Переиспользует `seedInviteeInTx` + `deliverMeetingInvites` — ровно ту же логику, что и при создании встречи (тот же `inviteToken` / joinUrl `${publicFrontendUrl}/m/<id>?inv=<token>`). Ответ `{ added, skipped }`. | host-only, `@RequireSubscription` |
 
+## Bitrix24-интеграция (2026-06-09)
+
+ТЗ — [`plans/tz/2026-06-09-bitrix24-integration-install.md`](../../plans/tz/2026-06-09-bitrix24-integration-install.md). Модуль `bitrix`. Аутентифицированные — под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `bitrix`, gate `feature.bitrix`. Public-роуты (callback/install) — без cookie-auth, `@ApiExcludeController`. Модули — [[../02_architecture/module-map]] §«Bitrix24-интеграция».
+
+| Метод | Путь | Назначение | RBAC |
+|---|---|---|---|
+| GET | `/api/v1/bitrix/integration` | текущая интеграция org (без токенов) | read |
+| GET | `/api/v1/bitrix/integration/authorize-url?domain=` | URL OAuth-авторизации портала | manage |
+| POST | `/api/v1/bitrix/integration/test` | проверка соединения (`app.info`) | manage |
+| POST | `/api/v1/bitrix/integration/claim` | привязать установку из Маркета `{memberId}` к org | manage |
+| DELETE | `/api/v1/bitrix/integration` | отключить (удалить токены) | delete |
+| GET | `/api/v1/bitrix/oauth/callback` | **public** — callback OAuth (code→токены → redirect на фронт) | — |
+| POST | `/api/v1/bitrix/install/event` | **public** — `ONAPPINSTALL`/`ONAPPUNINSTALL` (kill-switch `bitrix.enabled`, всегда 200) | — |
+
 ## ChatBox-интеграция (2026-06-05)
 
 ТЗ — [`plans/tz/2026-06-05-chatbox-integration.md`](../../plans/tz/2026-06-05-chatbox-integration.md). Модуль `chatbox`. Все (кроме webhook) под `CookieAuthGuard + TenantGuard`, RBAC-ресурс `chatbox`. Профильная заметка — [[chatbox-integration]], фронт — [[frontend-pages]] §«Чаты».

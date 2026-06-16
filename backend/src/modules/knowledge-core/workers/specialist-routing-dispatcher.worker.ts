@@ -165,7 +165,7 @@ export class SpecialistRoutingDispatcherWorker
         'specialist-routing: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `SpecialistRoutingDispatcherWorker запущен (${CORE_QUEUE_NAMES.SPECIALIST_ROUTING}, handlers=${this.handlers.size})`,
     );
   }

@@ -47,7 +47,7 @@ export class PortfolioHealthSnapshotCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'portfolio-health-snapshot.cron: проход завершён');
+      this.logger.debug(stats, 'portfolio-health-snapshot.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

@@ -110,7 +110,7 @@ export class TeamHealthAnalyzerCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'team-health-analyzer.cron: проход завершён');
+      this.logger.debug(stats, 'team-health-analyzer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `team-health-analyzer.cron fail: ${err instanceof Error ? err.message : String(err)}`,

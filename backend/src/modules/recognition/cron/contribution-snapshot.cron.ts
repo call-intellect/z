@@ -61,7 +61,7 @@ export class ContributionSnapshotCron {
           }
         }
       }
-      this.logger.log(
+      this.logger.debug(
         `contribution-snapshot: processed=${processed}/${users.length} in ${Date.now() - startedAt}ms`,
       );
     } catch (err) {

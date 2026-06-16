@@ -29,7 +29,7 @@ export class TemporalProbeCron {
     try {
       const stats = await this.svc.runAllOrgs();
       const esc = await this.svc.escalateUnanswered();
-      this.logger.log(
+      this.logger.debug(
         { ...stats, escalated: esc.escalated },
         'temporal-probe.cron: weekly проход завершён',
       );

@@ -64,7 +64,7 @@ export class BurnoutRiskDetectorCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'burnout-risk-detector: проход завершён');
+      this.logger.debug(stats, 'burnout-risk-detector: проход завершён');
     } catch (err) {
       this.logger.error(
         `burnout-risk-detector fail: ${err instanceof Error ? err.message : String(err)}`,

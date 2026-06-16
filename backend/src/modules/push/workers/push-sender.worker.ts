@@ -78,7 +78,7 @@ export class PushSenderWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.logger.log(
+    this.logger.debug(
       `PushSenderWorker запущен (${CORE_QUEUE_NAMES.PUSH_SEND}, concurrency=5)`,
     );
   }
@@ -114,7 +114,7 @@ export class PushSenderWorker implements OnModuleInit, OnModuleDestroy {
     if (extraData !== undefined) args.extraData = extraData;
 
     const result = await this.sender.sendToUser(args);
-    this.logger.log(
+    this.logger.debug(
       {
         jobId: job.id,
         userId,

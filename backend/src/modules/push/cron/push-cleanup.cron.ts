@@ -52,7 +52,7 @@ export class PushCleanupCron {
       },
     });
     if (res.count > 0) {
-      this.logger.log(
+      this.logger.debug(
         `push-cleanup: удалено подписок ${res.count} (max-failures=${max})`,
       );
     }

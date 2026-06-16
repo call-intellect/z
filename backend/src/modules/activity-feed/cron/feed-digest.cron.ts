@@ -83,7 +83,7 @@ export class FeedDigestCron {
             // TODO (отдельный sub-tz): тут будет вызов
             // ConversationalService.sendNotification(userId, channel, body)
             // с агрегированным payload'ом по типу ленты.
-            this.logger.log(
+            this.logger.debug(
               {
                 userId: sub.userId,
                 feedType: sub.feedType,
@@ -106,7 +106,7 @@ export class FeedDigestCron {
           );
         }
       }
-      this.logger.log(
+      this.logger.debug(
         { kind, totalSubscriptions: subscriptions.length, processed },
         'FeedDigestCron — завершено',
       );

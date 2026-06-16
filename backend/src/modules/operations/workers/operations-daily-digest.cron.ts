@@ -77,7 +77,7 @@ export class OperationsDailyDigestCron {
     const now = new Date();
     try {
       const stats = await this.runOnce({ now, deliverToTelegram });
-      this.logger.log(
+      this.logger.debug(
         stats,
         'operations-daily-digest.cron: проход завершён',
       );

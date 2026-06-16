@@ -16,7 +16,10 @@ export const ListEntitiesQuerySchema = z.object({
   type: z.enum(ENTITY_TYPE_VALUES).optional(),
   q: z.string().trim().min(1).max(200).optional(),
   includeMerged: z.coerce.boolean().default(false),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  // max=500: person-picker (связка менеджеров/клиентов ChatBox) тянет весь
+  // список людей компании одним запросом (`personsApi.list({limit:200})`).
+  // Раньше было max=100 → limit=200 валился 400 и дропдаун связки был пустым.
+  limit: z.coerce.number().int().min(1).max(500).default(20),
   offset: z.coerce.number().int().min(0).default(0),
 });
 

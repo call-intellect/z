@@ -141,7 +141,7 @@ export class Specialist38HelpfulnessWorker {
 
       const result = await this.svc.processBlock({ tenantId, blockId });
       if (result) {
-        this.logger.log(
+        this.logger.debug(
           {
             blockId,
             signalType: block.signalType,

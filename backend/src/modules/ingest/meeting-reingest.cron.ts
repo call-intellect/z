@@ -93,7 +93,7 @@ export class MeetingReingestCron {
         try {
           await this.meetingIngest.ingestMeeting(meeting.id);
           reingested++;
-          this.logger.log(
+          this.logger.debug(
             { meetingId: meeting.id, tenantId: meeting.tenantId },
             'meeting-reingest.cron: встреча переигран в knowledge-core',
           );
@@ -114,7 +114,7 @@ export class MeetingReingestCron {
       }
 
       if (reingested > 0 || failed > 0) {
-        this.logger.log(
+        this.logger.debug(
           { candidates: candidates.length, reingested, skipped, failed },
           'meeting-reingest.cron: проход завершён',
         );

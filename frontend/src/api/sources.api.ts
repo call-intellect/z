@@ -61,6 +61,13 @@ export const sourcesApi = {
       { headers: orgHeaders(orgId) },
     ),
 
+  // Полное удаление источника + его RawEvent (необратимо).
+  purge: (orgId: string, id: string) =>
+    apiClient.del<{ ok: true; deletedRawEvents: number }>(
+      `/api/v1/sources/${encodeURIComponent(id)}/purge`,
+      { headers: orgHeaders(orgId) },
+    ),
+
   test: (orgId: string, id: string) =>
     apiClient.post<SourceTestResultApi>(
       `/api/v1/sources/${encodeURIComponent(id)}/test`,

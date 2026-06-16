@@ -49,9 +49,9 @@ export class PracticeSkillEvaluateCron {
         );
         return;
       }
-      this.logger.log('practice-skill-evaluate.cron: START');
+      this.logger.debug('practice-skill-evaluate.cron: START');
       const summary = await this.evaluator.runOnce();
-      this.logger.log(
+      this.logger.debug(
         `practice-skill-evaluate.cron: DONE evaluated=${summary.skillsEvaluated} promoted=${summary.promoted} archived=${summary.archived} held=${summary.held}`,
       );
     } catch (err) {

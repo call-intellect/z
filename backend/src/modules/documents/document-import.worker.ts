@@ -73,7 +73,7 @@ export class DocumentImportWorker implements OnModuleInit, OnModuleDestroy {
         }`,
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `DocumentImportWorker запущен (${CORE_QUEUE_NAMES.DOCUMENT_IMPORT})`,
     );
   }

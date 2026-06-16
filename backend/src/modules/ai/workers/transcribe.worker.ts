@@ -162,7 +162,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
         where: { transcriptId: meeting.transcript.id },
       });
       if (doneTracks >= audioTracks.length) {
-        this.logger.log(
+        this.logger.debug(
           { meetingId, doneTracks },
           'transcribe: все дорожки уже в БД — переходим к merge',
         );
@@ -263,7 +263,7 @@ export class TranscribeWorker implements OnModuleInit, OnModuleDestroy {
       `transcribe: merge поставлен — ${audioTracks.length} треков, всего ${totalWords} слов`,
       { meetingId, tracks: audioTracks.length, totalWords, totalTextLength },
     );
-    this.logger.log(
+    this.logger.debug(
       { meetingId, tracks: audioTracks.length, totalWords, totalTextLength },
       'transcribe: успешно — merge поставлен',
     );

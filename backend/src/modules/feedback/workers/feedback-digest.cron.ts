@@ -37,7 +37,7 @@ export class FeedbackDigestCron {
   async scheduleDigest(): Promise<void> {
     try {
       const { jobId } = await this.queue.enqueueCronRun();
-      this.logger.log({ jobId }, 'feedback-digest.cron: enqueued');
+      this.logger.debug({ jobId }, 'feedback-digest.cron: enqueued');
     } catch (err) {
       // Cron не должен ронять процесс — следующий запуск через сутки.
       this.logger.error(

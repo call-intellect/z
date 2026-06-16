@@ -33,7 +33,7 @@ export class RoleProfileCron {
   async sweepBuilds(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(summary, 'role-profile.cron.builds: проход завершён');
+      this.logger.debug(summary, 'role-profile.cron.builds: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -51,7 +51,7 @@ export class RoleProfileCron {
     try {
       const { marked } = await this.service.markStaleProfiles();
       if (marked > 0) {
-        this.logger.log(
+        this.logger.debug(
           { marked },
           'role-profile.cron.stale: помечено профилей',
         );

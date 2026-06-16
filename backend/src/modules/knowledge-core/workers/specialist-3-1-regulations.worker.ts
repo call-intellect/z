@@ -110,7 +110,7 @@ export class Specialist31RegulationsWorker {
         return;
       }
 
-      this.logger.log(
+      this.logger.debug(
         {
           blockId,
           signalType: block.signalType,

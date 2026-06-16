@@ -84,7 +84,7 @@ export class MeetingUploadTranscribeWorker
         concurrency: 1,
       },
     );
-    this.logger.log(
+    this.logger.debug(
       `MeetingUploadTranscribeWorker запущен (${MEETING_UPLOAD_QUEUE_NAMES.UPLOAD_TRANSCRIBE})`,
     );
   }
@@ -234,7 +234,7 @@ export class MeetingUploadTranscribeWorker
       reason: 'upload_transcribe_done',
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         turns: turns.length,

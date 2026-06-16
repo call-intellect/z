@@ -76,7 +76,7 @@ export class CardRollupV2Worker implements OnModuleInit, OnModuleDestroy {
         'card-rollup-v2: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `CardRollupV2Worker запущен (${CORE_QUEUE_NAMES.CARD_ROLLUP_V2})`,
     );
   }
@@ -115,7 +115,7 @@ export class CardRollupV2Worker implements OnModuleInit, OnModuleDestroy {
       cardId: card.id,
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         cardId,
         reason,

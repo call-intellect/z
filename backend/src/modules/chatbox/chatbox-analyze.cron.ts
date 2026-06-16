@@ -11,15 +11,17 @@ import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.servic
 const SWEEP_BATCH = 200;
 
 /**
- * Cron-sweeper анализа закрытых сессий ChatBox (ТЗ 2026-06-05, Фаза 5).
+ * Cron-sweeper анализа закрытых сессий ChatBox (ТЗ 2026-06-05; пересмотр
+ * 2026-06-16 — расписание).
  *
- * Каждые 5 минут добирает закрытые сессии (`endedAt != null`) со статусом
- * `pending` и ставит на них job анализа через ChatboxAnalyzeQueueService.
- * Дедуп по jobId схлопнёт повторы (сессия уже в очереди). Подстраховка на
- * случай, если producer (webhook/синк) не поставил job сразу.
+ * **Раз в сутки в 00:00** добирает закрытые сессии (`endedAt != null`) со
+ * статусом `pending` и ставит на них job анализа. Раньше крутился каждые 5
+ * минут — это давало непрерывный авто-анализ и расход LLM; по требованию
+ * владельца ChatBox-анализ идёт ТОЛЬКО раз в сутки ИЛИ вручную из UI
+ * (кнопки «Синхронизировать» / анализ чата). Дедуп по jobId схлопнёт повторы.
  *
- * Kill-switch `chatbox.enabled` (admin settings) глушит проход. Тело обёрнуто
- * в try/catch — cron не должен падать.
+ * Kill-switch `chatbox.enabled` (admin settings) + per-integration
+ * `analysisEnabled` глушат проход. Тело в try/catch — cron не должен падать.
  */
 @Injectable()
 export class ChatboxAnalyzeCron {
@@ -37,7 +39,7 @@ export class ChatboxAnalyzeCron {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async sweep(): Promise<void> {
     try {
       const enabled =
@@ -104,7 +106,7 @@ export class ChatboxAnalyzeCron {
         );
       }
 
-      this.logger.log(
+      this.logger.debug(
         `analyze-sweep: pending=${sessions.length} enqueued=${enqueued}`,
       );
     } catch (err) {

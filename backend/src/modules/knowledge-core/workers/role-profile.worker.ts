@@ -73,7 +73,7 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
         'role-profile.worker: job failed',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `RoleProfileWorker запущен (${CORE_QUEUE_NAMES.ROLE_PROFILE}, concurrency=1)`,
     );
   }
@@ -91,14 +91,14 @@ export class RoleProfileWorker implements OnModuleInit, OnModuleDestroy {
     // Org-Admin тумблер.
     await this.gate.checkOrThrow(tenantId, WORKER_NAME);
 
-    this.logger.log(
+    this.logger.debug(
       { tenantId, roleId, triggerReason, jobId: job.id },
       'role-profile.worker: старт сборки',
     );
 
     const result = await this.service.build({ tenantId, roleId, triggerReason });
 
-    this.logger.log(
+    this.logger.debug(
       {
         tenantId,
         roleId,

@@ -41,7 +41,7 @@ export class HelpfulnessTraitDecayCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'helpfulness-trait-decay.cron: проход завершён');
+      this.logger.debug(summary, 'helpfulness-trait-decay.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

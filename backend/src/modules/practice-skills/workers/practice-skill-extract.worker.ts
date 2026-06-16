@@ -52,7 +52,7 @@ export class PracticeSkillExtractWorker {
     );
     if (conceptIds.length === 0) return;
 
-    this.logger.log(
+    this.logger.debug(
       `practice-skill-extract.worker: получено ${conceptIds.length} concept(s) для tenant=${ev.tenantId}`,
     );
     for (const conceptId of conceptIds) {
@@ -100,7 +100,7 @@ export class PracticeSkillExtractWorker {
         conceptId,
       });
       if (skills.length > 0) {
-        this.logger.log(
+        this.logger.debug(
           `practice-skill-extract: tenant=${tenantId} concept=${conceptId} → создано/обновлено skills=${skills.length}`,
         );
       }

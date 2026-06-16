@@ -66,7 +66,7 @@ export class ThemeSilenceDetectorCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'theme-silence-detector.cron: проход завершён');
+      this.logger.debug(stats, 'theme-silence-detector.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

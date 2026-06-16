@@ -99,7 +99,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
     });
-    this.logger.log(
+    this.logger.debug(
       `BlockDistillWorker запущен (${CORE_QUEUE_NAMES.BLOCK_DISTILL})`,
     );
   }
@@ -200,7 +200,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         'block-distill: enqueueBlockLinker упал — линковка отложена',
       );
     });
-    this.logger.log({ blockId: block.id }, 'block-distill: canonical');
+    this.logger.debug({ blockId: block.id }, 'block-distill: canonical');
 
     // Ф3 МТЗ «разблокировка конвейера» — диспатч специалистов на переходе в
     // canonical (раньше шёл из block-ingest на draft-блоке, где специалисты
@@ -370,7 +370,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.logger.log(
+    this.logger.debug(
       { blockId: block.id, canonicalId, explanation: args.explanation },
       'block-distill: merged_into',
     );
@@ -552,7 +552,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.logger.log(
+    this.logger.debug(
       {
         transcriptBlockId: transcriptBlock.id,
         reportCanonicalId,

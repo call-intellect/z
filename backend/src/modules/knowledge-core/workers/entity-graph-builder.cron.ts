@@ -46,7 +46,7 @@ export class EntityGraphBuilderCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.scanAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'entity-graph-builder: scanned X orgs, created/updated Y links',
       );

@@ -52,7 +52,7 @@ export class DomainExpanderCron {
         const created = await this.runForTenant(org.id);
         totalCreated += created;
       }
-      this.logger.log(
+      this.logger.debug(
         { orgsScanned: orgs.length, newDomainsCreated: totalCreated },
         'domain-expander.cron: проход завершён',
       );
@@ -188,7 +188,7 @@ export class DomainExpanderCron {
     if (created > 0) {
       const tenantTop = await tenantTopLabel(this.prisma, tenantId);
       this.metrics.incDomainExpanderCreated({ tenantTop, count: created });
-      this.logger.log(
+      this.logger.debug(
         { tenantId, created },
         'domain-expander.cron: созданы новые домены',
       );

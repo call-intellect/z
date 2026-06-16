@@ -112,7 +112,7 @@ export class InvoiceStatusSyncCron {
       }
 
       if (candidates.length > 0) {
-        this.logger.log(
+        this.logger.debug(
           `InvoiceStatusSyncCron: candidates=${candidates.length} synced=${synced} paid=${paid} notFound=${notFound}`,
         );
       }

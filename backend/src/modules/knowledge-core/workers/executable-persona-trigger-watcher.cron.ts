@@ -59,7 +59,10 @@ export class ExecutablePersonaTriggerWatcherCron {
         summary.triggeredCritical > 0 ||
         summary.skippedLocked > 0
       ) {
-        this.logger.log(summary, 'executable-persona-trigger-watcher: проход завершён');
+        this.logger.debug(
+          summary,
+          'executable-persona-trigger-watcher: проход завершён',
+        );
       } else {
         this.logger.debug(
           summary,

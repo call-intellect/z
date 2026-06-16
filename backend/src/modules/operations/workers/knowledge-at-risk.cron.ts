@@ -48,7 +48,7 @@ export class KnowledgeAtRiskCron {
     }
     try {
       const stats = await this.runOnce(new Date());
-      this.logger.log(stats, 'knowledge-at-risk.cron: проход завершён');
+      this.logger.debug(stats, 'knowledge-at-risk.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

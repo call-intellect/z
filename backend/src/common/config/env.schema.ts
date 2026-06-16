@@ -1111,6 +1111,16 @@ const MaxBotChannelSchema = z.object({
   // от MAX, но размещён в этой схеме чтобы не наращивать .merge()-цепочку
   // EnvSchema (TS2589); геттер — cfg.chatbox.
   CHATBOX_API_BASE_URL: z.string().url().default('https://app.agent-lia.ru'),
+  // Bitrix24 integration (plans/tz/2026-06-09-bitrix24-integration-install.md) —
+  // OAuth-креды тиражного (mass-market) приложения. Единые на все порталы.
+  // Размещены здесь по той же причине, что и CHATBOX выше (не растим .merge()-цепочку
+  // EnvSchema, TS2589); геттер — cfg.bitrix. CLIENT_ID/SECRET опциональны: без них
+  // приложение стартует, но попытка подключения даёт явную ошибку bitrix_misconfigured
+  // (creds появляются после регистрации app в Маркете). redirect_uri НЕ в ENV —
+  // вычисляется из PUBLIC_HOST_URL.
+  BITRIX_CLIENT_ID: z.string().optional(),
+  BITRIX_CLIENT_SECRET: z.string().optional(),
+  BITRIX_OAUTH_BASE_URL: z.string().url().default('https://oauth.bitrix.info'),
 });
 
 /**

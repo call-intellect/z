@@ -43,7 +43,7 @@ export class CompanyProfileBuilderCron {
         if (!before) lazyCreated++;
       }
       if (lazyCreated > 0) {
-        this.logger.log(
+        this.logger.debug(
           { orgsScanned: orgs.length, lazyCreated },
           'company-profile-builder.cron: проход завершён',
         );

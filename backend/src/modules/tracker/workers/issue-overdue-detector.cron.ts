@@ -98,7 +98,7 @@ export class IssueOverdueDetectorCron {
         );
       }
     }
-    this.logger.log(
+    this.logger.debug(
       { scanned: candidates.length, emitted },
       'issue-overdue-detector: проход завершён',
     );

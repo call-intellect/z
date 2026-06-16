@@ -13,6 +13,8 @@ export type ChatboxSyncScope =
 export interface ChatboxSyncJobData {
   tenantId: string;
   scope: ChatboxSyncScope;
+  /** Бэкафилл: тянуть чаты не старше этой даты (ISO). Только для scope chats/all. */
+  since?: string;
 }
 
 export const CHATBOX_SYNC_JOB_OPTIONS: JobsOptions = {

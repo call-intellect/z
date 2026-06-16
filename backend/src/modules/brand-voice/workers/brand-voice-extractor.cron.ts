@@ -28,7 +28,7 @@ export class BrandVoiceExtractorCron {
   async run(): Promise<void> {
     try {
       const stats = await this.extractor.runForAllTenants();
-      this.logger.log(stats, 'brand-voice-extractor.cron: проход завершён');
+      this.logger.debug(stats, 'brand-voice-extractor.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

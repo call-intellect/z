@@ -84,7 +84,7 @@ export class IssueEmbedWorker implements OnModuleInit, OnModuleDestroy {
         'issue-embed: job failed',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `IssueEmbedWorker запущен (${TRACKER_QUEUE_NAMES.ISSUE_EMBED}, concurrency=4)`,
     );
   }

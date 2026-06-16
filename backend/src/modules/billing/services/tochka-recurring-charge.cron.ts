@@ -193,7 +193,7 @@ export class TochkaRecurringChargeCron {
         });
       }
 
-      this.logger.log(
+      this.logger.debug(
         `TochkaRecurringChargeCron: candidates=${candidates.length} attempted=${attempted} failed=${failed}`,
       );
     } finally {

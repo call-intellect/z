@@ -32,27 +32,28 @@ describe('ChatboxSyncCron', () => {
     );
   });
 
-  it('runHourly: kill-switch off → enqueue не вызывался', async () => {
+  it('runDaily: kill-switch off → enqueue не вызывался', async () => {
     adminMock.get.mockResolvedValue(false);
 
-    await cron.runHourly();
+    await cron.runDaily();
 
     expect(prismaMock.chatboxIntegration.findMany).not.toHaveBeenCalled();
     expect(queueMock.enqueue).not.toHaveBeenCalled();
   });
 
-  it('runHourly: 2 интеграции (hourly+realtime) → enqueue x2 c incremental', async () => {
+  it('runDaily: все non-disconnected интеграции → enqueue incremental по каждой', async () => {
     prismaMock.chatboxIntegration.findMany.mockResolvedValue([
       { tenantId: 't1' },
       { tenantId: 't2' },
     ]);
 
-    await cron.runHourly();
+    await cron.runDaily();
 
+    // Расписание упрощено (2026-06-16): syncMode не влияет — берём все
+    // подключённые (status != disconnected), без фильтра по режиму.
     expect(prismaMock.chatboxIntegration.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          syncMode: { in: ['hourly', 'realtime'] },
           status: { not: 'disconnected' },
         }),
       }),
@@ -62,24 +63,7 @@ describe('ChatboxSyncCron', () => {
     expect(queueMock.enqueue).toHaveBeenCalledWith('t2', 'incremental');
   });
 
-  it('runDaily: фильтрует syncMode=daily', async () => {
-    prismaMock.chatboxIntegration.findMany.mockResolvedValue([
-      { tenantId: 't1' },
-    ]);
-
-    await cron.runDaily();
-
-    expect(prismaMock.chatboxIntegration.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          syncMode: { in: ['daily'] },
-        }),
-      }),
-    );
-    expect(queueMock.enqueue).toHaveBeenCalledWith('t1', 'incremental');
-  });
-
-  it('enqueue по одной интеграции упал → проход не падает', async () => {
+  it('runDaily: enqueue по одной интеграции упал → проход не падает', async () => {
     prismaMock.chatboxIntegration.findMany.mockResolvedValue([
       { tenantId: 't1' },
       { tenantId: 't2' },
@@ -88,7 +72,7 @@ describe('ChatboxSyncCron', () => {
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce({ jobId: 'j2' });
 
-    await expect(cron.runHourly()).resolves.toBeUndefined();
+    await expect(cron.runDaily()).resolves.toBeUndefined();
     expect(queueMock.enqueue).toHaveBeenCalledTimes(2);
   });
 });

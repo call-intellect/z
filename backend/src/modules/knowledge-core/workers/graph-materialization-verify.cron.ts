@@ -44,7 +44,7 @@ export class GraphMaterializationVerifyCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runForAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         summary,
         'graph-materialization-verify: проход завершён',
       );

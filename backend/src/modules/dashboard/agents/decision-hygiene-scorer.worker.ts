@@ -85,7 +85,7 @@ export class DecisionHygieneScorerWorker
         'decision-hygiene-scorer: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `DecisionHygieneScorerWorker запущен (${DASHBOARD_QUEUE_NAMES.DECISION_HYGIENE})`,
     );
   }
@@ -232,7 +232,7 @@ export class DecisionHygieneScorerWorker
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         decisionId,
         reversibility: parsed.reversibility,

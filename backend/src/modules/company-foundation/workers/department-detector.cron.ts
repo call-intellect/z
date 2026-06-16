@@ -104,7 +104,7 @@ export class DepartmentDetectorCron {
         }
       }
       if (created > 0) {
-        this.logger.log(
+        this.logger.debug(
           { entitiesScanned: orgUnits.length, created, skipped },
           'department-detector.cron: проход завершён',
         );

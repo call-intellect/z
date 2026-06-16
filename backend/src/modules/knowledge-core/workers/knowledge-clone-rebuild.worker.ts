@@ -70,7 +70,7 @@ export class KnowledgeCloneRebuildWorker
         'knowledge-clone-rebuild: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `KnowledgeCloneRebuildWorker запущен (${CORE_QUEUE_NAMES.KNOWLEDGE_CLONE_REBUILD})`,
     );
   }

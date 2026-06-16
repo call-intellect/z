@@ -77,7 +77,7 @@ export class GoalAlignmentLowCron {
     }
     try {
       const summary = await this.run();
-      this.logger.log(summary, 'goal-alignment-low: проход завершён');
+      this.logger.debug(summary, 'goal-alignment-low: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

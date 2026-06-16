@@ -102,7 +102,7 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
       });
     });
 
-    this.logger.log(
+    this.logger.debug(
       `WebhookDeliveryWorker запущен (${TRACKER_QUEUE_NAMES.WEBHOOK_DELIVERY}, concurrency=8)`,
     );
   }

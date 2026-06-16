@@ -71,7 +71,7 @@ export class SprintHelperCron {
     if (cycles.length === 0) return;
 
     const tenantsTouched = new Set(cycles.map((c) => c.tenantId)).size;
-    this.logger.log(
+    this.logger.debug(
       `sprint-helper.cron: enqueue для ${cycles.length} активных циклов (${tenantsTouched} tenants, per-tenant cap=${SprintHelperCron.PER_TENANT_CAP})`,
     );
     for (const c of cycles) {

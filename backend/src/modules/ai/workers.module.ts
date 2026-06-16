@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { BitrixAnalyzeWorker } from '../bitrix/bitrix-analyze.worker';
+import { BitrixSyncWorker } from '../bitrix/bitrix-sync.worker';
+import { BitrixModule } from '../bitrix/bitrix.module';
 import { ChatboxAnalyzeWorker } from '../chatbox/chatbox-analyze.worker';
 import { ChatboxSyncWorker } from '../chatbox/chatbox-sync.worker';
 import { ChatboxModule } from '../chatbox/chatbox.module';
@@ -143,6 +146,9 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // ChatboxModule (он экспортируется). Воркер очереди `chatbox.sync`
     // крутится in-process.
     ChatboxModule,
+    // Bitrix24 Ф3 — BitrixSyncWorker инжектит BitrixSyncService из BitrixModule
+    // (экспортируется). Воркер очереди `bitrix.sync`, in-process.
+    BitrixModule,
     // ТЗ-4 Ф7 — DocumentImportWorker инжектит DocumentImportService из
     // DocumentsModule (экспортируется). Воркер очереди `core.document-import`.
     DocumentsModule,
@@ -361,6 +367,14 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // (syncByScope / incrementalSync). Producer — ChatboxSyncQueueService
     // (ручной триггер из `POST /chatbox/integration/sync`).
     ChatboxSyncWorker,
+    // Bitrix24 Ф3 — consumer `bitrix.sync`. Делегирует в BitrixSyncService
+    // (syncByScope). Producer — BitrixSyncQueueService (крон 00:00 + ручной
+    // триггер `POST /bitrix/integration/sync`).
+    BitrixSyncWorker,
+    // Bitrix24 Ф4 — consumer `bitrix.analyze`. Посуточный rollup сессии-суток
+    // (накопительное + день → daySummary/rollingSummary) + мост в knowledge-core.
+    // Producer'ы — BitrixAnalyzeQueueService (cron-sweeper 00:00 + после синка).
+    BitrixAnalyzeWorker,
     // ChatBox Фаза 5 — consumer `chatbox.analyze`. Анализирует закрытую сессию:
     // LLM-summary + мост в knowledge-core (RawEvent). Producer'ы —
     // ChatboxAnalyzeQueueService (cron-sweeper + webhook/синк при закрытии).

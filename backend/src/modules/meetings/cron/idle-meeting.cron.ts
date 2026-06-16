@@ -93,7 +93,7 @@ export class IdleMeetingCron {
           continue;
         }
         await this.livekit.deleteRoom({ id: meeting.id });
-        this.logger.log(
+        this.logger.debug(
           { meetingId: meeting.id },
           'Idle-cron: room удалена (никого нет дольше таймаута)',
         );
@@ -147,14 +147,14 @@ export class IdleMeetingCron {
             startedAt: new Date(),
             reason: 'idle-cron:scheduled-reconcile-recover',
           });
-          this.logger.log(
+          this.logger.debug(
             { meetingId: meeting.id, count: participants.length },
             'Idle-cron: scheduled с участниками → recover active (room_started потерян)',
           );
           if (meeting.recordByDefault && this.recordings) {
             try {
               await this.recordings.start(meeting.id, meeting.ownerId);
-              this.logger.log({ meetingId: meeting.id }, 'Idle-cron: запись восстановлена');
+              this.logger.debug({ meetingId: meeting.id }, 'Idle-cron: запись восстановлена');
             } catch (err) {
               this.logger.warn(
                 { meetingId: meeting.id, err: err instanceof Error ? err.message : String(err) },
@@ -173,7 +173,7 @@ export class IdleMeetingCron {
             failureReason: 'never_activated',
             reason: 'idle-cron:never_activated',
           });
-          this.logger.log(
+          this.logger.debug(
             { meetingId: meeting.id },
             'Idle-cron: брошенная scheduled закрыта (never_activated)',
           );

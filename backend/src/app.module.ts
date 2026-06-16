@@ -30,6 +30,7 @@ import { MustChangePasswordGuard } from './modules/auth/guards/must-change-passw
 import { BehaviorMetricsModule } from './modules/behavior-metrics/behavior-metrics.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { SubscriptionGuard } from './modules/billing/guards/subscription.guard';
+import { BitrixModule } from './modules/bitrix/bitrix.module';
 import { BrandVoiceModule } from './modules/brand-voice/brand-voice.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { ChaptersModule } from './modules/chapters/chapters.module';
@@ -348,6 +349,11 @@ import { WebhooksOutModule } from './modules/webhooks-out/webhooks-out.module';
     // ChatBox-интеграция (ТЗ 2026-06-05) — конфиг + API-клиент + выбор воркспейса.
     // Зависит от @Global: Crypto, Rbac, Entitlements, Config.
     ChatboxModule,
+
+    // Bitrix24-интеграция (ТЗ 2026-06-09) — установка (OAuth + Маркет) + жизненный
+    // цикл токена. Зависит от @Global: Crypto, Auth(Jwt), Rbac, Entitlements,
+    // AdminSettings, Config.
+    BitrixModule,
 
     // Служба поддержки (ТЗ 2026-06-09 support-desk-clone, Ф1) — вендорский деск
     // приёма обращений клиентов (тикет=Issue в вендор-Org) + SLA-cron +

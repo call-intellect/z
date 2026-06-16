@@ -79,7 +79,7 @@ export class MeetingSpeakerAnalyzerWorker {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'meeting-speaker-analyzer: проход завершён');
+      this.logger.debug(stats, 'meeting-speaker-analyzer: проход завершён');
     } catch (err) {
       this.logger.error(
         `meeting-speaker-analyzer fail: ${err instanceof Error ? err.message : String(err)}`,

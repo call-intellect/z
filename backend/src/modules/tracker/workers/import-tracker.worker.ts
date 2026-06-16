@@ -100,7 +100,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
         'import-tracker: job failed (attempts=1, не будет retry)',
       );
     });
-    this.logger.log(
+    this.logger.debug(
       `ImportTrackerWorker запущен (${TRACKER_QUEUE_NAMES.IMPORT_TRACKER}, concurrency=2)`,
     );
   }
@@ -283,7 +283,7 @@ export class ImportTrackerWorker implements OnModuleInit, OnModuleDestroy {
         errors: result.errors.length,
       },
     });
-    this.logger.log(
+    this.logger.debug(
       {
         importLogId,
         source,

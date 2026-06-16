@@ -143,7 +143,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         );
       });
     });
-    this.logger.log(
+    this.logger.debug(
       `MeetingReportFastWorker запущен (${CORE_QUEUE_NAMES.MEETING_REPORT_FAST})`,
     );
   }
@@ -458,7 +458,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    this.logger.log(
+    this.logger.debug(
       {
         meetingId,
         tenantId,

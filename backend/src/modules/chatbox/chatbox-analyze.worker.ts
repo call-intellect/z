@@ -101,7 +101,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   /** Public для тестирования. */
   async process(job: Job<ChatboxAnalyzeJobData>): Promise<void> {
     const { tenantId, sessionId } = job.data;
-    this.logger.log(
+    this.logger.debug(
       `ChatboxAnalyze старт: tenant=${tenantId} session=${sessionId} job=${job.id}`,
     );
 
@@ -125,7 +125,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       //    оставляем pending (sweeper-cron вернётся позже).
       const res = await this.ingest.ingestSession(tenantId, sessionId);
       if (res === null) {
-        this.logger.log(
+        this.logger.debug(
           `ChatboxAnalyze: session=${sessionId} ещё открыта/нет — остаётся pending`,
         );
         return;
@@ -142,7 +142,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       });
       // Метрика анализа (Ф3): сессия успешно доведена до 'done'.
       this.metrics?.incChatboxAnalyze({ status: 'success' });
-      this.logger.log(
+      this.logger.debug(
         `ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`,
       );
 
@@ -221,7 +221,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }),
     ]);
     if (existingByTask || existingBySource) {
-      this.logger.log(
+      this.logger.debug(
         `ChatboxAnalyze: задачи для session=${sessionId} уже извлечены — пропуск (идемпотентность)`,
       );
       return;
@@ -339,7 +339,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       dialog,
     });
     if (extracted.length === 0) {
-      this.logger.log(
+      this.logger.debug(
         `ChatboxAnalyze: разборщик не нашёл задач в session=${sessionId}`,
       );
       return;
@@ -361,7 +361,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       sessionId,
       chatId: session.chatId,
     });
-    this.logger.log(
+    this.logger.debug(
       `ChatboxAnalyze: задачи session=${sessionId} created=${result.created} linked=${result.linked}`,
     );
   }

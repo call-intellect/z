@@ -226,6 +226,68 @@ export class SourcesService {
   }
 
   /**
+   * Полное удаление источника (ТЗ 2026-06-16) — в отличие от softDelete сносит
+   * строку целиком. `Source` защищён FK от `RawEvent` (RESTRICT), поэтому
+   * сначала удаляем все его `RawEvent` (их `IdeaBlockEvidence` каскадятся),
+   * затем сам `Source`. Собранные в графе IdeaBlock остаются (теряют лишь
+   * evidence-ссылку на это событие). Необратимо.
+   */
+  async hardDelete(
+    tenantId: string,
+    userId: string,
+    id: string,
+  ): Promise<{ ok: true; deletedRawEvents: number }> {
+    const source = await this.findOwnedOrThrow(tenantId, id);
+    const deletedRawEvents = await this.prisma.$transaction(async (tx) => {
+      const del = await tx.rawEvent.deleteMany({ where: { sourceId: id } });
+      await tx.source.delete({ where: { id } });
+      // chatbox-источник = интеграция: удаляя источник, делаем ПОЛНЫЙ сброс —
+      // рвём коннект И сносим всю зеркальную chatbox-data, иначе страница ChatBox
+      // покажет «Подключено» (рассинхрон), а сироты-данные останутся в БД.
+      // Порядок — FK-safe: сообщения → сессии → чаты → клиенты каналов →
+      // каналы → клиенты → менеджеры → интеграция.
+      if (source.type === 'chatbox') {
+        await tx.chatboxMessage.deleteMany({ where: { tenantId } });
+        await tx.chatboxChatSession.deleteMany({ where: { tenantId } });
+        await tx.chatboxChat.deleteMany({ where: { tenantId } });
+        await tx.chatboxChannelClient.deleteMany({ where: { tenantId } });
+        await tx.chatboxChannel.deleteMany({ where: { tenantId } });
+        await tx.chatboxCustomer.deleteMany({ where: { tenantId } });
+        await tx.chatboxMember.deleteMany({ where: { tenantId } });
+        await tx.chatboxIntegration.deleteMany({ where: { tenantId } });
+      }
+      // bitrix-источник = интеграция: тот же ПОЛНЫЙ сброс (ТЗ 2026-06-17, Ф5).
+      // Порядок FK-safe: сообщения → сессии → диалоги → сотрудники → CRM-зеркала
+      // → интеграция (токены). Иначе страница Bitrix покажет «Подключено».
+      if (source.type === 'bitrix') {
+        await tx.bitrixMessage.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialogSession.deleteMany({ where: { tenantId } });
+        await tx.bitrixDialog.deleteMany({ where: { tenantId } });
+        await tx.bitrixUser.deleteMany({ where: { tenantId } });
+        await tx.bitrixContact.deleteMany({ where: { tenantId } });
+        await tx.bitrixCompany.deleteMany({ where: { tenantId } });
+        await tx.bitrixDeal.deleteMany({ where: { tenantId } });
+        await tx.bitrixLead.deleteMany({ where: { tenantId } });
+        await tx.bitrixCrmNote.deleteMany({ where: { tenantId } });
+        await tx.bitrixIntegration.deleteMany({ where: { tenantId } });
+      }
+      return del.count;
+    });
+    await this.audit.log({
+      userId,
+      action: AUDIT.SOURCE_DELETED,
+      resourceId: id,
+      metadata: {
+        type: source.type,
+        name: source.name,
+        purged: true,
+        rawEvents: deletedRawEvents,
+      },
+    });
+    return { ok: true, deletedRawEvents };
+  }
+
+  /**
    * Smoke-test адаптера. Тип-зависимое поведение:
    *   - telegram → `getMe` Bot API.
    *   - mango    → проверка подписи на тестовом payload.

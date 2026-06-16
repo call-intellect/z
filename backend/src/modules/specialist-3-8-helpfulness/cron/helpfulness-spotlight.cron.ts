@@ -76,7 +76,7 @@ export class HelpfulnessSpotlightCron {
   async sweep(): Promise<void> {
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'helpfulness-spotlight.cron: проход завершён');
+      this.logger.debug(summary, 'helpfulness-spotlight.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

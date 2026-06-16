@@ -330,9 +330,10 @@ const SYSTEM_SECTION: NavConfigSection = {
   label: 'Система',
   items: [
     { href: '/settings', label: 'Настройки', icon: Settings, matchPrefix: '/settings', overviewTarget: 'overview.settings' },
-    // /settings/integrations = outbound-направления доставки (единственный вход;
-    // дубль «Интеграции» из «Чатов» убран в Ф0).
-    { href: '/settings/integrations', label: 'Интеграции', icon: Plug, matchPrefix: '/settings/integrations' },
+    // /delivery = outbound-доставка (почта/Telegram/Slack/вебхуки) + импорт из
+    // трекеров. Самостоятельный раздел (НЕ под /settings) — это НЕ подключение
+    // источников (CRM/чаты — в «Админка компании → Источники»).
+    { href: '/delivery', label: 'Доставка', icon: Plug, matchPrefix: '/delivery' },
     { href: '/team-templates', label: 'Шаблоны', icon: Shapes, matchPrefix: '/team-templates' },
     // Партнёрка — личный кабинет реферальной программы (доступен всем ролям:
     // ссылку можно создать без ИНН). Раньше входа в меню не было — только промо-полоса.

@@ -84,7 +84,7 @@ export class PendingActionsReminderCron {
   async reminderTick(): Promise<void> {
     try {
       const stats = await this.run();
-      this.logger.log(stats, 'pending-actions-reminder: цикл завершён');
+      this.logger.debug(stats, 'pending-actions-reminder: цикл завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

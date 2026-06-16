@@ -39,7 +39,7 @@ export class PromiseNetworkAnalyzerCron {
   async run(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(stats, 'promise-network-analyzer.cron: проход завершён');
+      this.logger.debug(stats, 'promise-network-analyzer.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         `promise-network-analyzer.cron fail: ${err instanceof Error ? err.message : String(err)}`,

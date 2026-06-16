@@ -14,6 +14,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 import { EntityResolutionService } from '../knowledge-core/services/entity-resolution.service';
+import { PersonsService } from '../persons/services/persons.service';
 
 import {
   ChatboxApiClient,
@@ -23,6 +24,7 @@ import {
 } from './chatbox-api.client';
 import { ChatboxIntegrationService } from './chatbox-integration.service';
 import { ChatboxSessionService } from './chatbox-session.service';
+import { ChatboxAnalyzeQueueService } from './queue/chatbox-analyze.queue.service';
 
 /**
  * ChatboxSyncService — синк данных ChatBox в зеркальные таблицы Коры
@@ -63,6 +65,12 @@ export class ChatboxSyncService {
     // автосвязки (`resolvePersonByHint`: exact + ILIKE; неоднозначность → null).
     @Inject(EntityResolutionService)
     private readonly entityResolution: EntityResolutionService,
+    // Авто-создание карточки сотрудника для несопоставленных members/customers
+    // (нет хита по email/имени → создаём Person и связываем).
+    @Inject(PersonsService) private readonly persons: PersonsService,
+    // Бэкафилл чатов → постановка анализа закрытых сессий (гейт по analysisEnabled).
+    @Inject(ChatboxAnalyzeQueueService)
+    private readonly analyzeQueue: ChatboxAnalyzeQueueService,
   ) {}
 
   // ─────────────────────────── helpers ──────────────────────────────
@@ -207,6 +215,8 @@ export class ChatboxSyncService {
     // linkedPersonId / linkMode не пишем в upsert выше (как у members), чтобы не
     // перетереть manual.
     await this.autoLinkCustomerTable(tenantId);
+    // Несопоставленные → создаём карточку Person и связываем (нет хита — создаём).
+    await this.autoCreateCustomersUnlinked(tenantId);
 
     return customers.length;
   }
@@ -278,6 +288,8 @@ export class ChatboxSyncService {
 
     // Ф1 — автосвязка собеседников канала (ChatboxChannelClient) с Person.
     await this.autoLinkChannelClientTable(tenantId);
+    // Несопоставленные → создаём карточку Person и связываем.
+    await this.autoCreateChannelClientsUnlinked(tenantId);
 
     return clients.length;
   }
@@ -317,6 +329,8 @@ export class ChatboxSyncService {
     }
 
     await this.autoLinkMembers(tenantId);
+    // Несопоставленные менеджеры → создаём карточку Person и связываем.
+    await this.autoCreateMembersUnlinked(tenantId);
 
     return members.length;
   }
@@ -535,6 +549,159 @@ export class ChatboxSyncService {
       rows: unlinkedAfterEmail,
       update: args.update,
     });
+  }
+
+  // ──────────────── авто-создание Person для несопоставленных ────────
+
+  /**
+   * Владелец Org (Membership role='owner') — userId для авторства авто-создаваемых
+   * карточек. null → авто-создание пропускается (некому атрибутировать).
+   */
+  private async resolveOwnerUserId(tenantId: string): Promise<string | null> {
+    const owner = await this.prisma.membership.findFirst({
+      where: { orgId: tenantId, role: 'owner' },
+      select: { userId: true },
+    });
+    return owner?.userId ?? null;
+  }
+
+  /**
+   * Для каждой несопоставленной строки с именем/email: дедуп по email (живой
+   * Person → связываем существующего), иначе создаём карточку через
+   * PersonsService и связываем (`linkMode='auto'`). Полностью анонимные
+   * (без имени и email) — пропускаем. LLM НЕ задействует — только карточки и связки.
+   */
+  private async autoCreateForUnlinked(args: {
+    tenantId: string;
+    ownerUserId: string;
+    rows: { id: string; email: string | null; name: string | null }[];
+    update: (id: string, personId: string) => Promise<unknown>;
+  }): Promise<void> {
+    for (const r of args.rows) {
+      const email = r.email?.trim() || null;
+      const name = r.name?.trim() || null;
+      if (!email && !name) continue;
+      try {
+        let personId: string | null = null;
+        if (email) {
+          const existing = await this.prisma.person.findFirst({
+            where: { tenantId: args.tenantId, email, deletedAt: null },
+            select: { id: true },
+          });
+          personId = existing?.id ?? null;
+        }
+        if (!personId) {
+          const created = await this.persons.create({
+            tenantId: args.tenantId,
+            userId: args.ownerUserId,
+            body: { name: name ?? email ?? 'Без имени', ...(email ? { email } : {}) },
+          });
+          personId = created.id;
+        }
+        await args.update(r.id, personId);
+      } catch (err) {
+        this.logger.warn(
+          { rowId: r.id, err: err instanceof Error ? err.message : String(err) },
+          'autoCreateForUnlinked: не удалось создать/связать — пропуск',
+        );
+      }
+    }
+  }
+
+  /** members: авто-создание Person для оставшихся несопоставленных. */
+  private async autoCreateMembersUnlinked(tenantId: string): Promise<void> {
+    const ownerUserId = await this.resolveOwnerUserId(tenantId);
+    if (!ownerUserId) return;
+    const rows = await this.prisma.chatboxMember.findMany({
+      where: { tenantId, linkedPersonId: null, linkMode: { not: 'manual' } },
+      select: { id: true, email: true, name: true },
+    });
+    await this.autoCreateForUnlinked({
+      tenantId,
+      ownerUserId,
+      rows,
+      update: (id, personId) =>
+        this.prisma.chatboxMember.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /** customers: авто-создание Person для оставшихся несопоставленных. */
+  private async autoCreateCustomersUnlinked(tenantId: string): Promise<void> {
+    const ownerUserId = await this.resolveOwnerUserId(tenantId);
+    if (!ownerUserId) return;
+    const customers = await this.prisma.chatboxCustomer.findMany({
+      where: { tenantId, linkedPersonId: null, linkMode: { not: 'manual' } },
+      select: { id: true, email: true, name: true },
+    });
+    await this.autoCreateForUnlinked({
+      tenantId,
+      ownerUserId,
+      rows: customers,
+      update: (id, personId) =>
+        this.prisma.chatboxCustomer.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /** channelClients: авто-создание Person для оставшихся несопоставленных. */
+  private async autoCreateChannelClientsUnlinked(tenantId: string): Promise<void> {
+    const ownerUserId = await this.resolveOwnerUserId(tenantId);
+    if (!ownerUserId) return;
+    const channelClients = await this.prisma.chatboxChannelClient.findMany({
+      where: { tenantId, linkedPersonId: null, linkMode: { not: 'manual' } },
+      select: { id: true, email: true, name: true },
+    });
+    await this.autoCreateForUnlinked({
+      tenantId,
+      ownerUserId,
+      rows: channelClients,
+      update: (id, personId) =>
+        this.prisma.chatboxChannelClient.update({
+          where: { id },
+          data: { linkedPersonId: personId, linkMode: 'auto' },
+        }),
+    });
+  }
+
+  /**
+   * Бэкафилл/синк чатов → постановка AI-анализа закрытых сессий.
+   * Гейт по `analysisEnabled` (выключено → только зеркалим, LLM не трогаем).
+   * Дедуп: только `analysisStatus='pending'` сессии (уже разобранные 'done' не
+   * трогаем) + jobId `chatbox-analyze-<sessionId>` схлопывает повторы.
+   */
+  private async enqueuePendingAnalysisIfEnabled(
+    tenantId: string,
+  ): Promise<number> {
+    const integ = await this.prisma.chatboxIntegration.findUnique({
+      where: { tenantId },
+      select: { analysisEnabled: true },
+    });
+    if (!integ?.analysisEnabled) return 0;
+    const sessions = await this.prisma.chatboxChatSession.findMany({
+      where: { tenantId, analysisStatus: 'pending', endedAt: { not: null } },
+      select: { id: true },
+    });
+    let enqueued = 0;
+    for (const s of sessions) {
+      try {
+        await this.analyzeQueue.enqueue(tenantId, s.id);
+        enqueued += 1;
+      } catch (err) {
+        this.logger.warn(
+          {
+            sessionId: s.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'enqueuePendingAnalysis: не удалось поставить job — пропуск',
+        );
+      }
+    }
+    return enqueued;
   }
 
   // ─────────────────────────── messages ────────────────────────────
@@ -793,10 +960,17 @@ export class ChatboxSyncService {
   async syncByScope(
     tenantId: string,
     scope: 'all' | 'customers' | 'managers' | 'chats',
+    opts?: { since?: Date },
   ): Promise<Record<string, number>> {
     switch (scope) {
-      case 'all':
-        return this.fullSync(tenantId);
+      case 'all': {
+        const result = await this.fullSync(tenantId);
+        // Ручной полный синк → анализ закрытых сессий (гейт по analysisEnabled,
+        // дедуп по pending+jobId).
+        const analysisEnqueued =
+          await this.enqueuePendingAnalysisIfEnabled(tenantId);
+        return { ...result, analysisEnqueued };
+      }
       case 'customers': {
         const customers = await this.syncCustomers(tenantId);
         const channelClients = await this.syncChannelClients(tenantId);
@@ -807,8 +981,12 @@ export class ChatboxSyncService {
         return { members };
       }
       case 'chats': {
-        const chats = await this.syncChats(tenantId);
-        return { chats };
+        // Бэкафилл за период: тянем чаты не старше opts.since (фильтр в syncChats).
+        const chats = await this.syncChats(tenantId, opts);
+        // Забранные диалоги → анализ (гейт по analysisEnabled, дедуп pending+jobId).
+        const analysisEnqueued =
+          await this.enqueuePendingAnalysisIfEnabled(tenantId);
+        return { chats, analysisEnqueued };
       }
     }
   }

@@ -34,7 +34,7 @@ export class RoleMapCompletenessCron {
     try {
       const startedAt = Date.now();
       const result = await this.runForAllOrgs();
-      this.logger.log(
+      this.logger.debug(
         { ...result, durationMs: Date.now() - startedAt },
         'role-map-completeness.cron: проход завершён',
       );

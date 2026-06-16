@@ -12,7 +12,6 @@ import { ConciergeFloatingButton } from '@/ui/concierge/ConciergeFloatingButton'
 import { SupportWidgetMount } from '@/ui/support/SupportWidgetMount';
 import { PaywallBanner } from '@/ui/components/PaywallBanner';
 import { PaywallModal } from '@/ui/components/PaywallModal';
-import { ReferralRewardBanner } from '@/ui/components/app-shell/ReferralRewardBanner';
 import { TrackerBottomNav } from '@/ui/tracker/TrackerBottomNav';
 import { MobileShell } from '@/ui/mobile/MobileShell';
 import { MobileTabBar } from '@/ui/mobile/MobileTabBar';
@@ -51,12 +50,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <PendingActionsBell />
           </div>
           <PaywallBanner />
-          {/* Единый persistent-баннер партнёрской программы (B3). Показывает
-              живой прогресс окупаемости подписки руководителю и приглашение
-              рядовому; не прячется при наличии профиля. Видимость + роль —
-              `useReferralBannerVisibility` (whitelist ритмов/«Я» + paywall +
-              dismiss-TTL 30 дней). */}
-          <ReferralRewardBanner />
           {children}
         </main>
 

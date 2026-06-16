@@ -51,7 +51,7 @@ export class RetentionCron {
           totals.failed >
         0
       ) {
-        this.logger.log(totals, 'Retention cron: проход завершён');
+        this.logger.debug(totals, 'Retention cron: проход завершён');
       }
     } catch (err) {
       // Не валим NestJS — cron должен переживать сбой и попробовать ещё раз.

@@ -68,16 +68,18 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
 
   /** Public для тестирования. */
   async process(job: Job<ChatboxSyncJobData>): Promise<void> {
-    const { tenantId, scope } = job.data;
-    this.logger.log(
-      `ChatboxSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`,
+    const { tenantId, scope, since } = job.data;
+    this.logger.debug(
+      `ChatboxSync старт: tenant=${tenantId} scope=${scope} since=${since ?? '-'} job=${job.id}`,
     );
     try {
       let result: Record<string, number> | void;
       if (scope === 'incremental') {
         result = await this.syncService.incrementalSync(tenantId);
       } else {
-        result = await this.syncService.syncByScope(tenantId, scope);
+        result = await this.syncService.syncByScope(tenantId, scope, {
+          since: since ? new Date(since) : undefined,
+        });
       }
       // Успех — метрики синка (Ф3): счётчик + отметка времени последнего синка.
       this.metrics?.incChatboxSync({ scope, status: 'success' });
@@ -85,7 +87,7 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
         scope,
         tsSeconds: Math.floor(Date.now() / 1000),
       });
-      this.logger.log(
+      this.logger.debug(
         `ChatboxSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
       );
     } catch (err) {

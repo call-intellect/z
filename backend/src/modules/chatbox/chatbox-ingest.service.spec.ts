@@ -15,7 +15,9 @@ import {
  *
  * Проверяем:
  *  - renderTranscript: роли (Клиент/Менеджер), не-TEXT → [<contentType>].
- *  - generateSummary: успех → текст; ошибка LLM → null (best-effort).
+ *  - generateSummary (посуточный rollup, 2026-06-17): JSON {daySummary,
+ *    rollingSummary} → возвращает daySummary + персистит rollingSummary на чат;
+ *    ошибка LLM/битый JSON → null (best-effort).
  *  - ingestSession: открытая сессия → null (ingest НЕ вызван); закрытая →
  *    ingest.ingest вызван с dataClass='sensitive', sourceExternalId=sessionId,
  *    payload содержит fullText + kind; сессия обновлена rawEventId.
@@ -36,7 +38,7 @@ function makeService(over: {
     source: { findUnique: vi.fn(), create: vi.fn() },
     chatboxChatSession: { findFirst: vi.fn(), update: vi.fn() },
     chatboxMessage: { findMany: vi.fn() },
-    chatboxChat: { findFirst: vi.fn() },
+    chatboxChat: { findFirst: vi.fn(), updateMany: vi.fn() },
     chatboxCustomer: { findUnique: vi.fn() },
     chatboxMember: { findUnique: vi.fn() },
     ...over.prisma,
@@ -72,33 +74,60 @@ describe('renderTranscript', () => {
 });
 
 describe('ChatboxIngestService.generateSummary', () => {
-  it('llm.call резолвит → вернул текст саммари (trim)', async () => {
+  it('llm.call резолвит JSON → вернул daySummary + персист rollingSummary на чат', async () => {
     const { service, prisma, llm } = makeService();
-    prisma.chatboxChatSession.findFirst.mockResolvedValue({ id: 's1' });
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({ id: 's1', chatId: 'c1' });
     prisma.chatboxMessage.findMany.mockResolvedValue([
       { senderType: 'CLIENT', senderName: 'A', text: 'вопрос', contentType: 'TEXT' },
     ]);
-    llm.call.mockResolvedValue({ text: '  саммари  ' });
+    prisma.chatboxChat.findFirst.mockResolvedValue({ id: 'c1', rollingSummary: null });
+    llm.call.mockResolvedValue({
+      text: '{"daySummary": "  итог дня  ", "rollingSummary": "накопительное"}',
+    });
 
     const out = await service.generateSummary('t1', 's1');
 
-    expect(out).toBe('саммари');
+    expect(out).toBe('итог дня');
     expect(llm.call).toHaveBeenCalledWith(
       expect.objectContaining({
         taskType: 'chatbox-summary',
         tenantId: 't1',
         dataClass: 'sensitive',
-        maxTokens: 500,
+        maxTokens: 900,
+        validate: expect.any(Function),
+      }),
+    );
+    // Накопительное саммари записано на чат.
+    expect(prisma.chatboxChat.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c1', tenantId: 't1' },
+        data: expect.objectContaining({ rollingSummary: 'накопительное' }),
       }),
     );
   });
 
-  it('llm.call бросает → вернул null (best-effort, не роняем)', async () => {
+  it('битый JSON (не валидный rollup) → null, rollingSummary не пишется', async () => {
     const { service, prisma, llm } = makeService();
-    prisma.chatboxChatSession.findFirst.mockResolvedValue({ id: 's1' });
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({ id: 's1', chatId: 'c1' });
     prisma.chatboxMessage.findMany.mockResolvedValue([
       { senderType: 'CLIENT', senderName: 'A', text: 'вопрос', contentType: 'TEXT' },
     ]);
+    prisma.chatboxChat.findFirst.mockResolvedValue({ id: 'c1', rollingSummary: null });
+    llm.call.mockResolvedValue({ text: 'просто текст, не json' });
+
+    const out = await service.generateSummary('t1', 's1');
+
+    expect(out).toBeNull();
+    expect(prisma.chatboxChat.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('llm.call бросает → вернул null (best-effort, не роняем)', async () => {
+    const { service, prisma, llm } = makeService();
+    prisma.chatboxChatSession.findFirst.mockResolvedValue({ id: 's1', chatId: 'c1' });
+    prisma.chatboxMessage.findMany.mockResolvedValue([
+      { senderType: 'CLIENT', senderName: 'A', text: 'вопрос', contentType: 'TEXT' },
+    ]);
+    prisma.chatboxChat.findFirst.mockResolvedValue({ id: 'c1', rollingSummary: null });
     llm.call.mockRejectedValue(new Error('LLM down'));
 
     const out = await service.generateSummary('t1', 's1');

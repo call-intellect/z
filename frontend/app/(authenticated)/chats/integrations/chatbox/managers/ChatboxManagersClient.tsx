@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import useSWR from 'swr';
-import { ArrowLeft, Loader2, UserPlus, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
@@ -17,7 +17,6 @@ import {
 import { useAuth } from '@/contexts/auth-context';
 import { TierGate } from '@/ui/components/TierGate';
 import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import {
   Select,
@@ -36,6 +35,7 @@ import {
  */
 
 const NONE_VALUE = '__none__';
+const CREATE_VALUE = '__create__';
 
 function errMessage(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
@@ -182,6 +182,10 @@ function MemberRow({
   };
 
   const handleChange = async (value: string) => {
+    if (value === CREATE_VALUE) {
+      await handleCreate();
+      return;
+    }
     const personId = value === NONE_VALUE ? null : value;
     setSaving(true);
     try {
@@ -223,46 +227,30 @@ function MemberRow({
         )}
       </div>
 
-      <div className="flex flex-col gap-2 sm:w-72 sm:shrink-0">
-        <div className="flex items-center gap-2">
-          <Select
-            value={member.linkedPersonId ?? NONE_VALUE}
-            onValueChange={(v) => void handleChange(v)}
-            disabled={saving || creating}
-          >
-            <SelectTrigger className="flex-1">
-              <SelectValue placeholder="Выберите сотрудника" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE_VALUE}>— Не связан —</SelectItem>
-              {personOptions.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {saving && (
-            <Loader2 size={16} className="animate-spin text-fg-tertiary" />
-          )}
-        </div>
-
-        {!member.linkedPersonId && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={() => void handleCreate()}
-            disabled={saving || creating}
-            title="Создать сотрудника компании на основе этого менеджера и связать"
-          >
-            {creating ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <UserPlus size={14} />
-            )}
-            Создать сотрудника
-          </Button>
+      {/* Единый селект: связать с человеком / не связывать / создать нового */}
+      <div className="flex items-center gap-2 sm:w-72 sm:shrink-0">
+        <Select
+          value={member.linkedPersonId ?? NONE_VALUE}
+          onValueChange={(v) => void handleChange(v)}
+          disabled={saving || creating}
+        >
+          <SelectTrigger className="flex-1">
+            <SelectValue placeholder="Действие" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE_VALUE}>— Не связывать —</SelectItem>
+            {personOptions.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}
+              </SelectItem>
+            ))}
+            <SelectItem value={CREATE_VALUE}>
+              ＋ Создать нового сотрудника
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        {(saving || creating) && (
+          <Loader2 size={16} className="animate-spin text-fg-tertiary" />
         )}
       </div>
     </div>

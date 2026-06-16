@@ -35,7 +35,7 @@ export class ProcessTemplateCompletenessCron {
   async sweep(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         stats,
         'process-template-completeness: проход завершён',
       );

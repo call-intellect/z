@@ -74,7 +74,7 @@ export class TranscriptIndexWorker implements OnModuleInit, OnModuleDestroy {
       data: { embeddingsStatus: 'processing' },
     });
     const result = await this.indexer.indexMeeting(meetingId);
-    this.logger.log(
+    this.logger.debug(
       { meetingId, chunks: result.chunksIndexed },
       'transcript-index: успешно',
     );

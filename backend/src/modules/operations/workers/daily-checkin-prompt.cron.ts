@@ -57,7 +57,7 @@ export class DailyCheckInPromptCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(
+      this.logger.debug(
         stats,
         'daily-checkin-prompt.cron: проход завершён',
       );

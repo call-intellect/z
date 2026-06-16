@@ -307,7 +307,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
         isReportEvent,
       );
       const { typed } = extraction;
-      this.logger.log(
+      this.logger.debug(
         {
           rawEventId,
           segments: segments.length,

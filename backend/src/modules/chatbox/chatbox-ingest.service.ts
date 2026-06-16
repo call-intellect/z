@@ -28,10 +28,60 @@ import { IngestService } from '../ingest/ingest.service';
 const SOURCE_TYPE = 'chatbox' as const;
 const SOURCE_NAME = 'ChatBox' as const;
 
-const SUMMARY_SYSTEM_PROMPT =
-  'Ты — аналитик клиентских диалогов. Сделай краткое саммари переписки: ' +
-  'суть запроса клиента, ключевые решения, договорённости, открытые вопросы. ' +
-  '3-6 предложений, по-русски.';
+/**
+ * System-промпт посуточного rollup'а (пересмотр 2026-06-17): ОДИН LLM-вызов на
+ * закрытие сессии-суток — `накопительное + сообщения дня → { daySummary,
+ * rollingSummary }`. Плейн-текст + `validate` надёжнее strict-json_schema на
+ * anthropic (см. llm-router gotchas). Тот же контракт, что у BitrixIngestService.
+ */
+const DAY_ROLLUP_SYSTEM_PROMPT = [
+  'Ты — аналитик клиентских диалогов.',
+  'Тебе дают НАКОПИТЕЛЬНОЕ САММАРИ переписки (контекст прошлых дней, может быть пустым)',
+  'и СООБЩЕНИЯ ЗА ОДИН ДЕНЬ.',
+  'Верни СТРОГО валидный JSON без markdown и пояснений, ровно с двумя строковыми полями:',
+  '{"daySummary": "...", "rollingSummary": "..."}',
+  '- daySummary — что произошло в этот день: суть запроса клиента, ключевые',
+  '  решения, договорённости, открытые вопросы. 3-6 предложений, по-русски.',
+  '- rollingSummary — ОБНОВЛЁННОЕ накопительное саммари всей переписки: объедини',
+  '  прошлый контекст с событиями дня, убери устаревшее, держи компактным',
+  '  (до ~10 предложений), по-русски. Если накопительного нет — построй с нуля.',
+].join(' ');
+
+/** Результат посуточного rollup'а. */
+export interface ChatboxDayRollup {
+  daySummary: string;
+  rollingSummary: string;
+}
+
+/** Снять markdown-ограждение (```json … ```), если модель его добавила. */
+function stripCodeFence(text: string): string {
+  const t = text.trim();
+  if (!t.startsWith('```')) return t;
+  return t
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+}
+
+/** Безопасный парс JSON-ответа rollup'а; null при любой кривизне. */
+export function parseChatboxDayRollup(text: string): ChatboxDayRollup | null {
+  try {
+    const obj = JSON.parse(stripCodeFence(text)) as unknown;
+    if (obj && typeof obj === 'object') {
+      const rec = obj as Record<string, unknown>;
+      const { daySummary, rollingSummary } = rec;
+      if (typeof daySummary === 'string' && typeof rollingSummary === 'string') {
+        return {
+          daySummary: daySummary.trim(),
+          rollingSummary: rollingSummary.trim(),
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /** Минимальная форма сообщения для рендера транскрипта. */
 export interface TranscriptMessage {
@@ -118,8 +168,13 @@ export class ChatboxIngestService {
   }
 
   /**
-   * Best-effort LLM-summary сессии. При любой ошибке LLM → warn + null
-   * (мост в knowledge-core не должен падать из-за саммари).
+   * Посуточный rollup закрытой сессии (пересмотр 2026-06-17): ОДИН LLM-вызов
+   * (`накопительное (ChatboxChat.rollingSummary) + сообщения дня → { daySummary,
+   * rollingSummary }`). Персистит обновлённое `rollingSummary` (+`rollingSummaryAt`)
+   * на чат; `daySummary` ВОЗВРАЩАЕТ (worker кладёт его в `ChatboxChatSession.summary`).
+   * Best-effort: при любой ошибке LLM/парса → warn + null (мост не падает).
+   *
+   * Имя `generateSummary` сохранено для обратной совместимости с воркером.
    */
   async generateSummary(
     tenantId: string,
@@ -127,7 +182,7 @@ export class ChatboxIngestService {
   ): Promise<string | null> {
     const session = await this.prisma.chatboxChatSession.findFirst({
       where: { id: sessionId, tenantId },
-      select: { id: true },
+      select: { id: true, chatId: true },
     });
     if (!session) return null;
 
@@ -143,38 +198,68 @@ export class ChatboxIngestService {
     });
     if (msgs.length === 0) return null;
 
+    // Накопительное саммари переписки (контекст прошлых дней) — на чате.
+    const chat = await this.prisma.chatboxChat.findFirst({
+      where: { id: session.chatId, tenantId },
+      select: { id: true, rollingSummary: true },
+    });
+
     const transcript = renderTranscript(msgs);
+    const prevRolling = chat?.rollingSummary?.trim() || '(пусто)';
+    const variableInput = [
+      'НАКОПИТЕЛЬНОЕ САММАРИ (прошлые дни):',
+      prevRolling,
+      '',
+      'СООБЩЕНИЯ ЗА ДЕНЬ:',
+      transcript,
+    ].join('\n');
 
     // Анти-инъекция: транскрипт чата — сырые внешние сообщения (клиент/менеджер),
     // классический вектор prompt-injection. Оборачиваем user в маркеры данных +
-    // ноту в system. У сервиса нет TypedConfigService, поэтому глобальный
-    // kill-switch (aiFeatures.promptInjectionGuardEnabled) тут НЕ гейтит —
-    // guards включены всегда (enabled по умолчанию true).
+    // ноту в system (guards включены всегда — у сервиса нет TypedConfigService).
     const { system: guardedSystem, user: guardedUser } = applyInputGuards(
-      SUMMARY_SYSTEM_PROMPT,
-      transcript,
+      DAY_ROLLUP_SYSTEM_PROMPT,
+      variableInput,
       { injection: true },
     );
 
-    try {
-      const result = await this.llm.call({
-        taskType: 'chatbox-summary',
-        systemPrompt: guardedSystem,
-        // Переменная часть (транскрипт) — в конце, под prompt caching.
-        userMessage: guardedUser,
-        tenantId,
-        dataClass: 'sensitive',
-        maxTokens: 500,
-      });
-      return result.text.trim();
-    } catch (err) {
-      this.logger.warn(
-        `generateSummary: LLM-ошибка для session=${sessionId} tenant=${tenantId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
-      return null;
+    let parsed: ChatboxDayRollup | null = null;
+    for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
+      try {
+        const result = await this.llm.call({
+          taskType: 'chatbox-summary',
+          systemPrompt: guardedSystem,
+          // Переменная часть — в конце, под prompt caching.
+          userMessage: guardedUser,
+          tenantId,
+          dataClass: 'sensitive',
+          maxTokens: 900,
+          sourceRef: { type: 'chatbox_session', id: sessionId },
+          validate: (t: string) => parseChatboxDayRollup(t) !== null,
+        });
+        parsed = parseChatboxDayRollup(result.text);
+      } catch (err) {
+        this.logger.warn(
+          `generateSummary: LLM-ошибка session=${sessionId} tenant=${tenantId} attempt=${attempt}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        break;
+      }
     }
+    if (!parsed) return null;
+
+    // Накопительное — на чат (день уйдёт в session.summary через worker).
+    if (chat) {
+      await this.prisma.chatboxChat.updateMany({
+        where: { id: chat.id, tenantId },
+        data: {
+          rollingSummary: parsed.rollingSummary,
+          rollingSummaryAt: new Date(),
+        },
+      });
+    }
+    return parsed.daySummary;
   }
 
   /**
@@ -212,6 +297,7 @@ export class ChatboxIngestService {
         channelType: true,
         customerExternalId: true,
         responsibleExternalId: true,
+        rollingSummary: true,
       },
     });
 
@@ -308,6 +394,8 @@ export class ChatboxIngestService {
       customer,
       responsible,
       previousSessionSummary,
+      // Пересмотр 2026-06-17 — накопительное саммари переписки (контекст всех дней).
+      rollingSummary: chat?.rollingSummary ?? null,
       messages: messages.map((m) => ({
         at: m.externalCreatedAt.toISOString(),
         from: m.senderType === 'CLIENT' ? 'client' : 'manager',

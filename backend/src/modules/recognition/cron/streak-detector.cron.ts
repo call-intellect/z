@@ -108,7 +108,7 @@ export class StreakDetectorCron {
           );
         }
       }
-      this.logger.log(
+      this.logger.debug(
         `streak-detector: persons=${persons.length} updated=${updated} milestones=${milestones} in ${Date.now() - startedAt}ms`,
       );
     } catch (err) {

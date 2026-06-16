@@ -97,7 +97,7 @@ export class Specialist314GoalsWorker {
 
       await this.svc.processBlock({ tenantId, blockId });
 
-      this.logger.log(
+      this.logger.debug(
         { blockId, signalType: block.signalType },
         'specialist-3-14: блок обработан',
       );

@@ -61,7 +61,7 @@ export class ProviderSmokeTestCron {
     }
     try {
       const result = await this.runOnce();
-      this.logger.log(result, 'provider-smoke-test.cron: проход завершён');
+      this.logger.debug(result, 'provider-smoke-test.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

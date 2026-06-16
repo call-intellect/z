@@ -53,7 +53,7 @@ export class RetentionExtrasCron {
       summary.cards = await this.hardDeleteCards();
       const total = Object.values(summary).reduce((s, n) => s + n, 0);
       if (total > 0) {
-        this.logger.log(summary, 'Retention extras: проход завершён');
+        this.logger.debug(summary, 'Retention extras: проход завершён');
       }
     } catch (err) {
       this.logger.error(

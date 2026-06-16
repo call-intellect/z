@@ -83,7 +83,7 @@ export class InsightClustererCron {
       // Глобальный gauge insights_dynamic_label_count{label}.
       await this.refreshDynamicLabelGauge();
 
-      this.logger.log(
+      this.logger.debug(
         {
           orgs: orgs.length,
           totalRecalc,

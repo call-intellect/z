@@ -81,7 +81,7 @@ export class ExecMorningPushCron {
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.log(stats, 'exec-morning-push.cron: проход завершён');
+      this.logger.debug(stats, 'exec-morning-push.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

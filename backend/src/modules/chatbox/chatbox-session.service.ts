@@ -1,18 +1,22 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
 /**
- * ChatboxSessionService — сегментация сообщений чата на сессии для LLM-анализа
- * (ТЗ plans/tz/2026-06-05-chatbox-integration.md, Фаза 3).
+ * ChatboxSessionService — нарезка сообщений чата на сессии для LLM-анализа
+ * (ТЗ 2026-06-05; пересмотр 2026-06-17 — окно синхронизации).
  *
- * Сессия = непрерывный диалог: смежные сообщения с паузой ≤ `idle_gap_hours`
- * относятся к одной сессии; пауза дольше открывает новую. Пересборка
- * идемпотентна (upsert по `seq`), не сбрасывает уже выполненный анализ
- * (`analysisStatus='done'`), кроме случаев, когда сессия дозаполнилась или
- * закрылась — тогда требуется пере-анализ.
+ * Сессия = ОКНО СИНХРОНИЗАЦИИ (сутки): на каждом синке берём только новые
+ * сообщения (ещё не привязанные к сессии, `sessionId=null`), группируем по
+ * календарному дню (UTC) и на каждый день создаём НОВУЮ ЗАКРЫТУЮ сессию
+ * (`endedAt` выставлен) → она сразу анализируема. Это чинит сквозной
+ * (непрерывный) чат: раньше (gap-based) он зависал одной вечно-открытой сессией
+ * (`endedAt=null`) и не анализировался ни одним из путей (все требуют
+ * `endedAt != null`). Уже привязанные сообщения и их сессии не трогаем —
+ * выполненный анализ (`analysisStatus='done'`) не сбрасывается.
+ *
+ * `segmentMessages` (gap-based, ниже) оставлена как чистая утилита для
+ * unit-тестов, но `rebuildSessions` её больше НЕ использует.
  */
 
 /** Один сегмент-сессия: окно времени + id входящих сообщений. */
@@ -81,108 +85,85 @@ export class ChatboxSessionService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    @Inject(AdminSettingsService)
-    private readonly adminSettings: AdminSettingsService,
   ) {}
 
   /**
-   * Пересобрать сессии чата из его сообщений. Идемпотентно: upsert по `seq`,
-   * чистит осиротевшие сессии. Возвращает число сегментов.
+   * Нарезать НОВЫЕ (ещё не привязанные) сообщения чата на сессии-сутки.
+   * Каждый календарный день новых сообщений → отдельная ЗАКРЫТАЯ сессия
+   * (`endedAt` = время последнего сообщения дня) → сразу анализируема. Уже
+   * привязанные сообщения и существующие сессии не трогаем. Идемпотентно:
+   * повторный вызов без новых сообщений — no-op. Возвращает число созданных сессий.
    */
   async rebuildSessions(
     tenantId: string,
     chatId: string,
   ): Promise<{ sessionCount: number }> {
-    const idleGapHours =
-      (await this.adminSettings.get<number>(
-        'chatbox.session.idle_gap_hours',
-        12,
-      )) ?? 12;
-
-    const messages = await this.prisma.chatboxMessage.findMany({
-      where: { tenantId, chatId },
+    // Только новые сообщения с прошлого синка (привязанные — уже в сессиях).
+    const fresh = await this.prisma.chatboxMessage.findMany({
+      where: { tenantId, chatId, sessionId: null },
       orderBy: { externalCreatedAt: 'asc' },
       select: { id: true, externalCreatedAt: true },
     });
-    if (messages.length === 0) {
+    if (fresh.length === 0) {
       return { sessionCount: 0 };
     }
 
-    const chat = await this.prisma.chatboxChat.findUnique({
-      where: { id: chatId },
-      select: { status: true },
-    });
-    const chatActive = chat?.status === 'active';
-
-    const segments = segmentMessages(
-      messages.map((m) => ({ id: m.id, at: m.externalCreatedAt })),
-      idleGapHours,
-      chatActive,
-    );
-
-    let previousSessionId: string | null = null;
-    for (let i = 0; i < segments.length; i++) {
-      const seg = segments[i]!;
-      const seq = i + 1;
-      const ids = seg.messageIds;
-
-      const existing = await this.prisma.chatboxChatSession.findUnique({
-        where: { tenantId_chatId_seq: { tenantId, chatId, seq } },
-        select: {
-          id: true,
-          endedAt: true,
-          messageCount: true,
-        },
-      });
-
-      // Решаем, требуется ли пере-анализ при апдейте: открытая сессия
-      // закрылась (endedAt был null → стал не-null) ИЛИ доросло число сообщений.
-      const needsReanalysis =
-        existing !== null &&
-        ((existing.endedAt === null && seg.endedAt !== null) ||
-          ids.length > existing.messageCount);
-
-      const updateData: Prisma.ChatboxChatSessionUpdateInput = {
-        startedAt: seg.startedAt,
-        endedAt: seg.endedAt,
-        messageCount: ids.length,
-        previousSessionId,
-      };
-      // analysisStatus НЕ трогаем в общем случае (не сбрасываем 'done');
-      // только при дозаполнении/закрытии — заново 'pending'.
-      if (needsReanalysis) {
-        updateData.analysisStatus = 'pending';
+    // Группировка по календарному дню (UTC). fresh уже ASC → порядок дней и
+    // endedAt (последнее сообщение дня) проставляются естественно.
+    const groups = new Map<
+      string,
+      { startedAt: Date; endedAt: Date; ids: string[] }
+    >();
+    for (const m of fresh) {
+      const dayKey = m.externalCreatedAt.toISOString().slice(0, 10);
+      const g = groups.get(dayKey);
+      if (g) {
+        g.endedAt = m.externalCreatedAt;
+        g.ids.push(m.id);
+      } else {
+        groups.set(dayKey, {
+          startedAt: m.externalCreatedAt,
+          endedAt: m.externalCreatedAt,
+          ids: [m.id],
+        });
       }
+    }
 
-      const session: { id: string } = await this.prisma.chatboxChatSession.upsert({
-        where: { tenantId_chatId_seq: { tenantId, chatId, seq } },
-        select: { id: true },
-        create: {
+    // Продолжаем нумерацию seq и цепочку previousSessionId от последней сессии.
+    const agg = await this.prisma.chatboxChatSession.aggregate({
+      where: { tenantId, chatId },
+      _max: { seq: true },
+    });
+    let seq = agg._max.seq ?? 0;
+    const lastSession = await this.prisma.chatboxChatSession.findFirst({
+      where: { tenantId, chatId },
+      orderBy: { seq: 'desc' },
+      select: { id: true },
+    });
+    let previousSessionId: string | null = lastSession?.id ?? null;
+
+    for (const g of groups.values()) {
+      seq += 1;
+      const session = await this.prisma.chatboxChatSession.create({
+        data: {
           tenantId,
           chatId,
           seq,
-          startedAt: seg.startedAt,
-          endedAt: seg.endedAt,
-          messageCount: ids.length,
-          previousSessionId,
+          startedAt: g.startedAt,
+          endedAt: g.endedAt, // закрыта сразу → анализируема
+          messageCount: g.ids.length,
           analysisStatus: 'pending',
+          previousSessionId,
         },
-        update: updateData,
+        select: { id: true },
       });
-
       await this.prisma.chatboxMessage.updateMany({
-        where: { tenantId, id: { in: ids } },
+        where: { tenantId, id: { in: g.ids } },
         data: { sessionId: session.id },
       });
-
       previousSessionId = session.id;
     }
 
-    // Осиротевшие сессии (seq за пределами текущего числа сегментов).
-    await this.prisma.chatboxChatSession.deleteMany({
-      where: { tenantId, chatId, seq: { gt: segments.length } },
-    });
-
-    return { sessionCount: segments.length };
+    return { sessionCount: groups.size };
   }
 }

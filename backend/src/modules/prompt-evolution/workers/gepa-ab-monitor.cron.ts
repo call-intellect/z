@@ -275,7 +275,7 @@ export class GepaAbMonitorCron {
     });
 
     this.metrics.incGepaPromoted({ promptKey: c.promptKey });
-    this.logger.log(
+    this.logger.debug(
       `gepa-ab-monitor: candidate=${c.id} promptKey=${c.promptKey} tenant=${c.tenantId ?? 'global'} → PROMOTED (score ${compositeB.toFixed(3)})`,
     );
   }

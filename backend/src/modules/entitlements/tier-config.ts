@@ -72,6 +72,12 @@ export type FeatureKey =
    */
   | 'feature.chatbox'
   /**
+   * ТЗ 2026-06-09-bitrix24-integration-install — интеграция с Bitrix24:
+   * установка портала + жизненный цикл OAuth-токена. Core-фича памяти
+   * компании, включена на всех тарифах.
+   */
+  | 'feature.bitrix'
+  /**
    * ТЗ 2026-06-09-support-desk-clone (Р-3) — вендор-эксклюзивная встроенная
    * служба поддержки. НЕ продаётся через тариф: `false` во ВСЕХ тирах;
    * включается только per-Org для нашей вендор-Org через
@@ -131,6 +137,7 @@ export const ALL_FEATURES: readonly FeatureKey[] = [
   'feature.memory_regulations_for_members',
   'feature.memory_entities_for_members',
   'feature.chatbox',
+  'feature.bitrix',
   // ТЗ 2026-06-09 support-desk — вендор-эксклюзив, false во всех тирах.
   'feature.support_desk',
 ] as const;
@@ -216,6 +223,9 @@ const BASIC_FEATURES: Record<FeatureKey, boolean> = {
   // ChatBox-интеграция — core-фича памяти компании, включена на всех тарифах
   // (PRO/ENTERPRISE/STANDARD наследуют через spread BASIC_FEATURES).
   'feature.chatbox': true,
+  // Bitrix24-интеграция — core-фича памяти компании, включена на всех тарифах
+  // (PRO/ENTERPRISE/STANDARD наследуют через spread BASIC_FEATURES).
+  'feature.bitrix': true,
   // ── всё остальное на basic — выключено ──
   'feature.theme': false,
   'feature.graph': false,

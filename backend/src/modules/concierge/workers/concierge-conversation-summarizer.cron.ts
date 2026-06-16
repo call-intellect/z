@@ -88,7 +88,7 @@ export class ConciergeConversationSummarizerCron {
       );
     }
     if (processed > 0 || errors > 0) {
-      this.logger.log(
+      this.logger.debug(
         `concierge-summarizer: processed=${processed} errors=${errors}`,
       );
     }

@@ -49,7 +49,7 @@ export class CrossFunctionalFrictionAggregatorCron {
   async sweep(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.log(
+      this.logger.debug(
         stats,
         'cross-functional-friction-aggregator: проход завершён',
       );

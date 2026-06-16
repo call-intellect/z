@@ -71,6 +71,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔌 2026-06-17 — Bitrix24 как источник: синк IM+CRM + посуточный анализ + UI (Ф0–Ф6)
+
+> Контракт: ветка `bitrix`, коммиты `aa44f18a` (Ф0–Ф4: схема+синк+очереди+анализ), `40580414` (Ф5–Ф6: страница+сопоставление+статус). ТЗ: `plans/tz/2026-06-17-bitrix24-source-sync.md`.
+
+- **Шаг 1 — ENV** — **новых нет.** `BITRIX_CLIENT_ID/SECRET` и пр. заведены ещё на фазе установки (`2026-06-09-bitrix24-integration-install`). Kill-switch `bitrix.enabled` — admin-настройка (не ENV).
+- **Шаг 4 — Prisma** — **обязательно, авто** (4 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260617000000_bitrix_source_sync` — зеркала `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal` + enum'ы `BitrixLinkMode/BitrixDialogType/BitrixDialogAnalysisStatus` + поля `BitrixIntegration.analysisEnabled`(default true)/`lastFullSyncAt`/`lastIncrementalSyncAt`.
+  - `20260617000001_bitrix_age_schema_fix` — идемпотентный перенос ag_catalog→public (AGE-трап; для повторного выката no-op).
+  - `20260617010000_bitrix_rolling_summary_crm_notes` — `rollingSummary`/`rollingSummaryAt` на `BitrixDialog` И `ChatboxChat` + зеркала `BitrixLead`/`BitrixCrmNote`.
+  - `20260617020000_bitrix_source_type` — `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'bitrix'`. ⚠ `ADD VALUE` не-транзакционна → отдельный файл; идемпотентна.
+  - `20260617030000_bitrix_crm_delta` (Ф4b) — колонка `modifiedAt` + индекс `[tenantId, modifiedAt]` на `BitrixContact/Company/Deal/Lead` + курсоры `lastCrmSyncAt`/`lastCrmDigestAt` на `BitrixIntegration` (дельта-синк CRM + посуточный дайджест).
+  - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
+- **Шаг 12 — Smoke** (после выката):
+  - В логах backend при старте: `BitrixSyncWorker запущен (bitrix.sync)` и `BitrixAnalyzeWorker запущен (bitrix.analyze)` (in-process воркеры в `WorkersModule`).
+  - Новые BullMQ-очереди: `bitrix.sync`, `bitrix.analyze`. Кроны `@Cron 00:00`: `BitrixSyncCron` (синк connected-порталов), `BitrixAnalyzeCron` (анализ закрытых сессий + **посуточный CRM-дайджест Ф4b** `ingestCrmDigests`, гейт `bitrix.enabled`+`analysisEnabled`).
+  - Новые REST (Swagger tag `bitrix`): `GET /api/v1/bitrix/integration/status`, `PATCH .../analysis`, `GET .../users`, `PATCH .../users/:externalId/link`, `POST .../sync?scope=all|users|dialogs|crm`.
+  - Фронт: `/company-admin/sources/bitrix` (стеклянная страница) + `/company-admin/sources/bitrix/managers` (сопоставление сотрудников).
+- **LLM сам не побежит:** анализ гейтится `analysisEnabled` + наличием подключённого портала. Дефолт `analysisEnabled=true`, но без connected-интеграции крон/синк ничего не ставят. Включение для существующих — через тумблер на странице источника.
+- **Отложено (Ф4b):** CRM посуточный дайджест — нужна дельта по `DATE_MODIFY` + `modifiedAt`/курсор + решение владельца по глубине/периоду. См. `second-brain/04_не-сделано/README.md`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧬 2026-06-16 — Один человек = один клон должности (Раздел 7) + ревизия 12 промптов клона + 21 баг конвейера M5
 
 > Контракт: ветка `devsv`, 9 коммитов (`80ce250a..8168d915`). ТЗ: `plans/tz/2026-06-16-clone-agents-prompt-revision.md` (Раздел 7 + Раздел 8 + Приложения A–D). second-brain: `02_architecture/data-model.md` §«PersonaStatus += frozen», `02_architecture/module-map.md`, `02_architecture/agent-modules.md`, `01_projects/skill-and-clone.md` §«Доработки 2026-06-16», `01_projects/api-layer.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`.
@@ -515,6 +539,42 @@ docker compose run --rm --no-deps backend \
   - Изоляция контура: `POST /support/tickets` от пользователя другой Org создаёт `Issue` в вендор-Org (`supportCustomerOrgId` = его tenant); черновик клона цитирует ТОЛЬКО блоки support-контура.
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🔌 2026-06-09 — Bitrix24: установка интеграции + жизненный цикл токена
+
+> Контракт: `plans/tz/2026-06-09-bitrix24-integration-install.md`. Ветка `bitrix`.
+>
+> **Зачем для прода:** подключение портала Bitrix24 к компании (оба способа —
+> OAuth-коннект из Коры + установка из Маркета `ONAPPINSTALL`), шифрованное
+> хранение `access+refresh` per-org, refresh по требованию, проверка соединения,
+> отключение. Синк данных — отдельный следующий этап. **Миграция БД ЕСТЬ**
+> (аддитивная, авто). **Новые ENV — опциональны** (без них стартует; подключение
+> даёт `bitrix_misconfigured`).
+
+- **Шаг 1 — ENV / kill-switch** (опциональны):
+  - `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` — OAuth-креды тиражного приложения
+    (из партнёрского кабинета Bitrix24). Без них фича не подключается, но backend
+    стартует. `redirect_uri` НЕ в ENV — `{PUBLIC_HOST_URL}/api/v1/bitrix/oauth/callback`.
+  - `BITRIX_OAUTH_BASE_URL` (default `https://oauth.bitrix.info`) — сервер авторизации.
+  - `bitrix.enabled` (AdminSetting, **default true**, kill-switch ON) — приём событий
+    установки. Выкл → install-handler 200 no-op. Code-fallback `true`, seed не нужен.
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260609112355_bitrix_integration`):
+  `+ table BitrixIntegration` (FK → `Org`, 2 индекса, unique по `memberId`) +
+  `+ enum BitrixIntegrationStatus`. Аддитивна (CREATE TABLE/TYPE), без потери данных.
+  Применяется `prisma migrate deploy` в migrate-контейнере на `docker compose up`.
+- **Шаг 11 — Docker rebuild** — обязателен (backend: модуль `bitrix` — 3 контроллера,
+  API-клиент, сервис, RBAC-ресурс `bitrix`, фича `feature.bitrix`; frontend: секция
+  Bitrix24 на `/settings/integrations` + страница `/bitrix/install`):
+  `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - `curl -s localhost:3000/api/docs-json | grep -c bitrix` → теги `bitrix` присутствуют.
+  - В UI `/settings/integrations` видна секция «Bitrix24» (если задан `BITRIX_CLIENT_ID`).
+  - **Вне кода:** зарегистрировать тиражное приложение в партнёрском кабинете
+    (client_id/secret → ENV; handler URL = `/bitrix/install`; install event →
+    `/api/v1/bitrix/install/event`; redirect_uri → `/api/v1/bitrix/oauth/callback`),
+    финализировать `scope` (минимум `crm,user,profile`).
 
 ---
 

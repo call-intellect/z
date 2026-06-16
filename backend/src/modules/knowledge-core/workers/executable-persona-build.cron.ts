@@ -47,7 +47,10 @@ export class ExecutablePersonaBuildCron {
     }
     try {
       const summary = await this.runOnce();
-      this.logger.log(summary, 'executable-persona-build.cron: проход завершён');
+      this.logger.debug(
+        summary,
+        'executable-persona-build.cron: проход завершён',
+      );
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },

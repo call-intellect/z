@@ -171,7 +171,7 @@ export class ChatboxIntegrationService {
         tokenEnc,
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
-        syncMode: dto.syncMode,
+        syncMode: 'daily', // период фиксирован (синк 00:00); выбор убран 2026-06-16
         // ТЗ 2026-06-10 cabinet §5 (Р-5): подключение канала = СОГЛАСИЕ на анализ
         // (как создание встречи/загрузка аудио). Дефолт ON — переписку подключают
         // именно ДЛЯ анализа; молчаливый OFF оставлял чаты в графе невидимыми.
@@ -183,7 +183,7 @@ export class ChatboxIntegrationService {
         tokenEnc,
         workspaceId: dto.workspaceId,
         workspaceName: selected.name,
-        syncMode: dto.syncMode,
+        syncMode: 'daily', // период фиксирован (синк 00:00); выбор убран 2026-06-16
         // Меняем только если явно передали — иначе сохранение syncMode не сбросит флаг.
         ...(dto.analysisEnabled !== undefined
           ? { analysisEnabled: dto.analysisEnabled }
@@ -196,14 +196,54 @@ export class ChatboxIntegrationService {
     // Фаза 4: синхронизация webhook ChatBox в зависимости от syncMode.
     await this.reconcileWebhook(tenantId, plainToken, dto.workspaceId, saved);
 
+    // Источник в списке «Источники» создаётся СРАЗУ при подключении (2026-06-16),
+    // а не лениво при первом синке — иначе после connect его не видно в списке.
+    await this.ensureChatboxSource(tenantId);
+
     const result = await this.getIntegration(tenantId);
     // upsert гарантирует наличие строки — null здесь невозможен.
     return result as ChatboxIntegrationResponseDto;
   }
 
   /**
+   * Lazy upsert `Source(type='chatbox', name='ChatBox')` для tenant'а — чтобы
+   * ChatBox появился в списке «Источники» сразу при подключении. Совпадает с
+   * тем, что делает `ChatboxIngestService` при ingest (тот же natural-key).
+   */
+  private async ensureChatboxSource(tenantId: string): Promise<void> {
+    await this.prisma.source
+      .upsert({
+        where: {
+          tenantId_type_name: {
+            tenantId,
+            type: 'chatbox',
+            name: 'ChatBox',
+          },
+        },
+        create: {
+          tenantId,
+          type: 'chatbox',
+          name: 'ChatBox',
+          dataClass: 'sensitive',
+          isActive: true,
+        },
+        update: { isActive: true },
+        select: { id: true },
+      })
+      .catch((err) => {
+        // Не критично для подключения — синк всё равно создаст источник лениво.
+        this.logger.warn(
+          `ensureChatboxSource: не удалось создать Source — ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+  }
+
+  /**
    * Отключить интеграцию (удалить конфиг). Перед удалением снимает
-   * зарегистрированный webhook ChatBox (best-effort).
+   * зарегистрированный webhook ChatBox (best-effort). Источник в списке гасим
+   * (isActive=false) — собранные данные остаются в памяти компании.
    */
   async remove(tenantId: string): Promise<{ ok: true }> {
     const row = await this.prisma.chatboxIntegration.findUnique({
@@ -215,6 +255,13 @@ export class ChatboxIntegrationService {
       await this.removeWebhook(token, row.workspaceId, row.webhookExternalId);
     }
     await this.prisma.chatboxIntegration.deleteMany({ where: { tenantId } });
+    // Гасим источник в списке (данные не трогаем — FK RawEvent).
+    await this.prisma.source
+      .updateMany({
+        where: { tenantId, type: 'chatbox', name: 'ChatBox' },
+        data: { isActive: false },
+      })
+      .catch(() => undefined);
     return { ok: true };
   }
 

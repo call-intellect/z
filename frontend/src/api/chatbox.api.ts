@@ -232,10 +232,11 @@ export const chatboxApi = {
   deleteIntegration: () =>
     apiClient.del<{ ok: true }>('/api/v1/chatbox/integration'),
 
-  sync: (scope: ChatboxSyncScope) =>
+  // `since` (ISO) — бэкафилл чатов за период (scope='chats').
+  sync: (scope: ChatboxSyncScope, since?: string) =>
     apiClient.post<{ ok: true; jobId: string }>(
       '/api/v1/chatbox/integration/sync',
-      { scope },
+      since ? { scope, since } : { scope },
     ),
 
   syncStatus: () =>

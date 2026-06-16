@@ -755,3 +755,112 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- K1 (Волна 3, Б7) — гонка дублей ConflictItem на одну пару.
+--   ConflictService.report делал findFirst-or-create без @@unique, поэтому два
+--   конкурента (cron + handler в одном процессе) создавали два открытых
+--   ConflictItem на одну пару. @@unique с status невозможен (full-unique
+--   запретил бы и закрытые повторы той же пары), поэтому partial-unique по
+--   ОТКРЫТЫМ конфликтам. Prisma `@@unique` не умеет WHERE. Идемпотентно.
+--   report ловит P2002 → re-find открытого (см. conflict.service.ts report).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'ConflictItem'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_conflict_open"
+      ON "ConflictItem" ("tenantId", "resourceType", "existingId", "newId")
+      WHERE "status" = 'open'
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- K1 (Волна 3, Б18) — дубль singleton closed-группы KnowledgeGroup (refId=NULL).
+--   @@unique([tenantId, kind, refId]) НЕ защищает синглтоны: в PostgreSQL NULL
+--   distinct, поэтому несколько leadership/council/support групп с refId=NULL
+--   проходят. Partial-unique по (tenantId, kind) ТОЛЬКО для refId IS NULL
+--   (department/personal с refId — под штатным @@unique). NULLS NOT DISTINCT не
+--   нужен: refId не входит в колонки индекса. Prisma `@@unique` не умеет WHERE.
+--   ensureGroup ловит P2002 → re-find (см. block-access-deriver.service.ts).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'KnowledgeGroup'
+  ) THEN
+    EXECUTE $sql$
+      CREATE UNIQUE INDEX IF NOT EXISTS "uq_knowledge_group_singleton"
+      ON "KnowledgeGroup" ("tenantId", "kind")
+      WHERE "refId" IS NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- K1+K11 (Волна 3, Б24) — гонка версий + ДВЕ active role-персоны.
+--   @@unique([profileId, scope, scopeRefId, version]) НЕ защищает role-scope:
+--   profileId=NULL для роли → NULL distinct в PG, дубли версий проходят. Плюс
+--   гонка nextVersion плодит две active. Два partial-unique:
+--     (a) uq_executable_persona_role_version — уникальность ВЕРСИИ роли;
+--     (b) uq_executable_persona_role_active  — РОВНО одна active на роль.
+--   Prisma `@@unique` не умеет WHERE. Таблица @@map('executable_personas').
+--   createRolePersonaWithRetry ловит P2002 → retry с пересчётом (см.
+--   executable-persona-build.service.ts).
+--   SELF-SKIP для (b): schema-фаза идёт раньше backfill; если уже есть роль с
+--   ≥2 active (тот самый баг) — уникальный индекс не встанет. Считаем такие
+--   группы, при >0 RAISE NOTICE и пропускаем (a) ставим всегда; индекс (b)
+--   встанет на следующем прогоне после ручной/cron-нормализации (cron сам
+--   супер-седит лишние active при следующей пересборке роли).
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+DECLARE
+  dup_active integer := 0;
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'executable_personas'
+  ) THEN
+    -- (a) уникальность версии роли — ставим всегда (дубли версий редки и их
+    --     ловит retry; если исторический дубль есть — IF NOT EXISTS не создаст,
+    --     ошибку логируем отдельным NOTICE).
+    BEGIN
+      EXECUTE $sql$
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_executable_persona_role_version"
+        ON "executable_personas" ("scope", "scopeRefId", "version")
+        WHERE "scope" = 'role'
+      $sql$;
+    EXCEPTION WHEN unique_violation THEN
+      RAISE NOTICE 'uq_executable_persona_role_version: исторические дубли версий — индекс пропущен, встанет после нормализации';
+    END;
+
+    -- (b) ровно одна active role-персона — self-skip при существующих дублях.
+    EXECUTE $sql$
+      SELECT count(*) FROM (
+        SELECT 1
+        FROM "executable_personas"
+        WHERE "scope" = 'role' AND "status" = 'active'
+        GROUP BY "scopeRefId"
+        HAVING count(*) > 1
+      ) d
+    $sql$ INTO dup_active;
+
+    IF dup_active > 0 THEN
+      RAISE NOTICE 'uq_executable_persona_role_active: % ролей с ≥2 active — индекс пропущен (cron-пересборка нормализует, индекс встанет на следующем прогоне postgres-init)', dup_active;
+    ELSE
+      EXECUTE $sql$
+        CREATE UNIQUE INDEX IF NOT EXISTS "uq_executable_persona_role_active"
+        ON "executable_personas" ("scope", "scopeRefId")
+        WHERE "status" = 'active' AND "scope" = 'role'
+      $sql$;
+    END IF;
+  END IF;
+END $$;

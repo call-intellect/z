@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { BlockAccessDeriverService } from './block-access-deriver.service';
@@ -189,6 +190,45 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
       expect.objectContaining({
         data: expect.arrayContaining([
           expect.objectContaining({ blockId: 'block-5', groupId: 'g-leadership', via: 'closed' }),
+        ]),
+        skipDuplicates: true,
+      }),
+    );
+  });
+
+  it('K1 (Б18): гонка singleton closed-группы (refId=NULL) → P2002 → re-find существующей, без дубля', async () => {
+    const prisma = buildPrisma();
+    // closed=council → ensureGroup(council, refId=null): findFirst пусто →
+    // create кидает P2002 (партиал-unique uq_knowledge_group_singleton) →
+    // re-find находит группу-победителя гонки.
+    prisma.knowledgeGroup.findFirst
+      .mockResolvedValueOnce(null) // 1-й findFirst в ensureGroup
+      .mockResolvedValueOnce({ id: 'g-council-existing' }); // re-find после P2002
+    const p2002 = new Prisma.PrismaClientKnownRequestError('unique', {
+      code: 'P2002',
+      clientVersion: 'x',
+    });
+    prisma.knowledgeGroup.create.mockRejectedValueOnce(p2002);
+
+    const service = buildService(prisma);
+    await service.deriveForBlock({
+      tenantId: 'tenant-1',
+      blockId: 'block-race',
+      sourceType: 'meeting',
+      sourceExternalId: 'm-race',
+      payload: { closedGroupKind: 'council' },
+    });
+
+    // Победитель гонки переиспользован, дубля не создано.
+    expect(prisma.knowledgeGroup.findFirst).toHaveBeenCalledTimes(2);
+    expect(prisma.ideaBlockAccess.createMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            blockId: 'block-race',
+            groupId: 'g-council-existing',
+            via: 'closed',
+          }),
         ]),
         skipDuplicates: true,
       }),

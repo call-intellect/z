@@ -196,13 +196,6 @@ export class ExecutablePersonaBuildService {
         ...processMarkers.map((t) => t.id),
       ];
 
-      // Insert new + supersede previous.
-      const nextVersion = await this.nextVersion({
-        profileId: profile.id,
-        scope: 'person',
-        scopeRefId: null,
-      });
-
       // W4.1/W4.2 — derive DataClass для ExecutablePersona.
       // Floor: 'internal' (Клон Роли, §4 ТЗ — решение №6 clones-role-based-rebrand).
       // На enforce — сохраняем audit в `ExecutablePersona.dataClassAudit`;
@@ -230,31 +223,20 @@ export class ExecutablePersonaBuildService {
           ? (derivedEp.audit as unknown as Prisma.InputJsonValue)
           : Prisma.JsonNull;
 
-      const newPersona = await this.prisma.$transaction(async (tx) => {
-        await tx.executablePersona.updateMany({
-          where: {
-            profileId: profile.id,
-            scope: 'person',
-            status: 'active',
-          },
-          data: { status: 'superseded' },
-        });
-        return tx.executablePersona.create({
-          data: {
-            tenantId: profile.tenantId,
-            profileId: profile.id,
-            scope: 'person',
-            scopeRefId: null,
-            version: nextVersion,
-            personaPrompt,
-            includedTraitIds,
-            status: 'active',
-            builtFromTraitsCount: profile.traits.length,
-            triggerReason,
-            triggerEventAt,
-            dataClassAudit: personaAudit,
-          },
-        });
+      // K1 (Б24) — гонка nextVersion (два конкурента читают одинаковый last
+      // version → создают дубли). Полагаемся на штатный
+      // @@unique([profileId, scope, scopeRefId, version]) (profileId NOT NULL
+      // для person → защищает). При P2002 — короткий retry с пересчётом
+      // nextVersion. catch(P2002) СНАРУЖИ $transaction (анти-паттерн Б1).
+      const newPersona = await this.createPersonPersonaWithRetry({
+        tenantId: profile.tenantId,
+        profileId: profile.id,
+        personaPrompt,
+        includedTraitIds,
+        builtFromTraitsCount: profile.traits.length,
+        triggerReason,
+        triggerEventAt,
+        personaAudit,
       });
 
       this.metrics.observePersonaBuildDuration(
@@ -437,12 +419,6 @@ export class ExecutablePersonaBuildService {
         ...processMarkers.map((t) => t.id),
       ];
 
-      const nextVersion = await this.nextVersion({
-        profileId: null,
-        scope: 'role',
-        scopeRefId: args.roleId,
-      });
-
       // Clones=Roles Ф5 (2026-05-25) — клон роли это shared-знание Org,
       // dataClass всегда `internal` (floor поднимает любой источник).
       // Используем `DataClassPolicyService.derive(kind='executable_persona')`.
@@ -467,36 +443,32 @@ export class ExecutablePersonaBuildService {
         dataClassAudit = derived.audit as unknown as Prisma.InputJsonValue;
       }
 
-      // Clones=Roles Ф2 — пересборка для role-scope должна также
-      // «погашать» pending_rebuild версии (создаваемые handler'ом при
-      // смене носителя). Иначе они останутся висеть в БД и портить count
-      // в `clones_role_versions_total`.
-      const newPersona = await this.prisma.$transaction(async (tx) => {
-        await tx.executablePersona.updateMany({
-          where: {
-            tenantId: args.tenantId,
-            scope: 'role',
-            scopeRefId: args.roleId,
-            status: { in: ['active', 'pending_rebuild'] },
-          },
-          data: { status: 'superseded' },
-        });
-        return tx.executablePersona.create({
-          data: {
-            tenantId: args.tenantId,
-            profileId: null,
-            scope: 'role',
-            scopeRefId: args.roleId,
-            version: nextVersion,
-            personaPrompt,
-            includedTraitIds,
-            status: 'active',
-            builtFromTraitsCount: dedupedTraits.length,
-            triggerReason,
-            triggerEventAt,
-            ...(dataClassAudit ? { dataClassAudit } : {}),
-          },
-        });
+      // K11 (Б23) — role-персона ДОЛЖНА нести поля версионирования
+      // (roleVersion / currentBearerPersonId / publicName / succeedsPersonaId),
+      // иначе версии схлопываются в v1 и имя носителя пустое. Раньше эти поля
+      // проставлял ТОЛЬКО handler (role.bearer_changed); standalone-вызовы
+      // (cron / on-demand из ClonesService) плодили незаполненную active.
+      // Вычисляются внутри createRolePersonaWithRetry (carry-forward цепочки).
+      //
+      // K1 (Б24) — гонка nextVersion + NULL в @@unique (profileId=NULL для роли)
+      // → дубли версий и ДВЕ active. Полагаемся на partial-unique
+      // `uq_executable_persona_role_version` (версия) +
+      // `uq_executable_persona_role_active` (одна active). При P2002 — короткий
+      // retry: пересчитать nextVersion/roleVersion и повторить. catch(P2002)
+      // СНАРУЖИ $transaction (анти-паттерн Б1: P2002 внутри tx ломает её).
+      // Clones=Roles Ф2 — пересборка для role-scope также «погашает»
+      // pending_rebuild версии (создаются handler'ом при смене носителя).
+      const newPersona = await this.createRolePersonaWithRetry({
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+        roleName: role?.name ?? null,
+        bearerPersonIds: personIds,
+        personaPrompt,
+        includedTraitIds,
+        builtFromTraitsCount: dedupedTraits.length,
+        triggerReason,
+        triggerEventAt,
+        dataClassAudit,
       });
 
       this.metrics.observePersonaBuildDuration(
@@ -762,6 +734,209 @@ export class ExecutablePersonaBuildService {
     const text = result.text.trim();
     if (text.length < 50) return null;
     return text.slice(0, 8_000);
+  }
+
+  /** K1 (Б24) — P2002 (unique violation). */
+  private isP2002(err: unknown): boolean {
+    return (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === 'P2002'
+    );
+  }
+
+  /**
+   * K1 (Б24) — supersede прошлой active + create новой person-персоны с
+   * retry на гонке версий (P2002 на @@unique([profileId,scope,scopeRefId,
+   * version])). До 3 попыток: пересчитываем nextVersion и повторяем.
+   * catch(P2002) СНАРУЖИ $transaction (анти-паттерн Б1).
+   */
+  private async createPersonPersonaWithRetry(args: {
+    tenantId: string;
+    profileId: string;
+    personaPrompt: string;
+    includedTraitIds: string[];
+    builtFromTraitsCount: number;
+    triggerReason: PersonaTriggerReason;
+    triggerEventAt: Date | null;
+    personaAudit: Prisma.InputJsonValue | typeof Prisma.JsonNull;
+  }): Promise<ExecutablePersona> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const nextVersion = await this.nextVersion({
+        profileId: args.profileId,
+        scope: 'person',
+        scopeRefId: null,
+      });
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          await tx.executablePersona.updateMany({
+            where: {
+              profileId: args.profileId,
+              scope: 'person',
+              status: 'active',
+            },
+            data: { status: 'superseded' },
+          });
+          return tx.executablePersona.create({
+            data: {
+              tenantId: args.tenantId,
+              profileId: args.profileId,
+              scope: 'person',
+              scopeRefId: null,
+              version: nextVersion,
+              personaPrompt: args.personaPrompt,
+              includedTraitIds: args.includedTraitIds,
+              status: 'active',
+              builtFromTraitsCount: args.builtFromTraitsCount,
+              triggerReason: args.triggerReason,
+              triggerEventAt: args.triggerEventAt,
+              dataClassAudit: args.personaAudit,
+            },
+          });
+        });
+      } catch (err) {
+        lastErr = err;
+        if (this.isP2002(err)) {
+          this.logger.debug(
+            { profileId: args.profileId, attempt },
+            'createPersonPersonaWithRetry: P2002 (гонка версий) — повтор с пересчётом',
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
+  }
+
+  /**
+   * K11 (Б23) — вычисляет поля версионирования клона роли для standalone
+   * buildForRole (carry-forward цепочки версий, как это делает handler при
+   * role.bearer_changed):
+   *   - roleVersion       — prevActive.roleVersion + 1 (или 1, если нет);
+   *   - succeedsPersonaId  — id прошлой active role-персоны (succeed-link);
+   *   - currentBearerPersonId — единственный носитель роли (PersonRole), иначе
+   *     сохраняем носителя прошлой active (или null);
+   *   - publicName        — «Клон <Role.name> v<roleVersion>».
+   * Best-effort: ошибка чтения НЕ валит сборку — возвращаем дефолты.
+   */
+  private async computeRoleVersioning(args: {
+    tenantId: string;
+    roleId: string;
+    roleName: string | null;
+    bearerPersonIds: string[];
+  }): Promise<{
+    roleVersion: number;
+    currentBearerPersonId: string | null;
+    publicName: string;
+    succeedsPersonaId: string | null;
+  }> {
+    const prevActive = await this.prisma.executablePersona.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        scope: 'role',
+        scopeRefId: args.roleId,
+        status: 'active',
+      },
+      orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
+      select: { id: true, roleVersion: true, currentBearerPersonId: true },
+    });
+    const roleVersion = (prevActive?.roleVersion ?? 0) + 1;
+    // Единственный носитель — берём его; иначе сохраняем прошлого (multi-holder
+    // / неопределённость не должны затирать носителя на null).
+    const currentBearerPersonId =
+      args.bearerPersonIds.length === 1
+        ? (args.bearerPersonIds[0] ?? null)
+        : (prevActive?.currentBearerPersonId ?? null);
+    const publicName = `Клон ${args.roleName ?? 'роль'} v${roleVersion}`;
+    return {
+      roleVersion,
+      currentBearerPersonId,
+      publicName,
+      succeedsPersonaId: prevActive?.id ?? null,
+    };
+  }
+
+  /**
+   * K1 (Б24) — supersede прошлых active/pending_rebuild + create новой
+   * role-персоны (с полями версионирования Б23) с retry на гонке P2002
+   * (partial-unique role-version / role-active). До 3 попыток: пересчитываем
+   * nextVersion + roleVersioning и повторяем. catch(P2002) СНАРУЖИ $transaction.
+   */
+  private async createRolePersonaWithRetry(args: {
+    tenantId: string;
+    roleId: string;
+    roleName: string | null;
+    bearerPersonIds: string[];
+    personaPrompt: string;
+    includedTraitIds: string[];
+    builtFromTraitsCount: number;
+    triggerReason: PersonaTriggerReason;
+    triggerEventAt: Date | null;
+    dataClassAudit: Prisma.InputJsonValue | undefined;
+  }): Promise<ExecutablePersona> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Пересчитываем КАЖДУЮ попытку: при P2002 прошлая active могла
+      // появиться/смениться (версия и succeed-link зависят от неё).
+      const versioning = await this.computeRoleVersioning({
+        tenantId: args.tenantId,
+        roleId: args.roleId,
+        roleName: args.roleName,
+        bearerPersonIds: args.bearerPersonIds,
+      });
+      const nextVersion = await this.nextVersion({
+        profileId: null,
+        scope: 'role',
+        scopeRefId: args.roleId,
+      });
+      try {
+        return await this.prisma.$transaction(async (tx) => {
+          await tx.executablePersona.updateMany({
+            where: {
+              tenantId: args.tenantId,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              status: { in: ['active', 'pending_rebuild'] },
+            },
+            data: { status: 'superseded' },
+          });
+          return tx.executablePersona.create({
+            data: {
+              tenantId: args.tenantId,
+              profileId: null,
+              scope: 'role',
+              scopeRefId: args.roleId,
+              version: nextVersion,
+              roleVersion: versioning.roleVersion,
+              currentBearerPersonId: versioning.currentBearerPersonId,
+              publicName: versioning.publicName,
+              succeedsPersonaId: versioning.succeedsPersonaId,
+              personaPrompt: args.personaPrompt,
+              includedTraitIds: args.includedTraitIds,
+              status: 'active',
+              builtFromTraitsCount: args.builtFromTraitsCount,
+              triggerReason: args.triggerReason,
+              triggerEventAt: args.triggerEventAt,
+              ...(args.dataClassAudit
+                ? { dataClassAudit: args.dataClassAudit }
+                : {}),
+            },
+          });
+        });
+      } catch (err) {
+        lastErr = err;
+        if (this.isP2002(err)) {
+          this.logger.debug(
+            { roleId: args.roleId, attempt },
+            'createRolePersonaWithRetry: P2002 (гонка версий/active) — повтор с пересчётом',
+          );
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastErr;
   }
 
   private async nextVersion(args: {

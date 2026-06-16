@@ -15,12 +15,12 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
+import { LlmRouterService } from '../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
   wrapUserData,
 } from '../../ai/services/prompts/common';
 import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
@@ -392,10 +392,25 @@ export class IntakeAutoTriageWorker
       viaDefaultProject = effectiveProjectId !== null;
     }
 
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — если дедуп-арбитр на создании
+    // пометил карточку дублем (suggestedDuplicateOfIssueId), НЕ принимаем
+    // автоматически: route to human (человек сам сливает через triage
+    // decision='duplicate'). Авто-merge ЗАПРЕЩЁН (R2/R13).
+    const hasSuggestedDuplicate = intake.suggestedDuplicateOfIssueId !== null;
     const canAutoAccept =
       confidentEnough &&
       effectiveAssigneeId !== null &&
-      effectiveProjectId !== null;
+      effectiveProjectId !== null &&
+      !hasSuggestedDuplicate;
+    if (hasSuggestedDuplicate) {
+      this.logger.log(
+        {
+          intakeIssueId,
+          suggestedDuplicateOfIssueId: intake.suggestedDuplicateOfIssueId,
+        },
+        'intake-auto-triage: найден дубль — авто-приём заблокирован, ждём человека',
+      );
+    }
 
     if (canAutoAccept) {
       await this.autoAccept({
@@ -557,6 +572,9 @@ export class IntakeAutoTriageWorker
         externalId: intake.externalId,
         // A10 (2026-06-14) — провенанс intake → Issue.
         sourceBlockIds: intake.sourceBlockIds,
+        // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
+        // (intake create); двойной suggest не нужен.
+        skipDedup: true,
       },
       tenantId,
       systemUserId,

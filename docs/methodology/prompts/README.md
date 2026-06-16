@@ -74,6 +74,7 @@
 | Эталон | Агент / `taskType` | Файл |
 |---|---|---|
 | probe-formulate | формулировка проактивного уточняющего вопроса | [examples/probe-formulate.md](examples/probe-formulate.md) |
+| task-dedup-arbiter | дедуп задачи перед записью в трекер (nil/same/different, NIL первым) | [examples/task-dedup-arbiter.md](examples/task-dedup-arbiter.md) |
 
 > Добавляя новый эталон: один файл в `examples/`, по структуре probe-formulate (контекст → полный промпт → разбор по анатомии → антипример «было» → как мерили). Сюда — строку.
 

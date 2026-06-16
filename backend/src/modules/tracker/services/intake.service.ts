@@ -28,6 +28,7 @@ import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
 import { ProjectsService } from './projects.service';
+import { TaskDedupService } from './task-dedup.service';
 import { shouldMaterializeTask } from './task-quality-gate.util';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
@@ -66,6 +67,8 @@ export interface IntakeResponseDto {
   rejectedReason: string | null;
   snoozedUntil: string | null;
   createdIssueId: string | null;
+  /** TZ task-dedup (2026-06-16) — открытая Issue-дубль, найденная арбитром (suggest). */
+  suggestedDuplicateOfIssueId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -136,6 +139,12 @@ export class IntakeService {
     @Optional()
     @Inject(ProjectsService)
     private readonly projects?: ProjectsService,
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — дедуп-гейт перед записью
+    // intake-карточки. @Optional: unit-тесты IntakeService строятся без него →
+    // дедуп пропускается (карточка создаётся как есть, suggestedDuplicate=null).
+    @Optional()
+    @Inject(TaskDedupService)
+    private readonly taskDedup?: TaskDedupService,
   ) {}
 
   /**
@@ -207,10 +216,35 @@ export class IntakeService {
     dto: CreateIntakeDto,
     tenantId: string,
   ): Promise<IntakeResponseDto> {
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — дедуп-гейт ПЕРЕД записью.
+    // Best-effort (R4): любой сбой/таймаут → verdict='nil', карточка создаётся
+    // как есть. verdict='same' → пишем suggestedDuplicateOfIssueId, что блокирует
+    // авто-accept в auto-triage (route to human). Авто-merge НЕ делаем (R13).
+    let suggestedDuplicateOfIssueId: string | null = null;
+    if (this.taskDedup) {
+      const dedup = await this.taskDedup.evaluate({
+        tenantId,
+        title: dto.extractedTitle ?? dto.rawContent,
+        description: dto.extractedDescription ?? null,
+      });
+      if (dedup.verdict === 'same') {
+        suggestedDuplicateOfIssueId = dedup.matchedIssueId;
+        this.logger.log(
+          {
+            tenantId,
+            matchedIssueId: dedup.matchedIssueId,
+            similarity: dedup.similarity,
+          },
+          'intake create: дедуп-арбитр нашёл дубль — помечаем suggestedDuplicateOfIssueId',
+        );
+      }
+    }
+
     const created = await this.prisma.intakeIssue.create({
       data: {
         tenantId,
         projectId: dto.projectId ?? null,
+        suggestedDuplicateOfIssueId,
         source: dto.source,
         sourceEmail: dto.sourceEmail ?? null,
         externalSource: dto.externalSource ?? null,
@@ -685,6 +719,9 @@ export class IntakeService {
           externalId: intake.externalId,
           // A10 (2026-06-14) — провенанс intake → Issue.
           sourceBlockIds: intake.sourceBlockIds,
+          // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
+          // (intake create); двойной suggest не нужен.
+          skipDedup: true,
         },
         tenantId,
         userId,
@@ -854,6 +891,7 @@ export class IntakeService {
       rejectedReason: i.rejectedReason,
       snoozedUntil: i.snoozedUntil?.toISOString() ?? null,
       createdIssueId: i.createdIssueId,
+      suggestedDuplicateOfIssueId: i.suggestedDuplicateOfIssueId,
       createdAt: i.createdAt.toISOString(),
       updatedAt: i.updatedAt.toISOString(),
     };

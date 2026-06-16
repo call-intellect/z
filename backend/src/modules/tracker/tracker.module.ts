@@ -57,6 +57,7 @@ import { SprintArchiveService } from './services/sprint-archive.service';
 import { SprintHintsService } from './services/sprint-hints.service';
 import { SprintsService } from './services/sprints.service';
 import { StatesService } from './services/states.service';
+import { TaskDedupService } from './services/task-dedup.service';
 import { TrackerEmitterService } from './services/tracker-emitter.service';
 import { TrackerEventsService } from './services/tracker-events.service';
 import { WebhookDispatcher } from './services/webhook-dispatcher.service';
@@ -164,6 +165,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // ТЗ#3 (2026-06-15): self-постановка задачи (POST /me/tasks).
     MeTasksService,
     SimilarIssuesService,
+    // TZ task-dedup (2026-06-16, Ф1) — единый дедуп-гейт перед записью задачи
+    // (intake + прямой create). Зависит от @Global Ai/Embeddings/AdminSettings/
+    // KnowledgeCore (Llm/Embedding/Calibration). Только suggest, авто-merge нет.
+    TaskDedupService,
     CyclesService,
     IntakeService,
     CommentsService,

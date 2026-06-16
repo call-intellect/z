@@ -129,6 +129,9 @@ const STEPS: Step[] = [
     'goals',
     // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
     'task-dedupe',
+    // TZ task-dedup (2026-06-16) — task-dedup-arbiter (дедуп задачи перед
+    // записью в трекер, два уровня входа; nil|same|different, только suggest).
+    'task-dedup-arbiter',
     // Ф4.1 (2026-06-08) — goal-task-link (LLM-привязка задач встречи к AI-цели,
     // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
     // поедет по аварийному DEFAULT_FALLBACK_CHAIN.

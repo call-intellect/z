@@ -600,6 +600,12 @@ export type LlmTaskType =
   // Дешёвый арбитр: primary deepseek-v4-flash; secondary gpt-5.4-mini;
   // tertiary ollama qwen3.5:9b. Cache-friendly: SYSTEM статичен, две задачи в USER.
   | 'task-dedupe'
+  // TZ task-dedup (2026-06-16) — task-dedup-arbiter: дедуп задачи ПЕРЕД записью
+  // в трекер. Вход — кандидат + KNN-похожие открытые задачи; вердикт
+  // nil|same|different (NIL первым, защита от «лепим к top-1»). Только SUGGEST —
+  // авто-merge запрещён (R13). Дешёвый арбитр CHEAP_CHAIN: primary
+  // deepseek-v4-flash. Cache-friendly: SYSTEM статичен, кандидат+список в USER.
+  | 'task-dedup-arbiter'
   // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link: батч-арбитр
   // авто-привязки задач встречи к AI-цели. Один вызов на цель: цель + список
   // ungoaled-задач встречи → по каждой { develops, confidence }. Non-destructive
@@ -855,6 +861,9 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'experiment-summarize-lessons',
   // Ф5 Р2 (2026-06-08) — task-dedupe (семантический дедуп задач встречи).
   'task-dedupe',
+  // TZ task-dedup (2026-06-16) — task-dedup-arbiter (дедуп задачи перед записью
+  // в трекер; nil|same|different, только suggest, авто-merge запрещён).
+  'task-dedup-arbiter',
   // Ф4.1 agent-chain-overhaul (2026-06-08) — goal-task-link (авто-привязка
   // задач встречи к AI-цели, DEFAULT OFF).
   'goal-task-link',

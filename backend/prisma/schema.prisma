@@ -9606,6 +9606,13 @@ model IntakeIssue {
   // Если принят — создаётся Issue
   createdIssueId String?
 
+  /// TZ task-dedup (2026-06-16, Ф1 уровень A) — кандидат-дубль: открытая Issue,
+  /// которую дедуп-арбитр (`task-dedup-arbiter`) счёл тем же поручением. НЕ
+  /// авто-merge (R13): при заполненном поле auto-triage НЕ принимает карточку
+  /// автоматически (route to human), человек сам сливает через triage
+  /// decision='duplicate'. null — дубль не найден.
+  suggestedDuplicateOfIssueId String?
+
   /// Редизайн Ф4 (2026-06-13) — авто-протухание pending-intake: после
   /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит pending →
   /// rejected («авто-закрыт по сроку»), чтобы входящие не висели вечно. TTL

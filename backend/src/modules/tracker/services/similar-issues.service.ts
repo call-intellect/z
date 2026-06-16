@@ -48,14 +48,11 @@ export class SimilarIssuesService {
     limit?: number;
     threshold?: number;
   }): Promise<SimilarIssueDto[]> {
-    const tenantTop = tenantTopOf(args.tenantId);
-    this.metrics.incTrackerIssueSimilarSearch({ tenantTop });
-
-    const limit = Math.min(
-      Math.max(1, args.limit ?? SimilarIssuesService.DEFAULT_LIMIT),
-      SimilarIssuesService.MAX_LIMIT,
-    );
-    const threshold = args.threshold ?? SimilarIssuesService.DEFAULT_THRESHOLD;
+    // Метрика «выполнен поиск похожих» — на каждый вызов read-эндпоинта, даже
+    // если у seed-задачи нет embedding (поведение до рефактора findSimilarByVector).
+    this.metrics.incTrackerIssueSimilarSearch({
+      tenantTop: tenantTopOf(args.tenantId),
+    });
 
     // 1. Загружаем embedding исходной задачи как text literal (pgvector
     //    отдаёт `'[v1,v2,...]'` если SELECT'ить как text).
@@ -77,8 +74,66 @@ export class SimilarIssuesService {
       return [];
     }
 
-    // 2. KNN cosine. Берём с запасом (limit*2) до фильтрации по threshold,
-    //    т.к. часть кандидатов может отвалиться по дистанции.
+    return this.findSimilarByVector({
+      tenantId: args.tenantId,
+      embedding: seed.embedding,
+      limit: args.limit,
+      threshold: args.threshold,
+      excludeIssueId: args.issueId,
+    });
+  }
+
+  /**
+   * KNN-поиск похожих задач по уже посчитанному вектору (text-литерал pgvector
+   * `'[v1,v2,...]'`). Вынесено из `findSimilar` (TZ task-dedup, 2026-06-16):
+   * дедуп задаёт вектор кандидата напрямую (синхронный embed на лету), без
+   * существующего `Issue.embedding`.
+   *
+   * @param args.tenantId       — обязателен, isolation.
+   * @param args.embedding      — вектор-кандидат как pgvector text-литерал.
+   * @param args.limit          — кол-во (default 5, max 20).
+   * @param args.threshold      — порог по distance (default 0.18). Ниже = ближе.
+   * @param args.excludeIssueId — исключить эту задачу из результата (опц.).
+   * @param args.openOnly       — true → только незакрытые (`completedAt IS NULL`);
+   *                              для дедупа (ищем среди открытых задач).
+   */
+  async findSimilarByVector(args: {
+    tenantId: string;
+    embedding: string;
+    limit?: number;
+    threshold?: number;
+    excludeIssueId?: string;
+    openOnly?: boolean;
+  }): Promise<SimilarIssueDto[]> {
+    // Метрика инкрементится в `findSimilar` (read-эндпоинт). Прямые вызовы
+    // findSimilarByVector (дедуп) — отдельный flow, в этот счётчик не входят.
+    const limit = Math.min(
+      Math.max(1, args.limit ?? SimilarIssuesService.DEFAULT_LIMIT),
+      SimilarIssuesService.MAX_LIMIT,
+    );
+    const threshold = args.threshold ?? SimilarIssuesService.DEFAULT_THRESHOLD;
+
+    // Динамический WHERE: tenant + embedding + (опц.) исключение задачи и
+    // фильтр открытых. Параметры нумеруются по мере добавления, чтобы
+    // pgvector index-only сортировка по distance оставалась валидной.
+    const params: unknown[] = [args.embedding, args.tenantId];
+    const conditions: string[] = [
+      '"tenantId" = $2',
+      'embedding IS NOT NULL',
+      '"deletedAt" IS NULL',
+    ];
+    if (args.excludeIssueId) {
+      params.push(args.excludeIssueId);
+      conditions.push(`id <> $${params.length}`);
+    }
+    if (args.openOnly) {
+      conditions.push('"completedAt" IS NULL');
+    }
+    // limit*2 запас до фильтрации по threshold — часть кандидатов может
+    // отвалиться по дистанции.
+    params.push(limit * 2);
+    const limitParamIdx = params.length;
+
     const candidates = await this.prisma.$queryRawUnsafe<
       Array<{
         id: string;
@@ -99,16 +154,10 @@ export class SimilarIssuesService {
          "projectId",
          (embedding <=> $1::vector) AS distance
        FROM "Issue"
-       WHERE "tenantId" = $2
-         AND id <> $3
-         AND embedding IS NOT NULL
-         AND "deletedAt" IS NULL
+       WHERE ${conditions.join('\n         AND ')}
        ORDER BY embedding <=> $1::vector
-       LIMIT $4`,
-      seed.embedding,
-      args.tenantId,
-      args.issueId,
-      limit * 2,
+       LIMIT $${limitParamIdx}`,
+      ...params,
     );
 
     const result: SimilarIssueDto[] = [];

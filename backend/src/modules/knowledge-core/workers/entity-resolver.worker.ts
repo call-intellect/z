@@ -22,6 +22,7 @@ import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ENTITY_ARCHIVED } from '../../tables/events/entity-sync.events';
 import { EntityMergeService } from '../services/entity-merge.service';
+import { EntityResolutionService } from '../services/entity-resolution.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
 /**
@@ -61,6 +62,10 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityMergeService) private readonly merger: EntityMergeService,
+    // Б29 [K6] — negative-cache distinct-пар: на verdict='distinct' помечаем
+    // пару, чтобы cron не отправлял её LLM-арбитру каждые 5 минут.
+    @Inject(EntityResolutionService)
+    private readonly resolution: EntityResolutionService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
     // KC-Temporal W3.5 — Optional EventEmitter2 для emit'а
     // `idea_block.updated` (после merge сущности блоки канонической
@@ -144,7 +149,15 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         recentBlocks,
         candidateRecentBlocks: candRecent,
       });
-      if (verdict.verdict === 'distinct') continue;
+      if (verdict.verdict === 'distinct') {
+        // Б29 [K6] — персистим негативный вердикт: пара (entity, candidate)
+        // признана РАЗНЫМИ. Cron исключит её из выборки кандидатов до TTL,
+        // иначе арбитр пересудил бы ту же пару каждые 5 минут. Best-effort.
+        await this.resolution
+          .markEntityPairDistinct(entity.id, c.candidate.id)
+          .catch(() => undefined);
+        continue;
+      }
       // verdict='merge'
       try {
         await this.applyMerge({

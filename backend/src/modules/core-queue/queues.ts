@@ -126,12 +126,6 @@ export const CORE_QUEUE_NAMES = {
    */
   PROBE_EVENTS: 'core.probe-events',
   /**
-   * SBA β-5 — Specialist 3.6 (Ideas Collector). Consumer — `IdeaClustererCron`-
-   * style worker (или прямо cron вызывает). Очередь нужна, чтобы кластеризация
-   * не делалась синхронно при создании каждой идеи. jobId = `idea_cluster_<orgId>`.
-   */
-  IDEA_CLUSTERER: 'core.idea-clusterer',
-  /**
    * SBA γ-1 — Specialist 3.7 (SkillProfile) rebuild. Consumer —
    * `SkillProfileRebuildWorker`. Дебаунс через jobId
    * `skill-profile-rebuild_<profileId>` + delay (`cfg.skill.rebuildDebounceMs`,
@@ -199,13 +193,22 @@ export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NA
  *
  *   attempts: 5                               — итого до 5 попыток.
  *   backoff: exponential delay 5000           — 5s, 10s, 20s, 40s.
- *   removeOnComplete: { age: 24h, count:1000} — успешные jobs не висят.
+ *   removeOnComplete: { age: 24h, count:20000} — успешные jobs не висят.
  *   removeOnFail: false                       — failed остаются для разбора.
+ *
+ * Б33 [K6]: count поднят 1000→20000. Дедуп по jobId (block-distill,
+ * meeting-report-fast, card-rollup-v2 и пр.) опирается на то, что completed-job
+ * с тем же jobId ещё в Redis. При count:1000 на нагруженной очереди completed
+ * вытеснялся раньше age=24h → повторный enqueue не дедуплицировался → дорогая
+ * повторная обработка. 20000 делает связывающим ограничением age (24ч), а не
+ * count, при копеечной памяти на Z-масштабе. Доп. защита — идемпотентность
+ * самих воркеров (distill skip not-draft; meeting-report-fast remove-on-
+ * regenerate Б35; rollup детерминирован).
  */
 export const CORE_DEFAULT_JOB_OPTIONS: JobsOptions = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 5000 },
-  removeOnComplete: { age: 86400, count: 1000 },
+  removeOnComplete: { age: 86400, count: 20000 },
   removeOnFail: false,
 };
 
@@ -405,16 +408,6 @@ export interface RebuildKnowledgeProfileJobData {
  */
 export interface ProbeEventJobData {
   probeEventId: string;
-}
-
-/**
- * Payload для `core.idea-clusterer` (SBA β-5). Воркер запускает один проход
- * группировки Idea → IdeaCluster в указанной Org.
- */
-export interface IdeaClustererJobData {
-  tenantId: string;
-  /** Проброс traceId цепочки (для сшивки логов со встречей-источником). */
-  traceId?: string;
 }
 
 /**

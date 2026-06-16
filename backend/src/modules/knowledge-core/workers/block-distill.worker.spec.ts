@@ -25,6 +25,7 @@ function buildBlock(overrides: Record<string, unknown> = {}): IdeaBlock {
     status: 'draft',
     evidenceCount: 1,
     confidence: '0.900',
+    dataClass: 'internal',
     tags: [],
     ...overrides,
   } as unknown as IdeaBlock;
@@ -34,10 +35,14 @@ interface Deps {
   router: { dispatch: ReturnType<typeof vi.fn> };
   coreQueue: { enqueueBlockLinker: ReturnType<typeof vi.fn> };
   prisma: any;
+  tx: { ideaBlock: { update: ReturnType<typeof vi.fn> } };
 }
 
 function buildWorker(
-  opts: { dispatchThrows?: boolean } = {},
+  opts: {
+    dispatchThrows?: boolean;
+    canonicalOverrides?: Record<string, unknown>;
+  } = {},
 ): { worker: BlockDistillWorker; deps: Deps } {
   const router = {
     dispatch: vi.fn(async () => {
@@ -60,6 +65,7 @@ function buildWorker(
       evidenceCount: 2,
       confidence: '0.800',
       tags: ['a'],
+      ...opts.canonicalOverrides,
     }),
   };
 
@@ -101,7 +107,7 @@ function buildWorker(
     undefined, // eventEmitter (Optional)
   );
 
-  return { worker, deps: { router, coreQueue, prisma } };
+  return { worker, deps: { router, coreQueue, prisma, tx } };
 }
 
 describe('BlockDistillWorker — Ф3 диспатч на canonical-переход', () => {
@@ -173,5 +179,64 @@ describe('BlockDistillWorker — Ф3 диспатч на canonical-перехо�
     ).resolves.toBeUndefined();
     expect(deps.router.dispatch).toHaveBeenCalledTimes(1);
     expect(deps.coreQueue.enqueueBlockLinker).toHaveBeenCalledWith('canon-1');
+  });
+});
+
+/**
+ * Б13 [K5] — merge не должен тихо понижать dataClass canonical-носителя.
+ * `tx.ideaBlock.update` в mergeInto вызывается дважды: (1) merged-блок →
+ * merged_into, (2) canonical → пересчёт полей. Вытаскиваем именно
+ * canonical-update (where.id==='canon-1') и проверяем dataClass.
+ */
+function canonicalUpdateData(
+  tx: { ideaBlock: { update: ReturnType<typeof vi.fn> } },
+): Record<string, unknown> | undefined {
+  const call = tx.ideaBlock.update.mock.calls.find(
+    (c) => (c[0] as { where: { id: string } }).where.id === 'canon-1',
+  );
+  return call?.[0]?.data as Record<string, unknown> | undefined;
+}
+
+describe('BlockDistillWorker — Б13 dataClass=max при merge', () => {
+  it('mergeInto: более чувствительный merged-блок поднимает dataClass canonical до max', async () => {
+    // canonical=internal, merged-блок=private → итог private.
+    const { worker, deps } = buildWorker({
+      canonicalOverrides: { dataClass: 'internal' },
+    });
+    const block = buildBlock({
+      id: 'block-1',
+      signalType: 'decision',
+      dataClass: 'private',
+    });
+
+    await (worker as any).mergeInto({
+      block,
+      canonicalId: 'canon-1',
+      explanation: 'дубликат',
+    });
+
+    const data = canonicalUpdateData(deps.tx);
+    expect(data?.dataClass).toBe('private');
+  });
+
+  it('mergeInto: менее чувствительный merged-блок НЕ понижает dataClass canonical', async () => {
+    // canonical=sensitive, merged-блок=internal → остаётся sensitive (max).
+    const { worker, deps } = buildWorker({
+      canonicalOverrides: { dataClass: 'sensitive' },
+    });
+    const block = buildBlock({
+      id: 'block-1',
+      signalType: 'decision',
+      dataClass: 'internal',
+    });
+
+    await (worker as any).mergeInto({
+      block,
+      canonicalId: 'canon-1',
+      explanation: 'дубликат',
+    });
+
+    const data = canonicalUpdateData(deps.tx);
+    expect(data?.dataClass).toBe('sensitive');
   });
 });

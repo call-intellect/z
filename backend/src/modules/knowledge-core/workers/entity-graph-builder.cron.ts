@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { EntityGraphService } from '../services/entity-graph.service';
 import { EntityLinkService } from '../services/entity-link.service';
 
@@ -32,6 +33,9 @@ export class EntityGraphBuilderCron {
   private readonly logger = new Logger(EntityGraphBuilderCron.name);
   private static readonly PAIRS_PER_ORG_LIMIT = 50;
   private static readonly RECENT_BLOCKS_FOR_CONTEXT = 5;
+  // Б17 [K2]: имя воркера для Org-Admin тумблера (Org.workersEnabled).
+  // Совпадает с taskType / именем файла (канон реестра gate).
+  private static readonly WORKER_NAME = 'entity-graph-builder';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -40,6 +44,9 @@ export class EntityGraphBuilderCron {
     // KC-Temporal W3.1 (2026-05-25) — единая точка upsert'а rich-edges.
     @Inject(EntityLinkService)
     private readonly entityLinks: EntityLinkService,
+    // Б17 [K2]: Org-Admin тумблер воркера — без него граф строится и жжёт
+    // LLM при выключенном воркере.
+    @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
   ) {}
 
   @Cron('0 * * * *')
@@ -79,6 +86,17 @@ export class EntityGraphBuilderCron {
     let upsertedLinks = 0;
 
     for (const org of orgs) {
+      // Б17 [K2]: Org-Admin тумблер — если воркер выключен для Org, пропускаем
+      // (не валим весь тик, не жжём LLM на findCoMentionedPairs/judgeRelation).
+      try {
+        await this.gate.checkOrThrow(org.id, EntityGraphBuilderCron.WORKER_NAME);
+      } catch {
+        this.logger.debug(
+          { tenantId: org.id },
+          'entity-graph-builder: gate disabled — skip Org',
+        );
+        continue;
+      }
       scannedOrgs += 1;
       const pairs = await this.graph.findCoMentionedPairs({
         tenantId: org.id,

@@ -626,12 +626,21 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // Fallback Decision-create для блоков signalType='decision', по которым
       // LLM не вернул отдельную запись в decisions[]. Idempotent по
       // sourceIdeaBlockId (upsertEntity сам проверяет существование).
+      //
+      // Б19 [K14] — fallback подчиняется тому же гейту качества, что и основной
+      // путь группы Б: typed-сущности с confidence < typedEntityMinConfidence
+      // отбрасываются ещё в BlockExtractionService, но fallback идёт по
+      // signalType блока (минуя тот фильтр) — поэтому проверяем порог здесь, иначе
+      // в граф попадали бы «решения» ниже порога доверия.
+      const typedMinConfidence = this.cfg.extraction.typedEntityMinConfidence;
       for (const blockId of decisionBlockIds) {
         if (llmDecisionBlockIds.has(blockId)) continue;
         const block = blocksInOrder.find(
           (_, idx) => indexToBlockId.get(idx) === blockId,
         );
         if (!block) continue;
+        // Б19 — гейт качества: ниже порога доверия решение не материализуем.
+        if (block.confidence < typedMinConfidence) continue;
         try {
           const res = await this.graph.upsertEntity({
             tenantId: event.tenantId,
@@ -680,24 +689,30 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       // его guard'ом (он обогащает, а не создаёт второй раз).
       if (this.cfg.knowledgeCore.ideaDirectPathEnabled && ideaEmbeddingByBlockId.size > 0) {
         const ideaCandidateIds = [...ideaEmbeddingByBlockId.keys()];
-        // Уже материализованные блоки (повторный прогон / частичный сбой).
-        const existingIdeas = await this.prisma.idea.findMany({
-          where: { tenantId: event.tenantId, sourceBlockIds: { hasSome: ideaCandidateIds } },
-          select: { sourceBlockIds: true },
-        });
-        const coveredBlockIds = new Set<string>();
-        for (const it of existingIdeas) for (const bid of it.sourceBlockIds) coveredBlockIds.add(bid);
-
-        const toCreate = ideaCandidateIds.filter((bid) => !coveredBlockIds.has(bid));
-        if (toCreate.length > 0) {
+        if (ideaCandidateIds.length > 0) {
           const rows = await this.prisma.ideaBlock.findMany({
-            where: { id: { in: toCreate } },
+            where: { id: { in: ideaCandidateIds } },
             select: { id: true, tenantId: true, trustedAnswer: true, confidence: true, dataClass: true, createdAt: true },
           });
-          let createdAny = false;
           for (const row of rows) {
             const statement = (row.trustedAnswer ?? '').trim();
             if (!statement) continue; // пустую идею не материализуем
+
+            // Б22 [K4] — детерминированный source-block дедуп ПЕРЕД create
+            // (как guard в Specialist 3.6). При reprocess-suffix RawEvent тот же
+            // sourceBlockId уже материализован прошлым прогоном → НЕ создаём дубль.
+            // Терминальные статусы (rejected/archived) исключаем — если идею
+            // отклонили, не воскрешаем её повторным ingest'ом.
+            const existing = await this.prisma.idea.findFirst({
+              where: {
+                tenantId: row.tenantId,
+                sourceBlockIds: { has: row.id },
+                status: { notIn: ['rejected', 'archived'] },
+              },
+              select: { id: true },
+            });
+            if (existing) continue;
+
             try {
               const conf = Math.max(0, Math.min(1, Number(row.confidence)));
               const idea = await this.prisma.idea.create({
@@ -717,7 +732,6 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
                   createdByUserId: null,
                 },
               });
-              createdAny = true;
               this.metrics.incExtractionEntity({ type: 'idea' });
               // Переиспользуем embedding блока → Idea KNN-discoverable.
               const emb = ideaEmbeddingByBlockId.get(row.id);
@@ -734,19 +748,29 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
                 }
               }
             } catch (err) {
+              // P2002 (гонка concurrency=2 / параллельный reprocess) — идемпотентный
+              // skip: идею создал параллельный путь, дубль не нужен.
+              if (
+                err instanceof Prisma.PrismaClientKnownRequestError &&
+                err.code === 'P2002'
+              ) {
+                continue;
+              }
               this.logger.warn(
                 { blockId: row.id, err: err instanceof Error ? err.message : String(err) },
                 'block-ingest: idea direct-path create упал — пропуск блока',
               );
             }
           }
-          if (createdAny) {
-            try {
-              await this.coreQueue.enqueueIdeaClusterer({ tenantId: event.tenantId });
-            } catch {
-              // graceful
-            }
-          }
+          // Б37 [K4] — НЕ создаём CurationItem прямо из direct-path (нет
+          // CurationService в воркере и его инъекция тянет circular-dep).
+          // Инвариант выровнен в Specialist 3.6: его dispatch ВСЕГДА приходит на
+          // этот idea-блок (canonical-переход), видит уже материализованную idea
+          // (guard `alreadyMaterialized`), обогащает её И идемпотентно прогоняет
+          // тот же triageProposed-путь, если CurationItem ещё нет — так direct-path
+          // и Specialist-3.6-идея сходятся к одному набору полей/видимости.
+          // Б9 [K10] — enqueueIdeaClusterer убран: очередь core.idea-clusterer
+          // удалена (без consumer'а), кластеризация идёт по @Cron (IdeaClustererCron).
         }
       }
 

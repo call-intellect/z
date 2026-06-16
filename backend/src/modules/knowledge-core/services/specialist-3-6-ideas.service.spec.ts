@@ -55,9 +55,10 @@ function buildService(): { svc: Specialist36Service; m: Mocks } {
   const curation = {} as never;
   const metrics = {} as never;
   const cfg = {} as never;
-  const coreQueue = {} as never;
   const events = {} as never;
 
+  // Б9 [K10]: CoreQueueService убран из конструктора (enqueueIdeaClusterer
+  // удалён вместе с мёртвой очередью) — конструктор теперь 8-арг.
   const svc = new Specialist36Service(
     m.prisma as never,
     llm,
@@ -65,7 +66,6 @@ function buildService(): { svc: Specialist36Service; m: Mocks } {
     curation,
     metrics,
     cfg,
-    coreQueue,
     events,
     m.logs as never,
   );

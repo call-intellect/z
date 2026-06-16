@@ -14,6 +14,7 @@ import { type Job, Worker } from 'bullmq';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { maxDataClass } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import {
   type BlockDistillJobData,
@@ -44,7 +45,11 @@ import { RouterService } from '../services/router.service';
  *            confidence, tags union.
  *      - после транзакции — enqueueBlockLinker(canonicalId).
  *
- * Concurrency=2: KNN-запрос и LLM-арбитр оба могут быть медленными.
+ * Б11 [K4]: concurrency=1 (сериализация). При concurrency>1 два draft-дубля
+ * одного tenant'а могли обрабатываться параллельно: оба видят себя `draft`,
+ * `knnCandidates` ищет только среди `canonical` → друг друга не находят → оба
+ * канонизируются, дубль остаётся навсегда. Сериализация воркера закрывает гонку:
+ * второй блок видит первый уже как canonical-кандидата в KNN.
  */
 @Injectable()
 export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
@@ -89,7 +94,9 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         ),
       {
         connection: this.redis.client,
-        concurrency: 2,
+        // Б11 [K4]: concurrency=1 — сериализация устраняет гонку двух draft-дублей
+        // (оба видели себя draft → оба канонизировались). Подробнее в шапке класса.
+        concurrency: 1,
       },
     );
     this.worker.on('failed', (job, err) => {
@@ -349,12 +356,23 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         new Set([...canonical.tags, ...block.tags]),
       );
 
+      // Б13 [K5]: пересчёт dataClass = max(canonical, merged). Без этого мердж
+      // более-чувствительного блока (например `confidential`) в менее
+      // чувствительный canonical (`internal`) тихо понижал бы класс носителя —
+      // evidence чувствительного блока переехало в canonical, а метка осталась
+      // старой → утечка при последующем retrieval/проекциях.
+      const mergedDataClass = maxDataClass([
+        canonical.dataClass,
+        block.dataClass,
+      ]);
+
       await tx.ideaBlock.update({
         where: { id: canonicalId },
         data: {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(avgConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });
@@ -531,6 +549,13 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       const mergedTags = Array.from(
         new Set([...transcriptBlock.tags, ...reportCanonical.tags]),
       );
+      // Б13 [K5]: dataClass = max(transcript, report). Транскрипт-носитель
+      // вобрал evidence report'а — если report был чувствительнее, метка
+      // носителя должна подняться, иначе тихий downgrade (как в mergeInto).
+      const mergedDataClass = maxDataClass([
+        transcriptBlock.dataClass,
+        reportCanonical.dataClass,
+      ]);
 
       await tx.ideaBlock.update({
         where: { id: transcriptBlock.id },
@@ -540,6 +565,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(maxConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });

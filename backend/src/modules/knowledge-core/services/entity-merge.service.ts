@@ -8,7 +8,10 @@ import {
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
 import {
   withInjectionGuard,
   wrapUserData,
@@ -228,6 +231,14 @@ export class EntityMergeService {
 
     // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (сущности) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
+    // Б12 [K5]: dataClass = max по упомянутым блокам обеих сущностей (как
+    // делает block-distill через maxDataClass). Без этого арбитр всегда
+    // 'internal' → чувствительный контекст уходит провайдеру с меньшим
+    // maxDataClass.
+    const dataClass = maxDataClass([
+      ...args.recentBlocks.map((b) => b.dataClass),
+      ...args.candidateRecentBlocks.map((b) => b.dataClass),
+    ]);
     try {
       const out = await this.llm.call({
         taskType: 'entity-merge-arbiter',
@@ -243,6 +254,8 @@ export class EntityMergeService {
           schema: ARBITER_JSON_SCHEMA,
         },
         sourceRef: { type: 'entity', id: args.entity.id },
+        // Б12 [K5]: явный dataClass — иначе router дефолтит на 'internal'.
+        dataClass,
       });
       const parsed = this.parseVerdict(out.text, [args.candidate]);
       if (parsed) return parsed;

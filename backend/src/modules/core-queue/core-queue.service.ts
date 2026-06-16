@@ -24,7 +24,6 @@ import {
   type DumpCreatedJobData,
   type EntityResolverJobData,
   type EventReminderJobData,
-  type IdeaClustererJobData,
   type MeetingReportFastJobData,
   type SpecialistsCombinedJobData,
   type ProbeEventJobData,
@@ -233,12 +232,27 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     opts?: { delayMs?: number; reason?: string },
   ): Promise<void> {
     const q = this.requireQueue(CORE_QUEUE_NAMES.MEETING_REPORT_FAST);
-    // С `reason` jobId варьируется (`..._<reason>`) — это нужно для regenerate:
-    // removeOnComplete очереди держит успешный job 24ч, поэтому повтор с тем же
-    // jobId был бы съеден дедупом. Producer'ы без reason (MergeWorker) — как было.
-    const jobId = opts?.reason
-      ? `meeting_report_fast_${meetingId}_${opts.reason}`
-      : `meeting_report_fast_${meetingId}`;
+    // Б35 [K7] — jobId СТРОГО по meetingId, БЕЗ reason-суффикса. Прежде reason
+    // (`..._v2`, `..._<source>`) варьировал jobId → дедуп BullMQ обходился, и на
+    // одну встречу могли крутиться ДВА meeting-report-fast параллельно
+    // (lost-update: оба пишут recap, второй затирает первый). Теперь jobId один —
+    // два параллельных job'а на встречу невозможны.
+    //
+    // Regenerate (reason задан): удаляем прошлый (completed/failed/waiting) job с
+    // тем же jobId ПЕРЕД add, чтобы removeOnComplete-дедуп (job висит 24ч) не съел
+    // повторную постановку. remove не трогает active-job (BullMQ кинет — глотаем):
+    // если предыдущий ещё выполняется, новый под тем же jobId всё равно
+    // не добавится — это и есть защита от параллельного дубля.
+    const jobId = `meeting_report_fast_${meetingId}`;
+    if (opts?.reason) {
+      try {
+        await q.remove(jobId);
+      } catch (err) {
+        this.logger.debug(
+          `enqueue core.meeting-report-fast meetingId=${meetingId}: remove прошлого job '${jobId}' пропущен (${err instanceof Error ? err.message : String(err)})`,
+        );
+      }
+    }
     const payload: MeetingReportFastJobData = { meetingId };
     const jobOpts: JobsOptions = { jobId };
     if (opts?.delayMs !== undefined && opts.delayMs > 0) {
@@ -593,22 +607,6 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug(
       `enqueue core.probe-events probeEventId=${args.probeEventId} delay=${args.delayMs ?? 0}ms`,
     );
-    return { jobId };
-  }
-
-  /**
-   * SBA β-5 — публикация задания idea-clusterer (post-create dedup + cluster
-   * merge). jobId = `idea_cluster_<tenantId>_<bucket>` — допускаем 1 job в
-   * минуту на Org (bucket = floor(now()/60s)), дальше cron возьмёт остаток.
-   */
-  async enqueueIdeaClusterer(args: {
-    tenantId: string;
-  }): Promise<{ jobId: string }> {
-    const q = this.requireQueue(CORE_QUEUE_NAMES.IDEA_CLUSTERER);
-    const bucket = Math.floor(Date.now() / 60_000);
-    const jobId = `idea_cluster_${args.tenantId}_${bucket}`;
-    const payload: IdeaClustererJobData = { tenantId: args.tenantId };
-    await q.add('idea-clusterer', this.stamp(payload), { jobId });
     return { jobId };
   }
 

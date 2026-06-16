@@ -71,6 +71,28 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 📊 2026-06-16 — Подключение агентов «Операционного директора» к UI (доска «Аналитика»)
+
+> Контракт: ветка `feature/coo-orphan-agents-wire`, коммиты `ac56ce2b..b44229ae` (Ф1–Ф8). ТЗ: `plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md`. second-brain: `01_projects/director-dashboard.md` (§«Доска «Аналитика»»). Реестр флагов — `docs/operations/feature-flags.md` (убрана строка `deliver_to_telegram`).
+>
+> **Зачем для прода:** бэкенд COO почти весь уже считал данные, но часть результатов была «осиротевшей» (код есть, потребителя на экране нет). Этот выкат подключает готовое к доске `/dashboard/operations` (переименована в «Аналитика»): 6 pulse-виджетов, «Доведение решений», «Клиенты под риском», «Знания под риском», «Перегруз ответственностью», оживлены мёртвые сигналы (факторы вовлечённости команд, сеть обещаний), починены 2 заглушки данных (`team-detail.goals`, `team-health.decisions`), дневная сводка COO начинает доставляться в каналы по умолчанию.
+>
+> **Миграций БД НЕТ** (все поля/модели уже в схеме). **Seed/patch/backfill на запуск НЕТ.** **Новых OFF-флагов НЕТ** (Ship-On). **1 ENV удалена** (`COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`). **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (удалить 1, действий владельца не требует):** `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM` удалена из `env.schema.ts` (Ф8, Ship-On — OFF-дефолт нарушал принцип). Если задана в прод-`.env` — можно удалить строку (лишняя ENV не ломает запуск; `EnvSchema` её больше не валидирует). Оставшаяся в проде AdminSetting `operations.daily_digest.deliver_to_telegram` безвредна (можно удалить вручную позднее). Новых ENV нет. ⚠️ **Стелс-эффект:** после выката дневная сводка COO начнёт доставляться owner/coo во все привязанные каналы по умолчанию (in_app + Telegram/email/MAX по привязкам); контроль — персональной галочкой «Ежедневная сводка компании» в кабинете (Настройки → Уведомления). Kill-switch `operations.daily_digest.enabled` остаётся.
+- **Шаг 4 — Prisma** — **миграций НЕТ** (все поля/модели уже в схеме: `Goal.ownerPersonId`, `Person.primaryDepartmentId`, `Department.healthSummaryJson`, `PromiseNetworkSnapshot`). Регистрировать нечего.
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новые эндпоинты `GET /dashboard/operations/promise-network` + `GET /me/notification-preferences`, backend-доводки goals/decisions/team-health/knowledge-at-risk, фронт — новый пункт меню «Аналитика» + риск-виджеты + персональная галочка): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит `GET /api/v1/dashboard/operations/promise-network` и `GET /api/v1/me/notification-preferences`;
+  - (б) доска `/dashboard/operations` достижима из меню под меткой **«Аналитика»** (раздел «Ритмы», после «Сегодня») и рендерит риск-виджеты (клиенты под риском / знания под риском / перегруз ответственностью);
+  - (в) `GET /api/v1/me/notification-preferences` отдаёт `{ optOutEventTypes, quietHoursStart, quietHoursEnd }` (не 500);
+  - (г) тумблер «Ежедневная сводка компании» рендерится в Настройки → Уведомления; снятие шлёт `PATCH /me/notification-preferences` с `operations.daily_digest` в `optOutEventTypes` (push перестаёт приходить, сводка остаётся в кабинете).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧠 2026-06-15 — Помощник = единый мозг каналов: дедуп понимания/синтеза + единый промпт chat-v2 + таблицы (цепочка из 5 ТЗ)
 
 > Контракт: ветка `feature/dialog-chat-assistant-chain`, коммиты `3f63f7c1` (ТЗ#1 dialog-layer), `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B chat-v2), `f49e7212` (ТЗ#3 concierge), `33ae43aa` (ТЗ#4 channels-sync), `4e9f1fec` (ТЗ#5 cabinet) + доп-фиксы `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move). ТЗ: `plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`, `plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`, `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`, `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (синхр. каналов), `plans/tz/2026-06-15-cabinet-assistant-clone-selector.md`, `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `01_projects/api-layer.md`, `01_projects/tracker.md`, `01_projects/frontend-pages.md`. Реестр флагов / крутилок — `docs/operations/feature-flags.md`.

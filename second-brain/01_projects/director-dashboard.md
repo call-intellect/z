@@ -117,3 +117,25 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **A2 — merge отделов переносит FK** (Metric/Interaction/OrgUnit/Entity).
 - **A10 — петля next-step→Issue:** миграция `IntakeIssue.sourceBlockIds TEXT[]`, `DecisionTaskLink('derived')`.
 - (Виджет «Оцифровано» на «Сегодня» — `DigitizedSummary` — описан в части C, см. [[regulations]] §«Хаб "Оцифровано"».) `degraded`-деградация дашборда отражается в `VerdictBar`.
+
+## Доска «Аналитика» — подключение агентов операционного директора (2026-06-16, Ф1–Ф8)
+
+Источник — `plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md` (Ф1–Ф8, ветка `feature/coo-orphan-agents-wire`, коммиты `ac56ce2b..b44229ae`, реализован целиком). Рефлексия — [[../05_история/2026-06-16-coo-orphan-agents-wire]]. Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-16 — Подключение агентов «Операционного директора»»).
+
+Бэкенд COO почти весь уже считал данные, но часть результатов была «осиротевшей» (код есть, потребителя на экране нет). ТЗ ничего нового не строит — **подключает готовое** слой за слоем (`ApiDto → DomainModel → UiModel → mount`), всё сразу включено (Ship-On). Доска **переименована «Операции» → «Аналитика»** (метка в `nav-config.ts`, RHYTHMS_SECTION/LEADERSHIP_ROLES, сразу после «Сегодня»); маршрут остался `/dashboard/operations`. Виджеты смонтированы ВНЕ ветки `reworkEnabled` (чужой kill-switch соседней задачи).
+
+- **Подключённые виджеты (`OperationsDashboardClient.tsx`, секции «Риски и непрерывность» / «Аналитика пульса» / «Загрузка и распределение» / «Трения»):**
+  - **6 pulse-виджетов** одним общим SWR к `GET /dashboard/pulse-patterns` (Ф1): `BusFactorWidget`, `RecurringTopicsWidget`, `LowRoiMeetingsWidget`, `BottleneckHeatmapWidget`, `KnowledgeVelocityKpi`, `IrreversibleDecisionsAlert` (самоскрывается при `alertCount=0`). Props НЕ единообразны (`data` / `meetings`-массив / `decisions`+`alertCount` / только-`data`).
+  - **«Доведение решений»** `DecisionThroughputWidget` (Ф3) — фронт-путь к готовым `decisions/throughput` + `decisions/stalled` (% доведено за 90 дней · застряло).
+  - **«Клиенты под риском оттока»** `CustomerRiskRadarWidget` (Ф4, SWR `limit≤20`) + зеркало `customersAtRisk` в чтение дневного дайджеста (`CustomersAtRiskSection` в `DailyDigestClient`).
+  - **«Знания под риском»** `KnowledgeAtRiskWidget` (Ф5) + минимальный backend-join имени эксперта (relation `soleExpert`, опц. поле `soleExpertPersonName` — без сырого cuid).
+  - **«Перегруз ответственностью»** `PromiseOverloadWidget` (Ф7) — accumulators сети обещаний.
+- **Оживлённые мёртвые сигналы:**
+  - **Факторы вовлечённости команд** (Ф6): за `Department.healthSummaryJson` уже платили LLM ежедневно, но `getHealth` его не селектил. Добавлен `select healthSummaryJson` + защитный парс в опц. поле `healthSummary`; рендер раскрытия «Почему такая оценка» (5 факторов чипами + summary + `generatedAt`, fallback «не посчитана») в `StructureWidgets`.
+  - **Сеть обещаний** (Ф7): `PromiseNetworkSnapshot` писался weekly, читателей было 0. НОВЫЙ `PromiseNetworkService` + НОВЫЙ эндпоинт `GET /api/v1/dashboard/operations/promise-network` (owner/admin/coo).
+- **Починенные заглушки данных (Ф2, backend-доводки, фронт уже был готов):**
+  - `team-detail.goals` — заглушка `[]` заменена на `findMany` по `Goal.ownerPersonId` (связь уже была в схеме).
+  - `team-health.decisions` — заглушка `{value:0,neutral}` заменена на scoped count висящих решений per-department через `HangingDecisionsService.listHangingWithAuthors` (атрибуция по `primaryDepartmentId`, одна агрегатная выборка in-memory — запрет N+1, overlap отделов допускается). Новые поля DTO опциональны (обратная совместимость 3 потребителей team-health).
+- **Доставка дневной сводки COO + персональная галочка (Ф8, Ship-On):** удалён OFF-флаг `operations.daily_digest.deliver_to_telegram` / ENV `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`; cron шлёт безусловно (идемпотентно по `deliveredAt`), kill-switch `operations.daily_digest.enabled` остаётся. Policy `operations.daily_digest` в `EVENT_TYPE_CHANNEL_POLICY` (in_app+email+telegram+max). НОВЫЙ эндпоинт `GET /api/v1/me/notification-preferences`; персональная галочка «Ежедневная сводка компании» в Настройки → Уведомления управляет доставкой через существующий `optOutEventTypes` (при отключении сводка остаётся в кабинете). Стелс-эффект: после выката сводка начинает доставляться owner/coo во все привязанные каналы по умолчанию.
+
+Миграций БД нет (все поля/модели уже в схеме), seed/patch/backfill на запуск нет. `TeamHealthGrid` оказался НЕ orphan (живой на `/teams`) — не удалён.

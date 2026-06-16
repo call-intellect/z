@@ -132,17 +132,21 @@ CRM-сущностей, AI-анализ переписок (как ChatBox), у�
   `ChatboxIngestService.generateSummary` → JSON `{daySummary, rollingSummary}`,
   накопительное на `ChatboxChat.rollingSummary`; payload ingest получил
   `rollingSummary`.** Bridge в knowledge-core (block-ingest) НЕ трогали — generic. ✅
-- [ ] Ф4b — CRM посуточный дайджест (отложено, нужна схема-дельта). Сейчас CRM
-  синкается полным списком (Ф2: contacts/companies/deals) без дельты и без
-  отметки модификации. Для «дайджеста изменений за день» (ТЗ Пересмотр §3) нужно:
-  (а) **дельта-синк** `crm.*.list?filter[>DATE_MODIFY]=<курсор>` + хранить
-  `modifiedAt` на зеркале (новая колонка) и курсор на интеграции; (б) синк
-  лидов/заметок в `BitrixLead`/`BitrixCrmNote` (зеркала из Ф3.5 ещё не
-  наполняются); (в) на «закрытие дня» — собрать изменения за сутки → ОДИН
-  LLM-дайджест → `RawEvent(sourceType='bitrix', sourceExternalId='crm-digest-<день>',
-  occurredAt=начало дня)` (идемпотентность по дню, без новой таблицы). Вынесено
-  отдельной фазой, чтобы не выкатывать половинчатый дайджест на ненадёжном
-  «полный список каждый раз» сигнале. Предложить владельцу глубину/период.
+- [x] Ф4b — CRM посуточный дайджест. **Решение владельца:** дельта + бэкафилл
+  **7 дней** (90 было перебором — до 90 цепочек block-ingest при включении;
+  единое окно `CRM_BACKFILL_DAYS=7`, меняется одной строкой). Реализовано:
+  (а) **дельта-синк** `crm.{contact,company,deal,lead}.list?filter[>=DATE_MODIFY]=
+  <курсор>` + колонка `modifiedAt` на зеркалах + курсор `lastCrmSyncAt` (первый
+  синк = now−7д); `syncCrm` двигает курсор; добавлен `syncLeads` (`BitrixLead`).
+  (б) **посуточный дайджест** `BitrixIngestService.ingestCrmDigests`: на закрытые
+  дни (UTC) от `lastCrmDigestAt` до вчера (кап `MAX_DIGEST_DAYS_PER_RUN=7`/проход)
+  собирает изменённые сущности → **детерминированный `fullText`** (без отдельного
+  LLM-вызова — знания извлекает downstream block-ingest, экономим LLM) →
+  `RawEvent(sourceType=bitrix, sourceExternalId='crm-digest-<день>',
+  occurredAt=начало дня)` (идемпотентно, без новой таблицы). Триггер — в
+  `BitrixAnalyzeCron` по enabled-тенантам. Миграция `20260617030000_bitrix_crm_delta`.
+  Тесты: курсор/окно/пропуск пустых дней. **Заметки/таймлайн (`BitrixCrmNote`)
+  отложены** (`crm.timeline.*` — per-entity, тяжело; зеркало есть, синк позже). ✅
 - [x] Ф5 — визард + страница источника + сопоставление сотрудников.
   Подключение = OAuth (домен→`authorize`→callback→`?bitrix=connected`); сам
   round-trip и есть persist (интеграция создаётся на бэке в callback, на возврате
@@ -180,8 +184,7 @@ OAuth-коннект → синк сотрудников/IM-диалогов/CRM
 `rollingSummary`). Verify: typecheck 0 (back+front), lint, 142 unit-теста зелёные.
 
 **Осталось (отдельными фазами, вне Этапа 1):**
-- **Ф4b** — CRM посуточный дайджест (дельта по `DATE_MODIFY` + `BitrixLead`/
-  `BitrixCrmNote` синк + дневной LLM-дайджест → блок). Нужна схема-дельта
-  (`modifiedAt`/курсор) + решение владельца по глубине/периоду CRM-импорта.
+- **Заметки/таймлайн CRM** (`BitrixCrmNote` через `crm.timeline.comment`/
+  `crm.activity`) — зеркало есть (Ф3.5), синк отложен (per-entity, тяжело).
 - Этап 2 — событийный инкремент (`event.bind`); Этап 3 — placement-виджеты;
   Этап 5 — self-hosted box. (См. «Вне объёма».)

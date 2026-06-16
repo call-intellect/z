@@ -49,9 +49,14 @@ llm-router через Workflow (4 агента, structured-output) — он да
   sources) зелёные. Этап 1 (Ф0–Ф6) закрыт.
 - Попутно починен предсуществующий красный тест-долг (chatbox sync/cron/integration
   специ) — он маскировался багом ниже.
-- **CRM посуточный дайджест вынесен в Ф4b** (отложено): нужна дельта по `DATE_MODIFY`
-  + `modifiedAt`/курсор + решение владельца по глубине/периоду. Полусырой дайджест на
-  «полный список каждый раз» выкатывать нельзя (Ship-On).
+- **Ф4b — CRM посуточный дайджест реализован** (решение владельца: окно **7 дней**,
+  не 90 — «90 дохуя» = до 90 цепочек block-ingest при включении). Дельта-синк
+  `crm.{contact,company,deal,lead}.list?filter[>=DATE_MODIFY]` (+ `modifiedAt`/курсор
+  `lastCrmSyncAt` + `syncLeads`); `ingestCrmDigests` строит на закрытые дни
+  **детерминированный `fullText`** (БЕЗ отдельного LLM-вызова — знания извлекает
+  downstream block-ingest, экономим LLM) → `RawEvent('crm-digest-<день>')`; триггер в
+  `BitrixAnalyzeCron`. Миграция `20260617030000`. Заметки/таймлайн (`BitrixCrmNote`)
+  отложены (`crm.timeline.*` per-entity, тяжело).
 
 ## Чему научился
 1. **`tsc --noEmit` падает по OOM (exit 134, core dumped) и печатает 0 ошибок
@@ -70,3 +75,9 @@ llm-router через Workflow (4 агента, structured-output) — он да
    (никогда не гоним всю историю).
 5. **`occurredAt=startedAt` стабилен** — idempotencyKey RawEvent не плывёт при
    дозаполнении сессии (дублей нет).
+6. **Не дублируй LLM там, где downstream и так извлекает.** CRM-дайджест НЕ делает
+   своего LLM-вызова: `fullText` детерминированный, знания достаёт block-ingest
+   (который всё равно прогоняет LLM по `fullText`). Это снимает целый слой вызовов
+   и прямо отвечает на «90 дней дохуя» — стоимость держим на backfill-окне (7), а
+   не на двойном LLM. Бэкафилл-окна разделять (mirror vs digest) — лишняя сложность;
+   одно окно-константа `CRM_BACKFILL_DAYS`.

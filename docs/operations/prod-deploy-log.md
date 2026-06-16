@@ -81,10 +81,11 @@ docker compose run --rm --no-deps backend \
   - `20260617000001_bitrix_age_schema_fix` — идемпотентный перенос ag_catalog→public (AGE-трап; для повторного выката no-op).
   - `20260617010000_bitrix_rolling_summary_crm_notes` — `rollingSummary`/`rollingSummaryAt` на `BitrixDialog` И `ChatboxChat` + зеркала `BitrixLead`/`BitrixCrmNote`.
   - `20260617020000_bitrix_source_type` — `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'bitrix'`. ⚠ `ADD VALUE` не-транзакционна → отдельный файл; идемпотентна.
+  - `20260617030000_bitrix_crm_delta` (Ф4b) — колонка `modifiedAt` + индекс `[tenantId, modifiedAt]` на `BitrixContact/Company/Deal/Lead` + курсоры `lastCrmSyncAt`/`lastCrmDigestAt` на `BitrixIntegration` (дельта-синк CRM + посуточный дайджест).
   - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
 - **Шаг 12 — Smoke** (после выката):
   - В логах backend при старте: `BitrixSyncWorker запущен (bitrix.sync)` и `BitrixAnalyzeWorker запущен (bitrix.analyze)` (in-process воркеры в `WorkersModule`).
-  - Новые BullMQ-очереди: `bitrix.sync`, `bitrix.analyze`. Кроны `@Cron 00:00`: `BitrixSyncCron` (синк connected-порталов), `BitrixAnalyzeCron` (анализ закрытых сессий, гейт `bitrix.enabled`+`analysisEnabled`).
+  - Новые BullMQ-очереди: `bitrix.sync`, `bitrix.analyze`. Кроны `@Cron 00:00`: `BitrixSyncCron` (синк connected-порталов), `BitrixAnalyzeCron` (анализ закрытых сессий + **посуточный CRM-дайджест Ф4b** `ingestCrmDigests`, гейт `bitrix.enabled`+`analysisEnabled`).
   - Новые REST (Swagger tag `bitrix`): `GET /api/v1/bitrix/integration/status`, `PATCH .../analysis`, `GET .../users`, `PATCH .../users/:externalId/link`, `POST .../sync?scope=all|users|dialogs|crm`.
   - Фронт: `/company-admin/sources/bitrix` (стеклянная страница) + `/company-admin/sources/bitrix/managers` (сопоставление сотрудников).
 - **LLM сам не побежит:** анализ гейтится `analysisEnabled` + наличием подключённого портала. Дефолт `analysisEnabled=true`, но без connected-интеграции крон/синк ничего не ставят. Включение для существующих — через тумблер на странице источника.

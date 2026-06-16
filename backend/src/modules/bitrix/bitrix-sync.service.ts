@@ -18,6 +18,7 @@ import type {
   BitrixCrmCompany,
   BitrixCrmContact,
   BitrixCrmDeal,
+  BitrixCrmLead,
   BitrixCrmListParams,
   BitrixCrmMultifield,
   BitrixImMessagesParams,
@@ -51,6 +52,22 @@ function str(v: unknown): string | null {
   const s = String(v).trim();
   return s.length > 0 ? s : null;
 }
+
+/** Парс даты Bitrix (DATE_MODIFY и т.п.) в Date|null. */
+function parseDate(v: unknown): Date | null {
+  const s = str(v);
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Ф4b — окно бэкафилла CRM (дни): на первом синке тянем изменения за столько
+ * дней назад, и за столько же закрытых дней строим посуточные дайджесты. 7 дней
+ * — компромисс контекст/стоимость (≤7 LLM-цепочек block-ingest при включении).
+ * Менять тут одной строкой.
+ */
+export const CRM_BACKFILL_DAYS = 7;
 
 @Injectable()
 export class BitrixSyncService {
@@ -431,18 +448,33 @@ export class BitrixSyncService {
     }
   }
 
-  // ─────────────────────────── CRM ──────────────────────────────────
+  // ─────────────────────────── CRM (дельта по DATE_MODIFY, Ф4b) ──────
+
+  /**
+   * Дельта-фильтр CRM: берём изменённые с курсора `lastCrmSyncAt` (или за
+   * последние `CRM_BACKFILL_DAYS` дней на первом синке). Bitrix принимает
+   * `>=DATE_MODIFY` в ISO. Возвращает фильтр + базовый select (с DATE_MODIFY).
+   */
+  private crmListParams(
+    row: BitrixIntegration,
+    select: string[],
+  ): BitrixCrmListParams {
+    const since =
+      row.lastCrmSyncAt ??
+      new Date(Date.now() - CRM_BACKFILL_DAYS * 24 * 60 * 60 * 1000);
+    return {
+      select: [...select, 'DATE_MODIFY'],
+      filter: { '>=DATE_MODIFY': since.toISOString() },
+    };
+  }
 
   async syncContacts(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
-    const params: BitrixCrmListParams = {
-      select: ['ID', 'NAME', 'LAST_NAME', 'EMAIL', 'PHONE'],
-    };
     const items = await this.integration.callApiList<BitrixCrmContact>(
       row,
       'crm.contact.list',
-      params,
+      this.crmListParams(row, ['ID', 'NAME', 'LAST_NAME', 'EMAIL', 'PHONE']),
     );
     const now = new Date();
     for (const c of items) {
@@ -454,6 +486,7 @@ export class BitrixSyncService {
         name,
         email: this.firstMultiField(c.EMAIL),
         phone: this.firstMultiField(c.PHONE),
+        modifiedAt: parseDate(c.DATE_MODIFY),
         raw: c as unknown as Prisma.InputJsonValue,
         syncedAt: now,
       };
@@ -469,11 +502,10 @@ export class BitrixSyncService {
   async syncCompanies(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
-    const params: BitrixCrmListParams = { select: ['ID', 'TITLE'] };
     const items = await this.integration.callApiList<BitrixCrmCompany>(
       row,
       'crm.company.list',
-      params,
+      this.crmListParams(row, ['ID', 'TITLE']),
     );
     const now = new Date();
     for (const c of items) {
@@ -481,6 +513,7 @@ export class BitrixSyncService {
       if (!externalId) continue;
       const data = {
         title: str(c.TITLE),
+        modifiedAt: parseDate(c.DATE_MODIFY),
         raw: c as unknown as Prisma.InputJsonValue,
         syncedAt: now,
       };
@@ -496,11 +529,10 @@ export class BitrixSyncService {
   async syncDeals(tenantId: string): Promise<number> {
     if (!(await this.isEnabled())) return 0;
     const row = await this.requireRow(tenantId);
-    const params: BitrixCrmListParams = { select: ['ID', 'TITLE', 'STAGE_ID'] };
     const items = await this.integration.callApiList<BitrixCrmDeal>(
       row,
       'crm.deal.list',
-      params,
+      this.crmListParams(row, ['ID', 'TITLE', 'STAGE_ID']),
     );
     const now = new Date();
     for (const d of items) {
@@ -509,6 +541,7 @@ export class BitrixSyncService {
       const data = {
         title: str(d.TITLE),
         stageId: str(d.STAGE_ID),
+        modifiedAt: parseDate(d.DATE_MODIFY),
         raw: d as unknown as Prisma.InputJsonValue,
         syncedAt: now,
       };
@@ -521,17 +554,62 @@ export class BitrixSyncService {
     return items.length;
   }
 
+  async syncLeads(tenantId: string): Promise<number> {
+    if (!(await this.isEnabled())) return 0;
+    const row = await this.requireRow(tenantId);
+    const items = await this.integration.callApiList<BitrixCrmLead>(
+      row,
+      'crm.lead.list',
+      this.crmListParams(row, ['ID', 'TITLE', 'NAME', 'LAST_NAME', 'STATUS_ID']),
+    );
+    const now = new Date();
+    for (const l of items) {
+      const externalId = str(l.ID);
+      if (!externalId) continue;
+      const name =
+        [str(l.NAME), str(l.LAST_NAME)].filter(Boolean).join(' ').trim() || null;
+      const data = {
+        title: str(l.TITLE),
+        name,
+        statusId: str(l.STATUS_ID),
+        modifiedAt: parseDate(l.DATE_MODIFY),
+        raw: l as unknown as Prisma.InputJsonValue,
+        syncedAt: now,
+      };
+      await this.prisma.bitrixLead.upsert({
+        where: { tenantId_externalId: { tenantId, externalId } },
+        create: { tenantId, externalId, ...data },
+        update: data,
+      });
+    }
+    return items.length;
+  }
+
+  /** Синк всей CRM-ветки одним проходом + сдвиг дельта-курсора (Ф4b). */
+  private async syncCrm(tenantId: string): Promise<Record<string, number>> {
+    // Курсор сдвигаем на момент СТАРТА (минус минута форы) — изменения во время
+    // прохода попадут в следующую дельту (upsert идемпотентен, дубль не страшен).
+    const cursor = new Date(Date.now() - 60_000);
+    const contacts = await this.syncContacts(tenantId);
+    const companies = await this.syncCompanies(tenantId);
+    const deals = await this.syncDeals(tenantId);
+    const leads = await this.syncLeads(tenantId);
+    await this.prisma.bitrixIntegration.updateMany({
+      where: { tenantId, status: 'connected' },
+      data: { lastCrmSyncAt: cursor },
+    });
+    return { contacts, companies, deals, leads };
+  }
+
   // ─────────────────────────── оркестрация ──────────────────────────
 
   async fullSync(tenantId: string): Promise<Record<string, number>> {
     const users = await this.syncUsers(tenantId);
     const dialogs = await this.syncDialogs(tenantId);
-    const contacts = await this.syncContacts(tenantId);
-    const companies = await this.syncCompanies(tenantId);
-    const deals = await this.syncDeals(tenantId);
+    const crm = await this.syncCrm(tenantId);
     await this.markSynced(tenantId, 'full');
     await this.enqueuePendingAnalysisIfEnabled(tenantId);
-    return { users, dialogs, contacts, companies, deals };
+    return { users, dialogs, ...crm };
   }
 
   /**
@@ -591,11 +669,9 @@ export class BitrixSyncService {
         return { dialogs };
       }
       case 'crm': {
-        const contacts = await this.syncContacts(tenantId);
-        const companies = await this.syncCompanies(tenantId);
-        const deals = await this.syncDeals(tenantId);
+        const crm = await this.syncCrm(tenantId);
         await this.markSynced(tenantId, 'incremental');
-        return { contacts, companies, deals };
+        return crm;
       }
     }
   }

@@ -139,3 +139,13 @@ export interface BitrixCrmDeal {
   STAGE_ID?: string | null;
   [key: string]: unknown;
 }
+
+/** Лид CRM (`crm.lead.list`). DATE_MODIFY доступен через индекс-сигнатуру. */
+export interface BitrixCrmLead {
+  ID: string;
+  TITLE?: string | null;
+  NAME?: string | null;
+  LAST_NAME?: string | null;
+  STATUS_ID?: string | null;
+  [key: string]: unknown;
+}

@@ -5,6 +5,25 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { IngestService } from '../ingest/ingest.service';
 
+import { CRM_BACKFILL_DAYS } from './bitrix-sync.service';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Сколько закрытых дней максимум дайджестим за один проход (анти-бёрст). */
+const MAX_DIGEST_DAYS_PER_RUN = CRM_BACKFILL_DAYS;
+
+/** Начало UTC-суток для даты. */
+function startOfUtcDay(d: Date): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
+}
+
+/** Секция дайджеста: `Заголовок (N):\n- …`. Пустая → ''. */
+function digestSection(label: string, lines: string[]): string {
+  if (lines.length === 0) return '';
+  return `${label} (${lines.length}):\n${lines.map((x) => `- ${x}`).join('\n')}\n\n`;
+}
+
 /**
  * BitrixIngestService — мост Bitrix24 (внутренний IM) → knowledge-core
  * (ТЗ plans/tz/2026-06-17-bitrix24-source-sync.md, Ф4). По образцу
@@ -396,5 +415,137 @@ export class BitrixIngestService {
     });
 
     return { rawEventId: res.rawEvent.id };
+  }
+
+  // ─────────────────────────── CRM посуточный дайджест (Ф4b) ─────────
+
+  /**
+   * Посуточные дайджесты изменений CRM (контакты/компании/сделки/лиды) →
+   * по одному `RawEvent(sourceType=bitrix, sourceExternalId='crm-digest-<день>')`
+   * на закрытый день с изменениями. «Закрываем день»: дайджестим только дни
+   * строго в прошлом (UTC), от курсора `lastCrmDigestAt` (или за последние
+   * `CRM_BACKFILL_DAYS` дней на старте) до вчера включительно, не более
+   * `MAX_DIGEST_DAYS_PER_RUN` за проход. Курсор двигаем даже по пустым дням.
+   *
+   * Дайджест НЕ делает отдельного LLM-вызова: `fullText` детерминированный, а
+   * извлечение знаний делает downstream block-ingest (экономим LLM). Гейт
+   * `analysisEnabled` — на стороне вызывающего крона.
+   */
+  async ingestCrmDigests(tenantId: string): Promise<{ daysDigested: number }> {
+    const integ = await this.prisma.bitrixIntegration.findFirst({
+      where: { tenantId },
+      select: { lastCrmDigestAt: true },
+    });
+    if (!integ) return { daysDigested: 0 };
+
+    const today0 = startOfUtcDay(new Date());
+    let dayStart = integ.lastCrmDigestAt
+      ? startOfUtcDay(integ.lastCrmDigestAt)
+      : new Date(today0.getTime() - CRM_BACKFILL_DAYS * DAY_MS);
+    if (dayStart >= today0) return { daysDigested: 0 };
+
+    let processed = 0;
+    let boundary = dayStart;
+    while (dayStart < today0 && processed < MAX_DIGEST_DAYS_PER_RUN) {
+      const dayEnd = new Date(dayStart.getTime() + DAY_MS);
+      await this.buildCrmDigestForDay(tenantId, dayStart, dayEnd);
+      boundary = dayEnd;
+      processed += 1;
+      dayStart = dayEnd;
+    }
+
+    await this.prisma.bitrixIntegration.updateMany({
+      where: { tenantId },
+      data: { lastCrmDigestAt: boundary },
+    });
+    return { daysDigested: processed };
+  }
+
+  /**
+   * Один день: собрать изменённые CRM-сущности (по `modifiedAt`), отрендерить
+   * детерминированный `fullText` и заингестить `RawEvent`. Пустой день → no-op
+   * (RawEvent не создаётся). Идемпотентно (sourceExternalId+occurredAt стабильны).
+   */
+  private async buildCrmDigestForDay(
+    tenantId: string,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<void> {
+    const where = { tenantId, modifiedAt: { gte: dayStart, lt: dayEnd } };
+    const [contacts, companies, deals, leads] = await Promise.all([
+      this.prisma.bitrixContact.findMany({
+        where,
+        take: 200,
+        select: { name: true, email: true },
+      }),
+      this.prisma.bitrixCompany.findMany({
+        where,
+        take: 200,
+        select: { title: true },
+      }),
+      this.prisma.bitrixDeal.findMany({
+        where,
+        take: 200,
+        select: { title: true, stageId: true },
+      }),
+      this.prisma.bitrixLead.findMany({
+        where,
+        take: 200,
+        select: { title: true, name: true, statusId: true },
+      }),
+    ]);
+
+    const total =
+      contacts.length + companies.length + deals.length + leads.length;
+    if (total === 0) return;
+
+    const dayKey = dayStart.toISOString().slice(0, 10);
+    const fullText =
+      `CRM-изменения за ${dayKey} (Bitrix24).\n\n` +
+      digestSection(
+        'Контакты',
+        contacts.map(
+          (c) => `${c.name ?? '—'}${c.email ? ` <${c.email}>` : ''}`,
+        ),
+      ) +
+      digestSection(
+        'Компании',
+        companies.map((c) => c.title ?? '—'),
+      ) +
+      digestSection(
+        'Сделки',
+        deals.map(
+          (d) => `${d.title ?? '—'}${d.stageId ? ` — стадия ${d.stageId}` : ''}`,
+        ),
+      ) +
+      digestSection(
+        'Лиды',
+        leads.map(
+          (l) =>
+            `${l.title ?? l.name ?? '—'}${l.statusId ? ` — статус ${l.statusId}` : ''}`,
+        ),
+      );
+
+    const payload = {
+      kind: 'bitrix_crm_digest' as const,
+      day: dayKey,
+      counts: {
+        contacts: contacts.length,
+        companies: companies.length,
+        deals: deals.length,
+        leads: leads.length,
+      },
+      fullText,
+    };
+
+    const source = await this.upsertSource(tenantId);
+    await this.ingest.ingest({
+      tenantId,
+      sourceId: source.id,
+      sourceExternalId: `crm-digest-${dayKey}`,
+      occurredAt: dayStart, // стабильный → idempotencyKey не плывёт
+      payload,
+      dataClass: 'sensitive',
+    });
   }
 }

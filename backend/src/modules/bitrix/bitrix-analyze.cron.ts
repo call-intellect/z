@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
+import { BitrixIngestService } from './bitrix-ingest.service';
 import { BitrixAnalyzeQueueService } from './queue/bitrix-analyze.queue.service';
 
 /** Сколько pending-сессий забираем за один проход sweeper'а. */
@@ -32,6 +33,8 @@ export class BitrixAnalyzeCron {
     private readonly queue: BitrixAnalyzeQueueService,
     @Inject(AdminSettingsService)
     private readonly adminSettings: AdminSettingsService,
+    @Inject(BitrixIngestService)
+    private readonly ingest: BitrixIngestService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
@@ -93,8 +96,26 @@ export class BitrixAnalyzeCron {
         }
       }
 
+      // Ф4b — посуточный CRM-дайджест за закрытые дни (по enabled-тенантам).
+      // Best-effort: ошибка одного тенанта не валит проход.
+      let crmDays = 0;
+      for (const tenantId of enabledTenantIds) {
+        try {
+          const { daysDigested } = await this.ingest.ingestCrmDigests(tenantId);
+          crmDays += daysDigested;
+        } catch (err) {
+          this.logger.warn(
+            {
+              tenantId,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'bitrix analyze-sweep: CRM-дайджест упал — пропуск',
+          );
+        }
+      }
+
       this.logger.debug(
-        `bitrix analyze-sweep: pending=${sessions.length} enqueued=${enqueued}`,
+        `bitrix analyze-sweep: pending=${sessions.length} enqueued=${enqueued} crmDigestDays=${crmDays}`,
       );
     } catch (err) {
       this.logger.error(

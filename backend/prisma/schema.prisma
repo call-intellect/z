@@ -11667,6 +11667,12 @@ model BitrixIntegration {
   /// Источник: отметки последних синков (как у ChatBox).
   lastFullSyncAt        DateTime?
   lastIncrementalSyncAt DateTime?
+  /// Ф4b — курсор дельта-синка CRM (по DATE_MODIFY): берём изменения с этого
+  /// момента. null → первый синк тянет за CRM_BACKFILL_DAYS (7 дней).
+  lastCrmSyncAt         DateTime?
+  /// Ф4b — до какого дня (UTC, начало дня) уже построены посуточные CRM-дайджесты.
+  /// null → бэкафилл дайджестов за последние CRM_BACKFILL_DAYS закрытых дней.
+  lastCrmDigestAt       DateTime?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
@@ -11779,6 +11785,8 @@ model BitrixContact {
   name       String?
   email      String?
   phone      String?
+  /// Ф4b — DATE_MODIFY из Bitrix (для дельты и посуточного дайджеста).
+  modifiedAt DateTime?
   raw        Json?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -11787,6 +11795,7 @@ model BitrixContact {
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, externalId])
+  @@index([tenantId, modifiedAt])
 }
 
 /// Зеркало CRM-компании Bitrix.
@@ -11795,6 +11804,7 @@ model BitrixCompany {
   tenantId   String
   externalId String
   title      String?
+  modifiedAt DateTime?
   raw        Json?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -11803,6 +11813,7 @@ model BitrixCompany {
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, externalId])
+  @@index([tenantId, modifiedAt])
 }
 
 /// Зеркало CRM-сделки Bitrix.
@@ -11812,6 +11823,7 @@ model BitrixDeal {
   externalId String
   title      String?
   stageId    String?
+  modifiedAt DateTime?
   raw        Json?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -11820,6 +11832,7 @@ model BitrixDeal {
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, externalId])
+  @@index([tenantId, modifiedAt])
 }
 
 /// Зеркало CRM-лида Bitrix (crm.lead.list). ТЗ 2026-06-17.
@@ -11830,6 +11843,7 @@ model BitrixLead {
   title      String?
   name       String?
   statusId   String?
+  modifiedAt DateTime?
   raw        Json?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -11838,6 +11852,7 @@ model BitrixLead {
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, externalId])
+  @@index([tenantId, modifiedAt])
 }
 
 /// Заметка/активность CRM Bitrix (crm.timeline.comment / crm.activity). ТЗ 2026-06-17.

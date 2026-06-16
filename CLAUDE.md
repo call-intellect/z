@@ -1,6 +1,25 @@
 # Z / Кора — память компании (второй мозг)
+## ЖЁСТКОЕ ПРАВИЛО ОБЩЕНИЯ (ОБЯЗАТЕЛЬНО)
 
-Этот документ — техническая карта проекта. Читай его в начале каждой сессии.
+**Задавай уточняющие вопросы на русском языке с подробным объяснением каждого варианта с указанием, что рекомендуешь!**
+
+- Любой уточняющий вопрос (через `AskUserQuestion` или текстом) — **только на русском**.
+- Для **каждого** варианта давай развёрнутое объяснение: суть, плюсы/минусы, последствия выбора.
+- **Явно указывай, какой вариант рекомендуешь** и почему (рекомендованный — первым, с пометкой «(рекомендую)»).
+- Это правило приоритетно и распространяется на все взаимодействия в этом репозитории.
+
+
+- **Без комментариев в коде (ЖЁСТКОЕ ПРАВИЛО)**: код самодокументируем — имена, типы и структура вместо текста. Не добавляй нарративные, исторические или объясняющие комментарии и JSDoc-прозу ни в новый, ни в редактируемый код; существующие такие комментарии при правке файла удаляй. Допустимы ТОЛЬКО функциональные директивы: `eslint-disable*`, `@ts-expect-error`, `prettier-ignore`, `/// <reference`. Знания, которым нужен текст (контракты, инварианты, причины решений), живут в `docs/`, не в коде.
+
+
+## Tooling — use the MCP servers & plugins actively
+
+This repo is wired for several MCP servers/plugins. Reach for them *first* — they beat ad-hoc grep/Read/guessing on both relevance and token cost.
+
+- **vexp** (`run_pipeline`) — **call this FIRST for every code task** (bug, feature, refactor, debug) instead of grep/glob/cat. One call returns graph-ranked context + impact + memory. A PreToolUse hook blocks Grep/Glob while the vexp daemon runs. Prefer `get_skeleton` over `Read` for inspecting files. Full guidance lives in [.claude/CLAUDE.md](.claude/CLAUDE.md). If `run_pipeline` errors (daemon down), fall back to normal search.
+- **context7** (`resolve-library-id` → `query-docs`) — **use for any external library/API question** before relying on memory. This stack pins fast-moving versions (NestJS 11, Prisma 7, React 19, Ant Design 6, Socket.IO, class-validator, React Query, Zustand); training data drifts from current APIs. When writing or reviewing code against a library — decorators, config shapes, new/renamed APIs, migration notes — resolve the library and query its docs rather than guessing.
+- **playwright** (`browser_*`) — drive a real browser to verify frontend changes, capture screenshots/snapshots, and check network/console. Use for FE visual/behavioral verification (matches the seed-and-visual-audit workflow), not for backend-only tasks.
+- **Skills** (invoke via the Skill tool when relevant): `code-review` (review the branch diff), `commit`/`commit-push-pr`, `security-review`, `frontend-design`/`impeccable` (FE UI work), `deep-research`. Don't hand-roll what a skill already does.
 
 > **Категория:** «память компании» / memory layer для AI-агентов (бренд Z → Кора, ребренд M9-M12).
 > Полное позиционирование, антинарратив, tone, ICP, ответы на возражения — [second-brain/06_marketing/positioning.md](second-brain/06_marketing/positioning.md) и [second-brain/06_marketing/messaging.md](second-brain/06_marketing/messaging.md). Головной GTM — [plans/analysis/2026-05-20-gtm-700m.md](plans/analysis/2026-05-20-gtm-700m.md).

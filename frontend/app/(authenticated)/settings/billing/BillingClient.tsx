@@ -318,7 +318,7 @@ function ChangeTierSection() {
     <section className="rounded-lg border border-border-subtle bg-bg-card p-5">
       <h2 className="text-base font-medium">Сменить тариф</h2>
       <p className="mt-1 text-sm text-fg-tertiary">
-        На MVP апгрейд в один клик ещё не подключён. Напишите нам — поможем
+        Смена тарифа в один клик пока недоступна. Напишите нам — поможем
         подобрать тариф под задачи и оформим переход.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

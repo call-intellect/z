@@ -547,7 +547,7 @@ function SubscriptionCard({
         <div>
           <h2 className="text-lg font-semibold">Текущая подписка</h2>
           <p className="text-sm text-fg-tertiary">
-            tier_standard
+            Стандартный
             {subscription.billingPeriod
               ? ` · ${billingPeriodLabel(subscription.billingPeriod)}`
               : ''}
@@ -643,7 +643,7 @@ function RenewalSection({
       <div>
         <h2 className="text-lg font-semibold">Продление подписки</h2>
         <p className="text-sm text-fg-tertiary">
-          tier_standard — 60 000 ₽/мес или 576 000 ₽/год (скидка 20%).
+          Стандартный — 60 000 ₽/мес или 576 000 ₽/год (скидка 20%).
           Каждое дополнительное место — +1 000 ₽/мес.
         </p>
       </div>

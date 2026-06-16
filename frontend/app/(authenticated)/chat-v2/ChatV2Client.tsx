@@ -198,6 +198,9 @@ export function ChatV2Client(): ReactElement {
           onConversationCreated={(id) => {
             setSelectedId(id);
             void list.mutate();
+            // Бэкенд генерирует title асинхронно (fire-and-forget) после первого
+            // сообщения — подхватываем обновлённое название повторным refetch.
+            setTimeout(() => { void list.mutate(); }, 2000);
           }}
           onConversationChanged={() => {
             void list.mutate();

@@ -56,7 +56,7 @@ export function SettingsClient() {
           <TabsTrigger value="profile">Профиль</TabsTrigger>
           <TabsTrigger value="security">Безопасность</TabsTrigger>
           <TabsTrigger value="appearance">Внешний вид</TabsTrigger>
-          <TabsTrigger value="tours">Онбординг</TabsTrigger>
+          <TabsTrigger value="tours">Знакомство</TabsTrigger>
         </TabsList>
 
         <TabsContent value="profile">

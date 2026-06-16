@@ -14,9 +14,9 @@ export function OnboardingSection() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-fg-primary">Онбординг</h2>
+        <h2 className="text-lg font-semibold text-fg-primary">Знакомство</h2>
         <p className="mt-1 text-sm text-fg-secondary">
-          Запустить туры заново или сбросить весь прогресс онбординга.
+          Запустить туры заново или сбросить весь прогресс знакомства.
         </p>
       </div>
 

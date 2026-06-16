@@ -166,11 +166,11 @@ function DepartmentsContent({
         <h1 className="text-2xl font-semibold text-fg-primary">Отделы</h1>
         <p className="mt-1 text-sm text-fg-tertiary">
           Список отделов компании и их функциональная нагрузка (привязка к доменам).
-          Базовый CRUD отделов — в{' '}
+          Управление отделами — в разделе{' '}
           <Link href="/structure" className="underline">
-            Структуре
+            «Структура»
           </Link>
-          ; здесь — связи Department ↔ FunctionalDomain.
+          ; здесь — привязки отделов к функциональным областям.
         </p>
       </header>
 

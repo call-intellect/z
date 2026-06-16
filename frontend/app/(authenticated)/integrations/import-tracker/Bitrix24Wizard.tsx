@@ -54,7 +54,7 @@ type Step = 'connect' | 'groups' | 'mapping' | 'preview';
 const STEPS: WizardStepDef[] = [
   { id: 'connect', label: 'Подключение' },
   { id: 'groups', label: 'Группы' },
-  { id: 'mapping', label: 'Маппинг' },
+  { id: 'mapping', label: 'Сопоставление' },
   { id: 'preview', label: 'Подтверждение' },
 ];
 
@@ -162,7 +162,7 @@ export function Bitrix24Wizard({
           parsed={parsedMappings}
           onBack={goBack}
           onNext={goNext}
-          stepTitle="Шаг 3: Маппинг пользователей Битрикс24"
+          stepTitle="Шаг 3: Сопоставление пользователей Битрикс24"
         />
       )}
 

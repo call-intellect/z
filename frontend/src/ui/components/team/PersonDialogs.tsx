@@ -89,7 +89,7 @@ export function PersonEditDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="p-email">Email</Label>
+            <Label htmlFor="p-email">Эл. почта</Label>
             <Input
               id="p-email"
               type="email"

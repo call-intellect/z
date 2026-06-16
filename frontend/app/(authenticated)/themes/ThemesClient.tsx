@@ -6,6 +6,7 @@ import useSWR from 'swr';
 import { Sparkles, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 
 import { themesApi } from '@/api/themes.api';
+import { pluralRu } from '@/domain/contribution';
 import {
   THEME_BRANCH_LABELS,
   THEME_BRANCH_VALUES,
@@ -181,7 +182,7 @@ function ThemeListItem({ theme }: { theme: ThemeDomain }) {
       )}
       <div className="mt-auto flex items-center justify-between text-xs text-fg-tertiary">
         <span>
-          {theme.blocksCount} блоков · {theme.entitiesCount} сущностей
+          {pluralRu(theme.blocksCount, 'блок', 'блока', 'блоков')} · {pluralRu(theme.entitiesCount, 'сущность', 'сущности', 'сущностей')}
         </span>
       </div>
     </Link>

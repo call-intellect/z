@@ -71,6 +71,29 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔌 2026-06-17 — Bitrix24 как источник: синк IM+CRM + посуточный анализ + UI (Ф0–Ф6)
+
+> Контракт: ветка `bitrix`, коммиты `aa44f18a` (Ф0–Ф4: схема+синк+очереди+анализ), `40580414` (Ф5–Ф6: страница+сопоставление+статус). ТЗ: `plans/tz/2026-06-17-bitrix24-source-sync.md`.
+
+- **Шаг 1 — ENV** — **новых нет.** `BITRIX_CLIENT_ID/SECRET` и пр. заведены ещё на фазе установки (`2026-06-09-bitrix24-integration-install`). Kill-switch `bitrix.enabled` — admin-настройка (не ENV).
+- **Шаг 4 — Prisma** — **обязательно, авто** (4 миграции, аддитивные, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up -d`):
+  - `20260617000000_bitrix_source_sync` — зеркала `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal` + enum'ы `BitrixLinkMode/BitrixDialogType/BitrixDialogAnalysisStatus` + поля `BitrixIntegration.analysisEnabled`(default true)/`lastFullSyncAt`/`lastIncrementalSyncAt`.
+  - `20260617000001_bitrix_age_schema_fix` — идемпотентный перенос ag_catalog→public (AGE-трап; для повторного выката no-op).
+  - `20260617010000_bitrix_rolling_summary_crm_notes` — `rollingSummary`/`rollingSummaryAt` на `BitrixDialog` И `ChatboxChat` + зеркала `BitrixLead`/`BitrixCrmNote`.
+  - `20260617020000_bitrix_source_type` — `ALTER TYPE "SourceType" ADD VALUE IF NOT EXISTS 'bitrix'`. ⚠ `ADD VALUE` не-транзакционна → отдельный файл; идемпотентна.
+  - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
+- **Шаг 12 — Smoke** (после выката):
+  - В логах backend при старте: `BitrixSyncWorker запущен (bitrix.sync)` и `BitrixAnalyzeWorker запущен (bitrix.analyze)` (in-process воркеры в `WorkersModule`).
+  - Новые BullMQ-очереди: `bitrix.sync`, `bitrix.analyze`. Кроны `@Cron 00:00`: `BitrixSyncCron` (синк connected-порталов), `BitrixAnalyzeCron` (анализ закрытых сессий, гейт `bitrix.enabled`+`analysisEnabled`).
+  - Новые REST (Swagger tag `bitrix`): `GET /api/v1/bitrix/integration/status`, `PATCH .../analysis`, `GET .../users`, `PATCH .../users/:externalId/link`, `POST .../sync?scope=all|users|dialogs|crm`.
+  - Фронт: `/company-admin/sources/bitrix` (стеклянная страница) + `/company-admin/sources/bitrix/managers` (сопоставление сотрудников).
+- **LLM сам не побежит:** анализ гейтится `analysisEnabled` + наличием подключённого портала. Дефолт `analysisEnabled=true`, но без connected-интеграции крон/синк ничего не ставят. Включение для существующих — через тумблер на странице источника.
+- **Отложено (Ф4b):** CRM посуточный дайджест — нужна дельта по `DATE_MODIFY` + `modifiedAt`/курсор + решение владельца по глубине/периоду. См. `second-brain/04_не-сделано/README.md`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐛 2026-06-16 — QA-багфиксы кабинета (пакет по итогам полного обхода)
 
 > Контракт: ветка `fix/qa-cabinet-bugfix-2026-06-16`, коммиты `e42b4ec3` (фронт), `9fa1ea12` (навигация настроек), `cf20473c` (бэкенд). ТЗ: `plans/tz/2026-06-16-qa-cabinet-bugfix-pack.md`.

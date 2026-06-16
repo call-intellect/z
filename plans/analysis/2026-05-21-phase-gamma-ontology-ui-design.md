@@ -27,10 +27,10 @@ related:
 Этот документ — **аналитика γ-фазы, аналогичная аналитике ЛК Фазы 0**. Цель — закрыть все большие развилки до того, как писать зонтичный ТЗ. Без этой аналитики писать ТЗ опасно: scope γ объёмнее Фазы 0, и попытка сразу разбить её на sub-TZ без предварительного scope-кат'а почти гарантированно даёт переделку.
 
 **Что я НЕ решаю в этом документе:**
-- Визуальный дизайн страниц группы Б (цвета, шрифты, motion — `delivery/06-ux-ui.md` + design-system).
+- Визуальный дизайн страниц группы Б (цвета, шрифты, motion — `second-brain/02_architecture/design-system.md` + design-system).
 - Конкретные API-контракты эндпоинтов CRUD группы Б (это уровень sub-TZ γa/γb).
 - Деталь промптов LLM для динамической онтологии и для дельты Declared vs Observed (это sub-TZ γc/γd).
-- Текст копирайта на страницах группы Б (это `delivery/ui/copy-strings.ru.md`).
+- Текст копирайта на страницах группы Б (это `second-brain/13_glossary/copy-strings.ru.md`).
 
 ---
 
@@ -64,7 +64,7 @@ related:
 - Модели `OntologyType` (динамическая онтология) и связанной инфраструктуры extraction.
 - UI «дельта Declared vs Observed» (между JobDescription и RoleProfile, между Regulation и фактически наблюдаемыми ProcessStep).
 - UI для RACI (`responsible_for` / `accountable_for` / `consulted_on` / `informed_about` — типы рёбер заведены, UI отсутствует).
-- Срезов времени (`/today`, `/week`, `/month`) и смысловой карты (`/map`) из `delivery/06-ux-ui.md`.
+- Срезов времени (`/today`, `/week`, `/month`) и смысловой карты (`/map`) из `second-brain/02_architecture/design-system.md`.
 - Полного `/dump` (голос, файлы, AI-feedback) и полной `/me` (обещания, настроение).
 
 ### 1.2. Что в roadmap'е изначально приписано к γ
@@ -266,7 +266,7 @@ _(пусто)_
 
 ## 12. Связи и обновления других документов
 
-> **К заполнению после §5.** Что обновить в `plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`, `second-brain/index.md`, `delivery/13-glossary.md` после accept'а γ-аналитики.
+> **К заполнению после §5.** Что обновить в `plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`, `second-brain/index.md`, `second-brain/13_glossary/ui-glossary.md` после accept'а γ-аналитики.
 
 _(пусто)_
 

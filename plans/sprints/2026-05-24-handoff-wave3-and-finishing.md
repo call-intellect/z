@@ -244,7 +244,7 @@ second-brain/06_marketing/style-guide.md
 
 И modified:
 ```
-M delivery/ui/screens.md
+M second-brain/01_projects/frontend-pages.md
 M plans/sprints/2026-05-24-handoff-to-next-orchestrator.md  (этот файл устаревает — заменён текущим)
 M plans/sprints/2026-05-24-sprint-plan-wave-1.md
 M plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md

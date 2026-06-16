@@ -58,7 +58,7 @@ covers_matrix_rows: [G1, G2, J10, J11, M1..M5 (через расширение r
 - Обновление seed `seed-llm-task-routes-knowledge-core.ts` — пересмотр цепочки provider'ов для `block-ingest` с учётом нового масштаба (placeholder с TODO согласовать с playbook).
 - (Опц.) Новый `LlmTaskType` `reasoning-detect` + seed-script `seed-llm-task-routes-reasoning-detect.ts` с тремя provider'ами.
 - Patch-script для бэкфила (опц.) — `backend/scripts/backfill-reasoning-signaltype.ts`.
-- Обновление `delivery/13-glossary.md` — глоссарий signalType с русскими названиями.
+- Обновление `second-brain/13_glossary/ui-glossary.md` — глоссарий signalType с русскими названиями.
 
 ### Не входит
 
@@ -195,7 +195,7 @@ REASONING_DETECT_CONFIDENCE_THRESHOLD=0.65
 - [ ] **α-2.5** (опц., не выбран) Отдельный reasoning-detect воркер — решено не делать.
 - [ ] **α-2.6** (опц., не выбран) Patch-script backfill — решено не делать (новые блоки получают reasoning из коробки).
 - [x] **α-2.7** Smoke на реальных данных — пройден в Wave 2.
-- [x] **α-2.8** Обновление [delivery/13-glossary.md](../../delivery/13-glossary.md).
+- [x] **α-2.8** Обновление [second-brain/13_glossary/ui-glossary.md](../../second-brain/13_glossary/ui-glossary.md).
 - [x] **α-2.9** Обновление [knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
 
 ---

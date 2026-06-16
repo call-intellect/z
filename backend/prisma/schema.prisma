@@ -4364,7 +4364,7 @@ model Goal {
   /// Вес в среднем "Согласованность стратегии" (Фаза 8 dashboard). Default 1.0.
   weight                  Decimal     @default(1.0) @db.Decimal(4, 3)
   /// Фаза 0a §11.6 — горизонт цели для декомпозиции strategic→annual→…→sprint.
-  /// Default quarterly — типичная цель компании в delivery/03-frame.md.
+  /// Default quarterly — типичная цель компании.
   horizon                 GoalHorizon @default(quarterly)
   /// ТЗ-B (2026-06-05) — флаг «главная цель компании» = «север» компаса Вектора.
   /// Одна primary на tenant гарантируется PARTIAL UNIQUE index в

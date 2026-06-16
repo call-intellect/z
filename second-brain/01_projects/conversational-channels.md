@@ -160,7 +160,7 @@ Per-event-type defaults в α-1:
 `/me/channels` — список каналов + моя привязка, генерация кода привязки, отвязка.
 `/me/notifications` — master-detail список с фильтрами (Непрочитанные / Ждут ответа / Все), inline-кнопки «Ответить»/«Пропустить», форма «Свободная заметка» → `RawEvent`.
 
-Глоссарий русских терминов: `delivery/13-glossary.md` (раздел SBA α-1) и `delivery/ui/copy-strings.ru.md`.
+Глоссарий русских терминов: [`13_glossary/ui-glossary.md`](../13_glossary/ui-glossary.md) (раздел SBA α-1) и [`13_glossary/copy-strings.ru.md`](../13_glossary/copy-strings.ru.md).
 
 ## Что не входит в α-1
 

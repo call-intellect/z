@@ -354,7 +354,7 @@ GET /api/v1/org/dashboard/quality-score?from=<ISO>&to=<ISO>&meetingType=<Meeting
 
 ### 8.4. Локализация (русский)
 
-В `delivery/ui/copy-strings.ru.md`:
+В `second-brain/13_glossary/copy-strings.ru.md`:
 - «Оценка качества встречи»
 - «Подготовка» / «Структура» / «Чёткость формулировок» / «Итоги» / «Вовлечённость»
 - «Рекомендации» (Информация / Внимание / Важно — для severity)

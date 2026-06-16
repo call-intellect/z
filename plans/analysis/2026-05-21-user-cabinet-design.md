@@ -15,7 +15,7 @@ blocks_sub_tz: tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md (не соз
 
 Документ закрывает три большие развилки и десяток мелких. По итогам — карта навигации, контракт по страницам и план изменений в [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx). Эти артефакты — вход в sub-TZ 0c.
 
-**Что я НЕ решаю в этом документе:** визуальный дизайн (цвета, шрифты, motion — это [delivery/06-ux-ui.md](../../delivery/06-ux-ui.md) + design-system), конкретные API-контракты страниц (это sub-TZ 0a/0c), формулы и тексты копирайта (это `delivery/ui/copy-strings.ru.md`).
+**Что я НЕ решаю в этом документе:** визуальный дизайн (цвета, шрифты, motion — это [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md) + design-system), конкретные API-контракты страниц (это sub-TZ 0a/0c), формулы и тексты копирайта (это `second-brain/13_glossary/copy-strings.ru.md`).
 
 ---
 
@@ -26,7 +26,7 @@ blocks_sub_tz: tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md (не соз
 | # | Модель | Где зафиксирована | Метафора | Дефолтный экран | CTA |
 |---|---|---|---|---|---|
 | 1 | Текущий код | [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx) | «Оперативный кабинет встреч» | `/dashboard` | «Создать встречу» |
-| 2 | Целевой UX из delivery/ | [delivery/06-ux-ui.md](../../delivery/06-ux-ui.md), [delivery/ui/screens.md](../../delivery/ui/screens.md) | «Память компании — срезы времени и сущности» | `/today` | «⊕ Дамп» |
+| 2 | Целевой UX из delivery/ | [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md), [second-brain/01_projects/frontend-pages.md](../../second-brain/01_projects/frontend-pages.md) | «Память компании — срезы времени и сущности» | `/today` | «⊕ Дамп» |
 | 3 | Фаза 0 (зонтичный ТЗ) | [plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | «Каркас компании: Структура / Документы / Карты должностей» | дашборд компании после wizard'а | — |
 
 Аналитика ЛК — это **примирение трёх моделей** в одну непротиворечивую навигацию, которую можно постепенно эволюционировать от состояния «как сейчас» к состоянию «целевой UX delivery/», проходя через состояние Фазы 0 без переписывания фронта на каждом шаге.
@@ -171,7 +171,7 @@ Primary CTA в Sidebar — кнопка «Создать встречу» (`/mee
 Multi-org switcher — в шапке Header, dropdown рядом с UserCard. Активная Org — источник `tenantId` для всех API. Во время wizard'а switcher временно скрыт (мы внутри только что созданной Org, переключение бессмысленно).
 
 **Обоснование:**
-- В [delivery/06-ux-ui.md](../../delivery/06-ux-ui.md) единый набор экранов для всех ролей. Разделение admin/member происходит **не на уровне URL, а на уровне содержимого экранов** (RBAC).
+- В [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md) единый набор экранов для всех ролей. Разделение admin/member происходит **не на уровне URL, а на уровне содержимого экранов** (RBAC).
 - Раздваивать роуты (`/dashboard` vs `/dashboard-personal`) — путь к двум разъезжающимся UI. Один URL + разное содержимое = одна реализация, проще поддерживать.
 - Member, попавший сразу на `/dashboard` без данных компании (структура только что заведена, у member ещё не было встреч), увидит пустой экран. Это плохое первое впечатление. `/me` даёт хотя бы свою должность.
 
@@ -565,7 +565,7 @@ Empty-state карты должности: «Карта формируется. 
    - «Главная» (как сейчас) — оставить.
    - «Мои встречи» → «Встречи».
    - «Дамп мысли» → «Дамп».
-   - «AI-чат» → «Помощник компании» (правило русского UI — никаких английских аббревиатур в лейблах, фиксируется в `delivery/13-glossary.md`).
+   - «AI-чат» → «Помощник компании» (правило русского UI — никаких английских аббревиатур в лейблах, фиксируется в `second-brain/13_glossary/ui-glossary.md`).
 6. **Группа «Настройки → Админка»** — подгруппа внутри «Настройки», условно отрисовываемая только для owner/admin/super_admin.
 7. **CTA в Sidebar:** в Фазе 0 оставить «Создать встречу» (`/meetings/create`). Не менять.
 8. **multi-org switcher** — добавить **в [Header.tsx](../../frontend/src/ui/components/app-shell/Header.tsx)**, не в Sidebar. См. решение 5.
@@ -574,7 +574,7 @@ Empty-state карты должности: «Карта формируется. 
 
 ## 10. Глоссарий новых терминов UI
 
-Добавить в [`delivery/13-glossary.md`](../../delivery/13-glossary.md) и `delivery/ui/copy-strings.ru.md` (sub-TZ 0c, строка 36 матрицы):
+Добавить в [`second-brain/13_glossary/ui-glossary.md`](../../second-brain/13_glossary/ui-glossary.md) и `second-brain/13_glossary/copy-strings.ru.md` (sub-TZ 0c, строка 36 матрицы):
 
 | Термин (русский) | Что значит | Не путать с |
 |---|---|---|

@@ -613,7 +613,7 @@ POST   /api/v1/admin/recognition/seasonal-events
 PATCH  /api/v1/admin/recognition/level-multiplier      # 0.5..2.0
 ```
 
-Все DTO — через `nestjs-zod`, Swagger `@ApiTags('recognition-v2')`. Все enum-значения (`reason`, `pattern`, `category`) — справочник в `delivery/ui/copy-strings.ru.md` с русскими лейблами.
+Все DTO — через `nestjs-zod`, Swagger `@ApiTags('recognition-v2')`. Все enum-значения (`reason`, `pattern`, `category`) — справочник в `second-brain/13_glossary/copy-strings.ru.md` с русскими лейблами.
 
 ## Cron / Workers
 
@@ -798,7 +798,7 @@ seasonal_event_participants_total{tenant, slug}
 - [ ] **apply-prod-deploy.ts** — добавлены seed-скрипты (`seed-levels.ts`, `seed-recognition-v2-templates.ts`, `seed-seasonal-events.ts`).
 - [ ] **second-brain** обновлён: `02_architecture/data-model.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md`, `02_architecture/module-map.md`.
 - [ ] **docs/operations/prod-deploy-log.md** — Шаги 1 (ENV), 4 (schema), 7 (seed), 12 (smoke).
-- [ ] **delivery/ui/copy-strings.ru.md** обновлён всеми новыми лейблами.
+- [ ] **second-brain/13_glossary/copy-strings.ru.md** обновлён всеми новыми лейблами.
 
 ## Срок
 

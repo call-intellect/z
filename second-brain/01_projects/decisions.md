@@ -206,5 +206,5 @@ Frontend:
 - `frontend/src/ui/components/app-shell/Sidebar.tsx` (добавлен пункт «Решения»)
 
 Documentation:
-- `delivery/13-glossary.md` (секция «SBA β-3»).
+- `second-brain/13_glossary/ui-glossary.md` (секция «SBA β-3»).
 - `second-brain/02_architecture/module-map.md`, `knowledge-core.md`, `index.md`.

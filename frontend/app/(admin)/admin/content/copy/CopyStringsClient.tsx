@@ -121,8 +121,8 @@ function SectionPanel({
         }
         description={
           section === COPY_SECTIONS.GLOSSARY
-            ? 'Добавьте через bulk-import из delivery/13-glossary.md или создайте записи руками.'
-            : 'Добавьте через bulk-import из delivery/ui/copy-strings.ru.md или создайте записи руками.'
+            ? 'Добавьте через bulk-import из second-brain/13_glossary/ui-glossary.md или создайте записи руками.'
+            : 'Добавьте через bulk-import из second-brain/13_glossary/copy-strings.ru.md или создайте записи руками.'
         }
       />
     );
@@ -138,7 +138,7 @@ function SectionPanel({
           disabled
           title="Импорт из markdown ещё не реализован на бэкенде"
         >
-          <Upload size={14} /> Импортировать из delivery/
+          <Upload size={14} /> Импортировать из second-brain/13_glossary/
           <span className="ml-1 rounded bg-bg-overlay px-1.5 py-0.5 text-[10px]">
             TODO
           </span>

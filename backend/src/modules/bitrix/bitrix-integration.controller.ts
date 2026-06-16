@@ -33,6 +33,16 @@ import {
   type BitrixClaimDto,
   type BitrixIntegrationResponseDto,
 } from './dto/bitrix-integration.dto';
+import { type BitrixSyncScope } from './queue/bitrix-sync.queue';
+import { BitrixSyncQueueService } from './queue/bitrix-sync.queue.service';
+
+/** Допустимые scope ручного синка Bitrix24. */
+const BITRIX_SYNC_SCOPES: readonly BitrixSyncScope[] = [
+  'all',
+  'users',
+  'dialogs',
+  'crm',
+];
 
 /**
  * REST API Bitrix24-интеграции org.
@@ -54,6 +64,8 @@ export class BitrixIntegrationController {
   constructor(
     @Inject(BitrixIntegrationService)
     private readonly service: BitrixIntegrationService,
+    @Inject(BitrixSyncQueueService)
+    private readonly syncQueue: BitrixSyncQueueService,
     @Inject(RbacService) private readonly rbac: RbacService,
     @Inject(EntitlementService)
     private readonly entitlements: EntitlementService,
@@ -108,6 +120,28 @@ export class BitrixIntegrationController {
     await this.requireManage(user.id, t);
     await this.requireFeature(t);
     return this.service.claim(t, body.memberId);
+  }
+
+  @Post('sync')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Запустить синхронизацию Bitrix24 (scope=all|users|dialogs|crm)',
+  })
+  async sync(
+    @Query('scope') scopeRaw: string | undefined,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{ ok: true; jobId: string; scope: BitrixSyncScope }> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    await this.requireFeature(t);
+    const scope: BitrixSyncScope = BITRIX_SYNC_SCOPES.includes(
+      scopeRaw as BitrixSyncScope,
+    )
+      ? (scopeRaw as BitrixSyncScope)
+      : 'all';
+    const { jobId } = await this.syncQueue.enqueue(t, scope);
+    return { ok: true, jobId, scope };
   }
 
   @Delete()

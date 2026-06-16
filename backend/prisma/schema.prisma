@@ -281,6 +281,10 @@ enum SourceType {
   /// trust, чем у транскриптного primary. По одному `Source(type=meeting_report)`
   /// на Org — создаётся лениво в ReportIngestAdapter.
   meeting_report
+  /// Bitrix24-источник (ТЗ 2026-06-17-bitrix24-source-sync, Ф4): сессия-сутки
+  /// внутреннего IM-диалога → RawEvent → knowledge-core. Мост BitrixIngestService.
+  /// По одному `Source(type=bitrix, name='Bitrix24')` на Org — создаётся лениво.
+  bitrix
 }
 
 enum DataClass {
@@ -312,6 +316,27 @@ enum BitrixIntegrationStatus {
   connected
   error
   disconnected
+}
+
+/// Режим связки Bitrix-сущности (user/contact) с Person Коры.
+enum BitrixLinkMode {
+  none
+  auto
+  manual
+}
+
+/// Тип IM-диалога Bitrix.
+enum BitrixDialogType {
+  chat // групповой / рабочая группа
+  private // личный диалог сотрудник↔сотрудник
+}
+
+/// Статус AI-анализа сессии IM-диалога Bitrix (аналог ChatboxSessionAnalysisStatus).
+enum BitrixDialogAnalysisStatus {
+  pending
+  analyzing
+  done
+  failed
 }
 
 /// Зеркало ChatBox Chat.status.
@@ -2830,6 +2855,16 @@ model Org {
 
   // ── Bitrix24-интеграция (plans/tz/2026-06-09-bitrix24-integration-install.md) ──
   bitrixIntegrations BitrixIntegration[]
+  // ── Bitrix24-источник: синк IM + CRM (plans/tz/2026-06-17-bitrix24-source-sync.md) ──
+  bitrixUsers          BitrixUser[]
+  bitrixDialogs        BitrixDialog[]
+  bitrixDialogSessions BitrixDialogSession[]
+  bitrixMessages       BitrixMessage[]
+  bitrixContacts       BitrixContact[]
+  bitrixCompanies      BitrixCompany[]
+  bitrixDeals          BitrixDeal[]
+  bitrixLeads          BitrixLead[]
+  bitrixCrmNotes       BitrixCrmNote[]
 
   @@index([ownerId])
   @@index([deletedAt])
@@ -11517,6 +11552,10 @@ model ChatboxChat {
   externalUpdatedAt     DateTime
   lastMessageAt         DateTime?
   messageCount          Int               @default(0)
+  /// Накопительное саммари разговора (ТЗ 2026-06-17): обновляется на закрытие
+  /// каждой сессии-дня; компактный «живой» контекст без полной истории.
+  rollingSummary        String?           @db.Text
+  rollingSummaryAt      DateTime?
   raw                   Json?
   syncedAt              DateTime          @default(now())
   createdAt             DateTime          @default(now())
@@ -11623,6 +11662,11 @@ model BitrixIntegration {
   status              BitrixIntegrationStatus @default(pending)
   lastError           String?                 @db.Text
   lastConnectedAt     DateTime?
+  /// Источник: AI-анализ IM-диалогов включён по умолчанию (ТЗ 2026-06-17).
+  analysisEnabled       Boolean   @default(true)
+  /// Источник: отметки последних синков (как у ChatBox).
+  lastFullSyncAt        DateTime?
+  lastIncrementalSyncAt DateTime?
   createdAt           DateTime                @default(now())
   updatedAt           DateTime                @updatedAt
 
@@ -11630,4 +11674,191 @@ model BitrixIntegration {
 
   @@index([tenantId])
   @@index([status])
+}
+
+// ─── Bitrix24-источник: зеркала IM-чатов + CRM (ТЗ 2026-06-17) ───────────────
+
+/// Сотрудник портала Bitrix (для сопоставления с Person Коры). Аналог ChatboxMember.
+model BitrixUser {
+  id             String         @id @default(cuid())
+  tenantId       String
+  externalId     String // Bitrix user ID
+  email          String?
+  name           String?
+  position       String? // должность
+  active         Boolean        @default(true)
+  linkedPersonId String?
+  linkMode       BitrixLinkMode @default(none)
+  raw            Json?
+  syncedAt       DateTime       @default(now())
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, linkedPersonId])
+}
+
+/// IM-диалог Bitrix (личный или групповой). Аналог ChatboxChat.
+model BitrixDialog {
+  id            String           @id @default(cuid())
+  tenantId      String
+  externalId    String // dialog_id (chatXXX или userId)
+  type          BitrixDialogType @default(chat)
+  title         String?
+  lastMessageAt DateTime?
+  messageCount  Int              @default(0)
+  /// Накопительное саммари разговора (ТЗ 2026-06-17): обновляется на закрытие
+  /// каждой сессии-дня; компактный «живой» контекст без полной истории.
+  rollingSummary   String?   @db.Text
+  rollingSummaryAt DateTime?
+  raw           Json?
+  syncedAt      DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  org      Org                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions BitrixDialogSession[]
+  messages BitrixMessage[]
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, lastMessageAt])
+}
+
+/// Сессия (временно́е окно) IM-диалога для анализа. Аналог ChatboxChatSession.
+model BitrixDialogSession {
+  id             String                     @id @default(cuid())
+  tenantId       String
+  dialogId       String
+  seq            Int
+  startedAt      DateTime
+  endedAt        DateTime?
+  messageCount   Int                        @default(0)
+  analysisStatus BitrixDialogAnalysisStatus @default(pending)
+  summary        String?                    @db.Text
+  rawEventId     String?
+  analyzedAt     DateTime?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  org    Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dialog BitrixDialog @relation(fields: [dialogId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dialogId, seq])
+  @@index([tenantId, analysisStatus])
+}
+
+/// Сообщение IM-диалога Bitrix. Аналог ChatboxMessage.
+model BitrixMessage {
+  id                String    @id @default(cuid())
+  tenantId          String
+  dialogId          String
+  sessionId         String?
+  externalId        String // message ID
+  authorExternalId  String? // Bitrix user ID автора
+  authorName        String?
+  text              String?   @db.Text
+  externalCreatedAt DateTime
+  raw               Json?
+  createdAt         DateTime  @default(now())
+
+  org    Org          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dialog BitrixDialog @relation(fields: [dialogId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+  @@index([tenantId, dialogId, externalCreatedAt])
+  @@index([tenantId, sessionId])
+}
+
+/// Зеркало CRM-контакта Bitrix. Мост в knowledge-core — Ф4.
+model BitrixContact {
+  id         String   @id @default(cuid())
+  tenantId   String
+  externalId String
+  name       String?
+  email      String?
+  phone      String?
+  raw        Json?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+}
+
+/// Зеркало CRM-компании Bitrix.
+model BitrixCompany {
+  id         String   @id @default(cuid())
+  tenantId   String
+  externalId String
+  title      String?
+  raw        Json?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+}
+
+/// Зеркало CRM-сделки Bitrix.
+model BitrixDeal {
+  id         String   @id @default(cuid())
+  tenantId   String
+  externalId String
+  title      String?
+  stageId    String?
+  raw        Json?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+}
+
+/// Зеркало CRM-лида Bitrix (crm.lead.list). ТЗ 2026-06-17.
+model BitrixLead {
+  id         String   @id @default(cuid())
+  tenantId   String
+  externalId String
+  title      String?
+  name       String?
+  statusId   String?
+  raw        Json?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, externalId])
+}
+
+/// Заметка/активность CRM Bitrix (crm.timeline.comment / crm.activity). ТЗ 2026-06-17.
+/// `kind` различает источник; `entityType`/`entityId` — к какой CRM-сущности привязана.
+model BitrixCrmNote {
+  id         String    @id @default(cuid())
+  tenantId   String
+  kind       String // 'comment' | 'activity'
+  externalId String
+  entityType String? // 'deal' | 'contact' | 'company' | 'lead'
+  entityId   String?
+  authorId   String? // Bitrix user id
+  text       String?   @db.Text
+  occurredAt DateTime?
+  raw        Json?
+  syncedAt   DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, kind, externalId])
+  @@index([tenantId, occurredAt])
 }

@@ -315,6 +315,92 @@ export class BitrixIntegrationService {
     return tokens.access_token;
   }
 
+  // ─────────────────── REST с refresh-on-401 (для синка) ─────────────
+
+  /**
+   * Вызов REST-метода портала с реактивным refresh: проактивно берём валидный
+   * токен (`getValidAccessToken`), а если Bitrix всё равно ответил
+   * `expired_token`/`invalid_token` (токен протух раньше буфера) — форсим refresh
+   * и повторяем один раз. Используется слоем синка.
+   */
+  async callApi<T = unknown>(
+    row: BitrixIntegration,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T> {
+    const endpoint = this.requireEndpoint(row);
+    const token = await this.getValidAccessToken(row);
+    try {
+      return await this.client.callMethod<T>(endpoint, token, method, params);
+    } catch (err) {
+      if (err instanceof BitrixApiError && err.isTokenExpired) {
+        const fresh = await this.refreshNow(row);
+        return this.client.callMethod<T>(endpoint, fresh, method, params);
+      }
+      throw err;
+    }
+  }
+
+  /** Списочный вызов с пагинацией + тем же refresh-on-401. */
+  async callApiList<T = unknown>(
+    row: BitrixIntegration,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<T[]> {
+    const endpoint = this.requireEndpoint(row);
+    const token = await this.getValidAccessToken(row);
+    try {
+      return await this.client.callMethodList<T>(endpoint, token, method, params);
+    } catch (err) {
+      if (err instanceof BitrixApiError && err.isTokenExpired) {
+        const fresh = await this.refreshNow(row);
+        return this.client.callMethodList<T>(endpoint, fresh, method, params);
+      }
+      throw err;
+    }
+  }
+
+  /** Форс-refresh токена (реактивно при 401), с перечитыванием свежей строки. */
+  private async refreshNow(row: BitrixIntegration): Promise<string> {
+    const latest = await this.prisma.bitrixIntegration.findUnique({
+      where: { id: row.id },
+    });
+    if (!latest) {
+      throw this.connectionError('Интеграция Bitrix24 не найдена');
+    }
+    let tokens: BitrixTokenResponse;
+    try {
+      tokens = await this.client.refresh(
+        this.crypto.decrypt(latest.refreshTokenEnc),
+      );
+    } catch (err) {
+      const message =
+        err instanceof BitrixApiError
+          ? `${err.code ?? 'refresh_failed'}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : 'refresh failed';
+      await this.markError(latest.id, message);
+      throw this.connectionError(`Не удалось обновить токен Bitrix24: ${message}`);
+    }
+    await this.persistTokens(tokens, {
+      tenantId: latest.tenantId ?? undefined,
+      portalDomain: this.resolveDomain(tokens, latest.portalDomain),
+      status: 'connected',
+    });
+    return tokens.access_token;
+  }
+
+  /** clientEndpoint или connection-ошибка (без эндпоинта REST-вызов невозможен). */
+  private requireEndpoint(row: BitrixIntegration): string {
+    if (!row.clientEndpoint) {
+      throw this.connectionError(
+        'У интеграции Bitrix24 нет client_endpoint — переподключите портал',
+      );
+    }
+    return row.clientEndpoint;
+  }
+
   // ─────────────────────────── helpers ──────────────────────────────
 
   /**

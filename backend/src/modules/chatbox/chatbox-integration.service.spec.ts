@@ -56,6 +56,10 @@ describe('ChatboxIntegrationService', () => {
       update: ReturnType<typeof vi.fn>;
       deleteMany: ReturnType<typeof vi.fn>;
     };
+    source: {
+      upsert: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
+    };
   };
   let cryptoMock: {
     encrypt: ReturnType<typeof vi.fn>;
@@ -77,6 +81,12 @@ describe('ChatboxIntegrationService', () => {
         upsert: vi.fn(),
         update: vi.fn(),
         deleteMany: vi.fn(),
+      },
+      // Lazy ensure (upsert) Source(type='chatbox') при connect + деактивация
+      // (updateMany isActive=false) при remove/смене режима. Оба best-effort.
+      source: {
+        upsert: vi.fn().mockResolvedValue({ id: 'src-chatbox' }),
+        updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
     };
     cryptoMock = {

@@ -36,6 +36,10 @@ export interface BitrixTokenResponse {
 /** Результат REST-метода Bitrix (`{result, ...}` либо `{error, error_description}`). */
 export interface BitrixRestResponse<T = unknown> {
   result?: T;
+  /** Смещение следующей страницы списочного метода (есть, пока есть ещё данные). */
+  next?: number;
+  /** Общее число записей списочного метода. */
+  total?: number;
   error?: string;
   error_description?: string;
   time?: Record<string, unknown>;
@@ -107,6 +111,61 @@ export class BitrixApiClient {
     method: string,
     params: Record<string, unknown> = {},
   ): Promise<T> {
+    const env = await this.restRequest<T>(
+      clientEndpoint,
+      accessToken,
+      method,
+      params,
+    );
+    return (env.result ?? ({} as T)) as T;
+  }
+
+  /**
+   * Списочный REST-метод с прокачкой пагинации Bitrix (`start`/`next`/`total`,
+   * страница 50). Возвращает все записи. `result` может быть массивом или
+   * объектом-словарём (тогда берём values). Защитный кап `maxPages` (по умолчанию
+   * 400 → до 20000 записей). Refresh токена — обязанность вызывающего слоя.
+   */
+  async callMethodList<T = unknown>(
+    clientEndpoint: string,
+    accessToken: string,
+    method: string,
+    params: Record<string, unknown> = {},
+    opts: { maxPages?: number } = {},
+  ): Promise<T[]> {
+    const maxPages = opts.maxPages ?? 400;
+    const acc: T[] = [];
+    let start = 0;
+    for (let page = 0; page < maxPages; page += 1) {
+      const env = await this.restRequest<T[] | Record<string, T>>(
+        clientEndpoint,
+        accessToken,
+        method,
+        { ...params, start },
+      );
+      const result = env.result;
+      const batch: T[] = Array.isArray(result)
+        ? result
+        : result && typeof result === 'object'
+          ? (Object.values(result) as T[])
+          : [];
+      acc.push(...batch);
+      // `next` отсутствует → последняя страница. Пустой батч → страховка от цикла.
+      if (env.next === undefined || env.next === null || batch.length === 0) {
+        break;
+      }
+      start = env.next;
+    }
+    return acc;
+  }
+
+  /** Низкоуровневый REST-вызов: возвращает полный конверт (result + next + total). */
+  private async restRequest<T = unknown>(
+    clientEndpoint: string,
+    accessToken: string,
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<BitrixRestResponse<T>> {
     const base = clientEndpoint.endsWith('/')
       ? clientEndpoint
       : `${clientEndpoint}/`;
@@ -138,7 +197,7 @@ export class BitrixApiClient {
       throw new BitrixApiError(res.status, code, description, transient);
     }
 
-    return (parsed?.result ?? ({} as T)) as T;
+    return parsed ?? {};
   }
 
   /** «Проверка соединения»: app.info (требует валидного токена). */

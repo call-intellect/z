@@ -26,6 +26,7 @@ export type TrackerWsEventType =
   | 'issue.updated'
   | 'issue.deleted'
   | 'issue.moved_to_board'
+  | 'issue.moved_to_project'
   | 'comment.created'
   | 'comment.updated'
   | 'comment.deleted'
@@ -214,6 +215,24 @@ export interface IssueMovedToBoardEvent
 }
 
 /**
+ * Перенос задачи в другой проект (POST /issues/:id/move). ТЗ
+ * `plans/tz/2026-06-15-issue-move-to-project.md`. Эмитится в tenant: +
+ * issue: + оба project:-room'а (исходный и целевой), чтобы UI убрал карточку
+ * из старого проекта и показал в новом. У задачи также меняется `identifier`
+ * (новый префикс целевого проекта), поэтому фронт перезагружает карточку.
+ */
+export interface IssueMovedToProjectEvent
+  extends BaseTrackerWsEvent<'issue.moved_to_project'> {
+  issueId: string;
+  fromProjectId: string;
+  toProjectId: string;
+  /** Новый человеко-читаемый идентификатор (например KORA-15). */
+  newIdentifier: string;
+  /** Прежний идентификатор (для лога/диффа на UI). */
+  oldIdentifier: string;
+}
+
+/**
  * Чек-листы задачи (2026-05-27). См. plans/tz/2026-05-27-tracker-checklists.md.
  *
  * Эмитятся в rooms:
@@ -335,6 +354,7 @@ export type TrackerWsEvent =
   | IssueUpdatedEvent
   | IssueDeletedEvent
   | IssueMovedToBoardEvent
+  | IssueMovedToProjectEvent
   | CommentCreatedEvent
   | CommentUpdatedEvent
   | CommentDeletedEvent

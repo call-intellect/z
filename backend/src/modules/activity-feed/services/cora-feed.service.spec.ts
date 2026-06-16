@@ -112,6 +112,132 @@ describe('CoraFeedService', () => {
     });
   });
 
+  describe('open_question — R9 askedByManager (спросил руководитель)', () => {
+    const NOW = new Date('2026-06-15T09:00:00.000Z'); // понедельник
+    // три вопроса, все висят 5 раб.дней (заданы пн 2026-06-08) → проходят детектор.
+    const OLD = new Date('2026-06-08T09:00:00.000Z');
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(NOW);
+    });
+
+    /**
+     * Собирает мок-Prisma для цепочки резолва авторства R9:
+     *   ideaBlockEntity(role='subject') → person(entityId) →
+     *   department(headPersonId) / membership(personId,role).
+     * Параметры описывают данные для каждого из вопросов q-head/q-staff/q-noauthor.
+     */
+    function buildPrismaR9() {
+      return {
+        ideaBlock: {
+          findMany: vi.fn(async () =>
+            [
+              { id: 'q-head', createdAt: OLD },
+              { id: 'q-staff', createdAt: OLD },
+              { id: 'q-noauthor', createdAt: OLD },
+            ].map((q) => ({
+              id: q.id,
+              name: `вопрос ${q.id}`,
+              criticalQuestion: `Критический вопрос ${q.id}?`,
+              createdAt: q.createdAt,
+            })),
+          ),
+        },
+        // subject-связи: q-head → e-head, q-staff → e-staff. q-noauthor — нет.
+        ideaBlockEntity: {
+          findMany: vi.fn(async () => [
+            { blockId: 'q-head', entityId: 'e-head', role: 'subject' },
+            { blockId: 'q-staff', entityId: 'e-staff', role: 'subject' },
+          ]),
+        },
+        // Entity → Person: e-head → p-head, e-staff → p-staff.
+        person: {
+          findMany: vi.fn(async () => [
+            { id: 'p-head', entityId: 'e-head' },
+            { id: 'p-staff', entityId: 'e-staff' },
+          ]),
+        },
+        // p-head — глава отдела. p-staff — не глава.
+        department: {
+          findMany: vi.fn(async () => [{ headPersonId: 'p-head' }]),
+        },
+        // никто не owner/admin/coo (проверяем именно ветку «глава отдела»).
+        membership: {
+          findMany: vi.fn(async () => []),
+        },
+        feedReadCursor: {
+          findUnique: vi.fn(async () => null),
+        },
+      } as unknown as PrismaService;
+    }
+
+    const query: CoraFeedQuery = {
+      type: 'open_question',
+      window: 'all',
+      limit: 50,
+    };
+
+    it('автор-глава отдела → true; автор-рядовой → false; без автора → false', async () => {
+      const prisma = buildPrismaR9();
+      stubCounters(prisma);
+      const svc = new CoraFeedService(prisma);
+
+      const res = await svc.getFeed({ tenantId: 't-1', userId: 'u-1', query });
+      const byId = new Map(
+        res.items
+          .filter((i) => i.type === 'open_question')
+          .map((i) => [i.id, i.payload?.askedByManager]),
+      );
+      expect(byId.get('open_question:q-head')).toBe(true);
+      expect(byId.get('open_question:q-staff')).toBe(false);
+      expect(byId.get('open_question:q-noauthor')).toBe(false);
+    });
+
+    it('автор-owner (Membership) → true даже без главы отдела', async () => {
+      const prisma = buildPrismaR9();
+      // переопределяем: p-staff теперь owner; никто не глава отдела.
+      (
+        prisma as unknown as {
+          department: { findMany: ReturnType<typeof vi.fn> };
+          membership: { findMany: ReturnType<typeof vi.fn> };
+        }
+      ).department.findMany = vi.fn(async () => []);
+      (
+        prisma as unknown as {
+          membership: { findMany: ReturnType<typeof vi.fn> };
+        }
+      ).membership.findMany = vi.fn(async () => [{ personId: 'p-staff' }]);
+      stubCounters(prisma);
+      const svc = new CoraFeedService(prisma);
+
+      const res = await svc.getFeed({ tenantId: 't-1', userId: 'u-1', query });
+      const byId = new Map(
+        res.items
+          .filter((i) => i.type === 'open_question')
+          .map((i) => [i.id, i.payload?.askedByManager]),
+      );
+      expect(byId.get('open_question:q-staff')).toBe(true);
+      expect(byId.get('open_question:q-head')).toBe(false);
+    });
+
+    it('нет ни одной subject-связи → у всех askedByManager=false (не падает)', async () => {
+      const prisma = buildPrismaR9();
+      (
+        prisma as unknown as {
+          ideaBlockEntity: { findMany: ReturnType<typeof vi.fn> };
+        }
+      ).ideaBlockEntity.findMany = vi.fn(async () => []);
+      stubCounters(prisma);
+      const svc = new CoraFeedService(prisma);
+
+      const res = await svc.getFeed({ tenantId: 't-1', userId: 'u-1', query });
+      const oq = res.items.filter((i) => i.type === 'open_question');
+      expect(oq).toHaveLength(3);
+      expect(oq.every((i) => i.payload?.askedByManager === false)).toBe(true);
+    });
+  });
+
   describe('тип / severity / unread', () => {
     const NOW = new Date('2026-06-15T09:00:00.000Z');
 
@@ -278,4 +404,11 @@ function stubCounters(prisma: PrismaService): void {
   if (!p.ideaBlockLink) p.ideaBlockLink = {};
   (p.ideaBlockLink as unknown as { groupBy?: ReturnType<typeof vi.fn> }).groupBy ??=
     vi.fn(async () => []);
+
+  // R9-цепочка резолва авторства open_question (resolveAskedByManager).
+  // По умолчанию пусто → askedByManager=false. Тесты R9 переопределяют сами.
+  for (const m of ['ideaBlockEntity', 'person', 'department', 'membership']) {
+    if (!p[m]) p[m] = {};
+    if (!p[m]!.findMany) p[m]!.findMany = vi.fn(async () => []);
+  }
 }

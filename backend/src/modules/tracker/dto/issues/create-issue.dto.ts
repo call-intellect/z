@@ -34,6 +34,14 @@ export const CreateIssueSchema = z
     externalSource: z.string().max(40).nullable().optional(),
     externalId: z.string().max(200).nullable().optional(),
     /**
+     * A10 (2026-06-14) — IdeaBlock-источники задачи (провенанс). Заполняется
+     * внутренними caller'ами (промоут intake→Issue): пересечение с
+     * `Decision.sourceBlockIds` той же Org рождает
+     * `DecisionTaskLink(linkType='derived')`. Внешний REST его не присылает —
+     * optional без default, чтобы caller'ы могли не передавать поле.
+     */
+    sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).optional(),
+    /**
      * Tracker Phase 3 part C — флаг включения AI-suggest при создании задачи.
      * Если true и `IssueInferFieldsService` доступен — в ответе POST /issues
      * будет дополнительное поле `aiSuggestions` с подсказками полей и цели.

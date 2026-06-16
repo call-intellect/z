@@ -489,7 +489,48 @@ export class DepartmentsService {
         }
       }
 
-      // 7. headPersonId: переносим из source только если у target пусто.
+      // 7. Metric.attachedToDepartmentId → target (KPI, привязанные к отделу).
+      //    onDelete:SetNull НЕ срабатывает при soft-delete → переносим вручную.
+      const metrics = await tx.metric.updateMany({
+        where: { tenantId, attachedToDepartmentId: sourceId },
+        data: { attachedToDepartmentId: targetId },
+      });
+
+      // 8. Interaction.counterpartDepartmentId → target (карта handoff'ов).
+      const interactions = await tx.interaction.updateMany({
+        where: { tenantId, counterpartDepartmentId: sourceId },
+        data: { counterpartDepartmentId: targetId },
+      });
+
+      // 9. OrgUnit.parentDepartmentId → target. Мягкая ссылка (String? без FK):
+      //    merge её не «видит» через onDelete, переносим явно, чтобы не потерять
+      //    привязку OrgUnit к официальному отделу.
+      const orgUnits = await tx.orgUnit.updateMany({
+        where: { tenantId, parentDepartmentId: sourceId },
+        data: { parentDepartmentId: targetId },
+      });
+
+      // 10. Department.entityId → target. Поле @unique (1:1 с Entity), onDelete:
+      //     SetNull при soft-delete не срабатывает. Ловушка UNIQUE: нельзя слепо
+      //     записать source.entityId в target. Переносим только если у target
+      //     пусто; сначала обнуляем source.entityId (освобождаем unique), затем
+      //     присваиваем target. Если у target уже есть entityId — оставляем
+      //     source-entity как есть (она осиротеет после soft-delete, но unique
+      //     не нарушится).
+      let movedEntity = false;
+      if (source.entityId && !target.entityId) {
+        await tx.department.update({
+          where: { id: sourceId },
+          data: { entityId: null },
+        });
+        await tx.department.update({
+          where: { id: targetId },
+          data: { entityId: source.entityId },
+        });
+        movedEntity = true;
+      }
+
+      // 11. headPersonId: переносим из source только если у target пусто.
       if (source.headPersonId && !target.headPersonId) {
         await tx.department.update({
           where: { id: targetId },
@@ -497,7 +538,7 @@ export class DepartmentsService {
         });
       }
 
-      // 8. Soft-delete source.
+      // 12. Soft-delete source.
       const now = new Date();
       await tx.department.update({
         where: { id: sourceId },
@@ -518,6 +559,10 @@ export class DepartmentsService {
           persons: persons.count,
           childDepartments: childDepartments.count,
           domainLinks: movedDomainLinks,
+          metrics: metrics.count,
+          interactions: interactions.count,
+          orgUnits: orgUnits.count,
+          entity: movedEntity ? 1 : 0,
         },
       };
     });

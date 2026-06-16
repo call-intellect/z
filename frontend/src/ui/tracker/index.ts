@@ -28,3 +28,4 @@ export { IntakeBoard } from './IntakeBoard';
 export { TrackerBottomNav } from './TrackerBottomNav';
 export { SprintHintCard } from './SprintHintCard';
 export { SprintCreateWizard } from './SprintCreateWizard';
+export { ProjectPickerDialog } from './ProjectPickerDialog';

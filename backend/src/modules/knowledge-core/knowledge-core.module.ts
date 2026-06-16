@@ -4,6 +4,11 @@ import { ConfigModule } from '../../common/config/index';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CurationModule } from '../curation/curation.module';
 import { S3Service } from '../recordings/s3.service';
+// Chat-v2 как параллельный источник (ТЗ 2026-06-15 §7, ЧАСТЬ B) — TablesModule
+// экспортирует TableSemanticFilterService; ChatV2TableContextService инжектит
+// его @Optional. TablesModule не импортирует другие модули (только @Global-deps),
+// поэтому импорт безопасен и не создаёт цикла.
+import { TablesModule } from '../tables/tables.module';
 
 import { SearchService } from './api/search.service';
 import { AxisClassifierService } from './services/axis-classifier.service';
@@ -14,6 +19,7 @@ import { BlockLinkService } from './services/block-link.service';
 import { BlockMergeService } from './services/block-merge.service';
 import { CardRollupV2Service } from './services/card-rollup-v2.service';
 import { ChatV2RetrievalService } from './services/chat-v2-retrieval.service';
+import { ChatV2TableContextService } from './services/chat-v2-table-context.service';
 import { ChatV2Service } from './services/chat-v2.service';
 import { ClusteringService } from './services/clustering.service';
 import { ConfidenceCalibrationService } from './services/confidence-calibration.service';
@@ -108,7 +114,7 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
 @Module({
   // SBA α-6 — CurationModule подключаем здесь, чтобы `CardRollupV2Service`
   // мог инжектить `CurationService.triage()` и `ConflictService.report()`.
-  imports: [ConfigModule, PrismaModule, CurationModule],
+  imports: [ConfigModule, PrismaModule, CurationModule, TablesModule],
   providers: [
     // Clones=Roles Ф2 (2026-05-25) — handler `role.bearer_changed`. Ставим
     // первым providers'ом: в момент onModuleInit Nest регистрирует @OnEvent —
@@ -142,6 +148,10 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // Фаза 6: ChatV2 (единый AI-чат поверх IdeaBlock'ов, 5 scope).
     ChatV2RetrievalService,
     ChatV2Service,
+    // ЧАСТЬ B (ТЗ 2026-06-15 §7) — таблицы как параллельный источник chat_v2.
+    // Ищет в умных таблицах параллельно с графом (entity-bridge + keyword-выбор
+    // → server-side фильтр). @Optional-инжект TableSemanticFilterService.
+    ChatV2TableContextService,
     // Фаза 11: snapshot-cron для core_* gauge'ев.
     CoreMetricsSnapshotCron,
     // SBA α-3: RouterService — диспатч атомов в специалистов Слоя 3.
@@ -317,6 +327,8 @@ import { TemporalProbeCron } from './workers/temporal-probe.cron';
     // его инжектить (этот модуль @Global, поэтому импортирует прозрачно).
     ChatV2RetrievalService,
     ChatV2Service,
+    // ЧАСТЬ B (ТЗ 2026-06-15 §7) — экспортируем для тестов и потребителей.
+    ChatV2TableContextService,
     // SBA α-3: экспортируем RouterService — block-ingest worker инжектит его
     // для dispatch'а после persist'а блока.
     RouterService,

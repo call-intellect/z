@@ -113,6 +113,27 @@ export interface RegulationHistoryResponseApi {
   items: RegulationVersionItemApi[];
 }
 
+/** Одна цитата-источник записи (C3). `meeting` может отсутствовать. */
+export interface RegulationSourceItemApi {
+  blockId: string;
+  quote: string;
+  meeting: { id: string; title: string; date: string } | null;
+}
+
+/** Ответ `GET /api/v1/regulations/:id/sources` (C3). */
+export interface RegulationSourcesApi {
+  items: RegulationSourceItemApi[];
+}
+
+/** Ответ `GET /api/v1/regulations/summary` (C4) — счётчики по видам. */
+export interface RegulationSummaryApi {
+  regulations: number;
+  processes: number;
+  instructions: number;
+  policies: number;
+  weekDelta: number;
+}
+
 export type ListRegulationsRequest = {
   page?: number;
   limit?: number;
@@ -150,6 +171,16 @@ export const regulationsApi = {
     apiClient.get<RegulationHistoryResponseApi>(
       `/api/v1/regulations/${encodeURIComponent(id)}/history?kind=${encodeURIComponent(kind)}`,
     ),
+
+  /** Дословные цитаты-источники записи (C3 — provenance-аккордеон). */
+  getSources: (id: string, kind: RegulationKindApi) =>
+    apiClient.get<RegulationSourcesApi>(
+      `/api/v1/regulations/${encodeURIComponent(id)}/sources?kind=${encodeURIComponent(kind)}`,
+    ),
+
+  /** Счётчики по видам для чипов хаба (C4). */
+  getSummary: () =>
+    apiClient.get<RegulationSummaryApi>(`/api/v1/regulations/summary`),
 
   supersede: (id: string, body: { kind: RegulationKindApi; supersededByRegulationId: string }) =>
     apiClient.post<{ ok: true }>(

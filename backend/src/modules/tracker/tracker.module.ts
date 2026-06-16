@@ -14,6 +14,7 @@ import { IntakeController } from './controllers/intake.controller';
 import { IssuesController } from './controllers/issues.controller';
 import { LabelsController } from './controllers/labels.controller';
 import { MeInboxController } from './controllers/me-inbox.controller';
+import { MeTasksController } from './controllers/me-tasks.controller';
 import { MyMentionsController } from './controllers/my-mentions.controller';
 import { OverviewController } from './controllers/overview.controller';
 import { ProjectDocumentsController } from './controllers/project-documents.controller';
@@ -42,6 +43,7 @@ import { IssueInferFieldsService } from './services/issue-infer-fields.service';
 import { IssueMeetingsService } from './services/issue-meetings.service';
 import { IssuesService } from './services/issues.service';
 import { LabelsService } from './services/labels.service';
+import { MeTasksService } from './services/me-tasks.service';
 import { MeetingExtractActionsService } from './services/meeting-extract-actions.service';
 import { MyMentionsService } from './services/my-mentions.service';
 import { OverviewService } from './services/overview.service';
@@ -117,6 +119,9 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // /api/v1/me/inbox — мои задачи (assignee=me) во всех проектах.
     // /api/v1/states — справочник IssueState для board + фильтров.
     MeInboxController,
+    // ТЗ#3 (2026-06-15): POST /api/v1/me/tasks — поставить задачу себе из
+    // помощника (право issue:write, исполнитель = я, проект «Входящие»).
+    MeTasksController,
     // T8 (2026-05-24): мои @-упоминания (список + счётчик + read).
     MyMentionsController,
     StatesController,
@@ -156,6 +161,8 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // (ensureDefaultBoard, resolveDefaultBoardId, assertBoardInProject).
     BoardsService,
     IssuesService,
+    // ТЗ#3 (2026-06-15): self-постановка задачи (POST /me/tasks).
+    MeTasksService,
     SimilarIssuesService,
     CyclesService,
     IntakeService,

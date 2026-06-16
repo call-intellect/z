@@ -41,8 +41,8 @@ export const DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT = `Ты — помощник
 
 /**
  * JSON Schema strict для DeepSeek/OpenAI. Совпадает по форме с
- * `DIALOG_MULTI_QUERY_JSON_SCHEMA` в multi-query.prompt.ts (тот же wrapper
- * `{ queries: string[] }`), но используется отдельным route'ом.
+ * `DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA` в query-understand.prompt.ts (тот же
+ * wrapper `{ queries: string[] }`), но используется отдельным route'ом.
  */
 export const DIALOG_MULTI_QUERY_CLONE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',

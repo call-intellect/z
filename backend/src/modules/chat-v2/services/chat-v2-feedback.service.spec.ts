@@ -181,6 +181,10 @@ describe('ChatV2FeedbackService', () => {
       const joined = sqlParts.join(' ');
       expect(joined).toContain("jsonb_typeof");
       expect(joined).toContain('jsonb_array_length');
+      // QA B2 (2026-06-15): array-length вызывается под CASE-guard (внутри CASE
+      // порядок вычисления детерминирован) — иначе Postgres на части планов
+      // зовёт jsonb_array_length на скалярном citations и падает 22023.
+      expect(joined).toContain('CASE');
       // дедуп ретраев присутствует в SQL.
       expect(joined).toContain('gap_seconds');
     });

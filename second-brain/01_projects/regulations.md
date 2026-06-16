@@ -7,6 +7,8 @@ related:
   - specialist-3-4-project-customer
   - curation
   - chat-v2
+related_plans:
+  - plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md
 ---
 
 # SBA α-7 — Specialist 3.1 (Regulations) — первая видимая ценность Слоя 3
@@ -59,8 +61,18 @@ Specialist 3.1 — третий специалист Слоя 3 (после α-6
 - `GET /api/v1/regulations/:id/history?kind=` — timeline CardVersion'ов (через единый `resourceType='regulation'|'process'|'policy'`).
 - `POST /api/v1/regulations/:id/supersede` — заменить версией (owner/admin).
 - `POST /api/v1/regulations/:id/confirm` — пометить `lastConfirmedAt=now()` (owner/admin/curator).
+- `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты карточки (источники до цитаты) (ТЗ cabinet-master-fixes C3).
+- `GET /api/v1/regulations/summary` — агрегированные счётчики по 4 типам норм для хаба и summary-виджета (ТЗ cabinet-master-fixes C4).
 
-UI: `/regulations` master-detail с фильтрами kind / status / scope / search. В детали — список ProcessStep для process, markdown render statement/contentMd, действия supersede / confirm.
+UI: `/regulations` master-detail с фильтрами kind / status / scope / search. В детали — список ProcessStep для process, markdown render statement/contentMd, действия supersede / confirm, аккордеон «Источники» (через `/:id/sources`).
+
+## Хаб «Оцифровано» (2026-06-14, ТЗ cabinet-master-fixes, часть C)
+
+`/regulations` поднят в видимый пункт меню «Оцифровано» (C1; убран дубль `/processes`, `/policies` теперь redirect на `/regulations?kind=policy`). Сама страница стала хабом (C2):
+- **Чипы-счётчики** по типам норм (источник — `GET /regulations/summary`); тип берётся из URL (`?kind=`).
+- **Вкладка «Шаблоны процессов»** — рядом с основным списком.
+- **Блок «Недавно оцифровано»** в хабе + **summary-виджет «Оцифровано» на экране «Сегодня»** (оба питаются `GET /regulations/summary`, C4).
+- **Провенанс-цитаты** — аккордеон «Источники» в карточке (`GET /:id/sources`, C3).
 
 ## CardSpecialistRegistry — chat-v2 retrieval
 

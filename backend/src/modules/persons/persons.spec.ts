@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { CreatePersonSchema } from './dto/persons.dto';
 import { PersonsService } from './services/persons.service';
@@ -20,49 +20,21 @@ import { PersonsService } from './services/persons.service';
 
 const prismaStub = {} as never;
 const auditStub = {} as never;
+const cfgStubFor = (useAppointment: boolean) =>
+  ({ persons: { useAppointment } }) as never;
 
 describe('PersonsService — feature-flag USE_APPOINTMENT_FOR_PERSON_ROLES', () => {
-  const originalEnv = process.env.USE_APPOINTMENT_FOR_PERSON_ROLES;
-
-  beforeEach(() => {
-    delete process.env.USE_APPOINTMENT_FOR_PERSON_ROLES;
-  });
-
-  afterEach(() => {
-    if (originalEnv === undefined) {
-      delete process.env.USE_APPOINTMENT_FOR_PERSON_ROLES;
-    } else {
-      process.env.USE_APPOINTMENT_FOR_PERSON_ROLES = originalEnv;
-    }
-    vi.restoreAllMocks();
-  });
-
-  it('default (no ENV) → useAppointment=false (читаем из PersonRole)', () => {
-    const svc = new PersonsService(prismaStub, auditStub);
+  it('cfg.persons.useAppointment=false → useAppointment=false (читаем из PersonRole)', () => {
+    const svc = new PersonsService(prismaStub, auditStub, cfgStubFor(false));
     // приватное поле — обращаемся через unknown-каст.
     const flag = (svc as unknown as { useAppointment: boolean }).useAppointment;
     expect(flag).toBe(false);
   });
 
-  it('ENV="true" → useAppointment=true (читаем из Appointment)', () => {
-    process.env.USE_APPOINTMENT_FOR_PERSON_ROLES = 'true';
-    const svc = new PersonsService(prismaStub, auditStub);
+  it('cfg.persons.useAppointment=true → useAppointment=true (читаем из Appointment)', () => {
+    const svc = new PersonsService(prismaStub, auditStub, cfgStubFor(true));
     const flag = (svc as unknown as { useAppointment: boolean }).useAppointment;
     expect(flag).toBe(true);
-  });
-
-  it('ENV="false" → useAppointment=false', () => {
-    process.env.USE_APPOINTMENT_FOR_PERSON_ROLES = 'false';
-    const svc = new PersonsService(prismaStub, auditStub);
-    const flag = (svc as unknown as { useAppointment: boolean }).useAppointment;
-    expect(flag).toBe(false);
-  });
-
-  it('ENV="garbage" → useAppointment=false (только строгое "true")', () => {
-    process.env.USE_APPOINTMENT_FOR_PERSON_ROLES = 'yes';
-    const svc = new PersonsService(prismaStub, auditStub);
-    const flag = (svc as unknown as { useAppointment: boolean }).useAppointment;
-    expect(flag).toBe(false);
   });
 });
 
@@ -107,7 +79,7 @@ describe('PersonsService.create — дефолт email при отсутстви
     const prisma = {
       $transaction: vi.fn(async (cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as never;
-    const svc = new PersonsService(prisma, auditMock);
+    const svc = new PersonsService(prisma, auditMock, cfgStubFor(false));
     vi.spyOn(svc, 'get').mockResolvedValue({ id: 'p1' } as never);
 
     await svc.create({

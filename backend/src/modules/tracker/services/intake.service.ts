@@ -12,6 +12,7 @@ import { Prisma, type IntakeIssue } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { BlockFetchService } from '../../knowledge-core/services/block-fetch.service';
 import { computeExpiresAt } from '../../pending-actions/expires-at.util';
 import type {
   CreateIntakeDto,
@@ -23,8 +24,10 @@ import type {
 } from '../dto/intake/triage-intake.dto';
 import type { IssueResponseDto } from '../dto/issues/issue-response.dto';
 
+import { linkDerivedDecisionsForIssue } from './decision-task-link.util';
 import { IntakeAutoTriageQueueService } from './intake-auto-triage-queue.service';
 import { IssuesService } from './issues.service';
+import { ProjectsService } from './projects.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
@@ -54,6 +57,8 @@ export interface IntakeResponseDto {
   suggestedPriority: string | null;
   suggestedDueDate: string | null;
   suggestedLabels: string[];
+  /** A10 (2026-06-14) — IdeaBlock-источники кандидата (провенанс). */
+  sourceBlockIds: string[];
   confidence: string | null;
   triagedByUserId: string | null;
   triagedAt: string | null;
@@ -113,7 +118,88 @@ export class IntakeService {
     @Optional()
     @Inject(IntakeAutoTriageQueueService)
     private readonly autoTriageQueue?: IntakeAutoTriageQueueService,
+    // A10 (2026-06-14) — резолв провенанса (canonical-блоки встречи) для
+    // next-step → intake. @Optional: BlockFetchService — из @Global
+    // KnowledgeCoreModule (как TaskAssigneeResolverService в
+    // meeting-extract-actions); в unit-тестах IntakeService его не передают —
+    // тогда провенанс резолвится в пустой массив (best-effort, не падаем).
+    @Optional()
+    @Inject(BlockFetchService)
+    private readonly blockFetch?: BlockFetchService,
+    // QA B1 (2026-06-15) — fallback-проект «Входящие» при accept без проекта
+    // (решение владельца: не заставлять выбирать проект, класть в общую папку,
+    // а пользователь позже вручную перенесёт задачу в нужный проект).
+    // @Optional: в unit-тестах IntakeService строится без ProjectsService —
+    // тогда дефолт-проект не создаётся и сохраняется прежняя 400-семантика
+    // (тесты accept всегда передают targetProjectId, путь не задевается).
+    @Optional()
+    @Inject(ProjectsService)
+    private readonly projects?: ProjectsService,
   ) {}
+
+  /**
+   * QA B1 (2026-06-15) — per-tenant дефолт-проект «Входящие» для задач без
+   * привязки к конкретному проекту. Решение владельца: accept без проекта не
+   * должен выдавать ошибку — задача кладётся в общую папку «Входящие».
+   *
+   * ВАЖНО — тот же проект, что использует авто-приём входящих
+   * (`intake-auto-triage.worker.ts` → resolveInboxProjectId): find-or-create по
+   * имени INBOX_PROJECT_NAME, владелец = владелец Org, network=0. Так ручной и
+   * авто-триаж сходятся в ОДНУ папку (без дублей дефолт-проектов). Логику стоит
+   * вынести в общий ProjectsService.ensureInboxProject при следующем касании
+   * воркера (сейчас не трогаем W4-воркер и его тесты).
+   *
+   * Идемпотентно: findFirst по имени → create → при гонке повторный findFirst.
+   * Возвращает null, если ProjectsService недоступен (DI без него — только
+   * unit-тесты) или у Org нет владельца; вызывающий код тогда сохраняет прежнее
+   * поведение (ошибка target_project_required).
+   */
+  private static readonly INBOX_PROJECT_NAME = 'Входящие';
+
+  private async ensureInboxProjectId(tenantId: string): Promise<string | null> {
+    if (!this.projects) return null;
+    const findExisting = (): Promise<{ id: string } | null> =>
+      this.prisma.project.findFirst({
+        where: {
+          tenantId,
+          name: IntakeService.INBOX_PROJECT_NAME,
+          deletedAt: null,
+          archivedAt: null,
+        },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+    const existing = await findExisting();
+    if (existing) return existing.id;
+    const org = await this.prisma.org.findUnique({
+      where: { id: tenantId },
+      select: { ownerId: true },
+    });
+    const ownerId = org?.ownerId ?? null;
+    if (!ownerId) return null;
+    try {
+      const created = await this.projects.create(
+        {
+          name: IntakeService.INBOX_PROJECT_NAME,
+          description:
+            'Задачи из внешних каналов без определённого проекта. Создан Корой автоматически (авто-приём входящих).',
+          network: 0,
+          timezone: 'Europe/Moscow',
+          cycleViewEnabled: true,
+          intakeViewEnabled: true,
+          gantViewEnabled: false,
+          timeTrackingEnabled: false,
+        },
+        tenantId,
+        ownerId,
+      );
+      return created.id;
+    } catch {
+      // Гонка: параллельный accept/воркер уже создал «Входящие» — переиспользуем.
+      const retry = await findExisting();
+      return retry?.id ?? null;
+    }
+  }
 
   /** Создать intake-карточку. Не требует userId — может вызвать webhook-адаптер. */
   async create(
@@ -137,6 +223,8 @@ export class IntakeService {
         suggestedPriority: dto.suggestedPriority ?? null,
         suggestedDueDate: dto.suggestedDueDate ?? null,
         suggestedLabels: dto.suggestedLabels,
+        // A10 (2026-06-14) — провенанс кандидата (IdeaBlock-источники).
+        sourceBlockIds: dto.sourceBlockIds,
         confidence:
           dto.confidence != null
             ? new Prisma.Decimal(dto.confidence)
@@ -188,12 +276,20 @@ export class IntakeService {
    * tenant-изоляция: проверяем, что встреча принадлежит tenantId (404 иначе) —
    * без зависимости от MeetingsService (разрыв цикла meetings↔tracker).
    *
-   * Полная петля sourceBlockIds + DecisionTaskLink — Ф8.1 (здесь не делаем).
+   * A10 (2026-06-14) — петля провенанса замкнута. `sourceBlockIds` либо
+   * передаёт FE явно (если знает блоки-источники), либо backend резолвит их по
+   * canonical-блокам встречи (BlockFetchService) — берём action-несущие сигналы
+   * (commitment / plan_item / task_created / decision), которые и порождают
+   * next-step в отчёте и пересекаются с `Decision.sourceBlockIds`. Резолв
+   * best-effort: при отсутствии BlockFetchService / RawEvent / блоков пишем
+   * пустой массив, не падаем. Дальше при промоуте в Issue эти блоки рождают
+   * `DecisionTaskLink(linkType='derived')`.
    */
   async createFromMeetingNextStep(args: {
     meetingId: string;
     text: string;
     description?: string | null;
+    sourceBlockIds?: string[] | null;
     tenantId: string;
   }): Promise<IntakeResponseDto> {
     const { meetingId, tenantId } = args;
@@ -233,6 +329,16 @@ export class IntakeService {
       return this.toResponse(existing);
     }
 
+    // A10 — провенанс: явный список от FE имеет приоритет, иначе резолвим по
+    // canonical-блокам встречи (best-effort, пустой массив при сбое).
+    const explicit = (args.sourceBlockIds ?? []).filter(
+      (s): s is string => typeof s === 'string' && s.length > 0,
+    );
+    const sourceBlockIds =
+      explicit.length > 0
+        ? explicit
+        : await this.resolveMeetingSourceBlockIds(meetingId, tenantId);
+
     return this.create(
       {
         source: 'meeting',
@@ -242,20 +348,88 @@ export class IntakeService {
         externalSource: 'meeting',
         externalId,
         suggestedLabels: [],
+        sourceBlockIds,
       },
       tenantId,
     );
   }
 
-  /** Список intake-карточек. Доступ: admin / project_manager. */
+  /**
+   * A10 (2026-06-14) — провенанс next-step → canonical-блоки встречи.
+   * Берём action-несущие сигналы (commitment / plan_item / task_created /
+   * decision): именно из них формируются «следующие шаги» в отчёте и именно
+   * они пересекаются с `Decision.sourceBlockIds` (→ DecisionTaskLink derived).
+   * Best-effort: нет BlockFetchService / RawEvent / блоков → пустой массив.
+   * Никогда не бросает — провенанс необязателен, intake создаётся в любом случае.
+   */
+  private async resolveMeetingSourceBlockIds(
+    meetingId: string,
+    tenantId: string,
+  ): Promise<string[]> {
+    if (!this.blockFetch) return [];
+    try {
+      const blocks = await this.blockFetch.getCanonicalBlocksForMeeting(
+        meetingId,
+        tenantId,
+      );
+      const ACTION_SIGNALS = new Set([
+        'commitment',
+        'plan_item',
+        'task_created',
+        'decision',
+      ]);
+      const ids = blocks
+        .filter((b) => ACTION_SIGNALS.has(b.signalType))
+        .map((b) => b.id);
+      return ids.slice(0, 64);
+    } catch (e) {
+      this.logger.warn(
+        {
+          meetingId,
+          err: e instanceof Error ? e.message : String(e),
+        },
+        'intake from next-step: резолв sourceBlockIds упал — пустой провенанс',
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Список intake-карточек. Доступ: admin / project_manager.
+   *
+   * Зеркало очереди подтверждений (A4, 2026-06-14): экран `/intake` — это
+   * детальный триаж-вид той же pending-секции, что агрегирует
+   * `IntakePendingProvider` в `/actions`. Чтобы число «требует разбора» на
+   * `/intake` совпадало со вкладом intake в счётчик `/actions`, дефолтный вид
+   * (status='pending' ИЛИ статус не задан явно) исключает карточки, которые
+   * пользователь отложил через единую очередь (`PendingActionSnooze`,
+   * source='intake', активный snoozedUntil) — ровно тем же фильтром, что
+   * провайдер. Явный `status=accepted|rejected|...` snooze НЕ применяет —
+   * история разобранных остаётся полной. snooze привязан к пользователю,
+   * поэтому исключение работает только когда передан `userId` (вызов из
+   * REST-контроллера); без userId (внутренние вызовы) — поведение прежнее.
+   */
   async findAll(
     tenantId: string,
     query: ListIntakeQuery,
+    userId?: string,
   ): Promise<ListIntakeResponse> {
     const where: Prisma.IntakeIssueWhereInput = { tenantId };
     if (query.status) where.status = query.status;
     if (query.source) where.source = query.source;
     if (query.projectId) where.projectId = query.projectId;
+
+    // snooze-aware «требует разбора»: исключаем карточки, отложенные этим
+    // пользователем через очередь /actions. Только для pending-вида (явный
+    // status='pending' либо статус не задан) — иначе ломали бы историю.
+    const pendingDefaultView = query.status === undefined || query.status === 'pending';
+    if (pendingDefaultView && userId) {
+      const snoozedIds = await this.loadSnoozedIntakeIds(tenantId, userId);
+      if (snoozedIds.length > 0) {
+        where.id = { notIn: snoozedIds };
+      }
+    }
+
     const [items, total] = await Promise.all([
       this.prisma.intakeIssue.findMany({
         where,
@@ -272,6 +446,29 @@ export class IntakeService {
       page: query.page,
       limit: query.limit,
     };
+  }
+
+  /**
+   * Активные snooze пользователя для intake-карточек (PendingActionSnooze,
+   * source='intake', snoozedUntil ещё в будущем). Возвращает resourceId'ы —
+   * id IntakeIssue, которые надо исключить из pending-вида. Тот же критерий,
+   * что `PendingActionsService.loadSnoozedBySource` → `IntakePendingProvider`,
+   * чтобы число pending на /intake совпадало с очередью /actions.
+   */
+  private async loadSnoozedIntakeIds(
+    tenantId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const rows = await this.prisma.pendingActionSnooze.findMany({
+      where: {
+        tenantId,
+        userId,
+        source: 'intake',
+        snoozedUntil: { gt: new Date() },
+      },
+      select: { resourceId: true },
+    });
+    return rows.map((r) => r.resourceId);
   }
 
   /**
@@ -395,12 +592,18 @@ export class IntakeService {
     const triagedAt = new Date();
 
     if (dto.decision === 'accept') {
+      // QA B1 (2026-06-15) — порядок выбора проекта: явный выбор → привязка
+      // кандидата → AI-предложение → fallback «Входящие». Решение владельца:
+      // задача без проекта не должна выдавать ошибку — кладём в общую папку,
+      // а пользователь позже вручную перенесёт её в нужный проект.
       const targetProjectId =
         dto.targetProjectId ??
         intake.projectId ??
         intake.suggestedProjectId ??
-        null;
+        (await this.ensureInboxProjectId(tenantId));
       if (!targetProjectId) {
+        // Сюда попадаем только если ProjectsService недоступен (unit-тесты DI
+        // без него); в проде дефолт-проект гарантирован выше.
         throw new BadRequestException({
           ok: false,
           error: {
@@ -448,9 +651,19 @@ export class IntakeService {
           labelIds: [], // matching label ids — Sprint 2 (resolve по suggestedLabels)
           externalSource: intake.externalSource ?? intake.source,
           externalId: intake.externalId,
+          // A10 (2026-06-14) — провенанс intake → Issue.
+          sourceBlockIds: intake.sourceBlockIds,
         },
         tenantId,
         userId,
+      );
+      // A10 — замыкание петли: пересечение sourceBlockIds задачи с
+      // Decision.sourceBlockIds той же Org → DecisionTaskLink('derived').
+      // Best-effort: ошибка не должна откатывать уже созданную задачу.
+      await this.linkDerivedDecisions(
+        tenantId,
+        createdIssue.id,
+        intake.sourceBlockIds,
       );
     } else if (dto.decision === 'snooze' && !dto.snoozedUntil) {
       throw new BadRequestException({
@@ -521,6 +734,38 @@ export class IntakeService {
     return result;
   }
 
+  /**
+   * A10 (2026-06-14) — связывает созданную из intake задачу с пересекающимися
+   * по `sourceBlockIds` Decision'ами (linkType='derived'). Тонкая обёртка над
+   * общим хелпером `linkDerivedDecisionsForIssue` (тот же код, что в
+   * IntakeAutoTriageWorker). Best-effort: лог + продолжаем, чтобы сбой линковки
+   * не откатывал уже принятый intake / созданную задачу.
+   */
+  private async linkDerivedDecisions(
+    tenantId: string,
+    issueId: string,
+    sourceBlockIds: string[],
+  ): Promise<void> {
+    try {
+      const created = await linkDerivedDecisionsForIssue(this.prisma, {
+        tenantId,
+        issueId,
+        sourceBlockIds,
+      });
+      if (created > 0) {
+        this.logger.debug(
+          { issueId, created },
+          'intake triage: создано DecisionTaskLink(derived)',
+        );
+      }
+    } catch (e) {
+      this.logger.warn(
+        { issueId, err: e instanceof Error ? e.message : String(e) },
+        'intake triage: линковка derived-решений упала (best-effort)',
+      );
+    }
+  }
+
   private async requireIntake(
     id: string,
     tenantId: string,
@@ -570,6 +815,7 @@ export class IntakeService {
       suggestedPriority: i.suggestedPriority,
       suggestedDueDate: i.suggestedDueDate?.toISOString() ?? null,
       suggestedLabels: i.suggestedLabels,
+      sourceBlockIds: i.sourceBlockIds,
       confidence: i.confidence?.toString() ?? null,
       triagedByUserId: i.triagedByUserId,
       triagedAt: i.triagedAt?.toISOString() ?? null,

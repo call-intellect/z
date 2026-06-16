@@ -40,7 +40,7 @@ const ENTRIES: Entry[] = [
 
 const REGISTRIES: Entry[] = [
   { href: '/decisions', label: 'Решения', desc: 'Журнал ключевых решений', icon: ClipboardList },
-  { href: '/regulations', label: 'Правила', desc: 'Регламенты и стандарты', icon: ClipboardList },
+  { href: '/regulations', label: 'Оцифровано', desc: 'Регламенты, процессы, инструкции и политики из встреч', icon: ClipboardList },
   { href: '/themes', label: 'Темы', desc: 'Кластеры обсуждений', icon: Sparkles },
   { href: '/entities', label: 'Сущности', desc: 'Реестр сущностей графа', icon: Network },
   { href: '/tables', label: 'Таблицы', desc: 'Извлечённые данные', icon: Table2 },

@@ -88,7 +88,7 @@ export function InsightsTopWidget() {
                     <Link
                       href={`/insights/${it.id}`}
                       className="flex items-start justify-between gap-3 rounded-xl p-3 transition hover:brightness-110"
-                      style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                      style={{ background: 'var(--surface-inset)' }}
                     >
                       <div className="min-w-0 flex-1">
                         <p

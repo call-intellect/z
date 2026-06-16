@@ -98,6 +98,12 @@ export type CoraFeedItem = {
   unread: boolean;
   /** Распарсенный «оценка→рекомендация→срок», если есть в payload. */
   insight: CoraInsightPayload | null;
+  /**
+   * R9 — для `open_question`: автор вопроса является руководителем (глава
+   * отдела / owner/admin/coo). Источник — `payload.askedByManager` с бэка.
+   * Управляет бейджем «Спросил руководитель».
+   */
+  askedByManager: boolean;
 };
 
 export type CoraFeedView = {
@@ -141,6 +147,7 @@ export function coraFeedItemFromApi(api: CoraFeedItemApi): CoraFeedItem {
     createdAtDate: new Date(api.createdAt),
     unread: api.unread === true,
     insight: parseInsightPayload(api.payload),
+    askedByManager: api.payload?.['askedByManager'] === true,
   };
 }
 

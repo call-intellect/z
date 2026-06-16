@@ -37,6 +37,41 @@ describe('stripBlockMarkers', () => {
     expect(out).not.toContain('REASONING CHAIN');
   });
 
+  // ТЗ 2026-06-15 — русские теги контекста вырезаются наравне с английскими.
+  it('убирает русский тег [ПРОТИВОРЕЧАЩИЙ ФАКТ]', () => {
+    const out = stripBlockMarkers(
+      'Есть конфликт мнений [ПРОТИВОРЕЧАЩИЙ ФАКТ] по срокам',
+    );
+    expect(out).toBe('Есть конфликт мнений по срокам');
+    expect(out).not.toContain('ПРОТИВОРЕЧАЩИЙ');
+  });
+
+  it('убирает русский тег [ПРОТИВОРЕЧАЩИЙ ФАКТ] вместе с соседним [BLOCK:<id>]', () => {
+    // Реальная форма строки контекста: тег + ссылка на блок в скобках.
+    const out = stripBlockMarkers(
+      'Спорно [ПРОТИВОРЕЧАЩИЙ ФАКТ] (противоречит [BLOCK:abc123]) дальше',
+    );
+    expect(out).toBe('Спорно (противоречит ) дальше');
+    expect(out).not.toContain('ПРОТИВОРЕЧАЩИЙ');
+    expect(out).not.toContain('[BLOCK:');
+  });
+
+  it('убирает русский тег [ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ <id>]', () => {
+    const out = stripBlockMarkers(
+      'Почему так [ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ abc123] — потому что',
+    );
+    expect(out).toBe('Почему так — потому что');
+    expect(out).not.toContain('ЦЕПОЧКА РАССУЖДЕНИЯ');
+  });
+
+  it('убирает русский тег [ТАБЛИЦА: <название>]', () => {
+    const out = stripBlockMarkers(
+      'Данные [ТАБЛИЦА: Клиенты] взяты из таблицы',
+    );
+    expect(out).toBe('Данные взяты из таблицы');
+    expect(out).not.toContain('ТАБЛИЦА');
+  });
+
   it('текст без маркеров возвращается как есть', () => {
     const text = 'Обычный ответ без маркеров, с **markdown** и [ссылкой](https://x).';
     expect(stripBlockMarkers(text)).toBe(text);

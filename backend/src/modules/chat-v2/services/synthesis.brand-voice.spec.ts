@@ -10,8 +10,9 @@ import { SynthesisService } from './synthesis.service';
  *   1. дёргает BrandVoiceService.getOrCreate(tenantId).
  *   2. подмешивает извлечённый профиль в systemPromptOverride при вызове
  *      knowledge-core ChatV2Service.ask().
- *   3. если профиль пуст (belowCorpusThreshold=true) — оставляет дефолтный
- *      clone_style prompt.
+ *   3. если профиль пуст (belowCorpusThreshold=true) — override НЕ задаётся
+ *      (null): графовый ответ идёт на единый промпт-ответчик (ТЗ 2026-06-15;
+ *      режима «в стиле сотрудника» как текста промпта больше нет).
  *
  * Все зависимости (prisma, chatV2, retrievalCache, clones) мокаются.
  */
@@ -88,7 +89,7 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
     expect(passedPrompt).toContain('данным письмом');
   });
 
-  it('clone_style + scope=org + belowCorpusThreshold → дефолтный clone_style prompt', async () => {
+  it('clone_style + scope=org + belowCorpusThreshold → override=null (единый промпт)', async () => {
     const chatV2 = makeChatV2Mock();
     const cache = makeRetrievalCache();
     const prisma = makePrismaForConflicts();
@@ -119,14 +120,14 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
     });
 
     expect(brandVoice.getOrCreate).toHaveBeenCalled();
-    const passedPrompt: string = (
-      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string }
+    const passedPrompt = (
+      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null }
     ).systemPromptOverride;
-    // При пустом профиле — НЕ должен содержать инжекцию «голос бренда».
-    expect(passedPrompt).not.toContain('фирменном голосе');
+    // При пустом профиле — override НЕ задаётся: единый промпт-ответчик.
+    expect(passedPrompt).toBeNull();
   });
 
-  it('clone_style + scope=org + brandVoice не подключен → fallback', async () => {
+  it('clone_style + scope=org + brandVoice не подключен → override=null (единый промпт)', async () => {
     const chatV2 = makeChatV2Mock();
     const cache = makeRetrievalCache();
     const prisma = makePrismaForConflicts();
@@ -149,10 +150,10 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
     });
 
     expect(chatV2.ask).toHaveBeenCalled();
-    // Должен сработать default clone_style fallback (без injection).
-    const passedPrompt: string = (
-      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string }
+    // brandVoice не подключён → override НЕ задаётся: единый промпт-ответчик.
+    const passedPrompt = (
+      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null }
     ).systemPromptOverride;
-    expect(passedPrompt).not.toContain('фирменном голосе');
+    expect(passedPrompt).toBeNull();
   });
 });

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import { useAuth } from '@/contexts/auth-context';
+import { teamTemplateCategoryLabel } from '@/domain/tracker/team-template';
 import { useTeamTemplates } from '@/hooks/tracker/useTeamTemplates';
 
 /**
@@ -60,7 +61,7 @@ export function TeamTemplatesClient() {
                     {t.name}
                   </span>
                   <span className="text-[10px] uppercase text-fg-tertiary">
-                    {t.category}
+                    {teamTemplateCategoryLabel(t.category)}
                   </span>
                 </div>
                 <p className="line-clamp-3 text-xs text-fg-tertiary">

@@ -179,3 +179,49 @@ export interface RegulationVersionItemDto {
 export interface RegulationHistoryResponse {
   items: RegulationVersionItemDto[];
 }
+
+// ─────────────────────────── C3 — provenance (sources) ───────────────
+//
+// `GET /api/v1/regulations/:id/sources?kind=` — цитаты-первоисточники карточки
+// (хаб «Оцифровано», провенанс). Цепочка: <card>.sourceBlockIds[] → IdeaBlock →
+// IdeaBlockEvidence (quote) → RawEvent → Meeting (best-effort title/date).
+//
+// Один блок может иметь несколько evidence (из разных встреч/чатов) —
+// возвращаем по записи на каждую цитату (гранулярность evidence), а не
+// агрегируем по блоку: так UI показывает каждую отдельную ссылку «откуда взято».
+
+/** Встреча-источник цитаты (если evidence ссылается на RawEvent типа meeting). */
+export interface RegulationSourceMeetingDto {
+  id: string;
+  title: string;
+  /** ISO-дата встречи (startedAt → createdAt → sourceTimestamp evidence). */
+  date: string;
+}
+
+export interface RegulationSourceItemDto {
+  /** id IdeaBlock'а, к которому относится цитата. */
+  blockId: string;
+  /** Текстовая цитата-первоисточник (IdeaBlockEvidence.quote). */
+  quote: string;
+  /** Встреча-источник или null (для не-meeting источников / неразрешённой встречи). */
+  meeting: RegulationSourceMeetingDto | null;
+}
+
+export interface RegulationSourcesResponse {
+  items: RegulationSourceItemDto[];
+}
+
+// ─────────────────────────── C4 — summary (сводка хаба) ──────────────
+//
+// `GET /api/v1/regulations/summary` — счётчики 4 типов карточек + недельный
+// прирост (карточки всех типов, созданные за последние 7 дней). Доступ — как у
+// list (read на любой из 4 типов), чтобы read-доступ к хабу давал и сводку.
+
+export interface RegulationSummaryResponse {
+  regulations: number;
+  processes: number;
+  instructions: number;
+  policies: number;
+  /** Суммарно создано карточек всех 4 типов за последние 7 дней. */
+  weekDelta: number;
+}

@@ -33,8 +33,9 @@ import {
   DIALOG_CONFIDENCE_JSON_SCHEMA,
   buildConfidenceUserPrompt,
 } from '../../src/modules/dialog-layer/prompts/confidence.prompt';
-import { CHAT_V2_FACTUAL_SYSTEM_PROMPT } from '../../src/modules/chat-v2/prompts/factual.prompt';
-import { CHAT_V2_SYNTHETIC_SYSTEM_PROMPT } from '../../src/modules/chat-v2/prompts/synthetic.prompt';
+// ТЗ 2026-06-15 — единый промпт-ответчик заменил режимы factual/synthetic/
+// clone_style; берём его напрямую из chat-v2.service.ts.
+import { BASE_SYSTEM_PROMPT } from '../../src/modules/knowledge-core/services/chat-v2.service';
 
 const MODEL = 'deepseek-v4-pro';
 // DeepSeek-V4-Pro со скидкой 75%.
@@ -303,12 +304,11 @@ async function main(): Promise<void> {
     console.log('\n  (multi-query пропущен — intent=factual)');
   }
 
-  // Шаг 5: answer (factual или synthetic)
+  // Шаг 5: answer — единый промпт-ответчик (ТЗ 2026-06-15; режимов больше нет,
+  // глубину модель выбирает по вопросу). answerMode из фикстуры оставляем
+  // только как метку отчёта.
   const answerMode = fixture.expected_answer_mode;
-  const systemAnswer =
-    answerMode === 'factual'
-      ? CHAT_V2_FACTUAL_SYSTEM_PROMPT
-      : CHAT_V2_SYNTHETIC_SYSTEM_PROMPT;
+  const systemAnswer = BASE_SYSTEM_PROMPT;
   const blocksCtx = buildBlocksContext(fixture.mock_blocks);
   const userAnswer = `Вопрос пользователя: ${standalone}\n\nКонтекст (найденные блоки памяти):\n\n${blocksCtx}\n\nДай ответ согласно правилам.`;
 

@@ -52,7 +52,7 @@
 |---|---|---|---|
 | `feature.tables_text_to_schema` | AdminSetting | seed-дефолт true + patch | человек подтверждает превью схемы (галлюцинация не создаётся молча); риск смягчён. AdminSetting → false |
 | `knowledge.meetingTasksToTrackerOnly` | AdminSetting | seed-дефолт true + patch | из встречи одна задача (Issue); `assigneeRaw`/`sourceQuote` станут null. AdminSetting → false |
-| `CONCIERGE_DIALOG_LAYER_ENABLED` | ENV (code-default) | code-default ON | kill-switch: `=false` в `.env` + рестарт |
+| ~~`CONCIERGE_DIALOG_LAYER_ENABLED`~~ | ENV (code-default) | _**снят с употребления 2026-06-15**_ | После переписи помощника (ТЗ `assistant-router-dedup`) concierge больше не зовёт dialog-layer (понимание/синтез — внутри chat-v2). Флаг ничего не гейтит, может быть удалён из `.env`. |
 | `knowledge.curationAutotuneEnabled` | AdminSetting (code-fallback) | code-fallback true + patch; с 2026-06-12 и seed-дефолт true (autonomy W3) | базовый kill-switch порогов и так активен. AdminSetting → false |
 
 ### ⏸️ Остаётся OFF — осознанное решение владельца
@@ -127,6 +127,7 @@ _(пусто — все доставки в Telegram авторизованы в
 | `CDM_INTERVIEW_ENABLED` / `knowledge.cdmInterviewEnabled` | 🟢 ВКЛ | CDM-интервью носителя роли: Кора по свежим reasoning-кейсам сама задаёт носителю до 5 не наводящих вопросов ретроспективного разбора (Critical Decision Method — «почему выбрали этот вариант», «какие альтернативы отвергли») через probe (`skill.cdm_interview`); ответ (текст/голос) идёт в граф как high-priority reasoning (`signalTypeHint='reasoning'`). Выкл → Кора перестаёт задавать новые CDM-вопросы носителям; ответы на уже заданные вопросы продолжают обрабатываться (closing-loop probe не гейтится). Лимиты — AdminSetting `knowledge.cdmInterviewMaxQuestions` (5) / `knowledge.cdmInterviewCooldownDays` (7). ENV-рубильник + AdminSetting (resolveSync, zBool default true). (ТЗ clone-persona-method-layer Э3.1) |
 | `PERSONA_LAYER_VALIDATION_ENABLED` / `knowledge.personaLayerValidationEnabled` | 🟢 ВКЛ | Еженедельная поведенческая оценка качества клона (`PersonaLayerValidationCron`, вс 07:00, после persona-build): на реальных кейсах роли LLM-судья (`persona-behavior-judge`) сравнивает ответы клона со старой persona v1 («только черты») и новой v2 (все слои метода) → метрика `clone_persona_layer_score{variant}` + лог; ничего не блокирует и не меняет (только наблюдение прод-качества, R10 — без human-approval). Выкл → еженедельная поведенческая оценка persona v1-vs-v2 не запускается; на работу клона не влияет. Число кейсов на роль — AdminSetting `knowledge.personaValidationCasesPerRole` (3). ENV-рубильник + AdminSetting (resolveSync, zBool default true). (ТЗ clone-persona-method-layer ВАЛ.1) |
 | `dashboard.theme_silence.enabled` | 🟢 ВКЛ | Детектор молчащих тем (`@Cron('theme-silence-detector')`): тема графа без активности ≥ N недель → создаётся `Insight` «тема замолчала» (порог — крутилка `dashboard.theme_silence_weeks`, default 3). Выкл → cron no-op, инсайты о замолчавших темах не создаются; на остальное не влияет. AdminSetting-ключ (kill-switch, code-default true), действий владельца НЕ требует. (ТЗ cabinet-redesign-rhythms Ф8.2/8.1) |
+| `DASHBOARD_THEME_SILENCE_ENABLED` | 🟢 ВКЛ | ENV-fallback того же детектора молчащих тем (раньше флаг был **мёртв** — теперь оживлён в `env.schema.ts`, подсхема `KnowledgeCoreSchema`, zBool default `true`; порог недель — `DASHBOARD_THEME_SILENCE_WEEKS`, int default `3`). Аварийный откат: `=false` в `.env` + рестарт → детектор no-op. Действий владельца НЕ требует. (ТЗ cabinet-master-fixes A3) |
 
 > **Планируется (Ф5, отложена):** `SUPPORT_CLONE_AUTOSEND_ENABLED` — авто-отправка ответа клиенту клоном без человека за гейтом calibrated-уверенности+groundedness. В Ф1–Ф4 НЕ выкатывается: нужен отдельный owner-go (раскрытие AI клиенту, Р-5) + калибровка на исходах. До выката человек шлёт ВСЕГДА. (ТЗ support-desk-clone-and-closed-contour Ф5)
 
@@ -145,6 +146,12 @@ _(пусто — все доставки в Telegram авторизованы в
 Это не «забытые», а незрелые. По Ship-On: когда дозреют — выкатятся сразу включёнными. Сейчас трогать не нужно.
 
 `MAIL_INBOX_ENABLED` (задачи из писем) · `CLONE_V2_ENABLED` · `SPECIALISTS_COMBINED_ENABLED` · `BITEMPORAL_ENABLED` / `BITEMPORAL_SUPERSEDE_ENABLED` (версионирование знаний во времени) · `PROMPT_EVOLUTION_ENABLED` (авто-эволюция промптов, GEPA).
+
+### Флаг миграции (default OFF до переключения источника данных)
+
+| Флаг | Сейчас | Что переключает |
+|---|---|---|
+| `USE_APPOINTMENT_FOR_PERSON_ROLES` | ⚫ ВЫКЛ | Источник ролей человека: при `false` `persons.service` читает старую модель `PersonRole`, при `true` — новую `Appointment`. Дефолт OFF — поведение не меняется. Это **флаг миграции данных**, не продуктовый рубильник: включается разово после переноса/сверки назначений. ENV (`cfg.persons.useAppointment`, `env.schema.ts` подсхема `KnowledgeCoreSchema`, zBool default `false`). (ТЗ cabinet-master-fixes A3) |
 
 ---
 
@@ -178,6 +185,11 @@ _(пусто — все доставки в Telegram авторизованы в
 | `dashboard.theme_silence_weeks` | 3 | Сколько недель тема графа должна молчать, чтобы детектор `theme-silence-detector` создал `Insight` «тема замолчала». AdminSetting (super_admin), code-fallback `3`. Сам детектор гейтится kill-switch `dashboard.theme_silence.enabled` (выше) | Детектор молчащих тем (ТЗ cabinet-redesign-rhythms Ф8.2/8.1) |
 | `pendingActions.conflictTtlDays` | 14 | Срок жизни (дней) `ConflictItem` в очереди решений «Требует вас»: по истечении sweep-крон проставляет `expiresAt` и убирает протухший конфликт из очереди. AdminSetting (super_admin), code-fallback | Очередь решений (ТЗ cabinet-redesign-rhythms Ф4) |
 | `pendingActions.intakeTtlDays` | 14 | Срок жизни (дней) `IntakeIssue` в очереди решений «Требует вас»: по истечении sweep-крон проставляет `expiresAt` и убирает протухшую входящую задачу из очереди. AdminSetting (super_admin), code-fallback | Очередь решений (ТЗ cabinet-redesign-rhythms Ф4) |
+| `dialog_layer.query_history_pairs` | 4 | Сколько последних пар реплик диалога подмешивается в history-aware «модуль понимания запроса» (слитый dialog-layer: реплика + summary + история → 3 самодостаточных вопроса). AdminSetting (super_admin). Сид `seed-admin-setting-dialog-layer.ts` | Модуль понимания запроса (ТЗ dialog-layer-unified-query-understanding) |
+| `concierge.history_pairs` | 4 | Глубина памяти помощника: сколько последних пар сообщений (помимо summary) уходит в системный промпт concierge. AdminSetting (super_admin). Сид `seed-admin-setting-concierge.ts` | Помощник = развилка + руки (ТЗ assistant-router-dedup) |
+| `concierge.clarify_min_confidence` | 80 | Порог самооценки понимания запроса (0–100), ниже которого помощник задаёт ОДИН уточняющий вопрос вместо действия (крен «лучше переспросить»). Подкреплён жёстким код-гардом: изменяющее действие без обязательного поля → уточнять всегда. AdminSetting (super_admin) | Помощник-уточнитель (ТЗ assistant-router-dedup) |
+| `chat_v2.table_context_max_rows` | 20 | Потолок строк умных таблиц, отдаваемых синтезатору chat-v2 как «Данные из таблиц» (таблицы — параллельный с графом источник). AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
+| `chat_v2.table_context_max_tables` | 2 | Максимум таблиц, из которых chat-v2 тянет строки в один ответ. AdminSetting (super_admin). Сид `seed-admin-setting-chat-v2-tables.ts` | Умные таблицы как источник chat-v2 (ТЗ chat-v2-unified-answer-prompt §7 B) |
 
 ---
 

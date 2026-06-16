@@ -1,20 +1,31 @@
 'use client';
 
-import { TrendingUp, Users, Wallet } from 'lucide-react';
+import { Coins, TrendingUp, Users, Wallet } from 'lucide-react';
 
 import { formatRubles } from '@/domain/billing';
-import type { ReferralDomain, ReferralStatsDomain } from '@/domain/referral';
-import { Card } from '@/ui/shadcn/card';
+import type {
+  MonthlyPointDomain,
+  ReferralDomain,
+  ReferralStatsDomain,
+} from '@/domain/referral';
+import { CHART, GRAD, StatCard } from '@/ui/components/dashboard/modern';
 
 import { WithdrawButton } from './WithdrawButton';
 
 interface Props {
   referral: ReferralDomain;
   stats: ReferralStatsDomain;
+  /**
+   * Месячный ряд для спарклайна в плитке «Доход в этом месяце» (опц.).
+   * Доступен только в состоянии C, где график уже загружен. Если нет —
+   * плитка рендерится без спарклайна.
+   */
+  monthlyPoints?: MonthlyPointDomain[];
 }
 
 /**
- * WithdrawalStrip — верхняя «полоса» из трёх плиток + кнопка «Вывести».
+ * WithdrawalStrip — верхняя «полоса» из четырёх KPI-плиток (modern StatCard)
+ * + кнопка «Вывести».
  *
  * Состояния B и C (ТЗ §8.1). В состоянии B все значения нулевые —
  * это нормальное «свежий партнёр», текст плиток не меняется.
@@ -23,9 +34,10 @@ interface Props {
  *   1. Активных клиентов сейчас.
  *   2. Доход в этом месяце (`activePaying × 20 000 ₽` — фиксированная
  *      комиссия, считается клиентом без отдельного запроса).
- *   3. К выводу — `totalPendingKopecks`.
+ *   3. Всего заработано — `totalEarnedKopecks`.
+ *   4. К выводу — `totalPendingKopecks` (+ кнопка «Вывести» рядом).
  */
-export function WithdrawalStrip({ referral, stats }: Props) {
+export function WithdrawalStrip({ referral, stats, monthlyPoints }: Props) {
   /**
    * Доход в этом месяце = активные клиенты × 20 000 ₽. Это совпадает с
    * логикой `getStats.monthlyEarningsKopecks` на backend (фиксированная
@@ -34,54 +46,49 @@ export function WithdrawalStrip({ referral, stats }: Props) {
    */
   const monthlyEarningsKopecks = stats.activePaying * 20_000_00;
 
+  // Спарклайн дохода: берём `incomeRub` по месяцам (только если ряд передан).
+  const incomeSpark =
+    monthlyPoints && monthlyPoints.length > 0
+      ? monthlyPoints.map((p, i) => ({ i, v: p.incomeRub }))
+      : undefined;
+
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Tile
-        icon={<Users className="h-4 w-4" />}
+      <StatCard
+        icon={<Users className="h-5 w-5" />}
+        grad={GRAD.blue}
+        tone={CHART.blue}
         label="Активных клиентов"
         value={String(stats.activePaying)}
       />
-      <Tile
-        icon={<TrendingUp className="h-4 w-4" />}
+      <StatCard
+        icon={<TrendingUp className="h-5 w-5" />}
+        grad={GRAD.teal}
+        tone={CHART.teal}
         label="Доход в этом месяце"
         value={formatRubles(monthlyEarningsKopecks)}
+        spark={incomeSpark}
       />
-      <Tile
-        icon={<Wallet className="h-4 w-4" />}
-        label="К выводу"
-        value={formatRubles(stats.totalPendingKopecks)}
+      <StatCard
+        icon={<Coins className="h-5 w-5" />}
+        grad={GRAD.amber}
+        tone={CHART.amber}
+        label="Всего заработано"
+        value={formatRubles(stats.totalEarnedKopecks)}
       />
-      <Card className="flex flex-col justify-between gap-2 p-4">
-        <span className="text-xs uppercase tracking-wide text-fg-tertiary">
-          Действие
-        </span>
+      <div className="flex flex-col gap-3">
+        <StatCard
+          icon={<Wallet className="h-5 w-5" />}
+          grad={GRAD.violet}
+          tone={CHART.violet}
+          label="К выводу"
+          value={formatRubles(stats.totalPendingKopecks)}
+        />
         <WithdrawButton
           referral={referral}
           totalPendingKopecks={stats.totalPendingKopecks}
         />
-      </Card>
-    </div>
-  );
-}
-
-function Tile({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <Card className="space-y-2 p-4">
-      <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-fg-tertiary">
-        <span className="text-fg-secondary" aria-hidden="true">
-          {icon}
-        </span>
-        <span>{label}</span>
       </div>
-      <div className="text-2xl font-semibold text-fg-primary">{value}</div>
-    </Card>
+    </div>
   );
 }

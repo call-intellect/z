@@ -20,7 +20,10 @@ import type {
   RegulationHistoryResponseApi,
   RegulationKindApi,
   RegulationListItemApi,
+  RegulationSourceItemApi,
+  RegulationSourcesApi,
   RegulationStatusApi,
+  RegulationSummaryApi,
   RegulationVersionItemApi,
   TrustTierApi,
 } from '@/api/regulations.api';
@@ -172,6 +175,68 @@ export function mapVersionsFromHistory(
   api: RegulationHistoryResponseApi,
 ): RegulationVersion[] {
   return api.items.map(mapVersionItem);
+}
+
+// ─── provenance (C3) ────────────────────────────────────────────────
+
+/** Цитата-источник записи с разобранной датой встречи. */
+export interface RegulationSource {
+  blockId: string;
+  quote: string;
+  meeting: { id: string; title: string; date: Date } | null;
+}
+
+export function mapRegulationSource(
+  api: RegulationSourceItemApi,
+): RegulationSource {
+  return {
+    blockId: api.blockId,
+    quote: api.quote,
+    meeting: api.meeting
+      ? {
+          id: api.meeting.id,
+          title: api.meeting.title,
+          date: new Date(api.meeting.date),
+        }
+      : null,
+  };
+}
+
+export function mapRegulationSources(
+  api: RegulationSourcesApi,
+): RegulationSource[] {
+  return api.items.map(mapRegulationSource);
+}
+
+// ─── summary (C4) ───────────────────────────────────────────────────
+
+/** Счётчики «оцифрованного» по видам + дельта за неделю. */
+export interface RegulationSummary {
+  regulations: number;
+  processes: number;
+  instructions: number;
+  policies: number;
+  /** Сколько записей добавилось за последнюю неделю (может быть 0). */
+  weekDelta: number;
+  /** Всего записей по всем видам — производное, чтобы не считать в UI. */
+  total: number;
+}
+
+export function mapRegulationSummary(
+  api: RegulationSummaryApi,
+): RegulationSummary {
+  const regulations = api.regulations ?? 0;
+  const processes = api.processes ?? 0;
+  const instructions = api.instructions ?? 0;
+  const policies = api.policies ?? 0;
+  return {
+    regulations,
+    processes,
+    instructions,
+    policies,
+    weekDelta: api.weekDelta ?? 0,
+    total: regulations + processes + instructions + policies,
+  };
 }
 
 export function mapVersionItem(api: RegulationVersionItemApi): RegulationVersion {

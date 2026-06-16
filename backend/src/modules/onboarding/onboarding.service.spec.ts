@@ -237,3 +237,91 @@ describe('OnboardingService.resetDemoWorkspace (audit Б3)', () => {
     );
   });
 });
+
+/**
+ * QA B6 (2026-06-15) — getSetupProgress: «timestamp ИЛИ факт».
+ *
+ * Покрытие (детерминизм: мок Prisma):
+ *   (а) timestamp'ов нет, но есть отделы/должности → они зачитаны (баг 0/6);
+ *   (б) ни вех, ни сущностей → 0 из 6;
+ *   (в) timestamp'ы стоят (мастер пройден) → 6 из 6 даже при нулевых счётчиках;
+ *   (г) Org нет → 404.
+ */
+describe('OnboardingService.getSetupProgress (QA B6)', () => {
+  function makeSvc(opts: {
+    org: Record<string, unknown> | null;
+    counts: { department: number; role: number; person: number; meeting: number; cycle: number };
+  }): OnboardingService {
+    const prisma = {
+      org: { findUnique: vi.fn(async () => opts.org) },
+      department: { count: vi.fn(async () => opts.counts.department) },
+      role: { count: vi.fn(async () => opts.counts.role) },
+      person: { count: vi.fn(async () => opts.counts.person) },
+      meeting: { count: vi.fn(async () => opts.counts.meeting) },
+      cycle: { count: vi.fn(async () => opts.counts.cycle) },
+    } as unknown as PrismaService;
+    return new OnboardingService(prisma);
+  }
+
+  const NO_TIMESTAMPS = {
+    welcomeCompletedAt: null,
+    companyInfoCompletedAt: null,
+    departmentsCompletedAt: null,
+    rolesCompletedAt: null,
+    teamInvitedAt: null,
+    firstMeetingCreatedAt: null,
+    firstSprintCreatedAt: null,
+    industry: null,
+  };
+
+  it('(а) timestamp нет, но есть отделы+должности → засчитаны (фикс 0/6)', async () => {
+    const svc = makeSvc({
+      org: { ...NO_TIMESTAMPS },
+      counts: { department: 2, role: 3, person: 1, meeting: 0, cycle: 0 },
+    });
+    const p = await svc.getSetupProgress('org-1');
+    expect(p.steps.departments).toBe(true);
+    expect(p.steps.roles).toBe(true);
+    expect(p.steps.team).toBe(false); // только владелец (persons=1)
+    expect(p.completed).toBe(2);
+    expect(p.total).toBe(6);
+  });
+
+  it('(б) ни вех, ни сущностей → 0 из 6', async () => {
+    const svc = makeSvc({
+      org: { ...NO_TIMESTAMPS },
+      counts: { department: 0, role: 0, person: 1, meeting: 0, cycle: 0 },
+    });
+    const p = await svc.getSetupProgress('org-1');
+    expect(p.completed).toBe(0);
+  });
+
+  it('(в) все timestamp стоят → 6 из 6 даже при нулевых счётчиках', async () => {
+    const now = new Date();
+    const svc = makeSvc({
+      org: {
+        welcomeCompletedAt: now,
+        companyInfoCompletedAt: now,
+        departmentsCompletedAt: now,
+        rolesCompletedAt: now,
+        teamInvitedAt: now,
+        firstMeetingCreatedAt: now,
+        firstSprintCreatedAt: null,
+        industry: null,
+      },
+      counts: { department: 0, role: 0, person: 1, meeting: 0, cycle: 0 },
+    });
+    const p = await svc.getSetupProgress('org-1');
+    expect(p.completed).toBe(6);
+  });
+
+  it('(г) Org нет → 404', async () => {
+    const svc = makeSvc({
+      org: null,
+      counts: { department: 0, role: 0, person: 0, meeting: 0, cycle: 0 },
+    });
+    await expect(svc.getSetupProgress('org-x')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+  });
+});

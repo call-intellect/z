@@ -18,7 +18,7 @@ export const welcomeTour: TourDefinition = {
       body: 'Логотип, юридические данные, контакты, миссия — основа для отчётов и ИИ-помощника.',
       placement: 'right',
       primaryAction: { label: 'Заполнить сейчас', kind: 'navigate', href: '/company' },
-      secondaryAction: { label: 'Пропустить', kind: 'next' },
+      secondaryAction: { label: 'Пропустить', kind: 'skip' },
     },
     // B2 — Отделы
     {
@@ -28,7 +28,7 @@ export const welcomeTour: TourDefinition = {
       body: 'Для команды на 20–30 человек обычно 3–5 отделов. Мы подготовили шаблон для вашей отрасли.',
       placement: 'right',
       primaryAction: { label: 'Добавить отделы', kind: 'navigate', href: '/departments' },
-      secondaryAction: { label: 'Пропустить', kind: 'next' },
+      secondaryAction: { label: 'Пропустить', kind: 'skip' },
     },
     // B3 — Должности
     {
@@ -38,7 +38,7 @@ export const welcomeTour: TourDefinition = {
       body: 'Кора создаст цифровых двойников — можно спросить «как обычно работает маркетолог», даже если он в отпуске.',
       placement: 'right',
       primaryAction: { label: 'Добавить должности', kind: 'navigate', href: '/roles' },
-      secondaryAction: { label: 'Пропустить', kind: 'next' },
+      secondaryAction: { label: 'Пропустить', kind: 'skip' },
     },
     // B4 — Команда
     {
@@ -48,7 +48,7 @@ export const welcomeTour: TourDefinition = {
       body: 'Каждый получит письмо с логином, паролем и инструкцией по входу.',
       placement: 'right',
       primaryAction: { label: 'Пригласить сотрудников', kind: 'navigate', href: '/structure' },
-      secondaryAction: { label: 'Пропустить', kind: 'next' },
+      secondaryAction: { label: 'Пропустить', kind: 'skip' },
     },
     // B5 — Первый спринт
     {
@@ -58,7 +58,7 @@ export const welcomeTour: TourDefinition = {
       body: 'Спринт — недельный цикл с одной целью. Кора будет следить из встреч и чатов, реально ли команда идёт к цели.',
       placement: 'right',
       primaryAction: { label: 'Создать спринт', kind: 'navigate', href: '/sprints/new' },
-      secondaryAction: { label: 'Пропустить', kind: 'next' },
+      secondaryAction: { label: 'Пропустить', kind: 'skip' },
     },
     // B6 — Первая встреча
     {

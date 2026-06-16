@@ -27,7 +27,7 @@ export function ProgressBar({ percent }: { percent: number }) {
     <div className="flex items-center gap-3">
       <div
         className="h-1.5 w-28 overflow-hidden rounded-full"
-        style={{ background: 'oklch(1 0 0 / 0.08)' }}
+        style={{ background: 'var(--surface-inset-strong)' }}
       >
         <div
           className="h-full rounded-full"
@@ -116,7 +116,7 @@ export function ModernTable<T>({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={getKey(row)} style={{ borderTop: '1px solid oklch(1 0 0 / 0.06)' }}>
+              <tr key={getKey(row)} style={{ borderTop: '1px solid var(--border-inset)' }}>
                 {columns.map((col, ci) => (
                   <td
                     key={col.header + ci}

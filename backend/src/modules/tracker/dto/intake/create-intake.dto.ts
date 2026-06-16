@@ -36,6 +36,12 @@ export const CreateIntakeSchema = z
       .optional(),
     suggestedDueDate: z.coerce.date().nullable().optional(),
     suggestedLabels: z.array(z.string().min(1).max(64)).max(16).default([]),
+    /**
+     * A10 (2026-06-14) — IdeaBlock-источники кандидата (провенанс). Прокидываются
+     * в `Issue.sourceBlockIds` при промоуте → пересечение с
+     * `Decision.sourceBlockIds` рождает `DecisionTaskLink(linkType='derived')`.
+     */
+    sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).default([]),
     confidence: z.number().min(0).max(1).nullable().optional(),
   })
   .strict();

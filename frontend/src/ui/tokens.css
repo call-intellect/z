@@ -27,7 +27,15 @@
   --border-subtle: oklch(0.93 0.005 250 / 0.05);
   --border: oklch(0.93 0.005 250 / 0.09);
   --border-strong: oklch(0.93 0.005 250 / 0.16);
+  --border-inset: oklch(1 0 0 / 0.07);
   --ring-edge-top: inset 0 1px 0 oklch(1 0 0 / 0.05);
+
+  /* Утопленные поверхности (треки прогресса, фоны плиток, hover-строк).
+     На тёмной теме — лёгкое ОСВЕТЛЕНИЕ (белый с альфой); на светлой
+     зеркало затемняет (см. блок light) — иначе белый оверлей невидим. */
+  --surface-inset: oklch(1 0 0 / 0.05);
+  --surface-inset-strong: oklch(1 0 0 / 0.08);
+  --surface-hover: oklch(1 0 0 / 0.05);
 
   /* Accent — warm-mint */
   --accent: oklch(0.84 0.13 168);
@@ -152,6 +160,13 @@
   --border-subtle: oklch(0.22 0.01 60 / 0.05);
   --border: oklch(0.22 0.01 60 / 0.09);
   --border-strong: oklch(0.22 0.01 60 / 0.18);
+  --border-inset: oklch(0.22 0.01 60 / 0.10);
+
+  /* Утопленные поверхности — зеркало тёмной темы: лёгкое ЗАТЕМНЕНИЕ
+     (тёмный с альфой), чтобы трек/плитка/hover читались на светлом фоне. */
+  --surface-inset: oklch(0.22 0.01 60 / 0.04);
+  --surface-inset-strong: oklch(0.22 0.01 60 / 0.07);
+  --surface-hover: oklch(0.22 0.01 60 / 0.045);
 
   /* Accent — sage */
   --accent: oklch(0.62 0.07 155);

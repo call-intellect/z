@@ -123,7 +123,10 @@ export function IssueDetailClient({ issueId }: { issueId: string }) {
         </div>
 
         <div>
-          <IssueSidebar issue={issue} orgId={currentOrgId} />
+          {/* onMoved: перенос в другой проект меняет identifier/projectId —
+              перезагружаем карточку (URL по стабильному issue.id, редирект
+              не нужен; breadcrumb/идентификатор обновятся из свежих данных). */}
+          <IssueSidebar issue={issue} orgId={currentOrgId} onMoved={mutate} />
         </div>
       </div>
     </div>

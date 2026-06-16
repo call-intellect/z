@@ -8,8 +8,13 @@ import {
   type ReferralClientMaskedDomain,
   type ReferralClientStatus,
 } from '@/domain/referral';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card } from '@/ui/shadcn/card';
+import {
+  GRAD,
+  STATUS_TONE,
+  ModernTable,
+  glass,
+  type ModernTableColumn,
+} from '@/ui/components/dashboard/modern';
 
 interface Props {
   clients: ReferralClientMaskedDomain[];
@@ -24,92 +29,120 @@ interface Props {
  * только анонимный `clientCode` (`C` + 6 символов base36 от crc32),
  * дату привязки, дату первой оплаты, статус и суммы.
  *
- * Пустое состояние — отдельный текстовый блок с подсказкой.
+ * Редизайн B10: переведена на `ModernTable`. МАСКИРОВАНИЕ СОХРАНЕНО
+ * дословно — единственный идентификатор клиента это `clientCode`.
  */
 export function ClientsTableMasked({ clients }: Props) {
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border-subtle px-6 py-4">
-        <span
-          className="flex h-8 w-8 items-center justify-center rounded-md bg-accent-muted text-accent"
-          aria-hidden="true"
-        >
-          <Users className="h-4 w-4" />
-        </span>
-        <div>
-          <h2 className="text-base font-semibold text-fg-primary">
-            Приведённые клиенты
-          </h2>
-          <p className="text-xs text-fg-tertiary">
-            Названия и реквизиты клиентов не показываем — это защита их
-            приватности и твоего доверия.
-          </p>
-        </div>
+  const header = (
+    <div className="flex items-center gap-2.5">
+      <span
+        className="grid h-8 w-8 place-items-center rounded-xl"
+        style={{ background: GRAD.teal, color: 'oklch(0.99 0.005 280)' }}
+        aria-hidden="true"
+      >
+        <Users className="h-4 w-4" />
+      </span>
+      <div>
+        <h3 className="text-[15px] font-semibold">Приведённые клиенты</h3>
+        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+          Названия и реквизиты клиентов не показываем — это защита их
+          приватности и твоего доверия.
+        </p>
       </div>
+    </div>
+  );
 
-      {clients.length === 0 ? (
-        <div className="px-6 py-8 text-sm text-fg-secondary">
+  if (clients.length === 0) {
+    return (
+      <div style={glass()} className="p-6">
+        {header}
+        <p className="mt-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
           Пока никого не привёл. Как только первый клиент оплатит подписку,
           здесь появится строка с кодом, датой и начислением.
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
-              <tr>
-                <th className="px-6 py-3 text-left font-medium">Код клиента</th>
-                <th className="px-6 py-3 text-left font-medium">
-                  Привязан
-                </th>
-                <th className="px-6 py-3 text-left font-medium">
-                  Первая оплата
-                </th>
-                <th className="px-6 py-3 text-left font-medium">Статус</th>
-                <th className="px-6 py-3 text-left font-medium">
-                  В этом месяце
-                </th>
-                <th className="px-6 py-3 text-left font-medium">Всего</th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map((c) => (
-                <tr key={c.clientCode} className="border-t border-border-subtle">
-                  <td className="px-6 py-3 font-mono text-fg-primary">
-                    {c.clientCode}
-                  </td>
-                  <td className="px-6 py-3 text-fg-secondary">
-                    {c.attachedAt.toLocaleDateString('ru-RU')}
-                  </td>
-                  <td className="px-6 py-3 text-fg-secondary">
-                    {c.firstPaidAt
-                      ? c.firstPaidAt.toLocaleDateString('ru-RU')
-                      : '—'}
-                  </td>
-                  <td className="px-6 py-3">
-                    <Badge variant={badgeVariant(c.status)}>
-                      {clientStatusLabel(c.status)}
-                    </Badge>
-                  </td>
-                  <td className="px-6 py-3 text-fg-primary">
-                    {formatRubles(c.monthlyEarningsKopecks)}
-                  </td>
-                  <td className="px-6 py-3 text-fg-primary">
-                    {formatRubles(c.totalEarnedKopecks)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
+        </p>
+      </div>
+    );
+  }
+
+  const columns: ModernTableColumn<ReferralClientMaskedDomain>[] = [
+    {
+      header: 'Код клиента',
+      cell: (c) => (
+        <span className="font-mono" style={{ color: 'var(--text-primary)' }}>
+          {c.clientCode}
+        </span>
+      ),
+    },
+    {
+      header: 'Привязан',
+      cell: (c) => (
+        <span style={{ color: 'var(--text-secondary)' }}>
+          {c.attachedAt.toLocaleDateString('ru-RU')}
+        </span>
+      ),
+    },
+    {
+      header: 'Первая оплата',
+      cell: (c) => (
+        <span style={{ color: 'var(--text-secondary)' }}>
+          {c.firstPaidAt ? c.firstPaidAt.toLocaleDateString('ru-RU') : '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Статус',
+      cell: (c) => <ClientStatusPill status={c.status} />,
+    },
+    {
+      header: 'В этом месяце',
+      align: 'right',
+      cell: (c) => (
+        <span style={{ color: 'var(--text-primary)' }}>
+          {formatRubles(c.monthlyEarningsKopecks)}
+        </span>
+      ),
+    },
+    {
+      header: 'Всего',
+      align: 'right',
+      cell: (c) => (
+        <span style={{ color: 'var(--text-primary)' }}>
+          {formatRubles(c.totalEarnedKopecks)}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <ModernTable<ReferralClientMaskedDomain>
+      title="Приведённые клиенты"
+      titleIcon={<Users className="h-4 w-4" />}
+      titleGrad={GRAD.teal}
+      columns={columns}
+      rows={clients}
+      getKey={(c) => c.clientCode}
+    />
   );
 }
 
-function badgeVariant(
-  s: ReferralClientStatus,
-): 'success' | 'warning' | 'secondary' {
-  if (s === 'active') return 'success';
+/**
+ * Плашка статуса клиента в стиле `StatusPill` (парные токены `STATUS_TONE`),
+ * но с осмысленной русской подписью (Активен / Ушёл / Не оплатил).
+ */
+function ClientStatusPill({ status }: { status: ReferralClientStatus }) {
+  const tone = STATUS_TONE[toneFromStatus(status)];
+  return (
+    <span
+      className="rounded-full px-3 py-1 text-xs font-medium"
+      style={{ color: tone.c, background: tone.bg }}
+    >
+      {clientStatusLabel(status)}
+    </span>
+  );
+}
+
+function toneFromStatus(s: ReferralClientStatus): 'ok' | 'warning' | 'risk' {
+  if (s === 'active') return 'ok';
   if (s === 'churned') return 'warning';
-  return 'secondary';
+  return 'warning';
 }

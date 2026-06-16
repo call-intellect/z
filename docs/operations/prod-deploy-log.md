@@ -71,6 +71,64 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧠 2026-06-15 — Помощник = единый мозг каналов: дедуп понимания/синтеза + единый промпт chat-v2 + таблицы (цепочка из 5 ТЗ)
+
+> Контракт: ветка `feature/dialog-chat-assistant-chain`, коммиты `3f63f7c1` (ТЗ#1 dialog-layer), `13b0cd9c`+`5e3498f9` (ТЗ#2A/2B chat-v2), `f49e7212` (ТЗ#3 concierge), `33ae43aa` (ТЗ#4 channels-sync), `4e9f1fec` (ТЗ#5 cabinet) + доп-фиксы `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move). ТЗ: `plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`, `plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`, `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`, `plans/tz/2026-06-11-assistant-channels-telegram-max.md` (синхр. каналов), `plans/tz/2026-06-15-cabinet-assistant-clone-selector.md`, `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/conversational-channels.md`, `02_architecture/module-map.md`, `01_projects/api-layer.md`, `01_projects/tracker.md`, `01_projects/frontend-pages.md`. Реестр флагов / крутилок — `docs/operations/feature-flags.md`.
+>
+> **Зачем для прода:** помощник перестаёт быть «вторым мозгом» — понимание запроса и синтез считаются ОДИН раз, внутри chat-v2 (убран дубль помощник↔chat-v2). chat-v2 переведён на один промпт-ответчик без режимов + человеческий русский контекст + умные таблицы как параллельный источник. Помощник — развилка + руки: `ask_chat_v2` терминальный, новые инструменты `create_task`/`search_tasks`/`ingest_note` вместо `search_knowledge`. Постановка задач из Telegram переведена на помощника (интенты `task`/`show_tasks` убраны из классификатора). В кабинете — селектор «помощник / клон должности» на `/chat`.
+>
+> **Миграций БД НЕТ.** **1 ENV удалена (`CONTEXTUALIZER_CONFIDENCE_MIN`).** **Новых флагов НЕТ** (kill-switch'и `ASSISTANT_CHANNEL_ROUTING_ENABLED` / `CONCIERGE_NATIVE_TOOLS_ENABLED` и пр. уже на проде). **3 seed-прогона AdminSetting (все в STEPS).** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (удалить 1, действий владельца не требует):** `CONTEXTUALIZER_CONFIDENCE_MIN` удалена из `env.schema.ts` (слитый dialog-layer убрал `ContextualizerService`/`ConfidenceEstimatorService`). Если она задана в прод-`.env` — можно удалить строку (лишняя ENV не ломает запуск; `EnvSchema` её больше не валидирует). Также формально мёртв `CONCIERGE_DIALOG_LAYER_ENABLED` (concierge больше не зовёт dialog-layer) — ничего не гейтит, удаление по желанию. Новых ENV нет.
+- **Шаг 1 — AdminSetting (новые крутилки, code-default есть — действий владельца НЕ требуют):** `dialog_layer.query_history_pairs` (4), `concierge.history_pairs` (4), `concierge.clarify_min_confidence` (80), `chat_v2.table_context_max_rows` (20), `chat_v2.table_context_max_tables` (2). Доезжают перепрогоном агрегатора (Шаг 7; уважает admin-override). Реестр — `docs/operations/feature-flags.md` §Крутилки.
+- **Шаг 4 — Prisma** — **миграций НЕТ** (новый эндпоинт `POST /me/tasks` использует существующие модели трекера). Регистрировать нечего.
+- **Шаг 7 — Seed (3 прогона AdminSetting, идемпотентные, все в STEPS, `phase:'seed-base'`):** `seed-admin-setting-dialog-layer.ts` (`dialog_layer.query_history_pairs=4`), `seed-admin-setting-concierge.ts` (`concierge.history_pairs=4` + `concierge.clarify_min_confidence=80`), `seed-admin-setting-chat-v2-tables.ts` (`chat_v2.table_context_max_rows=20` + `max_tables=2`). Прогон одним агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild** — обязателен (переписаны concierge/chat-v2/dialog-layer-сервисы и промпты, новый контроллер `POST /me/tasks`, удалены прежние промпты режимов, фронт — селектор клона): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **Telegram → ответ помощника:** написать боту вопрос «что у нас по проекту X?» → приходит текстовый ответ (через `ask_chat_v2`), не молчание;
+  - (б) **Telegram → задача себе:** написать «поставь задачу позвонить клиенту завтра» → помощник создаёт задачу через `create_task` (появляется в `GET /me/inbox` / «Мои задачи»), не уходит в free_note и не перехватывается старым классификатором;
+  - (в) **chat-v2 единым промптом:** `POST /api/v1/chat-v2/messages` (scope org) отвечает одним промптом без латиницы-кодов/английских тегов в выводе; при наличии умной таблицы с релевантными строками ответ опирается на «Данные из таблиц»;
+  - (г) Swagger `/api/docs` содержит `POST /api/v1/me/tasks`;
+  - (д) в логах backend нет ошибок инициализации от удалённых `ContextualizerService`/`ConfidenceEstimatorService` (модуль `dialog-layer` поднялся со слитым `query-understand`).
+
+#### Доп-фиксы поверх цепочки (2 коммита)
+
+> Контракт: та же ветка `feature/dialog-chat-assistant-chain`, коммиты `dfb82a6f` (Ф7 intent-questions), `b207743d` (issue-move-to-project). ТЗ: `plans/tz/2026-06-15-intent-questions-are-not-commitments.md`, `plans/tz/2026-06-15-issue-move-to-project.md`. second-brain: `01_projects/api-layer.md`, `01_projects/tracker.md`.
+
+- **Ф7 — вопросы/команды сотрудников ≠ кандидаты в задачи — ПРОД-ОПЕРАЦИЙ НЕТ.** Калибровка LLM-классификатора интента: константа `NOT_A_TASK_DISCRIMINATOR` в хвосте SYSTEM-промптов (`common.ts` → `telegram-task-parser.service.ts` главный источник + `tasks-unified.ts` встречи/ChatBox); ChatBox теперь пишет в `Task`, не в `IntakeIssue`. Промпт — code-fallback/registry (не seed). Миграций/ENV/seed/patch нет. `smoke-tasks-unified-battery.ts` — полевой smoke (в `apply-prod-deploy.ts` STEPS НЕ регистрируется). Достаточно `docker compose up -d --build backend`. **Smoke:** написать боту «какие у меня задачи?» → НЕ появляется кандидат в очереди «Кандидаты в задачи» (читается как вопрос/команда, не обещание).
+- **issue-move — перенос задачи в другой проект — МИГРАЦИЙ НЕТ** (новый эндпоинт `POST /api/v1/issues/:id/move` на существующих моделях `Issue`). RBAC `issue`/`write`; ре-аллокация `sequenceId`/`identifier`, ремап `state` по category, `board`=дефолт, `cycle`=null; запрет переноса задач с подзадачами; WS `IssueMovedToProjectEvent` + метрика `issue_moved_to_project_total`. Фронт: `ProjectPickerDialog` (`src/ui/tracker`) + строка «Проект · Перенести» в `IssueSidebar`. Seed/patch/backfill/ENV нет. **Rebuild backend+frontend:** `docker compose up -d --build backend frontend`. **Smoke:** (а) Swagger `/api/docs` содержит `POST /api/v1/issues/:id/move`; (б) перенос задачи из проекта «Входящие» в другой проект меняет её префикс/`identifier` на целевой, она исчезает из «Входящих» и появляется в целевом проекте.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 🛠️ 2026-06-14 — Мастер-фиксы кабинета: рефералка + хаб «Оцифровано» (A/B/C)
+
+> Контракт: ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb` (8 коммитов). ТЗ: `plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (части A/B/C). second-brain: `01_projects/director-dashboard.md`, `01_projects/api-layer.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md`.
+>
+> **Зачем для прода:** доработка кабинета по итогам аудита. (A) светлая тема доведена до конца — тема-зависимые токены поверхностей вместо белых оверлеев в modern-примитивах и ~24 файлах кабинета; ack «✓ Записано в память компании» на чек-ине; бейдж «Спросил руководитель» в Ленте Коры; синхронизация `/intake` с очередью решений; виджет «Висят без ответа ≥3 дней» на /week; CSV-экспорт «Скачать для планёрки»; merge отделов переносит FK (Metric/Interaction/OrgUnit/Entity); петля next-step→Issue с `IntakeIssue.sourceBlockIds`. (B) пункт меню «Партнёрка» (/referrals) вернулся в кабинет, persistent role-баннер «N из 3» вместо промо-полоски, редизайн кабинета рефералки на modern/, новый эндпоинт прогресса вознаграждения. (C) пункт меню «Оцифровано» (/regulations) — хаб с 4 типами норм + вкладкой шаблонов процессов + провенанс-цитатами + summary-виджетом на «Сегодня».
+>
+> **1 миграция (авто, аддитивная колонка).** **3 новых ENV (все с дефолтами — действий владельца НЕ требуют).** **Seed/patch/backfill новых нет.** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (3 новых, рабочие дефолты — действий владельца НЕ требуют):**
+  - `DASHBOARD_THEME_SILENCE_ENABLED` (zBool default `true`) — kill-switch детектора молчащих тем (оживлён: раньше флаг был мёртв). Аварийный откат: `=false` в `.env` + рестарт → cron `theme-silence-detector` no-op.
+  - `DASHBOARD_THEME_SILENCE_WEEKS` (int default `3`) — порог недель молчания темы (раньше — только AdminSetting `dashboard.theme_silence_weeks`; ENV даёт прод-fallback).
+  - `USE_APPOINTMENT_FOR_PERSON_ROLES` (zBool default `false`) — флаг миграции источника ролей `PersonRole`→`Appointment` (`persons.service` читает `cfg.persons.useAppointment`). Дефолт OFF — поведение не меняется до явного перевода. Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting** — новых ключей нет (ENV-флаги Шага 1 имеют code-default).
+- **Шаг 4 — Prisma** — **обязательно, авто** (миграция `20260614110154_add_intake_source_block_ids`, аддитивная, без потери данных, `prisma migrate deploy` в migrate-контейнере на `docker compose up`): `ALTER TABLE "IntakeIssue" ADD COLUMN "sourceBlockIds" TEXT[] DEFAULT ARRAY[]::TEXT[]` (петля next-step→Issue→DecisionTaskLink('derived')). Backfill НЕ нужен (default `ARRAY[]` = пустой массив для существующих строк). **В STEPS агрегатора регистрировать НЕ нужно** (миграция схемы, не seed/patch/backfill).
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новая миграция в PrismaClient, новые контроллеры/эндпоинты, новые ENV, фронт — новые пункты меню + редизайн `/referrals` + хаб `/regulations`): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит новые эндпоинты: `GET /api/v1/referrals/me/reward-progress`, `GET /api/v1/regulations/:id/sources`, `GET /api/v1/regulations/summary`;
+  - (б) `GET /api/v1/referrals/me/reward-progress` отдаёт `{hasProfile, activePaying, targetClients, monthlyEarnedKopecks}` (не 500);
+  - (в) `GET /api/v1/regulations/summary` отдаёт счётчики по 4 типам норм; `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты;
+  - (г) меню кабинета содержит пункты «Партнёрка» (/referrals) и «Оцифровано» (/regulations); `/policies` редиректит на `/regulations?kind=policy`; дубля `/processes` в меню нет;
+  - (д) светлая тема: в кабинете (modern-примитивы, /referrals, хаб) нет «светлое-на-светлом» от белых оверлеев — фон поверхностей берётся из тема-токенов.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🗂️ 2026-06-13 — Редизайн кабинета: ритмы (Сегодня/Неделя/Месяц) + очередь решений + Лента Коры (Ф0–Ф10)
 
 > Контракт: ветка `feature/cabinet-redesign-rhythms`, 23 коммита. ТЗ: `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10). second-brain: `05_история/2026-06-13-cabinet-redesign-implementation.md`, `01_projects/director-dashboard.md`. Реестр флагов — `docs/operations/feature-flags.md`.

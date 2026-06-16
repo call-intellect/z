@@ -17,6 +17,8 @@ import rehypeSanitize from 'rehype-sanitize';
 import useSWR from 'swr';
 
 import { ApiError } from '@/api/api-error';
+import { IDEA_STATUS_LABEL, type IdeaStatus } from '@/domain/idea';
+import { INSIGHT_KIND_LABEL, type InsightKind } from '@/domain/insight';
 import {
   weeklyDigestApi,
   type WeeklyDeltaApi,
@@ -117,8 +119,8 @@ export function WeeklyDigestClient({
         <button
           type="button"
           onClick={() => goToWeek(prevWeek)}
-          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/5"
-          style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)]"
+          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
         >
           ← Прошлая неделя
         </button>
@@ -138,8 +140,8 @@ export function WeeklyDigestClient({
           type="button"
           onClick={() => goToWeek(nextWeek)}
           disabled={nextWeekDisabled}
-          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-white/5 disabled:opacity-40"
-          style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+          className="rounded-full px-3 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-40"
+          style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
         >
           Следующая неделя →
         </button>
@@ -394,7 +396,7 @@ function GoalStat({
   return (
     <div
       className="rounded-2xl p-3"
-      style={{ background: 'oklch(1 0 0 / 0.04)' }}
+      style={{ background: 'var(--surface-inset)' }}
     >
       <div
         className="text-2xl font-semibold leading-none tabular-nums"
@@ -490,9 +492,9 @@ function InsightsSection({
               <UrgencyDot tone={tone} title={URGENCY_TITLE[tone]} />
               <span
                 className="rounded px-2 py-0.5 text-xs"
-                style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+                style={{ background: 'var(--surface-inset)', color: CHART.dim }}
               >
-                {it.kind}
+                {insightKindLabelRu(it.kind)}
               </span>
               <span className="flex-1" style={{ color: CHART.text }}>
                 {it.statement}
@@ -680,8 +682,8 @@ function OpenLink({ href }: { href: string }) {
   return (
     <Link
       href={href}
-      className="rounded-full px-2 py-0.5 text-xs transition-colors hover:bg-white/5"
-      style={{ color: CHART.dim, border: '1px solid oklch(1 0 0 / 0.1)' }}
+      className="rounded-full px-2 py-0.5 text-xs transition-colors hover:bg-[var(--surface-hover)]"
+      style={{ color: CHART.dim, border: '1px solid var(--border-inset)' }}
     >
       Открыть
     </Link>
@@ -846,7 +848,7 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
         <CardTitle icon={<TrendingUp size={16} />} grad={GRAD.blue}>
           Прогноз на следующую неделю
         </CardTitle>
-        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'oklch(1 0 0 / 0.04)' }}>
+        <div className="mt-4 rounded-2xl p-6 text-center" style={{ background: 'var(--surface-inset)' }}>
           <p className="text-sm font-medium" style={{ color: CHART.dim }}>
             Пока недостаточно данных для прогноза
           </p>
@@ -878,12 +880,12 @@ function ForecastSection({ items }: { items: WeeklyForecastItemApi[] }) {
             <li
               key={f.metric}
               className="rounded-xl p-3 text-sm"
-              style={{ background: 'oklch(1 0 0 / 0.04)' }}
+              style={{ background: 'var(--surface-inset)' }}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className="rounded px-2 py-0.5 text-[11px]"
-                  style={{ background: 'oklch(1 0 0 / 0.06)', color: CHART.dim }}
+                  style={{ background: 'var(--surface-inset)', color: CHART.dim }}
                 >
                   {forecastMetricLabel(f.metric)}
                 </span>
@@ -970,26 +972,22 @@ function IdeasSection({
   );
 }
 
-/** ТЗ-2 Ф3 — русские лейблы статуса идеи. */
+/**
+ * ТЗ-2 Ф3 — русский лейбл статуса идеи. Переиспользуем единый словарь
+ * `IDEA_STATUS_LABEL` (frontend/src/domain/idea.ts); типобезопасно страхуем
+ * неизвестные значения (API отдаёт `status: string`).
+ */
 function ideaStatusLabel(status: string): string {
-  switch (status) {
-    case 'captured':
-      return 'зафиксирована';
-    case 'in_discussion':
-      return 'в обсуждении';
-    case 'accepted':
-      return 'принята';
-    case 'in_progress':
-      return 'в работе';
-    case 'shipped':
-      return 'внедрена';
-    case 'rejected':
-      return 'отклонена';
-    case 'archived':
-      return 'в архиве';
-    default:
-      return status;
-  }
+  return IDEA_STATUS_LABEL[status as IdeaStatus] ?? status;
+}
+
+/**
+ * Русский лейбл типа сигнала. Переиспользуем единый словарь
+ * `INSIGHT_KIND_LABEL` (frontend/src/domain/insight.ts); API отдаёт
+ * `kind: string`, поэтому страхуем неизвестные значения fallback'ом.
+ */
+function insightKindLabelRu(kind: string): string {
+  return INSIGHT_KIND_LABEL[kind as InsightKind] ?? kind;
 }
 
 /**

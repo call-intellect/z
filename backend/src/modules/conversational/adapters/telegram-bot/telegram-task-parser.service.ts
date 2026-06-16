@@ -10,6 +10,7 @@ import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import {
   withInjectionGuard,
+  withNotATaskDiscriminator,
   wrapUserData,
 } from '../../../ai/services/prompts/common';
 import { LlmRouterService } from '../../../ai/services/llm-router.service';
@@ -682,7 +683,10 @@ export class TelegramTaskParserService {
         : '- "sourceQuote": фрагмент исходного текста, на котором ты основал title (для аудита).';
 
     // SYSTEM без `today` — дата приходит в user-блоке (cache-friendly, F1).
-    const system = `Ты — AI-парсер задач из Telegram-бота. ${sourceLine}
+    // Ф7 (интент): негативный класс «не задача» приклеивается в КОНЕЦ system
+    // (стабильная константа, кэш не страдает). Покрывает обе ветки own/forward —
+    // билдер общий, поэтому одного места достаточно.
+    const system = withNotATaskDiscriminator(`Ты — AI-парсер задач из Telegram-бота. ${sourceLine}
 ${titleLine}
 ${assigneeLine}
 - "suggestedDueDate": дата в формате YYYY-MM-DD, если упомянуто (сегодня / завтра / 24 мая / в пятницу). Дата «сегодня» передана в сообщении пользователя ниже. Если не упомянуто — null.
@@ -691,7 +695,7 @@ ${assigneeLine}
 ${confidenceLine}
 ${quoteLine}
 
-Не выдумывай. Что не указано в тексте — null.`;
+Не выдумывай. Что не указано в тексте — null.`);
 
     const ctxBlock = formatOrgContext(args.ctx);
     const sourceHeader = args.mode === 'forward' ? 'Форвард' : 'Сообщение пользователя';

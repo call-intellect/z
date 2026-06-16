@@ -9,16 +9,21 @@ import {
   Users,
   Layers,
   CornerUpRight,
+  FolderInput,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   ISSUE_PRIORITY_LABELS,
   dueDateLabel,
   type Issue,
 } from '@/domain/tracker';
 import { issuesApi } from '@/api/tracker/issues.api';
+import { humanizeApiError } from '@/api/api-error';
+import { useProjects } from '@/hooks/tracker/useProjects';
 import { IssuePriorityIcon } from './IssuePriorityIcon';
 import { AssigneeAvatarGroup } from './AssigneeAvatar';
 import { StartMeetingButton } from './StartMeetingButton';
+import { ProjectPickerDialog } from './ProjectPickerDialog';
 
 /**
  * IssueSidebar — правая колонка карточки задачи: исполнители, приоритет,
@@ -27,9 +32,15 @@ import { StartMeetingButton } from './StartMeetingButton';
 export function IssueSidebar({
   issue,
   orgId,
+  onMoved,
 }: {
   issue: Issue;
   orgId: string;
+  /**
+   * Перенос задачи в другой проект сменил identifier/projectId — родитель
+   * должен перезагрузить карточку (и при необходимости URL/breadcrumb).
+   */
+  onMoved?: () => void;
 }) {
   const due = dueDateLabel(issue.dueDate);
 
@@ -37,6 +48,10 @@ export function IssueSidebar({
     <aside className="flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated p-4 text-sm">
       <Row icon={<Users size={14} />} label="Исполнители">
         <AssigneeAvatarGroup userIds={issue.assigneeUserIds} max={6} size={22} />
+      </Row>
+
+      <Row icon={<FolderInput size={14} />} label="Проект">
+        <ProjectMoveRow issue={issue} orgId={orgId} onMoved={onMoved} />
       </Row>
 
       <Row icon={<IssuePriorityIcon priority={issue.priority} />} label="Приоритет">
@@ -175,6 +190,75 @@ function ParentTaskSelector({ issue, orgId }: { issue: Issue; orgId: string }) {
       {errorText ? (
         <span className="text-[10px] text-danger">{errorText}</span>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * ProjectMoveRow — текущий проект задачи + кнопка «Перенести» (2026-06-15,
+ * plans/tz/2026-06-15-issue-move-to-project.md).
+ *
+ * Открывает переиспользуемый ProjectPickerDialog (исключая текущий проект) →
+ * issuesApi.move. Перенос меняет identifier/projectId, поэтому после успеха
+ * зовём onMoved (родитель перезагружает карточку). Ошибки — через
+ * humanizeApiError + тост.
+ */
+function ProjectMoveRow({
+  issue,
+  orgId,
+  onMoved,
+}: {
+  issue: Issue;
+  orgId: string;
+  onMoved?: () => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [moving, setMoving] = useState(false);
+  // Имя текущего проекта для отображения (список проектов уже кэшируется SWR).
+  const { projects } = useProjects(orgId);
+  const currentProject = projects.find((p) => p.id === issue.projectId) ?? null;
+  const currentLabel = currentProject?.name ?? issue.projectId;
+
+  const handlePick = async (targetProjectId: string): Promise<void> => {
+    if (moving) return;
+    setPickerOpen(false);
+    setMoving(true);
+    try {
+      await issuesApi.move(orgId, issue.id, targetProjectId);
+      toast.success('Задача перенесена в другой проект.');
+      onMoved?.();
+    } catch (e) {
+      toast.error(
+        `Не удалось перенести задачу: ${humanizeApiError(e, 'попробуйте ещё раз')}`,
+        { duration: 5000 },
+      );
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-fg-primary">
+        {currentLabel}
+      </span>
+      <button
+        type="button"
+        className="shrink-0 text-xs text-accent hover:underline disabled:opacity-50"
+        onClick={() => setPickerOpen(true)}
+        disabled={moving}
+      >
+        {moving ? 'Переносим…' : 'Перенести'}
+      </button>
+      <ProjectPickerDialog
+        orgId={orgId}
+        open={pickerOpen}
+        excludeProjectId={issue.projectId}
+        title="Перенести задачу"
+        description="Выберите проект, в который перенести задачу. У задачи сменится код (идентификатор)."
+        onClose={() => setPickerOpen(false)}
+        onPick={(projectId) => void handlePick(projectId)}
+      />
     </div>
   );
 }

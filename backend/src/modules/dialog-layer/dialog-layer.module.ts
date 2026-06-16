@@ -2,8 +2,6 @@ import { Global, Module } from '@nestjs/common';
 
 import { AnswerCacheService } from './services/answer-cache.service';
 import { CacheInvalidationService } from './services/cache-invalidation.service';
-import { ConfidenceEstimatorService } from './services/confidence-estimator.service';
-import { ContextualizerService } from './services/contextualizer.service';
 import { DialogService } from './services/dialog.service';
 import { MultiQueryExpansionService } from './services/multi-query-expansion.service';
 import { QueryClassifierService } from './services/query-classifier.service';
@@ -30,8 +28,6 @@ import { ConversationSummarizerCron } from './workers/conversation-summarizer.cr
 @Global()
 @Module({
   providers: [
-    ContextualizerService,
-    ConfidenceEstimatorService,
     QueryClassifierService,
     QueryPlanExtractorService,
     MultiQueryExpansionService,

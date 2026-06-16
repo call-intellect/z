@@ -8,8 +8,6 @@ import {
   AnswerCacheService,
   type AnswerCacheEntry,
 } from './answer-cache.service';
-import { ConfidenceEstimatorService } from './confidence-estimator.service';
-import { ContextualizerService } from './contextualizer.service';
 import {
   MultiQueryExpansionService,
 } from './multi-query-expansion.service';
@@ -24,15 +22,22 @@ import {
 } from './query-plan-extractor.service';
 
 /**
- * SBA α-5 dialog-layer — DialogService (фасад).
+ * dialog-layer — DialogService (фасад). ТЗ 2026-06-14 (слитый «модуль
+ * понимания запроса»).
  *
  * Препроцессор между ChatV2OrchestrationService.ask() и knowledge-core
- * ChatV2Service.ask(). См. plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md.
+ * ChatV2Service.ask(). Новый порядок process():
+ *   loadContext → classify(сырая реплика) → answerCache(сырая)
+ *   → multiQuery.expand(сырая+summary+history → 3 самодостаточных вопроса)
+ *   → queryPlan.extract(3 вопроса без оригинала → объединённый план).
+ *
+ * Контекстуализатор (№1) и оценщик уверенности (№2) удалены — их работу
+ * полностью покрывает слитый шаг multiQuery.expand (history-aware).
  *
  * Возвращает:
- *  - standaloneQuestion (контекстуализация + fallback на raw если confidence низкий);
- *  - intent (classifier);
- *  - queries[] (originalOrStandalone + multi-query expansion для exploratory/analytical);
+ *  - standaloneQuestion (= сырая реплика; раскрытие сущностей теперь внутри expand);
+ *  - intent (classifier по сырой реплике);
+ *  - queries[] (originalQuestion + 3 самодостаточных формулировки);
  *  - cachedAnswer (если AnswerCache hit — pipeline возвращает ответ без вызова retrieval+LLM).
  *
  * При feature-flag `DIALOG_LAYER_ENABLED=false` — `process()` сразу
@@ -55,7 +60,10 @@ export interface DialogProcessResult {
   standaloneQuestion: string;
   intent: DialogIntent;
   queries: string[];
-  /** Уверенность контекстуализации (0..1). 1.0 если не было LLM-вызова. */
+  /**
+   * DEPRECATED (ТЗ 2026-06-14): оценщик уверенности удалён. Поле сохранено для
+   * совместимости потребителей (chat-v2 / concierge) — всегда 1.0.
+   */
   confidence: number;
   /** Если ответ найден в AnswerCache — возвращаем его без вызова retrieval+LLM. */
   cachedAnswer: AnswerCacheEntry | null;
@@ -63,7 +71,11 @@ export interface DialogProcessResult {
   queryPlan?: QueryPlanResult | null;
   /** Query Understanding Волна 1 — резолвнутые структурные фильтры для recall-safe ретрива (Ф3). null если фильтровать нечем. */
   structuralFilters?: StructuralRetrievalFilters | null;
-  /** Длительности шагов в секундах (для observability и admin-debug). */
+  /**
+   * Длительности шагов в секундах (для observability и admin-debug).
+   * `contextualize`/`confidence` сохранены для совместимости — всегда 0
+   * (агенты удалены, ТЗ 2026-06-14).
+   */
   steps: {
     contextualize: number;
     confidence: number;
@@ -80,10 +92,6 @@ export class DialogService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-    @Inject(ContextualizerService)
-    private readonly contextualizer: ContextualizerService,
-    @Inject(ConfidenceEstimatorService)
-    private readonly confidence: ConfidenceEstimatorService,
     @Inject(QueryClassifierService)
     private readonly classifier: QueryClassifierService,
     @Inject(MultiQueryExpansionService)
@@ -119,57 +127,50 @@ export class DialogService {
       };
     }
 
-    // 1. Загружаем summary + последние N сообщений диалога (для контекстуализации).
+    // Сырая реплика — больше нет отдельного контекстуализатора/оценщика.
+    // Раскрытие сущностей («это/он/там» → имена из истории) теперь внутри
+    // multiQuery.expand (слитый «модуль понимания запроса»).
+    const question = input.userMessage;
+
+    // 1. Загружаем summary + последние N сообщений диалога — кормят expand.
     const { summary, history } = await this.loadConversationContext(
       input.conversationId,
     );
 
-    // 2. Contextualize.
-    const ctx = await this.contextualizer.contextualize({
+    // 2. Classify по СЫРОЙ реплике (для выбора режима ответа + бот-интентов;
+    //    эвристики работают по сырому тексту).
+    const cls = await this.classifier.classify({
       tenantId: input.tenantId,
       userId: input.userId,
-      question: input.userMessage,
-      summary,
-      history,
+      question,
       conversationId: input.conversationId,
     });
 
-    // 3. Confidence (только если standalone != original).
-    const conf = await this.confidence.estimate({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      originalQuestion: input.userMessage,
-      standaloneQuestion: ctx.standaloneQuestion,
-      conversationId: input.conversationId,
-    });
-
-    // Если confidence низкий — fallback на raw userMessage. Это критично:
-    // плохая переформулировка может радикально изменить retrieval.
-    const finalQuestion = conf.shouldFallback
-      ? input.userMessage
-      : ctx.standaloneQuestion;
-
-    // 4. AnswerCache lookup ДО classifier/multi-query — самый быстрый
-    //    путь. Ключ — по итоговому standalone (с учётом fallback'а).
+    // 3. AnswerCache lookup по сырой реплике — самый быстрый путь.
     const cachedAnswer = await this.answerCache.get({
       tenantId: input.tenantId,
       userId: input.userId,
-      standaloneQuestion: finalQuestion,
+      standaloneQuestion: question,
       scope: input.scope,
       scopeRefId: input.scopeRefId,
       validAt: input.validAt,
     });
 
-    // 5. Classify (нужен для решения по multi-query + для mode-prompt'а).
-    const cls = await this.classifier.classify({
+    // 4. MultiQuery = слитый «модуль понимания запроса». Кормим сырой
+    //    репликой + summary + история → 3 самодостаточных вопроса.
+    const mq = await this.multiQuery.expand({
       tenantId: input.tenantId,
       userId: input.userId,
-      question: finalQuestion,
+      question,
+      intent: cls.intent,
+      summary,
+      history,
       conversationId: input.conversationId,
     });
 
-    // 5b. Query Understanding Волна 1 — извлечение структуры запроса (под
-    // флагом, fail-open). Результат не нужен multiQuery — считаем независимо.
+    // 5. Query Understanding Волна 1 — извлечение структуры запроса ПОСЛЕ
+    //    expand и по ТРЁМ формулировкам (без оригинала: имена/темы живут в
+    //    истории и раскрываются только расширителем). Под флагом, fail-open.
     let queryPlan: QueryPlanResult | null = null;
     let structuralFilters: StructuralRetrievalFilters | null = null;
     if (this.cfg.dialogLayer.queryPlanExtractionEnabled) {
@@ -179,10 +180,14 @@ export class DialogService {
           where: { id: input.tenantId },
           select: { timezone: true },
         });
+        // Извлекателю — 3 самодостаточных формулировки БЕЗ оригинала. Если
+        // expand вернул только оригинал (выключен/упал) — отдаём что есть.
+        const planQuestions =
+          mq.queries.length > 1 ? mq.queries.slice(1) : [...mq.queries];
         const plan = await this.queryPlanExtractor.extract({
           tenantId: input.tenantId,
           userId: input.userId,
-          question: finalQuestion,
+          questions: planQuestions,
           todayIso,
           orgTimezone: org?.timezone ?? null,
           conversationId: input.conversationId,
@@ -207,15 +212,6 @@ export class DialogService {
       }
     }
 
-    // 6. MultiQuery (только для exploratory/analytical).
-    const mq = await this.multiQuery.expand({
-      tenantId: input.tenantId,
-      userId: input.userId,
-      question: finalQuestion,
-      intent: cls.intent,
-      conversationId: input.conversationId,
-    });
-
     const totalSeconds = (Date.now() - totalStart) / 1000;
     this.metrics.observeDialogProcessingDuration({
       step: 'total',
@@ -224,16 +220,17 @@ export class DialogService {
 
     return {
       enabled: true,
-      standaloneQuestion: finalQuestion,
+      standaloneQuestion: question,
       intent: cls.intent,
       queries: mq.queries,
-      confidence: conf.confidence,
+      // Оценщик уверенности удалён (ТЗ 2026-06-14) — поле сохранено = 1.0.
+      confidence: 1.0,
       cachedAnswer,
       queryPlan,
       structuralFilters,
       steps: {
-        contextualize: ctx.durationSeconds,
-        confidence: conf.durationSeconds,
+        contextualize: 0,
+        confidence: 0,
         classify: cls.durationSeconds,
         multiQuery: mq.durationSeconds,
         total: totalSeconds,
@@ -242,10 +239,11 @@ export class DialogService {
   }
 
   /**
-   * Загружает summary + последние N сообщений для контекстуализации.
-   * Окно — `summarizerKeepLast` (default 6) последних сообщений
-   * (без текущего user-message, который ещё не записан в БД на момент
-   * вызова process()).
+   * Загружает summary + последние N сообщений диалога для контекстуализации
+   * follow-up'ов модулем понимания запроса. Глубина — крутилка AdminSetting
+   * `dialog_layer.query_history_pairs` (пар сообщений, дефолт 4 → 8 сообщений);
+   * НЕ `summarizerKeepLast` (им владеет крон-суммаризатор). Окно без текущего
+   * user-message (он ещё не записан в БД на момент вызова process()).
    */
   private async loadConversationContext(
     conversationId: string | null,
@@ -256,7 +254,12 @@ export class DialogService {
     if (!conversationId) {
       return { summary: null, history: [] };
     }
-    const keepLast = this.cfg.dialogLayer.summarizerKeepLast;
+    const pairs = await this.cfg.getDynamic<number>(
+      'dialog_layer.query_history_pairs',
+      undefined,
+      4,
+    );
+    const keepLast = Math.max(0, pairs) * 2;
     const conv = await this.prisma.chatV2Conversation.findUnique({
       where: { id: conversationId },
       select: { summary: true },

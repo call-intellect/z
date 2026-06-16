@@ -100,7 +100,7 @@ export function TeamCapacityWidget() {
                   </div>
                   <div
                     className="h-1.5 w-full overflow-hidden rounded-full"
-                    style={{ background: 'oklch(1 0 0 / 0.08)' }}
+                    style={{ background: 'var(--surface-inset-strong)' }}
                   >
                     <div
                       className="h-full rounded-full"

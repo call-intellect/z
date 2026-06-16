@@ -84,7 +84,7 @@ export function ChronicBlockersWidget() {
               <li
                 key={b.id}
                 className="rounded-xl p-3"
-                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                style={{ background: 'var(--surface-inset)' }}
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="flex-1 text-sm">{b.representativeText}</span>

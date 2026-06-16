@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { ApiError } from '@/api/api-error';
 import {
@@ -88,7 +89,8 @@ export function MyCheckInsClient() {
             };
       await myCheckInsApi.create(body);
       setText('');
-      setSubmitMsg('Чек-ин сохранён');
+      setSubmitMsg('✓ Записано в память компании');
+      toast.success('✓ Записано в память компании');
       refresh();
     } catch (err: unknown) {
       setSubmitMsg(

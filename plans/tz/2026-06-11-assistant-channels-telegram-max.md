@@ -124,8 +124,11 @@ Acceptance-пример: вопрос из Telegram в 23:00 (тихие час�
 const CHANNEL_TOOL_WHITELIST_SELF = [
   'list_tasks', 'list_my_events', 'list_meetings',
   'create_event', 'create_meeting', 'find_free_slot',
-  'search_knowledge', 'ask_chat_v2',
-  /* + поставить задачу: см. Ф6 (create_issue, если нет — через существующий task-flow) */
+  'create_task', 'search_tasks', 'ingest_note', 'ask_chat_v2',
+  // СИНХРОНИЗАЦИЯ 2026-06-15 (ТЗ помощника 2026-06-14): search_knowledge УДАЛЁН
+  // (к памяти — только ask_chat_v2); create_task ставит задачу; search_tasks —
+  // поиск задач; ingest_note заносит заметку/идею в граф. search_tables НЕ нужен
+  // (поиск таблиц внутри chat_v2 — ТЗ 2026-06-15 §7).
 ];
 const CHANNEL_TOOL_WHITELIST_MANAGER = [
   ...CHANNEL_TOOL_WHITELIST_SELF,
@@ -134,6 +137,16 @@ const CHANNEL_TOOL_WHITELIST_MANAGER = [
 // Роль определяется по RBAC пользователя из ChannelBinding. RBAC всё равно гейтит каждый вызов —
 // whitelist лишь сужает то, что помощник ВИДИТ в канале (меньше attack surface).
 ```
+
+> **Синхронизация с ТЗ помощника (2026-06-14) и chat-v2 (2026-06-15), добавлено 2026-06-15.**
+> Две координации к Ф5, чтобы не было дублей:
+> 1. **free_note.** Когда Ф5 ON, свободная заметка идёт в помощника → инструмент
+>    `ingest_note` (он и подтверждает «записал в память»). Bridge-ack из Ф1 —
+>    это путь Ф5-OFF (fallback). Не слать ack дважды: при ON отвечает помощник.
+> 2. **task/show_tasks.** Удаление этих интентов из канального классификатора
+>    (решение ТЗ помощника §5: задачи делает инструмент `create_task`/`list_tasks`)
+>    кладётся ЭТИМ ЖЕ релизом вместе с Ф5 — раньше нельзя (сломается постановка
+>    задач из Telegram).
 
 ---
 

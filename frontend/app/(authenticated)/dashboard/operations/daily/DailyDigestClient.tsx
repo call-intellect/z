@@ -161,8 +161,8 @@ export function DailyDigestClient() {
         <button
           type="button"
           onClick={() => goToDate(prevDate)}
-          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-white/5"
-          style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
+          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)]"
+          style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
         >
           ← Предыдущий день
         </button>
@@ -177,15 +177,15 @@ export function DailyDigestClient() {
             max={today}
             onChange={(e) => goToDate(e.target.value)}
             className="rounded-xl bg-transparent px-2 py-1 text-sm"
-            style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
+            style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
           />
         </label>
         <button
           type="button"
           onClick={() => goToDate(nextDate)}
           disabled={nextDisabled}
-          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-white/5 disabled:opacity-50"
-          style={{ border: '1px solid oklch(1 0 0 / 0.1)', color: CHART.text }}
+          className="rounded-xl px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-hover)] disabled:opacity-50"
+          style={{ border: '1px solid var(--border-inset)', color: CHART.text }}
         >
           Следующий день →
         </button>
@@ -448,7 +448,7 @@ function DigestView(props: { data: DailyDigestDomain; rawApi: DailyDigestApi }) 
               <li
                 key={r.checkInId}
                 className="rounded-xl p-2.5"
-                style={{ background: 'oklch(1 0 0 / 0.04)' }}
+                style={{ background: 'var(--surface-inset)' }}
               >
                 <div className="text-xs" style={{ color: CHART.faint }}>
                   {r.personName ?? 'без имени'}
@@ -604,7 +604,7 @@ function UrgentItemsSection({
           <li key={`${item.kind}-${item.id}`}>
             <Link
               href={item.link}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-white/5"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
               <span className="flex items-center gap-2" style={{ color: CHART.text }}>
                 <span aria-hidden style={{ color: CHART.faint }}>
@@ -646,7 +646,7 @@ function EventsTimelineSection({
           <li key={`${item.kind}-${item.id}`}>
             <Link
               href={item.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
               <span
                 aria-hidden
@@ -664,7 +664,7 @@ function EventsTimelineSection({
               {item.detail ? (
                 <span
                   className="rounded-full px-2 py-0.5 text-[11px]"
-                  style={{ color: CHART.faint, background: 'oklch(1 0 0 / 0.06)' }}
+                  style={{ color: CHART.faint, background: 'var(--surface-inset)' }}
                 >
                   {item.detail}
                 </span>
@@ -693,7 +693,7 @@ function WhoShinedSection({
           <li key={`${p.reason}-${p.personId}`}>
             <Link
               href={p.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
               <span aria-hidden style={{ color: CHART.mint }}>★</span>
               <span className="font-medium" style={{ color: CHART.text }}>
@@ -737,7 +737,7 @@ function WhoStruggledSection({
           <li key={`${p.reason}-${p.personId}`}>
             <Link
               href={p.link}
-              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-white/5"
+              className="flex flex-wrap items-center gap-2 rounded-md p-2 text-sm hover:bg-[var(--surface-hover)]"
             >
               <span aria-hidden style={{ color: CHART.amber }}>⚑</span>
               <span className="font-medium" style={{ color: CHART.text }}>

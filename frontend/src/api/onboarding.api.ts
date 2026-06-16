@@ -8,7 +8,31 @@ export interface WelcomePatchBody {
   plannedFeatures?: string[];
 }
 
+/**
+ * QA B6 — прогресс «Настройка компании»: 6 вех «timestamp ИЛИ факт». Считается
+ * на бэке (отделы/должности, заведённые вне мастера, тоже зачитываются).
+ */
+export interface SetupProgressApi {
+  completed: number;
+  total: number;
+  steps: {
+    welcome: boolean;
+    companyInfo: boolean;
+    departments: boolean;
+    roles: boolean;
+    team: boolean;
+    firstActivity: boolean;
+  };
+}
+
 export const onboardingApi = {
+  /** GET /orgs/:orgId/setup-progress — прогресс настройки (timestamp ИЛИ факт) */
+  getSetupProgress: (orgId: string) =>
+    apiClient.get<SetupProgressApi>(
+      `/api/v1/orgs/${encodeURIComponent(orgId)}/setup-progress`,
+      { headers: { 'X-Org-Id': orgId } },
+    ),
+
   /** PATCH /orgs/:orgId/welcome — пошаговое сохранение Блока A */
   patchWelcome: (orgId: string, body: WelcomePatchBody) =>
     apiClient.patch<{ ok: true }>(`/api/v1/orgs/${encodeURIComponent(orgId)}/welcome`, body, {

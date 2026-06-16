@@ -2,13 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
+import type { SeatService } from '../../billing/services/seat.service';
 import type { InnLookupService } from '../../inn-lookup/inn-lookup.service';
 
 import {
   ReferralsService,
+  REFERRAL_MONTHLY_COMMISSION_KOPECKS,
   clientCodeFromLinkId,
   hasPayoutDetails,
 } from './referrals.service';
+
+/**
+ * Заглушка SeatService для тестов: `calculateMonthlyPriceKopecks(0)` отдаёт
+ * базовую месячную цену (6 000 000 коп. = 60 000 ₽ — code-fallback Z).
+ * Тесты, не трогающие getRewardProgress, его не вызывают.
+ */
+function makeSeats(baseMonthlyKopecks = 6_000_000): SeatService {
+  return {
+    calculateMonthlyPriceKopecks: vi.fn(async () => baseMonthlyKopecks),
+  } as unknown as SeatService;
+}
 
 /**
  * audit Б6 (2026-05-29) — спецификация на verifyInn:
@@ -46,6 +59,7 @@ describe('ReferralsService.verifyInn (audit Б6 + cabinet-revamp)', () => {
       prisma as unknown as PrismaService,
       innLookup as unknown as InnLookupService,
       metrics as unknown as BusinessMetricsService,
+      makeSeats(),
     );
   });
 
@@ -186,6 +200,7 @@ describe('ReferralsService.create (cabinet-revamp)', () => {
       prisma as unknown as PrismaService,
       innLookup as unknown as InnLookupService,
       metrics as unknown as BusinessMetricsService,
+      makeSeats(),
     );
   });
 
@@ -261,6 +276,7 @@ describe('ReferralsService.listClients (маскировка)', () => {
       prisma as unknown as PrismaService,
       innLookup as unknown as InnLookupService,
       metrics as unknown as BusinessMetricsService,
+      makeSeats(),
     );
   });
 
@@ -367,6 +383,7 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
       prisma as unknown as PrismaService,
       innLookup as unknown as InnLookupService,
       metrics as unknown as BusinessMetricsService,
+      makeSeats(),
     );
 
     const funnel = await svc.getFunnel('ref-1', '30d');
@@ -392,6 +409,7 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
       prisma as unknown as PrismaService,
       { lookup: vi.fn() } as unknown as InnLookupService,
       { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
+      makeSeats(),
     );
     const funnel = await svc.getFunnel('ref-1', '90d');
     expect(funnel.conversions.clickToSignupPercent).toBe(0);
@@ -419,6 +437,7 @@ describe('ReferralsService.getFunnel + getIncomeChart', () => {
       prisma as unknown as PrismaService,
       { lookup: vi.fn() } as unknown as InnLookupService,
       { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
+      makeSeats(),
     );
 
     const points = await svc.getIncomeChart('ref-1');
@@ -462,5 +481,93 @@ describe('hasPayoutDetails (file-scope helper)', () => {
     // На уровне Prisma JsonValue массив теоретически возможен,
     // но это не корректные реквизиты — считаем «не заполнено».
     expect(hasPayoutDetails({ payoutDetails: ['x'] })).toBe(false);
+  });
+});
+
+/**
+ * B2 — getRewardProgress для шкалы прогресса промо-баннера рефералки.
+ *   - pre-profile (профиля нет): hasProfile=false, activePaying=0,
+ *     monthlyEarnedKopecks=0, но targetClients посчитан (НЕ null).
+ *   - профиль с activePaying=2: hasProfile=true, monthlyEarnedKopecks =
+ *     2 × REFERRAL_MONTHLY_COMMISSION_KOPECKS.
+ *   - targetClients = ceil(baseMonthlyPriceKopecks / комиссия) = 3
+ *     при 60 000 ₽ / 20 000 ₽.
+ */
+describe('ReferralsService.getRewardProgress (B2)', () => {
+  it('pre-profile: профиля нет → hasProfile=false, нули, targetClients=3', async () => {
+    const prisma = {
+      referral: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const svc = new ReferralsService(
+      prisma as unknown as PrismaService,
+      { lookup: vi.fn() } as unknown as InnLookupService,
+      { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
+      makeSeats(6_000_000),
+    );
+
+    const progress = await svc.getRewardProgress('u-1');
+    expect(progress).toEqual({
+      hasProfile: false,
+      activePaying: 0,
+      targetClients: 3,
+      monthlyEarnedKopecks: 0,
+    });
+  });
+
+  it('профиль с activePaying=2 → hasProfile=true, monthlyEarnedKopecks=4 000 000, targetClients=3', async () => {
+    const prisma = {
+      referral: {
+        findUnique: vi
+          .fn()
+          // 1-й вызов — getByUserId(ownerUserId)
+          .mockResolvedValueOnce({ id: 'r-1', slug: 's' })
+          // 2-й вызов — getStats(referralId).findUnique(select slug)
+          .mockResolvedValueOnce({ slug: 's' }),
+      },
+      // Порядок Promise.all в getStats:
+      //   totalClients, payouts, activePaying, clicks30d,
+      //   signupsFromLinks, signupsFromOrgs, firstPayments30d.
+      clientReferralLink: {
+        count: vi
+          .fn()
+          .mockResolvedValueOnce(7) // totalClients
+          .mockResolvedValueOnce(2) // activePaying ← интересует нас
+          .mockResolvedValueOnce(0) // signupsFromLinks
+          .mockResolvedValueOnce(0), // firstPayments30d
+      },
+      referralPayout: { findMany: vi.fn().mockResolvedValue([]) },
+      referralAttribution: { count: vi.fn().mockResolvedValue(0) },
+      org: { count: vi.fn().mockResolvedValue(0) },
+    };
+    const svc = new ReferralsService(
+      prisma as unknown as PrismaService,
+      { lookup: vi.fn() } as unknown as InnLookupService,
+      { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
+      makeSeats(6_000_000),
+    );
+
+    const progress = await svc.getRewardProgress('u-1');
+    expect(progress).toEqual({
+      hasProfile: true,
+      activePaying: 2,
+      targetClients: 3,
+      monthlyEarnedKopecks: 2 * REFERRAL_MONTHLY_COMMISSION_KOPECKS,
+    });
+    expect(progress.monthlyEarnedKopecks).toBe(4_000_000);
+  });
+
+  it('targetClients самонастраивается от базовой цены (90 000 ₽ → 5)', async () => {
+    const prisma = {
+      referral: { findUnique: vi.fn().mockResolvedValue(null) },
+    };
+    const svc = new ReferralsService(
+      prisma as unknown as PrismaService,
+      { lookup: vi.fn() } as unknown as InnLookupService,
+      { incReferralInnMismatch: vi.fn() } as unknown as BusinessMetricsService,
+      makeSeats(9_000_000), // ceil(9 000 000 / 2 000 000) = 5
+    );
+
+    const progress = await svc.getRewardProgress('u-1');
+    expect(progress.targetClients).toBe(5);
   });
 });

@@ -48,7 +48,7 @@ export function MaturityWidget(props: { maturity: MaturitySnapshotDomain }) {
         </div>
         <p
           className="rounded-xl p-3 text-sm"
-          style={{ background: 'oklch(1 0 0 / 0.04)', color: CHART.dim }}
+          style={{ background: 'var(--surface-inset)', color: CHART.dim }}
         >
           Расчёт зрелости — каждое утро в 05:00 UTC. Проверьте позже.
         </p>
@@ -168,7 +168,7 @@ function ScoreRing({ percent }: { percent: number }) {
         cx={size / 2}
         cy={size / 2}
         r={radius}
-        stroke="oklch(1 0 0 / 0.1)"
+        stroke="var(--border-inset)"
         strokeWidth={stroke}
         fill="none"
       />

@@ -8,7 +8,7 @@
  *   - `getStats` — отдаёт `ReferralStatsExtendedApi` (5 legacy + 5 новых 30d полей).
  *   - `getIncomeChart` — 12 точек дохода + активных клиентов за 12 месяцев (§7.3).
  *   - `getFunnel` — воронка за период `30d | 90d | all` (§7.3).
- *   - `trackPromoEvent` — 204 No Content для `ReferralPromoStrip` (§8.3a).
+ *   - `trackPromoEvent` — 204 No Content для баннера партнёрской программы (§8.3a).
  */
 
 import { apiClient } from './api-client';
@@ -23,6 +23,7 @@ import type {
   ReferralPayoutApi,
   ReferralStatsExtendedApi,
   ReferralViewApi,
+  RewardProgressApi,
   UpdateReferralBody,
 } from './types/referrals';
 
@@ -60,6 +61,12 @@ export const referralsApi = {
   /** ТЗ §8.3a — трекинг событий промо-полосы. 204 No Content. */
   trackPromoEvent: (body: PromoEventBody) =>
     apiClient.post<void>(`${BASE}/me/promo-event`, body),
+  /**
+   * B2 — прогресс окупаемости подписки за счёт приведённых клиентов.
+   * Используется persistent-баннером `ReferralRewardBanner`.
+   */
+  getRewardProgress: () =>
+    apiClient.get<RewardProgressApi>(`${BASE}/me/reward-progress`),
 
   // ── Admin ──
   adminListReferrals: (params?: { limit?: number; offset?: number }) => {

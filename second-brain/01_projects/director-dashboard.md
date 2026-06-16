@@ -103,3 +103,17 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 - **Silence-детектор тем (Ф8.2/8.1):** `@Cron('theme-silence-detector')` → Insight за kill-switch `dashboard.theme_silence.enabled` (ON) + крутилка `dashboard.theme_silence_weeks` (3); decision auto-implement детерминированный.
 - **Прочее:** taskType `meeting-title` (авто-название встреч, DEFAULT-цепочка), поиск по памяти `/memory`, мастер дедупа отделов (`POST /departments/:id/merge`), гейт полноты обещаний (`/me/promises` split items/openQuestions), EventForm rrule/reminders.
 - **Светлая тема (Ф10):** тема-зависимые поверхности в `tokens.css`/`modern.css`/`tokens.ts` (корень контраста — был хардкод тёмного в `modern/tokens.ts`); визуальная доводка оттенков дата-виз на белом — за владельцем/qa (в `04_не-сделано`).
+
+## Мастер-фиксы кабинета (2026-06-14, ТЗ cabinet-master-fixes, часть A)
+
+Источник — `plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (часть A, ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb`). Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-14 — Мастер-фиксы кабинета»). Доводка кабинета по итогам аудита:
+- **A1 — светлая тема доведена до конца:** новые тема-зависимые токены `--surface-inset/-strong/-hover` + `--border-inset` в `frontend/src/ui/tokens.css` (обе темы); modern-примитивы и ~24 файла кабинета переведены с белых оверлеев (`oklch(1 0 0 /…)` + `hover:bg-white/5`) на тема-токены; гард-тест `frontend/src/ui/components/dashboard/modern/light-theme.guard.spec.ts`.
+- **A5 — ack чек-ина:** toast «✓ Записано в память компании» при отправке чек-ина.
+- **A6 — бейдж «Спросил руководитель»:** в Ленте Коры на `open_question` — поле `askedByManager` (резолв через `IdeaBlockEntity(role='subject')`→`Person`).
+- **A4 — `/intake` синхронизирован с очередью /actions** (snooze-aware `findAll`).
+- **A7 — cross-surface тест Б-2; valueStrip-счётчики кликабельны** (`Link`).
+- **A8 — виджет «Висят без ответа ≥3 дней»** (`StaleQuestionsWidget`) на /week.
+- **A9 — CSV-экспорт «Скачать для планёрки»** в weekly-per-person.
+- **A2 — merge отделов переносит FK** (Metric/Interaction/OrgUnit/Entity).
+- **A10 — петля next-step→Issue:** миграция `IntakeIssue.sourceBlockIds TEXT[]`, `DecisionTaskLink('derived')`.
+- (Виджет «Оцифровано» на «Сегодня» — `DigitizedSummary` — описан в части C, см. [[regulations]] §«Хаб "Оцифровано"».) `degraded`-деградация дашборда отражается в `VerdictBar`.

@@ -219,16 +219,12 @@ export type LlmTaskType =
   //   клона с persona v1 (baseline «только черты») vs v2 (все слои метода);
   //   оценивает ТОЛЬКО поведенческий ход. Дешёвый — flash.
   | 'persona-behavior-judge'
-  // SBA α-5 dialog-layer — препроцессор chat-v2 (Contextualizer / Confidence /
-  // Classifier / MultiQuery / Summarizer). См.
-  // plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md §9.
-  // - dialog-contextualize: восстановление standalone-вопроса из истории.
-  // - dialog-confidence: бинарная оценка качества контекстуализации.
+  // dialog-layer — препроцессор chat-v2 (Classifier / модуль понимания запроса
+  // / Summarizer). ТЗ 2026-06-14 (контекстуализатор + оценщик уверенности
+  // удалены — слиты в модуль понимания запроса dialog-multi-query).
   // - dialog-classify: intent ∈ {factual|exploratory|analytical|clone-roleplay}.
-  // - dialog-multi-query: 3 переформулировки (синонимы/перспективы/конкретизация).
+  // - dialog-multi-query: модуль понимания запроса — история → 3 самодостаточных вопроса.
   // - dialog-summarize: сжатие старой части диалога (>12 сообщений) в summary.
-  | 'dialog-contextualize'
-  | 'dialog-confidence'
   | 'dialog-classify'
   | 'dialog-multi-query'
   | 'dialog-summarize'
@@ -729,9 +725,7 @@ export const ALL_LLM_TASK_TYPES: readonly LlmTaskType[] = [
   'cdm-case-interview',
   // TZ clone-method ВАЛ.1 — LLM-judge поведенческой верности клона (clone-method ВАЛ.1), дешёвый — flash
   'persona-behavior-judge',
-  // SBA α-5 dialog-layer
-  'dialog-contextualize',
-  'dialog-confidence',
+  // dialog-layer (ТЗ 2026-06-14: контекстуализатор+оценщик слиты в dialog-multi-query)
   'dialog-classify',
   'dialog-multi-query',
   'dialog-summarize',

@@ -245,6 +245,13 @@ export class ChatV2OrchestrationService {
       queries: dialogResult.queries,
       validAt,
       structuralFilters: dialogResult.structuralFilters ?? null,
+      // ЧАСТЬ B (ТЗ 2026-06-15 §7) — обогащённое понимание для параллельной
+      // ветки умных таблиц: entityHints/aggregation из queryPlan, entityIds из
+      // резолвнутых structuralFilters. Если queryPlan не применился — пусто
+      // (ветка таблиц не запустится, граф отвечает как раньше).
+      tableEntityHints: dialogResult.queryPlan?.filters.entityHints ?? [],
+      tableEntityIds: dialogResult.structuralFilters?.entityIds ?? [],
+      tableAggregation: dialogResult.queryPlan?.filters.aggregation ?? false,
       conversationSummary: convSummary,
       // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
       // ChatDialogIntent (4 категории) для chat-v2 synthesis. Новые

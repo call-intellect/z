@@ -78,6 +78,12 @@ import { TablesService } from './services/tables.service';
     TablesService,
     TablesAutoProvisionService,
     TableAgentService,
+    // Chat-v2 как параллельный источник (ТЗ 2026-06-15 §7, ЧАСТЬ B) —
+    // экспортируем для knowledge-core ChatV2TableContextService (@Optional-инжект).
+    // chat_v2 ищет в умных таблицах параллельно с графом, переиспользуя
+    // parseSemanticFilter + applyFilterToRows. Если TablesModule не подключён
+    // (worker-процесс / частичная сборка) — @Optional даёт undefined, ветка []==.
+    TableSemanticFilterService,
     // Экспортируем для WorkersModule (TableSyncWorker) и для backfill-сценариев.
     TableSyncService,
     TableSyncQueueService,

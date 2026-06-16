@@ -6,7 +6,7 @@
  *   - `Referral.inn / legalForm` → nullable (§5.1).
  *   - `CreateReferralBody` — обязательный `contractAccepted`, остальное опционально (§7.6).
  *   - Расширенная статистика 30d, маскированные клиенты, income-chart, funnel (§7.3–7.4).
- *   - Промо-событие для трекинга `ReferralPromoStrip` (§8.3a).
+ *   - Промо-событие для трекинга баннера партнёрской программы (§8.3a).
  */
 
 export type ReferralLegalFormApi =
@@ -159,4 +159,23 @@ export interface FunnelApi {
 export interface PromoEventBody {
   type: ReferralPromoEventTypeApi;
   role: ReferralPromoRoleApi;
+}
+
+/**
+ * Прогресс окупаемости подписки за счёт приведённых клиентов (B2).
+ *
+ * `GET /api/v1/referrals/me/reward-progress`.
+ *
+ *   - `hasProfile` — есть ли у пользователя Referral-профиль.
+ *     Pre-profile → `{ hasProfile: false, activePaying: 0, targetClients: 3,
+ *     monthlyEarnedKopecks: 0 }`.
+ *   - `activePaying` — сколько приведённых компаний платят сейчас.
+ *   - `targetClients` — сколько нужно для окупаемости (дефолт 3).
+ *   - `monthlyEarnedKopecks` — текущий ежемесячный заработок партнёра.
+ */
+export interface RewardProgressApi {
+  hasProfile: boolean;
+  activePaying: number;
+  targetClients: number;
+  monthlyEarnedKopecks: number;
 }

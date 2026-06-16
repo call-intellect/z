@@ -53,6 +53,10 @@ import {
   type StartMeetingFromIssueResponseDto,
 } from '../dto/issues/start-meeting.dto';
 import {
+  MoveIssueSchema,
+  type MoveIssueDto,
+} from '../dto/issues/move-issue.dto';
+import {
   TransitionIssueStateSchema,
   type TransitionIssueStateDto,
 } from '../dto/issues/transition-state.dto';
@@ -203,6 +207,27 @@ export class IssuesController {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
     return this.svc.transitionState(id, body, t, user.id);
+  }
+
+  // ── move to another project ──
+
+  @Post('issues/:id/move')
+  @RequireSubscription()
+  @ApiOperation({
+    summary:
+      'Перенести задачу в другой проект (moved_to_project). ' +
+      'Атомарно переназначает identifier/sequenceId, ремапит статус по ' +
+      'категории и доску на дефолтную целевого проекта, сбрасывает спринт.',
+  })
+  async move(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(MoveIssueSchema)) body: MoveIssueDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<IssueResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.svc.moveToProject(id, body.targetProjectId, t, user.id);
   }
 
   // ── assignees ──

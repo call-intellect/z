@@ -91,6 +91,7 @@ function director(over: Partial<DirectorDashboardDomain> = {}): DirectorDashboar
       commitmentsKept: 9,
     },
     mainReworkEnabled: true,
+    degraded: false,
     ...over,
   };
 }

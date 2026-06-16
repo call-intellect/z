@@ -7,8 +7,8 @@ import { Loader2 } from 'lucide-react';
 import { ApiError } from '@/api/api-error';
 import { referralsApi } from '@/api/referrals.api';
 import { referralFromApi, type ReferralDomain } from '@/domain/referral';
+import { GlassCard } from '@/ui/components/dashboard/modern';
 import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
 import { Checkbox } from '@/ui/shadcn/checkbox';
 
 interface Props {
@@ -27,6 +27,7 @@ interface Props {
  *     валидирует через Zod `literal(true)` и фиксирует `contractAcceptedAt = now()`.
  *
  * Текст копи — ТЗ §9 (вариант 3, финальный).
+ * Редизайн B10: стеклянная обёртка `GlassCard`. Логику создания не трогаем.
  */
 export function CreateLinkCard({ onCreated }: Props) {
   const [agreed, setAgreed] = useState(false);
@@ -52,12 +53,12 @@ export function CreateLinkCard({ onCreated }: Props) {
   };
 
   return (
-    <Card className="space-y-5 p-6">
+    <GlassCard className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-fg-primary">
+        <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
           Получи ссылку прямо сейчас
         </h2>
-        <p className="mt-1 text-sm text-fg-secondary">
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
           Один клик — и ты можешь начать делиться. Реквизиты для вывода
           заполнишь, когда захочешь получить деньги.
         </p>
@@ -74,7 +75,10 @@ export function CreateLinkCard({ onCreated }: Props) {
           Создать ссылку
         </Button>
 
-        <label className="flex cursor-pointer items-start gap-2 text-sm text-fg-secondary">
+        <label
+          className="flex cursor-pointer items-start gap-2 text-sm"
+          style={{ color: 'var(--text-secondary)' }}
+        >
           <Checkbox
             checked={agreed}
             onCheckedChange={(v) => setAgreed(v === true)}
@@ -100,6 +104,6 @@ export function CreateLinkCard({ onCreated }: Props) {
           {error}
         </div>
       )}
-    </Card>
+    </GlassCard>
   );
 }

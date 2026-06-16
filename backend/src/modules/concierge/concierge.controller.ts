@@ -152,6 +152,12 @@ export class ConciergeController {
     conversationId: string;
     messageId: string | null;
     text: string;
+    /**
+     * ТЗ 2026-06-14 — цитаты chat-v2 при терминальном (passthrough)
+     * `ask_chat_v2`: на чистом вопросе к памяти ответ отдаётся напрямую с
+     * источниками. Отсутствует, когда turn не был чистым вопросом к памяти.
+     */
+    citations?: unknown[];
     toolCalls: Array<{
       toolName: string;
       ok: boolean;
@@ -178,6 +184,8 @@ export class ConciergeController {
     }> = [];
     let quotaExceeded: 'user_daily' | 'daily' | 'monthly' | undefined;
     let error: { code: string; message: string } | undefined;
+    // ТЗ 2026-06-14 — цитаты ask_chat_v2 passthrough (приходят в событии message).
+    let citations: unknown[] | undefined;
 
     for await (const event of this.concierge.process({
       userMessage: body.userMessage,
@@ -202,6 +210,9 @@ export class ConciergeController {
           break;
         case 'message':
           finalText = event.text;
+          if (event.citations && event.citations.length > 0) {
+            citations = event.citations;
+          }
           break;
         case 'done':
           messageId = event.messageId;
@@ -221,6 +232,7 @@ export class ConciergeController {
       conversationId,
       messageId,
       text: finalText,
+      ...(citations && citations.length > 0 ? { citations } : {}),
       toolCalls,
       ...(quotaExceeded ? { quotaExceeded } : {}),
       ...(error ? { error } : {}),

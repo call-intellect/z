@@ -47,6 +47,12 @@ export interface AskCloneResponseApi {
 export interface AskCloneRequestApi {
   question: string;
   conversationId?: string;
+  /**
+   * Раздел 7 (2026-06-16) — спросить КОНКРЕТНУЮ версию клона должности,
+   * в т.ч. `frozen`-снимок бывшего носителя. Без поля — отвечает текущий
+   * `active`-клон.
+   */
+  roleVersion?: number;
 }
 
 export interface SkillTraitApi {
@@ -179,7 +185,15 @@ export interface CloneVersionApi {
   roleId: string;
   version: number;
   publicName: string;
-  status: 'active' | 'superseded' | 'pending_rebuild';
+  /**
+   * Раздел 7 (2026-06-16) — добавлен `frozen`: снимок БЫВШЕГО носителя.
+   * Замороженные версии доступны для вопросов навсегда («совет бывших»).
+   */
+  status: 'active' | 'superseded' | 'pending_rebuild' | 'frozen';
+  /**
+   * Раздел 7 (2026-06-16) — ФИО носителя больше НЕ приходит (всегда null).
+   * UI показывает только publicName «Клон <Должность> v<N>».
+   */
   bearer: { personId: string; personName: string } | null;
   validFrom: string;
   validUntil: string | null;
@@ -191,6 +205,32 @@ export interface CloneHistoryResponseApi {
   roleId: string;
   roleName: string;
   versions: CloneVersionApi[];
+}
+
+// ─────────── Раздел 7 (2026-06-16) — «Совет бывших» ───────────
+
+/**
+ * Один ответ конкретной версии клона на общий вопрос.
+ * `response` = null при ошибке (тогда `error` заполнен).
+ */
+export interface AskFormerAnswerApi {
+  personaId: string;
+  version: number;
+  publicName: string;
+  status: 'active' | 'frozen';
+  response: AskCloneResponseApi | null;
+  error: string | null;
+}
+
+export interface AskAllFormersResponseApi {
+  roleId: string;
+  roleName: string;
+  question: string;
+  answers: AskFormerAnswerApi[];
+}
+
+export interface AskAllFormersRequestApi {
+  question: string;
 }
 
 // ─────────── ТЗ 2026-05-26 §2.7 + §9.4.7 — clone-conversations ───────────
@@ -287,6 +327,22 @@ export const clonesApi = {
   getCloneHistory: (orgId: string, roleId: string) =>
     apiClient.get<CloneHistoryResponseApi>(
       `/api/v1/clones/${encodeURIComponent(roleId)}/history`,
+      { headers: orgHeaders(orgId) },
+    ),
+
+  /**
+   * Раздел 7 (2026-06-16) — «Совет бывших»: один вопрос → ответы всех версий
+   * (active + frozen) клона должности рядом.
+   * Backend: `POST /api/v1/clones/roles/:roleId/ask-all-formers`.
+   */
+  askAllFormers: (
+    orgId: string,
+    roleId: string,
+    body: AskAllFormersRequestApi,
+  ) =>
+    apiClient.post<AskAllFormersResponseApi>(
+      `/api/v1/clones/roles/${encodeURIComponent(roleId)}/ask-all-formers`,
+      body,
       { headers: orgHeaders(orgId) },
     ),
 

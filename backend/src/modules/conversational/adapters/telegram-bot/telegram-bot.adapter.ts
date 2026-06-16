@@ -1440,8 +1440,8 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
         break;
     }
     // Ф2 — универсальная ветка ПЕРЕД default: любой payload с готовыми
-    // непустыми title+body (operations.weekly_digest, goals.pulse,
-    // operations.monthly_recap, proactive.notification и будущие типы).
+    // непустыми title+body (operations.weekly_digest, operations.daily_digest,
+    // goals.pulse, operations.monthly_recap, proactive.notification и будущие типы).
     // Ссылка оформлена как у meeting.invite — метка, затем URL строкой ниже.
     const genericTitle = (payload['title'] as string | undefined) ?? '';
     const genericBody = (payload['body'] as string | undefined) ?? '';

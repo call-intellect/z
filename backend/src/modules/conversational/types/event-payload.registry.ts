@@ -235,6 +235,22 @@ const OperationsWeeklyDigestPayloadSchema = z
   .strict();
 
 /**
+ * ТЗ coo-orphan-agents Ф8 — ежедневная сводка операционного директора.
+ * Payload Notification(eventType='operations.daily_digest'). Recipient — userId
+ * роли coo/owner. digestId → DailyOperationsDigest.id (drill-down
+ * `/dashboard/operations/daily?date=`).
+ */
+const OperationsDailyDigestPayloadSchema = z
+  .object({
+    digestId: z.string().min(1).max(80),
+    dateLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+/**
  * Goals OKR v2 Фаза 4 — еженедельный пульс целей.
  *
  * Payload `Notification(eventType='goals.pulse')`. Recipient — userId роли
@@ -443,6 +459,8 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['proactive.notification', ProactiveNotificationPayloadSchema],
   // SBA β-8.1 — недельная сводка операционного директора.
   ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
+  // ТЗ coo-orphan-agents Ф8 — ежедневная сводка COO.
+  ['operations.daily_digest', OperationsDailyDigestPayloadSchema],
   // Goals OKR v2 Фаза 4 — еженедельный пульс целей.
   ['goals.pulse', GoalsPulsePayloadSchema],
   // TZ-1 Фаза 5 (daily-value-engine) — месячная витрина value-recap.

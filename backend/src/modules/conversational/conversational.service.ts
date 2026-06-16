@@ -116,6 +116,10 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   // SBA β-8.1: недельная сводка операционного директора. Email уместен
   // (понедельник утром — типичное окно для разбора почты), in_app — fallback.
   'operations.weekly_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
+  // ТЗ coo-orphan-agents Ф8 — ежедневная сводка COO. Доставляется по умолчанию
+  // (Ship-On) во все каналы owner/coo; контроль — персональной галочкой
+  // (optOutEventTypes). Зеркало weekly_digest.
+  'operations.daily_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   // Goals OKR v2 Фаза 4: еженедельный пульс целей (пн утром). Те же каналы,
   // что и недельная сводка COO — email уместен, in_app fallback.
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],

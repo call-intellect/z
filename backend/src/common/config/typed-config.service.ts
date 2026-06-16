@@ -2159,8 +2159,8 @@ export class TypedConfigService {
       // SBA β-8.3 — ежедневный отчёт COO (статические fallback'и; в cron
       // используется `TypedConfigService.getDynamic` поверх AdminSetting).
       dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
-      dailyDigestDeliverToTelegram:
-        this.get('COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM') === true,
+      // ТЗ coo-orphan-agents Ф8 — поле dailyDigestDeliverToTelegram убрано:
+      // доставка по умолчанию (Ship-On), контроль персональной галочкой.
       dailyDigestHourUtc: Number(this.get('COO_DAILY_DIGEST_HOUR_UTC') ?? 22),
       // SBA β-8.2 — «Хранитель обещаний».
       commitmentFollowupEnabled:

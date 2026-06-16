@@ -11,8 +11,10 @@ import {
  *   - yesterdayInMoscow: вычисляет дату вчера в МСК.
  *   - runOnce: идемпотентность (повторный запуск не создаёт второй дайджест).
  *   - run: мастер-тумблер `operations.daily_digest.enabled=false` → no-op.
- *   - runOnce: deliverToTelegram=false → не шлёт уведомлений.
- *   - runOnce: deliverToTelegram=true → шлёт coo + owner, не admin.
+ *   - runOnce: доставка идёт по умолчанию (Ship-On) — шлёт coo + owner, не admin.
+ *
+ * ТЗ coo-orphan-agents Ф8: OFF-флаг deliver_to_telegram убран, доставка
+ * безусловна (контроль — персональной галочкой optOutEventTypes).
  */
 describe('OperationsDailyDigestCron', () => {
   function buildCron(overrides: {
@@ -20,7 +22,6 @@ describe('OperationsDailyDigestCron', () => {
     existingDigest?: unknown;
     memberships?: Array<{ userId: string }>;
     dynamicEnabled?: boolean;
-    dynamicDeliver?: boolean;
   }) {
     const prisma = {
       org: {
@@ -39,9 +40,6 @@ describe('OperationsDailyDigestCron', () => {
       getDynamic: vi.fn().mockImplementation((key: string) => {
         if (key === 'operations.daily_digest.enabled') {
           return Promise.resolve(overrides.dynamicEnabled ?? true);
-        }
-        if (key === 'operations.daily_digest.deliver_to_telegram') {
-          return Promise.resolve(overrides.dynamicDeliver ?? false);
         }
         return Promise.resolve(undefined);
       }),
@@ -92,27 +90,14 @@ describe('OperationsDailyDigestCron', () => {
     expect(yesterdayInMoscow(now)).toBe('2026-05-24');
   });
 
-  it('runOnce: deliverToTelegram=false → дайджест генерируется, но не шлётся', async () => {
+  it('runOnce: доставка по умолчанию → шлёт coo + owner и помечает delivered', async () => {
     const { cron, digestService, conversational } = buildCron({
       orgs: [{ id: 'org-1' }],
     });
     const now = new Date('2026-05-24T22:00:00Z');
-    const stats = await cron.runOnce({ now, deliverToTelegram: false });
+    const stats = await cron.runOnce({ now });
     expect(stats.digestsGenerated).toBe(1);
-    expect(stats.notificationsSent).toBe(0);
-    expect(digestService.getOrGenerate).toHaveBeenCalledOnce();
-    expect(conversational.sendNotification).not.toHaveBeenCalled();
-    expect(digestService.markDelivered).not.toHaveBeenCalled();
-  });
-
-  it('runOnce: deliverToTelegram=true → шлёт coo + owner и помечает delivered', async () => {
-    const { cron, digestService, conversational } = buildCron({
-      orgs: [{ id: 'org-1' }],
-    });
-    const now = new Date('2026-05-24T22:00:00Z');
-    const stats = await cron.runOnce({ now, deliverToTelegram: true });
-    expect(stats.digestsGenerated).toBe(1);
-    // 2 нотификации (coo + owner).
+    // 2 нотификации (coo + owner) — доставка безусловна (Ship-On).
     expect(conversational.sendNotification).toHaveBeenCalledTimes(2);
     expect(stats.notificationsSent).toBe(2);
     expect(digestService.markDelivered).toHaveBeenCalledOnce();
@@ -123,7 +108,7 @@ describe('OperationsDailyDigestCron', () => {
       orgs: [{ id: 'org-1' }],
     });
     const now = new Date('2026-05-24T22:00:00Z');
-    await cron.runOnce({ now, deliverToTelegram: true });
+    await cron.runOnce({ now });
     const call = prisma.membership.findMany.mock.calls[0]?.[0] as {
       where: { role: { in: string[] } };
     };
@@ -148,7 +133,7 @@ describe('OperationsDailyDigestCron', () => {
       },
     });
     const now = new Date('2026-05-24T22:00:00Z');
-    const stats = await cron.runOnce({ now, deliverToTelegram: true });
+    const stats = await cron.runOnce({ now });
     expect(stats.digestsSkippedAlreadyExists).toBe(1);
     expect(stats.digestsGenerated).toBe(0);
     expect(digestService.getOrGenerate).not.toHaveBeenCalled();
@@ -169,7 +154,6 @@ describe('OperationsDailyDigestCron', () => {
     const { cron, prisma } = buildCron({
       orgs: [{ id: 'org-1' }],
       dynamicEnabled: true,
-      dynamicDeliver: false,
     });
     await cron.run();
     expect(prisma.org.findMany).toHaveBeenCalledOnce();

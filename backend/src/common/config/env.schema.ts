@@ -1678,14 +1678,13 @@ const BetaOpsSchema = z.object({
   // SBA β-8.3 — ежедневный отчёт COO (`DailyOperationsDigest`).
   //   - COO_DAILY_DIGEST_ENABLED — мастер-флаг cron'а (ENV-fallback;
   //     основной источник — AdminSetting `operations.daily_digest.enabled`).
-  //   - COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM — тумблер рассылки в Telegram
-  //     (ENV-fallback; основной — AdminSetting `operations.daily_digest.deliver_to_telegram`).
-  //     Default false, чтобы Telegram не молотил сразу после раскатки.
   //   - COO_DAILY_DIGEST_HOUR_UTC — час cron'а в UTC (default 22 = 01:00 МСК).
   //     Cron статичен `@Cron('0 22 * * *')`; этот ENV — справочный и для
   //     возможного override-аннотации в будущем.
+  // ТЗ coo-orphan-agents Ф8: флаг COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM убран —
+  // доставка по умолчанию (Ship-On), контроль персональной галочкой
+  // (optOutEventTypes).
   COO_DAILY_DIGEST_ENABLED: z.coerce.boolean().default(true),
-  COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM: z.coerce.boolean().default(false),
   COO_DAILY_DIGEST_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(22),
 
   // SBA β-8.2 — «Хранитель обещаний».

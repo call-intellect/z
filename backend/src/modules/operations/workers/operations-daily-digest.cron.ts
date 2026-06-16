@@ -17,22 +17,25 @@ import { resolveOperationsTenantTop } from '../utils/tenant-top';
  * per-Org timezone (ICP — РФ, разница до 6 часов несущественна для
  * утреннего отчёта).
  *
- * Тумблеры (через `TypedConfigService.getDynamic` → AdminSetting + ENV-fallback):
+ * Тумблер (через `TypedConfigService.getDynamic` → AdminSetting + ENV-fallback):
  *   - `operations.daily_digest.enabled` (fallback `COO_DAILY_DIGEST_ENABLED`,
- *     default true) — мастер-флаг.
- *   - `operations.daily_digest.deliver_to_telegram` (fallback
- *     `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`, default false) — рассылка в
- *     Telegram. По умолчанию false, чтобы Telegram не молотил сразу после
- *     раскатки. Включается тумблером без рестарта.
+ *     default true) — мастер-флаг (kill-switch cron'а).
+ *
+ * ТЗ coo-orphan-agents Ф8 (Ship-On): доставка дневной сводки в каналы
+ * (Telegram/email/MAX/in_app) идёт ПО УМОЛЧАНИЮ — отдельного OFF-флага
+ * `deliver_to_telegram` больше нет. Контроль доставки — персональной галочкой
+ * каждого пользователя (через `optOutEventTypes` в preferences его
+ * ChannelBinding'а, см. `PATCH /me/notification-preferences`): снял галочку →
+ * push/Telegram не приходит, но копия сводки остаётся в кабинете (in_app).
  *
  * Поведение:
  *   1. Проверить тумблер `enabled`. False → log skip, return.
  *   2. Вычислить `dateLocal` = вчера в МСК (по UTC-моменту cron'а).
  *   3. Обход всех активных Org (deletedAt IS NULL). На каждую:
  *      - Идемпотентно `DailyDigestService.getOrGenerate({ tenantId, dateLocal })`.
- *      - Если тумблер `deliver_to_telegram=true`, отправить уведомление
- *        `operations.daily_digest` всем coo/owner Org'а (БЕЗ admin —
- *        admin это IT/devops-роль, не бизнес-stakeholder, см. §3 ТЗ).
+ *      - Отправить уведомление `operations.daily_digest` всем coo/owner Org'а
+ *        (БЕЗ admin — admin это IT/devops-роль, не бизнес-stakeholder, см. §3
+ *        ТЗ), если сводка ещё не доставлялась (идемпотентность по deliveredAt).
  *      - Проставить `deliveredAt` после успешной отправки.
  *   4. Best-effort: ошибка по одной Org не валит остальные.
  *
@@ -68,15 +71,9 @@ export class OperationsDailyDigestCron {
       return;
     }
 
-    const deliverToTelegram = await this.cfg.getDynamic<boolean>(
-      'operations.daily_digest.deliver_to_telegram',
-      'COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM',
-      false,
-    );
-
     const now = new Date();
     try {
-      const stats = await this.runOnce({ now, deliverToTelegram });
+      const stats = await this.runOnce({ now });
       this.logger.log(
         stats,
         'operations-daily-digest.cron: проход завершён',
@@ -90,13 +87,10 @@ export class OperationsDailyDigestCron {
   }
 
   /**
-   * Выделен для unit-тестов: можно передать произвольный `now` и явно
-   * проконтролировать `deliverToTelegram`.
+   * Выделен для unit-тестов: можно передать произвольный `now`. Доставка идёт
+   * безусловно (Ship-On) — гейт только по идемпотентности (`deliveredAt`).
    */
-  async runOnce(args: {
-    now: Date;
-    deliverToTelegram: boolean;
-  }): Promise<{
+  async runOnce(args: { now: Date }): Promise<{
     orgsProcessed: number;
     digestsGenerated: number;
     digestsSkippedAlreadyExists: number;
@@ -162,8 +156,9 @@ export class OperationsDailyDigestCron {
         }
       }
 
-      // Доставка в Telegram (или мульти-канально по policy event-type'а).
-      if (args.deliverToTelegram && alreadyDelivered === null) {
+      // Доставка мульти-канально по policy event-type'а (Ship-On: безусловно;
+      // персональный opt-out режется в NotificationBudgetService).
+      if (alreadyDelivered === null) {
         try {
           const sent = await this.notifyRecipients({
             tenantId: org.id,

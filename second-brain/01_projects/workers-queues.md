@@ -114,7 +114,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 
 **ENV (9 новых):** `MAIL_IMAP_HOST/PORT/USER/PASSWORD/TLS/MAILBOX`, `MAIL_INBOX_POLL_CRON`, `MAIL_INBOX_DOMAIN`, `MAIL_ATTACHMENT_MAX_BYTES` (default 26214400 = 25 MB).
 
-**ВАЖНО:** воркер запускается только в worker-process (`bun run worker:dev`), но cron registered в `@nestjs/schedule` модуле, который монтируется и в HTTP-app, и в worker-app. Чтобы избежать двойного pull — проверяем `process.env.WORKER_INSTANCE === 'true'` в cron'е (TODO если не реализовано — добавить).
+**ВАЖНО:** cron зарегистрирован в `@nestjs/schedule` и тикает **in-process внутри основного backend'а** (отдельного worker-процесса нет — см. §«Топология» в шапке), процесс один, двойного pull нет. Guard `cfg.mailInbox.enabled` дополнительно проверяется в `ProjectInboxService.pollInbox()` — на dev'е cron всё равно тикает, но сразу выходит. Файл — `src/modules/mail/inbound/imap-poll.cron.ts`.
 
 ### T4 — Voice Streaming (без воркера)
 
@@ -128,7 +128,7 @@ covers: реестр BullMQ-очередей, воркеров, @Cron задан
 
 ## Принципы
 
-1. **HTTP-app и worker-app — разные процессы.** Worker не должен принимать HTTP-запросы (кроме `/health` /  `/metrics`).
+1. **Воркеры и cron'ы — in-process в основном backend'е.** `WorkersModule` импортирован в `AppModule`, отдельного worker-процесса/контейнера нет (см. §«Топология» в шапке). HTTP-запросы обслуживает тот же процесс.
 2. **Все cron используют `WorkerOrgGate`** — admin может выключить per-Org через `Org.workersEnabled`.
 3. **Идемпотентность через jobId** — все важные воркеры используют детерминированный `jobId` (формат `<entityType>_<entityId>_<hash>`) для дедупликации.
 4. **HNSW pgvector индексы** — для всех embedding-полей. Создаются скриптом `bun run apply-postgres-init` (НЕ в `schema.prisma`).

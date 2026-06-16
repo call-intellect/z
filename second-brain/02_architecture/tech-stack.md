@@ -9,7 +9,7 @@ type: architecture
 - React / Next.js
 - LiveKit React Components
 
-**Домен:** `meet.crossmark.ru` (см. ниже § Поддомены).
+**Домен:** `korateam.ru` (прод; переехал с `meet.crossmark.ru`). См. ниже § Поддомены.
 
 **Страницы:**
 - `/meetings` — список встреч пользователя (для тех, у кого есть учётка в Z).
@@ -101,23 +101,25 @@ type: architecture
 5. Шаблон анализа по типу встречи
 6. Сохранение результата в БД
 
-**Провайдеров не выбираем — у компании свои внутренние API:**
-- собственный ASR-API для транскрибации;
-- собственный LLM-API для шаблонов по типу встречи.
+**LLM — мульти-провайдерный `LlmRouter`** (`backend/src/modules/ai/services/llm-router.service.ts`): маршрут по `taskType` к провайдерам с tiers primary/secondary. По факту:
+- primary — DeepSeek (`deepseek`), secondary — OpenAI через прокси (`openai-via-proxy`);
+- `minimax` — резервный провайдер / kill-switch-откат (`LLM_MAIN_REPORT_PRIMARY`).
 
-Из задачи интеграции уходит вопрос «какой провайдер» — остаётся только формат вызовов и интеграция в пайплайн (см. `plans/analysis/2026-05-05-ai-pipeline-providers.md`).
+**Embeddings** — через fallback-сервис (`backend/src/modules/embeddings/`): `openai-via-proxy` (default) → `local`.
 
-## Поддомены (под `crossmark.ru`)
+Маршруты редактируются (seed `LlmTaskRoute` + админка), формат вызовов и интеграция в пайплайн — см. `plans/analysis/2026-05-05-ai-pipeline-providers.md`.
+
+## Поддомены (прод `korateam.ru`; ранее `crossmark.ru`)
 
 | Поддомен | Что | Видимость |
 |---|---|---|
-| `meet.crossmark.ru` | Frontend встреч (ЛК, комната, гостевой вход `/g/<token>`) | Пользователю |
-| `api.crossmark.ru` | Backend (REST + webhook endpoint) | Только серверу |
-| `media.crossmark.ru` | LiveKit SFU (wss://). Имя нейтральное — не светит «livekit» | Браузеру при подключении |
-| `turn.crossmark.ru` | TURN (на старте → сервер A с встроенным LiveKit TURN; при coturn → переключается через ENV) | Браузеру при NAT |
-| `s3-dev.crossmark.ru` | MinIO dev — только внутренняя сеть | Только разработчикам |
+| `korateam.ru` | Frontend (ЛК, комната, единая ссылка на встречу `/m/:id` — общий вход для хоста и гостей) | Пользователю |
+| `api.korateam.ru` | Backend (REST + webhook endpoint) | Только серверу |
+| `media.korateam.ru` | LiveKit SFU (wss://). Имя нейтральное — не светит «livekit» | Браузеру при подключении |
+| `turn.korateam.ru` | TURN (на старте → сервер A с встроенным LiveKit TURN; при coturn → переключается через ENV) | Браузеру при NAT |
+| `s3-dev.korateam.ru` | MinIO dev — только внутренняя сеть | Только разработчикам |
 
-**Convention:** в LiveKit room names и API keys слово «crossmark» не используется — нейтральные UUID/идентификаторы. Если завтра уйдём с LiveKit на другой SFU — URL переезжает без редизайна.
+**Convention:** в LiveKit room names и API keys слово бренда не используется — нейтральные UUID/идентификаторы. Если завтра уйдём с LiveKit на другой SFU — URL переезжает без редизайна.
 
 **TLS:** Let's Encrypt через nginx + certbot на обоих серверах. Wildcard от платного CA — только если уже куплен у компании.
 

@@ -233,7 +233,7 @@ ended_at
 
 ## Org / Membership / OrgInvitation / LlmModelPrice (Фаза 0 knowledge-core, 2026-05-10)
 
-Подробнее: [[../01_projects/orgs-and-rbac|orgs-and-rbac]] и [[../01_projects/llm-router|llm-router]].
+Подробнее: [[../01_projects/rbac-access-control|rbac-access-control]] и [[../01_projects/llm-router|llm-router]].
 
 ### Org
 

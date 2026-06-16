@@ -102,7 +102,7 @@ LiveKit чистит атрибуты автоматически при disconne
   - `policies/model.conf` + `policy.csv` — RBAC модель и правила. Версионируются через git.
   - Глобальный модуль (`@Global`).
 
-Подробности: [[../01_projects/orgs-and-rbac]], [[../01_projects/llm-router]].
+Подробности: [[../01_projects/rbac-access-control]], [[../01_projects/llm-router]].
 
 ## Ingest / core-queue модули (Фаза 1 knowledge-core, 2026-05-10)
 

@@ -1116,7 +1116,7 @@ model User {
   name                  String
   phone                 String?          @db.VarChar(20)
   role                  UserRole         @default(user)
-  /// Флаг владельца продукта Z (super-admin Z-Admin раздела). См. orgs-and-rbac.md.
+  /// Флаг владельца продукта Z (super-admin Z-Admin раздела). См. rbac-access-control.md.
   /// На уровне БД — независим от `role` и `Membership`. Включается вручную DBA / seed'ом.
   isSuperAdmin          Boolean          @default(false)
   signupSource          UserSignupSource @default(crossmark)

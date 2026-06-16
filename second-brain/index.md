@@ -50,8 +50,6 @@
 - [[01_projects/meeting-types]] — 9 типов встреч MVP
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
 - [[01_projects/meeting-report-pipeline]] — раздельные pipeline после встречи: быстрый отчёт пользователю (Б, `meeting-report-fast`) + память компании (A, `block-ingest` → специалисты 3-1…3-9). Подтверждено экспериментом sales-merge: Б в 3.5× быстрее и в 4.6× дешевле
-- [[01_projects/ai-value-director]] — **AI-директор по ценности** (Value Director) — первый агент в будущем AI-совете директоров CEO, работает на методологии из [[06_marketing/client-value-framework]]
-- [[01_projects/rbac-access-control]] — RBAC: роли (owner/admin/manager/coo/super_admin), матрица доступа, видимость встреч
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
 - [[01_projects/meeting-result-page]] — карточка результата: что показываем после встречи
 - [[01_projects/capacity-and-infra]] — мощности, метрики, deployment-правила
@@ -166,7 +164,7 @@ _пусто_
 - [[01_projects/frontend-pages]] — реестр Next.js App Router страниц (создан 2026-05-25)
 - [[01_projects/ai-jobs]] — реестр LLM-провайдеров, taskType, prompt hardening (создан 2026-05-25)
 - [[01_projects/workers-queues]] — реестр BullMQ-очередей, воркеров, @Cron заданий (создан 2026-05-25)
-- [[01_projects/concierge-voice]] — Concierge + Voice Streaming WS (T4 финального handoff, создан 2026-05-25)
+- [[01_projects/concierge-agent]] — Concierge (NL-ассистент): SSE `/concierge/messages`, tool-use, голосовой ввод (Voice Streaming WS — раздел «Голосовой ввод»)
 
 ## Заметки по реализации (2026-05-09)
 - [[01_projects/auth-and-accounts]] — standalone-аккаунты: argon2id, UserSession+jti, mail.hosting.reg.ru SMTP, forced-onboarding (+ Org-хук в register с 2026-05-10)
@@ -177,8 +175,7 @@ _пусто_
 - [[02_architecture/design-system]] — dark-first + mint `#5EEAD4` + Geist + glass-cards, motion presets, AppShell
 
 ## Заметки по реализации (2026-05-10) — Фаза 0 knowledge-core
-- [[01_projects/orgs-and-rbac]] — Org / Membership / OrgInvitation, RBAC через RbacService (Casbin-совместимый), super_admin, visibilityMode (open/strict)
-- [[01_projects/rbac-access-control]] — **RBAC детально: 5 ролей (super_admin/owner/admin/manager/coo), 60+ ResourceType'ов, policy.csv (Casbin-стиль), визуальность open/strict, доступ к knowledge-core, специальные логики (person.erase, clone-access, self-ownership)**
+- [[01_projects/rbac-access-control]] — **RBAC + Org/Membership/Invitations (объединено 2026-06-17): 5 ролей (super_admin/owner/admin/manager/coo), 60+ ResourceType'ов, policy.csv (Casbin-стиль), Org/Membership/OrgInvitation + TenantGuard, visibilityMode (open/strict), доступ к knowledge-core, person.erase/clone-access/self-ownership**
 - [[01_projects/llm-router]] — LlmRouter с обязательным tenantId, LlmModelPrice (версионируемая прайс-карта), AiUsageLog (cachedTokens/sourceRef/experimentGroup)
 - [[01_projects/llm-providers-verified]] — **verified-карта LLM-провайдеров и моделей (источник правды, прогон 2026-05-21).** Какие каналы реально работают, готовые образцы вызова, что НЕ используем (Anthropic, bge-m3). Любой новый AI-агент сверяется с этим файлом.
 - [[13_glossary/index|Глоссарий]] — Org, Membership, super_admin, visibilityMode, tenantId, IdeaBlock/Entity/Theme/Source/RawEvent (placeholder'ы для Фаз 1-4)

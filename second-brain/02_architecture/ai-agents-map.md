@@ -101,6 +101,7 @@ owner: architecture
 | **3-5** | Insights (боли, риски, churn-risk, возражения) | Insight (severity, dynamicLabel, mitigationPlan, linked decisions) | `insight-clusterer.cron` каждые 6 часов | confidence ≥ 0.85 (severity=critical → принудительно deep) | по `severity` |
 | **3-6** | Ideas (идеи, feature-requests) | Idea (internal или client_request) с подсчётом supporters | `ideas-closing-loop.handler` слушает transitions | confidence ≥ 0.85 | — |
 | **3-7** | Skill (как роль думает — навыки/трейты) | SkillTrait + SkillTraitConcept (нормализация) | `skill-profile-recalibrate.cron` 5:00 daily, `skill-trait-concept-normalizer.cron` 3:00 daily | confidence ≥ medium | по `severity` (мislead-черты) |
+| **3-8** | Helpfulness (помощь, менторство, фидбек, эмоц. поддержка — SBA Wave 2; модуль `modules/specialist-3-8-helpfulness`) | HelpfulnessTrait (7 traitType, 5 публичных + 2 PRIVATE) | `social-contribution-profile.cron` 5:00, `helpfulness-trait-decay.cron` 6:00, `helpfulness-probe.cron` 10:00 daily, `helpfulness-spotlight.cron` пн 9:00 | — | publicVisibility по traitType (2 типа только админ + руководитель) |
 | **3-9** | Эксперименты | Experiment (hypothesis → running → completed/dropped) с lessons | `experiment-status-resolver.cron` каждые 6 часов, `experiment-transitions.cron` 7:00 daily | confidence ≥ 0.7 для авто-перехода | — |
 | **Process** (без номера) | Process detector | `process-detector.worker.ts`, `process-template-completeness.cron.ts` | — | — | — |
 
@@ -285,7 +286,7 @@ Rate-limit инференса: `cfg.skill.cloneAskPerUserPerDay` (по умол�
 
 ### 3.6. Плановый агент — AI-Директор по ценности (Value Director)
 
-Статус: дизайн + частичная реализация. Источник: [ai-value-director.md](../01_projects/ai-value-director.md). Endpoint `/api/v1/dashboard/value-director`. Идея — первый из «AI Board of Directors»: синтезирует сигналы о клиентской ценности (боли, ЦП, фидбек) и даёт CEO второе мнение и рекомендации по методологии client-value-framework.
+Статус: **идея, не реализовано** (в коде нет модуля/модели/taskType — проверено 2026-06-17). Источник: [ai-value-director.md](../../plans/analysis/2026-05-21-ai-value-director.md) (в `plans/`). Идея — первый из «AI Board of Directors»: синтезирует сигналы о клиентской ценности (боли, ЦП, фидбек) и даёт CEO второе мнение и рекомендации по методологии client-value-framework.
 
 Планируемое расписание:
 - Daily — 1 ценностный сигнал в ленту AI-совета

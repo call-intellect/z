@@ -19,7 +19,7 @@ updated: 2026-06-03
 > приглашение/перевыпуск/отзыв, персональные override доступа) — это уровень владельца/админа
 > Org, оно переехало из `/settings/organization` (осталась только вкладка «Информация») в раздел
 > **«Команда» (`/structure`)** и карточку сотрудника `/structure/persons/[id]`. См.
-> [[frontend-pages]] §«Команда» и [[orgs-and-rbac]] §Frontend.
+> [[frontend-pages]] §«Команда» и [[rbac-access-control]] §Frontend.
 
 ## Крутилки курации и напоминаний (AdminSetting)
 

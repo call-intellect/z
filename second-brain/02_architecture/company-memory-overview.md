@@ -142,7 +142,7 @@ LiveKit-встреча / Telegram / email / трекер / документ / in
 ## Куда углубляться дальше
 
 - Технический pipeline и воркеры — [[knowledge-core]]
-- Multi-tenancy и роли — [[../01_projects/orgs-and-rbac]], [[../01_projects/rbac-access-control]]
+- Multi-tenancy и роли — [[../01_projects/rbac-access-control]], [[../01_projects/rbac-access-control]]
 - LLM-провайдеры и каналы — [[../01_projects/llm-providers-verified]], [[llm-cache-status]]
 - Карта модулей и потоков — [[module-map]]
 - Каждый специалист отдельно — `01_projects/regulations|knowledge-clone|decisions|insights|ideas|skill-and-clone|specialist-3-4-project-customer`

@@ -7,7 +7,7 @@ date: 2026-05-10
 parent_tz: plans/tz/2026-05-10-knowledge-core-tz.md
 references:
   - second-brain/01_projects/llm-router.md
-  - second-brain/01_projects/orgs-and-rbac.md
+  - second-brain/01_projects/rbac-access-control.md
   - second-brain/01_projects/themes.md
   - backend/src/modules/admin/
   - backend/src/modules/rbac/
@@ -554,7 +554,7 @@ model SuperAdminAccessLog {
 
 - Родитель: [plans/tz/2026-05-10-knowledge-core-tz.md](plans/tz/2026-05-10-knowledge-core-tz.md) (фаза 7 в общем списке).
 - LLM-router: [second-brain/01_projects/llm-router.md](second-brain/01_projects/llm-router.md).
-- RBAC: [second-brain/01_projects/orgs-and-rbac.md](second-brain/01_projects/orgs-and-rbac.md).
+- RBAC: [second-brain/01_projects/rbac-access-control.md](second-brain/01_projects/rbac-access-control.md).
 - Декораторы tenant: [backend/src/modules/rbac/decorators/current-org.decorator.ts](backend/src/modules/rbac/decorators/current-org.decorator.ts).
 
 ## Итог (заполняется агентом по ходу)

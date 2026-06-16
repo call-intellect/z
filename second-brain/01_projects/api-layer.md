@@ -249,7 +249,7 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 ## Org / RBAC / Admin / LLM
 
-См. [`orgs-and-rbac.md`](orgs-and-rbac.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
+См. [`rbac-access-control.md`](rbac-access-control.md), [`admin-z-global.md`](admin-z-global.md), [`admin-org-knowledge-core.md`](admin-org-knowledge-core.md), [`llm-router.md`](llm-router.md).
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 

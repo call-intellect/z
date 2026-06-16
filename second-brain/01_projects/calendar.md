@@ -141,7 +141,7 @@ Cardinality риск (известный, общий для tracker/calendar): l
 ## Связи
 
 - [tracker](tracker.md) — `Issue.dueDate` микшируется с Events в `/me/calendar`; per-project Calendar view заменил заглушку Sprint 4
-- [concierge-voice](concierge-voice.md) — Concierge AI-агент получил 5 новых tools для календаря
+- [concierge-agent](concierge-agent.md) — Concierge AI-агент получил 5 новых tools для календаря
 - [conversational-channels](conversational-channels.md) — доставка reminders через `event.reminder` notification (registry + policy)
 - [knowledge-core](../02_architecture/knowledge-core.md) — Events с `visibility != personal` индексируются как Entity{type=event} (legacy путь через `EntityResolutionService`)
 - LiveKit `Meeting` — связь через `Event.relatedMeetingId` (TODO авто-создание из Event при kind=meeting)

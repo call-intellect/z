@@ -30,6 +30,93 @@ type: architecture
 
 ---
 
+## Org / Membership / Invitations
+
+Введено в Фазе 0 ТЗ knowledge-core ([plans/tz/2026-05-10-knowledge-core-tz.md](../../plans/tz/2026-05-10-knowledge-core-tz.md), Шаги 1-5). До Фазы 0 ресурсы (встречи, карточки, задачи) принадлежали `User` напрямую через `ownerId`, что блокировало многопользовательские сценарии. После Фазы 0 любой ресурс принадлежит **Org** (через `tenantId`), а доступ внутри Org регулируется RBAC (роли + visibilityMode). Multi-tenancy теперь сквозная: `TenantGuard` применяется по всему backend (~160 контроллеров/модулей), не только в новых модулях.
+
+### Сущности БД
+
+**Org**
+```
+Org {
+  id, name, slug @unique, ownerId (FK User),
+  visibilityMode: open|strict (default open),
+  tier: basic|pro|enterprise (default basic — placeholder для Фазы 12),
+  createdAt, deletedAt?
+}
+```
+- Создаётся автоматически при `POST /api/v1/accounts/register` (см. [auth-and-accounts.md](./auth-and-accounts.md)).
+- Доп. Org можно создать через `POST /api/v1/orgs`.
+- Slug = `slugify(name) + '-' + 6 hex` (collision-resistant).
+
+**Membership** — связь User ↔ Org с ролью; один user может быть в нескольких Org с разными ролями.
+```
+Membership {
+  orgId, userId, role: MembershipRole,
+  invitedBy?, personId? (линковка с бизнес-Person), joinedAt,
+  @@unique([orgId, userId])
+}
+```
+На фронте при наличии нескольких Org — селектор и заголовок `X-Org-Id` для запросов.
+
+**OrgInvitation**
+```
+OrgInvitation {
+  orgId, email? (с β-9 опционален — линейный персонал без почты),
+  role, token UNIQUE (nanoid 40),
+  status: pending|accepted|revoked|expired,
+  invitedBy, personId?, expiresAt (TTL 7д), acceptedAt?, acceptedByUserId?,
+  linkCode? (β-9 Telegram deep-link), magicTokenHash? (β-9 magic-link),
+  tempPasswordHash? (β-10 одноразовый пароль),
+  reminderSentAt?, directorNotifiedAt?
+}
+```
+- Создаётся owner/admin Org через `POST /api/v1/orgs/:id/invitations`.
+- Письмо через `MailService.sendPlain` (inline-шаблон в `org-invitations.service.ts`).
+- Принимается через `POST /api/v1/orgs/invitations/:token/accept` (Prisma-транзакция: status→accepted + Membership).
+
+### Endpoints (под `CookieAuthGuard`)
+
+| Метод | URL | Кто может |
+|---|---|---|
+| POST | `/api/v1/orgs` | любой авторизованный (создаёт доп. Org) |
+| GET | `/api/v1/orgs/me` | любой авторизованный |
+| GET | `/api/v1/orgs/:id` | member |
+| PATCH | `/api/v1/orgs/:id` | только owner |
+| GET | `/api/v1/orgs/:id/members` | member |
+| GET | `/api/v1/orgs/:id/team-roster` | member |
+| PATCH | `/api/v1/orgs/:id/members/:userId` | owner/admin |
+| DELETE | `/api/v1/orgs/:id/members/:userId` | owner/admin |
+| POST | `/api/v1/orgs/:id/invitations` | owner/admin |
+| GET | `/api/v1/orgs/:id/invitations` | owner/admin |
+| DELETE | `/api/v1/orgs/:id/invitations/:invitationId` | owner/admin |
+| POST | `/api/v1/orgs/:id/invitations/:invitationId/resend` | owner/admin |
+| POST | `/api/v1/orgs/invitations/:token/accept` | любой авторизованный |
+
+### TenantGuard — извлечение tenantId
+
+`backend/src/modules/rbac/guards/tenant.guard.ts` достаёт `tenantId` из (в порядке приоритета):
+1. Заголовка `X-Org-Id` (для multi-org аккаунтов).
+2. URL-параметра `:orgId`.
+3. Тела запроса (`tenantId` или `orgId`).
+4. Дефолта — единственная активная Org юзера.
+
+Кладёт `req.tenantId` для downstream-кода; на отсутствие tenant'а или членства — `403`.
+
+### Frontend
+
+- `/settings/organization` — вкладка «Информация» (owner-only, с 2026-06-04). Управление участниками и приглашениями — в разделе «Команда» (`/structure`): ростер `GET /orgs/:id/team-roster`, inline-смена роли / удаление / приглашение / перевыпуск / отзыв, карточка сотрудника `/structure/persons/[id]`. См. [[frontend-pages]] §«Команда».
+- `/invitations/[token]` — «Принять приглашение» → редирект на `/dashboard`. Middleware: `/invitations` в `PROTECTED_PREFIXES` (неавторизованный → `/login?next=…`).
+- API-слой: `frontend/src/api/orgs.api.ts` — единый orgsApi с типизированными DTO.
+
+### Ключевые файлы
+
+- `backend/src/modules/orgs/` — OrgsService, OrgInvitationsService, controller, DTO.
+- `backend/scripts/backfill-orgs-fase0.ts` — backfill для production-проката.
+- `backend/scripts/smoke-orgs-fase0.ts` — smoke-тест на DB-уровне.
+
+---
+
 ## Роли (5 типов)
 
 ### 1. super_admin

@@ -61,17 +61,19 @@ Org-Admin удаляет связи через `DELETE /api/v1/org-admin/knowled
 
 ## UI
 
-Расположение: [frontend/app/(authenticated)/settings/admin/](frontend/app/(authenticated)/settings/admin/).
+> ⚠️ **Устарело (2026-06-02).** Org-admin переехал на поверхность `/company-admin/*`; все `/settings/admin/*` теперь redirect-заглушки. Страницы **«Экономика»** и **«Ядро знаний» (debug)** удалены из клиента (см. шапку).
 
-| URL | Назначение |
+Расположение актуального UI: [frontend/app/(authenticated)/company-admin/](frontend/app/(authenticated)/company-admin/). Старые пути [frontend/app/(authenticated)/settings/admin/](frontend/app/(authenticated)/settings/admin/) — только редиректы для совместимости закладок:
+
+| Старый URL | Поведение |
 |---|---|
-| `/settings/admin/usage` | Локальная экономика Org (CSV-экспорт) |
-| `/settings/admin/knowledge-core` | Тумблеры воркеров, журнал, связи, сущности, метрики (Tabs) |
+| `/settings/admin/usage` | удалена; redirect на `/company-admin` |
+| `/settings/admin/knowledge-core` | удалена; redirect на `/company-admin` |
 | `/settings/admin/members` | redirect на `/settings/organization` |
-| `/settings/admin/sources` | redirect на `/settings/sources` (Фаза 10) |
+| `/settings/admin/sources` | redirect на `/company-admin/sources` |
 
 ## Связанные документы
 
 - [admin-z-global.md](admin-z-global.md) — Z-Admin (для super_admin).
-- [orgs-and-rbac.md](orgs-and-rbac.md) — Membership-роли.
+- [rbac-access-control.md](rbac-access-control.md) — Membership-роли.
 - [ingest-and-sources.md](ingest-and-sources.md) — управление источниками (отдельная страница).

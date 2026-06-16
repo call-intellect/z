@@ -6,7 +6,7 @@ date: 2026-05-21
 related:
   - analysis/2026-05-21-user-cabinet-design.md (структура ЛК и навигация — продолжаем оттуда)
   - tz/2026-05-21-phase-0-roles-and-onboarding.md (Фаза 0 — что уже в скопе)
-  - second-brain/01_projects/orgs-and-rbac.md (текущая RBAC модель)
+  - second-brain/01_projects/rbac-access-control.md (текущая RBAC модель)
   - second-brain/06_marketing/positioning.md (ICP: CEO 50–300 чел)
 ---
 
@@ -40,7 +40,7 @@ related:
 
 ### 1.2. Текущая модель ролей
 
-Из [orgs-and-rbac.md](../../second-brain/01_projects/orgs-and-rbac.md) + [policy.csv](../../backend/src/modules/rbac/policies/policy.csv):
+Из [rbac-access-control.md](../../second-brain/01_projects/rbac-access-control.md) + [policy.csv](../../backend/src/modules/rbac/policies/policy.csv):
 
 **Внутри Org (бизнес-роль в Membership):**
 
@@ -400,7 +400,7 @@ enum Sensitivity {
 
 - **[user-cabinet-design.md](2026-05-21-user-cabinet-design.md)** — добавить раздел про роли и доступы (можно ссылкой на этот документ); сейчас там Решение 2 («единый ЛК, разный landing») недостаточно покрывает _что_ видит каждая роль на каждой странице.
 - **[phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md)** — добавить в §8 «Риски и ограничения» риск «нет fact-level ACL» (§5.2 этого документа).
-- **[orgs-and-rbac.md](../../second-brain/01_projects/orgs-and-rbac.md)** — добавить раздел «Чего не покрывает RBAC: fact-level ACL — это Фаза β» со ссылкой сюда.
+- **[rbac-access-control.md](../../second-brain/01_projects/rbac-access-control.md)** — добавить раздел «Чего не покрывает RBAC: fact-level ACL — это Фаза β» со ссылкой сюда.
 - **[positioning.md](../../second-brain/06_marketing/positioning.md)** — в sales-материалах не обещать «гранулярный контроль доступа к фактам» до Фазы γ; добавить FAQ-вопрос для пилотов «что с конфиденциальностью внутри Org».
 - **[second-brain/index.md](../../second-brain/index.md)** — добавить ссылку на этот документ в раздел «Активные анализы».
 - **Новый ТЗ `plans/tz/202X-XX-XX-phase-gamma-sensitivity-and-acl.md`** — отдельный sub-TZ Фазы γ под минимальный ABAC (см. §5.4 этап 2).

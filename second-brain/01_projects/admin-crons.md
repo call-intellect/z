@@ -69,7 +69,7 @@ Severity `high` для `enabled=false` критичных кронов (`email-f
 
 ## Управление через UI
 
-[frontend/app/(authenticated)/admin/platform/crons/](frontend/app/(authenticated)/admin/platform/crons/):
+[frontend/app/(admin)/admin/platform/crons/](frontend/app/(admin)/admin/platform/crons/):
 
 - Таблица всех CronSchedule с колонками: имя, выражение (cron expr), defaultExpression, enabled toggle, lastRunAt, lastRunDurationMs, lastRunError.
 - Колонка «Действия»: «Запустить сейчас», «Изменить расписание» (модалка с валидацией cron-expr), «Откатить на дефолт».

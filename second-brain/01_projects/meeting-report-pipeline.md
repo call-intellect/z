@@ -68,7 +68,7 @@ merge.worker (транскрипт готов)
 **LLM routing.** `taskType='meeting-report-fast'` в `seed-llm-task-routes-knowledge-core.ts`:
 - primary: `deepseek/deepseek-v4-pro` (32k output, thinking on, tool_choice='auto');
 - secondary: `openai-via-proxy/gpt-5.4-mini`;
-- tertiary: `ollama/qwen3.5:9b`.
+- tertiary: `kie/gemini-3.1-pro` (нормализация цепочек 2026-06-05, ollama выведен из всех боевых LLM-цепочек).
 
 **Метрики.** `z_meeting_report_fast_total{tenant, status}` (counter) + `z_meeting_report_fast_duration_seconds` (histogram, бакеты 5..600 с).
 

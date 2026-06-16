@@ -19,36 +19,32 @@ Concierge участвует в **единой per-user дневной квот�
 
 Порядок проверки в pipeline: per-user сначала (через `AiChatQuotaService.tryConsume`), затем per-Org safety-net.
 
-## Pipeline (после ТЗ 2026-05-27 dialog-layer integration)
+## Pipeline (после ТЗ 2026-06-14 assistant-router-dedup)
 
-При `CONCIERGE_DIALOG_LAYER_ENABLED=true` (production, default false):
+Помощник **больше не владеет пониманием запроса**: инъекция `DialogService` убрана, нет `dialog.process()` и предпоиска (`preRetrieve`). Понимание-цепочка (контекстуализация) и синтез считаются **один раз внутри chat-v2** — через терминальный tool `ask_chat_v2`. Запрос идёт в LLM как есть.
 
-1. **Quota check** — per-user (`AiChatQuotaService.tryConsume`, новая, ТЗ 2026-05-31) + per-Org safety-net (`OrgConciergeQuota`, Redis token-bucket).
+1. **Quota check** — per-user (`AiChatQuotaService.tryConsume`, ТЗ 2026-05-31) + per-Org safety-net (`OrgConciergeQuota`, Redis token-bucket).
 2. **Conversation** — создать/найти `ConciergeConversation`, записать user-message.
-3. **Summary в контекст** — `ConciergeConversation.summary` (если есть, пишется cron'ом `concierge-conversation-summarizer.cron` каждые 30 мин для диалогов >20 сообщений и старше часа) подмешивается в user-блок ПЕРЕД историей.
-4. **Dialog-layer препроцессинг** — `DialogService.process({ scope: 'concierge', scopeRefId: conv.id })`:
-   - **Contextualize**: «а почему?» → standalone-вопрос с учётом истории.
-   - **Confidence**: оценка качества standalone (≥ threshold → используем; иначе fallback на raw).
-   - **Classify intent**: `factual` | `exploratory` | `analytical` | `clone_roleplay`.
-   - **Multi-query expansion**: для `exploratory`/`analytical` — 3 переформулировки. Для `factual` — оригинал.
-   - **Answer cache lookup** (Redis): если hit — short-circuit. yield `thinking → message → done` без LLM.
-5. **Pre-retrieval** — параллельно по `queries[]` (до 3) через `ToolRouter.execute('search_knowledge')`. Per-query timeout 3000ms (`CONCIERGE_PRE_RETRIEVAL_TIMEOUT_MS`), top-K cumulative 12 (`CONCIERGE_PRE_RETRIEVAL_TOP_K`). Skip для `intent='clone_roleplay'`. Дедуп по id. Результаты подаются в system-prompt блоком `=== ПРЕДВАРИТЕЛЬНЫЕ РЕЗУЛЬТАТЫ ПОИСКА ===` перед whitelist tools.
-6. **Tool-use loop** (до 5 итераций):
-   - LLM `taskType='concierge-respond'` получает system (контекст + summary + preHits + tool whitelist) + user (effectiveQuestion + история 6 последних + tool results).
-   - Парсер ищет JSON `{"tool_call":{"name":"...","arguments":{...}}}`. Если найден — `ToolRouterService.execute()` с RBAC от userId (не bypass), результат идёт обратно в LLM. Если нет — финальный текст.
-7. **Persist** — assistant-message с `toolCallsJson` debug-блоком `{ dialogLayer: {...}, preRetrieval: {...} }`. Bump `lastMessageAt`.
+3. **effectiveQuestion = userMessage** — без контекстуализации и multi-query expansion на стороне помощника. `clarifyMinConfidence` (крутилка AdminSetting) читается, но жёсткого numeric-gate нет — уточнение управляется промптом + валидацией required-параметров в `ToolRouter`.
+4. **Tool-use loop**:
+   - LLM `taskType='concierge-respond'` получает system (контекст + tool whitelist) + user (effectiveQuestion + история + tool results).
+   - Native function-calling (прод-дефолт ON, `concierge.native_tools_enabled`); legacy regex-парсер `{"tool_call":{...}}` — fallback. При tool-call — `ToolRouterService.execute()` с RBAC от userId (не bypass), результат идёт обратно в LLM. Если нет — финальный текст.
+   - При терминальном `ask_chat_v2` (чистый вопрос к памяти) итоговый ответ помощника = захваченный ответ chat-v2 (текст + цитаты) напрямую, без второго прохода LLM.
+5. **Persist** — assistant-message с `toolCallsJson`. Bump `lastMessageAt`.
 
-При `CONCIERGE_DIALOG_LAYER_ENABLED=false` — legacy путь: только шаги 1, 2, 6, 7. Summary НЕ читается (только в новой ветке), pre-retrieval не запускается, dialog-layer не вызывается.
+`ConciergeConversation.summary` пишется cron'ом `concierge-conversation-summarizer.cron`.
 
-## Whitelist инструментов (13 шт.)
+## Whitelist инструментов
 
 Static в `backend/src/modules/concierge/services/service-map-generator.service.ts`:
 
 - **Встречи**: `list_meetings`, `create_meeting`, `cancel_meeting` (LiveKit-комнаты).
 - **Календарь**: `create_event`, `list_my_events`, `list_user_events`, `find_free_slot`, `delete_event`.
-- **Знания**: `search_knowledge` (используется pre-retrieval'ом), `ask_chat_v2`.
-- **Задачи**: `list_tasks`.
+- **Знания**: `ask_chat_v2` — единственный терминальный путь к памяти компании (прежний `search_knowledge` удалён). Его ответ (текст + цитаты) отдаётся пользователю как есть.
+- **Задачи трекера**: `create_task` (поставить задачу себе в «Входящие»), `search_tasks` (мои задачи трекера); `ingest_note` (занести мысль/факт в память). `list_tasks` — legacy действия-задачи из встреч.
 - **Клоны**: `ask_role_clone`, `list_clones`.
+- **Pulse/директор**: `get_person_pulse`, `list_overdue_promises`, `get_sprint_status`, `get_team_health`, `list_ignored_probe_questions`.
+- **Smart-tables**: `infer_table_schema` (превью схемы таблицы, без создания).
 
 RBAC проверяется внутри `ToolRouterService` от `userId` — concierge **не** bypassit permissions. Мутирующие tool-call'ы фиксируются в `ConciergeUndoLog`, откат через `POST /undo/:logId`.
 
@@ -80,8 +76,16 @@ RBAC проверяется внутри `ToolRouterService` от `userId` — c
 - Cron `concierge-conversation-summarizer.cron` — пишет `ConciergeConversation.summary`.
 - Cron `concierge-quota-reset.cron` — daily/monthly reset.
 
+## Голосовой ввод (Voice Streaming WebSocket, T4 δ-3)
+
+**Архитектурное правило:** Concierge отвечает **только текстом**. Голосовой ВВОД — да (микрофон → ASR), голосового ВЫВОДА нет (никакой кнопки «Слушать», `voiceMode toggle`). TTS-эндпоинт `/api/v1/voice/synthesize` существует как примитив, но в Concierge-flow НЕ интегрируется (см. memory `feedback_concierge_text_only_output.md`).
+
+- **Backend `backend/src/modules/voice/gateways/voice-stream.gateway.ts`** — namespace `/ws/voice`. Auth — тот же JWT-flow, что у `/ws/tracker` (`handshake.auth.token` / cookie `z_session` / `Authorization: Bearer` + jti revocation + membership в tenant). События client→server: `voice:start {sampleRate, mimeType}` → ack `{ok, sessionId, ttlSec}`, `voice:chunk {data}`, `voice:end`, `voice:cancel`. Server→client: `voice:transcribed {text, durationMs, latencyMs}`, `voice:error {code, message}`. Лимит 1 сессия на пользователя (новый коннект отменяет старую), buffer cap, ASR через `VoiceChannelAdapter` (Vox submit+poll, p50 ≥ 2 сек — streaming-ASR в TODO).
+- **Frontend** — хук `frontend/src/hooks/concierge/useVoiceStream.ts` (`open`/`sendChunk`/`end`/`cancel`, graceful REST-fallback на `POST /api/v1/voice/transcribe` при WS-проблемах) и компонент `frontend/src/ui/concierge/ConciergeVoice.tsx` (кнопка-микрофон, MediaRecorder → chunks, транскрипт дописывается в текстовое поле Concierge для правки перед отправкой).
+
 ## Источники
 
 - ТЗ ввода в строй: `plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md`.
 - ТЗ dialog-layer integration: `plans/tz/2026-05-27-concierge-dialog-layer-integration.md` (2026-05-27).
-- Код: `backend/src/modules/concierge/`.
+- ТЗ assistant-router-dedup: `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md` (понимание/синтез только в chat-v2).
+- Код: `backend/src/modules/concierge/`, `backend/src/modules/voice/`.

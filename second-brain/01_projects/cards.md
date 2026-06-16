@@ -160,7 +160,7 @@ CRM-карточки, к которым подвязываются встреч�
 - Связанные эндпоинты themes — см. [[themes]].
 
 Все модели — в [`backend/prisma/schema.prisma`](../../backend/prisma/schema.prisma).
-Применение схемы — только `bun prisma db push` (см. [prisma-db-push-rules](../../.claude/skills/prisma-db-push-rules/)).
+Применение схемы — версионируемые миграции (`bun run prisma:migrate`); `db push` — только для черновых локальных проб (см. [prisma-db-push-rules](../../.claude/skills/prisma-db-push-rules/)).
 
 ## Что осознанно НЕ сделано (vNext)
 

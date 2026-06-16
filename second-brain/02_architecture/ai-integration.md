@@ -18,42 +18,49 @@ type: architecture
   - `punctuationMode: 'pro'` — расставляем пунктуацию.
   - `diarizationEnabled: false` — спикер известен по `participant_id` (отдельные дорожки), диаризация Vox не нужна.
 
-### LLM (шаблоны по типу встречи) — Anthropic Claude Sonnet
+### LLM (шаблоны по типу встречи) — DeepSeek через `LlmRouterService`
 
-- **Endpoint:** `api.anthropic.com` (прямо, без нашего прокси).
-- **Модель на старте:** `claude-sonnet-4-6`.
-- **Возможности:** prompt caching (до -90% input для стабильного system-промпта), длинный контекст (≥1M токенов).
-- **Если из РФ-IP получим `403 "Request not allowed"`** — fallback на:
-  1. MiniMax-M2.5 (Anthropic-совместимый, прямой);
-  2. GPT-5.2 / GPT-4.1 через `proxy.agent-lia.ru/v1/responses`.
+- **Маршрутизация:** все LLM-вызовы идут через `LlmRouterService` (`ai/services/llm-router.service.ts`), который выбирает провайдер по `taskType` и `dataClass`.
+- **Основной провайдер:** `deepseek` (прямой, `https://api.deepseek.com/v1`).
+- **Модели:** `deepseek-v4-flash` (по умолчанию, `DEEPSEEK_DEFAULT_MODEL`) и `deepseek-v4-pro` (reasoning, напр. GEPA). Основной отчёт встречи (`LLM_MAIN_REPORT_PRIMARY`) — `deepseek`.
+- **Возможности:** prompt caching (см. [llm-cache-status.md](llm-cache-status.md) — DeepSeek кэширует на ~99% от 64 токенов).
+- **Claude / Anthropic — НЕ закупаем** (решение владельца). Канал `anthropic` в роутере не используется. См. [llm-cache-status.md](llm-cache-status.md) (строка 11) и [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
+- **Прочие каналы роутера:** `openai-via-proxy` (gpt-5* через `proxy.agent-lia.ru/v1/responses`), `minimax` (Anthropic-совместимый, прямой). Полная verified-карта — [llm-providers-verified.md](../01_projects/llm-providers-verified.md).
 
-### Прокси для OpenAI / Gemini — `proxy.agent-lia.ru`
+### Embeddings — OpenAI через прокси (`OpenAiProxyEmbeddingService`)
 
-Не используем на старте Z, но доступен для:
-- OpenAI (Responses API, Embeddings) — `proxy.agent-lia.ru/v1/...` с `Bearer myFeedproxy3128:<KEY>`;
-- Gemini через grsai / KIE — для fallback'ов.
+- **Сервис:** `OpenAiProxyEmbeddingService` (`embeddings/services/openai-proxy-embedding.service.ts`), провайдер `openai-via-proxy` (`EMBEDDING_PROVIDER`).
+- **Endpoint:** `https://proxy.agent-lia.ru/v1/embeddings` (OpenAI-совместимый), auth `Bearer myFeedproxy3128:<KEY>`.
+- **Модель:** `text-embedding-3-small`, размерность `1536`.
+- **Прочее:** доступны `local` (self-hosted) и `openai-direct` как альтернативы `EMBEDDING_PROVIDER`.
 
 ## Что это меняет для проекта
 
 1. **Провайдеров не выбираем.** Этот вопрос закрыт инфраструктурой компании — в `plans/analysis/2026-05-05-ai-pipeline-providers.md` остаётся только интеграция.
-2. **Готовые SDK-вызовы** есть в Crossmark (Anthropic streaming, Vox submit/poll, OpenAI Responses) — копируются один-в-один в Z.
+2. **Готовые SDK-вызовы** есть в Crossmark (DeepSeek chat, Vox submit/poll, OpenAI Responses/Embeddings) — копируются один-в-один в Z.
 3. **Логирование `ai_usage_logs`** — нужно завести аналогичную таблицу с полями `inputTokens / outputTokens / costUsd / durationMs / success` для биллинга и алертов.
-4. **Цены модели** уже известны (см. reference §12) — экономика на встречу: при ~25k input токенов и Claude Sonnet ($3/1M input + $15/1M output) одна встреча ≈ $0.08–$0.12 + ASR.
+4. **Цены модели** — экономика считается по DeepSeek (`deepseek-v4-flash`/`deepseek-v4-pro`), не по Claude; цены и пороги кэша — в [llm-providers-verified.md](../01_projects/llm-providers-verified.md) и [llm-cache-status.md](llm-cache-status.md).
 
 ## ENV для Z
 
 ```ini
-# Anthropic (LLM-шаблоны по типу встречи)
-ANTHROPIC_API_KEY=sk-ant-...
+# DeepSeek (основной LLM через LlmRouterService)
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_DEFAULT_MODEL=deepseek-v4-flash
+DEEPSEEK_API_KEY=...
+LLM_MAIN_REPORT_PRIMARY=deepseek
 
 # GigaAM Vox (транскрибация)
 VOX_API_URL=https://vox.agent-lia.ru
 VOX_API_TOKEN=...
 
-# OpenAI через proxy (для fallback)
+# Embeddings (OpenAI через proxy.agent-lia.ru)
+EMBEDDING_PROVIDER=openai-via-proxy
+EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_PROXY_EMBEDDINGS_URL=https://proxy.agent-lia.ru/v1/embeddings
 OPENAI_API_KEY=sk-proj-...
 
-# MiniMax (Anthropic-совместимый fallback)
+# MiniMax (Anthropic-совместимый канал роутера)
 MINIMAX_API_KEY=...
 ```
 

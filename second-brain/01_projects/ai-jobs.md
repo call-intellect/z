@@ -179,7 +179,7 @@ P2 (F6-F11) и P3 (F12-F16) — на следующую сессию. См. [`pl
 
 ## Concierge
 
-См. также [`concierge-voice.md`](concierge-voice.md) для voice-streaming контекста (T4).
+См. также [`concierge-agent.md`](concierge-agent.md) для voice-streaming контекста (T4).
 
 ### Concierge dialog-layer integration (ТЗ 2026-05-27)
 

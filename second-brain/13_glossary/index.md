@@ -15,7 +15,7 @@ updated: 2026-05-10
 
 ### Org (Организация)
 
-Тенант в multi-tenant модели Z. Любой ресурс (встреча, карточка, задача, теги, ai-логи) принадлежит одной Org через `tenantId`. Org создаётся автоматически при регистрации юзера + ручное создание через `POST /api/v1/orgs`. См. [[../01_projects/orgs-and-rbac|orgs-and-rbac]].
+Тенант в multi-tenant модели Z. Любой ресурс (встреча, карточка, задача, теги, ai-логи) принадлежит одной Org через `tenantId`. Org создаётся автоматически при регистрации юзера + ручное создание через `POST /api/v1/orgs`. См. [[../01_projects/rbac-access-control|rbac-access-control]].
 
 ### Membership
 

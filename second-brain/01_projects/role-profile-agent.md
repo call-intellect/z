@@ -1,7 +1,7 @@
 ---
 title: RoleProfileAgent (карта должности)
 phase: 0d
-status: planned
+status: implemented
 date: 2026-05-21
 references:
   - plans/tz/2026-05-21-phase-0d-role-profile-agent.md

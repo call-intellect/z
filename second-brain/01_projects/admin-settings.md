@@ -142,7 +142,7 @@ UI — `/admin/orgs/plans` (одна карточка «Стандартный �
 
 ## Schema-registry для UI
 
-UI-форма для каждой `AdminSetting` рендерится из Zod-схемы — единый источник правды для бэкенда (валидация на save) и фронтенда (рендер поля). Реестр схем — `backend/src/modules/admin/settings/schemas.registry.ts`, по `key` отдаёт Zod-схему, severity и человекочитаемое описание. Поле в UI рендерится через [AdminSettingField](frontend/ui/components/admin/AdminSettingField.tsx):
+UI-форма для каждой `AdminSetting` рендерится из Zod-схемы — единый источник правды для бэкенда (валидация на save) и фронтенда (рендер поля). Реестр схем — `backend/src/modules/admin/settings/admin-setting-schema-registry.ts`, по `key` отдаёт Zod-схему, severity и человекочитаемое описание. Поле в UI рендерится через [AdminSettingField](frontend/ui/components/admin/AdminSettingField.tsx):
 
 | Zod-тип | UI |
 |---|---|

@@ -8,6 +8,7 @@
 import type {
   DailyDigestApi,
   DailyDigestChronicBlockerApi,
+  DailyDigestCustomerAtRiskApi,
   DailyDigestEventApi,
   DailyDigestMetricsApi,
   DailyDigestPersonShinedApi,
@@ -39,6 +40,9 @@ export interface DailyDigestPersonStruggledDomain
 /** ТЗ-2 Ф3 — domain-зеркало хронического блокера (identity-маппинг). */
 export interface DailyDigestChronicBlockerDomain
   extends DailyDigestChronicBlockerApi {}
+/** ТЗ coo-orphan-agents Ф4 — domain-зеркало клиента под риском. */
+export interface DailyDigestCustomerAtRiskDomain
+  extends DailyDigestCustomerAtRiskApi {}
 
 /** ТЗ-2 Ф3 — русские лейблы статуса хронического блокера. */
 export const CHRONIC_BLOCKER_STATUS_LABEL: Record<
@@ -67,6 +71,8 @@ export interface DailyDigestDomain {
   urgentItems: DailyDigestUrgentItemDomain[];
   whoShined: DailyDigestPersonShinedDomain[];
   whoStruggled: DailyDigestPersonStruggledDomain[];
+  // ТЗ coo-orphan-agents Ф4 — клиенты под риском.
+  customersAtRisk: DailyDigestCustomerAtRiskDomain[];
   // ТЗ-2 Ф3 — хронические блокеры.
   chronicBlockers: DailyDigestChronicBlockerDomain[];
   // Ф1b — исторический тренд (identity-маппинг из API-типа), old→new.
@@ -90,6 +96,7 @@ export function fromDailyDigestApi(dto: DailyDigestApi): DailyDigestDomain {
     urgentItems: dto.urgentItems ?? [],
     whoShined: dto.whoShined ?? [],
     whoStruggled: dto.whoStruggled ?? [],
+    customersAtRisk: dto.customersAtRisk ?? [],
     chronicBlockers: dto.chronicBlockers ?? [],
     trend: dto.trend ?? [],
   };

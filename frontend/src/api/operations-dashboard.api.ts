@@ -294,6 +294,45 @@ export interface StalledDecisionsApi {
   items: StalledDecisionApi[];
 }
 
+/**
+ * ТЗ coo-orphan-agents Ф4 — радар клиентов под риском оттока.
+ * Контракт: GET /api/v1/dashboard/operations/customer-risk?level=&limit=
+ */
+export interface CustomerRiskTopBlockApi {
+  blockId: string;
+  signalType: string;
+  excerpt: string;
+}
+
+export interface CustomerRiskSnapshotApi {
+  id: string;
+  customerEntityId: string;
+  customerName: string;
+  dateLocal: string;
+  signalCounts: {
+    churn_risk: number;
+    objection: number;
+    pain: number;
+    feature_request: number;
+  };
+  windowDays: number;
+  riskScore: number;
+  riskLevel: 'critical' | 'warning' | 'ok';
+  scoreDelta: number;
+  signalDelta: number;
+  responsiblePersonId: string | null;
+  responsiblePersonName: string | null;
+  topBlocks: CustomerRiskTopBlockApi[];
+  hint: string;
+  snapshotAt: string;
+}
+
+export interface CustomerRiskListApi {
+  items: CustomerRiskSnapshotApi[];
+  criticalCount: number;
+  warningCount: number;
+}
+
 export const operationsDashboardApi = {
   getOverview: () =>
     apiClient.get<OperationsOverviewApi>('/api/v1/dashboard/operations/overview'),
@@ -369,6 +408,19 @@ export const operationsDashboardApi = {
     const suffix = q.toString();
     return apiClient.get<OperationsChronicBlockersApi>(
       `/api/v1/dashboard/operations/blockers/chronic${suffix ? `?${suffix}` : ''}`,
+    );
+  },
+  /**
+   * ТЗ coo-orphan-agents Ф4 — клиенты под риском оттока (топ по riskScore).
+   * limit ≤ 20 (защита от лавины запросов на drill-down).
+   */
+  getCustomerRisk: (params?: { level?: 'critical' | 'warning' | 'ok'; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.level) q.set('level', params.level);
+    const limit = Math.min(20, params?.limit ?? 20);
+    q.set('limit', String(limit));
+    return apiClient.get<CustomerRiskListApi>(
+      `/api/v1/dashboard/operations/customer-risk?${q.toString()}`,
     );
   },
   /**

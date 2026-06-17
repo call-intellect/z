@@ -11,13 +11,18 @@ openapi: 3.0.3
 info:
   title: Z Backend API
   description: |
-    API для AI-видеовстреч на LiveKit. Три класса endpoint'ов:
+    **Scope: Crossmark partner Meetings API only — НЕ полный контракт продукта.**
 
-    1. **Cookie API** (`/api/v1/...`) — для frontend Z (host'ы и гости).
+    Эта статическая спецификация описывает лишь тонкий срез продукта:
+    HMAC-интеграцию партнёра Crossmark и cookie-эндпоинты входа во встречу.
+    Z — это ~100 модулей (knowledge-core, dashboard, admin, orgs/rbac, AI-pipeline
+    и т.д.); они здесь НЕ описаны.
+
+    **Живой, полный контракт — Swagger на `/api/docs`** (генерится из NestJS при
+    запуске; в prod закрыт за basic-auth). Здесь — только Meetings-срез:
+
+    1. **Cookie API** (`/api/v1/meetings/...`) — вход во встречу (host'ы и гости).
     2. **HMAC API** (`/integrations/crossmark/v1/...`) — для партнёра Crossmark.
-    3. **Admin API** (`/admin/api/v1/...`) — для админ-панели Z.
-
-    Полные контракты см. http://localhost:3000/api/docs (Swagger UI).
   version: '0.1.0'
   contact:
     name: Z Backend Team

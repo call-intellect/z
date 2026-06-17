@@ -25,6 +25,14 @@ export const CreateIssueSchema = z
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).optional(),
     inferSuggestions: z.boolean().optional(),
     respectHolidays: z.boolean().optional(),
+    /**
+     * TZ task-dedup (2026-06-16, Ф1) — пропустить дедуп-гейт прямого create.
+     * Ставится ТОЛЬКО внутренними caller'ами, которые уже прошли дедуп на
+     * уровне intake (IntakeService.triage accept / IntakeAutoTriageWorker),
+     * чтобы не делать двойной suggest на одну и ту же карточку (pre-mortem).
+     * Внешний REST его не присылает — optional без default.
+     */
+    skipDedup: z.boolean().optional(),
   })
   .strict();
 

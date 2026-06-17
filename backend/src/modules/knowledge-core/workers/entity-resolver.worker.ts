@@ -7,7 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { type Entity, Prisma } from '@prisma/client';
+import { type Entity } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -18,8 +18,33 @@ import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { ENTITY_ARCHIVED } from '../../tables/events/entity-sync.events';
 import { EntityMergeService } from '../services/entity-merge.service';
+import { EntityResolutionService } from '../services/entity-resolution.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 
+/**
+ * Entity-resolver worker (`core.entity-resolver` consumer).
+ *
+ * Шаги на job `{ entityId }`:
+ *   1. findUnique Entity. Если null → skip.
+ *   2. Идемпотентность: entity.mergedIntoId !== null → skip (уже объединена).
+ *   3. KNN cosine top-5 кандидатов того же tenantId/type, embedding IS NOT NULL,
+ *      mergedIntoId IS NULL, sim > ENTITY_MERGE_THRESHOLD.
+ *   4. Если кандидатов нет — return.
+ *   5. Для каждого (по убыванию similarity) — judgeMerge с контекстом блоков.
+ *      На первый verdict='merge' — Prisma-транзакция:
+ *        - Защита: target.mergedIntoId === null, entity.mergedIntoId === null (race).
+ *        - Защита: canonicalId реально присутствует в списке кандидатов.
+ *        - entity.mergedIntoId = target.id, updatedAt=now.
+ *        - target.mentionsCount += entity.mentionsCount.
+ *        - target.aliases = union(target.aliases, [entity.canonicalName, ...entity.aliases]).
+ *        - Перенос IdeaBlockEntity entityId=entity.id → entityId=target.id;
+ *          composite PK (blockId, entityId) — pre-check целевой пары, при
+ *          конфликте delete дубля-источника, иначе update (Б1: без catch P2002 в tx).
+ *
+ * Concurrency=1: cron + on-event могут пересекаться, но операция merge меняет
+ * глобальное состояние. Обрабатываем серийно, чтобы не было race условий
+ * между двумя параллельными jobs для одной пары Entity.
+ */
 @Injectable()
 export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EntityResolverWorker.name);
@@ -33,6 +58,10 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(EntityMergeService) private readonly merger: EntityMergeService,
+    // Б29 [K6] — negative-cache distinct-пар: на verdict='distinct' помечаем
+    // пару, чтобы cron не отправлял её LLM-арбитру каждые 5 минут.
+    @Inject(EntityResolutionService)
+    private readonly resolution: EntityResolutionService,
     @Inject(WorkerOrgGate) private readonly gate: WorkerOrgGate,
     @Optional()
     @Inject(EventEmitter2)
@@ -101,7 +130,16 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         recentBlocks,
         candidateRecentBlocks: candRecent,
       });
-      if (verdict.verdict === 'distinct') continue;
+      if (verdict.verdict === 'distinct') {
+        // Б29 [K6] — персистим негативный вердикт: пара (entity, candidate)
+        // признана РАЗНЫМИ. Cron исключит её из выборки кандидатов до TTL,
+        // иначе арбитр пересудил бы ту же пару каждые 5 минут. Best-effort.
+        await this.resolution
+          .markEntityPairDistinct(entity.id, c.candidate.id)
+          .catch(() => undefined);
+        continue;
+      }
+      // verdict='merge'
       try {
         await this.applyMerge({
           entity,
@@ -185,28 +223,36 @@ export class EntityResolverWorker implements OnModuleInit, OnModuleDestroy {
         },
       });
 
+      // 3. Переносим IdeaBlockEntity'и: entityId=fresh.id → targetId.
+      //    Composite PK (blockId, entityId) может конфликтовать — идём по одному
+      //    с pre-check целевой пары (если в block уже есть mention target'а,
+      //    удаляем mention entity), иначе update (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { entityId: fresh.id },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02). Проверяем целевую пару
+        // (blockId, targetId) заранее.
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: { blockId: m.blockId, entityId: targetId },
+          },
+        });
+        if (conflicting) {
+          await tx.ideaBlockEntity.delete({
             where: {
               blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
             },
-            data: { entityId: targetId },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
-              },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: {
+            blockId_entityId: { blockId: m.blockId, entityId: fresh.id },
+          },
+          data: { entityId: targetId },
+        });
       }
     });
 

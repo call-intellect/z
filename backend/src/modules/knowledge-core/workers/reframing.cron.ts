@@ -277,7 +277,6 @@ export class ReframingCron {
         id: true,
         name: true,
         criticalQuestion: true,
-        signalType: true,
       },
     });
 

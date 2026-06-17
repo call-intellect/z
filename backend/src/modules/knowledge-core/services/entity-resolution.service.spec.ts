@@ -342,3 +342,213 @@ describe('EntityResolutionService.resolveSubjectEntityId — Ф1 per-adapter ide
     );
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б15/Б20 [K3] (2026-06-16) — детерминированная привязка Entity↔Person:
+// при >1 тёзке НЕ линкуем; при ровно 1 совпадении — линкуем детерминированно
+// (orderBy id ASC). Юнит-тесты с моканым prisma (БД не нужна).
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService — Entity↔Person линковка тёзок (Б15/Б20)', () => {
+  describe('linkEntityPerson (Entity{person} → Person)', () => {
+    function buildSvc(opts: {
+      entity: { tenantId: string; type: string; canonicalName: string } | null;
+      persons: Array<{ id: string; name: string }>;
+      personUpdate: ReturnType<typeof vi.fn>;
+    }): EntityResolutionService {
+      const prisma = {
+        entity: { findUnique: vi.fn(async () => opts.entity) },
+        person: {
+          findMany: vi.fn(async () => opts.persons),
+          update: opts.personUpdate,
+        },
+      } as unknown as PrismaService;
+      const embed = {} as unknown as KnowledgeEmbeddingService;
+      return new EntityResolutionService(prisma, embed);
+    }
+
+    it('РОВНО 1 Person-тёзка → линкуется', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        entity: { tenantId: 't1', type: 'person', canonicalName: 'Иван Иванов' },
+        persons: [{ id: 'p-1', name: 'Иван Иванов' }],
+        personUpdate,
+      });
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(personUpdate).toHaveBeenCalledTimes(1);
+      expect(personUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'p-1' },
+          data: { entityId: 'e-1' },
+        }),
+      );
+    });
+
+    it('>1 Person-тёзка → НЕ линкуется (неоднозначность)', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        entity: { tenantId: 't1', type: 'person', canonicalName: 'Иван Иванов' },
+        // Два Person с одинаковым именем — тёзки.
+        persons: [
+          { id: 'p-1', name: 'Иван Иванов' },
+          { id: 'p-2', name: 'иван иванов' },
+        ],
+        personUpdate,
+      });
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(personUpdate).not.toHaveBeenCalled();
+    });
+
+    it('findMany вызывается с детерминированным orderBy id ASC', async () => {
+      const findMany = vi.fn(async () => [] as Array<{ id: string; name: string }>);
+      const prisma = {
+        entity: {
+          findUnique: vi.fn(async () => ({
+            tenantId: 't1',
+            type: 'person',
+            canonicalName: 'Кто-то',
+          })),
+        },
+        person: { findMany, update: vi.fn() },
+      } as unknown as PrismaService;
+      const svc = new EntityResolutionService(
+        prisma,
+        {} as unknown as KnowledgeEmbeddingService,
+      );
+
+      await svc.linkEntityPerson({ tenantId: 't1', entityId: 'e-1' });
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ orderBy: { id: 'asc' } }),
+      );
+    });
+  });
+
+  describe('linkPersonEntity (Person → Entity{person})', () => {
+    function buildSvc(opts: {
+      person: {
+        tenantId: string;
+        name: string;
+        entityId: string | null;
+        deletedAt: Date | null;
+      } | null;
+      entities: Array<{ id: string; canonicalName: string }>;
+      personUpdate: ReturnType<typeof vi.fn>;
+    }): EntityResolutionService {
+      const prisma = {
+        person: {
+          findUnique: vi.fn(async () => opts.person),
+          update: opts.personUpdate,
+        },
+        entity: { findMany: vi.fn(async () => opts.entities) },
+      } as unknown as PrismaService;
+      const embed = {} as unknown as KnowledgeEmbeddingService;
+      return new EntityResolutionService(prisma, embed);
+    }
+
+    it('РОВНО 1 Entity-тёзка → линкуется', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        person: { tenantId: 't1', name: 'Пётр Петров', entityId: null, deletedAt: null },
+        entities: [{ id: 'e-1', canonicalName: 'Пётр Петров' }],
+        personUpdate,
+      });
+
+      await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-1' });
+
+      expect(personUpdate).toHaveBeenCalledTimes(1);
+      expect(personUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'p-1' },
+          data: { entityId: 'e-1' },
+        }),
+      );
+    });
+
+    it('>1 Entity-тёзка → НЕ линкуется (неоднозначность)', async () => {
+      const personUpdate = vi.fn(async () => ({}));
+      const svc = buildSvc({
+        person: { tenantId: 't1', name: 'Пётр Петров', entityId: null, deletedAt: null },
+        entities: [
+          { id: 'e-1', canonicalName: 'Пётр Петров' },
+          { id: 'e-2', canonicalName: 'ПЁТР ПЕТРОВ' },
+        ],
+        personUpdate,
+      });
+
+      await svc.linkPersonEntity({ tenantId: 't1', personId: 'p-1' });
+
+      expect(personUpdate).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Б29 [K6] (2026-06-16) — negative-cache distinct-пар (Redis).
+// markEntityPairDistinct / isEntityPairDistinct: ключ симметричен по паре,
+// best-effort (нет Redis → no-op / false).
+// ───────────────────────────────────────────────────────────────────────────
+describe('EntityResolutionService — negative-cache distinct-пар (Б29)', () => {
+  function buildSvc(redisClient: {
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+  }): EntityResolutionService {
+    const prisma = {} as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    const redis = { client: redisClient } as never;
+    // (prisma, embeddings, redis, coreQueue, metrics, cfg, events)
+    return new EntityResolutionService(prisma, embed, redis);
+  }
+
+  it('markEntityPairDistinct пишет SET с симметричным ключом (порядок id не важен)', async () => {
+    const set = vi.fn(async (..._args: unknown[]) => 'OK');
+    const get = vi.fn();
+    const svc = buildSvc({ get, set });
+
+    await svc.markEntityPairDistinct('b-zzz', 'a-aaa');
+    await svc.markEntityPairDistinct('a-aaa', 'b-zzz');
+
+    expect(set).toHaveBeenCalledTimes(2);
+    const key1 = set.mock.calls[0]![0] as string;
+    const key2 = set.mock.calls[1]![0] as string;
+    expect(key1).toBe(key2); // симметрично по паре
+    // упорядоченная пара (lo:hi) → a-aaa раньше b-zzz
+    expect(key1).toContain('a-aaa');
+    expect(key1).toContain('b-zzz');
+    // TTL задан (EX, число секунд > 0)
+    expect(set.mock.calls[0]).toEqual(
+      expect.arrayContaining(['EX']),
+    );
+  });
+
+  it('isEntityPairDistinct: судёная пара → true; несудёная → false', async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce('1') // первая пара есть в кэше
+      .mockResolvedValueOnce(null); // вторая — нет
+    const svc = buildSvc({ get, set: vi.fn() });
+
+    expect(await svc.isEntityPairDistinct('e1', 'e2')).toBe(true);
+    expect(await svc.isEntityPairDistinct('e3', 'e4')).toBe(false);
+  });
+
+  it('isEntityPairDistinct по одному и тому же id → false (без обращения к Redis)', async () => {
+    const get = vi.fn();
+    const svc = buildSvc({ get, set: vi.fn() });
+    expect(await svc.isEntityPairDistinct('same', 'same')).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('нет Redis → markEntityPairDistinct no-op, isEntityPairDistinct false', async () => {
+    const prisma = {} as unknown as PrismaService;
+    const embed = {} as unknown as KnowledgeEmbeddingService;
+    const svc = new EntityResolutionService(prisma, embed); // без redis
+    await expect(
+      svc.markEntityPairDistinct('e1', 'e2'),
+    ).resolves.toBeUndefined();
+    expect(await svc.isEntityPairDistinct('e1', 'e2')).toBe(false);
+  });
+});

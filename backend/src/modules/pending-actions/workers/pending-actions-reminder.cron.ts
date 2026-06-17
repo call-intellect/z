@@ -255,6 +255,8 @@ const SOURCE_LABEL: Record<PendingActionSource, string> = {
   conflict: 'Конфликты',
   intake: 'Задачи',
   probe: 'Вопросы',
+  task_closure: 'Задачи к закрытию',
+  task_review: 'Задачи под вопросом',
 };
 
 function buildReminderBody(args: {
@@ -264,7 +266,16 @@ function buildReminderBody(args: {
   lines: string[];
   actionUrl: string;
 }): string {
-  const breakdown = (['curation', 'conflict', 'intake', 'probe'] as PendingActionSource[])
+  const breakdown = (
+    [
+      'curation',
+      'conflict',
+      'intake',
+      'probe',
+      'task_closure',
+      'task_review',
+    ] as PendingActionSource[]
+  )
     .map((s) => `${SOURCE_LABEL[s]} — ${args.bySource[s]}`)
     .join(', ');
 

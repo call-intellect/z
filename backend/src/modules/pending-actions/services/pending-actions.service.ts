@@ -5,6 +5,7 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { IntakeService } from '../../tracker/services/intake.service';
+import { IssuesService } from '../../tracker/services/issues.service';
 import { ConflictPendingProvider } from '../providers/conflict.provider';
 import { CurationPendingProvider } from '../providers/curation.provider';
 import { IntakePendingProvider } from '../providers/intake.provider';
@@ -13,6 +14,8 @@ import type {
   PendingActionsProvider,
 } from '../providers/pending-actions-provider.types';
 import { ProbePendingProvider } from '../providers/probe.provider';
+import { TaskClosurePendingProvider } from '../providers/task-closure.provider';
+import { TaskReviewPendingProvider } from '../providers/task-review.provider';
 
 export type PendingActionSource = PendingActionItem['source'];
 
@@ -34,6 +37,7 @@ export interface SnoozeInput {
   hours: number;
 }
 
+/** Стратегия резолва (зависит от source). См. DTO ConfirmResolutionSchema. */
 export type ConfirmResolution =
   | 'approve'
   | 'reject'
@@ -47,14 +51,27 @@ export interface ConfirmInput {
   userId: string;
   source: PendingActionSource;
   resourceId: string;
+  /// Стратегия резолва (curation опц.; conflict/intake обязательна; probe — нет).
   resolution?: ConfirmResolution;
+  /// Свободный ответ на probe-вопрос (только source='probe').
   answerText?: string;
+  /// Целевой проект для intake accept.
   targetProjectId?: string;
 }
 
 const SNOOZE_MIN_HOURS = 1;
 const SNOOZE_MAX_HOURS = 720;
 
+/**
+ * PendingActionsService — единый агрегатор «что требует действия пользователя»
+ * (Action Center B0, 2026-06-02). Фундамент Части B: его потребляют бейдж,
+ * колокольчик, дашборд CEO и Telegram.
+ *
+ * Резолвит роль пользователя в tenant (Membership) → передаёт её провайдерам
+ * (owner/admin видят всё по своим источникам). Snooze (PendingActionSnooze)
+ * исключается из count/list: провайдер получает множество отложенных
+ * resourceId'ов своего источника и фильтрует их в SQL.
+ */
 @Injectable()
 export class PendingActionsService {
   private readonly logger = new Logger(PendingActionsService.name);
@@ -70,19 +87,44 @@ export class PendingActionsService {
     private readonly intake: IntakePendingProvider,
     @Inject(ProbePendingProvider)
     private readonly probe: ProbePendingProvider,
+    // TZ task-dedup (2026-06-16, Ф2) — задачи-кандидаты на закрытие из разговора.
+    @Inject(TaskClosurePendingProvider)
+    private readonly taskClosure: TaskClosurePendingProvider,
+    // TZ task-dedup (2026-06-16, Ф4) — задачи «под вопросом» после отмены решения.
+    @Inject(TaskReviewPendingProvider)
+    private readonly taskReview: TaskReviewPendingProvider,
+    // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
+    // Редизайн Ф4 — делегаты сквозного резолва остальных источников.
     @Inject(ConflictService)
     private readonly conflictService: ConflictService,
     @Inject(IntakeService)
     private readonly intakeService: IntakeService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
+    // TZ task-dedup (2026-06-16, Ф2) — делегат закрытия задачи при confirm
+    // (transitionState в completed-статус проекта).
+    @Inject(IssuesService)
+    private readonly issuesService: IssuesService,
   ) {
-    this.providers = [this.curation, this.conflict, this.intake, this.probe];
+    // Порядок фиксирован — детерминизм для bySource/тестов.
+    this.providers = [
+      this.curation,
+      this.conflict,
+      this.intake,
+      this.probe,
+      this.taskClosure,
+      this.taskReview,
+    ];
   }
 
-  async getCount(args: { tenantId: string; userId: string }): Promise<PendingActionsCountResult> {
+  // ──────────────────────────── count ─────────────────────────────
+
+  async getCount(args: {
+    tenantId: string;
+    userId: string;
+  }): Promise<PendingActionsCountResult> {
     const role = await this.resolveRole(args.tenantId, args.userId);
     const snoozed = await this.loadSnoozedBySource(args.tenantId, args.userId);
 
@@ -91,6 +133,8 @@ export class PendingActionsService {
       conflict: 0,
       intake: 0,
       probe: 0,
+      task_closure: 0,
+      task_review: 0,
     } as Record<PendingActionSource, number>;
 
     await Promise.all(
@@ -104,9 +148,17 @@ export class PendingActionsService {
       }),
     );
 
-    const total = bySource.curation + bySource.conflict + bySource.intake + bySource.probe;
+    const total =
+      bySource.curation +
+      bySource.conflict +
+      bySource.intake +
+      bySource.probe +
+      bySource.task_closure +
+      bySource.task_review;
     return { total, bySource };
   }
+
+  // ──────────────────────────── list ──────────────────────────────
 
   async getList(args: {
     tenantId: string;
@@ -116,6 +168,8 @@ export class PendingActionsService {
     const role = await this.resolveRole(args.tenantId, args.userId);
     const snoozed = await this.loadSnoozedBySource(args.tenantId, args.userId);
 
+    // Каждый провайдер отдаёт не более `limit` — объединяем, сортируем
+    // urgent-first затем по ageDays desc, и обрезаем до limit.
     const lists = await Promise.all(
       this.providers.map((p) =>
         p.listForUser({
@@ -132,12 +186,14 @@ export class PendingActionsService {
     merged.sort((a, b) => {
       const aUrgent = a.severity === 'urgent' ? 1 : 0;
       const bUrgent = b.severity === 'urgent' ? 1 : 0;
-      if (aUrgent !== bUrgent) return bUrgent - aUrgent;
-      return b.ageDays - a.ageDays;
+      if (aUrgent !== bUrgent) return bUrgent - aUrgent; // urgent-first
+      return b.ageDays - a.ageDays; // затем самые старые сверху
     });
 
     return { items: merged.slice(0, args.limit) };
   }
+
+  // ──────────────────────────── snooze ────────────────────────────
 
   async snooze(input: SnoozeInput): Promise<{ ok: true; snoozedUntil: string }> {
     if (
@@ -189,6 +245,17 @@ export class PendingActionsService {
     return { ok: true, snoozedUntil: snoozedUntil.toISOString() };
   }
 
+  // ──────────────────────── confirm (Ф4 — сквозной резолв) ────────
+
+  /**
+   * Сквозной резолв item'а единой очереди решений (редизайн Ф4, 2026-06-13).
+   * Диспетчер по `source` → профильный сервис-резолвер. Все источники
+   * валидируют tenantId-владение и status внутри своих сервисов; ошибки
+   * (BadRequest/Forbidden/NotFound) пробрасываются наружу. Повторный резолв
+   * уже резолвнутого ресурса — понятная ошибка/no-op, не 500.
+   *
+   * Возвращает `{ ok: true }` — детали резолва берутся из профильных API.
+   */
   async confirm(input: ConfirmInput): Promise<{ ok: true }> {
     switch (input.source) {
       case 'curation':
@@ -203,7 +270,14 @@ export class PendingActionsService {
       case 'probe':
         await this.confirmProbe(input);
         return { ok: true };
+      case 'task_closure':
+        await this.confirmTaskClosure(input);
+        return { ok: true };
+      case 'task_review':
+        await this.confirmTaskReview(input);
+        return { ok: true };
       default: {
+        // exhaustive — на случай расширения source без обновления switch.
         const _never: never = input.source;
         throw new BadRequestException({
           ok: false,
@@ -216,8 +290,13 @@ export class PendingActionsService {
     }
   }
 
+  /**
+   * curation: light-карточка → approve (one-tap, B4) либо reject. RBAC,
+   * status==='pending' и reasoning-окно — внутри `decide`.
+   */
   private async confirmCuration(input: ConfirmInput): Promise<void> {
-    const decision: 'approve' | 'reject' = input.resolution === 'reject' ? 'reject' : 'approve';
+    const decision: 'approve' | 'reject' =
+      input.resolution === 'reject' ? 'reject' : 'approve';
 
     const item = await this.prisma.curationItem.findUnique({
       where: { id: input.resourceId },
@@ -233,6 +312,7 @@ export class PendingActionsService {
       });
     }
     if (item.status !== 'pending') {
+      // Идемпотентность: уже резолвнут — понятная ошибка, не 500.
       throw new BadRequestException({
         ok: false,
         error: {
@@ -252,6 +332,8 @@ export class PendingActionsService {
       });
     }
 
+    // decide сам проверяет RBAC (reviewer ∈ candidateCuratorIds | owner/admin),
+    // повторно валидирует status==='pending'. ForbiddenException → 403 наружу.
     await this.curationService.decide({
       tenantId: input.tenantId,
       curationItemId: input.resourceId,
@@ -264,14 +346,24 @@ export class PendingActionsService {
     );
   }
 
+  /**
+   * conflict: keep_old | accept_new | merge → ConflictService.resolve.
+   * `evolving` через быстрый резолв не поддерживаем (нужны даты evolvingMeta —
+   * только на странице конфликта). tenantId-владение и status==='open' —
+   * внутри resolve (повторный → BadRequest 'conflict_not_open', не 500).
+   */
   private async confirmConflict(input: ConfirmInput): Promise<void> {
     const allowed = ['keep_old', 'accept_new', 'merge'] as const;
-    if (!input.resolution || !(allowed as readonly string[]).includes(input.resolution)) {
+    if (
+      !input.resolution ||
+      !(allowed as readonly string[]).includes(input.resolution)
+    ) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'conflict_resolution_required',
-          message: 'Для конфликта нужен resolution ∈ keep_old | accept_new | merge',
+          message:
+            "Для конфликта нужен resolution ∈ keep_old | accept_new | merge",
         },
       });
     }
@@ -282,16 +374,17 @@ export class PendingActionsService {
       resolution: input.resolution as 'keep_old' | 'accept_new' | 'merge',
     });
     this.logger.log(
-      {
-        tenantId: input.tenantId,
-        userId: input.userId,
-        resourceId: input.resourceId,
-        resolution: input.resolution,
-      },
+      { tenantId: input.tenantId, userId: input.userId, resourceId: input.resourceId, resolution: input.resolution },
       'pending-actions.confirm: conflict резолвнут',
     );
   }
 
+  /**
+   * intake: accept | reject → IntakeService.triage. Для accept проект берётся
+   * из targetProjectId / привязки / suggested (логика внутри triage). Если
+   * проекта нет — triage кидает BadRequest 'target_project_required' (наружу,
+   * не 500). Повторный триаж → BadRequest 'intake_already_triaged'.
+   */
   private async confirmIntake(input: ConfirmInput): Promise<void> {
     const decision = input.resolution;
     if (decision !== 'accept' && decision !== 'reject') {
@@ -318,6 +411,11 @@ export class PendingActionsService {
     );
   }
 
+  /**
+   * probe: свободный ответ текстом → ConversationalService.respondToProbe.
+   * Владение (recipientUserId), идемпотентность (answered → no-op) и срок
+   * (expiresAt) — внутри respondToProbe (Forbidden/BadRequest наружу).
+   */
   private async confirmProbe(input: ConfirmInput): Promise<void> {
     const text = input.answerText?.trim();
     if (!text) {
@@ -340,7 +438,161 @@ export class PendingActionsService {
     );
   }
 
-  private async resolveRole(tenantId: string, userId: string): Promise<string | null> {
+  /**
+   * task_closure (TZ task-dedup, 2026-06-16, Ф2): обратимый кандидат на закрытие
+   * задачи из разговора.
+   *   - approve → закрываем Issue через IssuesService.transitionState в
+   *     completed-статус проекта + статус кандидата 'accepted'.
+   *   - reject  → статус кандидата 'rejected', Issue НЕ трогаем (R13/Р1 —
+   *     авто-закрытие запрещено; человек — единственный, кто закрывает).
+   * Идемпотентность: кандидат должен быть в status='pending' (повторный резолв →
+   * понятная ошибка, не 500).
+   */
+  private async confirmTaskClosure(input: ConfirmInput): Promise<void> {
+    const decision: 'approve' | 'reject' =
+      input.resolution === 'reject' ? 'reject' : 'approve';
+
+    const candidate = await this.prisma.taskClosureCandidate.findUnique({
+      where: { id: input.resourceId },
+      select: { id: true, tenantId: true, issueId: true, status: true },
+    });
+    if (!candidate || candidate.tenantId !== input.tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_candidate_not_found',
+          message: 'Кандидат на закрытие задачи не найден',
+        },
+      });
+    }
+    if (candidate.status !== 'pending') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_candidate_not_pending',
+          message: `Кандидат уже в статусе ${candidate.status}`,
+        },
+      });
+    }
+
+    if (decision === 'reject') {
+      await this.prisma.taskClosureCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'rejected',
+          decidedByUserId: input.userId,
+          decidedAt: new Date(),
+        },
+      });
+      this.logger.log(
+        { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id },
+        'pending-actions.confirm: кандидат на закрытие отклонён (Issue не тронут)',
+      );
+      return;
+    }
+
+    // approve → найти completed-статус проекта задачи и перевести Issue.
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: candidate.issueId, tenantId: input.tenantId },
+      select: { id: true, projectId: true },
+    });
+    if (!issue) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_issue_not_found',
+          message: 'Задача-кандидат на закрытие не найдена',
+        },
+      });
+    }
+    const completedState = await this.prisma.issueState.findFirst({
+      where: { projectId: issue.projectId, category: 'completed' },
+      orderBy: { sequence: 'asc' },
+      select: { id: true },
+    });
+    if (!completedState) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_no_completed_state',
+          message: 'В проекте задачи нет статуса «выполнено»',
+        },
+      });
+    }
+    // R13: закрытие выполняет ТОЛЬКО подтверждение человека (этот путь),
+    // ни один LLM-обработчик Issue напрямую не трогает.
+    await this.issuesService.transitionState(
+      issue.id,
+      { stateId: completedState.id, reason: 'Подтверждено: выполнено в разговоре' } as never,
+      input.tenantId,
+      input.userId,
+    );
+    await this.prisma.taskClosureCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: 'accepted',
+        decidedByUserId: input.userId,
+        decidedAt: new Date(),
+      },
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id, issueId: issue.id },
+      'pending-actions.confirm: кандидат на закрытие принят — задача закрыта',
+    );
+  }
+
+  /**
+   * task_review (TZ task-dedup, 2026-06-16, Ф4): задача «под вопросом» после
+   * отмены/замены связанного решения (supersede). confirm = «разобрался» —
+   * снимаем пометку (`closureReviewState=null`). Задача НЕ закрывается и НЕ
+   * отменяется (R11/R13): необратимого действия здесь нет — гаснет лишь
+   * подсветка. Идемпотентность: уже снятая пометка → понятная ошибка, не 500.
+   */
+  private async confirmTaskReview(input: ConfirmInput): Promise<void> {
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: input.resourceId, tenantId: input.tenantId },
+      select: { id: true, closureReviewState: true },
+    });
+    if (!issue) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_review_issue_not_found',
+          message: 'Задача «под вопросом» не найдена',
+        },
+      });
+    }
+    if (issue.closureReviewState == null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_review_not_flagged',
+          message: 'Задача уже не помечена «под вопросом»',
+        },
+      });
+    }
+    // R11/R13: снимаем ТОЛЬКО review-пометку. Статус/closedAt задачи не трогаем.
+    await this.prisma.issue.update({
+      where: { id: issue.id },
+      data: {
+        closureReviewState: null,
+        closureReviewReason: null,
+        closureReviewAt: null,
+      },
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: issue.id },
+      'pending-actions.confirm: задача «под вопросом» разобрана — пометка снята (задача не закрыта)',
+    );
+  }
+
+  // ──────────────────────────── helpers ───────────────────────────
+
+  /** Роль пользователя в tenant (Membership) или null, если не член Org. */
+  private async resolveRole(
+    tenantId: string,
+    userId: string,
+  ): Promise<string | null> {
     const membership = await this.prisma.membership.findUnique({
       where: { orgId_userId: { orgId: tenantId, userId } },
       select: { role: true },
@@ -348,6 +600,10 @@ export class PendingActionsService {
     return membership?.role ?? null;
   }
 
+  /**
+   * Активные snooze пользователя, сгруппированные по source. resourceId'ы
+   * каждого источника передаются провайдеру для SQL-фильтрации.
+   */
   private async loadSnoozedBySource(
     tenantId: string,
     userId: string,
@@ -365,6 +621,8 @@ export class PendingActionsService {
       conflict: new Set(),
       intake: new Set(),
       probe: new Set(),
+      task_closure: new Set(),
+      task_review: new Set(),
     };
     for (const r of rows) {
       const bucket = out[r.source as PendingActionSource];

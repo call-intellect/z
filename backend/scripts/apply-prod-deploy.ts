@@ -135,6 +135,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-document-attribution.ts',
     hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-base-redesign.ts',
+    hint: 'knowledge_base.redesign.enabled kill-switch (Ф5 редизайн раздела «База знаний»)',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {
@@ -206,6 +211,8 @@ const STEPS: Step[] = [
     'curation',
     'goals',
     'task-dedupe',
+    'task-dedup-arbiter',
+    'task-closure-verify',
     'goal-task-link',
     'support',
     'compile-org-document',
@@ -463,6 +470,12 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
+    script: 'scripts/backfill-compile-flat-cards.ts',
+    hint: 'переразметка плоских карточек базы знаний компилятором',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
     script: 'scripts/backfill-merge-duplicate-persons.ts',
     args: ['--apply'],
     hint: 'Слить дубли Person по email (Команда)',
@@ -571,6 +584,12 @@ const STEPS: Step[] = [
     hint: 'клоны ролей → single-bearer + freeze бывших (Раздел 7 §7.6)',
     skipBootstrap: true,
   },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-goal-embeddings.ts',
+    hint: 'Goal.embedding (pgvector 1536) для семантического дедупа целей (TZ 2026-06-16 Ф5); идемпотентно — только embedding IS NULL',
+    skipBootstrap: true,
+  },
 
   {
     phase: 'migrate',
@@ -613,7 +632,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (a === '--no-fail-on-steps') failOnSteps = false;
     else if (a === '--verbose') verbose = true;
     else if (a === '--help' || a === '-h') {
-      // eslint-disable-next-line no-console
+       
       console.log(
         `Usage: bun run scripts/apply-prod-deploy.ts [--mode bootstrap|update|all] [--with-schema] [--dry-run] [--continue-on-fail] [--no-fail-on-steps] [--verbose]\n` +
           `  --with-schema       авто-бэкап БД → dedupe → prisma migrate deploy → apply-postgres-init,\n` +
@@ -641,7 +660,7 @@ async function autoBackup(): Promise<boolean> {
   const dir = '/app/backups';
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const file = `${dir}/pre-deploy-${ts}.dump`;
-  // eslint-disable-next-line no-console
+   
   console.log(`\n=== AUTO-BACKUP (перед migrate deploy) → ${file} ===`);
   await Bun.spawn(['mkdir', '-p', dir], { stdout: 'inherit', stderr: 'inherit' }).exited;
   const proc = Bun.spawn(['pg_dump', url, '-Fc', '-f', file], {
@@ -650,14 +669,14 @@ async function autoBackup(): Promise<boolean> {
   });
   const code = await proc.exited;
   if (code !== 0) {
-    // eslint-disable-next-line no-console
+     
     console.error(
       `[schema] ✗ pg_dump упал (exit ${code}). migrate deploy НЕ выполняется без бэкапа. ` +
         `Проверь, что pg_dump есть в образе (postgresql16-client) и postgres доступен.`,
     );
     return false;
   }
-  // eslint-disable-next-line no-console
+   
   console.log(
     `[schema] ✓ Бэкап создан: ${file}\n` +
       `         restore: docker compose run --rm --no-deps backend ` +
@@ -671,7 +690,7 @@ async function psqlScalar(url: string, sql: string): Promise<string | null> {
   const out = await new Response(proc.stdout).text();
   if ((await proc.exited) !== 0) {
     const err = await new Response(proc.stderr).text();
-    // eslint-disable-next-line no-console
+     
     console.error(`[schema] psqlScalar упал: ${err.slice(-500)}`);
     return null;
   }
@@ -695,7 +714,7 @@ function withPublicSearchPath(url: string): string {
 async function ensureBaseline(): Promise<boolean> {
   const url = process.env['DATABASE_URL'];
   if (!url) {
-    // eslint-disable-next-line no-console
+     
     console.error('[schema] ensureBaseline: DATABASE_URL не задан.');
     return false;
   }
@@ -715,7 +734,7 @@ async function ensureBaseline(): Promise<boolean> {
       `\n>>> [schema] _prisma_migrations в схеме "${migSchema}" (AGE search_path) → переношу в public.`,
     );
     if (!(await psqlExec(url, `ALTER TABLE "${migSchema}"._prisma_migrations SET SCHEMA public`))) {
-      // eslint-disable-next-line no-console
+       
       console.error('[schema] ✗ не удалось перенести _prisma_migrations в public.');
       return false;
     }
@@ -727,7 +746,7 @@ async function ensureBaseline(): Promise<boolean> {
   }
 
   if (migSchema === 'public') {
-    // eslint-disable-next-line no-console
+     
     console.log('[schema] baseline есть (_prisma_migrations в public) → обычный migrate deploy.');
     return true;
   }
@@ -738,7 +757,7 @@ async function ensureBaseline(): Promise<boolean> {
   );
   if (hasTables === null) return false;
   if (hasTables === '0') {
-    // eslint-disable-next-line no-console
+     
     console.log('[schema] пустая БД — migrate deploy создаст схему с нуля (0_init).');
     return true;
   }
@@ -758,15 +777,15 @@ async function ensureBaseline(): Promise<boolean> {
   console.log(resolveOut.trim());
   if ((await resolve.exited) !== 0) {
     if (/P3008|already recorded as applied/i.test(resolveOut)) {
-      // eslint-disable-next-line no-console
+       
       console.log('[schema] 0_init уже отмечен applied (P3008) — продолжаем.');
       return true;
     }
-    // eslint-disable-next-line no-console
+     
     console.error('[schema] ✗ migrate resolve --applied 0_init упал.');
     return false;
   }
-  // eslint-disable-next-line no-console
+   
   console.log('[schema] ✓ авто-baseline завершён.');
   return true;
 }
@@ -779,7 +798,7 @@ async function runSchemaPhase(
   // eslint-disable-next-line no-console
   console.log('\n=== SCHEMA PHASE (--with-schema) ===');
   if (dryRun) {
-    // eslint-disable-next-line no-console
+     
     console.log(
       '>>> [schema] (dry-run) auto-backup + dedupe + auto-baseline + prisma migrate deploy + apply-postgres-init',
     );
@@ -800,7 +819,7 @@ async function runSchemaPhase(
   if (!(await ensureBaseline())) return false;
 
   const dbUrl = process.env['DATABASE_URL'];
-  // eslint-disable-next-line no-console
+   
   console.log('\n>>> [schema] bunx prisma migrate deploy');
   const push = Bun.spawn(['bunx', 'prisma', 'migrate', 'deploy'], {
     stdout: 'inherit',
@@ -851,13 +870,13 @@ async function runOne(
   const cmd = ['bun', 'run', step.script, ...(step.args ?? [])];
   const label = `[${step.phase}] ${cmd.slice(2).join(' ')}${step.hint ? `  # ${step.hint}` : ''}`;
   if (dryRun) {
-    // eslint-disable-next-line no-console
+     
     console.log(`>>> ${label}`);
     return { ok: true, code: 0 };
   }
 
   if (verbose) {
-    // eslint-disable-next-line no-console
+     
     console.log(`\n>>> ${label}`);
     const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit' });
     const code = await proc.exited;
@@ -872,18 +891,18 @@ async function runOne(
   const code = await proc.exited;
   if (code === 0) {
     const summary = pickSummaryLine(out);
-    // eslint-disable-next-line no-console
+     
     console.log(`✓ ${label}${summary ? `  — ${summary}` : ''}`);
     return { ok: true, code };
   }
   // eslint-disable-next-line no-console
   console.error(`\n✗ ${label}  (exit ${code})`);
   if (out.trim()) {
-    // eslint-disable-next-line no-console
+     
     console.error(out.trimEnd());
   }
   if (err.trim()) {
-    // eslint-disable-next-line no-console
+     
     console.error(err.trimEnd());
   }
   return { ok: false, code };
@@ -893,7 +912,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const steps = filterSteps(STEPS, args.mode);
 
-  // eslint-disable-next-line no-console
+   
   console.log(
     `=== apply-prod-deploy mode=${args.mode} withSchema=${args.withSchema} dryRun=${args.dryRun} steps=${steps.length} ===`,
   );
@@ -901,7 +920,7 @@ async function main(): Promise<void> {
   if (args.withSchema) {
     const ok = await runSchemaPhase(args.dryRun, args.continueOnFail, args.verbose);
     if (!ok) {
-      // eslint-disable-next-line no-console
+       
       console.error('\n✗ SCHEMA PHASE упала (бэкап или push). Остановка — данные не тронуты.');
       process.exit(1);
     }
@@ -921,35 +940,35 @@ async function main(): Promise<void> {
   }
 
   const failed = results.filter((r) => !r.ok);
-  // eslint-disable-next-line no-console
+   
   console.log(`\n=== SUMMARY ===`);
   // eslint-disable-next-line no-console
   console.log(
     `Всего: ${results.length}, OK: ${results.length - failed.length}, FAIL: ${failed.length}`,
   );
   if (failed.length) {
-    // eslint-disable-next-line no-console
+     
     console.log(`\nУпавшие:`);
     for (const f of failed) {
-      // eslint-disable-next-line no-console
+       
       console.log(`  ✗ ${f.step.script} (exit ${f.code})`);
     }
     if (args.failOnSteps) {
       process.exit(1);
     }
-    // eslint-disable-next-line no-console
+     
     console.log(
       `\n⚠ ${failed.length} step(s) упали, но --no-fail-on-steps → выходим 0 ` +
         `(схема применена, backend может стартовать; перезапусти скрипты по списку выше).`,
     );
     return;
   }
-  // eslint-disable-next-line no-console
+   
   console.log(`✓ ALL APPLIED`);
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error('apply-prod-deploy FAILED:', err);
   process.exit(1);
 });

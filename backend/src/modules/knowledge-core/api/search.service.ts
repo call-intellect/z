@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import {
   KnowledgeAccessResolver,
   type KnowledgeAccessContext,
@@ -151,15 +152,34 @@ export class SearchService {
     const pWcos = pushParam(args.cosineWeight);
     const pWbm = pushParam(args.bm25Weight);
 
-    const cosineSelect = args.qvec
-      ? `(1 - (b.embedding <=> ${pushParam(this.toVectorLiteral(args.qvec))}::vector(1536)))`
+    // G2 guard: пускаем cosine в SQL только если литерал прошёл проверку
+    // размерности (== EMBEDDING_DIMENSIONS) и финитности элементов. Иначе —
+    // graceful degrade: WARN + ветка без cosine (BM25/пустой recall), чтобы
+    // pgvector-оператор `<=>` не валил `/search` 500-кой (смена модели → другая
+    // размерность; битый вектор → NaN/Infinity).
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const vecLiteral = args.qvec
+      ? buildVectorLiteral(args.qvec, expectedDim)
+      : { literal: null, rejectReason: null as null | string };
+    if (args.qvec && vecLiteral.literal === null) {
+      this.logger.warn(
+        {
+          reason: vecLiteral.rejectReason,
+          actualDim: args.qvec.length,
+          expectedDim,
+        },
+        'search: query-вектор отвергнут guard-ом — поиск только по BM25 (cosine пропущен)',
+      );
+    }
+    const cosineSelect = vecLiteral.literal
+      ? `(1 - (b.embedding <=> ${pushParam(vecLiteral.literal)}::vector(1536)))`
       : '0::float';
 
     const filters: string[] = [`b."tenantId" = ${pTenant}`, `b.status = 'canonical'`];
     if (args.bitemporalActiveOnly) {
       filters.push('b."validUntil" IS NULL');
     }
-    if (args.qvec) {
+    if (vecLiteral.literal) {
       filters.push('b.embedding IS NOT NULL');
     }
     if (args.signalTypes && args.signalTypes.length > 0) {
@@ -276,10 +296,6 @@ export class SearchService {
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
     };
-  }
-
-  private toVectorLiteral(vec: number[]): string {
-    return `[${vec.join(',')}]`;
   }
 
   private toFiniteNumber(v: unknown): number | null {

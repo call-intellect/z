@@ -133,6 +133,49 @@ describe('PracticeSkillRetrievalService', () => {
     expect(out).toEqual([]);
   });
 
+  it('2-G2) вектор неверной размерности → [] (KNN SQL не вызван, не 500)', async () => {
+    // 3-мерный вектор ≠ EMBEDDING_DIMENSIONS → guard отвергает → graceful [].
+    const embedder = makeEmbedder([0.1, 0.2, 0.3]);
+    const prisma = makePrisma({ knnIds: ['s1'], skills: [skill('s1')] });
+    const svc = new PracticeSkillRetrievalService(
+      prisma as unknown as PrismaService,
+      makeCfg(true),
+      embedder,
+      makeMetrics(),
+    );
+    const out = await svc.retrieveForCloneRespond({
+      tenantId: TENANT,
+      scope: 'person',
+      scopeRefId: PERSON,
+      question: 'как ты работаешь с клиентами?',
+      conversationId: 'conv-1',
+    });
+    expect(out).toEqual([]);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('2-G2b) вектор с NaN → [] (KNN SQL не вызван, не 500)', async () => {
+    const bad = new Array(1536).fill(0.01);
+    bad[7] = Number.NaN;
+    const embedder = makeEmbedder(bad);
+    const prisma = makePrisma({ knnIds: ['s1'], skills: [skill('s1')] });
+    const svc = new PracticeSkillRetrievalService(
+      prisma as unknown as PrismaService,
+      makeCfg(true),
+      embedder,
+      makeMetrics(),
+    );
+    const out = await svc.retrieveForCloneRespond({
+      tenantId: TENANT,
+      scope: 'person',
+      scopeRefId: PERSON,
+      question: 'q',
+      conversationId: 'conv-1',
+    });
+    expect(out).toEqual([]);
+    expect(prisma.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
   it('3) active skill → всегда включается', async () => {
     const s = skill('s1', { status: 'active', trafficShare: 0.0 });
     const embedder = makeEmbedder(new Array(1536).fill(0.01));

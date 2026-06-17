@@ -91,6 +91,50 @@ docker compose run --rm --no-deps backend \
 - **LLM сам не побежит:** анализ гейтится `analysisEnabled` + наличием подключённого портала. Дефолт `analysisEnabled=true`, но без connected-интеграции крон/синк ничего не ставят. Включение для существующих — через тумблер на странице источника.
 - **Отложено (Ф4b):** CRM посуточный дайджест — нужна дельта по `DATE_MODIFY` + `modifiedAt`/курсор + решение владельца по глубине/периоду. См. `second-brain/04_не-сделано/README.md`.
 
+---
+
+### 🧠 2026-06-17 — База знаний: форматтер на создании карточки + редизайн раздела (Ф1–Ф6)
+
+> Контракт: ветка `feature/knowledge-base-redesign-formatter`, коммиты `6e98d3a8..28b6217e` (8 коммитов: Ф1 форматтер-на-создании, Ф2 backfill, Ф3 граница промпта, Ф6 docType→hint, Ф4 нейминг, Ф5a backend-kill-switch, Ф5b редизайн). ТЗ: `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`. second-brain: `01_projects/regulations.md`, `02_architecture/knowledge-core.md`, `03_processes/specialist-3-1-regulations.md`. Реестр флагов — `docs/operations/feature-flags.md` (новая строка `knowledge_base.redesign.enabled`).
+>
+> **Зачем для прода:** раздел «Правила, процессы и политики» читался как лог экстракции (сырой одноабзацный `statement` в теле, узкая master-detail раскладка). Чиним 4 вектора: (Ф1) компилятор `compile-org-document` теперь зовётся на СОЗДАНИИ карточки (reg/proc/pol/instr), а не только на merge → каждая карточка структурна с v1 + CardVersion; (Ф2) разовый backfill переразмечает старые плоские карточки; (Ф3) граница regulation↔policy в промпте экстрактора; (Ф6) ручная загрузка `docType→signalTypeHint` — документ детерминированно доходит до Specialist 3.1; (Ф4) нейминг «База знаний компании» + таксономия + неконфликтные счётчики; (Ф5) редизайн раскладки (широкая оболочка + дерево + колонка чтения + TOC + тумблер ширины) за kill-switch.
+>
+> **Миграций БД НЕТ.** **1 новый kill-switch (`knowledge_base.redesign.enabled`, тип «аварийный рубильник», ON).** **1 seed + 1 backfill (оба в STEPS).** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — AdminSetting / feature-flag (новый kill-switch, ON, действий владельца НЕ требует):** `knowledge_base.redesign.enabled` (zBool, code-default `true`) — новая раскладка раздела «База знаний». Едет на фронт через `/regulations/summary.redesignEnabled`; OFF → прежняя master-detail раскладка. Реестр — `docs/operations/feature-flags.md`. Доезжает seed'ом (Шаг 7).
+- **Шаг 4 — Prisma** — **миграций НЕТ** (CardVersion на создании использует существующую модель `CardVersion`; новых колонок/таблиц нет). Регистрировать нечего.
+- **Шаг 7 — Seed (1 прогон AdminSetting, идемпотентный, в STEPS `phase:'seed-base'`):** `seed-admin-setting-knowledge-base-redesign.ts` (`knowledge_base.redesign.enabled=true`; защита admin-override). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-compile-flat-cards.ts` — переразмечает старые плоские карточки (reg/proc/pol/instr без `## `/таблицы) структурным компилятором + CardVersion. Прогон тем же агрегатором (`--mode update`). Идемпотентен (структурные пропускаются → повтор = 0). ⚠️ **Faithfulness-проверка перед массовым прогоном:** сначала `docker compose exec backend bun run scripts/backfill-compile-flat-cards.ts --dry-run --limit=20` (покажет кандидатов без LLM/записи), глазами сверить выборку; затем агрегатор. Уважает kill-switch `docCompilerEnabled` (OFF → backfill пропущен).
+- **Шаг 11 — Docker rebuild** — обязателен (Ф1 компилятор на создании в `core.specialist-routing`, Ф3 промпт экстрактора, Ф6 адаптер документов, Ф5a поле `redesignEnabled` в summary; фронт — Ф4 нейминг + Ф5b новая раскладка): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **Форматтер на создании:** создать/дождаться новой карточки regulation из встречи → тело содержит markdown-структуру (`## ` или таблица `| `), не сырой одноабзацный текст;
+  - (б) **Ручная загрузка:** загрузить документ с `docType='regulation'` → карточка появляется на `/regulations` (а не оседает только в `/documents`);
+  - (в) `GET /api/v1/regulations/summary` отдаёт поле `redesignEnabled: true`;
+  - (г) `/regulations` рендерит новую раскладку (широкая оболочка + дерево-папки слева + читаемая колонка + правый TOC + тумблер «Чтение/Широкий»); проверить читаемость в светлой И тёмной теме (переключатель внешнего вида в Настройках);
+  - (д) `GET /admin/settings` содержит `knowledge_base.redesign.enabled=true`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
+### 📊 2026-06-16 — Подключение агентов «Операционного директора» к UI (доска «Аналитика»)
+
+> Контракт: ветка `feature/coo-orphan-agents-wire`, коммиты `ac56ce2b..b44229ae` (Ф1–Ф8). ТЗ: `plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md`. second-brain: `01_projects/director-dashboard.md` (§«Доска «Аналитика»»). Реестр флагов — `docs/operations/feature-flags.md` (убрана строка `deliver_to_telegram`).
+>
+> **Зачем для прода:** бэкенд COO почти весь уже считал данные, но часть результатов была «осиротевшей» (код есть, потребителя на экране нет). Этот выкат подключает готовое к доске `/dashboard/operations` (переименована в «Аналитика»): 6 pulse-виджетов, «Доведение решений», «Клиенты под риском», «Знания под риском», «Перегруз ответственностью», оживлены мёртвые сигналы (факторы вовлечённости команд, сеть обещаний), починены 2 заглушки данных (`team-detail.goals`, `team-health.decisions`), дневная сводка COO начинает доставляться в каналы по умолчанию.
+>
+> **Миграций БД НЕТ** (все поля/модели уже в схеме). **Seed/patch/backfill на запуск НЕТ.** **Новых OFF-флагов НЕТ** (Ship-On). **1 ENV удалена** (`COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`). **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — ENV (удалить 1, действий владельца не требует):** `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM` удалена из `env.schema.ts` (Ф8, Ship-On — OFF-дефолт нарушал принцип). Если задана в прод-`.env` — можно удалить строку (лишняя ENV не ломает запуск; `EnvSchema` её больше не валидирует). Оставшаяся в проде AdminSetting `operations.daily_digest.deliver_to_telegram` безвредна (можно удалить вручную позднее). Новых ENV нет. ⚠️ **Стелс-эффект:** после выката дневная сводка COO начнёт доставляться owner/coo во все привязанные каналы по умолчанию (in_app + Telegram/email/MAX по привязкам); контроль — персональной галочкой «Ежедневная сводка компании» в кабинете (Настройки → Уведомления). Kill-switch `operations.daily_digest.enabled` остаётся.
+- **Шаг 4 — Prisma** — **миграций НЕТ** (все поля/модели уже в схеме: `Goal.ownerPersonId`, `Person.primaryDepartmentId`, `Department.healthSummaryJson`, `PromiseNetworkSnapshot`). Регистрировать нечего.
+- **Seed / patch / backfill — НЕТ.** Регистрировать в `apply-prod-deploy.ts` STEPS нечего.
+- **Шаг 11 — Docker rebuild** — обязателен (новые эндпоинты `GET /dashboard/operations/promise-network` + `GET /me/notification-preferences`, backend-доводки goals/decisions/team-health/knowledge-at-risk, фронт — новый пункт меню «Аналитика» + риск-виджеты + персональная галочка): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) Swagger `/api/docs` содержит `GET /api/v1/dashboard/operations/promise-network` и `GET /api/v1/me/notification-preferences`;
+  - (б) доска `/dashboard/operations` достижима из меню под меткой **«Аналитика»** (раздел «Ритмы», после «Сегодня») и рендерит риск-виджеты (клиенты под риском / знания под риском / перегруз ответственностью);
+  - (в) `GET /api/v1/me/notification-preferences` отдаёт `{ optOutEventTypes, quietHoursStart, quietHoursEnd }` (не 500);
+  - (г) тумблер «Ежедневная сводка компании» рендерится в Настройки → Уведомления; снятие шлёт `PATCH /me/notification-preferences` с `operations.daily_digest` в `optOutEventTypes` (push перестаёт приходить, сводка остаётся в кабинете).
+
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 
 ---
@@ -111,6 +155,30 @@ docker compose run --rm --no-deps backend \
   - (б) `psql`/`diag`: `SELECT enum_range(NULL::"PersonaStatus")` содержит `frozen`; индекс `executable_personas_one_active_per_role` существует (или `RAISE NOTICE` о дублях — тогда прогнать Шаг 8 и повторить Шаг 5).
   - (в) на экране должности с несколькими бывшими носителями — список версий (active + frozen) без ФИО, кнопка «спросить версию» и экран «Совет бывших» отвечают.
   - (г) в логах backend — нет вечного re-verify застрявших черт (Б1) и runaway-реэмита `role.bearer_changed` (Б16).
+
+---
+
+### 🧠 2026-06-17 — Модуль усвоения (knowledge-core) MASTER: промпты + аудит-фиксы + дедуп задач (волны 0–6)
+
+> Контракт: ветка `feature/knowledge-core-master`, 18 коммитов (`ee96aea7`..`9c5218aa`). ТЗ: `plans/tz/2026-06-16-knowledge-core-MASTER.md` (зонтик) + 6 промпт-ТЗ + `plans/tz/2026-06-16-task-dedup-and-tracker-reconcile.md`. Отложено: `plans/tz/2026-06-17-knowledge-core-queue-dlq-per-queue-config.md` (G5, DLQ/per-queue — vNext). second-brain: `02_architecture/data-model.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md`, `02_architecture/module-map.md`, `04_не-сделано/README.md`.
+>
+> **Зачем для прода:** закрыты 59 аудит-багов (4 HIGH потери/утечки данных, 36 MED, 19 LOW); 30 промптов knowledge-core переписаны по методологии; реализован дедуп задач + петля «разговор→кандидат закрытия» (task-dedup, 6 фаз Ф0–Ф5); закрыты пробелы покрытия G1–G8 (в т.ч. обход платного `feature.graph` — G1, выручка).
+>
+> **4 миграции (авто). postgres-init: 4 partial-unique + 1 HNSW. 2 seed-маршрута + 1 backfill (все в STEPS). Новые ENV — опц., default. Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (опц., code-default — действий владельца НЕ требуют):** `TASK_RECONCILE_ENABLED` (kill-switch суточного task-reconcile-крона, default `true`); `ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS` (negative-cache LLM-fallback, default 60 — весь fallback OFF по `ROUTER_LLM_FALLBACK_ENABLED=false`). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback — без сида работает на дефолтах):** `taskDedup.suggestThreshold` (0.88), `taskDedup.embedTimeoutMs`, `taskClosure.matchThreshold` (0.85), `taskClosure.autoConfirmThreshold` (0.95), `taskClosure.reopenRateAlert` (0.10), kill-switch'и `taskDedup.enabled` / `taskClosure.enabled` (ON). Доезжают перепрогоном агрегатора (уважает admin-override).
+- **Шаг 4 — Prisma (обязательно, авто — `prisma migrate deploy` в migrate-контейнере на `up`):** 4 аддитивные миграции (без потери данных): `20260616233329_task_dedup_intake_suggested_duplicate` (IntakeIssue.suggestedDuplicateOfIssueId), `20260617000614_task_closure_candidate` (модель TaskClosureCandidate), `20260617002427_issue_closure_review` (Issue.closureReviewState/Reason/At + индекс), `20260617005105_goal_embedding` (Goal.embedding `vector(1536)` + embeddingHash).
+- **Шаг 5 — postgres-init.sql (через `docker compose exec backend bun run apply-postgres-init`, идемпотентно; агрегатор на `up` гоняет сам):** 4 новых partial-unique (K1, защита от гонки дублей): `uq_conflict_open`, `uq_knowledge_group_singleton`, `uq_executable_persona_role_version`, `uq_executable_persona_role_active`; 1 HNSW: `goal_embedding_hnsw_cosine_idx` (Ф5, KNN-дедуп целей).
+- **Шаг 7 — Seed (2 LLM-маршрута, идемпотентны, в STEPS `phase:'seed-llm-routes'`):** `seed-llm-task-routes-task-dedup-arbiter.ts`, `seed-llm-task-routes-task-closure-verify.ts` (CHEAP_CHAIN). Прогон одним агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (в STEPS `phase:'backfill'`, идемпотентен):** `backfill-goal-embeddings.ts` — посчитать `Goal.embedding` существующим целям (повтор = no-op; пропускает уже с embedding). Выполнится тем же `apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild backend** обязателен (4 модели/колонки в PrismaClient; новые cron `BlockDistillReconcileCron`/`TaskReconcileCron`, worker `GoalEmbedWorker` + очередь `core.goal-embed`; **удалена** очередь `core.idea-clusterer`; 2 новых taskType; новые pending-провайдеры `task_closure`/`task_review`; entitlement-гард на граф-эндпоинтах; 30 переписанных промптов): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `/admin/ai-models` содержит `task-dedup-arbiter` и `task-closure-verify`;
+  - (б) логи backend: подняты `BlockDistillReconcileCron` (каждые 30 мин), `TaskReconcileCron` (03:00), `GoalEmbedWorker` (очередь `core.goal-embed`); нет ошибок от удалённой `core.idea-clusterer`;
+  - (в) FREE-тариф: `GET /api/v1/knowledge/entities/:id/graph` и `/blocks/:id/links` → 403 `entitlement_required` (платный `feature.graph` больше не обходится); на платном — 200;
+  - (г) `/search` при штатном эмбеддинге работает; при рассинхроне размерности модели — не 500, а деградация на BM25 (WARN в логах);
+  - (д) сигнал «сделал задачу X» из разговора → кандидат `task_closure` в очереди подтверждений (Issue НЕ закрыта); supersede решения → связанные задачи помечены `task_review` (не закрыты/не отменены).
 
 Этот блок при следующем prod-cut перенести в «Архив применённых».
 

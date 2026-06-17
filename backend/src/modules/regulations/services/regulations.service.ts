@@ -449,23 +449,38 @@ export class RegulationsService {
   async getSummary(tenantId: string): Promise<RegulationSummaryResponse> {
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const recent = { createdAt: { gte: weekAgo } };
-    const [regulations, processes, instructions, policies, regWeek, procWeek, instrWeek, polWeek] =
-      await Promise.all([
-        this.prisma.regulation.count({ where: { tenantId } }),
-        this.prisma.process.count({ where: { tenantId } }),
-        this.prisma.instruction.count({ where: { tenantId } }),
-        this.prisma.policy.count({ where: { tenantId } }),
-        this.prisma.regulation.count({ where: { tenantId, ...recent } }),
-        this.prisma.process.count({ where: { tenantId, ...recent } }),
-        this.prisma.instruction.count({ where: { tenantId, ...recent } }),
-        this.prisma.policy.count({ where: { tenantId, ...recent } }),
-      ]);
+    const [
+      regulations,
+      processes,
+      instructions,
+      policies,
+      regWeek,
+      procWeek,
+      instrWeek,
+      polWeek,
+    ] = await Promise.all([
+      this.prisma.regulation.count({ where: { tenantId } }),
+      this.prisma.process.count({ where: { tenantId } }),
+      this.prisma.instruction.count({ where: { tenantId } }),
+      this.prisma.policy.count({ where: { tenantId } }),
+      this.prisma.regulation.count({ where: { tenantId, ...recent } }),
+      this.prisma.process.count({ where: { tenantId, ...recent } }),
+      this.prisma.instruction.count({ where: { tenantId, ...recent } }),
+      this.prisma.policy.count({ where: { tenantId, ...recent } }),
+    ]);
+    const redesignEnabled =
+      (await this.cfg?.getDynamic<boolean>(
+        'knowledge_base.redesign.enabled',
+        undefined,
+        true,
+      )) ?? true;
     return {
       regulations,
       processes,
       instructions,
       policies,
       weekDelta: regWeek + procWeek + instrWeek + polWeek,
+      redesignEnabled,
     };
   }
 

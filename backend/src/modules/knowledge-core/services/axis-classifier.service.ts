@@ -10,6 +10,7 @@ import {
   AXIS_CLASSIFY_JSON_SCHEMA,
   AXIS_CLASSIFY_SYSTEM_PROMPT,
   AXIS_CLASSIFY_USER_TEMPLATE,
+  TEMPORAL_RU_TO_CODE,
 } from '../prompts/axis-classify.prompt';
 
 import { resolveAxisTenantTop } from './tenant-top';
@@ -230,6 +231,13 @@ export class AxisClassifierService {
     });
     const start = Date.now();
     const guardOn = this.isPromptInjectionGuardEnabled();
+    // Человеческое описание запрошенных осей (Ф4-pre / Прил. A2).
+    const axesRequested = [
+      args.wantFunctional ? 'функциональную' : null,
+      args.wantTemporal ? 'временную' : null,
+    ]
+      .filter((x): x is string => Boolean(x))
+      .join(' и ');
     const rawUser = AXIS_CLASSIFY_USER_TEMPLATE({
       blockName: args.block.name,
       signalType: args.block.signalType,
@@ -237,6 +245,7 @@ export class AxisClassifierService {
       trustedAnswer: args.block.trustedAnswer,
       tags: args.block.tags,
       domainWhitelist: domains,
+      axesRequested: axesRequested || undefined,
     });
     const result = await this.llm.call({
       taskType: 'axis-classify',
@@ -247,7 +256,7 @@ export class AxisClassifierService {
       userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
       responseFormat: {
         type: 'json_schema',
-        name: 'axis_classify_v1',
+        name: 'axis_classify_v2',
         schema: AXIS_CLASSIFY_JSON_SCHEMA,
         strict: true,
       },
@@ -280,10 +289,16 @@ export class AxisClassifierService {
     if (args.wantTemporal && Array.isArray(parsed.temporal)) {
       for (const item of parsed.temporal) {
         if (!isLabelEntry(item)) continue;
-        if (!item.label.startsWith('temporal:')) continue;
+        // A2: модель отдаёт русский ярлык («постоянное»), мапим обратно в
+        // код `temporal:<period>` перед записью IdeaBlockAxisLabel. Defensive:
+        // если вдруг пришёл уже-код (legacy/кэш) — принимаем его как есть.
+        const code = item.label.startsWith('temporal:')
+          ? item.label
+          : TEMPORAL_RU_TO_CODE[item.label];
+        if (!code) continue;
         labels.push({
           axis: 'temporal',
-          label: item.label,
+          label: code,
           confidence: clamp01(item.confidence),
           source: 'llm',
         });

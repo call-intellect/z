@@ -16,6 +16,7 @@ import { LlmRouterService } from '../ai/services/llm-router.service';
 import { applyInputGuards } from '../ai/services/prompts/common';
 import { CardsService } from '../cards/cards.service';
 import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
+import { buildVectorLiteral } from '../embeddings/services/vector-literal.util';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import {
   ChatV2Service,
@@ -105,6 +106,8 @@ export class ChatService {
         where: { meetingId: meeting.id },
         orderBy: { startMs: 'asc' },
       }),
+      // ТЗ Ф5.2 — задачи встречи через единый helper. По дефолту (флаг OFF)
+      // читает Task по meetingId (форма для контекста чата — только title).
       this.actionItems.listForMeeting({
         meetingId: meeting.id,
         tenantId: meeting.tenantId ?? '',
@@ -121,6 +124,7 @@ export class ChatService {
       this.prisma.meeting.findUniqueOrThrow({ where: { id: meeting.id } }),
     ]);
 
+    // Сохраняем user message ДО llm-вызова — на случай падения видим что юзер спросил.
     await this.repo.appendMessage({
       userId: input.userId,
       meetingId: meeting.id,
@@ -138,6 +142,10 @@ export class ChatService {
       question: input.message,
     });
 
+    // Анти-инъекция: userMessage = транскрипт встречи (ASR-фрагменты) + история
+    // диалога + вопрос пользователя — всё сырой пользовательский вход. Оборачиваем
+    // в маркеры данных + ASR-нота (поверх распознанной речи). Kill-switch —
+    // глобальный aiFeatures.promptInjectionGuardEnabled (дефолт ON).
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
       enabled: guardOn,
@@ -173,11 +181,15 @@ export class ChatService {
     return { message: result.text, citations, modelUsed: result.modelUsed };
   }
 
-  async askCrossMeeting(input: { userId: string; message: string }): Promise<ChatAnswer> {
+  async askCrossMeeting(input: {
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
     const tenantIdForQuota = await this.llm.resolveTenantByUser(input.userId);
     await this.checkChatQuota(input.userId, tenantIdForQuota);
 
+    // Embedding запроса.
     const [embedding] = await this.embeddings.embed([input.message]);
     if (!embedding) {
       throw new BadRequestException({
@@ -198,6 +210,9 @@ export class ChatService {
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
 
+    // Анти-инъекция: userMessage = найденные фрагменты транскриптов встреч
+    // (ASR) + вопрос пользователя — сырой пользовательский вход. Маркеры
+    // данных + ASR-нота. Kill-switch — глобальный aiFeatures.promptInjectionGuardEnabled.
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
       enabled: guardOn,
@@ -231,7 +246,10 @@ export class ChatService {
     return { message: result.text, citations, modelUsed: result.modelUsed };
   }
 
-  async getMeetingHistory(userId: string, meetingId: string): Promise<MeetingChatMessage[]> {
+  async getMeetingHistory(
+    userId: string,
+    meetingId: string,
+  ): Promise<MeetingChatMessage[]> {
     return this.repo.listMeetingHistory({ userId, meetingId });
   }
 
@@ -239,13 +257,26 @@ export class ChatService {
     return this.repo.listCrossHistory({ userId });
   }
 
-  async getCardHistory(userId: string, cardId: string): Promise<MeetingChatMessage[]> {
+  async getCardHistory(
+    userId: string,
+    cardId: string,
+  ): Promise<MeetingChatMessage[]> {
+    // Owner-проверка карточки.
     await this.cards.getById(cardId, userId);
     return this.repo.listCardHistory({ userId, cardId });
   }
 
-  async askCard(input: { cardId: string; userId: string; message: string }): Promise<ChatAnswer> {
+  /**
+   * AI-чат по карточке: RAG поверх transcript-chunks встреч карточки.
+   * Логика идентична `askCrossMeeting`, но с фильтром по `Meeting.cardId`.
+   */
+  async askCard(input: {
+    cardId: string;
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
+    // Owner-проверка карточки + 404 если её нет.
     const card = await this.cards.getById(input.cardId, input.userId);
 
     await this.checkChatQuota(input.userId, card.tenantId ?? null);
@@ -258,7 +289,12 @@ export class ChatService {
       });
     }
 
-    const chunks = await this.searchSimilarChunksByCard(input.userId, input.cardId, embedding, 16);
+    const chunks = await this.searchSimilarChunksByCard(
+      input.userId,
+      input.cardId,
+      embedding,
+      16,
+    );
 
     await this.repo.appendMessage({
       userId: input.userId,
@@ -271,6 +307,9 @@ export class ChatService {
     const ctx = buildCrossMeetingContext({ chunks, question: input.message });
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
 
+    // Анти-инъекция: userMessage = фрагменты транскриптов встреч карточки (ASR)
+    // + вопрос пользователя — сырой пользовательский вход. Маркеры данных +
+    // ASR-нота. Kill-switch — глобальный aiFeatures.promptInjectionGuardEnabled.
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(ctx.systemPrompt, ctx.userMessage, {
       enabled: guardOn,
@@ -306,6 +345,13 @@ export class ChatService {
     return { message: result.text, citations, modelUsed: result.modelUsed };
   }
 
+  // ─────────────────────────── ChatV2 (Фаза 6 knowledge-core) ───────────
+
+  /**
+   * Single-meeting через ChatV2Service. Owner-проверка + quota + persist
+   * остаётся в chat.service (контракт API не меняется); сама retrieval-логика
+   * и LLM-вызов делегируются в knowledge-core.
+   */
   async askSingleMeetingV2(input: {
     meetingId: string;
     userId: string;
@@ -382,7 +428,13 @@ export class ChatService {
     };
   }
 
-  async askCrossMeetingV2(input: { userId: string; message: string }): Promise<ChatAnswer> {
+  /**
+   * Cross-meeting (org-scope) через ChatV2Service.
+   */
+  async askCrossMeetingV2(input: {
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
 
     const tenantId = await this.llm.resolveTenantByUser(input.userId);
@@ -439,7 +491,14 @@ export class ChatService {
     };
   }
 
-  async askCardV2(input: { cardId: string; userId: string; message: string }): Promise<ChatAnswer> {
+  /**
+   * Card-scope через ChatV2Service.
+   */
+  async askCardV2(input: {
+    cardId: string;
+    userId: string;
+    message: string;
+  }): Promise<ChatAnswer> {
     this.assertMessageLength(input.message);
     const card = await this.cards.getById(input.cardId, input.userId);
     if (!card.tenantId) {
@@ -498,6 +557,11 @@ export class ChatService {
     };
   }
 
+  /**
+   * Unified chat для нового эндпоинта `POST /api/v1/chat/v2`.
+   * Делает auth/RBAC под scope, quota, ChatV2Service.ask, persist в общий
+   * `MeetingChatMessage`. Возвращает полный ChatV2-результат (с usedBlockIds).
+   */
   async askUnifiedV2(input: {
     userId: string;
     scope: ChatV2Scope;
@@ -511,14 +575,21 @@ export class ChatService {
   }> {
     this.assertMessageLength(input.message);
 
-    const { tenantId, persistMeetingId, persistCardId } = await this.resolveScopeAuth({
-      userId: input.userId,
-      scope: input.scope,
-      scopeId: input.scopeId,
-    });
+    // 1) RBAC + достаём tenantId под scope.
+    const { tenantId, persistMeetingId, persistCardId } =
+      await this.resolveScopeAuth({
+        userId: input.userId,
+        scope: input.scope,
+        scopeId: input.scopeId,
+      });
 
+    // 1.5) Phase 12: gating org-scope чата по `feature.chat_org`.
+    // На basic-Org разрешён только meeting/card/theme/entity scope; org — Pro+.
     if (input.scope === 'org') {
-      const allowed = await this.entitlements.hasFeature(tenantId, 'feature.chat_org');
+      const allowed = await this.entitlements.hasFeature(
+        tenantId,
+        'feature.chat_org',
+      );
       if (!allowed) {
         const ent = await this.entitlements.getEntitlement(tenantId);
         throw new ForbiddenException({
@@ -534,8 +605,11 @@ export class ChatService {
       }
     }
 
+    // 2) Quota.
     await this.checkChatQuota(input.userId, tenantId);
 
+    // 3) История диалога — берём по самому узкому контексту:
+    //    meeting → meeting history; card → card history; иначе cross-history.
     let history: MeetingChatMessage[];
     if (persistMeetingId) {
       history = await this.repo.listMeetingHistory({
@@ -556,6 +630,7 @@ export class ChatService {
       });
     }
 
+    // 4) Persist user-сообщения ДО llm-вызова.
     await this.repo.appendMessage({
       userId: input.userId,
       meetingId: persistMeetingId,
@@ -564,6 +639,7 @@ export class ChatService {
       content: input.message,
     });
 
+    // 5) ChatV2 ask.
     const result = await this.chatV2.ask({
       tenantId,
       userId: input.userId,
@@ -573,6 +649,7 @@ export class ChatService {
       history: this.toV2History(history),
     });
 
+    // 6) Persist assistant-ответа.
     await this.repo.appendMessage({
       userId: input.userId,
       meetingId: persistMeetingId,
@@ -585,8 +662,13 @@ export class ChatService {
       modelUsed: result.modelUsed,
     });
 
+    // Метрика — маппим v2-scope в существующий enum (single/cross/card).
     const metricScope: 'single' | 'cross' | 'card' =
-      input.scope === 'meeting' ? 'single' : input.scope === 'card' ? 'card' : 'cross';
+      input.scope === 'meeting'
+        ? 'single'
+        : input.scope === 'card'
+        ? 'card'
+        : 'cross';
     this.metrics?.incChatRequest({ scope: metricScope });
 
     return {
@@ -597,6 +679,11 @@ export class ChatService {
     };
   }
 
+  /**
+   * RBAC-проверка scope + резолв tenantId. Также возвращает, в какие поля
+   * `MeetingChatMessage` писать — для meeting/card в attached поля,
+   * для остальных — в cross-history (meetingId=null, cardId=null).
+   */
   private async resolveScopeAuth(args: {
     userId: string;
     scope: ChatV2Scope;
@@ -661,6 +748,8 @@ export class ChatService {
       };
     }
 
+    // org / theme / entity → tenant определяем из user membership +
+    // RBAC проверка resource (block/theme/entity).
     const tenantId = await this.llm.resolveTenantByUser(userId);
     if (!tenantId) {
       throw new BadRequestException({
@@ -721,6 +810,7 @@ export class ChatService {
         });
       }
     } else {
+      // scope === 'org'
       const allowed = await this.rbac.canRead(userId, tenantId, 'block');
       if (!allowed) {
         throw new NotFoundException({
@@ -733,6 +823,11 @@ export class ChatService {
     return { tenantId, persistMeetingId: null, persistCardId: null };
   }
 
+  /**
+   * Преобразует историю из `MeetingChatMessage` в формат, который ждёт
+   * ChatV2Service (только role=user|assistant, content). Передаём только
+   * последние 6 — больше не помещается в prompt.
+   */
   private toV2History(
     rows: ReadonlyArray<MeetingChatMessage>,
   ): Array<{ role: 'user' | 'assistant'; content: string }> {
@@ -745,11 +840,27 @@ export class ChatService {
       }));
   }
 
-  private async checkChatQuota(userId: string, tenantId: string | null | undefined): Promise<void> {
+  // ─────────────────────────── helpers ──────────────────────────────────
+
+  /**
+   * Phase 12: per-user chat-квота. `max` берётся через `EntitlementService`
+   * (поле `chat_requests_per_day_per_user` в TierConfig). Если tenantId
+   * отсутствует — fallback на ENV `cfg.workspace.maxChatRequestsPerDay`.
+   *
+   * `quotaName` намеренно изменён на `chat_requests_per_day_per_user` —
+   * новое имя ключа Redis, чтобы счётчики не схлопнулись с legacy.
+   */
+  private async checkChatQuota(
+    userId: string,
+    tenantId: string | null | undefined,
+  ): Promise<void> {
     let max = this.cfg.workspace.maxChatRequestsPerDay;
     if (tenantId) {
       try {
-        max = await this.entitlements.getQuota(tenantId, 'chat_requests_per_day_per_user');
+        max = await this.entitlements.getQuota(
+          tenantId,
+          'chat_requests_per_day_per_user',
+        );
       } catch (err) {
         this.logger.warn(
           `checkChatQuota: getQuota fail для ${tenantId}: ${
@@ -779,12 +890,34 @@ export class ChatService {
     }
   }
 
+  /**
+   * pgvector cosine similarity search. `embedding <=> $vec::vector` — это
+   * cosine distance (0 = идентично).
+   *
+   * Используем Prisma raw query, так как `Unsupported("vector(1536)")` не имеет
+   * native API.
+   */
   private async searchSimilarChunks(
     userId: string,
     queryEmbedding: number[],
     limit: number,
   ): Promise<CrossMeetingChunk[]> {
-    const vec = `[${queryEmbedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена модели
+    // → другая размерность; битый вектор → NaN/Infinity) деградируем на []
+    // (LLM ответит без cross-meeting контекста), не валя оператор `<=>` 500-кой.
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(queryEmbedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.warn(
+        { userId, reason: guard.rejectReason, actualDim: queryEmbedding.length, expectedDim },
+        'chat.searchSimilarChunks: query-вектор отвергнут guard-ом — без cross-meeting recall',
+      );
+      return [];
+    }
+    const vec = guard.literal;
+    // ВАЖНО: не интерполировать `vec` напрямую (chunks)/limit (chunks/userId должны быть параметрами).
+    // Используем $queryRaw с тегированной template literal. PostgreSQL не позволяет
+    // bind для cast `::vector`, поэтому вектор через `$2::vector`.
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         meeting_id: string;
@@ -829,13 +962,27 @@ export class ChatService {
     }));
   }
 
+  /**
+   * Аналогично `searchSimilarChunks`, но дополнительно фильтрует встречи
+   * по `Meeting.cardId = $cardId`. Используется для AI-чата по карточке.
+   */
   private async searchSimilarChunksByCard(
     userId: string,
     cardId: string,
     queryEmbedding: number[],
     limit: number,
   ): Promise<CrossMeetingChunk[]> {
-    const vec = `[${queryEmbedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора (см. searchSimilarChunks).
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(queryEmbedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.warn(
+        { userId, cardId, reason: guard.rejectReason, actualDim: queryEmbedding.length, expectedDim },
+        'chat.searchSimilarChunksByCard: query-вектор отвергнут guard-ом — без recall',
+      );
+      return [];
+    }
+    const vec = guard.literal;
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         meeting_id: string;
@@ -883,6 +1030,9 @@ export class ChatService {
   }
 }
 
+/**
+ * Парсит [mm:ss] из ответа AI и сопоставляет с ближайшим chunk'ом.
+ */
 function parseCitations(
   answer: string,
   chunks: Array<{
@@ -899,6 +1049,7 @@ function parseCitations(
     const m = Number(match[1]);
     const s = Number(match[2]);
     const ms = (m * 60 + s) * 1000;
+    // Ищем ближайший chunk.
     let best: (typeof chunks)[number] | null = null;
     let bestDist = Infinity;
     for (const c of chunks) {

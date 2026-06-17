@@ -68,6 +68,7 @@ const EVENT_TYPE_CHANNEL_POLICY: Record<string, ChannelKind[]> = {
   'specialist.probe': ['in_app', 'email_smtp'],
   'proactive.notification': ['in_app', 'telegram_bot', 'max_bot'],
   'operations.weekly_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
+  'operations.daily_digest': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   'goals.pulse': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   'operations.monthly_recap': ['in_app', 'email_smtp', 'telegram_bot', 'max_bot'],
   'issue.mention': ['in_app', 'telegram_bot', 'max_bot'],

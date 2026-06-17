@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { SegmentBuilderService } from './segment-builder.service';
 
+/**
+ * Фаза 10 (2026-06-04 razblokirovka-konveyera) — free_note распознаётся как
+ * чистый текстовый сегмент, а не JSON-stringify обёртка.
+ *
+ * Корень: payload свободной заметки `{ kind:'free_note', userId, text, metadata }`
+ * (ConversationalIngestAdapter) не имеет ни `transcript.turns`, ни `fullText`.
+ * До фикса он падал в buildFallback → весь JSON попадал в Segment.text → LLM
+ * в block-ingest получал шум (kind/userId/metadata). Тест фиксирует, что в
+ * текст сегмента попадает только `text`.
+ */
 describe('SegmentBuilderService — free_note (Фаза 10)', () => {
   const makeCfg = (maxTokens = 2000) =>
     ({
@@ -23,6 +33,7 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
 
     expect(segments).toHaveLength(1);
     expect(segments[0]!.text).toBe('Записал мысль про X');
+    // kind/userId/metadata НЕ должны протекать в текст сегмента.
     expect(segments[0]!.text).not.toContain('free_note');
     expect(segments[0]!.text).not.toContain('userId');
     expect(segments[0]!.text).not.toContain('metadata');
@@ -43,6 +54,7 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
 
     const segments = svc.buildSegments(payload);
 
+    // Упал в buildFallback: текст — JSON-stringify обёртки, а не пустой/чистый.
     expect(segments).toHaveLength(1);
     expect(segments[0]!.text).toContain('free_note');
     expect(segments[0]!.text).toContain('userId');
@@ -83,11 +95,20 @@ describe('SegmentBuilderService — free_note (Фаза 10)', () => {
   });
 });
 
+/**
+ * Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §2.1):
+ * payload `{ kind:'meeting_report', reportFacts, reportSummaryMarkdown, chapters }`
+ * разворачивается в ГРАНУЛЯРНЫЕ сегменты — по одному на факт/главу + один на
+ * summary. Главное: НЕ один склеенный сегмент (иначе block-ingest не извлечёт
+ * отдельный блок на каждый факт).
+ */
 describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
   const makeSvc = () =>
-    new SegmentBuilderService({
-      knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
-    } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0]);
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
 
   it('reportFacts[N] + summary + chapters → N + 1 + chapters сегментов (НЕ один)', () => {
     const svc = makeSvc();
@@ -109,13 +130,18 @@ describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
 
     const segments = svc.buildSegments(payload);
 
+    // 3 факта + 1 summary + 2 главы = 6 сегментов.
     expect(segments).toHaveLength(6);
+    // По одному факту на сегмент (НЕ склеены).
     expect(segments[0]!.text).toBe('Релиз 15 июня');
     expect(segments[1]!.text).toBe('Не готова инфраструктура');
     expect(segments[2]!.text).toBe('Подготовить демо');
+    // summary отдельным сегментом.
     expect(segments[3]!.text).toBe('Итоги встречи: договорились о релизе');
+    // chapters: «title: summary».
     expect(segments[4]!.text).toBe('Обсуждение: Поговорили о сроках');
     expect(segments[5]!.text).toBe('Решения: Приняли план');
+    // Все report-сегменты — без speakers/времени.
     for (const s of segments) {
       expect(s.speakers).toEqual([]);
       expect(s.startMs).toBe(0);
@@ -149,6 +175,7 @@ describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
 
     const segments = svc.buildSegments(payload);
 
+    // tryGetReportSegments вернул [] (а не null) → именно report-ветка, не fallback.
     expect(segments).toHaveLength(0);
   });
 
@@ -158,16 +185,84 @@ describe('SegmentBuilderService — meeting_report (Фаза 2)', () => {
 
     const segments = svc.buildSegments(payload);
 
+    // Упал в fallback (JSON-stringify), report-ветка не сработала.
     expect(segments).toHaveLength(1);
     expect(segments[0]!.text).toContain('something_else');
   });
 });
 
+/**
+ * Б21 [K13] — одиночный сверхдлинный turn РАНЬШЕ уходил в LLM-окно целиком
+ * (без усечения) → таймаут/обрезка JSON → потеря всего окна. Теперь длинный
+ * turn режется посимвольно на куски ≤ лимита (maxTokens*4 символов с поправкой
+ * на `speaker: ` префикс), каждый — отдельный сегмент того же speaker'а.
+ */
+describe('SegmentBuilderService — длинный turn усекается до лимита (Б21)', () => {
+  const makeSvc = (maxTokens: number) =>
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
+
+  it('один turn длиннее лимита → несколько сегментов, каждый ≤ лимита по символам', () => {
+    // maxTokens=10 → лимит ≈ 40 символов на сегмент. Один turn в 200 символов.
+    const maxTokens = 10;
+    const svc = makeSvc(maxTokens);
+    const speaker = 'Алиса';
+    const longText = 'я'.repeat(200);
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker, text: longText, startSec: 0, endSec: 5 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    // Раньше был бы РОВНО 1 сегмент в 200+ символов (вся «дыра»).
+    expect(segments.length).toBeGreaterThan(1);
+    const maxChars = maxTokens * 4; // 40
+    for (const s of segments) {
+      // Каждый сегмент (включая префикс `speaker: `) укладывается в лимит.
+      expect(s.text.length).toBeLessThanOrEqual(maxChars);
+      // Префикс speaker'а сохранён в каждом куске.
+      expect(s.text.startsWith(`${speaker}: `)).toBe(true);
+    }
+    // Восстановленный текст (без префиксов) равен исходному — ничего не потеряли.
+    const reconstructed = segments
+      .map((s) => s.text.slice(`${speaker}: `.length))
+      .join('');
+    expect(reconstructed).toBe(longText);
+  });
+
+  it('turn в пределах лимита → ровно 1 сегмент (без дробления)', () => {
+    const svc = makeSvc(2000);
+    const payload = {
+      meetingId: 'm1',
+      transcript: {
+        turns: [{ speaker: 'Боб', text: 'Короткая фраза', startSec: 0, endSec: 1 }],
+      },
+    };
+
+    const segments = svc.buildSegments(payload);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]!.text).toBe('Боб: Короткая фраза');
+  });
+});
+
+/**
+ * Фаза 1 (meeting-identity) — сегмент несёт identity спикера
+ * (participantId дорожки) для атрибуции авторства (role='subject').
+ */
 describe('SegmentBuilderService — speakerParticipantId (Фаза 1)', () => {
   const makeSvc = (maxTokens = 2000) =>
-    new SegmentBuilderService({
-      knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
-    } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0]);
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
 
   it('turn с speakerParticipantId → сегмент несёт его', () => {
     const svc = makeSvc();
@@ -214,11 +309,18 @@ describe('SegmentBuilderService — speakerParticipantId (Фаза 1)', () => {
   });
 });
 
+/**
+ * Фикс cross-attribution chatbox — chatbox-payload (transcript.turns с
+ * authorPersonId) строит per-message сегменты, несущие authorPersonId;
+ * meeting-payload (turns без authorPersonId) — сегменты БЕЗ этого поля.
+ */
 describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () => {
   const makeSvc = (maxTokens = 2000) =>
-    new SegmentBuilderService({
-      knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
-    } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0]);
+    new SegmentBuilderService(
+      {
+        knowledgeCore: { blockIngestMaxTokensPerSegment: maxTokens },
+      } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
 
   it('chatbox turns с authorPersonId → сегменты несут его (string для менеджера, null для клиента)', () => {
     const svc = makeSvc();
@@ -250,7 +352,9 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
     const segments = svc.buildSegments(payload);
 
     expect(segments).toHaveLength(2);
-    expect(Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId')).toBe(true);
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
+    ).toBe(true);
     expect(segments[0]!.authorPersonId).toBeNull();
     expect(segments[1]!.authorPersonId).toBe('p-manager');
   });
@@ -275,16 +379,28 @@ describe('SegmentBuilderService — authorPersonId (chatbox per-message)', () =>
     const segments = svc.buildSegments(payload);
 
     expect(segments).toHaveLength(1);
-    expect(Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId')).toBe(false);
+    // REGRESSION-GUARD: поле отсутствует у meeting-сегментов (segHasAuthor=false).
+    expect(
+      Object.prototype.hasOwnProperty.call(segments[0]!, 'authorPersonId'),
+    ).toBe(false);
     expect(segments[0]!.authorPersonId).toBeUndefined();
   });
 });
 
+/**
+ * TZ clone-method Э3.1 — ответ на probe (`kind:'notification_response'`)
+ * распознаётся как чистый текстовый сегмент «Вопрос Коры: … Ответ …»,
+ * а не JSON-stringify обёртка (фикс класса: чинит ВСЕ probe-ответы,
+ * не только CDM — раньше userId/eventType/respondsToNotificationId уходили
+ * LLM как шум через buildFallback).
+ */
 describe('SegmentBuilderService — notification_response (clone-method Э3.1)', () => {
   const makeSvc = () =>
-    new SegmentBuilderService({
-      knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
-    } as unknown as ConstructorParameters<typeof SegmentBuilderService>[0]);
+    new SegmentBuilderService(
+      ({
+        knowledgeCore: { blockIngestMaxTokensPerSegment: 2000 },
+      }) as unknown as ConstructorParameters<typeof SegmentBuilderService>[0],
+    );
 
   it('questionText + response.text → 1 сегмент «Вопрос Коры: …\\n\\nОтвет …» (НЕ JSON.stringify)', () => {
     const svc = makeSvc();
@@ -304,6 +420,7 @@ describe('SegmentBuilderService — notification_response (clone-method Э3.1)',
     expect(segments[0]!.text).toBe(
       'Вопрос Коры: Какие альтернативы вы рассматривали и почему отвергли?\n\nОтвет сотрудника: Рассматривал выкат в пятницу, но отказался из-за риска.',
     );
+    // Служебные поля payload НЕ протекают в текст сегмента.
     expect(segments[0]!.text).not.toContain('notification_response');
     expect(segments[0]!.text).not.toContain('userId');
     expect(segments[0]!.text).not.toContain('respondsToNotificationId');
@@ -354,6 +471,7 @@ describe('SegmentBuilderService — notification_response (clone-method Э3.1)',
 
     const segments = svc.buildSegments(payload);
 
+    // Упал в buildFallback: текст — JSON-stringify обёртки.
     expect(segments).toHaveLength(1);
     expect(segments[0]!.text).toContain('notification_response');
   });

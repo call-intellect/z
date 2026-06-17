@@ -13,6 +13,7 @@ import { type Job, Worker } from 'bullmq';
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
+import { maxDataClass } from '../../ai/services/llm-router.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import { type BlockDistillJobData, CORE_QUEUE_NAMES } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
@@ -22,6 +23,30 @@ import { FactSupersedeService } from '../services/fact-supersede.service';
 import type { IdeaBlockUpdatedEvent } from '../services/projection-rebuilder.service';
 import { RouterService } from '../services/router.service';
 
+/**
+ * Block-distill worker (`core.block-distill` consumer).
+ *
+ * Шаги на job `{ blockId }`:
+ *   1. findUnique IdeaBlock с evidence/entities. Если null → skip.
+ *   2. Idempotency: status !== 'draft' → skip (уже обработан).
+ *   3. KNN среди canonical того же tenant'а (cosine, threshold).
+ *   4. Если кандидатов нет → mark canonical + enqueueBlockLinker.
+ *   5. Иначе → judgeMerge:
+ *      - distinct → as (4).
+ *      - merge → транзакция:
+ *          - block.status='merged_into', mergedIntoId=canonicalId.
+ *          - перенос evidence на canonical (updateMany).
+ *          - перенос entity-mention'ов на canonical (skip ON CONFLICT).
+ *          - canonical: evidenceCount += block.evidenceCount, weighted-avg
+ *            confidence, tags union.
+ *      - после транзакции — enqueueBlockLinker(canonicalId).
+ *
+ * Б11 [K4]: concurrency=1 (сериализация). При concurrency>1 два draft-дубля
+ * одного tenant'а могли обрабатываться параллельно: оба видят себя `draft`,
+ * `knnCandidates` ищет только среди `canonical` → друг друга не находят → оба
+ * канонизируются, дубль остаётся навсегда. Сериализация воркера закрывает гонку:
+ * второй блок видит первый уже как canonical-кандидата в KNN.
+ */
 @Injectable()
 export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BlockDistillWorker.name);
@@ -55,7 +80,9 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         ),
       {
         connection: this.redis.client,
-        concurrency: 2,
+        // Б11 [K4]: concurrency=1 — сериализация устраняет гонку двух draft-дублей
+        // (оба видели себя draft → оба канонизировались). Подробнее в шапке класса.
+        concurrency: 1,
       },
     );
     this.worker.on('failed', (job, err) => {
@@ -233,24 +260,31 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         data: { blockId: canonicalId },
       });
 
+      // 3. Переносим entity-mention'ы. Composite PK (blockId, entityId) может
+      //    конфликтовать, если canonical уже линкован к той же entity —
+      //    делаем по одному с pre-check целевой пары, иначе update
+      //    (Б1: без catch P2002 в tx).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { blockId: block.id },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 4 (обновление
+        // canonical) не выполнится. Проверяем целевую пару (canonicalId, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: { blockId_entityId: { blockId: canonicalId, entityId: m.entityId } },
+        });
+        if (conflicting) {
+          // Дубль — удаляем mention со старого блока, оставляем canonical-вариант.
+          await tx.ideaBlockEntity.delete({
             where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            data: { blockId: canonicalId },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.ideaBlockEntity.delete({
-              where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: { blockId_entityId: { blockId: block.id, entityId: m.entityId } },
+          data: { blockId: canonicalId },
+        });
       }
 
       const newEvidenceCount = canonical.evidenceCount + Math.max(1, block.evidenceCount);
@@ -262,12 +296,23 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
       const avgConf = totalWeighted.div(newEvidenceCount);
       const mergedTags = Array.from(new Set([...canonical.tags, ...block.tags]));
 
+      // Б13 [K5]: пересчёт dataClass = max(canonical, merged). Без этого мердж
+      // более-чувствительного блока (например `confidential`) в менее
+      // чувствительный canonical (`internal`) тихо понижал бы класс носителя —
+      // evidence чувствительного блока переехало в canonical, а метка осталась
+      // старой → утечка при последующем retrieval/проекциях.
+      const mergedDataClass = maxDataClass([
+        canonical.dataClass,
+        block.dataClass,
+      ]);
+
       await tx.ideaBlock.update({
         where: { id: canonicalId },
         data: {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(avgConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });
@@ -364,38 +409,56 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
         where: { blockId: reportCanonicalId },
       });
       for (const m of mentions) {
-        try {
-          await tx.ideaBlockEntity.update({
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и шаг 5 (canonical-носитель)
+        // не выполнится. Проверяем целевую пару (transcriptBlock.id, entityId).
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: {
+              blockId: transcriptBlock.id,
+              entityId: m.entityId,
+            },
+          },
+        });
+        if (conflicting) {
+          await tx.ideaBlockEntity.delete({
             where: {
               blockId_entityId: {
                 blockId: reportCanonicalId,
                 entityId: m.entityId,
               },
             },
-            data: { blockId: transcriptBlock.id },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: {
-                  blockId: reportCanonicalId,
-                  entityId: m.entityId,
-                },
-              },
-            });
-            continue;
-          }
-          throw err;
+          continue;
         }
+        await tx.ideaBlockEntity.update({
+          where: {
+            blockId_entityId: {
+              blockId: reportCanonicalId,
+              entityId: m.entityId,
+            },
+          },
+          data: { blockId: transcriptBlock.id },
+        });
       }
 
       const newEvidenceCount =
         transcriptBlock.evidenceCount + Math.max(1, reportCanonical.evidenceCount);
       const transcriptConf = new Prisma.Decimal(transcriptBlock.confidence);
       const reportConf = new Prisma.Decimal(reportCanonical.confidence);
-      const maxConf = transcriptConf.greaterThanOrEqualTo(reportConf) ? transcriptConf : reportConf;
-      const mergedTags = Array.from(new Set([...transcriptBlock.tags, ...reportCanonical.tags]));
+      const maxConf = transcriptConf.greaterThanOrEqualTo(reportConf)
+        ? transcriptConf
+        : reportConf;
+      const mergedTags = Array.from(
+        new Set([...transcriptBlock.tags, ...reportCanonical.tags]),
+      );
+      // Б13 [K5]: dataClass = max(transcript, report). Транскрипт-носитель
+      // вобрал evidence report'а — если report был чувствительнее, метка
+      // носителя должна подняться, иначе тихий downgrade (как в mergeInto).
+      const mergedDataClass = maxDataClass([
+        transcriptBlock.dataClass,
+        reportCanonical.dataClass,
+      ]);
 
       await tx.ideaBlock.update({
         where: { id: transcriptBlock.id },
@@ -405,6 +468,7 @@ export class BlockDistillWorker implements OnModuleInit, OnModuleDestroy {
           evidenceCount: newEvidenceCount,
           confidence: new Prisma.Decimal(maxConf.toFixed(3)),
           tags: mergedTags,
+          dataClass: mergedDataClass,
         },
       });
     });

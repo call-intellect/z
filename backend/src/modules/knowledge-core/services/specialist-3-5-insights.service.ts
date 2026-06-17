@@ -9,12 +9,19 @@ import {
   type InsightSeverity,
   Prisma,
 } from '@prisma/client';
+import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  type LlmCallResult,
+  LlmRouterService,
+} from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
 import {
   INSIGHT_CAUSE_CATEGORIES,
@@ -34,16 +41,50 @@ import {
 import { DataClassPolicyService } from './dataclass-policy.service';
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
 import { Specialist35ProbeService } from './specialist-3-5-probe.service';
 
+/**
+ * SBA β-4 — Specialist35Service.
+ *
+ * Логика специалиста 3.5 (Insights Radar): блок (signalType ∈ {pain, risk,
+ * churn_risk, objection}) → KNN-кластеризация поверх существующих Insight →
+ * (обновление существующего ИЛИ extract + triage нового) → linking с Decisions
+ * → probe-events.
+ *
+ * Архитектура совпадает с β-3 (Decisions): KNN через pgvector embeddings,
+ * LLM-арбитр для extraction и linking, CurationService.triage перед
+ * канонизацией.
+ *
+ * Контракт §5 sub-TZ:
+ *   1. consumer `core.specialist-routing` jobName='3-5-insights' (worker).
+ *   2. Prisma-модель Insight (β-4).
+ *   3. triage перед канонизацией — `insight` НЕ в critical-types default,
+ *      но severity='critical' → confidence снижаем до 0.3 (force deep review).
+ *   4. probe-events — Specialist35ProbeService (4 trigger'а).
+ *   5. metrics — `core_specialist_*{type='insight'}` + `insights_dynamic_label_count`.
+ */
 @Injectable()
 export class Specialist35Service {
   private readonly logger = new Logger(Specialist35Service.name);
 
   static readonly SPECIALIST_NAME = '3-5-insights';
+  /** Top-K для cosine KNN кластеризации повторов. */
   private static readonly KNN_TOP_K = 10;
+  /** Минимальная уверенность extraction, ниже которой пропускаем triage. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
+  /** Сколько Decision-кандидатов брать для linking-арбитра. */
   private static readonly LINK_CANDIDATES_LIMIT = 10;
+  /**
+   * Б59 [K12] — схема ответа арбитра `insight-link-to-decisions`. Отделяет
+   * легитимный пустой массив (связей нет) от кривой формы (молча терялись
+   * связи): неверная форма не пройдёт safeParse → логируем + метрика, не
+   * выдаём за «связей нет». reasoning опционально (на парсинг id не влияет).
+   */
+  private static readonly LINK_RESPONSE_SCHEMA = z.object({
+    linkedDecisionIds: z.array(z.string()),
+    reasoning: z.string().optional(),
+  });
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -58,11 +99,16 @@ export class Specialist35Service {
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    // W4.1 — DataClassPolicyService для shadow-compare.
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   * Defensive try/catch — старые unit-тесты могут мокать cfg без `aiFeatures`.
+   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -71,7 +117,22 @@ export class Specialist35Service {
     }
   }
 
-  async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
+  // ───────────────────── публичный метод (вызывается из воркера) ─────────────────────
+
+  /**
+   * Обработка одного IdeaBlock. См. §5 sub-TZ:
+   *   1. load block + evidence.
+   *   2. compute embedding query (statement = trustedAnswer + name).
+   *   3. KNN top-K existing Insight (threshold INSIGHT_CLUSTER_THRESHOLD).
+   *   4. если match — update existing; recalcMetrics.
+   *   5. иначе — LLM extract → draft → resolve entities → linked-decisions LLM
+   *      → triage → create Insight.
+   *   6. probe-events.
+   */
+  async processBlock(args: {
+    tenantId: string;
+    blockId: string;
+  }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: args.blockId },
       include: { evidence: true },
@@ -79,10 +140,39 @@ export class Specialist35Service {
     if (!block) return;
     if (block.tenantId !== args.tenantId) return;
 
-    const supportedSignal = new Set(['pain', 'risk', 'churn_risk', 'objection']);
+    // signalType фильтр (worker уже фильтрует по jobName, тут — на всякий случай;
+    // sub-TZ упоминает problem/blocker/inefficiency — это НЕ существующие
+    // SignalType (живут только в InsightKind), потому не падаем при их отсутствии).
+    const supportedSignal = new Set([
+      'pain',
+      'risk',
+      'churn_risk',
+      'objection',
+    ]);
     if (!supportedSignal.has(block.signalType)) return;
 
     try {
+      // Б27 [K4] — детерминированный дедуп ПЕРЕД KNN.
+      // KNN недетерминирован (промах при ретрае / отсутствии embedding / ниже
+      // порога) → один и тот же block мог породить дубль Insight. Сначала
+      // прямой pre-check по GIN-массиву sourceBlockIds: если уже есть активный
+      // Insight, ссылающийся на этот block, — обогащаем его (как guard
+      // ideas/decisions через `sourceBlockIds: { has: ... }`) и выходим.
+      const dedupExisting = await this.prisma.insight.findFirst({
+        where: {
+          tenantId: block.tenantId,
+          sourceBlockIds: { has: block.id },
+          status: { notIn: ['archived'] },
+        },
+      });
+      if (dedupExisting) {
+        await this.updateExistingInsight({
+          existing: dedupExisting,
+          block,
+        });
+        return;
+      }
+
       const queryText = this.buildQueryText(block);
       const matched = await this.findMatchingInsight({
         tenantId: block.tenantId,
@@ -97,6 +187,7 @@ export class Specialist35Service {
         return;
       }
 
+      // Новый Insight — extract + triage.
       const draft = await this.extractDraft(block);
       if (!draft) return;
 
@@ -110,9 +201,15 @@ export class Specialist35Service {
       const severity = (draft.severity ?? 'medium') as InsightSeverity;
       const kind = draft.kind as InsightKind;
 
+      // Initial dynamic — для нового всегда 'stable'.
       const dynamicLabel: InsightDynamic = 'stable';
 
-      const causeCategory = Specialist35Service.normalizeCauseCategory(draft.causeCategory);
+      // SBA β-4 wave 2 (2026-05-23): валидируем causeCategory от LLM.
+      // strict JSON-schema гарантирует enum, но если ответ пришёл от
+      // fallback-tier'а без strict-mode — нормализуем.
+      const causeCategory = Specialist35Service.normalizeCauseCategory(
+        draft.causeCategory,
+      );
 
       const insight = await this.createInsight({
         block,
@@ -127,11 +224,13 @@ export class Specialist35Service {
         causeCategory,
       });
 
+      // Embedding (best-effort).
       await this.tryWriteEmbedding({
         id: insight.id,
         text: queryText,
       });
 
+      // Linked decisions (LLM-арбитр; best-effort).
       const linkedDecisionIds = await this.linkToDecisions({
         insight,
         tenantId: block.tenantId,
@@ -144,6 +243,7 @@ export class Specialist35Service {
         insight.relatedDecisionIds = [...linkedDecisionIds];
       }
 
+      // Также: добавить Decision'ы из IdeaBlockLink.relationType='consequences_of'.
       const consequenceDecisionIds = await this.findConsequenceDecisions({
         tenantId: block.tenantId,
         blockIds: insight.sourceBlockIds,
@@ -159,7 +259,10 @@ export class Specialist35Service {
         insight.relatedDecisionIds = merged;
       }
 
-      const triageConfidence = severity === 'critical' ? 0.3 : draft.confidence;
+      // Triage. Для severity='critical' снижаем confidence в triage до 0.3,
+      // чтобы гарантировать deep review.
+      const triageConfidence =
+        severity === 'critical' ? 0.3 : draft.confidence;
       await this.triageProposed({
         tenantId: block.tenantId,
         resourceId: insight.id,
@@ -168,6 +271,8 @@ export class Specialist35Service {
           kind: insight.kind,
           statement: insight.statement,
           severity: insight.severity,
+          // SBA β-4 wave 2: причина — в payload триажа, чтобы куратор
+          // подтвердил / отредактировал классификацию LLM.
           causeCategory: insight.causeCategory,
           affectedEntityIds: insight.affectedEntityIds,
           relatedDecisionIds: insight.relatedDecisionIds,
@@ -178,6 +283,7 @@ export class Specialist35Service {
         dataClass: block.dataClass,
       });
 
+      // Probe: linked_decision_question (если LLM нашёл связки).
       if (linkedDecisionIds.length > 0) {
         await this.probes.emitLinkedDecisionQuestion({
           insight,
@@ -186,6 +292,7 @@ export class Specialist35Service {
         });
       }
 
+      // Probe: escalation (на новый — только если severity='critical'/'high').
       await this.probes.checkAndEmitForInsight({
         insight,
         addedToMitigated: false,
@@ -205,6 +312,10 @@ export class Specialist35Service {
     }
   }
 
+  /**
+   * Пересчёт frequency / dynamic для конкретного Insight. Вызывается из
+   * InsightClustererCron раз в N часов (на каждом active Insight).
+   */
   async recalcMetrics(args: { insightId: string }): Promise<void> {
     const ins = await this.prisma.insight.findUnique({
       where: { id: args.insightId },
@@ -215,8 +326,12 @@ export class Specialist35Service {
       const windowDays = this.cfg.insights.frequencyWindowDays;
       const now = new Date();
       const window7d = new Date(now.getTime() - 7 * 24 * 3600_000);
-      const window30d = new Date(now.getTime() - windowDays * 24 * 3600_000);
+      const window30d = new Date(
+        now.getTime() - windowDays * 24 * 3600_000,
+      );
 
+      // 7d_count: блоки в sourceBlockIds, у которых createdAt >= 7d ago.
+      // 30d_count: блоки в sourceBlockIds, у которых createdAt >= window.
       const blockIds = ins.sourceBlockIds;
       if (blockIds.length === 0) {
         return;
@@ -254,24 +369,25 @@ export class Specialist35Service {
       else if (ratio < 0.5) dynamicLabel = 'declining';
       else dynamicLabel = 'stable';
 
-      const frequencyScore = totalOrg30d > 0 ? Math.min(1, count30d / totalOrg30d) : 0;
+      const frequencyScore =
+        totalOrg30d > 0 ? Math.min(1, count30d / totalOrg30d) : 0;
 
       await this.prisma.insight.update({
         where: { id: ins.id },
         data: {
-          frequencyScore: new Prisma.Decimal(this.clampDecimal(frequencyScore, 0, 999)),
-          dynamicScore: new Prisma.Decimal(this.clampDecimal(ratio, 0, 999)),
+          frequencyScore: new Prisma.Decimal(
+            this.clampDecimal(frequencyScore, 0, 999),
+          ),
+          dynamicScore: new Prisma.Decimal(
+            this.clampDecimal(ratio, 0, 999),
+          ),
           dynamicLabel,
         },
       });
 
+      // Probe escalation_suggested при spike (cron-trigger).
       if (dynamicLabel === 'spike' && ins.dynamicLabel !== 'spike') {
-        const fresh = {
-          ...ins,
-          dynamicLabel,
-          frequencyScore: ins.frequencyScore,
-          dynamicScore: ins.dynamicScore,
-        };
+        const fresh = { ...ins, dynamicLabel, frequencyScore: ins.frequencyScore, dynamicScore: ins.dynamicScore };
         await this.probes.emitEscalationSuggested(fresh as Insight);
       }
     } catch (err) {
@@ -285,11 +401,25 @@ export class Specialist35Service {
     }
   }
 
+  /**
+   * TZ-1 Фаза 3.A (daily-value-engine) — мост «хронический блокер → Insight».
+   *
+   * Вызывается из `BlockerSynthesisService`, когда кластер блокеров стал
+   * `recurring` и держится ≥ N дней. Переиспользует существующую модель Insight
+   * (kind='internal', статус active) вместо плодёжа отдельной сущности.
+   *
+   * Идемпотентность: если `existingInsightId` передан и Insight ещё активен —
+   * просто дополняем `sourceBlockIds` и `lastObservedAt` (не создаём дубль).
+   * Иначе создаём новый Insight. Возвращает id Insight'а (для `linkedInsightId`)
+   * или null при сбое (best-effort — не валим cron).
+   */
   async bridgeRecurringBlocker(args: {
     tenantId: string;
     statement: string;
     sourceBlockIds: string[];
+    /** Уже связанный Insight (из BlockerSynthesis.linkedInsightId), если есть. */
     existingInsightId?: string | null;
+    /** severity по бизнес-удару кластера. */
     severity?: InsightSeverity;
   }): Promise<string | null> {
     try {
@@ -298,16 +428,20 @@ export class Specialist35Service {
         new Set(args.sourceBlockIds.filter((s) => typeof s === 'string' && s)),
       ).slice(0, 50);
 
+      // 1. Если уже привязан активный Insight — дополняем, не дублируем.
       if (args.existingInsightId) {
         const existing = await this.prisma.insight.findUnique({
           where: { id: args.existingInsightId },
           select: { id: true, tenantId: true, status: true, sourceBlockIds: true },
         });
-        if (existing && existing.tenantId === args.tenantId && existing.status !== 'archived') {
-          const merged = Array.from(new Set([...existing.sourceBlockIds, ...blockIds])).slice(
-            0,
-            100,
-          );
+        if (
+          existing &&
+          existing.tenantId === args.tenantId &&
+          existing.status !== 'archived'
+        ) {
+          const merged = Array.from(
+            new Set([...existing.sourceBlockIds, ...blockIds]),
+          ).slice(0, 100);
           await this.prisma.insight.update({
             where: { id: existing.id },
             data: {
@@ -320,6 +454,7 @@ export class Specialist35Service {
         }
       }
 
+      // 2. Создаём новый Insight (статус active, kind='blocker').
       const created = await this.prisma.insight.create({
         data: {
           tenantId: args.tenantId,
@@ -352,6 +487,8 @@ export class Specialist35Service {
     }
   }
 
+  // ─────────────────────────── KNN-кластеризация ───────────────────────────
+
   private async findMatchingInsight(args: {
     tenantId: string;
     queryText: string;
@@ -371,7 +508,10 @@ export class Specialist35Service {
 
     try {
       const vec = `[${embedding.join(',')}]`;
-      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; distance: number }>>(
+      // cosine distance = 1 - similarity → similarity = 1 - dist.
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; distance: number }>
+      >(
         `SELECT "id", ("embedding" <=> $2::vector) AS distance
          FROM "insights"
          WHERE "tenantId" = $1
@@ -403,14 +543,20 @@ export class Specialist35Service {
     }
   }
 
+  // ─────────────────────────── update existing ───────────────────────────
+
   private async updateExistingInsight(args: {
     existing: Insight;
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] };
   }): Promise<void> {
     const wasMitigated = args.existing.status === 'mitigated';
-    const newSourceBlockIds = Array.from(new Set([...args.existing.sourceBlockIds, args.block.id]));
+    const newSourceBlockIds = Array.from(
+      new Set([...args.existing.sourceBlockIds, args.block.id]),
+    );
     const subjects = await this.resolvePersonSubjects(args.block.id);
-    const mergedSubjects = Array.from(new Set([...args.existing.personSubjectIds, ...subjects]));
+    const mergedSubjects = Array.from(
+      new Set([...args.existing.personSubjectIds, ...subjects]),
+    );
 
     const updated = await this.prisma.insight.update({
       where: { id: args.existing.id },
@@ -422,6 +568,7 @@ export class Specialist35Service {
       },
     });
 
+    // Сразу пересчёт метрик после добавления нового блока.
     await this.recalcMetrics({ insightId: updated.id });
     const recalculated = await this.prisma.insight.findUnique({
       where: { id: updated.id },
@@ -434,6 +581,8 @@ export class Specialist35Service {
     });
   }
 
+  // ─────────────────────────── LLM extract ───────────────────────────
+
   private async extractDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
   ): Promise<InsightDraft | null> {
@@ -443,6 +592,7 @@ export class Specialist35Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
     const guardOnExtract = this.isPromptInjectionGuardEnabled();
     const rawUserExtract = INSIGHT_EXTRACT_USER_TEMPLATE({
       blockName: block.name,
@@ -518,7 +668,12 @@ export class Specialist35Service {
       return null;
     }
 
-    if (!parsed || typeof parsed !== 'object' || !parsed.statement || !parsed.kind) {
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !parsed.statement ||
+      !parsed.kind
+    ) {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'insight',
         reason: 'schema_validation',
@@ -535,7 +690,13 @@ export class Specialist35Service {
     return parsed;
   }
 
-  private async linkToDecisions(args: { insight: Insight; tenantId: string }): Promise<string[]> {
+  // ─────────────────────────── linking with Decisions ───────────────────────────
+
+  private async linkToDecisions(args: {
+    insight: Insight;
+    tenantId: string;
+  }): Promise<string[]> {
+    // 1) KNN на Decision'ах того же tenant (cosine по embedding).
     let candidates: Array<{
       id: string;
       statement: string;
@@ -545,7 +706,9 @@ export class Specialist35Service {
     try {
       let embedding: number[] | null = null;
       try {
-        embedding = await this.embedder.embedQuery(args.insight.statement.slice(0, 2_000));
+        embedding = await this.embedder.embedQuery(
+          args.insight.statement.slice(0, 2_000),
+        );
       } catch {
         embedding = null;
       }
@@ -583,6 +746,8 @@ export class Specialist35Service {
 
     if (candidates.length === 0) return [];
 
+    // 2) LLM арбитр.
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (insight + кандидаты) в маркеры.
     const guardOnLink = this.isPromptInjectionGuardEnabled();
     const rawUserLink = INSIGHT_LINK_TO_DECISIONS_USER_TEMPLATE({
       insightKind: args.insight.kind,
@@ -631,17 +796,58 @@ export class Specialist35Service {
       });
     }
 
-    let parsed: { linkedDecisionIds?: string[]; reasoning?: string };
+    // Б59 [K12] — осознанный парсинг ответа арбитра.
+    // Раньше: голый JSON.parse без проверки формы → кривой ответ (объект без
+    // массива, число, строка) тихо давал пустой список, и связи insight→decision
+    // молча терялись. Теперь: Zod-схема ответа. Пустой массив [] — нормальный
+    // и частый исход (связи нет), он проходит валидацию. А вот сломанный JSON
+    // или НЕВЕРНАЯ форма (linkedDecisionIds не массив) — это аномалия: логируем
+    // warn + метрика invalid, не выдаём её за «связей нет».
+    let parsedJson: unknown;
     try {
-      parsed = JSON.parse(result.text);
-    } catch {
+      parsedJson = JSON.parse(result.text);
+    } catch (err) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'insight',
+        reason: 'link_parse_invalid',
+      });
+      this.logger.warn(
+        {
+          insightId: args.insight.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-5.linkToDecisions: ответ арбитра — не JSON, пропускаю linking',
+      );
+      return [];
+    }
+    const validated =
+      Specialist35Service.LINK_RESPONSE_SCHEMA.safeParse(parsedJson);
+    if (!validated.success) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'insight',
+        reason: 'link_parse_invalid',
+      });
+      this.logger.warn(
+        {
+          insightId: args.insight.id,
+          issues: validated.error.issues.map((i) => i.message).slice(0, 5),
+        },
+        'specialist-3-5.linkToDecisions: ответ арбитра не прошёл схему (кривая форма), пропускаю linking',
+      );
       return [];
     }
     const candidateIds = new Set(candidates.map((c) => c.id));
-    const linked = (parsed.linkedDecisionIds ?? []).filter((id) => candidateIds.has(id));
+    const linked = validated.data.linkedDecisionIds.filter((id) =>
+      candidateIds.has(id),
+    );
     return linked;
   }
 
+  /**
+   * Доп. источник linking — существующие IdeaBlockLink.relationType='consequences_of'
+   * для блоков-источников Insight. Если есть link на блок Decision (через
+   * Decision.sourceBlockIds), включаем тот Decision в relatedDecisionIds.
+   */
   private async findConsequenceDecisions(args: {
     tenantId: string;
     blockIds: readonly string[];
@@ -651,6 +857,7 @@ export class Specialist35Service {
       const links = await this.prisma.ideaBlockLink.findMany({
         where: {
           tenantId: args.tenantId,
+          ...ACTIVE_LINK_FILTER,
           relationType: 'consequences_of',
           fromBlockId: { in: [...args.blockIds] },
         },
@@ -658,7 +865,9 @@ export class Specialist35Service {
         take: 100,
       });
       if (links.length === 0) return [];
-      const targetBlockIds = Array.from(new Set(links.map((l) => l.toBlockId)));
+      const targetBlockIds = Array.from(
+        new Set(links.map((l) => l.toBlockId)),
+      );
       const decisions = await this.prisma.decision.findMany({
         where: {
           tenantId: args.tenantId,
@@ -680,6 +889,8 @@ export class Specialist35Service {
     }
   }
 
+  // ─────────────────────────── persist helpers ───────────────────────────
+
   private async createInsight(args: {
     block: IdeaBlock;
     kind: InsightKind;
@@ -690,9 +901,17 @@ export class Specialist35Service {
     mitigationPlan: string | null;
     confidence: number;
     dynamicLabel: InsightDynamic;
+    /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
     causeCategory: InsightCauseCategory;
   }): Promise<Insight> {
-    const legacyDataClass = this.elevateDataClass(args.block.dataClass, 'internal');
+    // W4.1/W4.2 — derive DataClass.
+    // legacy = elevateDataClass(block, 'internal') (floor=internal вручную).
+    // proposed — DataClassPolicyService.derive({ kind: 'insight' }).
+    // На 'enforce' — пишем derive() + audit; на shadow/off — legacy.
+    const legacyDataClass = this.elevateDataClass(
+      args.block.dataClass,
+      'internal',
+    );
     const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
     const proposed = this.dataClassPolicy?.derive({
       sources: [
@@ -712,7 +931,10 @@ export class Specialist35Service {
         sourceIds: [args.block.id],
       });
     }
-    const finalDc = enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDataClass;
+    const finalDc =
+      enforcement === 'enforce' && proposed
+        ? proposed.dataClass
+        : legacyDataClass;
     const audit =
       enforcement === 'enforce' && proposed
         ? (proposed.audit as unknown as Prisma.InputJsonValue)
@@ -729,7 +951,11 @@ export class Specialist35Service {
         sourceBlockIds: [args.block.id],
         mitigationPlan: args.mitigationPlan,
         causeCategory: args.causeCategory,
-        confidence: new Prisma.Decimal(Math.max(0, Math.min(1, args.confidence))),
+        confidence: new Prisma.Decimal(
+          Math.max(0, Math.min(1, args.confidence)),
+        ),
+        // Insight чаще про процесс — default 'internal' (см. §13 sub-ТЗ).
+        // W4.2: в enforce-режиме источником истины становится derive().
         dataClass: finalDc,
         dataClassAudit: audit,
         firstObservedAt: new Date(),
@@ -742,7 +968,14 @@ export class Specialist35Service {
     });
   }
 
-  static normalizeCauseCategory(raw: string | null | undefined): InsightCauseCategory {
+  /**
+   * SBA β-4 wave 2 — нормализация ответа LLM по causeCategory.
+   * Допускает только значения из INSIGHT_CAUSE_CATEGORIES; при отсутствии или
+   * неизвестном значении возвращает 'unknown' (см. §3 sub-TZ — куратор уточнит).
+   */
+  static normalizeCauseCategory(
+    raw: string | null | undefined,
+  ): InsightCauseCategory {
     if (!raw) return 'unknown';
     const v = raw.trim().toLowerCase();
     return (INSIGHT_CAUSE_CATEGORIES as readonly string[]).includes(v)
@@ -750,24 +983,40 @@ export class Specialist35Service {
       : 'unknown';
   }
 
-  private elevateDataClass(blockClass: DataClass, defaultClass: DataClass): DataClass {
+  /**
+   * @deprecated W4.2 (2026-05-25) — используй `DataClassPolicyService.derive()`.
+   * Оставлено как legacy path при `enforcement` ∈ {'off','shadow'} — для
+   * сохранения исторического поведения и сравнения через compareWithLegacy.
+   */
+  private elevateDataClass(
+    blockClass: DataClass,
+    defaultClass: DataClass,
+  ): DataClass {
     const order: DataClass[] = ['public', 'internal', 'sensitive', 'private'];
     const blockRank = order.indexOf(blockClass);
     const defaultRank = order.indexOf(defaultClass);
     return blockRank > defaultRank ? blockClass : defaultClass;
   }
 
+  // ─────────────────────────── resolvers ───────────────────────────
+
   private async resolveAffectedEntities(args: {
     tenantId: string;
     hints: ReadonlyArray<{ name: string; type: string }>;
   }): Promise<string[]> {
     const ids = new Set<string>();
-    const SUPPORTED_TYPES = new Set(['customer', 'project', 'product', 'vendor']);
+    const SUPPORTED_TYPES = new Set([
+      'customer',
+      'project',
+      'product',
+      'vendor',
+    ]);
 
     for (const hint of args.hints) {
       const name = hint.name?.trim();
       const type = hint.type;
       if (!name || !type) continue;
+      // 'process' пока не Entity — скипаем для β-4 (см. β-3).
       if (!SUPPORTED_TYPES.has(type)) continue;
       try {
         const { entity } = await this.entities.findOrCreateEntity({
@@ -809,6 +1058,8 @@ export class Specialist35Service {
     return [...new Set(persons.map((p) => p.id))];
   }
 
+  // ─────────────────────────── triage ───────────────────────────
+
   private async triageProposed(args: {
     tenantId: string;
     resourceId: string;
@@ -839,7 +1090,12 @@ export class Specialist35Service {
     }
   }
 
-  private async tryWriteEmbedding(args: { id: string; text: string }): Promise<void> {
+  // ─────────────────────────── embedding ───────────────────────────
+
+  private async tryWriteEmbedding(args: {
+    id: string;
+    text: string;
+  }): Promise<void> {
     try {
       const text = args.text.trim().slice(0, 2_000);
       if (!text) return;
@@ -862,8 +1118,14 @@ export class Specialist35Service {
     }
   }
 
-  private buildQueryText(block: IdeaBlock & { evidence: IdeaBlockEvidence[] }): string {
-    const parts = [block.name, block.trustedAnswer].filter((s) => s && s.length > 0).join('. ');
+  // ─────────────────────────── utils ───────────────────────────
+
+  private buildQueryText(
+    block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
+  ): string {
+    const parts = [block.name, block.trustedAnswer]
+      .filter((s) => s && s.length > 0)
+      .join('. ');
     return parts.slice(0, 2_000);
   }
 
@@ -873,12 +1135,15 @@ export class Specialist35Service {
   }
 }
 
+// ─────────────────────────── shared types ───────────────────────────
+
 interface InsightDraft {
   kind: 'problem' | 'risk' | 'blocker' | 'inefficiency';
   statement: string;
   severity?: 'low' | 'medium' | 'high' | 'critical';
   affectedEntityHints?: Array<{ name: string; type: string }>;
   mitigationSuggestion?: string | null;
+  /** SBA β-4 wave 2 — категория первопричины (LLM-классифицировано). */
   causeCategory?: string | null;
   confidence: number;
 }

@@ -247,31 +247,87 @@ export class ThemeClustererCron {
     const embeddingText = `${classification.name} ${classification.description}`.trim();
     const embedding = await this.embeddings.embedQuery(embeddingText);
 
-    const theme = await this.prisma.theme.create({
-      data: {
+    // Б10 [K10] — гард уникальности «блок ↔ Theme». PK ThemeIdeaBlock —
+    // (themeId, blockId), т.е. он НЕ уникален по blockId: один блок мог бы
+    // попасть в несколько Theme. Кандидаты выбирались SELECT'ом с
+    // `NOT EXISTS ThemeIdeaBlock`, но между ним и записью был долгий LLM-вызов
+    // (classifyTheme) — параллельный тик другого Org/прохода мог уже забрать
+    // часть блоков. Решение: внутри одной транзакции пере-проверяем, какие из
+    // блоков кластера ВСЁ ЕЩЁ свободны (NOT EXISTS), создаём Theme и пишем
+    // ThemeIdeaBlock только по ним. Если не осталось ни одного свободного —
+    // тему не создаём (иначе родится пустая осиротевшая Theme).
+    const blockIdsInCluster = blocks.map((b) => b.id);
+    const themeId = await this.prisma.$transaction(async (tx) => {
+      const freeRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT b.id AS id
+           FROM "IdeaBlock" b
+          WHERE b."tenantId" = $1
+            AND b.id = ANY($2::text[])
+            AND NOT EXISTS (
+              SELECT 1 FROM "ThemeIdeaBlock" t WHERE t."blockId" = b.id
+            )`,
         tenantId,
-        name: classification.name,
-        description: classification.description,
-        branch: classification.branch,
-        weight: new Prisma.Decimal(classification.weight.toFixed(3)),
-        confidence: new Prisma.Decimal(classification.confidence.toFixed(3)),
-        status: 'active',
-        lastSignalAt: new Date(),
-      },
-      select: { id: true },
+        blockIdsInCluster,
+      );
+      const freeBlockIds = new Set(freeRows.map((r) => r.id));
+      if (freeBlockIds.size === 0) {
+        this.logger.debug(
+          { tenantId, clusterBlocks: blocks.length },
+          'theme-clusterer: все блоки кластера уже привязаны к темам — пропускаем',
+        );
+        return null;
+      }
+
+      const created = await tx.theme.create({
+        data: {
+          tenantId,
+          name: classification.name,
+          description: classification.description,
+          branch: classification.branch,
+          weight: new Prisma.Decimal(classification.weight.toFixed(3)),
+          confidence: new Prisma.Decimal(classification.confidence.toFixed(3)),
+          status: 'active',
+          lastSignalAt: new Date(),
+        },
+        select: { id: true },
+      });
+
+      await tx.themeIdeaBlock.createMany({
+        data: blocks
+          .filter((b) => freeBlockIds.has(b.id))
+          .map((b) => ({
+            themeId: created.id,
+            blockId: b.id,
+            weight: new Prisma.Decimal('1.000'),
+          })),
+        skipDuplicates: true,
+      });
+      if (topEntities.length > 0) {
+        await tx.themeEntity.createMany({
+          data: topEntities.map((e) => ({
+            themeId: created.id,
+            entityId: e.id,
+            mentionsCount: entityMentionsByEntity.get(e.id) ?? 0,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      return created.id;
     });
+
+    if (!themeId) return null;
 
     if (embedding && embedding.length > 0) {
       try {
         await this.prisma.$executeRawUnsafe(
           'UPDATE "Theme" SET embedding = $1::vector(1536) WHERE id = $2',
           toVectorLiteral(embedding),
-          theme.id,
+          themeId,
         );
       } catch (err) {
         this.logger.warn(
           {
-            themeId: theme.id,
+            themeId,
             err: err instanceof Error ? err.message : String(err),
           },
           'theme-clusterer: не удалось записать embedding темы — продолжаю',
@@ -279,28 +335,7 @@ export class ThemeClustererCron {
       }
     }
 
-    if (blocks.length > 0) {
-      await this.prisma.themeIdeaBlock.createMany({
-        data: blocks.map((b) => ({
-          themeId: theme.id,
-          blockId: b.id,
-          weight: new Prisma.Decimal('1.000'),
-        })),
-        skipDuplicates: true,
-      });
-    }
-    if (topEntities.length > 0) {
-      await this.prisma.themeEntity.createMany({
-        data: topEntities.map((e) => ({
-          themeId: theme.id,
-          entityId: e.id,
-          mentionsCount: entityMentionsByEntity.get(e.id) ?? 0,
-        })),
-        skipDuplicates: true,
-      });
-    }
-
-    return theme.id;
+    return themeId;
   }
 }
 

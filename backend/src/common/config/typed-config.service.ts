@@ -1285,7 +1285,6 @@ export class TypedConfigService {
       weeklyDigestLocalHour: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_HOUR') ?? 8),
       weeklyDigestLocalDay: Number(this.get('COO_WEEKLY_DIGEST_LOCAL_DAY') ?? 1),
       dailyDigestEnabled: this.get('COO_DAILY_DIGEST_ENABLED') !== false,
-      dailyDigestDeliverToTelegram: this.get('COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM') === true,
       dailyDigestHourUtc: Number(this.get('COO_DAILY_DIGEST_HOUR_UTC') ?? 22),
       commitmentFollowupEnabled: this.get('COMMITMENT_FOLLOWUP_ENABLED') !== false,
       commitmentFollowupLocalHour: Number(this.get('COMMITMENT_FOLLOWUP_LOCAL_HOUR') ?? 9),

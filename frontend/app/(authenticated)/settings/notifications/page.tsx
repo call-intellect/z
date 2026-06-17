@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { DailyDigestToggle } from '@/ui/settings/DailyDigestToggle';
 import { PushSubscriptionToggle } from '@/ui/settings/PushSubscriptionToggle';
 
 export const metadata: Metadata = {
@@ -18,6 +19,7 @@ export default function NotificationsSettingsPage() {
 
       <section className="flex flex-col gap-3">
         <PushSubscriptionToggle />
+        <DailyDigestToggle />
       </section>
 
       <p className="text-xs text-fg-tertiary">

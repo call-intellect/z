@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Кора · Дашборды: было → станет</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0a14; --bg2:#0e0c1c;
+    --ink:#eef0fb; --ink-soft:#a7abc9; --ink-faint:#6b6f8f;
+    --violet:#7c5cff; --violet-2:#9b7bff; --violet-deep:#4b2fb3;
+    --mint:#4fe6c4; --mint-deep:#1f9d86;
+    --teal:#54c8ff;
+    --amber:#ffb74d; --rose:#ff6b8b; --gold:#ffd166;
+    --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.07);
+    --stroke:rgba(255,255,255,.10); --stroke-2:rgba(255,255,255,.16);
+    --shadow:0 18px 50px -20px rgba(0,0,0,.7);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Golos Text',system-ui,sans-serif;
+    background:var(--bg); color:var(--ink);
+    line-height:1.5; -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* atmospheric background */
+  body::before{
+    content:""; position:fixed; inset:0; z-index:-2;
+    background:
+      radial-gradient(60% 50% at 18% 8%, rgba(124,92,255,.28), transparent 60%),
+      radial-gradient(50% 45% at 92% 12%, rgba(84,200,255,.16), transparent 60%),
+      radial-gradient(55% 50% at 70% 95%, rgba(79,230,196,.12), transparent 60%),
+      var(--bg);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; z-index:-1; opacity:.5; pointer-events:none;
+    background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);
+    background-size:54px 54px;
+    mask-image:radial-gradient(circle at 50% 30%,#000,transparent 80%);
+  }
+  .wrap{max-width:1240px;margin:0 auto;padding:0 28px}
+  a{color:inherit}
+
+  /* ---- header ---- */
+  header.top{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+    background:linear-gradient(180deg,rgba(10,10,20,.82),rgba(10,10,20,.4));
+    border-bottom:1px solid var(--stroke)}
+  .top .wrap{display:flex;align-items:center;gap:18px;height:64px}
+  .logo{font-family:'Unbounded';font-weight:800;font-size:18px;letter-spacing:-.5px}
+  .logo b{color:var(--violet-2)}
+  .top .tag{margin-left:auto;font-size:12.5px;color:var(--ink-soft)}
+  .legend{display:flex;gap:8px;flex-wrap:wrap}
+  .chip{font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid var(--stroke-2);white-space:nowrap}
+  .chip.new{color:var(--mint);background:rgba(79,230,196,.10);border-color:rgba(79,230,196,.35)}
+  .chip.revive{color:var(--teal);background:rgba(84,200,255,.10);border-color:rgba(84,200,255,.32)}
+  .chip.fix{color:var(--gold);background:rgba(255,209,102,.10);border-color:rgba(255,209,102,.32)}
+  .chip.keep{color:var(--ink-soft)}
+
+  /* ---- hero ---- */
+  .hero{padding:78px 0 26px;position:relative}
+  .kicker{font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--violet-2)}
+  h1{font-family:'Unbounded';font-weight:800;font-size:clamp(34px,5vw,62px);line-height:1.02;letter-spacing:-1.5px;margin:14px 0 18px;max-width:18ch}
+  h1 .grad{background:linear-gradient(100deg,var(--violet-2),var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .lead{font-size:18px;color:var(--ink-soft);max-width:62ch}
+  .lead b{color:var(--ink)}
+
+  /* ---- section scaffolding ---- */
+  section{padding:46px 0;position:relative}
+  .sec-head{display:flex;align-items:flex-end;gap:16px;margin-bottom:26px;flex-wrap:wrap}
+  .sec-num{font-family:'Unbounded';font-weight:700;font-size:13px;color:var(--violet-2);border:1px solid var(--stroke-2);border-radius:10px;padding:6px 11px}
+  h2{font-family:'Unbounded';font-weight:700;font-size:clamp(22px,3vw,33px);letter-spacing:-.7px}
+  .sec-head p{color:var(--ink-soft);font-size:15px;max-width:60ch;margin-top:6px}
+
+  /* ---- concept: two speeds ---- */
+  .speeds{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .speed{position:relative;border-radius:22px;padding:26px 26px 24px;border:1px solid var(--stroke);
+    background:var(--glass);backdrop-filter:blur(10px);box-shadow:var(--shadow);overflow:hidden}
+  .speed.glance::before{content:"";position:absolute;inset:0;background:radial-gradient(80% 90% at 0% 0%,rgba(124,92,255,.22),transparent 60%)}
+  .speed.deep::before{content:"";position:absolute;inset:0;background:radial-gradient(80% 90% at 100% 0%,rgba(79,230,196,.16),transparent 60%)}
+  .speed>*{position:relative}
+  .speed .ic{font-size:26px}
+  .speed h3{font-family:'Unbounded';font-weight:700;font-size:20px;margin:10px 0 6px}
+  .speed .who{font-size:12.5px;color:var(--violet-2);font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+  .speed p{color:var(--ink-soft);font-size:14.5px;margin-top:10px}
+  .speed .meta{margin-top:16px;display:flex;gap:8px;flex-wrap:wrap}
+
+  /* ---- device frame ---- */
+  .device{border-radius:22px;border:1px solid var(--stroke);background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.015));
+    box-shadow:var(--shadow);overflow:hidden}
+  .device .bar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--stroke);background:rgba(0,0,0,.25)}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.r{background:#ff6058}.dot.y{background:#ffbe2e}.dot.g{background:#28c840}
+  .url{margin-left:10px;font-size:12px;color:var(--ink-faint);background:rgba(255,255,255,.05);padding:4px 12px;border-radius:8px}
+  .device .body{padding:20px;display:flex;gap:18px}
+  .sidebar{width:188px;flex:0 0 188px;border-right:1px solid var(--stroke);padding-right:16px}
+  .nav-grp{font-size:10.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ink-faint);margin:14px 0 6px}
+  .nav-grp:first-child{margin-top:0}
+  .nav-i{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink-soft);padding:7px 10px;border-radius:9px;margin-bottom:2px}
+  .nav-i .gi{width:7px;height:7px;border-radius:2px;background:var(--ink-faint)}
+  .nav-i.active{background:rgba(124,92,255,.16);color:var(--ink);font-weight:600}
+  .nav-i.active .gi{background:var(--violet-2)}
+  .nav-i.newnav{color:var(--mint);font-weight:600}
+  .nav-i.newnav .gi{background:var(--mint)}
+  .nav-i .nb{margin-left:auto;font-size:9px;font-weight:700;color:var(--mint);border:1px solid rgba(79,230,196,.4);border-radius:6px;padding:1px 6px}
+  .screen{flex:1;min-width:0}
+
+  /* widget cards */
+  .grid{display:grid;gap:12px}
+  .g2{grid-template-columns:repeat(2,1fr)}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g4{grid-template-columns:repeat(4,1fr)}
+  .card{position:relative;border-radius:14px;border:1px solid var(--stroke);background:var(--glass);padding:13px 14px;min-height:74px;transition:.25s}
+  .card:hover{transform:translateY(-2px);border-color:var(--stroke-2);background:var(--glass-2)}
+  .card .t{font-size:12.5px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px;line-height:1.25}
+  .card .s{font-size:11px;color:var(--ink-faint);margin-top:5px}
+  .card .big{font-family:'Unbounded';font-weight:700;font-size:21px;margin-top:7px}
+  .card .ico{font-size:14px;opacity:.9}
+  .badge{position:absolute;top:-8px;right:-7px;font-size:9px;font-weight:800;letter-spacing:.4px;padding:3px 7px;border-radius:7px;box-shadow:0 4px 12px -3px rgba(0,0,0,.6)}
+  .b-new{background:linear-gradient(100deg,var(--mint),var(--mint-deep));color:#04211b}
+  .b-rev{background:linear-gradient(100deg,var(--teal),#1f7fbf);color:#021726}
+  .b-fix{background:linear-gradient(100deg,var(--gold),#c79a18);color:#241c02}
+  .tone-rose{color:var(--rose)} .tone-amber{color:var(--amber)} .tone-mint{color:var(--mint)} .tone-teal{color:var(--teal)} .tone-violet{color:var(--violet-2)}
+  .spark{height:22px;margin-top:8px;display:flex;align-items:flex-end;gap:3px}
+  .spark i{flex:1;background:linear-gradient(180deg,var(--violet-2),rgba(124,92,255,.15));border-radius:2px;display:block}
+  .flagbanner{border-radius:14px;padding:13px 16px;border:1px solid rgba(255,107,139,.4);background:linear-gradient(100deg,rgba(255,107,139,.16),rgba(255,107,139,.04));display:flex;align-items:center;gap:12px;font-size:13px}
+  .flagbanner .pulse{width:9px;height:9px;border-radius:50%;background:var(--rose);box-shadow:0 0 0 0 rgba(255,107,139,.6);animation:pp 2s infinite}
+  @keyframes pp{0%{box-shadow:0 0 0 0 rgba(255,107,139,.5)}70%{box-shadow:0 0 0 9px rgba(255,107,139,0)}100%{box-shadow:0 0 0 0 rgba(255,107,139,0)}}
+  .blocklabel{font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-faint);margin:16px 0 9px;display:flex;align-items:center;gap:9px}
+  .blocklabel::after{content:"";flex:1;height:1px;background:var(--stroke)}
+  .blocklabel.risk{color:var(--rose)} .blocklabel.pulse{color:var(--teal)} .blocklabel.load{color:var(--violet-2)} .blocklabel.fric{color:var(--amber)}
+
+  /* before/after columns */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  .ba-col h4{font-family:'Unbounded';font-weight:600;font-size:14px;letter-spacing:.5px;margin-bottom:12px;display:flex;align-items:center;gap:9px}
+  .pill{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .pill.was{background:rgba(255,255,255,.06);color:var(--ink-soft)}
+  .pill.now{background:rgba(79,230,196,.12);color:var(--mint);border:1px solid rgba(79,230,196,.3)}
+  .mini{border-radius:9px;border:1px solid var(--stroke);background:rgba(255,255,255,.03);padding:9px 11px;font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .mini .d{width:6px;height:6px;border-radius:50%;flex:0 0 6px}
+  .mini .rt{margin-left:auto;font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:6px}
+  .rt.new{color:var(--mint);background:rgba(79,230,196,.12)}
+  .rt.rev{color:var(--teal);background:rgba(84,200,255,.12)}
+  .rt.fix{color:var(--gold);background:rgba(255,209,102,.12)}
+  .grouphead{font-size:10.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ink-faint);margin:14px 0 7px}
+  .note{margin-top:10px;font-size:12.5px;color:var(--ink-soft);border-left:2px solid var(--violet);padding-left:12px}
+
+  /* explainer cards */
+  .explain{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .ex{border-radius:16px;border:1px solid var(--stroke);background:var(--glass);padding:18px 20px}
+  .ex .h{display:flex;align-items:center;gap:10px;font-family:'Unbounded';font-weight:600;font-size:15px}
+  .ex .em{font-size:20px}
+  .ex p{color:var(--ink-soft);font-size:13.5px;margin-top:9px}
+  .ex .where{margin-top:11px;font-size:11.5px;color:var(--mint);font-weight:600}
+
+  .summary{border-radius:20px;border:1px solid var(--stroke-2);background:linear-gradient(120deg,rgba(124,92,255,.12),rgba(79,230,196,.06));padding:30px;display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  .stat .n{font-family:'Unbounded';font-weight:800;font-size:38px;background:linear-gradient(120deg,var(--violet-2),var(--mint));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .stat .l{font-size:13px;color:var(--ink-soft);margin-top:4px}
+
+  footer{padding:50px 0 70px;color:var(--ink-faint);font-size:13px;border-top:1px solid var(--stroke);margin-top:30px}
+
+  /* reveal */
+  .rv{opacity:0;transform:translateY(16px);animation:rev .7s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes rev{to{opacity:1;transform:none}}
+
+  @media(max-width:980px){
+    .speeds,.ba,.explain,.summary{grid-template-columns:1fr}
+    .summary{grid-template-columns:1fr 1fr}
+    .device .body{flex-direction:column}.sidebar{width:auto;flex:auto;border-right:none;border-bottom:1px solid var(--stroke);padding:0 0 12px}
+    .g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="logo">Кора<b>·</b></span>
+    <div class="legend">
+      <span class="chip new">● Новое</span>
+      <span class="chip revive">● Оживлённый сигнал</span>
+      <span class="chip fix">● Починенная заглушка</span>
+      <span class="chip keep">● Без изменений</span>
+    </div>
+    <span class="tag">Прототип · 16.06.2026</span>
+  </div>
+</header>
+
+<div class="hero wrap rv">
+  <div class="kicker">Дашборды · было → станет</div>
+  <h1>Главное <span class="grad">не трогаем</span>. Глубину выносим на отдельный экран.</h1>
+  <p class="lead">Сейчас система <b>уже считает</b> десяток сильных сигналов (клиенты под отток, доведение решений, узкие места, перегруз людей), но <b>не показывает их</b>. Вопрос не «нагрузить ли главную», а <b>куда положить аналитику, чтобы не сломать минимализм</b>. Ответ ниже — наглядно.</p>
+</div>
+
+<!-- 0. TWO SPEEDS -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">Идея</span>
+    <div><h2>Две скорости, два экрана</h2>
+    <p>Это главное, что нужно понять. Мы не превращаем один экран в свалку — мы разводим «быстрый взгляд» и «разбор» по разным местам.</p></div>
+  </div>
+  <div class="speeds">
+    <div class="speed glance rv" style="animation-delay:.05s">
+      <div class="ic">⚡</div>
+      <div class="who">Каждый день · 30 секунд</div>
+      <h3>«Сегодня» — витрина</h3>
+      <p>Главный экран при входе. Только то, что требует тебя <b>сегодня</b>: что случилось вчера, что в очереди на решение, куда движемся. Молчит, когда всё в норме. <b>Остаётся ровно таким, как сейчас.</b></p>
+      <div class="meta"><span class="chip keep">7 блоков · без изменений</span></div>
+    </div>
+    <div class="speed deep rv" style="animation-delay:.12s">
+      <div class="ic">🔬</div>
+      <div class="who">По запросу · когда копаешь</div>
+      <h3>«Аналитика» — разбор</h3>
+      <p>Отдельный экран, открываешь <b>когда хочешь разобраться</b>: где риски, кто перегружен, что буксует, какие клиенты горят. Сюда садится <b>весь</b> подключаемый аналитический слой — не на главную.</p>
+      <div class="meta"><span class="chip new">+10 виджетов</span><span class="chip revive">2 оживлены</span><span class="chip fix">2 починены</span></div>
+    </div>
+  </div>
+  <div class="note">Принцип «минимум для руководителя» сохраняется: он живёт на главной. «Операции» — это сознательно более плотный экран для тех минут, когда нужно копнуть. Разные задачи — разные плотности.</div>
+</section>
+
+<!-- 1. NAV -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <div><h2>Что меняется в меню</h2>
+    <p>Главное открытие: доска «Операции» технически есть, но при последнем редизайне её <b>выкинули из меню</b> — на неё нельзя попасть. Возвращаем пункт.</p></div>
+  </div>
+  <div class="device rv">
+    <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">korateam.ru / меню руководителя</span></div>
+    <div class="body" style="display:block">
+      <div style="max-width:300px;margin:0 auto">
+        <div class="nav-grp">Ритмы</div>
+        <div class="nav-i active"><span class="gi"></span> Сегодня</div>
+        <div class="nav-i newnav"><span class="gi"></span> Аналитика <span class="nb">ВЕРНУЛИ</span></div>
+        <div class="nav-i"><span class="gi"></span> Неделя</div>
+        <div class="nav-i"><span class="gi"></span> Итоги месяца</div>
+        <div class="nav-grp">Работа</div>
+        <div class="nav-i"><span class="gi"></span> Встречи</div>
+        <div class="nav-i"><span class="gi"></span> Задачи</div>
+        <div class="nav-i"><span class="gi"></span> Команда</div>
+        <div class="nav-i"><span class="gi"></span> Память</div>
+      </div>
+    </div>
+  </div>
+  <div class="note">Решено: доска называется <b>«Аналитика»</b> (бывш. «Операции») — самое понятное и без коллизий («Пульс» путался бы с обещанием главной «пульс компании за 30 секунд»). Маршрут прежний, меняется только метка. Стоит в «Ритмах» сразу после «Сегодня». Тёплая альтернатива — «Разбор», меняется одной строкой.</div>
+</section>
+
+<!-- 2. SEGODNYA UNCHANGED -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <div><h2>Главная «Сегодня» — остаётся как есть</h2>
+    <p>Ноль изменений. Показываю, чтобы было видно: минимализм не ломаем, ничего сюда не досыпаем.</p></div>
+  </div>
+  <div class="device rv">
+    <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">korateam.ru / dashboard · «Сегодня»</span>
+      <span class="pill was" style="margin-left:auto">БЕЗ ИЗМЕНЕНИЙ</span></div>
+    <div class="body">
+      <div class="sidebar">
+        <div class="nav-grp">Ритмы</div>
+        <div class="nav-i active"><span class="gi"></span> Сегодня</div>
+        <div class="nav-i newnav"><span class="gi"></span> Аналитика</div>
+        <div class="nav-i"><span class="gi"></span> Неделя</div>
+        <div class="nav-i"><span class="gi"></span> Итоги месяца</div>
+      </div>
+      <div class="screen">
+        <div class="flagbanner" style="border-color:rgba(79,230,196,.35);background:linear-gradient(100deg,rgba(79,230,196,.12),transparent)">
+          <span class="pulse" style="background:var(--mint);animation:none"></span>
+          <b>Компания в норме.</b>&nbsp;3 вещи требуют вашего решения →
+        </div>
+        <div class="grid g3" style="margin-top:12px">
+          <div class="card"><div class="t">📨 Что было вчера</div><div class="s">сводка дня + «доставлено»</div></div>
+          <div class="card"><div class="t">🎯 Требует вас</div><div class="big tone-violet">3</div></div>
+          <div class="card"><div class="t">🧭 Вектор к цели</div><div class="s">движемся вперёд</div></div>
+        </div>
+        <div class="grid g3" style="margin-top:12px">
+          <div class="card"><div class="t">📊 Польза за период</div><div class="s">5 счётчиков</div></div>
+          <div class="card"><div class="t">✨ Сводка Коры</div><div class="s">главное за неделю</div></div>
+          <div class="card"><div class="t">🔔 Самое острое</div><div class="s">топ-3 сигнала</div></div>
+        </div>
+        <div class="grid g3" style="margin-top:12px">
+          <div class="card"><div class="t">📚 Оцифровано</div><div class="s">регламенты · процессы</div></div>
+          <div class="card"><div class="t">👥 Активность</div><div class="s">кто что сделал</div></div>
+          <div class="card"><div class="t">✅ Чек-ины</div><div class="s">кто не сдал</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. OPERATIONS BEFORE/AFTER -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <div><h2>Доска «Аналитика» (бывш. «Операции») — было → станет</h2>
+    <p>Здесь все изменения. Слева — как сейчас (много виджетов вперемешку, но без «денежного» и риск-слоя, и на неё не попасть). Справа — как станет: сгруппировано в понятные секции + добавлены сильные сигналы.</p></div>
+  </div>
+
+  <div class="ba">
+    <!-- BEFORE -->
+    <div class="ba-col rv">
+      <h4><span class="pill was">БЫЛО</span> вперемешку · недостижимо из меню</h4>
+      <div class="device">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">/dashboard/operations</span></div>
+        <div class="body" style="display:block;padding:16px">
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> KPI-ряд: конфликты · блокеры · цели · обещания</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> График операционной нагрузки (12 недель)</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> Температура команды</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> Не отчитались · Зависли задачи</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> Загрузка команд</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> Зрелость · Карта причин · Топ-5 проблем</div>
+          <div class="mini"><span class="d" style="background:var(--ink-faint)"></span> Открытые обещания · Хронические блокеры · Конфликты</div>
+          <div class="note" style="border-color:var(--rose)">Проблемы: нет секций (всё одним списком), нет риск-слоя (клиенты/решения/знания не видны), и <b>пункта в меню нет</b> — экран существует, но открыть его нельзя.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="ba-col rv" style="animation-delay:.1s">
+      <h4><span class="pill now">СТАНЕТ</span> секции + сильные сигналы</h4>
+      <div class="device">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">/dashboard/operations · «Операции»</span></div>
+        <div class="body" style="display:block;padding:16px">
+
+          <div class="flagbanner"><span class="pulse"></span><b>Необратимое решение без альтернатив</b> — стоит перепроверить
+            <span class="rt new" style="margin-left:auto">НОВОЕ</span></div>
+
+          <div class="blocklabel">KPI-ряд</div>
+          <div class="grid g4">
+            <div class="card"><div class="t tone-amber">Блокеры</div><div class="big">4</div></div>
+            <div class="card"><div class="t tone-rose">Конфликты</div><div class="big">2</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-teal">Скорость ответа</div><div class="big">6ч</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-mint">Доведено решений</div><div class="big">62%</div></div>
+          </div>
+
+          <div class="blocklabel risk">⚠ Риски и непрерывность</div>
+          <div class="grid g3">
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-rose">💸 Клиенты под отток</div><div class="s">3 горят · деньги</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-amber">🔑 Знание под риском</div><div class="s">зона на 1 человеке</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-amber">🚌 Угрозы непрерывности</div><div class="s">bus-factor</div></div>
+          </div>
+
+          <div class="blocklabel pulse">📈 Аналитика пульса</div>
+          <div class="grid g3">
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-teal">🔁 Темы по кругу</div><div class="s">обсуждаем без решения</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-teal">🕒 Встречи-болтология</div><div class="s">низкий ROI</div></div>
+            <div class="card"><span class="badge b-new">NEW</span><div class="t tone-teal">🔥 Узкие места</div><div class="s">между отделами</div></div>
+          </div>
+
+          <div class="blocklabel load">⚖ Загрузка и распределение</div>
+          <div class="grid g2">
+            <div class="card"><div class="t tone-violet">Загрузка команд</div><div class="s">перегруз / норма</div></div>
+            <div class="card"><span class="badge b-rev">ОЖИВЛЁН</span><div class="t tone-teal">🪢 Перегруз ответственностью</div><div class="s">на ком всё висит</div></div>
+          </div>
+
+          <div class="blocklabel fric">💢 Трения и текучка</div>
+          <div class="grid g3">
+            <div class="card"><div class="t">Карта причин</div></div>
+            <div class="card"><div class="t">Свежие конфликты</div></div>
+            <div class="card"><div class="t">Хронические блокеры</div></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note">Тяжёлые блоки (тепловая карта узких мест, полные таблицы) по умолчанию свёрнуты — раскрываешь по клику. Риск-карточки (клиенты, знания) держим развёрнутыми — это то, что должно быть на виду.</div>
+</section>
+
+<!-- 4. ELSEWHERE -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <div><h2>Две починки на странице «Команда»</h2>
+    <p>Не на «Операциях», а там, где про людей — на странице команды/отдела. Чинятся «пустышки», которые сейчас всегда показывают ноль.</p></div>
+  </div>
+  <div class="ba">
+    <div class="ba-col rv">
+      <h4><span class="pill was">БЫЛО</span> карточка отдела</h4>
+      <div class="device"><div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">/teams/маркетинг</span></div>
+        <div class="body" style="display:block;padding:16px">
+          <div class="mini"><span class="d" style="background:var(--mint)"></span> Настроение · обещания · конфликты <span class="rt" style="background:rgba(255,255,255,.06);color:var(--ink-soft)">работает</span></div>
+          <div class="mini"><span class="d" style="background:var(--rose)"></span> Колонка «Решения» <span class="rt" style="background:rgba(255,107,139,.12);color:var(--rose)">всегда 0</span></div>
+          <div class="mini"><span class="d" style="background:var(--rose)"></span> Цели команды <span class="rt" style="background:rgba(255,107,139,.12);color:var(--rose)">всегда пусто</span></div>
+          <div class="mini"><span class="d" style="background:var(--rose)"></span> «Почему такая оценка» <span class="rt" style="background:rgba(255,107,139,.12);color:var(--rose)">не показано</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="ba-col rv" style="animation-delay:.1s">
+      <h4><span class="pill now">СТАНЕТ</span> реальные данные</h4>
+      <div class="device"><div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">/teams/маркетинг</span></div>
+        <div class="body" style="display:block;padding:16px">
+          <div class="mini"><span class="d" style="background:var(--mint)"></span> Настроение · обещания · конфликты <span class="rt" style="background:rgba(255,255,255,.06);color:var(--ink-soft)">работает</span></div>
+          <div class="mini"><span class="d" style="background:var(--gold)"></span> Колонка «Решения»: 2 висят <span class="rt fix">ПОЧИНЕНО</span></div>
+          <div class="mini"><span class="d" style="background:var(--gold)"></span> Цели команды: 4 цели + ответственный <span class="rt fix">ПОЧИНЕНО</span></div>
+          <div class="mini"><span class="d" style="background:var(--teal)"></span> «Почему такая оценка»: 5 факторов + вывод <span class="rt rev">ОЖИВЛЁН</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="note">«Оживлён» здесь — про факторы здоровья: их каждый день оценивает нейросеть (деньги уже тратятся), а результат лежал мёртвым грузом. Теперь просто показываем то, за что уже платим.</div>
+</section>
+
+<!-- 5. PLAIN EXPLAINER -->
+<section class="wrap">
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <div><h2>Что значит каждый новый блок — простыми словами</h2></div>
+  </div>
+  <div class="explain">
+    <div class="ex rv"><div class="h"><span class="em">💸</span>Клиенты под отток</div><p>Система ночью смотрит, у каких клиентов копятся сигналы «уйдём / недовольны / больно», и показывает: «3 клиента горят». Самая денежная подсказка — сейчас считается, но никто не видит.</p><div class="where">→ Операции · «Риски»</div></div>
+    <div class="ex rv" style="animation-delay:.05s"><div class="h"><span class="em">✅</span>Доведение решений</div><p>«62% решений доведено · 5 застряло». Видно, где приняли, но не двигается — прямой показатель, доводит ли команда дела до конца.</p><div class="where">→ Операции · KPI-ряд</div></div>
+    <div class="ex rv" style="animation-delay:.1s"><div class="h"><span class="em">🔑</span>Знание под риском</div><p>«Зона X держится на одном человеке, и он под риском ухода». Подсказка: продублируй экспертизу, пока не поздно.</p><div class="where">→ Операции · «Риски»</div></div>
+    <div class="ex rv" style="animation-delay:.15s"><div class="h"><span class="em">🪢</span>Перегруз ответственностью</div><p>Система строит карту обещаний и видит, на кого навешано слишком много. Сигнал «Иван — узкое горлышко» сейчас считается, но читателя не было вовсе.</p><div class="where">→ Операции · «Загрузка»</div></div>
+    <div class="ex rv" style="animation-delay:.2s"><div class="h"><span class="em">🕒</span>Встречи-болтология</div><p>Встречи с низкой отдачей (много времени — мало решений/задач). Помогает резать пустые созвоны.</p><div class="where">→ Операции · «Пульс»</div></div>
+    <div class="ex rv" style="animation-delay:.25s"><div class="h"><span class="em">⚠</span>Необратимые решения</div><p>Баннер-тревога вверху: приняли решение, которое тяжело откатить, и без проработки альтернатив. Сам прячется, когда таких нет.</p><div class="where">→ Операции · сверху</div></div>
+  </div>
+</section>
+
+<!-- SUMMARY -->
+<section class="wrap">
+  <div class="summary rv">
+    <div class="stat"><div class="n">0</div><div class="l">изменений на главной «Сегодня»</div></div>
+    <div class="stat"><div class="n">+10</div><div class="l">сильных виджетов на «Операциях»</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">мёртвых сигнала оживлены</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">пустышки починены</div></div>
+  </div>
+  <div class="note">Технически это почти всё <b>уже написано</b> — мы подключаем готовое, а не строим заново. Базы данных не трогаем, новых «выключателей» нет: выкатываем сразу включённым.</div>
+</section>
+
+<footer class="wrap">
+  Прототип к ТЗ <b>plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md</b> · анализ <b>plans/analysis/2026-06-15-coo-operational-director-module-agents-and-dashboards.md</b><br>
+  Решено: (1) доска → «Аналитика», пункт в меню возвращён; (2) доставка сводки в каналы — в ТЗ (Фаза 8), управляется персональной галочкой «Получать ежедневную сводку» в кабинете.
+</footer>
+
+</body>
+</html>

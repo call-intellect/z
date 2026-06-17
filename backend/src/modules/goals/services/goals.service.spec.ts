@@ -41,7 +41,9 @@ function makeService(prismaStub: PrismaStub): {
   const svc = new GoalsService(
     prismaStub as unknown as PrismaService,
     audit as unknown as AuditLogService,
-    {} as unknown as CoreQueueService,
+    {
+      enqueueGoalEmbed: vi.fn().mockResolvedValue(undefined),
+    } as unknown as CoreQueueService,
     {} as unknown as QuotaService,
     {} as unknown as TypedConfigService,
     metrics as unknown as BusinessMetricsService,

@@ -16,6 +16,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import {
@@ -23,6 +24,7 @@ import {
   type KnowledgeAccessContext,
 } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 import { ReasoningChainService } from '../services/reasoning-chain.service';
 
 import type { BlockDetailDto } from './dto/block.dto';
@@ -191,6 +193,10 @@ export class KnowledgeBlocksController {
   }
 
   @Get('blocks/:id/links')
+  // G1 — связи блока = граф знаний (платная feature.graph, как
+  // KnowledgeGraphController). Глобальный EntitlementGuard читает декоратор
+  // через Reflector. Без него /blocks/:id/links был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({ summary: 'Типизированные связи блока (outgoing + incoming)' })
   async links(
     @Param('id') id: string,
@@ -230,12 +236,12 @@ export class KnowledgeBlocksController {
     }
 
     let outgoing = await this.prisma.ideaBlockLink.findMany({
-      where: { fromBlockId: id, status: 'active', tenantId },
+      where: { fromBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { toBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });
     let incoming = await this.prisma.ideaBlockLink.findMany({
-      where: { toBlockId: id, status: 'active', tenantId },
+      where: { toBlockId: id, ...ACTIVE_LINK_FILTER, tenantId },
       include: { fromBlock: true },
       orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
     });
@@ -302,6 +308,9 @@ export class KnowledgeBlocksController {
   }
 
   @Get('blocks/:id/reasoning-chain')
+  // G1 — reasoning-chain = BFS по графу связей блока (платная feature.graph,
+  // как KnowledgeGraphController). Без декоратора был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({
     summary: 'Reasoning chain блока (BFS по логическим связям)',
   })

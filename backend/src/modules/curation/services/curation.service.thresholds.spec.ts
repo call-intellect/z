@@ -49,7 +49,11 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
         findFirst: cardVersionFindFirstMock,
         create: cardVersionCreateMock,
       },
-      curationItem: { create: curationItemCreateMock },
+      curationItem: {
+        // Б56 — idempotency-guard читает pending-item перед create.
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: curationItemCreateMock,
+      },
     } as unknown as PrismaService;
 
     cfg = {

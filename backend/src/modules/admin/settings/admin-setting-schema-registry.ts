@@ -83,6 +83,8 @@ const registry = new Map<string, ZodTypeAny>([
   ['embeddings.chunkOverlapTokens', NON_NEGATIVE_INT],
 
   ['feature.tables_text_to_schema', z.boolean()],
+  // База знаний редизайн (2026-06-16) — kill-switch новой раскладки раздела.
+  ['knowledge_base.redesign.enabled', z.boolean()],
 
   ['table.agent.confirmation_threshold', UNIT_INTERVAL],
   ['table.agent.max_concurrent_enrich_jobs_per_org', POSITIVE_INT],

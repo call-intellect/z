@@ -66,7 +66,12 @@ function buildHandler(args: {
   };
   const embeddings = {
     embedQuery: vi.fn(async () =>
-      args.embedQueryResult === undefined ? [0.1, 0.2, 0.3] : args.embedQueryResult,
+      // Класс G2: дефолтный стаб-вектор теперь ровно EMBEDDING_DIMENSIONS (1536),
+      // чтобы пройти guard размерности в knnByEmbedding (раньше длина мока была
+      // не важна, теперь dim-guard активен). Сам similarity берётся из vectorRows.
+      args.embedQueryResult === undefined
+        ? new Array(1536).fill(0.01)
+        : args.embedQueryResult,
     ),
   };
   const handler = new Specialist32CardHandler(
@@ -201,6 +206,45 @@ describe('Specialist32CardHandler.getCardsForQuery', () => {
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    expect(res).toHaveLength(1);
+    expect(res[0]?.id).toBe('pA');
+  });
+
+  it('G2: вектор неверной размерности → substring fallback (pgvector SQL не вызван, не 500)', async () => {
+    const personA = makePerson({
+      id: 'pA',
+      name: 'Маша',
+      knowledgeProfile: {
+        categories: [
+          {
+            name: 'биллинг и платёжные шлюзы',
+            confidence: 'high',
+            observationCount: 8,
+            sampleStatements: [{ quote: 'Stripe', blockId: 'b1' }],
+          },
+        ],
+      },
+    });
+    // embeddingsCount ≥ threshold → пошли бы в вектор, но guard отвергнет вектор
+    // (3 ≠ 1536) → деградация на substring. Запрос содержит «биллинг» → совпадёт.
+    const { handler, prisma, embeddings } = buildHandler({
+      embeddingsCount: 20,
+      vectorRows: [],
+      persons: [personA],
+      embedQueryResult: [0.1, 0.2, 0.3],
+    });
+
+    const res = await handler.getCardsForQuery({
+      tenantId: 't1',
+      query: 'кто понимает биллинг',
+      candidateBlockIds: [],
+      limit: 5,
+    });
+
+    expect(embeddings.embedQuery).toHaveBeenCalledOnce();
+    // pgvector SQL НЕ звался — guard отверг вектор до запроса.
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
+    // Substring-fallback нашёл Машу.
     expect(res).toHaveLength(1);
     expect(res[0]?.id).toBe('pA');
   });

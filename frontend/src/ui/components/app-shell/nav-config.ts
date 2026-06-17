@@ -186,7 +186,7 @@ const WORK_SECTION: NavConfigSection = {
     },
     {
       href: "/regulations",
-      label: "Оцифровано",
+      label: "База знаний",
       icon: BookText,
       matchPrefix: "/regulations",
     },

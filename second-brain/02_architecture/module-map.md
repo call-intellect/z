@@ -2166,13 +2166,19 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 `backend/src/modules/pending-actions/` — единый агрегатор «что ждёт подтверждения». Часть B ТЗ
 `plans/tz/2026-06-02-action-center-pending-confirmations.md`. Ветка `feature/action-center-trust-ladder`.
 
-- **`PendingActionsService`** — агрегатор: собирает pending по 4 read-провайдерам (curation / conflict /
-  intake / probe), urgent-first сортировка, tenant + роль-scoped. owner/admin видят все pending по
+- **`PendingActionsService`** — агрегатор: собирает pending по read-провайдерам (curation / conflict /
+  intake / probe + **task-closure / task-review** с 2026-06-16), urgent-first сортировка, tenant + роль-scoped. owner/admin видят все pending по
   curation/conflict/intake; probe — только свои. Используется и дашбордом (блок `requiresAction`).
-- **4 read-провайдера** — читают Prisma напрямую (curation/conflict/intake/probe), каждый отдаёт
+- **read-провайдеры** — читают Prisma напрямую, каждый отдаёт
   нормализованный pending-элемент с `source`, `actionUrl`, `urgent`. Провайдер курации помечает urgent
   за `LEAD_DAYS=3` до `CurationItem.expiresAt`. actionUrl curation/conflict → `/curation` (рабочая
   очередь; detail-страницы `/curation/[id]`, `/curation/conflicts` — follow-up).
+- **2 новых провайдера (knowledge-core MASTER task-dedup, 2026-06-16):** `TaskClosurePendingProvider`
+  (читает `TaskClosureCandidate(status='pending')` — «задача к закрытию», создаёт `TaskCompletionHandler`)
+  и `TaskReviewPendingProvider` (читает `Issue.closureReviewState='superseded_decision'` — «задача под
+  вопросом», ставит `specialist-3-3-decisions` при supersede решения). Ярлыки — `resource-type-ru.ts`
+  (`task_closure_candidate` → «задача к закрытию», `issue_review` → «задача под вопросом»). См.
+  [[../01_projects/ai-jobs]] §«task-dedup», [[data-model]] §«task-dedup».
 - **Модель `PendingActionSnooze`** — generic «отложить» (см. [[data-model]]).
 - **REST** (`pending-actions.controller.ts`, `CookieAuthGuard + TenantGuard`):
   `GET /api/v1/pending-actions/count` (`{total, bySource}`), `GET /api/v1/pending-actions` (urgent-first
@@ -2425,6 +2431,14 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 - **`operations/controllers/my-daily-value.controller.ts`** (`@Controller('api/v1/me')`) — `GET /me/ideas` + `GET /me/recognitions` (виджеты /me, флаг `me.daily_value_widgets.enabled`); **`my-weekly-per-person.controller.ts`** — `GET /me/weekly-per-person` (self-view план-факта, флаг `operations.per_person_self_view.enabled`).
 - `dashboard/services/director-dashboard.service.ts` — `fetchValueStrip` + `reasonSourceRef` + `mainReworkEnabled` (флаг `dashboard.main_rework.enabled`); `operations-dashboard.controller.ts` overview += blockers/frictions resolved + value-recap export `GET /dashboard/operations/value-recap/:id/export` (флаг `operations.dashboard_rework.enabled`).
 - Фронт: 5 новых виджетов главной + `/dashboard/portfolio` + `/dashboard/value-recap` + `/meetings/upload` + `/meetings/[id]/speakers`; modern-фон админки (`AdminShell MODERN_PAGE_BG`); perf-fallback `prefers-reduced-transparency` в tokens.css. См. [[../01_projects/frontend-pages]], [[../01_projects/director-dashboard]].
+
+### Доска «Аналитика» — подключение orphan-агентов COO (ТЗ 2026-06-15, ветка `feature/coo-orphan-agents-wire`, `ac56ce2b..b44229ae`)
+
+Подключение уже работавшего бэкенда операционного директора к UI (доска `/dashboard/operations`, метка меню «Аналитика»). Новые эндпоинты:
+- **`operations/services/promise-network.service.ts`** (НОВЫЙ) + **`GET /dashboard/operations/promise-network`** (owner/admin/coo) — «Перегруз ответственностью»: accumulators из последнего `PromiseNetworkSnapshot` (защитный парс `graphJson`, read-only, без cron — снапшот пишет существующий `PromiseNetworkAnalyzerCron`).
+- **`me.controller.ts` += `GET /me/notification-preferences`** — чтение `optOutEventTypes`/quiet-hours из `ChannelBinding.preferences` для персональной галочки уведомлений.
+- Доводки без новых эндпоинтов: `team-detail.goals` (findMany по `Goal.ownerPersonId`), `team-health.decisions` (scoped count через `HangingDecisionsService.listHangingWithAuthors`), `team-health` += опц. `healthSummary` (select `Department.healthSummaryJson`), `knowledge-at-risk` += `soleExpertPersonName` (relation join). Фронт: 6 pulse-виджетов + DecisionThroughput/CustomerRisk/KnowledgeAtRisk/PromiseOverload на доске.
+- **Ф8 (Ship-On):** убран OFF-флаг `operations.daily_digest.deliver_to_telegram` (ENV `COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM`); policy `operations.daily_digest` в `EVENT_TYPE_CHANNEL_POLICY` (in_app+email+telegram+max) + payload-схема; cron шлёт безусловно (идемпотентно), kill-switch `operations.daily_digest.enabled` остаётся; контроль доставки — персональной галочкой. Миграций нет. См. [[../01_projects/director-dashboard]], [[../05_история/2026-06-16-coo-orphan-agents-wire]].
 
 ### AdminSettings (kill-switch / крутилки)
 

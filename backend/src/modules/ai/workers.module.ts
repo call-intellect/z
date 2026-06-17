@@ -12,6 +12,7 @@ import { DocumentImportWorker } from '../documents/document-import.worker';
 import { DocumentsModule } from '../documents/documents.module';
 import { DocumentIngestAdapter } from '../ingest/adapters/document/document.adapter';
 import { TextIngestAdapter } from '../ingest/adapters/text/text.adapter';
+import { BlockDistillReconcileCron } from '../knowledge-core/workers/block-distill-reconcile.cron';
 import { BlockDistillWorker } from '../knowledge-core/workers/block-distill.worker';
 import { BlockIngestWorker } from '../knowledge-core/workers/block-ingest.worker';
 import { BlockLinkerWorker } from '../knowledge-core/workers/block-linker.worker';
@@ -23,6 +24,7 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GoalEmbedWorker } from '../knowledge-core/workers/goal-embed.worker';
 import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
@@ -127,6 +129,19 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     BlockLinkerWorker,
     EntityGraphBuilderCron,
     GraphMaterializationVerifyCron,
+    // Аудит-баг Б4 (high, класс K7) — cron каждые 30 мин: реконсиляция
+    // застрявших draft-блоков. block-ingest.worker помечает RawEvent=ingested
+    // ДО best-effort enqueueBlockDistill; краш/сбой Redis между ними оставляет
+    // блок навсегда в status='draft' (повторный заход — ранний skip). Этот cron
+    // догоняет: находит draft старше 10 мин и идемпотентно ре-enqueue'ит distill
+    // (jobId-дедуп + skip not-draft в distill-worker). WorkerOrgGate / CoreQueue —
+    // из @Global CoreQueueModule.
+    BlockDistillReconcileCron,
+    // Agent-chain overhaul Фаза 4.2 (2026-06-07) — cron каждые 30 мин:
+    // догоночная авто-привязка тем к AI-целям без единой темы (провенанс +
+    // co-mention, GoalTheme source='ai'). Закрывает «0 тем», из-за которых
+    // strategic-alignment.worker делал ранний return. GoalThemeLinkerService
+    // берётся из @Global KnowledgeCoreModule, WorkerOrgGate — из @Global CoreQueueModule.
     GoalThemeLinkerCron,
     GoalTaskLinkerCron,
     ReframingCron,
@@ -149,6 +164,13 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     ExperimentTransitionsCron,
     Specialist36IdeasWorker,
     Specialist314GoalsWorker,
+    // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
+    // pgvector-embedding цели (name+description) для семантического дедупа
+    // целей (specialist-3-14 KNN по Goal.embedding вместо ILIKE). Зеркало
+    // IssueEmbedWorker; EmbeddingFallbackService — из @Global EmbeddingsModule.
+    GoalEmbedWorker,
+    // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
+    // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,
     Specialist37SkillWorker,
     SkillProfileRebuildWorker,

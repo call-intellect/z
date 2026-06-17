@@ -19,6 +19,8 @@ const RESOURCE_TYPE_RU: Record<string, string> = {
   skill_trait: 'навык',
   role: 'должность',
   company_profile: 'профиль компании',
+  task_closure_candidate: 'задача к закрытию',
+  issue_review: 'задача под вопросом',
 };
 
 export function resourceTypeRu(t: string): string {

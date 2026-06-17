@@ -1,3 +1,14 @@
+/**
+ * Snapshot + структурные тесты для `specialists-combined.prompt.ts`.
+ *
+ * Фиксируется:
+ *   - стабильный system-промпт (главный артефакт, на нём держится формат
+ *     8 массивов);
+ *   - формат сериализации блока в user-сообщение;
+ *   - tool schema удовлетворяет zod-парсеру (round-trip минимального примера).
+ *
+ * Snapshots обновляются осознанно: `bunx vitest --update`.
+ */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -13,7 +24,9 @@ import {
 
 describe('specialists-combined — константы и tool schema', () => {
   it('константы стабильны (контракт LlmRouter + worker)', () => {
-    expect(SPECIALISTS_COMBINED_TASK_TYPE).toBe('knowledge-specialists-combined');
+    expect(SPECIALISTS_COMBINED_TASK_TYPE).toBe(
+      'knowledge-specialists-combined',
+    );
     expect(SPECIALISTS_COMBINED_TOOL_NAME).toBe('submit_all_8_entities');
     expect(SPECIALISTS_COMBINED_MAX_TOKENS).toBe(32_000);
   });
@@ -31,7 +44,9 @@ describe('specialists-combined — константы и tool schema', () => {
       'skill_traits',
       'helpfulness_traits',
     ]);
-    expect(SUBMIT_ALL_8_ENTITIES_TOOL.input_schema.additionalProperties).toBe(false);
+    expect(SUBMIT_ALL_8_ENTITIES_TOOL.input_schema.additionalProperties).toBe(
+      false,
+    );
   });
 });
 
@@ -39,10 +54,12 @@ describe('specialists-combined — system prompt snapshot', () => {
   it('system prompt стабилен (8 типов + маршрутизация + жёсткие требования)', () => {
     const prompt = buildSpecialistsCombinedSystemPrompt();
     expect(prompt).toMatchSnapshot('system');
+    // дополнительные структурные проверки (быстро падают, если правка сломала
+    // главное условие извлечения):
     expect(prompt).toContain('submit_all_8_entities');
     expect(prompt).toContain('decisions[]');
     expect(prompt).toContain('helpfulness_traits[]');
-    expect(prompt).toContain('Все строки на русском');
+    expect(prompt).toContain('на чистом русском');
   });
 });
 
@@ -61,9 +78,10 @@ describe('specialists-combined — formatBlockForCombined', () => {
       },
     });
     expect(result).toMatchSnapshot('block');
+    // структурные проверки (методология №3 — человеческий ярлык сигнала):
     expect(result).toContain('[BLOCK:blk_006]');
-    expect(result).toContain('signalType=decision');
-    expect(result).toContain('persons=Иван Соколов,Анна Мехова');
+    expect(result).toContain('тип сигнала: принятое решение');
+    expect(result).toContain('участники: Иван Соколов,Анна Мехова');
     expect(result).toContain('В: Какой провайдер SMS');
     expect(result).toContain('О: Выбран SMS Aero');
   });
@@ -78,7 +96,7 @@ describe('specialists-combined — formatBlockForCombined', () => {
       personNames: [],
       evidence: { quote: '...', speaker: '—' },
     });
-    expect(result).toContain('persons=-');
+    expect(result).toContain('участники: -');
   });
 });
 
@@ -197,6 +215,7 @@ describe('specialists-combined — zod schema валидирует минима�
   });
 
   it('output с extra-полем (additionalProperties)', () => {
+    // Zod-схема .strict — лишние поля должны валиться.
     const parsed = SpecialistsCombinedOutputSchema.safeParse({
       decisions: [],
       ideas: [],

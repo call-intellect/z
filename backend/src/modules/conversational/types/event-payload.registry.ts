@@ -136,6 +136,16 @@ const OperationsWeeklyDigestPayloadSchema = z
   })
   .strict();
 
+const OperationsDailyDigestPayloadSchema = z
+  .object({
+    digestId: z.string().min(1).max(80),
+    dateLocal: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    title: z.string().min(1).max(200),
+    body: z.string().min(1).max(4_000),
+    actionUrl: z.string().max(2_000).optional(),
+  })
+  .strict();
+
 const GoalsPulsePayloadSchema = z
   .object({
     digestId: z.string().min(1).max(80),
@@ -252,6 +262,7 @@ const registry = new Map<string, z.ZodTypeAny>([
   ['checkin.prompt', CheckinPromptPayloadSchema],
   ['proactive.notification', ProactiveNotificationPayloadSchema],
   ['operations.weekly_digest', OperationsWeeklyDigestPayloadSchema],
+  ['operations.daily_digest', OperationsDailyDigestPayloadSchema],
   ['goals.pulse', GoalsPulsePayloadSchema],
   ['operations.monthly_recap', OperationsMonthlyRecapPayloadSchema],
   ['issue.mention', IssueMentionPayloadSchema],

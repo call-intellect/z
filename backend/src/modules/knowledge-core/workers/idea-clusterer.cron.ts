@@ -5,8 +5,14 @@ import { type Idea, type IdeaCluster, Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  type LlmCallResult,
+  LlmRouterService,
+} from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   IDEA_CLUSTER_MERGE_JSON_SCHEMA,
   IDEA_CLUSTER_MERGE_SCHEMA_NAME,
@@ -24,6 +30,20 @@ interface ClusterMergeVerdict {
   confidence: number;
 }
 
+/**
+ * SBA β-5 — IdeaClustererCron.
+ *
+ * Раз в N часов (по умолчанию `30 *‎/4 * * *`, см. IDEA_CLUSTERER_CRON):
+ *   1. Для каждой Org находит Idea без clusterId.
+ *   2. KNN cosine с existing IdeaCluster — threshold 0.80.
+ *   3. На match — добавляем ideaId в cluster.ideaIds, recompute clusterWeight,
+ *      пересчёт embedding'а как mean всех Idea-embedding'ов.
+ *   4. На miss — LLM `idea-cluster-merge` (verdict). На 'new_cluster' создаём
+ *      IdeaCluster ТОЛЬКО если в окне 14 дней набралось `IDEA_MIN_SUPPORTERS_FOR_CLUSTER`
+ *      (минимальная критическая масса).
+ *
+ * Контракт: НЕ бросает.
+ */
 @Injectable()
 export class IdeaClustererCron {
   private readonly logger = new Logger(IdeaClustererCron.name);
@@ -40,6 +60,9 @@ export class IdeaClustererCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -120,6 +143,39 @@ export class IdeaClustererCron {
         );
       }
     }
+    // Б39 [K10] — финальный flush хвоста накопителя. Раньше остаток <
+    // minSupporters молча выпадал из прохода и оставался вечным orphan'ом
+    // (clusterId=null навсегда, в следующий тик снова попадал в накопитель и
+    // снова выпадал). Поведение хвоста теперь осознанное:
+    //   - ≥2 идей в хвосте → создаём кластер (минимальная критическая масса
+    //     кластера = 2; срабатывает только при minSupporters > 2);
+    //   - 1 идея → кластер из одной не имеет смысла; логируем счётчик orphan'ов,
+    //     чтобы backlog был виден в логах (наблюдаемость), идея ждёт соседей.
+    if (accumulated.length >= 2) {
+      try {
+        await this.maybeCreateNewCluster({
+          tenantId,
+          ideas: accumulated.slice(),
+          // Хвост уже прошёл порог критической массы 2 — не отбрасываем его
+          // из-за minSupporters, иначе вернёмся к вечному orphan'у.
+          ignoreMinSupporters: true,
+        });
+      } catch (err) {
+        this.logger.debug(
+          {
+            tenantId,
+            tail: accumulated.length,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'idea-clusterer: flush хвоста упал — пропускаю',
+        );
+      }
+    } else if (accumulated.length === 1) {
+      this.logger.debug(
+        { tenantId, orphanIdeas: accumulated.length },
+        'idea-clusterer: хвост из 1 идеи — кластер не создан, ждём соседей',
+      );
+    }
   }
 
   private async findNearestCluster(args: {
@@ -128,7 +184,9 @@ export class IdeaClustererCron {
     threshold: number;
   }): Promise<IdeaCluster | null> {
     try {
-      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; distance: number }>>(
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; distance: number }>
+      >(
         `SELECT c."id", (c."embedding" <=> (SELECT i."embedding" FROM "ideas" i WHERE i."id" = $2)) AS distance
          FROM "idea_clusters" c
          WHERE c."tenantId" = $1
@@ -152,28 +210,53 @@ export class IdeaClustererCron {
     }
   }
 
-  private async attachToCluster(args: { idea: Idea; cluster: IdeaCluster }): Promise<void> {
+  private async attachToCluster(args: {
+    idea: Idea;
+    cluster: IdeaCluster;
+  }): Promise<void> {
     const nextIds = Array.from(new Set([...args.cluster.ideaIds, args.idea.id]));
     const allIdeas = await this.prisma.idea.findMany({
       where: { id: { in: nextIds }, tenantId: args.idea.tenantId },
       select: { id: true, weight: true },
     });
-    const clusterWeight = allIdeas.reduce((acc, i) => acc + Number(i.weight), 0);
+    const clusterWeight = allIdeas.reduce(
+      (acc, i) => acc + Number(i.weight),
+      0,
+    );
     await this.prisma.ideaCluster.update({
       where: { id: args.cluster.id },
       data: {
         ideaIds: { set: nextIds },
-        clusterWeight: new Prisma.Decimal(Math.round(clusterWeight * 1000) / 1000),
+        clusterWeight: new Prisma.Decimal(
+          Math.round(clusterWeight * 1000) / 1000,
+        ),
       },
     });
     await this.prisma.idea.update({
       where: { id: args.idea.id },
       data: { clusterId: args.cluster.id },
     });
+    // Б8 [K10] — после добавления идеи пересчитываем embedding кластера как
+    // mean(векторов всех участников), чтобы centroid дрейфовал вместе с
+    // составом кластера и KNN-фильтр оставался корректным.
+    await this.recomputeClusterEmbedding({
+      tenantId: args.idea.tenantId,
+      clusterId: args.cluster.id,
+      ideaIds: nextIds,
+    });
   }
 
-  private async maybeCreateNewCluster(args: { tenantId: string; ideas: Idea[] }): Promise<void> {
-    if (args.ideas.length < this.cfg.ideas.minSupportersForCluster) return;
+  private async maybeCreateNewCluster(args: {
+    tenantId: string;
+    ideas: Idea[];
+    /** Б39 — flush хвоста: пропустить порог minSupporters (хвост уже ≥2). */
+    ignoreMinSupporters?: boolean;
+  }): Promise<void> {
+    if (
+      !args.ignoreMinSupporters &&
+      args.ideas.length < this.cfg.ideas.minSupportersForCluster
+    )
+      return;
     const seed = args.ideas[0];
     if (!seed) return;
     const candidates = await this.prisma.ideaCluster.findMany({
@@ -199,22 +282,92 @@ export class IdeaClustererCron {
         return;
       }
     }
-    const newName = verdict?.newClusterName ?? seed.statement.slice(0, 80);
+    const newName =
+      verdict?.newClusterName ?? seed.statement.slice(0, 80);
     const ideaIds = args.ideas.map((i) => i.id);
-    const clusterWeight = args.ideas.reduce((acc, i) => acc + Number(i.weight), 0);
+    const clusterWeight = args.ideas.reduce(
+      (acc, i) => acc + Number(i.weight),
+      0,
+    );
     const cluster = await this.prisma.ideaCluster.create({
       data: {
         tenantId: args.tenantId,
         name: newName,
         description: verdict?.newClusterDescription ?? null,
         ideaIds,
-        clusterWeight: new Prisma.Decimal(Math.round(clusterWeight * 1000) / 1000),
+        clusterWeight: new Prisma.Decimal(
+          Math.round(clusterWeight * 1000) / 1000,
+        ),
       },
     });
     await this.prisma.idea.updateMany({
       where: { id: { in: ideaIds } },
       data: { clusterId: cluster.id },
     });
+    // Б8 [K10] — пишем embedding кластера = mean(векторов участников). Без
+    // этого IdeaCluster.embedding оставался NULL навсегда и KNN-фильтр
+    // `embedding IS NOT NULL` в findNearestCluster отсекал кластер → новые
+    // идеи никогда не дополняли его (мёртвый код кластеризации).
+    await this.recomputeClusterEmbedding({
+      tenantId: args.tenantId,
+      clusterId: cluster.id,
+      ideaIds,
+    });
+  }
+
+  /**
+   * Б8 [K10] — пересчёт `IdeaCluster.embedding` как покомпонентного среднего
+   * (centroid) эмбеддингов идей-участников. Размерность — vector(1536) (см.
+   * schema.prisma: Idea.embedding / IdeaCluster.embedding). Idea.embedding —
+   * Unsupported-тип, его нельзя ни прочитать, ни записать через типизированный
+   * Prisma-клиент, поэтому читаем `::text` сырым SQL и пишем `::vector(1536)`
+   * сырым UPDATE (как сделано для Theme.embedding в theme-clusterer и для
+   * ideas.embedding в specialist-3-6/block-ingest).
+   *
+   * Контракт: НЕ бросает (на любой сбой кластер просто остаётся без embedding,
+   * деградирует, но не ломает проход).
+   */
+  private async recomputeClusterEmbedding(args: {
+    tenantId: string;
+    clusterId: string;
+    ideaIds: string[];
+  }): Promise<void> {
+    if (args.ideaIds.length === 0) return;
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ embedding: string | null }>
+      >(
+        `SELECT i."embedding"::text AS embedding
+           FROM "ideas" i
+          WHERE i."tenantId" = $1
+            AND i."id" = ANY($2::text[])
+            AND i."embedding" IS NOT NULL`,
+        args.tenantId,
+        args.ideaIds,
+      );
+      const vectors: number[][] = [];
+      for (const row of rows) {
+        const vec = parseVector(row.embedding);
+        if (vec) vectors.push(vec);
+      }
+      const mean = meanVector(vectors);
+      if (!mean) return;
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE "idea_clusters" SET "embedding" = $1::vector(1536) WHERE "id" = $2 AND "tenantId" = $3',
+        toVectorLiteral(mean),
+        args.clusterId,
+        args.tenantId,
+      );
+    } catch (err) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          clusterId: args.clusterId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'idea-clusterer: не удалось записать embedding кластера — продолжаю',
+      );
+    }
   }
 
   private async llmDecide(args: {
@@ -222,6 +375,7 @@ export class IdeaClustererCron {
     candidates: IdeaCluster[];
   }): Promise<ClusterMergeVerdict | null> {
     if (args.candidates.length === 0) {
+      // standalone — но мы всё равно дальше принимаем решение по фолбэку без LLM.
       return null;
     }
     let result: LlmCallResult;
@@ -241,6 +395,7 @@ export class IdeaClustererCron {
           };
         }),
       );
+      // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (statement + кандидаты) в маркеры.
       const guardOn = this.isPromptInjectionGuardEnabled();
       const rawUser = IDEA_CLUSTER_MERGE_USER_TEMPLATE({
         ideaStatement: args.idea.statement,
@@ -284,7 +439,54 @@ export class IdeaClustererCron {
     try {
       const parsed = JSON.parse(result.text) as ClusterMergeVerdict;
       if (parsed && typeof parsed.verdict === 'string') return parsed;
-    } catch {}
+    } catch {
+      // fallthrough
+    }
     return null;
   }
+}
+
+/**
+ * pgvector `::text` возвращает строку вида `[0.123,-0.456,...]`. Превращаем
+ * в `number[]`. На любую кривизну — null.
+ */
+function parseVector(raw: string | null): number[] | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return null;
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner.length === 0) return null;
+  const parts = inner.split(',');
+  const out = new Array<number>(parts.length);
+  for (let i = 0; i < parts.length; i++) {
+    const n = Number.parseFloat(parts[i]!);
+    if (!Number.isFinite(n)) return null;
+    out[i] = n;
+  }
+  return out;
+}
+
+/**
+ * Покомпонентное среднее (centroid) набора векторов одинаковой размерности.
+ * Векторы разной длины игнорируются (берётся длина первого валидного). На
+ * пустой вход — null.
+ */
+function meanVector(vectors: number[][]): number[] | null {
+  if (vectors.length === 0) return null;
+  const dim = vectors[0]!.length;
+  if (dim === 0) return null;
+  const acc = new Array<number>(dim).fill(0);
+  let used = 0;
+  for (const vec of vectors) {
+    if (vec.length !== dim) continue;
+    for (let i = 0; i < dim; i++) acc[i]! += vec[i]!;
+    used += 1;
+  }
+  if (used === 0) return null;
+  for (let i = 0; i < dim; i++) acc[i]! /= used;
+  return acc;
+}
+
+function toVectorLiteral(vec: number[]): string {
+  return `[${vec.join(',')}]`;
 }

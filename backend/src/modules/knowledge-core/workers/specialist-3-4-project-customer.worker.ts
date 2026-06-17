@@ -101,6 +101,13 @@ export class Specialist34ProjectCustomerWorker {
           OR: [{ entityId: { in: entityIds } }, { relatedEntityIds: { hasSome: entityIds } }],
         },
         select: { id: true },
+        // Б42 [K3]: детерминированный отбор при take. Без orderBy Postgres
+        // отдаёт произвольные строки → часть карточек систематически не
+        // получала бы rollup. Стабильный порядок: давно не подтверждённые
+        // (самые «протухшие» — приоритет rollup'у), затем id для тай-брейка.
+        orderBy: [{ lastConfirmedAt: 'asc' }, { id: 'asc' }],
+        // Защита от вырожденных tenant'ов с сотнями тысяч карточек:
+        // на один блок более 200 карточек — это сигнал плохой онтологии.
         take: 200,
       });
 

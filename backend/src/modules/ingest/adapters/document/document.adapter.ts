@@ -5,7 +5,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { type Document, type Source } from '@prisma/client';
+import { type Document, type SignalType, type Source } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
@@ -13,6 +13,7 @@ import { RedisService } from '../../../../common/redis/redis.service';
 import { CoreQueueService } from '../../../core-queue/core-queue.service';
 import { CORE_QUEUE_NAMES, type DocumentUploadedJobData } from '../../../core-queue/queues';
 import { DocumentAttributionService } from '../../../documents/document-attribution.service';
+import { SIGNAL_TYPE_VALUES } from '../../../knowledge-core/prompts/block-ingest.prompt';
 import { S3Service } from '../../../recordings/s3.service';
 import { IngestService } from '../../ingest.service';
 import {
@@ -22,6 +23,76 @@ import {
 } from '../../parsers/document-parser.errors';
 import { DocumentParserService } from '../../parsers/document-parser.service';
 
+/**
+ * Ф6 (knowledge-base-redesign) — детерминированный маппинг ручного `docType`
+ * документа в `signalTypeHint` для block-ingest. Пользователь пометил тип при
+ * загрузке → карточка нужного типа, не на усмотрение LLM. Возвращает undefined
+ * для типов без прямого соответствия (job_description/other/null) — тогда тип
+ * решает LLM, как раньше. Защита: только значения из SIGNAL_TYPE_VALUES.
+ *
+ * Маппинг идёт в РЕАЛЬНЫЙ Prisma enum `SignalType`, где орг-документов всего
+ * два типа: `regulation` и `process_step` (оба роутятся в `3-1-regulations`,
+ * см. router.service.ts:28). Финальный ТИП карточки (regulation / policy /
+ * instruction) решает экстрактор по полю `kind` ВНУТРИ Specialist 3.1 — задача
+ * hint'а лишь гарантировать, что документ дойдёт до этого специалиста, а не
+ * будет классифицирован LLM как idea/decision и потерян для базы знаний:
+ *   - docType 'regulation'  → 'regulation'    (kind=regulation/standard);
+ *   - docType 'policy'      → 'regulation'    ('policy' НЕ отдельный signalType
+ *       в enum — policy-блоки исторически идут через 'regulation';
+ *       processRegulationBlock при draft.kind='policy' зовёт upsertPolicy →
+ *       Policy-карточка; см. specialist-3-1-regulations.service.ts:150,193);
+ *   - docType 'process'     → 'process_step'  (kind=process);
+ *   - docType 'instruction' → 'process_step'  (kind=instruction по single-role);
+ *   - job_description / other / null → undefined (тип решает LLM, как раньше).
+ *
+ * NB: `SIGNAL_TYPE_VALUES` (массив-валидатор) содержит лишний `'policy'`,
+ * рассинхронизированный с enum `SignalType` (латентный баг вне scope ТЗ) —
+ * поэтому таргет типизирован реальным `SignalType`, а guard
+ * `includes(SIGNAL_TYPE_VALUES)` оставлен как доп. защита.
+ */
+export function docTypeToSignalTypeHint(
+  docType: string | null | undefined,
+): SignalType | undefined {
+  if (!docType) return undefined;
+  const map: Record<string, SignalType> = {
+    regulation: 'regulation',
+    policy: 'regulation',
+    process: 'process_step',
+    instruction: 'process_step',
+  };
+  const hint = map[docType];
+  if (!hint) return undefined;
+  return (SIGNAL_TYPE_VALUES as readonly string[]).includes(hint)
+    ? hint
+    : undefined;
+}
+
+/**
+ * `DocumentIngestAdapter` (Фаза 0b knowledge-core).
+ *
+ * BullMQ-consumer очереди `core.document-uploaded`. Реализация по ТЗ 0b.1 §4:
+ *
+ *   1. Находит `Document` по `documentId` (skip — если уже не `uploaded`).
+ *   2. Переводит `status: uploaded → parsing`.
+ *   3. Достаёт байты: `inlineContent` (если ≤ inlineThreshold) или S3-объект.
+ *   4. Парсит через `DocumentParserService.parse(...)`.
+ *   5. На успех:
+ *      - `Document.parsedText` заполняется, `status='parsed'`.
+ *      - lazy-upsert дефолтного `Source(type='external', name='Документы')`.
+ *      - `RawEvent` создаётся через `IngestService.ingest(...)` (он сам
+ *        enqueue'ит `core.raw-events` для дальнейшего knowledge-core pipeline).
+ *   6. На фейл — `status='failed'`, `parseError=err.message`.
+ *
+ * Sourcing: `SourceType` пока не содержит значения `document` — используем
+ * `external` как наиболее близкое по смыслу (см. отчёт по фазе 0b.1). Когда
+ * enum будет расширен — миграция: смена `Source.type` для существующих
+ * `Источник "Документы"` записей.
+ *
+ * Идемпотентность: jobId фиксируется в `CoreQueueService.enqueueDocumentUploaded`
+ * (`doc_<documentId>`). При повторном retry'е воркер сам убедится через статус,
+ * что Document не «в processing» одновременно — переход `uploaded → parsing`
+ * через `updateMany({ status: 'uploaded' })` использует statusCheck-fence.
+ */
 @Injectable()
 export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DocumentIngestAdapter.name);
@@ -124,6 +195,7 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
 
       const source = await this.upsertDocumentSource(tenantId);
 
+      const signalTypeHint = docTypeToSignalTypeHint(doc.docType);
       const result = await this.ingest.ingest({
         tenantId,
         sourceId: source.id,
@@ -138,6 +210,8 @@ export class DocumentIngestAdapter implements OnModuleInit, OnModuleDestroy {
           attachedRoleId: doc.attachedRoleId,
           attachedThemeId: doc.attachedThemeId,
           docType: doc.docType,
+          // Ф6 — block-ingest применит override типа карточки, если задано.
+          ...(signalTypeHint ? { signalTypeHint } : {}),
           parsedText: parsed.text,
           metadata: parsed.metadata,
         },

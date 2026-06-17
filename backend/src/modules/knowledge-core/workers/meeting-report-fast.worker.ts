@@ -17,8 +17,10 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type { DialogTurn } from '../../ai/services/prompts/common';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
-import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   buildMeetingReportFastPrompt,
   MEETING_REPORT_FAST_MAX_TOKENS,
@@ -30,7 +32,11 @@ import {
   type MeetingReportFastOutput,
   type MeetingReportFastTask,
 } from '../../ai/services/prompts/meeting-report-fast.prompt';
-import { CORE_QUEUE_NAMES, type MeetingReportFastJobData } from '../../core-queue/queues';
+import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
+import {
+  CORE_QUEUE_NAMES,
+  type MeetingReportFastJobData,
+} from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
 import { MeetingTitleService } from '../services/meeting-title.service';
@@ -255,7 +261,17 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         tenant: tenantId,
         status: 'failed',
       });
-      throw new Error(`meeting-report-fast: invalid LLM output — ${errText}`);
+      // Б32 — РАНЬШЕ здесь был throw «чтобы BullMQ зачёл attempt». Но внутренний
+      // цикл уже сделал MAX_LLM_RETRIES+1 (=3) дорогих LLM-вызова с явным
+      // «верни корректный JSON». Если все 3 не дали валидного вывода — это
+      // деградация провайдера/неспособность модели в схему, и повтор всей job
+      // (attempts=5 на очереди) дал бы ещё ×3 вызова на КАЖДУЮ попытку = до 15
+      // дорогих вызовов на одну встречу впустую. Фатальный статус 'failed' уже
+      // записан в БД выше, поэтому корректно ЗАВЕРШАЕМ job (return, не throw):
+      // BullMQ не ретраит → суммарно ровно ≤3 LLM-вызова на встречу. Транзиентные
+      // инфра-сбои (no_transcript / writer БД-ошибки) обрабатываются отдельно и
+      // там ретрай сохранён.
+      return;
     }
 
     const failures: string[] = [];

@@ -207,6 +207,14 @@ T6b: scope `'issue'` добавлен — `IssueChat` теперь работа�
 
 См. [`knowledge-core.md`](../02_architecture/knowledge-core.md) — `/api/v1/knowledge/blocks`, `/entities`, `/themes`, `/graph/*`, `/search`.
 
+**Гейт графа на платную `feature.graph` (knowledge-core MASTER G1, 2026-06-16).** Раньше `KnowledgeGraphController` (`/graph/*`) был гейтнут `@RequireEntitlement('feature.graph')`, а entity-/block-centric выходы графа — нет (обход paywall'а). Закрыто: `@RequireEntitlement('feature.graph')` навешан на
+- `GET /api/v1/knowledge/entities/:id/graph` (entity-centric граф) и `GET /api/v1/knowledge/entities/:id/links`,
+- `GET /api/v1/knowledge/blocks/:id/links` и `GET /api/v1/knowledge/blocks/:id/reasoning-chain` (BFS по логическим связям).
+
+Гейт читается глобальным `EntitlementGuard` через `Reflector` (тот же механизм, что у `KnowledgeGraphController`).
+
+**Throttle на `POST /api/v1/knowledge/entities/:id/mark-wrong` (G1).** Точечный rate-limit **только** на этот эндпоинт (`ThrottlerGuard` навешан per-route, глобально не зарегистрирован; `@Throttle` строже дефолта) — чтобы скрипт/циклом не раздувал датасет «неверных» меток.
+
 ## Regulations (единый API регламентов/процессов/политик/инструкций)
 
 Единая поверхность `/api/v1/regulations` агрегирует несколько таблиц через query-параметр `kind`. Полная карта эндпоинтов и DTO — [[../02_architecture/module-map]] §«SBA α-7 / Specialist 3.1». **Мастер-ТЗ промптов (2026-06-10):** `kind=instruction` добавлен как 4-я сущность — `GET /regulations?kind=instruction` (list), `GET /regulations/:id?kind=instruction` (get), `POST /regulations/:id/confirm` читают/пишут **`prisma.instruction`** (отдельная таблица `instructions`, см. [[../02_architecture/data-model]]). RBAC — ResourceType `instruction` (зеркалит `process`). Detail отдаёт поле `extractionStatus` (Существует / Нужен / Обсуждается).

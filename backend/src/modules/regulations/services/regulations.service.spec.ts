@@ -433,6 +433,7 @@ describe('RegulationsService — C4 getSummary', () => {
       instructions: 3,
       policies: 7,
       weekDelta: 2 + 1 + 0 + 4,
+      redesignEnabled: true,
     });
 
     expect(regCount).toHaveBeenNthCalledWith(1, { where: { tenantId: 't-1' } });

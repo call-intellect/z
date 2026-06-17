@@ -251,8 +251,10 @@ chat-v2), и канальный классификатор, и разбор че
 - [clone-reliability-hardening](../../plans/tz/2026-05-25-clone-reliability-hardening.md) (2026-05-25).
 - [clone-quality-improvements](../../plans/tz/2026-06-08-clone-quality-improvements.md) (2026-06-08, 8 фаз).
 - [clone-persona-method-layer](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (2026-06-12, метод-слой, +5 `taskType`).
-- **Ревизия промптов по методологии** — [docs/methodology/prompts/upgrade-progress.md](../../docs/methodology/prompts/upgrade-progress.md),
-  группа «Клоны/персоны». Идём пачками по 3 (только 🟣 clone-only); общие 🔵-агенты — в сессии по общей памяти.
+- **Ревизия промптов по методологии** — [ТЗ 2026-06-16](../../plans/tz/2026-06-16-clone-agents-prompt-revision.md)
+  (пачка 1: skill-trait-detect/merge/verify, приложения A1–A3 «было→стало»), трекер
+  [upgrade-progress.md](../../docs/methodology/prompts/upgrade-progress.md). Идём пачками по 3
+  (только 🟣 clone-only); общие 🔵-агенты — в сессии по общей памяти.
 
 ### Открытое / на тюнинг
 - `skill-trait-merge`/`-verify` работают на дешёвой модели (flash) и являются

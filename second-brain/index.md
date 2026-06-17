@@ -76,6 +76,13 @@
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
 - [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы
 
+## Методологии (вызываются владельцем одной фразой)
+
+> Переиспользуемые методики, запускаются по запросу на любом модуле/задаче. Живут в `docs/methodology/`, отсюда — только указатели.
+
+- [`docs/methodology/code-audit/README.md`](../docs/methodology/code-audit/README.md) — **состязательный аудит логики модуля «найди → опровергни»**: рой агентов проверяет ЛЮБОЙ модуль/агент на баги и несоответствия, каждую находку опровергает независимый скептик; на выходе подтверждённые (симптом+корень+фикс+`file:line`) + опровергнутые. Готовый workflow-скрипт внутри. Эталон — аудит M5 (27→21 баг).
+- [`docs/methodology/prompts/README.md`](../docs/methodology/prompts/README.md) — **методология промптов** (7-блочная анатомия + жёсткие требования Z: cache-friendly, чистый русский, гейт-в-коде). Реестр апгрейда — `docs/methodology/prompts/upgrade-progress.md`.
+
 ## Процессы
 
 > Сквозные бизнес-процессы платформы — от триггера до результата. Каждый описан в двух регистрах (бытовой + технический) с пошаговым статусом «реализован / частично / только в ТЗ». ТЗ каталога: [`plans/analysis/2026-05-29-business-processes-catalog.md`](../plans/analysis/2026-05-29-business-processes-catalog.md).

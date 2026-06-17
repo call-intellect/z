@@ -8,7 +8,7 @@ const PYTHON = process.env.GEPA_PYTHON_PATH ?? 'python3';
 
 describe.skipIf(!REAL)('GepaRunner real subprocess smoke', () => {
   it('python3 runner.py --version → JSON с runner+version', () => {
-    const scriptPath = join(process.cwd(), 'python', 'gepa', 'runner.py');
+    const scriptPath = join(process.cwd(), '..', 'infra', 'gepa', 'gepa', 'runner.py');
     const r = spawnSync(PYTHON, [scriptPath, '--version'], {
       encoding: 'utf8',
       timeout: 5000,
@@ -21,7 +21,7 @@ describe.skipIf(!REAL)('GepaRunner real subprocess smoke', () => {
   });
 
   it('runner.py с пустым stdin → JSON-error gracefully', () => {
-    const scriptPath = join(process.cwd(), 'python', 'gepa', 'runner.py');
+    const scriptPath = join(process.cwd(), '..', 'infra', 'gepa', 'gepa', 'runner.py');
     const r = spawnSync(PYTHON, [scriptPath], {
       encoding: 'utf8',
       input: '',

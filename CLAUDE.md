@@ -91,7 +91,7 @@
 
 ## Архитектура кода
 
-Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/Grafana/Prometheus/loadtest) + `second-brain/` (источник правды) + `plans/` (ТЗ и анализ) + `docs/`.
+Корень: `backend/` (NestJS) + `frontend/` (Next.js 14 App Router) + `infra/` (LiveKit/gepa/postgres/loadtest) + `second-brain/` (источник правды) + `plans/` (ТЗ и анализ) + `docs/`.
 
 **Backend** (`backend/src/`):
 - `main.ts` — HTTP-приложение + BullMQ-воркеры/cron **in-process** (через `WorkersModule` в `AppModule`, поверх Redis); глобальный префикс API `/api/v1`. Отдельного worker-процесса нет.

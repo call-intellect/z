@@ -42,7 +42,7 @@ WORKDIR /app
 # оба воркера падают с ENOENT.
 #
 # GEPA prompt evolution (Agents v2 Фаза C2) ВЫНЕСЕН в отдельный контейнер z-gepa
-# (см. backend/python/Dockerfile). Python/pip в этом образе больше не нужны —
+# (см. infra/gepa/Dockerfile). Python/pip в этом образе больше не нужны —
 # backend ходит к gepa-сервису по HTTP (GepaRunnerService → GEPA_SERVICE_URL).
 RUN apk add --no-cache openssl postgresql16-client ffmpeg
 ENV NODE_ENV=production

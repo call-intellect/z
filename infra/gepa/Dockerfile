@@ -8,7 +8,7 @@
 # сюда по `POST http://gepa:8000/optimize`. Выигрыш — лёгкий и быстрый образ
 # backend, изоляция тяжёлых ML-зависимостей, атомарность сборки.
 #
-# Build context — `backend/python` (см. docker-compose.yml service `gepa`).
+# Build context — `infra/gepa` (см. docker-compose.yml service `gepa`).
 #
 # HTTP(S)_PROXY — опциональный прокси для pip на этапе сборки (как у backend).
 

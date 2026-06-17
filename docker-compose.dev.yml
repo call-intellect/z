@@ -56,7 +56,7 @@ services:
   gepa:
     image: z-gepa:latest
     build:
-      context: ./backend/python
+      context: ./infra/gepa
       dockerfile: Dockerfile
     container_name: z-dev-gepa
     # Локальные LLM-креды для litellm/deepseek — из dev .env (если есть).

@@ -9575,6 +9575,10 @@ model IntakeIssue {
   externalSource String?
   externalId     String?
 
+  // Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
+  // При авто-приёме (IntakeAutoTriageWorker) прокидывается в Issue.linkedMeetingIds.
+  meetingId      String?
+
   rawContent           String  @db.Text // исходный текст
   extractedTitle       String?
   extractedDescription String? @db.Text
@@ -9619,6 +9623,7 @@ model IntakeIssue {
   @@index([tenantId, status])
   @@index([source, createdAt])
   @@index([tenantId, status, expiresAt])
+  @@index([meetingId])
 }
 
 /// Исходящий webhook для внешних интеграций. `secretKey` хранится с префиксом

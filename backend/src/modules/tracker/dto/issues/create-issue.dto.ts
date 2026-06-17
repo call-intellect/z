@@ -42,6 +42,12 @@ export const CreateIssueSchema = z
      */
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).optional(),
     /**
+     * Внутреннее поле — caller'ы вида IntakeAutoTriageWorker прокидывают
+     * linkedMeetingIds из IntakeIssue.meetingId. Внешний REST не посылает
+     * (аналогично sourceBlockIds). Схема .strict() — поле опционально.
+     */
+    linkedMeetingIds: z.array(z.string().min(1).max(64)).max(32).optional(),
+    /**
      * Tracker Phase 3 part C — флаг включения AI-suggest при создании задачи.
      * Если true и `IssueInferFieldsService` доступен — в ответе POST /issues
      * будет дополнительное поле `aiSuggestions` с подсказками полей и цели.

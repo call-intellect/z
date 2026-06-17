@@ -355,6 +355,8 @@ export class MeetingExtractActionsService implements OnModuleInit {
           suggestedLabels: [],
           // A10 (2026-06-14) — провенанс встречи (для DecisionTaskLink derived).
           sourceBlockIds: meetingSourceBlockIds,
+          // Фикс linkedMeetingIds 2026-06-17 — хранить для прокидки в Issue.
+          meetingId,
           confidence: confidenceDecimal,
           // Редизайн Ф4 (2026-06-13) — авто-протухание: sweep-крон закроет
           // pending-intake после TTL (cfg.pendingActions.intakeTtlDays).

@@ -42,6 +42,12 @@ export const CreateIntakeSchema = z
      * `Decision.sourceBlockIds` рождает `DecisionTaskLink(linkType='derived')`.
      */
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).default([]),
+    /**
+     * Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
+     * Internal-поле: прокидывается createFromMeetingNextStep; при авто-приёме идёт
+     * в Issue.linkedMeetingIds. Внешний REST обычно не посылает.
+     */
+    meetingId: z.string().max(200).nullable().optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
   })
   .strict();

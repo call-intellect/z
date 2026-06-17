@@ -225,6 +225,7 @@ export class IntakeService {
         suggestedLabels: dto.suggestedLabels,
         // A10 (2026-06-14) — провенанс кандидата (IdeaBlock-источники).
         sourceBlockIds: dto.sourceBlockIds,
+        meetingId: dto.meetingId ?? null,
         confidence:
           dto.confidence != null
             ? new Prisma.Decimal(dto.confidence)
@@ -349,6 +350,7 @@ export class IntakeService {
         externalId,
         suggestedLabels: [],
         sourceBlockIds,
+        meetingId,
       },
       tenantId,
     );
@@ -653,6 +655,8 @@ export class IntakeService {
           externalId: intake.externalId,
           // A10 (2026-06-14) — провенанс intake → Issue.
           sourceBlockIds: intake.sourceBlockIds,
+          // Фикс linkedMeetingIds 2026-06-17 — связка Issue со встречей (ручной тридж).
+          linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
         },
         tenantId,
         userId,

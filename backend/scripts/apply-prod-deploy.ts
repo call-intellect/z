@@ -373,6 +373,7 @@ const STEPS: Step[] = [
   // Идемпотентен (карточки с '## '/таблицей пропускаются → повторный прогон = 0). На
   // чистом старте карточек нет → skipBootstrap. ТЗ: plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md Ф2.
   { phase: 'backfill', script: 'scripts/backfill-compile-flat-cards.ts', hint: 'переразметка плоских карточек базы знаний компилятором', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (TZ intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
   // 2026-06-10 — слияние дублей Person по email внутри Org (раздел «Команда»:
   // аккаунтная ⊕ ручная карточка на один email). Дефолт dry-run → нужен --apply.
   // Идемпотентен (повтор → нет групп >1). По смыслу идёт ДО установки partial

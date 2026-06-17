@@ -286,6 +286,42 @@ describe('IssuesService — HolidayService integration', () => {
     const updateArg = issueUpdate.mock.calls[0]![0];
     expect(updateArg.data.dueDate).toEqual(SATURDAY);
   });
+
+  // Фикс linkedMeetingIds 2026-06-17 — internal-поле проброса связки со встречей
+  // в tx.issue.create (аналогично sourceBlockIds).
+  it('create — непустой dto.linkedMeetingIds пробрасывается в tx.issue.create', async () => {
+    const dto: CreateIssueDto = {
+      title: 'Test',
+      priority: 'medium',
+      sortOrder: 0,
+      assigneeUserIds: [],
+      labelIds: [],
+      linkedMeetingIds: ['mtg_1'],
+    } as unknown as CreateIssueDto;
+
+    await service.create('p1', dto, 'org_1', 'u1');
+
+    expect(issueCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ linkedMeetingIds: ['mtg_1'] }),
+      }),
+    );
+  });
+
+  it('create — пустой/отсутствующий dto.linkedMeetingIds НЕ пробрасывает поле', async () => {
+    const dto: CreateIssueDto = {
+      title: 'Test',
+      priority: 'medium',
+      sortOrder: 0,
+      assigneeUserIds: [],
+      labelIds: [],
+    } as unknown as CreateIssueDto;
+
+    await service.create('p1', dto, 'org_1', 'u1');
+
+    const createArg = issueCreate.mock.calls[0]![0];
+    expect(createArg.data).not.toHaveProperty('linkedMeetingIds');
+  });
 });
 
 /**

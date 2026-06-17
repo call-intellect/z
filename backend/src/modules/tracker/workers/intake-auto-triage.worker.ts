@@ -557,6 +557,8 @@ export class IntakeAutoTriageWorker
         externalId: intake.externalId,
         // A10 (2026-06-14) — провенанс intake → Issue.
         sourceBlockIds: intake.sourceBlockIds,
+        // Фикс linkedMeetingIds 2026-06-17 — связка Issue со встречей (авто-тридж).
+        linkedMeetingIds: intake.meetingId ? [intake.meetingId] : [],
       },
       tenantId,
       systemUserId,

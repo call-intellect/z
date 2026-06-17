@@ -4,8 +4,10 @@ import {
   Logger,
   type OnModuleDestroy,
   type OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import {
+  type Entity,
   type EntityType,
   Prisma,
   type RawEvent,
@@ -26,6 +28,8 @@ import {
 } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
+import { isEntityUnattributed } from '../../probe/probe-reason-policy';
+import { ProbeService } from '../../probe/probe.service';
 import { S3Service } from '../../recordings/s3.service';
 import {
   ENTITY_TYPE_VALUES,
@@ -207,6 +211,12 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     // Ф3 (knowledge-access) — детерминированный вывод групп доступа блока.
     @Inject(BlockAccessDeriverService)
     private readonly blockAccessDeriver: BlockAccessDeriverService,
+    // Probe Ф6 (2026-06-17) — атрибуционный вопрос «к чему относится новая
+    // сущность». @Optional: ProbeModule глобальный (как у specialist-3-4),
+    // но Optional страхует юнит-тесты/конструирование без probe.
+    @Optional()
+    @Inject(ProbeService)
+    private readonly probeService?: ProbeService,
   ) {}
 
   onModuleInit(): void {
@@ -1179,6 +1189,7 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
           tenantId: event.tenantId,
           blockId,
           mention,
+          event,
         }).catch((err) => {
           this.logger.warn(
             {
@@ -1491,16 +1502,33 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
     tenantId: string;
     blockId: string;
     mention: ExtractedEntityMention;
+    event?: RawEvent;
   }): Promise<void> {
     if (!ENTITY_TYPE_VALUES.includes(args.mention.type)) {
       return;
     }
-    const { entity } = await this.entities.findOrCreateEntity({
+    const { entity, created } = await this.entities.findOrCreateEntity({
       tenantId: args.tenantId,
       type: args.mention.type as EntityType,
       name: args.mention.name,
       metadata: args.mention.metadata,
     });
+
+    // Probe Ф6 (2026-06-17) — атрибуционный вопрос. Только для НОВОЙ значимой
+    // сущности (клиент/поставщик) без явной привязки к отделу/клиенту/владельцу.
+    // best-effort: ошибка probe НЕ должна валить ingest.
+    if (created && args.event) {
+      await this.emitAttributionProbe(entity, args.event).catch((err) => {
+        this.logger.debug(
+          {
+            entityId: entity.id,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'block-ingest: attribution-probe не отправлен (best-effort) — продолжаем',
+        );
+      });
+    }
+
     try {
       await this.prisma.ideaBlockEntity.create({
         data: {
@@ -1522,6 +1550,80 @@ export class BlockIngestWorker implements OnModuleInit, OnModuleDestroy {
       }
       throw err;
     }
+  }
+
+  /**
+   * Probe Ф6 (2026-06-17) — отправляет атрибуционный probe для НОВОЙ
+   * значимой сущности (клиент/поставщик) без явной привязки к
+   * отделу/клиенту/владельцу. reason='attribution.unresolved_at_ingest',
+   * окно deferrable (в дайджест). Дедуп/cooldown — штатные внутри
+   * `ProbeService.suggest` (content-hash + Ф4 семантика).
+   *
+   * Получатели: владелец встречи-источника (если sourceType='meeting'),
+   * иначе владелец/админы Org. Нет ни одного → эмиссию пропускаем.
+   */
+  private async emitAttributionProbe(
+    entity: Entity,
+    event: RawEvent,
+  ): Promise<void> {
+    if (!this.probeService) return;
+    // Чистая проверка типа + metadata: только customer/vendor без привязки.
+    if (!isEntityUnattributed({ type: entity.type, metadata: entity.metadata })) {
+      return;
+    }
+
+    const recipients = await this.resolveAttributionRecipients(entity.tenantId, event);
+    if (recipients.length === 0) return; // некому слать — молчим
+
+    const title = entity.canonicalName.slice(0, 100);
+    await this.probeService.suggest({
+      tenantId: entity.tenantId,
+      emittedByService: 'ingest-attribution',
+      reason: 'attribution.unresolved_at_ingest',
+      payload: {
+        message: `К чему отнести «${title}»? Это про какой отдел, проект или клиента?`,
+        contextCardId: entity.id,
+        contextCardKind: 'entity',
+        contextCardTitle: entity.canonicalName,
+        dataClass: 'internal',
+      },
+      recipientCandidates: recipients,
+      priorityHint: 0.4,
+      dataClass: 'internal',
+    });
+    this.logger.debug(
+      { entityId: entity.id, type: entity.type, recipients: recipients.length },
+      'block-ingest: attribution-probe поставлен (reason=attribution.unresolved_at_ingest)',
+    );
+  }
+
+  /**
+   * Получатели атрибуционного probe: владелец встречи-источника (если событие
+   * из встречи), иначе владелец/админы Org. Возвращает уникальный список userId.
+   */
+  private async resolveAttributionRecipients(
+    tenantId: string,
+    event: RawEvent,
+  ): Promise<string[]> {
+    const out: string[] = [];
+    if (event.sourceType === 'meeting' && event.sourceExternalId) {
+      const meeting = await this.prisma.meeting
+        .findFirst({
+          where: { id: event.sourceExternalId, tenantId },
+          select: { ownerId: true },
+        })
+        .catch(() => null);
+      if (meeting?.ownerId) out.push(meeting.ownerId);
+    }
+    if (out.length === 0) {
+      const admins = await this.prisma.membership.findMany({
+        where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
+        select: { userId: true },
+        take: 20,
+      });
+      for (const m of admins) out.push(m.userId);
+    }
+    return [...new Set(out)];
   }
 
   private toVectorLiteral(vec: number[]): string {

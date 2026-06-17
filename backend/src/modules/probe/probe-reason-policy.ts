@@ -16,6 +16,8 @@
  * (решение Б5 ТЗ). Числовые пороги (касание-кап, час дайджеста) — AdminSetting.
  */
 
+import type { EntityLinkType } from '@prisma/client';
+
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
 export type ProbeWindow = 'immediate' | 'deferrable';
@@ -82,6 +84,76 @@ export interface ProbeRecheckCtx {
  * (probe о несуществующем объекте не нужен).
  */
 export type ProbeRecheckPredicate = (ctx: ProbeRecheckCtx) => Promise<boolean>;
+
+/**
+ * Ф6 (2026-06-17) — атрибуция новой сущности при ingest.
+ *
+ * Признак «сущность НЕ привязана» (чистая часть — по in-memory полям entity):
+ * у `metadata` нет ни одного явного ключа привязки к оргструктуре/клиенту.
+ * Это переиспользуется и в эмиттере (block-ingest.worker), и в recheck —
+ * чтобы условие было одним и тем же кодом, а не двумя расходящимися ветками.
+ *
+ * Почему именно metadata-ключи, а не граф: на МОМЕНТ создания (`created=true`)
+ * у свежей Entity ещё НЕТ рёбер EntityLink (их строят async-воркеры позже) —
+ * значит свежий customer/vendor по определению «не привязан». Эмиттер
+ * проверяет дешёвую in-memory часть; recheck дополнительно смотрит, не
+ * появилось ли ребро привязки к отделу/оргюниту/человеку/роли (см.
+ * `attribution.unresolved_at_ingest` ниже) — тогда пробел закрыт.
+ *
+ * Список ключей консервативен: если LLM-экстрактор или ручная правка положили
+ * любой из них — считаем сущность уже отнесённой и НЕ спрашиваем.
+ */
+const ATTRIBUTION_METADATA_KEYS: readonly string[] = [
+  'departmentId',
+  'department_id',
+  'orgUnitId',
+  'orgunit_id',
+  'ownerPersonId',
+  'ownerUserId',
+  'owner_person_id',
+  'clientId',
+  'client_id',
+  'customerId',
+  'customer_id',
+];
+
+/** Типы Entity, для которых атрибуционный вопрос имеет смысл (клиент/поставщик). */
+export const ATTRIBUTION_ENTITY_TYPES: ReadonlySet<string> = new Set([
+  'customer',
+  'vendor',
+]);
+
+/**
+ * Чистая проверка «сущность не привязана» по типу + metadata (без БД).
+ * `true` → значимый тип (customer/vendor) И нет явного ключа привязки.
+ * Служебные типы (person/role/department/orgunit/event/…) → `false`.
+ */
+export function isEntityUnattributed(entity: {
+  type: string;
+  metadata?: unknown;
+}): boolean {
+  if (!ATTRIBUTION_ENTITY_TYPES.has(entity.type)) return false;
+  const meta = entity.metadata;
+  if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+    const record = meta as Record<string, unknown>;
+    for (const key of ATTRIBUTION_METADATA_KEYS) {
+      const v = record[key];
+      if (v !== undefined && v !== null && v !== '') return false;
+    }
+  }
+  return true;
+}
+
+/** Типы рёбер EntityLink, означающие «сущность отнесена к оргструктуре/владельцу». */
+const ATTRIBUTION_LINK_TYPES: ReadonlyArray<EntityLinkType> = [
+  'belongs_to',
+  'part_of',
+  'member_of',
+  'works_at',
+  'owned_by',
+  'responsible_for',
+  'accountable_for',
+];
 
 export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
   // ── Decision (contextCardKind='decision', contextCardId=Decision.id) ──
@@ -165,5 +237,41 @@ export const PROBE_REASON_RECHECK: Record<string, ProbeRecheckPredicate> = {
     });
     if (!reg) return false;
     return reg.ownerPersonId == null;
+  },
+  // ── Attribution (Ф6, contextCardKind='entity', contextCardId=Entity.id) ──
+  // Пробел открыт, пока новая значимая сущность не привязана к отделу/клиенту/
+  // владельцу. Закрыт (false), если: контекст не entity / нет id; сущность
+  // удалена или слита (mergedIntoId); появился metadata-ключ привязки; либо
+  // появилось ребро EntityLink к оргструктуре/владельцу.
+  'attribution.unresolved_at_ingest': async ({
+    prisma,
+    tenantId,
+    contextCardId,
+    contextCardKind,
+  }) => {
+    if (!contextCardId) return true;
+    if (contextCardKind !== 'entity') return true;
+    const entity = await prisma.entity.findFirst({
+      where: { id: contextCardId, tenantId },
+      select: { id: true, type: true, metadata: true, mergedIntoId: true },
+    });
+    if (!entity) return false; // удалена → probe не нужен
+    if (entity.mergedIntoId) return false; // слита в другую → пробел снят
+    // metadata-привязка появилась (или тип перестал быть значимым) → закрыт.
+    if (!isEntityUnattributed({ type: entity.type, metadata: entity.metadata }))
+      return false;
+    // Появилось ребро привязки к оргструктуре/владельцу → закрыт.
+    const link = await prisma.entityLink.findFirst({
+      where: {
+        tenantId,
+        fromEntityId: contextCardId,
+        relationType: { in: [...ATTRIBUTION_LINK_TYPES] },
+        status: 'active',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (link) return false;
+    return true; // всё ещё не привязана → пробел открыт
   },
 };

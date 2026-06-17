@@ -90,6 +90,9 @@ export const PROBE_REASON_LABEL: Record<string, string> = {
   'consistency_violation.R4': 'обнаружено расхождение в данных',
   'consistency_violation.R5': 'обнаружено расхождение в данных',
   'consistency_violation.R6': 'обнаружено расхождение в данных',
+  // attribution.* (Ф6 2026-06-17 — ingest-повод атрибуции новой сущности)
+  'attribution.unresolved_at_ingest':
+    'новая сущность не привязана к отделу/клиенту',
 };
 
 /** Машинный `reason` → заготовленный человеческий ВОПРОС (fallback при провале LLM). */
@@ -132,4 +135,6 @@ export const PROBE_REASON_FALLBACK: Record<string, string> = {
   'helpfulness.question_chain_unanswered': 'Этот вопрос так и остался без ответа. Подскажете?',
   'commitment.followup': 'Как продвигается то, что вы обещали?',
   'commitment.silence_escalation': 'По вашему обещанию давно нет новостей. Как с ним сейчас?',
+  'attribution.unresolved_at_ingest':
+    'К какому отделу, проекту или клиенту это относится?',
 };

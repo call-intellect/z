@@ -367,6 +367,11 @@ const STEPS: Step[] = [
   // (first-class «Инструкция»). Идемпотентен (skip по tenantId+name), dry-run по
   // умолчанию → нужен `--apply`. На чистом старте инструкций нет → skipBootstrap.
   { phase: 'backfill', script: 'scripts/backfill-reclassify-instructions.ts', args: ['--apply'], hint: 'Process scope=role:* → Instruction (A10)', skipBootstrap: true },
+  // 2026-06-16 — knowledge-base-redesign Ф2: переразметка старых ПЛОСКИХ карточек
+  // (regulation/process/policy/instruction) структурным компилятором compile-org-document.
+  // Идемпотентен (карточки с '## '/таблицей пропускаются → повторный прогон = 0). На
+  // чистом старте карточек нет → skipBootstrap. ТЗ: plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md Ф2.
+  { phase: 'backfill', script: 'scripts/backfill-compile-flat-cards.ts', hint: 'переразметка плоских карточек базы знаний компилятором', skipBootstrap: true },
   // 2026-06-10 — слияние дублей Person по email внутри Org (раздел «Команда»:
   // аккаунтная ⊕ ручная карточка на один email). Дефолт dry-run → нужен --apply.
   // Идемпотентен (повтор → нет групп >1). По смыслу идёт ДО установки partial

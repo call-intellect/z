@@ -238,6 +238,57 @@ export class MeController {
     return { ok: true };
   }
 
+  @Get('notification-preferences')
+  @ApiOperation({
+    summary: 'Мои настройки уведомлений (opt-out типы + тихие часы)',
+  })
+  async getNotificationPreferences(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<{
+    optOutEventTypes: string[];
+    quietHoursStart: number | null;
+    quietHoursEnd: number | null;
+  }> {
+    const t = this.requireTenant(tenantId);
+    const channel = await this.prisma.channel.findUnique({
+      where: { tenantId_kind: { tenantId: t, kind: 'in_app' } },
+      select: { id: true },
+    });
+    const empty = {
+      optOutEventTypes: [],
+      quietHoursStart: null,
+      quietHoursEnd: null,
+    };
+    if (!channel) return empty;
+    const binding = await this.prisma.channelBinding.findUnique({
+      where: {
+        channelId_externalId: { channelId: channel.id, externalId: user.id },
+      },
+      select: { preferences: true },
+    });
+    const prefs =
+      binding?.preferences &&
+      typeof binding.preferences === 'object' &&
+      !Array.isArray(binding.preferences)
+        ? (binding.preferences as Record<string, unknown>)
+        : {};
+    const optOut = Array.isArray(prefs['notificationOptOutEventTypes'])
+      ? (prefs['notificationOptOutEventTypes'] as unknown[]).filter(
+          (x): x is string => typeof x === 'string',
+        )
+      : [];
+    const qhs =
+      typeof prefs['notificationQuietHoursStart'] === 'number'
+        ? (prefs['notificationQuietHoursStart'] as number)
+        : null;
+    const qhe =
+      typeof prefs['notificationQuietHoursEnd'] === 'number'
+        ? (prefs['notificationQuietHoursEnd'] as number)
+        : null;
+    return { optOutEventTypes: optOut, quietHoursStart: qhs, quietHoursEnd: qhe };
+  }
+
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({

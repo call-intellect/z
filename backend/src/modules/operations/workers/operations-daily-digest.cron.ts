@@ -37,16 +37,13 @@ export class OperationsDailyDigestCron {
       return;
     }
 
-    const deliverToTelegram = await this.cfg.getDynamic<boolean>(
-      'operations.daily_digest.deliver_to_telegram',
-      'COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM',
-      false,
-    );
-
     const now = new Date();
     try {
-      const stats = await this.runOnce({ now, deliverToTelegram });
-      this.logger.debug(stats, 'operations-daily-digest.cron: проход завершён');
+      const stats = await this.runOnce({ now });
+      this.logger.log(
+        stats,
+        'operations-daily-digest.cron: проход завершён',
+      );
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -55,7 +52,7 @@ export class OperationsDailyDigestCron {
     }
   }
 
-  async runOnce(args: { now: Date; deliverToTelegram: boolean }): Promise<{
+  async runOnce(args: { now: Date }): Promise<{
     orgsProcessed: number;
     digestsGenerated: number;
     digestsSkippedAlreadyExists: number;
@@ -119,7 +116,7 @@ export class OperationsDailyDigestCron {
         }
       }
 
-      if (args.deliverToTelegram && alreadyDelivered === null) {
+      if (alreadyDelivered === null) {
         try {
           const sent = await this.notifyRecipients({
             tenantId: org.id,

@@ -566,7 +566,6 @@ const BetaOpsSchema = z.object({
   COO_WEEKLY_DIGEST_LOCAL_DAY: z.coerce.number().int().min(0).max(6).default(1),
 
   COO_DAILY_DIGEST_ENABLED: z.coerce.boolean().default(true),
-  COO_DAILY_DIGEST_DELIVER_TO_TELEGRAM: z.coerce.boolean().default(false),
   COO_DAILY_DIGEST_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(22),
 
   COMMITMENT_FOLLOWUP_ENABLED: zBool(true),

@@ -68,6 +68,7 @@ import {
   type PortfolioHealthDto,
   type PortfolioHealthQuery,
 } from '../dto/portfolio-health.dto';
+import type { PromiseNetworkDto } from '../dto/promise-network.dto';
 import {
   ValueRecapExportQuerySchema,
   ValueRecapQuerySchema,
@@ -85,6 +86,7 @@ import { KnowledgeAtRiskService } from '../services/knowledge-at-risk.service';
 import { OnboardingRampService } from '../services/onboarding-ramp.service';
 import { OperationsDashboardService } from '../services/operations-dashboard.service';
 import { PortfolioHealthService } from '../services/portfolio-health.service';
+import { PromiseNetworkService } from '../services/promise-network.service';
 import { TeamCapacityService } from '../services/team-capacity.service';
 import { shiftPeriod, ValueRecapService } from '../services/value-recap.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
@@ -117,6 +119,8 @@ export class OperationsDashboardController {
     private readonly valueRecap: ValueRecapService,
     @Inject(PortfolioHealthService)
     private readonly portfolioHealth: PortfolioHealthService,
+    @Inject(PromiseNetworkService)
+    private readonly promiseNetwork: PromiseNetworkService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(BusinessMetricsService)
@@ -422,6 +426,21 @@ export class OperationsDashboardController {
     this.requireTenant(tenantId);
     await this.requireAccess(uid, tenantId!);
     return this.knowledgeAtRisk.listForTenant({ tenantId: tenantId! });
+  }
+
+  @Get('promise-network')
+  @ApiOperation({
+    summary:
+      'COO operations dashboard — перегруз ответственностью (accumulators сети обещаний)',
+  })
+  async promiseNetworkGet(
+    @CurrentOrg() tenantId: string | undefined,
+    @Req() req: Request,
+  ): Promise<PromiseNetworkDto> {
+    const uid = this.requireUser(req);
+    this.requireTenant(tenantId);
+    await this.requireAccess(uid, tenantId!);
+    return this.promiseNetwork.getLatest({ tenantId: tenantId! });
   }
 
   @Get('team-capacity')

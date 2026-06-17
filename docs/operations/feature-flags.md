@@ -76,7 +76,6 @@ _(пусто — все доставки в Telegram авторизованы в
 | `knowledge.commitmentAuthorAttributionEnabled` | 🟢 ВКЛ | Привязка автора обещаний (план-факт). |
 | `notifications.daily_budget.enabled` | 🟢 ВКЛ | Дневной бюджет push-уведомлений (не заваливать человека). Выкл → push не ограничивается. (TZ-1 Ф0 daily-value) |
 | `notifications.binding_campaign.enabled` | 🟢 ВКЛ | Кампания привязки Telegram-канала (приглашение + напоминание сотрудникам без привязки). Выкл → приглашения не шлются. (TZ-1 Ф0) |
-| `operations.daily_digest.deliver_to_telegram` | 🟢 ВКЛ | Ежедневный отчёт COO доставляется в Telegram. Владелец авторизовал доставку в ТГ 2026-06-08 (батч daily-value). Выкл → отчёт только в кабинете. |
 | `goals.pulse.deliver_to_telegram` | 🟢 ВКЛ | Еженедельный пульс целей доставляется в Telegram. Владелец авторизовал доставку в ТГ 2026-06-08 (батч daily-value). Выкл → пульс только в кабинете. |
 | `operations.customer_risk_radar.enabled` | 🟢 ВКЛ | Дневной радар клиентов под риском (cron 21:00 → COO-дайджест «Клиенты под риском» + push ответственному менеджеру). Выкл → снимки не строятся, пушей нет. (TZ-1 Ф1 daily-value) |
 | `operations.personal_daily_brief.enabled` | 🟢 ВКЛ | Персональный дневной бриф «Твой день» (cron каждый час, утреннее окно по таймзоне сотрудника → push через бюджет). Выкл → брифы не строятся и не шлются. (TZ-1 Ф2 daily-value) |

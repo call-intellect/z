@@ -5,26 +5,31 @@
  * Показывается если Org.setupCompletedAt === null.
  *
  * ТЗ 2026-05-29 onboarding-v2 §5.7.
+ * Фикс 2026-06-17: прогресс берём с бэка (GET /orgs/:orgId/setup-progress —
+ * «timestamp ИЛИ факт существования сущности»), а не по полям Org.*CompletedAt,
+ * иначе отделы/сотрудники, заведённые вне мастера, давали «0 из 6».
  */
 
 import { useState, useEffect } from 'react';
+import useSWR from 'swr';
 import { X } from 'lucide-react';
 
 import { Button } from '@/ui/shadcn/button';
 import { useAuth } from '@/contexts/auth-context';
 import { useOrgSetup } from '@/hooks/useOrgSetup';
 import { useTourContext } from '@/ui/tour';
-import type { OrgApi } from '@/api/orgs.api';
+import { onboardingApi, type SetupProgressApi } from '@/api/onboarding.api';
 
 const DISMISS_KEY = 'onboarding.banner.dismissed';
 
-const STEP_LABELS: { field: keyof OrgApi; label: string }[] = [
-  { field: 'companyInfoCompletedAt', label: 'заполнить данные компании' },
-  { field: 'departmentsCompletedAt', label: 'добавить отделы' },
-  { field: 'rolesCompletedAt', label: 'завести должности' },
-  { field: 'teamInvitedAt', label: 'пригласить команду' },
-  { field: 'firstSprintCreatedAt', label: 'создать первый спринт' },
-  { field: 'firstMeetingCreatedAt', label: 'провести первую встречу' },
+// Маппинг 6 вех setup-progress → русские лейблы «Осталось» (порядок сохранить).
+const SETUP_STEPS: { key: keyof SetupProgressApi['steps']; label: string }[] = [
+  { key: 'welcome', label: 'познакомить Кору с компанией' },
+  { key: 'companyInfo', label: 'заполнить данные компании' },
+  { key: 'departments', label: 'добавить отделы' },
+  { key: 'roles', label: 'завести должности' },
+  { key: 'team', label: 'пригласить команду' },
+  { key: 'firstActivity', label: 'провести первую встречу или создать спринт' },
 ];
 
 export function IncompleteSetupBanner() {
@@ -39,10 +44,20 @@ export function IncompleteSetupBanner() {
     }
   }, []);
 
+  const progressSwr = useSWR(
+    currentOrgId ? ['onboarding-setup-progress', currentOrgId] : null,
+    () => onboardingApi.getSetupProgress(currentOrgId!),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
   if (setupCompletedAt || dismissed || !org || isSuperAdmin) return null;
 
-  const completed = STEP_LABELS.filter((s) => org[s.field] != null).length;
-  const pending = STEP_LABELS.filter((s) => org[s.field] == null);
+  // Пока прогресс не пришёл — не мигаем «0 из 6».
+  const progress = progressSwr.data;
+  if (!progress) return null;
+
+  const completed = progress.completed;
+  const pending = SETUP_STEPS.filter((s) => progress.steps[s.key] === false);
 
   const handleContinue = () => {
     forceStart('welcome');

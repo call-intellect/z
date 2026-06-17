@@ -148,32 +148,50 @@ export class KnowledgeGraphController {
     let frontier: GraphNodeDto[] = [root];
 
     for (let level = 1; level <= depth; level++) {
+      if (nodesById.size >= MAX_NODES) {
+        truncated = true;
+        break;
+      }
+
+      // G3 (perf) — батчинг по уровню: вместо 3–4 findMany НА КАЖДЫЙ узел
+      // frontier делаем константное число запросов на весь уровень (один
+      // findMany на тип связи с `in:[...frontier]`, как reasoning-chain).
+      // Семантика обхода/выдачи неизменна — меняется только число запросов.
+      const blockNodeIds = frontier
+        .filter((n) => n.type === 'block')
+        .map((n) => n.id);
+      const entityNodeIds = frontier
+        .filter((n) => n.type === 'entity')
+        .map((n) => n.id);
+
+      const expansions = await Promise.all([
+        blockNodeIds.length
+          ? this.expandBlockNodes(blockNodeIds, level, tenantId)
+          : Promise.resolve({ nodes: [], edges: [] }),
+        entityNodeIds.length
+          ? this.expandEntityNodes(entityNodeIds, level, tenantId)
+          : Promise.resolve({ nodes: [], edges: [] }),
+      ]);
+
+      const found = {
+        nodes: [...expansions[0].nodes, ...expansions[1].nodes],
+        edges: [...expansions[0].edges, ...expansions[1].edges],
+      };
+
       const nextFrontier: GraphNodeDto[] = [];
-      for (const node of frontier) {
+      for (const e of found.edges) {
+        const key = this.edgeKey(e);
+        if (!edgesByKey.has(key)) edgesByKey.set(key, e);
+      }
+      for (const n of found.nodes) {
+        const k = this.nodeKey(n);
+        if (nodesById.has(k)) continue;
         if (nodesById.size >= MAX_NODES) {
           truncated = true;
           break;
         }
-        const found =
-          node.type === 'block'
-            ? await this.expandBlock(node, level, tenantId)
-            : await this.expandEntity(node, level, tenantId);
-
-        for (const e of found.edges) {
-          const key = this.edgeKey(e);
-          if (!edgesByKey.has(key)) edgesByKey.set(key, e);
-        }
-        for (const n of found.nodes) {
-          const k = this.nodeKey(n);
-          if (nodesById.has(k)) continue;
-          if (nodesById.size >= MAX_NODES) {
-            truncated = true;
-            break;
-          }
-          nodesById.set(k, n);
-          nextFrontier.push(n);
-        }
-        if (truncated) break;
+        nodesById.set(k, n);
+        nextFrontier.push(n);
       }
       if (truncated) break;
       frontier = nextFrontier;
@@ -226,12 +244,19 @@ export class KnowledgeGraphController {
   }
 
   /**
-   * Расширение block-узла. Уровень `level` — глубина (1=прямые соседи).
+   * Расширение СЛОЯ block-узлов (G3 perf — батчинг по frontier).
+   * Уровень `level` — глубина (1=прямые соседи).
    *   - Идём по IdeaBlockLink (any direction) — другие блоки.
    *   - Параллельно — через IdeaBlockEntity (entities, на которые ссылается блок).
+   *
+   * Вместо 3 findMany на КАЖДЫЙ block-узел делаем 2 findMany на весь слой:
+   *   1) один по IdeaBlockLink с `OR:[{fromBlockId:{in}},{toBlockId:{in}}]`
+   *      (include обоих концов — toBlock/fromBlock);
+   *   2) один по IdeaBlockEntity с `blockId:{in}` (упоминания сущностей).
+   * Соседей раскрываем из этих двух выборок без доп. запросов на узел.
    */
-  private async expandBlock(
-    node: GraphNodeDto,
+  private async expandBlockNodes(
+    blockIds: string[],
     level: number,
     tenantId: string,
   ): Promise<{ nodes: GraphNodeDto[]; edges: GraphEdgeDto[] }> {
@@ -240,41 +265,37 @@ export class KnowledgeGraphController {
       edges: [],
     };
 
-    const [blockLinksFrom, blockLinksTo, entityMentions] = await Promise.all([
+    const frontierSet = new Set(blockIds);
+
+    const [blockLinks, entityMentions] = await Promise.all([
       this.prisma.ideaBlockLink.findMany({
-        where: { fromBlockId: node.id, ...ACTIVE_LINK_FILTER, tenantId },
-        include: { toBlock: true },
-      }),
-      this.prisma.ideaBlockLink.findMany({
-        where: { toBlockId: node.id, ...ACTIVE_LINK_FILTER, tenantId },
-        include: { fromBlock: true },
+        where: {
+          ...ACTIVE_LINK_FILTER,
+          tenantId,
+          OR: [
+            { fromBlockId: { in: blockIds } },
+            { toBlockId: { in: blockIds } },
+          ],
+        },
+        include: { toBlock: true, fromBlock: true },
       }),
       this.prisma.ideaBlockEntity.findMany({
-        where: { blockId: node.id, entity: { tenantId } },
+        where: { blockId: { in: blockIds }, entity: { tenantId } },
         include: { entity: true },
       }),
     ]);
 
-    for (const l of blockLinksFrom) {
+    for (const l of blockLinks) {
+      // Сосед — «другой конец» ребра относительно frontier. Каждое ребро
+      // даёт один соседний block-узел; если в frontier оба конца — узел уже
+      // в выдаче (дедуп по nodeKey выше), берём toBlock как канонический конец.
+      const neighbour = frontierSet.has(l.fromBlockId)
+        ? l.toBlock
+        : l.fromBlock;
       result.nodes.push({
-        id: l.toBlock.id,
+        id: neighbour.id,
         type: 'block',
-        label: l.toBlock.name,
-        depth: level,
-      });
-      result.edges.push({
-        from: l.fromBlockId,
-        to: l.toBlockId,
-        type: 'block-link',
-        label: l.relationType,
-        confidence: this.confToNumber(l.confidence),
-      });
-    }
-    for (const l of blockLinksTo) {
-      result.nodes.push({
-        id: l.fromBlock.id,
-        type: 'block',
-        label: l.fromBlock.name,
+        label: neighbour.name,
         depth: level,
       });
       result.edges.push({
@@ -293,7 +314,7 @@ export class KnowledgeGraphController {
         depth: level,
       });
       result.edges.push({
-        from: node.id,
+        from: m.blockId,
         to: m.entity.id,
         type: 'block-entity',
         label: 'mentions',
@@ -303,12 +324,19 @@ export class KnowledgeGraphController {
   }
 
   /**
-   * Расширение entity-узла.
+   * Расширение СЛОЯ entity-узлов (G3 perf — батчинг по frontier).
    *   - Идём по EntityLink (any direction) — другие сущности.
    *   - Параллельно — через IdeaBlockEntity (блоки, упоминающие сущность).
+   *
+   * Вместо 3–4 findMany на КАЖДЫЙ entity-узел делаем константу на весь слой:
+   *   1) один по EntityLink с `OR:[{fromEntityId:{in}},{toEntityId:{in}}]`
+   *      (полиморфные fromType/toType-фильтры внесены в AND);
+   *   2) один по IdeaBlockEntity с `entityId:{in}` (блоки-mention, лимит 20
+   *      НА СУЩНОСТЬ применяем в JS — семантика per-node `take:20` сохранена);
+   *   3) один по Entity для подгрузки peer-узлов (id из рёбер).
    */
-  private async expandEntity(
-    node: GraphNodeDto,
+  private async expandEntityNodes(
+    entityIds: string[],
     level: number,
     tenantId: string,
   ): Promise<{ nodes: GraphNodeDto[]; edges: GraphEdgeDto[] }> {
@@ -317,40 +345,45 @@ export class KnowledgeGraphController {
       edges: [],
     };
 
+    const frontierSet = new Set(entityIds);
+
     // С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Фильтруем
     // только Entity↔Entity связи; узлы Фазы 0 (Role/Person/Process/...)
     // на этом графе не возвращаем — он работает только внутри knowledge-core.
-    const [entityLinksFrom, entityLinksTo, blockMentions] = await Promise.all([
+    const [entityLinks, blockMentions] = await Promise.all([
       this.prisma.entityLink.findMany({
         where: {
-          fromEntityId: node.id,
           ...ACTIVE_LINK_FILTER,
           tenantId,
-          OR: [{ fromType: null }, { fromType: 'entity' }],
-          AND: { OR: [{ toType: null }, { toType: 'entity' }] },
-        },
-      }),
-      this.prisma.entityLink.findMany({
-        where: {
-          toEntityId: node.id,
-          ...ACTIVE_LINK_FILTER,
-          tenantId,
-          OR: [{ toType: null }, { toType: 'entity' }],
-          AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
+          AND: [
+            {
+              OR: [
+                { fromEntityId: { in: entityIds } },
+                { toEntityId: { in: entityIds } },
+              ],
+            },
+            { OR: [{ fromType: null }, { fromType: 'entity' }] },
+            { OR: [{ toType: null }, { toType: 'entity' }] },
+          ],
         },
       }),
       this.prisma.ideaBlockEntity.findMany({
-        where: { entityId: node.id, block: { status: 'canonical', tenantId } },
+        where: {
+          entityId: { in: entityIds },
+          block: { status: 'canonical', tenantId },
+        },
         include: { block: true },
-        take: 20, // ограничиваем — у популярной сущности могут быть сотни блоков
+        orderBy: { createdAt: 'desc' },
       }),
     ]);
 
+    // Peer'ы — «другой конец» каждого ребра относительно frontier.
     const peerIds = Array.from(
-      new Set([
-        ...entityLinksFrom.map((l) => l.toEntityId),
-        ...entityLinksTo.map((l) => l.fromEntityId),
-      ]),
+      new Set(
+        entityLinks.map((l) =>
+          frontierSet.has(l.fromEntityId) ? l.toEntityId : l.fromEntityId,
+        ),
+      ),
     );
     const peers = peerIds.length
       ? await this.prisma.entity.findMany({
@@ -360,8 +393,11 @@ export class KnowledgeGraphController {
       : [];
     const peerById = new Map(peers.map((p) => [p.id, p]));
 
-    for (const l of entityLinksFrom) {
-      const peer = peerById.get(l.toEntityId);
+    for (const l of entityLinks) {
+      const peerId = frontierSet.has(l.fromEntityId)
+        ? l.toEntityId
+        : l.fromEntityId;
+      const peer = peerById.get(peerId);
       if (!peer) continue;
       result.nodes.push({
         id: peer.id,
@@ -377,24 +413,14 @@ export class KnowledgeGraphController {
         confidence: this.confToNumber(l.confidence),
       });
     }
-    for (const l of entityLinksTo) {
-      const peer = peerById.get(l.fromEntityId);
-      if (!peer) continue;
-      result.nodes.push({
-        id: peer.id,
-        type: 'entity',
-        label: peer.canonicalName,
-        depth: level,
-      });
-      result.edges.push({
-        from: l.fromEntityId,
-        to: l.toEntityId,
-        type: 'entity-link',
-        label: l.relationType,
-        confidence: this.confToNumber(l.confidence),
-      });
-    }
+
+    // Лимит 20 блоков НА СУЩНОСТЬ (как было per-node `take:20`): группируем
+    // mention'ы по entityId и берём первые 20 (orderBy createdAt desc выше).
+    const mentionsByEntity = new Map<string, number>();
     for (const m of blockMentions) {
+      const seen = mentionsByEntity.get(m.entityId) ?? 0;
+      if (seen >= 20) continue;
+      mentionsByEntity.set(m.entityId, seen + 1);
       result.nodes.push({
         id: m.block.id,
         type: 'block',
@@ -403,7 +429,7 @@ export class KnowledgeGraphController {
       });
       result.edges.push({
         from: m.block.id,
-        to: node.id,
+        to: m.entityId,
         type: 'block-entity',
         label: 'mentions',
       });

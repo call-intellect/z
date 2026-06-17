@@ -158,3 +158,99 @@ describe('Specialist36Service.processBlock — direct-path dedup guard', () => {
     );
   });
 });
+
+/**
+ * G6 (CONFIRMED, LOW) — condition-UPDATE в changeStatus.
+ *
+ * Авто-переход статуса идеи (IdeaStatusAutoAdvanceService) не должен
+ * перетирать ручное изменение, сделанное человеком между findFirst и update.
+ * Реализовано через updateMany({ where: { id, status: oldStatus } }):
+ *   - count > 0 → статус сменился атомарно, эмитим idea.status_changed;
+ *   - count === 0 → статус уже изменён другим путём → no-op (без события).
+ */
+describe('Specialist36Service.changeStatus — G6 condition-UPDATE', () => {
+  function buildForChangeStatus(opts: {
+    existing: { id: string; tenantId: string; status: string } | null;
+    updateManyCount: number;
+    currentAfter?: { id: string; tenantId: string; status: string } | null;
+  }) {
+    const findFirst = vi
+      .fn()
+      // 1-й вызов — поиск existing внутри changeStatus.
+      .mockResolvedValueOnce(opts.existing)
+      // последующие — повторное чтение актуального состояния.
+      .mockResolvedValue(opts.currentAfter ?? opts.existing);
+    const updateMany = vi
+      .fn()
+      .mockResolvedValue({ count: opts.updateManyCount });
+    const prisma = {
+      idea: {
+        findFirst,
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn(),
+        update: vi.fn(),
+        updateMany,
+      },
+      ideaBlock: { findUnique: vi.fn() },
+      ideaBlockEntity: { findMany: vi.fn().mockResolvedValue([]) },
+      person: { findMany: vi.fn().mockResolvedValue([]) },
+    };
+    const events = { emit: vi.fn() };
+    const logs = { write: vi.fn() };
+    const svc = new Specialist36Service(
+      prisma as never,
+      {} as never, // llm
+      {} as never, // embedder
+      {} as never, // curation
+      {} as never, // metrics
+      {} as never, // cfg
+      events as never,
+      logs as never,
+    );
+    return { svc, prisma, events, updateMany, findFirst };
+  }
+
+  it('статус сменился (count>0) → updateMany с guard по oldStatus + событие', async () => {
+    const { svc, events, updateMany } = buildForChangeStatus({
+      existing: { id: 'idea-1', tenantId: 't1', status: 'captured' },
+      updateManyCount: 1,
+      currentAfter: { id: 'idea-1', tenantId: 't1', status: 'in_discussion' },
+    });
+    await svc.changeStatus({
+      tenantId: 't1',
+      ideaId: 'idea-1',
+      newStatus: 'in_discussion' as never,
+      reason: 'auto:linked_task_closed',
+      changedByUserId: 'system',
+    });
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'idea-1', status: 'captured' }),
+      }),
+    );
+    expect(events.emit).toHaveBeenCalledWith(
+      'idea.status_changed',
+      expect.objectContaining({ oldStatus: 'captured', newStatus: 'in_discussion' }),
+    );
+  });
+
+  it('статус уже изменён человеком (count===0) → no-op: события НЕТ', async () => {
+    const { svc, events, updateMany } = buildForChangeStatus({
+      existing: { id: 'idea-1', tenantId: 't1', status: 'captured' },
+      updateManyCount: 0,
+      currentAfter: { id: 'idea-1', tenantId: 't1', status: 'rejected' },
+    });
+    const res = await svc.changeStatus({
+      tenantId: 't1',
+      ideaId: 'idea-1',
+      newStatus: 'in_discussion' as never,
+      reason: 'auto:linked_task_closed',
+      changedByUserId: 'system',
+    });
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    // событие НЕ эмитится — авто-переход устарел, ручное решение сохранено.
+    expect(events.emit).not.toHaveBeenCalled();
+    // возвращается актуальное состояние (статус, выставленный человеком).
+    expect((res as { status: string }).status).toBe('rejected');
+  });
+});

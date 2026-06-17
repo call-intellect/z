@@ -30,12 +30,15 @@ function makeCfg(
     knowledgeAccess: { enforcement },
     knowledgeCore: { searchCosineWeight: 0.7, searchBm25Weight: 0.3 },
     bitemporal: { enabled: false },
+    ai: { embeddings: { dimensions: 1536 } },
   } as unknown as TypedConfigService;
 }
 
-function makeEmbeddings(): KnowledgeEmbeddingService {
+function makeEmbeddings(
+  vec: number[] | null = null,
+): KnowledgeEmbeddingService {
   return {
-    embedQuery: vi.fn(async () => null),
+    embedQuery: vi.fn(async () => vec),
   } as unknown as KnowledgeEmbeddingService;
 }
 
@@ -201,5 +204,79 @@ describe('SearchService — Ф4 гейт доступа (knowledge-access)', () 
     expect(captured.sql).not.toContain('IdeaBlockAccess');
     expect(partitionSpy).toHaveBeenCalled();
     expect(shadowSpy).toHaveBeenCalledWith({ surface: 'search' }, 1);
+  });
+});
+
+describe('SearchService — G2 guard размерности/чистоты query-вектора', () => {
+  const validVec = new Array(1536).fill(0).map((_, i) => i / 1536);
+
+  it('валидный вектор 1536 → cosine в SQL (литерал как раньше)', async () => {
+    const captured: { sql: string | null } = { sql: null };
+    const prisma = buildFakePrisma(captured);
+    const { resolver } = makeResolver();
+    const { metrics } = makeMetrics();
+    const svc = new SearchService(
+      prisma,
+      makeCfg('off'),
+      makeEmbeddings(validVec),
+      resolver,
+      metrics,
+    );
+
+    await svc.search({ query: 'тест', limit: 10, tenantId: 't-A' });
+
+    expect(captured.sql).not.toBeNull();
+    // cosine-ветка активна: оператор pgvector + cast + фильтр embedding NOT NULL.
+    expect(captured.sql).toContain('<=>');
+    expect(captured.sql).toContain('::vector(1536)');
+    expect(captured.sql).toContain('b.embedding IS NOT NULL');
+  });
+
+  it('вектор неверной длины → graceful: НЕ падает, cosine пропущен (BM25-only)', async () => {
+    const captured: { sql: string | null } = { sql: null };
+    const prisma = buildFakePrisma(captured);
+    const { resolver } = makeResolver();
+    const { metrics } = makeMetrics();
+    const svc = new SearchService(
+      prisma,
+      makeCfg('off'),
+      makeEmbeddings([0.1, 0.2, 0.3]),
+      resolver,
+      metrics,
+    );
+
+    // НЕ должно бросать (иначе /search → 500).
+    await expect(
+      svc.search({ query: 'тест', limit: 10, tenantId: 't-A' }),
+    ).resolves.toBeDefined();
+
+    expect(captured.sql).not.toBeNull();
+    // cosine отключён → ни оператора, ни фильтра по embedding.
+    expect(captured.sql).not.toContain('<=>');
+    expect(captured.sql).not.toContain('b.embedding IS NOT NULL');
+  });
+
+  it('NaN/Infinity в элементе → graceful: НЕ падает, cosine пропущен', async () => {
+    const captured: { sql: string | null } = { sql: null };
+    const prisma = buildFakePrisma(captured);
+    const { resolver } = makeResolver();
+    const { metrics } = makeMetrics();
+    const badVec = [...validVec];
+    badVec[10] = Number.NaN;
+    badVec[20] = Number.POSITIVE_INFINITY;
+    const svc = new SearchService(
+      prisma,
+      makeCfg('off'),
+      makeEmbeddings(badVec),
+      resolver,
+      metrics,
+    );
+
+    await expect(
+      svc.search({ query: 'тест', limit: 10, tenantId: 't-A' }),
+    ).resolves.toBeDefined();
+
+    expect(captured.sql).not.toBeNull();
+    expect(captured.sql).not.toContain('<=>');
   });
 });

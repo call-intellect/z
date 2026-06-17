@@ -19,6 +19,7 @@ import {
   type CurrentUserPayload,
 } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import {
@@ -233,6 +234,10 @@ export class KnowledgeBlocksController {
    * Архивированные связи не показываем (`status='active'`).
    */
   @Get('blocks/:id/links')
+  // G1 — связи блока = граф знаний (платная feature.graph, как
+  // KnowledgeGraphController). Глобальный EntitlementGuard читает декоратор
+  // через Reflector. Без него /blocks/:id/links был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({ summary: 'Типизированные связи блока (outgoing + incoming)' })
   async links(
     @Param('id') id: string,
@@ -358,6 +363,9 @@ export class KnowledgeBlocksController {
    * RBAC: `block:read` (как у других block-эндпоинтов).
    */
   @Get('blocks/:id/reasoning-chain')
+  // G1 — reasoning-chain = BFS по графу связей блока (платная feature.graph,
+  // как KnowledgeGraphController). Без декоратора был обходом paywall'а графа.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({
     summary: 'Reasoning chain блока (BFS по логическим связям)',
   })

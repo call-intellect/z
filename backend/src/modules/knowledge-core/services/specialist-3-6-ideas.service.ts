@@ -359,14 +359,31 @@ export class Specialist36Service {
     const oldStatus = existing.status;
     if (oldStatus === args.newStatus) return existing;
 
-    const updated = await this.prisma.idea.update({
-      where: { id: existing.id },
+    // G6 condition-UPDATE (эталон fact-supersede.service.ts:456-471): меняем
+    // статус ТОЛЬКО если он всё ещё равен прочитанному (oldStatus). Защита от
+    // гонки авто-продвижения (IdeaStatusAutoAdvanceService) ↔ ручного изменения
+    // человеком: между findFirst и update человек мог сменить статус — тогда
+    // count===0, авто-переход устарел → no-op (не перетираем ручное решение,
+    // не эмитим повторный idea.status_changed).
+    const res = await this.prisma.idea.updateMany({
+      where: { id: existing.id, status: oldStatus },
       data: {
         status: args.newStatus,
         statusChangedAt: new Date(),
         statusChangedByUserId: args.changedByUserId,
         statusReason: args.reason,
       },
+    });
+    if (res.count === 0) {
+      // Статус уже изменён другим путём (человеком/параллельно) — возвращаем
+      // актуальное состояние без события.
+      const current = await this.prisma.idea.findFirst({
+        where: { id: existing.id, tenantId: args.tenantId },
+      });
+      return current ?? existing;
+    }
+    const updated = await this.prisma.idea.findFirst({
+      where: { id: existing.id, tenantId: args.tenantId },
     });
 
     // EventEmitter — для closing-loop handler'а.
@@ -383,7 +400,7 @@ export class Specialist36Service {
       // graceful
     }
 
-    return updated;
+    return updated ?? { ...existing, status: args.newStatus };
   }
 
   // ─────────────────────────── KNN / update ─────────────────────────────

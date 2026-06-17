@@ -132,6 +132,7 @@ export interface RegulationSummaryApi {
   instructions: number;
   policies: number;
   weekDelta: number;
+  redesignEnabled?: boolean;
 }
 
 export type ListRegulationsRequest = {

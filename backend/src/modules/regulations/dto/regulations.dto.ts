@@ -224,4 +224,7 @@ export interface RegulationSummaryResponse {
   policies: number;
   /** Суммарно создано карточек всех 4 типов за последние 7 дней. */
   weekDelta: number;
+  /** Ф5 — kill-switch редизайна раздела (`knowledge_base.redesign.enabled`,
+   *  дефолт ON). Едет на фронт: true → новая раскладка, false → прежняя. */
+  redesignEnabled: boolean;
 }

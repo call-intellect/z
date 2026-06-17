@@ -460,6 +460,7 @@ describe('RegulationsService — C4 getSummary', () => {
       instructions: 3,
       policies: 7,
       weekDelta: 2 + 1 + 0 + 4,
+      redesignEnabled: true,
     });
 
     // tenant-фильтр на каждом count'е (первый вызов каждой модели — общий count).

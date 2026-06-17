@@ -581,12 +581,21 @@ export class RegulationsService {
       this.prisma.instruction.count({ where: { tenantId, ...recent } }),
       this.prisma.policy.count({ where: { tenantId, ...recent } }),
     ]);
+    // Ф5 — kill-switch редизайна (дефолт ON). cfg может быть null (юнит-тесты) →
+    // optional chain короткозамыкается в undefined → ?? true.
+    const redesignEnabled =
+      (await this.cfg?.getDynamic<boolean>(
+        'knowledge_base.redesign.enabled',
+        undefined,
+        true,
+      )) ?? true;
     return {
       regulations,
       processes,
       instructions,
       policies,
       weekDelta: regWeek + procWeek + instrWeek + polWeek,
+      redesignEnabled,
     };
   }
 

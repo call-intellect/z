@@ -147,6 +147,8 @@ const registry = new Map<string, ZodTypeAny>([
   // ── feature-flags (feature.*) ────────────────────────────────────────
   // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
   ['feature.tables_text_to_schema', z.boolean()],
+  // База знаний редизайн (2026-06-16) — kill-switch новой раскладки раздела.
+  ['knowledge_base.redesign.enabled', z.boolean()],
 
   // ── Smart-tables агент (table.agent.*) — Фаза 3 Event-to-Cells ────────
   // Порог confidence: ≥ порога и ячейка пуста → авто-патч; иначе очередь.

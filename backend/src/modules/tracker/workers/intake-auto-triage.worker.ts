@@ -396,7 +396,9 @@ export class IntakeAutoTriageWorker
     // пометил карточку дублем (suggestedDuplicateOfIssueId), НЕ принимаем
     // автоматически: route to human (человек сам сливает через triage
     // decision='duplicate'). Авто-merge ЗАПРЕЩЁН (R2/R13).
-    const hasSuggestedDuplicate = intake.suggestedDuplicateOfIssueId !== null;
+    // Boolean(): поле nullable; в БД дефолт null, но защищаемся и от undefined
+    // (иначе `!== null` ложно срабатывает на отсутствующем поле → блок авто-приёма).
+    const hasSuggestedDuplicate = Boolean(intake.suggestedDuplicateOfIssueId);
     const canAutoAccept =
       confidentEnough &&
       effectiveAssigneeId !== null &&

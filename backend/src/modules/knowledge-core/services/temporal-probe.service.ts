@@ -113,6 +113,10 @@ export class TemporalProbeService {
           select: { entityId: true },
         },
       },
+      // Б51 — детерминированная выборка: без orderBy `take` отдаёт произвольный
+      // срез, и при > limit*2 кандидатах одни и те же блоки могут никогда не
+      // попасть на проверку. Самые древние (validFrom asc) — приоритет.
+      orderBy: { validFrom: 'asc' },
       take: limit * 2, // запас, чтобы после фильтрации хватило до limit'а.
     });
 

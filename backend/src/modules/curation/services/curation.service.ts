@@ -387,6 +387,38 @@ export class CurationService {
       criteria: input.criteria,
     });
 
+    // Б56 (K4) — идемпотентность triage. При ретрае специалиста (BullMQ
+    // attempts) повторный заход на тот же (resourceType, resourceId) плодил
+    // дубль CurationItem → раздувание очереди «Подтверждения N». Guard:
+    // если уже есть pending-item по этому ресурсу — переиспользуем его,
+    // не создаём новый и не шлём повторный probe. (findFirst-guard, без
+    // partial-unique: есть @@index([resourceType, resourceId]).)
+    const existingPending = await this.prisma.curationItem.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        resourceType: input.resourceType,
+        resourceId: input.resourceId,
+        status: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existingPending) {
+      this.logger.log(
+        {
+          tenantId: input.tenantId,
+          itemId: existingPending.id,
+          level: existingPending.level,
+        },
+        'curation.triage: pending CurationItem уже существует — переиспользуем (idempotent)',
+      );
+      return {
+        decision: existingPending.level,
+        cardVersionId: null,
+        curationItemId: existingPending.id,
+        candidateCuratorIds: existingPending.candidateCuratorIds,
+      };
+    }
+
     const item = await this.prisma.curationItem.create({
       data: {
         tenantId: input.tenantId,

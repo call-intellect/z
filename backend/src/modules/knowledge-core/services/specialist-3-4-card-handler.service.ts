@@ -83,6 +83,14 @@ export class Specialist34CardHandler
           confidence: true,
           kind: true,
         },
+        // Б41 [K3]: детерминированный отбор при take. Без orderBy Postgres
+        // отдаёт произвольные строки — chat-v2 получал недетерминированный
+        // набор карточек. Самые уверенные / свежеподтверждённые — первыми.
+        orderBy: [
+          { confidence: 'desc' },
+          { lastConfirmedAt: 'desc' },
+          { id: 'asc' },
+        ],
         take: Math.max(args.limit * 3, 30),
       });
 
@@ -93,6 +101,11 @@ export class Specialist34CardHandler
       const blockEntityMentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           blockId: { in: [...blockIds] },
+          // Б43 [K2]: tenant-инвариант — IdeaBlockEntity не имеет своего
+          // tenantId, фильтруем через relation на block. Без этого
+          // промежуточная выборка могла зацепить чужие блоки (если
+          // candidateBlockIds пришли загрязнёнными).
+          block: { tenantId },
           entity: {
             type: {
               in: ['customer', 'vendor', 'project', 'product', 'client'],
@@ -123,6 +136,13 @@ export class Specialist34CardHandler
               confidence: true,
               kind: true,
             },
+            // Б41 [K3]: тот же детерминированный orderBy, что и для выборки
+            // по sourceBlockIds — без него take отдавал произвольные строки.
+            orderBy: [
+              { confidence: 'desc' },
+              { lastConfirmedAt: 'desc' },
+              { id: 'asc' },
+            ],
             take: Math.max(args.limit * 3, 30),
           })
         : [];

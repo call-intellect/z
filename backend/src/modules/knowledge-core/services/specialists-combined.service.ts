@@ -306,6 +306,21 @@ export class SpecialistsCombinedService {
         );
         continue;
       }
+      // Б50 (K4) — детерминированный source-block дедуп. Combined-путь может
+      // запускаться параллельно со старыми специалистами (см. шапку файла) или
+      // ретраиться BullMQ → голый create плодил бы дубли. Guard по
+      // sourceBlockIds:{has} перед create (как в single-специалистах).
+      const dupDecision = await this.prisma.decision.findFirst({
+        where: { tenantId, sourceBlockIds: { has: d.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupDecision) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'decision',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.decision.create({
           data: {
@@ -352,6 +367,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const i of parsed.ideas) {
       if (!blockIdSet.has(i.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupIdea = await this.prisma.idea.findFirst({
+        where: { tenantId, sourceBlockIds: { has: i.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupIdea) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'idea',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.idea.create({
           data: {
@@ -385,6 +412,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const it of parsed.insights) {
       if (!blockIdSet.has(it.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupInsight = await this.prisma.insight.findFirst({
+        where: { tenantId, sourceBlockIds: { has: it.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupInsight) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'insight',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.insight.create({
           data: {
@@ -420,6 +459,18 @@ export class SpecialistsCombinedService {
     let created = 0;
     for (const e of parsed.experiments) {
       if (!blockIdSet.has(e.sourceBlockId)) continue;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupExperiment = await this.prisma.experiment.findFirst({
+        where: { tenantId, sourceBlockIds: { has: e.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupExperiment) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'experiment',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.experiment.create({
           data: {
@@ -483,13 +534,24 @@ export class SpecialistsCombinedService {
         continue;
       }
       try {
+        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`:
+        // pre-fetch существующего массива → дедуп при повторной встрече того же
+        // имени. Контракт совпадает с single-путём (mergeIntoExisting).
+        const existingReg = await this.prisma.regulation.findUnique({
+          where: { tenantId_name: { tenantId, name: r.name } },
+          select: { sourceBlockIds: true },
+        });
         await this.prisma.regulation.upsert({
           where: {
             tenantId_name: { tenantId, name: r.name },
           },
           update: {
             statement: r.statement,
-            sourceBlockIds: { push: r.sourceBlockId },
+            sourceBlockIds: {
+              set: this.union(existingReg?.sourceBlockIds ?? [], [
+                r.sourceBlockId,
+              ]),
+            },
             confidence: r.confidence,
             category: r.kind === 'standard' ? 'standard' : 'regulation',
           },
@@ -539,12 +601,22 @@ export class SpecialistsCombinedService {
           ? 'deprecated'
           : 'active';
       try {
+        // Б57 (K4) — провенанс через `set: union(...)` вместо `{ push }`
+        // (см. persistRegulations).
+        const existingInstr = await this.prisma.instruction.findUnique({
+          where: { tenantId_name: { tenantId, name: r.name } },
+          select: { sourceBlockIds: true },
+        });
         await this.prisma.instruction.upsert({
           where: { tenantId_name: { tenantId, name: r.name } },
           update: {
             statement: r.statement,
             contentMd: r.statement,
-            sourceBlockIds: { push: r.sourceBlockId },
+            sourceBlockIds: {
+              set: this.union(existingInstr?.sourceBlockIds ?? [], [
+                r.sourceBlockId,
+              ]),
+            },
             confidence: r.confidence,
             forRole: forRole ?? undefined,
             status,
@@ -736,6 +808,18 @@ export class SpecialistsCombinedService {
       const recipientUserId = h.recipientUserHint
         ? userByHint.get(h.recipientUserHint.trim()) ?? null
         : null;
+      // Б50 (K4) — source-block дедуп перед create (см. persistDecisions).
+      const dupHelpfulness = await this.prisma.helpfulnessTrait.findFirst({
+        where: { tenantId, sourceBlockIds: { has: h.sourceBlockId } },
+        select: { id: true },
+      });
+      if (dupHelpfulness) {
+        this.metrics?.incCoreSpecialistSkipped({
+          specialist: 'helpfulness',
+          reason: 'source_block_dedup',
+        });
+        continue;
+      }
       try {
         await this.prisma.helpfulnessTrait.create({
           data: {
@@ -769,6 +853,16 @@ export class SpecialistsCombinedService {
     if (value < 0) return 0;
     if (value > 1) return 1;
     return value;
+  }
+
+  /**
+   * Б57 (K4) — объединение массивов с дедупом (эталон —
+   * specialist-3-3-decisions.service.ts `union`). Combined-путь обновляет
+   * провенанс regulation/instruction через upsert; `{ push }` без дедупа
+   * накапливал бы дубли sourceBlockId при повторной встрече того же имени.
+   */
+  private union<T>(a: readonly T[], b: readonly T[]): T[] {
+    return [...new Set([...a, ...b])];
   }
 
   private emptyResult(

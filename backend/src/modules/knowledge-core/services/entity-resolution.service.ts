@@ -250,6 +250,16 @@ export class EntityResolutionService {
         where: { id: knnHit.id },
         data: {
           mentionsCount: { increment: 1 },
+          // Б44 [K4] W3.4 backfill: если caller передал strong-ID, которого
+          // нет у найденной по KNN сущности — записываем его. Симметрично
+          // strong-ID и exact-name веткам выше. Без этого KNN-reuse оставлял
+          // ИНН/домен пустыми → следующий вызов с тем же ИНН не находил по
+          // strong-ID и плодил дубль.
+          ...(strong.inn && !knnHit.inn ? { inn: strong.inn } : {}),
+          ...(strong.ogrn && !knnHit.ogrn ? { ogrn: strong.ogrn } : {}),
+          ...(strong.email && !knnHit.email ? { email: strong.email } : {}),
+          ...(strong.phone && !knnHit.phone ? { phone: strong.phone } : {}),
+          ...(strong.domain && !knnHit.domain ? { domain: strong.domain } : {}),
           ...(merged !== undefined ? { metadata: merged } : {}),
         },
       });

@@ -156,6 +156,43 @@ describe('TemporalProbeService.runForOrg', () => {
     expect(stats.probesEmitted).toBe(0);
     expect(suggestMock).not.toHaveBeenCalled();
   });
+
+  // ─────────────── Б51 — детерминированная выборка stale ───────────────
+
+  it('Б51: stale-кандидаты запрашиваются с orderBy validFrom asc', async () => {
+    const suggestMock = vi.fn();
+    let captured: { orderBy?: unknown } | null = null;
+    const findManyCapture = vi.fn(async (q: unknown) => {
+      captured = q as { orderBy?: unknown };
+      return [];
+    });
+    const fakePrisma = {
+      org: {
+        findMany: async () => [{ id: 'org_1' }],
+        findUnique: async () => ({ ownerId: 'u_owner' }),
+      },
+      ideaBlock: { findMany: findManyCapture, findFirst: vi.fn() },
+      membership: { findMany: async () => [{ userId: 'u_admin' }] },
+      probeEvent: { findMany: async () => [] },
+    } as unknown as ConstructorParameters<typeof TemporalProbeService>[0];
+    const fakeCfg = {
+      bitemporal: { factSignalTypes: ['fact_state'] },
+      temporalProbe: { limitPerOrg: 50, escalateAfterWeeks: 2 },
+      probe: { expiryDays: 14 },
+    } as unknown as ConstructorParameters<typeof TemporalProbeService>[1];
+    const fakeProbe = {
+      suggest: suggestMock,
+    } as unknown as ConstructorParameters<typeof TemporalProbeService>[2];
+    const svc = new TemporalProbeService(fakePrisma, fakeCfg, fakeProbe);
+
+    await svc.runForOrg('org_1');
+
+    expect(findManyCapture).toHaveBeenCalledTimes(1);
+    expect(captured).not.toBeNull();
+    expect((captured as unknown as { orderBy?: unknown }).orderBy).toEqual({
+      validFrom: 'asc',
+    });
+  });
 });
 
 /**
@@ -192,7 +229,10 @@ describe('TemporalProbeService.escalateUnanswered — порог < expiryDays (�
     // НЕ попадал бы под старый порог (createdAt < now-14д ложно) — и при этом
     // на 14-й день его пометили бы expired. Новый порог = min(14, 14-1) = 13:
     // probe попадает в эскалацию ПОКА ещё pending.
-    const probeCreatedAt = new Date(now - 13 * 24 * 3600 * 1000);
+    // 13.5 дней: гарантированно старше cutoff'а эскалации (13 календарных дней,
+    // через setUTCDate), но всё ещё новее expiry-cutoff'а (14 дней) — без гонки
+    // на стыке полуночи UTC (ровно 13д флакали из-за календарного vs ms-сдвига).
+    const probeCreatedAt = new Date(now - 13.5 * 24 * 3600 * 1000);
     let capturedCutoff: Date | null = null;
     const findManyCapture = vi.fn(async (q: unknown) => {
       const query = q as { where: { createdAt: { lt: Date } } };

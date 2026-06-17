@@ -19,11 +19,32 @@ import {
 
 function makePrismaMock(): any {
   return {
-    decision: { create: vi.fn().mockResolvedValue({ id: 'd1' }) },
-    idea: { create: vi.fn().mockResolvedValue({ id: 'i1' }) },
-    insight: { create: vi.fn().mockResolvedValue({ id: 'ins1' }) },
-    experiment: { create: vi.fn().mockResolvedValue({ id: 'e1' }) },
-    regulation: { upsert: vi.fn().mockResolvedValue({ id: 'r1' }) },
+    // Б50 — findFirst для source-block дедупа (null = дубля нет → create).
+    decision: {
+      create: vi.fn().mockResolvedValue({ id: 'd1' }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    idea: {
+      create: vi.fn().mockResolvedValue({ id: 'i1' }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    insight: {
+      create: vi.fn().mockResolvedValue({ id: 'ins1' }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    experiment: {
+      create: vi.fn().mockResolvedValue({ id: 'e1' }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
+    // Б57 — findUnique для чтения существующего sourceBlockIds перед union.
+    regulation: {
+      upsert: vi.fn().mockResolvedValue({ id: 'r1' }),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
+    instruction: {
+      upsert: vi.fn().mockResolvedValue({ id: 'instr1' }),
+      findUnique: vi.fn().mockResolvedValue(null),
+    },
     person: { findMany: vi.fn().mockResolvedValue([]) },
     personKnowledgeCategoryEmbedding: {
       create: vi.fn().mockResolvedValue({ id: 'pk1' }),
@@ -33,7 +54,10 @@ function makePrismaMock(): any {
       create: vi.fn().mockResolvedValue({ id: 'sp1' }),
     },
     skillTrait: { create: vi.fn().mockResolvedValue({ id: 'st1' }) },
-    helpfulnessTrait: { create: vi.fn().mockResolvedValue({ id: 'h1' }) },
+    helpfulnessTrait: {
+      create: vi.fn().mockResolvedValue({ id: 'h1' }),
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
   };
 }
 
@@ -57,6 +81,7 @@ function makeMetricsMock() {
   return {
     incCoreSpecialistCards: vi.fn(),
     incCoreSpecialistLlmTokens: vi.fn(),
+    incCoreSpecialistSkipped: vi.fn(),
   };
 }
 
@@ -310,5 +335,137 @@ describe('SpecialistsCombinedService.extractAll', () => {
     // внутреннего формата.
     expect(callArg.data.confidence).toBeInstanceOf(Prisma.Decimal);
     expect(callArg.data.confidence.toString()).toBe('1');
+  });
+
+  // ─────────────────── Б50 (K4): source-block дедуп ───────────────────
+
+  it('Б50: повтор combined по тому же блоку (уже есть Decision по sourceBlockId) → дедуп, create не вызывается', async () => {
+    const prisma = makePrismaMock();
+    // findFirst находит уже существующее решение по этому блоку → дубль.
+    prisma.decision.findFirst.mockResolvedValue({ id: 'd-existing' });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      decisions: [
+        { sourceBlockId: 'blk_1', statement: 'Решили X', confidence: 0.9 },
+      ],
+    });
+    const metrics = makeMetricsMock();
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      metrics as any,
+    );
+
+    const result = await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.decision.findFirst).toHaveBeenCalledTimes(1);
+    expect(prisma.decision.create).not.toHaveBeenCalled();
+    expect(result.created.decisions).toBe(0);
+    expect(metrics.incCoreSpecialistSkipped).toHaveBeenCalledWith({
+      specialist: 'decision',
+      reason: 'source_block_dedup',
+    });
+  });
+
+  // ─────────────────── Б57 (K4): провенанс через set:union ───────────────────
+
+  it('Б57: повтор regulation с тем же sourceBlockId → set:union без дубля в массиве', async () => {
+    const prisma = makePrismaMock();
+    // У существующего регламента уже есть этот sourceBlockId.
+    prisma.regulation.findUnique.mockResolvedValue({
+      sourceBlockIds: ['blk_1'],
+    });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'regulation',
+          name: 'Reg-1',
+          statement: 'Должно быть...',
+          confidence: 0.85,
+          isOrgNorm: true,
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.regulation.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    // update-ветка использует set:union, а НЕ push → без дубля.
+    expect(upsertArg.update.sourceBlockIds).toEqual({ set: ['blk_1'] });
+    expect(upsertArg.update.sourceBlockIds.set).toHaveLength(1);
+    expect(upsertArg.update.sourceBlockIds).not.toHaveProperty('push');
+  });
+
+  it('Б57: новый sourceBlockId у существующего regulation → union добавляет, старый сохранён', async () => {
+    const prisma = makePrismaMock();
+    prisma.regulation.findUnique.mockResolvedValue({
+      sourceBlockIds: ['blk_old'],
+    });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'regulation',
+          name: 'Reg-1',
+          statement: 'Должно быть...',
+          confidence: 0.85,
+          isOrgNorm: true,
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    const upsertArg = prisma.regulation.upsert.mock.calls[0][0];
+    expect(upsertArg.update.sourceBlockIds.set).toEqual(
+      expect.arrayContaining(['blk_old', 'blk_1']),
+    );
+    expect(upsertArg.update.sourceBlockIds.set).toHaveLength(2);
+  });
+
+  it('Б57: повтор instruction с тем же sourceBlockId → set:union без дубля', async () => {
+    const prisma = makePrismaMock();
+    prisma.instruction.findUnique.mockResolvedValue({
+      sourceBlockIds: ['blk_1'],
+    });
+    const llm = makeLlmMock({
+      ...VALID_8_EMPTY,
+      regulations: [
+        {
+          sourceBlockId: 'blk_1',
+          kind: 'instruction',
+          name: 'Instr-1',
+          statement: 'Шаг 1...',
+          confidence: 0.8,
+          roles: ['Менеджер'],
+        },
+      ],
+    });
+    const svc = new SpecialistsCombinedService(
+      prisma as any,
+      llm as any,
+      makeMetricsMock() as any,
+    );
+
+    await svc.extractAll({ ...argsTemplate() });
+
+    expect(prisma.instruction.upsert).toHaveBeenCalledTimes(1);
+    const upsertArg = prisma.instruction.upsert.mock.calls[0][0];
+    expect(upsertArg.update.sourceBlockIds).toEqual({ set: ['blk_1'] });
+    expect(upsertArg.update.sourceBlockIds).not.toHaveProperty('push');
   });
 });

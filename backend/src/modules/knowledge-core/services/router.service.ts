@@ -542,6 +542,34 @@ export class RouterService {
       }
     }
 
+    // ── Б54 (K6) negative-cache lookup ──
+    // При предыдущем llm_error мы записали короткоживущий negative-маркер.
+    // Пока он жив — НЕ дёргаем LLM повторно (анти-шторм при сбое провайдера):
+    // блоков с unmatched signalType может быть много, иначе каждый снова бьёт
+    // в упавший LLM. Маркер best-effort: ошибка чтения = просто идём в LLM.
+    const negativeKey = this.makeFallbackNegativeKey(cacheKey);
+    if (this.redis) {
+      try {
+        const negative = await this.redis.client.get(negativeKey);
+        if (negative != null) {
+          this.metrics.incRouterFallbackCall({ tenantTop, result: 'llm_error' });
+          this.logger.debug(
+            { negativeKey, signalType: block.signalType },
+            'RouterService.fallback: negative-маркер активен — пропускаем LLM-вызов',
+          );
+          return [];
+        }
+      } catch (err) {
+        this.logger.debug(
+          {
+            negativeKey,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'RouterService.fallback: negative-cache read error — продолжаем',
+        );
+      }
+    }
+
     // ── LLM call ──
     const whitelist = Object.values(RouterService.SPECIALIST) as string[];
     const systemPrompt = [
@@ -574,6 +602,28 @@ export class RouterService {
       llmText = result.text;
     } catch (err) {
       this.metrics.incRouterFallbackCall({ tenantTop, result: 'llm_error' });
+      // Б54 (K6) — записываем короткоживущий negative-маркер, чтобы остальные
+      // блоки в окне сбоя не штормили упавший LLM (circuit-breaker minimal).
+      // Best-effort: ошибка записи не блокирует возврат.
+      if (this.redis) {
+        try {
+          await this.redis.client.set(
+            negativeKey,
+            '1',
+            'EX',
+            this.getRouterFallbackNegativeTtlSeconds(),
+          );
+        } catch (cacheErr) {
+          this.logger.debug(
+            {
+              negativeKey,
+              err:
+                cacheErr instanceof Error ? cacheErr.message : String(cacheErr),
+            },
+            'RouterService.fallback: negative-cache write error — пропускаем',
+          );
+        }
+      }
       this.logger.warn(
         {
           blockId: block.id,
@@ -625,6 +675,30 @@ export class RouterService {
       .digest('hex')
       .slice(0, 16);
     return `routerfallback:${args.signalType}:${hash}`;
+  }
+
+  /**
+   * Б54 (K6) — ключ negative-маркера, производный от позитивного cache-key
+   * (тот же signalType+hash). Отдельное пространство `:err:` чтобы не
+   * пересекаться с позитивным кэшем.
+   */
+  private makeFallbackNegativeKey(cacheKey: string): string {
+    return `routerfallback:err:${cacheKey.slice('routerfallback:'.length)}`;
+  }
+
+  /**
+   * Б54 (K6) — TTL negative-маркера при llm_error. Короткий (default 60с):
+   * достаточно, чтобы погасить шторм блоков в окне сбоя, но не «залипнуть»
+   * после восстановления провайдера. env ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS.
+   * TODO(env-refactor): перенести в TypedConfig после фикса TS2589 в EnvSchema
+   * (см. getRouterFallbackTtlSeconds).
+   */
+  private getRouterFallbackNegativeTtlSeconds(): number {
+    const raw = process.env['ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS'];
+    if (raw == null || raw === '') return 60;
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return 60;
+    return Math.floor(num);
   }
 
   /**

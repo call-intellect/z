@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 import { ACTIVE_LINK_FILTER } from './link-read-filter';
@@ -245,6 +246,24 @@ export class ChatV2RetrievalService {
         { err: err instanceof Error ? err.message : String(err) },
         'chat-v2 retrieval: embedQuery упал — будет ранжирование по BM25/recency',
       );
+    }
+
+    // Класс G2 — guard pgvector-литерала query-вектора (та же ветка деградации,
+    // что и embed-failure выше). Все downstream-точки (collectPool HNSW,
+    // rankByCosineOrRecency, rankByStructuralFilter) формируют литерал из этого
+    // же `qvec` через `if (qvec)`; занулив его при reject, мы единым местом
+    // переводим весь read-путь на recency/recall-safe fallback, не валя оператор
+    // `<=>` (смена модели → другая размерность; битый вектор → NaN/Infinity).
+    if (qvec) {
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const guard = buildVectorLiteral(qvec, expectedDim);
+      if (guard.literal === null) {
+        this.logger.warn(
+          { reason: guard.rejectReason, actualDim: qvec.length, expectedDim },
+          'chat-v2 retrieval: query-вектор отвергнут guard-ом — ранжирование по recency/BM25 (cosine пропущен)',
+        );
+        qvec = null;
+      }
     }
 
     // 1) Собираем pool кандидатов в зависимости от scope.

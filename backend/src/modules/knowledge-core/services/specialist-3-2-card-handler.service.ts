@@ -13,6 +13,7 @@ import {
   type CardSpecialistResult,
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 
 import { KnowledgeEmbeddingService } from './embedding.service';
 
@@ -122,7 +123,25 @@ export class Specialist32CardHandler
         return this.getCardsForQueryFallback(args);
       }
 
-      const vecLiteral = `[${queryVec.join(',')}]`;
+      // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена
+      // модели → другая размерность; битый вектор → NaN/Infinity) деградируем на
+      // тот же substring-fallback, что и при embed-failure, не валя оператор
+      // `<=>`.
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const guard = buildVectorLiteral(queryVec, expectedDim);
+      if (guard.literal === null) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            reason: guard.rejectReason,
+            actualDim: queryVec.length,
+            expectedDim,
+          },
+          'Specialist32CardHandler: query-вектор отвергнут guard-ом — fallback на substring',
+        );
+        return this.getCardsForQueryFallback(args);
+      }
+      const vecLiteral = guard.literal;
       const sqlLimit = args.limit * 3;
       let rows: Array<{
         id: string;

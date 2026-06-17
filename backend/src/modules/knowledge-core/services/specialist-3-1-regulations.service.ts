@@ -23,6 +23,7 @@ import {
 } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import {
   REGULATION_DEDUPE_JSON_SCHEMA,
   REGULATION_DEDUPE_SCHEMA_NAME,
@@ -35,7 +36,6 @@ import {
   REGULATION_EXTRACT_SYSTEM_PROMPT,
   REGULATION_EXTRACT_USER_TEMPLATE,
 } from '../prompts/regulation-extract.prompt';
-
 import type { OrgDocumentKind } from '../prompts/structured-document-compiler.prompt';
 
 import { DataClassPolicyService } from './dataclass-policy.service';
@@ -1294,7 +1294,25 @@ export class Specialist31Service {
     };
     const table = tableMap[args.table];
     if (!table) return [];
-    const vec = `[${args.embedding.join(',')}]`;
+    // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена
+    // модели → другая размерность; битый вектор → NaN/Infinity) возвращаем []:
+    // caller (`knnCandidates`) деградирует на name-like fallback, не валя `<=>`.
+    const expectedDim = this.cfg?.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(args.embedding, expectedDim);
+    if (guard.literal === null) {
+      this.logger.debug(
+        {
+          tenantId: args.tenantId,
+          table: args.table,
+          reason: guard.rejectReason,
+          actualDim: args.embedding.length,
+          expectedDim,
+        },
+        'specialist-3-1.knnByEmbedding: query-вектор отвергнут guard-ом — name-like fallback',
+      );
+      return [];
+    }
+    const vec = guard.literal;
     // Raw SQL: cosine distance (1 - cos similarity). LIMIT KNN_TOP_K.
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{ id: string; name: string; statement: string | null; scope: string | null }>

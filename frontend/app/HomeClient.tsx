@@ -1,566 +1,296 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import Image from 'next/image';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Check, CheckCircle2, X } from 'lucide-react';
 
-import { useAuth } from "@/contexts/auth-context";
+import { useAuth } from '@/contexts/auth-context';
 
-const PAIN_ROWS: [string, string][] = [
-  [
-    "Решили на планёрке — через неделю никто не помнит, к чему шли",
-    "Цель живёт в спринте. Кора возвращает к ней каждую неделю.",
+/* ------------------------------------------------------------------ */
+/* Внешние ссылки и тексты блоков (копирайт образца kora-landing)      */
+/* ------------------------------------------------------------------ */
+
+const TELEGRAM_URL = 'https://t.me/SERGEYMZ80';
+const WIKI_URL = '/wiki/index.html';
+const DEMO_URL = '/demo/index.html';
+
+interface BlockData {
+  id: string;
+  eyebrow: string;
+  headingLead: string;
+  headingAccent: string;
+  intro: string;
+  /** базовое имя картинок: /landing/{image}-desktop.webp и -mobile.webp */
+  image: string;
+  imageAlt: string;
+  painsTitle: string;
+  pains: string[];
+  gainsTitle: string;
+  gains: string[];
+}
+
+const BLOCK_COMMUNICATION: BlockData = {
+  id: 'communication',
+  eyebrow: 'Боли клиента',
+  headingLead: 'От хаоса в общении — к',
+  headingAccent: 'управляемой команде',
+  intro:
+    'Команды теряют не в работе, а в коммуникации. Договорённости из встреч, чатов и звонков не превращаются в задачи — бизнес держится на памяти сотрудников и ручном контроле руководителя. Кора закрывает этот разрыв: превращает разговоры в зафиксированные договорённости, задачи и сроки.',
+  image: 'compare2',
+  imageAlt:
+    'Слева — хаос разрозненных встреч, чатов и задач без Коры; справа — единый управляемый процесс с Корой',
+  painsTitle: 'Без Коры — как сейчас',
+  pains: [
+    'Договорённости со встреч не фиксируются — каждый запомнил по-своему.',
+    'Задачи теряются между чатами, почтой и звонками.',
+    'Непонятно, кто за что отвечает и на каком этапе работа.',
+    'Итоги встреч живут в переписках, к ним невозможно вернуться.',
+    'Руководитель контролирует всё вручную — и всё равно что-то упускает.',
   ],
-  [
-    "Задачи зависают между понедельниками, а вы узнаёте последним",
-    "Кора слышит, что застряло — и подсвечивает до того, как сорвётся срок.",
+  gainsTitle: 'С Корой — как становится',
+  gains: [
+    'Собирает встречи, чаты и звонки в одном месте.',
+    'Фиксирует договорённости и формирует протокол встречи.',
+    'Автоматически распределяет задачи и назначает ответственных.',
+    'Держит сроки и показывает статус по каждой задаче.',
+    'Руководитель управляет результатом, а не ручным контролем.',
   ],
-  [
-    "Статусы в трекере зелёные, а движения нет",
-    "Кора видит правду из встреч и чатов, а не из галочек.",
+};
+
+const BLOCK_KNOWLEDGE: BlockData = {
+  id: 'knowledge',
+  eyebrow: 'Знания компании',
+  headingLead: 'От знаний в чужих головах — ко',
+  headingAccent: 'второму мозгу компании',
+  intro:
+    'Главный актив компании — знания о процессах, клиентах и договорённостях — обычно разбросаны по чатам, таблицам и головам сотрудников. Их трудно найти, они забываются, а с уходом человека уходят вместе с ним. Кора собирает всё в единую базу и превращает знания в растущий актив.',
+  image: 'knowledge2',
+  imageAlt:
+    'Слева — знания теряются в чатах, таблицах и головах без Коры; справа — единый «второй мозг» компании с Корой',
+  painsTitle: 'Без Коры — как сейчас',
+  pains: [
+    'Данные о процессах, договорённостях и решениях — в головах руководителей.',
+    'Информация разрознена по чатам и таблицам.',
+    'Со временем знания теряются и забываются.',
+    'Чтобы найти нужное, уходит много времени.',
+    'Сотрудник в отпуске или уволился — знания ушли вместе с ним.',
   ],
-  [
-    "Клиенту пообещали — не сделали",
-    "Обещание на встрече = задача на исполнителе. Никто не забывает.",
+  gainsTitle: 'С Корой — как становится',
+  gains: [
+    'Видеовстречи, чаты и переписки собираются в одном месте.',
+    'Мысли руководителя и команды фиксируются и не теряются.',
+    'Отчёты и документы структурно пополняют базу знаний.',
+    'Помощник компании отвечает на любой вопрос по знаниям.',
+    'Цифровой двойник ответит за сотрудника, даже если он в отпуске или ушёл.',
   ],
-  [
-    "Ключевой человек ушёл — знания ушли с ним",
-    "Цифровой двойник остаётся. Новый сотрудник входит в курс за минуту.",
+};
+
+const BLOCK_GOALS: BlockData = {
+  id: 'goals',
+  eyebrow: 'Боли клиента',
+  headingLead: 'Почему цели не достигаются, а команда',
+  headingAccent: 'буксует',
+  intro:
+    'Руководитель тонет в операционке и не видит полной картины: где буксуют задачи, что блокирует движение и почему цели снова не закрыты. Кора работает как операционный директор — сравнивает цели команды с фактом, держит вектор движения и каждый день показывает, что идёт не так.',
+  image: 'goals2',
+  imageAlt:
+    'Слева — руководитель в операционном хаосе без Коры; справа — командный центр с целями, план-фактом и контролем 96% с Корой',
+  painsTitle: 'Без Коры — как сейчас',
+  pains: [
+    'Руководитель погряз в операционке вместо стратегии.',
+    'Нет полного контроля за выполнением задач.',
+    'Цели теряются — задачи не выполняются.',
+    'Не видно в моменте, где проблемы с командой и процессами.',
+    'Не видно, что именно блокирует движение вперёд.',
   ],
-  [
-    "Тонете в операционке, некогда думать на три хода вперёд",
-    "AI-директор берёт рутину. Голова освобождается для стратегии.",
+  gainsTitle: 'С Корой — как становится',
+  gains: [
+    'Ежедневный диалог с командой — пульс всей системы.',
+    'Сравнивает цели команды и каждого сотрудника с фактом.',
+    'План / факт по задачам и результатам в реальном времени.',
+    'Лента проблем и блокираторов между людьми и процессами.',
+    'У руководителя освобождается время на стратегию и жизнь.',
   ],
+};
+
+const SUMMARY_POINTS = [
+  'Встречи, задачи и решения собираются в одном месте.',
+  'Кора следит, чтобы договорённости не терялись.',
+  'Руководитель управляет результатом, а не ручным контролем.',
 ];
+
+/* ------------------------------------------------------------------ */
+/* Главная страница                                                   */
+/* ------------------------------------------------------------------ */
 
 export function HomeClient() {
   const router = useRouter();
   const { user, isLoading } = useAuth();
+  const [scrolled, setScrolled] = useState(false);
 
+  // Авторизованного — сразу в кабинет.
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace("/dashboard");
+      router.replace('/dashboard');
     }
   }, [user, isLoading, router]);
 
+  // Шапка «застекляется» при прокрутке.
   useEffect(() => {
-    const id = "kl-fonts";
-    if (document.getElementById(id)) return;
-    const link = document.createElement("link");
-    link.id = id;
-    link.rel = "stylesheet";
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Manrope:wght@300;400;500;600;700&display=swap";
-    document.head.appendChild(link);
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Reveal-анимации блоков при попадании в зону видимости.
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((e) => {
           if (e.isIntersecting) {
-            e.target.classList.add("in");
+            e.target.classList.add('in');
             io.unobserve(e.target);
           }
         });
       },
-      { rootMargin: "0px 0px -8% 0px", threshold: 0.06 },
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.08 },
     );
-    document.querySelectorAll(".kl .reveal").forEach((el) => io.observe(el));
+    document.querySelectorAll('.kora-landing .kl-reveal').forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
 
+  // Заглушка на момент до редиректа авторизованного пользователя.
   if (user) {
-    return <div className="min-h-screen" style={{ background: "#0C0A08" }} />;
+    return <div className="min-h-screen" style={{ background: '#f7f8fb' }} />;
   }
 
   return (
-    <div className="kl">
+    <div className="kora-landing">
       <LandingStyles />
 
-      <header>
-        <div className="wrap header-inner">
-          <Link href="/" className="brand">
-            <span className="brand-dot" />
-            КОРА
+      {/* ===================== ШАПКА ===================== */}
+      <header className="kl-header">
+        <div className={`kl-headbar${scrolled ? ' is-scrolled' : ''}`}>
+          <Link href="/" className="kl-brand" aria-label="Кора — на главную">
+            <span className="kl-brand-mark">К</span>
+            <span className="kl-brand-name">КОРА</span>
           </Link>
-          <nav className="nav">
-            <Link href="/login" className="btn btn-ghost">
+
+          <nav className="kl-nav">
+            <a href="#communication">Договорённости</a>
+            <a href="#knowledge">Знания</a>
+            <a href="#goals">Цели</a>
+            <a href="#summary">Платформа</a>
+            <a href={DEMO_URL}>Демо</a>
+            <a href={WIKI_URL} target="_blank" rel="noopener noreferrer">
+              Инструкция
+            </a>
+          </nav>
+
+          <div className="kl-actions">
+            <a
+              href={TELEGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="kl-btn kl-btn-ghost kl-hide-sm"
+            >
+              Связаться
+            </a>
+            <Link href="/login" className="kl-btn kl-btn-outline">
               Войти
             </Link>
-            <Link href="/signup" className="btn btn-primary">
+            <Link href="/signup" className="kl-btn kl-btn-primary kl-hide-sm">
               Получить ранний доступ
             </Link>
-          </nav>
+          </div>
         </div>
       </header>
 
       <main>
-        {}
-        <section className="hero">
-          <div className="wrap">
-            <div className="eyebrow">
-              Память · Спринты · AI-операционный директор
+        {/* ===================== HERO ===================== */}
+        <section className="kl-section kl-hero-section" id="top">
+          <div className="kl-wrap">
+            <div className="kl-hero">
+              <Image
+                unoptimized
+                src="/landing/hero-mobile.webp"
+                alt=""
+                fill
+                priority
+                sizes="100vw"
+                className="kl-hero-img kl-only-mobile"
+              />
+              <Image
+                unoptimized
+                src="/landing/hero-desktop.webp"
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 1024px) 100vw, 1024px"
+                className="kl-hero-img kl-only-desktop"
+              />
+              <p className="kl-hero-eyebrow">Прозрейте в своём бизнесе</p>
+              <h1 className="kl-hero-title">
+                <span className="kl-hero-accent">Запустим оцифровку</span>
+                <span>вашего бизнеса и команды за 1 день</span>
+              </h1>
             </div>
-            <h1>
-              Компании растут, когда добивают цели. <em>Кора</em> следит, чтобы
-              точно добивались.
-            </h1>
-            <p className="lead">
-              Ставите цель — идёте спринтами — Кора из реальных встреч, чатов и
-              отчётов держит фокус и не даёт сбиться. А всё, что наработали,
-              остаётся в памяти компании навсегда.
-            </p>
-            <div className="hero-ctas">
-              <Link href="/signup" className="btn btn-primary btn-lg">
+
+            <div className="kl-hero-ctas">
+              <Link href="/signup" className="kl-btn kl-btn-primary kl-btn-lg">
                 Получить ранний доступ
               </Link>
-              <Link href="/login" className="btn btn-outline btn-lg">
-                Войти
-              </Link>
+              <a href={DEMO_URL} className="kl-btn kl-btn-outline kl-btn-lg">
+                Посмотреть демо-кабинет
+                <ArrowRight size={17} />
+              </a>
             </div>
-            <div className="hero-note">
-              <span className="pulse" />
-              Встречи, задачи, спринты и память компании — в одном месте
-            </div>
-          </div>
-        </section>
-
-        {}
-        <section id="tools">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">I — Что внутри</div>
-              <div>
-                <h2 className="section-title">
-                  Двенадцать инструментов — один <em>растущий актив</em>.
-                </h2>
-                <p className="section-sub">
-                  Четыре опоры, на которых стоит Кора. Не набор разрозненных
-                  сервисов, а единая система — встречи, задачи и память работают
-                  друг на друга.
-                </p>
-              </div>
-            </div>
-
-            <div className="tools-grid reveal">
-              <div className="tool-group">
-                <div className="tool-group-label">Встречи</div>
-                <div className="tool-card">
-                  <h4>Видеовстречи с AI-отчётом</h4>
-                  <p>
-                    Полноценные встречи с экраном и чатом. Гость по ссылке без
-                    регистрации. Как Zoom — только с памятью.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Автозапись и расшифровка</h4>
-                  <p>Сохраняются сами. Ничего не нужно включать вручную.</p>
-                </div>
-                <div className="tool-card">
-                  <h4>Отчёт под тип встречи</h4>
-                  <p>
-                    Один-на-один, разбор сделки, ретроспектива, собеседование.
-                    Структура под задачу — не одна выжимка на всё.
-                  </p>
-                </div>
-              </div>
-
-              <div className="tool-group">
-                <div className="tool-group-label">Задачи и спринты</div>
-                <div className="tool-card">
-                  <h4>Привычный трекер</h4>
-                  <p>
-                    Доски, статусы, исполнители, сроки. Команде ничего не нужно
-                    учить.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Задачи появляются сами</h4>
-                  <p>
-                    Кора слышит «Иван, сделай к пятнице» — и ставит задачу на
-                    Ивана. То же из чатов.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Спринты с контролем цели</h4>
-                  <p>
-                    Недельный ритм. Кора следит, реально ли вы идёте к цели — а
-                    не просто двигаете статусы.
-                  </p>
-                </div>
-              </div>
-
-              <div className="tool-group">
-                <div className="tool-group-label">AI-директор</div>
-                <div className="tool-card">
-                  <h4>Картина целиком</h4>
-                  <p>
-                    Кто чем занят, что обещано, где застряло. Раньше — в десяти
-                    местах. Теперь — в одном.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Обещания на радаре</h4>
-                  <p>
-                    Расхождения по встречам и чатам подсвечиваются раньше
-                    эскалации.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Отчёты в одной ленте</h4>
-                  <p>Настоящее положение дел без созвонов и докладов.</p>
-                </div>
-              </div>
-
-              <div className="tool-group">
-                <div className="tool-group-label">Память</div>
-                <div className="tool-card">
-                  <h4>Второй мозг компании</h4>
-                  <p>Всё разрозненное — в одном месте. Навсегда.</p>
-                </div>
-                <div className="tool-card">
-                  <h4>Цифровые двойники</h4>
-                  <p>
-                    Спросить эксперта в отпуске или уже уволенного — ответит так
-                    же, как он.
-                  </p>
-                </div>
-                <div className="tool-card">
-                  <h4>Telegram-доступ</h4>
-                  <p>
-                    «Что решили по клиенту в марте?» — ответ со ссылкой на
-                    источник, прямо из Telegram.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {}
-        <section id="pain">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">II — Что меняет Кора</div>
-              <div>
-                <h2 className="section-title">
-                  Цели ставят все. Добивают — <em>единицы</em>.
-                </h2>
-                <p className="section-sub">
-                  Шесть точек, в которых обычно теряется движение компании — и
-                  что меняет Кора.
-                </p>
-              </div>
-            </div>
-
-            <div className="pain-list reveal">
-              {PAIN_ROWS.map(([problem, solution]) => (
-                <div className="pain-row" key={problem}>
-                  <div className="pain-problem">{problem}</div>
-                  <div className="pain-solution">{solution}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {}
-        <section id="how">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">III — Как это работает</div>
-              <div>
-                <h2 className="section-title">
-                  Один недельный цикл, который <em>двигает компанию</em> вперёд.
-                </h2>
-              </div>
-            </div>
-
-            <div className="steps reveal">
-              <div className="step">
-                <div className="step-num">01</div>
-                <h4>Ставите цель</h4>
-                <p>Собираете спринт: что делаем на этой неделе и ради чего.</p>
-              </div>
-              <div className="step">
-                <div className="step-num">02</div>
-                <h4>Команда работает</h4>
-                <p>
-                  В привычном трекере. Задачи из встреч и чатов появляются сами.
-                </p>
-              </div>
-              <div className="step">
-                <div className="step-num">03</div>
-                <h4>Кора видит правду</h4>
-                <p>
-                  Слушает встречи, читает чаты и отчёты — и видит, реально ли вы
-                  идёте к цели.
-                </p>
-              </div>
-              <div className="step">
-                <div className="step-num">04</div>
-                <h4>Разбор спринта</h4>
-                <p>
-                  Что добили, что застряло, цель на следующий. Всё уходит в
-                  память компании.
-                </p>
-              </div>
-            </div>
-
-            <p className="steps-foot reveal">
-              Так каждую неделю. Память накапливается, цели <em>добиваются</em>,
-              компания растёт.
+            <p className="kl-hero-note">
+              Встречи, задачи, спринты и память компании — в одном месте.
             </p>
           </div>
         </section>
 
-        {}
-        <section id="sprints">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">IV — Спринты</div>
-              <div>
-                <h2 className="section-title">
-                  Спринты, за которыми <em>действительно</em> следят.
-                </h2>
-              </div>
-            </div>
+        {/* ===================== ДОГОВОРЁННОСТИ ===================== */}
+        <ProblemSolution data={BLOCK_COMMUNICATION} />
 
-            <div className="sprint reveal">
-              <div className="sprint-text">
-                <p className="lead-quote">
-                  Обычный трекер знает только то, что вы вписали руками.{" "}
-                  <em>Кора знает</em> из реальных встреч и переписок —
-                  двигаетесь вы к цели или только отчитываетесь, что двигаетесь.
-                </p>
-              </div>
-              <div className="sprint-points">
-                <div className="sprint-point">
-                  <div className="sprint-point-num">i.</div>
-                  <div>
-                    <h5>Старт спринта</h5>
-                    <p>
-                      Собираете команду, ставите цель недели, набираете задачи.
-                      Кора фиксирует, к чему идёте.
-                    </p>
-                  </div>
-                </div>
-                <div className="sprint-point">
-                  <div className="sprint-point-num">ii.</div>
-                  <div>
-                    <h5>Кора держит курс</h5>
-                    <p>
-                      Слышит на встречах и в чатах, что сделано и что буксует.
-                      Подсвечивает разрыв между «сказали» и «сделали».
-                    </p>
-                  </div>
-                </div>
-                <div className="sprint-point">
-                  <div className="sprint-point-num">iii.</div>
-                  <div>
-                    <h5>Разбор раз в неделю</h5>
-                    <p>
-                      Готовый отчёт по спринту: что добили, где отстаём, что
-                      мешало. Без ручного сбора статусов.
-                    </p>
-                  </div>
-                </div>
-                <div className="sprint-point">
-                  <div className="sprint-point-num">iv.</div>
-                  <div>
-                    <h5>Цель не сливается</h5>
-                    <p>
-                      То, что не успели — Кора сама предлагает в следующий
-                      спринт. Ничего не теряется между неделями.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* ===================== ЗНАНИЯ ===================== */}
+        <ProblemSolution data={BLOCK_KNOWLEDGE} />
 
-        {}
-        <section style={{ padding: 0 }}>
-          <div
-            className="wrap sources"
-            style={{ border: "none", padding: "56px 0" }}
-          >
-            <div className="sources-label reveal">Откуда Кора видит всё</div>
-            <div className="sources-list reveal">
-              <span>видеовстречи</span>
-              <span>планёрки</span>
-              <span>вечерние отчёты</span>
-              <span>рабочие чаты</span>
-              <span>задачи в трекере</span>
-              <span>спринты</span>
-            </div>
-          </div>
-        </section>
+        {/* плашка-переход после «Знания» */}
+        <DemoBanner />
 
-        {}
-        <section id="memory">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">V — Память компании</div>
-              <div>
-                <h2 className="section-title">
-                  Под всем этим — память, <em>которая остаётся</em>.
-                </h2>
-              </div>
-            </div>
+        {/* ===================== ЦЕЛИ ===================== */}
+        <ProblemSolution data={BLOCK_GOALS} />
 
-            <div className="memory reveal">
-              <h3>
-                Уходит человек — <em>память остаётся</em>.
-              </h3>
-              <p className="memory-intro">
-                Встречи, решения, спринты, переписки — всё копится в одном
-                месте. С каждым днём память компании знает о вас больше. Это
-                актив, который только растёт.
-              </p>
-              <div className="memory-grid">
-                <div className="memory-item">
-                  <h4>Знания не уходят с людьми</h4>
-                  <p>
-                    Увольнение — не катастрофа. Новый сотрудник видит, как
-                    работал предшественник и почему принимал такие решения.
-                  </p>
-                </div>
-                <div className="memory-item">
-                  <h4>Цифровые двойники</h4>
-                  <p>
-                    С двойником можно разговаривать как с самим человеком:
-                    спросить эксперта в отпуске или уже уволенного.
-                  </p>
-                </div>
-                <div className="memory-item">
-                  <h4>Личный консультант</h4>
-                  <p>
-                    Любой вопрос по истории компании — ответ со ссылкой на
-                    конкретную встречу или переписку.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* плашка-переход после «Цели» */}
+        <DemoBanner />
 
-        {}
-        <section id="reviews">
-          <div className="wrap">
-            <div className="section-head reveal">
-              <div className="section-num">VI — Отзывы</div>
-              <div>
-                <h2 className="section-title">
-                  С этого начинался <em>рост</em> у тех, кто уже внутри.
-                </h2>
-              </div>
-            </div>
-
-            <div className="testimonials reveal">
-              <div className="testimonial">
-                <div className="quote-mark">&ldquo;</div>
-                <blockquote>
-                  Раньше цели на квартал к середине просто растворялись. Теперь
-                  каждую неделю — спринт, и на разборе Кора показывает не
-                  галочки в трекере, а что реально обсуждали на встречах. В
-                  первый месяц вскрылось, что треть задач «в работе» не
-                  двигалась по 6–8 недель. За квартал добили два проекта,
-                  которые висели с прошлого года. Выручка +23%.
-                </blockquote>
-                <div className="author">
-                  <strong>Артём Кравцов</strong>
-                  <span>
-                    основатель digital-агентства · 18 человек · Казань
-                  </span>
-                </div>
-              </div>
-
-              <div className="testimonial">
-                <div className="quote-mark">&ldquo;</div>
-                <blockquote>
-                  У нас уволился логист, который шесть лет держал всех
-                  поставщиков в голове. Раньше это был бы коллапс на месяц. А
-                  новый человек просто спросил у его цифрового двойника, почему
-                  мы ушли от одного поставщика и как договаривались с другим — и
-                  получил ответы со ссылками на конкретные встречи. Онбординг
-                  вместо полугода занял две недели.
-                </blockquote>
-                <div className="author">
-                  <strong>Марина Соколова</strong>
-                  <span>
-                    операционный директор · оптовая компания · 40 человек ·
-                    Екатеринбург
-                  </span>
-                </div>
-              </div>
-
-              <div className="testimonial">
-                <div className="quote-mark">&ldquo;</div>
-                <blockquote>
-                  Главная боль была — на встрече что-то пообещали клиенту и
-                  забыли. Теперь Кора слышит «сделаем к пятнице» прямо на
-                  созвоне и ставит задачу сама. За первый месяц перестали терять
-                  обещания — клиенты больше не ловят нас на «вы же обещали». А я
-                  утром открываю одну ленту вместо обзвона пяти руководителей.
-                </blockquote>
-                <div className="author">
-                  <strong>Дмитрий Веров</strong>
-                  <span>
-                    владелец сети сервисных центров · 25 человек · Новосибирск
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {}
-        <section style={{ padding: "60px 0" }}>
-          <div className="wrap">
-            <div className="privacy-wrap reveal">
-              <div className="privacy-mark">§</div>
-              <div className="privacy-content">
-                <h3>Ваши данные — только ваши.</h3>
-                <p>
-                  Встречи, чаты и отчёты хранятся в вашем контуре. Доступ — по
-                  ролям: каждый видит своё. Ничего не уходит на сторону и не
-                  используется для обучения чужих моделей. Память — это ваш
-                  актив, и она остаётся вашей.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {}
-        <section className="final" id="cta">
-          <div className="wrap">
-            <h2 className="reveal">
-              Поставьте первую цель уже на <em>этой неделе</em>.
-            </h2>
-            <p className="reveal">
-              Память, которая помнит за всех, и спринты, которые ведут к
-              результату. Двенадцать инструментов — один растущий актив.
-            </p>
-            <div className="final-ctas reveal">
-              <Link href="/signup" className="btn btn-primary btn-lg">
-                Получить ранний доступ
-              </Link>
-              <Link href="/login" className="btn btn-outline btn-lg">
-                Войти
-              </Link>
-            </div>
-          </div>
-        </section>
+        {/* ===================== ПЛАТФОРМА / ИТОГ ===================== */}
+        <SummaryBlock />
       </main>
 
-      <footer>
-        <div className="wrap footer-inner">
-          <div className="footer-brand">КОРА · ПАМЯТЬ ВАШЕЙ КОМПАНИИ</div>
-          <div className="footer-links">
+      {/* ===================== ФУТЕР ===================== */}
+      <footer className="kl-footer">
+        <div className="kl-wrap kl-footer-inner">
+          <div className="kl-footer-brand">
+            <Link href="/" className="kl-brand">
+              <span className="kl-brand-mark">К</span>
+              <span className="kl-brand-name">КОРА</span>
+            </Link>
+            <p>Память вашей компании, которая превращает разговоры команды в выполненные цели.</p>
+          </div>
+          <div className="kl-footer-links">
+            <a href={DEMO_URL}>Демо-кабинет</a>
+            <a href={WIKI_URL} target="_blank" rel="noopener noreferrer">
+              Инструкция
+            </a>
+            <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer">
+              Связаться
+            </a>
             <Link href="/terms">Договор оферты</Link>
             <Link href="/privacy">Политика конфиденциальности</Link>
           </div>
@@ -570,205 +300,385 @@ export function HomeClient() {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Блок «боль → решение»                                              */
+/* ------------------------------------------------------------------ */
+
+function ProblemSolution({ data }: { data: BlockData }) {
+  return (
+    <section className="kl-section kl-ps" id={data.id}>
+      <div className="kl-wrap">
+        <div className="kl-ps-head kl-reveal">
+          <p className="kl-eyebrow">{data.eyebrow}</p>
+          <h2 className="kl-h2">
+            {data.headingLead} <span className="kl-grad-text">{data.headingAccent}</span>
+          </h2>
+          <p className="kl-intro">{data.intro}</p>
+        </div>
+
+        <div className="kl-ps-img kl-reveal">
+          <Image
+            unoptimized
+            src={`/landing/${data.image}-mobile.webp`}
+            alt={data.imageAlt}
+            fill
+            sizes="(max-width: 768px) 100vw, 768px"
+            className="kl-ps-img-el kl-only-mobile"
+          />
+          <Image
+            unoptimized
+            src={`/landing/${data.image}-desktop.webp`}
+            alt={data.imageAlt}
+            fill
+            sizes="(max-width: 768px) 100vw, 768px"
+            className="kl-ps-img-el kl-only-desktop"
+          />
+        </div>
+
+        <div className="kl-ps-cols kl-reveal">
+          <div className="kl-card kl-pains">
+            <h3>{data.painsTitle}</h3>
+            <ul>
+              {data.pains.map((t) => (
+                <li key={t}>
+                  <X size={20} className="kl-ico-x" />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="kl-glass kl-gains">
+            <h3>{data.gainsTitle}</h3>
+            <ul>
+              {data.gains.map((t) => (
+                <li key={t}>
+                  <Check size={20} className="kl-ico-check" />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Плашка-переход «→ Посмотреть демо-кабинет»                          */
+/* ------------------------------------------------------------------ */
+
+function DemoBanner() {
+  return (
+    <section className="kl-section kl-demo-section">
+      <div className="kl-wrap">
+        <a href={DEMO_URL} className="kl-demo-banner kl-reveal">
+          <div className="kl-demo-banner-text">
+            <p className="kl-eyebrow">Живой кабинет</p>
+            <h3>Посмотреть демо-кабинет</h3>
+            <p className="kl-demo-banner-sub">
+              Дашборды, лента Коры, задачи и память — на демо-данных, без регистрации.
+            </p>
+          </div>
+          <span className="kl-demo-banner-cta">
+            Открыть демо
+            <ArrowRight size={20} />
+          </span>
+        </a>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Финальный блок-итог «Платформа Кора»                               */
+/* ------------------------------------------------------------------ */
+
+function SummaryBlock() {
+  return (
+    <section className="kl-section kl-summary-section" id="summary">
+      <div className="kl-wrap">
+        <div className="kl-glass kl-summary kl-reveal">
+          <div className="kl-summary-text">
+            <p className="kl-eyebrow">Платформа Кора</p>
+            <h2 className="kl-h2">
+              Превращает разговоры команды в <span className="kl-grad-text">выполненные цели</span>
+            </h2>
+            <p className="kl-intro">
+              Договорённости, знания и цели больше не теряются в чатах и головах. Кора собирает всё
+              в одном месте, фиксирует решения и доводит задачи до результата — а руководитель
+              управляет, а не тушит пожары.
+            </p>
+            <ul className="kl-summary-points">
+              {SUMMARY_POINTS.map((t) => (
+                <li key={t}>
+                  <CheckCircle2 size={20} className="kl-ico-blue" />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="kl-summary-ctas">
+              <Link href="/signup" className="kl-btn kl-btn-primary kl-btn-lg">
+                Получить ранний доступ
+              </Link>
+              <Link href="/login" className="kl-btn kl-btn-outline kl-btn-lg">
+                Войти
+              </Link>
+            </div>
+          </div>
+          <div className="kl-summary-img">
+            <Image
+              unoptimized
+              src="/landing/summary2-mobile.webp"
+              alt="Платформа Кора: ядро и все договорённости под контролем — 98% выполнено"
+              fill
+              sizes="(max-width: 1024px) 100vw, 512px"
+              className="kl-ps-img-el kl-only-mobile"
+            />
+            <Image
+              unoptimized
+              src="/landing/summary2-desktop.webp"
+              alt="Платформа Кора: ядро и все договорённости под контролем — 98% выполнено"
+              fill
+              sizes="(max-width: 1024px) 100vw, 512px"
+              className="kl-ps-img-el kl-only-desktop"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Scoped-стили лендинга (светлая тема, не зависит от темы приложения) */
+/* ------------------------------------------------------------------ */
+
 function LandingStyles() {
   return (
     <style>{`
-      .kl {
-        --bg: #0C0A08;
-        --bg-elev: #14110D;
-        --ink: #F4ECDC;
-        --ink-soft: rgba(244, 236, 220, 0.78);
-        --ink-muted: #8A8175;
-        --line: rgba(244, 236, 220, 0.08);
-        --line-strong: rgba(244, 236, 220, 0.18);
-        --accent: #D4A574;
-        --accent-soft: rgba(212, 165, 116, 0.12);
-        --serif: 'Fraunces', Georgia, serif;
-        --sans: 'Manrope', system-ui, sans-serif;
-        --container: 1180px;
-        --pad-side: 32px;
-        background-color: #0C0A08;
-        color: var(--ink);
-        font-family: var(--sans);
-        font-size: 17px;
+      .kora-landing {
+        --kl-blue: oklch(0.55 0.225 264);
+        --kl-blue-2: oklch(0.62 0.19 250);
+        --kl-violet: oklch(0.58 0.20 285);
+        --kl-ink: oklch(0.23 0.04 263);
+        --kl-muted: oklch(0.50 0.03 260);
+        --kl-faint: oklch(0.62 0.02 265);
+        --kl-border: oklch(0.90 0.012 256);
+        --kl-card: oklch(1 0 0);
+        --kl-rose: oklch(0.66 0.19 18);
+        --kl-emerald: oklch(0.66 0.15 162);
+        --kl-grad: linear-gradient(100deg, var(--kl-blue), var(--kl-violet));
+        --kl-container: 1120px;
+        --kl-pad: 24px;
+
+        position: relative;
+        min-height: 100vh;
+        color: var(--kl-ink);
+        font-family: var(--font-geist-sans, system-ui, sans-serif);
+        font-size: 16px;
         line-height: 1.55;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         overflow-x: hidden;
-        font-feature-settings: "ss01", "cv11";
-        min-height: 100vh;
+        background-color: oklch(0.985 0.006 256);
+        background-image:
+          radial-gradient(48rem 48rem at 88% -8%, oklch(0.55 0.225 264 / 0.10), transparent 60%),
+          radial-gradient(40rem 40rem at 4% 0%, oklch(0.58 0.20 285 / 0.08), transparent 55%);
+        background-attachment: fixed;
       }
-      .kl * { box-sizing: border-box; margin: 0; padding: 0; }
-      .kl main { background-color: #0C0A08; position: relative; z-index: 2; }
-      .kl section { background-color: #0C0A08; }
-      .kl .wrap { max-width: var(--container); margin: 0 auto; padding: 0 var(--pad-side); position: relative; z-index: 2; }
+      .kora-landing * { box-sizing: border-box; }
+      .kora-landing a { text-decoration: none; color: inherit; }
 
-      /* HEADER */
-      .kl header { position: sticky; top: 0; z-index: 50; background: rgba(12,10,8,0.78); backdrop-filter: blur(18px) saturate(180%); -webkit-backdrop-filter: blur(18px) saturate(180%); border-bottom: 1px solid var(--line); }
-      .kl .header-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
-      .kl .brand { font-family: var(--serif); font-weight: 500; font-size: 22px; letter-spacing: 0.04em; color: var(--ink); text-decoration: none; display: inline-flex; align-items: center; }
-      .kl .brand-dot { display: inline-block; width: 7px; height: 7px; background: var(--accent); border-radius: 50%; margin-right: 10px; flex-shrink: 0; box-shadow: 0 0 12px var(--accent-soft); }
-      .kl .nav { display: flex; gap: 8px; align-items: center; }
-
-      /* BUTTONS */
-      .kl .btn { display: inline-flex; align-items: center; justify-content: center; font-family: var(--sans); font-size: 14px; font-weight: 500; letter-spacing: 0.005em; padding: 11px 20px; border-radius: 999px; text-decoration: none; transition: all 0.25s cubic-bezier(.4,0,.2,1); cursor: pointer; border: 1px solid transparent; white-space: nowrap; line-height: 1; }
-      .kl .btn-ghost { color: var(--ink-muted); background: transparent; }
-      .kl .btn-ghost:hover { color: var(--ink); }
-      .kl .btn-outline { color: var(--ink); border-color: var(--line-strong); }
-      .kl .btn-outline:hover { border-color: var(--ink-muted); background: rgba(244,236,220,0.03); }
-      .kl .btn-primary { color: #1a1410; background: var(--accent); font-weight: 600; }
-      .kl .btn-primary:hover { background: #E0B488; transform: translateY(-1px); box-shadow: 0 8px 24px -8px rgba(212,165,116,0.5); }
-      .kl .btn-lg { padding: 15px 30px; font-size: 15px; }
-
-      /* HERO */
-      .kl .hero { padding: 110px 0 100px; position: relative; }
-      .kl .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); margin-bottom: 36px; display: flex; align-items: center; gap: 14px; }
-      .kl .eyebrow::before { content: ''; width: 36px; height: 1px; background: var(--accent); flex-shrink: 0; }
-      .kl .hero h1 { font-family: var(--serif); font-weight: 400; font-size: clamp(40px,6.4vw,88px); line-height: 1.02; letter-spacing: -0.028em; max-width: 16ch; margin-bottom: 36px; }
-      .kl .hero h1 em { font-style: italic; font-weight: 300; color: var(--accent); }
-      .kl .hero .lead { font-size: clamp(17px,1.35vw,20px); line-height: 1.5; max-width: 58ch; color: var(--ink-soft); margin-bottom: 44px; }
-      .kl .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
-      .kl .hero-note { font-size: 13px; color: var(--ink-muted); letter-spacing: 0.04em; display: flex; align-items: center; gap: 8px; }
-      .kl .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; flex-shrink: 0; animation: kl-pulse 2.2s ease-out infinite; }
-      @keyframes kl-pulse { 0% { box-shadow: 0 0 0 0 rgba(212,165,116,0.5); } 70% { box-shadow: 0 0 0 12px rgba(212,165,116,0); } 100% { box-shadow: 0 0 0 0 rgba(212,165,116,0); } }
-
-      /* SECTIONS */
-      .kl section { padding: 100px 0; position: relative; }
-      .kl .section-head { display: grid; grid-template-columns: 130px 1fr; gap: 40px; align-items: start; margin-bottom: 64px; }
-      .kl .section-num { font-family: var(--serif); font-style: italic; font-size: 14px; font-weight: 400; letter-spacing: 0.16em; color: var(--ink-muted); padding-top: 16px; border-top: 1px solid var(--line-strong); }
-      .kl .section-title { font-family: var(--serif); font-weight: 400; font-size: clamp(28px,3.8vw,50px); line-height: 1.08; letter-spacing: -0.022em; max-width: 22ch; }
-      .kl .section-title em { font-style: italic; font-weight: 300; color: var(--accent); }
-      .kl .section-sub { font-size: 16px; color: var(--ink-muted); margin-top: 18px; max-width: 58ch; line-height: 1.55; }
-
-      /* TOOLS */
-      .kl .tools-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 24px; }
-      .kl .tool-group { display: flex; flex-direction: column; gap: 14px; }
-      .kl .tool-group-label { font-family: var(--serif); font-size: 22px; font-style: italic; color: var(--accent); margin-bottom: 6px; font-weight: 400; letter-spacing: -0.01em; }
-      .kl .tool-card { border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: linear-gradient(180deg,rgba(244,236,220,0.018) 0%,transparent 100%); transition: all 0.3s ease; flex: 1; display: flex; flex-direction: column; min-height: 152px; }
-      .kl .tool-card:hover { border-color: var(--line-strong); background: linear-gradient(180deg,rgba(212,165,116,0.05) 0%,transparent 100%); transform: translateY(-2px); }
-      .kl .tool-card h4 { font-family: var(--sans); font-size: 15.5px; font-weight: 600; margin-bottom: 8px; letter-spacing: -0.005em; line-height: 1.3; color: var(--ink); }
-      .kl .tool-card p { font-size: 13.5px; color: var(--ink-muted); line-height: 1.55; }
-
-      /* PAIN */
-      .kl .pain-list { border-top: 1px solid var(--line); }
-      .kl .pain-row { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); transition: background 0.2s ease; }
-      .kl .pain-row:hover { background: linear-gradient(90deg,transparent 0%,rgba(212,165,116,0.025) 50%,transparent 100%); }
-      .kl .pain-problem, .kl .pain-solution { padding: 26px 0; font-size: 17px; line-height: 1.5; }
-      .kl .pain-problem { padding-right: 48px; color: var(--ink-soft); }
-      .kl .pain-solution { padding-left: 48px; border-left: 1px solid var(--line); font-weight: 500; color: var(--ink); }
-      .kl .pain-solution::before { content: '→'; color: var(--accent); margin-right: 14px; font-weight: 400; }
-
-      /* STEPS */
-      .kl .steps { display: grid; grid-template-columns: repeat(4,1fr); gap: 28px; }
-      .kl .step { border-top: 1px solid var(--line-strong); padding-top: 24px; }
-      .kl .step-num { font-family: var(--serif); font-style: italic; font-size: 64px; font-weight: 300; line-height: 1; color: var(--accent); margin-bottom: 22px; letter-spacing: -0.04em; }
-      .kl .step h4 { font-size: 16px; font-weight: 600; margin-bottom: 10px; letter-spacing: -0.005em; color: var(--ink); }
-      .kl .step p { font-size: 14px; color: var(--ink-muted); line-height: 1.55; }
-      .kl .steps-foot { margin-top: 64px; font-family: var(--serif); font-style: italic; font-size: clamp(20px,2vw,26px); color: var(--ink-muted); text-align: center; max-width: 50ch; margin-left: auto; margin-right: auto; line-height: 1.35; }
-      .kl .steps-foot em { color: var(--ink); }
-
-      /* SPRINTS */
-      .kl .sprint { display: grid; grid-template-columns: 1fr 1.1fr; gap: 60px; align-items: start; }
-      .kl .lead-quote { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: clamp(20px,1.8vw,26px); line-height: 1.4; color: var(--ink); max-width: 28ch; }
-      .kl .lead-quote em { color: var(--accent); font-style: italic; }
-      .kl .sprint-points { display: flex; flex-direction: column; }
-      .kl .sprint-point { padding: 22px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 28px 1fr; gap: 16px; align-items: start; }
-      .kl .sprint-point:first-child { padding-top: 0; }
-      .kl .sprint-point:last-child { border-bottom: none; }
-      .kl .sprint-point-num { font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--accent); padding-top: 2px; }
-      .kl .sprint-point h5 { font-size: 15px; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.005em; color: var(--ink); }
-      .kl .sprint-point p { font-size: 14.5px; color: var(--ink-muted); line-height: 1.55; }
-
-      /* SOURCES */
-      .kl .sources { padding: 56px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: center; }
-      .kl .sources-label { font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 28px; font-weight: 600; }
-      .kl .sources-list { display: flex; flex-wrap: wrap; justify-content: center; align-items: baseline; gap: 0 36px; font-family: var(--serif); font-style: italic; font-size: clamp(18px,1.6vw,24px); color: var(--ink); font-weight: 400; }
-      .kl .sources-list span { display: inline-flex; align-items: baseline; }
-      .kl .sources-list span:not(:last-child)::after { content: '·'; margin-left: 36px; color: var(--accent); font-style: normal; font-size: 1.1em; }
-
-      /* MEMORY */
-      .kl .memory { background: radial-gradient(ellipse at top left,rgba(212,165,116,0.06) 0%,transparent 55%),linear-gradient(180deg,rgba(244,236,220,0.015) 0%,transparent 100%); border-radius: 24px; padding: 80px 64px; border: 1px solid var(--line); position: relative; overflow: hidden; }
-      .kl .memory h3 { font-family: var(--serif); font-size: clamp(32px,4.2vw,58px); font-weight: 400; line-height: 1.05; letter-spacing: -0.025em; max-width: 18ch; margin-bottom: 26px; color: var(--ink); }
-      .kl .memory h3 em { font-style: italic; color: var(--accent); font-weight: 300; }
-      .kl .memory-intro { font-size: 18px; max-width: 58ch; color: var(--ink-soft); margin-bottom: 56px; line-height: 1.55; }
-      .kl .memory-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 36px; }
-      .kl .memory-item { border-top: 1px solid var(--line-strong); padding-top: 24px; }
-      .kl .memory-item h4 { font-family: var(--serif); font-size: 22px; font-weight: 500; margin-bottom: 12px; color: var(--ink); letter-spacing: -0.005em; }
-      .kl .memory-item p { font-size: 14.5px; color: var(--ink-muted); line-height: 1.55; }
-
-      /* TESTIMONIALS */
-      .kl .testimonials { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
-      .kl .testimonial { border: 1px solid var(--line); border-radius: 16px; padding: 32px 30px 28px; display: flex; flex-direction: column; background: linear-gradient(180deg,rgba(244,236,220,0.022) 0%,transparent 100%); position: relative; transition: all 0.3s ease; }
-      .kl .testimonial:hover { border-color: var(--line-strong); transform: translateY(-3px); }
-      .kl .quote-mark { font-family: var(--serif); font-size: 64px; line-height: 0.6; color: var(--accent); margin-bottom: 18px; font-weight: 400; font-style: italic; height: 32px; }
-      .kl .testimonial blockquote { font-family: var(--serif); font-weight: 400; font-size: 16.5px; line-height: 1.5; color: var(--ink); margin-bottom: 28px; flex: 1; font-style: italic; letter-spacing: -0.003em; }
-      .kl .author { padding-top: 22px; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
-      .kl .author strong { display: block; font-weight: 600; color: var(--ink); margin-bottom: 4px; font-size: 13.5px; letter-spacing: 0.005em; }
-      .kl .author span { color: var(--ink-muted); }
-
-      /* PRIVACY */
-      .kl .privacy-wrap { display: grid; grid-template-columns: 200px 1fr; gap: 48px; align-items: center; padding: 64px 0; }
-      .kl .privacy-mark { font-family: var(--serif); font-size: 140px; font-style: italic; font-weight: 300; color: var(--accent); line-height: 0.7; opacity: 0.55; text-align: center; }
-      .kl .privacy-content h3 { font-family: var(--serif); font-size: clamp(28px,3.4vw,42px); font-weight: 400; line-height: 1.1; letter-spacing: -0.02em; margin-bottom: 20px; color: var(--ink); }
-      .kl .privacy-content p { font-size: 16.5px; color: var(--ink-muted); max-width: 60ch; line-height: 1.6; }
-
-      /* FINAL CTA */
-      .kl .final { text-align: center; padding: 130px 0 110px; border-top: 1px solid var(--line); position: relative; }
-      .kl .final::before { content: ''; position: absolute; top: -1px; left: 50%; transform: translateX(-50%); width: 80px; height: 1px; background: var(--accent); }
-      .kl .final h2 { font-family: var(--serif); font-size: clamp(36px,5.4vw,68px); font-weight: 400; line-height: 1.04; letter-spacing: -0.028em; margin-bottom: 26px; max-width: 18ch; margin-left: auto; margin-right: auto; color: var(--ink); }
-      .kl .final h2 em { font-style: italic; font-weight: 300; color: var(--accent); }
-      .kl .final > .wrap > p { font-size: 18px; color: var(--ink-muted); max-width: 52ch; margin: 0 auto 44px; line-height: 1.55; }
-      .kl .final-ctas { display: inline-flex; gap: 12px; }
-
-      /* FOOTER */
-      .kl footer { border-top: 1px solid var(--line); padding: 40px 0; }
-      .kl .footer-inner { display: flex; align-items: center; justify-content: space-between; font-size: 13px; color: var(--ink-muted); letter-spacing: 0.04em; flex-wrap: wrap; gap: 16px; }
-      .kl .footer-brand { font-family: var(--serif); font-style: italic; letter-spacing: 0.06em; }
-      .kl .footer-links { display: flex; gap: 24px; }
-      .kl .footer-links a { color: var(--ink-muted); text-decoration: none; transition: color 0.2s ease; }
-      .kl .footer-links a:hover { color: var(--ink); }
-
-      /* REVEAL */
-      .kl .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.9s cubic-bezier(.2,.6,.2,1),transform 0.9s cubic-bezier(.2,.6,.2,1); }
-      .kl .reveal.in { opacity: 1; transform: none; }
-
-      /* Hero entrance animations */
-      .kl .hero .eyebrow { animation: kl-rise 0.9s cubic-bezier(.2,.6,.2,1) 0.1s both; }
-      .kl .hero h1 { animation: kl-rise 1s cubic-bezier(.2,.6,.2,1) 0.22s both; }
-      .kl .hero .lead { animation: kl-rise 0.9s cubic-bezier(.2,.6,.2,1) 0.42s both; }
-      .kl .hero .hero-ctas { animation: kl-rise 0.9s cubic-bezier(.2,.6,.2,1) 0.58s both; }
-      .kl .hero .hero-note { animation: kl-rise 0.9s cubic-bezier(.2,.6,.2,1) 0.72s both; }
-      @keyframes kl-rise { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
-
-      /* RESPONSIVE */
-      @media (max-width: 1024px) {
-        .kl .tools-grid { grid-template-columns: repeat(2,1fr); }
-        .kl .steps { grid-template-columns: repeat(2,1fr); }
+      .kl-wrap { max-width: var(--kl-container); margin: 0 auto; padding: 0 var(--kl-pad); }
+      .kl-section { padding: 64px 0; }
+      .kl-only-mobile { display: block; }
+      .kl-only-desktop { display: none; }
+      @media (min-width: 768px) {
+        .kl-only-mobile { display: none; }
+        .kl-only-desktop { display: block; }
       }
-      @media (max-width: 820px) {
-        .kl .testimonials { grid-template-columns: 1fr; }
-        .kl .sprint { grid-template-columns: 1fr; gap: 40px; }
-        .kl .memory-grid { grid-template-columns: 1fr; gap: 28px; }
-        .kl .privacy-wrap { grid-template-columns: 1fr; gap: 24px; text-align: center; }
-        .kl .privacy-mark { font-size: 88px; }
-        .kl .section-head { grid-template-columns: 1fr; gap: 16px; }
-        .kl .pain-row { grid-template-columns: 1fr; }
-        .kl .pain-problem { padding-right: 0; padding-bottom: 6px; }
-        .kl .pain-solution { padding-left: 0; padding-top: 6px; border-left: none; }
-        .kl .memory { padding: 56px 32px; }
+
+      /* glass / gradient utilities */
+      .kl-glass {
+        background: color-mix(in oklch, white 72%, transparent);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid color-mix(in oklch, white 60%, var(--kl-border));
+        box-shadow:
+          0 1px 0 0 oklch(1 0 0 / 0.6) inset,
+          0 20px 50px -24px oklch(0.55 0.18 264 / 0.40);
       }
-      @media (max-width: 580px) {
-        .kl { --pad-side: 20px; }
-        .kl .tools-grid { grid-template-columns: 1fr; }
-        .kl .steps { grid-template-columns: 1fr; }
-        .kl .hero { padding: 70px 0 60px; }
-        .kl section { padding: 70px 0; }
-        .kl .sources-list { gap: 14px 22px; font-size: 17px; }
-        .kl .sources-list span:not(:last-child)::after { margin-left: 22px; }
-        .kl .header-inner { height: 60px; }
-        .kl .btn { padding: 10px 16px; font-size: 13.5px; }
-        .kl .btn-lg { padding: 13px 22px; font-size: 14px; }
-        .kl .nav .btn-ghost { display: none; }
+      .kl-grad-text {
+        background: var(--kl-grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      /* ===== Кнопки ===== */
+      .kl-btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 10px 18px; border-radius: 12px; font-size: 14px; font-weight: 600;
+        line-height: 1; cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+        transition: transform .15s, box-shadow .2s, background .2s, border-color .2s, color .2s;
+      }
+      .kl-btn-lg { padding: 14px 24px; font-size: 15px; border-radius: 14px; }
+      .kl-btn-primary {
+        color: oklch(0.99 0 0); background: var(--kl-grad);
+        box-shadow: 0 10px 26px -10px oklch(0.55 0.2 270 / 0.55);
+      }
+      .kl-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -10px oklch(0.55 0.2 270 / 0.6); }
+      .kl-btn-outline { color: var(--kl-ink); border-color: var(--kl-border); background: color-mix(in oklch, white 60%, transparent); }
+      .kl-btn-outline:hover { border-color: var(--kl-blue); color: var(--kl-blue); transform: translateY(-1px); }
+      .kl-btn-ghost { color: var(--kl-muted); background: transparent; }
+      .kl-btn-ghost:hover { color: var(--kl-ink); }
+
+      /* ===== Шапка ===== */
+      .kl-header { position: fixed; inset: 12px 0 auto; z-index: 50; display: flex; justify-content: center; padding: 0 16px; pointer-events: none; }
+      .kl-headbar {
+        pointer-events: auto;
+        display: flex; align-items: center; gap: 18px; width: 100%; max-width: 1180px;
+        padding: 10px 14px 10px 16px; border-radius: 18px;
+        border: 1px solid transparent; background: transparent;
+        transition: background .3s, border-color .3s, box-shadow .3s;
+      }
+      .kl-headbar.is-scrolled {
+        background: color-mix(in oklch, white 72%, transparent);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border-color: color-mix(in oklch, white 60%, var(--kl-border));
+        box-shadow: 0 10px 30px -16px oklch(0.4 0.06 265 / 0.35);
+      }
+      .kl-brand { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
+      .kl-brand-mark {
+        width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center;
+        font-weight: 800; font-size: 16px; color: oklch(0.99 0 0); background: var(--kl-grad);
+        box-shadow: 0 8px 20px -8px oklch(0.55 0.2 270 / 0.6);
+      }
+      .kl-brand-name { font-weight: 800; font-size: 18px; letter-spacing: -0.01em; color: var(--kl-ink); }
+      .kl-nav { display: none; align-items: center; gap: 4px; margin: 0 auto; }
+      .kl-nav a {
+        padding: 8px 12px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--kl-muted);
+        transition: background .15s, color .15s;
+      }
+      .kl-nav a:hover { background: oklch(0.55 0.18 264 / 0.07); color: var(--kl-ink); }
+      .kl-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+      @media (min-width: 980px) { .kl-nav { display: flex; } .kl-actions { margin-left: 0; } }
+
+      /* ===== Hero ===== */
+      .kl-hero-section { padding-top: 104px; }
+      .kl-hero {
+        position: relative; width: 100%; overflow: hidden; border-radius: 24px;
+        aspect-ratio: 4 / 5;
+        container-type: inline-size;
+        box-shadow: 0 30px 70px -34px oklch(0.4 0.08 265 / 0.5);
+        border: 1px solid oklch(0 0 0 / 0.05);
+      }
+      @media (min-width: 768px) { .kl-hero { aspect-ratio: 16 / 9; } }
+      .kl-hero-img { object-fit: cover; }
+      .kl-hero-eyebrow {
+        position: absolute; left: 50%; top: 3%; transform: translateX(-50%);
+        white-space: nowrap; text-align: center; font-weight: 600; letter-spacing: 0.02em;
+        font-size: 3cqw; color: var(--kl-muted); margin: 0;
+      }
+      .kl-hero-title {
+        position: absolute; left: 50%; top: 7%; transform: translateX(-50%);
+        width: 90%; text-align: center; font-weight: 800; line-height: 1.12; letter-spacing: -0.02em;
+        font-size: 4.1cqw; margin: 0;
+      }
+      .kl-hero-title span { display: block; }
+      .kl-hero-accent { color: var(--kl-blue); }
+      .kl-hero-title span:last-child { color: var(--kl-ink); }
+      @media (min-width: 768px) {
+        .kl-hero-eyebrow { top: 5.5%; font-size: 1.7cqw; }
+        .kl-hero-title { top: 10%; width: 72%; font-size: 3.3cqw; }
+      }
+      .kl-hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 32px; }
+      .kl-hero-note { text-align: center; margin: 16px 0 0; font-size: 14px; color: var(--kl-faint); }
+
+      /* ===== Блок боль→решение ===== */
+      .kl-ps-head { max-width: 760px; margin: 0 auto; text-align: center; }
+      .kl-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--kl-blue); margin: 0; }
+      .kl-h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; margin: 12px 0 0; color: var(--kl-ink); }
+      .kl-intro { font-size: 17px; line-height: 1.6; color: var(--kl-muted); margin: 16px 0 0; }
+
+      .kl-ps-img {
+        position: relative; width: 100%; max-width: 760px; margin: 40px auto 0; overflow: hidden;
+        border-radius: 20px; aspect-ratio: 4 / 5; box-shadow: 0 24px 60px -30px oklch(0.4 0.08 265 / 0.45);
+        border: 1px solid oklch(0 0 0 / 0.05);
+      }
+      @media (min-width: 768px) { .kl-ps-img { aspect-ratio: 16 / 9; } }
+      .kl-ps-img-el { object-fit: cover; }
+
+      .kl-ps-cols { display: grid; gap: 20px; margin-top: 40px; }
+      @media (min-width: 768px) { .kl-ps-cols { grid-template-columns: 1fr 1fr; } }
+      .kl-pains, .kl-gains { border-radius: 20px; padding: 26px; }
+      .kl-pains { background: color-mix(in oklch, white 64%, transparent); border: 1px solid var(--kl-border); backdrop-filter: blur(8px); }
+      .kl-pains h3 { color: var(--kl-muted); }
+      .kl-gains h3 { color: var(--kl-blue); }
+      .kl-pains h3, .kl-gains h3 { font-size: 19px; font-weight: 700; margin: 0 0 16px; }
+      .kl-pains ul, .kl-gains ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+      .kl-pains li, .kl-gains li { display: flex; gap: 12px; font-size: 15px; line-height: 1.4; color: var(--kl-ink); }
+      .kl-ico-x { color: var(--kl-rose); flex: none; margin-top: 1px; }
+      .kl-ico-check { color: var(--kl-emerald); flex: none; margin-top: 1px; }
+      .kl-ico-blue { color: var(--kl-blue); flex: none; margin-top: 1px; }
+
+      /* ===== Плашка-переход на демо ===== */
+      .kl-demo-section { padding: 24px 0; }
+      .kl-demo-banner {
+        display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+        padding: 28px 32px; border-radius: 22px; cursor: pointer;
+        background:
+          radial-gradient(120% 160% at 0% 0%, oklch(0.55 0.225 264 / 0.12), transparent 55%),
+          color-mix(in oklch, white 72%, transparent);
+        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+        border: 1px solid color-mix(in oklch, var(--kl-blue) 22%, var(--kl-border));
+        box-shadow: 0 20px 50px -26px oklch(0.55 0.18 264 / 0.45);
+        transition: transform .2s, box-shadow .2s;
+      }
+      .kl-demo-banner:hover { transform: translateY(-2px); box-shadow: 0 28px 60px -26px oklch(0.55 0.18 264 / 0.55); }
+      .kl-demo-banner h3 { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin: 8px 0 0; color: var(--kl-ink); }
+      .kl-demo-banner-sub { font-size: 15px; color: var(--kl-muted); margin: 6px 0 0; }
+      .kl-demo-banner-cta {
+        display: inline-flex; align-items: center; gap: 8px; flex: none;
+        padding: 13px 22px; border-radius: 14px; font-size: 15px; font-weight: 700;
+        color: oklch(0.99 0 0); background: var(--kl-grad);
+        box-shadow: 0 12px 28px -10px oklch(0.55 0.2 270 / 0.55);
+      }
+
+      /* ===== Итог ===== */
+      .kl-summary { border-radius: 28px; padding: 40px; display: grid; gap: 32px; align-items: center; }
+      @media (min-width: 900px) { .kl-summary { grid-template-columns: 1fr 1fr; padding: 56px; } }
+      .kl-summary .kl-eyebrow, .kl-summary .kl-h2, .kl-summary .kl-intro { text-align: left; margin-left: 0; }
+      .kl-summary-points { list-style: none; margin: 24px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+      .kl-summary-points li { display: flex; gap: 12px; font-size: 15px; color: var(--kl-ink); }
+      .kl-summary-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+      .kl-summary-img {
+        position: relative; width: 100%; overflow: hidden; border-radius: 20px;
+        aspect-ratio: 4 / 5; border: 1px solid oklch(0 0 0 / 0.05);
+        box-shadow: 0 24px 60px -30px oklch(0.4 0.08 265 / 0.45);
+      }
+      @media (min-width: 900px) { .kl-summary-img { aspect-ratio: 4 / 5; } }
+
+      /* ===== Футер ===== */
+      .kl-footer { border-top: 1px solid var(--kl-border); padding: 40px 0; margin-top: 24px; }
+      .kl-footer-inner { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; justify-content: space-between; }
+      .kl-footer-brand { max-width: 360px; }
+      .kl-footer-brand p { font-size: 14px; color: var(--kl-muted); margin: 12px 0 0; line-height: 1.55; }
+      .kl-footer-links { display: flex; flex-wrap: wrap; gap: 14px 22px; }
+      .kl-footer-links a { font-size: 14px; color: var(--kl-muted); transition: color .15s; }
+      .kl-footer-links a:hover { color: var(--kl-blue); }
+
+      /* ===== Reveal ===== */
+      .kl-reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s cubic-bezier(.2,.6,.2,1), transform .8s cubic-bezier(.2,.6,.2,1); }
+      .kl-reveal.in { opacity: 1; transform: none; }
+
+      .kl-hide-sm { display: none; }
+      @media (min-width: 720px) { .kl-hide-sm { display: inline-flex; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .kora-landing * { transition: none !important; animation: none !important; }
+        .kl-reveal { opacity: 1; transform: none; }
       }
     `}</style>
   );

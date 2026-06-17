@@ -181,6 +181,8 @@ export interface RegulationSummary {
   policies: number;
   weekDelta: number;
   total: number;
+  /** Ф5 — kill-switch редизайна (дефолт true, если бэк не прислал). */
+  redesignEnabled: boolean;
 }
 
 export function mapRegulationSummary(
@@ -197,6 +199,7 @@ export function mapRegulationSummary(
     policies,
     weekDelta: api.weekDelta ?? 0,
     total: regulations + processes + instructions + policies,
+    redesignEnabled: api.redesignEnabled ?? true,
   };
 }
 

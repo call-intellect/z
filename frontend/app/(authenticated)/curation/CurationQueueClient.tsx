@@ -27,6 +27,7 @@ import {
   mapConflictItem,
   mapCurationItem,
   mapCurationItemDetail,
+  triageReasonSummary,
   type ConflictItem,
   type CurationItem,
   type CurationItemDetail,
@@ -413,7 +414,9 @@ function CurationDetailPanel({
 
       <section>
         <h3 className="mb-1 text-sm font-medium">Почему сюда попала</h3>
-        <ReadablePayload value={item.triageReason} />
+        <p className="rounded-md border border-border-subtle bg-bg-card p-3 text-sm text-fg-secondary">
+          {triageReasonSummary(item.triageReason)}
+        </p>
       </section>
 
       {}

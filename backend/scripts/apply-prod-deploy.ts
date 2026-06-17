@@ -135,6 +135,11 @@ const STEPS: Step[] = [
     script: 'scripts/seed-admin-setting-document-attribution.ts',
     hint: 'documents.ai_attribution.enabled kill-switch (ТЗ-4 Ф10 LLM-подсказка атрибуции документа: docType + тема)',
   },
+  {
+    phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-knowledge-base-redesign.ts',
+    hint: 'knowledge_base.redesign.enabled kill-switch (Ф5 редизайн раздела «База знаний»)',
+  },
   { phase: 'seed-base', script: 'scripts/seed-badges.ts' },
   { phase: 'seed-base', script: 'scripts/seed-global-channels.ts' },
   {
@@ -459,6 +464,12 @@ const STEPS: Step[] = [
     script: 'scripts/backfill-reclassify-instructions.ts',
     args: ['--apply'],
     hint: 'Process scope=role:* → Instruction (A10)',
+    skipBootstrap: true,
+  },
+  {
+    phase: 'backfill',
+    script: 'scripts/backfill-compile-flat-cards.ts',
+    hint: 'переразметка плоских карточек базы знаний компилятором',
     skipBootstrap: true,
   },
   {

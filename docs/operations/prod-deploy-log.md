@@ -93,6 +93,30 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧠 2026-06-17 — База знаний: форматтер на создании карточки + редизайн раздела (Ф1–Ф6)
+
+> Контракт: ветка `feature/knowledge-base-redesign-formatter`, коммиты `6e98d3a8..28b6217e` (8 коммитов: Ф1 форматтер-на-создании, Ф2 backfill, Ф3 граница промпта, Ф6 docType→hint, Ф4 нейминг, Ф5a backend-kill-switch, Ф5b редизайн). ТЗ: `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`. second-brain: `01_projects/regulations.md`, `02_architecture/knowledge-core.md`, `03_processes/specialist-3-1-regulations.md`. Реестр флагов — `docs/operations/feature-flags.md` (новая строка `knowledge_base.redesign.enabled`).
+>
+> **Зачем для прода:** раздел «Правила, процессы и политики» читался как лог экстракции (сырой одноабзацный `statement` в теле, узкая master-detail раскладка). Чиним 4 вектора: (Ф1) компилятор `compile-org-document` теперь зовётся на СОЗДАНИИ карточки (reg/proc/pol/instr), а не только на merge → каждая карточка структурна с v1 + CardVersion; (Ф2) разовый backfill переразмечает старые плоские карточки; (Ф3) граница regulation↔policy в промпте экстрактора; (Ф6) ручная загрузка `docType→signalTypeHint` — документ детерминированно доходит до Specialist 3.1; (Ф4) нейминг «База знаний компании» + таксономия + неконфликтные счётчики; (Ф5) редизайн раскладки (широкая оболочка + дерево + колонка чтения + TOC + тумблер ширины) за kill-switch.
+>
+> **Миграций БД НЕТ.** **1 новый kill-switch (`knowledge_base.redesign.enabled`, тип «аварийный рубильник», ON).** **1 seed + 1 backfill (оба в STEPS).** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — AdminSetting / feature-flag (новый kill-switch, ON, действий владельца НЕ требует):** `knowledge_base.redesign.enabled` (zBool, code-default `true`) — новая раскладка раздела «База знаний». Едет на фронт через `/regulations/summary.redesignEnabled`; OFF → прежняя master-detail раскладка. Реестр — `docs/operations/feature-flags.md`. Доезжает seed'ом (Шаг 7).
+- **Шаг 4 — Prisma** — **миграций НЕТ** (CardVersion на создании использует существующую модель `CardVersion`; новых колонок/таблиц нет). Регистрировать нечего.
+- **Шаг 7 — Seed (1 прогон AdminSetting, идемпотентный, в STEPS `phase:'seed-base'`):** `seed-admin-setting-knowledge-base-redesign.ts` (`knowledge_base.redesign.enabled=true`; защита admin-override). Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (1 прогон, идемпотентный, в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-compile-flat-cards.ts` — переразмечает старые плоские карточки (reg/proc/pol/instr без `## `/таблицы) структурным компилятором + CardVersion. Прогон тем же агрегатором (`--mode update`). Идемпотентен (структурные пропускаются → повтор = 0). ⚠️ **Faithfulness-проверка перед массовым прогоном:** сначала `docker compose exec backend bun run scripts/backfill-compile-flat-cards.ts --dry-run --limit=20` (покажет кандидатов без LLM/записи), глазами сверить выборку; затем агрегатор. Уважает kill-switch `docCompilerEnabled` (OFF → backfill пропущен).
+- **Шаг 11 — Docker rebuild** — обязателен (Ф1 компилятор на создании в `core.specialist-routing`, Ф3 промпт экстрактора, Ф6 адаптер документов, Ф5a поле `redesignEnabled` в summary; фронт — Ф4 нейминг + Ф5b новая раскладка): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **Форматтер на создании:** создать/дождаться новой карточки regulation из встречи → тело содержит markdown-структуру (`## ` или таблица `| `), не сырой одноабзацный текст;
+  - (б) **Ручная загрузка:** загрузить документ с `docType='regulation'` → карточка появляется на `/regulations` (а не оседает только в `/documents`);
+  - (в) `GET /api/v1/regulations/summary` отдаёт поле `redesignEnabled: true`;
+  - (г) `/regulations` рендерит новую раскладку (широкая оболочка + дерево-папки слева + читаемая колонка + правый TOC + тумблер «Чтение/Широкий»); проверить читаемость в светлой И тёмной теме (переключатель внешнего вида в Настройках);
+  - (д) `GET /admin/settings` содержит `knowledge_base.redesign.enabled=true`.
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 📊 2026-06-16 — Подключение агентов «Операционного директора» к UI (доска «Аналитика»)
 
 > Контракт: ветка `feature/coo-orphan-agents-wire`, коммиты `ac56ce2b..b44229ae` (Ф1–Ф8). ТЗ: `plans/tz/2026-06-15-coo-orphan-agents-wire-to-operations-board.md`. second-brain: `01_projects/director-dashboard.md` (§«Доска «Аналитика»»). Реестр флагов — `docs/operations/feature-flags.md` (убрана строка `deliver_to_telegram`).

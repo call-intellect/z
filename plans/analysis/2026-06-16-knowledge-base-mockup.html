@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Кора · База знаний — макет редизайна</title>
+<style>
+  :root {
+    --violet: oklch(0.72 0.2 300);
+    --violet-deep: oklch(0.58 0.2 268);
+    --mint: oklch(0.85 0.15 165);
+    --teal: oklch(0.82 0.13 190);
+    --amber: oklch(0.84 0.16 80);
+    --red: oklch(0.68 0.21 25);
+    --blue: oklch(0.74 0.15 245);
+
+    --grad-violet: linear-gradient(135deg, oklch(0.7 0.2 300), oklch(0.58 0.2 268));
+    --grad-teal: linear-gradient(135deg, oklch(0.86 0.15 168), oklch(0.74 0.13 205));
+    --grad-amber: linear-gradient(135deg, oklch(0.86 0.16 85), oklch(0.72 0.18 45));
+
+    --text: oklch(0.96 0.01 285);
+    --dim: oklch(0.74 0.02 285);
+    --faint: oklch(0.6 0.02 285);
+
+    --glass: rgba(255, 255, 255, 0.045);
+    --glass-strong: rgba(255, 255, 255, 0.07);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --shadow: 0 18px 50px -18px rgba(0, 0, 0, 0.7);
+    --radius: 22px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(900px 500px at 12% -8%, oklch(0.46 0.18 300 / 0.4), transparent 60%),
+      radial-gradient(800px 460px at 95% 0%, oklch(0.5 0.13 205 / 0.22), transparent 55%),
+      radial-gradient(700px 600px at 60% 120%, oklch(0.5 0.15 330 / 0.16), transparent 55%),
+      oklch(0.155 0.025 285);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  a { color: inherit; }
+
+  /* ---------- Banner ---------- */
+  .banner {
+    padding: 9px 22px;
+    font-size: 12.5px;
+    color: var(--dim);
+    background: linear-gradient(90deg, oklch(0.7 0.2 300 / 0.16), oklch(0.74 0.13 205 / 0.1));
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  .banner b { color: var(--text); font-weight: 600; }
+  .banner .pill { background: var(--glass-strong); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; color: var(--dim); }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 11px; font-weight: 650; letter-spacing: .2px; }
+  .logo {
+    width: 30px; height: 30px; border-radius: 9px; background: var(--grad-violet);
+    display: grid; place-items: center; font-size: 16px;
+    box-shadow: 0 6px 18px -4px oklch(0.6 0.2 300 / 0.7);
+  }
+  .brand small { color: var(--faint); font-weight: 500; }
+  .search {
+    margin-left: 8px; flex: 1; max-width: 440px;
+    display: flex; align-items: center; gap: 9px;
+    background: var(--glass); border: 1px solid var(--border); border-radius: 12px;
+    padding: 8px 13px; color: var(--faint); font-size: 14px;
+  }
+  .spacer { flex: 1; }
+  .seg {
+    display: inline-flex; background: var(--glass); border: 1px solid var(--border);
+    border-radius: 11px; padding: 3px; gap: 2px;
+  }
+  .seg button {
+    border: 0; background: transparent; color: var(--dim); cursor: pointer;
+    padding: 6px 13px; border-radius: 8px; font-size: 13px; font-family: inherit; transition: .15s;
+  }
+  .seg button.active { background: var(--grad-violet); color: white; box-shadow: 0 4px 14px -4px oklch(0.6 0.2 300 / 0.8); }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--grad-teal); display: grid; place-items: center; font-weight: 700; color: oklch(0.2 0.05 220); }
+
+  /* ---------- Shell grid ---------- */
+  .shell { display: grid; grid-template-columns: 286px minmax(0, 1fr) 268px; gap: 18px; padding: 18px 22px 40px; align-items: start; }
+  .shell.wide { grid-template-columns: 286px minmax(0, 1fr); }
+  .shell.wide .toc { display: none; }
+
+  .panel { background: var(--glass); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+
+  /* ---------- Left tree ---------- */
+  .tree { padding: 14px 12px; position: sticky; top: 18px; }
+  .tree h3 { margin: 4px 8px 12px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .node { border-radius: 12px; }
+  .row {
+    display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 11px;
+    cursor: pointer; color: var(--dim); font-size: 14px; transition: .13s; user-select: none;
+  }
+  .row:hover { background: var(--glass-strong); color: var(--text); }
+  .row.sel { background: oklch(0.7 0.2 300 / 0.18); color: var(--text); box-shadow: inset 0 0 0 1px oklch(0.7 0.2 300 / 0.35); }
+  .row .chev { width: 14px; color: var(--faint); transition: transform .15s; flex: none; }
+  .row.open > .chev { transform: rotate(90deg); }
+  .row .ic { width: 19px; text-align: center; flex: none; }
+  .row .lbl { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .cnt { font-size: 12px; color: var(--faint); background: var(--glass-strong); border-radius: 999px; padding: 1px 8px; min-width: 22px; text-align: center; }
+  .row.empty .lbl, .row.empty .cnt { color: oklch(0.5 0.02 285); }
+  .children { margin-left: 18px; padding-left: 10px; border-left: 1px solid var(--border); display: none; }
+  .children.show { display: block; }
+  .children .row { font-size: 13px; padding: 7px 10px; }
+
+  .tree .hint { margin: 4px 10px 0; font-size: 11.5px; color: var(--faint); line-height: 1.4; }
+  .upload { margin: 14px 6px 6px; display: flex; align-items: center; justify-content: center; gap: 8px; width: calc(100% - 12px); padding: 10px; border-radius: 12px; border: 1px dashed var(--border-strong); background: var(--glass); color: var(--dim); cursor: pointer; font-size: 13.5px; font-family: inherit; transition: .15s; }
+  .upload:hover { border-color: var(--violet); color: var(--text); background: oklch(0.7 0.2 300 / 0.1); }
+  .viewseg { margin: 14px 6px 2px; }
+
+  /* ---------- Middle ---------- */
+  .main { min-height: 70vh; }
+  .head { padding: 22px 26px 16px; border-bottom: 1px solid var(--border); }
+  .crumbs { font-size: 13px; color: var(--faint); display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .crumbs b { color: var(--dim); font-weight: 500; }
+  .crumbs .sep { color: oklch(0.45 0.02 285); }
+  .title { margin: 12px 0 0; font-size: 25px; font-weight: 700; letter-spacing: -.01em; }
+
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 11px; border-radius: 999px; background: var(--glass-strong); border: 1px solid var(--border); color: var(--dim); }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge.ok { background: oklch(0.85 0.15 165 / 0.14); border-color: oklch(0.85 0.15 165 / 0.3); color: var(--mint); }
+  .badge.amber { background: oklch(0.84 0.16 80 / 0.14); border-color: oklch(0.84 0.16 80 / 0.3); color: var(--amber); }
+  .badge.violet { background: oklch(0.7 0.2 300 / 0.16); border-color: oklch(0.7 0.2 300 / 0.34); color: oklch(0.82 0.13 305); }
+
+  /* before/after toggle */
+  .ba { display: flex; align-items: center; gap: 14px; padding: 14px 26px; border-bottom: 1px solid var(--border); background: oklch(0.7 0.2 300 / 0.06); flex-wrap: wrap; }
+  .ba .lab { font-size: 13px; color: var(--dim); }
+  .ba .lab b { color: var(--text); }
+
+  .doc-wrap { padding: 26px; display: flex; justify-content: center; }
+  .doc { width: 100%; max-width: 720px; transition: max-width .25s; }
+  .shell.wide .doc { max-width: 980px; }
+
+  /* "After" — formatted */
+  .doc h2 { font-size: 19px; margin: 30px 0 10px; font-weight: 680; letter-spacing: -.01em; }
+  .doc h2:first-child { margin-top: 4px; }
+  .doc h2 .num { color: var(--violet); margin-right: 9px; font-variant-numeric: tabular-nums; }
+  .doc p { color: oklch(0.9 0.01 285); margin: 0 0 12px; }
+  .doc ul, .doc ol { margin: 0 0 14px; padding-left: 22px; color: oklch(0.9 0.01 285); }
+  .doc li { margin: 6px 0; }
+  .doc table { width: 100%; border-collapse: collapse; margin: 6px 0 16px; font-size: 14px; }
+  .doc th { text-align: left; font-weight: 600; color: var(--faint); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding: 9px 12px; border-bottom: 1px solid var(--border-strong); }
+  .doc td { padding: 11px 12px; border-bottom: 1px solid var(--border); color: oklch(0.9 0.01 285); vertical-align: top; }
+  .doc tr:hover td { background: var(--glass); }
+  .callout { display: flex; gap: 12px; padding: 14px 16px; border-radius: 14px; background: oklch(0.84 0.16 80 / 0.1); border: 1px solid oklch(0.84 0.16 80 / 0.28); margin: 6px 0 16px; }
+  .callout .ci { font-size: 18px; }
+  .callout .ct { font-size: 13.5px; color: oklch(0.92 0.03 90); }
+  .callout.info { background: oklch(0.74 0.15 245 / 0.1); border-color: oklch(0.74 0.15 245 / 0.28); }
+  .callout.info .ct { color: oklch(0.9 0.04 245); }
+
+  /* "Before" — wall of text */
+  .raw { color: oklch(0.82 0.01 285); }
+  .raw .marker { font-size: 12px; color: var(--faint); margin-bottom: 14px; padding: 9px 13px; border-radius: 11px; border: 1px dashed var(--border-strong); background: oklch(0.68 0.21 25 / 0.07); }
+  .raw p { line-height: 1.65; }
+
+  /* ---------- List view ---------- */
+  .listwrap { padding: 14px 16px 22px; display: none; }
+  .item { display: flex; gap: 14px; align-items: flex-start; padding: 15px 16px; border-radius: 16px; cursor: pointer; transition: .14s; border: 1px solid transparent; }
+  .item:hover { background: var(--glass); border-color: var(--border); }
+  .item .tic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; font-size: 18px; flex: none; }
+  .item .it-main { flex: 1; min-width: 0; }
+  .item .it-title { font-weight: 600; font-size: 15px; }
+  .item .it-sum { color: var(--faint); font-size: 13px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .it-meta { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; font-size: 12px; color: var(--faint); }
+  .item .it-meta .k { display: inline-flex; align-items: center; gap: 5px; }
+  .conf { display: inline-flex; align-items: center; gap: 6px; }
+  .conf .bar { width: 46px; height: 5px; border-radius: 3px; background: var(--glass-strong); overflow: hidden; }
+  .conf .bar i { display: block; height: 100%; background: var(--grad-teal); }
+
+  /* ---------- TOC ---------- */
+  .toc { padding: 18px 16px; position: sticky; top: 18px; }
+  .toc h4 { margin: 2px 8px 12px; font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); font-weight: 700; }
+  .toc a { display: block; padding: 7px 10px; border-radius: 9px; color: var(--dim); font-size: 13px; text-decoration: none; transition: .12s; border-left: 2px solid transparent; }
+  .toc a:hover { background: var(--glass-strong); color: var(--text); }
+  .toc a.on { color: var(--text); border-left-color: var(--violet); background: oklch(0.7 0.2 300 / 0.1); }
+  .toc .src { margin-top: 16px; padding: 13px; border-radius: 14px; background: var(--glass); border: 1px solid var(--border); font-size: 12.5px; color: var(--dim); }
+  .toc .src b { color: var(--text); display: block; margin-bottom: 6px; font-size: 12px; }
+  .toc .src .q { color: var(--faint); font-style: italic; border-left: 2px solid var(--border-strong); padding-left: 10px; margin-top: 8px; }
+
+  .graph-note { padding: 60px 30px; text-align: center; color: var(--faint); display: none; }
+  .graph-note .big { font-size: 40px; margin-bottom: 12px; }
+  .hidden { display: none !important; }
+  .actions { display: flex; gap: 10px; padding: 0 26px 26px; flex-wrap: wrap; }
+  .btn { font-family: inherit; font-size: 13.5px; padding: 9px 16px; border-radius: 11px; border: 1px solid var(--border-strong); background: var(--glass); color: var(--text); cursor: pointer; transition: .15s; display: inline-flex; gap: 7px; align-items: center; }
+  .btn:hover { background: var(--glass-strong); }
+  .btn.primary { background: var(--grad-violet); border-color: transparent; box-shadow: 0 6px 18px -6px oklch(0.6 0.2 300 / 0.8); }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <b>Интерактивный макет</b> редизайна базы знаний Коры — данные демонстрационные.
+  <span class="pill">кликабельно: папки слева • строки списка • «До / После» на карточке • «Чтение / Широкий» вверху • «Граф»</span>
+</div>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="logo">К</div>
+    <div>Кора <small>· База знаний</small></div>
+  </div>
+  <div class="search">
+    <span>⌕</span><span>Поиск по названию и содержанию…</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="seg" id="widthSeg">
+    <button class="active" data-w="read">Чтение</button>
+    <button data-w="wide">Широкий</button>
+  </div>
+  <div class="avatar">С</div>
+</div>
+
+<div class="shell" id="shell">
+
+  <!-- LEFT TREE -->
+  <aside class="panel tree">
+    <h3>База знаний</h3>
+
+    <div class="node">
+      <div class="row sel" data-list="all"><span class="chev"></span><span class="ic">📚</span><span class="lbl">Вся база</span><span class="cnt">58</span></div>
+    </div>
+
+    <div class="node">
+      <div class="row open" data-toggle><span class="chev">›</span><span class="ic">📕</span><span class="lbl">Регламенты</span><span class="cnt">11</span></div>
+      <div class="children show">
+        <div class="row sel-target" data-list="reg" data-open="doc"><span class="ic"></span><span class="lbl">Договоры</span><span class="cnt">4</span></div>
+        <div class="row" data-list="reg"><span class="ic"></span><span class="lbl">Найм и адаптация</span><span class="cnt">3</span></div>
+        <div class="row" data-list="reg"><span class="ic"></span><span class="lbl">Безопасность</span><span class="cnt">2</span></div>
+        <div class="row" data-list="reg"><span class="ic"></span><span class="lbl">Финансы</span><span class="cnt">2</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="row" data-toggle><span class="chev">›</span><span class="ic">🔄</span><span class="lbl">Процессы</span><span class="cnt">37</span></div>
+      <div class="children">
+        <div class="row" data-list="proc"><span class="ic"></span><span class="lbl">Онбординг клиента</span><span class="cnt">6</span></div>
+        <div class="row" data-list="proc"><span class="ic"></span><span class="lbl">Сделка / продажи</span><span class="cnt">9</span></div>
+        <div class="row" data-list="proc"><span class="ic"></span><span class="lbl">Релиз продукта</span><span class="cnt">5</span></div>
+      </div>
+    </div>
+
+    <div class="node">
+      <div class="row" data-list="instr"><span class="chev"></span><span class="ic">📋</span><span class="lbl">Инструкции</span><span class="cnt">1</span></div>
+    </div>
+
+    <div class="node">
+      <div class="row" data-list="pol"><span class="chev"></span><span class="ic">🛡️</span><span class="lbl">Политики</span><span class="cnt">9</span></div>
+    </div>
+
+    <div class="node">
+      <div class="row empty" data-list="std"><span class="chev"></span><span class="ic">📐</span><span class="lbl">Стандарты</span><span class="cnt">0</span></div>
+    </div>
+    <div class="hint">Пустые типы Кора заполнит, как только их обсудят на встречах или вы загрузите вручную.</div>
+
+    <button class="upload">＋ Загрузить вручную</button>
+
+    <div class="seg viewseg" id="viewSeg" style="width:calc(100% - 12px)">
+      <button class="active" data-v="tree" style="flex:1">Дерево</button>
+      <button data-v="graph" style="flex:1">Граф</button>
+    </div>
+  </aside>
+
+  <!-- MIDDLE -->
+  <main class="panel main">
+
+    <!-- DOC VIEW -->
+    <div id="docView">
+      <div class="head">
+        <div class="crumbs"><b>Регламенты</b><span class="sep">›</span><b>Договоры</b><span class="sep">›</span>Юридическая проверка договоров</div>
+        <h1 class="title">Юридическая проверка договоров с подрядчиками</h1>
+        <div class="badges">
+          <span class="badge ok"><span class="dot" style="background:var(--mint)"></span>Действует</span>
+          <span class="badge violet">Регламент</span>
+          <span class="badge amber">Уверенность извлечения 90%</span>
+          <span class="badge">✓ Подтверждён 3 дня назад</span>
+          <span class="badge">Источник: встреча «Планёрка 12.06»</span>
+        </div>
+      </div>
+
+      <div class="ba">
+        <span class="lab">Подача тела документа:</span>
+        <div class="seg" id="baSeg">
+          <button data-ba="after" class="active">После фикса форматтера</button>
+          <button data-ba="before">Как сейчас (сырой текст)</button>
+        </div>
+        <span class="lab" id="baExpl"><b>После:</b> структура собирается при создании карточки — заголовки, шаги, таблица.</span>
+      </div>
+
+      <div class="doc-wrap">
+        <!-- AFTER -->
+        <article class="doc" id="docAfter">
+          <h2 id="s1"><span class="num">1</span>Назначение</h2>
+          <p>Обеспечить юридическую чистоту договоров с внешними подрядчиками до подписания и снизить риск спорных условий и штрафных санкций.</p>
+
+          <h2 id="s2"><span class="num">2</span>Область применения</h2>
+          <p>Все договоры с подрядчиками на сумму свыше 50 000 ₽. Не распространяется на типовые публичные оферты и продление действующих договоров без изменения условий.</p>
+
+          <h2 id="s3"><span class="num">3</span>Порядок выполнения</h2>
+          <table>
+            <thead><tr><th>Шаг</th><th>Действие</th><th>Ответственный</th><th>Срок</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>Передать проект договора в юридический отдел</td><td>Менеджер проекта</td><td>в день получения</td></tr>
+              <tr><td>2</td><td>Юридическая экспертиза условий, фиксация рисков</td><td>Юрист</td><td>1 рабочий день</td></tr>
+              <tr><td>3</td><td>Внести правки и согласовать с подрядчиком</td><td>Менеджер проекта</td><td>2 дня</td></tr>
+              <tr><td>4</td><td>Финальное визирование и постановка на учёт</td><td>Руководитель направления</td><td>1 день</td></tr>
+            </tbody>
+          </table>
+
+          <h2 id="s4"><span class="num">4</span>Контроль и эскалация</h2>
+          <div class="callout"><span class="ci">⚠️</span><span class="ct">При разногласиях с подрядчиком по существенным условиям (цена, сроки, ответственность) — эскалация на руководителя направления в тот же день.</span></div>
+
+          <h2 id="s5"><span class="num">5</span>Связанные документы</h2>
+          <ul>
+            <li>Политика работы с персональными данными</li>
+            <li>Шаблон договора подряда</li>
+            <li>Процесс «Онбординг клиента» (шаг 3 — заключение договора)</li>
+          </ul>
+        </article>
+
+        <!-- BEFORE -->
+        <article class="doc raw hidden" id="docBefore">
+          <div class="marker">⚠️ Так тело выглядит сейчас: один сплошной абзац — это сырой вывод модели, сохранённый в поле <code>contentMd</code> без форматирования.</div>
+          <p>Каждый договор с подрядчиком на сумму свыше 50 000 рублей проходит юридическую проверку до подписания, менеджер проекта передаёт проект договора в юридический отдел в день получения, юрист проводит экспертизу условий и фиксирует риски в течение одного рабочего дня, затем менеджер вносит правки и согласовывает их с подрядчиком в течение двух дней, после чего руководитель направления визирует финальную версию и ставит договор на учёт за один день, при разногласиях с подрядчиком по существенным условиям таким как цена сроки и ответственность вопрос в тот же день эскалируется на руководителя направления, регламент не распространяется на типовые публичные оферты и продление действующих договоров без изменения условий, регламент связан с политикой работы с персональными данными шаблоном договора подряда и процессом онбординга клиента на шаге заключения договора.</p>
+        </article>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary">✓ Подтвердить актуальность</button>
+        <button class="btn">⇆ Заменить новой версией</button>
+        <button class="btn">✎ Исправить</button>
+        <button class="btn">⚑ Это неверно</button>
+        <button class="btn">🕘 История версий</button>
+      </div>
+    </div>
+
+    <!-- LIST VIEW -->
+    <div class="listwrap" id="listView">
+      <div class="head" style="border:0;padding:8px 10px 16px">
+        <div class="crumbs"><b id="listCrumb">Вся база</b><span class="sep">·</span>найдено <span id="listCount">5</span></div>
+      </div>
+
+      <div class="item" data-open="doc">
+        <div class="tic" style="background:var(--grad-violet)">📕</div>
+        <div class="it-main">
+          <div class="it-title">Юридическая проверка договоров с подрядчиками</div>
+          <div class="it-sum">Все договоры свыше 50 000 ₽ проходят экспертизу юр-отдела до подписания…</div>
+          <div class="it-meta">
+            <span class="k">Регламент</span><span class="k">🟢 Действует</span>
+            <span class="k">⏱ обновлён 3 дн. назад</span>
+            <span class="k conf">Уверенность <span class="bar"><i style="width:90%"></i></span> 90%</span>
+            <span class="k">📅 Планёрка 12.06</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="tic" style="background:var(--grad-teal)">📋</div>
+        <div class="it-main">
+          <div class="it-title">Создание отдельного рабочего Telegram-аккаунта как шлюза</div>
+          <div class="it-sum">Отдельный аккаунт подключается через QR-код, добавляется только в рабочие группы…</div>
+          <div class="it-meta">
+            <span class="k">Инструкция</span><span class="k">🟢 Действует</span>
+            <span class="k">⏱ обновлён 16.06</span>
+            <span class="k conf">Уверенность <span class="bar"><i style="width:60%"></i></span> 60%</span>
+            <span class="k">📅 Чат «Интеграции»</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="tic" style="background:var(--grad-violet)">🔄</div>
+        <div class="it-main">
+          <div class="it-title">Онбординг нового клиента</div>
+          <div class="it-sum">Продажи → юрист → внедрение: 6 шагов с передачей ответственности между ролями…</div>
+          <div class="it-meta">
+            <span class="k">Процесс</span><span class="k">🟢 Действует</span>
+            <span class="k">⏱ обновлён 14.06</span>
+            <span class="k conf">Уверенность <span class="bar"><i style="width:85%"></i></span> 85%</span>
+            <span class="k">📅 Встреча с отделом продаж</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="tic" style="background:var(--grad-amber)">🛡️</div>
+        <div class="it-main">
+          <div class="it-title">Политика предоставления отпусков</div>
+          <div class="it-sum">Заявление за 2 недели, согласование руководителем, не более 2 человек из отдела одновременно…</div>
+          <div class="it-meta">
+            <span class="k">Политика · обязательная</span><span class="k">🟡 Требует подтверждения</span>
+            <span class="k">⏱ обновлён 02.06</span>
+            <span class="k conf">Уверенность <span class="bar"><i style="width:72%"></i></span> 72%</span>
+            <span class="k">📅 HR-планёрка</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="item">
+        <div class="tic" style="background:var(--grad-violet)">📕</div>
+        <div class="it-main">
+          <div class="it-title">Регламент проведения еженедельной планёрки</div>
+          <div class="it-sum">Понедельник 10:00, повестка за день, протокол ведёт ассистент, решения — в трекер…</div>
+          <div class="it-meta">
+            <span class="k">Регламент</span><span class="k">🟢 Действует</span>
+            <span class="k">⏱ обновлён 09.06</span>
+            <span class="k conf">Уверенность <span class="bar"><i style="width:88%"></i></span> 88%</span>
+            <span class="k">📅 Планёрка 05.06</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GRAPH TEASER -->
+    <div class="graph-note" id="graphView">
+      <div class="big">🕸️</div>
+      <div style="font-size:17px;color:var(--text);margin-bottom:8px">Граф знаний</div>
+      <div>Режим, которого нет у обычных вики: документы связаны рёбрами (регламент → процесс → роль → решение).<br>Честное преимущество Коры — знание уже хранится графом. Заложим отдельной фазой.</div>
+    </div>
+  </main>
+
+  <!-- RIGHT TOC -->
+  <aside class="panel toc" id="tocPanel">
+    <h4>На этой странице</h4>
+    <a class="on" href="#">Назначение</a>
+    <a href="#">Область применения</a>
+    <a href="#">Порядок выполнения</a>
+    <a href="#">Контроль и эскалация</a>
+    <a href="#">Связанные документы</a>
+    <div class="src">
+      <b>Источник · 1 цитата</b>
+      Встреча «Планёрка 12.06» · Сергей М.
+      <div class="q">«…давайте зафиксируем: любой договор с подрядчиком сначала идёт юристу, без этого не подписываем…»</div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+  // Width toggle
+  document.getElementById('widthSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#widthSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('shell').classList.toggle('wide', b.dataset.w === 'wide');
+  });
+
+  // Before / After
+  const baExpl = document.getElementById('baExpl');
+  document.getElementById('baSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#baSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    const after = b.dataset.ba === 'after';
+    document.getElementById('docAfter').classList.toggle('hidden', !after);
+    document.getElementById('docBefore').classList.toggle('hidden', after);
+    baExpl.innerHTML = after
+      ? '<b>После:</b> структура собирается при создании карточки — заголовки, шаги, таблица.'
+      : '<b>Сейчас:</b> сырой одноабзацный вывод модели сохранён как тело без форматирования.';
+  });
+
+  // Tree expand/collapse
+  document.querySelectorAll('[data-toggle]').forEach(r => {
+    r.addEventListener('click', () => {
+      r.classList.toggle('open');
+      const ch = r.nextElementSibling;
+      if (ch && ch.classList.contains('children')) ch.classList.toggle('show');
+    });
+  });
+
+  // Tree selection -> list / doc
+  const docView = document.getElementById('docView');
+  const listView = document.getElementById('listView');
+  const graphView = document.getElementById('graphView');
+  const tocPanel = document.getElementById('tocPanel');
+  const listCrumb = document.getElementById('listCrumb');
+  const listCount = document.getElementById('listCount');
+  const LIST_META = { all:['Вся база',5], reg:['Регламенты',4], proc:['Процессы',3], instr:['Инструкции',1], pol:['Политики',9], std:['Стандарты',0] };
+
+  function showList(key) {
+    docView.style.display = 'none';
+    graphView.style.display = 'none';
+    listView.style.display = 'block';
+    tocPanel.style.visibility = 'hidden';
+    const m = LIST_META[key] || LIST_META.all;
+    listCrumb.textContent = m[0]; listCount.textContent = m[1];
+  }
+  function showDoc() {
+    listView.style.display = 'none';
+    graphView.style.display = 'none';
+    docView.style.display = 'block';
+    tocPanel.style.visibility = 'visible';
+  }
+
+  document.querySelectorAll('.tree .row').forEach(r => {
+    r.addEventListener('click', () => {
+      if (r.hasAttribute('data-list') || r.hasAttribute('data-open')) {
+        document.querySelectorAll('.tree .row').forEach(x => x.classList.remove('sel'));
+        r.classList.add('sel');
+        if (r.dataset.open === 'doc') showDoc();
+        else if (r.dataset.list) showList(r.dataset.list);
+      }
+    });
+  });
+
+  // List row -> doc
+  document.querySelectorAll('.item').forEach(it => {
+    it.addEventListener('click', () => { showDoc(); window.scrollTo({top:0,behavior:'smooth'}); });
+  });
+
+  // View seg (tree / graph)
+  document.getElementById('viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#viewSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    if (b.dataset.v === 'graph') {
+      docView.style.display='none'; listView.style.display='none';
+      graphView.style.display='block'; tocPanel.style.visibility='hidden';
+    } else { showDoc(); }
+  });
+
+  // TOC active state (cosmetic)
+  document.querySelectorAll('.toc a').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('.toc a').forEach(x => x.classList.remove('on'));
+    a.classList.add('on');
+  }));
+</script>
+</body>
+</html>

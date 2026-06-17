@@ -80,6 +80,63 @@ export function conflictRelationLabel(relationType: string): string {
   );
 }
 
+/**
+ * Человекочитаемое объяснение, ПОЧЕМУ карточка попала на проверку.
+ *
+ * `triageReason` на бэке — это технический объект с порогами
+ * (`autoThreshold`, `deepReviewThreshold`, `effectiveConfidence`,
+ * `conflictSignal`, `criticalType`…), который пользователю показывать нельзя:
+ * это внутренние числа и английские ключи. Здесь сводим его к одной понятной
+ * фразе на русском. Источник полей — `curation.service.ts` (`triageReason`,
+ * `via: 'user_correction' | 'recordDecision'`, `reason: 'stale' | 'audit_sample'`).
+ */
+export function triageReasonSummary(
+  reason: Record<string, unknown> | null | undefined,
+): string {
+  const r = reason ?? {};
+  const via = typeof r.via === 'string' ? r.via : null;
+  const tag = typeof r.reason === 'string' ? r.reason : null;
+
+  if (via === 'user_correction') {
+    return 'Сотрудник предложил правку этой карточки — нужно подтвердить или отклонить изменение.';
+  }
+  if (via === 'recordDecision') {
+    return 'Решение по карточке зафиксировано из интерфейса.';
+  }
+  if (tag === 'stale') {
+    return 'Карточка давно не обновлялась и могла устареть — стоит пересмотреть её актуальность.';
+  }
+  if (tag === 'audit_sample') {
+    return 'Выборочная проверка качества: карточку сохранил ИИ автоматически, но мы показываем её человеку для контроля.';
+  }
+
+  if (r.criticalType === true) {
+    return 'Это важный тип знания — такие карточки всегда проверяет человек, прежде чем они попадут в память компании.';
+  }
+
+  const conflict = typeof r.conflictSignal === 'string' ? r.conflictSignal : 'none';
+  if (conflict === 'hard') {
+    return 'Карточка противоречит уже сохранённому знанию — нужно решить, какой из вариантов верный.';
+  }
+  if (conflict === 'soft') {
+    return 'Карточка может пересекаться с уже сохранённым знанием — стоит проверить, нет ли дубля или противоречия.';
+  }
+
+  const confidence =
+    typeof r.confidence === 'number'
+      ? r.confidence
+      : typeof r.effectiveConfidence === 'number'
+        ? r.effectiveConfidence
+        : null;
+  const deepThreshold =
+    typeof r.deepReviewThreshold === 'number' ? r.deepReviewThreshold : null;
+  if (confidence !== null && deepThreshold !== null && confidence < deepThreshold) {
+    return 'ИИ не уверен в этой карточке — поэтому нужна подробная проверка человеком, прежде чем сохранять её.';
+  }
+
+  return 'ИИ не до конца уверен в карточке, поэтому отправил её вам на проверку, а не сохранил автоматически.';
+}
+
 export interface CurationItem {
   id: string;
   tenantId: string;

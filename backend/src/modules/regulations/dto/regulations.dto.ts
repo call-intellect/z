@@ -152,4 +152,7 @@ export interface RegulationSummaryResponse {
   instructions: number;
   policies: number;
   weekDelta: number;
+  /** Ф5 — kill-switch редизайна раздела (`knowledge_base.redesign.enabled`,
+   *  дефолт ON). Едет на фронт: true → новая раскладка, false → прежняя. */
+  redesignEnabled: boolean;
 }

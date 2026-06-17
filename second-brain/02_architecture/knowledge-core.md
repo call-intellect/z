@@ -119,6 +119,12 @@ specialist-3-1-regulations.worker (consumer core.specialist-routing, jobName='3-
    │         · regulation.stale (lastConfirmedAt > 6 мес + свежие блоки)
    │         · regulation.scope_unclear (Regulation/важная Policy без scope)
    │    8. Embedding записи (best-effort) через KnowledgeEmbeddingService + UPDATE ... SET embedding = $::vector
+   ├─ Структурный компилятор `compile-org-document` (StructuredDocumentCompilerService.tryCompileContent):
+   │    с 2026-06-17 вызывается НЕ только на merge/extension, но и на СОЗДАНИИ карточки (ветка 'new')
+   │    для ВСЕХ 4 типов вкл. instruction (раньше у instruction не вызывался вообще). При успехе
+   │    пишем compiled.contentMd (у process — в description) + снимок CardVersion v1 одной транзакцией
+   │    (trustTier='auto', changeReason='create', previousVersionId=null). Fallback (kill-switch
+   │    AdminSetting docCompilerEnabled OFF / ошибка LLM / пусто) → сырой draft.statement, CardVersion не пишется.
    └─ Параллельно живёт legacy block-ingest.worker (Phase 0b extraction) — не переписываем,
      обогащаем existing записи через merge-арбитра.
 

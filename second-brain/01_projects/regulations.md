@@ -62,17 +62,69 @@ Specialist 3.1 — третий специалист Слоя 3 (после α-6
 - `POST /api/v1/regulations/:id/supersede` — заменить версией (owner/admin).
 - `POST /api/v1/regulations/:id/confirm` — пометить `lastConfirmedAt=now()` (owner/admin/curator).
 - `GET /api/v1/regulations/:id/sources?kind=` — провенанс-цитаты карточки (источники до цитаты) (ТЗ cabinet-master-fixes C3).
-- `GET /api/v1/regulations/summary` — агрегированные счётчики по 4 типам норм для хаба и summary-виджета (ТЗ cabinet-master-fixes C4).
+- `GET /api/v1/regulations/summary` — агрегированные счётчики по 4 типам норм для хаба и summary-виджета (ТЗ cabinet-master-fixes C4). С 2026-06-17 в ответ добавлено аддитивное булево поле `redesignEnabled` (kill-switch раскладки, см. ниже).
 
-UI: `/regulations` master-detail с фильтрами kind / status / scope / search. В детали — список ProcessStep для process, markdown render statement/contentMd, действия supersede / confirm, аккордеон «Источники» (через `/:id/sources`).
+UI (с 2026-06-17 — новая раскладка «База знаний», см. ниже): дерево-папки по типам слева, читаемая колонка с тумблером ширины в центре, TOC справа. Старая master-detail раскладка (фильтры kind / status / scope / search; в детали — список ProcessStep для process, markdown render statement/contentMd, действия supersede / confirm, аккордеон «Источники» через `/:id/sources`) осталась аварийным fallback при `redesignEnabled=false`.
 
 ## Хаб «Оцифровано» (2026-06-14, ТЗ cabinet-master-fixes, часть C)
+
+> **Историческая справка.** На 2026-06-14 раздел назывался «Оцифровано»; с 2026-06-17 переименован в **«База знаний»** (см. раздел «База знаний компании: форматтер + редизайн» ниже). Описание ниже зафиксировано на момент 2026-06-14.
 
 `/regulations` поднят в видимый пункт меню «Оцифровано» (C1; убран дубль `/processes`, `/policies` теперь redirect на `/regulations?kind=policy`). Сама страница стала хабом (C2):
 - **Чипы-счётчики** по типам норм (источник — `GET /regulations/summary`); тип берётся из URL (`?kind=`).
 - **Вкладка «Шаблоны процессов»** — рядом с основным списком.
 - **Блок «Недавно оцифровано»** в хабе + **summary-виджет «Оцифровано» на экране «Сегодня»** (оба питаются `GET /regulations/summary`, C4).
 - **Провенанс-цитаты** — аккордеон «Источники» в карточке (`GET /:id/sources`, C3).
+
+## База знаний компании: форматтер на создании + редизайн раздела (2026-06-17, ТЗ knowledge-base-redesign-and-formatter)
+
+Источник — `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`, ветка `feature/knowledge-base-redesign-formatter`, 6 фаз (8 коммитов `6e98d3a8..28b6217e`). Две связанные цели: (1) каждая карточка структурна с **первой** версии, а не только после слияний; (2) раздел читается как настоящая база знаний.
+
+### Форматтер на создании карточки (Ф1)
+
+Раньше структурный компилятор `compile-org-document` (`StructuredDocumentCompilerService.tryCompileContent`) вызывался **только на merge/extension** — карточка, созданная первой (ветка `new`), несла сырой `draft.statement` без `## ` заголовков и таблиц. Теперь компилятор зовётся и в ветке `new` для **всех четырёх** типов карточек:
+- для regulation / process / policy он вызывался на merge, добавлен и на create;
+- для **instruction** компилятор раньше не вызывался **вообще** — теперь заведён и на create, и на merge.
+
+При успехе LLM пишем `compiled.contentMd` (у process — в поле `description`) **плюс** снимок `CardVersion` v1 одной транзакцией (`trustTier='auto'`, `changeReason='create'`, `previousVersionId=null`) — зеркало merge-ветки. Fallback (kill-switch `docCompilerEnabled` OFF / ошибка LLM / пустой результат) → legacy сырой `draft.statement`, `CardVersion` при этом **не** создаётся. Создание карточки best-effort — провал компиляции её не ломает.
+
+> ⚠️ Устаревшая формулировка «компилятор только на merge / `contentMd` = сырой statement на create» больше **не** актуальна — карточка структурна с v1.
+
+### Бэкфилл старых плоских карточек (Ф2)
+
+`backend/scripts/backfill-compile-flat-cards.ts` — разовый идемпотентный бэкфилл: находит **плоские** карточки (тело без `## ` и без markdown-таблицы), пересобирает их компилятором и пишет `CardVersion` (`changeReason='backfill'`). Идемпотентность двойная: предикат пропускает уже структурные + write-гейт (пишем только если ok + непустое + изменилось + структурно) → повторный прогон = 0 записей. Зарегистрирован в `apply-prod-deploy.ts` STEPS (`phase:'backfill'`, `skipBootstrap` — нужен только при апгрейде).
+
+### Граница промпта regulation ↔ policy (Ф3)
+
+В SYSTEM-промпт `regulation-extract.prompt.ts` добавлена строка-граница: **регламент = ПОРЯДОК по шагам**, **политика = ПРИНЦИП без процедуры** — чтобы экстрактор реже путал `kind='regulation'` с `kind='policy'`.
+
+### Ручная загрузка: docType → signalTypeHint (Ф6)
+
+`document.adapter.ts` (`backend/src/modules/ingest/adapters/document/`) теперь детерминированно доводит загруженный файл до Specialist 3.1: чистая функция `docTypeToSignalTypeHint`:
+- `regulation` → `regulation`,
+- `policy` → `regulation` (в enum `SignalType` **нет** отдельного значения `policy` — политика идёт через `regulation`, а финальный `kind=policy` ставит экстрактор → `upsertPolicy`),
+- `process` / `instruction` → `process_step`,
+- прочее → `undefined` (как раньше, тип решает LLM).
+
+Так документ нужного типа гарантированно доезжает до экстрактора Specialist 3.1, а не зависит от классификатора. (Финальный тип карточки всё равно решает экстрактор по `draft.kind` — hint лишь гарантирует доставку.)
+
+### Нейминг «База знаний компании» + таксономия + счётчики (Ф4)
+
+`RegulationsListClient.tsx` + `nav-config.ts`:
+- пункт меню «Оцифровано» → **«База знаний»**; заголовок страницы — **«База знаний компании»**;
+- фильтры по типам — «Регламенты / Процессы / Инструкции / Политики» («Стандарт» теперь **метка внутри регламента**, не отдельный фильтр);
+- счётчики подписаны «В базе: Тип: N», заголовок списка — «Найдено: N» (снят прежний рассинхрон вида «9 политик / Всего 1»).
+
+### Редизайн раскладки за kill-switch `knowledge_base.redesign.enabled` (Ф5)
+
+**Ф5a (backend).** Новый kill-switch `knowledge_base.redesign.enabled` (тип «аварийный рубильник», состояние **ON**). Бэк читает его через `getDynamic` в `getSummary` и кладёт булево поле `redesignEnabled` в ответ `GET /api/v1/regulations/summary` (контракт аддитивный — страница и так грузит summary, отдельного эндпоинта нет; прецедент — `main_rework`/`dashboard_rework`). Сопровождение: seed `seed-admin-setting-knowledge-base-redesign.ts` + STEPS + строка в реестре схемы + `docs/operations/feature-flags.md` + фронтовый api-тип и domain-маппер.
+
+**Ф5b (frontend).** Новая раскладка `RegulationsListClient.tsx` за флагом (дефолт ON), на modern-токенах (`MODERN_PAGE_BG` / `glass()`):
+- **левое дерево-папки** по типам (Вся база + 4 типа со счётчиками; «Шаблоны процессов» сведены в дерево **без** отдельной верхней вкладки; «Загрузить вручную» → `/documents`);
+- **центральная читаемая колонка** с тумблером «Чтение / Широкий» (max-width 720 / 980);
+- **правый TOC** из `## ` заголовков карточки.
+
+Только theme-aware токены (`var(--*)`) → светлая тема флипается автоматически. Старая master-detail раскладка осталась как **аварийный fallback** при `redesignEnabled=false`.
 
 ## CardSpecialistRegistry — chat-v2 retrieval
 

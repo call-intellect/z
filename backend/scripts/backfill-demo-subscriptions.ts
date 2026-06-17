@@ -1,5 +1,3 @@
-import { SubscriptionEventType } from '@prisma/client';
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -43,7 +41,7 @@ async function main(): Promise<Result> {
       await prisma.subscriptionEvent.create({
         data: {
           subscriptionId: created.id,
-          eventType: SubscriptionEventType.CREATED,
+          eventType: 'created',
           payload: { initial: true, backfill: 'backfill-demo-subscriptions' },
         },
       });

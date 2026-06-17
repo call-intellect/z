@@ -26,7 +26,6 @@ import {
   buildTasksPrompt,
 } from '../src/modules/ai/services/prompts/tasks';
 import { buildCardRollupSystemPrompt } from '../src/modules/ai/services/prompts/card-rollup';
-import { buildChaptersPrompt } from '../src/modules/ai/services/prompts/chapters';
 
 const prisma = createPrismaClient();
 
@@ -128,44 +127,6 @@ function followUpDefaultSeed(): TemplateSeed {
   };
 }
 
-function chaptersDefaultSeed(): TemplateSeed {
-  const dummy = buildChaptersPrompt({
-    meeting: { id: '__seed__', title: '__seed__', type: 'team' },
-    dialog: [],
-  });
-  return {
-    key: 'chapters-default',
-    name: 'Извлечение глав встречи (по умолчанию)',
-    description:
-      'Универсальный системный шаблон для разбиения встречи на смысловые главы (chapters).',
-    meetingType: null,
-    taskType: 'chapters',
-    systemPrompt: dummy.system,
-    toolName: null,
-    toolDescription: null,
-    outputSchema: {
-      type: 'object',
-      properties: {
-        chapters: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              startMs: { type: 'integer' },
-              endMs: { type: 'integer' },
-              title: { type: 'string' },
-              summary: { type: ['string', 'null'] },
-              order: { type: 'integer' },
-            },
-            required: ['startMs', 'endMs', 'title', 'order'],
-          },
-        },
-      },
-      required: ['chapters'],
-    },
-  };
-}
-
 function cardRollupDefaultSeed(): TemplateSeed {
   return {
     key: 'card-rollup-default',
@@ -252,7 +213,6 @@ function buildAllSeeds(): TemplateSeed[] {
       'customer_success',
     ),
     tasksDefaultSeed(),
-    chaptersDefaultSeed(),
     followUpDefaultSeed(),
     cardRollupDefaultSeed(),
   ];

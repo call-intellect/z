@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { ArrowRight, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
 
 import { coraFeedApi } from '@/api/cora-feed.api';
 import { coraFeedItemFromApi, type CoraFeedItem } from '@/domain/cora-feed';
@@ -73,14 +73,6 @@ export function TeamActivityWidget({ orgId }: { orgId: string | null }) {
         <ModernCardTitle icon={<Users size={16} />} grad={GRAD.teal}>
           Активность команды
         </ModernCardTitle>
-        <Link
-          href="/feed"
-          className="ml-auto inline-flex items-center gap-1 text-xs font-medium hover:underline"
-          style={{ color: CHART.cyan }}
-        >
-          Открыть ленту
-          <ArrowRight size={13} />
-        </Link>
       </div>
 
       {isLoading ? (
@@ -107,42 +99,55 @@ export function TeamActivityWidget({ orgId }: { orgId: string | null }) {
         <ul className="space-y-1">
           {items.map((item) => {
             const tone = activityTone(item);
-            const href = item.meetingId
+            // Если есть встреча-источник — элемент кликабелен в неё; иначе
+            // (отдельной страницы /feed больше нет) показываем неактивный блок.
+            const meetingHref = item.meetingId
               ? `/meetings/${encodeURIComponent(item.meetingId)}`
-              : '/feed';
-            return (
-              <li key={item.id}>
-                <Link
-                  href={href}
-                  className="flex items-center gap-3 rounded-xl p-2.5 transition-colors hover:bg-[var(--surface-hover)]"
+              : null;
+            const rowClassName =
+              'flex items-center gap-3 rounded-xl p-2.5 transition-colors';
+            const inner = (
+              <>
+                <span
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
+                  style={{ background: tone.chipBg }}
+                  aria-hidden
                 >
                   <span
-                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg"
-                    style={{ background: tone.chipBg }}
-                    aria-hidden
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ background: tone.dot, boxShadow: `0 0 8px ${tone.dot}` }}
-                    />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm" style={{ color: CHART.text }}>
-                      {item.title}
-                    </div>
-                    {item.analysis && (
-                      <div className="truncate text-xs" style={{ color: CHART.faint }}>
-                        {item.analysis}
-                      </div>
-                    )}
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: tone.dot, boxShadow: `0 0 8px ${tone.dot}` }}
+                  />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm" style={{ color: CHART.text }}>
+                    {item.title}
                   </div>
-                  <span
-                    className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: tone.chipBg, color: tone.dot }}
+                  {item.analysis && (
+                    <div className="truncate text-xs" style={{ color: CHART.faint }}>
+                      {item.analysis}
+                    </div>
+                  )}
+                </div>
+                <span
+                  className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
+                  style={{ background: tone.chipBg, color: tone.dot }}
+                >
+                  {item.typeLabel}
+                </span>
+              </>
+            );
+            return (
+              <li key={item.id}>
+                {meetingHref ? (
+                  <Link
+                    href={meetingHref}
+                    className={`${rowClassName} hover:bg-[var(--surface-hover)]`}
                   >
-                    {item.typeLabel}
-                  </span>
-                </Link>
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className={rowClassName}>{inner}</div>
+                )}
               </li>
             );
           })}

@@ -2,7 +2,7 @@
 
 > История-aware шаг dialog-layer: из реплики сотрудника в живом диалоге делает 3 самодостаточных вопроса для поиска по графу знаний.
 > **Где живёт:** `backend/src/modules/dialog-layer/prompts/query-understand.prompt.ts`, используется `MultiQueryExpansionService` (org-режим), `taskType='dialog-multi-query'`.
-> **Контракт реализации:** `plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md` (Приложение A).
+> **Контракт реализации:** `plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md` (Приложение A).
 
 ---
 

@@ -66,7 +66,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 
 ## Массовая миграция на DeepSeek V4 Pro (2026-05-26)
 
-В рамках Фаз 0-8 ТЗ [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:
+В рамках Фаз 0-8 ТЗ [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) primary capable модель (γ-1) — `deepseek:deepseek-v4-pro` — раскатана на:
 - **chat-v2 + dialog-layer** (Фаза 4 §2): 5 шагов диалогового слоя + 19 одиночек, ранее на flash.
 - **specialists combined** (Фаза 6 §3): новый `knowledge-specialists-combined`.
 - **clone-respond v2** (Фаза 7 §9): новый `dialog-multi-query-clone`.
@@ -364,7 +364,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Загрузка/импорт документов — AI-подсказка привязки (ТЗ-4 Ф10, 2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
+**Источник:** ТЗ [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md) Ф10. Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модуль `documents` — [[../02_architecture/module-map]] §«Батч 5».
 
 ### Новый taskType `document-attribution-suggest`
 
@@ -396,7 +396,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Служба поддержки — клон техподдержки (4 taskType, 2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
+**Источник:** ТЗ [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф3–Ф4). Модуль `support` — [[../02_architecture/module-map]] §«support»; профильная заметка — [[support-desk]]; cron'ы — [[workers-queues]].
 
 | taskType | Модель | Роль |
 |---|---|---|
@@ -489,7 +489,7 @@ ASR-нота `withAsrNote` / калибровка уверенности / ан�
 
 ## Единый помощник в каналах + автономизация — 5 новых taskType (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-assistant-channels-telegram-max.md`](../../plans/tz/2026-06-11-assistant-channels-telegram-max.md) + [`plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
+**Источник:** ТЗ [`plans/archive/2026-06-11-assistant-channels-telegram-max.md`](../../plans/archive/2026-06-11-assistant-channels-telegram-max.md) + [`plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md`](../../plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md). Ветка `feature/assistant-channels-and-autonomy`. Cron — [[workers-queues]]; мост каналов — [[conversational-channels]] §«Единый мозг помощника».
 
 ### Семейство `debate-conflict-arbiter` (autonomy W1, 4 taskType)
 
@@ -506,7 +506,7 @@ LLM-judge текстового подтверждения мутаций в ка
 
 ## Слой метода клона — 5 новых taskType (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
+**Источник:** ТЗ [`plans/archive/2026-06-11-clone-persona-method-layer.md`](../../plans/archive/2026-06-11-clone-persona-method-layer.md). Ветка `feature/clone-persona-method-layer`. Полная карта фичи — [[skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[workers-queues]]; схема — [[../02_architecture/data-model]] §«Слой метода клона». Все промпты — стабильный SYSTEM, переменные данные в конце USER (prompt-caching-friendly); без anthropic (не закупаем).
 
 | taskType | Цепочка | Что делает |
 |---|---|---|

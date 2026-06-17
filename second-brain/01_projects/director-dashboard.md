@@ -58,7 +58,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 
 ## Связанные панели
 
-- **Панель операционного директора** (`/dashboard/operations`) — параллельная панель для роли `coo`/`owner`/`admin`. Источник — модуль `backend/src/modules/operations/`. Реализована в β-8 (PersonalRelation + DailyCheckIn + CooDashboard) + β-8.1 (виджет «Температура команды» + страница `/dashboard/operations/weekly`) + β-8.2 (виджет «Открытые обещания»). См. ТЗ: [β-8](../../plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md), [β-8.1](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [β-8.2](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md).
+- **Панель операционного директора** (`/dashboard/operations`) — параллельная панель для роли `coo`/`owner`/`admin`. Источник — модуль `backend/src/modules/operations/`. Реализована в β-8 (PersonalRelation + DailyCheckIn + CooDashboard) + β-8.1 (виджет «Температура команды» + страница `/dashboard/operations/weekly`) + β-8.2 (виджет «Открытые обещания»). См. ТЗ: [β-8](../../plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md), [β-8.1](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md), [β-8.2](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md).
 - **Личный кабинет сотрудника:** `/me/check-ins` (β-8), `/me/promises` (β-8.2). С пакета дашбордов 2026-06-05 (ТЗ-E) — кабинет «Я» с вкладками (Pulse self-режим, перенос срока обещания, отписка от соцвклада).
 
 ## Пакет улучшений дашбордов (2026-06-05, ТЗ B/D/C/G/E)
@@ -92,7 +92,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 
 ## Редизайн кабинета — ритмы + очередь решений (Ф0–Ф10, 2026-06-13)
 
-Источник — `plans/tz/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10, ветка `feature/cabinet-redesign-rhythms`, 23 коммита, реализован целиком). Рефлексия — [[../05_история/2026-06-13-cabinet-redesign-implementation]]. Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-13 — Редизайн кабинета»).
+Источник — `plans/archive/2026-06-13-cabinet-redesign-rhythms-and-decision-queue.md` (Ф0–Ф10, ветка `feature/cabinet-redesign-rhythms`, 23 коммита, реализован целиком). Рефлексия — [[../05_история/2026-06-13-cabinet-redesign-implementation]]. Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-13 — Редизайн кабинета»).
 
 Кабинет перестроен от «свалки меню + противоречивых дашбордов» к модели **ритмов** (Сегодня / Неделя / Месяц) + сквозной **очереди решений** «Требует вас». Ключевое:
 - **Навигация:** единый источник `frontend/src/ui/components/app-shell/nav-config.ts` (десктоп+мобилка), меню 3 ритма + Работа + Я + Система (роль-зависимо), CTA «+ Создать»; redirects старых дашбордов в `next.config.mjs`.
@@ -106,7 +106,7 @@ LLM-резюме «Главное за неделю» — 3-4 факта + 1 р�
 
 ## Мастер-фиксы кабинета (2026-06-14, ТЗ cabinet-master-fixes, часть A)
 
-Источник — `plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (часть A, ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb`). Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-14 — Мастер-фиксы кабинета»). Доводка кабинета по итогам аудита:
+Источник — `plans/archive/2026-06-14-cabinet-master-fixes-referral-and-hub.md` (часть A, ветка `feature/cabinet-master-fixes`, коммиты `dfb79211..fd0e8eeb`). Прод-операции — [[../../docs/operations/prod-deploy-log]] (блок «2026-06-14 — Мастер-фиксы кабинета»). Доводка кабинета по итогам аудита:
 - **A1 — светлая тема доведена до конца:** новые тема-зависимые токены `--surface-inset/-strong/-hover` + `--border-inset` в `frontend/src/ui/tokens.css` (обе темы); modern-примитивы и ~24 файла кабинета переведены с белых оверлеев (`oklch(1 0 0 /…)` + `hover:bg-white/5`) на тема-токены; гард-тест `frontend/src/ui/components/dashboard/modern/light-theme.guard.spec.ts`.
 - **A5 — ack чек-ина:** toast «✓ Записано в память компании» при отправке чек-ина.
 - **A6 — бейдж «Спросил руководитель»:** в Ленте Коры на `open_question` — поле `askedByManager` (резолв через `IdeaBlockEntity(role='subject')`→`Person`).

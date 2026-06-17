@@ -3,9 +3,9 @@ type: tz
 status: draft
 feature: Вкладка «Документы» в проекте (ProjectDocument + связанные карточки)
 date: 2026-05-27
-parent: plans/tz/2026-05-27-tracker-parity-with-competitors.md
+parent: plans/archive/2026-05-27-tracker-parity-with-competitors.md
 related:
-  - plans/tz/2026-05-09-cards.md
+  - plans/archive/2026-05-09-cards.md
 ---
 
 # Вкладка «Документы» в проекте

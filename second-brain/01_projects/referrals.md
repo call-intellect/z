@@ -6,9 +6,9 @@ last_audited: 2026-06-14
 related_processes:
   - 03_processes/referral-program.md
 related_plans:
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
-  - plans/tz/2026-05-31-referrals-cabinet-revamp.md
-  - plans/tz/2026-06-14-cabinet-master-fixes-referral-and-hub.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-31-referrals-cabinet-revamp.md
+  - plans/archive/2026-06-14-cabinet-master-fixes-referral-and-hub.md
 ---
 
 # Партнёрский кабинет (реферальная программа)

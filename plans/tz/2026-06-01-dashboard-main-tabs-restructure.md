@@ -4,7 +4,7 @@ status: ready-to-implement
 date: 2026-06-01
 owner: sergrv80@gmail.com
 relates_to:
-  - plans/tz/2026-06-01-dashboards-wow-polish.md
+  - plans/archive/2026-06-01-dashboards-wow-polish.md
   - plans/tz/2026-05-30-pulse-full.md
   - docs/reference/dashboards-registry.md
   - second-brain/01_projects/frontend-pages.md

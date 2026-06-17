@@ -8,8 +8,8 @@ owners_human:
   - продакт «памяти компании»
   - инженер knowledge-core
 related_plans:
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
-  - plans/tz/2026-05-21-sba-beta-3-specialist-3-3-decisions.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-21-sba-beta-3-specialist-3-3-decisions.md
 related_projects:
   - 01_projects/decisions.md
   - 01_projects/specialist-3-4-project-customer.md

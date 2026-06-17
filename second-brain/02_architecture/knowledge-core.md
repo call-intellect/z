@@ -13,7 +13,7 @@ phase: 4
 блоков и сущностей через KNN cosine + LLM-арбитр, поверх — гибридный поиск
 (pgvector cosine + ts_vector BM25).
 
-> Источник истины — этот документ + ТЗ `plans/tz/2026-05-10-knowledge-core-tz.md`.
+> Источник истины — этот документ + ТЗ `plans/archive/2026-05-10-knowledge-core-tz.md`.
 > Бизнес-контекст и зачем оно — `01_projects/ingest-and-sources.md` (Фаза 1)
 > и сам ТЗ (введение).
 
@@ -534,7 +534,7 @@ CARD_ROLLUP_V2_DEBOUNCE_MS=60000      # дебаунс enqueueCardRollupV2
 
 ## SBA α-3 — Layer 2 Ontology Extension (2026-05-21)
 
-См. план: `plans/tz/2026-05-21-sba-alpha-3-layer2-ontology-extension.md`.
+См. план: `plans/archive/2026-05-21-sba-alpha-3-layer2-ontology-extension.md`.
 
 ### Расширение онтологии
 

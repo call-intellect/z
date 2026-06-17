@@ -2,7 +2,7 @@
 
 > Один документ — источник правды по всем дашбордам Z и их виджетам. Сверяемся
 > с ним на каждой фазе ТЗ
-> [plans/tz/2026-06-01-dashboards-wow-polish.md](../../plans/tz/2026-06-01-dashboards-wow-polish.md).
+> [plans/archive/2026-06-01-dashboards-wow-polish.md](../../plans/archive/2026-06-01-dashboards-wow-polish.md).
 >
 > Дата создания: 2026-06-01. Поддерживать актуальным при добавлении/удалении
 > страниц и виджетов.

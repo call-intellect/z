@@ -2,7 +2,7 @@
 
 > «Умный ответчик» AI-чата: гибридный поиск по графу знаний → синтез ответа с цитатами `[BLOCK:<id>]`.
 > **Где живёт:** `backend/src/modules/knowledge-core/services/chat-v2.service.ts` (`BASE_SYSTEM_PROMPT`), используется `ChatV2Service.ask`, `taskType='chat-v2'`. Обслуживает и старый `chat`-модуль (встреча/архив через V2), и боевой путь AI-чата компании (через `SynthesisService`).
-> **Контракт реализации:** `plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md` (Приложение A).
+> **Контракт реализации:** `plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md` (Приложение A).
 
 ---
 

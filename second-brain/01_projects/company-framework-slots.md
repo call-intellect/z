@@ -4,7 +4,7 @@ phase: 0a
 status: implemented
 date: 2026-05-21
 references:
-  - plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md §4.2
+  - plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md §4.2
   - plans/analysis/2026-05-21-ontology-process-regulation.md §10
 ---
 

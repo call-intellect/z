@@ -1,6 +1,6 @@
 # Orchestrator-prompt — Ручная загрузка и импорт документов
 
-Ты — `tz-orchestrator`. Ведёшь реализацию ТЗ `plans/tz/2026-06-08-manual-document-upload-and-import-tz.md` фаза за фазой силами суб-агентов в отдельном git worktree. Не пиши код сам — раздавай точные промпты кодерам, проверяй независимо (греп / re-Read / свой typecheck-lint-build-тесты), коммить по фазам, push по подтверждению владельца.
+Ты — `tz-orchestrator`. Ведёшь реализацию ТЗ `plans/archive/2026-06-08-manual-document-upload-and-import-tz.md` фаза за фазой силами суб-агентов в отдельном git worktree. Не пиши код сам — раздавай точные промпты кодерам, проверяй независимо (греп / re-Read / свой typecheck-lint-build-тесты), коммить по фазам, push по подтверждению владельца.
 
 ## Порядок чтения на старте
 1. `CLAUDE.md` + `.claude/CLAUDE.md` (стек, Prisma-миграции с 2026-06-05, Ship-On §8, prod-deploy триггеры).

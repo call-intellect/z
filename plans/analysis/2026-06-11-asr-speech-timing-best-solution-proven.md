@@ -23,7 +23,7 @@
 | `plans/tz/2026-06-06-meeting-report-reliability-and-ui-honesty.md` Ф3 | Парсер расширен на `segments[].words`; добавлен PII-safe лог `vox.no_words` | Не прочитан сырой ответ |
 | `plans/tz/2026-06-07-asr-word-timestamps-duration-behavior.md` | Дерево решений (а) ключ / (б) submit-флаг / (в) смена модели; Ф2 закрыта Vox-независимым фолбэком | Решили «нужен 1 прод-проход» |
 | `plans/tz/2026-06-08-agent-chain-remaining-no-golden.md` п.5 (`accdfe7b`) | **Первое** прод-чтение `vox.no_words` показало ключ `extendedResult` → парсер расширен на `extendedResult` | Не углубились в `extendedResult.segments` |
-| `plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md` Ф0 + `backend/scripts/smoke-vox-diarization.ts` | Доказали: `diarizationEnabled:true` → `extendedResult.segments[] {start,end,speaker,text}` (секунды). Парсер `mapDiarizedSegments` | Считали, что это только для upload-пути |
+| `plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md` Ф0 + `backend/scripts/smoke-vox-diarization.ts` | Доказали: `diarizationEnabled:true` → `extendedResult.segments[] {start,end,speaker,text}` (секунды). Парсер `mapDiarizedSegments` | Считали, что это только для upload-пути |
 | `plans/analysis/2026-06-10-diarization-timing-rootcause.md` | **Точный разбор**: алгоритм слияния корректен, нужны таймкоды; Plan B = псевдо-слово на сегмент | **Ошибочная посылка:** «per-track (`diar:false`) → segments отсутствуют» |
 | `second-brain/02_architecture/code-pitfalls.md:503` | «модель `v3_e2e_rnnt` может не отдавать word-ts by design» | Не подтверждено сырым ответом |
 | Реестр `second-brain/04_не-сделано/README.md` | Строка ASR word-timestamps (2026-06-06) | — |

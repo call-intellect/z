@@ -123,7 +123,7 @@ Eager sync-путь — читает из `TypedConfigService.cacheMap`, зап�
 
 ### `billing.*` — единый тариф `tier_standard` (2026-05-31)
 
-ТЗ [admin-plans-collapse-to-standard](plans/tz/2026-05-31-admin-plans-collapse-to-standard.md) перевёл цену тарифа и грант встреч в AdminSetting (`category=billing`, `section=tariff-standard`, `severity=high` — `reason` обязателен). Читается через **async** `getDynamic` (а не sync `resolveSync`) — `SeatService` и `MeetingsBalanceService` стали async, все call-site'ы используют `await`.
+ТЗ [admin-plans-collapse-to-standard](plans/archive/2026-05-31-admin-plans-collapse-to-standard.md) перевёл цену тарифа и грант встреч в AdminSetting (`category=billing`, `section=tariff-standard`, `severity=high` — `reason` обязателен). Читается через **async** `getDynamic` (а не sync `resolveSync`) — `SeatService` и `MeetingsBalanceService` стали async, все call-site'ы используют `await`.
 
 | Ключ | Тип | Default (code-fallback) |
 |---|---|---|
@@ -138,7 +138,7 @@ Seed — `backend/scripts/seed-admin-settings-billing.ts` (идемпотент�
 
 UI — `/admin/orgs/plans` (одна карточка «Стандартный тариф Z», калькулятор seats, история через `AdminSettingHistoryDrawer`). Остальные ~40 геттеров (`knowledgeCore`, `chatV2`, `curation`, `insights`, `ideas`, `skill`, `persona`, `conversational`, `telegramBot`, `maxBot`, `bot`, `mailInbox`, `bitemporal`, `extraction`, `document`, `brandVoice`, `roleMap`, `betaOps`, `proactive`, `concierge`, `budget`, `tracker`, `companyFoundation`, `processTemplate`, `experiments`, `dataClassPolicy`, `confidenceCalibration`, `temporalProbe`, `signalTypeStats`, `voice`, `invites`, `push`, `router`, `entityIngest`, `projectionRebuild`, `admin`, и пр.) — пока ENV-only, мигрировать по мере необходимости отдельными ТЗ.
 
-ТЗ миграции: [plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md](plans/tz/2026-05-25-env-to-admin-setting-call-sites-migration.md).
+ТЗ миграции: [plans/archive/2026-05-25-env-to-admin-setting-call-sites-migration.md](plans/archive/2026-05-25-env-to-admin-setting-call-sites-migration.md).
 
 ## Schema-registry для UI
 

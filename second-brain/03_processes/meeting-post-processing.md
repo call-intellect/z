@@ -8,9 +8,9 @@ owners_human:
   - продакт встреч
   - инженер AI-pipeline
 related_plans:
-  - plans/tz/2026-05-08-mvp-fullstack-tz.md
-  - plans/tz/2026-05-10-knowledge-core-tz.md
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-08-mvp-fullstack-tz.md
+  - plans/archive/2026-05-10-knowledge-core-tz.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
 related_projects:
   - 01_projects/meeting-types.md
   - 01_projects/recording.md

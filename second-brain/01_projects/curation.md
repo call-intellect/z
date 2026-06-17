@@ -1,6 +1,6 @@
 # Curation (Слой 4) — Layer 4 Curation Foundation
 
-> Sub-TZ: [`plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md`](../../plans/tz/2026-05-21-sba-alpha-4-layer4-curation-foundation.md). Зонтичный: [`plans/tz/2026-05-21-second-brain-agents-umbrella.md`](../../plans/tz/2026-05-21-second-brain-agents-umbrella.md) §3.6, §5.
+> Sub-TZ: [`plans/archive/2026-05-21-sba-alpha-4-layer4-curation-foundation.md`](../../plans/archive/2026-05-21-sba-alpha-4-layer4-curation-foundation.md). Зонтичный: [`plans/archive/2026-05-21-second-brain-agents-umbrella.md`](../../plans/archive/2026-05-21-second-brain-agents-umbrella.md) §3.6, §5.
 
 ## Зачем
 

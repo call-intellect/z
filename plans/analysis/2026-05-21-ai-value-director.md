@@ -186,6 +186,6 @@ VD-агент — **первый** из линейки агентов-совет
 - [[ai-analysis-by-type]] — другие AI-агенты в системе (отчёты по типам встреч)
 - [[llm-router]] — маршрутизация LLM-вызовов
 - [[ai-workspace]] — общее устройство AI-слоя
-- `plans/tz/2026-05-10-phase-8-director-dashboard.md` — дашборд CEO (куда встраивается виджет агента)
-- `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md` — стратегический согласователь (смежная функция в дашборде)
+- `plans/archive/2026-05-10-phase-8-director-dashboard.md` — дашборд CEO (куда встраивается виджет агента)
+- `plans/archive/2026-05-10-phase-9-goals-strategic-alignment.md` — стратегический согласователь (смежная функция в дашборде)
 - `.claude/skills/z-ai-agent-rules.md` — правила работы с prompt registry и AI-агентами в Z

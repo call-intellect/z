@@ -139,7 +139,7 @@ owner: architecture
 | **Триаж и persistence** | Каждый блок результата проходит обычный `CurationService.triage` своего специалиста + сохраняется через те же сервисы (`Specialist33DecisionsService.upsertDecision` и т.д.) для сохранения семантики probe / merge / dedupe |
 | **Флаг** | `SPECIALISTS_COMBINED_ENABLED` (default off). Параллельная работа со старыми 8 воркерами для контролируемой раскатки. |
 | **Eval-скрипты** | `judge-specialists-bplus-vs-g.ts`, `judge-dialog-deepseek.ts` (5 раздельных vs 1 объединённый dialog-layer), `judge-kie-claude.ts` (meeting-report-fast 4 vs 1) |
-| **Источник** | [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) Фаза 6 §3 |
+| **Источник** | [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) Фаза 6 §3 |
 
 **Когда снимать флаг и убирать старые специалисты:** после положительного A/B на dev-трафике и проверки, что probe-трассировка не теряется (Specialist combined пишет тот же `sourceBlockIds`/`triageResult` per-entity).
 

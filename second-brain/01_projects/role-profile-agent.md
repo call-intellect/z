@@ -4,7 +4,7 @@ phase: 0d
 status: implemented
 date: 2026-05-21
 references:
-  - plans/tz/2026-05-21-phase-0d-role-profile-agent.md
+  - plans/archive/2026-05-21-phase-0d-role-profile-agent.md
 ---
 
 # RoleProfileAgent
@@ -44,4 +44,4 @@ BullMQ-воркер, который собирает «карту должнос
 - `z_role_profile_llm_cost_usd`
 
 ## Промпт
-`role-profile-build-v1` в prompt registry + code fallback. Источник — `plans/tz/2026-05-21-phase-0d-role-profile-agent.md` §6.1.
+`role-profile-build-v1` в prompt registry + code fallback. Источник — `plans/archive/2026-05-21-phase-0d-role-profile-agent.md` §6.1.

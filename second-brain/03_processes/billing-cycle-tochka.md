@@ -8,9 +8,9 @@ owners_human:
   - продакт биллинга
   - финансовый директор (для legal-реквизитов и канарейки на 1 ₽)
 related_plans:
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
   - plans/analysis/2026-05-25-billing-and-referrals.md
-  - plans/tz/2026-05-28-paywall-no-trial.md
+  - plans/archive/2026-05-28-paywall-no-trial.md
 related_projects:
   - 01_projects/billing.md
   - 01_projects/inn-lookup.md
@@ -191,7 +191,7 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
 ## 8. Расхождения «задумано vs реализовано»
 
 **Заложено в ТЗ, НЕ реализовано:**
-- **Фаза 7 — Tochka production OAuth + webhook**: код провайдера, OAuth-сервиса, webhook-верификатора и `BillingModule.onApplicationBootstrap` готовы и протестированы юнитами, но **реальная авторизация в проде — операция владельца, ещё не выполнена**: `BillingProviderConfig['tochka.production.oauth_tokens']` в production-БД пуст; админ должен открыть authorize URL в браузере, пройти консент, и принять callback. Без этого `getAccessToken()` падает, и pay-эндпоинты с `provider='tochka'` вернут 500. См. `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` §14 Фаза 7.
+- **Фаза 7 — Tochka production OAuth + webhook**: код провайдера, OAuth-сервиса, webhook-верификатора и `BillingModule.onApplicationBootstrap` готовы и протестированы юнитами, но **реальная авторизация в проде — операция владельца, ещё не выполнена**: `BillingProviderConfig['tochka.production.oauth_tokens']` в production-БД пуст; админ должен открыть authorize URL в браузере, пройти консент, и принять callback. Без этого `getAccessToken()` падает, и pay-эндпоинты с `provider='tochka'` вернут 500. См. `plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md` §14 Фаза 7.
 - **Фаза 9 — Frontend (~6 страниц)** реализован **частично**:
   - ✅ `/admin/orgs/[id]/subscription`, `/admin/billing-overview`, `/admin/integrations/tochka` — есть.
   - ❌ Полноценная owner-страница `/settings/billing` с формами оплаты «картой / счётом», pricing-калькулятором, выбором тарифа — **нет**: текущий `BillingClient.tsx` показывает старые entitlements (`entitlement.tier`, `quotas`, `features` через `entitlementsApi`), не новый billing с `Subscription(tier_standard)` и `SeatService.calculatePricing`. Это legacy от Фазы 12 paywall, не обновлено.
@@ -221,6 +221,6 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
 | 2026-05-30 | Закрыт observability-gap: 6 метрик `billing_*` + 3 алёрта + Grafana-дашборд. `incBillingInvoicePaid`/`incBillingSubscriptionRenewed` подключены в `finalizePaidInvoice`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 4 |
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-29 | Paywall Фазы 4-5 завершены | `b8b57d6 feat(paywall): рефакторинг Фаз 1-3 + завершение Фаз 4-5` |
-| 2026-05-29 | UI-поверхность саппорта закрыта: табы Org-карточки, mark-paid / void / adjust-seats / force-status / events timeline, Badge «Бонус», пункт «Биллинг — обзор» в sidebar | `plans/tz/2026-05-29-admin-subscription-ui-v2.md` |
-| 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов | `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` |
+| 2026-05-29 | UI-поверхность саппорта закрыта: табы Org-карточки, mark-paid / void / adjust-seats / force-status / events timeline, Badge «Бонус», пункт «Биллинг — обзор» в sidebar | `plans/archive/2026-05-29-admin-subscription-ui-v2.md` |
+| 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов | `plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md` |
 | ≥2026-05-27 | Фазы 1-6 реализованы (Prisma, ENV, inn-lookup, meetings-balance, ядро биллинга + ManualBillingProvider, Tochka sandbox + recurring/sync/cycle cron, рефералы), 139 unit-тестов pass | по фазам ТЗ |

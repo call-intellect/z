@@ -10,7 +10,7 @@ related:
   - plans/analysis/2026-05-22-coo-dashboard-and-checkins.md §2.2 пункт 3
   - plans/analysis/2026-05-23-ai-coo-readiness-analysis.md §M1 «closing-loop»
   - second-brain/01_projects/probe-agent.md
-  - plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md
+  - plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md
 ---
 
 # Замыкание петли обещаний — исследование
@@ -175,8 +175,8 @@ related:
 ## 10. Что дальше
 
 1. Владелец отвечает на §7 (можно прямо в этом документе).
-2. Если §9 «делаем» подтверждается — пишу ТЗ `plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`.
-3. Параллельно или после — пишу ТЗ `plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md` (настроение + недельная сводка), оно от этого исследования не зависит.
+2. Если §9 «делаем» подтверждается — пишу ТЗ `plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`.
+3. Параллельно или после — пишу ТЗ `plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md` (настроение + недельная сводка), оно от этого исследования не зависит.
 
 ---
 

@@ -7,7 +7,7 @@ updated: 2026-05-10
 # Cards (CRM-структура встреч)
 
 CRM-карточки, к которым подвязываются встречи. Реализовано 2026-05-09 по
-[plans/tz/2026-05-09-cards.md](../../plans/tz/2026-05-09-cards.md).
+[plans/archive/2026-05-09-cards.md](../../plans/archive/2026-05-09-cards.md).
 
 ## Главный сценарий
 
@@ -175,6 +175,6 @@ CRM-карточки, к которым подвязываются встреч�
 
 ## Источники
 
-- ТЗ: [plans/tz/2026-05-09-cards.md](../../plans/tz/2026-05-09-cards.md)
-- Базовое ТЗ: [plans/tz/2026-05-09-standalone-product.md](../../plans/tz/2026-05-09-standalone-product.md)
-- AI Workspace: [plans/tz/2026-05-09-ai-meeting-workspace.md](../../plans/tz/2026-05-09-ai-meeting-workspace.md)
+- ТЗ: [plans/archive/2026-05-09-cards.md](../../plans/archive/2026-05-09-cards.md)
+- Базовое ТЗ: [plans/archive/2026-05-09-standalone-product.md](../../plans/archive/2026-05-09-standalone-product.md)
+- AI Workspace: [plans/archive/2026-05-09-ai-meeting-workspace.md](../../plans/archive/2026-05-09-ai-meeting-workspace.md)

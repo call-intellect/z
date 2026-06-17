@@ -7,7 +7,7 @@ updated: 2026-06-03
 
 С 2026-05-31 — Z-Admin живёт в отдельной route-группе `app/(admin)/admin/*`
 (root-layout с `AdminAuthGuard`, без AppShell/EntitlementProvider). См.
-`plans/tz/2026-05-31-z-admin-standalone-route-group.md`. Org-admin с
+`plans/archive/2026-05-31-z-admin-standalone-route-group.md`. Org-admin с
 2026-06-02 вынесен в `(authenticated)/company-admin/*` (свой
 `CompanyAdminSidebar`) — это другая роль; см. [[admin-org-knowledge-core]].
 
@@ -126,7 +126,7 @@ admin-поверхности с разбором конкретной карто
     больше не перезатирают (см. `safe-seed-rules`).
   - Для DeepSeek-Pro в модалке предупреждение про автоконвертацию
     `json_schema → tools` (ТЗ `deepseek-pro-output-format-fix`).
-- **ТЗ:** [plans/tz/2026-05-25-admin-llm-routes-frontend.md](../../plans/tz/2026-05-25-admin-llm-routes-frontend.md).
+- **ТЗ:** [plans/archive/2026-05-25-admin-llm-routes-frontend.md](../../plans/archive/2026-05-25-admin-llm-routes-frontend.md).
 
 ### `/admin/clones` — Доступы к клонам (2026-05-26)
 
@@ -149,7 +149,7 @@ admin-поверхности с разбором конкретной карто
   - Server-side pagination (`page` + `pageSize=50`).
   - Re-grant поверх revoked — физическое удаление старой записи в транзакции (audit остаётся в `AdminAuditLog`).
   - При `grant` уведомление получателя — `eventType=clone.access_granted` (in-app + Telegram через `ConversationalService`). Notification-failure не откатывает grant (warn-log).
-- **ТЗ:** [plans/tz/2026-05-26-clone-access-grant-admin-api.md](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) + frontend часть в [plans/tz/2026-05-26-clones-marketplace-frontend.md](../../plans/tz/2026-05-26-clones-marketplace-frontend.md) §2-§3.
+- **ТЗ:** [plans/archive/2026-05-26-clone-access-grant-admin-api.md](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) + frontend часть в [plans/archive/2026-05-26-clones-marketplace-frontend.md](../../plans/archive/2026-05-26-clones-marketplace-frontend.md) §2-§3.
 
 ## Тенанты (Org)
 
@@ -237,7 +237,7 @@ admin-поверхности с разбором конкретной карто
 пункт «Биллинг — обзор» → `/admin/billing-overview` (агрегированные
 метрики MRR/ARR/subs/refs/invoices по всем Org).
 
-**ТЗ:** [plans/tz/2026-05-29-admin-subscription-ui-v2.md](../../plans/tz/2026-05-29-admin-subscription-ui-v2.md).
+**ТЗ:** [plans/archive/2026-05-29-admin-subscription-ui-v2.md](../../plans/archive/2026-05-29-admin-subscription-ui-v2.md).
 
 ### `/admin/demo` — Демо-кабинеты «ТехноСтрим» (2026-05-29)
 
@@ -250,7 +250,7 @@ Super-admin создаёт/сбрасывает демо-кабинет для *
   - `frontend/src/api/admin-demo.api.ts`.
 - **Навигация:** пункт «Демо-кабинеты» (иконка `Sparkles`) в разделе «Тенанты» (`navigation.ts`).
 - **Особенности:** seed берёт `ownerId` Org автоматически. Демо помечается `externalSource='demo'`, reset не трогает боевые данные.
-- **ТЗ:** [plans/tz/2026-05-29-admin-demo-workspace-creation.md](../../plans/tz/2026-05-29-admin-demo-workspace-creation.md). Инструкция — [docs/guides/demo-workspace.md](../../docs/guides/demo-workspace.md).
+- **ТЗ:** [plans/archive/2026-05-29-admin-demo-workspace-creation.md](../../plans/archive/2026-05-29-admin-demo-workspace-creation.md). Инструкция — [docs/guides/demo-workspace.md](../../docs/guides/demo-workspace.md).
 
 ## Обратная связь
 
@@ -272,4 +272,4 @@ Super-admin создаёт/сбрасывает демо-кабинет для *
   - Действия: rename / merge (склейка с другим topic) / archive / unarchive.
   - Отдельная страница «Failed-сообщения» (`GET /admin/feedback/messages/failed`) — сообщения, на которых AI 3+ раза падал.
   - Ручной запуск ночного прогона — `POST /admin/feedback/digest/run` (BullMQ-job в очередь `core.feedback-digest`).
-- **ТЗ:** [plans/tz/2026-05-25-user-feedback-with-ai-clustering.md](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[feedback]].
+- **ТЗ:** [plans/archive/2026-05-25-user-feedback-with-ai-clustering.md](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[feedback]].

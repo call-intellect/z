@@ -8,7 +8,7 @@ owners_human:
   - инженер media-stack
   - продакт биллинга
 related_plans:
-  - plans/tz/2026-05-08-mvp-fullstack-tz.md
+  - plans/archive/2026-05-08-mvp-fullstack-tz.md
 related_projects:
   - 01_projects/recording.md
   - 01_projects/entitlements.md

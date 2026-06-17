@@ -6,8 +6,8 @@ date: 2026-05-22 (audit-проход 2026-05-23)
 author: claude (по запросу владельца «сопоставь план с реальным кодом»)
 related:
   - plans/analysis/2026-05-22-unified-product-architecture.md (продуктовый план)
-  - plans/tz/2026-05-22-final-roadmap.md (программистская роадмапа)
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md (исторический зонтичный)
+  - plans/archive/2026-05-22-final-roadmap.md (программистская роадмапа)
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md (исторический зонтичный)
 sources:
   - frontend-audit (a3a200132a7c0db45)
   - backend-knowledge-core-audit (aac8d3031ef6e1e6e)
@@ -384,9 +384,9 @@ sources:
    - Распознавание deep-link `/start <token>` и голого 6-знач кода.
    - LLM-классификатор intent (через DialogService — зависит от α-5).
 3. **Синхронизировать ТЗ-файлы:**
-   - `plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md` → archived.
+   - `plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md` → archived.
    - `plans/tz/2026-05-21-sba-beta-5-...` § β-5.19 → переписать.
-   - `plans/tz/2026-05-21-telegram-employee-channel.md` → пересмотр.
+   - `plans/archive/2026-05-21-telegram-employee-channel.md` → пересмотр.
    - `second-brain/01_projects/conversational-channels.md` → переписать.
    - `second-brain/01_projects/ideas.md` → переписать § Telegram.
 

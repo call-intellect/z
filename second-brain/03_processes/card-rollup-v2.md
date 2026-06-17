@@ -8,8 +8,8 @@ owners_human:
   - инженер knowledge-core
   - продакт CRM / карточек
 related_plans:
-  - plans/tz/2026-05-10-knowledge-core-tz.md
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-10-knowledge-core-tz.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
 related_projects:
   - 02_architecture/knowledge-core.md
   - 01_projects/workers-queues.md
@@ -178,4 +178,4 @@ deep  → CurationItem (pending), Card.summaryUpdatedAt only
 | 2026-05-25 | KC-Temporal W4.1/W4.2 DataClassPolicy shadow-compare | [[02_architecture/knowledge-core]] |
 | 2026-05-24 | `withInjectionGuard` + `wrapUserData` обёртка LLM-вызова | ТЗ 2026-05-24 §4 F1.2 |
 | 2026-05-22 | SBA α-6: triage + CardVersion + 5 kind-промптов + Specialist34Probe | [[02_architecture/knowledge-core]] §SBA α-6 |
-| 2026-05-10 | CardRollupV2Worker + Service запущены (Фаза 4) | plans/tz/2026-05-10-knowledge-core-tz.md |
+| 2026-05-10 | CardRollupV2Worker + Service запущены (Фаза 4) | plans/archive/2026-05-10-knowledge-core-tz.md |

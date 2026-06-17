@@ -7,7 +7,7 @@ author: claude (по запросу владельца продукта)
 related:
   - plans/analysis/2026-05-22-role-map-ontology-gap.md (исходная схема пользователя — уровень должности + первый анализ покрытия)
   - plans/analysis/2026-05-22-company-ontology-gap.md (исходная схема пользователя — уровень компании + второй анализ покрытия)
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ)
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ)
   - second-brain/02_architecture/knowledge-core.md (текущее состояние графа)
 ---
 

@@ -8,7 +8,7 @@ related:
   - second-brain/01_projects/director-dashboard.md
   - second-brain/01_projects/conversational-channels.md
   - second-brain/01_projects/goals-and-strategic-alignment.md
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
 ---
 
 # Дашборд COO + ежедневные чек-ины — анализ

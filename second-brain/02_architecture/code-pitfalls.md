@@ -224,7 +224,7 @@ DeepSeek (OpenAI-compat) при `response_format: {type:'json_object'}` отве
 
 ## Cypher только через GraphService
 
-С Фазы 0a (см. [plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.
+С Фазы 0a (см. [plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md](../../plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md) §6.3) запрещён прямой `$queryRaw cypher(...)` из бизнес-сервисов. Все обращения к AGE — через `GraphService` из `backend/src/common/graph/`.
 
 **Почему:** двойная запись `Postgres EntityLink` + `AGE z_graph` гарантирует консистентность только внутри одной Prisma-транзакции `GraphService`. Вне его — рассинхрон (Postgres-связь есть, AGE-ребра нет, или наоборот), и обход графа на Cypher даёт неверные ответы.
 
@@ -377,7 +377,7 @@ System всегда содержит `INJECTION_GUARD_NOTE` (см. [`backend/src
 
 ### Куда вынести общий префикс
 
-`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [`2026-05-25-llm-cache-prefix-everywhere.md`](../../plans/tz/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный «роль + commonContext + commonRules».
+`backend/src/common/ai/cache-prefix-builder.ts` (см. ТЗ [`2026-05-25-llm-cache-prefix-everywhere.md`](../../plans/archive/2026-05-25-llm-cache-prefix-everywhere.md)) — utility, формирующая стабильный «роль + commonContext + commonRules».
 
 ### Подробности и сырые числа
 

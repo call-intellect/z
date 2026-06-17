@@ -85,7 +85,7 @@ RBAC проверяется внутри `ToolRouterService` от `userId` — c
 
 ## Источники
 
-- ТЗ ввода в строй: `plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md`.
-- ТЗ dialog-layer integration: `plans/tz/2026-05-27-concierge-dialog-layer-integration.md` (2026-05-27).
-- ТЗ assistant-router-dedup: `plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md` (понимание/синтез только в chat-v2).
+- ТЗ ввода в строй: `plans/archive/2026-05-23-sba-gamma-2-concierge-agent.md`.
+- ТЗ dialog-layer integration: `plans/archive/2026-05-27-concierge-dialog-layer-integration.md` (2026-05-27).
+- ТЗ assistant-router-dedup: `plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md` (понимание/синтез только в chat-v2).
 - Код: `backend/src/modules/concierge/`, `backend/src/modules/voice/`.

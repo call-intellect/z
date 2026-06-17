@@ -323,7 +323,7 @@ Value-recap со слайдами уже построен — добавить: 
 
 - Живой обход прод-кабинета korateam.ru 2026-06-12 под аккаунтом владельца (Playwright): все пункты меню, 8 дашбордов (Главная+4 вкладки, Портфель, Value-recap, Операции, Daily, Weekly, Цели+деталка, Я+обещания), отчёт встречи, intake, actions, память. Скриншоты: `2026-06-12-product-audit/`.
 - Фоновое исследование (8 агентов): карта кода (`Sidebar.tsx`, `primary-nav.ts`), 7 ТЗ дашбордов + редизайн, позиционирование/запреты владельца, инвентаризация закопанных возможностей бэка; рынок мира (Geckoboard/Databox/Mosaic/EOS/15Five/Superhuman/Viva/Basecamp), рынок РФ (Битрикс24/Planfix/YouGile/Мегаплан/ПланФакт/СЭД-дисциплина), AI chief-of-staff (Gong/Glean/Granola/Fireflies/Fathom/Otter/Hyper). Полный текст синтеза — в журнале workflow `wf_992c5b36-33c`.
-- Связанные документы проекта: `plans/analysis/2026-06-08-value-stickiness-roadmap*.md` (двигатели 1→2, push-recap), `plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4 — Б-4), `plans/analysis/2026-06-11-istok-ai-competitor-teardown.md` (уверенность+источник), `plans/tz/2026-06-05-*` (7 ТЗ дашбордов).
+- Связанные документы проекта: `plans/analysis/2026-06-08-value-stickiness-roadmap*.md` (двигатели 1→2, push-recap), `plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md` (W0–W4 — Б-4), `plans/analysis/2026-06-11-istok-ai-competitor-teardown.md` (уверенность+источник), `plans/tz/2026-06-05-*` (7 ТЗ дашбордов).
 
 ---
 

@@ -5,8 +5,8 @@ feature: Z/Кора — нативное мобильное приложение
 date: 2026-05-23
 parent: plans/analysis/2026-05-23-tracker-as-entry-wedge.md
 related:
-  - plans/tz/2026-05-23-tracker-phase-1-models-api.md
-  - plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md
+  - plans/archive/2026-05-23-tracker-phase-1-models-api.md
+  - plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md
 revision: 2026-05-24 — НЕ начат, ждёт RN-команды и Apple/Google/RuStore аккаунтов
 ---
 

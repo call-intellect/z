@@ -3,9 +3,9 @@ type: tz
 status: planned
 feature: Геймификация v2 «мягко-средняя» — Зёрна (внутренняя валюта без денежной конвертации), 10 уровней с правами, двусторонние «спасибо», мини-лиги команды, личный прогресс «рост относительно себя», Telegram-канал мотивации, AI-оценка качества признаний, защиты от накрутки и от выгорания. Полная русификация. Поверх существующего модуля recognition. Под РФ-компанию 5–100 человек.
 date: 2026-05-29
-parent: plans/tz/2026-05-23-gamification-and-motivation.md
+parent: plans/archive/2026-05-23-gamification-and-motivation.md
 related:
-  - plans/tz/2026-05-23-gamification-and-motivation.md
+  - plans/archive/2026-05-23-gamification-and-motivation.md
   - second-brain/01_projects/probe-agent.md
   - second-brain/02_architecture/module-map.md
 research:
@@ -36,7 +36,7 @@ language_rule: вся коммуникация с сотрудниками и р
 
 ## Зачем именно это (с источниками)
 
-Old план [plans/tz/2026-05-23-gamification-and-motivation.md](plans/tz/2026-05-23-gamification-and-motivation.md) запрещал баллы и рейтинги. Два pass deep-research (2026-05-29) показали нюанс:
+Old план [plans/archive/2026-05-23-gamification-and-motivation.md](plans/archive/2026-05-23-gamification-and-motivation.md) запрещал баллы и рейтинги. Два pass deep-research (2026-05-29) показали нюанс:
 
 - ✓ **Геймификация работает узко-условно**: β = 0.31 (Zhang 2025 Frontiers, N=418) — но только при принятии сотрудниками и оргподдержке.
 - ✓ **Принятие — модератор × 1.5** (PMC12263921 2025). Без опт-ин эффект падает на 33%, для отказников — отрицательный.

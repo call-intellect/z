@@ -77,7 +77,7 @@ updated: 2026-05-31
 - `open` — менеджер видит всё в компании;
 - `strict` — менеджер видит только свою команду.
 
-Плюс **DataClassPolicy** (4 уровня чувствительности: `public` / `internal` / `sensitive` / `private`). Каждый канал доставки маркирован максимальным уровнем (например `telegram_dm` по умолчанию `internal`). Чтобы `sensitive`-инфа полетела в Telegram — владелец должен явно включить opt-in в `/me/channels`. `private` не утекает наружу никогда. Аудит — на каждой проекции (`dataClassAudit`). Детали: [[../01_projects/rbac-access-control]], `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md` Волна 4.
+Плюс **DataClassPolicy** (4 уровня чувствительности: `public` / `internal` / `sensitive` / `private`). Каждый канал доставки маркирован максимальным уровнем (например `telegram_dm` по умолчанию `internal`). Чтобы `sensitive`-инфа полетела в Telegram — владелец должен явно включить opt-in в `/me/channels`. `private` не утекает наружу никогда. Аудит — на каждой проекции (`dataClassAudit`). Детали: [[../01_projects/rbac-access-control]], `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md` Волна 4.
 
 ## Bitemporal — память помнит «как было тогда»
 

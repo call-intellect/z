@@ -8,7 +8,7 @@ owners_human:
   - продакт «памяти компании»
   - инженер knowledge-core
 related_plans:
-  - plans/tz/2026-06-02-goals-okr-v2.md
+  - plans/archive/2026-06-02-goals-okr-v2.md
   - plans/analysis/2026-06-02-goals-okr-research-and-gap.md
 related_projects:
   - 01_projects/goals-and-strategic-alignment.md

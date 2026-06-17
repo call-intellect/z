@@ -5,7 +5,7 @@ feature: Глубокий UI/UX design audit — Z-Admin и Org-кабинет
 date: 2026-05-22
 related:
   - plans/analysis/2026-05-21-user-cabinet-design.md (вход — навигация ЛК Фазы 0)
-  - plans/tz/2026-05-21-phase-0-roles-and-onboarding.md (зонтичный ТЗ Фазы 0)
+  - plans/archive/2026-05-21-phase-0-roles-and-onboarding.md (зонтичный ТЗ Фазы 0)
   - second-brain/02_architecture/design-system.md (целевой UX)
   - second-brain/01_projects/frontend-pages.md (каталог экранов)
   - second-brain/13_glossary/ui-glossary.md (глоссарий UI)
@@ -70,7 +70,7 @@ related:
 - **[second-brain/01_projects/frontend-pages.md](../../second-brain/01_projects/frontend-pages.md)** — целевой каталог из 18 экранов. Из них реализовано 6, в очереди 12 (γ+).
 - **[second-brain/13_glossary/ui-glossary.md](../../second-brain/13_glossary/ui-glossary.md)** + **[second-brain/13_glossary/copy-strings.ru.md](../../second-brain/13_glossary/copy-strings.ru.md)** — глоссарий русских терминов UI и копирайт.
 - **[plans/analysis/2026-05-21-user-cabinet-design.md](2026-05-21-user-cabinet-design.md)** — вход по навигации ЛК. Этот аудит идёт **поверх** аналитики ЛК.
-- **[plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md)** — зонтичный ТЗ Фазы 0, чей sub-TZ 0c будет писаться на основе и аналитики ЛК, и этого аудита.
+- **[plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md)** — зонтичный ТЗ Фазы 0, чей sub-TZ 0c будет писаться на основе и аналитики ЛК, и этого аудита.
 - **[second-brain/06_marketing/positioning.md](../../second-brain/06_marketing/positioning.md)** + **[messaging.md](../../second-brain/06_marketing/messaging.md)** — категория «память компании», tone of voice, ICP.
 
 **При расхождениях** между этим аудитом и `second-brain/02_architecture/design-system.md` — приоритет у `delivery/06`, кроме случаев когда delivery/06 явно противоречит свежей аналитике ЛК (тогда приоритет у аналитики ЛК + изменения в delivery/06 фиксируются отдельным апдейтом).
@@ -3637,7 +3637,7 @@ WCAG-обязательное. Сейчас Z частично поддержи�
 | [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md) | Добавить раздел о design tokens (см. 4.1–4.6); обновить раздел 8 (что запрещено) ссылками на C-1..C-10 |
 | [second-brain/13_glossary/copy-strings.ru.md](../../second-brain/13_glossary/copy-strings.ru.md) | Добавить строки: «Заполнена на X%», «обновлено N с назад», «Что важно для меня сегодня», «Все [Орг / Сотрудники / Документы] →», «Расход AI» (вместо «Расход LLM») |
 | [second-brain/13_glossary/ui-glossary.md](../../second-brain/13_glossary/ui-glossary.md) | Добавить термины: Дашборд / KPI / тариф / лимит / прогноз / событие (в журнале) / алерт / sparkline |
-| [plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | Добавить раздел L «UI/UX из аудита» в матрицу прослеживаемости — со ссылками на P0-* и P1-* действия |
+| [plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | Добавить раздел L «UI/UX из аудита» в матрицу прослеживаемости — со ссылками на P0-* и P1-* действия |
 | [plans/analysis/2026-05-21-user-cabinet-design.md](2026-05-21-user-cabinet-design.md) | Добавить в §10 (глоссарий) русские варианты «KPI», «tariff», «projection» |
 | [second-brain/02_architecture/code-pitfalls.md](../../second-brain/02_architecture/code-pitfalls.md) | Добавить: «mint #14b8a6 не проходит WCAG AA на белом фоне — использовать `--accent-text` для текстовых случаев в light-mode»; «не плодить ad-hoc цвета — всегда через tokens.css» |
 | [second-brain/02_architecture/module-map.md](../../second-brain/02_architecture/module-map.md) | Добавить `frontend/src/ui/states/` и `frontend/src/ui/charts/` когда они появятся |

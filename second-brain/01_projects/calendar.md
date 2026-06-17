@@ -163,8 +163,8 @@ Cardinality риск (известный, общий для tracker/calendar): l
 
 ## План реализации
 
-- Базовый ТЗ: [`plans/tz/2026-05-25-calendar-mvp.md`](../../plans/tz/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
-- Polish ТЗ: [`plans/tz/2026-05-25-calendar-mvp-polish.md`](../../plans/tz/2026-05-25-calendar-mvp-polish.md) — 4 фазы (P1-P4) закрыты.
+- Базовый ТЗ: [`plans/archive/2026-05-25-calendar-mvp.md`](../../plans/archive/2026-05-25-calendar-mvp.md) — три фазы (1+2 закрыты).
+- Polish ТЗ: [`plans/archive/2026-05-25-calendar-mvp-polish.md`](../../plans/archive/2026-05-25-calendar-mvp-polish.md) — 4 фазы (P1-P4) закрыты.
 - External sync ТЗ: [`plans/tz/2026-05-25-calendar-external-sync.md`](../../plans/tz/2026-05-25-calendar-external-sync.md) — F1-F4 для интеграций (планируется).
 - Коммиты: `800fdbd` (Фаза 1 — backend), `6e5fd62` (Фаза 2 — UI+ICS), `13b6a66` (second-brain), `5c4c6c1` (Polish P1-P4).
 - Тесты: 63 unit + integration зелёных (+1 skipped) в events/persons/org-members/meetings, frontend typecheck 0.

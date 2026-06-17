@@ -8,7 +8,7 @@ owners_human:
   - инженер knowledge-core
   - продакт «памяти компании»
 related_plans:
-  - plans/tz/2026-05-10-knowledge-core-tz.md
+  - plans/archive/2026-05-10-knowledge-core-tz.md
 related_projects:
   - 02_architecture/knowledge-core.md
   - 01_projects/workers-queues.md
@@ -172,4 +172,4 @@ Per Org (с owner/admin membership, deletedAt=null, WorkerOrgGate active):
 |---|---|---|
 | 2026-05-29 | Карточка создана | этот документ |
 | 2026-05-24 | `withInjectionGuard` + `wrapUserData` для обоих LLM-вызовов | ТЗ 2026-05-24 §4 F1.2 |
-| 2026-05-10 | ReframingCron запущен (Фаза 3-4) | plans/tz/2026-05-10-knowledge-core-tz.md |
+| 2026-05-10 | ReframingCron запущен (Фаза 3-4) | plans/archive/2026-05-10-knowledge-core-tz.md |

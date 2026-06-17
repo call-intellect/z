@@ -6,7 +6,7 @@ covers: разделение pipeline после встречи на «быст�
 
 # Meeting Report Pipeline
 
-Карта двух независимых AI-цепочек, которые стартуют после готовности транскрипта встречи. Введена ТЗ [`2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md).
+Карта двух независимых AI-цепочек, которые стартуют после готовности транскрипта встречи. Введена ТЗ [`2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md).
 
 ## Зачем разделение
 
@@ -105,8 +105,8 @@ Legacy v2-агенты (`chapters-v2`, `tasks-v2`, `summary-v2`, `meeting-qualit
 
 ## Связанные документы
 
-- ТЗ-основание: [`plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md).
-- Эксперимент-основание: [`plans/tz/2026-05-25-ai-real-eval-harness.md`](../../plans/tz/2026-05-25-ai-real-eval-harness.md).
+- ТЗ-основание: [`plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md).
+- Эксперимент-основание: [`plans/archive/2026-05-25-ai-real-eval-harness.md`](../../plans/archive/2026-05-25-ai-real-eval-harness.md).
 - Артефакты эксперимента: [`backend/test/eval/sales-merge-experiment/`](../../backend/test/eval/sales-merge-experiment/).
 - Жёсткая идентификация участников (используется в `Task` обеих цепочек): [`participant-identification.md`](participant-identification.md).
 - Реестр AI-jobs: [`ai-jobs.md`](ai-jobs.md).

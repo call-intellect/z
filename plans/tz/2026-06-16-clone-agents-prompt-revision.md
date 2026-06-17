@@ -9,7 +9,7 @@ related:
   - docs/methodology/prompts/README.md                        (методология промптов, 7 блоков)
   - docs/methodology/prompts/upgrade-progress.md              (реестр апгрейда промптов — статусы 🟡/🟢)
   - second-brain/01_projects/skill-and-clone.md               (контракт SkillProfile/SkillTrait/persona)
-  - plans/tz/2026-06-11-clone-persona-method-layer.md          (метод-слой клона — соседнее ТЗ)
+  - plans/archive/2026-06-11-clone-persona-method-layer.md          (метод-слой клона — соседнее ТЗ)
 ---
 
 # M5 «Клоны и персоны» — ревизия промптов по методологии

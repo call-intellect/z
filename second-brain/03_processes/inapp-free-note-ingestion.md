@@ -7,7 +7,7 @@ last_audited: 2026-05-29
 owners_human:
   - продакт conversational-каналов
 related_plans:
-  - plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md
+  - plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md
 related_projects:
   - 01_projects/conversational-channels.md
   - 01_projects/concierge-agent.md
@@ -138,4 +138,4 @@ Card / Decision / Insight / Idea (обогащается граф знаний)
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
 | 2026-05-29 | Карточка создана. Зафиксирован gap «Concierge ≠ free-note» и метрика. | этот документ |
-| ~2026-05-21 | SBA α-1 — `POST /me/notifications/free-note`, `ConversationalIngestAdapter` | plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md |
+| ~2026-05-21 | SBA α-1 — `POST /me/notifications/free-note`, `ConversationalIngestAdapter` | plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md |

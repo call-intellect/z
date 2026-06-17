@@ -9,8 +9,8 @@ date: 2026-05-09
 
 > Связанные документы:
 > - Анализ скоупа: [plans/analysis/2026-05-09-ai-meeting-workspace.md](plans/analysis/2026-05-09-ai-meeting-workspace.md)
-> - ТЗ: [plans/tz/2026-05-09-ai-meeting-workspace.md](plans/tz/2026-05-09-ai-meeting-workspace.md)
-> - Дизайн-система-база: [plans/tz/2026-05-09-standalone-product.md](plans/tz/2026-05-09-standalone-product.md) (Фаза 1 — shadcn/ui scaffolding)
+> - ТЗ: [plans/archive/2026-05-09-ai-meeting-workspace.md](plans/archive/2026-05-09-ai-meeting-workspace.md)
+> - Дизайн-система-база: [plans/archive/2026-05-09-standalone-product.md](plans/archive/2026-05-09-standalone-product.md) (Фаза 1 — shadcn/ui scaffolding)
 
 ## Что хотим сделать
 
@@ -541,4 +541,4 @@ Vidstack даёт основу плеера, но дефолтный UI не п�
 
 ## Следующий шаг
 
-→ Обновление основного ТЗ ([plans/tz/2026-05-09-ai-meeting-workspace.md](plans/tz/2026-05-09-ai-meeting-workspace.md)) — добавление ссылки на этот документ и Фазы 0.5 «Design Foundations» с реализацией эталонной страницы.
+→ Обновление основного ТЗ ([plans/archive/2026-05-09-ai-meeting-workspace.md](plans/archive/2026-05-09-ai-meeting-workspace.md)) — добавление ссылки на этот документ и Фазы 0.5 «Design Foundations» с реализацией эталонной страницы.

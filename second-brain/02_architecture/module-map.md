@@ -287,14 +287,14 @@ LiveKit чистит атрибуты автоматически при disconne
 - **`public-demo.decorator.ts`** — `@PublicDemo()` декоратор для точечных исключений (concierge LLM-чат — read-only по природе, не мутирует данные).
 - **403 ответ:** `{ok: false, error: {code: 'demo_observer_readonly', message: 'Это демо-кабинет «Демо: ТехноСтрим» — здесь доступен только просмотр. Чтобы создавать данные, переключитесь в свою компанию и оплатите подписку.'}}`.
 - **Тесты:** 23 unit-тестов в `demo-observer.guard.spec.ts` (все ✅).
-- **ТЗ:** `plans/tz/2026-06-01-demo-shared-org-model.md` §4.3, профильная заметка [[demo-workspace]].
+- **ТЗ:** `plans/archive/2026-06-01-demo-shared-org-model.md` §4.3, профильная заметка [[demo-workspace]].
 - **Применение:** ~126 мутирующих эндпоинтов (POST/PATCH/DELETE) в 31 контроллере: tracker (projects/issues/sprints/cycles/boards/checklists/comments/labels/relations/attachments/documents/holidays/intake/imports/webhooks), meetings (meetings/participants/room-messages/recordings/reports/highlights/decisions), clones (clones/clones-admin), AI chat (chat/chat-v2/concierge), orgs (orgs/retention/goals/sprint-review).
 - **403 ответ:** `{ok: false, error: {code: 'subscription_required', message: 'Оплатите подписку, чтобы начать работу', currentStatus, price: 60000, currency: 'RUB', paymentUrl: '/settings/subscription'}}`.
 - **Исключения:** GET-запросы (read-only), `/auth/*`, `/billing/*`, webhook'и от платёжных провайдеров (HMAC-guarded), server-to-server (Crossmark).
 - **Модель подписки:** `Subscription { tenantId, status: DEMO|ACTIVE|PAST_DUE|SUSPENDED|CANCELED|EXPIRED, seatsBase: 31, seatsExtra, currentPeriodStart, currentPeriodEnd }`.
 - **Тариф:** 60 000 ₽/мес (или 576 000 ₽/год со скидкой 20%), +1 000 ₽/мес за каждого пользователя сверх 31.
 - **Тесты:** 14 unit-тестов (все ✅).
-- **ТЗ:** `plans/tz/2026-05-28-paywall-no-trial.md` (Фаза 1 ✅).
+- **ТЗ:** `plans/archive/2026-05-28-paywall-no-trial.md` (Фаза 1 ✅).
 
 ### Frontend (фазы 7–12)
 - `frontend/app/(admin)/admin/*` — Z-Admin (8 страниц + AdminShell). С 2026-05-31 перенесён из `(authenticated)/admin/` в standalone route-группу с собственным root-layout и `AdminAuthGuard` (без AppShell/EntitlementProvider).
@@ -508,7 +508,7 @@ AI-чат компании поверх knowledge-core, с conversation history 
 
 **ENV (через `TypedConfigService.chatV2`):** `CHAT_V2_HISTORY_MESSAGES=6`, `CHAT_V2_CONVERSATION_TTL_DAYS=90`, `CHAT_V2_CLEANUP_CRON='0 3 * * 0'`, `CHAT_V2_DEFAULT_MODE=synthetic`.
 
-> **Единый промпт-ответчик + человеческий контекст + таблицы (2026-06-15).** ТЗ [`plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md`](../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md).
+> **Единый промпт-ответчик + человеческий контекст + таблицы (2026-06-15).** ТЗ [`plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md`](../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md).
 > - **Один промпт без режимов.** Удалены `chat-v2/prompts/{factual,synthetic,clone-style}.prompt.ts`; `synthesis.service.ts` больше не выбирает ТЕКСТ промпта по `ChatV2Mode`. Графовый путь идёт по единому `BASE_SYSTEM_PROMPT` (роль, границы, few-shot, self-check, темпоральные правила «противоречащий факт» / «цепочка рассуждения» — больше не теряются). `askPerson` (clone_style+card) и brand-voice (clone_style+org) — отдельные движки, не тронуты.
 > - **Человеческий русский контекст.** `buildUserMessage` (knowledge-core `chat-v2.service.ts`): summary/history перенесены из SYSTEM в конец USER (кэш цел); русские ярлыки типов сигналов через `SIGNAL_TYPE_CONTEXT_RU` (`Record<SignalType,string>`, compile-guard на enum); русские теги `[ПРОТИВОРЕЧАЩИЙ ФАКТ]` / `[ЦЕПОЧКА РАССУЖДЕНИЯ К ФАКТУ]` вместо английских; «О компании» (per-tenant `CompanyProfile`) — стабильный хвост SYSTEM.
 > - **Умные таблицы — параллельный источник** (ЧАСТЬ B). Новый `ChatV2TableContextService` (knowledge-core): entity-bridge по `TableRow.entityId` + keyword-выбор таблиц → `parseSemanticFilter` → `TableSemanticFilterService.applyFilterToRows` (server-side eq/in/empty + остальные через выборку+TS-фильтр, единая семантика с фронтом). `ChatV2Service.ask` гоняет ветку таблиц параллельно с retrieval'ом графа (`Promise.allSettled` — падение ветки не валит граф), найденные строки идут синтезатору как «Данные из таблиц». Каждой ветке передаётся обогащённое понимание (`entityHints`/`entityIds`/`aggregation`). Caps — крутилки `chat_v2.table_context_max_rows` (20) / `chat_v2.table_context_max_tables` (2), сид `seed-admin-setting-chat-v2-tables.ts`. `@Optional`-инжект `TableSemanticFilterService` (export `TablesModule`, без DI-цикла).
@@ -992,7 +992,7 @@ INSIGHT_SPIKE_RATIO=3.0
 
 Шестой специалист Слоя 3 — Ideas Collector — **парно** с новым **Слоем 6 Probe-Agent**. Без активного уточнителя идеи превращаются в кладбище, поэтому пара неразделима (см. §3.3 (C4) зонтичного ТЗ).
 
-**Источник:** [`plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md`](../../plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md).
+**Источник:** [`plans/archive/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md`](../../plans/archive/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md).
 
 ### Backend — Specialist 3.6 (Ideas Collector)
 
@@ -1086,7 +1086,7 @@ PROBE_COLD_START_MODE_HOURS=24
 
 Финальная фаза SBA. **Самый чувствительный sub-TZ**: Employee Clones — клоны сотрудников по наблюдаемому поведению.
 
-**Источник:** [`plans/tz/2026-05-21-sba-gamma-1-specialist-3-7-skill-and-clone.md`](../../plans/tz/2026-05-21-sba-gamma-1-specialist-3-7-skill-and-clone.md).
+**Источник:** [`plans/archive/2026-05-21-sba-gamma-1-specialist-3-7-skill-and-clone.md`](../../plans/archive/2026-05-21-sba-gamma-1-specialist-3-7-skill-and-clone.md).
 
 ### Что добавлено
 
@@ -1194,7 +1194,7 @@ PERSONA_ROLE_AGG_MIN_PERSONS=2
 
 ### Доработки 2026-05-26 — admin CRUD CloneAccessGrant + frontend marketplace (Фаза 7 §9 рост)
 
-**Источник:** [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) + [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md). Коммиты `fc3d6fe` (rbac+schema), `c96505a` (admin/user API), `87fef5d` (patch-скрипт миграции), `578a777` (user frontend), `eab4d8f` (admin frontend).
+**Источник:** [`plans/archive/2026-05-26-clone-access-grant-admin-api.md`](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) + [`plans/archive/2026-05-26-clones-marketplace-frontend.md`](../../plans/archive/2026-05-26-clones-marketplace-frontend.md). Коммиты `fc3d6fe` (rbac+schema), `c96505a` (admin/user API), `87fef5d` (patch-скрипт миграции), `578a777` (user frontend), `eab4d8f` (admin frontend).
 
 **Backend (расширение модуля `clones/`):**
 - `services/clones-admin.service.ts` (новый, ~570 строк) — list / create / revoke / extend + per-clone view + enrichment (`cloneLabel` / `userName` / `userEmail` / `grantedBy`) батч-запросом без N+1. Re-grant поверх revoked делает физическое удаление старой revoked-записи в транзакции (audit-trail остаётся в `AdminAuditLog`).
@@ -1576,7 +1576,7 @@ backend/src/modules/tracker/
 
 ### Tracker `/me/tasks` — self-задача для помощника (2026-06-15)
 
-ТЗ [`plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md). Чтобы помощник (concierge) сам ставил задачи через инструмент `create_task`:
+ТЗ [`plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md). Чтобы помощник (concierge) сам ставил задачи через инструмент `create_task`:
 
 - `controllers/me-tasks.controller.ts` — `POST /api/v1/me/tasks`: рядовой ставит задачу **СЕБЕ** в проект «Входящие» через `issue`/`write` (policy.csv НЕ меняется — это self-операция). DTO `dto/issues/post-me-task.dto.ts`.
 - `services/me-tasks.service.ts` — создание self-задачи; `ensureInboxProjectId` вынесен в `ProjectsService` (общий с intake-приёмом).
@@ -1881,7 +1881,7 @@ mail-inbound/
 
 ## Admin Redesign — Фазы 0-9 (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-admin-redesign-tz.md`](../../plans/tz/2026-05-25-admin-redesign-tz.md). См. [admin-z-global.md](../01_projects/admin-z-global.md), [admin-settings.md](../01_projects/admin-settings.md), [admin-crons.md](../01_projects/admin-crons.md), [admin-workers.md](../01_projects/admin-workers.md), [admin-content.md](../01_projects/admin-content.md).
+**Источник:** [`plans/archive/2026-05-25-admin-redesign-tz.md`](../../plans/archive/2026-05-25-admin-redesign-tz.md). См. [admin-z-global.md](../01_projects/admin-z-global.md), [admin-settings.md](../01_projects/admin-settings.md), [admin-crons.md](../01_projects/admin-crons.md), [admin-workers.md](../01_projects/admin-workers.md), [admin-content.md](../01_projects/admin-content.md).
 
 Глобальная админка переработана в двухуровневый сайдбар (8 категорий × 36 разделов) с модульным блоком вкладок (`AdminSection` + `AdminTabs` + URL-driven state) и Cmd+K-палитрой. ~140 ENV-переменных мигрированы в БД (`AdminSetting`) с UI-редактированием.
 
@@ -1932,7 +1932,7 @@ mail-inbound/
 
 ### SBA β-8.1 + β-8.2 + β-8.3 — модуль `operations/` расширен (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
+**Источник:** [`plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md), [`plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 
 `backend/src/modules/operations/` — расширения поверх готового β-8:
 
@@ -1960,7 +1960,7 @@ mail-inbound/
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
+**Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
 
 Глобальная фича (не tenant-bound): фидбэк адресован команде Z. `super_admin`-only дашборд блоков с AI-кластеризацией.
 
@@ -1995,7 +1995,7 @@ mail-inbound/
 
 ## Concierge γ-2 — dialog-layer integration (2026-05-27)
 
-ТЗ [`plans/tz/2026-05-27-concierge-dialog-layer-integration.md`](../../plans/tz/2026-05-27-concierge-dialog-layer-integration.md). Полная заметка фичи — [[../01_projects/concierge-agent|concierge-agent]].
+ТЗ [`plans/archive/2026-05-27-concierge-dialog-layer-integration.md`](../../plans/archive/2026-05-27-concierge-dialog-layer-integration.md). Полная заметка фичи — [[../01_projects/concierge-agent|concierge-agent]].
 
 ### `backend/src/modules/ai-chat-quota/` — единая per-user квота AI-общения (ТЗ 2026-05-31)
 
@@ -2021,7 +2021,7 @@ mail-inbound/
 
 #### Помощник = развилка + руки + уточнитель (2026-06-15, актуально)
 
-ТЗ [`plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/tz/2026-06-14-assistant-router-dedup-and-prompt.md).
+ТЗ [`plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md`](../../plans/archive/2026-06-14-assistant-router-dedup-and-prompt.md).
 
 - `services/concierge.service.ts` — убраны `dialog.process()` + `preRetrieve` + preHits + intent-гейтинг + метрики dialog-layer. Помощник решает развилку сам выбором инструмента (native function-calling): действие/просмотр → инструмент, вопрос к памяти → `ask_chat_v2` (терминальный), неясно → ОДИН уточняющий вопрос, не про компанию → вежливый отказ. Понимание-цепочка и синтез — **один раз, внутри chat-v2**.
 - `prompts/concierge-respond.prompt.ts` — новый системный промпт (роль/границы/ingest/уточнение/карта инструментов по группам, cache-friendly). История — **4 пары** (крутилка `concierge.history_pairs`); summary остаётся.
@@ -2051,7 +2051,7 @@ Pino-логи: `stage: 'dialog-layer' | 'pre-retrieval'`.
 
 #### Слитый dialog-layer — «модуль понимания запроса» (2026-06-15)
 
-ТЗ [`plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md`](../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md). `DialogService.process` (зовётся ТОЛЬКО из chat-v2) теперь history-aware и слит в один LLM-вызов: `classify(сырая) → answerCache → expand` (реплика + summary + история → 3 самодостаточных вопроса, промпт `query-understand.prompt.ts`, taskType `dialog-multi-query`) → `queryPlan` по 3 формулировкам (`extract-plan.prompt.ts` v2). **Удалены** `ContextualizerService` / `ConfidenceEstimatorService` + их промпты, taskType `dialog-contextualize`/`dialog-confidence`, ENV `CONTEXTUALIZER_CONFIDENCE_MIN`. Поля `confidence`/`steps.contextualize` сохранены = 1.0/0 (совместимость потребителей). Глубина истории — крутилка AdminSetting `dialog_layer.query_history_pairs` (4), сид `seed-admin-setting-dialog-layer.ts`.
+ТЗ [`plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md`](../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md). `DialogService.process` (зовётся ТОЛЬКО из chat-v2) теперь history-aware и слит в один LLM-вызов: `classify(сырая) → answerCache → expand` (реплика + summary + история → 3 самодостаточных вопроса, промпт `query-understand.prompt.ts`, taskType `dialog-multi-query`) → `queryPlan` по 3 формулировкам (`extract-plan.prompt.ts` v2). **Удалены** `ContextualizerService` / `ConfidenceEstimatorService` + их промпты, taskType `dialog-contextualize`/`dialog-confidence`, ENV `CONTEXTUALIZER_CONFIDENCE_MIN`. Поля `confidence`/`steps.contextualize` сохранены = 1.0/0 (совместимость потребителей). Глубина истории — крутилка AdminSetting `dialog_layer.query_history_pairs` (4), сид `seed-admin-setting-dialog-layer.ts`.
 
 ### Тесты
 
@@ -2095,7 +2095,7 @@ Pipeline: `LogService.write → in-memory буфер → bulk createMany → Sys
 
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
-**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md). Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` + новый специалист Слоя 3 knowledge-core. Координаты воркера/cron'ов — [[../01_projects/workers-queues]], taskType'ы — [[../01_projects/ai-jobs]].
+**Источник:** [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md). Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` + новый специалист Слоя 3 knowledge-core. Координаты воркера/cron'ов — [[../01_projects/workers-queues]], taskType'ы — [[../01_projects/ai-jobs]].
 
 ### `backend/src/modules/goals/` (расширение)
 
@@ -2239,7 +2239,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ## Bitrix24-интеграция (2026-06-09)
 
-**Источник:** [`plans/tz/2026-06-09-bitrix24-integration-install.md`](../../plans/tz/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Roadmap дальше — [`plans/analysis/2026-06-09-bitrix24-next-steps.md`](../../plans/analysis/2026-06-09-bitrix24-next-steps.md). Схема — [[data-model]] §«Bitrix24», REST — [[../01_projects/api-layer]].
+**Источник:** [`plans/archive/2026-06-09-bitrix24-integration-install.md`](../../plans/archive/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Roadmap дальше — [`plans/analysis/2026-06-09-bitrix24-next-steps.md`](../../plans/analysis/2026-06-09-bitrix24-next-steps.md). Схема — [[data-model]] §«Bitrix24», REST — [[../01_projects/api-layer]].
 
 Новый backend-домен **`backend/src/modules/bitrix/`** — установка портала Bitrix24 на уровне org + жизненный цикл OAuth-токена (синк данных — отдельный этап). Образец — `chatbox` (per-org config + AES-GCM) и `billing/tochka` (OAuth-редирект). Воркеров нет (refresh по требованию).
 
@@ -2252,7 +2252,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ### Bitrix24 как источник — синк IM+CRM + анализ (2026-06-17, Ф0–Ф6)
 
-**Источник:** [`plans/tz/2026-06-17-bitrix24-source-sync.md`](../../plans/tz/2026-06-17-bitrix24-source-sync.md). Развитие домена `bitrix/` из «установки» в полноценный **источник памяти** (как ChatBox). Зеркала: `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal/Lead/CrmNote` ([[data-model]] §«Bitrix24»). `SourceType.bitrix`.
+**Источник:** [`plans/archive/2026-06-17-bitrix24-source-sync.md`](../../plans/archive/2026-06-17-bitrix24-source-sync.md). Развитие домена `bitrix/` из «установки» в полноценный **источник памяти** (как ChatBox). Зеркала: `BitrixUser/Dialog/DialogSession/Message/Contact/Company/Deal/Lead/CrmNote` ([[data-model]] §«Bitrix24»). `SourceType.bitrix`.
 
 - `bitrix-sync.service.ts` — `syncUsers` (`user.get` + автосвязка email→fuzzy + авто-создание Person), `syncDialogs` (`im.recent.get`→`im.dialog.messages.get`) + `rebuildDialogSessions` (**сессии-сутки**: новые сообщения группируются по UTC-дню → новая закрытая сессия), **CRM `syncCrm`** (Ф4b — дельта `crm.{contact,company,deal,lead}.list?filter[>=DATE_MODIFY]` + колонка `modifiedAt` + курсор `lastCrmSyncAt`, первый синк = now−`CRM_BACKFILL_DAYS`(7)д), `syncByScope`/`fullSync`. **Сопоставление сотрудников**: `listUsers` (+ кандидаты Person), `linkUser` (link/unlink/create). После синка — `enqueuePendingAnalysisIfEnabled` (гейт `analysisEnabled`).
 - `bitrix-ingest.service.ts` — мост в knowledge-core (как ChatBox): `generateDayRollup` (**1 LLM-вызов** `накопительное + сообщения дня → {daySummary, rollingSummary}`, plain-text JSON + `validate`+retry, taskType `chatbox-summary`, `dataClass:sensitive`; `daySummary`→сессия, `rollingSummary`→`BitrixDialog`), `ingestSession` → `RawEvent(sourceType=bitrix)` с `fullText` + `transcript.turns[*].authorPersonId` (из `BitrixUser.linkedPersonId`). **Ф4b — `ingestCrmDigests`**: посуточный CRM-дайджест за закрытые дни (от курсора `lastCrmDigestAt`, кап `MAX_DIGEST_DAYS_PER_RUN=7`) — детерминированный `fullText` (БЕЗ отдельного LLM, извлекает downstream block-ingest) → `RawEvent('crm-digest-<день>')`.
@@ -2398,7 +2398,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
 
-**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) (состав) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md) (визуал), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, 32 коммита. Модели — [[data-model]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) (состав) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md) (визуал), ТЗ-4 [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`, 32 коммита. Модели — [[data-model]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
 
 ### Новый модуль `meeting-uploads` (ТЗ-5)
 
@@ -2434,7 +2434,7 @@ ConversationalService, eventType `actions.reminder`). Дашборд (`DirectorD
 
 ## support — служба поддержки + закрытый контур + клон (2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4; Ф5 авто-отправка / Ф6 тон-адаптер отложены). Профильная заметка — [[../01_projects/support-desk]]; модели — [[data-model]] §«Служба поддержки»; taskType — [[../01_projects/ai-jobs]]; cron'ы — [[../01_projects/workers-queues]]; эндпоинты — [[../01_projects/api-layer]]; страницы — [[../01_projects/frontend-pages]].
+**Источник:** ТЗ [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4; Ф5 авто-отправка / Ф6 тон-адаптер отложены). Профильная заметка — [[../01_projects/support-desk]]; модели — [[data-model]] §«Служба поддержки»; taskType — [[../01_projects/ai-jobs]]; cron'ы — [[../01_projects/workers-queues]]; эндпоинты — [[../01_projects/api-layer]]; страницы — [[../01_projects/frontend-pages]].
 
 Вендорская служба поддержки на существующих кирпичах (трекер `Issue`, граф `KnowledgeGroup`, клон `clone-respond`, каналы `Notification`). Новое — ровно закрытый контур памяти, обучающая петля «черновик→правка», support-слой над трекером, клиентский виджет.
 

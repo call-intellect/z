@@ -7,7 +7,7 @@ phase: 9
 # Z-Admin (super_admin консоль) — после редизайна 2026-05-25
 
 > Глобальная админка владельца продукта Z/Кора. Доступ только под `User.isSuperAdmin = true` (отдельно от Membership-ролей Org).
-> Реализована поэтапно (Фазы 0–9), источник правды по дизайну — [plans/tz/2026-05-25-admin-redesign-tz.md](plans/tz/2026-05-25-admin-redesign-tz.md).
+> Реализована поэтапно (Фазы 0–9), источник правды по дизайну — [plans/archive/2026-05-25-admin-redesign-tz.md](plans/archive/2026-05-25-admin-redesign-tz.md).
 
 ## Назначение
 

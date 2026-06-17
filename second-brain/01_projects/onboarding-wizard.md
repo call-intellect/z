@@ -4,7 +4,7 @@ phase: 0c
 status: done
 date: 2026-05-21
 references:
-  - plans/tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md
+  - plans/archive/2026-05-21-phase-0c-onboarding-wizard-frontend.md
   - plans/analysis/2026-05-21-user-cabinet-design.md §8, §13
 ---
 
@@ -40,7 +40,7 @@ references:
 
 ## Shared эталонная демо-Org «Демо: ТехноСтрим» (ТЗ 2026-06-01)
 
-Источник: [`plans/tz/2026-06-01-demo-shared-org-model.md`](../../plans/tz/2026-06-01-demo-shared-org-model.md), анализ [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../../plans/analysis/2026-06-01-demo-shared-org-architecture.md). **Полностью заменяет** старую модель «копия ТехноСтрим в каждую Org» (ТЗ 2026-05-31-demo-auto-seed-and-cleanup отменён).
+Источник: [`plans/archive/2026-06-01-demo-shared-org-model.md`](../../plans/archive/2026-06-01-demo-shared-org-model.md), анализ [`plans/analysis/2026-06-01-demo-shared-org-architecture.md`](../../plans/analysis/2026-06-01-demo-shared-org-architecture.md). **Полностью заменяет** старую модель «копия ТехноСтрим в каждую Org» (ТЗ 2026-05-31-demo-auto-seed-and-cleanup отменён).
 
 **Идея.** Демо — это не операция (seed), это **состояние** (membership). Эталонная Org «ТехноСтрим» (`isReferenceDemo=true`) живёт **одна** в БД, новые пользователи получают `OrgMember(role='demo_observer')` к ней автоматически — без копирования, без ожидания, без тоста «Готовим…».
 

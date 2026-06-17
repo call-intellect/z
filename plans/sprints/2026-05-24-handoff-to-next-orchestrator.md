@@ -77,7 +77,7 @@ to: next-orchestrator
 ### Sprint 3 backend завершение (3 тикета)
 
 **B1-3.2 — Goals integration + strategic-alignment расширение** ~30-45 минут agent:
-- Sub-ТЗ: `plans/tz/2026-05-23-tracker-phase-1-models-api.md` раздел «Связь с Goals».
+- Sub-ТЗ: `plans/archive/2026-05-23-tracker-phase-1-models-api.md` раздел «Связь с Goals».
 - В `backend/src/modules/tracker/services/issues.service.ts` уже есть методы `linkGoal/unlinkGoal` — проверить что они полные (с IssueActivity).
 - Расширить `backend/src/modules/goals/cron/strategic-alignment.cron.ts` (или подобный): для каждой активной Goal сосчитать сколько Issue привязано (`Goal.linkedIssues`), сколько completed (state.category=completed), сколько осталось, % времени прошло. Snapshot в `GoalAlignmentSnapshot` или `Goal.progressSnapshot Json`.
 - Probe-trigger через ProbeService.suggest: если у пользователя ≥80% Issue без `goalId` → "stratgic_misalignment_high". `ProbeService.suggest({ type: 'strategic_misalignment_high', targetUserId, formulatedQuestion })`.
@@ -85,7 +85,7 @@ to: next-orchestrator
 - Тесты unit.
 
 **B1-3.3 — миграция legacy `Task` → `Issue`** ~45 минут agent:
-- Sub-ТЗ: `plans/tz/2026-05-23-tracker-phase-1-models-api.md` раздел «Миграция legacy Task модуля».
+- Sub-ТЗ: `plans/archive/2026-05-23-tracker-phase-1-models-api.md` раздел «Миграция legacy Task модуля».
 - Скрипт `backend/scripts/migrate-task-to-issue.ts`:
   - Для каждой Org создать виртуальный `Project { slug: 'from-meetings', identifier: 'MTG', name: 'Из встреч' }`.
   - Каждый существующий `Task` → новый `Issue` с `projectId` виртуального проекта, `externalSource='meeting_legacy'`, `linkedMeetingIds=[task.meetingId]`, `title=task.title`, `description=task.description`. assignee пытаемся найти User по email/имени; если не найден — `metadata.legacyAssigneeRaw`.
@@ -152,7 +152,7 @@ to: next-orchestrator
 - Temporal `validAt` фильтр.
 - Mode-specific prompts (factual / synthetic / clone_style).
 - Реализация в `backend/src/modules/dialog-layer/`.
-- Sub-ТЗ: `plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md`.
 
 **Поток C — Phase 3 трекера AI-фичи** (Sprint 6-7):
 - meeting-extract-actions расширение (одна или N задач из встречи с suggestedAssignee/Goal/DueDate).
@@ -160,19 +160,19 @@ to: next-orchestrator
 - Похожие задачи через KNN embeddings.
 - AI Q&A через chat-v2 для tracker.
 - auto-triage Intake.
-- Sub-ТЗ: `plans/tz/2026-05-23-tracker-phase-3-ai-features.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-tracker-phase-3-ai-features.md`.
 
 **Поток D — Activity Feeds + Specialist 3.8 Helpfulness + Recognition** (Sprint 4-6):
 - Activity Feeds (4 нед): модель ActivityFeedItem + 6 типов лент + WebSocket events.
 - Specialist 3.8 Helpfulness Agent (4 нед): 3 LlmTaskType, worker, 3 cron, 4 probe-trigger, 4 страницы UI + 3 виджета. **Этическая защита:** `question_unanswered`/`question_acknowledged_no_action` только private-to-admin + руководитель команды (никогда публично).
 - Recognition + Gamification (3 нед): Badge, Recognition Agent (от имени AI), ContributionSnapshot, BadgeAwarderCron.
-- Sub-ТЗ: `plans/tz/2026-05-23-activity-feeds.md`, `plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md`, `plans/tz/2026-05-23-gamification-and-motivation.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-activity-feeds.md`, `plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md`, `plans/archive/2026-05-23-gamification-and-motivation.md`.
 
 **Поток E — α-10 Admin LLM + Unit Economics** (Sprint 7):
 - ⚠ ВАЖНО: ДО старта α-10 — унификация двух admin-групп `(admin)/admin/*` vs `(authenticated)/admin/*`. Иначе плодим третью группу `/admin/llm/*`.
 - LlmProvider, LlmModel, AiCostDaily, OrgBudgetCap, CurrencyRate модели.
 - 4 cron'а: DailyCostAggregatorCron, OrgEconomicsCron, BudgetAlertCron, CurrencyRateSyncCron (ЦБ РФ), ProviderSmokeTestCron.
-- Sub-ТЗ: `plans/tz/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md`.
 
 ---
 
@@ -194,7 +194,7 @@ to: next-orchestrator
 - LlmTaskType `checkin-parse` извлекает 4 секции + sentiment.
 - COO Dashboard `/dashboard/operations`: сегодня + неделя.
 - Personal Relations: extension EntityLink с relation_quality.
-- Sub-ТЗ: `plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md`.
 
 **γ-2 Concierge Agent** (Sprint 12): NL → command parser для Cmd+K + Telegram голоса ("назначь встречу с Иваном завтра в 15").
 
@@ -223,21 +223,21 @@ to: next-orchestrator
 
 ### Главные документы
 - **Sprint Plan Wave 1:** `plans/sprints/2026-05-24-sprint-plan-wave-1.md`
-- **Зонтичный план Wave 1-3:** `plans/tz/2026-05-23-coo-and-tracker-umbrella.md`
+- **Зонтичный план Wave 1-3:** `plans/archive/2026-05-23-coo-and-tracker-umbrella.md`
 - **Reality-deltas:** `plans/analysis/2026-05-22-code-reality-deltas.md` ⚠ ОБЯЗАТЕЛЬНО прочесть перед запуском любого Wave 2 sub-ТЗ
 - **Стратегия трекера:** `plans/analysis/2026-05-23-tracker-as-entry-wedge.md`
 - **AI-COO readiness:** `plans/analysis/2026-05-23-ai-coo-readiness-analysis.md`
 - **Product overview:** `plans/analysis/2026-05-23-product-overview-simple.md`
 
 ### Sub-ТЗ для Wave 2-3
-- `plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md` — Phase 2 frontend
-- `plans/tz/2026-05-23-tracker-phase-3-ai-features.md` — Phase 3 AI
+- `plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md` — Phase 2 frontend
+- `plans/archive/2026-05-23-tracker-phase-3-ai-features.md` — Phase 3 AI
 - `plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md` — Phase 4 РФ
-- `plans/tz/2026-05-23-tracker-phase-5-import.md` — Phase 5 импорт
+- `plans/archive/2026-05-23-tracker-phase-5-import.md` — Phase 5 импорт
 - `plans/tz/2026-05-23-tracker-mobile-native.md` — мобилка (требует RN-среды)
-- `plans/tz/2026-05-23-activity-feeds.md`
+- `plans/archive/2026-05-23-activity-feeds.md`
 - `plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md`
-- `plans/tz/2026-05-23-gamification-and-motivation.md`
+- `plans/archive/2026-05-23-gamification-and-motivation.md`
 - 21 sub-ТЗ Кора v2 в `plans/tz/2026-05-23-sba-*.md`
 
 ### second-brain ключевые
@@ -301,7 +301,7 @@ to: next-orchestrator
 - Tracker модуль: backend/src/modules/tracker/. IssuesService.linkGoal/unlinkGoal уже есть (проверить полноту + IssueActivity).
 - Goals модуль: backend/src/modules/goals/. Найти strategic-alignment cron.
 - Schema: Goal.linkedIssues уже добавлен (Issue.goalId + reverse relation).
-- Sub-ТЗ: plans/tz/2026-05-23-tracker-phase-1-models-api.md раздел «Связь с Goals».
+- Sub-ТЗ: plans/archive/2026-05-23-tracker-phase-1-models-api.md раздел «Связь с Goals».
 - Skills: nestjs-rules, core-engineering-standards.
 
 Что сделать:
@@ -332,7 +332,7 @@ to: next-orchestrator
 Контекст:
 - Legacy: backend/src/modules/tasks/. Task = action items из встреч (с assigneeRaw String, без FK на User).
 - Новое: backend/src/modules/tracker/. Issue полноценный.
-- Sub-ТЗ: plans/tz/2026-05-23-tracker-phase-1-models-api.md раздел «Миграция legacy Task модуля».
+- Sub-ТЗ: plans/archive/2026-05-23-tracker-phase-1-models-api.md раздел «Миграция legacy Task модуля».
 - Skills: safe-seed-rules, core-engineering-standards.
 
 Что сделать:
@@ -402,7 +402,7 @@ to: next-orchestrator
 Ты backend разработчик Z/Кора. Wave 2 Sprint 4: Activity Feeds — единая модель + 6 типов лент.
 
 Контекст:
-- Sub-ТЗ: plans/tz/2026-05-23-activity-feeds.md (читать полностью).
+- Sub-ТЗ: plans/archive/2026-05-23-activity-feeds.md (читать полностью).
 - Backend: новый модуль backend/src/modules/activity-feed/.
 - Зависит от tracker (закрыто), insights (закрыто), decisions (закрыто), ideas (закрыто), curation (закрыто), probe (закрыто).
 - Skills: nestjs-rules, prisma-db-push-rules, core-engineering-standards.
@@ -469,7 +469,7 @@ to: next-orchestrator
 Ты backend разработчик Z/Кора. Wave 2: Recognition Agent + Gamification.
 
 Контекст:
-- Sub-ТЗ: plans/tz/2026-05-23-gamification-and-motivation.md (читать полностью).
+- Sub-ТЗ: plans/archive/2026-05-23-gamification-and-motivation.md (читать полностью).
 - α-2 wave-3 SignalType (helped_by, helped_to, thanks_explicit) — УЖЕ добавлены (commit 6b85491).
 - Зависит от Specialist 3.8 Helpfulness (Agent 16 параллельно).
 - Skills: nestjs-rules, z-ai-agent-rules, prisma-db-push-rules.
@@ -504,7 +504,7 @@ to: next-orchestrator
 Ты backend разработчик Z/Кора. Wave 2: α-5 DialogService (RAG-слой над chat-v2).
 
 Контекст:
-- Sub-ТЗ: plans/tz/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md (читать полностью).
+- Sub-ТЗ: plans/archive/2026-05-23-sba-alpha-5-dialog-layer-and-cache.md (читать полностью).
 - chat-v2 уже работает (cosine + BM25 + 1-hop graph retrieval). Не ломать.
 - KnowledgeCoreChatV2Service ядро retrieval — оставить как есть.
 - ChatV2OrchestrationService.ask() оркестрация — оборачивать сюда DialogService как препроцессор.

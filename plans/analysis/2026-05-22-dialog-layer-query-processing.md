@@ -221,7 +221,7 @@ _Создан: 2026-05-22 как фиксация формулировки вл�
 | Реестр специалистов | `CardSpecialistRegistry` (α-5) | Каркас, нужно расширить до tool-схемы |
 | Гибридный поиск | `SearchService` knowledge-core | Готов |
 | Темы как кластерный индекс | `Theme` (Phase 4) | Половина динамической карты уже считается |
-| Дашборд директора + AI-чат | `plans/tz/2026-05-10-phase-8-director-dashboard.md` | План есть, ляжет поверх chat-v2 |
+| Дашборд директора + AI-чат | `plans/archive/2026-05-10-phase-8-director-dashboard.md` | План есть, ляжет поверх chat-v2 |
 | Сигналы «где не уверены» | α-4 Curation (ConflictItem/stale/evolving) | Будет после α-4 |
 
 ### 5.4. Главные риски / tradeoffs

@@ -5,7 +5,7 @@ feature: Онтология уровня КОМПАНИИ — пробелы и 
 date: 2026-05-22
 related:
   - plans/analysis/2026-05-22-role-map-ontology-gap.md (парный документ — уровень должности)
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ)
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ)
   - second-brain/02_architecture/knowledge-core.md (текущее состояние графа)
   - second-brain/06_marketing/company-ontology.md (13 классов сущностей)
   - plans/analysis/2026-05-20-knowledge-core-vs-ontology-gap-analysis.md (предыдущий gap-анализ)
@@ -210,7 +210,7 @@ related:
 
 ## 2. Что уже покрыто в зонтичном ТЗ
 
-Сверка с [plans/tz/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md) + [second-brain/02_architecture/knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
+Сверка с [plans/archive/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md) + [second-brain/02_architecture/knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
 
 | Сущность из схемы | Куда ложится в текущем ТЗ |
 |---|---|
@@ -479,7 +479,7 @@ _Заполняется по итогам диалога с пользовате
 
 После согласования с пользователем (синхронно с [role-map analysis](2026-05-22-role-map-ontology-gap.md)):
 
-1. Внести правки в зонтичный ТЗ ([plans/tz/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md)) — общим пакетом по обоим analysis (§6.1).
+1. Внести правки в зонтичный ТЗ ([plans/archive/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md)) — общим пакетом по обоим analysis (§6.1).
 2. Создать draft sub-TZ:
    - `plans/tz/2026-05-22-sba-alpha-8-role-map-foundation.md` (из парного analysis).
    - `plans/tz/2026-05-22-sba-alpha-9-company-foundation.md` (из этого analysis).

@@ -1,6 +1,6 @@
 # DataClass Policy v1 — единые правила классификации данных
 
-Дата: 2026-05-25 · Источник: `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md` §4 + §W4.1.
+Дата: 2026-05-25 · Источник: `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md` §4 + §W4.1.
 
 Версия `v1` — соответствует ENV `DATACLASS_POLICY_VERSION=v1` и записывается в `DataClassAudit.policyVersion`.
 
@@ -65,7 +65,7 @@ Floor — минимально-допустимый уровень DataClass д�
 
 Override floors per Org доступен через `AdminSetting` ключ `dataclass_policy:floors` (JSON `Record<DerivedKind, DataClass>`) — читается через `getFloor(kind)`. Если AdminSetting не задан / недоступен — fallback на default из таблицы выше.
 
-> **Изменение vs предыдущая версия:** `knowledge_profile` (раньше floor=`sensitive`/`private` для не-сотрудников) переименован в `executable_persona` + `skill_profile`. Floor у обоих = `internal`, потому что Клон делается на роль, а не на человека. Подробности — `plans/tz/2026-05-25-clones-role-based-rebrand.md`.
+> **Изменение vs предыдущая версия:** `knowledge_profile` (раньше floor=`sensitive`/`private` для не-сотрудников) переименован в `executable_persona` + `skill_profile`. Floor у обоих = `internal`, потому что Клон делается на роль, а не на человека. Подробности — `plans/archive/2026-05-25-clones-role-based-rebrand.md`.
 
 ## 4. LLM-провайдеры
 

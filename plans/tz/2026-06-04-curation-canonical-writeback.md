@@ -5,7 +5,7 @@ date: 2026-06-04
 owner: sergrv80@gmail.com
 branch: feature/action-center-trust-ladder
 relates_to:
-  - plans/tz/2026-06-03-knowledge-card-correct.md
+  - plans/archive/2026-06-03-knowledge-card-correct.md
   - backend/src/modules/curation/services/curation.service.ts
   - backend/src/modules/regulations/services/regulations.service.ts
   - backend/src/modules/decisions/services/decisions.service.ts

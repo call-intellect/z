@@ -79,7 +79,7 @@ Structured-логи `feedback-digest`: `batchSize`, `topicsCount`, `newTopicsCre
 
 ## Ссылки
 
-- ТЗ: [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md)
+- ТЗ: [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md)
 - AI-jobs: [[ai-jobs|ai-jobs]] (taskType `feedback.cluster`)
 - Workers / queues: [[workers-queues|workers-queues]] (очередь `core.feedback-digest`)
 - API: [[api-layer|api-layer]] (раздел Feedback)

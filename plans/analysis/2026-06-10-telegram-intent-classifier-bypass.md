@@ -25,7 +25,7 @@
 ## Корень
 
 Конфликт двух фич, не состыкованных:
-- Классификатор — ТЗ [`plans/tz/2026-05-29-telegram-self-initiated-checkins.md`](../../plans/tz/2026-05-29-telegram-self-initiated-checkins.md) (rev3, согласован владельцем 2026-05-29): «классификация „план/отчёт/вопрос/заметка“ через LLM», расширили `QueryClassifierService`.
+- Классификатор — ТЗ [`plans/archive/2026-05-29-telegram-self-initiated-checkins.md`](../../plans/archive/2026-05-29-telegram-self-initiated-checkins.md) (rev3, согласован владельцем 2026-05-29): «классификация „план/отчёт/вопрос/заметка“ через LLM», расширили `QueryClassifierService`.
 - Бот для задач — ТЗ [`plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md`](../../plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md) (Wave 3, 2026-05-24): «фраза/голос в личке → задача», БЕЗ гейта намерения. Реализован буквально «всё → задача» и вызывается раньше.
 
 ## Что доделать (для ТЗ; без кода здесь)

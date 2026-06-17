@@ -26,7 +26,7 @@ date: 2026-05-09
 
 **Страница результата встречи.** Линейный стек карточек в `max-w-4xl`: Header → Video → Summary → ReportByType → FollowUp → Tasks → Transcript. Реализовано в [ResultPage.tsx](frontend/src/ui/components/meeting-result/ResultPage.tsx). Никакой синхронизации между транскриптом и видео, никаких глав, никакого AI-чата, никаких маркеров на timeline. Action items хранятся плоским массивом строк (см. `aiResultFromApi`), без assignee, статуса, due date, источника-цитаты.
 
-**Журнал встреч.** Таблица [MeetingsTable.tsx](frontend/src/ui/components/meetings-list/MeetingsTable.tsx) с фильтрами по типу/статусу/дате/title (`MeetingFiltersBar.tsx`). Без чекбоксов, без массовых действий, без тегов. В рамках уже спланированного [standalone-product ТЗ](plans/tz/2026-05-09-standalone-product.md) журнал переделывается в master-detail layout, но без расширений по фичам.
+**Журнал встреч.** Таблица [MeetingsTable.tsx](frontend/src/ui/components/meetings-list/MeetingsTable.tsx) с фильтрами по типу/статусу/дате/title (`MeetingFiltersBar.tsx`). Без чекбоксов, без массовых действий, без тегов. В рамках уже спланированного [standalone-product ТЗ](plans/archive/2026-05-09-standalone-product.md) журнал переделывается в master-detail layout, но без расширений по фичам.
 
 **AI-pipeline.** Существующие этапы — транскрибация (Vox/GigaAM), склейка по времени, разделение по спикерам, применение шаблона по типу, генерация summary, follow-up email, плоский список задач, custom_output_md для custom_prompt. Описано в [ai-analysis-by-type.md](second-brain/01_projects/ai-analysis-by-type.md) и работает через BullMQ-воркеры. Этапов смыслового разбиения на главы и построения embeddings пока нет.
 
@@ -725,4 +725,4 @@ model MeetingTag {
 
 ## Следующий шаг
 
-→ ТЗ: [plans/tz/2026-05-09-ai-meeting-workspace.md](plans/tz/2026-05-09-ai-meeting-workspace.md) (будет написан после ревью этого analysis-документа).
+→ ТЗ: [plans/archive/2026-05-09-ai-meeting-workspace.md](plans/archive/2026-05-09-ai-meeting-workspace.md) (будет написан после ревью этого analysis-документа).

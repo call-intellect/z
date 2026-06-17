@@ -6,7 +6,7 @@ date: 2026-06-08
 owner: Сергей (sergrv80@gmail.com)
 relates_to:
   - plans/analysis/2026-06-08-smart-tables-live-test-and-agent-quality.md
-  - plans/tz/2026-06-02-smart-tables-auto-creation.md
+  - plans/archive/2026-06-02-smart-tables-auto-creation.md
   - second-brain/01_projects/smart-tables.md
 ---
 > Анализ-источник: `plans/analysis/2026-06-08-smart-tables-live-test-and-agent-quality.md` (живой тест на проде, 10 прогонов) · Статус согласования: 2026-06-08

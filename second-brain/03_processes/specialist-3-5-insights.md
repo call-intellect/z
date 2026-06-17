@@ -8,9 +8,9 @@ owners_human:
   - продакт «второго мозга»
   - инженер knowledge-core
 related_plans:
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
-  - plans/tz/2026-05-21-sba-beta-4-specialist-3-5-insights.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-21-sba-beta-4-specialist-3-5-insights.md
+  - plans/archive/2026-05-22-final-roadmap.md
 related_projects:
   - 01_projects/insights.md
   - 01_projects/decisions.md

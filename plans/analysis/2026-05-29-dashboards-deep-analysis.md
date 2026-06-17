@@ -5,8 +5,8 @@ owner: Сергей
 type: analysis
 related:
   - plans/archive/2026-05-10-phase-8-director-dashboard.md
-  - plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md
-  - plans/tz/2026-05-27-sprints.md
+  - plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md
+  - plans/archive/2026-05-27-sprints.md
   - second-brain/01_projects/admin.md
   - second-brain/02_architecture/module-map.md
 ---

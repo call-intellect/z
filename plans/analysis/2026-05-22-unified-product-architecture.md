@@ -6,14 +6,14 @@ date: 2026-05-22
 approved-date: 2026-05-23
 approved-by: владелец продукта (sergrv80@gmail.com)
 author: claude (по запросу владельца, синтез 5 analysis-документов сессии + зонтичного ТЗ + новых требований)
-supersedes: plans/tz/2026-05-21-second-brain-agents-umbrella.md (становится главной точкой правды; зонтичное ТЗ от 2026-05-21 переходит в исторический режим)
+supersedes: plans/archive/2026-05-21-second-brain-agents-umbrella.md (становится главной точкой правды; зонтичное ТЗ от 2026-05-21 переходит в исторический режим)
 related:
   - plans/analysis/2026-05-22-ontology-reasoning-from-scratch.md
   - plans/analysis/2026-05-22-role-map-ontology-gap.md
   - plans/analysis/2026-05-22-company-ontology-gap.md
   - plans/analysis/2026-05-22-dialog-layer-query-processing.md
   - plans/analysis/2026-05-22-coo-dashboard-and-checkins.md
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
   - plans/analysis/2026-05-22-ui-design-deep-audit.md
   - plans/archive/2026-05-22-second-brain-visualization.md
   - second-brain/06_marketing/positioning.md
@@ -28,7 +28,7 @@ related:
 >
 > **Назначение.** Это **главная архитектурная карта продукта**. Она собирает в одно место всё, что обсудили в сессии 2026-05-22: ответы на 50+ открытых вопросов, новые требования (концьерж-агент в кабинете, юнит-экономика, zero-button каналы), уточнённую онтологию (4 оси знания вместо 2), полную карту слоёв и агентов.
 >
-> **Этот документ — для владельца продукта.** Технические детали (Prisma-модели, API, миграции) — в парном `plans/tz/2026-05-22-final-roadmap.md` (для программистов).
+> **Этот документ — для владельца продукта.** Технические детали (Prisma-модели, API, миграции) — в парном `plans/archive/2026-05-22-final-roadmap.md` (для программистов).
 >
 > **Принцип согласования.** После одобрения этого документа он становится главной точкой правды; зонтичное ТЗ от 2026-05-21 переходит в режим «исторический документ, см. v2». Все sub-ТЗ создаются от этой карты.
 >
@@ -671,8 +671,8 @@ Tool-use промпт описывает условия использовани
 
 (Эту секцию финализирую после отчёта Telegram-аудит-агента; здесь только структурный список.)
 
-- Из `plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md` — выкинуть упоминания «Inline-кнопки, диалоговые формы, slash-commands (`/ask`, `/note`, `/idea`, `/status`, `/myideas`, `/link`)». Оставить только `/start`.
-- Из `plans/tz/2026-05-21-telegram-employee-channel.md` — пересмотреть на zero-button.
+- Из `plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md` — выкинуть упоминания «Inline-кнопки, диалоговые формы, slash-commands (`/ask`, `/note`, `/idea`, `/status`, `/myideas`, `/link`)». Оставить только `/start`.
+- Из `plans/archive/2026-05-21-telegram-employee-channel.md` — пересмотреть на zero-button.
 - Из второго мозга `01_projects/conversational-channels.md` — убрать упоминания slash-команд.
 - Из `01_projects/ideas.md` — фраза «Telegram `/myideas` теперь функциональна» → «понимание запроса "покажи мои идеи" через DialogService».
 - В коде (если уже реализовано) — миграция: убрать `setMyCommands`, убрать `reply_markup`, убрать callback_query handler'ы, всё проходит через text-handler + DialogService.
@@ -950,10 +950,10 @@ OrgUnitEconomics (новая):
 3. **Concierge Agent (γ-2)** — реализуется сейчас как сквозной UX-слой кабинета.
 4. **δ-фаза (Orchestrator + Proactive + Voice)** — реализуется сейчас, не откладывается.
 5. **4 оси знания и 12 специалистов Слоя 3** — принимаются как целевая архитектура.
-6. **Юнит-экономика (α-10)** — реализуется сейчас, с уточнением: прайс моделей должен иметь **кодовый source of truth** (отдельный модуль/файл LLM-каталога с моделями и ценами), из которого данные **поставляются** в БД (seed) и далее видны на админ-странице. Это даёт версионирование цен в git + единую точку правды + работающий fallback, если БД пуста. Деталь — в `plans/tz/2026-05-22-final-roadmap.md` §9.6 (новый параграф).
+6. **Юнит-экономика (α-10)** — реализуется сейчас, с уточнением: прайс моделей должен иметь **кодовый source of truth** (отдельный модуль/файл LLM-каталога с моделями и ценами), из которого данные **поставляются** в БД (seed) и далее видны на админ-странице. Это даёт версионирование цен в git + единую точку правды + работающий fallback, если БД пуста. Деталь — в `plans/archive/2026-05-22-final-roadmap.md` §9.6 (новый параграф).
 7. **Все 50+ ответов в Части 4 (4.1-4.6)** — приняты целиком.
 
-**Статус документа:** `approved` (был `draft`). Парный roadmap (`plans/tz/2026-05-22-final-roadmap.md`) переведён в `approved` тем же актом.
+**Статус документа:** `approved` (был `draft`). Парный roadmap (`plans/archive/2026-05-22-final-roadmap.md`) переведён в `approved` тем же актом.
 
 ### Следующие шаги (исполнитель: оркестратор)
 
@@ -969,7 +969,7 @@ OrgUnitEconomics (новая):
 
 ## Приложение A. Полный список sub-ТЗ финальной раскладки
 
-Реструктурированная карта 20+ sub-ТЗ (вместо 13 из зонтичного 2026-05-21). Детали — в `plans/tz/2026-05-22-final-roadmap.md`.
+Реструктурированная карта 20+ sub-ТЗ (вместо 13 из зонтичного 2026-05-21). Детали — в `plans/archive/2026-05-22-final-roadmap.md`.
 
 ### Фаза α — устойчивый двигатель (10 sub-ТЗ)
 

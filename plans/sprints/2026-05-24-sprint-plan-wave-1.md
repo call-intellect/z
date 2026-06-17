@@ -4,7 +4,7 @@ status: draft
 feature: Sprint Plan Wave 1 (2026-05-26 — 2026-07-06, 6 нед) — оркестрация единого продуктового рывка Z/Кора
 date: 2026-05-24
 author: claude (роль — оркестратор разработки)
-umbrella: plans/tz/2026-05-23-coo-and-tracker-umbrella.md
+umbrella: plans/archive/2026-05-23-coo-and-tracker-umbrella.md
 realityCheck: plans/analysis/2026-05-22-code-reality-deltas.md
 horizon: Wave 1 — детально (3 спринта × 2 нед); Wave 2-3 — обзор + критический путь
 ---

@@ -189,10 +189,10 @@ to: next-orchestrator
   - 5 открытых решений до старта реализации β-8 (см. часть 4 документа).
 
 **3. Sub-ТЗ β-8** (формальное ТЗ):
-- `plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` — PersonalRelation + COO Operations Dashboard + DailyCheckIn.
+- `plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` — PersonalRelation + COO Operations Dashboard + DailyCheckIn.
 
 **4. Зонтичный план Wave 1-3** (карта всех тикетов):
-- `plans/tz/2026-05-23-coo-and-tracker-umbrella.md`.
+- `plans/archive/2026-05-23-coo-and-tracker-umbrella.md`.
 
 ### 📊 Другие критические исследования
 
@@ -247,7 +247,7 @@ second-brain/06_marketing/style-guide.md
 M second-brain/01_projects/frontend-pages.md
 M plans/sprints/2026-05-24-handoff-to-next-orchestrator.md  (этот файл устаревает — заменён текущим)
 M plans/sprints/2026-05-24-sprint-plan-wave-1.md
-M plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md
+M plans/archive/2026-05-23-sba-gamma-2-concierge-agent.md
 M second-brain/06_marketing/{competitors,icp,messaging,positioning}.md
 ```
 
@@ -419,7 +419,7 @@ Stash уничтожит работу коллеги (урок 2026-05-24 сес
 **β-8-1. Pre-работа — допиши ТЗ + ответь на 5 открытых решений (15-20 мин — ты сам, не агент):**
 
 Прочти:
-- `plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` (формальное ТЗ)
+- `plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` (формальное ТЗ)
 - `plans/analysis/2026-05-22-coo-dashboard-and-checkins.md` (постановка владельца, 7 функций COO)
 - `plans/analysis/2026-05-23-ai-coo-readiness-analysis.md` (gap-анализ, минимальный MVP)
 
@@ -476,7 +476,7 @@ model DailyCheckIn {
 Working directory: c:\work\z. Из backend/.
 
 ## Контекст
-- Sub-ТЗ: plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md (читать полностью).
+- Sub-ТЗ: plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md (читать полностью).
 - Concept: plans/analysis/2026-05-22-coo-dashboard-and-checkins.md (постановка владельца).
 - Gap: plans/analysis/2026-05-23-ai-coo-readiness-analysis.md (M1 β-8 — главный gap).
 - Schema: DailyCheckIn модель добавлена в schema.prisma коммитом оркестратора (см. выше).
@@ -514,7 +514,7 @@ Working directory: c:\work\z. Из backend/.
 
 ## Контекст
 - EntityLink модель уже есть в schema.prisma (knowledge-core, Фаза 2).
-- Sub-ТЗ: plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md (раздел PersonalRelation).
+- Sub-ТЗ: plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md (раздел PersonalRelation).
 - 7 типов отношений: manages | collaborates_with | mentors | conflicted_with | transfers_result_to | escalates_to | reports_to.
 
 ## Что НЕ дублировать
@@ -572,7 +572,7 @@ Working directory: c:\work\z. Из backend/.
 
 ### Приоритет №2 — Tracker Phase 3 AI features (2 нед)
 
-См. полное sub-ТЗ: `plans/tz/2026-05-23-tracker-phase-3-ai-features.md`. Разбить на 2 агентов:
+См. полное sub-ТЗ: `plans/archive/2026-05-23-tracker-phase-3-ai-features.md`. Разбить на 2 агентов:
 - Agent: `meeting-extract-actions` расширение (одна или N задач из встречи с suggestedAssignee/Goal/DueDate) + `issue-infer-fields` LlmTaskType + auto-triage Intake.
 - Agent: KNN похожие задачи через embeddings + AI Q&A через chat-v2 scope='card' (уже работает в IssueChat).
 
@@ -580,7 +580,7 @@ Working directory: c:\work\z. Из backend/.
 
 Frontend Cmd+K + ConciergeFloatingButton + ConciergeChat готовы. Нужен backend NL→command parser.
 
-См. `plans/tz/2026-05-23-sba-gamma-2-concierge-agent.md`. Подсказка владельца 2026-05-24: главный вход = плавающий значок «Кора-помощник» + Telegram-бот, Cmd+K — опциональный desktop shortcut.
+См. `plans/archive/2026-05-23-sba-gamma-2-concierge-agent.md`. Подсказка владельца 2026-05-24: главный вход = плавающий значок «Кора-помощник» + Telegram-бот, Cmd+K — опциональный desktop shortcut.
 
 ### Приоритет №4 — Tracker Phase 4 РФ (3-4 нед)
 
@@ -588,16 +588,16 @@ Frontend Cmd+K + ConciergeFloatingButton + ConciergeChat готовы. Нуже�
 
 ### Приоритет №5 — Tracker Phase 5 импорт (4 нед)
 
-См. `plans/tz/2026-05-23-tracker-phase-5-import.md`. После Phase 4.
+См. `plans/archive/2026-05-23-tracker-phase-5-import.md`. После Phase 4.
 
 ### Параллельные потоки (можно запускать как time-permits)
 
 - **α-8 Role Map + Appointment** (2 нед) — `plans/tz/2026-05-23-sba-alpha-8-{wave3,wave4}-*.md`.
-- **α-9 Company Foundation** (2 нед) — `plans/tz/2026-05-23-sba-alpha-9-wave3-company-foundation-services.md`.
-- **α-10 Admin LLM + Unit Economics** (3 нед) — `plans/tz/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md`. ⚠ ДО старта — унификация admin-групп.
-- **γ-3 CrossFunctional Handoff** (2 нед) — `plans/tz/2026-05-23-sba-gamma-3-cross-functional-process-handoff.md`.
-- **δ-1 Orchestrator + OrgKnowledgeIndex** (2 нед) — `plans/tz/2026-05-23-sba-delta-1-orchestrator-org-knowledge-index.md`.
-- **δ-2 ProactiveWatcher** (2 нед) — `plans/tz/2026-05-23-sba-delta-2-proactive-watcher.md`.
+- **α-9 Company Foundation** (2 нед) — `plans/archive/2026-05-23-sba-alpha-9-wave3-company-foundation-services.md`.
+- **α-10 Admin LLM + Unit Economics** (3 нед) — `plans/archive/2026-05-23-sba-alpha-10-wave3-admin-llm-economics.md`. ⚠ ДО старта — унификация admin-групп.
+- **γ-3 CrossFunctional Handoff** (2 нед) — `plans/archive/2026-05-23-sba-gamma-3-cross-functional-process-handoff.md`.
+- **δ-1 Orchestrator + OrgKnowledgeIndex** (2 нед) — `plans/archive/2026-05-23-sba-delta-1-orchestrator-org-knowledge-index.md`.
+- **δ-2 ProactiveWatcher** (2 нед) — `plans/archive/2026-05-23-sba-delta-2-proactive-watcher.md`.
 
 ---
 
@@ -675,7 +675,7 @@ bun run migrate-task-to-issue --apply    # реально применить (и
 4. Прочитать `plans/analysis/2026-05-23-ai-coo-readiness-analysis.md` (20 мин).
 
 **Час 2-3: β-8 prep**
-5. Прочитать `plans/analysis/2026-05-22-coo-dashboard-and-checkins.md` (постановка владельца) и `plans/tz/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` (sub-ТЗ).
+5. Прочитать `plans/analysis/2026-05-22-coo-dashboard-and-checkins.md` (постановка владельца) и `plans/archive/2026-05-23-sba-beta-8-personal-relation-coo-checkin.md` (sub-ТЗ).
 6. Принять решения по 5 открытым вопросам β-8 (см. §7 β-8-1) и зафиксировать в новой версии sub-ТЗ или прямой правкой.
 7. Добавить DailyCheckIn модель в schema.prisma + `bun run prisma:push && bun run prisma:generate` + коммит.
 

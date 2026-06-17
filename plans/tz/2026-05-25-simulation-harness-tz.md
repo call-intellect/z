@@ -4,7 +4,7 @@ status: draft
 feature: Симулятор месяца работы компании на 20 человек — реальные вызовы DeepSeek через весь pipeline Z для проверки сквозной работоспособности и расчёта unit-economics
 date: 2026-05-25
 relates_to:
-  - plans/tz/2026-05-25-demo-mode-tz.md
+  - plans/archive/2026-05-25-demo-mode-tz.md
   - second-brain/01_projects/ai-analysis-by-type.md
   - second-brain/01_projects/ai-jobs.md
   - second-brain/01_projects/workers-queues.md

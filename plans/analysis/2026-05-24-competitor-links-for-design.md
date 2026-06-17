@@ -8,7 +8,7 @@ related:
   - plans/analysis/2026-05-23-market-research-final.md
   - plans/analysis/2026-05-23-competitive-analysis-v2.md
   - plans/analysis/2026-05-23-tracker-as-entry-wedge.md
-  - plans/tz/2026-05-23-coo-and-tracker-umbrella.md
+  - plans/archive/2026-05-23-coo-and-tracker-umbrella.md
 ---
 
 # Большой список конкурентов с ссылками для дизайн-референса

@@ -27,7 +27,7 @@ blocks_sub_tz: tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md (не соз
 |---|---|---|---|---|---|
 | 1 | Текущий код | [Sidebar.tsx](../../frontend/src/ui/components/app-shell/Sidebar.tsx) | «Оперативный кабинет встреч» | `/dashboard` | «Создать встречу» |
 | 2 | Целевой UX из delivery/ | [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md), [second-brain/01_projects/frontend-pages.md](../../second-brain/01_projects/frontend-pages.md) | «Память компании — срезы времени и сущности» | `/today` | «⊕ Дамп» |
-| 3 | Фаза 0 (зонтичный ТЗ) | [plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | «Каркас компании: Структура / Документы / Карты должностей» | дашборд компании после wizard'а | — |
+| 3 | Фаза 0 (зонтичный ТЗ) | [plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | «Каркас компании: Структура / Документы / Карты должностей» | дашборд компании после wizard'а | — |
 
 Аналитика ЛК — это **примирение трёх моделей** в одну непротиворечивую навигацию, которую можно постепенно эволюционировать от состояния «как сейчас» к состоянию «целевой UX delivery/», проходя через состояние Фазы 0 без переписывания фронта на каждом шаге.
 
@@ -606,7 +606,7 @@ Empty-state карты должности: «Карта формируется. 
 
 Итого добавляется к Фазе 0: ~5-7 дней frontend + 1-2 дня backend (на `text.adapter`). В контексте оценки Фазы 0 (2-3 месяца) — приемлемо. Все четыре расширения — это **закрытие реальных пробелов**, а не расширение функционала.
 
-**Действие после accept'а аналитики (обязательно перед стартом sub-TZ 0c).** В зонтичный ТЗ Фазы 0 ([`plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`](../tz/2026-05-21-phase-0-roles-and-onboarding.md)) добавляется новая секция матрицы прослеживаемости **K. Расширения скопа из аналитики ЛК (§11)** со строками:
+**Действие после accept'а аналитики (обязательно перед стартом sub-TZ 0c).** В зонтичный ТЗ Фазы 0 ([`plans/archive/2026-05-21-phase-0-roles-and-onboarding.md`](../tz/2026-05-21-phase-0-roles-and-onboarding.md)) добавляется новая секция матрицы прослеживаемости **K. Расширения скопа из аналитики ЛК (§11)** со строками:
 
 - `text.adapter` в `backend/src/modules/ingest/adapters/` (в sub-TZ 0b).
 - Страница `/dump` минимальная — textarea + сохранить (в sub-TZ 0c).
@@ -661,7 +661,7 @@ Empty-state карты должности: «Карта формируется. 
 
 После принятия этой аналитики надо обновить:
 
-- [`plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`](../tz/2026-05-21-phase-0-roles-and-onboarding.md) — заменить ссылку `2026-05-XX-user-cabinet-design.md` на `2026-05-21-user-cabinet-design.md` (frontmatter `related` + §1 «Анализ — источники»).
+- [`plans/archive/2026-05-21-phase-0-roles-and-onboarding.md`](../tz/2026-05-21-phase-0-roles-and-onboarding.md) — заменить ссылку `2026-05-XX-user-cabinet-design.md` на `2026-05-21-user-cabinet-design.md` (frontmatter `related` + §1 «Анализ — источники»).
 - При написании sub-TZ 0c — учесть расширения scope из §11 этого документа.
 - При написании sub-TZ 0b — добавить `text.adapter` к `document.adapter` (расширение из §11).
 - [`second-brain/index.md`](../../second-brain/index.md) — добавить ссылку на этот файл в раздел «Активные ТЗ» (либо «Анализы»), когда статус draft → final.
@@ -697,6 +697,6 @@ Empty-state карты должности: «Карта формируется. 
 
 → Применение §14 (обновить зонтичный ТЗ Фазы 0 + второй мозг).
 
-→ Написание `plans/tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md` на основе этой аналитики.
+→ Написание `plans/archive/2026-05-21-phase-0c-onboarding-wizard-frontend.md` на основе этой аналитики.
 
-→ Параллельно — пометить в `plans/tz/2026-05-21-phase-0b-document-ingest.md` (когда будет создан) расширение скопа `text.adapter`.
+→ Параллельно — пометить в `plans/archive/2026-05-21-phase-0b-document-ingest.md` (когда будет создан) расширение скопа `text.adapter`.

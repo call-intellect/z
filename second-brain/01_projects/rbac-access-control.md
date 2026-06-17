@@ -32,7 +32,7 @@ type: architecture
 
 ## Org / Membership / Invitations
 
-Введено в Фазе 0 ТЗ knowledge-core ([plans/tz/2026-05-10-knowledge-core-tz.md](../../plans/tz/2026-05-10-knowledge-core-tz.md), Шаги 1-5). До Фазы 0 ресурсы (встречи, карточки, задачи) принадлежали `User` напрямую через `ownerId`, что блокировало многопользовательские сценарии. После Фазы 0 любой ресурс принадлежит **Org** (через `tenantId`), а доступ внутри Org регулируется RBAC (роли + visibilityMode). Multi-tenancy теперь сквозная: `TenantGuard` применяется по всему backend (~160 контроллеров/модулей), не только в новых модулях.
+Введено в Фазе 0 ТЗ knowledge-core ([plans/archive/2026-05-10-knowledge-core-tz.md](../../plans/archive/2026-05-10-knowledge-core-tz.md), Шаги 1-5). До Фазы 0 ресурсы (встречи, карточки, задачи) принадлежали `User` напрямую через `ownerId`, что блокировало многопользовательские сценарии. После Фазы 0 любой ресурс принадлежит **Org** (через `tenantId`), а доступ внутри Org регулируется RBAC (роли + visibilityMode). Multi-tenancy теперь сквозная: `TenantGuard` применяется по всему backend (~160 контроллеров/модулей), не только в новых модулях.
 
 ### Сущности БД
 

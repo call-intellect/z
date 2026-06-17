@@ -6,7 +6,7 @@ updated: 2026-05-10
 
 # Themes (AI-кластеры IdeaBlock'ов)
 
-Реализовано 2026-05-10 по [plans/tz/2026-05-10-knowledge-core-tz.md](../../plans/tz/2026-05-10-knowledge-core-tz.md) §Фаза 4.
+Реализовано 2026-05-10 по [plans/archive/2026-05-10-knowledge-core-tz.md](../../plans/archive/2026-05-10-knowledge-core-tz.md) §Фаза 4.
 
 ## Главная идея
 
@@ -133,5 +133,5 @@ Seed: `backend/scripts/seed-llm-task-routes-knowledge-core.ts --update-existing`
 
 ## Источники
 
-- ТЗ: [plans/tz/2026-05-10-knowledge-core-tz.md §Фаза 4](../../plans/tz/2026-05-10-knowledge-core-tz.md)
+- ТЗ: [plans/archive/2026-05-10-knowledge-core-tz.md §Фаза 4](../../plans/archive/2026-05-10-knowledge-core-tz.md)
 - Концепция веток компании: [[../02_architecture/knowledge-core]] (enum `ThemeBranch`).

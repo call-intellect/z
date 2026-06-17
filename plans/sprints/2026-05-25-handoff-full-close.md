@@ -43,10 +43,10 @@ scope: финальное закрытие всего недоделанного
 
 | # | Тикет | ТЗ | Что нужно | Время | Приоритет |
 |---|---|---|---|---|---|
-| **1** | **Gamification frontend** | `plans/tz/2026-05-23-gamification-and-motivation.md` | 5 страниц + 3 виджета + api-client. Backend готов (4 модели + 4 cron + RecognitionFormulateWorker + bridges). | 3 дня | 🟢 P0 |
+| **1** | **Gamification frontend** | `plans/archive/2026-05-23-gamification-and-motivation.md` | 5 страниц + 3 виджета + api-client. Backend готов (4 модели + 4 cron + RecognitionFormulateWorker + bridges). | 3 дня | 🟢 P0 |
 | **2** | **Helpfulness frontend** | `plans/tz/2026-05-23-specialist-3-8-helpfulness-agent.md` | 3 страницы + 3 виджета + api-client. Backend готов (3 модели + worker + 3 cron + 4 probe-trigger + 2 controller + HNSW + bridge с Recognition). | 3 дня | 🟢 P0 |
-| **3** | **kie-grsai LLM Router** | `plans/tz/2026-05-24-kie-grsai-llm-router-integration.md` | seed-провайдеры в БД + цены `gemini-3-flash` / `gpt-5-4` + unit-тесты + smoke. Основа KieService+GrsaiService+enum+dispatch готова. | 1 день | 🟠 P1 |
-| **4** | **δ-3 WebSocket-стриминг голосового ВВОДА** | `plans/tz/2026-05-23-sba-delta-3-voice-channel-adapter.md` | WebSocket-gateway для real-time стриминга микрофона → ASR (вместо file-upload). Сокращает задержку с 15 сек до 1-2 сек. **Голосовой вывод не делаем — Concierge отвечает только текстом.** | 1.5-2 дня | 🟠 P1 |
+| **3** | **kie-grsai LLM Router** | `plans/archive/2026-05-24-kie-grsai-llm-router-integration.md` | seed-провайдеры в БД + цены `gemini-3-flash` / `gpt-5-4` + unit-тесты + smoke. Основа KieService+GrsaiService+enum+dispatch готова. | 1 день | 🟠 P1 |
+| **4** | **δ-3 WebSocket-стриминг голосового ВВОДА** | `plans/archive/2026-05-23-sba-delta-3-voice-channel-adapter.md` | WebSocket-gateway для real-time стриминга микрофона → ASR (вместо file-upload). Сокращает задержку с 15 сек до 1-2 сек. **Голосовой вывод не делаем — Concierge отвечает только текстом.** | 1.5-2 дня | 🟠 P1 |
 | **5** | **Tracker email-to-task IMAP** | `plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md` | Mail-inbound через IMAP (уникальный `project-<id>@inbox.kora.app`) → создание Issue. Остальное Phase 4 готово (TG-бот, голос, digest, 10 templates, HolidayService). | 2 дня | 🟠 P1 |
 | **6** | **Wave 2 polish (3 микро)** | inline | `GET /me/inbox/count` + `ChatV2ScopeEnum + 'issue'` + `@testing-library/react` + 4 базовых теста Board.tsx. | 0.5 дня | 🟠 P1 |
 | **7** | **prompts-hardening** | `plans/tz/2026-05-24-prompts-hardening.md` | 16 фич (F1-F16) в 3 фазах. F1 injection-guard и F2 confidence-calibration — security/качество критично. | 13-16 дней (3 фазы) | 🟡 P2 |
@@ -136,7 +136,7 @@ Working directory: c:\work\z. Стек: NestJS backend (`backend/`) + Next.js 14
 Ты frontend разработчик Z/Кора. Тикет: Gamification frontend.
 
 ## Контекст
-- Sub-ТЗ: `plans/tz/2026-05-23-gamification-and-motivation.md` — прочитай целиком, особенно §«Что делаем» и §«Pages + виджеты».
+- Sub-ТЗ: `plans/archive/2026-05-23-gamification-and-motivation.md` — прочитай целиком, особенно §«Что делаем» и §«Pages + виджеты».
 - Backend готов: модели `Recognition`, `RecognitionThanks`, `CheckinStreak`, `IdeaContributionStat` в `backend/prisma/schema.prisma`. Сервисы и cron'ы в `backend/src/modules/recognition/` и `backend/src/modules/gamification/`. RecognitionFormulateWorker уже шлёт уведомления через ActivityFeedService.publish.
 - Соседи: Activity Feeds frontend готов в `frontend/app/(authenticated)/feed/*`. AppShell — `frontend/src/ui/components/app-shell/AppShell.tsx`. Sidebar — там же `Sidebar.tsx`.
 
@@ -253,7 +253,7 @@ Working directory: c:\work\z. Стек: NestJS backend (`backend/`) + Next.js 14
 Ты backend разработчик Z/Кора. Тикет: kie-grsai LLM Router — доделки.
 
 ## Контекст
-- Sub-ТЗ: `plans/tz/2026-05-24-kie-grsai-llm-router-integration.md`.
+- Sub-ТЗ: `plans/archive/2026-05-24-kie-grsai-llm-router-integration.md`.
 - Уже готово: `KieService`, `GrsaiService`, enum/capability/dispatch в `backend/src/modules/ai/services/llm-router.service.ts`. Адаптеры провайдеров в `backend/src/modules/ai/services/providers/`.
 - Не готово (по ревизии 2026-05-24): unit-тесты, seed провайдеров/моделей в БД, цены `gemini-3-flash` / `gpt-5-4`, A/B seed + smoke-тест.
 
@@ -313,7 +313,7 @@ Working directory: c:\work\z. Стек: NestJS backend (`backend/`) + Next.js 14
 Ты fullstack разработчик Z/Кора. Тикет: δ-3 — WebSocket-стриминг голосового ВВОДА в Concierge.
 
 ## Контекст
-- Sub-ТЗ: `plans/tz/2026-05-23-sba-delta-3-voice-channel-adapter.md`.
+- Sub-ТЗ: `plans/archive/2026-05-23-sba-delta-3-voice-channel-adapter.md`.
 - Готово: VoiceChannelAdapter, REST `POST /api/v1/voice/transcribe` (file → text), TtsService + `/voice/synthesize` (используется не в Concierge — оставляем как есть, не трогаем).
 - НЕ готово (по ревизии 2026-05-24): **WebSocket-стриминг голоса отсутствует** — `ConciergeVoice.tsx` использует file-upload (записал → загрузил → распарсил → ответ). Это даёт задержку 15-18 секунд от начала записи до текстового ответа. Нужен стриминг ≤1-2 сек после отпускания микрофона.
 
@@ -650,7 +650,7 @@ DoD: `bun run test:unit` зелёный, новые тесты покрываю�
 ## Что сделать
 1. Прочитай ТЗ `plans/tz/2026-05-24-supervised-prompt-optimization.md` целиком.
 2. Прочитай связанные ТЗ:
-   - `plans/tz/2026-05-21-phase-A-prompt-registry-admin.md` (родительский) — в plans/archive/.
+   - `plans/archive/2026-05-21-phase-A-prompt-registry-admin.md` (родительский) — в plans/archive/.
    - `plans/tz/2026-05-24-prompts-hardening.md` — сейчас тоже идёт.
 3. Составь короткий (1 страница) **discovery-документ** для владельца:
    - Что такое SPO в нашем контексте (3-5 предложений).

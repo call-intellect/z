@@ -250,7 +250,7 @@ EXPIRED → ACTIVE (повторная оплата)
 
 ### Фаза 1: Демо-кабинет (приоритет — высокий, выполняется)
 
-ТЗ: [plans/tz/2026-05-28-demo-workspace.md](../tz/2026-05-28-demo-workspace.md)
+ТЗ: [plans/archive/2026-05-28-demo-workspace.md](../tz/2026-05-28-demo-workspace.md)
 
 - [ ] **1.1** Создать `backend/scripts/seed-demo-workspace.ts` — seed всех сущностей (ТехноСтрим, 12 сотрудников, 3 проекта, 7 встреч)
 - [ ] **1.2** Добавить онбординг-шаг «Демо или с нуля?» (после welcome step-6)
@@ -260,7 +260,7 @@ EXPIRED → ACTIVE (повторная оплата)
 
 ### Фаза 2: SubscriptionGuard + Paywall UI
 
-ТЗ: [plans/tz/2026-05-28-paywall-no-trial.md](../tz/2026-05-28-paywall-no-trial.md)
+ТЗ: [plans/archive/2026-05-28-paywall-no-trial.md](../tz/2026-05-28-paywall-no-trial.md)
 
 - [ ] **2.1** Создать `SubscriptionGuard` (проверка `status === 'ACTIVE'` для мутаций)
 - [ ] **2.2** Добавить декоратор `@RequireSubscription()`

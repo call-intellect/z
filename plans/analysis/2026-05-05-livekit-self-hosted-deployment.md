@@ -84,4 +84,4 @@ _(заполняется после обсуждения)_
 
 ## Следующий шаг
 
-→ ТЗ собрано: `plans/tz/2026-05-06-infrastructure-deployment-tz.md` (готово к реализации, 10 фаз).
+→ ТЗ собрано: `plans/archive/2026-05-06-infrastructure-deployment-tz.md` (готово к реализации, 10 фаз).

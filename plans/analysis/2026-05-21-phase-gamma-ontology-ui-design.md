@@ -266,7 +266,7 @@ _(пусто)_
 
 ## 12. Связи и обновления других документов
 
-> **К заполнению после §5.** Что обновить в `plans/tz/2026-05-21-phase-0-roles-and-onboarding.md`, `second-brain/index.md`, `second-brain/13_glossary/ui-glossary.md` после accept'а γ-аналитики.
+> **К заполнению после §5.** Что обновить в `plans/archive/2026-05-21-phase-0-roles-and-onboarding.md`, `second-brain/index.md`, `second-brain/13_glossary/ui-glossary.md` после accept'а γ-аналитики.
 
 _(пусто)_
 

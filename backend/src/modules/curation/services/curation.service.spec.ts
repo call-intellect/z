@@ -12,13 +12,36 @@ import type { ConversationalService } from '../../conversational/conversational.
 import { CurationService, type TriageInput } from './curation.service';
 import type { CuratorRoutingService } from './curator-routing.service';
 
+/**
+ * Unit-тесты Action Center A1 «лестница доверия» (2026-06-02).
+ *
+ * Покрытие:
+ *   - критический тип + high confidence + AI-судья accept-консенсус →
+ *     провизорная канонизация (CardVersion.trustTier='provisional', без
+ *     блокирующего CurationItem);
+ *   - AI-судья reject/split → deep CurationItem (человек);
+ *   - debate недоступен (null) → deep CurationItem (fallback);
+ *   - debate.judge бросил → deep CurationItem (fallback);
+ *   - аудит-выборка rate=1 → создаётся audit-CurationItem; rate=0 → нет;
+ *   - trustTier на auto-пути ('auto') и human-пути (decide) корректен.
+ */
+
 interface CardVersionRow {
   id: string;
   version: number;
   trustTier: string;
 }
 
-function buildPrisma(args?: { curationSettings?: Record<string, unknown> | null }) {
+/** Собирает мок PrismaService + наблюдаемые буферы создания записей. */
+function buildPrisma(args?: {
+  curationSettings?: Record<string, unknown> | null;
+  /** Б56 — если задано, curationItem.findFirst вернёт этот pending-item. */
+  existingPendingItem?: {
+    id: string;
+    level: string;
+    candidateCuratorIds: string[];
+  } | null;
+}) {
   const createdCardVersions: Array<{ trustTier: string; resourceType: string }> = [];
   const createdCurationItems: Array<{
     level: string;
@@ -45,8 +68,14 @@ function buildPrisma(args?: { curationSettings?: Record<string, unknown> | null 
       }),
     },
     curationItem: {
+      // Б56 — idempotency-guard читает pending-item по (resourceType,resourceId).
+      findFirst: vi.fn(async () => args?.existingPendingItem ?? null),
       create: vi.fn(
-        async ({ data }: { data: { level: string; status: string; triageReason: unknown } }) => {
+        async ({
+          data,
+        }: {
+          data: { level: string; status: string; triageReason: unknown };
+        }) => {
           const id = `ci-${createdCurationItems.length + 1}`;
           createdCurationItems.push({
             level: data.level,
@@ -69,6 +98,10 @@ function buildCfg(overrides?: Partial<Record<string, unknown>>): TypedConfigServ
       deepReviewThresholdDefault: 0.6,
       criticalTypesDefault: ['regulation', 'process', 'decision'],
       itemExpiryDays: 30,
+      // A1/A2 «лестница доверия» — платформенные дефолты теперь приходят из
+      // cfg.curation (AdminSetting → ENV → default), а не из констант сервиса.
+      // Значения совпадают с code-fallback (0.8 / true / 0.05 / false / 0.6 /
+      // 0.97 / 0.02 / 20 / 0.2), чтобы существующие A1-тесты не менялись.
       provisionalThresholdDefault: 0.8,
       aiVerifierEnabled: true,
       auditSampleRate: 0.05,
@@ -153,8 +186,8 @@ function makeService(opts: {
     opts.metrics,
     opts.conversational ?? buildConversational(),
     opts.routing,
-    null,
-    null,
+    null, // skillCategories
+    null, // events
     opts.debate,
   );
 }
@@ -195,6 +228,7 @@ describe('CurationService — A1 «лестница доверия»', () => {
     expect(res.curationItemId).toBeNull();
     expect(createdCardVersions).toHaveLength(1);
     expect(createdCardVersions[0]?.trustTier).toBe('provisional');
+    // Аудит rate=0 → CurationItem НЕ создан вовсе.
     expect(createdCurationItems).toHaveLength(0);
     expect(metrics.incCurationProvisional).toHaveBeenCalledWith({
       resourceType: 'decision',
@@ -291,6 +325,7 @@ describe('CurationService — A1 «лестница доверия»', () => {
 
     expect(res.decision).toBe('provisional');
     expect(createdCardVersions[0]?.trustTier).toBe('provisional');
+    // rate=1 → ровно один лёгкий аудит-item (не блокирующий).
     expect(createdCurationItems).toHaveLength(1);
     expect(createdCurationItems[0]?.level).toBe('light');
     expect(createdCurationItems[0]?.status).toBe('pending');
@@ -352,8 +387,59 @@ describe('CurationService — A1 «лестница доверия»', () => {
     expect(createdCurationItems[0]?.level).toBe('deep');
     expect(debate?.judge).not.toHaveBeenCalled();
   });
+
+  // ─────────────────── Б56 (K4): идемпотентность triage ───────────────────
+
+  it('Б56: повторный triage по тому же ресурсу (есть pending CurationItem) → переиспользуем, второй create НЕ делаем', async () => {
+    const { prisma, createdCurationItems } = buildPrisma({
+      // aiVerifier выключен → критический тип идёт в deep-ветку (где create).
+      curationSettings: { aiVerifierEnabled: false, auditSampleRate: 0 },
+      existingPendingItem: {
+        id: 'ci-existing',
+        level: 'deep',
+        candidateCuratorIds: ['curator-9'],
+      },
+    });
+    const service = makeService({
+      prisma,
+      metrics,
+      routing,
+      debate: null,
+    });
+
+    const res = await service.triage(criticalInput);
+
+    // findFirst нашёл pending → возвращаем существующий, create не вызван.
+    expect((prisma.curationItem.findFirst as any)).toHaveBeenCalledTimes(1);
+    expect(createdCurationItems).toHaveLength(0);
+    expect(res.curationItemId).toBe('ci-existing');
+    expect(res.decision).toBe('deep');
+    expect(res.candidateCuratorIds).toEqual(['curator-9']);
+  });
+
+  it('Б56: нет pending CurationItem → triage создаёт новый (регрессия не сломана)', async () => {
+    const { prisma, createdCurationItems } = buildPrisma({
+      curationSettings: { aiVerifierEnabled: false, auditSampleRate: 0 },
+      existingPendingItem: null,
+    });
+    const service = makeService({ prisma, metrics, routing, debate: null });
+
+    const res = await service.triage(criticalInput);
+
+    expect(createdCurationItems).toHaveLength(1);
+    expect(res.curationItemId).toBe('ci-1');
+    expect(res.decision).toBe('deep');
+  });
 });
 
+/**
+ * C2 «курация» — дефолты «лестницы доверия» вынесены из code-констант в
+ * AdminSetting (cfg.curation, через resolveSync). Доказываем, что при
+ * отсутствии per-Org override (`curationSettings === null`) платформенные
+ * дефолты `getSettings` приходят ИЗ cfg, а не из захардкоженных DEFAULT_*.
+ *
+ * Детерминизм: только моки Prisma + cfg, без системного времени/сети.
+ */
 describe('CurationService.getSettings — дефолты курации из cfg/AdminSetting', () => {
   let metrics: BusinessMetricsService;
   let routing: CuratorRoutingService;
@@ -365,6 +451,8 @@ describe('CurationService.getSettings — дефолты курации из cfg
 
   it('curationSettings=null → дефолты A1/A2 берутся из cfg.curation, не из констант', async () => {
     const { prisma } = buildPrisma({ curationSettings: null });
+    // Кастомные значения, отличные от code-fallback: если бы дефолты были
+    // захардкожены — тест бы поймал регресс.
     const cfg = buildCfg({
       provisionalThresholdDefault: 0.91,
       aiVerifierEnabled: false,
@@ -386,9 +474,11 @@ describe('CurationService.getSettings — дефолты курации из cfg
 
     const settings = await service.getSettings('tenant-A');
 
+    // A1.
     expect(settings.provisionalThreshold).toBe(0.91);
     expect(settings.aiVerifierEnabled).toBe(false);
     expect(settings.auditSampleRate).toBe(0.11);
+    // A2.
     expect(settings.autotuneEnabled).toBe(true);
     expect(settings.thresholdMin).toBe(0.42);
     expect(settings.thresholdMax).toBe(0.93);
@@ -416,8 +506,8 @@ describe('CurationService.getSettings — дефолты курации из cfg
 
     const settings = await service.getSettings('tenant-A');
 
-    expect(settings.provisionalThreshold).toBe(0.5);
-    expect(settings.aiVerifierEnabled).toBe(false);
-    expect(settings.autotuneEnabled).toBe(true);
+    expect(settings.provisionalThreshold).toBe(0.5); // per-Org override
+    expect(settings.aiVerifierEnabled).toBe(false); // дефолт из cfg
+    expect(settings.autotuneEnabled).toBe(true); // дефолт из cfg
   });
 });

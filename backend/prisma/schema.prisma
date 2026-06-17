@@ -4443,6 +4443,11 @@ model Goal {
   supersedes     Goal?              @relation("GoalSupersedes", fields: [supersededById], references: [id], onDelete: SetNull)
   supersedeChain Goal[]             @relation("GoalSupersedes")
 
+  /// Ф5 (TZ 2026-06-16) — pgvector embedding цели (text-embedding-3-small, 1536).
+  /// Генерируется goal-embed.worker. HNSW-индекс — в postgres-init.sql (Prisma не умеет).
+  embedding     Unsupported("vector(1536)")?
+  embeddingHash String?
+
   keyResults   GoalKeyResult[]
   linkedIdeas  Idea[]          @relation("IdeaGoal")
   linkedCycles Cycle[]         @relation("CyclePrimaryGoal")
@@ -9197,6 +9202,13 @@ model Issue {
   // Граф знаний
   entityId String?
 
+  /// Р4 (TZ 2026-06-16, Ф4) — задача помечена «под вопросом» после отмены/замены
+  /// связанного решения (supersede). null — обычная задача. НЕ авто-снос:
+  /// показывается человеку в pending-actions, снимается при ручном решении.
+  closureReviewState  String?   @db.VarChar(24) // null | superseded_decision
+  closureReviewReason String?   @db.Text
+  closureReviewAt     DateTime?
+
   // RBAC и owner
   createdById String
 
@@ -9262,6 +9274,34 @@ model Issue {
   /// Support desk (TZ 2026-06-09) — тикеты конкретного клиента + SLA-сканер.
   @@index([tenantId, supportCustomerUserId])
   @@index([tenantId, firstResponseDueAt])
+  /// Р4 (TZ 2026-06-16, Ф4) — выборка задач «под вопросом» для pending-actions.
+  @@index([tenantId, closureReviewState])
+}
+
+/// Э2 (TZ 2026-06-16) — обратимое предложение закрыть задачу по сигналу из
+/// разговора. НЕ меняет Issue сам: человек подтверждает в очереди pending-actions.
+/// Закрытие применяется через IssuesService.transitionState(category='completed')
+/// только при confirm. status: pending → accepted | rejected | expired.
+model TaskClosureCandidate {
+  id              String    @id @default(cuid())
+  tenantId        String
+  issueId         String    /// задача-кандидат на закрытие
+  sourceBlockId   String    /// IdeaBlock-сигнал выполнения из разговора
+  status          String    @default("pending") @db.VarChar(16)
+  matchSimilarity Decimal?  @db.Decimal(4, 3)   /// cosine similarity матча блок↔Issue
+  confidence      Decimal?  @db.Decimal(4, 3)   /// откалиброванная уверенность верификатора
+  rationale       String?   @db.Text            /// «почему считаем сделанным» — человеческим языком, +/- сигналы
+  evidenceQuote   String?   @db.Text            /// цитата из разговора (для показа человеку)
+  decidedByUserId String?
+  decidedAt       DateTime?
+  expiresAt       DateTime?                      /// авто-протухание pending (sweep, как IntakeIssue)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  /// Идемпотентность: один сигнал-блок → максимум один кандидат на задачу.
+  @@unique([tenantId, issueId, sourceBlockId])
+  @@index([tenantId, status])
+  @@index([issueId])
 }
 
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
@@ -9663,6 +9703,13 @@ model IntakeIssue {
 
   // Если принят — создаётся Issue
   createdIssueId String?
+
+  /// TZ task-dedup (2026-06-16, Ф1 уровень A) — кандидат-дубль: открытая Issue,
+  /// которую дедуп-арбитр (`task-dedup-arbiter`) счёл тем же поручением. НЕ
+  /// авто-merge (R13): при заполненном поле auto-triage НЕ принимает карточку
+  /// автоматически (route to human), человек сам сливает через triage
+  /// decision='duplicate'. null — дубль не найден.
+  suggestedDuplicateOfIssueId String?
 
   /// Редизайн Ф4 (2026-06-13) — авто-протухание pending-intake: после
   /// `expiresAt` sweep-крон (CurationItemLifecycleCron) переводит pending →

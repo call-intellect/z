@@ -6,6 +6,7 @@ import type { PracticeSkill } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 
 @Injectable()
@@ -46,6 +47,19 @@ export class PracticeSkillRetrievalService {
     }
     if (!queryVec) return [];
 
+    // Класс G2 — guard pgvector-литерала query-вектора. При reject (смена модели
+    // → другая размерность; битый вектор → NaN/Infinity) деградируем на [] (как
+    // при embed-failure выше), не валя оператор `<=>`.
+    const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+    const guard = buildVectorLiteral(queryVec, expectedDim);
+    if (guard.literal === null) {
+      this.logger.debug(
+        `practice-skills.retrieval: query-вектор отвергнут guard-ом (${guard.rejectReason}, actualDim=${queryVec.length}, expectedDim=${expectedDim}) — []`,
+      );
+      return [];
+    }
+    const vecLiteral = guard.literal;
+
     const topK = args.topK ?? PracticeSkillRetrievalService.DEFAULT_TOP_K;
     const limit = Math.max(topK * 4, 8);
     const minDistance = 1 - this.cfg.practiceSkills.knnRetrievalThreshold;
@@ -63,7 +77,7 @@ export class PracticeSkillRetrievalService {
             AND ("triggerEmbedding" <=> $1::vector) <= $5
           ORDER BY dist ASC
           LIMIT ${limit}`,
-        `[${queryVec.join(',')}]`,
+        vecLiteral,
         args.tenantId,
         args.scope,
         args.scopeRefId,

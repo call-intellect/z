@@ -36,10 +36,19 @@ import { IssueEmbedQueueService } from './issue-embed-queue.service';
 import { IssueGoalSuggestService } from './issue-goal-suggest.service';
 import { IssueInferFieldsService } from './issue-infer-fields.service';
 import { ProjectsService } from './projects.service';
+import { TaskDedupService } from './task-dedup.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
 import { WebhookDispatcher } from './webhook-dispatcher.service';
 
+/**
+ * IssuesService — ядро трекера. Создание / обновление / переходы статусов /
+ * комментарии-связи / лента активности. Все мутации пишутся в IssueActivity
+ * через ActivityRecorderService (видимое аудиторное наследие = вход для второго мозга).
+ *
+ * Доступ: проверяется в контроллере через RbacService.canRead/canWrite('issue').
+ * Tenant-scope обязателен на всех методах.
+ */
 @Injectable()
 export class IssuesService {
   private readonly logger = new Logger(IssuesService.name);
@@ -55,26 +64,56 @@ export class IssuesService {
     private readonly webhooks: WebhookDispatcher,
     @Inject(TrackerEmitterService)
     private readonly emitter: TrackerEmitterService,
+    // Tracker Phase 3 (Sprint 6, 2026-05-24) — best-effort enqueue в
+    // `core.issue-embed`. Optional: позволяет unit-тестам сервиса работать
+    // без Redis/BullMQ и не падать, если очередь временно не инжектится.
     @Optional()
     @Inject(IssueEmbedQueueService)
     private readonly embedQueue?: IssueEmbedQueueService,
+    // Tracker Phase 3 part C (2026-05-24) — AI-suggest. Optional: модуль может
+    // быть инициализирован без LLM-зависимостей (unit-тесты, dev-окружение
+    // без LlmRouter). Если сервисы не инжектятся — `inferSuggestions=true`
+    // просто не вернёт `aiSuggestions`, основной flow продолжает работать.
     @Optional()
     @Inject(IssueInferFieldsService)
     private readonly inferFieldsSvc?: IssueInferFieldsService,
     @Optional()
     @Inject(IssueGoalSuggestService)
     private readonly goalSuggestSvc?: IssueGoalSuggestService,
+    // Wave 3 finishing (Sprint 10, 2026-05-24) — учёт производственного
+    // календаря РФ при создании/обновлении задачи. Optional: модуль может
+    // быть собран без HolidayService (unit-тесты, dev-окружение без БД-сидов).
+    // Если сервис недоступен — `dueDate` сохраняется ровно как передал клиент
+    // (никаких сдвигов). Флаг `dto.respectHolidays !== false` — default-on.
     @Optional()
     @Inject(HolidayService)
     private readonly holidayService?: HolidayService,
+    // Tracker Boards (2026-05-27) — резолв default-доски проекта на create
+    // (если фронт не передал `boardId`) и валидация целевой доски на PATCH.
+    // Optional: unit-тесты `IssuesService` без BoardsService → `boardId`
+    // сохраняется как есть (если передан) или null (если нет).
     @Optional()
     @Inject(BoardsService)
     private readonly boards?: BoardsService,
+    // Tracker (2026-05-27) — Prometheus-метрики: subtasks_created_total,
+    // board_issues_moved_total. Optional: unit-тесты без MetricsModule.
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — дедуп-гейт прямого create
+    // (email-inbox / self-task в обход intake). @Optional: unit-тесты
+    // IssuesService строятся без него → дедуп пропускается, задача создаётся
+    // как есть. Только suggest (IssueRelation('duplicates')), не блокирует.
+    @Optional()
+    @Inject(TaskDedupService)
+    private readonly taskDedup?: TaskDedupService,
   ) {}
 
+  /**
+   * Создать задачу. Атомарно: генерирует sequenceId (max+1 в проекте),
+   * identifier=`{project.identifier}-{sequenceId}`, проставляет defaultStateId,
+   * создаёт IssueAssignee/IssueLabel, пишет IssueActivity verb='created'.
+   */
   async create(
     projectId: string,
     dto: CreateIssueDto,
@@ -82,22 +121,54 @@ export class IssuesService {
     userId: string,
   ): Promise<IssueResponseDto> {
     const project = await this.projects.requireProject(projectId, tenantId);
+    // Если stateId не передан — используем defaultStateId проекта.
     const stateId = dto.stateId ?? project.defaultStateId ?? null;
     if (dto.stateId) await this.requireStateInProject(dto.stateId, projectId);
 
+    // Tracker subtasks UI (2026-05-27) — валидация parentId при создании
+    // перенесена ВНУТРЬ $transaction (audit-fixes Б9): TOCTOU race
+    // между check parentId и create issue. См. блок ниже в $transaction.
+
+    // Tracker Boards (2026-05-27) — резолвим boardId:
+    //   1. Если фронт явно передал boardId — валидируем, что доска в этом проекте.
+    //   2. Иначе — берём default-доску проекта (ленивая инициализация).
+    //   3. Если BoardsService не инжектился (unit-тест без Boards) — boardId=null.
     const boardId = await this.resolveBoardIdForCreate({
       tenantId,
       projectId,
       explicitBoardId: dto.boardId ?? null,
     });
 
+    // Wave 3 finishing (Sprint 10) — сдвигаем dueDate на ближайший рабочий
+    // день, если попал на праздник/выходной. По умолчанию ВКЛ (default-on);
+    // выключается явным `respectHolidays=false` в DTO. Если HolidayService
+    // не инжектился (Optional) — оставляем `dueDate` как есть.
     const adjustedDueDate = await this.maybeAdjustDueDate({
       tenantId,
       dueDate: dto.dueDate ?? null,
       respectHolidays: dto.respectHolidays,
     });
 
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — дедуп-гейт ПЕРЕД транзакцией
+    // для прямого create (email/self-task). Best-effort (R4): сбой → 'nil'.
+    // verdict='same' → создаём задачу как обычно, затем заводим
+    // IssueRelation('duplicates') как ПОДСКАЗКУ (не блокируем создание, R2/R13).
+    // skipDedup ставят внутренние caller'ы intake (уже прошли дедуп уровня A).
+    let dedupMatchedIssueId: string | null = null;
+    if (this.taskDedup && !dto.skipDedup) {
+      const dedup = await this.taskDedup.evaluate({
+        tenantId,
+        title: dto.title,
+        description: dto.descriptionStripped ?? dto.description ?? null,
+      });
+      if (dedup.verdict === 'same') {
+        dedupMatchedIssueId = dedup.matchedIssueId;
+      }
+    }
+
     const issue = await this.prisma.$transaction(async (tx) => {
+      // audit-fixes Б9: валидация родителя ВНУТРИ tx с advisory_xact_lock.
+      // Защищает от TOCTOU race (parent удалён/перевешен между check и create).
       if (dto.parentId) {
         await this.validateParentForIssue({
           candidateParentId: dto.parentId,
@@ -108,6 +179,9 @@ export class IssuesService {
         });
       }
 
+      // Атомарный sequenceId: max+1 per project (узкая зона гонок снимется
+      // unique-constraint'ом @@unique([projectId, sequenceId]) — при retry-ит
+      // upstream через идемпотентность Sprint 2).
       const maxRow = await tx.issue.aggregate({
         where: { projectId },
         _max: { sequenceId: true },
@@ -134,7 +208,10 @@ export class IssuesService {
           dueDate: adjustedDueDate,
           cycleId: dto.cycleId ?? null,
           goalId: dto.goalId ?? null,
+          // Tracker Boards (2026-05-27) — boardId резолвится выше.
           boardId,
+          // A10 (2026-06-14) — провенанс из intake (см. промоут intake→Issue):
+          // прокидывается для последующего DecisionTaskLink('derived').
           ...(dto.sourceBlockIds && dto.sourceBlockIds.length > 0
             ? { sourceBlockIds: dto.sourceBlockIds }
             : {}),
@@ -145,6 +222,7 @@ export class IssuesService {
         },
       });
 
+      // Assignees.
       if (dto.assigneeUserIds.length > 0) {
         await tx.issueAssignee.createMany({
           data: dto.assigneeUserIds.map((uid) => ({
@@ -155,6 +233,7 @@ export class IssuesService {
           skipDuplicates: true,
         });
       }
+      // Labels — проверим, что они принадлежат tenant'у (защита от cross-tenant).
       if (dto.labelIds.length > 0) {
         const valid = await tx.label.findMany({
           where: { id: { in: dto.labelIds }, tenantId },
@@ -175,6 +254,7 @@ export class IssuesService {
         });
       }
 
+      // IssueActivity verb='created'.
       await this.activity.record({
         tenantId,
         issueId: created.id,
@@ -188,6 +268,38 @@ export class IssuesService {
     });
 
     const response = await this.assemble(issue.id, tenantId);
+
+    // TZ task-dedup (2026-06-16, Ф1 уровень B) — кандидат-подсказка дубля:
+    // связь IssueRelation('duplicates') от новой задачи к найденной открытой.
+    // Подтверждает существование, НЕ блокирует и НЕ сливает (R2/R13). Best-effort:
+    // ошибка/гонка @@unique не валит создание. Self-ссылку не заводим.
+    if (dedupMatchedIssueId && dedupMatchedIssueId !== issue.id) {
+      try {
+        await this.prisma.issueRelation.create({
+          data: {
+            sourceIssueId: issue.id,
+            targetIssueId: dedupMatchedIssueId,
+            relationType: 'duplicates',
+            createdById: userId,
+          },
+        });
+        this.logger.log(
+          { issueId: issue.id, duplicateOfIssueId: dedupMatchedIssueId },
+          'issues.create: дедуп-арбитр нашёл дубль — заведена связь duplicates (suggest)',
+        );
+      } catch (e) {
+        this.logger.warn(
+          {
+            issueId: issue.id,
+            err: e instanceof Error ? e.message : String(e),
+          },
+          'issues.create: не удалось завести связь duplicates (best-effort)',
+        );
+      }
+    }
+    // Tracker subtasks UI (2026-05-27) — отдельный счётчик подзадач, чтобы
+    // в Grafana отделить «корневые» задачи от подзадач. Метрика
+    // `subtasks_created_total{tenant, project}`.
     if (issue.parentId) {
       try {
         this.metrics?.incSubtaskCreated({
@@ -204,18 +316,36 @@ export class IssuesService {
         );
       }
     }
+    // WS + outgoing webhooks (fire-and-forget; ошибки доставки логируются
+    // самим dispatcher/events service'ом, не пропагируются).
     this.events.publishIssueCreated(response, tenantId);
+    // Sprint 3 B1-3.1 — ingest в knowledge-core через event-emitter.
+    // ПОСЛЕ транзакции (issue уже в БД, безопасно эмитить).
     this.emitter.emitIssueCreated(issue, userId);
+    // Phase 3 (2026-05-24) — best-effort enqueue embedding pipeline.
+    // Не блокирует основной flow; ошибка enqueue → warn, embedding
+    // появится при следующем update текста.
     void this.enqueueEmbed(tenantId, issue.id, null);
-    void this.webhooks.dispatch(tenantId, 'issue.created', { issue: response }).catch((e) => {
-      this.logger.warn(
-        { issueId: response.id, err: e instanceof Error ? e.message : String(e) },
-        'issue.created webhook dispatch failed',
-      );
-    });
+    void this.webhooks
+      .dispatch(tenantId, 'issue.created', { issue: response })
+      .catch((e) => {
+        this.logger.warn(
+          { issueId: response.id, err: e instanceof Error ? e.message : String(e) },
+          'issue.created webhook dispatch failed',
+        );
+      });
 
+    // Tracker Phase 3 part C — AI-suggest по флагу `inferSuggestions`.
+    // Best-effort: ошибки/таймаут не блокируют создание задачи; в этом случае
+    // `aiSuggestions` остаётся `null`/отсутствует. Goal-suggest требует
+    // embedding'а для KNN — он генерируется асинхронно, поэтому первый
+    // вызов goalSuggest вернёт результат только если embedding уже успел
+    // посчитаться (или сработает LLM-fallback).
     if (dto.inferSuggestions) {
-      const aiSuggestions = await this.collectAiSuggestions(issue.id, tenantId);
+      const aiSuggestions = await this.collectAiSuggestions(
+        issue.id,
+        tenantId,
+      );
       if (aiSuggestions) {
         return { ...response, aiSuggestions };
       }
@@ -223,6 +353,13 @@ export class IssuesService {
     return response;
   }
 
+  /**
+   * Tracker Phase 3 part C — параллельный сбор AI-подсказок: поля задачи
+   * (IssueInferFieldsService) и связь с целью (IssueGoalSuggestService).
+   * Сервисы Optional — если хотя бы один доступен, возвращаем структуру
+   * с null для недоступного; если оба недоступны — null (caller отдаст
+   * IssueResponseDto без aiSuggestions).
+   */
   private async collectAiSuggestions(
     issueId: string,
     tenantId: string,
@@ -264,6 +401,7 @@ export class IssuesService {
     };
   }
 
+  /** Список задач проекта с фильтрами. */
   async findAll(
     projectId: string,
     tenantId: string,
@@ -281,6 +419,7 @@ export class IssuesService {
     if (query.parentId) where.parentId = query.parentId;
     if (query.cycleId) where.cycleId = query.cycleId;
     if (query.goalId) where.goalId = query.goalId;
+    // Tracker Boards (2026-05-27) — фильтр задач по выбранной доске.
     if (query.boardId) where.boardId = query.boardId;
     if (query.assigneeUserId) {
       where.assignees = { some: { userId: query.assigneeUserId } };
@@ -308,6 +447,9 @@ export class IssuesService {
       }),
       this.prisma.issue.count({ where }),
     ]);
+    // Tracker subtasks UI (2026-05-27) — массовый подсчёт детей через
+    // groupBy, чтобы канбан-карточки могли отрисовать badge `N/M`.
+    // Один JOIN-эквивалент на весь список — стоимость минимальная.
     let childrenCountByParent: Map<string, number> | null = null;
     if (query.includeChildrenCount && items.length > 0) {
       const parentIds = items.map((i) => i.id);
@@ -341,7 +483,21 @@ export class IssuesService {
     };
   }
 
-  async findChildren(issueId: string, tenantId: string): Promise<IssueChildrenResponseDto> {
+  /**
+   * Tracker subtasks UI (2026-05-27) — список прямых детей задачи.
+   *
+   * Возвращает упрощённый DTO без description/labelIds (фронт получает
+   * только то, что нужно блоку «Подзадачи» в карточке родителя).
+   *
+   * Сортировка: `sortOrder ASC, createdAt ASC` — стабильно и совпадает
+   * с порядком на канбан-доске родителя.
+   *
+   * Контракт: `plans/tz/2026-05-27-tracker-subtasks-ui.md` §"REST API".
+   */
+  async findChildren(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueChildrenResponseDto> {
     await this.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issue.findMany({
       where: { tenantId, parentId: issueId, deletedAt: null },
@@ -351,6 +507,9 @@ export class IssuesService {
         state: { select: { category: true } },
       },
     });
+    // Подсчёт «внуков»: один groupBy(parentId) на весь список детей.
+    // На канбан-доске родителя такие случаи показаны на 2-м уровне, новые
+    // подзадачи на 3-м уровне запрещены validateParentForIssue.
     let grandchildrenByParent: Map<string, number> | null = null;
     if (rows.length > 0) {
       const ids = rows.map((r) => r.id);
@@ -371,7 +530,8 @@ export class IssuesService {
       identifier: r.identifier,
       title: r.title,
       stateId: r.stateId,
-      stateCategory: (r.state?.category as IssueChildResponseDto['stateCategory']) ?? null,
+      stateCategory:
+        (r.state?.category as IssueChildResponseDto['stateCategory']) ?? null,
       priority: r.priority,
       assigneeUserIds: r.assignees.map((a) => a.userId),
       dueDate: r.dueDate?.toISOString() ?? null,
@@ -382,6 +542,20 @@ export class IssuesService {
     return { items, total: items.length };
   }
 
+  /**
+   * Мой inbox — задачи, в которых currentUser является assignee
+   * (через `IssueAssignee.userId`). Сквозной список по ВСЕМ проектам
+   * текущего tenant'а; tenant-scope гарантирует Issue.tenantId.
+   *
+   * Пагинация: cursor-based. `cursor` — id последней задачи предыдущей
+   * страницы. Сортировка — стабильная по `id desc` (без коллизий с
+   * createdAt/sortOrder, которые могут совпадать у нескольких задач).
+   *
+   * Если задач больше чем `limit` — возвращаем ровно `limit` элементов
+   * и `nextCursor = items[last].id`. Иначе `nextCursor = null`.
+   *
+   * Frontend Wave 2: `useMyInbox`.
+   */
   async findMyInbox(
     tenantId: string,
     userId: string,
@@ -405,13 +579,14 @@ export class IssuesService {
         ...(query.dueAfter && { gte: query.dueAfter }),
       };
     }
+    // Cursor: берём id < cursor (если задан) — пагинация по убыванию id.
     if (query.cursor) {
       where.id = { lt: query.cursor };
     }
     const rows = await this.prisma.issue.findMany({
       where,
       orderBy: [{ id: 'desc' }],
-      take: query.limit + 1,
+      take: query.limit + 1, // +1 чтобы определить, есть ли следующая страница
       include: {
         assignees: { select: { userId: true } },
         labels: { select: { labelId: true } },
@@ -419,7 +594,9 @@ export class IssuesService {
     });
     const hasMore = rows.length > query.limit;
     const pageItems = hasMore ? rows.slice(0, query.limit) : rows;
-    const nextCursor = hasMore ? (pageItems[pageItems.length - 1]?.id ?? null) : null;
+    const nextCursor = hasMore
+      ? (pageItems[pageItems.length - 1]?.id ?? null)
+      : null;
     return {
       items: pageItems.map((i) => this.toResponseFromInclude(i)),
       nextCursor,
@@ -427,7 +604,21 @@ export class IssuesService {
     };
   }
 
-  async countMyInbox(tenantId: string, userId: string): Promise<MyInboxCountDto> {
+  /**
+   * Wave 2 polish T6-6a — счётчик задач в моём инбоксе (без пагинации/выборки).
+   *
+   * Используется фронтом для бейджа на иконке «Инбокс» в `TrackerBottomNav`,
+   * чтобы не дёргать тяжёлый `findMyInbox` ради одного числа.
+   *
+   * Контракт фильтрации эквивалентен `findMyInbox` БЕЗ опциональных query-
+   * фильтров: считаем все задачи tenant'а, где user — assignee, исключая
+   * deletedAt и archivedAt. На текущей модели данных «непрочитанные»
+   * совпадают с «всеми» (модели IssueRead нет), поэтому `unread = total`.
+   */
+  async countMyInbox(
+    tenantId: string,
+    userId: string,
+  ): Promise<MyInboxCountDto> {
     const where: Prisma.IssueWhereInput = {
       tenantId,
       assignees: { some: { userId } },
@@ -435,10 +626,25 @@ export class IssuesService {
       archivedAt: null,
     };
     const total = await this.prisma.issue.count({ where });
+    // Модели IssueRead на сейчас нет — unread временно совпадает с total.
+    // Когда появится IssueRead с `readAt` — заменим на отдельный count
+    // с фильтром `reads: { none: { userId } }`.
     return { total, unread: total };
   }
 
-  async listOpenForAssignee(args: { tenantId: string; userId: string; limit: number }): Promise<{
+  /**
+   * ТЗ 2026-06-10 §2 Ф5 — лёгкий листинг ОТКРЫТЫХ задач исполнителя для
+   * Telegram-читалки «мои задачи». Открытые = `IssueState.category` НЕ
+   * `completed`/`cancelled` (либо задача без статуса). Фильтр по
+   * `tenantId` + `assignees.userId` (есть `@@index([userId])` на
+   * IssueAssignee). Сортировка: с дедлайном раньше (NULLS LAST по умолчанию
+   * Postgres для ASC), затем новые. Возвращает только поля для рендера.
+   */
+  async listOpenForAssignee(args: {
+    tenantId: string;
+    userId: string;
+    limit: number;
+  }): Promise<{
     items: Array<{
       identifier: string;
       title: string;
@@ -452,7 +658,10 @@ export class IssuesService {
       deletedAt: null,
       archivedAt: null,
       assignees: { some: { userId: args.userId } },
-      OR: [{ state: { category: { notIn: ['completed', 'cancelled'] } } }, { stateId: null }],
+      OR: [
+        { state: { category: { notIn: ['completed', 'cancelled'] } } },
+        { stateId: null },
+      ],
     };
     const [rows, total] = await Promise.all([
       this.prisma.issue.findMany({
@@ -479,11 +688,16 @@ export class IssuesService {
     };
   }
 
+  /** Найти задачу по id (глобальный id) + проверка tenant. */
   async findById(id: string, tenantId: string): Promise<IssueResponseDto> {
     return this.assemble(id, tenantId);
   }
 
-  async findByIdentifier(identifier: string, tenantId: string): Promise<IssueResponseDto> {
+  /** Найти задачу по identifier (`KORA-123`) + tenant. */
+  async findByIdentifier(
+    identifier: string,
+    tenantId: string,
+  ): Promise<IssueResponseDto> {
     const issue = await this.prisma.issue.findFirst({
       where: { tenantId, identifier, deletedAt: null },
       select: { id: true },
@@ -497,6 +711,11 @@ export class IssuesService {
     return this.assemble(issue.id, tenantId);
   }
 
+  /**
+   * PATCH задачи. Для каждого изменённого поля пишет отдельную строку
+   * IssueActivity verb='updated' (field/oldValue/newValue). state-смена через
+   * PATCH тоже фиксируется отдельной записью verb='status_changed'.
+   */
   async update(
     id: string,
     dto: UpdateIssueDto,
@@ -507,14 +726,26 @@ export class IssuesService {
     if (dto.stateId && dto.stateId !== existing.stateId) {
       await this.requireStateInProject(dto.stateId, existing.projectId);
     }
+    // Tracker subtasks UI (2026-05-27) — валидация смены `parentId`
+    // перенесена ВНУТРЬ $transaction (audit-fixes Б9), см. блок ниже.
 
-    if (dto.boardId && dto.boardId !== existing.boardId && this.boards) {
+    // Tracker Boards (2026-05-27) — если фронт меняет boardId на не-null,
+    // валидируем что доска принадлежит тому же проекту и tenant'у.
+    if (
+      dto.boardId &&
+      dto.boardId !== existing.boardId &&
+      this.boards
+    ) {
       await this.boards.assertBoardInProject({
         boardId: dto.boardId,
         projectId: existing.projectId,
         tenantId,
       });
     }
+    // Wave 3 finishing (Sprint 10) — корректируем `dueDate` ДО формирования
+    // diff'а activity. Если dueDate в dto не передан — не трогаем (undefined
+    // означает «оставить как есть»). Если передан null — это явное снятие,
+    // adjust пропускаем (нечего сдвигать).
     const adjustedDueDate =
       dto.dueDate === undefined || dto.dueDate === null
         ? dto.dueDate
@@ -525,6 +756,9 @@ export class IssuesService {
           });
     const changedFields: string[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // audit-fixes Б9: валидация parentId ВНУТРИ tx с advisory_xact_lock.
+      // Лочит parentId + currentIssueId — две параллельные операции с
+      // пересекающимися родителями сериализуются, не дают создать цикл.
       if (dto.parentId !== undefined && dto.parentId !== null) {
         await this.validateParentForIssue({
           candidateParentId: dto.parentId,
@@ -550,6 +784,9 @@ export class IssuesService {
         const prev = existing[field];
         if (this.equalsLoose(prev, nextValue)) return;
         (data as Record<string, unknown>)[field as string] = nextValue;
+        // Tracker subtasks UI (2026-05-27) — отдельный verb 'parent_changed'
+        // для смены parentId (наряду с 'status_changed' для stateId).
+        // Это нужно для активити-фида: «перенесли подзадачу в KORA-200».
         let verb: string;
         if (field === 'stateId') verb = 'status_changed';
         else if (field === 'parentId') verb = 'parent_changed';
@@ -575,11 +812,16 @@ export class IssuesService {
       trackField('dueDate', adjustedDueDate ?? undefined);
       trackField('cycleId', dto.cycleId ?? undefined);
       trackField('goalId', dto.goalId ?? undefined);
+      // Tracker Boards (2026-05-27) — фиксируем перенос между досками.
+      // verb остаётся 'updated', но IssueActivity.field='boardId' даёт
+      // ленте конкретную метку «перенос». В knowledge-core это событие
+      // не идёт (не семантика, организационное перекладывание).
       trackField('boardId', dto.boardId ?? undefined);
 
       if (Object.keys(data).length === 0) {
         return;
       }
+      // Если state поменялся и новая категория = completed — проставим completedAt.
       if (dto.stateId !== undefined && dto.stateId !== existing.stateId) {
         const newState = dto.stateId
           ? await tx.issueState.findUnique({ where: { id: dto.stateId } })
@@ -605,6 +847,8 @@ export class IssuesService {
           newValue: a.newValue,
           tx,
         });
+        // WS активити-фид (emit fire-and-forget — даже до commit'а БД безопасно,
+        // т.к. клиент всё равно дойдёт до этой записи через REST при reload).
         this.events.publishActivity({
           tenantId,
           activityId,
@@ -616,6 +860,9 @@ export class IssuesService {
     const response = await this.assemble(id, tenantId);
     if (changedFields.length > 0) {
       this.events.publishIssueUpdated(response, tenantId, changedFields);
+      // Tracker Boards (2026-05-27) — если изменился boardId, эмитим узкое
+      // событие `issue.moved_to_board` (фронт может удалить карточку из
+      // старой доски и добавить в новую без перезагрузки + метрика).
       if (changedFields.includes('boardId') && dto.boardId) {
         this.events.publishIssueMovedToBoard({
           tenantId,
@@ -630,6 +877,11 @@ export class IssuesService {
           toBoard: dto.boardId,
         });
       }
+      // Phase 3 (2026-05-24) — пересчёт embedding'а, если изменились
+      // текстовые поля (title / description / descriptionStripped). Hash
+      // защитит от лишних пересчётов, если описание тривиально перетёрли
+      // тем же значением через ?? — но дешевле скипать по hash в воркере,
+      // чем дублировать проверку здесь.
       const textChanged =
         changedFields.includes('title') ||
         changedFields.includes('description') ||
@@ -637,6 +889,8 @@ export class IssuesService {
       if (textChanged) {
         void this.enqueueEmbed(tenantId, id, null);
       }
+      // Sprint 3 B1-3.1 — ingest в knowledge-core. Если изменился stateId —
+      // эмитим status_changed (+ специфичные blocked/completed).
       if (changedFields.includes('stateId') && dto.stateId !== undefined) {
         void this.emitStateChangeIfNeeded({
           issueId: id,
@@ -666,6 +920,7 @@ export class IssuesService {
     return response;
   }
 
+  /** Soft-delete через deletedAt. Пишет IssueActivity verb='deleted'. */
   async softDelete(id: string, tenantId: string, userId: string): Promise<{ ok: true }> {
     const existing = await this.requireIssue(id, tenantId);
     await this.prisma.$transaction(async (tx) => {
@@ -697,6 +952,10 @@ export class IssuesService {
     return { ok: true };
   }
 
+  /**
+   * Сменить статус задачи отдельным action'ом (predпочтительнее PATCH stateId).
+   * Доступ: assignee / project_manager / admin (контроллер проверяет RBAC).
+   */
   async transitionState(
     id: string,
     dto: TransitionIssueStateDto,
@@ -705,6 +964,7 @@ export class IssuesService {
   ): Promise<IssueResponseDto> {
     const existing = await this.requireIssue(id, tenantId);
     if (existing.stateId === dto.stateId) {
+      // Идемпотентно: уже в нужном состоянии.
       return this.assemble(id, tenantId);
     }
     const newState = await this.prisma.issueState.findFirst({
@@ -750,6 +1010,7 @@ export class IssuesService {
     });
     const response = await this.assemble(id, tenantId);
     this.events.publishIssueUpdated(response, tenantId, ['stateId']);
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (status_changed + спец. blocked/completed).
     void this.emitStateChangeIfNeeded({
       issueId: id,
       tenantId,
@@ -777,6 +1038,27 @@ export class IssuesService {
     return response;
   }
 
+  /**
+   * Перенос задачи в другой проект (POST /issues/:id/move). ТЗ
+   * `plans/tz/2026-06-15-issue-move-to-project.md`.
+   *
+   * Простая смена projectId сломала бы инварианты: identifier уникален
+   * per-tenant, sequenceId уникален per-project, stateId/boardId/cycleId
+   * принадлежат исходному проекту. Поэтому перенос = атомарная ре-аллокация
+   * в `$transaction`:
+   *   1. новый sequenceId = max(в целевом проекте)+1;
+   *   2. новый identifier = `${target.identifier}-${seq}`;
+   *   3. stateId → статус целевого проекта той же category (иначе
+   *      defaultStateId целевого, иначе null);
+   *   4. boardId → default-доска целевого проекта (иначе null);
+   *   5. cycleId → null (цикл исходного проекта неприменим);
+   *   6. IssueActivity verb='moved_to_project' + WS + метрика.
+   *
+   * Подзадачи: v1 запрещает перенос задачи, у которой есть parentId или
+   * дети (понятная 400) — деревья переносить нельзя, потому что родитель
+   * обязан быть в том же проекте (validateParentForIssue). Relations /
+   * labels / assignees / goal — tenant-scoped и переживают перенос.
+   */
   async moveToProject(
     issueId: string,
     targetProjectId: string,
@@ -795,6 +1077,7 @@ export class IssuesService {
       });
     }
 
+    // Целевой проект того же tenant'а (404 если чужой/удалён) и не архивный.
     const target = await this.projects.requireProject(targetProjectId, tenantId);
     if (target.archivedAt !== null) {
       throw new BadRequestException({
@@ -806,12 +1089,14 @@ export class IssuesService {
       });
     }
 
+    // Подзадачи: запрещаем перенос задачи с родителем или с детьми.
     if (existing.parentId !== null) {
       throw new BadRequestException({
         ok: false,
         error: {
           code: 'cannot_move_issue_with_subtasks',
-          message: 'Нельзя перенести подзадачу — сначала сделайте её самостоятельной',
+          message:
+            'Нельзя перенести подзадачу — сначала сделайте её самостоятельной',
         },
       });
     }
@@ -823,18 +1108,22 @@ export class IssuesService {
         ok: false,
         error: {
           code: 'cannot_move_issue_with_subtasks',
-          message: 'Нельзя перенести задачу с подзадачами — перенесите или отвяжите подзадачи',
+          message:
+            'Нельзя перенести задачу с подзадачами — перенесите или отвяжите подзадачи',
         },
       });
     }
 
+    // Ремап state по category: ищем в целевом проекте статус той же
+    // категории, что у текущего state. Если у задачи нет state или совпадения
+    // нет — берём defaultStateId целевого проекта (может быть null).
     const currentCategory = existing.stateId
-      ? ((
+      ? (
           await this.prisma.issueState.findUnique({
             where: { id: existing.stateId },
             select: { category: true },
           })
-        )?.category ?? null)
+        )?.category ?? null
       : null;
     let targetStateId: string | null = target.defaultStateId ?? null;
     if (currentCategory) {
@@ -846,6 +1135,7 @@ export class IssuesService {
       if (matched) targetStateId = matched.id;
     }
 
+    // Ремап board: default-доска целевого проекта (лениво создаётся).
     let targetBoardId: string | null = null;
     if (this.boards) {
       try {
@@ -869,6 +1159,8 @@ export class IssuesService {
     const oldIdentifier = existing.identifier;
     let newIdentifier = oldIdentifier;
     await this.prisma.$transaction(async (tx) => {
+      // Новый sequenceId = max(в целевом проекте)+1 — защита
+      // @@unique([projectId, sequenceId]). Копия логики из create().
       const maxRow = await tx.issue.aggregate({
         where: { projectId: targetProjectId },
         _max: { sequenceId: true },
@@ -903,7 +1195,13 @@ export class IssuesService {
     });
 
     const response = await this.assemble(issueId, tenantId);
-    this.events.publishIssueUpdated(response, tenantId, ['projectId', 'identifier']);
+    // WS: общий issue.updated (projectId/identifier поменялись) + узкое
+    // issue.moved_to_project. Fire-and-forget — ошибки доставки логируются
+    // самим events-service'ом, не пропагируются.
+    this.events.publishIssueUpdated(response, tenantId, [
+      'projectId',
+      'identifier',
+    ]);
     this.events.publishIssueMovedToProject({
       tenantId,
       issueId,
@@ -934,6 +1232,7 @@ export class IssuesService {
     return response;
   }
 
+  /** Добавить исполнителя. IssueActivity verb='assigned'. */
   async addAssignee(
     issueId: string,
     assigneeUserId: string,
@@ -968,6 +1267,7 @@ export class IssuesService {
         tx,
       });
     });
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (task_reassigned).
     this.emitter.emitIssueAssigneeChanged({
       issue,
       actorUserId,
@@ -977,6 +1277,7 @@ export class IssuesService {
     return { ok: true };
   }
 
+  /** Удалить исполнителя. */
   async removeAssignee(
     issueId: string,
     assigneeUserId: string,
@@ -1004,6 +1305,7 @@ export class IssuesService {
       verb: 'unassigned',
       oldValue: { userId: assigneeUserId },
     });
+    // Sprint 3 B1-3.1 — ingest в knowledge-core (task_reassigned).
     this.emitter.emitIssueAssigneeChanged({
       issue,
       actorUserId,
@@ -1013,6 +1315,7 @@ export class IssuesService {
     return { ok: true };
   }
 
+  /** Добавить метку. */
   async addLabel(
     issueId: string,
     labelId: string,
@@ -1033,7 +1336,10 @@ export class IssuesService {
     try {
       await this.prisma.issueLabel.create({ data: { issueId, labelId } });
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
         throw new ConflictException({
           ok: false,
           error: { code: 'label_already_added', message: 'Метка уже добавлена' },
@@ -1052,6 +1358,7 @@ export class IssuesService {
     return { ok: true };
   }
 
+  /** Удалить метку. */
   async removeLabel(
     issueId: string,
     labelId: string,
@@ -1079,12 +1386,21 @@ export class IssuesService {
     return { ok: true };
   }
 
-  async subscribe(issueId: string, userId: string, tenantId: string): Promise<{ ok: true }> {
+  /** Подписаться на задачу (получать уведомления). */
+  async subscribe(
+    issueId: string,
+    userId: string,
+    tenantId: string,
+  ): Promise<{ ok: true }> {
     await this.requireIssue(issueId, tenantId);
     try {
       await this.prisma.issueSubscriber.create({ data: { issueId, userId } });
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        // Уже подписан — идемпотентно ok.
         return { ok: true };
       }
       throw e;
@@ -1092,12 +1408,30 @@ export class IssuesService {
     return { ok: true };
   }
 
-  async unsubscribe(issueId: string, userId: string, tenantId: string): Promise<{ ok: true }> {
+  /** Отписаться. Идемпотентно. */
+  async unsubscribe(
+    issueId: string,
+    userId: string,
+    tenantId: string,
+  ): Promise<{ ok: true }> {
     await this.requireIssue(issueId, tenantId);
     await this.prisma.issueSubscriber.deleteMany({ where: { issueId, userId } });
     return { ok: true };
   }
 
+  /**
+   * Связать задачу с целью (Goal).
+   *
+   * - $transaction: Issue.update + IssueActivity verb='goal_linked' с
+   *   metadata={goalId}.
+   * - WS-событие через `TrackerEventsService.publishIssueUpdated` (паттерн
+   *   как у других мутаций) + `publishActivity` для feed'а.
+   *
+   * Sprint 3 B1-3.2 — после линковки strategic-alignment.cron (см.
+   * goals/cron/strategic-alignment-issues.cron.ts) подхватит задачу в
+   * следующем проходе. Эмитить сюда специальное knowledge-core событие
+   * пока не нужно — связь читается напрямую через Issue.goalId.
+   */
   async linkGoal(
     issueId: string,
     goalId: string,
@@ -1132,6 +1466,7 @@ export class IssuesService {
       });
     });
     const response = await this.assemble(issueId, tenantId);
+    // WS — задача обновилась + новая запись в activity-feed.
     this.events.publishIssueUpdated(response, tenantId, ['goalId']);
     if (activityId) {
       this.events.publishActivity({
@@ -1144,6 +1479,7 @@ export class IssuesService {
     return response;
   }
 
+  /** Отвязать задачу от цели. См. linkGoal — симметричная семантика. */
   async unlinkGoal(
     issueId: string,
     tenantId: string,
@@ -1181,7 +1517,11 @@ export class IssuesService {
     return response;
   }
 
-  async getActivity(issueId: string, tenantId: string): Promise<IssueActivityDto[]> {
+  /** Список IssueActivity для задачи (DESC по epoch). */
+  async getActivity(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueActivityDto[]> {
     await this.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issueActivity.findMany({
       where: { issueId, tenantId },
@@ -1204,7 +1544,11 @@ export class IssuesService {
     }));
   }
 
-  async getVersions(issueId: string, tenantId: string): Promise<IssueVersionDto[]> {
+  /** Список IssueVersion (исторические снимки) для задачи. */
+  async getVersions(
+    issueId: string,
+    tenantId: string,
+  ): Promise<IssueVersionDto[]> {
     await this.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issueVersion.findMany({
       where: { issueId },
@@ -1220,6 +1564,21 @@ export class IssuesService {
     }));
   }
 
+  // ── internal ──
+
+  /**
+   * Sprint 3 B1-3.1 — общая логика emit'ов смены статуса в knowledge-core.
+   * Вызывается из `update()` и `transitionState()` ПОСЛЕ транзакции.
+   *
+   * Логика:
+   *   1. Загружаем новое и старое состояние (для определения category).
+   *   2. Всегда эмитим `issue.status_changed` (signalType=task_status_changed).
+   *   3. Дополнительно, если newState.category='blocked' — эмитим
+   *      `issue.status_changed_to_blocked` (signalType=task_blocked).
+   *      Если 'completed' — `issue.status_changed_to_done` (task_completed).
+   *   4. Если новый stateId = null — эмитим только общий status_changed,
+   *      без специфичных (нечего проверять).
+   */
   private async emitStateChangeIfNeeded(args: {
     issueId: string;
     tenantId: string;
@@ -1266,6 +1625,7 @@ export class IssuesService {
     }
   }
 
+  /** Проверка существования + tenant ownership. */
   async requireIssue(id: string, tenantId: string): Promise<Issue> {
     const issue = await this.prisma.issue.findFirst({
       where: { id, tenantId, deletedAt: null },
@@ -1279,14 +1639,47 @@ export class IssuesService {
     return issue;
   }
 
+  /**
+   * Tracker subtasks UI (2026-05-27) — валидация родителя при create/update.
+   *
+   * Падает 400 в следующих случаях:
+   *   - `candidateParentId` совпадает с самой задачей (`currentIssueId`)
+   *     — `cyclic_parent_not_allowed`.
+   *   - кандидат-родитель не существует / в другом tenant'е — `parent_not_found`.
+   *   - кандидат в другом проекте — `parent_in_different_project`.
+   *   - кандидат сам является подзадачей (parentId !== null) — глубина >2
+   *     запрещена — `max_subtask_depth_exceeded`.
+   *   - кандидат — один из потомков текущей задачи (только при update,
+   *     когда `currentIssueId !== null`) — `cyclic_parent_not_allowed`.
+   *     На текущей модели подзадачи 3-го уровня запрещены, поэтому глубина
+   *     ≤2, и обход вниз — это ровно один уровень детей. Для устойчивости
+   *     к будущему расширению (если depth-limit поднимут) делаем BFS по
+   *     всему поддереву с защитой от циклов через `visited`.
+   *
+   * audit-fixes Б9 (2026-05-29):
+   *   - Метод теперь обязателен в транзакционном контексте (параметр `tx`).
+   *     Раньше валидация шла на основном prisma-клиенте ПЕРЕД $transaction
+   *     с записью, что давало TOCTOU race: кандидат-родитель мог быть
+   *     удалён/перевешен между check и write.
+   *   - Перед запросами берётся `pg_advisory_xact_lock(hashtext(parentId))` —
+   *     сериализует параллельные операции с одним и тем же родителем.
+   *     Lock освобождается при коммите/откате транзакции автоматически.
+   *
+   * TODO (после tracker-boards): проверять boardId родителя.
+   */
   private async validateParentForIssue(args: {
     candidateParentId: string;
     projectId: string;
     tenantId: string;
+    /** id текущей задачи (null при create). */
     currentIssueId: string | null;
+    /** Обязательный транзакционный клиент (audit-fixes Б9). */
     tx: Prisma.TransactionClient;
   }): Promise<void> {
-    if (args.currentIssueId !== null && args.candidateParentId === args.currentIssueId) {
+    if (
+      args.currentIssueId !== null &&
+      args.candidateParentId === args.currentIssueId
+    ) {
       throw new BadRequestException({
         ok: false,
         error: {
@@ -1295,10 +1688,15 @@ export class IssuesService {
         },
       });
     }
+    // audit-fixes Б9: advisory_xact_lock на parentId. Если currentIssueId
+    // задан и отличается от parentId — лочим оба в детерминированном порядке
+    // (по убыванию hashtext) чтобы избежать deadlock при двух параллельных
+    // update'ах с пересекающимися parent'ами.
     const lockKeys = [args.candidateParentId];
     if (args.currentIssueId && args.currentIssueId !== args.candidateParentId) {
       lockKeys.push(args.currentIssueId);
     }
+    // Сортируем строки → стабильный порядок lock'ов.
     lockKeys.sort();
     for (const key of lockKeys) {
       await args.tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
@@ -1335,10 +1733,14 @@ export class IssuesService {
         ok: false,
         error: {
           code: 'max_subtask_depth_exceeded',
-          message: 'Подзадача не может быть подзадачей: глубина больше 2 запрещена',
+          message:
+            'Подзадача не может быть подзадачей: глубина больше 2 запрещена',
         },
       });
     }
+    // Защита от цикла: при update убедимся, что кандидат не лежит в
+    // поддереве текущей задачи. BFS вниз, threshold 256 узлов
+    // (защита от случайно широких деревьев — на MVP всё равно глубина ≤2).
     if (args.currentIssueId !== null) {
       const visited = new Set<string>([args.currentIssueId]);
       let frontier: string[] = [args.currentIssueId];
@@ -1361,7 +1763,8 @@ export class IssuesService {
               ok: false,
               error: {
                 code: 'cyclic_parent_not_allowed',
-                message: 'Нельзя назначить родителем потомка текущей задачи',
+                message:
+                  'Нельзя назначить родителем потомка текущей задачи',
               },
             });
           }
@@ -1375,7 +1778,10 @@ export class IssuesService {
     }
   }
 
-  private async requireStateInProject(stateId: string, projectId: string): Promise<void> {
+  private async requireStateInProject(
+    stateId: string,
+    projectId: string,
+  ): Promise<void> {
     const s = await this.prisma.issueState.findFirst({
       where: { id: stateId, projectId },
       select: { id: true },
@@ -1391,6 +1797,7 @@ export class IssuesService {
     }
   }
 
+  /** Собрать ResponseDto по id (включая assignees + labels). */
   private async assemble(id: string, tenantId: string): Promise<IssueResponseDto> {
     const issue = await this.prisma.issue.findFirst({
       where: { id, tenantId },
@@ -1434,6 +1841,7 @@ export class IssuesService {
       completedAt: issue.completedAt?.toISOString() ?? null,
       cycleId: issue.cycleId,
       goalId: issue.goalId,
+      // Tracker Boards (2026-05-27).
       boardId: issue.boardId,
       meetingId: issue.meetingId,
       linkedMeetingIds: issue.linkedMeetingIds,
@@ -1455,6 +1863,16 @@ export class IssuesService {
     };
   }
 
+  /**
+   * Tracker Boards (2026-05-27) — резолв `boardId` при создании задачи.
+   *
+   *   1. Если фронт явно передал boardId — проверяем что доска в этом
+   *      проекте + tenant'е через BoardsService.assertBoardInProject.
+   *   2. Иначе — резолвим default-доску проекта
+   *      (`BoardsService.resolveDefaultBoardId` — лениво создаёт если нет).
+   *   3. Если BoardsService недоступен (unit-тесты без модуля) — возвращаем
+   *      то, что передал клиент (или null). Schema допускает null.
+   */
   private async resolveBoardIdForCreate(args: {
     tenantId: string;
     projectId: string;
@@ -1488,6 +1906,13 @@ export class IssuesService {
     }
   }
 
+  /**
+   * Phase 3 (2026-05-24) — best-effort enqueue в `core.issue-embed`.
+   *
+   * Не блокирует caller'а: всегда ловит exception (warn-log), потому что
+   * embedding — вспомогательная фича (similar-issues / issue-goal-suggest),
+   * и Redis-проблемы не должны валить основной create/update.
+   */
   private async enqueueEmbed(
     tenantId: string,
     issueId: string,
@@ -1504,6 +1929,19 @@ export class IssuesService {
     }
   }
 
+  /**
+   * Wave 3 finishing (Sprint 10) — корректировка `dueDate` через
+   * `HolidayService.adjustDueDate`. Возвращает:
+   *   - null — если входной `dueDate=null` (нечего сдвигать).
+   *   - исходный Date — если `respectHolidays=false` ИЛИ HolidayService
+   *     недоступен (Optional inject не сработал).
+   *   - скорректированный Date — иначе (если попал на праздник/выходной,
+   *     сдвинется на ближайший рабочий день; если уже рабочий — вернётся
+   *     нормализованным к UTC-midnight).
+   *
+   * Опционально: при ошибке внутри HolidayService — warn-лог + возврат
+   * исходного значения. Не валим create/update из-за календарного сбоя.
+   */
   private async maybeAdjustDueDate(args: {
     tenantId: string;
     dueDate: Date | null;
@@ -1530,6 +1968,7 @@ export class IssuesService {
     }
   }
 
+  /** Сравнение значений «как в Prisma» — Date через timestamp, остальное ===. */
   private equalsLoose(a: unknown, b: unknown): boolean {
     if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
     if (a instanceof Date && typeof b === 'string') {

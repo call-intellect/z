@@ -14,9 +14,12 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { tryParseJson } from '../../ai/services/json-extract.util';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
-import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
+import { sanitizeCustomPrompt } from '../../ai/services/prompts/sanitize-custom-prompt';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { type IntakeAutoTriageJobData, TRACKER_QUEUE_NAMES } from '../queues';
@@ -291,8 +294,27 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
       viaDefaultProject = effectiveProjectId !== null;
     }
 
+    // TZ task-dedup (2026-06-16, Ф1 уровень A) — если дедуп-арбитр на создании
+    // пометил карточку дублем (suggestedDuplicateOfIssueId), НЕ принимаем
+    // автоматически: route to human (человек сам сливает через triage
+    // decision='duplicate'). Авто-merge ЗАПРЕЩЁН (R2/R13).
+    // Boolean(): поле nullable; в БД дефолт null, но защищаемся и от undefined
+    // (иначе `!== null` ложно срабатывает на отсутствующем поле → блок авто-приёма).
+    const hasSuggestedDuplicate = Boolean(intake.suggestedDuplicateOfIssueId);
     const canAutoAccept =
-      confidentEnough && effectiveAssigneeId !== null && effectiveProjectId !== null;
+      confidentEnough &&
+      effectiveAssigneeId !== null &&
+      effectiveProjectId !== null &&
+      !hasSuggestedDuplicate;
+    if (hasSuggestedDuplicate) {
+      this.logger.log(
+        {
+          intakeIssueId,
+          suggestedDuplicateOfIssueId: intake.suggestedDuplicateOfIssueId,
+        },
+        'intake-auto-triage: найден дубль — авто-приём заблокирован, ждём человека',
+      );
+    }
 
     if (canAutoAccept) {
       await this.autoAccept({
@@ -426,6 +448,9 @@ export class IntakeAutoTriageWorker implements OnModuleInit, OnModuleDestroy {
         externalSource: intake.externalSource ?? intake.source,
         externalId: intake.externalId,
         sourceBlockIds: intake.sourceBlockIds,
+        // TZ task-dedup (2026-06-16) — дедуп уже отработал на уровне A
+        // (intake create); двойной suggest не нужен.
+        skipDedup: true,
       },
       tenantId,
       systemUserId,

@@ -2,19 +2,35 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PreferenceDatasetService } from './preference-dataset.service';
 
-function makeService(prismaCreate: ReturnType<typeof vi.fn>) {
+/**
+ * W2.3 KC-Temporal (2026-05-25) — unit-тесты PreferenceDatasetService.
+ *
+ * Тестируем:
+ *   1) `approved` decisionType → label='correct', sample записан.
+ *   2) `mark_as_misleading` → label='misleading'.
+ *   3) `rejected` → label='wrong'.
+ *   4) `escalate` (не релевантный) → sample НЕ записан.
+ *   5) Сбой prisma.create → не падает (best-effort).
+ */
+
+function makeService(
+  prismaCreate: ReturnType<typeof vi.fn>,
+  prismaFindFirst?: ReturnType<typeof vi.fn>,
+) {
+  const findFirst = prismaFindFirst ?? vi.fn().mockResolvedValue(null);
   const fakePrisma = {
     llmPreferenceSample: {
       create: prismaCreate,
+      findFirst,
     },
   } as unknown as ConstructorParameters<typeof PreferenceDatasetService>[0];
-  return new PreferenceDatasetService(fakePrisma);
+  return { svc: new PreferenceDatasetService(fakePrisma), findFirst };
 }
 
 describe('PreferenceDatasetService.onDecisionRecorded', () => {
   it('approve → создаёт sample с label=correct, taskType маппится из resourceType', async () => {
     const createMock = vi.fn().mockResolvedValue({ id: 's1' });
-    const svc = makeService(createMock);
+    const { svc } = makeService(createMock);
     await svc.onDecisionRecorded({
       tenantId: 'org_1',
       curationItemId: 'ci_1',
@@ -37,7 +53,7 @@ describe('PreferenceDatasetService.onDecisionRecorded', () => {
 
   it('mark_as_misleading → label=misleading', async () => {
     const createMock = vi.fn().mockResolvedValue({ id: 's2' });
-    const svc = makeService(createMock);
+    const { svc } = makeService(createMock);
     await svc.onDecisionRecorded({
       tenantId: 'org_1',
       curationItemId: 'ci_1',
@@ -57,7 +73,7 @@ describe('PreferenceDatasetService.onDecisionRecorded', () => {
 
   it('reject → label=wrong', async () => {
     const createMock = vi.fn().mockResolvedValue({ id: 's3' });
-    const svc = makeService(createMock);
+    const { svc } = makeService(createMock);
     await svc.onDecisionRecorded({
       tenantId: 'org_1',
       curationItemId: 'ci_2',
@@ -76,7 +92,7 @@ describe('PreferenceDatasetService.onDecisionRecorded', () => {
 
   it('escalate → sample НЕ создаётся (не релевантный decisionType)', async () => {
     const createMock = vi.fn();
-    const svc = makeService(createMock);
+    const { svc } = makeService(createMock);
     await svc.onDecisionRecorded({
       tenantId: 'org_1',
       curationItemId: 'ci_3',
@@ -92,7 +108,7 @@ describe('PreferenceDatasetService.onDecisionRecorded', () => {
 
   it('best-effort: сбой prisma.create не пробрасывает наружу', async () => {
     const createMock = vi.fn().mockRejectedValue(new Error('db down'));
-    const svc = makeService(createMock);
+    const { svc } = makeService(createMock);
     await expect(
       svc.onDecisionRecorded({
         tenantId: 'org_1',
@@ -105,5 +121,51 @@ describe('PreferenceDatasetService.onDecisionRecorded', () => {
         proposedPayload: {},
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it('G7 дедуп: повтор события (уже есть sample по decisionId) → create НЕ вызывается', async () => {
+    const createMock = vi.fn();
+    const findFirstMock = vi.fn().mockResolvedValue({ id: 'existing-sample' });
+    const { svc } = makeService(createMock, findFirstMock);
+    await svc.onDecisionRecorded({
+      tenantId: 'org_1',
+      curationItemId: 'ci_5',
+      curationDecisionId: 'cd_6',
+      resourceType: 'decision',
+      resourceId: 'd_4',
+      decisionType: 'approve',
+      reviewerUserId: 'u_6',
+      proposedPayload: {},
+    });
+    expect(findFirstMock).toHaveBeenCalledTimes(1);
+    // dedup идёт по (tenantId, decisionId), когда curationDecisionId задан.
+    expect(findFirstMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'org_1',
+          decisionId: 'cd_6',
+        }),
+      }),
+    );
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('G7 дедуп: повтор без decisionId → fallback findFirst по resourceId', async () => {
+    const createMock = vi.fn().mockResolvedValue({ id: 's-new' });
+    const findFirstMock = vi.fn().mockResolvedValue(null);
+    const { svc } = makeService(createMock, findFirstMock);
+    await svc.onDecisionRecorded({
+      tenantId: 'org_1',
+      curationItemId: 'ci_6',
+      curationDecisionId: null,
+      resourceType: 'decision',
+      resourceId: 'd_5',
+      decisionType: 'approve',
+      reviewerUserId: 'u_7',
+      proposedPayload: {},
+    });
+    // Без decisionId — fallback по modelOutput.resourceId; sample записан (нет дубля).
+    expect(findFirstMock).toHaveBeenCalledTimes(1);
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -155,4 +155,71 @@ describe('TemporalConflictService', () => {
       relationType: 'works_at',
     });
   });
+
+  // ─────────────── Б53 — поиск конфликта в ОБЕ стороны ───────────────
+
+  it('Б53 block: where ищет обе ориентации (from,to) и (to,from); зеркальный old закрыт', async () => {
+    prismaStub.ideaBlockLink.findMany.mockResolvedValueOnce([
+      { id: 'mirror-old', relationType: 'contradicts' },
+    ]);
+    prismaStub.ideaBlockLink.updateMany
+      .mockResolvedValueOnce({ count: 1 }) // закрытие зеркального old
+      .mockResolvedValueOnce({ count: 0 }); // ensureValidFrom
+
+    const result = await svc.onNewBlockLink({
+      id: 'new-link',
+      tenantId: 't',
+      // Новая связь A→B; зеркальный old был B→A — должен найтись и закрыться.
+      fromBlockId: 'A',
+      toBlockId: 'B',
+      relationType: 'develops',
+      status: 'active',
+      validFrom: new Date(),
+      validUntil: null,
+    } as never);
+
+    expect(result.invalidated).toBe(1);
+    const where = prismaStub.ideaBlockLink.findMany.mock.calls[0]?.[0].where;
+    expect(where.OR).toEqual([
+      { fromBlockId: 'A', toBlockId: 'B' },
+      { fromBlockId: 'B', toBlockId: 'A' },
+    ]);
+    // Плоских направленных полей в where быть не должно (заменены на OR).
+    expect(where.fromBlockId).toBeUndefined();
+    expect(where.toBlockId).toBeUndefined();
+    expect(prismaStub.ideaBlockLink.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'mirror-old', validUntil: null } }),
+    );
+  });
+
+  it('Б53 entity: where ищет обе ориентации с перестановкой fromType/toType', async () => {
+    prismaStub.entityLink.findMany.mockResolvedValueOnce([
+      { id: 'mirror-el', relationType: 'opposes' },
+    ]);
+    prismaStub.entityLink.updateMany
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+
+    const result = await svc.onNewEntityLink({
+      id: 'el-new',
+      tenantId: 't',
+      fromEntityId: 'P',
+      toEntityId: 'C',
+      fromType: 'person',
+      toType: 'company',
+      relationType: 'works_at',
+      status: 'active',
+      validFrom: new Date(),
+      validUntil: null,
+    } as never);
+
+    expect(result.invalidated).toBe(1);
+    const where = prismaStub.entityLink.findMany.mock.calls[0]?.[0].where;
+    expect(where.OR).toEqual([
+      { fromEntityId: 'P', toEntityId: 'C', fromType: 'person', toType: 'company' },
+      { fromEntityId: 'C', toEntityId: 'P', fromType: 'company', toType: 'person' },
+    ]);
+    expect(where.fromEntityId).toBeUndefined();
+    expect(where.toEntityId).toBeUndefined();
+  });
 });

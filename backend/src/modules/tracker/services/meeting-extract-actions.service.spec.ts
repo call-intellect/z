@@ -299,9 +299,12 @@ describe('MeetingExtractActionsService', () => {
       llmText: JSON.stringify({
         tasks: [
           {
+            // Ф0 (ТЗ 2026-06-16) — у задачи есть срок, чтобы пройти гейт
+            // качества: проверяем именно clampConfidence, а не гейт.
             title: 'Задача с confidence > 1',
             assignee: null,
-            dueDate: null,
+            dueDate: '2026-05-30',
+            suggestedDueDate: '2026-05-30',
             confidence: 1.5,
             sourceQuote: 'некая цитата',
           },

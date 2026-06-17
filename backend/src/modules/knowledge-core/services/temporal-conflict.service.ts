@@ -9,6 +9,28 @@ import {
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
+import { ACTIVE_LINK_FILTER } from './link-read-filter';
+
+/**
+ * Agents v2 Фаза A1 (2026-05-30) — Bi-temporal edges.
+ *
+ * `TemporalConflictService.onNewLink(...)` вызывается после `upsert` свежей
+ * связи (block↔block или entity↔entity). Логика:
+ *   1. Ищет existing открытые links (`validUntil IS NULL`) того же
+ *      source+target, у которых `relationType` явно противоречит новому
+ *      (см. `CONTRADICTING_BLOCK_LINK_PAIRS` / `CONTRADICTING_ENTITY_LINK_PAIRS`).
+ *   2. Старый link не удаляется — ему проставляется `validUntil = NOW()`
+ *      (закрытый интервал). Аудит в графе сохраняется.
+ *   3. Если у нового link'а `validFrom` ещё не задан — он выставляется в
+ *      `NOW()` (новая связь начала действовать).
+ *   4. Метрика `temporal_edges_invalidated_total{relationType}` инкрементится
+ *      по каждому закрытому old-link'у.
+ *
+ * Сервис — синглтон, side-effects идемпотентны (повторный вызов на тот же
+ * новый link не закроет тот же old второй раз — `validUntil IS NULL`-фильтр).
+ *
+ * Источник: plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
+ */
 @Injectable()
 export class TemporalConflictService {
   private readonly logger = new Logger(TemporalConflictService.name);
@@ -20,6 +42,11 @@ export class TemporalConflictService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
+  /**
+   * Обработать новую/обновлённую связь блок↔блок: закрыть противоречащие
+   * existing open-links (validUntil = NOW), при необходимости проставить
+   * validFrom на свежей связи.
+   */
   async onNewBlockLink(link: IdeaBlockLink): Promise<{ invalidated: number }> {
     if (link.status !== 'active') return { invalidated: 0 };
 
@@ -30,21 +57,30 @@ export class TemporalConflictService {
     const existing = await this.prisma.ideaBlockLink.findMany({
       where: {
         tenantId: link.tenantId,
-        fromBlockId: link.fromBlockId,
-        toBlockId: link.toBlockId,
+        // Б53 — противоречие не зависит от направления связи: ищем existing
+        // как в той же ориентации (from,to), так и в инвертированной (to,from),
+        // иначе зеркальный old-link не закрывается.
+        OR: [
+          { fromBlockId: link.fromBlockId, toBlockId: link.toBlockId },
+          { fromBlockId: link.toBlockId, toBlockId: link.fromBlockId },
+        ],
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
+        // Исключаем сам новый link — на случай если по какой-то причине
+        // relationType совпал (теоретически не должно: пары disjoint).
         NOT: { id: link.id },
       },
       select: { id: true, relationType: true },
     });
 
     if (existing.length === 0) {
+      // Просто проставим validFrom если он пуст.
       await this.ensureValidFrom('block', link.id, link.validFrom, now);
       return { invalidated: 0 };
     }
 
+    // Закрываем все противоречащие.
     let invalidated = 0;
     for (const old of existing) {
       const res = await this.prisma.ideaBlockLink.updateMany({
@@ -73,6 +109,10 @@ export class TemporalConflictService {
     return { invalidated };
   }
 
+  /**
+   * Обработать новую/обновлённую связь entity↔entity: закрыть противоречащие
+   * existing open-links того же source+target+(fromType,toType).
+   */
   async onNewEntityLink(link: EntityLink): Promise<{ invalidated: number }> {
     if (link.status !== 'active') return { invalidated: 0 };
 
@@ -83,12 +123,25 @@ export class TemporalConflictService {
     const existing = await this.prisma.entityLink.findMany({
       where: {
         tenantId: link.tenantId,
-        fromEntityId: link.fromEntityId,
-        toEntityId: link.toEntityId,
-        fromType: link.fromType,
-        toType: link.toType,
+        // Б53 — ищем противоречащий existing в ОБЕ стороны: прямая ориентация
+        // (from,to)+(fromType,toType) и инвертированная (to,from)+(toType,fromType).
+        // Иначе зеркальная связь (LLM поставил A→B вместо B→A) не закрывается.
+        OR: [
+          {
+            fromEntityId: link.fromEntityId,
+            toEntityId: link.toEntityId,
+            fromType: link.fromType,
+            toType: link.toType,
+          },
+          {
+            fromEntityId: link.toEntityId,
+            toEntityId: link.fromEntityId,
+            fromType: link.toType,
+            toType: link.fromType,
+          },
+        ],
         relationType: { in: conflicting },
-        status: 'active',
+        ...ACTIVE_LINK_FILTER,
         validUntil: null,
         NOT: { id: link.id },
       },
@@ -136,20 +189,57 @@ export class TemporalConflictService {
   ): Promise<void> {
     if (currentValidFrom) return;
     if (kind === 'block') {
+      // IdeaBlockLink.validFrom — nullable (Agents v2 A1).
       await this.prisma.ideaBlockLink.updateMany({
         where: { id, validFrom: null },
         data: { validFrom: now },
       });
     }
+    // EntityLink.validFrom — required с @default(now()), null невозможен;
+    // ensureValidFrom для 'entity' = no-op (значение уже валидное).
   }
 }
 
-const CONTRADICTING_BLOCK_LINK_PAIRS = new Map<IdeaBlockLinkType, IdeaBlockLinkType[]>([
+/**
+ * Список «противоречащих пар» для IdeaBlockLink. Если детектируется новая
+ * связь типа X, существующие открытые связи типа Y (где Y ∈ map[X]) с тем
+ * же (from,to) — закрываются.
+ *
+ * Симметрия: если X → [Y], то Y → [X] (чтобы порядок появления не имел
+ * значения).
+ */
+const CONTRADICTING_BLOCK_LINK_PAIRS = new Map<
+  IdeaBlockLinkType,
+  IdeaBlockLinkType[]
+>([
+  // develops vs contradicts — содержательное противоречие.
   ['develops', ['contradicts']],
   ['contradicts', ['develops']],
+  // supersedes — новая версия факта заменяет старую; develops/causes на
+  // старом блоке логически закрываются вместе с самим блоком, но здесь
+  // мы трогаем только зеркальные «один источник, один тип факта»-пары.
+  // Пока добавляем только develops↔contradicts (ясный кейс из ТЗ §A1).
 ]);
 
-const CONTRADICTING_ENTITY_LINK_PAIRS = new Map<EntityLinkType, EntityLinkType[]>([
+/**
+ * Список «противоречащих пар» для EntityLink. Аналогичная симметрия.
+ *
+ * Базовые пары (из ТЗ §A1):
+ *   - works_at ↔ opposes (если детектируется явная конфронтация, прошлая
+ *     принадлежность закрывается).
+ *
+ * NB: legacy enum EntityLinkType НЕ содержит `left_company` (ТЗ привёл его
+ * как иллюстрацию — в проекте такого типа нет). Реальные противопоставления
+ * сейчас (ровно то, что есть в Map ниже):
+ *   - works_at ↔ opposes  (вышел из компании / стал конкурентом).
+ *   - mentors ↔ conflicted_with (наставничество vs зафиксированный конфликт).
+ *
+ * Расширять только после явного решения в second-brain/02_architecture/.
+ */
+const CONTRADICTING_ENTITY_LINK_PAIRS = new Map<
+  EntityLinkType,
+  EntityLinkType[]
+>([
   ['works_at', ['opposes']],
   ['opposes', ['works_at']],
   ['mentors', ['conflicted_with']],

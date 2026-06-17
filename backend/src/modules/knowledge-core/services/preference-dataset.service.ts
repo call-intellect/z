@@ -79,6 +79,34 @@ export class PreferenceDatasetService {
         return;
       }
       const taskType = resourceTypeToTaskType(event.resourceType);
+
+      // G7 дедуп: событие `curation.decision_recorded` может прийти повторно
+      // (ретрай эмиттера/воркера) → без guard'а получим дубль-sample. У модели
+      // LlmPreferenceSample нет @unique, поэтому findFirst перед create.
+      //   - есть curationDecisionId → один sample на curation-решение
+      //     (decisionId — естественный ключ-источник);
+      //   - нет id решения → fallback по (tenantId, taskType, resourceId, label).
+      const dedupWhere: Prisma.LlmPreferenceSampleWhereInput =
+        event.curationDecisionId
+          ? { tenantId: event.tenantId, decisionId: event.curationDecisionId }
+          : {
+              tenantId: event.tenantId,
+              taskType,
+              label,
+              modelOutput: {
+                path: ['resourceId'],
+                equals: event.resourceId,
+              },
+            };
+      const existing = await this.prisma.llmPreferenceSample.findFirst({
+        where: dedupWhere,
+        select: { id: true },
+      });
+      if (existing) {
+        // Повтор события — sample уже записан, no-op.
+        return;
+      }
+
       const inputContext = (event.proposedPayload ?? {}) as Prisma.InputJsonValue;
       const modelOutput: Prisma.InputJsonValue = {
         decisionType: event.decisionType,

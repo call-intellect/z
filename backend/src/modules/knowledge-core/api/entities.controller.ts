@@ -14,6 +14,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
@@ -23,10 +24,12 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurationService } from '../../curation/services/curation.service';
+import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { KnowledgeAccessResolver } from '../../rbac/knowledge-access-resolver.service';
 import { RbacService } from '../../rbac/rbac.service';
+import { ACTIVE_LINK_FILTER } from '../services/link-read-filter';
 
 import {
   type EntityDetailDto,
@@ -207,6 +210,11 @@ export class KnowledgeEntitiesController {
   }
 
   @Get('entities/:id/links')
+  // G1 — связи сущности = граф знаний (платная feature.graph). Гейтим тем же
+  // механизмом, что и KnowledgeGraphController (глобальный EntitlementGuard
+  // читает этот декоратор через Reflector). Без него /entities/:id/links был
+  // обходом платной фичи: тот же графовый контент мимо paywall'а.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({ summary: 'Типизированные связи сущности (outgoing + incoming)' })
   async links(
     @Param('id') id: string,
@@ -241,7 +249,7 @@ export class KnowledgeEntitiesController {
       this.prisma.entityLink.findMany({
         where: {
           fromEntityId: id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ fromType: null }, { fromType: 'entity' }],
           AND: { OR: [{ toType: null }, { toType: 'entity' }] },
@@ -251,7 +259,7 @@ export class KnowledgeEntitiesController {
       this.prisma.entityLink.findMany({
         where: {
           toEntityId: id,
-          status: 'active',
+          ...ACTIVE_LINK_FILTER,
           tenantId,
           OR: [{ toType: null }, { toType: 'entity' }],
           AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
@@ -320,6 +328,9 @@ export class KnowledgeEntitiesController {
   }
 
   @Get('entities/:id/graph')
+  // G1 — entity-centric граф = платная feature.graph (как KnowledgeGraphController).
+  // Без этого декоратора эндпоинт был обходом paywall'а графа знаний.
+  @RequireEntitlement('feature.graph')
   @ApiOperation({
     summary: 'Entity-centric граф с rich-edge атрибутами и top-3 evidence (G.3)',
   })
@@ -377,7 +388,7 @@ export class KnowledgeEntitiesController {
         this.prisma.entityLink.findMany({
           where: {
             fromEntityId: { in: frontier },
-            status: 'active',
+            ...ACTIVE_LINK_FILTER,
             tenantId,
             OR: [{ fromType: null }, { fromType: 'entity' }],
             AND: { OR: [{ toType: null }, { toType: 'entity' }] },
@@ -386,7 +397,7 @@ export class KnowledgeEntitiesController {
         this.prisma.entityLink.findMany({
           where: {
             toEntityId: { in: frontier },
-            status: 'active',
+            ...ACTIVE_LINK_FILTER,
             tenantId,
             OR: [{ toType: null }, { toType: 'entity' }],
             AND: { OR: [{ fromType: null }, { fromType: 'entity' }] },
@@ -473,7 +484,7 @@ export class KnowledgeEntitiesController {
           },
         }),
         this.prisma.entityLink.findMany({
-          where: { id: { in: Array.from(edgesById.keys()) } },
+          where: { id: { in: Array.from(edgesById.keys()) }, ...ACTIVE_LINK_FILTER },
           select: { id: true, sourceBlockIds: true },
         }),
       ]);
@@ -556,6 +567,13 @@ export class KnowledgeEntitiesController {
 
   @Post('entities/:id/mark-wrong')
   @HttpCode(200)
+  // G1 — точечный rate-limit ТОЛЬКО на этот эндпоинт (не глобально):
+  // каждый вызов пишет LlmPreferenceSample (обучающий датасет). Без лимита
+  // скрипт мог раздувать датасет «неверными» метками. ThrottlerGuard навешан
+  // per-route (глобально он не зарегистрирован), @Throttle строже дефолта
+  // (120/мин) — ручная разметка живым человеком не превышает 30/мин.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Пометить ребро или сущность как «неверную» (G.3, попадает в LlmPreferenceSample)',
   })

@@ -8,23 +8,40 @@ import {
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   BLOCK_DISTILL_JSON_SCHEMA,
   BLOCK_DISTILL_SYSTEM_PROMPT,
   BlockDistillJudgeResponseSchema,
 } from '../prompts/block-distill.prompt';
+import { signalTypeLabel } from '../prompts/signal-type-label';
 
+/**
+ * Кандидат — canonical-блок, ближайший к новому по cosine. similarity ∈ [0,1].
+ */
 export interface MergeCandidate {
   candidate: IdeaBlock;
   similarity: number;
 }
 
+/**
+ * Результат LLM-арбитра: либо merge с указанием каноничного id, либо distinct.
+ */
 export type MergeVerdict =
   | { verdict: 'merge'; canonicalId: string; explanation: string }
   | { verdict: 'distinct'; explanation: string };
 
+/**
+ * Сырая запись из $queryRawUnsafe: все поля IdeaBlock + similarity.
+ * BigInt'ов нет (все Int4) — Prisma выдаёт чистые числа / строки / Date.
+ */
 interface RawCandidateRow {
   id: string;
   tenantId: string;
@@ -45,10 +62,21 @@ interface RawCandidateRow {
   similarity: string | number;
 }
 
+// Промпт, JSON Schema и Zod вынесены в `prompts/block-distill.prompt.ts`.
+// Здесь оставляем алиасы под историческими именами для минимума diff'а.
 const JudgeResponseSchema = BlockDistillJudgeResponseSchema;
 const JUDGE_JSON_SCHEMA = BLOCK_DISTILL_JSON_SCHEMA;
 const JUDGE_SYSTEM_PROMPT = BLOCK_DISTILL_SYSTEM_PROMPT;
 
+/**
+ * BlockMergeService — KNN + LLM-арбитр для block-distill.
+ *
+ *   - `knnCandidates`: pgvector cosine KNN среди canonical-блоков того же
+ *     tenant'а. Возвращает только кандидатов, у которых similarity >
+ *     `mergeThreshold` (порог из ENV `DISTILL_MERGE_THRESHOLD`).
+ *   - `judgeMerge`: LLM-вызов `taskType: 'block-distill'`. Strict JSON Schema
+ *     с verdict ∈ {merge, distinct} + canonicalId.
+ */
 @Injectable()
 export class BlockMergeService {
   private readonly logger = new Logger(BlockMergeService.name);
@@ -61,6 +89,9 @@ export class BlockMergeService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -75,6 +106,12 @@ export class BlockMergeService {
     topK: number;
     threshold: number;
   }): Promise<MergeCandidate[]> {
+    // Cosine distance в pgvector — `<=>` (0 = идентичные, 2 = противоположные).
+    // similarity = 1 - distance даёт нам [-1, 1], при условии что embedding'и
+    // нормированы (text-embedding-3-small — нормированы) — это [0, 1].
+    //
+    // Фильтр по status='canonical' и mergedIntoId IS NULL — гарантия,
+    // что не возьмём промежуточные draft/merged_into.
     const rows = await this.prisma.$queryRawUnsafe<RawCandidateRow[]>(
       `
       SELECT b.id, b."tenantId", b.name, b."criticalQuestion", b."trustedAnswer",
@@ -129,12 +166,15 @@ export class BlockMergeService {
     };
     const userMessage = `Новый блок и кандидаты ниже. Реши verdict.\n\n${JSON.stringify(userPayload, null, 2)}`;
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     try {
       const out = await this.llm.call({
         taskType: 'block-distill',
         tenantId: args.tenantId,
-        systemPrompt: guardOn ? withInjectionGuard(JUDGE_SYSTEM_PROMPT) : JUDGE_SYSTEM_PROMPT,
+        systemPrompt: guardOn
+          ? withInjectionGuard(JUDGE_SYSTEM_PROMPT)
+          : JUDGE_SYSTEM_PROMPT,
         userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
         responseFormat: {
           type: 'json_schema',
@@ -143,6 +183,7 @@ export class BlockMergeService {
           schema: JUDGE_JSON_SCHEMA,
         },
         sourceRef: { type: 'idea-block', id: args.blockId },
+        // Фаза 11: dataClass = max(новый блок, кандидаты).
         dataClass: maxDataClass([
           args.newBlock.dataClass,
           ...args.candidates.map((c) => c.dataClass),
@@ -173,7 +214,12 @@ export class BlockMergeService {
     }
   }
 
-  private parseVerdict(text: string, candidates: IdeaBlock[]): MergeVerdict | null {
+  // ─────────────────────────── helpers ─────────────────────────────────────
+
+  private parseVerdict(
+    text: string,
+    candidates: IdeaBlock[],
+  ): MergeVerdict | null {
     let raw: unknown;
     try {
       raw = JSON.parse(text);
@@ -187,6 +233,7 @@ export class BlockMergeService {
     }
     const canonicalId = parsed.data.canonicalId;
     if (!canonicalId) return null;
+    // Защита от галлюцинаций: canonicalId должен быть из переданных кандидатов.
     if (!candidates.some((c) => c.id === canonicalId)) {
       this.logger.warn(
         { canonicalId, candidateIds: candidates.map((c) => c.id) },
@@ -207,12 +254,24 @@ export class BlockMergeService {
       name: b.name,
       criticalQuestion: b.criticalQuestion,
       trustedAnswer: b.trustedAnswer,
-      signalType: b.signalType,
+      // Методология промптов №3 — модели подаём человеческий ярлык сигнала,
+      // не машинный код (`pain`/`churn_risk`…). Источник: signal-type-label.ts.
+      signalType: signalTypeLabel(b.signalType),
       tags: b.tags,
-      primarySource: b.primarySource ?? 'transcript',
+      // Report-to-graph Ф4 ГАРД B — источник кандидата для LLM-арбитра
+      // (report — вторичный, transcript — первичный). Исторические блоки без
+      // признака трактуем как транскриптные. Подаём человеческим ярлыком.
+      primarySource:
+        (b.primarySource ?? 'transcript') === 'report'
+          ? 'сводка/отчёт'
+          : 'живой разговор',
     };
   }
 
+  /**
+   * $queryRawUnsafe возвращает не Prisma-типизированные объекты — приводим
+   * к IdeaBlock (без поля embedding, оно нам тут не нужно).
+   */
   private rowToIdeaBlock(r: RawCandidateRow): IdeaBlock {
     return {
       id: r.id,
@@ -222,6 +281,9 @@ export class BlockMergeService {
       trustedAnswer: r.trustedAnswer,
       tags: r.tags,
       signalType: r.signalType as SignalType,
+      // Decimal приходит строкой — приведём к Prisma.Decimal через any-каст
+      // на месте использования. Здесь оставляем строкой (TS-тип Decimal
+      // принимает string в конструкторе).
       confidence: this.toDecimal(r.confidence),
       dataClass: r.dataClass as DataClass,
       embedding: null,
@@ -229,6 +291,8 @@ export class BlockMergeService {
       mergedIntoId: r.mergedIntoId,
       evidenceCount: r.evidenceCount,
       dynamicScore: this.toDecimal(r.dynamicScore),
+      // Report-to-graph Ф4 ГАРД B — провенанс кандидата нужен пост-гарду
+      // block-distill (swapDirection) и summariseBlock (LLM видит источник).
       primarySource: r.primarySource,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
@@ -236,6 +300,9 @@ export class BlockMergeService {
   }
 
   private toDecimal(v: string | number): unknown {
+    // Возвращаем сырое значение — Prisma.Decimal сравнивается по toString,
+    // и в БД-update мы потом передадим уже свежий new Prisma.Decimal(...)
+    // явно; здесь нужен только тип-каст для Prisma.IdeaBlock.
     return typeof v === 'string' ? v : v;
   }
 }

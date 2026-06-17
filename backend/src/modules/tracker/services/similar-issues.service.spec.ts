@@ -136,3 +136,92 @@ describe('SimilarIssuesService.findSimilar', () => {
     });
   });
 });
+
+/**
+ * TZ task-dedup (2026-06-16, Ф1) — findSimilarByVector: KNN по готовому вектору
+ * (без seed-задачи), фильтр openOnly, исключение задачи.
+ */
+describe('SimilarIssuesService.findSimilarByVector', () => {
+  let prisma: PrismaService;
+  let metrics: BusinessMetricsService;
+  let svc: SimilarIssuesService;
+  let queryRawMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    queryRawMock = vi.fn();
+    prisma = { $queryRawUnsafe: queryRawMock } as unknown as PrismaService;
+    metrics = {
+      incTrackerIssueSimilarSearch: vi.fn(),
+    } as unknown as BusinessMetricsService;
+    svc = new SimilarIssuesService(prisma, metrics);
+  });
+
+  it('по вектору сразу делает KNN (без seed-запроса) и фильтрует по threshold', async () => {
+    queryRawMock.mockResolvedValueOnce([
+      {
+        id: 'iss2',
+        identifier: 'K-2',
+        title: 'Похожая',
+        stateId: 'st1',
+        projectId: 'p1',
+        completedAt: null,
+        distance: 0.04, // < 0.18 → попадает
+      },
+      {
+        id: 'iss3',
+        identifier: 'K-3',
+        title: 'Далёкая',
+        stateId: 'st1',
+        projectId: 'p1',
+        completedAt: null,
+        distance: 0.9, // > 0.18 → отброшена
+      },
+    ]);
+
+    const result = await svc.findSimilarByVector({
+      tenantId: 't1',
+      embedding: '[0.1,0.2,0.3]',
+      threshold: 0.18,
+    });
+
+    expect(queryRawMock).toHaveBeenCalledTimes(1); // нет seed-запроса
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe('iss2');
+    expect(result[0]?.similarity).toBeCloseTo(0.96, 5);
+  });
+
+  it('openOnly=true добавляет фильтр completedAt IS NULL в SQL', async () => {
+    queryRawMock.mockResolvedValueOnce([]);
+    await svc.findSimilarByVector({
+      tenantId: 't1',
+      embedding: '[1,0,0]',
+      openOnly: true,
+    });
+    const sql = queryRawMock.mock.calls[0]?.[0] as string;
+    expect(sql).toContain('"completedAt" IS NULL');
+  });
+
+  it('openOnly не задан → нет фильтра completedAt IS NULL', async () => {
+    queryRawMock.mockResolvedValueOnce([]);
+    await svc.findSimilarByVector({
+      tenantId: 't1',
+      embedding: '[1,0,0]',
+    });
+    const sql = queryRawMock.mock.calls[0]?.[0] as string;
+    expect(sql).not.toContain('"completedAt" IS NULL');
+  });
+
+  it('excludeIssueId добавляет условие id <> $N с правильным параметром', async () => {
+    queryRawMock.mockResolvedValueOnce([]);
+    await svc.findSimilarByVector({
+      tenantId: 't1',
+      embedding: '[1,0,0]',
+      excludeIssueId: 'self-id',
+    });
+    const call = queryRawMock.mock.calls[0]!;
+    const sql = call[0] as string;
+    expect(sql).toContain('id <> $3');
+    // params: $1 embedding, $2 tenantId, $3 excludeIssueId, $4 limit
+    expect(call[3]).toBe('self-id');
+  });
+});

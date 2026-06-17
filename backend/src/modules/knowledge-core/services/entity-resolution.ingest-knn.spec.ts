@@ -217,6 +217,120 @@ describe('EntityResolutionService.findOrCreateEntity (W1.5 ingest-time KNN)', ()
     });
   });
 
+  it('Б44 [K4]: knn-reuse переносит пустые strong-IDs из найденного кандидата', async () => {
+    const m = makeMocks({ threshold: 0.95 });
+    m.spies.redisGet.mockResolvedValueOnce(null);
+    // resolveByStrongIds: INN lookup → пусто, domain lookup → пусто
+    // (strong-ID не нашёл сущность → падаем в exact → KNN).
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]); // inn lookup
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]); // domain lookup
+    // Exact пусто.
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
+    // KNN: distance=0.04 → similarity=0.96 (>= 0.95).
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([
+      { id: 'ent-knn', distance: 0.04 },
+    ]);
+    // Найденный по KNN кандидат БЕЗ strong-полей (ИНН/домен пусты).
+    m.spies.entityFindUnique.mockResolvedValueOnce({
+      id: 'ent-knn',
+      tenantId: 'org-1',
+      type: 'customer',
+      canonicalName: 'ООО Ромашка',
+      mergedIntoId: null,
+      mentionsCount: 3,
+      metadata: null,
+      inn: null,
+      ogrn: null,
+      email: null,
+      phone: null,
+      domain: null,
+    });
+
+    const svc = new EntityResolutionService(
+      m.prisma,
+      m.embeddings,
+      m.redis,
+      m.coreQueue,
+      m.metrics,
+      m.cfg,
+    );
+
+    const r = await svc.findOrCreateEntity({
+      tenantId: 'org-1',
+      type: 'customer',
+      name: 'Ромашка',
+      // Новый вызов принёс strong-IDs, которых не было у KNN-кандидата.
+      inn: '7700000000', // 10 цифр — валидный ИНН юр.лица
+      domain: 'romashka.ru',
+    });
+
+    expect(r.created).toBe(false);
+    expect(m.spies.entityCreate).not.toHaveBeenCalled();
+    expect(m.metrics.incKcEntityResolvePath).toHaveBeenCalledWith({
+      path: 'knn',
+    });
+    // entity.update должен backfill'ить пустые strong-поля из нового вызова.
+    expect(m.spies.entityUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ent-knn' },
+        data: expect.objectContaining({
+          inn: '7700000000',
+          domain: 'romashka.ru',
+        }),
+      }),
+    );
+  });
+
+  it('Б44 [K4]: knn-reuse НЕ перетирает уже заполненные strong-IDs кандидата', async () => {
+    const m = makeMocks({ threshold: 0.95 });
+    m.spies.redisGet.mockResolvedValueOnce(null);
+    // resolveByStrongIds: только INN lookup (domain не передан) → пусто.
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]); // inn lookup
+    // Exact пусто.
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
+    // KNN: distance=0.04 → similarity=0.96.
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([
+      { id: 'ent-knn', distance: 0.04 },
+    ]);
+    // У кандидата УЖЕ есть ИНН — он не должен перезаписываться.
+    m.spies.entityFindUnique.mockResolvedValueOnce({
+      id: 'ent-knn',
+      tenantId: 'org-1',
+      type: 'customer',
+      canonicalName: 'ООО Ромашка',
+      mergedIntoId: null,
+      mentionsCount: 3,
+      metadata: null,
+      inn: '5500000000',
+      ogrn: null,
+      email: null,
+      phone: null,
+      domain: null,
+    });
+
+    const svc = new EntityResolutionService(
+      m.prisma,
+      m.embeddings,
+      m.redis,
+      m.coreQueue,
+      m.metrics,
+      m.cfg,
+    );
+
+    await svc.findOrCreateEntity({
+      tenantId: 'org-1',
+      type: 'customer',
+      name: 'Ромашка',
+      inn: '7700000000',
+    });
+
+    const updateArgs = (m.spies.entityUpdate.mock.calls as unknown[][])[0]?.[0] as {
+      data: Record<string, unknown>;
+    };
+    // inn не должен попасть в data (поле кандидата уже заполнено).
+    expect(updateArgs.data).not.toHaveProperty('inn');
+  });
+
   it('knn miss → create + enqueue entity-resolver + cache write', async () => {
     const m = makeMocks({ threshold: 0.95 });
     m.spies.redisGet.mockResolvedValueOnce(null);

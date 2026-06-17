@@ -1,25 +1,121 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { type Entity, type EntityType, type IdeaBlock, Prisma } from '@prisma/client';
+import {
+  type Entity,
+  type EntityType,
+  type IdeaBlock,
+  Prisma,
+} from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { LlmRouterService } from '../../ai/services/llm-router.service';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  LlmRouterService,
+  maxDataClass,
+} from '../../ai/services/llm-router.service';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import {
   ENTITY_MERGE_ARBITER_JSON_SCHEMA,
   ENTITY_MERGE_ARBITER_SYSTEM_PROMPT,
   EntityMergeArbiterResponseSchema,
 } from '../prompts/entity-merge-arbiter.prompt';
+import { signalTypeLabel } from '../prompts/signal-type-label';
 
+/**
+ * Человеческие ярлыки вида сущности (Прил. A3): подаём арбитру «человек»,
+ * «заказчик», а не код `person`/`customer` — методология промптов №3
+ * (человеческий вход). Fallback — сам код.
+ */
+const ENTITY_TYPE_LABEL_RU: Record<string, string> = {
+  person: 'человек',
+  customer: 'заказчик',
+  vendor: 'поставщик',
+  project: 'проект',
+  product: 'продукт',
+  document: 'документ',
+  goal: 'цель',
+  event: 'событие',
+  topic: 'тема',
+  location: 'место',
+  technology: 'технология',
+  metric: 'показатель',
+  market: 'рынок',
+  org_unit: 'подразделение',
+  client: 'заказчик',
+};
+
+function entityTypeLabelRu(code: string): string {
+  return ENTITY_TYPE_LABEL_RU[code] ?? code;
+}
+
+/**
+ * Человеческие ярлыки частых ключей metadata сущности (Прил. A3). Известные
+ * ключи переводим, неизвестные — оставляем как есть (не теряем данные).
+ */
+const ENTITY_METADATA_KEY_LABEL_RU: Record<string, string> = {
+  role: 'должность',
+  title: 'должность',
+  position: 'должность',
+  email: 'почта',
+  phone: 'телефон',
+  inn: 'ИНН',
+  domain: 'домен',
+  city: 'город',
+  codeName: 'кодовое имя',
+  code: 'кодовое имя',
+  sku: 'артикул',
+  article: 'артикул',
+};
+
+/**
+ * Превращает metadata сущности (произвольный JSON-объект) в человекочитаемые
+ * пары «ярлык: значение». Не объект / пусто → null (арбитру нечего показывать).
+ */
+function humaniseMetadata(
+  metadata: unknown,
+): Record<string, unknown> | null {
+  if (
+    metadata == null ||
+    typeof metadata !== 'object' ||
+    Array.isArray(metadata)
+  ) {
+    return null;
+  }
+  const entries = Object.entries(metadata as Record<string, unknown>).filter(
+    ([, v]) => v != null && v !== '',
+  );
+  if (entries.length === 0) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of entries) {
+    const label = ENTITY_METADATA_KEY_LABEL_RU[key] ?? key;
+    out[label] = value;
+  }
+  return out;
+}
+
+/**
+ * Кандидат для merge'а Entity — другая сущность того же tenant'а / type,
+ * у которой cosine-similarity к исходной выше порога.
+ */
 export interface EntityMergeCandidate {
   candidate: Entity;
   similarity: number;
 }
 
+/**
+ * Вердикт LLM-арбитра. При `merge` `canonicalId` обязателен и должен быть
+ * id одного из переданных кандидатов.
+ */
 export type EntityMergeVerdict =
   | { verdict: 'merge'; canonicalId: string; explanation: string }
   | { verdict: 'distinct'; explanation: string };
 
+/**
+ * Сырая запись из $queryRawUnsafe — все поля Entity + similarity.
+ * embedding / metadata намеренно не выбираем (чтобы не таскать по сети vector).
+ */
 interface RawCandidateRow {
   id: string;
   tenantId: string;
@@ -34,10 +130,22 @@ interface RawCandidateRow {
   similarity: string | number;
 }
 
+// Промпт, JSON Schema и Zod вынесены в `prompts/entity-merge-arbiter.prompt.ts`.
+// Алиасы под историческими именами — чтобы тело сервиса не менялось.
 const ArbiterResponseSchema = EntityMergeArbiterResponseSchema;
 const ARBITER_JSON_SCHEMA = ENTITY_MERGE_ARBITER_JSON_SCHEMA;
 const ARBITER_SYSTEM_PROMPT = ENTITY_MERGE_ARBITER_SYSTEM_PROMPT;
 
+/**
+ * EntityMergeService — KNN cosine + LLM-арбитр для entity-resolver worker'а.
+ *
+ *   - `findCandidates(tenantId, entityId, threshold)` — pgvector cosine KNN
+ *     среди Entity того же tenantId / type / status (mergedIntoId IS NULL).
+ *     Возвращает только тех, у кого similarity > threshold. Limit 5.
+ *   - `judgeMerge` — LLM-вызов `taskType: 'entity-merge-arbiter'` с JSON
+ *     Schema strict. На вход — обе сущности + контекст 3-5 последних блоков
+ *     каждой (через IdeaBlockEntity).
+ */
 @Injectable()
 export class EntityMergeService {
   private readonly logger = new Logger(EntityMergeService.name);
@@ -50,6 +158,9 @@ export class EntityMergeService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -63,6 +174,12 @@ export class EntityMergeService {
     entityId: string;
     threshold: number;
   }): Promise<EntityMergeCandidate[]> {
+    // Cosine: `<=>` в pgvector — distance, [0..2]. similarity = 1 - distance ∈ [-1..1];
+    // для нормированных эмбеддингов text-embedding-3-small — фактически [0..1].
+    //
+    // Жёсткий фильтр: type должен совпадать (нельзя слить person и client),
+    // mergedIntoId IS NULL (не берём «уже мерженных»),
+    // id <> entityId (себя не тащим).
     const rows = await this.prisma.$queryRawUnsafe<RawCandidateRow[]>(
       `
       SELECT e.id, e."tenantId", e.type, e."canonicalName", e.aliases,
@@ -112,12 +229,23 @@ export class EntityMergeService {
     };
     const userMessage = `Новая сущность и кандидат ниже. Реши verdict.\n\n${JSON.stringify(userPayload, null, 2)}`;
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (сущности) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
+    // Б12 [K5]: dataClass = max по упомянутым блокам обеих сущностей (как
+    // делает block-distill через maxDataClass). Без этого арбитр всегда
+    // 'internal' → чувствительный контекст уходит провайдеру с меньшим
+    // maxDataClass.
+    const dataClass = maxDataClass([
+      ...args.recentBlocks.map((b) => b.dataClass),
+      ...args.candidateRecentBlocks.map((b) => b.dataClass),
+    ]);
     try {
       const out = await this.llm.call({
         taskType: 'entity-merge-arbiter',
         tenantId: args.tenantId,
-        systemPrompt: guardOn ? withInjectionGuard(ARBITER_SYSTEM_PROMPT) : ARBITER_SYSTEM_PROMPT,
+        systemPrompt: guardOn
+          ? withInjectionGuard(ARBITER_SYSTEM_PROMPT)
+          : ARBITER_SYSTEM_PROMPT,
         userMessage: guardOn ? wrapUserData(userMessage) : userMessage,
         responseFormat: {
           type: 'json_schema',
@@ -126,6 +254,8 @@ export class EntityMergeService {
           schema: ARBITER_JSON_SCHEMA,
         },
         sourceRef: { type: 'entity', id: args.entity.id },
+        // Б12 [K5]: явный dataClass — иначе router дефолтит на 'internal'.
+        dataClass,
       });
       const parsed = this.parseVerdict(out.text, [args.candidate]);
       if (parsed) return parsed;
@@ -146,6 +276,25 @@ export class EntityMergeService {
     }
   }
 
+  /**
+   * Org-Admin Фаза 7: ручное слияние двух Entity (без LLM-арбитра).
+   *
+   * Алгоритм:
+   *   1. Загрузить fromEntity / intoEntity. Проверить tenantId match, оба
+   *      без mergedIntoId, оба того же type (если разные — ошибка).
+   *   2. Транзакция:
+   *      - перенос IdeaBlockEntity entityId=fromEntity.id → intoEntity.id;
+   *        composite PK (blockId, entityId) — pre-check целевой пары, при
+   *        конфликте delete дубля-источника, иначе update (Б1: без catch P2002 в tx).
+   *      - перенос EntityLink (fromEntityId / toEntityId) → intoEntity.id;
+   *        composite unique — pre-check целевого ключа, при конфликте delete,
+   *        иначе update (Б1).
+   *      - intoEntity.mentionsCount += fromEntity.mentionsCount,
+   *        aliases = union(into.aliases, [from.canonicalName, ...from.aliases]),
+   *        updatedAt=now.
+   *      - fromEntity: mergedIntoId=intoEntity.id, updatedAt=now.
+   *   3. Лог + AuditLog (на Фазе 7 пишет caller, не сервис).
+   */
   async mergeManually(args: {
     tenantId: string;
     fromEntityId: string;
@@ -174,65 +323,97 @@ export class EntityMergeService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      // Перенос IdeaBlockEntity. composite PK (blockId, entityId).
       const mentions = await tx.ideaBlockEntity.findMany({
         where: { entityId: fromEntityId },
       });
       for (const m of mentions) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx — иначе ошибка SQL
+        // абортит всю транзакцию (PostgreSQL 25P02), и перенос/слияние ниже
+        // не выполняется. Проверяем целевую пару (blockId, intoEntityId) заранее.
+        const conflicting = await tx.ideaBlockEntity.findUnique({
+          where: {
+            blockId_entityId: { blockId: m.blockId, entityId: intoEntityId },
+          },
+        });
+        if (conflicting) {
+          // Уже есть пара (blockId, intoEntityId) — просто удаляем from-запись.
+          await tx.ideaBlockEntity.delete({
+            where: {
+              blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
+            },
+          });
+        } else {
           await tx.ideaBlockEntity.update({
             where: { blockId_entityId: { blockId: m.blockId, entityId: fromEntityId } },
             data: { entityId: intoEntityId },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.ideaBlockEntity.delete({
-              where: {
-                blockId_entityId: { blockId: m.blockId, entityId: fromEntityId },
-              },
-            });
-          } else {
-            throw err;
-          }
         }
       }
 
+      // Перенос EntityLink (входящие).
       const linksTo = await tx.entityLink.findMany({
         where: { toEntityId: fromEntityId },
       });
       for (const l of linksTo) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx (catch абортил бы
+        // транзакцию — PostgreSQL 25P02). findFirst, а не findUnique:
+        // composite-ключ включает nullable fromType/toType, вход findUnique
+        // их не принимает. id:{not} исключает саму переносимую запись.
+        const conflicting = await tx.entityLink.findFirst({
+          where: {
+            fromEntityId: l.fromEntityId,
+            fromType: l.fromType,
+            toEntityId: intoEntityId,
+            toType: l.toType,
+            relationType: l.relationType,
+            id: { not: l.id },
+          },
+        });
+        if (conflicting) {
+          await tx.entityLink.delete({ where: { id: l.id } });
+        } else {
           await tx.entityLink.update({
             where: { id: l.id },
             data: { toEntityId: intoEntityId },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.entityLink.delete({ where: { id: l.id } });
-          } else {
-            throw err;
-          }
         }
       }
+      // Перенос EntityLink (исходящие).
       const linksFrom = await tx.entityLink.findMany({
         where: { fromEntityId: fromEntityId },
       });
       for (const l of linksFrom) {
-        try {
+        // Б1: pre-check вместо catch(P2002) внутри tx (см. выше). findFirst
+        // из-за nullable fromType/toType в composite-ключе; id:{not} исключает
+        // саму переносимую запись.
+        const conflicting = await tx.entityLink.findFirst({
+          where: {
+            fromEntityId: intoEntityId,
+            fromType: l.fromType,
+            toEntityId: l.toEntityId,
+            toType: l.toType,
+            relationType: l.relationType,
+            id: { not: l.id },
+          },
+        });
+        if (conflicting) {
+          await tx.entityLink.delete({ where: { id: l.id } });
+        } else {
           await tx.entityLink.update({
             where: { id: l.id },
             data: { fromEntityId: intoEntityId },
           });
-        } catch (err) {
-          if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-            await tx.entityLink.delete({ where: { id: l.id } });
-          } else {
-            throw err;
-          }
         }
       }
 
+      // Обновляем intoEntity (mentionsCount, aliases).
       const aliasesUnion = Array.from(
-        new Set([...intoEntity.aliases, fromEntity.canonicalName, ...fromEntity.aliases]),
+        new Set([
+          ...intoEntity.aliases,
+          fromEntity.canonicalName,
+          ...fromEntity.aliases,
+        ]),
       );
       await tx.entity.update({
         where: { id: intoEntityId },
@@ -242,6 +423,7 @@ export class EntityMergeService {
         },
       });
 
+      // fromEntity → merged_into.
       await tx.entity.update({
         where: { id: fromEntityId },
         data: { mergedIntoId: intoEntityId },
@@ -260,7 +442,12 @@ export class EntityMergeService {
     return { ok: true };
   }
 
-  private parseVerdict(text: string, candidates: Entity[]): EntityMergeVerdict | null {
+  // ─────────────────────────── helpers ─────────────────────────────────────
+
+  private parseVerdict(
+    text: string,
+    candidates: Entity[],
+  ): EntityMergeVerdict | null {
     let raw: unknown;
     try {
       raw = JSON.parse(text);
@@ -288,18 +475,23 @@ export class EntityMergeService {
     };
   }
 
-  private summariseEntity(e: Entity, recentBlocks: IdeaBlock[]): Record<string, unknown> {
+  private summariseEntity(
+    e: Entity,
+    recentBlocks: IdeaBlock[],
+  ): Record<string, unknown> {
     return {
       id: e.id,
-      type: e.type,
-      canonicalName: e.canonicalName,
-      aliases: e.aliases,
-      metadata: e.metadata ?? null,
-      mentionsCount: e.mentionsCount,
-      recentMentions: recentBlocks.slice(0, 5).map((b) => ({
-        name: b.name,
-        criticalQuestion: b.criticalQuestion,
-        signalType: b.signalType,
+      // Прил. A3: подаём ЧЕЛОВЕЧЕСКИЕ ярлыки (вид сущности, тип упоминания,
+      // человекочитаемые свойства), а не машинные коды — методология №3.
+      вид: entityTypeLabelRu(e.type),
+      название: e.canonicalName,
+      другиеНаписания: e.aliases,
+      свойства: humaniseMetadata(e.metadata),
+      числоУпоминаний: e.mentionsCount,
+      недавниеУпоминания: recentBlocks.slice(0, 5).map((b) => ({
+        блок: b.name,
+        вопрос: b.criticalQuestion,
+        типСигнала: signalTypeLabel(b.signalType),
       })),
     };
   }

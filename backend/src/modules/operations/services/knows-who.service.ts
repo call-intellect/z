@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildVectorLiteral } from '../../embeddings/services/vector-literal.util';
 import { KnowledgeEmbeddingService } from '../../knowledge-core/services/embedding.service';
 
 import {
@@ -13,6 +14,23 @@ import {
   type KnowsWhoRow,
 } from './knows-who.scoring';
 
+/**
+ * TZ-1 Фаза 2 (daily-value-engine) — KnowsWhoService («кто знает X»).
+ *
+ * Семантический поиск носителя знания по блокеру / `knowledge_gap` сотрудника.
+ * Алгоритм (повторяет canonical-путь `Specialist32CardHandler`):
+ *   1. embedQuery(blockerText) через `KnowledgeEmbeddingService`
+ *      (text-embedding-3-small) — это embeddings, НЕ chat-LLM.
+ *   2. pgvector cosine KNN по `person_knowledge_category_embeddings` с join на
+ *      persons (relationship='employee', deletedAt IS NULL, embedding IS NOT NULL).
+ *   3. Чистый ранкинг `rankExperts` — агрегация по personId, ИСКЛЮЧЕНИЕ автора
+ *      блокера, фильтр по порогу `knows_who.min_confidence` (AdminSetting),
+ *      топ-K носителей.
+ *   4. Резолв имён найденных Person'ов.
+ *
+ * Контракт: метод НЕ бросает — на любую ошибку возвращает `[]` и логирует.
+ * Tenant isolation — запрос всегда фильтруется по `tenantId`.
+ */
 @Injectable()
 export class KnowsWhoService {
   private readonly logger = new Logger(KnowsWhoService.name);
@@ -26,10 +44,17 @@ export class KnowsWhoService {
     private readonly embeddings: KnowledgeEmbeddingService,
   ) {}
 
+  /**
+   * Найти топ-K носителей знания по тексту блокера или по `blockId`.
+   *
+   * Ровно один из `blockerText` / `blockId` обязателен. По `blockId` сервис
+   * сам достаёт текст блока и автора (для исключения из результата).
+   */
   async findExpertsForBlocker(args: {
     tenantId: string;
     blockerText?: string;
     blockId?: string;
+    /** Явное исключение (автор блокера); если задан blockId — резолвится сам. */
     excludePersonId?: string | null;
     topK?: number;
   }): Promise<KnowsWhoExpert[]> {
@@ -60,6 +85,8 @@ export class KnowsWhoService {
           if (queryText.length === 0) {
             queryText = (block.name || block.criticalQuestion || '').trim();
           }
+          // Автор блокера резолвится через identity спикера; если есть —
+          // исключаем его из носителей (искать помощь у самого себя бессмысленно).
           if (!excludePersonId && block.commitmentAuthorPersonId) {
             excludePersonId = block.commitmentAuthorPersonId;
           }
@@ -74,6 +101,7 @@ export class KnowsWhoService {
       const minConfidence = await this.resolveMinConfidence();
       const topK = args.topK ?? DEFAULT_KNOWS_WHO_TOP_K;
 
+      // 1. embedQuery (embeddings, не chat-LLM).
       let queryVec: number[] | null;
       try {
         queryVec = await this.embeddings.embedQuery(queryText);
@@ -93,7 +121,27 @@ export class KnowsWhoService {
         return [];
       }
 
-      const vecLiteral = `[${queryVec.join(',')}]`;
+      // 2. pgvector cosine KNN.
+      // Класс G2 — guard pgvector-литерала query-вектора. Вся выборка здесь
+      // вектор-driven (BM25-fallback нет), поэтому graceful degrade при reject =
+      // вернуть [] (как при embed-failure выше), не валя оператор `<=>`
+      // 500-кой (смена модели → другая размерность; битый вектор → NaN/Infinity).
+      const expectedDim = this.cfg.ai?.embeddings?.dimensions ?? 1536;
+      const guard = buildVectorLiteral(queryVec, expectedDim);
+      if (guard.literal === null) {
+        this.logger.warn(
+          {
+            tenantId: args.tenantId,
+            reason: guard.rejectReason,
+            actualDim: queryVec.length,
+            expectedDim,
+          },
+          'knows-who: query-вектор отвергнут guard-ом — возвращаю []',
+        );
+        this.metrics.incKnowsWhoMatch({ found: 'no' });
+        return [];
+      }
+      const vecLiteral = guard.literal;
       const sqlLimit = Math.max(topK * 3, 9);
       let rows: Array<{
         person_id: string;
@@ -133,6 +181,7 @@ export class KnowsWhoService {
         return [];
       }
 
+      // 3. Чистый ранкинг (исключаем автора, порог confidence, топ-K).
       const candidates = rankExperts({
         rows: rows.map(
           (r): KnowsWhoRow => ({
@@ -152,6 +201,7 @@ export class KnowsWhoService {
         return [];
       }
 
+      // 4. Резолв имён.
       const persons = await this.prisma.person.findMany({
         where: {
           tenantId: args.tenantId,
@@ -194,15 +244,22 @@ export class KnowsWhoService {
       'KNOWS_WHO_MIN_CONFIDENCE',
       DEFAULT_KNOWS_WHO_MIN_CONFIDENCE,
     );
-    return typeof v === 'number' && Number.isFinite(v) ? v : DEFAULT_KNOWS_WHO_MIN_CONFIDENCE;
+    return typeof v === 'number' && Number.isFinite(v)
+      ? v
+      : DEFAULT_KNOWS_WHO_MIN_CONFIDENCE;
   }
 }
 
+/** Носитель знания (для эндпоинта и брифа). */
 export interface KnowsWhoExpert {
   personId: string;
   name: string;
+  /** Лучшая cosine similarity по категориям [0..1]. */
   confidence: number;
+  /** Имена топ-категорий, на которых сработал матч. */
   topCategories: string[];
 }
 
+// Защита от drift: используется в DTO/тестах.
 export type { KnowsWhoRow };
+export const _DEFAULT_MIN_CONFIDENCE = DEFAULT_KNOWS_WHO_MIN_CONFIDENCE;

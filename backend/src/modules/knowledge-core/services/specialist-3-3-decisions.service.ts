@@ -7,16 +7,23 @@ import {
   type IdeaBlockEvidence,
   Prisma,
 } from '@prisma/client';
+import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import {
+  type LlmCallResult,
+  LlmRouterService,
+} from '../../ai/services/llm-router.service';
 import {
   type DebateVerdict,
   MultiAgentDebateService,
 } from '../../ai/services/multi-agent-debate.service';
-import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
+import {
+  withInjectionGuard,
+  wrapUserData,
+} from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { SystemLogPipeline } from '../../logging/log-pipeline';
@@ -39,13 +46,36 @@ import { KnowledgeEmbeddingService } from './embedding.service';
 import { EntityResolutionService } from './entity-resolution.service';
 import { Specialist33ProbeService } from './specialist-3-3-probe.service';
 
+/**
+ * SBA β-3 — Specialist33Service.
+ *
+ * Логика специалиста 3.3: блок (signalType ∈ {decision, rationale,
+ * decision_basis}) → черновик Decision → KNN+LLM-арбитр (new/merge/supersedes)
+ * → triage (deep review всегда: decision в CURATION_CRITICAL_TYPES_DEFAULT)
+ * → probe-events.
+ *
+ * Контракт §5 sub-TZ:
+ *   1. consumer `core.specialist-routing` jobName='3-3-decisions' (worker).
+ *   2. Prisma-модель Decision (in-place extension Фазы 0a, см. §4 sub-TZ).
+ *   3. triage перед канонизацией — всегда deep review (critical-type).
+ *   4. probe-events — Specialist33ProbeService (5 trigger'ов).
+ *   5. conflict-events — ConflictService.report с suggested resolution
+ *      'evolving' при verdict='supersedes'.
+ *   6. chat-v2 support — Specialist33CardHandler (через CardSpecialistRegistry).
+ *   7. metrics — `core_specialist_*{type='decision'}` + специфичные
+ *      `core_specialist_conflict_evolving_total` и
+ *      `decision_supersede_chain_length`.
+ */
 @Injectable()
 export class Specialist33Service {
   private readonly logger = new Logger(Specialist33Service.name);
 
   static readonly SPECIALIST_NAME = '3-3-decisions';
+  /** Top-K для cosine KNN арбитра дедупа / supersede-detect. */
   private static readonly KNN_TOP_K = 5;
+  /** Минимальная уверенность extraction, ниже которой пропускаем triage. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
+  /** Окно ±2 минуты для контекста rationale-extraction. */
   private static readonly CONTEXT_WINDOW_MS = 2 * 60 * 1000;
 
   constructor(
@@ -65,14 +95,21 @@ export class Specialist33Service {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
+    // W4.1 — DataClassPolicyService для shadow-compare.
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate для supersede-detect.
+    // Optional, чтобы старые тесты без модуля DI продолжали работать; на проде
+    // подключается через @Global AiModule.
     @Optional()
     @Inject(MultiAgentDebateService)
     private readonly debate?: MultiAgentDebateService,
   ) {}
 
+  /**
+   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
+   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -81,7 +118,23 @@ export class Specialist33Service {
     }
   }
 
-  async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
+  // ───────────────────── публичный метод (вызывается из воркера) ─────────────────────
+
+  /**
+   * Обработка одного IdeaBlock. См. §5 sub-TZ — последовательность:
+   *   1. load block + evidence + context (±2 мин в той же встрече).
+   *   2. LLM extract → draft.
+   *   3. resolve decidedByPersonIds, affectsEntityIds.
+   *   4. KNN top-K + LLM supersede-detect → verdict.
+   *   5. apply: new / merge / supersedes.
+   *   6. embedding (best-effort).
+   *   7. triage (deep review всегда).
+   *   8. probe-events.
+   */
+  async processBlock(args: {
+    tenantId: string;
+    blockId: string;
+  }): Promise<void> {
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: args.blockId },
       include: { evidence: true },
@@ -105,12 +158,14 @@ export class Specialist33Service {
     }
 
     try {
+      // Резолв decidedByPersonIds (через name-hints + linkPersonEntity).
       const decidedByPersonIds = await this.resolveDecidedByPersons({
         tenantId: block.tenantId,
         hints: draft.decidedByPersonHints ?? [],
         blockId: block.id,
       });
 
+      // Резолв affectsEntityIds (через EntityResolutionService.findOrCreate).
       const affectsEntityIds = await this.resolveAffectsEntities({
         tenantId: block.tenantId,
         hints: draft.affectsEntityHints ?? [],
@@ -119,6 +174,63 @@ export class Specialist33Service {
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
       const sourceBlockIds = [block.id];
 
+      // Б3/Б48 source-block dedup (эталон specialist-3-6-ideas.service.ts:129-169):
+      // если Decision уже материализован из ЭТОГО блока (block-ingest direct-path
+      // создал «тонкий» Decision с sourceIdeaBlockId=blockId ИЛИ прошлый прогон
+      // специалиста при re-dispatch) — НЕ создаём дубль. Без этого guard'а
+      // createNewDecision пишет sourceIdeaBlockId=block.id → P2002 на @unique →
+      // внешний catch инкрементит метрику и return без re-throw → богатое решение
+      // теряется. notIn по статусам НЕ ставим намеренно: @unique sourceIdeaBlockId
+      // конфликтует независимо от статуса существующего Decision (в т.ч.
+      // superseded/rejected/cancelled), поэтому guard обязан ловить ЛЮБОЙ Decision
+      // с этим sourceIdeaBlockId, иначе terminal-Decision снова уронит P2002.
+      const alreadyMaterialized = await this.prisma.decision.findFirst({
+        where: {
+          tenantId: block.tenantId,
+          OR: [
+            { sourceIdeaBlockId: block.id },
+            { sourceBlockIds: { has: block.id } },
+          ],
+        },
+      });
+      if (alreadyMaterialized) {
+        try {
+          await this.mergeIntoExisting({
+            existing: alreadyMaterialized,
+            draft,
+            decidedByPersonIds,
+            affectsEntityIds,
+            sourceBlockIds,
+            personSubjectIds,
+          });
+        } catch (err) {
+          this.logger.warn(
+            {
+              blockId: block.id,
+              decisionId: alreadyMaterialized.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'specialist-3-3: обогащение уже-материализованного решения упало — пропуск',
+          );
+        }
+        this.logs.write({
+          level: 'INFO',
+          pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+          module: 'specialist-3-3-decisions',
+          action: 'merged',
+          message: `Decision уже материализован из блока ${block.id} — обогащён ${alreadyMaterialized.id}`,
+          orgId: block.tenantId,
+          details: {
+            type: 'decision',
+            intoId: alreadyMaterialized.id,
+            blockId: block.id,
+            reason: 'source_block_dedup',
+          },
+        });
+        return;
+      }
+
+      // KNN-кандидаты + LLM supersede-detect.
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
         queryText: `${draft.statement} ${draft.rationale ?? ''}`,
@@ -131,10 +243,12 @@ export class Specialist33Service {
         blockId: block.id,
       });
 
-      const status: DecisionStatus = (draft.status ?? 'approved') as DecisionStatus;
+      const status: DecisionStatus = (draft.status ??
+        'approved') as DecisionStatus;
       const decidedAt = this.parseDate(draft.decidedAt);
       const deadline = this.parseDate(draft.deadline);
 
+      // Применяем verdict.
       let decision: Decision;
       let createdNew = false;
 
@@ -197,35 +311,49 @@ export class Specialist33Service {
           createdNew = true;
         } else {
           const now = new Date();
+          // validFrom для нового = decidedAt или now.
           const newValidFrom = decidedAt ?? now;
           const evolvingMeta = verdict.evolvingMeta ?? {
             existingValidUntil: now.toISOString(),
             newValidFrom: newValidFrom.toISOString(),
           };
 
-          decision = await this.createNewDecision({
-            block,
-            draft,
-            decidedByPersonIds,
-            affectsEntityIds,
-            sourceBlockIds,
-            personSubjectIds,
-            status,
-            decidedAt,
-            deadline,
-            supersedesId: existing.id,
-            validFrom: newValidFrom,
+          // Б49 — две критичные записи (create нового supersedesId=existing.id и
+          // update старого → superseded + validUntil) обёрнуты в одну транзакцию,
+          // чтобы не было рассинхрона (новый есть, старый не помечен) при сбое
+          // между ними. reportEvolvingConflict и computeSupersedeChainLength —
+          // follow-up, оставлены ПОСЛЕ транзакции. Внутри tx НЕ ловим P2002
+          // (анти-паттерн Б1: абортит транзакцию); коллизию sourceIdeaBlockId уже
+          // снял guard Б3 выше по методу для текущего block.id.
+          decision = await this.prisma.$transaction(async (tx) => {
+            // 1. Создаём новый Decision со ссылкой supersedesId.
+            const created = await this.createNewDecision({
+              block,
+              draft,
+              decidedByPersonIds,
+              affectsEntityIds,
+              sourceBlockIds,
+              personSubjectIds,
+              status,
+              decidedAt,
+              deadline,
+              supersedesId: existing.id,
+              validFrom: newValidFrom,
+              tx,
+            });
+            // 2. Старый — помечаем superseded + validUntil.
+            await tx.decision.update({
+              where: { id: existing.id },
+              data: {
+                status: 'superseded',
+                validUntil: new Date(evolvingMeta.existingValidUntil),
+              },
+            });
+            return created;
           });
           createdNew = true;
 
-          await this.prisma.decision.update({
-            where: { id: existing.id },
-            data: {
-              status: 'superseded',
-              validUntil: new Date(evolvingMeta.existingValidUntil),
-            },
-          });
-
+          // 3. ConflictItem (evolving).
           await this.reportEvolvingConflict({
             tenantId: block.tenantId,
             existingId: existing.id,
@@ -236,8 +364,20 @@ export class Specialist33Service {
             evolvingMeta,
           });
 
-          const chainLength = await this.computeSupersedeChainLength(decision.id);
+          // 4. Метрика длины цепочки.
+          const chainLength = await this.computeSupersedeChainLength(
+            decision.id,
+          );
           this.metrics.observeDecisionSupersedeChainLength(chainLength);
+
+          // 5. Р4 (TZ 2026-06-16, Ф4) — задачи под СТАРЫМ (superseded) решением
+          // подсвечиваем «под вопросом», НЕ закрываем и НЕ отменяем (R11/R13).
+          // CASCADE-снос запрещён: временная/ошибочная отмена не должна уносить
+          // задачи. Best-effort — сбой пометки не валит supersede-путь.
+          await this.markTasksForReviewOnSupersede({
+            tenantId: block.tenantId,
+            supersededDecisionId: existing.id,
+          });
         }
       } else {
         decision = await this.createNewDecision({
@@ -254,11 +394,13 @@ export class Specialist33Service {
         createdNew = true;
       }
 
+      // Embedding (best-effort).
       await this.tryWriteEmbedding({
         id: decision.id,
         text: `${draft.statement} ${draft.rationale ?? ''}`,
       });
 
+      // Triage — Decision всегда critical → deep review.
       await this.triageProposed({
         tenantId: block.tenantId,
         resourceId: decision.id,
@@ -296,6 +438,8 @@ export class Specialist33Service {
         });
       }
 
+      // Probe-events (на новый и на merge — но только trigger'ы про текущее
+      // состояние карточки, а не общестояночные).
       void createdNew;
       await this.probes.checkAndEmitForDecision(decision);
     } catch (err) {
@@ -313,6 +457,8 @@ export class Specialist33Service {
     }
   }
 
+  // ─────────────────────────── extraction ───────────────────────────
+
   private async extractDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
     contextQuotes: string[],
@@ -323,6 +469,7 @@ export class Specialist33Service {
       .map((e) => e.quote)
       .filter((q) => q && q.length > 0);
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока + контекст-цитаты).
     const guardOnExtract = this.isPromptInjectionGuardEnabled();
     const rawUserExtract = DECISION_EXTRACT_USER_TEMPLATE({
       blockName: block.name,
@@ -406,6 +553,8 @@ export class Specialist33Service {
       });
       return null;
     }
+    // C3 anti-плодёж: явный булев гейт. Срабатывает ТОЛЬКО на явный false —
+    // модель не обязана фабриковать карточку, если решения в блоке нет.
     if (parsed.isDecision === false) {
       this.logger.debug(
         { blockId: block.id },
@@ -422,6 +571,8 @@ export class Specialist33Service {
     }
     return parsed;
   }
+
+  // ─────────────────────────── KNN + supersede-detect ───────────────────────────
 
   private async knnCandidates(args: {
     tenantId: string;
@@ -480,6 +631,7 @@ export class Specialist33Service {
       }
     }
 
+    // Fallback — ILIKE по первым словам.
     const firstWords = queryText
       .split(/\s+/)
       .filter((w) => w.length >= 3)
@@ -527,6 +679,11 @@ export class Specialist33Service {
       return { verdict: 'new', targetId: null, reasoning: 'нет кандидатов' };
     }
 
+    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate под флагом.
+    // При MULTI_AGENT_DEBATE_ENABLED=true дёргаем 3-голосовый дебат-арбитр
+    // вместо single LLM-вызова. Остальная цепочка (`apply verdict`) не меняется.
+    // На split-verdict падаем на самый консервативный verdict='new', чтобы
+    // не закрыть случайно existing Decision (escalate в curation через triage).
     if (this.cfg?.debate.enabled && this.debate) {
       try {
         const debateVerdict = await this.debate.judge({
@@ -551,6 +708,7 @@ export class Specialist33Service {
           tenantId: args.tenantId,
         });
       } catch (err) {
+        // Debate-цикл упал целиком — fallback на single LLM-call ниже.
         this.logger.warn(
           {
             tenantId: args.tenantId,
@@ -561,6 +719,7 @@ export class Specialist33Service {
       }
     }
 
+    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты) в маркеры.
     const guardOnSup = this.isPromptInjectionGuardEnabled();
     const rawUserSup = DECISION_SUPERSEDE_DETECT_USER_TEMPLATE({
       draft: {
@@ -612,9 +771,9 @@ export class Specialist33Service {
       });
     }
 
-    let parsed: SupersedeVerdict;
+    let rawParsed: unknown;
     try {
-      parsed = JSON.parse(result.text) as SupersedeVerdict;
+      rawParsed = JSON.parse(result.text);
     } catch {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'decision',
@@ -627,8 +786,41 @@ export class Specialist33Service {
       };
     }
 
+    // Б40 [K12] — структурная валидация verdict. Невалидный verdict (вне enum)
+    // раньше тихо трактовался как 'new' и терял supersede-намерение. Теперь —
+    // метрика + WARN-лог + ОСОЗНАННЫЙ fallback на самый консервативный 'new'.
+    const validated = SupersedeVerdictSchema.safeParse(rawParsed);
+    if (!validated.success) {
+      this.metrics.incCoreSpecialistExtractionFailure({
+        type: 'decision',
+        reason: 'arbiter_invalid_verdict',
+      });
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          blockId: args.blockId,
+          rawVerdict: (rawParsed as { verdict?: unknown } | null)?.verdict,
+          issues: validated.error.issues
+            .map((i) => `${i.path.join('.')}: ${i.message}`)
+            .join('; '),
+        },
+        'specialist-3-3.supersedeDetect: невалидный verdict арбитра — осознанный fallback к "new"',
+      );
+      return {
+        verdict: 'new',
+        targetId: null,
+        reasoning: 'arbiter_invalid_verdict',
+      };
+    }
+    const parsed: SupersedeVerdict = validated.data;
+
+    // Sanity: target должен принадлежать candidates.
     const candidateIds = new Set(args.candidates.map((c) => c.id));
-    if (parsed.verdict !== 'new' && parsed.targetId && !candidateIds.has(parsed.targetId)) {
+    if (
+      parsed.verdict !== 'new' &&
+      parsed.targetId &&
+      !candidateIds.has(parsed.targetId)
+    ) {
       this.logger.warn(
         {
           tenantId: args.tenantId,
@@ -646,6 +838,20 @@ export class Specialist33Service {
     return parsed;
   }
 
+  /**
+   * Маппинг {@link DebateVerdict} → внутренний {@link SupersedeVerdict}.
+   *
+   * Логика:
+   *  - `consensusType ∈ {unanimous, majority}` AND verdict ∈ {new|merge|supersedes}
+   *    → используем как есть. targetId восстанавливаем из первого голоса,
+   *    у которого был targetId hint (если в reasoning попал id) — иначе
+   *    из knnTop1 (fallback: candidates[0].id для merge/supersedes).
+   *  - `consensusType='split'` (verdict='split_uncertain') → самый
+   *    консервативный verdict='new' с reasoning, что debate не сошёлся.
+   *    Triage в `processBlock` всё равно поднимет deep review (Decision —
+   *    critical type), куратор увидит split-кейс.
+   *  - Verdict из голосов, не входящий в {new|merge|supersedes} → 'new'.
+   */
   private mapDebateToSupersedeVerdict(args: {
     debateVerdict: DebateVerdict;
     candidates: DecisionKnnCandidate[];
@@ -654,6 +860,7 @@ export class Specialist33Service {
     const { debateVerdict, candidates } = args;
     const supportedVerdicts = new Set(['new', 'merge', 'supersedes']);
 
+    // Split / fallback — самый безопасный verdict.
     if (
       debateVerdict.consensusType === 'split' ||
       debateVerdict.fallbackUsed !== null ||
@@ -675,11 +882,18 @@ export class Specialist33Service {
         targetId: null,
         reasoning:
           debateVerdict.consensusType === 'split'
-            ? `debate_split:${debateVerdict.votes.map((v) => `${v.stance}=${v.verdict}`).join(',')}`
+            ? `debate_split:${debateVerdict.votes
+                .map((v) => `${v.stance}=${v.verdict}`)
+                .join(',')}`
             : `debate_fallback:${debateVerdict.fallbackUsed ?? 'unknown'}`,
       };
     }
 
+    // Consensus verdict — для merge/supersedes нужен targetId. У debate'а
+    // нет structured field'а под id, поэтому fallback к первому KNN-кандидату
+    // (наиболее cosine-близкому). Это безопасно: arbiter уже подтвердил
+    // verdict; targetId предположительно — top-1 (sanity-check сам выловит
+    // если что).
     const decision = debateVerdict.decision as 'new' | 'merge' | 'supersedes';
     if (decision === 'new') {
       return {
@@ -703,6 +917,8 @@ export class Specialist33Service {
     };
   }
 
+  // ─────────────────────────── persist helpers ───────────────────────────
+
   private async createNewDecision(args: {
     block: IdeaBlock;
     draft: DecisionDraft;
@@ -715,7 +931,17 @@ export class Specialist33Service {
     deadline: Date | null;
     supersedesId?: string;
     validFrom?: Date;
+    // Б49 — опциональный tx-клиент: чтобы create нового и update(старый→superseded)
+    // в supersedes-ветке прошли в одной транзакции. По умолчанию this.prisma.
+    tx?: Prisma.TransactionClient;
   }): Promise<Decision> {
+    // W4.1/W4.2 — derive DataClass. Поведение зависит от
+    // cfg.dataClassPolicy.enforcement:
+    //   - 'off' / 'shadow' — пишем legacy (block.dataClass), compareWithLegacy
+    //     эмитит метрику расхождения.
+    //   - 'enforce' — пишем derive().dataClass и аудит. Legacy остаётся для
+    //     compareWithLegacy метрики (`shadow_diff` уже не растёт, но видно
+    //     насколько мы ушли от исторического правила).
     const legacyDc = args.block.dataClass;
     const enforcement = this.cfg?.dataClassPolicy.enforcement ?? 'off';
     const proposed = this.dataClassPolicy?.derive({
@@ -736,15 +962,18 @@ export class Specialist33Service {
         sourceIds: [args.block.id],
       });
     }
-    const finalDc = enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
+    const finalDc =
+      enforcement === 'enforce' && proposed ? proposed.dataClass : legacyDc;
     const audit =
       enforcement === 'enforce' && proposed
         ? (proposed.audit as unknown as Prisma.InputJsonValue)
         : Prisma.JsonNull;
 
-    return this.prisma.decision.create({
+    const db = args.tx ?? this.prisma;
+    return db.decision.create({
       data: {
         tenantId: args.block.tenantId,
+        // legacy text-поле — первые 1000 символов (для обратной совместимости).
         text: args.draft.statement.slice(0, 1_000),
         statement: args.draft.statement,
         rationale: args.draft.rationale ?? null,
@@ -761,11 +990,15 @@ export class Specialist33Service {
         sourceBlockIds: args.sourceBlockIds,
         sourceIdeaBlockId: args.block.id,
         personSubjectIds: args.personSubjectIds,
-        confidence: new Prisma.Decimal(Math.max(0, Math.min(1, args.draft.confidence))),
+        confidence: new Prisma.Decimal(
+          Math.max(0, Math.min(1, args.draft.confidence)),
+        ),
         dataClass: finalDc,
         dataClassAudit: audit,
+        // Если в блоке есть один decidedByPerson — заполняем legacy-поле.
         decidedByPersonId: args.decidedByPersonIds[0] ?? null,
         validFrom: args.validFrom ?? args.decidedAt ?? null,
+        // Pulse Wave 1 §1.2 — счётчик «сколько раз решение поднималось».
         raisedCount: 1,
         lastRaisedAt: new Date(),
       },
@@ -787,7 +1020,9 @@ export class Specialist33Service {
     return this.prisma.decision.update({
       where: { id: args.existing.id },
       data: {
-        rationale: args.existing.rationale ?? args.draft.rationale ?? undefined,
+        // rationale — append, если в существующем не было.
+        rationale:
+          args.existing.rationale ?? args.draft.rationale ?? undefined,
         statement: args.existing.statement ?? args.draft.statement,
         alternatives:
           mergedAlternatives.length > 0
@@ -797,15 +1032,22 @@ export class Specialist33Service {
           set: this.union(args.sourceBlockIds, args.existing.sourceBlockIds),
         },
         decidedByPersonIds: {
-          set: this.union(args.decidedByPersonIds, args.existing.decidedByPersonIds),
+          set: this.union(
+            args.decidedByPersonIds,
+            args.existing.decidedByPersonIds,
+          ),
         },
         affectsEntityIds: {
-          set: this.union(args.affectsEntityIds, args.existing.affectsEntityIds),
+          set: this.union(
+            args.affectsEntityIds,
+            args.existing.affectsEntityIds,
+          ),
         },
         personSubjectIds: {
           set: this.union(args.personSubjectIds, args.existing.personSubjectIds),
         },
         lastConfirmedAt: new Date(),
+        // Pulse Wave 1 §1.2 — решение поднялось ещё раз (merge-событие).
         raisedCount: { increment: 1 },
         lastRaisedAt: new Date(),
       },
@@ -847,6 +1089,8 @@ export class Specialist33Service {
     return result;
   }
 
+  // ─────────────────────────── resolvers ───────────────────────────
+
   private async resolveDecidedByPersons(args: {
     tenantId: string;
     hints: readonly string[];
@@ -854,6 +1098,7 @@ export class Specialist33Service {
   }): Promise<string[]> {
     const personIds = new Set<string>();
 
+    // Сначала — name-match по Person.relationship='employee' (если есть Person).
     for (const hint of args.hints) {
       const trimmed = hint.trim();
       if (trimmed.length < 2) continue;
@@ -863,6 +1108,7 @@ export class Specialist33Service {
             tenantId: args.tenantId,
             deletedAt: null,
             name: { contains: trimmed, mode: 'insensitive' },
+            // Предпочитаем сотрудников; но если нет employee — возьмём любого.
           },
           orderBy: { relationship: 'asc' },
           select: { id: true },
@@ -878,6 +1124,8 @@ export class Specialist33Service {
       }
     }
 
+    // Если ничего не нашли по hint'ам — пробуем взять subject-Person'ы из блока
+    // (через IdeaBlockEntity → Entity{type=person} → Person).
     if (personIds.size === 0) {
       try {
         const subjectMentions = await this.prisma.ideaBlockEntity.findMany({
@@ -899,7 +1147,9 @@ export class Specialist33Service {
           });
           for (const p of persons) personIds.add(p.id);
         }
-      } catch {}
+      } catch {
+        // best-effort
+      }
     }
 
     return [...personIds];
@@ -910,16 +1160,23 @@ export class Specialist33Service {
     hints: ReadonlyArray<{ name: string; type: string }>;
   }): Promise<string[]> {
     const ids = new Set<string>();
-    const SUPPORTED_TYPES = new Set(['customer', 'project', 'product', 'vendor']);
+    const SUPPORTED_TYPES = new Set([
+      'customer',
+      'project',
+      'product',
+      'vendor',
+    ]);
 
     for (const hint of args.hints) {
       const name = hint.name?.trim();
       const type = hint.type;
       if (!name || !type) continue;
+      // 'process' пока не Entity (Process — отдельная таблица); скипаем.
       if (!SUPPORTED_TYPES.has(type)) continue;
       try {
         const { entity } = await this.entities.findOrCreateEntity({
           tenantId: args.tenantId,
+          // Cast: type уже отфильтрован SUPPORTED_TYPES.
           type: type as 'customer' | 'project' | 'product' | 'vendor',
           name,
         });
@@ -956,6 +1213,8 @@ export class Specialist33Service {
     });
     return [...new Set(persons.map((p) => p.id))];
   }
+
+  // ─────────────────────────── conflicts ───────────────────────────
 
   private async reportEvolvingConflict(args: {
     tenantId: string;
@@ -996,23 +1255,98 @@ export class Specialist33Service {
     }
   }
 
-  private async computeSupersedeChainLength(decisionId: string): Promise<number> {
+  private async computeSupersedeChainLength(
+    decisionId: string,
+  ): Promise<number> {
+    // Идём вверх по supersedesId, считаем шаги (cap 100, защита от циклов).
     let cur: string | null = decisionId;
     let length = 0;
     const seen = new Set<string>();
     while (cur && length < 100) {
       if (seen.has(cur)) break;
       seen.add(cur);
-      const next: { supersedesId: string | null } | null = await this.prisma.decision.findUnique({
-        where: { id: cur },
-        select: { supersedesId: true },
-      });
+      const next: { supersedesId: string | null } | null =
+        await this.prisma.decision.findUnique({
+          where: { id: cur },
+          select: { supersedesId: true },
+        });
       if (!next?.supersedesId) break;
       length += 1;
       cur = next.supersedesId;
     }
     return length;
   }
+
+  /**
+   * Р4 (TZ 2026-06-16, Ф4) — пометить задачи, заведённые под СТАРЫМ (теперь
+   * superseded) решением, «под вопросом» (`closureReviewState='superseded_decision'`).
+   *
+   * Инвариант R11/R13: задачи НЕ закрываются и НЕ отменяются автоматически —
+   * только подсвечиваются человеку в pending-actions (source='task_review').
+   * Снять пометку (`closureReviewState=null`) может ТОЛЬКО человек.
+   *
+   * Связи читаем напрямую `decisionTaskLink.findMany` по supersededDecisionId
+   * (decision-task-link.util.ts умеет только СОЗДАВАТЬ derived-связи, чтения
+   * «задачи под решением» там нет). `updateMany` по issueId идемпотентен:
+   * повторный supersede того же решения выставит те же значения.
+   *
+   * Best-effort: любой сбой логируется и не прерывает supersede-путь.
+   */
+  private async markTasksForReviewOnSupersede(args: {
+    tenantId: string;
+    supersededDecisionId: string;
+  }): Promise<void> {
+    try {
+      const links = await this.prisma.decisionTaskLink.findMany({
+        where: { decisionId: args.supersededDecisionId },
+        select: { issueId: true },
+        take: 2_000,
+      });
+      const issueIds = [...new Set(links.map((l) => l.issueId))];
+      if (issueIds.length === 0) return;
+
+      const res = await this.prisma.issue.updateMany({
+        where: {
+          id: { in: issueIds },
+          tenantId: args.tenantId,
+          // не трогаем уже удалённые задачи
+          deletedAt: null,
+        },
+        data: {
+          closureReviewState: 'superseded_decision',
+          closureReviewReason:
+            'Решение, по которому заведена задача, заменено новым — проверьте, актуальна ли задача.',
+          closureReviewAt: new Date(),
+        },
+      });
+
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-3-decisions',
+        action: 'tasks_marked_review',
+        message: `Задачи под заменённым решением подсвечены «под вопросом» (${res.count})`,
+        orgId: args.tenantId,
+        details: {
+          type: 'decision',
+          supersededDecisionId: args.supersededDecisionId,
+          markedCount: res.count,
+          reason: 'superseded_decision',
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          supersededDecisionId: args.supersededDecisionId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-3.markTasksForReviewOnSupersede: пометка задач упала — пропуск (best-effort)',
+      );
+    }
+  }
+
+  // ─────────────────────────── triage ───────────────────────────
 
   private async triageProposed(args: {
     tenantId: string;
@@ -1045,7 +1379,12 @@ export class Specialist33Service {
     }
   }
 
-  private async tryWriteEmbedding(args: { id: string; text: string }): Promise<void> {
+  // ─────────────────────────── embedding ───────────────────────────
+
+  private async tryWriteEmbedding(args: {
+    id: string;
+    text: string;
+  }): Promise<void> {
     try {
       const text = args.text.trim().slice(0, 2_000);
       if (!text) return;
@@ -1068,6 +1407,19 @@ export class Specialist33Service {
     }
   }
 
+  // ─────────────────────────── context window ───────────────────────────
+
+  /**
+   * Цитаты блоков ±2 минуты от текущего блока в той же RawEvent-источнике
+   * (встреча / документ / чат). Помогают LLM найти rationale, который может
+   * лежать в соседних блоках reasoning.
+   *
+   * Алгоритм:
+   *   1. Берём evidence текущего блока — узнаём rawEventId + sourceTimestamp.
+   *   2. Ищем другие IdeaBlockEvidence с тем же rawEventId в окне
+   *      sourceTimestamp ± CONTEXT_WINDOW_MS.
+   *   3. Берём IdeaBlock'и этих evidence, собираем trustedAnswer + цитаты.
+   */
   private async loadContextQuotes(block: IdeaBlock): Promise<string[]> {
     try {
       const ev = await this.prisma.ideaBlockEvidence.findFirst({
@@ -1077,8 +1429,12 @@ export class Specialist33Service {
       });
       if (!ev || !ev.sourceTimestamp) return [];
       const startMs = ev.sourceTimestamp.getTime();
-      const windowStart = new Date(startMs - Specialist33Service.CONTEXT_WINDOW_MS);
-      const windowEnd = new Date(startMs + Specialist33Service.CONTEXT_WINDOW_MS);
+      const windowStart = new Date(
+        startMs - Specialist33Service.CONTEXT_WINDOW_MS,
+      );
+      const windowEnd = new Date(
+        startMs + Specialist33Service.CONTEXT_WINDOW_MS,
+      );
 
       const neighbors = await this.prisma.ideaBlockEvidence.findMany({
         where: {
@@ -1098,7 +1454,9 @@ export class Specialist33Service {
       for (const n of neighbors) {
         const blockKey = `${n.block.name}::${n.block.trustedAnswer ?? ''}`;
         if (!seenBlocks.has(blockKey) && n.block.trustedAnswer) {
-          quotes.push(`${n.block.name}: ${n.block.trustedAnswer}`.slice(0, 400));
+          quotes.push(
+            `${n.block.name}: ${n.block.trustedAnswer}`.slice(0, 400),
+          );
           seenBlocks.add(blockKey);
         }
         if (n.quote) quotes.push(n.quote.slice(0, 400));
@@ -1108,6 +1466,8 @@ export class Specialist33Service {
       return [];
     }
   }
+
+  // ─────────────────────────── utils ───────────────────────────
 
   private parseDate(input: string | null | undefined): Date | null {
     if (!input) return null;
@@ -1120,6 +1480,8 @@ export class Specialist33Service {
     return [...new Set([...a, ...b])];
   }
 }
+
+// ─────────────────────────── shared types ───────────────────────────
 
 export interface DecisionDraft {
   isDecision?: boolean;
@@ -1151,3 +1513,25 @@ interface SupersedeVerdict {
     newValidFrom: string;
   };
 }
+
+/**
+ * Б40 [K12] — строгая валидация ответа арбитра supersede.
+ *
+ * Раньше ответ парсился голым `JSON.parse(...) as SupersedeVerdict`: если
+ * модель вернёт `verdict` вне enum (русский ярлык, опечатка), он молча
+ * проходил дальше и трактовался как 'new' — supersede-намерение терялось без
+ * следа. Теперь невалидный verdict ловится Zod-ом → метрика
+ * `arbiter_invalid_verdict` + WARN-лог, и только потом ОСОЗНАННЫЙ fallback на
+ * 'new'. `targetId`/`reasoning`/`evolvingMeta` зеркалят {@link SupersedeVerdict}.
+ */
+const SupersedeVerdictSchema = z.object({
+  verdict: z.enum(['new', 'merge', 'supersedes']),
+  targetId: z.string().nullable().default(null),
+  reasoning: z.string().default(''),
+  evolvingMeta: z
+    .object({
+      existingValidUntil: z.string(),
+      newValidFrom: z.string(),
+    })
+    .optional(),
+});

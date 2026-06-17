@@ -113,6 +113,14 @@ const ENTITY_LINK_SYSTEM_PROMPT = `Ты — эксперт по связям м�
 export class EntityGraphService {
   private readonly logger = new Logger(EntityGraphService.name);
 
+  /**
+   * Б30 [K6]: пара исключается из выборки, если уже есть EntityLink между ней,
+   * обновлённый за последние N дней. Без этого cron ежечасно re-LLM'ит топ-50
+   * пар даже при существующей свежей связи (~1200 вызовов/сутки/Org). 30 дней —
+   * связь подтверждена недавно, переспрашивать арбитра незачем.
+   */
+  private static readonly LINK_REFRESH_DAYS = 30;
+
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
@@ -137,6 +145,15 @@ export class EntityGraphService {
     minComentions: number;
     limit: number;
   }): Promise<CoMentionedPair[]> {
+    // Б30 [K6]: исключаем пары со свежим EntityLink (updatedAt > now-Nдней).
+    // upsertRichEdge пишет ребро с fromEntityId=меньший id, toEntityId=больший
+    // id (cron подаёт пары в том же порядке a.entityId<b.entityId), поэтому
+    // сопоставление NOT EXISTS by (from=a, to=b) корректно. Деактивированные
+    // (deletedAt) рёбра — не считаются свежими, пару пересмотрит арбитр.
+    const linkFreshCutoff = new Date(
+      Date.now() -
+        EntityGraphService.LINK_REFRESH_DAYS * 24 * 60 * 60 * 1000,
+    );
     const rows = await this.prisma.$queryRawUnsafe<
       Array<{
         a_id: string;
@@ -155,6 +172,14 @@ export class EntityGraphService {
       JOIN "IdeaBlock" blk ON blk.id = a."blockId"
       WHERE blk."tenantId" = $1
         AND blk.status = 'canonical'
+        AND NOT EXISTS (
+          SELECT 1 FROM "EntityLink" el
+          WHERE el."tenantId" = $1
+            AND el."fromEntityId" = a."entityId"
+            AND el."toEntityId" = b."entityId"
+            AND el."deletedAt" IS NULL
+            AND el."updatedAt" > $4
+        )
       GROUP BY a."entityId", b."entityId"
       HAVING COUNT(*) >= $2
       ORDER BY COUNT(*) DESC
@@ -163,6 +188,7 @@ export class EntityGraphService {
       args.tenantId,
       args.minComentions,
       args.limit,
+      linkFreshCutoff,
     );
     if (rows.length === 0) return [];
 

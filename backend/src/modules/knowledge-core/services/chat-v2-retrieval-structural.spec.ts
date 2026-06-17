@@ -166,6 +166,83 @@ describe('ChatV2RetrievalService — структурный фильтр (роу
     expect(params).toContain(to);
   });
 
+  it('G2 guard: валидный 1536-вектор → cosine-путь (rankByCosineOrRecency через $queryRawUnsafe с `embedding <=>`)', async () => {
+    // Валидный вектор ровно EMBEDDING_DIMENSIONS — guard пропускает, литерал
+    // строится как раньше, recall работает.
+    embeddingsStub.embedQuery.mockResolvedValue(new Array(1536).fill(0.01));
+    prismaStub.ideaBlock.findMany.mockResolvedValueOnce([
+      { id: 'b1' },
+      { id: 'b2' },
+    ]);
+    // collectPool org HNSW (qvec есть, нет структурного фильтра) — $queryRawUnsafe #1.
+    prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }]);
+    // rankByCosineOrRecency cosine SQL — $queryRawUnsafe #2.
+    prismaStub.$queryRawUnsafe.mockResolvedValueOnce([{ id: 'b1', score: 0.9 }]);
+    prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);
+
+    const result = await svc.fetchCandidates({
+      tenantId: 't',
+      scope: 'org',
+      scopeId: null,
+      query: 'какой бюджет на маркетинг',
+      limit: 10,
+      graphHops: 0,
+    });
+
+    expect(result.map((r) => r.blockId)).toEqual(['b1']);
+    // Хотя бы один SQL содержит cosine-оператор по вектору — recall активен.
+    const sqls = prismaStub.$queryRawUnsafe.mock.calls.map((c) => c[0] as string);
+    expect(sqls.some((s) => s.includes('embedding <=>'))).toBe(true);
+  });
+
+  it('G2 guard: вектор неверной размерности → graceful degrade на recency (cosine SQL НЕ вызван, не 500)', async () => {
+    // Размерность 3 ≠ 1536 → guard отвергает qvec → весь read-путь как при
+    // embed-failure: collectPool recency-findMany + rankByCosineOrRecency recency.
+    embeddingsStub.embedQuery.mockResolvedValue([0.1, 0.2, 0.3]);
+    prismaStub.ideaBlock.findMany
+      .mockResolvedValueOnce([{ id: 'b1' }, { id: 'b2' }])
+      .mockResolvedValueOnce([
+        { id: 'b1', updatedAt: new Date() },
+        { id: 'b2', updatedAt: new Date() },
+      ]);
+    prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);
+
+    const result = await svc.fetchCandidates({
+      tenantId: 't',
+      scope: 'org',
+      scopeId: null,
+      query: 'какой бюджет на маркетинг',
+      limit: 10,
+      graphHops: 1,
+    });
+
+    expect(result.length).toBe(2);
+    // qvec занулён → raw cosine SQL ни в collectPool, ни в ранкинге не звался.
+    expect(prismaStub.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('G2 guard: вектор с NaN → graceful degrade на recency (cosine SQL НЕ вызван, не 500)', async () => {
+    const bad = new Array(1536).fill(0.01);
+    bad[5] = Number.NaN;
+    embeddingsStub.embedQuery.mockResolvedValue(bad);
+    prismaStub.ideaBlock.findMany
+      .mockResolvedValueOnce([{ id: 'b1' }])
+      .mockResolvedValueOnce([{ id: 'b1', updatedAt: new Date() }]);
+    prismaStub.ideaBlockLink.findMany.mockResolvedValue([]);
+
+    const result = await svc.fetchCandidates({
+      tenantId: 't',
+      scope: 'org',
+      scopeId: null,
+      query: 'какой бюджет на маркетинг',
+      limit: 10,
+      graphHops: 0,
+    });
+
+    expect(result.length).toBe(1);
+    expect(prismaStub.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+
   it('регрессия: без структурного фильтра + qvec null → recency-путь, $queryRawUnsafe (структурный) НЕ вызван, граф работает', async () => {
     embeddingsStub.embedQuery.mockRejectedValue(new Error('no'));
     prismaStub.ideaBlock.findMany

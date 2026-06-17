@@ -89,8 +89,14 @@ export class ExperimentStatusResolverCron {
       const targetStatus = this.computeTargetStatus(exp);
       if (!targetStatus || targetStatus === exp.status) continue;
       try {
-        await this.prisma.experiment.update({
-          where: { id: exp.id },
+        // G4 condition-UPDATE (эталон fact-supersede.service.ts:456-471):
+        // переводим статус ТОЛЬКО если он всё ещё равен прочитанному (exp.status).
+        // Защита от гонки cron ↔ параллельный handler/специалист 3.9: оба могли
+        // прочитать 'hypothesis' и оба попытаться UPDATE. updateMany с guard'ом
+        // по текущему статусу — атомарно; count===0 → статус уже сменил кто-то
+        // другой, наш переход устарел → no-op.
+        const res = await this.prisma.experiment.updateMany({
+          where: { id: exp.id, status: exp.status },
           data: {
             status: targetStatus,
             startedAt:
@@ -102,6 +108,10 @@ export class ExperimentStatusResolverCron {
             lastConfirmedAt: now,
           },
         });
+        if (res.count === 0) {
+          // Статус уже изменён параллельно — переход устарел, пропускаем.
+          continue;
+        }
         updated += 1;
       } catch (err) {
         this.logger.debug(

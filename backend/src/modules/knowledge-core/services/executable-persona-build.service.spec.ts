@@ -1,3 +1,17 @@
+/**
+ * Clones=Roles Ф5 (2026-05-25) — unit-проверка, что `buildForRole`
+ * прокидывает `dataClass='internal'` в Prisma create.
+ *
+ * TZ clone-method ИНТ.1 (2026-06-12) — persona-compile v2: секционная сборка
+ * из слоёв метода (values/motivations/RolePrinciple/PracticeSkill/markers).
+ * Добавлены тесты на наполнение/деградацию секций, layer-фильтр выборки,
+ * union процедур role+person и устойчивость к битому steps-Json.
+ *
+ * Не покрываем полный pipeline (LLM, embeddings, метрики) — это
+ * integration-test scope.
+ */
+
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -7,6 +21,12 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import type { DataClassPolicyService } from './dataclass-policy.service';
 import { ExecutablePersonaBuildService } from './executable-persona-build.service';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Фабрика моков (ИНТ.1): prisma-база отвечает пустыми массивами на все новые
+// запросы v2 (skillTrait по layer / rolePrinciple / practiceSkill /
+// appointment) — каждый тест переопределяет нужные delegates через spread.
+// ─────────────────────────────────────────────────────────────────────────────
 
 const makeCreateSpy = () =>
   vi.fn(async (q: { data: Record<string, unknown> }) => ({
@@ -37,7 +57,6 @@ function makePrismaBase(args: {
     $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
       cb({
         executablePersona: {
-          findFirst: vi.fn(async () => null),
           updateMany: args.updateManySpy,
           create: args.createSpy,
         },
@@ -74,6 +93,7 @@ function makeService(prisma: unknown) {
   const cfg = {
     persona: { minTraits: 3, roleAggMinPersons: 1 },
     aiFeatures: { promptInjectionGuardEnabled: false },
+    // buildForProfile читает cfg.dataClassPolicy.enforcement (W4.1/W4.2).
     dataClassPolicy: { enforcement: 'off' },
   };
   const svc = new ExecutablePersonaBuildService(
@@ -86,8 +106,11 @@ function makeService(prisma: unknown) {
   return { svc, llm, metrics, dataClassPolicy };
 }
 
+/** userMessage первого вызова llm.call (guard выключен в cfg → raw template). */
 function getUserMessage(llm: { call: ReturnType<typeof vi.fn> }): string {
-  const arg = llm.call.mock.calls[0]?.[0] as { userMessage: string } | undefined;
+  const arg = llm.call.mock.calls[0]?.[0] as
+    | { userMessage: string }
+    | undefined;
   if (!arg) throw new Error('llm.call не был вызван');
   return arg.userMessage;
 }
@@ -105,6 +128,7 @@ const makeSkillTraitRow = (
   ...over,
 });
 
+/** Профиль для buildForProfile: 3 skill-черты, employee, active. */
 const makeProfileRow = () => ({
   id: 'sp-1',
   status: 'active',
@@ -123,26 +147,37 @@ const makeProfileRow = () => ({
 });
 
 describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation', () => {
-  it('Раздел 7 — создаёт ExecutablePersona(scope=role) из ЕДИНСТВЕННОГО носителя с версионными полями + dataClass=internal', async () => {
+  it('создаёт ExecutablePersona(scope=role) с dataClass=internal', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
+          { personId: 'person-A' },
+          { personId: 'person-B' },
         ]),
       },
       skillProfile: {
-        findFirst: vi.fn(async () => ({
-          id: 'sp-A',
-          person: { name: 'A', relationship: 'employee' },
-          traits: [
-            makeSkillTraitRow('t1', { conceptId: undefined }),
-            makeSkillTraitRow('t2', { conceptId: undefined }),
-            makeSkillTraitRow('t3', { conceptId: undefined }),
-          ],
-        })),
+        findMany: vi.fn(async () => [
+          {
+            id: 'sp-A',
+            person: { name: 'A', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('t1', { conceptId: undefined }),
+              makeSkillTraitRow('t2', { conceptId: undefined }),
+              makeSkillTraitRow('t3', { conceptId: undefined }),
+            ],
+          },
+          {
+            id: 'sp-B',
+            person: { name: 'B', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('t4', { conceptId: undefined }),
+              makeSkillTraitRow('t5', { conceptId: undefined }),
+            ],
+          },
+        ]),
       },
     };
 
@@ -156,27 +191,23 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
 
     expect(result).not.toBeNull();
     expect(createSpy).toHaveBeenCalledTimes(1);
-    const createArg = (
-      createSpy.mock.calls[0] as unknown as [
-        {
-          data: {
-            scope: string;
-            scopeRefId: string;
-            currentBearerPersonId: string;
-            roleVersion: number;
-            publicName: string;
-            dataClassAudit?: unknown;
-          };
-        },
-      ]
-    )[0];
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { scope: string; scopeRefId: string; dataClassAudit?: unknown } },
+    ])[0];
     expect(createArg.data.scope).toBe('role');
     expect(createArg.data.scopeRefId).toBe('role-1');
-    expect(createArg.data.currentBearerPersonId).toBe('person-A');
-    expect(createArg.data.roleVersion).toBe(1);
-    expect(createArg.data.publicName).toContain('Клон');
+    // dataClassAudit JSON содержит результат derive (kind='executable_persona').
     expect(createArg.data.dataClassAudit).toBeDefined();
 
+    // updateMany должен погасить pending_rebuild И active.
+    expect(updateManySpy).toHaveBeenCalled();
+    const updateArg = (updateManySpy.mock.calls[0] as unknown as [
+      { where: { status: { in: string[] } } },
+    ])[0];
+    expect(updateArg.where.status.in).toContain('active');
+    expect(updateArg.where.status.in).toContain('pending_rebuild');
+
+    // derive должен быть вызван с правильным kind.
     expect(dataClassPolicy.derive).toHaveBeenCalledWith(
       expect.objectContaining({
         context: expect.objectContaining({ kind: 'executable_persona' }),
@@ -184,41 +215,69 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     );
   });
 
-  it('Ф7 (H) — схлопывает черты с одинаковым conceptId внутри профиля носителя (Раздел 7)', async () => {
+  it('Ф7 (H) — схлопывает черты с одинаковым conceptId (3 носителя → 1 черта)', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
+          { personId: 'person-A' },
+          { personId: 'person-B' },
+          { personId: 'person-C' },
         ]),
       },
       skillProfile: {
-        findFirst: vi.fn(async () => ({
-          id: 'sp-A',
-          person: { name: 'A', relationship: 'employee' },
-          traits: [
-            makeSkillTraitRow('shared-hi', {
-              observationCount: 3,
-              conceptId: 'concept-1',
-            }),
-            makeSkillTraitRow('shared-lo', {
-              confidence: 'low',
-              observationCount: 1,
-              conceptId: 'concept-1',
-            }),
-            makeSkillTraitRow('uniq-1', {
-              observationCount: 2,
-              conceptId: 'concept-2',
-            }),
-            makeSkillTraitRow('uniq-null', {
-              confidence: 'low',
-              observationCount: 1,
-              conceptId: null,
-            }),
-          ],
-        })),
+        findMany: vi.fn(async () => [
+          {
+            id: 'sp-A',
+            person: { name: 'A', relationship: 'employee' },
+            traits: [
+              // общий концепт — представитель с max observationCount (3)
+              makeSkillTraitRow('shared-A', {
+                confidence: 'medium',
+                observationCount: 3,
+                conceptId: 'concept-1',
+              }),
+              // уникальная черта A (свой conceptId)
+              makeSkillTraitRow('uniq-A', {
+                observationCount: 1,
+                conceptId: 'concept-A',
+              }),
+            ],
+          },
+          {
+            id: 'sp-B',
+            person: { name: 'B', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('shared-B', {
+                observationCount: 1,
+                conceptId: 'concept-1',
+              }),
+              // уникальная черта B без conceptId (не схлопывается)
+              makeSkillTraitRow('uniq-B', {
+                confidence: 'low',
+                observationCount: 1,
+                conceptId: null,
+              }),
+            ],
+          },
+          {
+            id: 'sp-C',
+            person: { name: 'C', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('shared-C', {
+                confidence: 'low',
+                observationCount: 2,
+                conceptId: 'concept-1',
+              }),
+              makeSkillTraitRow('uniq-C', {
+                observationCount: 4,
+                conceptId: 'concept-C',
+              }),
+            ],
+          },
+        ]),
       },
     };
 
@@ -233,22 +292,26 @@ describe('ExecutablePersonaBuildService.buildForRole — dataClass propagation',
     expect(result).not.toBeNull();
     expect(createSpy).toHaveBeenCalledTimes(1);
 
-    const createArg = (
-      createSpy.mock.calls[0] as unknown as [
-        { data: { includedTraitIds: string[]; builtFromTraitsCount: number } },
-      ]
-    )[0];
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[]; builtFromTraitsCount: number } },
+    ])[0];
     const includedIds = createArg.data.includedTraitIds;
 
+    // concept-1 представлен РОВНО одной чертой — представитель shared-A
+    // (max observationCount=3 среди shared-A/B/C).
     const sharedIds = includedIds.filter((id) => id.startsWith('shared-'));
-    expect(sharedIds).toEqual(['shared-hi']);
+    expect(sharedIds).toEqual(['shared-A']);
 
-    expect(includedIds).toContain('uniq-1');
-    expect(includedIds).toContain('uniq-null');
+    // Все остальные (разные conceptId + null) — на месте.
+    expect(includedIds).toContain('uniq-A');
+    expect(includedIds).toContain('uniq-B'); // conceptId=null, не схлопнут
+    expect(includedIds).toContain('uniq-C');
 
-    expect(includedIds).toHaveLength(3);
-    expect(createArg.data.builtFromTraitsCount).toBe(3);
+    // Итог: 1 (shared) + 3 (uniq) = 4 черты, без дублей по concept-1.
+    expect(includedIds).toHaveLength(4);
+    expect(createArg.data.builtFromTraitsCount).toBe(4);
 
+    // В compile уходит дедуплицированный список (длина traits = 4).
     expect(llm.call).toHaveBeenCalledTimes(1);
   });
 });
@@ -282,7 +345,8 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
             return [
               makeSkillTraitRow('mark-1', {
                 category: 'варианты',
-                statement: 'перед рекомендацией перечисляет варианты и критерий',
+                statement:
+                  'перед рекомендацией перечисляет варианты и критерий',
               }),
             ];
           }
@@ -295,7 +359,8 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
           {
             id: 'rp-1',
             situation: 'срыв срока',
-            statement: 'сначала эскалирует владельцу с 2 вариантами, потом режет scope',
+            statement:
+              'сначала эскалирует владельцу с 2 вариантами, потом режет scope',
             observationCount: 4,
             confidence: 'high',
           },
@@ -330,9 +395,11 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     expect(userMessage).toContain('Когда:');
     expect(userMessage).toContain('Маркеры процесса');
 
-    const createArg = (
-      createSpy.mock.calls[0] as unknown as [{ data: { includedTraitIds: string[] } }]
-    )[0];
+    // includedTraitIds — skill-черты + values/motivations/markers
+    // (RolePrinciple/PracticeSkill ids НЕ попадают — это не SkillTrait).
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[] } },
+    ])[0];
     expect(createArg.data.includedTraitIds).toEqual(
       expect.arrayContaining(['skill-1', 'val-1', 'mot-1', 'mark-1']),
     );
@@ -375,7 +442,8 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     const { svc } = makeService(prisma);
     await svc.buildForProfile({ profileId: 'sp-1' });
 
-    const findUniqueArg = prisma.skillProfile.findUnique.mock.calls[0]?.[0] as unknown as {
+    const findUniqueArg = prisma.skillProfile.findUnique.mock
+      .calls[0]?.[0] as unknown as {
       include: { traits: { where: Record<string, unknown> } };
     };
     expect(findUniqueArg.include.traits.where).toMatchObject({
@@ -383,28 +451,43 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
       layer: 'skill',
     });
 
+    // Отдельные запросы по слоям value/motivation/process_marker.
     const layerQueries = prisma.skillTrait.findMany.mock.calls.map(
       (c) => (c[0] as { where: { layer: string } }).where.layer,
     );
-    expect(layerQueries).toEqual(expect.arrayContaining(['value', 'motivation', 'process_marker']));
+    expect(layerQueries).toEqual(
+      expect.arrayContaining(['value', 'motivation', 'process_marker']),
+    );
   });
 
-  it('buildForRole: practiceSkills — union scope role + person носителя; values из профиля носителя (Раздел 7)', async () => {
+  it('buildForRole: practiceSkills — union scope role+person; values агрегируются по профилям', async () => {
     const createSpy = makeCreateSpy();
     const updateManySpy = makeUpdateManySpy();
     const prisma = {
       ...makePrismaBase({ createSpy, updateManySpy }),
       personRole: {
         findMany: vi.fn(async () => [
-          { personId: 'person-A', validFrom: new Date('2026-01-01T00:00:00Z') },
+          { personId: 'person-A' },
+          { personId: 'person-B' },
         ]),
       },
       skillProfile: {
-        findFirst: vi.fn(async () => ({
-          id: 'sp-A',
-          person: { name: 'A', relationship: 'employee' },
-          traits: [makeSkillTraitRow('t1'), makeSkillTraitRow('t2'), makeSkillTraitRow('t3')],
-        })),
+        findMany: vi.fn(async () => [
+          {
+            id: 'sp-A',
+            person: { name: 'A', relationship: 'employee' },
+            traits: [
+              makeSkillTraitRow('t1'),
+              makeSkillTraitRow('t2'),
+              makeSkillTraitRow('t3'),
+            ],
+          },
+          {
+            id: 'sp-B',
+            person: { name: 'B', relationship: 'employee' },
+            traits: [makeSkillTraitRow('t4')],
+          },
+        ]),
       },
       skillTrait: {
         findMany: vi.fn(async (q: { where: { layer: string } }) =>
@@ -416,7 +499,7 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
                   statement: 'выбирает качество при конфликте со сроком',
                 }),
                 makeSkillTraitRow('val-B', {
-                  profileId: 'sp-A',
+                  profileId: 'sp-B',
                   category: 'прозрачность',
                   statement: 'предпочитает ранние плохие новости поздним',
                   observationCount: 2,
@@ -445,21 +528,24 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
 
     expect(result).not.toBeNull();
 
-    const psArg = prisma.practiceSkill.findMany.mock.calls[0]?.[0] as unknown as {
-      where: { OR: unknown[] };
-    };
+    // Union процедур: scope='role' (roleId) + scope='person' (люди роли).
+    const psArg = prisma.practiceSkill.findMany.mock
+      .calls[0]?.[0] as unknown as { where: { OR: unknown[] } };
     expect(psArg.where.OR).toEqual([
       { scope: 'role', scopeRefId: 'role-1' },
-      { scope: 'person', scopeRefId: 'person-A' },
+      { scope: 'person', scopeRefId: { in: ['person-A', 'person-B'] } },
     ]);
 
+    // values агрегированы (оба профиля) и попали в userMessage + аудит.
     const userMessage = getUserMessage(llm);
     expect(userMessage).toContain('Ценности из проявленных выборов (2)');
     expect(userMessage).toContain('Процедуры');
-    const createArg = (
-      createSpy.mock.calls[0] as unknown as [{ data: { includedTraitIds: string[] } }]
-    )[0];
-    expect(createArg.data.includedTraitIds).toEqual(expect.arrayContaining(['val-A', 'val-B']));
+    const createArg = (createSpy.mock.calls[0] as unknown as [
+      { data: { includedTraitIds: string[] } },
+    ])[0];
+    expect(createArg.data.includedTraitIds).toEqual(
+      expect.arrayContaining(['val-A', 'val-B']),
+    );
   });
 
   it('битый steps-Json у PracticeSkill → скилл пропущен, сборка не падает', async () => {
@@ -493,6 +579,196 @@ describe('ExecutablePersonaBuildService — persona-compile v2 слои мето
     const userMessage = getUserMessage(llm);
     expect(userMessage).toContain('валидный-скилл-триггер');
     expect(userMessage).not.toContain('битый-скилл-триггер');
+    // Счётчик в заголовке блока — только валидные скиллы.
     expect(userMessage).toContain('Процедуры (1)');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// K1 (Б24) — гонка версий/active + K11 (Б23) — поля версионирования роли.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const P2002 = () =>
+  new Prisma.PrismaClientKnownRequestError('unique', {
+    code: 'P2002',
+    clientVersion: 'x',
+  });
+
+/** prisma для buildForRole с управляемым executablePersona.create / findFirst. */
+function makeRolePrisma(args: {
+  createSpy: ReturnType<typeof vi.fn>;
+  updateManySpy: ReturnType<typeof vi.fn>;
+  findFirstSpy: ReturnType<typeof vi.fn>;
+}) {
+  return {
+    org: { findUnique: vi.fn(async () => null) },
+    appointment: { findMany: vi.fn(async () => []) },
+    rolePrinciple: { findMany: vi.fn(async () => []) },
+    practiceSkill: { findMany: vi.fn(async () => []) },
+    role: { findUnique: vi.fn(async () => ({ name: 'Маркетолог' })) },
+    personRole: {
+      findMany: vi.fn(async () => [{ personId: 'person-A' }]),
+    },
+    skillTrait: { findMany: vi.fn(async () => []) },
+    skillProfile: {
+      findMany: vi.fn(async () => [
+        {
+          id: 'sp-A',
+          person: { name: 'A', relationship: 'employee' },
+          traits: [
+            makeSkillTraitRow('t1', { conceptId: undefined }),
+            makeSkillTraitRow('t2', { conceptId: undefined }),
+            makeSkillTraitRow('t3', { conceptId: undefined }),
+          ],
+        },
+      ]),
+    },
+    executablePersona: {
+      findFirst: args.findFirstSpy,
+      updateMany: args.updateManySpy,
+      create: args.createSpy,
+    },
+    $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        executablePersona: {
+          updateMany: args.updateManySpy,
+          create: args.createSpy,
+        },
+      }),
+    ),
+  };
+}
+
+describe('ExecutablePersonaBuildService.buildForRole — Б23/Б24', () => {
+  it('K11 (Б23): role-персона проставляет roleVersion/currentBearerPersonId/publicName/succeedsPersonaId', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    // findFirst: (1) computeRoleVersioning.prevActive → есть active v2 у person-X;
+    //            (2) nextVersion.last → version=2.
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'prev-active',
+        roleVersion: 2,
+        currentBearerPersonId: 'person-X',
+      })
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({
+      tenantId: 't-1',
+      roleId: 'role-1',
+      triggerReason: 'manual',
+    });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const data = (
+      createSpy.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    // carry-forward: prevActive.roleVersion=2 → 3; succeed-link на prev-active.
+    expect(data.roleVersion).toBe(3);
+    expect(data.succeedsPersonaId).toBe('prev-active');
+    // единственный носитель роли (person-A из personRole) → currentBearerPersonId.
+    expect(data.currentBearerPersonId).toBe('person-A');
+    expect(data.publicName).toBe('Клон Маркетолог v3');
+    // глобальный version = last(2) + 1 = 3.
+    expect(data.version).toBe(3);
+  });
+
+  it('K11 (Б23): без прошлой active → roleVersion=1, succeedsPersonaId=null', async () => {
+    const createSpy = makeCreateSpy();
+    const updateManySpy = makeUpdateManySpy();
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce(null) // computeRoleVersioning.prevActive — нет
+      .mockResolvedValueOnce(null); // nextVersion.last — нет
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({ tenantId: 't-1', roleId: 'role-1' });
+
+    expect(result).not.toBeNull();
+    const data = (
+      createSpy.mock.calls[0] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(data.roleVersion).toBe(1);
+    expect(data.succeedsPersonaId).toBeNull();
+    expect(data.version).toBe(1);
+  });
+
+  it('K1 (Б24): P2002 на create → retry с пересчётом nextVersion, одна active без дубля', async () => {
+    const updateManySpy = makeUpdateManySpy();
+    // create: 1-я попытка кидает P2002, 2-я успешна.
+    const createSpy = vi
+      .fn()
+      .mockRejectedValueOnce(P2002())
+      .mockImplementationOnce(async (q: { data: Record<string, unknown> }) => ({
+        id: 'p-final',
+        ...q.data,
+      }));
+    // findFirst последовательность (по 2 на попытку: prevActive, last):
+    //  попытка 1: prevActive=null, last={version:1}
+    //  попытка 2 (после P2002): prevActive=null, last={version:2} (конкурент вписал v2)
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ version: 1 })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = makeRolePrisma({ createSpy, updateManySpy, findFirstSpy });
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForRole({ tenantId: 't-1', roleId: 'role-1' });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    // 2-я (успешная) попытка использует пересчитанную версию = last(2)+1 = 3.
+    const finalData = (
+      createSpy.mock.calls[1] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(finalData.version).toBe(3);
+    expect(finalData.status).toBe('active');
+  });
+});
+
+describe('ExecutablePersonaBuildService.buildForProfile — Б24', () => {
+  it('K1 (Б24): P2002 на create → retry с пересчётом nextVersion', async () => {
+    const updateManySpy = makeUpdateManySpy();
+    const createSpy = vi
+      .fn()
+      .mockRejectedValueOnce(P2002())
+      .mockImplementationOnce(async (q: { data: Record<string, unknown> }) => ({
+        id: 'pp-final',
+        ...q.data,
+      }));
+    // person-scope: nextVersion.findFirst по одному на попытку.
+    const findFirstSpy = vi
+      .fn()
+      .mockResolvedValueOnce({ version: 1 })
+      .mockResolvedValueOnce({ version: 2 });
+    const prisma = {
+      ...makePrismaBase({ createSpy, updateManySpy }),
+      skillProfile: { findUnique: vi.fn(async () => makeProfileRow()) },
+      executablePersona: {
+        findFirst: findFirstSpy,
+        updateMany: updateManySpy,
+        create: createSpy,
+      },
+      $transaction: vi.fn(async (cb: (tx: unknown) => unknown) =>
+        cb({ executablePersona: { updateMany: updateManySpy, create: createSpy } }),
+      ),
+    };
+
+    const { svc } = makeService(prisma);
+    const result = await svc.buildForProfile({ profileId: 'sp-1' });
+
+    expect(result).not.toBeNull();
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    const finalData = (
+      createSpy.mock.calls[1] as unknown as [{ data: Record<string, unknown> }]
+    )[0].data;
+    expect(finalData.version).toBe(3); // пересчитан = last(2)+1
   });
 });

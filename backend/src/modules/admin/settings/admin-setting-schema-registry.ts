@@ -194,6 +194,9 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 5 — adaptive fatigue (cooldown темы · рубильник снижения частоты).
   ['probe.topicCooldownHours', POSITIVE_INT],
   ['probe.adaptiveFatigueEnabled', z.boolean()],
+  // Probe Фаза 2 (2026-06-17) — порог уверенности для распознавания свободного
+  // ответа на probe во входном классификаторе (Telegram без reply / MAX).
+  ['probe.replyClassifyMinConfidence', UNIT_INTERVAL],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

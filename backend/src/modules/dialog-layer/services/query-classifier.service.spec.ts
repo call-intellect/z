@@ -222,4 +222,46 @@ describe('QueryClassifierService', () => {
     expect(result.intent).toBe('factual');
     expect(result.source).toBe('fallback');
   });
+
+  // ─── ТЗ 2026-06-17 probe-system-phase2 Ф1 — интент probe_reply ────────
+  it('openProbeQuestion + ответ по сути + LLM probe_reply(0.8) → intent probe_reply', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"intent": "probe_reply", "confidence": 0.8}',
+      modelUsed: 'deepseek:flash',
+    });
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'Да, отвечает Иванов',
+      conversationId: null,
+      openProbeQuestion: 'Кто отвечает за это решение?',
+    });
+    expect(result.intent).toBe('probe_reply');
+    expect(result.confidence).toBe(0.8);
+    expect(result.source).toBe('llm');
+    // openProbeQuestion подставлен в КОНЕЦ USER-промпта (cache-friendly).
+    expect(llmCallMock).toHaveBeenCalledOnce();
+    const callArg = llmCallMock.mock.calls[0]?.[0] as { userMessage?: string };
+    expect(callArg.userMessage).toContain('Открытый вопрос Коры тебе сейчас');
+    expect(callArg.userMessage).toContain('Кто отвечает за это решение?');
+  });
+
+  it('БЕЗ openProbeQuestion (LLM вернул обычный интент) → НЕ probe_reply', async () => {
+    llmCallMock.mockResolvedValue({
+      text: '{"intent": "note", "confidence": 0.7}',
+      modelUsed: 'deepseek:flash',
+    });
+    const result = await svc.classify({
+      tenantId: 't',
+      userId: 'u',
+      question: 'Иванов',
+      conversationId: null,
+      skipHeuristicFirstPass: true,
+    });
+    expect(result.intent).not.toBe('probe_reply');
+    expect(result.intent).toBe('note');
+    // Без openProbeQuestion блок в USER не добавляется.
+    const callArg = llmCallMock.mock.calls[0]?.[0] as { userMessage?: string };
+    expect(callArg.userMessage).not.toContain('Открытый вопрос Коры тебе сейчас');
+  });
 });

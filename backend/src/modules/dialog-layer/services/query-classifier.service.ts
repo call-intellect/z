@@ -36,6 +36,10 @@ import {
 // постановку и показ задач из Telegram/MAX теперь закрывает AI-помощник
 // (assistant_turn → concierge → create_task / search_tasks), отдельная
 // классификация задач в боте больше не нужна.
+// ТЗ 2026-06-17 probe-system-phase2 Ф1 — добавлен интент `probe_reply`:
+// свободный ответ пользователя на ранее заданный Корой probe-вопрос
+// (Telegram без reply / MAX). Доступен только когда в `ClassifyInput`
+// передан `openProbeQuestion` (иначе SYSTEM-ловушка запрещает его выбор).
 export type DialogIntent =
   | 'factual'
   | 'exploratory'
@@ -43,7 +47,8 @@ export type DialogIntent =
   | 'clone_roleplay'
   | 'daily_plan_morning'
   | 'daily_report_evening'
-  | 'note';
+  | 'note'
+  | 'probe_reply';
 
 /**
  * Узкий подтип «классические chat-интенты» — 4 категории, на которые
@@ -96,6 +101,14 @@ export interface ClassifyInput {
    * LLM-вызова.
    */
   skipHeuristicFirstPass?: boolean;
+  /**
+   * ТЗ 2026-06-17 probe-system-phase2 Ф1 — текст последнего неотвеченного
+   * probe-вопроса Коры этому пользователю. Если задан — подставляется в КОНЕЦ
+   * USER-промпта (cache-friendly), и только тогда модель вправе вернуть
+   * интент `probe_reply`. Если не задан — `probe_reply` недоступен (ловушка
+   * в SYSTEM). Адаптеры каналов резолвят его до вызова классификатора.
+   */
+  openProbeQuestion?: string;
 }
 
 export interface ClassifyResult {
@@ -179,7 +192,14 @@ export class QueryClassifierService {
 
   async classify(input: ClassifyInput): Promise<ClassifyResult> {
     const startedAt = Date.now();
-    if (!input.skipHeuristicFirstPass) {
+    // ТЗ 2026-06-17 probe-phase2 Ф1 — при наличии открытого probe-вопроса
+    // пропускаем дешёвую эвристику и сразу идём в LLM: эвристика не умеет
+    // распознавать `probe_reply` и могла бы ошибочно увести ответ на probe
+    // (например «Сколько?») в factual. С openProbeQuestion решает только LLM.
+    const hasOpenProbe =
+      typeof input.openProbeQuestion === 'string' &&
+      input.openProbeQuestion.trim().length > 0;
+    if (!input.skipHeuristicFirstPass && !hasOpenProbe) {
       const heuristic = heuristicClassify(input.question);
       if (heuristic) {
         const durationSeconds = (Date.now() - startedAt) / 1000;
@@ -206,7 +226,10 @@ export class QueryClassifierService {
           this.metrics.incPromptInjectionAttempt({ source: 'chat', pattern });
         }
       }
-      const rawUser = buildClassifyUserPrompt({ question: input.question });
+      const rawUser = buildClassifyUserPrompt({
+        question: input.question,
+        openProbeQuestion: hasOpenProbe ? input.openProbeQuestion : undefined,
+      });
       const systemText = guardOn
         ? withInjectionGuard(DIALOG_CLASSIFY_SYSTEM_PROMPT)
         : DIALOG_CLASSIFY_SYSTEM_PROMPT;
@@ -337,6 +360,7 @@ function mapRawIntent(raw: string): DialogIntent | null {
     case 'daily_plan_morning':
     case 'daily_report_evening':
     case 'note':
+    case 'probe_reply': // ТЗ 2026-06-17 probe-phase2 Ф1 — ответ на probe-вопрос
       return raw;
     // ТЗ 2026-06-14 channels-sync — task/show_tasks и их алиасы убраны:
     // постановку/показ задач из каналов закрывает AI-помощник.

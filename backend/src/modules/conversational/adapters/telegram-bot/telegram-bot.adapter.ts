@@ -538,12 +538,36 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       if (handled) return null;
     }
 
+    // 7.6. ТЗ 2026-06-17 probe-phase2 Ф1 — свободный ответ на probe без reply.
+    //      Если reply-матча (п.7) не было — ищем последний неотвеченный probe
+    //      пользователя и передаём его текст классификатору. При вердикте
+    //      `probe_reply` (с уверенностью ≥ порога — гейт внутри classifyIntent)
+    //      засчитываем сообщение ответом на этот probe (type:'response'). Это
+    //      приоритетнее assistant-routing: пользователь отвечает на конкретный
+    //      вопрос Коры, а не начинает новый диалог с помощником.
+    const openProbe = await this.findOpenProbe({
+      tenantId,
+      userId: binding.userId,
+    });
+
     // 8. Intent classification (LLM + fallback на эвристики).
     const intent = await this.classifyIntent({
       text: rawText,
       tenantId,
       userId: binding.userId,
+      openProbeQuestion: openProbe?.question || undefined,
     });
+
+    if (intent === 'probe_reply' && openProbe) {
+      return {
+        type: 'response',
+        userId: binding.userId,
+        tenantId,
+        notificationId: openProbe.id,
+        payload: { text: rawText, kind: 'implicit_response' },
+        originChannelBindingId: binding.id,
+      };
+    }
 
     // Ф5 assistant-channels (2026-06-11) + ТЗ 2026-06-14 channels-sync — за
     // kill-switch'ем ASSISTANT_CHANNEL_ROUTING_ENABLED всё свободное (вопросы
@@ -1129,11 +1153,18 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     text: string;
     tenantId: string;
     userId: string;
+    /**
+     * ТЗ 2026-06-17 probe-phase2 Ф1 — текст последнего неотвеченного probe.
+     * Если задан — классификатор может вернуть `probe_reply` (ответ на вопрос
+     * Коры свободным текстом без reply).
+     */
+    openProbeQuestion?: string;
   }): Promise<
     | 'chat_query'
     | 'free_note'
     | 'daily_plan_morning'
     | 'daily_report_evening'
+    | 'probe_reply'
   > {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
@@ -1143,7 +1174,28 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           question: args.text,
           conversationId: null,
           skipHeuristicFirstPass: true,
+          openProbeQuestion: args.openProbeQuestion,
         });
+
+        // ТЗ 2026-06-17 probe-phase2 Ф1 — ответ на probe свободным текстом.
+        // Порог уверенности проверяется в вызывающем коде (ему нужен и
+        // notificationId найденного probe). Здесь просто пробрасываем интент
+        // и confidence наружу через возврат 'probe_reply'; гейт по
+        // `probe.replyClassifyMinConfidence` — на стороне ingest-ветки.
+        if (result.intent === 'probe_reply') {
+          const conf = result.confidence ?? 0;
+          const minConf = await this.getProbeReplyMinConfidence();
+          if (conf >= minConf) {
+            this.metrics.incBotIntentClassified({
+              channel: 'telegram_bot',
+              intent: 'free_note',
+              source: result.source === 'heuristic' ? 'heuristic' : 'llm',
+            });
+            return 'probe_reply';
+          }
+          // Уверенность ниже порога — не засчитываем как ответ, продолжаем
+          // обычным маппингом (probe_reply → free_note по умолчанию ниже).
+        }
 
         // ТЗ 2026-05-29: confidence-gate для plan/report.
         // Если LLM вернул plan/report с уверенностью <0.7 — fall through
@@ -1243,6 +1295,56 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     if (!delivery) return null;
     if (delivery.notification.responseStatus === 'answered') return null;
     return { notificationId: delivery.notificationId };
+  }
+
+  /**
+   * ТЗ 2026-06-17 probe-phase2 Ф1 — последний неотвеченный probe-вопрос
+   * пользователя (для распознавания свободного ответа без reply). Возвращает
+   * id уведомления и текст вопроса из payload (поле `question` для
+   * probe.question; для probe.digest текста единого вопроса нет → '').
+   */
+  private async findOpenProbe(args: {
+    tenantId: string;
+    userId: string;
+  }): Promise<{ id: string; question: string } | null> {
+    const openProbe = await this.prisma.notification.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        recipientUserId: args.userId,
+        eventType: { in: ['probe.question', 'probe.digest'] },
+        responseStatus: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true },
+    });
+    if (!openProbe) return null;
+    const payload =
+      (openProbe.payload as Record<string, unknown> | null) ?? {};
+    const question =
+      typeof payload['question'] === 'string'
+        ? (payload['question'] as string)
+        : typeof payload['formulatedQuestion'] === 'string'
+          ? (payload['formulatedQuestion'] as string)
+          : '';
+    return { id: openProbe.id, question };
+  }
+
+  /**
+   * ТЗ 2026-06-17 probe-phase2 Ф1 — минимальная уверенность классификатора,
+   * с которой свободный текст засчитывается ответом на probe. AdminSetting
+   * `probe.replyClassifyMinConfidence` (дефолт 0.6); читается тем же
+   * механизмом, что и прочие probe.*-крутилки (TypedConfigService.getDynamic).
+   */
+  private async getProbeReplyMinConfidence(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.replyClassifyMinConfidence',
+        undefined,
+        0.6,
+      );
+    } catch {
+      return 0.6;
+    }
   }
 
   // ─────────────────────────────── render helpers ───────────────────

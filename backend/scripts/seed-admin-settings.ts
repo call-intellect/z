@@ -622,6 +622,8 @@ function buildSettings(): SettingSeed[] {
     ['probe.immediatePushMinPriority', envInt('PROBE_IMMEDIATE_PUSH_MIN_PRIORITY', 70), 'low', 'Минимальный priority (0-100) для немедленного пуша probe; ниже — вопрос уходит в ежедневный батч-дайджест'],
     // W2 autonomy (2026-06-12) — гейт ценности probe.
     ['probe.minValuePriority', envInt('PROBE_MIN_VALUE_PRIORITY', 30), 'low', 'Минимальный priority (0-100) ценности probe; ниже — вопрос не задаётся (dropped_low_value)'],
+    // Probe Фаза 2 (2026-06-17) — распознавание свободного ответа на probe.
+    ['probe.replyClassifyMinConfidence', envFloat('PROBE_REPLY_CLASSIFY_MIN_CONFIDENCE', 0.6), 'low', 'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

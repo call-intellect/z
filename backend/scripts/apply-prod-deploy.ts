@@ -470,12 +470,6 @@ const STEPS: Step[] = [
   },
   {
     phase: 'backfill',
-    script: 'scripts/backfill-compile-flat-cards.ts',
-    hint: 'переразметка плоских карточек базы знаний компилятором',
-    skipBootstrap: true,
-  },
-  {
-    phase: 'backfill',
     script: 'scripts/backfill-merge-duplicate-persons.ts',
     args: ['--apply'],
     hint: 'Слить дубли Person по email (Команда)',
@@ -584,13 +578,6 @@ const STEPS: Step[] = [
     hint: 'клоны ролей → single-bearer + freeze бывших (Раздел 7 §7.6)',
     skipBootstrap: true,
   },
-  {
-    phase: 'backfill',
-    script: 'scripts/backfill-goal-embeddings.ts',
-    hint: 'Goal.embedding (pgvector 1536) для семантического дедупа целей (TZ 2026-06-16 Ф5); идемпотентно — только embedding IS NULL',
-    skipBootstrap: true,
-  },
-
   {
     phase: 'migrate',
     script: 'scripts/migrate-telegram-channels-to-global.ts',

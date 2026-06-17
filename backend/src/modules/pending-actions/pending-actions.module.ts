@@ -9,6 +9,7 @@ import { ConflictPendingProvider } from './providers/conflict.provider';
 import { CurationPendingProvider } from './providers/curation.provider';
 import { IntakePendingProvider } from './providers/intake.provider';
 import { ProbePendingProvider } from './providers/probe.provider';
+import { TaskClosurePendingProvider } from './providers/task-closure.provider';
 import { PendingActionsService } from './services/pending-actions.service';
 import { PendingActionsReminderCron } from './workers/pending-actions-reminder.cron';
 
@@ -44,6 +45,8 @@ import { PendingActionsReminderCron } from './workers/pending-actions-reminder.c
     ConflictPendingProvider,
     IntakePendingProvider,
     ProbePendingProvider,
+    // TZ task-dedup (2026-06-16, Ф2) — задачи-кандидаты на закрытие из разговора.
+    TaskClosurePendingProvider,
     // Action Center B3 — повторяющееся Telegram-напоминание о pending.
     PendingActionsReminderCron,
   ],

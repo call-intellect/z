@@ -286,6 +286,10 @@ import { WebhookDeliveryWorker } from './workers/webhook-delivery.worker';
     // SprintAnalystService.computeDashboard и записывают SprintHint через
     // SprintHintsService (или напрямую через Prisma в worker'е).
     SprintAnalystService,
+    // TZ task-dedup (2026-06-16, Ф2) — TaskCompletionHandler (operations)
+    // переиспользует findSimilarByVector для семантического матча
+    // сигнал-блок «сделал X» → открытая Issue (кандидат на закрытие).
+    SimilarIssuesService,
   ],
 })
 export class TrackerModule {}

@@ -20,6 +20,7 @@ const RESOURCE_TYPE_RU: Record<string, string> = {
   skill_trait: 'навык',
   role: 'должность',
   company_profile: 'профиль компании',
+  task_closure_candidate: 'задача к закрытию',
 };
 
 /** Переводит тип ресурса в RU для отображения; неизвестный — как есть. */

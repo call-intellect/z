@@ -22,23 +22,24 @@ import { BlockerSynthesisService } from './services/blocker-synthesis.service';
 import { CheckinIngestService } from './services/checkin-ingest.service';
 import { CheckinParserService } from './services/checkin-parser.service';
 import { CheckinResponseHandler } from './services/checkin-response.handler';
-import { DecisionImplementationService } from './services/decision-implementation.service';
-import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
-import { OnboardingRampService } from './services/onboarding-ramp.service';
-import { TeamCapacityService } from './services/team-capacity.service';
-import { PromiseCascadeService } from './services/promise-cascade.service';
 import { CommitmentResponseHandler } from './services/commitment-response.handler';
 import { CommitmentsService } from './services/commitments.service';
 import { CustomerRiskRadarService } from './services/customer-risk-radar.service';
 import { DailyCheckInService } from './services/daily-checkin.service';
-import { KnowsWhoService } from './services/knows-who.service';
-import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { DailyDigestService } from './services/daily-digest.service';
+import { DecisionImplementationService } from './services/decision-implementation.service';
 import { GoalCascadeService } from './services/goal-cascade.service';
+import { KnowledgeAtRiskService } from './services/knowledge-at-risk.service';
+import { KnowsWhoService } from './services/knows-who.service';
+import { OnboardingRampService } from './services/onboarding-ramp.service';
 import { OperationsDashboardService } from './services/operations-dashboard.service';
+import { PersonalDailyBriefService } from './services/personal-daily-brief.service';
 import { PersonalRelationService } from './services/personal-relation.service';
 import { PortfolioHealthService } from './services/portfolio-health.service';
+import { PromiseCascadeService } from './services/promise-cascade.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
+import { TaskCompletionHandler } from './services/task-completion.handler';
+import { TeamCapacityService } from './services/team-capacity.service';
 import { ValueRecapService } from './services/value-recap.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
 import { WeeklyPerPersonService } from './services/weekly-per-person.service';
@@ -46,20 +47,20 @@ import { BlockerSynthesisCron } from './workers/blocker-synthesis.cron';
 import { ChannelBindingCampaignCron } from './workers/channel-binding-campaign.cron';
 import { CheckinGraphIngestListener } from './workers/checkin-graph-ingest.listener';
 import { CheckinSentimentAnalyzerWorker } from './workers/checkin-sentiment-analyzer.worker';
+import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
+import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
 import { CustomerRiskRadarCron } from './workers/customer-risk-radar.cron';
+import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { DecisionImplementationCron } from './workers/decision-implementation.cron';
 import { ExecMorningPushCron } from './workers/exec-morning-push.cron';
 import { KnowledgeAtRiskCron } from './workers/knowledge-at-risk.cron';
 import { OnboardingRampCron } from './workers/onboarding-ramp.cron';
-import { PromiseCascadeCron } from './workers/promise-cascade.cron';
-import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
-import { CheckinSentimentBatchCron } from './workers/checkin-sentiment-batch.cron';
-import { CommitmentFollowupCron } from './workers/commitment-followup.cron';
-import { DailyCheckInPromptCron } from './workers/daily-checkin-prompt.cron';
 import { OperationsDailyDigestCron } from './workers/operations-daily-digest.cron';
 import { OperationsWeeklyDigestCron } from './workers/operations-weekly-digest.cron';
+import { PersonalDailyBriefCron } from './workers/personal-daily-brief.cron';
 import { CheckInConflictDetectorCron } from './workers/personal-relation-builder.worker';
 import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
+import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
 import { ValueRecapCron } from './workers/value-recap.cron';
 
@@ -161,6 +162,11 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     Specialist39PromiseKeeperService,
     CommitmentFollowupCron,
     CommitmentResponseHandler,
+    // TZ task-dedup (2026-06-16, Ф2) — петля «разговор → кандидат на закрытие
+    // задачи». Зеркало CommitmentResponseHandler: @OnEvent('task.completion_signalled'),
+    // семантический матч открытой Issue + LLM-верификатор → обратимый
+    // TaskClosureCandidate (авто-закрытие запрещено, R13).
+    TaskCompletionHandler,
     // SBA β-8.3 — ежедневный отчёт COO.
     DailyDigestService,
     OperationsDailyDigestCron,

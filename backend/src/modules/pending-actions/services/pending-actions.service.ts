@@ -5,6 +5,7 @@ import { ConversationalService } from '../../conversational/conversational.servi
 import { ConflictService } from '../../curation/services/conflict.service';
 import { CurationService } from '../../curation/services/curation.service';
 import { IntakeService } from '../../tracker/services/intake.service';
+import { IssuesService } from '../../tracker/services/issues.service';
 import { ConflictPendingProvider } from '../providers/conflict.provider';
 import { CurationPendingProvider } from '../providers/curation.provider';
 import { IntakePendingProvider } from '../providers/intake.provider';
@@ -13,6 +14,7 @@ import type {
   PendingActionsProvider,
 } from '../providers/pending-actions-provider.types';
 import { ProbePendingProvider } from '../providers/probe.provider';
+import { TaskClosurePendingProvider } from '../providers/task-closure.provider';
 
 export type PendingActionSource = PendingActionItem['source'];
 
@@ -84,6 +86,9 @@ export class PendingActionsService {
     private readonly intake: IntakePendingProvider,
     @Inject(ProbePendingProvider)
     private readonly probe: ProbePendingProvider,
+    // TZ task-dedup (2026-06-16, Ф2) — задачи-кандидаты на закрытие из разговора.
+    @Inject(TaskClosurePendingProvider)
+    private readonly taskClosure: TaskClosurePendingProvider,
     // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
@@ -94,9 +99,19 @@ export class PendingActionsService {
     private readonly intakeService: IntakeService,
     @Inject(ConversationalService)
     private readonly conversational: ConversationalService,
+    // TZ task-dedup (2026-06-16, Ф2) — делегат закрытия задачи при confirm
+    // (transitionState в completed-статус проекта).
+    @Inject(IssuesService)
+    private readonly issuesService: IssuesService,
   ) {
     // Порядок фиксирован — детерминизм для bySource/тестов.
-    this.providers = [this.curation, this.conflict, this.intake, this.probe];
+    this.providers = [
+      this.curation,
+      this.conflict,
+      this.intake,
+      this.probe,
+      this.taskClosure,
+    ];
   }
 
   // ──────────────────────────── count ─────────────────────────────
@@ -113,6 +128,7 @@ export class PendingActionsService {
       conflict: 0,
       intake: 0,
       probe: 0,
+      task_closure: 0,
     } as Record<PendingActionSource, number>;
 
     await Promise.all(
@@ -127,7 +143,11 @@ export class PendingActionsService {
     );
 
     const total =
-      bySource.curation + bySource.conflict + bySource.intake + bySource.probe;
+      bySource.curation +
+      bySource.conflict +
+      bySource.intake +
+      bySource.probe +
+      bySource.task_closure;
     return { total, bySource };
   }
 
@@ -242,6 +262,9 @@ export class PendingActionsService {
         return { ok: true };
       case 'probe':
         await this.confirmProbe(input);
+        return { ok: true };
+      case 'task_closure':
+        await this.confirmTaskClosure(input);
         return { ok: true };
       default: {
         // exhaustive — на случай расширения source без обновления switch.
@@ -405,6 +428,109 @@ export class PendingActionsService {
     );
   }
 
+  /**
+   * task_closure (TZ task-dedup, 2026-06-16, Ф2): обратимый кандидат на закрытие
+   * задачи из разговора.
+   *   - approve → закрываем Issue через IssuesService.transitionState в
+   *     completed-статус проекта + статус кандидата 'accepted'.
+   *   - reject  → статус кандидата 'rejected', Issue НЕ трогаем (R13/Р1 —
+   *     авто-закрытие запрещено; человек — единственный, кто закрывает).
+   * Идемпотентность: кандидат должен быть в status='pending' (повторный резолв →
+   * понятная ошибка, не 500).
+   */
+  private async confirmTaskClosure(input: ConfirmInput): Promise<void> {
+    const decision: 'approve' | 'reject' =
+      input.resolution === 'reject' ? 'reject' : 'approve';
+
+    const candidate = await this.prisma.taskClosureCandidate.findUnique({
+      where: { id: input.resourceId },
+      select: { id: true, tenantId: true, issueId: true, status: true },
+    });
+    if (!candidate || candidate.tenantId !== input.tenantId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_candidate_not_found',
+          message: 'Кандидат на закрытие задачи не найден',
+        },
+      });
+    }
+    if (candidate.status !== 'pending') {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_candidate_not_pending',
+          message: `Кандидат уже в статусе ${candidate.status}`,
+        },
+      });
+    }
+
+    if (decision === 'reject') {
+      await this.prisma.taskClosureCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'rejected',
+          decidedByUserId: input.userId,
+          decidedAt: new Date(),
+        },
+      });
+      this.logger.log(
+        { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id },
+        'pending-actions.confirm: кандидат на закрытие отклонён (Issue не тронут)',
+      );
+      return;
+    }
+
+    // approve → найти completed-статус проекта задачи и перевести Issue.
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: candidate.issueId, tenantId: input.tenantId },
+      select: { id: true, projectId: true },
+    });
+    if (!issue) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_issue_not_found',
+          message: 'Задача-кандидат на закрытие не найдена',
+        },
+      });
+    }
+    const completedState = await this.prisma.issueState.findFirst({
+      where: { projectId: issue.projectId, category: 'completed' },
+      orderBy: { sequence: 'asc' },
+      select: { id: true },
+    });
+    if (!completedState) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_closure_no_completed_state',
+          message: 'В проекте задачи нет статуса «выполнено»',
+        },
+      });
+    }
+    // R13: закрытие выполняет ТОЛЬКО подтверждение человека (этот путь),
+    // ни один LLM-обработчик Issue напрямую не трогает.
+    await this.issuesService.transitionState(
+      issue.id,
+      { stateId: completedState.id, reason: 'Подтверждено: выполнено в разговоре' } as never,
+      input.tenantId,
+      input.userId,
+    );
+    await this.prisma.taskClosureCandidate.update({
+      where: { id: candidate.id },
+      data: {
+        status: 'accepted',
+        decidedByUserId: input.userId,
+        decidedAt: new Date(),
+      },
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: candidate.id, issueId: issue.id },
+      'pending-actions.confirm: кандидат на закрытие принят — задача закрыта',
+    );
+  }
+
   // ──────────────────────────── helpers ───────────────────────────
 
   /** Роль пользователя в tenant (Membership) или null, если не член Org. */
@@ -440,6 +566,7 @@ export class PendingActionsService {
       conflict: new Set(),
       intake: new Set(),
       probe: new Set(),
+      task_closure: new Set(),
     };
     for (const r of rows) {
       const bucket = out[r.source as PendingActionSource];

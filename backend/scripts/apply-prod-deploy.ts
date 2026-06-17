@@ -132,6 +132,9 @@ const STEPS: Step[] = [
     // TZ task-dedup (2026-06-16) — task-dedup-arbiter (дедуп задачи перед
     // записью в трекер, два уровня входа; nil|same|different, только suggest).
     'task-dedup-arbiter',
+    // TZ task-dedup (2026-06-16, Ф2) — task-closure-verify (верификатор
+    // «выполнена ли задача» по сигналу из разговора; только обратимый кандидат).
+    'task-closure-verify',
     // Ф4.1 (2026-06-08) — goal-task-link (LLM-привязка задач встречи к AI-цели,
     // DEFAULT OFF). Маршрут нужен заранее, иначе при включении флага вызов
     // поедет по аварийному DEFAULT_FALLBACK_CHAIN.

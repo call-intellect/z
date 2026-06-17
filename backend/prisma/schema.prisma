@@ -9206,6 +9206,32 @@ model Issue {
   @@index([tenantId, firstResponseDueAt])
 }
 
+/// Э2 (TZ 2026-06-16) — обратимое предложение закрыть задачу по сигналу из
+/// разговора. НЕ меняет Issue сам: человек подтверждает в очереди pending-actions.
+/// Закрытие применяется через IssuesService.transitionState(category='completed')
+/// только при confirm. status: pending → accepted | rejected | expired.
+model TaskClosureCandidate {
+  id              String    @id @default(cuid())
+  tenantId        String
+  issueId         String    /// задача-кандидат на закрытие
+  sourceBlockId   String    /// IdeaBlock-сигнал выполнения из разговора
+  status          String    @default("pending") @db.VarChar(16)
+  matchSimilarity Decimal?  @db.Decimal(4, 3)   /// cosine similarity матча блок↔Issue
+  confidence      Decimal?  @db.Decimal(4, 3)   /// откалиброванная уверенность верификатора
+  rationale       String?   @db.Text            /// «почему считаем сделанным» — человеческим языком, +/- сигналы
+  evidenceQuote   String?   @db.Text            /// цитата из разговора (для показа человеку)
+  decidedByUserId String?
+  decidedAt       DateTime?
+  expiresAt       DateTime?                      /// авто-протухание pending (sweep, как IntakeIssue)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  /// Идемпотентность: один сигнал-блок → максимум один кандидат на задачу.
+  @@unique([tenantId, issueId, sourceBlockId])
+  @@index([tenantId, status])
+  @@index([issueId])
+}
+
 /// M:M задача↔исполнители. Несколько ассайнеров на одну задачу разрешено.
 model IssueAssignee {
   id           String   @id @default(cuid())

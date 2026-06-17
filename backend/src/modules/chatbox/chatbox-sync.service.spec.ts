@@ -42,6 +42,7 @@ describe('ChatboxSyncService', () => {
     person: {
       findMany: ReturnType<typeof vi.fn>;
       findFirst: ReturnType<typeof vi.fn>;
+      updateMany: ReturnType<typeof vi.fn>;
     };
     membership: { findFirst: ReturnType<typeof vi.fn> };
   };
@@ -82,6 +83,7 @@ describe('ChatboxSyncService', () => {
       person: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       },
       membership: { findFirst: vi.fn().mockResolvedValue(null) },
     };

@@ -59,6 +59,12 @@ const SYNC_SCOPES: ReadonlyArray<{
   { scope: "managers", label: "Менеджеры", icon: Users },
 ];
 
+function chatboxSyncLabel(scope: ChatboxSyncScope, since?: string): string {
+  if (scope === "chats") return since ? "Прошлые чаты" : "Чаты";
+  if (scope === "all") return "Всё";
+  return SYNC_SCOPES.find((s) => s.scope === scope)?.label ?? "Данные";
+}
+
 const CHAT_PERIOD_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "1", label: "Последний 1 день" },
   { value: "7", label: "Последние 7 дней" },
@@ -166,6 +172,7 @@ function ConnectedView({
   );
   const [deleting, setDeleting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [activeSyncLabel, setActiveSyncLabel] = useState<string | null>(null);
   const [chatPeriod, setChatPeriod] = useState("90");
   const syncBaselineRef = useRef<string | null>(null);
   const syncStartMsRef = useRef<number>(0);
@@ -174,8 +181,21 @@ function ConnectedView({
   const { data: syncStatus, mutate: mutateStatus } = useSWR(
     ["chatbox-sync-status"],
     () => chatboxApi.syncStatus(),
-    { refreshInterval: syncing ? 2500 : 0 },
+    {
+      refreshInterval: (latest) =>
+        syncing ||
+        (latest && "runningScopes" in latest
+          ? (latest.runningScopes?.length ?? 0) > 0
+          : false)
+          ? 2500
+          : 0,
+    },
   );
+
+  const serverSyncing =
+    syncStatus && "runningScopes" in syncStatus
+      ? (syncStatus.runningScopes?.length ?? 0) > 0
+      : false;
 
   useEffect(() => {
     if (!syncing) return;
@@ -186,12 +206,13 @@ function ConnectedView({
     const done =
       (curFull && curFull !== syncBaselineRef.current) ||
       Date.now() - syncStartMsRef.current > 240_000;
-    if (done) {
+    if (done && !serverSyncing) {
       setSyncing(false);
+      setActiveSyncLabel(null);
       toast.success("Синхронизация завершена");
       onChanged();
     }
-  }, [syncing, syncStatus, onChanged]);
+  }, [syncing, syncStatus, onChanged, serverSyncing]);
 
   const statusTone =
     integration.status === "connected"
@@ -228,10 +249,13 @@ function ConnectedView({
           ? syncStatus.lastFullSyncAt
           : null;
       syncStartMsRef.current = Date.now();
+      setActiveSyncLabel(chatboxSyncLabel(scope, since));
       setSyncing(true);
       void mutateStatus();
       toast.success(
-        since ? "Запущен импорт прошлых чатов" : "Синхронизация запущена",
+        since
+          ? "Запущен импорт прошлых чатов"
+          : `Запущена синхронизация: ${chatboxSyncLabel(scope, since)}`,
       );
     } catch (e) {
       toast.error(errMessage(e, "Не удалось запустить синхронизацию"));
@@ -315,7 +339,7 @@ function ConnectedView({
                 variant="outline"
                 size="sm"
                 onClick={() => void handleSync(scope)}
-                disabled={syncingScope !== null || syncing}
+                disabled={syncingScope !== null || syncing || serverSyncing}
               >
                 {syncingScope === scope ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -327,14 +351,16 @@ function ConnectedView({
             ))}
           </div>
 
-          {syncing && (
+          {(syncing || serverSyncing) && (
             <div
               className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
               style={{ background: STATUS_TONE.ok.bg }}
             >
               <Loader2 size={14} className="animate-spin text-accent" />
               <span className="font-medium text-fg-primary">
-                Идёт синхронизация…
+                {activeSyncLabel
+                  ? `Синхронизируем: ${activeSyncLabel}…`
+                  : "Идёт синхронизация…"}
               </span>
               {syncStatus && "counts" in syncStatus && (
                 <span className="text-fg-secondary">
@@ -358,7 +384,7 @@ function ConnectedView({
             <Select
               value={chatPeriod}
               onValueChange={setChatPeriod}
-              disabled={syncingScope !== null || syncing}
+              disabled={syncingScope !== null || syncing || serverSyncing}
             >
               <SelectTrigger className="w-[220px]">
                 <SelectValue />
@@ -375,7 +401,7 @@ function ConnectedView({
               variant="outline"
               size="sm"
               onClick={() => handleBackfillChats()}
-              disabled={syncingScope !== null || syncing}
+              disabled={syncingScope !== null || syncing || serverSyncing}
             >
               {syncingScope === "chats" ? (
                 <Loader2 size={14} className="animate-spin" />

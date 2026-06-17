@@ -97,10 +97,36 @@ export class BitrixSyncService {
   }
 
   async syncUsers(tenantId: string): Promise<number> {
-    if (!(await this.isEnabled())) return 0;
+    if (!(await this.isEnabled())) {
+      this.logger.warn(`syncUsers: bitrix.enabled=false — пропуск (tenant=${tenantId})`);
+      return 0;
+    }
     const row = await this.requireRow(tenantId);
     const params: BitrixUserGetParams = {};
-    const users = await this.integration.callApiList<BitrixUser>(row, 'user.get', params);
+    this.logger.log(
+      `syncUsers: tenant=${tenantId} endpoint=${row.clientEndpoint ?? '-'} ` +
+        `scope=${row.scope ?? '-'} → запрос user.get`,
+    );
+    let users: BitrixUser[];
+    try {
+      users = await this.integration.callApiList<BitrixUser>(row, 'user.get', params);
+    } catch (err) {
+      this.logger.error(
+        `syncUsers: user.get УПАЛ tenant=${tenantId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw err;
+    }
+    this.logger.log(
+      `syncUsers: user.get вернул ${users.length} пользователей (tenant=${tenantId})` +
+        (users.length
+          ? ` — ID: [${users
+              .slice(0, 10)
+              .map((u) => str(u.ID))
+              .join(',')}]`
+          : ''),
+    );
 
     const now = new Date();
     for (const u of users) {
@@ -159,6 +185,7 @@ export class BitrixSyncService {
           where: { id: c.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
+        await this.upgradePersonToEmployee(tenantId, personId);
         continue;
       }
       if (c.linkedPersonId === null) {
@@ -176,8 +203,16 @@ export class BitrixSyncService {
           where: { id: row.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
+        await this.upgradePersonToEmployee(tenantId, personId);
       }
     }
+  }
+
+  private async upgradePersonToEmployee(tenantId: string, personId: string): Promise<void> {
+    await this.prisma.person.updateMany({
+      where: { id: personId, tenantId, relationship: 'external', deletedAt: null },
+      data: { relationship: 'employee' },
+    });
   }
 
   private async autoCreateUsersUnlinked(tenantId: string): Promise<void> {
@@ -208,6 +243,7 @@ export class BitrixSyncService {
           });
           personId = created.id;
         }
+        await this.upgradePersonToEmployee(tenantId, personId);
         await this.prisma.bitrixUser.update({
           where: { id: r.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },

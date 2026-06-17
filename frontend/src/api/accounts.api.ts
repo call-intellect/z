@@ -55,4 +55,10 @@ export const accountsApi = {
       "/api/v1/accounts/invitations/accept-magic",
       body,
     ),
+
+  consumeMagicLink: (body: { token: string }) =>
+    apiClient.post<{ user: { id: string; email: string; name: string } }>(
+      "/api/v1/accounts/magic-link/consume",
+      body,
+    ),
 };

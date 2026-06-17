@@ -117,6 +117,7 @@ export class PersonsService {
     q?: string;
     departmentId?: string;
     roleId?: string;
+    relationship?: 'employee' | 'external' | 'candidate' | 'former';
     invitationStatus?: 'pending' | 'accepted' | 'revoked' | 'expired' | 'none';
     includeDeleted: boolean;
     limit: number;
@@ -124,6 +125,7 @@ export class PersonsService {
     const where: Prisma.PersonWhereInput = {
       tenantId: args.tenantId,
       ...(args.includeDeleted ? {} : { deletedAt: null }),
+      ...(args.relationship ? { relationship: args.relationship } : {}),
       ...(args.departmentId ? { primaryDepartmentId: args.departmentId } : {}),
       ...(args.q
         ? {
@@ -309,6 +311,7 @@ export class PersonsService {
             name: args.body.name,
             email: args.body.email ?? '',
             primaryDepartmentId: args.body.primaryDepartmentId ?? null,
+            ...(args.body.relationship ? { relationship: args.body.relationship } : {}),
           },
         });
 

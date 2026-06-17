@@ -3,6 +3,7 @@ import type {
   BitrixIntegrationStatus,
   BitrixLinkMode,
   BitrixStatusApi,
+  BitrixSyncScope,
 } from "@/api/bitrix.api";
 
 export interface BitrixIntegrationView {
@@ -58,6 +59,8 @@ export function mapBitrixIntegration(
 export interface BitrixStatusView {
   integration: BitrixIntegrationView;
   analysisEnabled: boolean;
+  runningScopes: BitrixSyncScope[];
+  activeSyncScope: BitrixSyncScope | null;
   lastFullSyncAt: Date | null;
   lastIncrementalSyncAt: Date | null;
   counts: BitrixStatusApi["counts"];
@@ -71,6 +74,8 @@ export function mapBitrixStatus(
   return {
     integration: mapBitrixIntegration(api.integration)!,
     analysisEnabled: api.analysisEnabled,
+    runningScopes: api.runningScopes ?? [],
+    activeSyncScope: api.activeSyncScope ?? null,
     lastFullSyncAt: toDate(api.lastFullSyncAt),
     lastIncrementalSyncAt: toDate(api.lastIncrementalSyncAt),
     counts: api.counts,

@@ -56,7 +56,7 @@ export class ChatboxCustomersService {
       const created = await this.persons.create({
         tenantId,
         userId,
-        body: { name, ...(email ? { email } : {}) },
+        body: { name, ...(email ? { email } : {}), relationship: 'external' },
       });
       personId = created.id;
     }

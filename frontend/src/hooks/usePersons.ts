@@ -24,6 +24,7 @@ export function usePersons(
         orgId,
         query.roleId ?? null,
         query.departmentId ?? null,
+        query.relationship ?? null,
         query.invitationStatus ?? null,
       ]
     : null;

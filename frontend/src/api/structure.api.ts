@@ -102,6 +102,7 @@ export interface TeamRosterItemApi {
   email: string | null;
   roleId: string | null;
   roleName: string | null;
+  relationship: "employee" | "external" | "candidate" | "former";
   departmentId: string | null;
   departmentName: string | null;
   invitationStatus: "none" | "pending" | "accepted" | "revoked" | "expired";
@@ -128,6 +129,7 @@ export interface UpdatePersonRequest {
 export interface ListPersonsQuery {
   departmentId?: string;
   roleId?: string;
+  relationship?: "employee" | "external" | "candidate" | "former";
   invitationStatus?: PersonDomainApi["invitationStatus"];
 }
 

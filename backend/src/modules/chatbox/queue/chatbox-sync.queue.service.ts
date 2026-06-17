@@ -21,6 +21,21 @@ export class ChatboxSyncQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChatboxSyncQueueService.name);
   private queue: Queue<ChatboxSyncJobData> | null = null;
 
+  private static readonly SCOPES: readonly ChatboxSyncScope[] = [
+    'all',
+    'customers',
+    'managers',
+    'chats',
+    'incremental',
+  ];
+  private static readonly RUNNING_STATES = new Set<string>([
+    'active',
+    'waiting',
+    'delayed',
+    'prioritized',
+    'waiting-children',
+  ]);
+
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
   onModuleInit(): void {
@@ -47,11 +62,33 @@ export class ChatboxSyncQueueService implements OnModuleInit, OnModuleDestroy {
     const jobId = since
       ? `chatbox-sync-${tenantId}-${scope}-backfill`
       : `chatbox-sync-${tenantId}-${scope}`;
+    await queue.remove(jobId).catch(() => undefined);
     await queue.add('sync', { tenantId, scope, since }, { jobId });
-    this.logger.debug(
+    this.logger.log(
       `enqueue: tenant=${tenantId} scope=${scope} since=${since ?? '-'} jobId=${jobId}`,
     );
     return { jobId };
+  }
+
+  async getRunningScopes(tenantId: string): Promise<ChatboxSyncScope[]> {
+    const queue = this.requireQueue();
+    const probes: { scope: ChatboxSyncScope; jobId: string }[] = ChatboxSyncQueueService.SCOPES.map(
+      (scope) => ({ scope, jobId: `chatbox-sync-${tenantId}-${scope}` }),
+    );
+    probes.push({ scope: 'chats', jobId: `chatbox-sync-${tenantId}-chats-backfill` });
+    const states = await Promise.all(
+      probes.map(async ({ scope, jobId }) => ({
+        scope,
+        running: ChatboxSyncQueueService.RUNNING_STATES.has(
+          await queue.getJobState(jobId).catch(() => 'unknown'),
+        ),
+      })),
+    );
+    const running = new Set<ChatboxSyncScope>();
+    for (const s of states) {
+      if (s.running) running.add(s.scope);
+    }
+    return [...running];
   }
 
   private requireQueue(): Queue<ChatboxSyncJobData> {

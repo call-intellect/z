@@ -29,7 +29,10 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
       { connection: this.redis.client, concurrency: 2 },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.warn({ jobId: job?.id, err: err.message }, 'BitrixSyncWorker: job failed');
+      this.logger.error(
+        { jobId: job?.id, scope: job?.data?.scope, err: err.message, stack: err.stack },
+        'BitrixSyncWorker: job failed',
+      );
     });
     this.logger.log(`BitrixSyncWorker запущен (${BITRIX_SYNC_QUEUE})`);
   }
@@ -43,9 +46,9 @@ export class BitrixSyncWorker implements OnModuleInit, OnModuleDestroy {
 
   async process(job: Job<BitrixSyncJobData>): Promise<void> {
     const { tenantId, scope } = job.data;
-    this.logger.debug(`BitrixSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`);
+    this.logger.log(`BitrixSync старт: tenant=${tenantId} scope=${scope} job=${job.id}`);
     const result = await this.syncService.syncByScope(tenantId, scope);
-    this.logger.debug(
+    this.logger.log(
       `BitrixSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
     );
   }

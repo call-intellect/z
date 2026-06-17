@@ -8,6 +8,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
+import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 
 import {
   PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR,
@@ -57,6 +58,8 @@ export class ProbeService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(EmbeddingFallbackService)
+    private readonly embeddings: EmbeddingFallbackService,
   ) {}
 
   /** Входная точка для специалистов Слоя 3. */
@@ -130,6 +133,27 @@ export class ProbeService {
           },
           'ProbeService.suggest: Redis dedup check failed — продолжаю без дедупа',
         );
+      }
+
+      // 1b. Ф4 (2026-06-17) — семантический дедуп вопросов по эмбеддингу
+      // (pgvector). Точный content-hash не ловит тот же по смыслу вопрос,
+      // переформулированный иначе. Считаем эмбеддинг текста вопроса один раз
+      // (переиспользуем при create через questionVectorLiteral), ищем близкий
+      // активный probe того же tenant в окне; cos ≥ порога → dedup.
+      // Kill-switch probe.semanticDedupEnabled (тип А, ON). Best-effort:
+      // эмбеддинг/SQL упали → пропускаем семантику, probe идёт дальше.
+      const questionVectorLiteral = await this.maybeSemanticDedup({
+        tenantId: input.tenantId,
+        payload: input.payload,
+      });
+      if (questionVectorLiteral === 'DEDUP') {
+        this.metrics.incProbeDedupDropped({ reason: input.reason });
+        this.metrics.incProbeEvent({
+          emittedByService: input.emittedByService,
+          reason: input.reason,
+          status: 'dropped_dedup',
+        });
+        return { dropped: 'dedup' };
       }
 
       // 2. Rate-limit per recipient.
@@ -306,6 +330,28 @@ export class ProbeService {
         },
       });
 
+      // Ф4 (2026-06-17) — сохранить questionEmbedding (vector(1536)) для будущего
+      // семантического дедупа. Unsupported-тип нельзя писать обычным Prisma
+      // create → отдельным $executeRawUnsafe. Переиспользуем уже посчитанный
+      // вектор (шаг 1b). Best-effort: ошибка записи эмбеддинга не валит probe.
+      if (questionVectorLiteral) {
+        try {
+          await this.prisma.$executeRawUnsafe(
+            'UPDATE "probe_events" SET "questionEmbedding" = $1::vector WHERE id = $2',
+            questionVectorLiteral,
+            event.id,
+          );
+        } catch (err) {
+          this.logger.warn(
+            {
+              probeEventId: event.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'ProbeService.suggest: не удалось записать questionEmbedding — probe создан без эмбеддинга',
+          );
+        }
+      }
+
       this.metrics.incProbeEvent({
         emittedByService: input.emittedByService,
         reason: input.reason,
@@ -338,6 +384,124 @@ export class ProbeService {
       );
       return { dropped: 'dedup' };
     }
+  }
+
+  /**
+   * Ф4 (2026-06-17) — семантический дедуп probe-вопроса по эмбеддингу.
+   *
+   * Возвращает:
+   *   - `'DEDUP'` — найден семантически близкий активный probe (cos ≥ порога)
+   *     в окне → вызывающий код дропает probe как dedup.
+   *   - vector-литерал (`'[v1,v2,...]'`) — вопрос уникален; литерал нужно
+   *     записать в `questionEmbedding` после create (чтобы дедуп ловил будущие).
+   *   - `null` — семантику пропустили (флаг OFF / нет текста / эмбеддинг или
+   *     SQL упали). Best-effort: probe в любом случае идёт дальше.
+   */
+  private async maybeSemanticDedup(args: {
+    tenantId: string;
+    payload: ProbeSuggestPayload;
+  }): Promise<'DEDUP' | string | null> {
+    // Kill-switch (тип А, ON). Ошибка чтения → ON (как qualityJudge/minValue).
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.semanticDedupEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return null;
+
+    // Текст вопроса: готовый suggestedQuestion, иначе message специалиста.
+    const rawText = args.payload.suggestedQuestion ?? args.payload.message;
+    if (typeof rawText !== 'string') return null;
+    const text = rawText.trim();
+    if (text.length === 0) return null;
+
+    // Эмбеддинг (best-effort): любая ошибка → пропускаем семантику.
+    let vector: number[] | undefined;
+    try {
+      const vecs = await this.embeddings.embed([text]);
+      vector = vecs[0];
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeService.maybeSemanticDedup: embed упал — пропускаю семантику',
+      );
+      return null;
+    }
+    if (!vector || vector.length === 0) return null;
+    const vectorLiteral = `[${vector.join(',')}]`;
+
+    let threshold: number;
+    let windowHours: number;
+    try {
+      threshold = await this.cfg.getDynamic<number>(
+        'probe.semanticDedupThreshold',
+        undefined,
+        0.92,
+      );
+    } catch {
+      threshold = 0.92;
+    }
+    try {
+      windowHours = await this.cfg.getDynamic<number>(
+        'probe.semanticDedupWindowHours',
+        undefined,
+        72,
+      );
+    } catch {
+      windowHours = 72;
+    }
+
+    // pgvector cosine-distance (`<=>`). similarity = 1 - distance.
+    // Активные/доставленные статусы (как content-hash окно), не терминальные.
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; distance: number }>
+      >(
+        `SELECT id, ("questionEmbedding" <=> $1::vector) AS distance
+         FROM "probe_events"
+         WHERE "tenantId" = $2
+           AND status IN ('pending','dispatched','queued_digest','routed_to_digest')
+           AND "questionEmbedding" IS NOT NULL
+           AND "createdAt" > now() - make_interval(hours => $3::int)
+         ORDER BY "questionEmbedding" <=> $1::vector
+         LIMIT 1`,
+        vectorLiteral,
+        args.tenantId,
+        Math.max(0, Math.round(windowHours)),
+      );
+      const top = rows[0];
+      if (top && Number.isFinite(Number(top.distance))) {
+        const similarity = 1 - Number(top.distance);
+        if (similarity >= threshold) {
+          this.logger.log(
+            `semantic-dedup: probe близок к ${top.id} (sim=${similarity.toFixed(
+              3,
+            )} ≥ ${threshold}) tenant=${args.tenantId} — drop`,
+          );
+          return 'DEDUP';
+        }
+      }
+    } catch (err) {
+      // SQL упал (колонка/индекс не применены и т.п.) — graceful: пропускаем
+      // семантику, но вернём литерал, чтобы записать эмбеддинг на будущее.
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeService.maybeSemanticDedup: KNN-запрос упал — пропускаю семантику',
+      );
+    }
+
+    return vectorLiteral;
   }
 
   /**

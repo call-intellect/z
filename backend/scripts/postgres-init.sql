@@ -351,6 +351,12 @@ BEGIN
       CREATE INDEX IF NOT EXISTS "probe_events_tenant_status_created_idx"
       ON "probe_events" ("tenantId", "status", "createdAt" DESC)
     $sql$;
+    -- Ф4 (2026-06-17) — HNSW на questionEmbedding для семантического дедупа probe.
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "idx_probeevent_qembed_hnsw"
+      ON "probe_events" USING hnsw ("questionEmbedding" vector_cosine_ops)
+      WHERE "questionEmbedding" IS NOT NULL
+    $sql$;
   END IF;
 END $$;
 

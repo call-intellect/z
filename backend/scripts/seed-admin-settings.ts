@@ -628,6 +628,10 @@ function buildSettings(): SettingSeed[] {
     ['probe.qualityJudgeEnabled', envBool('PROBE_QUALITY_JUDGE_ENABLED', true), 'low', 'Рубильник LLM-судьи качества формулировки уточняющего вопроса (probe): проверяет вопрос перед отправкой и при браке заменяет одним улучшенным регенератом (kill-switch, ON). Выкл → вопрос отправляется как сформулирован'],
     // Probe Фаза 3 (2026-06-17) — выбор получателя probe по engagement.
     ['probe.engagementRoutingEnabled', envBool('PROBE_ENGAGEMENT_ROUTING_ENABLED', true), 'low', 'Рубильник выбора получателя уточняющего вопроса (probe) по отзывчивости: из кандидатов вопрос идёт самому отзывчивому (engagement-снимок), а не первому по списку (kill-switch, ON). Выкл → берётся первый кандидат'],
+    // Probe Фаза 4 (2026-06-17) — семантический дедуп близких по смыслу probe.
+    ['probe.semanticDedupEnabled', envBool('PROBE_SEMANTIC_DEDUP_ENABLED', true), 'low', 'Семантический дедуп вопросов по эмбеддингу (kill-switch, ON)'],
+    ['probe.semanticDedupThreshold', envFloat('PROBE_SEMANTIC_DEDUP_THRESHOLD', 0.92), 'low', 'Cosine-порог семантического дедупа (0..1)'],
+    ['probe.semanticDedupWindowHours', envInt('PROBE_SEMANTIC_DEDUP_WINDOW_HOURS', 72), 'low', 'Окно (часы) поиска близких по смыслу вопросов'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { EmbeddingsModule } from '../embeddings/embeddings.module';
 
 import { ProbeDigestCron } from './probe-digest.cron';
 import { ProbeDispatcherWorker } from './probe-dispatcher.worker';
@@ -30,7 +31,7 @@ import { ProbeService } from './probe.service';
  */
 @Global()
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, EmbeddingsModule],
   controllers: [ProbeController],
   providers: [
     ProbeService,

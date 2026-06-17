@@ -203,6 +203,11 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 3 (2026-06-17) — kill-switch выбора получателя probe по
   // engagement-снимку (самый отзывчивый из кандидатов). ON.
   ['probe.engagementRoutingEnabled', z.boolean()],
+  // Probe Фаза 4 (2026-06-17) — семантический дедуп близких по смыслу probe
+  // по эмбеддингу вопроса (рубильник ON · cosine-порог · окно поиска в часах).
+  ['probe.semanticDedupEnabled', z.boolean()],
+  ['probe.semanticDedupThreshold', UNIT_INTERVAL],
+  ['probe.semanticDedupWindowHours', POSITIVE_INT],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

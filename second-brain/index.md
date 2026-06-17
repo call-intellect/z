@@ -47,7 +47,7 @@
 - [[01_projects/skill-and-clone]] — **SBA γ-1 Specialist 3.7 (SkillProfile) + ExecutablePersona + Clone API** — финальная фаза SBA, самый чувствительный sub-TZ. **Employee Clones**: клоны сотрудников по наблюдаемому поведению. 3 новых модели (SkillProfile / SkillTrait с эмерджентной категорией / ExecutablePersona) + 5 enum'ов, HNSW индекс на trait.embedding, GIN на sourceBlockIds. Источник — только subject-reasoning-блоки employee'ев (signalType ∈ reasoning/rationale/decision_basis). KNN-группировка → LLM `skill-trait-detect` (⚠ КРИТИЧНО, primary `gpt-5.4` capable) → KNN-merge через `skill-trait-merge` → decay. **Auto-canonical (без pre-approval)**: manager помечает trait как `mark_as_misleading` ПОСТФАКТУМ (новое значение в `CurationDecisionType`). 4 LLM-taskType (skill-trait-detect / skill-trait-merge / executable-persona-compile / clone-respond) с тройной цепочкой. Новая очередь `core.skill-profile-rebuild` + worker (debounce 60s). 3 cron'а: daily decay (`0 5 * * *`), weekly persona snapshots person+role (`0 6 * * SUN`), weekly manager digest (`0 9 * * MON`). 2 probe-trigger (`skill.profile_starved` / `skill.contradicting_traits`). Новый модуль `clones/` с REST `POST /clones/persons/:id/ask` + `/roles/:id/ask` + GET skill-profile + POST mark-misleading. Rate limit 20/сутки на пользователя через Redis. RBAC `skill_profile` + `clone_persona` (owner/admin/direct manager/self). Расширение `SynthesisService.synthesize` mode='clone_style' → делегирование `ClonesService.askPerson`. UI: **обязательная** `/me/clone` (zonтичный §3.3 C5 — без неё DoD не закрыт), `/persons/[id]/skill-profile` (manager UI с mark-misleading), `/roles/[id]/skill-profile` (агрегат + диалог с клоном роли). Кнопка «отключить наблюдение» НЕ показывается (§3.4 правило).
 - [[01_projects/crossmark-integration]] — связь с Crossmark: только через API, развёртывание отдельное
 - [[01_projects/chatbox-integration]] — **ChatBox-интеграция (2026-06-05)** — клиентские переписки из мессенджеров (Telegram/MAX/WhatsApp/виджет) в память компании. Зеркалит read-mostly чаты/клиентов/менеджеров/сообщения из внешнего ChatBox (`app.agent-lia.ru`), режет на сессии и через `IngestService.ingest` → `RawEvent(sourceType='chatbox')` → knowledge-core. Новый домен `backend/src/modules/chatbox/` (8 моделей Prisma + 7 enum + `SourceType.chatbox`), очереди `chatbox.sync`/`chatbox.analyze` + cron'ы, inbound webhook, LLM-summary сессий (taskType `chatbox-summary`), исходящая отправка ответа менеджера, мультимессенджер-объединение клиента (`Customer↔ChannelClient`), сессии-сегменты (`previousSessionId`), автосвязка менеджеров по email с `Person`. Feature-flag `feature.chatbox` (OFF) + kill-switch `AdminSetting chatbox.enabled`. Фронт — группа меню «Чаты» (`/chats`, `/chats/[id]`, `/chats/integrations/chatbox`).
-- [[01_projects/meeting-types]] — 9 типов встреч MVP
+- [[01_projects/meeting-types]] — 13 типов встреч (enum `MeetingType`, DB-конфиг через `MeetingTypeConfig`)
 - [[01_projects/ai-analysis-by-type]] — шаблоны AI-анализа по типу
 - [[01_projects/meeting-report-pipeline]] — раздельные pipeline после встречи: быстрый отчёт пользователю (Б, `meeting-report-fast`) + память компании (A, `block-ingest` → специалисты 3-1…3-9). Подтверждено экспериментом sales-merge: Б в 3.5× быстрее и в 4.6× дешевле
 - [[01_projects/recording]] — запись встречи (общая + аудиодорожки) + retention (TTL по тарифу)
@@ -58,6 +58,15 @@
   - [[01_projects/admin-crons]] — `CronManagerService` + `CronSchedule` UI (включить/отключить/изменить расписание/запустить вручную)
   - [[01_projects/admin-workers]] — BullMQ-инспектор (`/admin/platform/workers`): retry-failed, pause/resume, DLQ
   - [[01_projects/admin-content]] — типы встреч / email-шаблоны (Handlebars + bootstrap-sync) / system-messages / global-channels / copy-strings
+- [[01_projects/admin-org-knowledge-core]] — Org-Admin (owner/admin, `/company-admin`): настройки уровня компании, ingest-источники, retention
+- [[01_projects/goals-and-strategic-alignment]] — цели/OKR v2 (дерево mission→strategy→goal→KR) + воркер strategic-alignment (термометр согласованности)
+- [[01_projects/smart-tables]] — умные таблицы (13 типов колонок, авто-создание из текста, system-tables, импорт-агент)
+- [[01_projects/support-desk]] — служба поддержки вендора: closed-contour клон + цикл обучения draft→edit
+- [[01_projects/tariffs-and-entitlements]] — гейтинг по тарифу (`OrgEntitlement`, `@RequireEntitlement`, tier-config)
+- [[01_projects/participant-identification]] — жёсткая идентификация участников встречи (LiveKit identity → Participant → Task.assigneeUserId)
+- [[01_projects/livekit-noise-cancellation]] — браузерное шумоподавление (AudioCaptureOptions), localStorage-тумблер
+- [[01_projects/frontend-contexts-hooks]] — реестр cross-component механизмов фронта (единый floating-ассистент, api-client interceptor, helpers)
+- [[01_projects/tracker-dev-map]] — карта кода трекера («где что лежит»), компаньон к [[01_projects/tracker]]
 
 ## Архитектура
 
@@ -67,18 +76,21 @@
 - [[02_architecture/module-map]] — карта модулей и потоков данных (включая Фазу 0: departments/roles-domain/persons/job-descriptions/skills/documents/role-profiles/structure/graph)
 - [[02_architecture/data-model]] — сущности (Meeting, Participant, Recording, AI Result) и FSM статусов; Фаза 0: группа А (с UI) + группа Б (слоты каркаса) + расширения existing + Apache AGE
 - [[02_architecture/age-deployment-decision]] — решение по Apache AGE (граф знаний поверх PostgreSQL)
-- [[02_architecture/ai-integration]] — внутренние API компании: GigaAM Vox (ASR) + Claude Sonnet (LLM), `proxy.agent-lia.ru` для fallback
+- [[02_architecture/ai-integration]] — AI-слой: ASR (GigaAM Vox) + LLM через `LlmRouterService` (primary DeepSeek, openai-via-proxy, minimax); Claude НЕ закупается (решение владельца); эмбеддинги через openai-proxy
 - [[02_architecture/agent-modules]] — **функциональные модули AI-агентов**: группировка ~127 агентов по способностям (M1 «Помощник и общение с сотрудниками» описан; M2–M9 — реестр-указатели)
 - [[02_architecture/llm-cache-status]] — **prompt caching по всем 9 каналам Z**: где работает, где нет, размерные пороги, 6 анти-паттернов (verified 2026-05-25)
 
 - [[02_architecture/code-pitfalls]] — копилка тех. фактов «не как кажется» (LiveKit, Egress, webhooks, ASR-биллинг)
 - [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы
+- [[02_architecture/ai-agents-map]] — реестр всех AI-агентов по способу запуска (событие / cron / диалог); комплемент к agent-modules (срез по способностям)
+- [[02_architecture/security-and-152fz]] — per-Org retention, право на удаление ПДн (152-ФЗ), dataClass-routing в LlmRouter, метрики core_*/kc_access_*
+- [[02_architecture/document-conversion-service]] — статус Python-микросервиса конвертации документов (Docling/RapidOCR, `infra/document-conversion/`, Ф0 research)
 
 ## Процессы
 
 > Сквозные бизнес-процессы платформы — от триггера до результата. Каждый описан в двух регистрах (бытовой + технический) с пошаговым статусом «реализован / частично / только в ТЗ». ТЗ каталога: [`plans/analysis/2026-05-29-business-processes-catalog.md`](../plans/analysis/2026-05-29-business-processes-catalog.md).
 
-- [[03_processes/index]] — реестр всех процессов (27 строк, 3 заполнено в Волне 1)
+- [[03_processes/index]] — реестр всех бизнес-процессов (29 процессов, двойной регистр: бытовой + технический)
 - [[03_processes/_template]] — шаблон карточки
 - [[03_processes/meeting-post-processing]] ⭐ — пост-обработка встречи (запись → транскрипт → AI-отчёт → граф знаний)
 - [[03_processes/telegram-inbox-ingestion]] ⭐ — входящие сообщения из Telegram (зафиксирован критический gap по `free_note`)
@@ -214,12 +226,6 @@ _пусто_
 - [[06_marketing/client-value-framework]] — методология клиентской ценности (по Гордееву) + роль Value Officer
 - [[06_marketing/company-ontology]] — онтология компании (13 классов сущностей + ~40 типов рёбер, клон сотрудника как subgraph, специфика РФ) — фундамент архитектуры «второго мозга»
 
-## Баги и инциденты (`03_bugs/`)
-_пусто_
-
-## Архив (`04_archive/`)
-_пусто_
-
 ## Инфраструктура агента Claude Code
 
 - `.claude/settings.json` — hooks (PreToolUse: блок `git push main/master`, `rm -rf /`, `DROP TABLE`; Stop: ворнинг про забытый second-brain после коммита в `backend/src` / `frontend/src` / `*.prisma`) + permissions deny для `.env` / секретов / ключей
@@ -227,7 +233,9 @@ _пусто_
 - `.mcp.json` — playwright MCP (UI-тесты)
 
 ---
-_Обновлён: 2026-05-27 (Billing/Tochka/Referrals/DaData backend реализован — 8 коммитов на ветке `feature/billing-tochka-referral-dadata`, 5 новых модулей (`billing` + `inn-lookup` + `meetings-balance` + `referrals` + Tochka-провайдер), 10 Prisma-моделей, 36 ENV, 139 unit-тестов. Фаза 7 (Tochka production OAuth) — операция владельца, Фаза 9 (frontend) — отдельная сессия. Рефлексия: [[05_история/2026-05-27-billing-tochka-referrals-dadata-implementation]])._
+_Обновлён: 2026-06-17 (аудит и рефакторинг структуры/доков: ретайр `delivery/`, факт-фиксы (9→13 типов встреч, DeepSeek/LlmRouter вместо Claude, in-process воркеры, route-group `(admin)`), консолидация дублей (RBAC/concierge), вычистка всех комментариев из кода, консервативный dead-code, архивация 39 реализованных ТЗ + репойнт ссылок, ре-индекс этого файла. Рефлексия: [[05_история/2026-06-17-audit-refaktoring-struktury-i-doks]])._
+
+_Предыдущий: 2026-05-27 (Billing/Tochka/Referrals/DaData backend реализован — 8 коммитов на ветке `feature/billing-tochka-referral-dadata`, 5 новых модулей (`billing` + `inn-lookup` + `meetings-balance` + `referrals` + Tochka-провайдер), 10 Prisma-моделей, 36 ENV, 139 unit-тестов. Фаза 7 (Tochka production OAuth) — операция владельца, Фаза 9 (frontend) — отдельная сессия. Рефлексия: [[05_история/2026-05-27-billing-tochka-referrals-dadata-implementation]])._
 
 _Предыдущий: 2026-05-26 (ТЗ Simulation Harness опубликован: внутренний QA-стенд месяца работы компании на 20 человек, реальные DeepSeek через ~70 cron'ов, unit-economics через AiUsageLog, kill-switch + бюджетный gate, 14 smoke-assert'ов, 8 фаз. Commit `dc7550c`)._
 

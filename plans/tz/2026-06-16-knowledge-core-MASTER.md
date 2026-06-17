@@ -342,5 +342,33 @@ Severity проставлен скептиком ПОСЛЕ опровержен
   reconcile-cron; ai-jobs при новых taskType); `prod-deploy-log.md` + `feature-flags.md` при затронутых schema/scripts/ENV/флагах.
 - Рефлексия записана; реестр не-сделано обновлён (строка-указатель на этот файл закрывается по мере волн).
 
-## 9. Итог
-_(заполняет исполняющая сессия по завершении волн: что реализовано, что осталось, что отложено.)_
+## 9. Итог (исполнено 2026-06-16/17, ветка `feature/knowledge-core-master`)
+
+**Реализовано целиком — 7 волн, 21 коммит (`ee96aea7`..), 4 миграции БД.** Верификация:
+`typecheck`+`build`+`eslint` зелёные на каждой волне; полный `test:unit` (5451 тест) — зелёный
+после фикса 2 регрессий, пойманных suite (intake undefined-guard, goals coreQueue-мок).
+
+- **Волна 0** — `signal-type-label.ts` (словарь код→ярлык, 56/56 enum) + хаб ярлыков.
+- **Волна 1 (HIGH)** — Б1 P2002-в-tx (pre-check ×4), Б2 soft-delete рёбер (ACTIVE_LINK_FILTER ×18 + archived),
+  Б3/48/49 коллизия decision (guard+enrich+tx), Б4 reconcile draft-блоков (BlockDistillReconcileCron).
+- **Волна 2 (пласт A)** — 30 промпт-агентов перенесены/реконструированы по методологии (6 пачек) +
+  парс-фиксы Б38/Б40/Б58/Б59; 31 снапшот-spec. A2/A3 реконструированы (текст не был инлайн).
+- **Волна 3 (36 MED)** — все классы K1–K14: partial-unique, atomicity/reconcile, soft-delete/gate,
+  source-block дедуп, cost-runaway (negative-cache, LATERAL HNSW), dataClass, validAt, card-rollup,
+  кластеризация (embedding+flush+guard, удалена мёртвая очередь idea-clusterer), persona, сегментация, гейт.
+- **Волна 4 (пласт C, task-dedup Ф0–Ф5)** — гейт качества задачи; дедуп задач (`task-dedup-arbiter`,
+  IntakeIssue.suggestedDuplicateOfIssueId); петля разговор→кандидат (`TaskClosureCandidate`,
+  `task-closure-verify`, handler, provider); reconcile+reopen-метрика; supersede→review (Issue.closureReview*,
+  TaskReviewProvider); вектор целей (Goal.embedding+HNSW, goal-embed.worker, backfill, KNN-дедуп). Б34 поглощён Ф5.
+- **Волна 5 (19 LOW)** — детерминизм/идемпотентность/докстринги (Б41–Б57 остаток).
+- **Волна 6 (G1–G8)** — верификация→фикс: G1 (обход feature.graph + throttle), G2 (vector-literal guard,
+  весь класс READ-точек), G3 (батчинг BFS), G4a/G6 (condition-UPDATE), G7 (дедуп). G8/G4b/projection
+  ОПРОВЕРГНУТЫ проверкой кода (verify-before-fix спас от регрессии). G5 → отложено (см. ниже).
+
+**Отложено (осознанно, с ТЗ):** G5 (DLQ + per-queue конфиг очередей) — enhancement надёжности, острое
+закрыто Б32/Б33; контракт — `plans/tz/2026-06-17-knowledge-core-queue-dlq-per-queue-config.md`, строка в реестре не-сделано.
+
+**Вне scope (как и в исходном ТЗ):** клон-агенты M5 (отдельная сессия); сам LLM-классификатор intent (смежное ТЗ, Ф0 потребляет результат).
+
+**Прод:** 4 миграции (авто), postgres-init (4 partial-unique + Goal HNSW), 2 seed-маршрута + backfill (в STEPS),
+новые ENV/AdminSetting (опц., default). Полная инструкция — `docs/operations/prod-deploy-log.md` (блок 2026-06-17).

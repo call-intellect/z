@@ -60,6 +60,7 @@ import { DigitizedSummaryWidget } from './widgets/DigitizedSummaryWidget';
 import { TeamActivityWidget } from './widgets/TeamActivityWidget';
 import { ValueStripWidget } from './widgets/ValueStripWidget';
 import { VerdictBar } from './widgets/VerdictBar';
+import { CoraFeedWidget } from '@/ui/components/feed/CoraFeedWidget';
 
 /**
  * Экран «Сегодня» (бывшая «Главная»), редизайн Ф1 cabinet-redesign-rhythms.
@@ -192,6 +193,11 @@ export function DirectorDashboardClient() {
   );
   const isOwnOrg = currentMembership ? !currentMembership.isReferenceDemo : true;
   const isOwnerOrAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  // Управление вопросами Коры доступно владельцу/админу/операционному директору.
+  const canControlFeed =
+    currentOrgRole === 'owner' ||
+    currentOrgRole === 'admin' ||
+    currentOrgRole === 'coo';
 
   const isPageEmpty =
     isOwnOrg &&
@@ -437,6 +443,16 @@ export function DirectorDashboardClient() {
           <TeamActivityWidget orgId={currentOrgId} />
           <DayFeedCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
         </div>
+        {/* ── 6.5. Лента Коры (поток событий + контроль вопросов) ───────── */}
+        {currentOrgId && (
+          <div className="mb-6">
+            <CoraFeedWidget
+              variant="compact"
+              orgId={currentOrgId}
+              canControl={canControlFeed}
+            />
+          </div>
+        )}
         <div className="mb-6">
           <ProbeUnansweredPill count={probeUnanswered} />
         </div>

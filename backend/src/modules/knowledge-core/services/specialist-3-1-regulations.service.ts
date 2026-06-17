@@ -388,6 +388,18 @@ export class Specialist31Service {
       });
 
       if (verdict.decision === 'new' || !verdict.targetId) {
+        // Ф1 (форматтер на создании) — структурный contentMd компилятором уже
+        // на ПЕРВОЙ версии (режим СОЗДАНИЕ: existingContentMd=''). На fallback
+        // (null: kill-switch OFF / ошибка LLM / пустой) — legacy: сырой statement.
+        const compiled = await this.tryCompileContent({
+          kind: 'regulation',
+          tenantId: block.tenantId,
+          name: draft.name,
+          existingContentMd: '',
+          newStatement: draft.statement,
+          block,
+        });
+        const bodyMd = compiled?.contentMd ?? draft.statement;
         regulation = await this.prisma.regulation.upsert({
           where: {
             tenantId_name: { tenantId: block.tenantId, name: draft.name },
@@ -402,11 +414,14 @@ export class Specialist31Service {
             dataClassAudit: dcRes.dataClassAudit,
             confidence: draft.confidence ?? null,
             category: draft.category === 'standard' ? 'standard' : 'regulation',
+            // contentMd обновляем ТОЛЬКО при успешной компиляции (на name-collision
+            // не затираем структурное тело сырым statement — legacy не трогал contentMd).
+            ...(compiled ? { contentMd: bodyMd } : {}),
           },
           create: {
             tenantId: block.tenantId,
             name: draft.name,
-            contentMd: draft.statement,
+            contentMd: bodyMd,
             statement: draft.statement,
             category: draft.category === 'standard' ? 'standard' : 'regulation',
             confidence: draft.confidence ?? null,
@@ -418,6 +433,40 @@ export class Specialist31Service {
             dataClassAudit: dcRes.dataClassAudit,
           },
         });
+        // Ф1 — на успешной компиляции фиксируем v1-снимок CardVersion одной
+        // транзакцией (зеркало merge-ветки :470). nextCardVersion→1 у новой карточки.
+        if (compiled) {
+          const persisted = regulation;
+          const newVersion = await this.nextCardVersion(
+            block.tenantId,
+            'regulation',
+            persisted.id,
+          );
+          regulation = await this.prisma.$transaction(async (tx) => {
+            const cv = await tx.cardVersion.create({
+              data: {
+                tenantId: block.tenantId,
+                resourceType: 'regulation',
+                resourceId: persisted.id,
+                version: newVersion,
+                payload: {
+                  contentMd: compiled.contentMd,
+                  steps: compiled.steps,
+                  signals: compiled.signals,
+                  changeReasonText: compiled.changeReason,
+                } as unknown as Prisma.InputJsonValue,
+                changeReason: 'create',
+                trustTier: 'auto',
+                previousVersionId: persisted.currentVersionId,
+                createdByUserId: null,
+              },
+            });
+            return tx.regulation.update({
+              where: { id: persisted.id },
+              data: { currentVersionId: cv.id, version: newVersion },
+            });
+          });
+        }
       } else {
         // merge / extension / contradicts → загружаем существующую и обновляем.
         const existing = await this.prisma.regulation.findUnique({
@@ -625,12 +674,23 @@ export class Specialist31Service {
         kind: 'process',
       });
       if (verdict.decision === 'new' || !verdict.targetId) {
+        // Ф1 — структурное описание процесса компилятором на создании (режим
+        // СОЗДАНИЕ). Тело процесса хранится в Process.description. fallback → statement.
+        const compiled = await this.tryCompileContent({
+          kind: 'process',
+          tenantId: block.tenantId,
+          name: processName,
+          existingContentMd: '',
+          newStatement: draft.statement,
+          block,
+        });
+        const bodyMd = compiled?.contentMd ?? draft.statement;
         proc = await this.prisma.process.upsert({
           where: {
             tenantId_name: { tenantId: block.tenantId, name: processName },
           },
           update: {
-            description: draft.statement,
+            description: bodyMd,
             scope: draft.scope ?? undefined,
             ownerPersonId: ownerPersonId ?? undefined,
             sourceBlockIds: { set: this.union(sourceBlockIds, []) },
@@ -642,7 +702,7 @@ export class Specialist31Service {
           create: {
             tenantId: block.tenantId,
             name: processName,
-            description: draft.statement,
+            description: bodyMd,
             scope: draft.scope ?? null,
             ownerPersonId: ownerPersonId ?? null,
             sourceBlockIds,
@@ -652,6 +712,40 @@ export class Specialist31Service {
             confidence: draft.confidence ?? null,
           },
         });
+        // Ф1 — v1-снимок CardVersion (process: версия через nextCardVersion,
+        // финальный update ставит только currentVersionId — у Process нет version).
+        if (compiled) {
+          const persisted = proc;
+          const newVersion = await this.nextCardVersion(
+            block.tenantId,
+            'process',
+            persisted.id,
+          );
+          proc = await this.prisma.$transaction(async (tx) => {
+            const cv = await tx.cardVersion.create({
+              data: {
+                tenantId: block.tenantId,
+                resourceType: 'process',
+                resourceId: persisted.id,
+                version: newVersion,
+                payload: {
+                  contentMd: compiled.contentMd,
+                  steps: compiled.steps,
+                  signals: compiled.signals,
+                  changeReasonText: compiled.changeReason,
+                } as unknown as Prisma.InputJsonValue,
+                changeReason: 'create',
+                trustTier: 'auto',
+                previousVersionId: persisted.currentVersionId,
+                createdByUserId: null,
+              },
+            });
+            return tx.process.update({
+              where: { id: persisted.id },
+              data: { currentVersionId: cv.id },
+            });
+          });
+        }
       } else {
         const existing = await this.prisma.process.findUnique({
           where: { id: verdict.targetId },
@@ -887,12 +981,22 @@ export class Specialist31Service {
         kind: 'policy',
       });
       if (verdict.decision === 'new' || !verdict.targetId) {
+        // Ф1 — структурный contentMd политики компилятором на создании. fallback → statement.
+        const compiled = await this.tryCompileContent({
+          kind: 'policy',
+          tenantId: block.tenantId,
+          name: draft.name,
+          existingContentMd: '',
+          newStatement: draft.statement,
+          block,
+        });
+        const bodyMd = compiled?.contentMd ?? draft.statement;
         policy = await this.prisma.policy.upsert({
           where: {
             tenantId_name: { tenantId: block.tenantId, name: draft.name },
           },
           update: {
-            contentMd: draft.statement,
+            contentMd: bodyMd,
             severity,
             scope: draft.scope ?? undefined,
             ownerPersonId: ownerPersonId ?? undefined,
@@ -905,7 +1009,7 @@ export class Specialist31Service {
           create: {
             tenantId: block.tenantId,
             name: draft.name,
-            contentMd: draft.statement,
+            contentMd: bodyMd,
             severity,
             scope: draft.scope ?? null,
             ownerPersonId: ownerPersonId ?? null,
@@ -916,6 +1020,40 @@ export class Specialist31Service {
             confidence: draft.confidence ?? null,
           },
         });
+        // Ф1 — v1-снимок CardVersion (policy: версия через nextCardVersion,
+        // финальный update ставит только currentVersionId — у Policy нет version).
+        if (compiled) {
+          const persisted = policy;
+          const newVersion = await this.nextCardVersion(
+            block.tenantId,
+            'policy',
+            persisted.id,
+          );
+          policy = await this.prisma.$transaction(async (tx) => {
+            const cv = await tx.cardVersion.create({
+              data: {
+                tenantId: block.tenantId,
+                resourceType: 'policy',
+                resourceId: persisted.id,
+                version: newVersion,
+                payload: {
+                  contentMd: compiled.contentMd,
+                  steps: compiled.steps,
+                  signals: compiled.signals,
+                  changeReasonText: compiled.changeReason,
+                } as unknown as Prisma.InputJsonValue,
+                changeReason: 'create',
+                trustTier: 'auto',
+                previousVersionId: persisted.currentVersionId,
+                createdByUserId: null,
+              },
+            });
+            return tx.policy.update({
+              where: { id: persisted.id },
+              data: { currentVersionId: cv.id },
+            });
+          });
+        }
       } else {
         const existing = await this.prisma.policy.findUnique({
           where: { id: verdict.targetId },
@@ -1122,12 +1260,23 @@ export class Specialist31Service {
         draft.extractionStatus,
       );
 
-      const instruction = await this.prisma.instruction.upsert({
+      // Ф1 — компилятор для instruction (раньше НЕ вызывался вообще). Режим
+      // СОЗДАНИЕ; fallback (null) → legacy сырой statement.
+      const compiled = await this.tryCompileContent({
+        kind: 'instruction',
+        tenantId: block.tenantId,
+        name: draft.name,
+        existingContentMd: '',
+        newStatement: draft.statement,
+        block,
+      });
+      const bodyMd = compiled?.contentMd ?? draft.statement;
+      let instruction = await this.prisma.instruction.upsert({
         where: {
           tenantId_name: { tenantId: block.tenantId, name: draft.name },
         },
         update: {
-          contentMd: draft.statement,
+          contentMd: bodyMd,
           statement: draft.statement,
           scope: draft.scope ?? undefined,
           forRole: forRole ?? undefined,
@@ -1142,7 +1291,7 @@ export class Specialist31Service {
         create: {
           tenantId: block.tenantId,
           name: draft.name,
-          contentMd: draft.statement,
+          contentMd: bodyMd,
           statement: draft.statement,
           scope: draft.scope ?? null,
           forRole: forRole ?? null,
@@ -1155,6 +1304,40 @@ export class Specialist31Service {
           confidence: draft.confidence ?? null,
         },
       });
+      // Ф1 — v1-снимок CardVersion (instruction имеет version + currentVersionId,
+      // как regulation).
+      if (compiled) {
+        const persisted = instruction;
+        const newVersion = await this.nextCardVersion(
+          block.tenantId,
+          'instruction',
+          persisted.id,
+        );
+        instruction = await this.prisma.$transaction(async (tx) => {
+          const cv = await tx.cardVersion.create({
+            data: {
+              tenantId: block.tenantId,
+              resourceType: 'instruction',
+              resourceId: persisted.id,
+              version: newVersion,
+              payload: {
+                contentMd: compiled.contentMd,
+                steps: compiled.steps,
+                signals: compiled.signals,
+                changeReasonText: compiled.changeReason,
+              } as unknown as Prisma.InputJsonValue,
+              changeReason: 'create',
+              trustTier: 'auto',
+              previousVersionId: persisted.currentVersionId,
+              createdByUserId: null,
+            },
+          });
+          return tx.instruction.update({
+            where: { id: persisted.id },
+            data: { currentVersionId: cv.id, version: newVersion },
+          });
+        });
+      }
 
       // Эмбеддинг (best-effort) — для будущего KNN-дедупа инструкций.
       await this.tryWriteInstructionEmbedding({

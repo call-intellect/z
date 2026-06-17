@@ -769,6 +769,7 @@ erDiagram
 - AI metadata: `sourceBlockIds String[]`, `confidence Decimal(4,3)?`, `createdManually @default(true)`.
 - Внешний источник: `externalSource?` (email/telegram/checkin/meeting/api/manual), `externalId?`.
 - `entityId?` для графа, `createdById String`, soft-delete `deletedAt?`.
+- **task-dedup Ф4 (knowledge-core MASTER, 2026-06-16, миграция `20260617002427_issue_closure_review`):** `closureReviewState String? @db.VarChar(24)` (null | `superseded_decision`), `closureReviewReason? @db.Text`, `closureReviewAt DateTime?` — задача попадает «под вопрос», когда supersede связанного решения (`specialist-3-3-decisions`) ставит её на пересмотр. Индекс `@@index([tenantId, closureReviewState])`. Поднимается в Action Center провайдером `TaskReviewPendingProvider` («задача под вопросом»).
 
 ### IssueAssignee (M2M), IssueSubscriber, IssueMention (с commentId? FK), Label (per-project или global), IssueLabel
 - Стандартные M2M структуры, см. schema.prisma.
@@ -806,6 +807,15 @@ erDiagram
 - AI-предложения: `suggestedProjectId?, suggestedAssigneeId?, suggestedGoalId?, suggestedPriority?, suggestedDueDate?, suggestedLabels String[], confidence Decimal(4,3)?`.
 - Триаж: `triagedByUserId?, triagedAt?, rejectedReason?, snoozedUntil?`.
 - Если accept — создаётся Issue, ссылка в `createdIssueId?`.
+- **task-dedup Ф1 (knowledge-core MASTER, 2026-06-16, миграция `20260616233329_task_dedup_intake_suggested_duplicate`):** `suggestedDuplicateOfIssueId String?` — кандидат-дубль, найденный дедупом (`TaskDedupService`: embedding-KNN-кандидаты + LLM-арбитр `task-dedup-arbiter` в серой зоне) ещё на входе в трекер.
+
+### TaskClosureCandidate (task-dedup Ф2 — петля разговор→кандидат закрытия)
+**knowledge-core MASTER, 2026-06-16, миграция `20260617000614_task_closure_candidate`, `@map`-имя по умолчанию.**
+- `tenantId, issueId, sourceBlockId` — задача и блок графа, который предположительно её закрывает.
+- `status @db.VarChar(16) @default("pending")`, `matchSimilarity Decimal(4,3)?`, `confidence Decimal(4,3)?`, `rationale? @db.Text`, `evidenceQuote? @db.Text`.
+- Решение: `decidedByUserId?`, `decidedAt?`, `expiresAt?` + `createdAt/updatedAt`.
+- Индексы: `@@unique([tenantId, issueId, sourceBlockId])` (идемпотентность кандидата), `@@index([tenantId, status])`, `@@index([issueId])`.
+- Создаётся `TaskCompletionHandler` (`@OnEvent('task.completion_signalled')`, эмитит `RouterService` на блоках `signalType='task_completed'`/ручном закрытии) после верификации taskType `task-closure-verify`. Поднимается в Action Center провайдером `TaskClosurePendingProvider` («задача к закрытию»).
 
 ### IssueWebhook (исходящие webhooks для внешних интеграций)
 - `tenantId, name, url, secretKey String` (с префиксом `kora_wh_` + 32 байта random).
@@ -1233,6 +1243,8 @@ cachedBlocksCount Int?                                  // кэш числа б�
 > `progressStatus` — самостоятельная ось «движение для пульса», `status` (GoalStatus) остаётся жизненным циклом. Их не путать.
 >
 > **ТЗ-F 2026-06-05** ([`plans/tz/2026-06-05-goals-improvements.md`](../../plans/tz/2026-06-05-goals-improvements.md), ветка `feature/goals-improvements`): `ownerPersonId` — relation `GoalOwnerPerson` на `Person` с `onDelete: SetNull` и индексом `[tenantId, ownerPersonId]`; back-relation `Person.ownedGoals Goal[] @relation("GoalOwnerPerson")` (рядом с `ownedProcesses`/`ownedRegulations`). `cachedBlocksCount Int?` — кэш числа блоков последнего snapshot, чтобы «светофор уверенности» в списке считался без JOIN; обновляется `strategic-alignment.worker` тем же `tx.goal.update`. Поля `cachedAlignment`/`progressStatus` НЕ менялись.
+>
+> **task-dedup Ф5 (knowledge-core MASTER, 2026-06-16, миграция `20260617005105_goal_embedding`):** `embedding Unsupported("vector(1536)")?` (text-embedding-3-small по `name + description`) + `embeddingHash String?` (чтобы не пересчитывать без изменений). Считается воркером `GoalEmbedWorker` (очередь `core.goal-embed`); backfill `backfill-goal-embeddings.ts`. Питает KNN-дедуп целей в специалисте `3-14-goals`. **HNSW-индекс** на `Goal.embedding` (`vector_cosine_ops`, `WHERE embedding IS NOT NULL`) — в `backend/scripts/postgres-init.sql` (Prisma не умеет HNSW).
 
 ### `model GoalKeyResult` (новая) — измеримый ориентир, 0..N на цель
 
@@ -1741,5 +1753,13 @@ enum SkillTraitLayer {
 - Вопрос **не хранится целиком**: `questionPreview VarChar(200)` + `questionHash` (sha256).
 - Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
 - Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
+
+## knowledge-core MASTER — схема: partial-unique против гонки дублей (K1, 2026-06-16)
+
+**Источник:** [`plans/tz/2026-06-16-knowledge-core-MASTER.md`](../../plans/tz/2026-06-16-knowledge-core-MASTER.md) (Волна 3, K1+K11). Все три индекса — **partial-unique вне `schema.prisma`** (`@@unique` не умеет `WHERE`-условие), в `backend/scripts/postgres-init.sql`, ставятся `bun run apply-postgres-init` (идемпотентно, `CREATE UNIQUE INDEX IF NOT EXISTS`). Закрывают гонку, при которой два параллельных воркера создавали дубль на одну пару/синглтон/версию.
+
+- **`ConflictItem`** (Б7) — `uq_conflict_open ON "ConflictItem"("tenantId","resourceType","existingId","newId") WHERE status='open'` — один открытый конфликт на пару (full-unique со `status` запретил бы повторное открытие той же пары после закрытия).
+- **`KnowledgeGroup`** (Б18) — `uq_knowledge_group_singleton ON "KnowledgeGroup"("tenantId","kind") WHERE "refId" IS NULL` — один синглтон-singleton группы (leadership/council) на Org для `refId IS NULL` (department/personal с непустым refId проходят как раньше).
+- **`ExecutablePersona`** (Б... K11) — два partial-unique по версионированию персоны роли: `uq_executable_persona_role_version` (уникальность версии) + `uq_executable_persona_role_active` (одна активная персона на роль) — против гонки `nextVersion`, плодившей две active.
 
 [[../index|← index]]

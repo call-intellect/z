@@ -71,6 +71,32 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧠 2026-06-17 — Модуль усвоения (knowledge-core) MASTER: промпты + аудит-фиксы + дедуп задач (волны 0–6)
+
+> Контракт: ветка `feature/knowledge-core-master`, 18 коммитов (`ee96aea7`..`9c5218aa`). ТЗ: `plans/tz/2026-06-16-knowledge-core-MASTER.md` (зонтик) + 6 промпт-ТЗ + `plans/tz/2026-06-16-task-dedup-and-tracker-reconcile.md`. Отложено: `plans/tz/2026-06-17-knowledge-core-queue-dlq-per-queue-config.md` (G5, DLQ/per-queue — vNext). second-brain: `02_architecture/data-model.md`, `01_projects/ai-jobs.md`, `01_projects/workers-queues.md`, `01_projects/api-layer.md`, `02_architecture/module-map.md`, `04_не-сделано/README.md`.
+>
+> **Зачем для прода:** закрыты 59 аудит-багов (4 HIGH потери/утечки данных, 36 MED, 19 LOW); 30 промптов knowledge-core переписаны по методологии; реализован дедуп задач + петля «разговор→кандидат закрытия» (task-dedup, 6 фаз Ф0–Ф5); закрыты пробелы покрытия G1–G8 (в т.ч. обход платного `feature.graph` — G1, выручка).
+>
+> **4 миграции (авто). postgres-init: 4 partial-unique + 1 HNSW. 2 seed-маршрута + 1 backfill (все в STEPS). Новые ENV — опц., default. Docker rebuild backend обязателен.**
+
+- **Шаг 1 — ENV (опц., code-default — действий владельца НЕ требуют):** `TASK_RECONCILE_ENABLED` (kill-switch суточного task-reconcile-крона, default `true`); `ROUTER_FALLBACK_NEGATIVE_TTL_SECONDS` (negative-cache LLM-fallback, default 60 — весь fallback OFF по `ROUTER_LLM_FALLBACK_ENABLED=false`). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 1 — AdminSetting (опц., code-fallback — без сида работает на дефолтах):** `taskDedup.suggestThreshold` (0.88), `taskDedup.embedTimeoutMs`, `taskClosure.matchThreshold` (0.85), `taskClosure.autoConfirmThreshold` (0.95), `taskClosure.reopenRateAlert` (0.10), kill-switch'и `taskDedup.enabled` / `taskClosure.enabled` (ON). Доезжают перепрогоном агрегатора (уважает admin-override).
+- **Шаг 4 — Prisma (обязательно, авто — `prisma migrate deploy` в migrate-контейнере на `up`):** 4 аддитивные миграции (без потери данных): `20260616233329_task_dedup_intake_suggested_duplicate` (IntakeIssue.suggestedDuplicateOfIssueId), `20260617000614_task_closure_candidate` (модель TaskClosureCandidate), `20260617002427_issue_closure_review` (Issue.closureReviewState/Reason/At + индекс), `20260617005105_goal_embedding` (Goal.embedding `vector(1536)` + embeddingHash).
+- **Шаг 5 — postgres-init.sql (через `docker compose exec backend bun run apply-postgres-init`, идемпотентно; агрегатор на `up` гоняет сам):** 4 новых partial-unique (K1, защита от гонки дублей): `uq_conflict_open`, `uq_knowledge_group_singleton`, `uq_executable_persona_role_version`, `uq_executable_persona_role_active`; 1 HNSW: `goal_embedding_hnsw_cosine_idx` (Ф5, KNN-дедуп целей).
+- **Шаг 7 — Seed (2 LLM-маршрута, идемпотентны, в STEPS `phase:'seed-llm-routes'`):** `seed-llm-task-routes-task-dedup-arbiter.ts`, `seed-llm-task-routes-task-closure-verify.ts` (CHEAP_CHAIN). Прогон одним агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update`.
+- **Шаг 8 — Backfill (в STEPS `phase:'backfill'`, идемпотентен):** `backfill-goal-embeddings.ts` — посчитать `Goal.embedding` существующим целям (повтор = no-op; пропускает уже с embedding). Выполнится тем же `apply-prod-deploy.ts --mode update`.
+- **Шаг 11 — Docker rebuild backend** обязателен (4 модели/колонки в PrismaClient; новые cron `BlockDistillReconcileCron`/`TaskReconcileCron`, worker `GoalEmbedWorker` + очередь `core.goal-embed`; **удалена** очередь `core.idea-clusterer`; 2 новых taskType; новые pending-провайдеры `task_closure`/`task_review`; entitlement-гард на граф-эндпоинтах; 30 переписанных промптов): `docker compose up -d --build backend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) `/admin/ai-models` содержит `task-dedup-arbiter` и `task-closure-verify`;
+  - (б) логи backend: подняты `BlockDistillReconcileCron` (каждые 30 мин), `TaskReconcileCron` (03:00), `GoalEmbedWorker` (очередь `core.goal-embed`); нет ошибок от удалённой `core.idea-clusterer`;
+  - (в) FREE-тариф: `GET /api/v1/knowledge/entities/:id/graph` и `/blocks/:id/links` → 403 `entitlement_required` (платный `feature.graph` больше не обходится); на платном — 200;
+  - (г) `/search` при штатном эмбеддинге работает; при рассинхроне размерности модели — не 500, а деградация на BM25 (WARN в логах);
+  - (д) сигнал «сделал задачу X» из разговора → кандидат `task_closure` в очереди подтверждений (Issue НЕ закрыта); supersede решения → связанные задачи помечены `task_review` (не закрыты/не отменены).
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🐛 2026-06-16 — QA-багфиксы кабинета (пакет по итогам полного обхода)
 
 > Контракт: ветка `fix/qa-cabinet-bugfix-2026-06-16`, коммиты `e42b4ec3` (фронт), `9fa1ea12` (навигация настроек), `cf20473c` (бэкенд). ТЗ: `plans/tz/2026-06-16-qa-cabinet-bugfix-pack.md`.

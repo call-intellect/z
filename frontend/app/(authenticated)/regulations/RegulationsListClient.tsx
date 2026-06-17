@@ -52,6 +52,7 @@ import {
 import { Button } from '@/ui/shadcn/button';
 import { Input } from '@/ui/shadcn/input';
 import { cn } from '@/ui/shadcn/lib/utils';
+import { glass, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
 
 import {
   AdminError,
@@ -149,6 +150,24 @@ const CONTENT_MARKERS: ReadonlyArray<{
   { literal: 'изменено', variant: 'info' },
 ];
 
+/**
+ * Оглавление тела регламента (Ф5b): вытаскивает заголовки `## …` из markdown.
+ * id синхронизированы с теми, что `ContentMarkdown` проставляет на `<h2>`
+ * (`kb-h-0`, `kb-h-1`, …) — клик по пункту скроллит к соответствующему h2.
+ */
+function extractToc(md: string): { id: string; text: string }[] {
+  const out: { id: string; text: string }[] = [];
+  const re = /^##\s+(.+)$/gm;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = re.exec(md)) !== null) {
+    const text = m[1].trim();
+    out.push({ id: `kb-h-${i}`, text });
+    i++;
+  }
+  return out;
+}
+
 function RegulationsListContent() {
   const { currentOrgRole } = useAuth();
   const canApplyDirectly = ['owner', 'admin'].includes(currentOrgRole ?? '');
@@ -187,6 +206,9 @@ function RegulationsListContent() {
   const [supersedeTargetId, setSupersedeTargetId] = useState('');
   // C3: provenance-аккордеон раскрывается лениво по клику.
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  // Ф5b: ширина читаемой колонки в новой раскладке ('read' — узкая с TOC,
+  // 'wide' — широкая без правой колонки).
+  const [widthMode, setWidthMode] = useState<'read' | 'wide'>('read');
 
   // Debounce поиска (300 мс).
   useEffect(() => {
@@ -329,51 +351,436 @@ function RegulationsListContent() {
       .slice(0, 8);
   }, [groupedItems]);
 
+  // Ф5b: оглавление тела открытой записи для правой TOC-колонки.
+  const toc = useMemo(
+    () => extractToc(detail?.contentMd ?? ''),
+    [detail?.contentMd],
+  );
+
   if (isLoading && !data) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;
   if (error) return <AdminError message={error} onRetry={load} />;
   if (!data) return null;
 
-  return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-4">
-        <h1 className="text-2xl font-semibold">База знаний компании</h1>
-        <p className="mt-1 text-sm text-fg-secondary">
-          Кора оцифровала из ваших встреч и обсуждений.
-          {topTab === 'regulations' ? ` Найдено: ${data.total}.` : ''}
-        </p>
+  // Ф5b: общее число записей. В summary нет агрегата — складываем по видам;
+  // пока summary грузится, опираемся на total текущего (нефильтрованного) списка.
+  const summaryTotal = summary
+    ? summary.regulations +
+      summary.processes +
+      summary.instructions +
+      summary.policies
+    : data.total;
+
+  // ── Переиспользуемые фрагменты JSX (общие для старой и новой раскладок) ──
+
+  // Блок списка записей (без внешней обёртки-колонки).
+  const listBlock =
+    groupedItems.length === 0 ? (
+      <EmptyState
+        title="Регламентов пока нет"
+        description="Кора автоматически создаёт регламенты, процессы и политики из ваших встреч. Накопятся первые обсуждения — они появятся здесь."
+      />
+    ) : (
+      <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-card">
+        {groupedItems.map((r) => {
+          const isSelected =
+            selected?.id === r.id && selected.kind === r.kind;
+          const stepsCount =
+            r.kind === 'process' && 'steps' in r ? null : null;
+          void stepsCount;
+          return (
+            <li key={`${r.kind}:${r.id}`}>
+              <button
+                type="button"
+                onClick={() => setSelected({ id: r.id, kind: r.kind })}
+                className={cn(
+                  'flex w-full flex-col gap-1 px-4 py-3 text-left transition',
+                  isSelected ? 'bg-accent/5' : 'hover:bg-bg-overlay/40',
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Chip variant="info" size="sm">
+                    {REGULATION_KIND_LABEL[r.kind]}
+                  </Chip>
+                  <LifecycleChip
+                    status={r.status}
+                    extractionStatus={r.extractionStatus ?? null}
+                  />
+                  {r.kind === 'policy' && r.severity ? (
+                    <Chip variant={SEVERITY_CHIP[r.severity]} size="sm">
+                      {POLICY_SEVERITY_LABEL[r.severity]}
+                    </Chip>
+                  ) : null}
+                  <TrustBadge tier={r.trustTier} size="sm" />
+                </div>
+                {r.extractionStatus ? (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-fg-tertiary">
+                      Извлечение:
+                    </span>
+                    <Chip
+                      variant={EXTRACTION_CHIP[r.extractionStatus]}
+                      size="sm"
+                    >
+                      {EXTRACTION_STATUS_LABEL[r.extractionStatus]}
+                    </Chip>
+                  </div>
+                ) : null}
+                <div className="truncate text-sm font-medium text-fg-primary">
+                  {r.name}
+                </div>
+                {r.statement ? (
+                  <div className="line-clamp-2 text-xs text-fg-tertiary">
+                    {r.statement}
+                  </div>
+                ) : null}
+                <div className="text-xs text-fg-tertiary">
+                  {r.scope ? `Область: ${r.scope} · ` : ''}
+                  Обновлено{' '}
+                  {new Date(r.updatedAt).toLocaleDateString('ru-RU')}
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    );
+
+  // Фильтры: поиск + статус (над списком).
+  const filtersBlock = (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="relative max-w-md flex-1">
+        <Search
+          className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-tertiary"
+          aria-hidden
+        />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Поиск по названию или содержанию"
+          className="pl-8"
+        />
+      </div>
+      <select
+        value={statusFilter}
+        onChange={(e) =>
+          setStatusFilter(e.target.value as 'all' | RegulationStatusApi)
+        }
+        className="rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
+      >
+        {STATUS_FILTERS.map((f) => (
+          <option key={f.value} value={f.value}>
+            {f.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+
+  // Блок детали записи (вся условная цепочка состояний).
+  const detailBlock = !selected ? (
+    <p className="text-sm text-fg-tertiary">
+      Выберите запись слева, чтобы увидеть подробности и историю версий.
+    </p>
+  ) : detailLoading ? (
+    <AdminLoading rows={3} />
+  ) : detailError ? (
+    <AdminError message={detailError} onRetry={loadDetail} />
+  ) : !detail ? null : (
+    <article className="space-y-4">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip variant="info" size="sm">
+            {REGULATION_KIND_LABEL[detail.kind]}
+          </Chip>
+          <LifecycleChip
+            status={detail.status}
+            extractionStatus={detail.extractionStatus}
+          />
+          {detail.kind === 'policy' && detail.severity ? (
+            <Chip variant={SEVERITY_CHIP[detail.severity]} size="sm">
+              {POLICY_SEVERITY_LABEL[detail.severity]}
+            </Chip>
+          ) : null}
+          <TrustBadge tier={detail.trustTier} size="sm" />
+        </div>
+        {detail.extractionStatus ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-bg-overlay/30 px-2.5 py-1.5">
+            <span className="text-xs text-fg-secondary">
+              Статус извлечения:
+            </span>
+            <Chip
+              variant={EXTRACTION_CHIP[detail.extractionStatus]}
+              size="sm"
+            >
+              {EXTRACTION_STATUS_LABEL[detail.extractionStatus]}
+            </Chip>
+            {isDraftExtraction(detail.extractionStatus) ? (
+              <span className="text-xs text-fg-tertiary">
+                Это черновик — запись ещё обсуждается и пока не действует.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        <h2 className="text-lg font-semibold">{detail.name}</h2>
+        <dl className="grid grid-cols-1 gap-1 text-xs text-fg-tertiary sm:grid-cols-2">
+          {detail.scope ? (
+            <div>
+              <dt className="inline text-fg-secondary">Область: </dt>
+              <dd className="inline">{detail.scope}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt className="inline text-fg-secondary">Подтверждено: </dt>
+            <dd className="inline">
+              {detail.lastConfirmedAt
+                ? detail.lastConfirmedAt.toLocaleDateString('ru-RU')
+                : '—'}
+            </dd>
+          </div>
+          {detail.confidence !== null ? (
+            <div>
+              <dt className="inline text-fg-secondary">
+                Уверенность извлечения:{' '}
+              </dt>
+              <dd className="inline">
+                {(detail.confidence * 100).toFixed(0)}%
+              </dd>
+            </div>
+          ) : null}
+        </dl>
       </header>
 
-      {/* Верхний переключатель: регламенты vs шаблоны процессов (C2). */}
-      <div
-        role="tablist"
-        aria-label="Раздел"
-        className="mb-5 flex flex-wrap gap-1 border-b border-border-subtle"
-      >
-        {TOP_TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={topTab === t.key}
-            onClick={() => setTopTab(t.key)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition',
-              topTab === t.key
-                ? 'border-accent text-accent'
-                : 'border-transparent text-fg-secondary hover:text-fg-primary',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* C3: provenance-аккордеон — дословные цитаты-источники. */}
+      <SourcesAccordion
+        regulationId={detail.id}
+        kind={detail.kind}
+        count={detail.sourceBlockIds.length}
+        open={sourcesOpen}
+        onToggle={() => setSourcesOpen((v) => !v)}
+      />
 
-      {topTab === 'process-templates' ? (
-        <ProcessTemplatesClient />
-      ) : (
-        <>
-          {summary ? (
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium text-fg-primary">Содержание</h3>
+        {detail.statement && detail.statement !== detail.contentMd ? (
+          <p className="text-sm font-medium text-fg-primary">
+            {detail.statement}
+          </p>
+        ) : null}
+        {detail.contentMd ? (
+          <ContentMarkdown text={detail.contentMd} />
+        ) : detail.statement ? null : (
+          <p className="text-sm text-fg-tertiary">Текст пока не заполнен.</p>
+        )}
+      </section>
+
+      {detail.steps && detail.steps.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="text-sm font-medium text-fg-primary">
+            Шаги процесса
+          </h3>
+          <ol className="space-y-2">
+            {detail.steps.map((s) => (
+              <li
+                key={s.id}
+                className="rounded-md border border-border-subtle p-3 text-xs"
+              >
+                <div className="text-sm font-medium text-fg-primary">
+                  {s.order}. {s.name}
+                </div>
+                {s.description ? (
+                  <p className="mt-1 text-fg-secondary">{s.description}</p>
+                ) : null}
+                {s.slaMinutes ? (
+                  <p className="mt-1 text-fg-tertiary">
+                    SLA: ≈ {formatMinutes(s.slaMinutes)}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-medium text-fg-primary">Действия</h3>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleConfirm()}
+          >
+            <CheckCircle2 className="mr-1.5 h-4 w-4" />
+            Подтвердить актуальность
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setSupersedeOpen(true)}
+          >
+            <Replace className="mr-1.5 h-4 w-4" />
+            Заменить новой версией
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void toggleHistory()}
+          >
+            <History className="mr-1.5 h-4 w-4" />
+            {historyOpen ? 'Скрыть историю' : 'История версий'}
+          </Button>
+          <CardCorrectionActions
+            fields={buildRegulationCorrectionFields(detail)}
+            canApplyDirectly={canApplyDirectly}
+            trustTier={detail.trustTier}
+            onCorrect={(values, reason) =>
+              regulationsApi
+                .correct(detail.id, {
+                  kind: detail.kind,
+                  correctedPayload: values,
+                  ...(reason ? { reason } : {}),
+                })
+                .then((r) => ({ applied: r.applied }))
+            }
+            onDispute={(reason) =>
+              regulationsApi
+                .dispute(detail.id, {
+                  kind: detail.kind,
+                  ...(reason ? { reason } : {}),
+                })
+                .then(() => undefined)
+            }
+            onDone={() => {
+              void loadDetail();
+              void load();
+            }}
+          />
+        </div>
+      </section>
+
+      {historyOpen ? (
+        <section className="rounded-md border border-border-subtle bg-bg-overlay/20 p-3">
+          <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
+            История изменений
+          </h4>
+          {historyLoading ? (
+            <AdminLoading rows={2} />
+          ) : !history || history.items.length === 0 ? (
+            <p className="text-xs text-fg-tertiary">История пуста.</p>
+          ) : (
+            <ol className="space-y-2">
+              {history.items.map(mapVersionItem).map((v) => (
+                <li
+                  key={v.id}
+                  className="border-l-2 border-border-subtle pl-3"
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-medium text-fg-primary">
+                      Версия {v.version}
+                    </span>
+                    <span className="text-xs font-normal text-fg-tertiary">
+                      · {v.createdAt.toLocaleDateString('ru-RU')}
+                    </span>
+                    {v.source ? (
+                      <Chip variant="lavender" size="sm">
+                        {REGULATION_CHANGE_SOURCE_LABEL[v.source]}
+                      </Chip>
+                    ) : null}
+                  </div>
+                  {v.changeReason ? (
+                    <p className="mt-0.5 text-xs text-fg-secondary">
+                      <span className="font-medium text-fg-primary">
+                        Причина изменения:{' '}
+                      </span>
+                      {v.changeReason}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      ) : null}
+    </article>
+  );
+
+  // Диалог замены версией — общий для обеих раскладок.
+  const supersedeDialog = (
+    <ConfirmDialog
+      open={supersedeOpen}
+      onOpenChange={(open) => {
+        setSupersedeOpen(open);
+        if (!open) setSupersedeTargetId('');
+      }}
+      title="Заменить новой версией"
+      description={
+        <div className="space-y-2">
+          <p>
+            Текущая запись будет помечена как устаревшая, а новая — указанная
+            по идентификатору — займёт её место.
+          </p>
+          <Input
+            value={supersedeTargetId}
+            onChange={(e) => setSupersedeTargetId(e.target.value)}
+            placeholder="Идентификатор новой версии"
+            autoFocus
+          />
+        </div>
+      }
+      confirmLabel="Заменить"
+      onConfirm={handleSupersede}
+    />
+  );
+
+  // Гейт раскладки (Ф5b, kill-switch): дефолт — новая раскладка; пока summary
+  // грузится — тоже новая (redesignEnabled !== false). false → аварийный
+  // fallback на старую master-detail раскладку.
+  const redesignEnabled = summary?.redesignEnabled !== false;
+
+  if (!redesignEnabled) {
+    return (
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <header className="mb-4">
+          <h1 className="text-2xl font-semibold">База знаний компании</h1>
+          <p className="mt-1 text-sm text-fg-secondary">
+            Кора оцифровала из ваших встреч и обсуждений.
+            {topTab === 'regulations' ? ` Найдено: ${data.total}.` : ''}
+          </p>
+        </header>
+
+        {/* Верхний переключатель: регламенты vs шаблоны процессов (C2). */}
+        <div
+          role="tablist"
+          aria-label="Раздел"
+          className="mb-5 flex flex-wrap gap-1 border-b border-border-subtle"
+        >
+          {TOP_TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={topTab === t.key}
+              onClick={() => setTopTab(t.key)}
+              className={cn(
+                '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition',
+                topTab === t.key
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-fg-secondary hover:text-fg-primary',
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {topTab === 'process-templates' ? (
+          <ProcessTemplatesClient />
+        ) : (
+          <>
+            {summary ? (
             <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-secondary">
               <span className="text-fg-tertiary">В базе:</span>
               <Chip variant="info" size="sm">
@@ -460,386 +867,254 @@ function RegulationsListContent() {
         ))}
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative max-w-md flex-1">
-          <Search
-            className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-tertiary"
-            aria-hidden
-          />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск по названию или содержанию"
-            className="pl-8"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value as 'all' | RegulationStatusApi)
-          }
-          className="rounded-md border border-border-subtle bg-bg-card px-3 py-2 text-sm"
-        >
-          {STATUS_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <div className="mb-4">{filtersBlock}</div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         {/* Левая колонка: список */}
-        <div>
-          {groupedItems.length === 0 ? (
-            <EmptyState
-              title="Регламентов пока нет"
-              description="Кора автоматически создаёт регламенты, процессы и политики из ваших встреч. Накопятся первые обсуждения — они появятся здесь."
-            />
-          ) : (
-            <ul className="divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-card">
-              {groupedItems.map((r) => {
-                const isSelected =
-                  selected?.id === r.id && selected.kind === r.kind;
-                const stepsCount =
-                  r.kind === 'process' && 'steps' in r ? null : null;
-                void stepsCount;
-                return (
-                  <li key={`${r.kind}:${r.id}`}>
-                    <button
-                      type="button"
-                      onClick={() => setSelected({ id: r.id, kind: r.kind })}
-                      className={cn(
-                        'flex w-full flex-col gap-1 px-4 py-3 text-left transition',
-                        isSelected
-                          ? 'bg-accent/5'
-                          : 'hover:bg-bg-overlay/40',
-                      )}
-                    >
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Chip variant="info" size="sm">
-                          {REGULATION_KIND_LABEL[r.kind]}
-                        </Chip>
-                        <LifecycleChip
-                          status={r.status}
-                          extractionStatus={r.extractionStatus ?? null}
-                        />
-                        {r.kind === 'policy' && r.severity ? (
-                          <Chip
-                            variant={SEVERITY_CHIP[r.severity]}
-                            size="sm"
-                          >
-                            {POLICY_SEVERITY_LABEL[r.severity]}
-                          </Chip>
-                        ) : null}
-                        <TrustBadge tier={r.trustTier} size="sm" />
-                      </div>
-                      {r.extractionStatus ? (
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[11px] text-fg-tertiary">
-                            Извлечение:
-                          </span>
-                          <Chip
-                            variant={EXTRACTION_CHIP[r.extractionStatus]}
-                            size="sm"
-                          >
-                            {EXTRACTION_STATUS_LABEL[r.extractionStatus]}
-                          </Chip>
-                        </div>
-                      ) : null}
-                      <div className="truncate text-sm font-medium text-fg-primary">
-                        {r.name}
-                      </div>
-                      {r.statement ? (
-                        <div className="line-clamp-2 text-xs text-fg-tertiary">
-                          {r.statement}
-                        </div>
-                      ) : null}
-                      <div className="text-xs text-fg-tertiary">
-                        {r.scope ? `Область: ${r.scope} · ` : ''}
-                        Обновлено{' '}
-                        {new Date(r.updatedAt).toLocaleDateString('ru-RU')}
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
+        <div>{listBlock}</div>
 
         {/* Правая колонка: деталь */}
         <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
-          {!selected ? (
-            <p className="text-sm text-fg-tertiary">
-              Выберите запись слева, чтобы увидеть подробности и историю
-              версий.
-            </p>
-          ) : detailLoading ? (
-            <AdminLoading rows={3} />
-          ) : detailError ? (
-            <AdminError message={detailError} onRetry={loadDetail} />
-          ) : !detail ? null : (
-            <article className="space-y-4">
-              <header className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Chip variant="info" size="sm">
-                    {REGULATION_KIND_LABEL[detail.kind]}
-                  </Chip>
-                  <LifecycleChip
-                    status={detail.status}
-                    extractionStatus={detail.extractionStatus}
-                  />
-                  {detail.kind === 'policy' && detail.severity ? (
-                    <Chip variant={SEVERITY_CHIP[detail.severity]} size="sm">
-                      {POLICY_SEVERITY_LABEL[detail.severity]}
-                    </Chip>
-                  ) : null}
-                  <TrustBadge tier={detail.trustTier} size="sm" />
-                </div>
-                {detail.extractionStatus ? (
-                  <div className="flex flex-wrap items-center gap-2 rounded-md border border-border-subtle bg-bg-overlay/30 px-2.5 py-1.5">
-                    <span className="text-xs text-fg-secondary">
-                      Статус извлечения:
-                    </span>
-                    <Chip
-                      variant={EXTRACTION_CHIP[detail.extractionStatus]}
-                      size="sm"
-                    >
-                      {EXTRACTION_STATUS_LABEL[detail.extractionStatus]}
-                    </Chip>
-                    {isDraftExtraction(detail.extractionStatus) ? (
-                      <span className="text-xs text-fg-tertiary">
-                        Это черновик — запись ещё обсуждается и пока не
-                        действует.
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <h2 className="text-lg font-semibold">{detail.name}</h2>
-                <dl className="grid grid-cols-1 gap-1 text-xs text-fg-tertiary sm:grid-cols-2">
-                  {detail.scope ? (
-                    <div>
-                      <dt className="inline text-fg-secondary">Область: </dt>
-                      <dd className="inline">{detail.scope}</dd>
-                    </div>
-                  ) : null}
-                  <div>
-                    <dt className="inline text-fg-secondary">
-                      Подтверждено:{' '}
-                    </dt>
-                    <dd className="inline">
-                      {detail.lastConfirmedAt
-                        ? detail.lastConfirmedAt.toLocaleDateString('ru-RU')
-                        : '—'}
-                    </dd>
-                  </div>
-                  {detail.confidence !== null ? (
-                    <div>
-                      <dt className="inline text-fg-secondary">
-                        Уверенность извлечения:{' '}
-                      </dt>
-                      <dd className="inline">
-                        {(detail.confidence * 100).toFixed(0)}%
-                      </dd>
-                    </div>
-                  ) : null}
-                </dl>
-              </header>
-
-              {/* C3: provenance-аккордеон — дословные цитаты-источники. */}
-              <SourcesAccordion
-                regulationId={detail.id}
-                kind={detail.kind}
-                count={detail.sourceBlockIds.length}
-                open={sourcesOpen}
-                onToggle={() => setSourcesOpen((v) => !v)}
-              />
-
-              <section className="space-y-2">
-                <h3 className="text-sm font-medium text-fg-primary">
-                  Содержание
-                </h3>
-                {detail.statement &&
-                detail.statement !== detail.contentMd ? (
-                  <p className="text-sm font-medium text-fg-primary">
-                    {detail.statement}
-                  </p>
-                ) : null}
-                {detail.contentMd ? (
-                  <ContentMarkdown text={detail.contentMd} />
-                ) : detail.statement ? null : (
-                  <p className="text-sm text-fg-tertiary">
-                    Текст пока не заполнен.
-                  </p>
-                )}
-              </section>
-
-              {detail.steps && detail.steps.length > 0 ? (
-                <section className="space-y-2">
-                  <h3 className="text-sm font-medium text-fg-primary">
-                    Шаги процесса
-                  </h3>
-                  <ol className="space-y-2">
-                    {detail.steps.map((s) => (
-                      <li
-                        key={s.id}
-                        className="rounded-md border border-border-subtle p-3 text-xs"
-                      >
-                        <div className="text-sm font-medium text-fg-primary">
-                          {s.order}. {s.name}
-                        </div>
-                        {s.description ? (
-                          <p className="mt-1 text-fg-secondary">
-                            {s.description}
-                          </p>
-                        ) : null}
-                        {s.slaMinutes ? (
-                          <p className="mt-1 text-fg-tertiary">
-                            SLA: ≈ {formatMinutes(s.slaMinutes)}
-                          </p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ol>
-                </section>
-              ) : null}
-
-              <section className="space-y-2">
-                <h3 className="text-sm font-medium text-fg-primary">Действия</h3>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void handleConfirm()}
-                  >
-                    <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                    Подтвердить актуальность
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setSupersedeOpen(true)}
-                  >
-                    <Replace className="mr-1.5 h-4 w-4" />
-                    Заменить новой версией
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void toggleHistory()}
-                  >
-                    <History className="mr-1.5 h-4 w-4" />
-                    {historyOpen ? 'Скрыть историю' : 'История версий'}
-                  </Button>
-                  <CardCorrectionActions
-                    fields={buildRegulationCorrectionFields(detail)}
-                    canApplyDirectly={canApplyDirectly}
-                    trustTier={detail.trustTier}
-                    onCorrect={(values, reason) =>
-                      regulationsApi
-                        .correct(detail.id, {
-                          kind: detail.kind,
-                          correctedPayload: values,
-                          ...(reason ? { reason } : {}),
-                        })
-                        .then((r) => ({ applied: r.applied }))
-                    }
-                    onDispute={(reason) =>
-                      regulationsApi
-                        .dispute(detail.id, {
-                          kind: detail.kind,
-                          ...(reason ? { reason } : {}),
-                        })
-                        .then(() => undefined)
-                    }
-                    onDone={() => {
-                      void loadDetail();
-                      void load();
-                    }}
-                  />
-                </div>
-              </section>
-
-              {historyOpen ? (
-                <section className="rounded-md border border-border-subtle bg-bg-overlay/20 p-3">
-                  <h4 className="mb-2 text-xs font-medium uppercase tracking-wider text-fg-tertiary">
-                    История изменений
-                  </h4>
-                  {historyLoading ? (
-                    <AdminLoading rows={2} />
-                  ) : !history || history.items.length === 0 ? (
-                    <p className="text-xs text-fg-tertiary">
-                      История пуста.
-                    </p>
-                  ) : (
-                    <ol className="space-y-2">
-                      {history.items.map(mapVersionItem).map((v) => (
-                        <li
-                          key={v.id}
-                          className="border-l-2 border-border-subtle pl-3"
-                        >
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-xs font-medium text-fg-primary">
-                              Версия {v.version}
-                            </span>
-                            <span className="text-xs font-normal text-fg-tertiary">
-                              · {v.createdAt.toLocaleDateString('ru-RU')}
-                            </span>
-                            {v.source ? (
-                              <Chip variant="lavender" size="sm">
-                                {REGULATION_CHANGE_SOURCE_LABEL[v.source]}
-                              </Chip>
-                            ) : null}
-                          </div>
-                          {v.changeReason ? (
-                            <p className="mt-0.5 text-xs text-fg-secondary">
-                              <span className="font-medium text-fg-primary">
-                                Причина изменения:{' '}
-                              </span>
-                              {v.changeReason}
-                            </p>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ol>
-                  )}
-                </section>
-              ) : null}
-            </article>
-          )}
+          {detailBlock}
         </div>
       </div>
 
-      <ConfirmDialog
-        open={supersedeOpen}
-        onOpenChange={(open) => {
-          setSupersedeOpen(open);
-          if (!open) setSupersedeTargetId('');
-        }}
-        title="Заменить новой версией"
-        description={
-          <div className="space-y-2">
-            <p>
-              Текущая запись будет помечена как устаревшая, а новая —
-              указанная по идентификатору — займёт её место.
-            </p>
-            <Input
-              value={supersedeTargetId}
-              onChange={(e) => setSupersedeTargetId(e.target.value)}
-              placeholder="Идентификатор новой версии"
-              autoFocus
-            />
-          </div>
-        }
-        confirmLabel="Заменить"
-        onConfirm={handleSupersede}
-      />
+      {supersedeDialog}
         </>
       )}
+      </div>
+    );
+  }
+
+  // ── НОВАЯ раскладка (Ф5b): дерево слева · читаемая колонка · TOC справа ──
+
+  const TREE_TYPES: {
+    kind: RegulationKindApi;
+    label: string;
+    icon: string;
+    count: number;
+  }[] = [
+    {
+      kind: 'regulation',
+      label: 'Регламенты',
+      icon: '📕',
+      count: summary?.regulations ?? 0,
+    },
+    {
+      kind: 'process',
+      label: 'Процессы',
+      icon: '🔄',
+      count: summary?.processes ?? 0,
+    },
+    {
+      kind: 'instruction',
+      label: 'Инструкции',
+      icon: '📋',
+      count: summary?.instructions ?? 0,
+    },
+    {
+      kind: 'policy',
+      label: 'Политики',
+      icon: '🛡️',
+      count: summary?.policies ?? 0,
+    },
+  ];
+
+  return (
+    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      {/* Верхняя строка: заголовок + тумблер ширины */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4">
+        <div>
+          <h1 className="text-xl font-semibold text-fg-primary">
+            База знаний компании
+          </h1>
+          <p className="text-sm text-fg-tertiary">
+            Кора оцифровала из ваших встреч и обсуждений.
+          </p>
+        </div>
+        <div
+          role="group"
+          aria-label="Ширина колонки"
+          className="inline-flex rounded-xl border border-border-subtle p-1"
+          style={glass()}
+        >
+          {(['read', 'wide'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setWidthMode(m)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-sm transition',
+                widthMode === m
+                  ? 'bg-accent/15 text-fg-primary'
+                  : 'text-fg-tertiary hover:text-fg-primary',
+              )}
+            >
+              {m === 'read' ? 'Чтение' : 'Широкий'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3-зонная оболочка на всю ширину */}
+      <div
+        className="grid items-start gap-4 px-6 pb-12"
+        style={{
+          gridTemplateColumns:
+            widthMode === 'wide'
+              ? '280px minmax(0,1fr)'
+              : '280px minmax(0,1fr) 264px',
+        }}
+      >
+        {/* ЛЕВО — дерево */}
+        <aside
+          style={glass()}
+          className="sticky top-4 self-start rounded-2xl p-3"
+        >
+          <h3 className="mb-2 px-2 text-[11px] font-bold uppercase tracking-[0.14em] text-fg-tertiary">
+            База знаний
+          </h3>
+          {/* Вся база */}
+          <button
+            type="button"
+            onClick={() => {
+              setKindFilter('all');
+              setSelected(null);
+              setTopTab('regulations');
+            }}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm transition',
+              topTab === 'regulations' && kindFilter === 'all' && !selected
+                ? 'bg-accent/15 text-fg-primary'
+                : 'text-fg-secondary hover:bg-bg-overlay/40',
+            )}
+          >
+            <span>📚</span>
+            <span className="flex-1 text-left">Вся база</span>
+            <span className="rounded-full bg-bg-overlay/50 px-2 text-xs text-fg-tertiary">
+              {summaryTotal}
+            </span>
+          </button>
+          {/* Типы */}
+          {TREE_TYPES.map((t) => (
+            <button
+              key={t.kind}
+              type="button"
+              onClick={() => {
+                setKindFilter(t.kind);
+                setSelected(null);
+                setTopTab('regulations');
+              }}
+              className={cn(
+                'mt-0.5 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm transition',
+                topTab === 'regulations' && kindFilter === t.kind
+                  ? 'bg-accent/15 text-fg-primary'
+                  : 'text-fg-secondary hover:bg-bg-overlay/40',
+                t.count === 0 && 'opacity-60',
+              )}
+            >
+              <span>{t.icon}</span>
+              <span className="flex-1 text-left">{t.label}</span>
+              <span className="rounded-full bg-bg-overlay/50 px-2 text-xs text-fg-tertiary">
+                {t.count}
+              </span>
+            </button>
+          ))}
+          {/* Шаблоны процессов — сведены сюда (без отдельной верхней вкладки) */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(null);
+              setTopTab('process-templates');
+            }}
+            className={cn(
+              'mt-0.5 flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-sm transition',
+              topTab === 'process-templates'
+                ? 'bg-accent/15 text-fg-primary'
+                : 'text-fg-secondary hover:bg-bg-overlay/40',
+            )}
+          >
+            <span>🧩</span>
+            <span className="flex-1 text-left">Шаблоны процессов</span>
+          </button>
+          <p className="mt-2 px-2 text-[11px] leading-snug text-fg-tertiary">
+            Пустые типы Кора заполнит, как только их обсудят на встречах или
+            вы загрузите вручную.
+          </p>
+          <Link
+            href="/documents"
+            className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong px-3 py-2 text-sm text-fg-secondary transition hover:text-fg-primary"
+          >
+            ＋ Загрузить вручную
+          </Link>
+        </aside>
+
+        {/* ЦЕНТР — читаемая колонка */}
+        <main style={glass()} className="min-h-[70vh] rounded-2xl">
+          {topTab === 'process-templates' ? (
+            <div className="p-5">
+              <ProcessTemplatesClient />
+            </div>
+          ) : selected ? (
+            <div
+              className="mx-auto p-6"
+              style={{ maxWidth: widthMode === 'wide' ? 980 : 720 }}
+            >
+              {detailBlock}
+            </div>
+          ) : (
+            <div className="p-5">
+              <div className="mb-3 text-sm text-fg-tertiary">
+                Найдено: {data.total}
+              </div>
+              {filtersBlock}
+              <div className="mt-3">{listBlock}</div>
+            </div>
+          )}
+        </main>
+
+        {/* ПРАВО — TOC (скрыт в режиме «Широкий») */}
+        {widthMode !== 'wide' && (
+          <aside
+            style={glass()}
+            className="sticky top-4 self-start rounded-2xl p-4"
+          >
+            {selected && detail && toc.length > 0 ? (
+              <>
+                <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-fg-tertiary">
+                  На этой странице
+                </h4>
+                <nav className="space-y-0.5">
+                  {toc.map((h) => (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() =>
+                        document
+                          .getElementById(h.id)
+                          ?.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'start',
+                          })
+                      }
+                      className="block w-full truncate rounded-lg px-2.5 py-1.5 text-left text-sm text-fg-secondary transition hover:bg-bg-overlay/40 hover:text-fg-primary"
+                    >
+                      {h.text}
+                    </button>
+                  ))}
+                </nav>
+              </>
+            ) : (
+              <p className="text-xs text-fg-tertiary">
+                Выберите карточку слева — здесь появится оглавление и
+                источник.
+              </p>
+            )}
+          </aside>
+        )}
+      </div>
+
+      {supersedeDialog}
     </div>
   );
 }
@@ -1030,6 +1305,11 @@ function ContentMarkdown({ text }: { text: string }) {
     [segments],
   );
 
+  // Ф5b: счётчик `## …` заголовков — id `kb-h-N` синхронизированы с extractToc,
+  // чтобы клики в правой TOC-колонке скроллили к нужному заголовку. Сбрасываем
+  // на каждый рендер (порядок обхода h2 у react-markdown стабилен).
+  let h2Index = 0;
+
   return (
     <div className="space-y-2">
       {markers.length > 0 ? (
@@ -1042,7 +1322,14 @@ function ContentMarkdown({ text }: { text: string }) {
         </div>
       ) : null}
       <div className="prose prose-sm max-w-none text-sm text-fg-primary [&>*]:my-2">
-        <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+        <ReactMarkdown
+          rehypePlugins={[rehypeSanitize]}
+          components={{
+            h2: ({ node: _node, ...props }) => (
+              <h2 id={`kb-h-${h2Index++}`} {...props} />
+            ),
+          }}
+        >
           {cleanText || text}
         </ReactMarkdown>
       </div>

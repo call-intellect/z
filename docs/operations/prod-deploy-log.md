@@ -93,6 +93,25 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🔌 2026-06-17 — Bitrix24 SSR-установка из маркета + фиксы синка + sync-state + сотрудники/клиенты
+
+> Контракт: ветка `bitrixNext`, коммиты `b25802e0`, `efb09fa5`, `1f7021f5`. ТЗ:
+> `plans/tz/2026-06-17-bitrix24-install-ssr-and-recovery.md`. Рефлексия:
+> `second-brain/05_история/2026-06-17-bitrix-install-chatbox-sync-fixes.md`.
+
+- **Шаг 1 — ENV — проверить на проде:**
+  - `PUBLIC_HOST_URL` = публичный домен бэка (Bitrix install/oauth/event URL; пусто → фолбэк на `PUBLIC_FRONTEND_URL`). В dev — туннель.
+  - `BITRIX_CLIENT_ID` / `BITRIX_CLIENT_SECRET` — **обязательны** (refresh access-token; без них синк умирает через ~1ч). Заведены ранее — убедиться, что заполнены.
+  - Партнёрский кабинет Bitrix: обработчик установки `{PUBLIC_HOST_URL}/api/v1/bitrix/install/handler`, событие `.../install/event`, redirect_uri `.../oauth/callback`; scope `crm,user_basic,im`.
+- **Шаг 4 — Prisma — авто** (`migrate deploy`): `20260617130000_task_closure_candidate_to_public` — идемпотентный AGE-перенос `ag_catalog."TaskClosureCandidate"` → public (тот же класс трапа, что `..._bitrix_age_schema_fix`, но для таблицы из не-bitrix-миграции `..._task_closure_candidate`). Прочие pending-миграции ветки (`frozen_persona`, `task_dedup`, `issue_closure_review`, `goal_embedding`) — аддитивные, авто.
+- **Шаг 12 — Smoke:**
+  - Новые REST: `POST /api/v1/bitrix/install/bind`, `POST /api/v1/bitrix/integration/claim-by-domain`; `GET /api/v1/bitrix/integration/status` и `GET /api/v1/chatbox/integration/sync/status` теперь несут `runningScopes`/`activeSyncScope`.
+  - Фронт: `/accounts/magic-link/consume` (вход по одноразовой ссылке из iframe-визарда).
+  - В логах при старте: `Bitrix24 install URLs (партнёрский кабинет): handler=… event=… oauthCallback=…`.
+- **Код-фиксы (прод-шагов НЕ требуют):** `queue.remove(jobId)` перед `add` (bitrix+chatbox — фикс «повторный синк не запускается»); клиенты ChatBox → `Person.relationship=external`; менеджеры → `employee`; sync-state из BullMQ; разделение сотрудники/клиенты в директории «Команда».
+
+---
+
 ### 🧠 2026-06-17 — База знаний: форматтер на создании карточки + редизайн раздела (Ф1–Ф6)
 
 > Контракт: ветка `feature/knowledge-base-redesign-formatter`, коммиты `6e98d3a8..28b6217e` (8 коммитов: Ф1 форматтер-на-создании, Ф2 backfill, Ф3 граница промпта, Ф6 docType→hint, Ф4 нейминг, Ф5a backend-kill-switch, Ф5b редизайн). ТЗ: `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`. second-brain: `01_projects/regulations.md`, `02_architecture/knowledge-core.md`, `03_processes/specialist-3-1-regulations.md`. Реестр флагов — `docs/operations/feature-flags.md` (новая строка `knowledge_base.redesign.enabled`).

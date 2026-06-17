@@ -656,4 +656,29 @@ Read-маппер — единственное место, где дрейф ф�
 не молча получаешь `undefined` в JSX). Нашёл один такой дрейф — ищи остальные
 list/byId-эндпоинты (impact-graph / run_pipeline), это повторяемый конструкт.
 
+## BullMQ: фиксированный jobId + age-ретеншен = повторный add молча игнорируется
+
+`queue.add(name, data, { jobId })` с УЖЕ существующим в Redis jobId — **no-op** (BullMQ
+дедуплицирует по jobId). А `removeOnComplete/removeOnFail: { age }` держат завершённую
+джобу в очереди (часы) → детерминированный jobId (`{queue}-{tenantId}-{scope}`) после
+первого прогона блокирует ВСЕ последующие `enqueue` того же scope. Симптом: «синк не
+запускается повторно», в логах ни старта джобы, ни ошибки (тихо). Бил и Bitrix, и
+ChatBox одинаково (`bitrix-sync.queue.service.ts`, `chatbox-sync.queue.service.ts`).
+**Фикс:** `await queue.remove(jobId).catch(() => undefined)` ПЕРЕД `queue.add(...)` —
+снимает остаточную completed/failed-джобу, перезапуск гарантирован. Активную (running)
+джобу `remove` не трогает → дедуп конкурентных запусков сохраняется.
+Серверное «идёт ли синк» для UI — `queue.getJobState(jobId)`, считать running только
+`active|waiting|delayed|prioritized|waiting-children` (НЕ `completed`/`failed` — иначе
+из-за age-ретеншена баннер залипнет на часы).
+
+## Bitrix24 iframe install: DOMAIN в query, токены в теле; refresh обязателен
+
+Обработчик установки в iframe получает `DOMAIN` в **query-параметрах** URL, а
+`AUTH_ID/REFRESH_ID/member_id` — в **теле** POST (form-urlencoded). Читать домен из
+тела недостаточно → без домена нет `clientEndpoint` → синк не достучится. Брать
+`DOMAIN` из query (+ фолбэк на `referer`/`origin` с проверкой `*.bitrix24.*`).
+`user.get` отдаёт сотрудников и EMAIL уже на scope `user_basic` (не нужен `user`).
+`accessExpiresAt` протухает за ~1ч → **`BITRIX_CLIENT_ID/SECRET` обязательны** для
+refresh, иначе интеграция «умирает» после первого часа (синк падает `bitrix_misconfigured`).
+
 [[../index|← index]]

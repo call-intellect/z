@@ -626,6 +626,8 @@ function buildSettings(): SettingSeed[] {
     ['probe.replyClassifyMinConfidence', envFloat('PROBE_REPLY_CLASSIFY_MIN_CONFIDENCE', 0.6), 'low', 'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)'],
     // Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки probe-вопроса.
     ['probe.qualityJudgeEnabled', envBool('PROBE_QUALITY_JUDGE_ENABLED', true), 'low', 'Рубильник LLM-судьи качества формулировки уточняющего вопроса (probe): проверяет вопрос перед отправкой и при браке заменяет одним улучшенным регенератом (kill-switch, ON). Выкл → вопрос отправляется как сформулирован'],
+    // Probe Фаза 3 (2026-06-17) — выбор получателя probe по engagement.
+    ['probe.engagementRoutingEnabled', envBool('PROBE_ENGAGEMENT_ROUTING_ENABLED', true), 'low', 'Рубильник выбора получателя уточняющего вопроса (probe) по отзывчивости: из кандидатов вопрос идёт самому отзывчивому (engagement-снимок), а не первому по списку (kill-switch, ON). Выкл → берётся первый кандидат'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

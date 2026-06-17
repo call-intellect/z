@@ -200,6 +200,9 @@ const registry = new Map<string, ZodTypeAny>([
   // Probe Фаза 2 (2026-06-17) — kill-switch LLM-судьи качества формулировки
   // probe-вопроса (один регенерат при браке). ON.
   ['probe.qualityJudgeEnabled', z.boolean()],
+  // Probe Фаза 3 (2026-06-17) — kill-switch выбора получателя probe по
+  // engagement-снимку (самый отзывчивый из кандидатов). ON.
+  ['probe.engagementRoutingEnabled', z.boolean()],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

@@ -77,6 +77,21 @@ function makeMocks(args: {
   judgeResponse?: { text: string };
   judgeThrow?: Error;
   qualityJudgeEnabled?: boolean;
+  /**
+   * Probe Фаза 3 — список кандидатов-получателей (после rate-limit). По
+   * умолчанию ['user-1'] (один → выбор тривиален, старые тесты не задеты).
+   */
+  candidates?: string[];
+  /** Probe Фаза 3 — engagement-снимки в Redis (userId → rate-строка). */
+  engagement?: Record<string, string>;
+  /** Probe Фаза 3 — флаг probe.engagementRoutingEnabled (дефолт ON через fallback). */
+  engagementRoutingEnabled?: boolean;
+  /**
+   * Probe Фаза 3 — kind первого NotificationDelivery (mock findFirst). null →
+   * findFirst вернёт null (fallback метрики 'in_app'). undefined → findFirst
+   * возвращает null по умолчанию.
+   */
+  deliveryKind?: string | null;
 }): Mocks {
   const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
   const updateCalls: Array<{
@@ -84,6 +99,9 @@ function makeMocks(args: {
     data: Record<string, unknown>;
   }> = [];
 
+  // Probe Фаза 3 — kind первого NotificationDelivery. findFirst возвращает
+  // запись с channel.kind, если deliveryKind задан непустым; иначе null.
+  const deliveryKind = args.deliveryKind ?? null;
   const prisma = {
     probeEvent: {
       findUnique: vi.fn().mockResolvedValue(probe),
@@ -95,6 +113,13 @@ function makeMocks(args: {
             return { ...probe, ...params.data };
           },
         ),
+    },
+    notificationDelivery: {
+      findFirst: vi.fn().mockResolvedValue(
+        deliveryKind
+          ? { channelBinding: { channel: { kind: deliveryKind } } }
+          : null,
+      ),
     },
   } as unknown as PrismaService;
 
@@ -119,8 +144,9 @@ function makeMocks(args: {
     sendNotification: vi.fn().mockResolvedValue({ id: 'notif-disp-1' }),
   } as unknown as ConversationalService;
 
+  const candidates = args.candidates ?? ['user-1'];
   const probeService = {
-    filterByRateLimit: vi.fn().mockResolvedValue(['user-1']),
+    filterByRateLimit: vi.fn().mockResolvedValue(candidates),
     noteSent: vi.fn().mockResolvedValue(undefined),
   } as unknown as ProbeService;
 
@@ -157,13 +183,28 @@ function makeMocks(args: {
           ) {
             return args.qualityJudgeEnabled;
           }
+          if (
+            key === 'probe.engagementRoutingEnabled' &&
+            args.engagementRoutingEnabled !== undefined
+          ) {
+            return args.engagementRoutingEnabled;
+          }
           return fallback;
         },
       ),
   } as unknown as TypedConfigService;
 
+  // Probe Фаза 3 — engagement-снимки в Redis по ключу probe:engagement:<userId>.
+  const engagement = args.engagement ?? {};
   const redis = {
-    client: {} as unknown,
+    client: {
+      get: vi.fn().mockImplementation(async (key: string) => {
+        // ключ вида probe:engagement:<userId>
+        const userId = key.replace('probe:engagement:', '');
+        return engagement[userId] ?? null;
+      }),
+      set: vi.fn().mockResolvedValue('OK'),
+    } as unknown,
   } as unknown as RedisService;
 
   return {
@@ -579,5 +620,102 @@ describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качес�
     expect(
       vi.mocked(mocks.metrics.incProbeQualityJudged),
     ).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Probe Фаза 3 (2026-06-17) — выбор получателя по engagement + реальный kind
+ * метрики доставки.
+ */
+describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получателя по engagement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE = {
+    text: JSON.stringify({ question: 'Кто отвечает за это решение?' }),
+  };
+
+  it('2 кандидата (engagement 0.2 и 0.8) → выбран более отзывчивый (0.8)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      candidates: ['user-low', 'user-high'],
+      engagement: { 'user-low': '0.2', 'user-high': '0.8' },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-high' }),
+    );
+    expect(mocks.updateCalls[0]!.data.selectedRecipientId).toBe('user-high');
+  });
+
+  it('равный engagement (оба 0.5/оба отсутствуют) → меньший по строковому userId (детерминизм)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      // оба снимка отсутствуют в Redis → нейтраль 0.5 для обоих.
+      candidates: ['user-zzz', 'user-aaa'],
+      engagement: {},
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-aaa' }),
+    );
+  });
+
+  it('флаг probe.engagementRoutingEnabled=false → первый кандидат (candidates[0])', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      candidates: ['user-first', 'user-high'],
+      // у второго выше engagement, но флаг OFF — берём первого.
+      engagement: { 'user-first': '0.1', 'user-high': '0.9' },
+      engagementRoutingEnabled: false,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-first' }),
+    );
+  });
+
+  it('реальный kind: channel.kind=telegram → incProbeDispatched({kind:telegram})', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      deliveryKind: 'telegram',
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeDispatched),
+    ).toHaveBeenCalledWith(expect.objectContaining({ kind: 'telegram' }));
+  });
+
+  it('реальный kind: findFirst=null → fallback incProbeDispatched({kind:in_app})', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      deliveryKind: null,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeDispatched),
+    ).toHaveBeenCalledWith(expect.objectContaining({ kind: 'in_app' }));
   });
 });

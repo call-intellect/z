@@ -25,7 +25,10 @@ import {
 } from '../knowledge-core/prompts/probe-formulate.prompt';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
-import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
+import {
+  probeEngagementRedisKey,
+  probeTopicCooldownRedisKey,
+} from './probe-fatigue.util';
 import {
   PROBE_REASON_FALLBACK,
   PROBE_REASON_FALLBACK_DEFAULT,
@@ -235,8 +238,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // 2. Select recipient (round-robin — берём первого; engagement weight γ+).
-    const selectedUserId = candidates[0];
+    // 2. Select recipient. Probe Фаза 3 (G2, 2026-06-17) — выбор по engagement:
+    // самый отзывчивый из кандидатов получает вопрос (если флаг ON), иначе —
+    // прежний round-robin (первый кандидат).
+    const selectedUserId = await this.selectRecipient(candidates);
     if (!selectedUserId) return;
 
     // 2b. Probe Фаза 4 (R8) — recheck повода перед dispatch (answer-first lite).
@@ -333,7 +338,11 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         reason: probe.reason,
         status: 'dispatched',
       });
-      this.metrics.incProbeDispatched({ kind: 'in_app' });
+      // Probe Фаза 3 (G3, 2026-06-17) — реальный kind канала доставки в метрику
+      // вместо хардкода 'in_app': читаем первый NotificationDelivery (как
+      // ProbeResponseHandler.lookupDeliveryKind); fallback 'in_app'.
+      const dispatchedKind = await this.lookupDeliveryKind(notif.id);
+      this.metrics.incProbeDispatched({ kind: dispatchedKind ?? 'in_app' });
       // Probe Фаза 5 (R9) — topic cooldown: тема поднята → не доставать тем же
       // вопросом сразу повторно. Best-effort, не валит dispatch.
       await this.setTopicCooldown(probe.tenantId, probe.contentHash);
@@ -554,6 +563,87 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       );
     } catch {
       // graceful — cooldown не применится.
+    }
+  }
+
+  /**
+   * Probe Фаза 3 (G2, 2026-06-17) — выбор получателя по engagement-снимку.
+   *
+   * Из уже отфильтрованного rate-limit'ом списка `candidates` берём того, у кого
+   * максимальный engagement_rate (снимок пишет ProbePriorityCron в Redis по
+   * ключу `probeEngagementRedisKey`). Отсутствует/не парсится снимок → нейтраль
+   * 0.5. Tie-break — детерминированный: меньший `userId` (строковое сравнение)
+   * выигрывает при равном engagement (никакого Math.random — воспроизводимость).
+   *
+   * Kill-switch `probe.engagementRoutingEnabled` (AdminSetting, тип А, ON). При
+   * выключенном — прежний round-robin (первый кандидат). getDynamic / Redis
+   * упали → graceful: считаем все engagement нейтральными → вернётся первый по
+   * детерминированной сортировке (не падаем).
+   */
+  private async selectRecipient(candidates: string[]): Promise<string | undefined> {
+    if (candidates.length === 0) return undefined;
+    if (candidates.length === 1) return candidates[0];
+
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.engagementRoutingEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return candidates[0];
+
+    // engagement-снимок каждого кандидата (нейтраль 0.5 при отсутствии/ошибке).
+    const scored: Array<{ userId: string; rate: number }> = [];
+    for (const userId of candidates) {
+      let rate = 0.5;
+      try {
+        const raw = await this.redis.client.get(
+          probeEngagementRedisKey(userId),
+        );
+        const parsed = raw != null ? Number(raw) : Number.NaN;
+        if (Number.isFinite(parsed)) rate = parsed;
+      } catch {
+        // Redis down — нейтраль (graceful, не падаем).
+      }
+      scored.push({ userId, rate });
+    }
+
+    // Максимальный engagement; tie-break — меньший userId (детерминизм).
+    scored.sort((a, b) => {
+      if (b.rate !== a.rate) return b.rate - a.rate;
+      return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+    });
+    return scored[0]!.userId;
+  }
+
+  /**
+   * Probe Фаза 3 (G3, 2026-06-17) — реальный kind канала доставки probe.
+   * Берёт kind первого NotificationDelivery с привязанным channel (как
+   * ProbeResponseHandler.lookupDeliveryKind). Best-effort: ошибка → null →
+   * вызывающий ставит fallback 'in_app'.
+   */
+  private async lookupDeliveryKind(
+    notificationId: string,
+  ): Promise<string | null> {
+    try {
+      const d = await this.prisma.notificationDelivery.findFirst({
+        where: { notificationId },
+        include: { channelBinding: { include: { channel: true } } },
+      });
+      return d?.channelBinding?.channel?.kind ?? null;
+    } catch (err) {
+      this.logger.debug(
+        {
+          notificationId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-dispatcher: lookupDeliveryKind упал — fallback in_app',
+      );
+      return null;
     }
   }
 

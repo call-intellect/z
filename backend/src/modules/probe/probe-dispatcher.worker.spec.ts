@@ -68,6 +68,15 @@ function makeMocks(args: {
   llmThrow?: Error;
   probePriority?: number;
   reason?: string;
+  /**
+   * Probe Фаза 2 — ответ LLM-судьи качества (`probe-quality-judge`), вызов
+   * ИДЁТ ВТОРЫМ после probe-formulate. По умолчанию `{ok:true}` (вопрос
+   * полноценный, исходный сохраняется), чтобы старые dispatch-тесты не задевал
+   * регенерат. Передай свой judgeResponse/judgeThrow для тестов Ф2.
+   */
+  judgeResponse?: { text: string };
+  judgeThrow?: Error;
+  qualityJudgeEnabled?: boolean;
 }): Mocks {
   const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
   const updateCalls: Array<{
@@ -89,11 +98,20 @@ function makeMocks(args: {
     },
   } as unknown as PrismaService;
 
+  // Очередь LLM-вызовов: [0] probe-formulate, [1] probe-quality-judge.
   const llmCall = vi.fn();
   if (args.llmThrow) {
     llmCall.mockRejectedValueOnce(args.llmThrow);
   } else if (args.llmResponse) {
     llmCall.mockResolvedValueOnce(args.llmResponse);
+  }
+  // Второй вызов — судья качества (если флаг не выключен и reason не CDM).
+  if (args.judgeThrow) {
+    llmCall.mockRejectedValueOnce(args.judgeThrow);
+  } else {
+    llmCall.mockResolvedValueOnce(
+      args.judgeResponse ?? { text: JSON.stringify({ ok: true, issues: [] }) },
+    );
   }
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
@@ -111,6 +129,7 @@ function makeMocks(args: {
     incProbeDispatched: vi.fn(),
     incProbeRateLimitDropped: vi.fn(),
     incProbeExpired: vi.fn(),
+    incProbeQualityJudged: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {
@@ -124,12 +143,22 @@ function makeMocks(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
+    aiFeatures: { promptInjectionGuardEnabled: false },
     // Динамические крутилки (probe.immediatePushMinPriority=70,
-    // probe.topicCooldownHours=48) — мок отдаёт переданный fallback.
+    // probe.topicCooldownHours=48) — мок отдаёт переданный fallback. Для
+    // probe.qualityJudgeEnabled можно переопределить через qualityJudgeEnabled.
     getDynamic: vi
       .fn()
       .mockImplementation(
-        async (_key: string, _env: unknown, fallback: unknown) => fallback,
+        async (key: string, _env: unknown, fallback: unknown) => {
+          if (
+            key === 'probe.qualityJudgeEnabled' &&
+            args.qualityJudgeEnabled !== undefined
+          ) {
+            return args.qualityJudgeEnabled;
+          }
+          return fallback;
+        },
       ),
   } as unknown as TypedConfigService;
 
@@ -196,7 +225,8 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    // 2 LLM-вызова: probe-formulate + probe-quality-judge (Ф2, флаг ON).
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
     // Должен быть ровно один update — на status='dispatched'.
     expect(mocks.updateCalls).toHaveLength(1);
     const updateData = mocks.updateCalls[0]!.data;
@@ -388,5 +418,166 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
     expect(newPayload.formulatedQuestion).toBe(
       'Расскажете, как принимали это решение?',
     );
+  });
+});
+
+/**
+ * Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки + один регенерат.
+ * Судья вызывается ВТОРЫМ LLM-вызовом после probe-formulate. При браке и валидном
+ * rewrite → отправляется регенерат; иначе/при сбое → исходный (best-effort).
+ */
+describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качества', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE_RESPONSE = {
+    text: JSON.stringify({
+      question: 'Уточни по cardId clx9 кто owner?',
+    }),
+  };
+
+  it('судья ok=false + валидный rewrite → отправлен rewrite + метрика rewritten', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE_RESPONSE,
+      judgeResponse: {
+        text: JSON.stringify({
+          ok: false,
+          issues: ['has_code_or_english'],
+          rewrite: 'Кто отвечает за это решение?',
+        }),
+      },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    // sendNotification получил rewrite, а не исходный вопрос.
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за это решение?',
+        }),
+      }),
+    );
+    // В payload ProbeEvent сохранён тот же rewrite.
+    expect(mocks.updateCalls[0]!.data.payload).toEqual(
+      expect.objectContaining({
+        formulatedQuestion: 'Кто отвечает за это решение?',
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'rewritten' });
+  });
+
+  it('судья ok=true → отправлен исходный вопрос + метрика ok', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за этот склад?' }),
+      },
+      judgeResponse: { text: JSON.stringify({ ok: true, issues: [] }) },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за этот склад?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'ok' });
+  });
+
+  it('судья кинул ошибку → отправлен исходный + метрика kept_on_fail', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто согласовал бюджет?' }),
+      },
+      judgeThrow: new Error('judge proxy 500'),
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто согласовал бюджет?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'kept_on_fail' });
+  });
+
+  it('судья ok=false, но rewrite с латиницей/кодом → маркер-чек режет, отправлен исходный + kept_on_fail', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за решение?' }),
+      },
+      judgeResponse: {
+        text: JSON.stringify({
+          ok: false,
+          issues: ['vague'],
+          rewrite: 'Уточни owner по entity clx9f2a3b4c5d6e7f8?',
+        }),
+      },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за решение?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'kept_on_fail' });
+  });
+
+  it('флаг probe.qualityJudgeEnabled=false → судья не зван, отправлен исходный', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто владелец задачи?' }),
+      },
+      qualityJudgeEnabled: false,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    // Только один LLM-вызов (probe-formulate); судья не дёргался.
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто владелец задачи?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).not.toHaveBeenCalled();
   });
 });

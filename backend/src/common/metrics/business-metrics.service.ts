@@ -637,6 +637,8 @@ export class BusinessMetricsService implements OnModuleInit {
   private probeResponseUnclearTotal!: Counter<'original_reason'>;
   // ── Probe Фаза 5 (2026-06-11) — исход probe (калибровка Фазы 2) ──
   private probeOutcomeTotal!: Counter<'outcome' | 'reason'>;
+  // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
+  private probeQualityJudgedTotal!: Counter<'verdict'>;
   // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
   private ownerResolutionTotal!: Counter<'outcome'>;
   // ── Ф5/Ф6 assistant-channels (2026-06-12) — мост «каналы → помощник» ──
@@ -2670,6 +2672,12 @@ export class BusinessMetricsService implements OnModuleInit {
       name: 'probe_outcome_total',
       help: 'Probe Фаза 5 — исход probe: answered (ответил) | ignored (истёк без ответа), по reason. Калибровочный сигнал для Фазы 2 (LLM-judge ценности вопроса).',
       labelNames: ['outcome', 'reason'] as const,
+    });
+    // ── Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки вопроса ──
+    this.probeQualityJudgedTotal = this.getOrCreateCounter({
+      name: 'probe_quality_judged_total',
+      help: 'Probe Фаза 2 — вердикт LLM-судьи качества формулировки probe-вопроса: ok (вопрос полноценный) | rewritten (взят регенерат судьи) | kept_on_fail (судья упал/невалидный rewrite → отправлен исходный).',
+      labelNames: ['verdict'] as const,
     });
     // ── W2 autonomy (2026-06-12) — OwnerResolver («лестница владельца») ──
     this.ownerResolutionTotal = this.getOrCreateCounter({
@@ -6214,6 +6222,18 @@ export class BusinessMetricsService implements OnModuleInit {
     reason: string;
   }): void {
     this.probeOutcomeTotal.inc({ outcome: args.outcome, reason: args.reason });
+  }
+
+  /**
+   * Probe Фаза 2 (2026-06-17) — вердикт LLM-судьи качества формулировки
+   * probe-вопроса: ok (вопрос полноценный, шлём как есть) | rewritten (взят
+   * регенерат судьи) | kept_on_fail (судья упал / невалидный rewrite →
+   * отправлен исходный, best-effort).
+   */
+  incProbeQualityJudged(args: {
+    verdict: 'ok' | 'rewritten' | 'kept_on_fail';
+  }): void {
+    this.probeQualityJudgedTotal.inc({ verdict: args.verdict });
   }
 
   // ── Agents v2 Фаза B1 (2026-05-30) — AutoRule extract ────────────────

@@ -34,9 +34,46 @@ import {
 } from './probe-reason-labels';
 import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
+import {
+  PROBE_QUALITY_JUDGE_JSON_SCHEMA,
+  PROBE_QUALITY_JUDGE_SCHEMA_NAME,
+  PROBE_QUALITY_JUDGE_SYSTEM_PROMPT,
+  PROBE_QUALITY_JUDGE_USER,
+} from './prompts/probe-quality-judge.prompt';
 
 interface FormulatedProbe {
   question: string;
+}
+
+/** Вердикт LLM-судьи качества формулировки probe-вопроса (Ф2). */
+interface ProbeQualityVerdict {
+  ok: boolean;
+  issues?: string[];
+  rewrite?: string;
+}
+
+/**
+ * Probe Фаза 2 — детерминированный маркер-чек итогового текста вопроса.
+ * Дополняет LLM-судью: даже если судья предложил rewrite, мы НЕ возьмём его,
+ * пока он не пройдёт эти жёсткие правила. Возвращает true, если вопрос годен:
+ *   - не пустой (после trim);
+ *   - длина ≤ 400 символов;
+ *   - ровно один знак «?»;
+ *   - нет латинских «слов» из ≥4 подряд букв (имена/короткие аббревиатуры
+ *     CRM/KPI/IT проходят), что отсекает код/англоязычные термины;
+ *   - нет длинных id-последовательностей (≥16 буквенно-цифровых подряд — cuid и т.п.).
+ */
+export function passesMarkerCheck(q: string): boolean {
+  const text = (q ?? '').trim();
+  if (text.length === 0) return false;
+  if (text.length > 400) return false;
+  const questionMarks = (text.match(/\?/g) ?? []).length;
+  if (questionMarks !== 1) return false;
+  // Латинские слова из ≥4 подряд букв — признак кода/англоязычного термина.
+  if (/[A-Za-z]{4,}/.test(text)) return false;
+  // Длинные буквенно-цифровые последовательности — id/cuid/хеши.
+  if (/[A-Za-z0-9]{16,}/.test(text)) return false;
+  return true;
 }
 
 /** Человеческий fallback-вопрос: вырезает cuid-подобные токены и обрезает. */
@@ -247,6 +284,14 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     // 3. LLM probe-formulate.
     const formulated = await this.formulate(probe);
 
+    // 3b. Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки.
+    // CDM-вопрос построен строго по методике (см. formulate) — НЕ судим/не
+    // переписываем, чтобы судья случайно не сделал его наводящим.
+    const finalQuestion =
+      probe.reason === 'skill.cdm_interview'
+        ? formulated.question
+        : await this.judgeQuality(probe, formulated.question);
+
     // 4. Send notification.
     const payload = (probe.payload ?? {}) as Record<string, unknown>;
     const dataClass = this.extractDataClass(payload);
@@ -256,7 +301,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         recipientUserId: selectedUserId,
         eventType: 'probe.question',
         payload: {
-          question: formulated.question,
+          question: finalQuestion,
           askedBy: probe.emittedByService,
           context: typeof payload.message === 'string' ? payload.message : undefined,
         },
@@ -279,7 +324,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           dispatchedNotificationId: notif.id,
           payload: {
             ...payload,
-            formulatedQuestion: formulated.question,
+            formulatedQuestion: finalQuestion,
           },
         },
       });
@@ -398,6 +443,90 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'probe-dispatcher: probe-formulate fallback',
       );
       return fallback;
+    }
+  }
+
+  /**
+   * Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки.
+   *
+   * Проверяет сформулированный вопрос через `probe-quality-judge`. При браке
+   * (`ok=false`) и валидном `rewrite` (проходит детерминированный маркер-чек)
+   * возвращает `rewrite`. Иначе возвращает ИСХОДНЫЙ вопрос. Один проход, без
+   * цикла. Best-effort: судья упал / выключен / невалидный rewrite → исходный.
+   *
+   * Метрика `probe_quality_judged_total{verdict}`:
+   *   - `ok`           — судья сказал ok=true (вопрос полноценный);
+   *   - `rewritten`    — взят регенерат судьи;
+   *   - `kept_on_fail` — судья упал / невалидный rewrite → отправлен исходный.
+   * При выключенном флаге судья не вызывается и метрика не пишется.
+   */
+  private async judgeQuality(
+    probe: ProbeEvent,
+    question: string,
+  ): Promise<string> {
+    // Kill-switch (тип А, дефолт ON). getDynamic может упасть (БД/Redis) —
+    // тогда судим (default true), не роняя dispatch (паттерн probe.service).
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.qualityJudgeEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return question;
+
+    const payload = (probe.payload ?? {}) as Record<string, unknown>;
+    try {
+      const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const guarded = applyInputGuards(
+        PROBE_QUALITY_JUDGE_SYSTEM_PROMPT,
+        PROBE_QUALITY_JUDGE_USER({ question }),
+        { enabled: guardOn, injection: true },
+      );
+      const result = await this.llm.call({
+        taskType: 'probe-quality-judge',
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
+        tenantId: probe.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: PROBE_QUALITY_JUDGE_SCHEMA_NAME,
+          schema: PROBE_QUALITY_JUDGE_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'probe', id: probe.id },
+        dataClass: this.extractDataClass(payload),
+      });
+      const verdict = JSON.parse(result.text) as ProbeQualityVerdict;
+      if (verdict && verdict.ok === true) {
+        this.metrics.incProbeQualityJudged({ verdict: 'ok' });
+        return question;
+      }
+      const rewrite =
+        typeof verdict?.rewrite === 'string' ? verdict.rewrite.trim() : '';
+      if (verdict && verdict.ok === false && passesMarkerCheck(rewrite)) {
+        this.metrics.incProbeQualityJudged({ verdict: 'rewritten' });
+        this.logger.log(
+          `probe-quality-judge: вопрос переформулирован (id=${probe.id} issues=${(verdict.issues ?? []).join(',')})`,
+        );
+        return rewrite;
+      }
+      // ok=false, но rewrite пустой/невалидный — best-effort: исходный.
+      this.metrics.incProbeQualityJudged({ verdict: 'kept_on_fail' });
+      return question;
+    } catch (err) {
+      this.logger.debug(
+        {
+          probeEventId: probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-dispatcher: probe-quality-judge упал — отправляю исходный вопрос (best-effort)',
+      );
+      this.metrics.incProbeQualityJudged({ verdict: 'kept_on_fail' });
+      return question;
     }
   }
 

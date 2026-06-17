@@ -624,6 +624,8 @@ function buildSettings(): SettingSeed[] {
     ['probe.minValuePriority', envInt('PROBE_MIN_VALUE_PRIORITY', 30), 'low', 'Минимальный priority (0-100) ценности probe; ниже — вопрос не задаётся (dropped_low_value)'],
     // Probe Фаза 2 (2026-06-17) — распознавание свободного ответа на probe.
     ['probe.replyClassifyMinConfidence', envFloat('PROBE_REPLY_CLASSIFY_MIN_CONFIDENCE', 0.6), 'low', 'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)'],
+    // Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки probe-вопроса.
+    ['probe.qualityJudgeEnabled', envBool('PROBE_QUALITY_JUDGE_ENABLED', true), 'low', 'Рубильник LLM-судьи качества формулировки уточняющего вопроса (probe): проверяет вопрос перед отправкой и при браке заменяет одним улучшенным регенератом (kill-switch, ON). Выкл → вопрос отправляется как сформулирован'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

@@ -208,6 +208,9 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.semanticDedupEnabled', z.boolean()],
   ['probe.semanticDedupThreshold', UNIT_INTERVAL],
   ['probe.semanticDedupWindowHours', POSITIVE_INT],
+  // Probe Фаза 5 (2026-06-17) — kill-switch одного переспроса (re-ask) при
+  // истечении неотвеченного probe (переформулировать и спросить ещё раз). ON.
+  ['probe.reaskEnabled', z.boolean()],
 
   // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],

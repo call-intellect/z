@@ -27,6 +27,7 @@ import type { RedisService } from '../../common/redis/redis.service';
 import type { LlmRouterService } from '../ai/services/llm-router.service';
 import { ConversationalIngestAdapter } from '../conversational/adapters/conversational-ingest.adapter';
 import type { ConversationalService } from '../conversational/conversational.service';
+import type { CoreQueueService } from '../core-queue/core-queue.service';
 import type { IngestService } from '../ingest/ingest.service';
 
 import { ProbePriorityCron } from './probe-priority.cron';
@@ -140,6 +141,14 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
           {
             id: state.probe.id,
             dispatchedNotificationId: state.probe.dispatchedNotificationId,
+            // Probe Ф5 re-ask — cron теперь читает доп. поля для переспроса.
+            reason: state.probe.reason,
+            tenantId: state.probe.tenantId,
+            contentHash: state.probe.contentHash,
+            payload: state.probe.payload,
+            recipientCandidates: state.probe.recipientCandidates,
+            priority: state.probe.priority,
+            emittedByService: state.probe.emittedByService,
           },
         ]),
         updateMany: vi
@@ -151,6 +160,10 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
             }
             return { count: 0 };
           }),
+        // Probe Ф5 re-ask — создание переспроса (best-effort).
+        create: vi
+          .fn()
+          .mockResolvedValue({ id: 'probe-reask-1' }),
       },
       notification: {
         findUnique: vi.fn().mockImplementation(async () => state.notification),
@@ -175,6 +188,8 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
       incProbeResponseClassified: vi.fn(),
       incProbeResponseUnclear: vi.fn(),
       incProbeOutcome: vi.fn(),
+      // Probe Ф5 re-ask — createReask пишет incProbeEvent(status='pending').
+      incProbeEvent: vi.fn(),
     } as unknown as BusinessMetricsService;
 
     ingestAdapter = new ConversationalIngestAdapter(prisma, ingestSvc);
@@ -185,9 +200,22 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
   const redisMock = {
     client: { set: vi.fn().mockResolvedValue('OK') },
   } as unknown as RedisService;
+  // probe.reaskEnabled читается getDynamic — по умолчанию ВЫКЛ в этих старых
+  // closing-loop сценариях, чтобы поведение «истёк → expired (+ignored)»
+  // оставалось прежним (re-ask проверяется отдельным spec'ом).
   const cfgMock = {
-    getDynamic: vi.fn().mockResolvedValue(48),
+    getDynamic: vi.fn().mockImplementation(
+      async (key: string, _env: unknown, fallback: unknown) => {
+        if (key === 'probe.reaskEnabled') return false;
+        if (key === 'probe.topicCooldownHours') return 48;
+        return fallback;
+      },
+    ),
   } as unknown as TypedConfigService;
+  // Probe Ф5 re-ask — cron ставит переспрос через CoreQueueService.
+  const queueMock = {
+    enqueueProbeEvent: vi.fn().mockResolvedValue({ jobId: 'probe_reask-1' }),
+  } as unknown as CoreQueueService;
 
   // Agents v2 Фаза 0.1: handler теперь требует LlmRouter + TypedConfig.
   // Здесь classify по умолчанию выключаем (responseClassifyEnabled=false),
@@ -280,7 +308,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
 
   it('cron: respondedAt IS NOT NULL → probe НЕ помечается expired', async () => {
     // Notification.respondedAt уже задан в scenario (закрыт пользователем).
-    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock, queueMock);
 
     await cron.sweep();
 
@@ -294,7 +322,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
     // Снимаем «ответ» — имитируем случай, когда пользователь так и не ответил.
     state.notification.respondedAt = null;
 
-    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock, queueMock);
     await cron.sweep();
 
     expect(prisma.probeEvent.updateMany).toHaveBeenCalledTimes(1);
@@ -305,7 +333,7 @@ describe('SBA β-5 closing-loop — ProbeResponseHandler + ProbePriorityCron', (
   it('L-2: expire-выборка и updateMany включают digest-статусы (queued_digest / routed_to_digest)', async () => {
     state.notification.respondedAt = null;
 
-    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock);
+    const cron = new ProbePriorityCron(prisma, metrics, redisMock, cfgMock, queueMock);
     await cron.sweep();
 
     const findArg = vi.mocked(prisma.probeEvent.findMany).mock

@@ -81,6 +81,8 @@ function makeWorker(args: {
     incProbeDispatched: vi.fn(),
     incProbeRateLimitDropped: vi.fn(),
     incProbeExpired: vi.fn(),
+    // Ф2 (2026-06-17) — судья качества пишет эту метрику на dispatch-пути.
+    incProbeQualityJudged: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {

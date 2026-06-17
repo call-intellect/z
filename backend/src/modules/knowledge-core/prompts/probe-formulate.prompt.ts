@@ -68,6 +68,12 @@ export const PROBE_FORMULATE_USER_TEMPLATE = (args: {
   message: string;
   suggestedActions: readonly string[];
   contextCard?: { kind: string; title: string } | null;
+  /**
+   * Probe Ф5 re-ask (2026-06-17) — это повторный вопрос (в прошлый раз ответа
+   * не было). Добавляет пометку в КОНЕЦ USER (cache-friendly: переменная в
+   * хвосте, SYSTEM не трогаем), чтобы вопрос был переформулирован иначе и мягче.
+   */
+  isReask?: boolean;
 }): string => {
   const lines = [
     `Тип ситуации: ${args.reasonLabel}`,
@@ -86,6 +92,12 @@ export const PROBE_FORMULATE_USER_TEMPLATE = (args: {
     '',
     'Сформулируй один уточняющий вопрос. Верни JSON по схеме probe_formulate_v3.',
   );
+  if (args.isReask) {
+    lines.push(
+      '',
+      'Это повторный вопрос — в прошлый раз ответа не было. Переформулируй иначе, мягко, не дублируя прошлый текст дословно.',
+    );
+  }
   return lines.join('\n');
 };
 

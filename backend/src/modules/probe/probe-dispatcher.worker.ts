@@ -405,6 +405,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
       const reasonLabel =
         PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
+      // Probe Ф5 re-ask (2026-06-17) — если это переспрос (payload.reaskCount≥1,
+      // ставит ProbePriorityCron), пометка уходит в КОНЕЦ USER (cache-friendly):
+      // переформулировать мягко, не дублируя прошлый вопрос дословно.
+      const isReask = this.readReaskCount(payload) >= 1;
       const guarded = applyInputGuards(
         PROBE_FORMULATE_SYSTEM_PROMPT,
         PROBE_FORMULATE_USER_TEMPLATE({
@@ -415,6 +419,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             contextKind && contextTitle
               ? { kind: contextKind, title: contextTitle }
               : null,
+          isReask,
         }),
         { enabled: guardOn, injection: true },
       );
@@ -662,6 +667,16 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
 
   private toStringOrUndef(v: unknown): string | undefined {
     return typeof v === 'string' && v.length > 0 ? v : undefined;
+  }
+
+  /**
+   * Probe Ф5 re-ask (2026-06-17) — число переспросов из payload (`reaskCount`),
+   * дефолт 0. ≥1 → это переспрос (formulate добавит мягкую пометку в USER).
+   */
+  private readReaskCount(payload: Record<string, unknown>): number {
+    const raw = payload.reaskCount;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(n) ? n : 0;
   }
 
   private toStringArray(v: unknown): string[] {

@@ -719,3 +719,55 @@ describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получат�
     ).toHaveBeenCalledWith(expect.objectContaining({ kind: 'in_app' }));
   });
 });
+
+/**
+ * Probe Ф5 re-ask (2026-06-17) — пометка переспроса в USER `probe-formulate`.
+ * При payload.reaskCount≥1 в КОНЕЦ USER (cache-friendly) добавляется мягкая
+ * пометка «это повторный вопрос»; без reaskCount — пометки нет. SYSTEM не
+ * меняется (cache-friendly, проверяем что вопрос всё равно формулируется).
+ */
+describe('ProbeDispatcherWorker — Probe Ф5: пометка переспроса в USER formulate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE_RESP = {
+    text: JSON.stringify({ question: 'Что сейчас с этим решением?' }),
+  };
+  const REASK_HINT = 'Это повторный вопрос';
+
+  it('payload.reaskCount=1 → USER probe-formulate содержит пометку переспроса', async () => {
+    const mocks = makeMocks({
+      probePayload: {
+        message: 'Решение по подрядчику просрочено.',
+        reaskCount: 1,
+        originalProbeEventId: 'probe-orig-1',
+      },
+      llmResponse: FORMULATE_RESP,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    // Первый LLM-вызов — probe-formulate; проверяем его userMessage.
+    const formulateCall = mocks.llmCall.mock.calls[0]![0] as {
+      taskType: string;
+      userMessage: string;
+    };
+    expect(formulateCall.taskType).toBe('probe-formulate');
+    expect(formulateCall.userMessage).toContain(REASK_HINT);
+  });
+
+  it('payload без reaskCount → пометки переспроса в USER НЕТ', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'Решение по подрядчику просрочено.' },
+      llmResponse: FORMULATE_RESP,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    const formulateCall = mocks.llmCall.mock.calls[0]![0] as {
+      userMessage: string;
+    };
+    expect(formulateCall.userMessage).not.toContain(REASK_HINT);
+  });
+});

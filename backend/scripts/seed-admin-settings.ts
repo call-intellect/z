@@ -632,6 +632,8 @@ function buildSettings(): SettingSeed[] {
     ['probe.semanticDedupEnabled', envBool('PROBE_SEMANTIC_DEDUP_ENABLED', true), 'low', 'Семантический дедуп вопросов по эмбеддингу (kill-switch, ON)'],
     ['probe.semanticDedupThreshold', envFloat('PROBE_SEMANTIC_DEDUP_THRESHOLD', 0.92), 'low', 'Cosine-порог семантического дедупа (0..1)'],
     ['probe.semanticDedupWindowHours', envInt('PROBE_SEMANTIC_DEDUP_WINDOW_HOURS', 72), 'low', 'Окно (часы) поиска близких по смыслу вопросов'],
+    // Probe Фаза 5 (2026-06-17) — один переспрос (re-ask) при истечении неотвеченного probe.
+    ['probe.reaskEnabled', envBool('PROBE_REASK_ENABLED', true), 'low', 'Один переспрос при истечении неотвеченного probe: вопрос переформулируется и задаётся ещё раз перед закрытием как ignored (kill-switch, ON). Выкл → истёкший probe сразу закрывается без переспроса'],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

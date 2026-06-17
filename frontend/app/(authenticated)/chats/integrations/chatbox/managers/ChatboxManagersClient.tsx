@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ApiError } from "@/api/api-error";
 import { chatboxApi } from "@/api/chatbox.api";
-import { personsApi } from "@/api/persons.api";
+import { personsDomainApi } from "@/api/structure.api";
 import {
   chatboxLinkModeBadgeVariant,
   mapMember,
@@ -54,16 +54,13 @@ function ChatboxManagersContent() {
   );
 
   const { data: persons } = useSWR(
-    currentOrgId ? ["org-persons", currentOrgId] : null,
-    () => personsApi.list(currentOrgId!, { limit: 200 }),
+    currentOrgId ? ["org-persons-employees", currentOrgId] : null,
+    () => personsDomainApi.list(currentOrgId!, { relationship: "employee" }),
   );
 
   const personOptions: { id: string; name: string }[] = (
     persons?.items ?? []
-  ).map((p) => {
-    const raw = p as unknown as { name?: string; canonicalName?: string };
-    return { id: p.id, name: raw.name ?? raw.canonicalName ?? "(без имени)" };
-  });
+  ).map((p) => ({ id: p.id, name: p.fullName || "(без имени)" }));
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6">

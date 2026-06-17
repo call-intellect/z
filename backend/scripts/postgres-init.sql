@@ -483,6 +483,27 @@ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Ф5 (TZ 2026-06-16 task-dedup) — Goal.embedding.
+--   HNSW индекс (cosine) для семантического дедупа целей (specialist-3-14):
+--   KNN по Goal.embedding вместо ILIKE по 2 словам. Заполняется goal-embed.worker.
+--   WHERE embedding IS NOT NULL — у ручных/нестроенных целей вектора нет.
+-- ─────────────────────────────────────────────────────────────────────────────
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'Goal' AND column_name = 'embedding'
+  ) THEN
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS "goal_embedding_hnsw_cosine_idx"
+      ON "Goal" USING hnsw (embedding vector_cosine_ops)
+      WHERE embedding IS NOT NULL
+    $sql$;
+  END IF;
+END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- KC-Temporal W3.4 (2026-05-25) — Strong IDs (выделенные идентификаторы)
 -- на Entity. Дедуп внутри Org через ИНН / ОГРН / email / домен БЕЗ LLM.
 -- Prisma `@@unique` не поддерживает WHERE-условие; full-unique нельзя —

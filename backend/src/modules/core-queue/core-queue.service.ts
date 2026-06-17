@@ -24,6 +24,7 @@ import {
   type DumpCreatedJobData,
   type EntityResolverJobData,
   type EventReminderJobData,
+  type GoalEmbedJobData,
   type MeetingReportFastJobData,
   type SpecialistsCombinedJobData,
   type ProbeEventJobData,
@@ -735,6 +736,30 @@ export class CoreQueueService implements OnModuleInit, OnModuleDestroy {
     await q.add('event-reminder', this.stamp(payload), { jobId });
     this.logger.debug(
       `enqueue core.event-reminders reminderId=${args.reminderId} jobId=${jobId}`,
+    );
+    return { jobId };
+  }
+
+  /**
+   * Ф5 (TZ 2026-06-16) — публикация события `core.goal-embed`. Consumer —
+   * `GoalEmbedWorker`. jobId = `goal_embed_<goalId>` → идемпотентно: повторный
+   * enqueue для той же цели в окне дедупа BullMQ не создаст дубль (а воркер
+   * дополнительно делает hash-skip). Best-effort: caller вызывает
+   * fire-and-forget `void`, ошибки тут глотать не нужно (caller их игнорирует).
+   */
+  async enqueueGoalEmbed(args: {
+    tenantId: string;
+    goalId: string;
+  }): Promise<{ jobId: string }> {
+    const q = this.requireQueue(CORE_QUEUE_NAMES.GOAL_EMBED);
+    const jobId = `goal_embed_${args.goalId}`;
+    const payload: GoalEmbedJobData = {
+      tenantId: args.tenantId,
+      goalId: args.goalId,
+    };
+    await q.add('goal-embed', this.stamp(payload), { jobId });
+    this.logger.debug(
+      `enqueue core.goal-embed goalId=${args.goalId} tenantId=${args.tenantId} jobId=${jobId}`,
     );
     return { jobId };
   }

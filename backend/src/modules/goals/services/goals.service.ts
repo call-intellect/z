@@ -232,6 +232,11 @@ export class GoalsService {
         targetDate: created.targetDate?.toISOString() ?? null,
       },
     });
+    // Ф5 (TZ 2026-06-16) — фоновый пересчёт Goal.embedding для семантического
+    // дедупа целей. Fire-and-forget (воркер идемпотентен по hash).
+    void this.coreQueue
+      .enqueueGoalEmbed({ tenantId, goalId: created.id })
+      .catch(() => undefined);
     return this.mapList(created, created._count.themes);
   }
 
@@ -310,6 +315,15 @@ export class GoalsService {
       resourceId: goalId,
       metadata: { tenantId, changedFields: Object.keys(body) },
     });
+
+    // Ф5 (TZ 2026-06-16) — пересчёт embedding'а при правке name/description
+    // (текст KNN-дедупа = name+description). Прочие поля воркер отфильтрует
+    // hash-skip'ом. Fire-and-forget.
+    if (body.name !== undefined || body.description !== undefined) {
+      void this.coreQueue
+        .enqueueGoalEmbed({ tenantId, goalId })
+        .catch(() => undefined);
+    }
 
     return this.mapList(updated, updated._count.themes);
   }

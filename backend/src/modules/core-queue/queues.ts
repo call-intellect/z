@@ -182,6 +182,18 @@ export const CORE_QUEUE_NAMES = {
    * Идемпотентность: `jobId = specialists_combined_<meetingId>`.
    */
   SPECIALISTS_COMBINED: 'core.specialists-combined',
+  /**
+   * Ф5 (TZ 2026-06-16 task-dedup) — пересчёт pgvector-embedding'а для Goal.
+   * Consumer — `GoalEmbedWorker`. Аналог `core.issue-embed`: на job {tenantId,
+   * goalId} считает sha256(name+description), при совпадении с `embeddingHash`
+   * — skip; иначе embed (text-embedding-3-small, 1536) + raw UPDATE
+   * `Goal.embedding/embeddingHash`. Нужен для семантического дедупа целей
+   * (specialist-3-14 KNN по `Goal.embedding` вместо ILIKE по 2 словам).
+   *
+   * Идемпотентность: `jobId = goal_embed_<goalId>` (повторный enqueue в окне
+   * BullMQ не создаёт дубль) + hash-skip внутри воркера.
+   */
+  GOAL_EMBED: 'core.goal-embed',
 } as const;
 
 export type CoreQueueName = (typeof CORE_QUEUE_NAMES)[keyof typeof CORE_QUEUE_NAMES];
@@ -472,6 +484,21 @@ export interface PushSendJobData {
  */
 export interface EventReminderJobData {
   reminderId: string;
+}
+
+/**
+ * Ф5 (TZ 2026-06-16) — payload `core.goal-embed`. Consumer — `GoalEmbedWorker`.
+ *
+ *  - `tenantId` — для cross-tenant защиты в UPDATE (WHERE tenantId=$).
+ *  - `goalId` — какую цель пересчитать.
+ *
+ * Текст и hash считаются ВНУТРИ воркера (БД — единственный источник правды).
+ * Idempotent jobId формируется в `CoreQueueService.enqueueGoalEmbed`:
+ * `goal_embed_<goalId>`.
+ */
+export interface GoalEmbedJobData {
+  tenantId: string;
+  goalId: string;
 }
 
 export interface RecognitionFormulateJobData {

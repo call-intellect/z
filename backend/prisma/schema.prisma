@@ -4391,6 +4391,11 @@ model Goal {
   supersedes     Goal?              @relation("GoalSupersedes", fields: [supersededById], references: [id], onDelete: SetNull)
   supersedeChain Goal[]             @relation("GoalSupersedes")
 
+  /// Ф5 (TZ 2026-06-16) — pgvector embedding цели (text-embedding-3-small, 1536).
+  /// Генерируется goal-embed.worker. HNSW-индекс — в postgres-init.sql (Prisma не умеет).
+  embedding     Unsupported("vector(1536)")?
+  embeddingHash String?
+
   keyResults   GoalKeyResult[]
   linkedIdeas  Idea[]          @relation("IdeaGoal")
   linkedCycles Cycle[]         @relation("CyclePrimaryGoal")

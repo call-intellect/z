@@ -28,6 +28,7 @@ import { ExecutablePersonaBuildCron } from '../knowledge-core/workers/executable
 import { ExperimentDetectorWorker } from '../knowledge-core/workers/experiment-detector.worker';
 import { ExperimentStatusResolverCron } from '../knowledge-core/workers/experiment-status-resolver.cron';
 import { ExperimentTransitionsCron } from '../knowledge-core/workers/experiment-transitions.cron';
+import { GoalEmbedWorker } from '../knowledge-core/workers/goal-embed.worker';
 import { GoalTaskLinkerCron } from '../knowledge-core/workers/goal-task-linker.cron';
 import { GoalThemeLinkerCron } from '../knowledge-core/workers/goal-theme-linker.cron';
 import { GraphMaterializationVerifyCron } from '../knowledge-core/workers/graph-materialization-verify.cron';
@@ -292,6 +293,11 @@ import { TranscriptIndexWorker } from './workers/transcript-index.worker';
     // jobName='3-14-goals'. Авто-добыча целей из блоков commitment/plan_item:
     // LLM goal-extract → KNN-дедуп → goal-hierarchy-link → Goal(source='ai').
     Specialist314GoalsWorker,
+    // Ф5 (TZ 2026-06-16 task-dedup) — consumer `core.goal-embed`. Считает
+    // pgvector-embedding цели (name+description) для семантического дедупа
+    // целей (specialist-3-14 KNN по Goal.embedding вместо ILIKE). Зеркало
+    // IssueEmbedWorker; EmbeddingFallbackService — из @Global EmbeddingsModule.
+    GoalEmbedWorker,
     // SBA β-5 — cron `30 *‎/4 * * *`: кластеризация Idea → IdeaCluster
     // (KNN + LLM idea-cluster-merge на критической массе).
     IdeaClustererCron,

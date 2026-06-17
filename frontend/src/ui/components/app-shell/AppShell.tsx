@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { MobileHeader } from './Header';
 import { PendingActionsBell } from './PendingActionsBell';
+import { Breadcrumbs } from '@/ui/components/breadcrumbs/Breadcrumbs';
 import {
   CommandPalette,
   CommandPaletteProvider,
@@ -47,7 +48,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
           {/* Action Center B1 — компактный desktop top-bar с глобальным
               колокольчиком (на мобильных колокольчик живёт в MobileHeader). */}
-          <div className="hidden h-header items-center justify-end gap-2 border-b border-border-subtle bg-bg-surface/60 px-4 backdrop-blur-glass md:flex">
+          <div className="hidden h-header items-center justify-between gap-2 border-b border-border-subtle bg-bg-surface/60 px-4 backdrop-blur-glass md:flex">
+            <Breadcrumbs />
             <PendingActionsBell />
           </div>
           <PaywallBanner />

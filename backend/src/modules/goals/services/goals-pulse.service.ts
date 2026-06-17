@@ -17,22 +17,6 @@ import {
   type GoalsPulseGoalLine,
 } from '../prompts/goals-pulse-summarize.prompt';
 
-/**
- * Goals OKR v2 (Фаза 4) — GoalsPulseService.
- *
- * Зеркало `DailyDigestService` с окном «прошедшая ISO-неделя в МСК».
- *
- * Двухстадийная сборка пульса:
- *   1. `aggregate` — счётчики целей по `progressStatus` + список активных
- *      целей со средним прогрессом KR (быстро, из БД).
- *   2. Один LLM-вызов `goals-pulse-summarize` — связный markdown + shortSummary.
- *
- * Идемпотентность — `@@unique([tenantId, isoWeek])`. Если за неделю пульс уже
- * сохранён — `getOrGenerate` возвращает существующий.
- *
- * При неудаче LLM сохраняем «сухой» вариант с `llmTaskRouteId=null` — это
- * позволяет различать «нормальный» пульс и fallback в админке.
- */
 @Injectable()
 export class GoalsPulseService {
   private readonly logger = new Logger(GoalsPulseService.name);
@@ -44,9 +28,6 @@ export class GoalsPulseService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────────── public API ─────────────────────────────
-
-  /** Получить сохранённый пульс за неделю. null — ещё не сгенерирован. */
   async getStored(args: {
     tenantId: string;
     isoWeek: string;
@@ -59,9 +40,6 @@ export class GoalsPulseService {
     return row ? this.toDto(row) : null;
   }
 
-  /**
-   * Получить или сгенерировать (идемпотентность по `(tenantId, isoWeek)`).
-   */
   async getOrGenerate(args: {
     tenantId: string;
     isoWeek: string;
@@ -76,10 +54,6 @@ export class GoalsPulseService {
     return this.generate(args);
   }
 
-  /**
-   * Принудительная генерация (upsert по unique-ключу). Агрегирует → зовёт LLM
-   * → сохраняет. При провале LLM — «сухой» fallback (llmTaskRouteId=null).
-   */
   async generate(args: {
     tenantId: string;
     isoWeek: string;
@@ -141,7 +115,6 @@ export class GoalsPulseService {
         shortSummary,
         metricsJson: aggregate.counters as unknown as Prisma.InputJsonValue,
         llmTaskRouteId,
-        // deliveredAt НЕ обнуляем при regenerate.
       },
     });
 
@@ -149,23 +122,13 @@ export class GoalsPulseService {
     return this.toDto(row);
   }
 
-  /** Пометить пульс как доставленный. Best-effort. */
-  async markDelivered(args: {
-    tenantId: string;
-    isoWeek: string;
-  }): Promise<void> {
+  async markDelivered(args: { tenantId: string; isoWeek: string }): Promise<void> {
     await this.prisma.weeklyGoalsPulseDigest.updateMany({
       where: { tenantId: args.tenantId, isoWeek: args.isoWeek },
       data: { deliveredAt: new Date() },
     });
   }
 
-  /**
-   * Агрегация: счётчики целей по progressStatus (только active+живые) +
-   * список целей со средним прогрессом KR. Выделена для тестов без LLM.
-   *
-   * `newThisWeek` — цели, появившиеся в окне недели (Goal.createdAt в [start,end)).
-   */
   async aggregate(args: {
     tenantId: string;
     isoWeek: string;
@@ -226,8 +189,7 @@ export class GoalsPulseService {
           break;
       }
 
-      const isNew =
-        g.createdAt >= args.weekStart && g.createdAt < args.weekEnd;
+      const isNew = g.createdAt >= args.weekStart && g.createdAt < args.weekEnd;
       if (isNew) counters.newThisWeek++;
 
       goalLines.push({
@@ -247,9 +209,6 @@ export class GoalsPulseService {
     };
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────
-
-  /** Средний прогресс KR в % (0..100). null — если нет KR. */
   static avgKrProgress(
     krs: Array<{ startValue: unknown; targetValue: unknown; currentValue: unknown }>,
   ): number | null {
@@ -265,7 +224,6 @@ export class GoalsPulseService {
     return sum / krs.length;
   }
 
-  /** Прогресс KR в %: clamp 0..100, защита от деления на 0. */
   static progressPercent(start: number, target: number, current: number): number {
     const span = target - start;
     if (span === 0) return 0;
@@ -274,7 +232,6 @@ export class GoalsPulseService {
     return Math.max(0, Math.min(100, pct));
   }
 
-  /** Безопасный Number из Decimal | number | string. */
   static toNumber(v: unknown): number {
     if (v === null || v === undefined) return 0;
     if (typeof v === 'number') return v;
@@ -286,9 +243,7 @@ export class GoalsPulseService {
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());
@@ -328,8 +283,6 @@ export class GoalsPulseService {
     };
   }
 }
-
-// ─────────────────────────── DTO ────────────────────────────────────
 
 export interface WeeklyGoalsPulseDigestDto {
   id: string;

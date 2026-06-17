@@ -19,19 +19,6 @@ import { TablesService } from './tables.service';
 
 export { parseNumericLoose } from './_num.util';
 
-/**
- * Smart-tables auto-creation (2026-06-02, Фаза 4) — Document-to-Table, commit.
- *
- * Материализует разобранный импорт в таблицу:
- *   - create: создаёт таблицу из схемы → колонки → переносит строки → линкует
- *     строки к Entity (если у схемы есть entitySync);
- *   - merge:  сопоставляет столбцы входной схемы с колонками целевой таблицы по
- *     нормализованному имени → переносит строки → линкует к Entity.
- *
- * Формат входных `rows` — массив массивов строковых значений (`rows[i][j]` —
- * значение j-го столбца), где `j` соответствует `schema.properties[j]` по
- * порядку (см. tables.dto.ts §Document-to-Table).
- */
 @Injectable()
 export class TableImportService {
   private readonly logger = new Logger(TableImportService.name);
@@ -46,9 +33,6 @@ export class TableImportService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * mode=create: создать новую таблицу из схемы и перенести строки.
-   */
   async commitCreate(args: {
     tenantId: string;
     userId: string;
@@ -57,7 +41,6 @@ export class TableImportService {
   }): Promise<{ tableId: string; rowsCreated: number; entitiesLinked: number }> {
     const { tenantId, userId, schema } = args;
 
-    // 1. Таблица.
     const table = await this.tables.create({
       tenantId,
       userId,
@@ -71,7 +54,6 @@ export class TableImportService {
       },
     });
 
-    // 2. Колонки (bulk, порядок сохранён).
     await this.properties.createMany({
       tenantId,
       tableId: table.id,
@@ -83,17 +65,11 @@ export class TableImportService {
       })),
     });
 
-    // 3. Перечитать созданные колонки в порядке создания — нужны их id для cells.
     const created = await this.properties.list({ tenantId, tableId: table.id });
-    // createMany гарантирует порядок order=(i+1)*1000 → сортируем по order.
     const ordered = [...created].sort(
       (a, b) => Number(a.order.toString()) - Number(b.order.toString()),
     );
-    // Маппинг index столбца файла j → propertyId. Берём первые N созданных
-    // колонок (системные авто-колонки, если их добавит провижн, окажутся в конце).
-    const propIdByIndex = schema.properties.map(
-      (_p, j) => ordered[j]?.id ?? null,
-    );
+    const propIdByIndex = schema.properties.map((_p, j) => ordered[j]?.id ?? null);
     const primaryIndex = schema.properties.findIndex((p) => p.isPrimary);
 
     return this.materializeRows({
@@ -107,11 +83,6 @@ export class TableImportService {
     });
   }
 
-  /**
-   * mode=merge: добавить строки в существующую таблицу. Колонки входной схемы
-   * сопоставляются с колонками целевой таблицы ПО нормализованному имени.
-   * Несопоставленные столбцы файла отбрасываются (их данные не переносятся).
-   */
   async commitMerge(args: {
     tenantId: string;
     userId: string;
@@ -121,7 +92,6 @@ export class TableImportService {
   }): Promise<{ tableId: string; rowsCreated: number; entitiesLinked: number }> {
     const { tenantId, userId, targetTableId, schema } = args;
 
-    // Проверка существования + tenant-scope (бросит 404).
     const target = await this.tables.findById({ tenantId, id: targetTableId });
     const targetProps = await this.properties.list({
       tenantId,
@@ -137,10 +107,6 @@ export class TableImportService {
       });
     }
 
-    // index столбца файла j → propertyId целевой таблицы (по имени) | null.
-    // Защита от дублей имён: если два столбца файла маппятся на ОДИН propertyId,
-    // маппим только первый (более ранний). Второй дубль НЕ перетирает первый —
-    // ставим null, чтобы его данные не затёрли уже занятую колонку.
     const byName = new Map<string, (typeof targetProps)[number]>();
     for (const p of targetProps) byName.set(this.norm(p.name), p);
     const usedPropIds = new Set<string>();
@@ -158,8 +124,6 @@ export class TableImportService {
       return match.id;
     });
 
-    // entity-linking при merge: тип берём из entitySync ЦЕЛЕВОЙ таблицы; primary
-    // столбец файла = isPrimary из входной схемы.
     const primaryIndex = schema.properties.findIndex((p) => p.isPrimary);
     const targetSync = parseEntitySync(target.entitySync);
     const schemaForLink: InferredTableSchema = {
@@ -178,12 +142,6 @@ export class TableImportService {
     });
   }
 
-  // ──────────────────────────── private ────────────────────────────────────
-
-  /**
-   * Общий перенос строк: собирает cells по propIdByIndex с минимальным
-   * приведением типа, линкует к Entity по primary-значению, делает bulk-insert.
-   */
   private async materializeRows(args: {
     tenantId: string;
     userId: string;
@@ -193,13 +151,8 @@ export class TableImportService {
     propIdByIndex: Array<string | null>;
     primaryIndex: number;
   }): Promise<{ tableId: string; rowsCreated: number; entitiesLinked: number }> {
-    const { tenantId, userId, tableId, schema, rows, propIdByIndex, primaryIndex } =
-      args;
+    const { tenantId, userId, tableId, schema, rows, propIdByIndex, primaryIndex } = args;
 
-    // Анти-обход лимита строк: импорт мог бы влить тысячи строк мимо проверки
-    // TableRowsService.create (она по-одной). Считаем активные строки целевой
-    // таблицы и не даём суммой превысить maxRowsPerTable. Для create таблица
-    // новая → current=0.
     const limit = this.cfg.smartTables.maxRowsPerTable;
     const current = await this.prisma.tableRow.count({
       where: { tableId, deletedAt: null, archivedAt: null },
@@ -214,22 +167,18 @@ export class TableImportService {
       });
     }
 
-    // primary-значения для entity-linking (в порядке строк).
-    const primaryValues = rows.map((r) =>
-      primaryIndex >= 0 ? (r[primaryIndex] ?? null) : null,
-    );
+    const primaryValues = rows.map((r) => (primaryIndex >= 0 ? (r[primaryIndex] ?? null) : null));
     const { entityIds, linkedCount } = await this.agent.linkRowsToEntities({
       tenantId,
       entitySync: schema.entitySync,
       primaryValues,
     });
 
-    // Сборка cells по индексу столбца → propertyId с приведением типа.
     const payload = rows.map((row, i) => {
       const cells: Record<string, unknown> = {};
       for (let j = 0; j < propIdByIndex.length; j++) {
         const propId = propIdByIndex[j];
-        if (!propId) continue; // столбец без целевой колонки (merge) — пропуск
+        if (!propId) continue;
         const raw = row[j];
         if (raw === undefined || raw === '') continue;
         const type = schema.properties[j]?.type ?? 'text';
@@ -253,19 +202,12 @@ export class TableImportService {
     return { tableId, rowsCreated: res.created, entitiesLinked: linkedCount };
   }
 
-  /**
-   * Минимальное приведение строкового значения файла к типу колонки. Безопасно:
-   * при любой неоднозначности оставляем строку (UI отрисует, пользователь
-   * поправит). Числа/проценты/деньги → Number (если парсится), checkbox → bool.
-   */
   private coerce(raw: string, type: string): unknown {
     const v = raw.trim();
     switch (type) {
       case 'number':
       case 'currency':
       case 'percent': {
-        // Устойчивый парс: поддержка «1 234,56», «1,234.56», «15%», «$1,200».
-        // percent — число как есть (без деления на 100). Не распарсилось → v.
         const n = parseNumericLoose(v);
         return n === null ? v : n;
       }
@@ -273,9 +215,6 @@ export class TableImportService {
         const low = v.toLowerCase();
         if (['да', 'true', '1', 'yes', '✓', 'x', 'есть'].includes(low)) return true;
         if (['нет', 'false', '0', 'no', '', '-'].includes(low)) return false;
-        // Неизвестное значение НЕ превращаем в Boolean(v) (это давало true почти
-        // на всём): возвращаем исходную строку — UI покажет как есть, пользователь
-        // поправит вручную.
         return v;
       }
       default:
@@ -283,7 +222,6 @@ export class TableImportService {
     }
   }
 
-  /** Нормализация имени колонки для матчинга при merge. */
   private norm(name: string): string {
     return name.trim().toLowerCase().replace(/\s+/g, ' ');
   }

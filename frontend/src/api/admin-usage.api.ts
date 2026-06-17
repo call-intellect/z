@@ -1,14 +1,5 @@
-/**
- * API-клиент для Z-Admin usage endpoints (Фаза 7).
- *
- * Контракт: `backend/src/modules/admin/controllers/admin-usage.controller.ts`
- * под префиксом `/api/v1/admin/usage`. Защита — `SuperAdminGuard`.
- *
- * Ошибка 403 = `forbidden` (выкидывает `ApiClient`) — UI показывает empty-state.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminCallDetailApi,
   AdminCallsLogApi,
@@ -16,7 +7,7 @@ import type {
   AdminFunctionsUsageApi,
   AdminPeriod,
   AdminUsersUsageApi,
-} from '@/domain/admin-usage';
+} from "@/domain/admin-usage";
 
 export type DashboardRequest = {
   period: AdminPeriod;
@@ -33,7 +24,7 @@ export type UsersUsageRequest = DashboardRequest & {
 export type CallsLogRequest = {
   taskType?: string;
   userId?: string;
-  experimentGroup?: 'A' | 'B';
+  experimentGroup?: "A" | "B";
   limit?: number;
   cursor?: string;
 };
@@ -48,7 +39,7 @@ export type ExportCsvRequest = {
   period: AdminPeriod;
   from?: string;
   to?: string;
-  kind?: 'calls' | 'users' | 'functions';
+  kind?: "calls" | "users" | "functions";
 };
 
 export const adminUsageApi = {
@@ -78,11 +69,10 @@ export const adminUsageApi = {
     ),
 
   getFunctionCalls: (taskType: string, req: FunctionCallsRequest = {}) =>
-    apiClient.get<{ items: AdminCallsLogApi['items'] }>(
+    apiClient.get<{ items: AdminCallsLogApi["items"] }>(
       `/api/v1/admin/usage/functions/${encodeURIComponent(taskType)}/calls${buildQuery({ ...req })}`,
     ),
 
-  /** URL для прямой загрузки CSV (frontend открывает в новой вкладке). */
   exportCsvUrl: (req: ExportCsvRequest) =>
     `/api/v1/admin/usage/export/usage.csv${buildQuery({ ...req })}`,
 };

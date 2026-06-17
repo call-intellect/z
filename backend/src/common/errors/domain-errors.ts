@@ -1,18 +1,7 @@
-/**
- * Доменные ошибки бизнес-логики Z.
- *
- * Все наследуют `DomainError`. `AllExceptionsFilter` мапит их в HTTP-ответ
- * `{ ok:false, error:{ code, message, requestId } }` со статусом `httpStatus`.
- *
- * Поле `details` не отдаётся клиенту — оно только для логов (например,
- * `meetingId`, `from/to` FSM-перехода).
- */
-
 export abstract class DomainError extends Error {
   abstract readonly code: string;
   abstract readonly httpStatus: number;
 
-  /** Контекст для логов (НЕ отдаётся клиенту). */
   readonly details?: Record<string, unknown>;
 
   constructor(message: string, details?: Record<string, unknown>) {
@@ -21,8 +10,6 @@ export abstract class DomainError extends Error {
     this.details = details;
   }
 }
-
-// ─────────────────────────── 401 ──────────────────────────────────────
 
 export class IntegrationKeyInvalidError extends DomainError {
   readonly code = 'integration_key_invalid';
@@ -51,8 +38,6 @@ export class DeepLinkMismatchError extends DomainError {
   }
 }
 
-// ─────────────────────────── 403 ──────────────────────────────────────
-
 export class NotAuthorizedError extends DomainError {
   readonly code = 'not_authorized';
   readonly httpStatus = 403;
@@ -62,24 +47,16 @@ export class NotAuthorizedError extends DomainError {
   }
 }
 
-/**
- * Хост пытается переименовать `Participant`, у которого `isRegisteredUser=true`.
- * Имя такого участника берётся из `User.name` и редактируется владельцем
- * аккаунта, а не хостом встречи.
- */
 export class ParticipantRenameForbiddenError extends DomainError {
   readonly code = 'participant_rename_forbidden';
   readonly httpStatus = 403;
 
   constructor(participantId: string) {
-    super(
-      'Нельзя переименовать зарегистрированного участника — его имя берётся из аккаунта.',
-      { participantId },
-    );
+    super('Нельзя переименовать зарегистрированного участника — его имя берётся из аккаунта.', {
+      participantId,
+    });
   }
 }
-
-// ─────────────────────────── 404 ──────────────────────────────────────
 
 export class MeetingNotFoundError extends DomainError {
   readonly code = 'meeting_not_found';
@@ -99,17 +76,12 @@ export class ParticipantNotFoundError extends DomainError {
   }
 }
 
-// ─────────────────────────── 409 ──────────────────────────────────────
-
 export class InvalidFsmTransitionError extends DomainError {
   readonly code = 'invalid_state_transition';
   readonly httpStatus = 409;
 
   constructor(from: string, to: string) {
-    super(
-      `Невозможно перевести встречу из состояния ${from} в ${to}`,
-      { from, to },
-    );
+    super(`Невозможно перевести встречу из состояния ${from} в ${to}`, { from, to });
   }
 }
 
@@ -162,8 +134,6 @@ export class IdempotencyConflictError extends DomainError {
   }
 }
 
-// ─────────────────────────── 400 ──────────────────────────────────────
-
 export class GuestNameRequiredError extends DomainError {
   readonly code = 'guest_name_required';
   readonly httpStatus = 400;
@@ -173,8 +143,6 @@ export class GuestNameRequiredError extends DomainError {
   }
 }
 
-// ─────────────────────────── 410 ──────────────────────────────────────
-
 export class MeetingFinishedError extends DomainError {
   readonly code = 'meeting_finished';
   readonly httpStatus = 410;
@@ -183,8 +151,6 @@ export class MeetingFinishedError extends DomainError {
     super('Встреча уже завершена');
   }
 }
-
-// ─────────────────────────── 429 ──────────────────────────────────────
 
 export class QuotaExceededError extends DomainError {
   readonly code = 'quota_exceeded';

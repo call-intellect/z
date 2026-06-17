@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   type ChannelDirection,
   type ChannelKind,
@@ -15,22 +9,6 @@ import {
 
 import { CryptoService } from '../../../../common/crypto/crypto.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-
-/**
- * Admin-redesign Фаза 5 — `GlobalChannelsAdminService`.
- *
- * CRUD глобальных каналов (`Channel` с `tenantId IS NULL`). Один на kind
- * гарантируется partial unique index'ом `channels_global_unique` в БД.
- *
- * Секреты:
- *   - `secrets` приходят как `{ field: value }` plain;
- *   - перед записью в `config` каждое значение шифруется через
- *     `CryptoService.encrypt(...)` и кладётся под ключом `${field}Enc`;
- *   - public-часть `config` (без секретов) хранится рядом — UI её видит,
- *     секретные поля никогда не возвращаются.
- *
- * `subscribersCount` считаем как количество `ChannelBinding` с этим каналом.
- */
 
 const SECRET_SUFFIX = 'Enc';
 const SECRET_FIELDS = new Set([
@@ -48,7 +26,6 @@ export interface GlobalChannelItem {
   direction: ChannelDirection;
   status: ChannelStatus;
   maxDataClass: DataClass;
-  /** Публичная часть config — без зашифрованных секретов. */
   config: Record<string, unknown>;
   brokenReason: string | null;
   subscribersCount: number;
@@ -90,8 +67,6 @@ export class GlobalChannelsAdminService {
     userId: string | null,
   ): Promise<GlobalChannelItem> {
     void userId;
-    // Уникальность глобального канала на kind гарантируется БД (partial
-    // unique), но даём дружелюбное сообщение раньше — до 23505.
     const existing = await this.prisma.channel.findFirst({
       where: { tenantId: null, kind: input.kind },
     });
@@ -163,11 +138,7 @@ export class GlobalChannelsAdminService {
           ? (existing.config as Record<string, unknown>)
           : {};
       const publicConfig = input.config ?? this.stripSecrets(prevConfig);
-      const merged = this.mergeWithEncryptedSecrets(
-        publicConfig,
-        input.secrets ?? {},
-        prevConfig,
-      );
+      const merged = this.mergeWithEncryptedSecrets(publicConfig, input.secrets ?? {}, prevConfig);
       data.config = merged as Prisma.InputJsonValue;
     }
 
@@ -176,11 +147,6 @@ export class GlobalChannelsAdminService {
     return this.toItem(updated, count);
   }
 
-  /**
-   * Soft-delete: `status = 'global_disabled'` — kill-switch для глобального
-   * канала. Запись остаётся, чтобы `ChannelBinding`'и не сломались;
-   * маршрутизатор просто перестаёт отправлять.
-   */
   async softDelete(id: string, userId: string | null): Promise<{ ok: true }> {
     void userId;
     const existing = await this.prisma.channel.findUnique({ where: { id } });
@@ -200,12 +166,6 @@ export class GlobalChannelsAdminService {
     return { ok: true };
   }
 
-  // ─────────────────────────── private ─────────────────────────────────
-
-  /**
-   * Удаляет все ключи, оканчивающиеся на `Enc`, либо находящиеся в списке
-   * `SECRET_FIELDS`. Используется при выводе config в API.
-   */
   private stripSecrets(config: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(config)) {
@@ -216,26 +176,18 @@ export class GlobalChannelsAdminService {
     return out;
   }
 
-  /**
-   * Готовит `config` для записи в БД: public-поля + зашифрованные секреты.
-   * `prev` нужен, чтобы при partial-update сохранить ранее зашифрованные
-   * секреты, если пользователь их не менял (передал только `config`).
-   */
   private mergeWithEncryptedSecrets(
     publicConfig: Record<string, unknown>,
     secrets: Record<string, string>,
     prev: Record<string, unknown>,
   ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
-    // Сохраняем ранее зашифрованные секреты (поля *Enc).
     for (const [k, v] of Object.entries(prev)) {
       if (k.endsWith(SECRET_SUFFIX)) out[k] = v;
     }
-    // Накладываем новый public-config (он уже без секретов после strip).
     for (const [k, v] of Object.entries(this.stripSecrets(publicConfig))) {
       out[k] = v;
     }
-    // Шифруем переданные секреты — каждое значение под ключом `${field}Enc`.
     for (const [field, plain] of Object.entries(secrets)) {
       if (!plain) continue;
       const cipher = this.crypto.encrypt(plain);

@@ -6,7 +6,7 @@ updated: 2026-05-09
 
 # AI Meeting Workspace
 
-Расширение MVP до уровня Otter / Fathom / Fireflies. Реализовано 2026-05-09 по ТЗ `plans/tz/2026-05-09-ai-meeting-workspace.md`.
+Расширение MVP до уровня Otter / Fathom / Fireflies. Реализовано 2026-05-09 по ТЗ `plans/archive/2026-05-09-ai-meeting-workspace.md`.
 
 ## Backend — карта модулей
 

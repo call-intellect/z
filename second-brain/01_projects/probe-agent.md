@@ -6,7 +6,7 @@ updated: 2026-05-22
 related:
   - 02_architecture/module-map.md (β-5)
   - 01_projects/ideas.md
-  - plans/tz/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md
+  - plans/archive/2026-05-21-sba-beta-5-specialist-3-6-ideas-and-layer6-probe.md
 ---
 
 # Layer 6 — Probe-Agent (Активный уточнитель)

@@ -8,8 +8,8 @@ owners_human:
   - инженер knowledge-core
   - продакт трекера
 related_plans:
-  - plans/tz/2026-05-23-tracker-phase-1-models-api.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-23-tracker-phase-1-models-api.md
+  - plans/archive/2026-05-22-final-roadmap.md
   - plans/tz/2026-05-27-tracker-project-documents.md
   - plans/sprints/2026-05-24-sprint-plan-wave-1.md
 related_projects:

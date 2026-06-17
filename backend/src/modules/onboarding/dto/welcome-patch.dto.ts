@@ -1,4 +1,3 @@
-import { createZodDto } from 'nestjs-zod';
 import { z } from 'zod';
 
 export const WelcomePatchSchema = z.object({
@@ -9,5 +8,4 @@ export const WelcomePatchSchema = z.object({
   plannedFeatures: z.array(z.string()).optional(),
 });
 
-export class WelcomePatchDto extends createZodDto(WelcomePatchSchema) {}
 export type WelcomePatchBody = z.infer<typeof WelcomePatchSchema>;

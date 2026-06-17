@@ -1,19 +1,11 @@
-/**
- * API-клиент для Concierge / AI-чат analytics (Z-Admin, Фаза 2 редизайна).
- *
- * Контракт: backend `/api/v1/admin/analytics/concierge/*`. Защита — `SuperAdminGuard`.
- * Бэкенд готовится параллельно — при отсутствии эндпоинтов UI покажет
- * `AdminEmpty` («Будет подключено к chat-модулю»).
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminConciergeNoAnswerApi,
   AdminConciergeOverviewApi,
   AdminConciergeTopQueriesApi,
-} from '@/domain/admin-concierge-analytics';
-import type { AdminPeriod } from '@/domain/admin-usage';
+} from "@/domain/admin-concierge-analytics";
+import type { AdminPeriod } from "@/domain/admin-usage";
 
 export type ConciergePeriodRequest = {
   period: AdminPeriod;

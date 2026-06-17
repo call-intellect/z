@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -16,16 +11,6 @@ import {
 
 const RELOAD_INTERVAL_MS = 30_000;
 
-/**
- * LoggingModule — кэш runtime-настроек + перечит из БД + persist.
- *
- * - На старте: env-дефолты → reload() из `PlatformSetting[logging_settings]`.
- * - Каждые 30с перечитывает из БД (подхват изменений с других инстансов).
- * - `get()` — синхронный доступ к кэшу (горячий путь записи лога).
- * - При недоступной БД — продолжает работать на текущем кэше, не валит процесс.
- *
- * См. plans/tz/2026-06-01-logging-module.md §3.
- */
 @Injectable()
 export class LogSettingsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(LogSettingsService.name);
@@ -51,12 +36,10 @@ export class LogSettingsService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Синхронный доступ к настройкам (горячий путь). */
   get(): LoggingRuntimeSettings {
     return this.cached;
   }
 
-  /** Перечитывает настройки из БД поверх env-дефолтов. Best-effort. */
   async reload(): Promise<void> {
     try {
       const row = await this.prisma.platformSetting.findUnique({
@@ -65,25 +48,17 @@ export class LogSettingsService implements OnModuleInit, OnModuleDestroy {
       });
       this.cached = normalizeLoggingSettings(row?.valueJson ?? {}, this.envBase());
     } catch (err) {
-      // БД недоступна — остаёмся на текущем кэше (env-дефолты при старте).
       this.logger.warn(
         `Не удалось перечитать настройки логирования: ${(err as Error).message}. Используем кэш.`,
       );
     }
   }
 
-  /**
-   * Применяет частичный patch поверх текущего кэша, персистит в БД и
-   * возвращает новые настройки. Кэш обновляется синхронно.
-   */
   async applyUpdate(
     patch: Partial<LoggingRuntimeSettings>,
     actorId: string | undefined,
   ): Promise<LoggingRuntimeSettings> {
-    const next = normalizeLoggingSettings(
-      { ...this.cached, ...patch },
-      this.envBase(),
-    );
+    const next = normalizeLoggingSettings({ ...this.cached, ...patch }, this.envBase());
     await this.prisma.platformSetting.upsert({
       where: { key: LOGGING_SETTINGS_KEY },
       create: {
@@ -100,7 +75,6 @@ export class LogSettingsService implements OnModuleInit, OnModuleDestroy {
     return next;
   }
 
-  /** Базовые настройки из env (с пустыми списками категорий/модулей). */
   private envBase(): LoggingRuntimeSettings {
     const c = this.config.logging;
     return {

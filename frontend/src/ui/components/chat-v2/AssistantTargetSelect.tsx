@@ -1,22 +1,7 @@
-'use client';
+"use client";
 
-/**
- * ТЗ#5 2026-06-15 — компактный селектор адресата у окна ввода AI-чата кабинета.
- *
- * По умолчанию выбран общий помощник Коры (`{kind:'assistant'}`); опционально
- * пользователь выбирает РОЛЕВОЙ клон (по должности) — вопрос уходит ему через
- * `clonesApi.askRole` (ветвление в `ChatV2Client`).
- *
- * Источник клонов — `useClones(orgId)` (active role-clones). Доступ помечается
- * по `useMyCloneAccess` (недоступные клоны остаются в списке, но disabled и с
- * пометкой «нет доступа»). Если ролевых клонов нет вовсе — компонент возвращает
- * `null` (рендерим только помощника, без селектора).
- *
- * См. `plans/tz/2026-06-15-cabinet-assistant-clone-selector.md`.
- */
-
-import { Bot, UserCog } from 'lucide-react';
-import { useMemo, type ReactElement } from 'react';
+import { Bot, UserCog } from "lucide-react";
+import { useMemo, type ReactElement } from "react";
 
 import {
   Select,
@@ -26,14 +11,12 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { useClones, useMyCloneAccess } from '@/hooks/useClones';
-import type { AssistantTarget } from '@/domain/chat-v2';
+} from "@/ui/shadcn/select";
+import { useClones, useMyCloneAccess } from "@/hooks/useClones";
+import type { AssistantTarget } from "@/domain/chat-v2";
 
-/** Стабильное value для опции «общий помощник». */
-const ASSISTANT_VALUE = '__assistant__';
-/** Префикс value для опций-клонов, чтобы отличать от помощника. */
-const CLONE_VALUE_PREFIX = 'clone:';
+const ASSISTANT_VALUE = "__assistant__";
+const CLONE_VALUE_PREFIX = "clone:";
 
 export function AssistantTargetSelect({
   orgId,
@@ -49,42 +32,37 @@ export function AssistantTargetSelect({
   const { items, isLoading } = useClones(orgId);
   const { access } = useMyCloneAccess(orgId);
 
-  // Список ролевых клонов с пометкой доступа (для disabled-состояния опции).
   const clones = useMemo(
     () =>
       items.map((c) => ({
         roleId: c.roleId,
-        // Лейбл — публичное имя клона, иначе название должности.
         label: c.publicName || c.roleName,
         department: c.departmentName,
-        hasAccess: access?.has('role', c.roleId) ?? false,
+        hasAccess: access?.has("role", c.roleId) ?? false,
       })),
     [items, access],
   );
 
-  // Р-E5: пустой список клонов → селектор скрыт (остаётся только помощник).
-  // Пока грузим — тоже не мигаем селектором (вернётся, когда станет ясно, что
-  // клоны есть).
   if (isLoading) return null;
   if (clones.length === 0) return null;
 
   const selectValue =
-    value.kind === 'assistant'
+    value.kind === "assistant"
       ? ASSISTANT_VALUE
       : `${CLONE_VALUE_PREFIX}${value.roleId}`;
 
   function handleValueChange(next: string): void {
     if (next === ASSISTANT_VALUE) {
-      onChange({ kind: 'assistant' });
+      onChange({ kind: "assistant" });
       return;
     }
     const roleId = next.slice(CLONE_VALUE_PREFIX.length);
     const clone = clones.find((c) => c.roleId === roleId);
     if (!clone) {
-      onChange({ kind: 'assistant' });
+      onChange({ kind: "assistant" });
       return;
     }
-    onChange({ kind: 'clone', roleId: clone.roleId, roleName: clone.label });
+    onChange({ kind: "clone", roleId: clone.roleId, roleName: clone.label });
   }
 
   return (
@@ -98,7 +76,7 @@ export function AssistantTargetSelect({
         aria-label="Кому задать вопрос"
       >
         <span className="flex items-center gap-1.5">
-          {value.kind === 'assistant' ? (
+          {value.kind === "assistant" ? (
             <Bot size={14} className="shrink-0 text-accent" aria-hidden />
           ) : (
             <UserCog size={14} className="shrink-0 text-accent" aria-hidden />

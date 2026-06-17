@@ -1,39 +1,13 @@
-/**
- * API-клиент модуля processes (SBA α-7 wave 2).
- * Контракт: `backend/src/modules/processes/`.
- *
- * Эндпоинты:
- *   - GET    /api/v1/processes/templates
- *   - POST   /api/v1/processes/templates
- *   - GET    /api/v1/processes/templates/:id
- *   - PATCH  /api/v1/processes/templates/:id
- *   - DELETE /api/v1/processes/templates/:id
- *   - GET    /api/v1/processes/templates/:id/versions
- *   - POST   /api/v1/processes/templates/:id/versions
- *   - POST   /api/v1/processes/templates/:id/versions/:vid/activate
- *   - GET    /api/v1/processes/decision-points
- *   - POST   /api/v1/processes/decision-points
- *   - PATCH  /api/v1/processes/decision-points/:id
- *   - DELETE /api/v1/processes/decision-points/:id
- *   - GET    /api/v1/processes/handoffs
- *   - POST   /api/v1/processes/handoffs
- *   - PATCH  /api/v1/processes/handoffs/:id
- *   - DELETE /api/v1/processes/handoffs/:id
- *   - POST   /api/v1/processes/extract
- *
- * Защита: `CookieAuthGuard + TenantGuard`, RBAC `process_template:read|write`.
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export type ProcessTemplateStatusApi = 'active' | 'deprecated' | 'archived';
-export type ProcessTemplateVersionSourceApi = 'manual' | 'agent' | 'imported';
+export type ProcessTemplateStatusApi = "active" | "deprecated" | "archived";
+export type ProcessTemplateVersionSourceApi = "manual" | "agent" | "imported";
 export type ProcessHandoffKindApi =
-  | 'document'
-  | 'data'
-  | 'decision'
-  | 'physical'
-  | 'notification';
+  | "document"
+  | "data"
+  | "decision"
+  | "physical"
+  | "notification";
 
 export interface ProcessTemplateStepApi {
   name: string;
@@ -151,22 +125,21 @@ export type ListProcessTemplatesRequest = {
 };
 
 function buildQuery(filters?: ListProcessTemplatesRequest): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const p = new URLSearchParams();
-  if (filters.page) p.set('page', String(filters.page));
-  if (filters.limit) p.set('limit', String(filters.limit));
-  if (filters.status) p.set('status', filters.status);
-  if (filters.ownerEntityId) p.set('ownerEntityId', filters.ownerEntityId);
+  if (filters.page) p.set("page", String(filters.page));
+  if (filters.limit) p.set("limit", String(filters.limit));
+  if (filters.status) p.set("status", filters.status);
+  if (filters.ownerEntityId) p.set("ownerEntityId", filters.ownerEntityId);
   if (filters.completenessMin != null)
-    p.set('completenessMin', String(filters.completenessMin));
-  if (filters.category) p.set('category', filters.category);
-  if (filters.q) p.set('q', filters.q);
+    p.set("completenessMin", String(filters.completenessMin));
+  if (filters.category) p.set("category", filters.category);
+  if (filters.q) p.set("q", filters.q);
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
 export const processesApi = {
-  // templates
   list: (filters?: ListProcessTemplatesRequest) =>
     apiClient.get<ListProcessTemplatesResponseApi>(
       `/api/v1/processes/templates${buildQuery(filters)}`,
@@ -208,7 +181,6 @@ export const processesApi = {
       `/api/v1/processes/templates/${encodeURIComponent(id)}`,
     ),
 
-  // versions
   listVersions: (id: string) =>
     apiClient.get<ListProcessTemplateVersionsResponseApi>(
       `/api/v1/processes/templates/${encodeURIComponent(id)}/versions`,
@@ -232,23 +204,21 @@ export const processesApi = {
       {},
     ),
 
-  // decision points
   listDecisionPoints: (filters?: {
     templateId?: string;
     page?: number;
     limit?: number;
   }) => {
     const p = new URLSearchParams();
-    if (filters?.templateId) p.set('templateId', filters.templateId);
-    if (filters?.page) p.set('page', String(filters.page));
-    if (filters?.limit) p.set('limit', String(filters.limit));
+    if (filters?.templateId) p.set("templateId", filters.templateId);
+    if (filters?.page) p.set("page", String(filters.page));
+    if (filters?.limit) p.set("limit", String(filters.limit));
     const qs = p.toString();
     return apiClient.get<{ items: DecisionPointApi[]; total: number }>(
-      `/api/v1/processes/decision-points${qs ? `?${qs}` : ''}`,
+      `/api/v1/processes/decision-points${qs ? `?${qs}` : ""}`,
     );
   },
 
-  // handoffs
   listHandoffs: (filters?: {
     sourceTemplateId?: string;
     targetTemplateId?: string;
@@ -258,19 +228,18 @@ export const processesApi = {
   }) => {
     const p = new URLSearchParams();
     if (filters?.sourceTemplateId)
-      p.set('sourceTemplateId', filters.sourceTemplateId);
+      p.set("sourceTemplateId", filters.sourceTemplateId);
     if (filters?.targetTemplateId)
-      p.set('targetTemplateId', filters.targetTemplateId);
-    if (filters?.kind) p.set('kind', filters.kind);
-    if (filters?.page) p.set('page', String(filters.page));
-    if (filters?.limit) p.set('limit', String(filters.limit));
+      p.set("targetTemplateId", filters.targetTemplateId);
+    if (filters?.kind) p.set("kind", filters.kind);
+    if (filters?.page) p.set("page", String(filters.page));
+    if (filters?.limit) p.set("limit", String(filters.limit));
     const qs = p.toString();
     return apiClient.get<{ items: ProcessHandoffApi[]; total: number }>(
-      `/api/v1/processes/handoffs${qs ? `?${qs}` : ''}`,
+      `/api/v1/processes/handoffs${qs ? `?${qs}` : ""}`,
     );
   },
 
-  // extract (admin trigger)
   extract: (body: { blockIds: string[] }) =>
     apiClient.post<{
       ok: true;
@@ -279,9 +248,7 @@ export const processesApi = {
     }>(`/api/v1/processes/extract`, body),
 };
 
-// ─────────────────────────── SBA γ-3: Cross-Functional ─────────────
-
-export type CrossFunctionalSeverityApi = 'low' | 'medium' | 'high';
+export type CrossFunctionalSeverityApi = "low" | "medium" | "high";
 
 export interface CrossFunctionalProcessListItemApi {
   id: string;
@@ -326,20 +293,20 @@ export interface ListCrossFunctionalFrictionResponseApi {
 export const crossFunctionalApi = {
   list: (filters?: { q?: string; page?: number; limit?: number }) => {
     const p = new URLSearchParams();
-    if (filters?.q) p.set('q', filters.q);
-    if (filters?.page) p.set('page', String(filters.page));
-    if (filters?.limit) p.set('limit', String(filters.limit));
+    if (filters?.q) p.set("q", filters.q);
+    if (filters?.page) p.set("page", String(filters.page));
+    if (filters?.limit) p.set("limit", String(filters.limit));
     const qs = p.toString();
     return apiClient.get<ListCrossFunctionalProcessesResponseApi>(
-      `/api/v1/processes/cross-functional${qs ? `?${qs}` : ''}`,
+      `/api/v1/processes/cross-functional${qs ? `?${qs}` : ""}`,
     );
   },
   listFriction: (id: string, opts?: { includeResolved?: boolean }) => {
     const p = new URLSearchParams();
-    if (opts?.includeResolved) p.set('includeResolved', 'true');
+    if (opts?.includeResolved) p.set("includeResolved", "true");
     const qs = p.toString();
     return apiClient.get<ListCrossFunctionalFrictionResponseApi>(
-      `/api/v1/processes/cross-functional/${encodeURIComponent(id)}/friction${qs ? `?${qs}` : ''}`,
+      `/api/v1/processes/cross-functional/${encodeURIComponent(id)}/friction${qs ? `?${qs}` : ""}`,
     );
   },
   resolveFriction: (id: string, body?: { closingNote?: string }) =>

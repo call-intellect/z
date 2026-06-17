@@ -1,22 +1,3 @@
-/**
- * BillingService — фасад над провайдером + finalizePaidInvoice.
- *
- * Главные методы:
- *   - `handleProviderWebhook(headers, body)` — обработать webhook от Точки:
- *      verify signature → parse → dedup → BillingEventLog → finalizePaidInvoice
- *      при status='APPROVED'.
- *   - `finalizePaidInvoice(invoiceId, params)` — atomic Subscription update +
- *      Invoice markPaid + BillingOperation/SubscriptionEvent. После tx:
- *      fire-and-forget эмит для реф-комиссии (Фаза 6).
- *
- * Webhook-эндпоинт ВСЕГДА отвечает 200, даже на:
- *   - invalid signature (логируем, не падаем)
- *   - дубликат (BillingEventLog.externalEventId уже есть → skip)
- *   - не найденный invoice (логируем, не падаем — Точка не должна ретраить)
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.4 + port-brief §13.
- */
-
 import {
   BadRequestException,
   ForbiddenException,
@@ -38,10 +19,7 @@ import {
   InvoiceItemKind,
   type InvoiceItem,
 } from '../billing.types';
-import {
-  BillingEvent,
-  type InvoicePaidPayload,
-} from '../events/billing.events';
+import { BillingEvent, type InvoicePaidPayload } from '../events/billing.events';
 import type {
   BillingProviderPort,
   CreateBankInvoiceRequest,
@@ -56,17 +34,7 @@ import { SubscriptionService } from './subscription.service';
 
 export interface WebhookHandleResult {
   ok: boolean;
-  reason?:
-    | 'invalid_signature'
-    | 'duplicate'
-    | 'no_invoice'
-    | 'processed'
-    /**
-     * audit В3 (2026-05-29): customerCode из webhook не совпал
-     * с `cfg.billing.tochka.customerCode` — чужой merchant. Webhook
-     * принят (200 OK для Точки), но finalize пропущен.
-     */
-    | 'customer_mismatch';
+  reason?: 'invalid_signature' | 'duplicate' | 'no_invoice' | 'processed' | 'customer_mismatch';
   invoiceId?: string;
 }
 
@@ -74,7 +42,6 @@ export interface CreateCardPaymentInput {
   tenantId: string;
   billingPeriod: BillingPeriod;
   seatsExtra: number;
-  /** Если true — создаётся рекуррент-подписка (saveCard + autoRenew). */
   autoRenew: boolean;
 }
 
@@ -82,9 +49,7 @@ export interface CreateBankInvoicePaymentInput {
   tenantId: string;
   billingPeriod: BillingPeriod;
   seatsExtra: number;
-  /** Если true — после создания инвойса в Точке отправляем PDF на email Org. */
   sendToEmail?: boolean;
-  /** Через сколько дней истекает срок оплаты. По умолчанию 14. */
   dueInDays?: number;
 }
 
@@ -115,24 +80,7 @@ export class BillingService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ════════════════════════ User-flow: card / bank-invoice ════════════════════════
-
-  /**
-   * Создать платёж картой (один разовый или с автопродлением).
-   *
-   * Поток:
-   *   1. Проверить feature-flag tochka + card_recurring.
-   *   2. Создать Invoice (status=draft, paymentMethod=card_recurring).
-   *   3. provider.createRecurringSubscription({...}) если autoRenew=true,
-   *      иначе provider.createPayment({...}).
-   *   4. Обновить Invoice: providerInvoiceId, paymentUrl, status=issued.
-   *   5. Обновить Subscription: renewalMethod=card_recurring, providerSubscriptionId.
-   *
-   * Финализация (status='paid') приходит позже через webhook.
-   */
-  async createCardPayment(
-    input: CreateCardPaymentInput,
-  ): Promise<CreatePaymentResultView> {
+  async createCardPayment(input: CreateCardPaymentInput): Promise<CreatePaymentResultView> {
     this.assertFeature('card_recurring');
     const sub = await this.subscriptions.getByTenantOrFail(input.tenantId);
     const pricing = await this.seats.calculatePricing(
@@ -194,7 +142,6 @@ export class BillingService {
       externalStatus = r.externalStatus ?? null;
     }
 
-    // Обновляем Invoice + Subscription в одной транзакции.
     const final = await this.prisma.$transaction(async (tx) => {
       const inv = await tx.invoice.update({
         where: { id: invoice.id },
@@ -230,16 +177,6 @@ export class BillingService {
     };
   }
 
-  /**
-   * Создать безналичный счёт через Точку.
-   *
-   * Требует заполненных реквизитов в Org (inn/legalName/legalAddress + email).
-   * После создания Invoice в Точке (документ создаётся на их стороне) —
-   * опционально отправляем PDF на email Org.
-   *
-   * Финализация (status='paid') приходит через webhook когда платёжка
-   * дойдёт до счёта Z в Точке.
-   */
   async createBankInvoicePayment(
     input: CreateBankInvoicePaymentInput,
   ): Promise<CreatePaymentResultView> {
@@ -282,9 +219,7 @@ export class BillingService {
       invoiceId: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
       amountKopecks: pricing.periodKopecks,
-      description: `Подписка Z tier_standard (${
-        input.billingPeriod === 'yearly' ? 'год' : 'мес'
-      })`,
+      description: `Подписка Z tier_standard (${input.billingPeriod === 'yearly' ? 'год' : 'мес'})`,
       customerCode,
       accountId,
       payer: {
@@ -334,23 +269,16 @@ export class BillingService {
     };
   }
 
-  /**
-   * Главный entry-point для `POST /internal/billing/provider-events`.
-   * Никогда не throws — всегда возвращает 200 с reason'ом (нужно, чтобы
-   * Точка не уходила в retry-loop).
-   */
   async handleProviderWebhook(
     headers: Record<string, string>,
     body: unknown,
   ): Promise<WebhookHandleResult> {
-    // 1. Verify подпись.
     const signatureValid = await this.provider.verifyWebhookSignature(headers, body);
     if (!signatureValid) {
       this.logger.warn('Provider webhook: signature invalid — игнорируем');
       return { ok: false, reason: 'invalid_signature' };
     }
 
-    // 2. Parse payload.
     let event;
     try {
       event = this.provider.parseWebhook(headers, body);
@@ -361,8 +289,6 @@ export class BillingService {
       return { ok: false, reason: 'invalid_signature' };
     }
 
-    // 3. Дедуп + лог. audit Б4 — передаём jti для атомарной защиты
-    // от replay (BillingEventLog.jti @unique → P2002 → duplicate=true).
     const { duplicate } = await this.eventLog.log({
       eventType: BillingEventType.PROVIDER_WEBHOOK,
       providerName: this.provider.providerName === 'tochka' ? 'tochka' : 'manual',
@@ -374,11 +300,6 @@ export class BillingService {
       return { ok: true, reason: 'duplicate' };
     }
 
-    // audit В3 (2026-05-29): сверка customerCode из webhook с нашим конфигом.
-    // Точка валидно подписывает любой webhook своим JWK — подпись валидности
-    // tenant не гарантирует. Если payload-customerCode не совпадает с
-    // `cfg.billing.tochka.customerCode` — это чужой merchant, finalize нельзя.
-    // На manual-провайдере поле отсутствует — сверка пропускается.
     if (this.provider.providerName === 'tochka' && event.customerCode != null) {
       const expectedCustomerCode = this.cfg.billing.tochka.customerCode;
       if (expectedCustomerCode && event.customerCode !== expectedCustomerCode) {
@@ -389,13 +310,9 @@ export class BillingService {
       }
     }
 
-    // 4. Найти invoice по providerInvoiceId либо по paymentLinkId (= Invoice.id).
     const invoice = await this.prisma.invoice.findFirst({
       where: {
-        OR: [
-          { providerInvoiceId: event.providerInvoiceId },
-          { id: event.providerInvoiceId },
-        ],
+        OR: [{ providerInvoiceId: event.providerInvoiceId }, { id: event.providerInvoiceId }],
       },
     });
     if (!invoice) {
@@ -405,7 +322,6 @@ export class BillingService {
       return { ok: false, reason: 'no_invoice' };
     }
 
-    // 5. Если status='APPROVED' → finalize.
     if (event.status === 'APPROVED' || event.status === 'payment_paid') {
       await this.finalizePaidInvoice(invoice.id, {
         externalReference: event.providerInvoiceId,
@@ -413,38 +329,23 @@ export class BillingService {
       return { ok: true, reason: 'processed', invoiceId: invoice.id };
     }
 
-    // 6. Прочие статусы (REFUNDED/EXPIRED/CANCELED) — только лог, без действий.
     this.logger.log(
       `Provider webhook: invoice=${invoice.id} status=${event.status} — действий не требуется`,
     );
     return { ok: true, reason: 'processed', invoiceId: invoice.id };
   }
 
-  /**
-   * Финализация оплаченного инвойса:
-   *   - markPaid в Invoice (paymentMode='paid')
-   *   - update Subscription: status='ACTIVE', period dates, totalPaidKopecks
-   *   - SubscriptionEvent renewed
-   *   - BillingEventLog 'invoice.paid'
-   *   - fire-and-forget emit `billing.invoice.paid` для реф-комиссии (Фаза 6)
-   *
-   * Идемпотентность: если invoice уже paid — no-op (transactionно через
-   * markPaid).
-   */
   async finalizePaidInvoice(
     invoiceId: string,
     params: { externalReference?: string },
   ): Promise<void> {
     const invoice = await this.invoices.findOrFail(invoiceId);
     if (invoice.status === 'paid' || invoice.status === 'bonus') {
-      this.logger.log(
-        `finalizePaidInvoice: invoice ${invoiceId} уже ${invoice.status} — no-op`,
-      );
+      this.logger.log(`finalizePaidInvoice: invoice ${invoiceId} уже ${invoice.status} — no-op`);
       return;
     }
 
     await this.prisma.$transaction(async (tx) => {
-      // 1. Помечаем invoice как paid (внутри tx — без эмита из InvoiceService).
       await this.invoices.markPaid(
         {
           invoiceId,
@@ -454,7 +355,6 @@ export class BillingService {
         tx,
       );
 
-      // 2. Обновляем Subscription: ACTIVE + period dates из invoice.
       if (invoice.subscriptionId && invoice.periodEnd && invoice.periodStart) {
         await this.subscriptions.transition(invoice.tenantId, {
           to: 'ACTIVE',
@@ -473,7 +373,6 @@ export class BillingService {
         });
       }
 
-      // 3. BillingEventLog 'invoice.paid'.
       await this.eventLog.log({
         eventType: BillingEventType.INVOICE_PAID,
         tenantId: invoice.tenantId,
@@ -487,19 +386,14 @@ export class BillingService {
       });
     });
 
-    // 5. Метрики observability (commercial-reliability pack 2026-05-30, Фаза 4).
     const kindForMetric: 'acquiring' | 'bank' | 'manual' =
       this.provider.providerName === 'tochka' ? 'bank' : 'manual';
     const tenantTop = tenantTopOf(invoice.tenantId);
     this.metrics.incBillingInvoicePaid({ tenantTop, kind: kindForMetric });
     if (invoice.subscriptionId) {
-      // tier subscription мы не подтягиваем дополнительным запросом — для
-      // observability достаточно знать «продление произошло». При желании
-      // детального reporting'а — отдельный запрос по subscriptionId.
       this.metrics.incBillingSubscriptionRenewed({ tenantTop, tier: 'unknown' });
     }
 
-    // 4. Fire-and-forget эмит для side-effect handlers (реф-комиссия, signup-бонус).
     const payload: InvoicePaidPayload = {
       invoiceId: invoice.id,
       tenantId: invoice.tenantId,
@@ -515,17 +409,12 @@ export class BillingService {
     try {
       await this.events.emitAsync(eventName, payload);
     } catch (err) {
-      // audit С3 (2026-05-29): метрика для алертов в Grafana. Без этой
-      // метрики падения listener'ов (реф-комиссия, signup-бонус) видны
-      // только в логах — оператор может пропустить.
       this.metrics.incBillingEmitFailed({ event: eventName });
       this.logger.warn(
         `BillingEvent ${eventName}: emit упал: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
-
-  // ──────────────────── helpers (pay-flow) ────────────────────
 
   private assertFeature(kind: 'card_recurring' | 'bank_invoice'): void {
     const features = this.cfg.billing.features;
@@ -610,4 +499,3 @@ export class BillingService {
     return items;
   }
 }
-

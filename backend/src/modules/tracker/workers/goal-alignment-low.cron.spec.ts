@@ -23,11 +23,9 @@ describe('GoalAlignmentLowCron', () => {
 
   beforeEach(() => {
     orgFindMany = vi.fn().mockResolvedValue([{ id: 'org_1' }]);
-    // По умолчанию: 1 user-employee + owner отдельным membership.
     membershipFindMany = vi
       .fn()
       .mockImplementation(async (args: { where?: { role?: unknown } }) => {
-        // findOwnerCandidates запрашивает с role:{in:[owner,admin]}
         if (args?.where?.role) {
           return [{ userId: 'owner_1' }];
         }
@@ -35,9 +33,7 @@ describe('GoalAlignmentLowCron', () => {
       });
     issueCount = vi.fn();
     redisSet = vi.fn().mockResolvedValue('OK');
-    probeSuggest = vi
-      .fn()
-      .mockResolvedValue({ ok: true, probeEventId: 'pe_1' });
+    probeSuggest = vi.fn().mockResolvedValue({ ok: true, probeEventId: 'pe_1' });
     incProbeMetric = vi.fn();
 
     prisma = {
@@ -57,7 +53,7 @@ describe('GoalAlignmentLowCron', () => {
   });
 
   it('Org с 0 пользователей — 0 probes (early return)', async () => {
-    membershipFindMany.mockResolvedValueOnce([]); // first call — main employees
+    membershipFindMany.mockResolvedValueOnce([]);
     const res = await cron.run();
     expect(res.scannedUsers).toBe(0);
     expect(res.emitted).toBe(0);
@@ -66,7 +62,6 @@ describe('GoalAlignmentLowCron', () => {
   });
 
   it('User с 10 issues, 9 без goalId (90%) — 1 probe + 1 инкремент метрики', async () => {
-    // count #1 = total=10, count #2 = withoutGoal=9
     issueCount.mockResolvedValueOnce(10).mockResolvedValueOnce(9);
     const res = await cron.run();
     expect(res.emitted).toBe(1);
@@ -101,7 +96,7 @@ describe('GoalAlignmentLowCron', () => {
 
   it('Повторный run в тот же день — 0 probes (Redis dedup)', async () => {
     issueCount.mockResolvedValueOnce(10).mockResolvedValueOnce(9);
-    redisSet.mockResolvedValueOnce(null); // ключ уже есть → SET NX вернул null
+    redisSet.mockResolvedValueOnce(null);
     const res = await cron.run();
     expect(res.emitted).toBe(0);
     expect(res.dedupSkipped).toBe(1);

@@ -1,18 +1,14 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
 import {
   projectsApi,
   type ListProjectsRequest,
-} from '@/api/tracker/projects.api';
-import { projectFromApi, type Project } from '@/domain/tracker';
+} from "@/api/tracker/projects.api";
+import { projectFromApi, type Project } from "@/domain/tracker";
 
-/**
- * Список проектов трекера для текущей Org.
- * Возвращает уже доменные модели (с Date вместо ISO).
- */
 export function useProjects(
   orgId: string | null | undefined,
   req: ListProjectsRequest = {},
@@ -25,11 +21,11 @@ export function useProjects(
 } {
   const key = orgId
     ? [
-        'tracker.projects',
+        "tracker.projects",
         orgId,
         req.includeArchived ?? false,
         req.ownerId ?? null,
-        req.q ?? '',
+        req.q ?? "",
         req.page ?? 1,
         req.limit ?? 50,
       ]
@@ -38,7 +34,7 @@ export function useProjects(
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId is required');
+      if (!orgId) throw new Error("orgId is required");
       return projectsApi.list(orgId, req);
     },
     { revalidateOnFocus: false },

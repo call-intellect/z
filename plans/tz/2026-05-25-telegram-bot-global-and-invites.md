@@ -4,7 +4,7 @@ status: ready
 feature: β-9 — Глобальный Telegram-бот + GitHub-style приглашения сотрудников
 phase: beta-9
 date: 2026-05-25
-parent: plans/tz/2026-05-22-final-roadmap.md
+parent: plans/archive/2026-05-22-final-roadmap.md
 related:
   - second-brain/01_projects/conversational-channels.md §«Продуктовые принципы каналов (утверждены 2026-05-25)»
   - second-brain/01_projects/conversational-channels.md §«Conversational Channels β-1 — Telegram + MAX adapters»

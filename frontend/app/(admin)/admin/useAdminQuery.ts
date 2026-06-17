@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 
 export type AdminQueryState<T> = {
   data: T | null;
@@ -12,12 +12,6 @@ export type AdminQueryState<T> = {
   refetch: () => void;
 };
 
-/**
- * Минимальный hook для загрузки админ-данных с обработкой 403 (super_admin_required
- * или org_admin_required). Аналог useSWR, но без кэша: каждый раз перезагружаем
- * на refetch / при изменении ключа. Этого достаточно — админка не самый
- * горячий путь, и мы хотим явный контроль (refetch на mutations).
- */
 export function useAdminQuery<T>(
   key: string,
   loader: () => Promise<T>,
@@ -39,10 +33,10 @@ export function useAdminQuery<T>(
       setData(res);
     } catch (e) {
       if (cancelRef.current) return;
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setIsForbidden(true);
       } else {
-        setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+        setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
       }
     } finally {
       if (!cancelRef.current) setIsLoading(false);

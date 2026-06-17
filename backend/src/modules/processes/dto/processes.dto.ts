@@ -1,38 +1,10 @@
-/**
- * DTO модуля Processes (SBA α-7 wave 2). REST API `/api/v1/processes/*` —
- * master-detail для `ProcessTemplate` + `ProcessTemplateVersion` +
- * `DecisionPoint` + `ProcessHandoff`.
- *
- * Все user-facing строки — на русском.
- */
-
 import { z } from 'zod';
 
-// ─────────────────────────── enums ──────────────────────────────────
+export const ProcessTemplateStatusSchema = z.enum(['active', 'deprecated', 'archived']);
+export type ProcessTemplateStatusDto = z.infer<typeof ProcessTemplateStatusSchema>;
 
-/**
- * Status — общий для ProcessTemplate (Prisma enum `ProcessStatus`).
- * Соответствует Prisma enum `ProcessStatus` (active|deprecated|archived).
- * UI отображает «черновик» как computed состояние: status='active' AND
- * currentVersionId == null (т.е. ещё нет опубликованной версии).
- */
-export const ProcessTemplateStatusSchema = z.enum([
-  'active',
-  'deprecated',
-  'archived',
-]);
-export type ProcessTemplateStatusDto = z.infer<
-  typeof ProcessTemplateStatusSchema
->;
-
-export const ProcessTemplateVersionSourceSchema = z.enum([
-  'manual',
-  'agent',
-  'imported',
-]);
-export type ProcessTemplateVersionSourceDto = z.infer<
-  typeof ProcessTemplateVersionSourceSchema
->;
+export const ProcessTemplateVersionSourceSchema = z.enum(['manual', 'agent', 'imported']);
+export type ProcessTemplateVersionSourceDto = z.infer<typeof ProcessTemplateVersionSourceSchema>;
 
 export const ProcessHandoffKindSchema = z.enum([
   'document',
@@ -43,36 +15,18 @@ export const ProcessHandoffKindSchema = z.enum([
 ]);
 export type ProcessHandoffKindDto = z.infer<typeof ProcessHandoffKindSchema>;
 
-// ─────────────────────────── definition JSON ────────────────────────
-
-/**
- * Структура `ProcessTemplateVersion.definitionJson`. Не вшита в schema.prisma
- * (там Json), но описана здесь как Zod-схема для валидации входящих
- * payload'ов из UI / extraction'а.
- */
 export const ProcessStepDefinitionSchema = z.object({
-  /** Имя шага (короткое, до 200 символов). */
   name: z.string().trim().min(1).max(200),
-  /** Описание (что именно делается). */
   description: z.string().trim().max(2_000).optional(),
-  /** Очередь (1-based, монотонно). */
   order: z.number().int().min(1),
-  /** Owner (Role.id) — кто отвечает за шаг. Опц. */
   ownerRoleId: z.string().min(1).max(60).optional(),
-  /** Входной артефакт (документ / решение / событие). Опц. */
   inputArtifact: z.string().trim().max(300).optional(),
-  /** Выходной артефакт. Опц. */
   outputArtifact: z.string().trim().max(300).optional(),
-  /** Ожидаемое SLA (минут). Опц. */
   slaMinutes: z.number().int().positive().optional(),
 });
-export type ProcessStepDefinitionDto = z.infer<
-  typeof ProcessStepDefinitionSchema
->;
 
 export const ProcessTemplateDefinitionSchema = z.object({
   steps: z.array(ProcessStepDefinitionSchema).max(50).default([]),
-  /** Inline-описание handoff'ов (для UI-просмотра в version detail). */
   handoffsInline: z
     .array(
       z.object({
@@ -84,7 +38,6 @@ export const ProcessTemplateDefinitionSchema = z.object({
     )
     .max(50)
     .default([]),
-  /** Inline-decision-points (UI-only mirror, реальная запись — в DecisionPoint). */
   decisionPointsInline: z
     .array(
       z.object({
@@ -96,28 +49,18 @@ export const ProcessTemplateDefinitionSchema = z.object({
     .max(50)
     .default([]),
 });
-export type ProcessTemplateDefinitionDto = z.infer<
-  typeof ProcessTemplateDefinitionSchema
->;
-
-// ─────────────────────────── List query ─────────────────────────────
+export type ProcessTemplateDefinitionDto = z.infer<typeof ProcessTemplateDefinitionSchema>;
 
 export const ListProcessTemplatesQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   status: ProcessTemplateStatusSchema.optional(),
   ownerEntityId: z.string().min(1).max(60).optional(),
-  /** Минимальная completeness (0..1). Фильтрует «незакрытые» template'ы. */
   completenessMin: z.coerce.number().min(0).max(1).optional(),
-  /** Категория (см. ProcessTemplate.category). */
   category: z.string().trim().min(1).max(60).optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
-export type ListProcessTemplatesQuery = z.infer<
-  typeof ListProcessTemplatesQuerySchema
->;
-
-// ─────────────────────────── Create / Update bodies ─────────────────
+export type ListProcessTemplatesQuery = z.infer<typeof ListProcessTemplatesQuerySchema>;
 
 export const CreateProcessTemplateBodySchema = z.object({
   name: z.string().trim().min(1).max(300),
@@ -127,9 +70,7 @@ export const CreateProcessTemplateBodySchema = z.object({
   ownerRoleId: z.string().min(1).max(60).optional(),
   ownerPersonId: z.string().min(1).max(60).optional(),
 });
-export type CreateProcessTemplateBody = z.infer<
-  typeof CreateProcessTemplateBodySchema
->;
+export type CreateProcessTemplateBody = z.infer<typeof CreateProcessTemplateBodySchema>;
 
 export const UpdateProcessTemplateBodySchema = z.object({
   name: z.string().trim().min(1).max(300).optional(),
@@ -140,22 +81,17 @@ export const UpdateProcessTemplateBodySchema = z.object({
   ownerPersonId: z.string().min(1).max(60).nullable().optional(),
   status: ProcessTemplateStatusSchema.optional(),
 });
-export type UpdateProcessTemplateBody = z.infer<
-  typeof UpdateProcessTemplateBodySchema
->;
+export type UpdateProcessTemplateBody = z.infer<typeof UpdateProcessTemplateBodySchema>;
 
 export const CreateProcessTemplateVersionBodySchema = z.object({
   definition: ProcessTemplateDefinitionSchema,
   source: ProcessTemplateVersionSourceSchema.default('manual'),
   changeNote: z.string().trim().max(2_000).optional(),
-  /** Сразу пометить новую версию как currentVersionId? (По умолчанию `false` — куратор активирует отдельно.) */
   activateImmediately: z.boolean().optional(),
 });
 export type CreateProcessTemplateVersionBody = z.infer<
   typeof CreateProcessTemplateVersionBodySchema
 >;
-
-// ─────────────────────────── DecisionPoint ──────────────────────────
 
 export const ListDecisionPointsQuerySchema = z.object({
   templateId: z.string().min(1).max(60).optional(),
@@ -163,9 +99,7 @@ export const ListDecisionPointsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-export type ListDecisionPointsQuery = z.infer<
-  typeof ListDecisionPointsQuerySchema
->;
+export type ListDecisionPointsQuery = z.infer<typeof ListDecisionPointsQuerySchema>;
 
 export const CreateDecisionPointBodySchema = z.object({
   templateId: z.string().min(1).max(60),
@@ -176,7 +110,6 @@ export const CreateDecisionPointBodySchema = z.object({
       z.object({
         name: z.string().trim().min(1).max(200),
         description: z.string().trim().max(500).optional(),
-        /** Опц. ссылка на step (по order в definition'е). */
         leadsToStepOrder: z.number().int().positive().optional(),
       }),
     )
@@ -185,17 +118,12 @@ export const CreateDecisionPointBodySchema = z.object({
   decidedByRoleId: z.string().min(1).max(60).optional(),
   order: z.number().int().min(0).default(0),
 });
-export type CreateDecisionPointBody = z.infer<
-  typeof CreateDecisionPointBodySchema
->;
+export type CreateDecisionPointBody = z.infer<typeof CreateDecisionPointBodySchema>;
 
-export const UpdateDecisionPointBodySchema =
-  CreateDecisionPointBodySchema.partial().omit({ templateId: true });
-export type UpdateDecisionPointBody = z.infer<
-  typeof UpdateDecisionPointBodySchema
->;
-
-// ─────────────────────────── ProcessHandoff ─────────────────────────
+export const UpdateDecisionPointBodySchema = CreateDecisionPointBodySchema.partial().omit({
+  templateId: true,
+});
+export type UpdateDecisionPointBody = z.infer<typeof UpdateDecisionPointBodySchema>;
 
 export const ListProcessHandoffsQuerySchema = z.object({
   sourceTemplateId: z.string().min(1).max(60).optional(),
@@ -204,9 +132,7 @@ export const ListProcessHandoffsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(100),
 });
-export type ListProcessHandoffsQuery = z.infer<
-  typeof ListProcessHandoffsQuerySchema
->;
+export type ListProcessHandoffsQuery = z.infer<typeof ListProcessHandoffsQuerySchema>;
 
 export const CreateProcessHandoffBodySchema = z.object({
   fromTemplateId: z.string().min(1).max(60).optional(),
@@ -215,28 +141,22 @@ export const CreateProcessHandoffBodySchema = z.object({
   toRoleId: z.string().min(1).max(60).optional(),
   kind: ProcessHandoffKindSchema,
   payloadDescription: z.string().trim().max(2_000).optional(),
-  expectedSlaHours: z.number().int().min(0).max(24 * 365).optional(),
+  expectedSlaHours: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 365)
+    .optional(),
 });
-export type CreateProcessHandoffBody = z.infer<
-  typeof CreateProcessHandoffBodySchema
->;
+export type CreateProcessHandoffBody = z.infer<typeof CreateProcessHandoffBodySchema>;
 
-export const UpdateProcessHandoffBodySchema =
-  CreateProcessHandoffBodySchema.partial();
-export type UpdateProcessHandoffBody = z.infer<
-  typeof UpdateProcessHandoffBodySchema
->;
-
-// ─────────────────────────── Extract trigger ────────────────────────
+export const UpdateProcessHandoffBodySchema = CreateProcessHandoffBodySchema.partial();
+export type UpdateProcessHandoffBody = z.infer<typeof UpdateProcessHandoffBodySchema>;
 
 export const ExtractProcessTemplateBodySchema = z.object({
   blockIds: z.array(z.string().min(1).max(60)).min(1).max(100),
 });
-export type ExtractProcessTemplateBody = z.infer<
-  typeof ExtractProcessTemplateBodySchema
->;
-
-// ─────────────────────────── Response DTOs ──────────────────────────
+export type ExtractProcessTemplateBody = z.infer<typeof ExtractProcessTemplateBodySchema>;
 
 export interface ProcessTemplateListItemDto {
   id: string;
@@ -248,7 +168,6 @@ export interface ProcessTemplateListItemDto {
   currentVersionId: string | null;
   ownerRoleId: string | null;
   ownerPersonId: string | null;
-  /** Completeness (0..1) — расчётный показатель «насколько заполнен шаблон». */
   completeness: number;
   stepsCount: number;
   decisionPointsCount: number;

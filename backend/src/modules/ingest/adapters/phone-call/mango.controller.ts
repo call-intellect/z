@@ -15,22 +15,6 @@ import { IngestService } from '../../ingest.service';
 
 import { MangoAdapterService } from './mango.service';
 
-/**
- * Webhook-контроллер Mango Office (Фаза 10 knowledge-core, Шаг 5).
- *
- * `POST /api/v1/ingest/calls/mango/:sourceId` — endpoint для notify-событий
- * АТС Mango. Mango отправляет form-encoded body с полями `json` (raw JSON-строка
- * payload'а) и `sign` (sha256(apiKey + json + apiSalt)).
- *
- * Особенности:
- *   - Авторизация — через подпись (timing-safe в `MangoAdapterService.verifySignature`).
- *   - Только summary-события (`event.entry === 'call'`) обрабатываются.
- *   - На MVP Шага 5 НЕ создаём `Meeting` — храним только `RawEvent` с
- *     metadata-only payload (см. plans/decisions-log.md 2026-05-10).
- *   - Запись звонка (`recordUrl`) скачивается в S3 fire-and-forget.
- *
- * FIXME knowledge-core Фаза 12: добавить @RequireEntitlement('feature.adapter_phone_call').
- */
 @ApiExcludeController()
 @Controller('api/v1/ingest/calls/mango')
 export class MangoCallWebhookController {
@@ -71,17 +55,18 @@ export class MangoCallWebhookController {
     } catch (err) {
       throw new ForbiddenException({
         ok: false,
-        error: { code: 'invalid_mango_json', message: err instanceof Error ? err.message : String(err) },
+        error: {
+          code: 'invalid_mango_json',
+          message: err instanceof Error ? err.message : String(err),
+        },
       });
     }
 
-    // Принимаем только финальное summary call-события.
     if (event.entry !== 'call') {
       this.logger.debug({ sourceId, entry: event.entry }, 'mango: skip non-call entry');
       return { ok: true };
     }
 
-    // Фильтр по добавочному.
     if (
       config.extensions.length > 0 &&
       event.from?.extension &&
@@ -101,7 +86,6 @@ export class MangoCallWebhookController {
       });
     }
 
-    // Скачивание записи (если есть) — fire-and-forget, не блокируем ingest.
     let recordS3Key: string | null = null;
     if (event.recording_url) {
       try {
@@ -130,8 +114,6 @@ export class MangoCallWebhookController {
       recordingUrlExternal: event.recording_url ?? null,
       recordS3Key,
       raw: event,
-      // TODO Фаза 10b: добавить enqueue в transcribe.queue для phone-transcribe.worker.
-      // Сейчас — metadata-only RawEvent. См. plans/decisions-log.md 2026-05-10.
     };
 
     const result = await this.ingest.ingest({

@@ -1,15 +1,21 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { projectsApi, type ProjectEmailInboxApi } from '@/api/tracker/projects.api';
-import { humanizeApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { PROJECT_MEMBER_ROLE_LABELS, memberDisplayName } from '@/domain/tracker';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { useProjectMembers } from '@/hooks/tracker/useProject';
-import { AssigneeAvatar } from '@/ui/tracker';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
+import {
+  projectsApi,
+  type ProjectEmailInboxApi,
+} from "@/api/tracker/projects.api";
+import { humanizeApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import {
+  PROJECT_MEMBER_ROLE_LABELS,
+  memberDisplayName,
+} from "@/domain/tracker";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { useProjectMembers } from "@/hooks/tracker/useProject";
+import { AssigneeAvatar } from "@/ui/tracker";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
 export function ProjectSettingsClient({ slug }: { slug: string }) {
   const { currentOrgId } = useAuth();
@@ -37,11 +43,11 @@ export function ProjectSettingsClient({ slug }: { slug: string }) {
           <Field label="Таймзона" value={project.timezone} />
           <Field
             label="Спринты"
-            value={project.cycleViewEnabled ? 'Вкл' : 'Выкл'}
+            value={project.cycleViewEnabled ? "Вкл" : "Выкл"}
           />
           <Field
             label="Входящие"
-            value={project.intakeViewEnabled ? 'Вкл' : 'Выкл'}
+            value={project.intakeViewEnabled ? "Вкл" : "Выкл"}
           />
         </dl>
       </section>
@@ -93,14 +99,6 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * Tracker Phase 4 (Email-to-task, T5) — секция управления email-inbox проекта.
- *
- * - Toggle вкл./выкл. (POST enable / POST disable).
- * - Показ полного адреса + кнопка «Скопировать».
- * - «Сгенерировать новый адрес» (с подтверждением — старый сразу перестанет работать).
- * - Лог последних 20 inbound писем (status badge + время + subject + ссылка на Issue).
- */
 function EmailInboxSection({
   orgId,
   projectId,
@@ -110,7 +108,7 @@ function EmailInboxSection({
 }) {
   const [data, setData] = useState<ProjectEmailInboxApi | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<'enable' | 'disable' | 'regen' | null>(null);
+  const [busy, setBusy] = useState<"enable" | "disable" | "regen" | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
@@ -122,7 +120,9 @@ function EmailInboxSection({
       const fresh = await projectsApi.getEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить настройки email-inbox'));
+      setError(
+        humanizeApiError(e, "Не удалось загрузить настройки email-inbox"),
+      );
     } finally {
       setLoading(false);
     }
@@ -133,26 +133,26 @@ function EmailInboxSection({
   }, [reload]);
 
   const handleEnable = async () => {
-    setBusy('enable');
+    setBusy("enable");
     setError(null);
     try {
       const fresh = await projectsApi.enableEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось включить email-inbox'));
+      setError(humanizeApiError(e, "Не удалось включить email-inbox"));
     } finally {
       setBusy(null);
     }
   };
 
   const handleDisable = async () => {
-    setBusy('disable');
+    setBusy("disable");
     setError(null);
     try {
       const fresh = await projectsApi.disableEmailInbox(orgId, projectId);
       setData(fresh);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось выключить email-inbox'));
+      setError(humanizeApiError(e, "Не удалось выключить email-inbox"));
     } finally {
       setBusy(null);
     }
@@ -160,19 +160,23 @@ function EmailInboxSection({
 
   const handleRegenerate = async () => {
     const ok = await ask({
-      title: 'Сгенерировать новый адрес?',
-      description: 'Старый адрес сразу перестанет работать — письма на него будут отскакивать.',
-      confirmLabel: 'Сгенерировать',
+      title: "Сгенерировать новый адрес?",
+      description:
+        "Старый адрес сразу перестанет работать — письма на него будут отскакивать.",
+      confirmLabel: "Сгенерировать",
       destructive: true,
     });
     if (!ok) return;
-    setBusy('regen');
+    setBusy("regen");
     setError(null);
     try {
-      const fresh = await projectsApi.regenerateEmailInboxAlias(orgId, projectId);
+      const fresh = await projectsApi.regenerateEmailInboxAlias(
+        orgId,
+        projectId,
+      );
       setData(fresh);
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось сгенерировать новый адрес'));
+      setError(humanizeApiError(e, "Не удалось сгенерировать новый адрес"));
     } finally {
       setBusy(null);
     }
@@ -184,16 +188,15 @@ function EmailInboxSection({
       await navigator.clipboard.writeText(data.fullAddress);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Игнорируем — пользователь скопирует вручную.
-    }
+    } catch {}
   };
 
   return (
     <section className="flex flex-col gap-2">
       <h2 className="text-sm font-medium text-fg-primary">Email-to-task</h2>
       <p className="text-xs text-fg-tertiary">
-        Письма на адрес проекта автоматически создают задачи. Вложения сохраняются.
+        Письма на адрес проекта автоматически создают задачи. Вложения
+        сохраняются.
       </p>
 
       <div className="flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated p-4">
@@ -253,7 +256,7 @@ function EmailInboxSection({
                     onClick={handleCopy}
                     className="rounded-md border border-border-subtle px-3 py-1 text-xs hover:bg-bg-subtle"
                   >
-                    {copied ? 'Скопировано' : 'Скопировать'}
+                    {copied ? "Скопировано" : "Скопировать"}
                   </button>
                   <button
                     type="button"
@@ -298,9 +301,11 @@ function EmailInboxSection({
                         {formatDateTime(log.createdAt)}
                       </span>
                       <span className="truncate text-fg-primary">
-                        {log.subject || '(без темы)'}
+                        {log.subject || "(без темы)"}
                       </span>
-                      <span className="ml-auto text-fg-tertiary">{log.fromEmail}</span>
+                      <span className="ml-auto text-fg-tertiary">
+                        {log.fromEmail}
+                      </span>
                       {log.issueId ? (
                         <a
                           className="text-accent hover:underline"
@@ -325,19 +330,19 @@ function EmailInboxSection({
 function MailStatusBadge({
   status,
 }: {
-  status: 'received' | 'bounced' | 'failed' | 'created';
+  status: "received" | "bounced" | "failed" | "created";
 }) {
   const labels: Record<typeof status, string> = {
-    received: 'Получено',
-    bounced: 'Отскок',
-    failed: 'Ошибка',
-    created: 'Задача создана',
+    received: "Получено",
+    bounced: "Отскок",
+    failed: "Ошибка",
+    created: "Задача создана",
   };
   const colors: Record<typeof status, string> = {
-    received: 'bg-bg-subtle text-fg-secondary',
-    bounced: 'bg-chip-warning-bg text-chip-warning-fg',
-    failed: 'bg-chip-danger-bg text-chip-danger-fg',
-    created: 'bg-chip-success-bg text-chip-success-fg',
+    received: "bg-bg-subtle text-fg-secondary",
+    bounced: "bg-chip-warning-bg text-chip-warning-fg",
+    failed: "bg-chip-danger-bg text-chip-danger-fg",
+    created: "bg-chip-success-bg text-chip-success-fg",
   };
   return (
     <span
@@ -351,11 +356,11 @@ function MailStatusBadge({
 function formatDateTime(iso: string): string {
   try {
     const d = new Date(iso);
-    return d.toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+    return d.toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return iso;

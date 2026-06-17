@@ -30,21 +30,6 @@ import {
 } from './admin-telegram-bot.dto';
 import { AdminTelegramBotService } from './admin-telegram-bot.service';
 
-/**
- * Главная админка Z — управление глобальным Telegram-ботом (β-9 Phase 4).
- *
- * Контракты:
- *   GET  /api/v1/admin/system/telegram-bot
- *   PUT  /api/v1/admin/system/telegram-bot/token
- *   PUT  /api/v1/admin/system/telegram-bot/webhook
- *   PUT  /api/v1/admin/system/telegram-bot/templates
- *   PUT  /api/v1/admin/system/telegram-bot/status
- *   GET  /api/v1/admin/system/telegram-bot/bindings
- *
- * Доступ — только super-admin (RBAC ResourceType `system_telegram_bot`).
- * `SuperAdminAuditInterceptor` пишет каждое действие в `SuperAdminAccessLog`
- * (включая GET — это compliance-требование для drill-down доступа).
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/system/telegram-bot')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -61,19 +46,13 @@ export class AdminTelegramBotController {
   }
 
   @Put('token')
-  async updateToken(
-    @Body(new ZodValidationPipe(UpdateTokenSchema)) dto: UpdateTokenDto,
-  ) {
+  async updateToken(@Body(new ZodValidationPipe(UpdateTokenSchema)) dto: UpdateTokenDto) {
     return this.svc.updateToken({ token: dto.token });
   }
 
   @Put('webhook')
-  async resetWebhook(
-    @Body(new ZodValidationPipe(ResetWebhookSchema)) dto: ResetWebhookDto,
-  ) {
-    return this.svc.resetWebhook(
-      dto.webhookUrl ? { webhookUrl: dto.webhookUrl } : undefined,
-    );
+  async resetWebhook(@Body(new ZodValidationPipe(ResetWebhookSchema)) dto: ResetWebhookDto) {
+    return this.svc.resetWebhook(dto.webhookUrl ? { webhookUrl: dto.webhookUrl } : undefined);
   }
 
   @Put('templates')
@@ -85,9 +64,7 @@ export class AdminTelegramBotController {
   }
 
   @Put('status')
-  async setStatus(
-    @Body(new ZodValidationPipe(UpdateStatusSchema)) dto: UpdateStatusDto,
-  ) {
+  async setStatus(@Body(new ZodValidationPipe(UpdateStatusSchema)) dto: UpdateStatusDto) {
     return this.svc.setStatus({ status: dto.status });
   }
 
@@ -99,11 +76,6 @@ export class AdminTelegramBotController {
     return this.svc.listBindings(query);
   }
 
-  /**
-   * Синхронный пинг прокси telegram.crossmark.ru («Проверить прокси
-   * сейчас»). ТЗ 2026-05-26 §7 + §10. Не пишет в БД, не меняет
-   * Channel.config — только диагностика.
-   */
   @Post('ping')
   async pingProxy() {
     return this.svc.pingProxy();

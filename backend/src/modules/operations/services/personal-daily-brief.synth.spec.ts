@@ -6,10 +6,6 @@ import {
   type BriefItem,
 } from './personal-daily-brief.synth';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — unit-тесты дедупа персонального брифа.
- * Без БД/времени. Главный кейс — обещание, ставшее задачей, считается один раз.
- */
 describe('personal-daily-brief.synth', () => {
   const item = (over: Partial<BriefItem>): BriefItem => ({
     kind: over.kind ?? 'task',
@@ -73,7 +69,6 @@ describe('personal-daily-brief.synth', () => {
         item({ kind: 'my_promise', dedupKey: 'block-2', title: 'Другое обещание' }),
       ];
       const out = dropPromisesThatBecameTasks({ tasks, promises });
-      // block-1 ушло (стало задачей), block-2 осталось
       expect(out.map((p) => p.dedupKey)).toEqual(['block-2']);
     });
 

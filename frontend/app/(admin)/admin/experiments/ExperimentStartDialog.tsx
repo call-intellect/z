@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 
-import { ApiError } from '@/api/api-error';
-import { adminExperimentsApi } from '@/api/admin-experiments.api';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminExperimentsApi } from "@/api/admin-experiments.api";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -13,17 +13,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 const PROVIDER_MODEL_RE = /^[a-z][a-z0-9-]*:[A-Za-z0-9-_.]+$/;
 
-/**
- * Диалог запуска A/B-эксперимента над функцией LLM.
- * Используется со страниц `/admin/usage/functions/[taskType]` и
- * `/admin/experiments/[taskType]` (при отсутствии активного экса).
- */
 export function ExperimentStartDialog({
   taskType,
   onClose,
@@ -33,22 +28,22 @@ export function ExperimentStartDialog({
   onClose: () => void;
   onStarted: () => void;
 }) {
-  const [modelB, setModelB] = useState('anthropic:claude-3-5-sonnet-20241022');
+  const [modelB, setModelB] = useState("anthropic:claude-3-5-sonnet-20241022");
   const [splitPercent, setSplitPercent] = useState(50);
   const [durationDays, setDurationDays] = useState(7);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (!PROVIDER_MODEL_RE.test(modelB)) {
-      toast.error('modelB должен быть формата `<provider>:<model>`');
+      toast.error("modelB должен быть формата `<provider>:<model>`");
       return;
     }
     if (splitPercent < 1 || splitPercent > 99) {
-      toast.error('split должен быть 1..99');
+      toast.error("split должен быть 1..99");
       return;
     }
     if (durationDays < 1 || durationDays > 30) {
-      toast.error('продолжительность 1..30 дней');
+      toast.error("продолжительность 1..30 дней");
       return;
     }
     setSubmitting(true);
@@ -59,10 +54,10 @@ export function ExperimentStartDialog({
         splitPercent,
         durationDays,
       });
-      toast.success('Эксперимент запущен');
+      toast.success("Эксперимент запущен");
       onStarted();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось запустить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось запустить");
     } finally {
       setSubmitting(false);
     }
@@ -74,7 +69,7 @@ export function ExperimentStartDialog({
         <DialogHeader>
           <DialogTitle>Запуск A/B на {taskType}</DialogTitle>
           <DialogDescription>
-            Текущая модель станет «A». Введите кандидата «B» в формате{' '}
+            Текущая модель станет «A». Введите кандидата «B» в формате{" "}
             <code className="font-mono text-xs">provider:model</code>.
           </DialogDescription>
         </DialogHeader>
@@ -112,11 +107,20 @@ export function ExperimentStartDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
             Отмена
           </Button>
-          <Button size="sm" onClick={() => void handleSubmit()} disabled={submitting}>
-            {submitting ? 'Запускаем…' : 'Запустить'}
+          <Button
+            size="sm"
+            onClick={() => void handleSubmit()}
+            disabled={submitting}
+          >
+            {submitting ? "Запускаем…" : "Запустить"}
           </Button>
         </DialogFooter>
       </DialogContent>

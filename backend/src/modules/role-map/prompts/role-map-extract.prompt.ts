@@ -1,19 +1,4 @@
-/**
- * SBA α-8 wave 4 — промпт `role-map-extract-v1`.
- *
- * Используется RoleMapBuilderWorker для извлечения нормализованных
- * Role Map элементов из батча IdeaBlock'ов одного roleId.
- *
- * Возвращает JSON: { responsibilities[], authority[], knowledge[],
- * decision_policies[], interactions[] } — 5 категорий wave 2.
- *
- * Регистрируется в LlmRouter через taskType='role-map-extract'.
- */
-
-import {
-  withConfidenceCalibration,
-  withEdgeCasePolicy,
-} from '../../ai/services/prompts/common';
+import { withConfidenceCalibration, withEdgeCasePolicy } from '../../ai/services/prompts/common';
 
 export interface RoleMapExtractBlock {
   id: string;
@@ -34,20 +19,10 @@ export interface RoleMapExtractContext {
 export const ROLE_MAP_EXTRACT_TASK_TYPE = 'role-map-extract';
 export const ROLE_MAP_EXTRACT_SCHEMA_NAME = 'role_map_extract_v1';
 
-/**
- * Strict JSON Schema (для `responseFormat: 'json_schema' strict`).
- * Совпадает с zod-схемой ниже — синхронизировать при изменениях.
- */
 export const ROLE_MAP_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
-  required: [
-    'responsibilities',
-    'authority',
-    'knowledge',
-    'decision_policies',
-    'interactions',
-  ],
+  required: ['responsibilities', 'authority', 'knowledge', 'decision_policies', 'interactions'],
   properties: {
     responsibilities: {
       type: 'array',
@@ -169,21 +144,15 @@ export const ROLE_MAP_EXTRACT_SYSTEM_PROMPT = withEdgeCasePolicy(
 - Все строки на русском. Без markdown, без преамбул, только JSON по схеме.`),
 );
 
-export function buildRoleMapExtractUserMessage(
-  ctx: RoleMapExtractContext,
-): string {
+export function buildRoleMapExtractUserMessage(ctx: RoleMapExtractContext): string {
   const blocks = ctx.blocks
     .map(
       (b) =>
         `- id=${b.id} [${b.signalType}] ${b.text}${b.source ? ` (${b.source})` : ''} (${b.createdAt})`,
     )
     .join('\n');
-  const knownRoles = ctx.knownRoles
-    .map((r) => `- ${r.id}: ${r.name}`)
-    .join('\n');
-  const knownDepts = ctx.knownDepartments
-    .map((d) => `- ${d.id}: ${d.name}`)
-    .join('\n');
+  const knownRoles = ctx.knownRoles.map((r) => `- ${r.id}: ${r.name}`).join('\n');
+  const knownDepts = ctx.knownDepartments.map((d) => `- ${d.id}: ${d.name}`).join('\n');
 
   return [
     `Должность: ${ctx.role.name}`,
@@ -205,44 +174,4 @@ export function buildRoleMapExtractUserMessage(
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-/**
- * Промпт `role-completeness-rationale-v1` — краткое (1-3 предложения)
- * объяснение, почему такая completeness и что заполнить в первую очередь.
- */
-export const ROLE_COMPLETENESS_RATIONALE_TASK_TYPE =
-  'role-completeness-rationale';
-
-export const ROLE_COMPLETENESS_RATIONALE_SYSTEM_PROMPT = `Ты — эксперт по орг-структуре. Кратко объясни (1-3 предложения), почему у должности именно такая полнота карты и какие 1-2 слота приоритетно заполнить.
-
-Тон — спокойный, без воды. Только конкретика. На русском.`;
-
-export function buildCompletenessRationaleUserMessage(args: {
-  roleName: string;
-  completeness: number;
-  perCategory: {
-    responsibilities: number;
-    authority: number;
-    knowledge: number;
-    decisions: number;
-    interactions: number;
-    metrics: number;
-  };
-  hasMission: boolean;
-}): string {
-  return [
-    `Должность: ${args.roleName}`,
-    `Completeness: ${(args.completeness * 100).toFixed(0)}%`,
-    `Миссия должности задана: ${args.hasMission ? 'да' : 'нет'}`,
-    `Заполненность по категориям:`,
-    `- Обязанности: ${args.perCategory.responsibilities}`,
-    `- Границы полномочий: ${args.perCategory.authority}`,
-    `- Требуемые знания: ${args.perCategory.knowledge}`,
-    `- Политики решений: ${args.perCategory.decisions}`,
-    `- Взаимодействия: ${args.perCategory.interactions}`,
-    `- KPI / метрики: ${args.perCategory.metrics}`,
-    '',
-    'Дай объяснение в 1-3 предложения. Без markdown.',
-  ].join('\n');
 }

@@ -12,7 +12,7 @@
 1. Найти встречу:
 
    ```bash
-   psql z_main -c "SELECT id, status, started_at, ended_at FROM \"Meeting\" WHERE id='<MEETING_ID>';"
+   docker compose exec backend psql "$DATABASE_URL" -c "SELECT id, status, started_at, ended_at FROM \"Meeting\" WHERE id='<MEETING_ID>';"
    ```
 
 2. Проверить, есть ли участники в LiveKit:
@@ -28,7 +28,7 @@
 3. Логи backend по `meetingId`:
 
    ```bash
-   journalctl -u z-backend --since '2h ago' | grep -i '<MEETING_ID>'
+   docker compose logs backend --since 2h | grep -i '<MEETING_ID>'
    ```
 
    Часто причина — webhook `participant_left` потерян / не пришёл.
@@ -43,21 +43,24 @@
 
 Эффект: статус → `finishing`, останавливается Egress, запускается AI-pipeline.
 
-### Вариант 2: SQL (если админка недоступна)
+### Вариант 2: SQL + retry-ai эндпоинт (если кнопка в админке недоступна)
 
 ```sql
 UPDATE "Meeting"
-SET status = 'finishing', ended_at = now()
+SET status = 'completed', ended_at = now()
 WHERE id = '<MEETING_ID>' AND status = 'active';
 ```
 
-После этого вручную поставить job в очередь:
+(Запускать через `docker compose exec backend psql "$DATABASE_URL" -c "..."`.)
+
+После этого перезапустить AI-pipeline через admin-эндпоинт `POST /admin/api/v1/meetings/:id/retry-ai` (под admin-токеном) — он вызывает `RetryService.retry` и сам ставит нужный job в очередь:
 
 ```bash
-bun run scripts/enqueue-merge.ts <MEETING_ID>
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+     "https://<BACKEND_HOST>/admin/api/v1/meetings/<MEETING_ID>/retry-ai"
 ```
 
-(Скрипт нужно дописать или вручную через `redis-cli LPUSH bull:merge:wait ...`.)
+Отдельного скрипта `enqueue-merge.ts` нет; ручной re-enqueue делается только через этот эндпоинт (или кнопку **Retry AI** в админке).
 
 ## Escalation
 

@@ -19,16 +19,6 @@ import type {
   UpdateDepartmentDto,
 } from '../dto/departments.dto';
 
-/**
- * Сервис управления отделами компании клиента (Department).
- *
- * Бизнес-правила:
- *   - tenantId обязателен (изоляция Org).
- *   - DELETE — soft (`deletedAt = now`); запрещён, если у отдела есть
- *     активные дочерние отделы или активные Role.
- *   - Уникальность по (tenantId, name, deletedAt) гарантируется БД —
- *     перехватываем `P2002` и отдаём 409.
- */
 @Injectable()
 export class DepartmentsService {
   private readonly logger = new Logger(DepartmentsService.name);
@@ -37,8 +27,6 @@ export class DepartmentsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -49,9 +37,7 @@ export class DepartmentsService {
     const where: Prisma.DepartmentWhereInput = {
       tenantId: args.tenantId,
       ...(args.includeDeleted ? {} : { deletedAt: null }),
-      ...(args.q
-        ? { name: { contains: args.q, mode: 'insensitive' as const } }
-        : {}),
+      ...(args.q ? { name: { contains: args.q, mode: 'insensitive' as const } } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.department.findMany({
@@ -61,16 +47,10 @@ export class DepartmentsService {
       }),
       this.prisma.department.count({ where }),
     ]);
-    const counts = await this.countAttachments(
-      rows.map((d) => d.id),
-    );
+    const counts = await this.countAttachments(rows.map((d) => d.id));
     return {
       items: rows.map((d) =>
-        this.toListItem(
-          d,
-          counts.get(d.id)?.roles ?? 0,
-          counts.get(d.id)?.children ?? 0,
-        ),
+        this.toListItem(d, counts.get(d.id)?.roles ?? 0, counts.get(d.id)?.children ?? 0),
       ),
       total,
     };
@@ -91,11 +71,6 @@ export class DepartmentsService {
     return this.toListItem(dep, c?.roles ?? 0, c?.children ?? 0);
   }
 
-  /**
-   * Считаем активные Role и дочерние Department для пачки id-шников
-   * одним запросом (groupBy). Используем вместо filtered `_count` из Prisma,
-   * чтобы не подключать preview-флаг `relationFilteredCount`.
-   */
   private async countAttachments(
     departmentIds: string[],
   ): Promise<Map<string, { roles: number; children: number }>> {
@@ -134,8 +109,6 @@ export class DepartmentsService {
     return result;
   }
 
-  // ─────────────────────────── create / update / delete ─────────────
-
   async create(args: {
     tenantId: string;
     userId: string;
@@ -162,7 +135,6 @@ export class DepartmentsService {
           parentDepartmentId: created.parentDepartmentId,
         },
       });
-      // Side-effect онбординг v2: первый отдел → выставляем departmentsCompletedAt
       void this.prisma.org.updateMany({
         where: { id: args.tenantId, departmentsCompletedAt: null },
         data: { departmentsCompletedAt: new Date() },
@@ -184,9 +156,7 @@ export class DepartmentsService {
     let skipped = 0;
     for (const it of args.body.items) {
       try {
-        items.push(
-          await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }),
-        );
+        items.push(await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }));
       } catch (err) {
         if (err instanceof ConflictException) {
           skipped += 1;
@@ -213,10 +183,7 @@ export class DepartmentsService {
         error: { code: 'department_not_found', message: 'Отдел не найден' },
       });
     }
-    if (
-      args.body.parentDepartmentId !== undefined &&
-      args.body.parentDepartmentId !== null
-    ) {
+    if (args.body.parentDepartmentId !== undefined && args.body.parentDepartmentId !== null) {
       if (args.body.parentDepartmentId === args.id) {
         throw new BadRequestException({
           ok: false,
@@ -260,16 +227,6 @@ export class DepartmentsService {
     }
   }
 
-  /**
-   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — назначить или снять
-   * главу отдела. Probe-уведомления Specialist 3.2 / 3.7 идут главе в первую
-   * очередь, и только при NULL — fallback к admin'ам Org.
-   *
-   * Валидация:
-   *   - Отдел должен принадлежать `tenantId` и быть не удалён.
-   *   - Если `headPersonId !== null`: Person того же tenantId,
-   *     `relationship='employee'`, `deletedAt=null`.
-   */
   async setHead(args: {
     tenantId: string;
     userId: string;
@@ -304,11 +261,7 @@ export class DepartmentsService {
           deletedAt: true,
         },
       });
-      if (
-        !person ||
-        person.tenantId !== args.tenantId ||
-        person.deletedAt !== null
-      ) {
+      if (!person || person.tenantId !== args.tenantId || person.deletedAt !== null) {
         throw new BadRequestException({
           ok: false,
           error: {
@@ -346,26 +299,6 @@ export class DepartmentsService {
     return this.toListItem(updated, c?.roles ?? 0, c?.children ?? 0);
   }
 
-  /**
-   * Редизайн кабинета Ф7а — слияние отделов. Все ссылки source-отдела
-   * переносятся в target, после чего source помечается soft-deleted.
-   *
-   * Переносимые FK (source → target) в одной транзакции:
-   *   - Role.departmentId           (UPDATE всех активных и удалённых);
-   *   - Appointment.departmentId    (UPDATE);
-   *   - Project.departmentId        (UPDATE);
-   *   - Person.primaryDepartmentId  (UPDATE);
-   *   - Department.parentDepartmentId дочерних source → target (переподвес);
-   *   - DepartmentDomainLink.departmentId (UPDATE; пара (departmentId, domainId)
-   *     уникальна — на дубль удаляем source-ссылку, как в entity-merge).
-   * headPersonId target'а не трогаем, если у source он был — переносим только
-   * когда у target пусто (опционально, без затирания).
-   *
-   * Валидация: оба существуют и не удалены, тот же tenantId, source≠target,
-   * target НЕ является потомком source (запрет цикла — иначе target остался бы
-   * подвешен сам под себя). Идемпотентность: если source уже soft-deleted —
-   * BadRequest (не 500).
-   */
   async mergeDepartments(args: {
     tenantId: string;
     sourceId: string;
@@ -425,45 +358,34 @@ export class DepartmentsService {
       });
     }
 
-    // Запрет цикла: target не должен быть потомком source. Иначе после
-    // переподвеса детей source→target target оказался бы подвешен сам под себя.
     await this.assertNotDescendant(tenantId, sourceId, targetId);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // 1. Role.departmentId → target (и активные, и soft-deleted — чтобы не
-      //    осиротить ссылки на удаляемый source).
       const roles = await tx.role.updateMany({
         where: { tenantId, departmentId: sourceId },
         data: { departmentId: targetId },
       });
 
-      // 2. Appointment.departmentId → target.
       const appointments = await tx.appointment.updateMany({
         where: { tenantId, departmentId: sourceId },
         data: { departmentId: targetId },
       });
 
-      // 3. Project.departmentId → target.
       const projects = await tx.project.updateMany({
         where: { tenantId, departmentId: sourceId },
         data: { departmentId: targetId },
       });
 
-      // 4. Person.primaryDepartmentId → target.
       const persons = await tx.person.updateMany({
         where: { tenantId, primaryDepartmentId: sourceId },
         data: { primaryDepartmentId: targetId },
       });
 
-      // 5. Дочерние Department → переподвес на target (НЕ удаляем).
       const childDepartments = await tx.department.updateMany({
         where: { tenantId, parentDepartmentId: sourceId },
         data: { parentDepartmentId: targetId },
       });
 
-      // 6. DepartmentDomainLink.departmentId → target. Пара (departmentId,
-      //    domainId) уникальна: если у target уже есть ссылка на тот же domain —
-      //    удаляем source-ссылку (как делает entity-merge при P2002).
       const sourceDomainLinks = await tx.departmentDomainLink.findMany({
         where: { departmentId: sourceId },
         select: { id: true, domainId: true },
@@ -477,7 +399,6 @@ export class DepartmentsService {
         const targetDomainIds = new Set(targetLinks.map((l) => l.domainId));
         for (const link of sourceDomainLinks) {
           if (targetDomainIds.has(link.domainId)) {
-            // У target уже есть связь с этим доменом — выкидываем дубль source.
             await tx.departmentDomainLink.delete({ where: { id: link.id } });
           } else {
             await tx.departmentDomainLink.update({
@@ -489,34 +410,21 @@ export class DepartmentsService {
         }
       }
 
-      // 7. Metric.attachedToDepartmentId → target (KPI, привязанные к отделу).
-      //    onDelete:SetNull НЕ срабатывает при soft-delete → переносим вручную.
       const metrics = await tx.metric.updateMany({
         where: { tenantId, attachedToDepartmentId: sourceId },
         data: { attachedToDepartmentId: targetId },
       });
 
-      // 8. Interaction.counterpartDepartmentId → target (карта handoff'ов).
       const interactions = await tx.interaction.updateMany({
         where: { tenantId, counterpartDepartmentId: sourceId },
         data: { counterpartDepartmentId: targetId },
       });
 
-      // 9. OrgUnit.parentDepartmentId → target. Мягкая ссылка (String? без FK):
-      //    merge её не «видит» через onDelete, переносим явно, чтобы не потерять
-      //    привязку OrgUnit к официальному отделу.
       const orgUnits = await tx.orgUnit.updateMany({
         where: { tenantId, parentDepartmentId: sourceId },
         data: { parentDepartmentId: targetId },
       });
 
-      // 10. Department.entityId → target. Поле @unique (1:1 с Entity), onDelete:
-      //     SetNull при soft-delete не срабатывает. Ловушка UNIQUE: нельзя слепо
-      //     записать source.entityId в target. Переносим только если у target
-      //     пусто; сначала обнуляем source.entityId (освобождаем unique), затем
-      //     присваиваем target. Если у target уже есть entityId — оставляем
-      //     source-entity как есть (она осиротеет после soft-delete, но unique
-      //     не нарушится).
       let movedEntity = false;
       if (source.entityId && !target.entityId) {
         await tx.department.update({
@@ -530,7 +438,6 @@ export class DepartmentsService {
         movedEntity = true;
       }
 
-      // 11. headPersonId: переносим из source только если у target пусто.
       if (source.headPersonId && !target.headPersonId) {
         await tx.department.update({
           where: { id: targetId },
@@ -538,14 +445,12 @@ export class DepartmentsService {
         });
       }
 
-      // 12. Soft-delete source.
       const now = new Date();
       await tx.department.update({
         where: { id: sourceId },
         data: { deletedAt: now },
       });
 
-      // Свежий снимок target (мог быть обновлён шагом 7 — headPersonId).
       const updatedTarget = await tx.department.findUniqueOrThrow({
         where: { id: targetId },
       });
@@ -631,8 +536,7 @@ export class DepartmentsService {
         ok: false,
         error: {
           code: 'department_has_active_roles',
-          message:
-            'У отдела есть активные должности — удалите/перенесите их сначала',
+          message: 'У отдела есть активные должности — удалите/перенесите их сначала',
         },
       });
     }
@@ -641,8 +545,7 @@ export class DepartmentsService {
         ok: false,
         error: {
           code: 'department_has_children',
-          message:
-            'У отдела есть дочерние отделы — удалите/перенесите их сначала',
+          message: 'У отдела есть дочерние отделы — удалите/перенесите их сначала',
         },
       });
     }
@@ -664,14 +567,6 @@ export class DepartmentsService {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  /**
-   * Запрет цикла при слиянии: проверяет, что `candidateId` (target) НЕ является
-   * потомком `ancestorId` (source). Идём вверх по `parentDepartmentId` от
-   * target — если встретили source, значит target внутри поддерева source и
-   * слияние создало бы цикл. Защита от зацикленных данных — лимит шагов.
-   */
   private async assertNotDescendant(
     tenantId: string,
     ancestorId: string,
@@ -686,12 +581,11 @@ export class DepartmentsService {
           ok: false,
           error: {
             code: 'department_merge_cycle',
-            message:
-              'Нельзя слить отдел в его собственный дочерний отдел — образуется цикл',
+            message: 'Нельзя слить отдел в его собственный дочерний отдел — образуется цикл',
           },
         });
       }
-      if (visited.has(currentId)) break; // защита от уже зацикленных данных
+      if (visited.has(currentId)) break;
       visited.add(currentId);
       const node: { parentDepartmentId: string | null } | null =
         await this.prisma.department.findFirst({
@@ -702,10 +596,7 @@ export class DepartmentsService {
     }
   }
 
-  private async assertParentExists(
-    tenantId: string,
-    parentId: string,
-  ): Promise<void> {
+  private async assertParentExists(tenantId: string, parentId: string): Promise<void> {
     const parent = await this.prisma.department.findUnique({
       where: { id: parentId },
       select: { tenantId: true, deletedAt: true },
@@ -722,10 +613,7 @@ export class DepartmentsService {
   }
 
   private handleUniqueViolation(err: unknown, name: string | undefined): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {

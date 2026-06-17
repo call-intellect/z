@@ -1,37 +1,30 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState, type JSX } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useState, type JSX } from "react";
+import Link from "next/link";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   companyApi,
   type CompanyProfileApi,
   type CompanyStageApi,
   type UpdateCompanyProfileRequest,
-} from '@/api/company.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/company.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   COMPANY_STAGE_LABEL,
   toCompanyProfileDomain,
   type CompanyProfileDomain,
-} from '@/domain/company-profile';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
+} from "@/domain/company-profile";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/company` UI — простой single-page редактор профиля.
- * 4 текстовых блока (миссия / видение / стратегия / стадия).
- *
- * MVP-уровень: textarea-редактирование без markdown-preview. Расширение —
- * следующая итерация (δ-1 виджеты + AI-fill действий).
- */
 export function CompanyClient(): JSX.Element {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -43,7 +36,7 @@ export function CompanyClient(): JSX.Element {
       />
     );
   }
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
   return <CompanyContent orgId={currentOrgId} canEdit={canEdit} />;
 }
 
@@ -60,12 +53,11 @@ function CompanyContent({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Локальные поля формы (отделяем от serverState).
-  const [displayName, setDisplayName] = useState('');
-  const [mission, setMission] = useState('');
-  const [vision, setVision] = useState('');
-  const [strategy, setStrategy] = useState('');
-  const [stage, setStage] = useState<CompanyStageApi | ''>('');
+  const [displayName, setDisplayName] = useState("");
+  const [mission, setMission] = useState("");
+  const [vision, setVision] = useState("");
+  const [strategy, setStrategy] = useState("");
+  const [stage, setStage] = useState<CompanyStageApi | "">("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -75,13 +67,13 @@ function CompanyContent({
       setRaw(r);
       const d = toCompanyProfileDomain(r);
       setProfile(d);
-      setDisplayName(d.displayName ?? '');
-      setMission(d.missionContentMd ?? '');
-      setVision(d.visionContentMd ?? '');
-      setStrategy(d.strategyContentMd ?? '');
-      setStage(d.stage ?? '');
+      setDisplayName(d.displayName ?? "");
+      setMission(d.missionContentMd ?? "");
+      setVision(d.visionContentMd ?? "");
+      setStrategy(d.strategyContentMd ?? "");
+      setStage(d.stage ?? "");
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось загрузить профиль');
+      const msg = humanizeApiError(err, "Не удалось загрузить профиль");
       setError(msg);
     } finally {
       setLoading(false);
@@ -99,18 +91,16 @@ function CompanyContent({
     try {
       const body: UpdateCompanyProfileRequest = {
         displayName: displayName.trim() || undefined,
-        mission: mission.trim()
-          ? { contentMd: mission.trim() }
-          : null,
+        mission: mission.trim() ? { contentMd: mission.trim() } : null,
         vision: vision.trim() ? { contentMd: vision.trim() } : null,
         strategy: strategy.trim() ? { contentMd: strategy.trim() } : null,
-        stage: stage === '' ? null : (stage as CompanyStageApi),
+        stage: stage === "" ? null : (stage as CompanyStageApi),
       };
       const r = await companyApi.update(orgId, body);
       setRaw(r);
       setProfile(toCompanyProfileDomain(r));
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось сохранить профиль');
+      const msg = humanizeApiError(err, "Не удалось сохранить профиль");
       setError(msg);
     } finally {
       setSaving(false);
@@ -118,7 +108,8 @@ function CompanyContent({
   }, [canEdit, displayName, mission, vision, strategy, stage, orgId]);
 
   if (loading) return <AdminLoading rows={6} />;
-  if (error && !profile) return <AdminError message={error} onRetry={() => void load()} />;
+  if (error && !profile)
+    return <AdminError message={error} onRetry={() => void load()} />;
   if (!profile) return <AdminError message="Профиль не найден" />;
 
   return (
@@ -127,15 +118,15 @@ function CompanyContent({
         <div>
           <h1 className="text-2xl font-semibold text-fg-primary">Компания</h1>
           <p className="mt-1 text-sm text-fg-tertiary">
-            Идентичность компании: миссия, видение, стратегия. Связано со{' '}
+            Идентичность компании: миссия, видение, стратегия. Связано со{" "}
             <Link href="/structure" className="underline">
               Структурой
             </Link>
-            ,{' '}
+            ,{" "}
             <Link href="/domains" className="underline">
               Доменами
             </Link>
-            ,{' '}
+            ,{" "}
             <Link href="/maturity" className="underline">
               Зрелостью
             </Link>
@@ -193,23 +184,25 @@ function CompanyContent({
           </label>
           <select
             value={stage}
-            onChange={(e) => setStage(e.target.value as CompanyStageApi | '')}
+            onChange={(e) => setStage(e.target.value as CompanyStageApi | "")}
             disabled={!canEdit}
             className="w-full rounded-md border border-border-subtle bg-bg-base px-3 py-2 text-sm"
           >
             <option value="">Не указана</option>
-            {(['early_stage', 'growth', 'scale', 'enterprise'] as const).map((s) => (
-              <option key={s} value={s}>
-                {COMPANY_STAGE_LABEL[s]}
-              </option>
-            ))}
+            {(["early_stage", "growth", "scale", "enterprise"] as const).map(
+              (s) => (
+                <option key={s} value={s}>
+                  {COMPANY_STAGE_LABEL[s]}
+                </option>
+              ),
+            )}
           </select>
         </div>
 
         {canEdit && (
           <div className="flex gap-2 pt-2">
             <Button onClick={() => void handleSave()} disabled={saving}>
-              {saving ? 'Сохраняем…' : 'Сохранить'}
+              {saving ? "Сохраняем…" : "Сохранить"}
             </Button>
             <Button
               variant="outline"
@@ -224,7 +217,8 @@ function CompanyContent({
 
       {profile.lastMaturityCalcAt && (
         <div className="text-xs text-fg-tertiary">
-          Зрелость пересчитана: {profile.lastMaturityCalcAt.toLocaleString('ru-RU')}
+          Зрелость пересчитана:{" "}
+          {profile.lastMaturityCalcAt.toLocaleString("ru-RU")}
         </div>
       )}
     </div>

@@ -595,7 +595,7 @@ export function codeFallbackForMeeting(type: MeetingType, taskType: string): Res
 
 ### 8.6. Локализация
 
-Все строки на русском (memory `feedback_admin_ui_russian_only`). Добавить в `delivery/ui/copy-strings.ru.md`:
+Все строки на русском (memory `feedback_admin_ui_russian_only`). Добавить в `second-brain/13_glossary/copy-strings.ru.md`:
 - «Шаблон отчёта» / «Шаблоны отчётов»
 - «Раздел отчёта»
 - «Инструкция для ИИ»
@@ -746,7 +746,7 @@ z_prompt_template_feedback_total{reaction="positive|negative"}
 - [ ] Обновлён `second-brain/02_architecture/data-model.md` — новые модели.
 - [ ] Обновлён `second-brain/02_architecture/module-map.md` — модуль `admin/prompt-templates`.
 - [ ] Обновлён `second-brain/01_projects/api-layer.md` — новые эндпоинты.
-- [ ] Глоссарий `delivery/13-glossary.md` расширен.
+- [ ] Глоссарий `second-brain/13_glossary/ui-glossary.md` расширен.
 - [ ] CLAUDE.md (раздел про LLM-router) обновлён — «промпты теперь в БД, code остаётся как fallback».
 - [ ] Запись рефлексии в `second-brain/05_история/2026-MM-DD-A-prompt-registry-итог.md`.
 

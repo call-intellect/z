@@ -1,9 +1,5 @@
-/**
- * SBA α-9 wave 3 — API-клиент для /api/v1/domains.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
 export interface FunctionalDomainApi {
   id: string;
@@ -54,11 +50,11 @@ export interface UpdateDomainRequest {
 }
 
 export type IndustrySlugApi =
-  | 'saas'
-  | 'developer'
-  | 'retail'
-  | 'manufacturing'
-  | 'b2b_services';
+  | "saas"
+  | "developer"
+  | "retail"
+  | "manufacturing"
+  | "b2b_services";
 
 export interface SeedTemplateResponseApi {
   created: number;
@@ -80,7 +76,7 @@ export const functionalDomainsApi = {
     ),
 
   create: (orgId: string, body: CreateDomainRequest) =>
-    apiClient.post<FunctionalDomainApi>('/api/v1/domains', body, {
+    apiClient.post<FunctionalDomainApi>("/api/v1/domains", body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -99,13 +95,11 @@ export const functionalDomainsApi = {
 
   seedTemplate: (orgId: string, industry: IndustrySlugApi) =>
     apiClient.post<SeedTemplateResponseApi>(
-      '/api/v1/domains/seed-template',
+      "/api/v1/domains/seed-template",
       { industry },
       { headers: orgHeaders(orgId) },
     ),
 };
-
-// ─── Department-domain links ──────────────────────────────────────
 
 export interface DepartmentDomainLinkApi {
   id: string;
@@ -126,7 +120,7 @@ export interface DepartmentDomainLinkApi {
 
 export interface LinkDepartmentDomainRequest {
   domainId: string;
-  role?: 'primary' | 'secondary' | 'supporting';
+  role?: "primary" | "secondary" | "supporting";
   coverageRatio?: number;
 }
 

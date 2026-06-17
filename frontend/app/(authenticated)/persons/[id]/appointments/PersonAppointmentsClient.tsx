@@ -1,36 +1,32 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { ArrowLeft, Briefcase } from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { ArrowLeft, Briefcase } from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   appointmentsApi,
   type AppointmentTimelineItemApi,
-} from '@/api/appointments.api';
-import { useAuth } from '@/contexts/auth-context';
-import { Badge } from '@/ui/shadcn/badge';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/api/appointments.api";
+import { useAuth } from "@/contexts/auth-context";
+import { Badge } from "@/ui/shadcn/badge";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
+import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-const STATUS_LABEL: Record<AppointmentTimelineItemApi['status'], string> = {
-  active: 'действующее',
-  acting: 'и. о.',
-  former: 'архив',
+const STATUS_LABEL: Record<AppointmentTimelineItemApi["status"], string> = {
+  active: "действующее",
+  acting: "и. о.",
+  former: "архив",
 };
 
-/**
- * SBA α-8 wave 4 — детальный timeline назначений сотрудника.
- * Альтернатива/дополнение к секции в PersonDetailClient.
- */
 export function PersonAppointmentsClient({ entityId }: { entityId: string }) {
   const { currentOrgId, isLoading } = useAuth();
   if (isLoading) return null;
@@ -46,7 +42,7 @@ export function PersonAppointmentsClient({ entityId }: { entityId: string }) {
 }
 
 function Content({ orgId, entityId }: { orgId: string; entityId: string }) {
-  const swr = useSWR(['appointments-timeline', orgId, entityId], () =>
+  const swr = useSWR(["appointments-timeline", orgId, entityId], () =>
     appointmentsApi.entityTimeline(orgId, entityId),
   );
 
@@ -78,7 +74,7 @@ function Content({ orgId, entityId }: { orgId: string; entityId: string }) {
           ))}
         </div>
       ) : swr.error ? (
-        swr.error instanceof ApiError && swr.error.code === 'http_404' ? (
+        swr.error instanceof ApiError && swr.error.code === "http_404" ? (
           <AdminEmpty
             title="Назначения недоступны"
             description="API назначений не отвечает или сотрудник не найден."
@@ -88,7 +84,7 @@ function Content({ orgId, entityId }: { orgId: string; entityId: string }) {
             message={
               swr.error instanceof Error
                 ? swr.error.message
-                : 'Не удалось загрузить назначения'
+                : "Не удалось загрузить назначения"
             }
             onRetry={() => void swr.mutate()}
           />
@@ -115,13 +111,13 @@ function AppointmentRow({ item }: { item: AppointmentTimelineItemApi }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="font-medium text-fg-primary">
-            {item.roleName ?? 'Должность'}
+            {item.roleName ?? "Должность"}
           </div>
           <div className="text-sm text-fg-secondary">
-            {item.departmentName ?? 'Без отдела'} · нагрузка {item.loadPercent}%
+            {item.departmentName ?? "Без отдела"} · нагрузка {item.loadPercent}%
           </div>
         </div>
-        <Badge variant={item.status === 'active' ? 'default' : 'secondary'}>
+        <Badge variant={item.status === "active" ? "default" : "secondary"}>
           {STATUS_LABEL[item.status]}
         </Badge>
       </div>
@@ -129,7 +125,7 @@ function AppointmentRow({ item }: { item: AppointmentTimelineItemApi }) {
         {formatDate(item.validFrom)}
         {item.validTo
           ? ` — ${formatDate(item.validTo)}`
-          : ' — по настоящее время'}
+          : " — по настоящее время"}
         {item.durationDays !== null && ` (${item.durationDays} дн.)`}
       </div>
     </li>
@@ -138,10 +134,10 @@ function AppointmentRow({ item }: { item: AppointmentTimelineItemApi }) {
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleDateString('ru-RU', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
+    return new Date(iso).toLocaleDateString("ru-RU", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     });
   } catch {
     return iso;

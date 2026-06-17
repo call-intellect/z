@@ -1,14 +1,6 @@
-'use client';
+"use client";
 
-/**
- * Фаза 3 редизайна — `/admin/ai/embeddings`.
- *
- * 4 вкладки: Модель / Chunking / Batch / Реиндексация. Первые три — поля
- * через `AdminSettingField`+`useAdminSettingEditor`. Реиндексация —
- * placeholder под Фазу 8 (нужен бэкенд-эндпоинт запуска job).
- */
-
-import { useState } from 'react';
+import { useState } from "react";
 import {
   Boxes,
   DatabaseZap,
@@ -16,20 +8,20 @@ import {
   Layers,
   Loader2,
   Scissors,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { z, type ZodTypeAny } from 'zod';
+} from "lucide-react";
+import { toast } from "sonner";
+import { z, type ZodTypeAny } from "zod";
 
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { ApiError } from '@/api/api-error';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { Button } from '@/ui/shadcn/button';
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { ApiError } from "@/api/api-error";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { Button } from "@/ui/shadcn/button";
 
-import { AdminEmpty } from '../../AdminStateViews';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+import { AdminEmpty } from "../../AdminStateViews";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 type SettingSpec<T> = {
   key: string;
@@ -41,23 +33,26 @@ type SettingSpec<T> = {
 
 const MODEL_SETTINGS: SettingSpec<unknown>[] = [
   {
-    key: 'embeddings.provider',
-    label: 'Провайдер эмбеддингов',
-    description: 'Кто рассчитывает векторы. Поддерживаем только OpenAI-text-embedding-3-small (см. verified-карту).',
-    schema: z.enum(['openai-via-proxy', 'ollama']).default('openai-via-proxy'),
-    defaultValue: 'openai-via-proxy',
+    key: "embeddings.provider",
+    label: "Провайдер эмбеддингов",
+    description:
+      "Кто рассчитывает векторы. Поддерживаем только OpenAI-text-embedding-3-small (см. verified-карту).",
+    schema: z.enum(["openai-via-proxy", "ollama"]).default("openai-via-proxy"),
+    defaultValue: "openai-via-proxy",
   },
   {
-    key: 'embeddings.model',
-    label: 'Имя модели',
-    description: 'По дефолту text-embedding-3-small. Смена модели требует реиндексации всей базы.',
-    schema: z.string().min(3).max(64).default('text-embedding-3-small'),
-    defaultValue: 'text-embedding-3-small',
+    key: "embeddings.model",
+    label: "Имя модели",
+    description:
+      "По дефолту text-embedding-3-small. Смена модели требует реиндексации всей базы.",
+    schema: z.string().min(3).max(64).default("text-embedding-3-small"),
+    defaultValue: "text-embedding-3-small",
   },
   {
-    key: 'embeddings.dimensions',
-    label: 'Размерность вектора',
-    description: 'Для text-embedding-3-small — 1536. Должна совпадать с pgvector-индексом.',
+    key: "embeddings.dimensions",
+    label: "Размерность вектора",
+    description:
+      "Для text-embedding-3-small — 1536. Должна совпадать с pgvector-индексом.",
     schema: z.number().int().min(64).max(4096).default(1536),
     defaultValue: 1536,
   },
@@ -65,14 +60,14 @@ const MODEL_SETTINGS: SettingSpec<unknown>[] = [
 
 const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
   {
-    key: 'embeddings.chunk_target_tokens',
-    label: 'Целевой размер чанка (токены)',
+    key: "embeddings.chunk_target_tokens",
+    label: "Целевой размер чанка (токены)",
     schema: z.number().int().min(64).max(2000).default(512),
     defaultValue: 512,
   },
   {
-    key: 'embeddings.chunk_overlap_tokens',
-    label: 'Перекрытие чанков (токены)',
+    key: "embeddings.chunk_overlap_tokens",
+    label: "Перекрытие чанков (токены)",
     schema: z.number().int().min(0).max(500).default(64),
     defaultValue: 64,
   },
@@ -80,19 +75,19 @@ const CHUNK_SETTINGS: SettingSpec<unknown>[] = [
 
 const BATCH_SETTINGS: SettingSpec<unknown>[] = [
   {
-    key: 'embeddings.batch_size',
-    label: 'Batch size',
-    description: 'Сколько чанков отправлять в одном HTTP-запросе к провайдеру.',
+    key: "embeddings.batch_size",
+    label: "Batch size",
+    description: "Сколько чанков отправлять в одном HTTP-запросе к провайдеру.",
     schema: z.number().int().min(1).max(256).default(32),
     defaultValue: 32,
   },
 ];
 
 const TABS: AdminTabDef[] = [
-  { value: 'model', label: 'Модель', icon: DatabaseZap },
-  { value: 'chunking', label: 'Chunking', icon: Scissors },
-  { value: 'batch', label: 'Batch', icon: Boxes },
-  { value: 'reindex', label: 'Реиндексация', icon: Layers },
+  { value: "model", label: "Модель", icon: DatabaseZap },
+  { value: "chunking", label: "Chunking", icon: Scissors },
+  { value: "batch", label: "Batch", icon: Boxes },
+  { value: "reindex", label: "Реиндексация", icon: Layers },
 ];
 
 export function EmbeddingsSettingsClient() {
@@ -102,8 +97,8 @@ export function EmbeddingsSettingsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'AI и модели' },
-        { label: 'Эмбеддинги' },
+        { label: "AI и модели" },
+        { label: "Эмбеддинги" },
       ]}
       title="Эмбеддинги"
       description="Провайдер, размер чанков, batch и реиндексация. Смена модели или размерности требует полной реиндексации pgvector-индексов."
@@ -111,27 +106,25 @@ export function EmbeddingsSettingsClient() {
       <AdminTabs tabs={TABS} defaultTab="model">
         {(active) => (
           <>
-            {active === 'model' && (
+            {active === "model" && (
               <SettingsGrid
                 settings={MODEL_SETTINGS}
                 onOpenHistory={setHistoryKey}
               />
             )}
-            {active === 'chunking' && (
+            {active === "chunking" && (
               <SettingsGrid
                 settings={CHUNK_SETTINGS}
                 onOpenHistory={setHistoryKey}
               />
             )}
-            {active === 'batch' && (
+            {active === "batch" && (
               <SettingsGrid
                 settings={BATCH_SETTINGS}
                 onOpenHistory={setHistoryKey}
               />
             )}
-            {active === 'reindex' && (
-              <ReindexTab />
-            )}
+            {active === "reindex" && <ReindexTab />}
           </>
         )}
       </AdminTabs>
@@ -189,7 +182,7 @@ function SettingRow<T>({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       toast.error(msg);
     }
   };

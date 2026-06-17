@@ -4,10 +4,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 
 import { JwtService } from './jwt.service';
 
-/**
- * Юнит-тесты JwtService — round-trip session/deep-link, expired throw.
- */
-
 function makeCfg(opts: {
   sessionSecret?: string;
   deepLinkSecret?: string;
@@ -45,7 +41,6 @@ describe('JwtService', () => {
   });
 
   it('просроченный session-токен — throws', () => {
-    // Нулевой TTL → токен сразу expired.
     const svc = new JwtService(makeCfg({ sessionTtlSeconds: -10 }));
     const token = svc.signSession({ sub: 'u_1', email: 'a@b.c', role: 'user' });
     expect(() => svc.verifySession(token)).toThrow();

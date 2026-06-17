@@ -1,33 +1,3 @@
-/**
- * Tracker A5 — one-off patch script (русификация ролей шаблона продаж).
- *
- * Применяет к УЖЕ засеянным записям `TeamTemplate` те же две замены, что
- * внесены в исходник сидов (`src/modules/tracker/seed/team-templates-data.ts`):
- *   - «Специалист по квалификации (SDR)» → «Специалист по квалификации»
- *   - «Квалифицирует входящие заявки по BANT/CHAMP»
- *       → «Квалифицирует входящие заявки по методике квалификации»
- *
- * `definition` — JSON-колонка с `{ roles[], states[], ... }`, admin-editable.
- * Замена сургичная и строковая: сериализуем JSON, делаем replaceAll по двум
- * подстрокам и парсим обратно. Затрагиваются ТОЛЬКО эти две подстроки —
- * любые другие admin-правки сохраняются как есть.
- *
- * Покрываем все записи (без фильтра по tenantId): системные (tenantId=null)
- * и любые tenant-копии шаблона.
- *
- * Запуск:
- *   bun run scripts/patch-team-templates-ru.ts
- *   bun run scripts/patch-team-templates-ru.ts --dry-run   # только посчитать
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - При повторном запуске старых подстрок уже нет → 0 patched.
- *   - Можно запускать многократно — итог один и тот же.
- *
- * Регистрация: apply-prod-deploy.ts (phase: 'patch', skipBootstrap: true).
- * После пуша на прод запустить ВРУЧНУЮ один раз (через агрегатор или напрямую):
- *   bun run scripts/patch-team-templates-ru.ts
- */
-
 import { Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -51,9 +21,7 @@ interface PatchStats {
 
 async function main(): Promise<void> {
   // eslint-disable-next-line no-console
-  console.log(
-    `=== patch-team-templates-ru START${DRY_RUN ? ' (dry-run)' : ''} ===`,
-  );
+  console.log(`=== patch-team-templates-ru START${DRY_RUN ? ' (dry-run)' : ''} ===`);
 
   const stats: PatchStats = { scanned: 0, patched: 0, alreadyOk: 0 };
 
@@ -92,9 +60,7 @@ async function main(): Promise<void> {
   }
 
   // eslint-disable-next-line no-console
-  console.log(
-    `scanned=${stats.scanned}, patched=${stats.patched}, already_ok=${stats.alreadyOk}`,
-  );
+  console.log(`scanned=${stats.scanned}, patched=${stats.patched}, already_ok=${stats.alreadyOk}`);
   // eslint-disable-next-line no-console
   console.log(`=== patch-team-templates-ru DONE${DRY_RUN ? ' (dry-run)' : ''} ===`);
 }

@@ -1,32 +1,23 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Lightbulb, Users } from 'lucide-react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { Lightbulb, Users } from "lucide-react";
+import useSWR from "swr";
 
-import { ideasApi } from '@/api/ideas.api';
-import { useAuth } from '@/contexts/auth-context';
-import { ideaHref, IDEA_KIND_LABEL, IDEA_STATUS_LABEL } from '@/domain/idea';
+import { ideasApi } from "@/api/ideas.api";
+import { useAuth } from "@/contexts/auth-context";
+import { ideaHref, IDEA_KIND_LABEL, IDEA_STATUS_LABEL } from "@/domain/idea";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ-1 Ф4.A — виджет «Идеи» (топ идей по ре-ранку). Self-fetch через SWR на
- * `ideasApi.top(orgId, 5)`. Структура — как у `InsightsTopWidget`, но на
- * современном визуальном языке (стекло + градиентный заголовок), токены
- * из `modern/`.
- *
- * Доступ к эндпоинту: owner/admin/coo. Если у пользователя нет доступа или
- * данных нет — graceful empty-state «Идей пока нет». Загрузка — скелетон.
- */
 export function IdeasTopWidget() {
   const { currentOrgId } = useAuth();
   const swr = useSWR(
-    currentOrgId ? ['ideas-top', currentOrgId] : null,
+    currentOrgId ? ["ideas-top", currentOrgId] : null,
     () => ideasApi.top(currentOrgId!, 5),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -55,7 +46,7 @@ export function IdeasTopWidget() {
               <li
                 key={i}
                 className="h-12 animate-pulse rounded-xl"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               />
             ))}
           </ul>
@@ -81,7 +72,7 @@ export function IdeasTopWidget() {
                     <span
                       className="rounded-full px-2 py-0.5 font-medium"
                       style={{
-                        background: 'var(--surface-inset)',
+                        background: "var(--surface-inset)",
                         color: CHART.dim,
                       }}
                     >

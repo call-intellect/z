@@ -15,29 +15,13 @@ import { CryptoService } from '../../common/crypto/crypto.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
 
-import {
-  BitrixApiClient,
-  BitrixApiError,
-  type BitrixTokenResponse,
-} from './bitrix-api.client';
+import { BitrixApiClient, BitrixApiError, type BitrixTokenResponse } from './bitrix-api.client';
 import type { BitrixIntegrationResponseDto } from './dto/bitrix-integration.dto';
 
-/**
- * Сервис Bitrix24-интеграции org.
- * ТЗ: plans/tz/2026-06-09-bitrix24-integration-install.md.
- *
- * Отвечает за установку (оба способа), шифрованное хранение токенов
- * (AES-256-GCM через CryptoService), refresh по требованию, проверку соединения
- * и отключение. Синк данных — отдельный следующий этап (вне этого сервиса).
- *
- * Инвариант приватности: plain-токены НИКОГДА не покидают сервис в read-ответе —
- * наружу только `hasTokens`.
- */
 @Injectable()
 export class BitrixIntegrationService {
   private readonly logger = new Logger(BitrixIntegrationService.name);
 
-  /** Буфер до протухания access_token (refresh заранее, чтобы не словить 401). */
   private static readonly EXPIRY_BUFFER_MS = 60_000;
 
   constructor(
@@ -48,13 +32,6 @@ export class BitrixIntegrationService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ─────────────────────────── способ A: OAuth-коннект ───────────────
-
-  /**
-   * URL авторизации Bitrix24 для способа A. `state` — подписанный JWT с
-   * tenantId+domain (живёт 15 мин). Бросает `bitrix_misconfigured`, если нет
-   * client_id приложения.
-   */
   buildAuthorizeUrl(tenantId: string, domain: string): string {
     const clientId = this.cfg.bitrix.clientId;
     if (!clientId) {
@@ -65,11 +42,6 @@ export class BitrixIntegrationService {
     return `https://${domain}/oauth/authorize/?${qs}`;
   }
 
-  /**
-   * Callback способа A: проверяем state → tenantId, меняем `code` на токены,
-   * сохраняем интеграцию в `connected`. Возвращает домен портала (для редиректа).
-   * Любая ошибка — бросается наружу (контроллер редиректит на ?bitrix=error).
-   */
   async handleOAuthCallback(params: {
     code?: string;
     state?: string;
@@ -111,13 +83,6 @@ export class BitrixIntegrationService {
     return { portalDomain };
   }
 
-  // ─────────────────────────── способ B: установка из Маркета ────────
-
-  /**
-   * Обработчик `ONAPPINSTALL`: сохраняем токены портала в `pending` (привязка к
-   * org — позже через claim из iframe-handler). Best-effort: вызывается из
-   * public-контроллера, который всегда отвечает 200.
-   */
   async onAppInstall(auth: {
     member_id?: string;
     access_token?: string;
@@ -145,8 +110,6 @@ export class BitrixIntegrationService {
     };
     const portalDomain = this.resolveDomain(tokens, auth.domain ?? '');
 
-    // Если портал уже привязан к org (повторная установка) — сохраняем привязку
-    // и статус connected; иначе кладём pending до claim.
     const existing = await this.prisma.bitrixIntegration.findUnique({
       where: { memberId: auth.member_id },
     });
@@ -164,15 +127,7 @@ export class BitrixIntegrationService {
     );
   }
 
-  /**
-   * Обработчик `ONAPPUNINSTALL`: помечаем `disconnected`. Авторизации в событии
-   * нет — подлинность подтверждаем сравнением `application_token` (timing-safe)
-   * с сохранённым. На несовпадении — no-op.
-   */
-  async onAppUninstall(auth: {
-    member_id?: string;
-    application_token?: string;
-  }): Promise<void> {
+  async onAppUninstall(auth: { member_id?: string; application_token?: string }): Promise<void> {
     if (!auth.member_id) return;
     const row = await this.prisma.bitrixIntegration.findUnique({
       where: { memberId: auth.member_id },
@@ -191,14 +146,7 @@ export class BitrixIntegrationService {
     this.logger.log(`ONAPPUNINSTALL: member=${auth.member_id} → disconnected`);
   }
 
-  /**
-   * Claim: привязать pending-установку (по `memberId`) к org Коры. Вызывается из
-   * аутентифицированного контекста (iframe-handler после логина в Коре).
-   */
-  async claim(
-    tenantId: string,
-    memberId: string,
-  ): Promise<BitrixIntegrationResponseDto> {
+  async claim(tenantId: string, memberId: string): Promise<BitrixIntegrationResponseDto> {
     const row = await this.prisma.bitrixIntegration.findUnique({
       where: { memberId },
     });
@@ -211,7 +159,6 @@ export class BitrixIntegrationService {
         },
       });
     }
-    // Уже привязан к ДРУГОЙ org — конфликт.
     if (row.tenantId && row.tenantId !== tenantId) {
       throw new ConflictException({
         ok: false,
@@ -232,12 +179,7 @@ export class BitrixIntegrationService {
     return result as BitrixIntegrationResponseDto;
   }
 
-  // ─────────────────────────── чтение / проверка / отключение ────────
-
-  /** Текущая интеграция org (sanitized, без токенов) или null. */
-  async getIntegration(
-    tenantId: string,
-  ): Promise<BitrixIntegrationResponseDto | null> {
+  async getIntegration(tenantId: string): Promise<BitrixIntegrationResponseDto | null> {
     const row = await this.prisma.bitrixIntegration.findFirst({
       where: { tenantId },
       orderBy: { updatedAt: 'desc' },
@@ -245,13 +187,7 @@ export class BitrixIntegrationService {
     return row ? this.sanitize(row) : null;
   }
 
-  /**
-   * Проверка соединения: гарантировать валидный токен (refresh при нужде) и
-   * дёрнуть `app.info`. Обновляет `lastConnectedAt`/`status`.
-   */
-  async testConnection(
-    tenantId: string,
-  ): Promise<{ ok: true; app: Record<string, unknown> }> {
+  async testConnection(tenantId: string): Promise<{ ok: true; app: Record<string, unknown> }> {
     const row = await this.requireConnectedRow(tenantId);
     const accessToken = await this.getValidAccessToken(row);
     if (!row.clientEndpoint) {
@@ -265,19 +201,12 @@ export class BitrixIntegrationService {
       });
       return { ok: true, app };
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Ошибка обращения к Bitrix24';
+      const message = err instanceof Error ? err.message : 'Ошибка обращения к Bitrix24';
       await this.markError(row.id, message);
       throw this.connectionError(message);
     }
   }
 
-  /**
-   * Отключить интеграцию org (удалить запись). Зеркала (BitrixUser/Dialog/…)
-   * НЕ трогаем — это «мягкое» отключение; полный сброс источника делает
-   * `SourcesService.hardDelete` (кнопка «удалить источник»). Деактивируем
-   * `Source(type='bitrix')`, чтобы он не «висел активным» в списке источников.
-   */
   async remove(tenantId: string): Promise<{ ok: true }> {
     await this.prisma.bitrixIntegration.deleteMany({ where: { tenantId } });
     await this.prisma.source
@@ -289,12 +218,6 @@ export class BitrixIntegrationService {
     return { ok: true };
   }
 
-  /**
-   * Lazy upsert `Source(type='bitrix', name='Bitrix24')` для tenant'а — чтобы
-   * Bitrix24 появился в «Источниках» сразу при подключении. Тот же natural-key,
-   * что у `BitrixIngestService.upsertSource` (idempotent). Best-effort: ошибка
-   * не должна валить connect/claim.
-   */
   private async ensureBitrixSource(tenantId: string): Promise<void> {
     await this.prisma.source
       .upsert({
@@ -319,11 +242,6 @@ export class BitrixIntegrationService {
       });
   }
 
-  /**
-   * Статус источника Bitrix24 для UI: счётчики зеркал, отметки синков, тумблер
-   * анализа и разбивка сессий по статусу анализа. Возвращает null, если
-   * интеграции нет.
-   */
   async getStatus(tenantId: string): Promise<{
     integration: BitrixIntegrationResponseDto;
     analysisEnabled: boolean;
@@ -393,11 +311,6 @@ export class BitrixIntegrationService {
     };
   }
 
-  /**
-   * Тумблер AI-анализа диалогов (как у ChatBox). OFF → синк зеркалит диалоги,
-   * но LLM (rollup + мост в knowledge-core) не дёргается; ON → крон/пост-синк
-   * ставят анализ закрытых сессий. Возвращает новое значение.
-   */
   async setAnalysisEnabled(
     tenantId: string,
     enabled: boolean,
@@ -418,18 +331,10 @@ export class BitrixIntegrationService {
     return { ok: true, analysisEnabled: enabled };
   }
 
-  // ─────────────────────────── токены ───────────────────────────────
-
-  /**
-   * Валидный access_token для записи: если протух (или скоро) — refresh и
-   * пересохранение. На провале refresh помечает `status=error` и бросает.
-   * Публичен для будущего синк-слоя (вызовы REST с refresh-on-demand).
-   */
   async getValidAccessToken(row: BitrixIntegration): Promise<string> {
     const stillValid =
       row.accessExpiresAt &&
-      row.accessExpiresAt.getTime() - Date.now() >
-        BitrixIntegrationService.EXPIRY_BUFFER_MS;
+      row.accessExpiresAt.getTime() - Date.now() > BitrixIntegrationService.EXPIRY_BUFFER_MS;
     if (stillValid) {
       return this.crypto.decrypt(row.accessTokenEnc);
     }
@@ -457,14 +362,6 @@ export class BitrixIntegrationService {
     return tokens.access_token;
   }
 
-  // ─────────────────── REST с refresh-on-401 (для синка) ─────────────
-
-  /**
-   * Вызов REST-метода портала с реактивным refresh: проактивно берём валидный
-   * токен (`getValidAccessToken`), а если Bitrix всё равно ответил
-   * `expired_token`/`invalid_token` (токен протух раньше буфера) — форсим refresh
-   * и повторяем один раз. Используется слоем синка.
-   */
   async callApi<T = unknown>(
     row: BitrixIntegration,
     method: string,
@@ -483,7 +380,6 @@ export class BitrixIntegrationService {
     }
   }
 
-  /** Списочный вызов с пагинацией + тем же refresh-on-401. */
   async callApiList<T = unknown>(
     row: BitrixIntegration,
     method: string,
@@ -502,7 +398,6 @@ export class BitrixIntegrationService {
     }
   }
 
-  /** Форс-refresh токена (реактивно при 401), с перечитыванием свежей строки. */
   private async refreshNow(row: BitrixIntegration): Promise<string> {
     const latest = await this.prisma.bitrixIntegration.findUnique({
       where: { id: row.id },
@@ -512,9 +407,7 @@ export class BitrixIntegrationService {
     }
     let tokens: BitrixTokenResponse;
     try {
-      tokens = await this.client.refresh(
-        this.crypto.decrypt(latest.refreshTokenEnc),
-      );
+      tokens = await this.client.refresh(this.crypto.decrypt(latest.refreshTokenEnc));
     } catch (err) {
       const message =
         err instanceof BitrixApiError
@@ -533,7 +426,6 @@ export class BitrixIntegrationService {
     return tokens.access_token;
   }
 
-  /** clientEndpoint или connection-ошибка (без эндпоинта REST-вызов невозможен). */
   private requireEndpoint(row: BitrixIntegration): string {
     if (!row.clientEndpoint) {
       throw this.connectionError(
@@ -543,12 +435,6 @@ export class BitrixIntegrationService {
     return row.clientEndpoint;
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  /**
-   * Upsert по memberId: шифрует и сохраняет токены + метаданные. `applicationToken`
-   * шифруется только если передан (есть лишь при ONAPPINSTALL).
-   */
   private async persistTokens(
     tokens: BitrixTokenResponse,
     meta: {
@@ -587,11 +473,7 @@ export class BitrixIntegrationService {
     });
   }
 
-  /** Запретить привязку портала к org, у которой уже есть ДРУГОЙ активный портал. */
-  private async assertNoForeignActiveBinding(
-    tenantId: string,
-    memberId: string,
-  ): Promise<void> {
+  private async assertNoForeignActiveBinding(tenantId: string, memberId: string): Promise<void> {
     const other = await this.prisma.bitrixIntegration.findFirst({
       where: {
         tenantId,
@@ -605,16 +487,13 @@ export class BitrixIntegrationService {
         ok: false,
         error: {
           code: 'bitrix_already_connected',
-          message:
-            'К этой компании уже подключён другой портал Bitrix24. Сначала отключите его.',
+          message: 'К этой компании уже подключён другой портал Bitrix24. Сначала отключите его.',
         },
       });
     }
   }
 
-  private async requireConnectedRow(
-    tenantId: string,
-  ): Promise<BitrixIntegration> {
+  private async requireConnectedRow(tenantId: string): Promise<BitrixIntegration> {
     const row = await this.prisma.bitrixIntegration.findFirst({
       where: { tenantId, status: { in: ['connected', 'error'] } },
       orderBy: { updatedAt: 'desc' },
@@ -640,10 +519,7 @@ export class BitrixIntegrationService {
       .catch(() => undefined);
   }
 
-  private verifyApplicationToken(
-    row: BitrixIntegration,
-    incoming: string | undefined,
-  ): boolean {
+  private verifyApplicationToken(row: BitrixIntegration, incoming: string | undefined): boolean {
     if (!incoming || !row.applicationTokenEnc) return false;
     let stored: string;
     try {
@@ -652,20 +528,14 @@ export class BitrixIntegrationService {
       return false;
     }
     if (stored.length !== incoming.length) return false;
-    return timingSafeEqual(
-      Buffer.from(stored, 'utf8'),
-      Buffer.from(incoming, 'utf8'),
-    );
+    return timingSafeEqual(Buffer.from(stored, 'utf8'), Buffer.from(incoming, 'utf8'));
   }
 
-  /** Домен портала: из client_endpoint OAuth-ответа, иначе из переданного. */
   private resolveDomain(tokens: BitrixTokenResponse, fallback: string): string {
     if (tokens.client_endpoint) {
       try {
         return new URL(tokens.client_endpoint).host.toLowerCase();
-      } catch {
-        // fall through
-      }
+      } catch {}
     }
     if (tokens.domain) return tokens.domain.toLowerCase();
     return fallback.toLowerCase();
@@ -691,8 +561,7 @@ export class BitrixIntegrationService {
       ok: false,
       error: {
         code: 'bitrix_misconfigured',
-        message:
-          'Интеграция Bitrix24 не настроена на сервере (нет client_id/secret приложения)',
+        message: 'Интеграция Bitrix24 не настроена на сервере (нет client_id/secret приложения)',
       },
     });
   }

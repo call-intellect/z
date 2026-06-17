@@ -1,12 +1,3 @@
-/**
- * Probe-система Фаза 4 (2026-06-11) — recheck повода перед dispatch.
- *
- * R8: если пробел закрылся сам между suggest и dispatch (predicate
- * PROBE_REASON_RECHECK вернул false) → probe помечается suppressed_stale и
- * НЕ отправляется. Best-effort: ошибка предиката → probe всё равно уходит.
- *
- * Детерминизм: Prisma/LLM/Conversational/Probe/Metrics/Cfg мокированы.
- */
 import type { Job } from 'bullmq';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -33,8 +24,6 @@ function buildProbe() {
     status: 'pending',
     dispatchedNotificationId: null,
     contentHash: 'h',
-    // 80 — выше порога immediatePushMinPriority (70, Autonomy W0 Ф0.2):
-    // тесты recheck-пути не должен задевать priority-гейт.
     priority: 80,
     createdAt: new Date(Date.now() - 60_000),
     dispatchedAt: null,
@@ -42,9 +31,7 @@ function buildProbe() {
   };
 }
 
-function makeWorker(args: {
-  decisionFindFirst: ReturnType<typeof vi.fn>;
-}): {
+function makeWorker(args: { decisionFindFirst: ReturnType<typeof vi.fn> }): {
   worker: ProbeDispatcherWorker;
   updateCalls: Array<{ data: Record<string, unknown> }>;
   sendNotification: ReturnType<typeof vi.fn>;
@@ -86,13 +73,9 @@ function makeWorker(args: {
   const cfg = {
     aiFeatures: { promptInjectionGuardEnabled: false },
     probe: {},
-    // Динамические крутилки (probe.immediatePushMinPriority и т.п.) —
-    // мок отдаёт переданный fallback.
     getDynamic: vi
       .fn()
-      .mockImplementation(
-        async (_key: string, _env: unknown, fallback: unknown) => fallback,
-      ),
+      .mockImplementation(async (_key: string, _env: unknown, fallback: unknown) => fallback),
   } as unknown as TypedConfigService;
 
   const redis = { client: {} } as unknown as RedisService;

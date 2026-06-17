@@ -1,23 +1,17 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-import { ApiError } from '@/api/api-error';
-import { gamificationApi } from '@/api/gamification.api';
+import { ApiError } from "@/api/api-error";
+import { gamificationApi } from "@/api/gamification.api";
 import {
   contributionFromApi,
   formatRuDate,
   type RecognitionEntry,
-} from '@/domain/contribution';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/domain/contribution";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
-/**
- * T1 (2026-05-23) — лента последних 5 Recognition (моих полученных).
- *
- * Источник — `/me/contributions.recentRecognitions` (там уже последние 10);
- * берём первые `limit`.
- */
 export function RecognitionFeedWidget({ limit = 5 }: { limit?: number }) {
   const [items, setItems] = useState<RecognitionEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +35,7 @@ export function RecognitionFeedWidget({ limit = 5 }: { limit?: number }) {
             ? err.message
             : err instanceof Error
               ? err.message
-              : 'Не удалось загрузить благодарности';
+              : "Не удалось загрузить благодарности";
         setError(msg);
       })
       .finally(() => {

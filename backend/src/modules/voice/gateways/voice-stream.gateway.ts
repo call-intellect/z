@@ -14,25 +14,16 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { JwtService } from '../../auth/services/jwt.service';
-import {
-  VoiceAdapterError,
-  VoiceChannelAdapter,
-} from '../services/voice-channel-adapter.service';
+import { VoiceAdapterError, VoiceChannelAdapter } from '../services/voice-channel-adapter.service';
 
-/**
- * Per-user state. In-memory достаточно: voice-сессии короткие (≤60 сек),
- * restart процесса = клиент пере-загрузит / переподключится.
- */
 interface VoiceSession {
   userId: string;
   tenantId: string;
   chunks: Buffer[];
-  /** Сумма chunk.byteLength, чтобы быстро проверять overflow без reduce. */
   totalBytes: number;
   mimeType: string;
   sampleRate: number | null;
   startedAt: number;
-  /** TTL guard — auto-cancel если voice:end не пришёл за TTL. */
   ttlTimer: NodeJS.Timeout;
 }
 
@@ -42,74 +33,25 @@ interface SocketContext {
   tenantId: string;
 }
 
-/** Жёсткие пределы — защита от мусорных клиентов / атак. */
 const TTL_SECONDS = 60;
-const MAX_BUFFER_BYTES = 5 * 1024 * 1024; // 5 MB на сессию
-const MAX_CHUNK_BYTES = 64 * 1024; // 64 KB на один chunk
+const MAX_BUFFER_BYTES = 5 * 1024 * 1024;
+const MAX_CHUNK_BYTES = 64 * 1024;
 
-/**
- * VoiceStreamGateway (T4 / δ-3) — WebSocket-канал для голосового **ввода**
- * в Concierge. Намеренно ТОЛЬКО ввод (ASR): Concierge отвечает только
- * текстом, голосового вывода нет (см. CLAUDE.md и feedback_concierge_*).
- *
- * Намespace: `/ws/voice`. Auth — тот же JWT-flow, что у `/ws/tracker`
- * (handshake.auth.token / cookie `z_session` / Authorization: Bearer +
- * session.jti revocation + membership в tenant).
- *
- * События (client → server):
- *   - `voice:start {sampleRate, mimeType}` — открыть сессию. Ack
- *     `{ok, sessionId, ttlSec}`. Если у юзера уже есть открытая сессия —
- *     старая cancel'ится (limit 1).
- *   - `voice:chunk {data: Buffer | ArrayBuffer}` — добавить chunk
- *     (timeslice 200ms у MediaRecorder). Если суммарно > 5MB — overflow.
- *   - `voice:end` — собрать chunks, прогнать через ASR (VoiceChannelAdapter
- *     → Vox submit+poll), emit `voice:transcribed`, закрыть сессию.
- *   - `voice:cancel` — выкинуть сессию без ASR-вызова.
- *
- * События (server → client):
- *   - `voice:transcribed {text, durationMs, latencyMs}` — финальный текст.
- *   - `voice:error {code, message}` — ошибки (auth, overflow, asr_failed,
- *     ttl_expired и т.п.). После error сессия удалена.
- *
- * Известное ограничение (TODO):
- *   Vox работает по submit + poll каждые 2 сек. p50 latency после
- *   `voice:end` будет ≥ 2 сек (минимум 1 цикл poll + сам ASR). ТЗ метит
- *   1-2 сек — это недостижимо до миграции на streaming ASR (например,
- *   OpenAI Whisper realtime API или GigaAM stream). При переходе:
- *     - заменить `VoiceChannelAdapter.transcribe(chunks → buffer)` на
- *       стримящий вариант: открывать upstream-сокет на `voice:start`,
- *       форвардить `voice:chunk` напрямую, читать partial+final transcripts;
- *     - сверить ENV/pricing — Whisper realtime ~ $0.06/мин, Vox ~ X RUB/мин;
- *     - сравнить latency: realtime ASR обычно даёт p50 200-500ms.
- *   Поле выходного payload (`durationMs`/`latencyMs`) сохранит совместимость.
- */
 @Injectable()
 @WebSocketGateway({
   namespace: '/ws/voice',
-  // CORS закрывается в `authenticate` по `cfg.cors.allowed` (нельзя дёргать
-  // DI в декораторе — оставляем разрешающий шаблон + fail-fast в handshake).
   cors: { origin: true, credentials: true },
   transports: ['websocket', 'polling'],
-  // Один chunk ≤ 64 KB; 200ms opus ≈ 4-8 KB. Лимит payload — с запасом 256 KB
-  // на случай keyframes/jitter; meaningful overflow ловим уже в gateway.
   maxHttpBufferSize: 256 * 1024,
 })
-export class VoiceStreamGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
-{
+export class VoiceStreamGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(VoiceStreamGateway.name);
 
   @WebSocketServer()
   server!: Server;
 
-  /** Контекст подключения (тот же паттерн, что в TrackerGateway). */
   private readonly socketContext = new Map<string, SocketContext>();
 
-  /**
-   * Активные сессии. Key = clientId — по умолчанию одна сессия на сокет.
-   * При limit-of-1 «на пользователя» (см. handleStart) — отменяем старые
-   * сокеты того же userId перед открытием новой.
-   */
   private readonly sessions = new Map<string, VoiceSession>();
 
   constructor(
@@ -121,8 +63,6 @@ export class VoiceStreamGateway
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
   ) {}
-
-  // ── lifecycle ────────────────────────────────────────────────────────
 
   async handleConnection(client: Socket): Promise<void> {
     try {
@@ -150,7 +90,6 @@ export class VoiceStreamGateway
     const ctx = this.socketContext.get(client.id);
     const session = this.sessions.get(client.id);
     if (session) {
-      // disconnect без явного end/cancel — считаем как cancelled.
       this.disposeSession(client.id, 'cancelled');
     }
     this.socketContext.delete(client.id);
@@ -159,8 +98,6 @@ export class VoiceStreamGateway
       'voice WS: client disconnected',
     );
   }
-
-  // ── client-side messages ─────────────────────────────────────────────
 
   @SubscribeMessage('voice:start')
   handleStart(
@@ -181,7 +118,6 @@ export class VoiceStreamGateway
       };
     }
 
-    // Лимит «1 сессия на пользователя» — отменяем все его старые сессии.
     for (const [otherId, otherSession] of this.sessions.entries()) {
       if (otherSession.userId === ctx.userId) {
         this.logger.debug(
@@ -189,9 +125,6 @@ export class VoiceStreamGateway
           'voice WS: cancelling previous session for same user',
         );
         this.disposeSession(otherId, 'cancelled');
-        // Сообщим старому сокету, что его сессия отменена в пользу новой.
-        // server.sockets — это Namespace (тут namespace = /ws/voice),
-        // у Namespace есть Map `.sockets: Map<id, Socket>`.
         const otherSocket = this.server?.sockets?.sockets?.get(otherId);
         otherSocket?.emit('voice:error', {
           code: 'superseded',
@@ -201,9 +134,7 @@ export class VoiceStreamGateway
     }
 
     const mimeType =
-      typeof body?.mimeType === 'string' && body.mimeType.length > 0
-        ? body.mimeType
-        : 'audio/webm';
+      typeof body?.mimeType === 'string' && body.mimeType.length > 0 ? body.mimeType : 'audio/webm';
     const sampleRate =
       typeof body?.sampleRate === 'number' && Number.isFinite(body.sampleRate)
         ? body.sampleRate
@@ -222,7 +153,6 @@ export class VoiceStreamGateway
       });
       this.disposeSession(client.id, 'timeout');
     }, TTL_SECONDS * 1000);
-    // Не блокируем event loop при shutdown.
     if (typeof ttlTimer.unref === 'function') ttlTimer.unref();
 
     this.sessions.set(client.id, {
@@ -267,7 +197,6 @@ export class VoiceStreamGateway
       };
     }
     if (chunk.byteLength === 0) {
-      // Пустой chunk — игнор, не ошибка.
       return { ok: true };
     }
     if (chunk.byteLength > MAX_CHUNK_BYTES) {
@@ -320,7 +249,6 @@ export class VoiceStreamGateway
       return;
     }
 
-    // Снимаем TTL — мы уже завершаем сессию.
     clearTimeout(session.ttlTimer);
 
     const totalBytes = session.totalBytes;
@@ -338,9 +266,6 @@ export class VoiceStreamGateway
 
     const audio = Buffer.concat(session.chunks, totalBytes);
 
-    // Cleanup сессии ДО ASR — если клиент дисконнектится, не считаем как
-    // cancelled (ответ просто не дойдёт, но метрика была бы corrupted).
-    // Снимаем из map СЕЙЧАС, чтобы handleDisconnect не пытался cancel.
     this.sessions.delete(client.id);
 
     const asrStartedAt = Date.now();
@@ -378,8 +303,7 @@ export class VoiceStreamGateway
       const latencyMs = Date.now() - asrStartedAt;
       this.metrics.observeVoiceWsAsrLatency(latencyMs);
       this.metrics.incVoiceWsSession('error');
-      const code =
-        err instanceof VoiceAdapterError ? err.code : 'asr_failed';
+      const code = err instanceof VoiceAdapterError ? err.code : 'asr_failed';
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(
         { socketId: client.id, userId: ctx.userId, code, err: message },
@@ -395,15 +319,6 @@ export class VoiceStreamGateway
     return { ok: true };
   }
 
-  // ── internals ────────────────────────────────────────────────────────
-
-  /**
-   * Удаляет сессию + засчитывает outcome в метрики.
-   *
-   * Idempotent: если сессии уже нет (например, gateway вызвал её сам
-   * в handleEnd до Promise resolve, а потом пришёл disconnect) —
-   * метрика не двойниится.
-   */
   private disposeSession(
     clientId: string,
     outcome: 'completed' | 'cancelled' | 'error' | 'timeout',
@@ -447,15 +362,9 @@ export class VoiceStreamGateway
       const us = await this.prisma.userSession.findUnique({
         where: { jti: session.jti },
       });
-      const valid =
-        us !== null &&
-        us.revokedAt === null &&
-        us.expiresAt.getTime() > Date.now();
+      const valid = us !== null && us.revokedAt === null && us.expiresAt.getTime() > Date.now();
       if (!valid) {
-        this.logger.warn(
-          { socketId: client.id, jti: session.jti },
-          'voice WS: session revoked',
-        );
+        this.logger.warn({ socketId: client.id, jti: session.jti }, 'voice WS: session revoked');
         return null;
       }
     }
@@ -500,10 +409,7 @@ export class VoiceStreamGateway
     return null;
   }
 
-  private async resolveTenantId(
-    client: Socket,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveTenantId(client: Socket, userId: string): Promise<string | null> {
     const auth = client.handshake.auth as { tenantId?: string } | undefined;
     if (auth?.tenantId && typeof auth.tenantId === 'string') return auth.tenantId;
 
@@ -520,14 +426,6 @@ export class VoiceStreamGateway
   }
 }
 
-/**
- * Принимает chunk от socket.io в любом из форматов:
- *   - `{data: ArrayBuffer | Buffer | Uint8Array}` — наш стандарт
- *     (фронт оборачивает Blob.arrayBuffer() в `{data}`);
- *   - голый `ArrayBuffer` / `Buffer` — socket.io по умолчанию шлёт бинарь
- *     через `socket.emit('event', buffer)` без wrapper;
- *   - `Uint8Array` (some node-runtime'ы).
- */
 function toBuffer(
   payload: { data: unknown } | ArrayBuffer | Buffer | Uint8Array | undefined,
 ): Buffer | null {

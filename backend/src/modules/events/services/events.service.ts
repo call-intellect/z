@@ -39,20 +39,6 @@ import type {
   UpdateEventDto,
 } from '../dto/events.dto';
 
-/**
- * EventsService — управление событиями графа знаний + календарём пользователя
- * (Calendar MVP 2026-05-25).
- *
- * CRUD-операции:
- *   - `create` — Entity{type=event} + Event + participants + reminders +
- *     (если kind=meeting → TODO интеграция с MeetingsService).
- *   - `update` / `softDelete` — права на основе owner/organizer.
- *   - `rsvp` — обновление статуса участника.
- *
- * Календарь:
- *   - `getMyCalendar` — собственные события + назначенные задачи.
- *   - `getUserCalendar` — события другого user (personal маскируются «Занято»).
- */
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -69,12 +55,7 @@ export class EventsService {
     @Optional() @Inject(EventEmitter2) private readonly eventEmitter?: EventEmitter2,
   ) {}
 
-  // ─────────────────────────── read API (read-only, legacy α-3) ────────
-
-  async list(args: {
-    tenantId: string;
-    query: ListEventsQuery;
-  }): Promise<ListEventsResponse> {
+  async list(args: { tenantId: string; query: ListEventsQuery }): Promise<ListEventsResponse> {
     const { tenantId, query } = args;
     const where: Prisma.EventWhereInput = { tenantId };
 
@@ -125,18 +106,6 @@ export class EventsService {
     return this.toDetail(e);
   }
 
-  // ─────────────────────────── CRUD (Calendar MVP) ─────────────────────
-
-  /**
-   * Создание события. Шаги:
-   *   1. Резолвим/создаём Entity{type=event} (через EntityResolutionService).
-   *   2. Создаём Event + EventParticipant'ы (включая organizer = ownerId).
-   *   3. Если reminders не переданы — для kind ∈ {meeting,call,offline_meeting}
-   *      создаём дефолтные: за 15 мин + за 1 день, channel='telegram', всем.
-   *   4. TODO: kind=meeting → MeetingsService.create + Event.relatedMeetingId.
-   *   5. Если visibility != personal — emit('event.created') для будущей
-   *      интеграции в knowledge-core RawEvent.
-   */
   async create(args: {
     tenantId: string;
     ownerId: string;
@@ -144,7 +113,6 @@ export class EventsService {
   }): Promise<EventDto> {
     const { tenantId, ownerId, data } = args;
 
-    // 1. Entity{type=event}.
     const { entity } = await this.entityResolver.findOrCreateEntity({
       tenantId,
       type: 'event',
@@ -152,7 +120,6 @@ export class EventsService {
       metadata: { source: 'calendar_user', kind: data.kind },
     });
 
-    // 2. Транзакция: Event + participants + reminders.
     const created = await this.prisma.$transaction(async (tx) => {
       const event = await tx.event.create({
         data: {
@@ -165,10 +132,7 @@ export class EventsService {
           endAt: data.endAt ?? null,
           durationMin:
             data.endAt !== undefined
-              ? Math.max(
-                  0,
-                  Math.round((data.endAt.getTime() - data.startAt.getTime()) / 60_000),
-                )
+              ? Math.max(0, Math.round((data.endAt.getTime() - data.startAt.getTime()) / 60_000))
               : null,
           description: data.description ?? null,
           location: data.location?.trim() ?? null,
@@ -180,7 +144,6 @@ export class EventsService {
         },
       });
 
-      // Organizer всегда — owner.
       const participantRows: Prisma.EventParticipantCreateManyInput[] = [
         {
           eventId: event.id,
@@ -192,7 +155,6 @@ export class EventsService {
       ];
       if (data.participants?.length) {
         for (const p of data.participants) {
-          // Не дублируем owner'а, если он в participants.
           if (p.userId === ownerId) continue;
           const role: EventParticipantRole = p.optional ? 'optional' : p.role;
           participantRows.push({
@@ -207,7 +169,6 @@ export class EventsService {
         await tx.eventParticipant.createMany({ data: participantRows });
       }
 
-      // Reminders: переданные либо дефолтные.
       const reminderRows: Prisma.EventReminderCreateManyInput[] = [];
       if (data.reminders?.length) {
         for (const r of data.reminders) {
@@ -223,7 +184,6 @@ export class EventsService {
         data.kind === 'call' ||
         data.kind === 'offline_meeting'
       ) {
-        // Дефолтные: за 15 минут + за 1 день. Канал telegram, всем участникам.
         reminderRows.push(
           {
             eventId: event.id,
@@ -243,7 +203,6 @@ export class EventsService {
         await tx.eventReminder.createMany({ data: reminderRows });
       }
 
-      // Re-fetch со связями для DTO.
       const full = await tx.event.findUnique({
         where: { id: event.id },
         include: { participants: true, reminders: true },
@@ -251,10 +210,6 @@ export class EventsService {
       return full!;
     });
 
-    // 3. kind=meeting → создать LiveKit Meeting + записать meeting.id в
-    //    Event.relatedMeetingId. joinUrl кладём в Event.metadata, чтобы UI
-    //    мог показать кнопку «Войти во встречу». Для kind=call комнату НЕ
-    //    создаём — это телефонный звонок, не онлайн-видео.
     if (data.kind === 'meeting') {
       if (!this.meetings) {
         this.logger.warn(
@@ -270,10 +225,6 @@ export class EventsService {
             scheduledFor: data.startAt,
             eventId: created.id,
           });
-          // Обновляем Event: relatedMeetingId + metadata.joinUrl. Делаем
-          // отдельным апдейтом (не в основной транзакции), чтобы при сбое
-          // LiveKit само событие осталось — пользователь увидит его без
-          // joinUrl и сможет докрутить вручную.
           const meta = this.mergeMetadata(created.metadata, {
             joinUrl: meet.joinUrl,
           });
@@ -285,7 +236,6 @@ export class EventsService {
             },
             include: { participants: true, reminders: true },
           });
-          // Подменяем для финального DTO.
           (created as Event).relatedMeetingId = updated.relatedMeetingId;
           (created as Event).metadata = updated.metadata;
         } catch (err) {
@@ -300,7 +250,6 @@ export class EventsService {
       }
     }
 
-    // 4. Доменное событие (для будущей RawEvent-интеграции в knowledge-core).
     if (data.visibility !== 'personal') {
       this.tryEmit('event.created', {
         tenantId,
@@ -310,7 +259,6 @@ export class EventsService {
       });
     }
 
-    // 5. Метрика.
     this.metrics.incCalendarEventCreated({
       tenant: tenantId,
       kind: data.kind,
@@ -320,10 +268,6 @@ export class EventsService {
     return this.toDetail(created);
   }
 
-  /**
-   * Обновление. Только owner или organizer (EventParticipant.role='organizer')
-   * могут менять; RBAC-проверка `event_card.write` уже сделана в controller'е.
-   */
   async update(args: {
     tenantId: string;
     eventId: string;
@@ -350,23 +294,17 @@ export class EventsService {
     if (data.kind !== undefined) patch.kind = data.kind;
     if (data.visibility !== undefined) patch.visibility = data.visibility;
     if (data.description !== undefined) patch.description = data.description;
-    if (data.location !== undefined)
-      patch.location = data.location?.trim() ?? null;
+    if (data.location !== undefined) patch.location = data.location?.trim() ?? null;
     if (data.allDay !== undefined) patch.allDay = data.allDay;
     if (data.timezone !== undefined) patch.timezone = data.timezone;
     if (data.rrule !== undefined) patch.rrule = data.rrule;
     if (data.status !== undefined) patch.status = data.status;
     if (data.projectId !== undefined) patch.projectId = data.projectId;
 
-    const newStart =
-      data.startAt !== undefined ? data.startAt : event.startAt;
-    const newEnd =
-      data.endAt !== undefined ? data.endAt : event.endAt;
+    const newStart = data.startAt !== undefined ? data.startAt : event.startAt;
+    const newEnd = data.endAt !== undefined ? data.endAt : event.endAt;
     if (newStart && newEnd) {
-      patch.durationMin = Math.max(
-        0,
-        Math.round((newEnd.getTime() - newStart.getTime()) / 60_000),
-      );
+      patch.durationMin = Math.max(0, Math.round((newEnd.getTime() - newStart.getTime()) / 60_000));
     } else if (data.endAt === null) {
       patch.durationMin = null;
     }
@@ -386,10 +324,6 @@ export class EventsService {
     return this.toDetail(updated);
   }
 
-  /**
-   * Soft delete: deletedAt=now, status=cancelled. Связанный Meeting (если
-   * есть) тоже отменяется (TODO: вызов MeetingsService.cancelScheduled).
-   */
   async softDelete(args: {
     tenantId: string;
     eventId: string;
@@ -441,10 +375,6 @@ export class EventsService {
     this.tryEmit('event.deleted', { tenantId, eventId });
   }
 
-  /**
-   * RSVP участника. Пользователь должен иметь EventParticipant.userId =
-   * actorUserId (не organizer, любая роль). Идемпотентно перезаписывает.
-   */
   async rsvp(args: {
     tenantId: string;
     eventId: string;
@@ -493,14 +423,11 @@ export class EventsService {
     return this.participantToDto(updated);
   }
 
-  // ─────────────────────────── /me/calendar ────────────────────────────
-
   async getMyCalendar(args: {
     tenantId: string;
     userId: string;
     from?: Date;
     to?: Date;
-    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, userId, projectId } = args;
@@ -519,32 +446,24 @@ export class EventsService {
     ]);
 
     const items: CalendarItemDto[] = [
-      ...events.map((e) => this.toCalendarEventItem(e, /*mask*/ false)),
+      ...events.map((e) => this.toCalendarEventItem(e, false)),
       ...issues.map((i) => this.toCalendarIssueItem(i)),
     ];
 
     items.sort((a, b) => {
-      const ta =
-        a.type === 'event' ? a.event.startAt : a.issue.dueDate;
-      const tb =
-        b.type === 'event' ? b.event.startAt : b.issue.dueDate;
+      const ta = a.type === 'event' ? a.event.startAt : a.issue.dueDate;
+      const tb = b.type === 'event' ? b.event.startAt : b.issue.dueDate;
       return ta.localeCompare(tb);
     });
     return { items };
   }
 
-  /**
-   * Календарь другого пользователя. Если targetUserId === currentUserId —
-   * то же, что getMyCalendar. Иначе personal-события возвращаются с маской
-   * «Занято» (показывает занятость без деталей).
-   */
   async getUserCalendar(args: {
     tenantId: string;
     currentUserId: string;
     targetUserId: string;
     from?: Date;
     to?: Date;
-    /** Calendar MVP Polish (P3) — серверная фильтрация по проекту. */
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, currentUserId, targetUserId, projectId } = args;
@@ -564,7 +483,7 @@ export class EventsService {
         userId: targetUserId,
         from,
         to,
-        includePersonal: true, // подгружаем, но ниже замаскируем
+        includePersonal: true,
         projectId,
       }),
       this.fetchIssuesForUser({
@@ -577,9 +496,7 @@ export class EventsService {
     ]);
 
     const items: CalendarItemDto[] = [
-      ...events.map((e) =>
-        this.toCalendarEventItem(e, /*mask*/ e.visibility === 'personal'),
-      ),
+      ...events.map((e) => this.toCalendarEventItem(e, e.visibility === 'personal')),
       ...issues.map((i) => this.toCalendarIssueItem(i)),
     ];
     items.sort((a, b) => {
@@ -590,21 +507,7 @@ export class EventsService {
     return { items };
   }
 
-  // ─────────────────────────── helpers (private) ───────────────────────
-
-  /**
-   * Возвращает сырые Event'ы и Issue'ы пользователя в окне [from, to] —
-   * для генерации ICS-feed (`/api/v1/calendar/:userId.ics`). В отличие от
-   * `getMyCalendar`, здесь не нужен tenant — feed строится по конкретному
-   * user'у (его tenant вычисляется отдельно или не учитывается, т.к. token
-   * привязан к user'у). Включает personal-события (это собственный feed
-   * пользователя).
-   */
-  async getEventsForFeed(args: {
-    userId: string;
-    from: Date;
-    to: Date;
-  }): Promise<{
+  async getEventsForFeed(args: { userId: string; from: Date; to: Date }): Promise<{
     events: (Event & {
       participants: EventParticipant[];
       reminders: EventReminder[];
@@ -617,10 +520,7 @@ export class EventsService {
         where: {
           deletedAt: null,
           startAt: { gte: from, lt: to },
-          OR: [
-            { ownerId: userId },
-            { participants: { some: { userId } } },
-          ],
+          OR: [{ ownerId: userId }, { participants: { some: { userId } } }],
         },
         include: { participants: true, reminders: true },
         orderBy: [{ startAt: 'asc' }],
@@ -638,10 +538,6 @@ export class EventsService {
     return { events, issues };
   }
 
-  /**
-   * Внутренний метод для FindFreeSlotService — возвращает busy-окна для
-   * заданного пользователя (Events + Issues с dueDate).
-   */
   async fetchBusyWindowsForUser(args: {
     tenantId: string;
     userId: string;
@@ -667,8 +563,7 @@ export class EventsService {
     for (const e of events) {
       const start = e.startAt;
       const end =
-        e.endAt ??
-        new Date(e.startAt.getTime() + Math.max(0, e.durationMin ?? 30) * 60_000);
+        e.endAt ?? new Date(e.startAt.getTime() + Math.max(0, e.durationMin ?? 30) * 60_000);
       out.push({ start, end });
     }
     for (const i of issues) {
@@ -680,10 +575,7 @@ export class EventsService {
     return out;
   }
 
-  private resolveCalendarWindow(
-    from?: Date,
-    to?: Date,
-  ): { from: Date; to: Date } {
+  private resolveCalendarWindow(from?: Date, to?: Date): { from: Date; to: Date } {
     if (from && to) return { from, to };
     const now = new Date();
     if (from && !to) {
@@ -692,7 +584,6 @@ export class EventsService {
     if (!from && to) {
       return { from: new Date(to.getTime() - 24 * 60 * 60_000), to };
     }
-    // Default — сегодня 00:00 — завтра 00:00 (UTC).
     const start = new Date(now);
     start.setUTCHours(0, 0, 0, 0);
     const end = new Date(start.getTime() + 24 * 60 * 60_000);
@@ -705,11 +596,8 @@ export class EventsService {
     from: Date;
     to: Date;
     includePersonal: boolean;
-    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
     projectId?: string;
-  }): Promise<
-    (Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]
-  > {
+  }): Promise<(Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]> {
     const { tenantId, userId, from, to, projectId } = args;
     return this.prisma.event.findMany({
       where: {
@@ -733,7 +621,6 @@ export class EventsService {
     userId: string;
     from: Date;
     to: Date;
-    /** Calendar MVP Polish (P3) — фильтр по проекту, серверный. */
     projectId?: string;
   }): Promise<(Issue & { project: Project | null })[]> {
     const { tenantId, userId, from, to, projectId } = args;
@@ -780,8 +667,6 @@ export class EventsService {
     }
   }
 
-  // ─────────────────────────── mappers ─────────────────────────────────
-
   private toListItem(e: Event): EventListItemDto {
     return {
       id: e.id,
@@ -800,26 +685,13 @@ export class EventsService {
     };
   }
 
-  /**
-   * Достаёт `joinUrl` из `Event.metadata` (см. Calendar MVP Polish P1).
-   * Защищаемся от того, что metadata может быть null, массивом или иметь
-   * не-строковое поле joinUrl.
-   */
   private extractJoinUrl(meta: unknown): string | null {
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
     const v = (meta as Record<string, unknown>).joinUrl;
     return typeof v === 'string' && v.length > 0 ? v : null;
   }
 
-  /**
-   * Merge нового объекта в existing metadata (Json | null) без потери
-   * остальных полей. Используется при дописывании `joinUrl` после успешного
-   * создания LiveKit-комнаты.
-   */
-  private mergeMetadata(
-    current: unknown,
-    patch: Record<string, unknown>,
-  ): Record<string, unknown> {
+  private mergeMetadata(current: unknown, patch: Record<string, unknown>): Record<string, unknown> {
     const base =
       current && typeof current === 'object' && !Array.isArray(current)
         ? (current as Record<string, unknown>)
@@ -882,7 +754,6 @@ export class EventsService {
     mask: boolean,
   ): CalendarItemDto {
     if (mask) {
-      // Personal event чужого пользователя — отдаём только границы и заглушку.
       const masked: Event = {
         ...e,
         title: 'Занято',
@@ -902,9 +773,7 @@ export class EventsService {
     return { type: 'event', event: this.toDetail(e) };
   }
 
-  private toCalendarIssueItem(
-    i: Issue & { project: Project | null },
-  ): CalendarItemDto {
+  private toCalendarIssueItem(i: Issue & { project: Project | null }): CalendarItemDto {
     return {
       type: 'issue',
       issue: {

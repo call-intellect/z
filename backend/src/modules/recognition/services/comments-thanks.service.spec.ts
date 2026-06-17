@@ -38,7 +38,6 @@ function mkSvc(opts?: {
   const prisma = {
     issueComment: {
       findUnique: vi.fn().mockImplementation(({ select }) => {
-        // tx-вариант (select без include)
         if (select) return Promise.resolve(txComment);
         return Promise.resolve(comment);
       }),
@@ -100,16 +99,12 @@ describe('CommentsThanksService.toggle', () => {
 
   it('cross-tenant: 404', async () => {
     const { svc } = mkSvc({ initial: [], tenantOfComment: 'org-OTHER' });
-    await expect(
-      svc.toggle('comment-1', 'org-1', 'user-1'),
-    ).rejects.toThrow(NotFoundException);
+    await expect(svc.toggle('comment-1', 'org-1', 'user-1')).rejects.toThrow(NotFoundException);
   });
 
   it('удалённый комментарий: 404', async () => {
     const { svc } = mkSvc({ initial: [], deleted: true });
-    await expect(
-      svc.toggle('comment-1', 'org-1', 'user-1'),
-    ).rejects.toThrow(NotFoundException);
+    await expect(svc.toggle('comment-1', 'org-1', 'user-1')).rejects.toThrow(NotFoundException);
   });
 });
 

@@ -2,16 +2,6 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * Агрегация AiUsageLog за период для партнёра (Crossmark API).
- * Все расчёты через Prisma `groupBy` — никакого ручного SQL.
- *
- * Возврат:
- *   - totals — общие суммы за период.
- *   - by_model — суммы по моделям LLM/ASR.
- *   - by_meeting_type — кол-во встреч по типу (берём по AiResult.meetingType,
- *     потому что в AiUsageLog тип встречи не дублируется).
- */
 export interface CrossmarkUsageDto {
   from: string;
   to: string;
@@ -32,20 +22,17 @@ export class CrossmarkUsageService {
   async getUsage(from: Date, to: Date): Promise<CrossmarkUsageDto> {
     const range = { gte: from, lt: to };
 
-    // Totals по AiUsageLog за период.
     const totalsRow = await this.prisma.aiUsageLog.aggregate({
       where: { createdAt: range },
       _sum: { inputTokens: true, outputTokens: true, costUsd: true },
     });
 
-    // Уникальные meetingId, по которым были AI-вызовы.
     const distinctMeetings = await this.prisma.aiUsageLog.findMany({
       where: { createdAt: range, meetingId: { not: null } },
       select: { meetingId: true },
       distinct: ['meetingId'],
     });
 
-    // by_model — сумма по моделям.
     const byModelRows = await this.prisma.aiUsageLog.groupBy({
       by: ['model'],
       where: { createdAt: range },
@@ -53,7 +40,6 @@ export class CrossmarkUsageService {
       _sum: { costUsd: true },
     });
 
-    // by_meeting_type — считаем по AiResult.meetingType (там же createdAt).
     const byTypeRows = await this.prisma.aiResult.groupBy({
       by: ['meetingType'],
       where: { createdAt: range },
@@ -92,14 +78,11 @@ export class CrossmarkUsageService {
       const n = Number.parseFloat(value);
       return Number.isFinite(n) ? n : 0;
     }
-    // Prisma.Decimal: имеет toNumber/toString
     const obj = value as { toNumber?: () => number; toString?: () => string };
     if (typeof obj.toNumber === 'function') {
       try {
         return obj.toNumber();
-      } catch {
-        // ignore — fallback ниже
-      }
+      } catch {}
     }
     if (typeof obj.toString === 'function') {
       const n = Number.parseFloat(obj.toString());

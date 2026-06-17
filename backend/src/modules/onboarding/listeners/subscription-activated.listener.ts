@@ -1,12 +1,3 @@
-/**
- * SubscriptionActivatedListener — при FSM `DEMO → ACTIVE` (paid/bonus)
- * снимает у владельца Org его `Membership(demo_observer)` к эталонной демо-Org.
- *
- * Старая логика (cleanup 35 таблиц через DemoCleanupQueue) удалена: shared
- * demo-модель больше не копирует данные, нечего чистить per-user.
- * Источник: plans/tz/2026-06-01-demo-shared-org-model.md §4.8.
- */
-
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 
@@ -37,7 +28,6 @@ export class SubscriptionActivatedListener {
       );
       return;
     }
-    // Не отвязываем сам эталон (защита).
     if (payload.tenantId === demoOrgId) return;
 
     const activated = await this.prisma.org.findUnique({

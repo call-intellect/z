@@ -22,7 +22,6 @@ export const SCHEMA = z
     frequency: z.string().nullable(),
     willingness_to_pay: z.string().nullable(),
     insights: z.array(z.string()),
-    // A11-Волна2 (additive, опциональное — обратная совместимость):
     data_quality: z.string().nullable().optional(),
   })
   .strict();

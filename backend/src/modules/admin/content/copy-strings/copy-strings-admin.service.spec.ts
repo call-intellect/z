@@ -1,41 +1,27 @@
-/**
- * Admin-redesign Фаза 5 — unit-тесты `CopyStringsAdminService`.
- *
- * Покрываем:
- *   1) list(): прокидывает фильтры category=content + section=copy-strings.
- *   2) update(): зовёт AdminSettingsService.set() с user-id и reason.
- *   3) bulkImport(): импортирует все пары; считает успешные записи; ошибка
- *      одной пары не валит всю операцию.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AdminSettingsService } from '../../settings/admin-settings.service';
 
 import { CopyStringsAdminService } from './copy-strings-admin.service';
 
-function buildSettings(
-  override: Partial<AdminSettingsService> = {},
-): AdminSettingsService {
-  const list = vi.fn(
-    async (filters: { category?: string; section?: string }) => {
-      void filters;
-      return [
-        {
-          key: 'ui.signin.title',
-          value: 'Войти',
-          category: 'content',
-          section: 'copy-strings',
-          severity: 'low',
-          schemaId: null,
-          description: 'Заголовок страницы входа',
-          updatedBy: 'user-1',
-          updatedAt: new Date('2026-01-01T00:00:00Z'),
-          comment: null,
-        },
-      ];
-    },
-  );
+function buildSettings(override: Partial<AdminSettingsService> = {}): AdminSettingsService {
+  const list = vi.fn(async (filters: { category?: string; section?: string }) => {
+    void filters;
+    return [
+      {
+        key: 'ui.signin.title',
+        value: 'Войти',
+        category: 'content',
+        section: 'copy-strings',
+        severity: 'low',
+        schemaId: null,
+        description: 'Заголовок страницы входа',
+        updatedBy: 'user-1',
+        updatedAt: new Date('2026-01-01T00:00:00Z'),
+        comment: null,
+      },
+    ];
+  });
   const set = vi.fn(async () => undefined);
   return { list, set, ...override } as unknown as AdminSettingsService;
 }

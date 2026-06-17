@@ -6,11 +6,6 @@ import {
   type KnowsWhoRow,
 } from './knows-who.scoring';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — unit-тесты чистого ранкинга «кто знает X».
- * Без БД/эмбеддингов. Покрываем исключение автора, порог confidence, агрегацию
- * по personId, топ-K, негативные пути (мусор similarity/confidence).
- */
 describe('knows-who.scoring rankExperts', () => {
   const rows = (over: Partial<KnowsWhoRow>[]): KnowsWhoRow[] =>
     over.map((o, i) => ({
@@ -51,7 +46,6 @@ describe('knows-who.scoring rankExperts', () => {
       ]),
       minConfidence: 0.5,
     });
-    // p1 = 0.6*1 + 0.7*1 = 1.3 > p2 = 0.65 → p1 первый
     expect(out[0]!.personId).toBe('p1');
     expect(out[0]!.score).toBeCloseTo(1.3, 4);
   });
@@ -59,8 +53,8 @@ describe('knows-who.scoring rankExperts', () => {
   it('confidence-вес влияет на ранжирование (high весомее low)', () => {
     const out = rankExperts({
       rows: rows([
-        { personId: 'high', similarity: 0.6, confidence: 'high' }, // 0.6*3=1.8
-        { personId: 'low', similarity: 0.7, confidence: 'low' }, // 0.7*1=0.7
+        { personId: 'high', similarity: 0.6, confidence: 'high' },
+        { personId: 'low', similarity: 0.7, confidence: 'low' },
       ]),
       minConfidence: 0.5,
     });
@@ -91,20 +85,16 @@ describe('knows-who.scoring rankExperts', () => {
       ],
       minConfidence: 0.5,
     });
-    // nan→0, neg→0 (ниже порога, отброшены); big→1 (проходит)
     expect(out.map((c) => c.personId)).toEqual(['big']);
     expect(out[0]!.bestSimilarity).toBe(1);
   });
 
   it('негатив: мусорный confidence трактуется как low', () => {
     const out = rankExperts({
-      rows: [
-        { personId: 'p', categoryName: 'a', confidence: 'garbage', similarity: 0.6 },
-      ],
+      rows: [{ personId: 'p', categoryName: 'a', confidence: 'garbage', similarity: 0.6 }],
       minConfidence: 0.5,
     });
     expect(out[0]!.topCategories[0]!.confidence).toBe('low');
-    // score = 0.6 * вес(low=1)
     expect(out[0]!.score).toBeCloseTo(0.6, 4);
   });
 

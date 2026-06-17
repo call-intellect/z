@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   insightsApi,
   type InsightDynamicApi,
@@ -12,8 +12,8 @@ import {
   type InsightStatusApi,
   type InsightsChartResponseApi,
   type InsightsListResponseApi,
-} from '@/api/insights.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/insights.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   INSIGHT_DYNAMIC_LABEL,
   INSIGHT_DYNAMIC_TONE,
@@ -24,23 +24,15 @@ import {
   INSIGHT_STATUS_TONE,
   mapInsightDetail,
   type InsightDetail,
-} from '@/domain/insight';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/insight";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * Master-detail для `/insights` (SBA β-4).
- *
- * Слева — chart-виджет stacked-bar + список сигналов с фильтрами.
- * Справа — детальная карточка: статус / острота / dynamicLabel / частота /
- * affected entities / related decisions / mitigation plan (editable для
- * owner/admin) / provenance / actions.
- */
 export function InsightsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -56,55 +48,55 @@ export function InsightsListClient() {
 }
 
 const KIND_FILTERS: ReadonlyArray<{
-  value: 'all' | InsightKindApi;
+  value: "all" | InsightKindApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Все типы' },
-  { value: 'problem', label: 'Проблемы' },
-  { value: 'risk', label: 'Риски' },
-  { value: 'blocker', label: 'Блокеры' },
-  { value: 'inefficiency', label: 'Неэффективность' },
+  { value: "all", label: "Все типы" },
+  { value: "problem", label: "Проблемы" },
+  { value: "risk", label: "Риски" },
+  { value: "blocker", label: "Блокеры" },
+  { value: "inefficiency", label: "Неэффективность" },
 ];
 
 const SEVERITY_FILTERS: ReadonlyArray<{
-  value: 'all' | InsightSeverityApi;
+  value: "all" | InsightSeverityApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Любая острота' },
-  { value: 'critical', label: 'Критическая' },
-  { value: 'high', label: 'Высокая' },
-  { value: 'medium', label: 'Средняя' },
-  { value: 'low', label: 'Низкая' },
+  { value: "all", label: "Любая острота" },
+  { value: "critical", label: "Критическая" },
+  { value: "high", label: "Высокая" },
+  { value: "medium", label: "Средняя" },
+  { value: "low", label: "Низкая" },
 ];
 
 const STATUS_FILTERS: ReadonlyArray<{
-  value: 'all' | InsightStatusApi;
+  value: "all" | InsightStatusApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Любой статус' },
-  { value: 'active', label: 'Активные' },
-  { value: 'mitigating', label: 'В работе' },
-  { value: 'mitigated', label: 'Решённые' },
-  { value: 'archived', label: 'В архиве' },
-  { value: 'false_alarm', label: 'Ложные тревоги' },
+  { value: "all", label: "Любой статус" },
+  { value: "active", label: "Активные" },
+  { value: "mitigating", label: "В работе" },
+  { value: "mitigated", label: "Решённые" },
+  { value: "archived", label: "В архиве" },
+  { value: "false_alarm", label: "Ложные тревоги" },
 ];
 
 const DYNAMIC_FILTERS: ReadonlyArray<{
-  value: 'all' | InsightDynamicApi;
+  value: "all" | InsightDynamicApi;
   label: string;
 }> = [
-  { value: 'all', label: 'Любая динамика' },
-  { value: 'spike', label: 'Всплеск' },
-  { value: 'growing', label: 'Растёт' },
-  { value: 'stable', label: 'Стабильно' },
-  { value: 'declining', label: 'Снижается' },
+  { value: "all", label: "Любая динамика" },
+  { value: "spike", label: "Всплеск" },
+  { value: "growing", label: "Растёт" },
+  { value: "stable", label: "Стабильно" },
+  { value: "declining", label: "Снижается" },
 ];
 
 const KIND_COLORS: Record<InsightKindApi, string> = {
-  problem: '#ef4444',
-  risk: '#f59e0b',
-  blocker: '#a855f7',
-  inefficiency: '#3b82f6',
+  problem: "#ef4444",
+  risk: "#f59e0b",
+  blocker: "#a855f7",
+  inefficiency: "#3b82f6",
 };
 
 function InsightsListContent() {
@@ -113,23 +105,23 @@ function InsightsListContent() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
-  const [q, setQ] = useState('');
-  const [kindFilter, setKindFilter] = useState<'all' | InsightKindApi>('all');
+  const [q, setQ] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | InsightKindApi>("all");
   const [severityFilter, setSeverityFilter] = useState<
-    'all' | InsightSeverityApi
-  >('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | InsightStatusApi>(
-    'all',
+    "all" | InsightSeverityApi
+  >("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | InsightStatusApi>(
+    "all",
   );
-  const [dynamicFilter, setDynamicFilter] = useState<'all' | InsightDynamicApi>(
-    'all',
+  const [dynamicFilter, setDynamicFilter] = useState<"all" | InsightDynamicApi>(
+    "all",
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<InsightDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
-  const [mitigationDraft, setMitigationDraft] = useState<string>('');
+  const [mitigationDraft, setMitigationDraft] = useState<string>("");
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -139,12 +131,10 @@ function InsightsListContent() {
       const [list, chartDto] = await Promise.all([
         insightsApi.list({
           ...(q.trim() ? { q: q.trim() } : {}),
-          ...(kindFilter !== 'all' ? { kind: kindFilter } : {}),
-          ...(severityFilter !== 'all' ? { severity: severityFilter } : {}),
-          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
-          ...(dynamicFilter !== 'all'
-            ? { dynamic_label: dynamicFilter }
-            : {}),
+          ...(kindFilter !== "all" ? { kind: kindFilter } : {}),
+          ...(severityFilter !== "all" ? { severity: severityFilter } : {}),
+          ...(statusFilter !== "all" ? { status: statusFilter } : {}),
+          ...(dynamicFilter !== "all" ? { dynamic_label: dynamicFilter } : {}),
           limit: 50,
         }),
         insightsApi.chart(30),
@@ -152,10 +142,10 @@ function InsightsListContent() {
       setData(list);
       setChart(chartDto);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Ошибка загрузки'));
+        setError(humanizeApiError(e, "Ошибка загрузки"));
       }
     } finally {
       setIsLoading(false);
@@ -174,9 +164,9 @@ function InsightsListContent() {
       const dto = await insightsApi.get(selectedId);
       const mapped = mapInsightDetail(dto);
       setDetail(mapped);
-      setMitigationDraft(mapped.mitigationPlan ?? '');
+      setMitigationDraft(mapped.mitigationPlan ?? "");
     } catch (e) {
-      setDetailError(humanizeApiError(e, 'Ошибка загрузки'));
+      setDetailError(humanizeApiError(e, "Ошибка загрузки"));
     } finally {
       setDetailLoading(false);
     }
@@ -186,7 +176,7 @@ function InsightsListContent() {
     if (selectedId) void loadDetail();
     else {
       setDetail(null);
-      setMitigationDraft('');
+      setMitigationDraft("");
     }
   }, [selectedId, loadDetail]);
 
@@ -196,15 +186,13 @@ function InsightsListContent() {
       setActionMsg(null);
       try {
         await insightsApi.changeStatus(selectedId, { newStatus });
-        setActionMsg(
-          `Статус изменён на «${INSIGHT_STATUS_LABEL[newStatus]}».`,
-        );
+        setActionMsg(`Статус изменён на «${INSIGHT_STATUS_LABEL[newStatus]}».`);
         await Promise.all([load(), loadDetail()]);
       } catch (e) {
         setActionMsg(
           e instanceof ApiError
             ? `Ошибка: ${e.message}`
-            : 'Не удалось изменить статус.',
+            : "Не удалось изменить статус.",
         );
       }
     },
@@ -225,7 +213,7 @@ function InsightsListContent() {
         setActionMsg(
           e instanceof ApiError
             ? `Ошибка: ${e.message}`
-            : 'Не удалось изменить остроту.',
+            : "Не удалось изменить остроту.",
         );
       }
     },
@@ -239,13 +227,13 @@ function InsightsListContent() {
     setActionMsg(null);
     try {
       await insightsApi.setMitigation(selectedId, { mitigationPlan: trimmed });
-      setActionMsg('План реагирования обновлён.');
+      setActionMsg("План реагирования обновлён.");
       await Promise.all([load(), loadDetail()]);
     } catch (e) {
       setActionMsg(
         e instanceof ApiError
           ? `Ошибка: ${e.message}`
-          : 'Не удалось сохранить план реагирования.',
+          : "Не удалось сохранить план реагирования.",
       );
     }
   }, [selectedId, mitigationDraft, load, loadDetail]);
@@ -320,7 +308,7 @@ function InsightsListContent() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
-        {/* Левая колонка — список */}
+        {}
         <aside className="space-y-2">
           {items.length === 0 ? (
             <div className="rounded-md border border-border-subtle p-6 text-center text-sm text-fg-tertiary">
@@ -334,8 +322,8 @@ function InsightsListContent() {
                 onClick={() => setSelectedId(it.id)}
                 className={`block w-full rounded-md border p-3 text-left transition ${
                   selectedId === it.id
-                    ? 'border-accent bg-accent/5'
-                    : 'border-border-subtle hover:border-border-strong'
+                    ? "border-accent bg-accent/5"
+                    : "border-border-subtle hover:border-border-strong"
                 }`}
               >
                 <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -353,7 +341,7 @@ function InsightsListContent() {
                   {it.statement}
                 </p>
                 <p className="mt-1 text-xs text-fg-tertiary">
-                  Частота {formatPercent(it.frequencyScore)} · Упоминаний:{' '}
+                  Частота {formatPercent(it.frequencyScore)} · Упоминаний:{" "}
                   {it.sourceBlocksCount}
                 </p>
               </button>
@@ -361,7 +349,7 @@ function InsightsListContent() {
           )}
         </aside>
 
-        {/* Правая колонка — детали */}
+        {}
         <section>
           {!selectedId ? (
             <div className="rounded-md border border-border-subtle p-8 text-center text-sm text-fg-tertiary">
@@ -388,8 +376,6 @@ function InsightsListContent() {
   );
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────
-
 function FilterChip({
   active,
   label,
@@ -405,8 +391,8 @@ function FilterChip({
       onClick={onClick}
       className={`rounded-full border px-3 py-1 text-xs transition ${
         active
-          ? 'border-accent bg-accent/10 text-accent'
-          : 'border-border-subtle text-fg-secondary hover:border-border-strong'
+          ? "border-accent bg-accent/10 text-accent"
+          : "border-border-subtle text-fg-secondary hover:border-border-strong"
       }`}
     >
       {label}
@@ -418,19 +404,19 @@ function Badge({
   tone,
   children,
 }: {
-  tone: 'neutral' | 'info' | 'warning' | 'success' | 'danger';
+  tone: "neutral" | "info" | "warning" | "success" | "danger";
   children: React.ReactNode;
 }) {
   const cls =
-    tone === 'danger'
-      ? 'bg-chip-danger-bg text-chip-danger-fg'
-      : tone === 'warning'
-        ? 'bg-chip-warning-bg text-chip-warning-fg'
-        : tone === 'success'
-          ? 'bg-chip-success-bg text-chip-success-fg'
-          : tone === 'info'
-            ? 'bg-chip-info-bg text-chip-info-fg'
-            : 'bg-bg-subtle text-fg-secondary';
+    tone === "danger"
+      ? "bg-chip-danger-bg text-chip-danger-fg"
+      : tone === "warning"
+        ? "bg-chip-warning-bg text-chip-warning-fg"
+        : tone === "success"
+          ? "bg-chip-success-bg text-chip-success-fg"
+          : tone === "info"
+            ? "bg-chip-info-bg text-chip-info-fg"
+            : "bg-bg-subtle text-fg-secondary";
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${cls}`}
@@ -445,8 +431,6 @@ function formatPercent(value: number): string {
 }
 
 function InsightsChart({ chart }: { chart: InsightsChartResponseApi }) {
-  // Простой stacked bar chart на SVG. labels = недели; для каждой недели
-  // — стек из 4 kind'ов.
   const labels = chart.labels;
   const series = chart.series;
   if (labels.length === 0 || series.length === 0) {
@@ -456,7 +440,6 @@ function InsightsChart({ chart }: { chart: InsightsChartResponseApi }) {
       </div>
     );
   }
-  // Suma по неделе.
   const weekTotals = labels.map((_, i) =>
     series.reduce((acc, s) => acc + (s.counts[i] ?? 0), 0),
   );
@@ -490,7 +473,7 @@ function InsightsChart({ chart }: { chart: InsightsChartResponseApi }) {
           height={H + PAD * 2}
           className="text-fg-tertiary"
         >
-          {/* Y axis labels — простые */}
+          {}
           <text x={0} y={PAD} fontSize="10" fill="currentColor">
             {maxTotal}
           </text>
@@ -572,9 +555,7 @@ function InsightDetailView({
         <Stat label="Частота за 30 дней">
           {formatPercent(detail.frequencyScore)}
         </Stat>
-        <Stat label="Динамика 7д / 30д">
-          {detail.dynamicScore.toFixed(2)}×
-        </Stat>
+        <Stat label="Динамика 7д / 30д">{detail.dynamicScore.toFixed(2)}×</Stat>
         <Stat label="Упоминаний">{detail.sourceBlocksCount}</Stat>
         <Stat label="Уверенность">{formatPercent(detail.confidence)}</Stat>
       </div>
@@ -642,7 +623,7 @@ function InsightDetailView({
             className="rounded bg-accent px-3 py-1 text-xs font-medium text-accent-fg hover:opacity-90"
             disabled={
               mitigationDraft.trim().length === 0 ||
-              mitigationDraft === (detail.mitigationPlan ?? '')
+              mitigationDraft === (detail.mitigationPlan ?? "")
             }
           >
             Сохранить план
@@ -656,8 +637,10 @@ function InsightDetailView({
         </h3>
         <p className="text-xs text-fg-secondary">
           {detail.sourceBlockIds.length} блок(а/ов) из встреч и документов.
-          Первое упоминание: {new Date(detail.firstObservedAt).toLocaleDateString('ru-RU')}.
-          Последнее: {new Date(detail.lastObservedAt).toLocaleDateString('ru-RU')}.
+          Первое упоминание:{" "}
+          {new Date(detail.firstObservedAt).toLocaleDateString("ru-RU")}.
+          Последнее:{" "}
+          {new Date(detail.lastObservedAt).toLocaleDateString("ru-RU")}.
         </p>
       </div>
 
@@ -668,11 +651,11 @@ function InsightDetailView({
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ['active', 'Вернуть в активные'],
-              ['mitigating', 'Взять в работу'],
-              ['mitigated', 'Отметить решённым'],
-              ['archived', 'Архивировать'],
-              ['false_alarm', 'Ложная тревога'],
+              ["active", "Вернуть в активные"],
+              ["mitigating", "Взять в работу"],
+              ["mitigated", "Отметить решённым"],
+              ["archived", "Архивировать"],
+              ["false_alarm", "Ложная тревога"],
             ] as ReadonlyArray<readonly [InsightStatusApi, string]>
           )
             .filter(([s]) => s !== detail.status)
@@ -692,10 +675,10 @@ function InsightDetailView({
         <div className="mt-2 flex flex-wrap gap-2">
           {(
             [
-              ['low', 'Низкая'],
-              ['medium', 'Средняя'],
-              ['high', 'Высокая'],
-              ['critical', 'Критическая'],
+              ["low", "Низкая"],
+              ["medium", "Средняя"],
+              ["high", "Высокая"],
+              ["critical", "Критическая"],
             ] as ReadonlyArray<readonly [InsightSeverityApi, string]>
           )
             .filter(([s]) => s !== detail.severity)

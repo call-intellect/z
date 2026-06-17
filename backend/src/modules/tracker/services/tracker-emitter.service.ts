@@ -4,15 +4,6 @@ import type { Issue, IssueState } from '@prisma/client';
 
 import type { CommentResponseDto } from './comments.service';
 
-/**
- * Типы событий трекера, эмитируемые в шину `tracker.event_occurred`.
- * TrackerAdapter (в IngestModule) маппит каждый на signalType из enum
- * SignalType (task_*).
- *
- * NB: `issue.updated` (общий) НЕ эмитим — слишком шумно. Только специфичные
- * изменения: status_changed_to_blocked / status_changed_to_done /
- * assignee_changed.
- */
 export type TrackerEventType =
   | 'issue.created'
   | 'issue.status_changed'
@@ -23,16 +14,10 @@ export type TrackerEventType =
   | 'comment.created'
   | 'mention.created';
 
-/**
- * Универсальный payload события трекера. Передаётся «как есть» в
- * `TrackerAdapter` (модуль `ingest`). Все поля сериализуемы в JSON.
- */
 export interface TrackerEventPayload {
   type: TrackerEventType;
   tenantId: string;
-  /** Когда событие произошло (для оконных дедупов). ISO либо Date.toISOString(). */
   occurredAt: string;
-  /** Базовые данные задачи — общие для всех событий. */
   issue: {
     id: string;
     identifier: string;
@@ -42,46 +27,21 @@ export interface TrackerEventPayload {
     stateId?: string | null;
     dueDate?: string | null;
   };
-  /** Кто инициировал событие (`user` | `ai_agent` | `system` cron). */
   actor: {
     userId: string | null;
     actorType: 'user' | 'ai_agent' | 'system';
   };
-  /** Специфика по типу события. */
   meta?: Record<string, unknown>;
 }
 
-/**
- * TrackerEmitterService — единая точка публикации событий трекера в
- * `tracker.event_occurred`. Слушатель — `TrackerAdapter` (IngestModule)
- * через `@OnEvent`.
- *
- * Sprint 3 B1-3.1 (2026-05-24). Реализует принцип «трекер = источник для
- * второго мозга»: каждая значимая мутация Issue/Comment эмитится в шину,
- * TrackerAdapter формирует RawEvent → block-ingest worker → IdeaBlock.
- *
- * Все методы fire-and-forget (EventEmitter2 синхронный по дефолту, но
- * слушатели в IngestModule помечены `{ async: true }`). Ошибки слушателей
- * не пробрасываются — бизнес-транзакция Tracker'а никогда не падает из-за
- * проблем ingest'а.
- */
 @Injectable()
 export class TrackerEmitterService {
   private readonly logger = new Logger(TrackerEmitterService.name);
 
   static readonly EVENT_NAME = 'tracker.event_occurred';
-  /**
-   * Tracker Project Documents (2026-05-27) — отдельная шина для событий
-   * документа проекта. Не использует контракт `tracker.event_occurred`
-   * (там required `issue`), поэтому шина и handler в `TrackerAdapter`
-   * — отдельные.
-   */
-  static readonly PROJECT_DOCUMENT_EVENT_NAME =
-    'tracker.project_document_changed';
+  static readonly PROJECT_DOCUMENT_EVENT_NAME = 'tracker.project_document_changed';
 
-  constructor(
-    @Inject(EventEmitter2) private readonly eventEmitter: EventEmitter2,
-  ) {}
+  constructor(@Inject(EventEmitter2) private readonly eventEmitter: EventEmitter2) {}
 
   emitIssueCreated(issue: Issue, actorUserId: string): void {
     this.emit({
@@ -181,11 +141,7 @@ export class TrackerEmitterService {
     });
   }
 
-  emitIssueOverdueDetected(args: {
-    issue: Issue;
-    /** Сколько дней просрочена (рассчитывается крон-ом). */
-    daysOverdue: number;
-  }): void {
+  emitIssueOverdueDetected(args: { issue: Issue; daysOverdue: number }): void {
     this.emit({
       type: 'issue.overdue_detected',
       tenantId: args.issue.tenantId,
@@ -226,7 +182,6 @@ export class TrackerEmitterService {
     actorUserId: string;
     mentionedUserId: string;
     commentId: string | null;
-    /** Контекст: текст комментария / задачи, в котором было упоминание. */
     contextText: string | null;
   }): void {
     this.emit({
@@ -243,17 +198,6 @@ export class TrackerEmitterService {
     });
   }
 
-  /**
-   * Tracker Project Documents (2026-05-27) — публикация события об изменении
-   * документа проекта (create / update). Эмитится отдельным event-name'ом
-   * `project-document.event_occurred`, чтобы TrackerAdapter мог различать
-   * issue- и document-события. См. plans/tz/2026-05-27-tracker-project-documents.md
-   * §Knowledge-core.
-   *
-   * `fullText` — конкатенация title + contentStripped, передаётся «как есть»
-   * в `RawEvent.payload.fullText`. block-ingest worker извлечёт IdeaBlock'и
-   * (decision/note/idea/rule) по `signalTypeHint=note`.
-   */
   emitProjectDocumentChanged(args: {
     tenantId: string;
     projectId: string;
@@ -262,27 +206,23 @@ export class TrackerEmitterService {
     fullText: string | null;
     actorUserId: string | null;
     occurredAt: Date;
-    /** 'created' | 'updated' — для дедупа и аналитики. */
     changeType: 'created' | 'updated';
   }): void {
     try {
-      this.eventEmitter.emit(
-        TrackerEmitterService.PROJECT_DOCUMENT_EVENT_NAME,
-        {
-          type: 'project_document.changed',
-          tenantId: args.tenantId,
-          projectId: args.projectId,
-          documentId: args.documentId,
-          title: args.title,
-          fullText: args.fullText,
-          actor: {
-            userId: args.actorUserId,
-            actorType: args.actorUserId ? 'user' : 'system',
-          },
-          occurredAt: args.occurredAt.toISOString(),
-          changeType: args.changeType,
+      this.eventEmitter.emit(TrackerEmitterService.PROJECT_DOCUMENT_EVENT_NAME, {
+        type: 'project_document.changed',
+        tenantId: args.tenantId,
+        projectId: args.projectId,
+        documentId: args.documentId,
+        title: args.title,
+        fullText: args.fullText,
+        actor: {
+          userId: args.actorUserId,
+          actorType: args.actorUserId ? 'user' : 'system',
         },
-      );
+        occurredAt: args.occurredAt.toISOString(),
+        changeType: args.changeType,
+      });
     } catch (err) {
       this.logger.warn(
         {
@@ -294,14 +234,10 @@ export class TrackerEmitterService {
     }
   }
 
-  // ── internal ──
-
   private emit(payload: TrackerEventPayload): void {
     try {
       this.eventEmitter.emit(TrackerEmitterService.EVENT_NAME, payload);
     } catch (err) {
-      // EventEmitter2.emit бросает только для wildcard-listener'ов; всё равно
-      // ловим — бизнес-транзакция не должна падать из-за ingest'а.
       this.logger.warn(
         {
           type: payload.type,

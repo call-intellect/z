@@ -4,10 +4,7 @@ import type { Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { wrapUserData } from '../../ai/services/prompts/common';
 import {
   SPRINT_REVIEW_SUMMARY_JSON_SCHEMA,
@@ -31,24 +28,6 @@ interface SprintReviewPayload {
   confidence: number;
 }
 
-/**
- * Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.7) — генерация
- * финального отчёта спринта.
- *
- * Вызывается:
- *   - хуком `CyclesService.complete` сразу после rollover (опционально, через
- *     EventEmitter — `cycle.completed`),
- *   - endpoint'ом `POST /api/v1/cycles/:id/review/regenerate`.
- *
- * Результат сохраняется через `CurationService.triage({resourceType:'cycle', …})`,
- * который создаёт `CardVersion(resourceType='cycle', version=N)` —
- * специальной таблицы для review нет, ТЗ §5 (решение 5).
- *
- * Graceful degrade: если ВСЕ 3 провайдера LLM упали — записываем
- * `reviewStatus='failed'` в `Cycle.progressSnapshot.reviewStatus` (метаполе),
- * не блокируем `complete`. UI прочитает и покажет «AI недоступен, попробуйте
- * позже» + кнопка regenerate.
- */
 @Injectable()
 export class SprintReviewService {
   private readonly logger = new Logger(SprintReviewService.name);
@@ -62,11 +41,6 @@ export class SprintReviewService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Sprints (2026-05-27) — подписка на событие завершения цикла из
-   * `CyclesService.complete`. Best-effort: ошибка генерации НЕ блокирует
-   * complete (cycle уже завершён к моменту эмита).
-   */
   @OnEvent('cycle.review_requested', { async: true })
   async onCycleReviewRequested(payload: {
     cycleId: string;
@@ -91,12 +65,6 @@ export class SprintReviewService {
     }
   }
 
-  /**
-   * Сгенерировать (или перегенерировать) финальный отчёт спринта.
-   * Возвращает status:
-   *   - 'ready' — отчёт сохранён в CardVersion, payload вернули;
-   *   - 'failed' — все LLM-провайдеры упали, отчёт НЕ сохранён.
-   */
   async generateReview(args: {
     cycleId: string;
     tenantId: string;
@@ -142,26 +110,17 @@ export class SprintReviewService {
       const completedIssues = issues
         .filter((i) => i.state?.category === 'completed')
         .map((i) => ({ identifier: i.identifier, title: i.title }));
-      const cancelledIssues = issues.filter(
-        (i) => i.state?.category === 'cancelled',
-      );
+      const cancelledIssues = issues.filter((i) => i.state?.category === 'cancelled');
       const notCompletedIssues = issues
-        .filter(
-          (i) =>
-            i.state?.category !== 'completed' &&
-            i.state?.category !== 'cancelled',
-        )
+        .filter((i) => i.state?.category !== 'completed' && i.state?.category !== 'cancelled')
         .map((i) => ({
           identifier: i.identifier,
           title: i.title,
           state: i.state?.category ?? null,
         }));
 
-      // Перенесённые — задачи, у которых есть IssueActivity verb=moved_from_cycle
-      // с oldValue=cycle.id (т.е. были в нашем спринте, теперь в другом).
       const carriedOverIssueIds = await this.findCarriedOverIssues(cycle.id);
 
-      // Блоки встречи sprint_review (если есть).
       const sprintReviewMeeting = await this.prisma.meeting.findFirst({
         where: {
           linkedCycleId: cycle.id,
@@ -172,10 +131,6 @@ export class SprintReviewService {
         orderBy: [{ createdAt: 'desc' }],
         select: { id: true },
       });
-      // Блоки той встречи — через её RawEvent. На MVP не тянем (требует
-      // знания source-структуры конкретно для LiveKit-встреч); если у Issue
-      // есть sourceBlockIds, возьмём блоки оттуда же — это достаточный
-      // контекст для review.
       void sprintReviewMeeting;
       const sourceBlockIds = new Set<string>();
       for (const i of await this.prisma.issue.findMany({
@@ -239,13 +194,6 @@ export class SprintReviewService {
         activeHints,
       });
 
-      // A2 анти-инъекция: userMessage содержит сырой пользовательский ввод
-      // (название/описание спринта, заголовки задач) рядом с derived-частями
-      // (блоки графа, активные подсказки) — оборачиваем весь блок в маркеры
-      // данных. SYSTEM уже несёт INJECTION_GUARD_NOTE (withInjectionGuard в
-      // промпте), поэтому оборачиваем ТОЛЬКО user (иначе нота задвоится и
-      // сломается prompt-кэш). Глобальный kill-switch тут не гейтит: у сервиса
-      // нет TypedConfigService.
       const guardedUser = wrapUserData(userMessage);
 
       let result: LlmCallResult;
@@ -290,7 +238,6 @@ export class SprintReviewService {
         return { status: 'failed', error: 'invalid_json_from_llm' };
       }
 
-      // Сохраняем через CurationService.triage — CardVersion(resourceType='cycle').
       let cardVersionId: string | null = null;
       try {
         const triage = await this.curation.triage({
@@ -305,7 +252,6 @@ export class SprintReviewService {
         });
         cardVersionId = triage.cardVersionId;
       } catch (err) {
-        // Триаж может упасть, отчёт всё равно генерим — на UI вернём review.
         this.logger.warn(
           {
             cycleId: cycle.id,
@@ -315,12 +261,6 @@ export class SprintReviewService {
         );
       }
 
-      // audit В13 (2026-05-29): если triage не выдал CardVersion (вернул null
-      // или упал в catch), помечаем review как failed с reason='triage_failed'.
-      // Без этого status оставался 'ready' с cardVersionId=null — фронт не
-      // мог понять, привязан ли review к графу знаний или это сирота. Теперь
-      // оператор видит failed-статус в админке и может рестартануть генерацию
-      // (review-payload восстановится из LLM-кэша / ASR-кэша).
       if (cardVersionId === null) {
         await this.markFailed(cycle.id, 'triage_failed');
         this.metrics?.incSprintReviewGeneration({
@@ -344,11 +284,6 @@ export class SprintReviewService {
     }
   }
 
-  /**
-   * Прочитать текущий статус и payload review (если есть).
-   * Источник: `Cycle.progressSnapshot.reviewStatus` + последняя
-   * `CardVersion(resourceType='cycle', resourceId=cycle.id)`.
-   */
   async getCurrentReview(args: {
     cycleId: string;
     tenantId: string;
@@ -391,10 +326,7 @@ export class SprintReviewService {
     return { status: 'ready', review: payload.review };
   }
 
-  // ─────────────────────────── internals ───────────────────────────────
-
   private async findCarriedOverIssues(cycleId: string): Promise<string[]> {
-    // moved_from_cycle с oldValue=cycle.id → задача ушла из ЭТОГО спринта.
     const rows = await this.prisma.issueActivity.findMany({
       where: {
         verb: 'moved_from_cycle',
@@ -416,8 +348,7 @@ export class SprintReviewService {
   }): string {
     if (project.customerCard) return `Клиент: ${project.customerCard.name}`;
     if (project.vendor) return `Поставщик: ${project.vendor.name}`;
-    if (project.subjectPerson)
-      return `Сотрудник: ${project.subjectPerson.name}`;
+    if (project.subjectPerson) return `Сотрудник: ${project.subjectPerson.name}`;
     if (project.department) return `Отдел: ${project.department.name}`;
     return `Проект: ${project.name}`;
   }
@@ -428,8 +359,7 @@ export class SprintReviewService {
         where: { id: cycleId },
         select: { progressSnapshot: true },
       });
-      const snap =
-        (cycle?.progressSnapshot as Record<string, unknown> | null) ?? {};
+      const snap = (cycle?.progressSnapshot as Record<string, unknown> | null) ?? {};
       snap['reviewStatus'] = 'ready';
       snap['reviewError'] = null;
       snap['reviewGeneratedAt'] = new Date().toISOString();
@@ -454,8 +384,7 @@ export class SprintReviewService {
         where: { id: cycleId },
         select: { progressSnapshot: true },
       });
-      const snap =
-        (cycle?.progressSnapshot as Record<string, unknown> | null) ?? {};
+      const snap = (cycle?.progressSnapshot as Record<string, unknown> | null) ?? {};
       snap['reviewStatus'] = 'failed';
       snap['reviewError'] = error;
       await this.prisma.cycle.update({

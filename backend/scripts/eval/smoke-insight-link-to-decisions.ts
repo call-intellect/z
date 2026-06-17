@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `insight-link-to-decisions` на DeepSeek-V4-Pro.
- * См. backend/src/modules/knowledge-core/prompts/insight-link-to-decisions.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-insight-link-to-decisions.ts
- */
 import {
   client,
   computeCost,

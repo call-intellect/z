@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -62,46 +59,6 @@ import { RequiredKnowledgeService } from './services/required-knowledge.service'
 import { ResponsibilityElementService } from './services/responsibility-element.service';
 import { RoleMapBuilderService } from './services/role-map-builder.service';
 
-/**
- * SBA α-8 wave 4 — REST API карты должности.
- *
- *   GET    /api/v1/roles/:id/map
- *   GET    /api/v1/roles/:id/maturity
- *
- *   GET    /api/v1/roles/:id/responsibilities
- *   POST   /api/v1/roles/:id/responsibilities
- *   PATCH  /api/v1/roles/:id/responsibilities/:itemId
- *   DELETE /api/v1/roles/:id/responsibilities/:itemId
- *
- *   GET    /api/v1/roles/:id/authority
- *   POST   /api/v1/roles/:id/authority
- *   PATCH  /api/v1/roles/:id/authority/:itemId
- *   DELETE /api/v1/roles/:id/authority/:itemId
- *
- *   GET    /api/v1/roles/:id/knowledge
- *   POST   /api/v1/roles/:id/knowledge
- *   PATCH  /api/v1/roles/:id/knowledge/:itemId
- *   DELETE /api/v1/roles/:id/knowledge/:itemId
- *
- *   GET    /api/v1/roles/:id/decision-policies
- *   POST   /api/v1/roles/:id/decision-policies
- *   PATCH  /api/v1/roles/:id/decision-policies/:itemId
- *   DELETE /api/v1/roles/:id/decision-policies/:itemId
- *
- *   GET    /api/v1/roles/:id/interactions
- *   POST   /api/v1/roles/:id/interactions
- *   PATCH  /api/v1/roles/:id/interactions/:itemId
- *   DELETE /api/v1/roles/:id/interactions/:itemId
- *
- * RBAC ResourceType: `role` для read, `role` для write/delete. Per-category
- * permissions проверяются через RBAC + дополнительные правила в сервисах
- * (всё внутри одного Org).
- *
- * NB: используем существующий RBAC ResourceType `role` (см. policy.csv).
- * Per-category resourceTypes (`role.map.read`, `role.responsibility.write` и т.п.)
- * упоминались в ТЗ как future-work; на wave 4 ограничиваемся `role` ресурсом,
- * проверки одинаковые: owner/admin r/w/d, manager r.
- */
 @ApiTags('roles-map')
 @Controller('api/v1/roles')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -121,8 +78,6 @@ export class RoleMapController {
     private readonly interactions: InteractionService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ─────────────────────────── Aggregate ──────────────────────────────
 
   @Get(':id/map')
   @ApiOperation({ summary: 'Карта должности (5 категорий + KPI + completeness)' })
@@ -147,8 +102,6 @@ export class RoleMapController {
     await this.requireRead(user.id, t);
     return this.builder.getMaturity({ tenantId: t, roleId: id });
   }
-
-  // ─────────────────────────── Responsibilities ───────────────────────
 
   @Get(':id/responsibilities')
   @ApiOperation({ summary: 'Список элементов ответственности' })
@@ -225,8 +178,6 @@ export class RoleMapController {
     });
   }
 
-  // ─────────────────────────── Authority ──────────────────────────────
-
   @Get(':id/authority')
   @ApiOperation({ summary: 'Границы полномочий (allowed/requires_approval/forbidden)' })
   async listAuthority(
@@ -301,8 +252,6 @@ export class RoleMapController {
       id: itemId,
     });
   }
-
-  // ─────────────────────────── Required Knowledge ─────────────────────
 
   @Get(':id/knowledge')
   @ApiOperation({ summary: 'Требования к знаниям' })
@@ -379,8 +328,6 @@ export class RoleMapController {
     });
   }
 
-  // ─────────────────────────── Decision Policies ─────────────────────
-
   @Get(':id/decision-policies')
   @ApiOperation({ summary: 'Политики принятия решений' })
   async listDecisionPolicies(
@@ -453,8 +400,6 @@ export class RoleMapController {
       id: itemId,
     });
   }
-
-  // ─────────────────────────── Interactions ──────────────────────────
 
   @Get(':id/interactions')
   @ApiOperation({ summary: 'Взаимодействия должности (reports_to / collaborates_with / ...)' })
@@ -531,8 +476,6 @@ export class RoleMapController {
     });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -560,8 +503,7 @@ export class RoleMapController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Изменять карту должности может только владелец/администратор Org',
+          message: 'Изменять карту должности может только владелец/администратор Org',
         },
       });
     }
@@ -579,8 +521,7 @@ export class RoleMapController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Удалять элементы карты должности может только владелец/администратор Org',
+          message: 'Удалять элементы карты должности может только владелец/администратор Org',
         },
       });
     }

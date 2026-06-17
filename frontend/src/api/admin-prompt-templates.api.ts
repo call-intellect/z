@@ -1,47 +1,52 @@
-/**
- * Фаза A.2 — API DTO для `/admin/prompt-templates` (конструктор шаблонов AI-отчёта).
- * Контракт — `backend/src/modules/admin/prompt-templates/`.
- *
- * Layered model: ApiDto → DomainModel → UiModel (skill `frontend-rules`).
- * Здесь только Api-уровень. DomainModel — в `src/domain/admin-prompt-template.ts`.
- */
+import { apiClient } from "./api-client";
 
-import { apiClient } from './api-client';
-
-export const PROMPT_TEMPLATE_SCOPES = ['system', 'org'] as const;
+export const PROMPT_TEMPLATE_SCOPES = ["system", "org"] as const;
 export type PromptTemplateScope = (typeof PROMPT_TEMPLATE_SCOPES)[number];
 
-export const PROMPT_TEMPLATE_STATUSES = ['draft', 'active', 'archived'] as const;
+export const PROMPT_TEMPLATE_STATUSES = [
+  "draft",
+  "active",
+  "archived",
+] as const;
 export type PromptTemplateStatus = (typeof PROMPT_TEMPLATE_STATUSES)[number];
 
 export const PROMPT_TASK_TYPES = [
-  'summary',
-  'tasks',
-  'chapters',
-  'follow-up',
-  'card-rollup',
+  "summary",
+  "tasks",
+  "chapters",
+  "follow-up",
+  "card-rollup",
 ] as const;
 export type PromptTaskType = (typeof PROMPT_TASK_TYPES)[number];
 
 export const MEETING_TYPES = [
-  'team',
-  'standup',
-  'plan_fact',
-  'project',
-  'sales',
-  'custdev',
-  'partner',
-  'interview',
-  'customer_success',
-  'review',
-  'retrospective',
+  "team",
+  "standup",
+  "plan_fact",
+  "project",
+  "sales",
+  "custdev",
+  "partner",
+  "interview",
+  "customer_success",
+  "review",
+  "retrospective",
 ] as const;
 export type MeetingTypeApi = (typeof MEETING_TYPES)[number];
 
-export const OUTPUT_TYPES = ['text', 'bullet_list', 'table', 'json_object'] as const;
+export const OUTPUT_TYPES = [
+  "text",
+  "bullet_list",
+  "table",
+  "json_object",
+] as const;
 export type OutputTypeApi = (typeof OUTPUT_TYPES)[number];
 
-export const DEMO_MEETING_KEYS = ['demo-sales', 'demo-standup', 'demo-interview'] as const;
+export const DEMO_MEETING_KEYS = [
+  "demo-sales",
+  "demo-standup",
+  "demo-interview",
+] as const;
 export type DemoMeetingKey = (typeof DEMO_MEETING_KEYS)[number];
 
 export type PromptSectionApi = {
@@ -87,7 +92,6 @@ export type PromptTemplateApi = {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
-  /** Возвращается из GET /:id, не из списка. */
   versions?: PromptVersionApi[];
   activeVersion?: PromptVersionWithSectionsApi | null;
 };
@@ -102,7 +106,7 @@ export type CreatePromptTemplateRequest = {
   taskType: PromptTaskType;
   systemPrompt?: string;
   toolName?: string | null;
-  sections?: Array<Omit<PromptSectionApi, 'id' | 'versionId'>>;
+  sections?: Array<Omit<PromptSectionApi, "id" | "versionId">>;
   outputSchema?: Record<string, unknown>;
 };
 
@@ -116,7 +120,7 @@ export type UpdatePromptTemplateRequest = {
 export type CreateVersionRequest = {
   systemPrompt: string;
   toolName?: string | null;
-  sections: Array<Omit<PromptSectionApi, 'id' | 'versionId'>>;
+  sections: Array<Omit<PromptSectionApi, "id" | "versionId">>;
   outputSchema?: Record<string, unknown>;
   notes?: string | null;
   activate?: boolean;
@@ -134,7 +138,7 @@ export type PreviewRequest = {
 };
 
 export type PreviewResultApi = {
-  source: 'db_draft' | 'db_active';
+  source: "db_draft" | "db_active";
   templateId: string;
   versionId: string;
   versionNumber: number;
@@ -157,14 +161,14 @@ export const adminPromptTemplatesApi = {
     search?: string;
   }) => {
     const search = new URLSearchParams();
-    if (params?.scope) search.set('scope', params.scope);
-    if (params?.status) search.set('status', params.status);
-    if (params?.meetingType) search.set('meetingType', params.meetingType);
-    if (params?.taskType) search.set('taskType', params.taskType);
-    if (params?.search) search.set('search', params.search);
+    if (params?.scope) search.set("scope", params.scope);
+    if (params?.status) search.set("status", params.status);
+    if (params?.meetingType) search.set("meetingType", params.meetingType);
+    if (params?.taskType) search.set("taskType", params.taskType);
+    if (params?.search) search.set("search", params.search);
     const q = search.toString();
     return apiClient.get<{ items: PromptTemplateApi[] }>(
-      `/api/v1/admin/prompt-templates${q ? `?${q}` : ''}`,
+      `/api/v1/admin/prompt-templates${q ? `?${q}` : ""}`,
     );
   },
 
@@ -174,7 +178,7 @@ export const adminPromptTemplatesApi = {
     ),
 
   create: (body: CreatePromptTemplateRequest) =>
-    apiClient.post<PromptTemplateApi>('/api/v1/admin/prompt-templates', body),
+    apiClient.post<PromptTemplateApi>("/api/v1/admin/prompt-templates", body),
 
   update: (id: string, body: UpdatePromptTemplateRequest) =>
     apiClient.patch<PromptTemplateApi>(
@@ -188,7 +192,10 @@ export const adminPromptTemplatesApi = {
     ),
 
   createVersion: (id: string, body: CreateVersionRequest) =>
-    apiClient.post<{ version: PromptVersionWithSectionsApi; activated: boolean }>(
+    apiClient.post<{
+      version: PromptVersionWithSectionsApi;
+      activated: boolean;
+    }>(
       `/api/v1/admin/prompt-templates/${encodeURIComponent(id)}/versions`,
       body,
     ),

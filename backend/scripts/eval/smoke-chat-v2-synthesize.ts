@@ -1,21 +1,9 @@
-/**
- * Smoke-тест taskType=chat-v2-synthesize.
- * Источник BASE_SYSTEM_PROMPT — backend/src/modules/knowledge-core/services/chat-v2.service.ts.
- * Mode-аддоны — backend/src/modules/chat-v2/prompts/chat-v2-synthesize.prompt.ts.
- *
- * Воспроизводим минимальный prompt без всего конвейера retrieval / dataClass /
- * injection-guard — задача smoke только проверить, что промпт работает на DeepSeek-Pro.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-chat-v2-synthesize.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 
 import { CHAT_V2_SYNTHESIZE_MODE_PROMPTS } from '../../src/modules/chat-v2/prompts/chat-v2-synthesize.prompt';
 
-// BASE_SYSTEM_PROMPT — копия из knowledge-core/services/chat-v2.service.ts (он
-// там не экспортируется, поэтому дублируем тут — это smoke-тест, не прод).
 const BASE_SYSTEM_PROMPT = `Ты — AI-аналитик компании, работаешь на знании из её встреч и переписок.
 
 Правила:
@@ -30,9 +18,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,
@@ -63,9 +49,7 @@ async function main(): Promise<void> {
 
   const modePrompt = CHAT_V2_SYNTHESIZE_MODE_PROMPTS[fixture.mode];
   const systemPrompt = `${BASE_SYSTEM_PROMPT}\n\n${modePrompt}`;
-  const contextStr = fixture.contextBlocks
-    .map((b) => `[BLOCK:${b.id}] ${b.snippet}`)
-    .join('\n');
+  const contextStr = fixture.contextBlocks.map((b) => `[BLOCK:${b.id}] ${b.snippet}`).join('\n');
   const userMessage = `Контекст:\n${contextStr}\n\nВопрос: ${fixture.query}`;
 
   const start = Date.now();

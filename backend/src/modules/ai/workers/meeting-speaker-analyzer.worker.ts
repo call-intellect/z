@@ -11,30 +11,8 @@ import {
   type DialogTurn,
 } from '../services/prompts/common';
 
-/**
- * Meeting-Speaker-Analyzer (Pulse Wave 4 §4.4, plans/tz/2026-05-30-pulse-full.md).
- *
- * Hourly batch (`@Cron('20 * * * *')`): для каждой `MeetingParticipantBehavior`
- * с `sentimentTextPerSpeakerJson IS NULL` и встречей, завершившейся за
- * последние 24ч, собирает реплики этого спикера из `Transcript.turns`
- * (DialogTurn[]) и пишет в JSON структурированный анализ:
- *
- *   { topics: string[3..5], textSentiment: 'positive'|'neutral'|'negative',
- *     confidence: 0..1 }
- *
- * Спикер ↔ Participant матчится по livekitIdentity или name (case-insensitive),
- * аналогично `behavior-metrics-calculator.ts`.
- *
- * EU AI Act §1.3: НЕ анализирует audio/video, только TEXT транскрипта.
- * Это поведенческая аналитика на основе слов, не emotion recognition.
- *
- * Если реплик < 50 символов — пишем заглушку `neutral` с низким confidence.
- * Best-effort: ошибка по одной MPB не валит проход.
- */
-// A9 (2026-06-10): `confidence` — уверенность в оценке ТОНАЛЬНОСТИ текста.
-// Применяем тональную шкалу (`withToneConfidenceCalibration`) в КОНЕЦ SYSTEM
-// (cache-friendly): тон — наблюдаемое поведение, не диагноз; при сомнении ниже.
-const SYSTEM_PROMPT = withToneConfidenceCalibration(`Ты — аналитик встреч. На вход — текст реплик одного спикера за встречу. Определи:
+const SYSTEM_PROMPT =
+  withToneConfidenceCalibration(`Ты — аналитик встреч. На вход — текст реплик одного спикера за встречу. Определи:
 - topics: 3-5 главных тем, о которых он говорил (короткие фразы на русском).
 - textSentiment: общий sentiment ТЕКСТА его реплик ('positive' / 'neutral' / 'negative').
 - confidence: твоя уверенность 0..1.
@@ -74,7 +52,6 @@ export class MeetingSpeakerAnalyzerWorker {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  /** Hourly при минуте :20 (после behavior-metrics.worker для свежих встреч). */
   @Cron('20 * * * *')
   async run(): Promise<void> {
     try {
@@ -96,8 +73,6 @@ export class MeetingSpeakerAnalyzerWorker {
     const now = new Date();
     const since24h = new Date(now.getTime() - 24 * 3600 * 1000);
 
-    // Берём pending MeetingParticipantBehavior со свежих встреч.
-    // JSON-поле IS NULL фильтруем через `equals: Prisma.AnyNull` (Prisma 7).
     const pending = await this.prisma.meetingParticipantBehavior.findMany({
       where: {
         sentimentTextPerSpeakerJson: { equals: Prisma.AnyNull },
@@ -124,8 +99,6 @@ export class MeetingSpeakerAnalyzerWorker {
     let skippedNoTranscript = 0;
     let errors = 0;
 
-    // Кэш транскриптов по meetingId, чтобы не перечитывать для нескольких MPB
-    // одного meeting'а в одном проходе.
     const turnsCache = new Map<string, DialogTurn[] | null>();
     const participantsCache = new Map<
       string,
@@ -162,17 +135,10 @@ export class MeetingSpeakerAnalyzerWorker {
           participantsCache.set(meetingId, participants);
         }
 
-        // Собираем реплики текущего участника по speaker-key matching
-        // (identity + displayName, case-insensitive).
-        const speakerKeys = this.buildSpeakerKeys(
-          mpb.participantId,
-          mpb.displayName,
-          participants,
-        );
+        const speakerKeys = this.buildSpeakerKeys(mpb.participantId, mpb.displayName, participants);
         const speakerText = this.collectSpeakerText(turns, speakerKeys);
 
         if (speakerText.length < MeetingSpeakerAnalyzerWorker.MIN_TEXT_CHARS) {
-          // Слишком мало текста — пишем нейтральную заглушку с низким confidence.
           await this.prisma.meetingParticipantBehavior.update({
             where: { id: mpb.id },
             data: {
@@ -189,9 +155,6 @@ export class MeetingSpeakerAnalyzerWorker {
 
         const truncated = speakerText.slice(0, MeetingSpeakerAnalyzerWorker.MAX_TEXT_CHARS);
 
-        // A2-AI: userMessage — сырые реплики спикера из транскрипта (ASR).
-        // Оборачиваем в маркеры данных + ASR-нота в КОНЕЦ SYSTEM. Воркер без
-        // TypedConfigService — глобальный kill-switch здесь не гейтит (всегда ON).
         const guarded = applyInputGuards(SYSTEM_PROMPT, truncated, {
           injection: true,
           asr: true,
@@ -246,14 +209,6 @@ export class MeetingSpeakerAnalyzerWorker {
     return { processed, skippedNoText, skippedNoTranscript, errors };
   }
 
-  /**
-   * Формирует набор speaker-ключей (lowercase), по которым реплики в
-   * `DialogTurn[]` относятся к данному участнику.
-   *
-   * Аналог логики `behavior-metrics-calculator.ts`: matches либо по
-   * `livekitIdentity`, либо по `name`. Для NULL participantId fallback'имся
-   * на displayName из MPB-снапшота.
-   */
   private buildSpeakerKeys(
     participantId: string | null,
     displayName: string,
@@ -271,10 +226,6 @@ export class MeetingSpeakerAnalyzerWorker {
     return keys;
   }
 
-  /**
-   * Собирает текст реплик из `DialogTurn[]`, у которых
-   * `turn.speaker.toLowerCase()` попадает в speakerKeys.
-   */
   private collectSpeakerText(turns: DialogTurn[], speakerKeys: Set<string>): string {
     const parts: string[] = [];
     for (const t of turns) {
@@ -287,10 +238,6 @@ export class MeetingSpeakerAnalyzerWorker {
     return parts.join(' ');
   }
 
-  /**
-   * Парсит JSON-ответ модели. Терпим к мусору — возвращает null, если
-   * структура не соответствует ожидаемой.
-   */
   private safeParse(raw: string): ParsedSentiment | null {
     const obj = tryParseJson(raw);
     if (!obj || typeof obj !== 'object') return null;
@@ -299,13 +246,10 @@ export class MeetingSpeakerAnalyzerWorker {
       ? o.topics.filter((s): s is string => typeof s === 'string')
       : null;
     const ts = o.textSentiment;
-    const textSentiment =
-      ts === 'positive' || ts === 'neutral' || ts === 'negative' ? ts : null;
+    const textSentiment = ts === 'positive' || ts === 'neutral' || ts === 'negative' ? ts : null;
     const conf = o.confidence;
     const confidence =
-      typeof conf === 'number' && Number.isFinite(conf) && conf >= 0 && conf <= 1
-        ? conf
-        : null;
+      typeof conf === 'number' && Number.isFinite(conf) && conf >= 0 && conf <= 1 ? conf : null;
     if (!topics || !textSentiment || confidence === null) return null;
     return { topics, textSentiment, confidence };
   }

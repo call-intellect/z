@@ -1,11 +1,3 @@
-/**
- * Admin-redesign Фаза 8 — unit-тесты `MaintenanceAdminService`.
- *
- * Покрываем:
- *   1) getStatus() — отдаёт lastBackupAt=null + активные maintenance windows.
- *   2) backupNow()/reindexNow() — кидают 501 Not Implemented.
- */
-
 import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -13,13 +5,15 @@ import type { PrismaService } from '../../../../common/prisma/prisma.service';
 
 import { MaintenanceAdminService } from './maintenance-admin.service';
 
-function buildService(activeWindows: Array<{
-  id: string;
-  severity: string;
-  body: string;
-  startsAt: Date | null;
-  endsAt: Date | null;
-}> = []) {
+function buildService(
+  activeWindows: Array<{
+    id: string;
+    severity: string;
+    body: string;
+    startsAt: Date | null;
+    endsAt: Date | null;
+  }> = [],
+) {
   const findMany = vi.fn(async () => activeWindows);
   const prisma = {
     systemMessage: { findMany },
@@ -52,17 +46,13 @@ describe('MaintenanceAdminService', () => {
       svc.backupNow();
       throw new Error('должно было выкинуть');
     } catch (err) {
-      expect((err as { status?: number }).status).toBe(
-        HttpStatus.NOT_IMPLEMENTED,
-      );
+      expect((err as { status?: number }).status).toBe(HttpStatus.NOT_IMPLEMENTED);
     }
     try {
       svc.reindexNow();
       throw new Error('должно было выкинуть');
     } catch (err) {
-      expect((err as { status?: number }).status).toBe(
-        HttpStatus.NOT_IMPLEMENTED,
-      );
+      expect((err as { status?: number }).status).toBe(HttpStatus.NOT_IMPLEMENTED);
     }
   });
 });

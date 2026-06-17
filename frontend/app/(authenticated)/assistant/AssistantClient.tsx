@@ -1,25 +1,18 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
 import {
   conciergeApi,
   type ConciergeConversationApi,
   type ConciergeQuotaApi,
-} from '@/api/concierge.api';
-import { ConciergeChat } from '@/ui/concierge/ConciergeChat';
+} from "@/api/concierge.api";
+import { ConciergeChat } from "@/ui/concierge/ConciergeChat";
 
-/**
- * SBA γ-2 — `/assistant` страница.
- *
- * Layout: 2 колонки.
- *   - Sidebar (320px) — список диалогов + квота.
- *   - Main — ConciergeChat (новый или продолжение conversation).
- */
 export function AssistantClient() {
-  const [conversations, setConversations] = useState<ConciergeConversationApi[]>(
-    [],
-  );
+  const [conversations, setConversations] = useState<
+    ConciergeConversationApi[]
+  >([]);
   const [quota, setQuota] = useState<ConciergeQuotaApi | null>(null);
   const [activeConv, setActiveConv] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -34,7 +27,6 @@ export function AssistantClient() {
       setConversations(convs.items);
       setQuota(q);
     } catch {
-      /* swallow */
     } finally {
       setLoading(false);
     }
@@ -74,8 +66,8 @@ export function AssistantClient() {
               type="button"
               onClick={() => setActiveConv(c.id)}
               className={
-                'block w-full truncate px-3 py-2 text-left text-xs hover:bg-bg-base ' +
-                (activeConv === c.id ? 'bg-bg-base font-semibold' : '')
+                "block w-full truncate px-3 py-2 text-left text-xs hover:bg-bg-base " +
+                (activeConv === c.id ? "bg-bg-base font-semibold" : "")
               }
             >
               {c.summary ?? `Диалог от ${formatShortDate(c.startedAt)}`}
@@ -84,7 +76,7 @@ export function AssistantClient() {
         </div>
         {quota && (
           <div className="border-t border-border-subtle p-3 text-xs text-fg-tertiary">
-            Квота: сегодня {quota.dailyUsed}/{quota.dailyLimit} · месяц{' '}
+            Квота: сегодня {quota.dailyUsed}/{quota.dailyLimit} · месяц{" "}
             {quota.monthlyUsed}/{quota.monthlyLimit}
           </div>
         )}
@@ -105,11 +97,11 @@ export function AssistantClient() {
 
 function formatShortDate(iso: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(iso));
   } catch {
     return iso;

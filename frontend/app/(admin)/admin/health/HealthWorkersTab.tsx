@@ -1,21 +1,11 @@
-'use client';
+"use client";
 
-/**
- * HealthWorkersTab — вкладка «Воркеры» в /admin/health.
- *
- * Источник: `GET /api/v1/admin/health/workers` (Фаза 1 ТЗ admin-redesign).
- */
+import { ApiError } from "@/api/api-error";
+import { apiClient } from "@/api/api-client";
+import { Badge } from "@/ui/shadcn/badge";
 
-import { ApiError } from '@/api/api-error';
-import { apiClient } from '@/api/api-client';
-import { Badge } from '@/ui/shadcn/badge';
-
-import {
-  AdminEmpty,
-  AdminError,
-  AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminEmpty, AdminError, AdminLoading } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 type WorkerInfoApi = {
   name: string;
@@ -32,16 +22,16 @@ type WorkersHealthApi = {
 
 export function HealthWorkersTab() {
   const q = useAdminQuery(
-    'admin-health-workers',
+    "admin-health-workers",
     async () => {
       try {
         return await apiClient.get<WorkersHealthApi>(
-          '/api/v1/admin/health/workers',
+          "/api/v1/admin/health/workers",
         );
       } catch (e) {
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           return null;
         }
@@ -99,19 +89,19 @@ export function HealthWorkersTab() {
                 {w.concurrency}
               </td>
               <td className="px-2 py-1 text-right tabular-nums">
-                {w.processedTotal.toLocaleString('ru-RU')}
+                {w.processedTotal.toLocaleString("ru-RU")}
               </td>
               <td
                 className={`px-2 py-1 text-right tabular-nums ${
-                  w.failedTotal > 0 ? 'text-warning' : ''
+                  w.failedTotal > 0 ? "text-warning" : ""
                 }`}
               >
-                {w.failedTotal.toLocaleString('ru-RU')}
+                {w.failedTotal.toLocaleString("ru-RU")}
               </td>
               <td className="px-2 py-1 text-right text-xs text-fg-tertiary">
                 {w.lastHeartbeatAt
-                  ? new Date(w.lastHeartbeatAt).toLocaleString('ru-RU')
-                  : '—'}
+                  ? new Date(w.lastHeartbeatAt).toLocaleString("ru-RU")
+                  : "—"}
               </td>
             </tr>
           ))}

@@ -1,14 +1,3 @@
-/**
- * Snapshot-тест сборки промпта `skill-trait-concept-name.prompt.ts`.
- *
- * Snapshot фиксирует:
- *   - текст `SKILL_TRAIT_CONCEPT_NAME_SYSTEM_PROMPT` (guard от случайных
- *     правок жёстких правил формулировок);
- *   - текст user, который собирает `SKILL_TRAIT_CONCEPT_NAME_USER_TEMPLATE`
- *     для фикстуры с тремя вариантами одной черты.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

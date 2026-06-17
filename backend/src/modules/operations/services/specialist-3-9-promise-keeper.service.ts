@@ -7,32 +7,6 @@ import { ProbeService } from '../../probe/probe.service';
 import { HolidayService } from '../../tracker/services/holiday.service';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8.2 — Specialist 3.9 «Хранитель обещаний».
- *
- * Раз в день для каждого Org выполняет два прохода:
- *
- *   1. **followup** — обещания с `commitmentStatus='open'`, у которых
- *      `commitmentDueDate` прошёл хотя бы один рабочий день назад
- *      (через HolidayService). На каждое — `ProbeService.suggest` с
- *      reason='commitment.followup' получателю-автору. После — выставляем
- *      `commitmentStatus='asked'` и `commitmentAskedAt=now`.
- *
- *   2. **escalate** — обещания с `commitmentStatus='asked'`, по которым
- *      молчат `COMMITMENT_ESCALATION_DAYS` дней (default 3) и нет
- *      `commitmentEscalatedAt`. Эскалируем — probe всем `coo`/`owner`
- *      Org'а с reason='commitment.silence_escalation'. Ставим
- *      `commitmentEscalatedAt=now`.
- *
- * Идемпотентность:
- *   - ProbeService сам защищается от повторов 72ч по contentHash.
- *   - Флаг `commitmentStatus='asked'` гарантирует, что followup не пойдёт
- *     повторно (cron ищет только `open`).
- *   - Эскалация выполняется ровно один раз (фильтр `commitmentEscalatedAt IS NULL`).
- *
- * Безопасность каскадных сбоев — best-effort: ошибка по одному блоку не
- * валит весь проход.
- */
 @Injectable()
 export class Specialist39PromiseKeeperService {
   private readonly logger = new Logger(Specialist39PromiseKeeperService.name);
@@ -47,20 +21,7 @@ export class Specialist39PromiseKeeperService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Выборка просроченных open-обещаний с фильтром «прошёл хотя бы один
-   * рабочий день после `commitmentDueDate`». Так как HolidayService даёт
-   * `nextBusinessDay`, считаем: блок просрочен, если
-   * `nextBusinessDay(commitmentDueDate + 1) <= today`.
-   *
-   * Чтобы не делать N запросов в БД, забираем все open-блоки с
-   * `commitmentDueDate < today` за один SQL, а HolidayService применяем уже
-   * к каждому из них.
-   */
-  async findFollowupCandidates(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<
+  async findFollowupCandidates(args: { tenantId: string; now: Date }): Promise<
     Array<{
       id: string;
       tenantId: string;
@@ -103,10 +64,6 @@ export class Specialist39PromiseKeeperService {
 
     if (blocks.length === 0) return [];
 
-    // Для каждого блока — найти автора через IdeaBlockEntity → Entity (type='person')
-    // → Person (relationship='employee', userId IS NOT NULL). Считаем,
-    // что автор обещания — это person с ролью 'subject' в IdeaBlockEntity
-    // (если нет — берём любого employee-person из mentioned).
     const out: Array<{
       id: string;
       tenantId: string;
@@ -118,8 +75,6 @@ export class Specialist39PromiseKeeperService {
     }> = [];
 
     for (const block of blocks) {
-      // Проверяем «прошёл хотя бы один рабочий день после dueDate».
-      // nextBusinessDay(dueDate + 1) <= today.
       const due = block.commitmentDueDate;
       if (!due) continue;
       const dayAfter = new Date(due.getTime());
@@ -129,10 +84,6 @@ export class Specialist39PromiseKeeperService {
           tenantId: block.tenantId,
           date: dayAfter,
         });
-        // Просрочен — если рабочий день уже наступил В ПРОШЛОМ (т.е.
-        // nextWorkday < today). Если nextWorkday == today, значит срок
-        // прошёл прямо вчера и сегодня — рабочий день: пока ещё рано
-        // дёргать сотрудника, дадим ему день.
         if (nextWorkday.getTime() >= today.getTime()) {
           continue;
         }
@@ -151,7 +102,6 @@ export class Specialist39PromiseKeeperService {
         blockId: block.id,
       });
       if (authorUserIds.length === 0) {
-        // Нет автора-employee — спросить не у кого, пропускаем.
         continue;
       }
       out.push({ ...block, authorUserIds });
@@ -159,15 +109,7 @@ export class Specialist39PromiseKeeperService {
     return out;
   }
 
-  /**
-   * Выборка обещаний, которые подлежат эскалации (probe COO + owner).
-   * Фильтр: `commitmentStatus='asked'`, `commitmentAskedAt < now - escalationDays`,
-   * `commitmentEscalatedAt IS NULL`.
-   */
-  async findEscalationCandidates(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<
+  async findEscalationCandidates(args: { tenantId: string; now: Date }): Promise<
     Array<{
       id: string;
       tenantId: string;
@@ -179,9 +121,7 @@ export class Specialist39PromiseKeeperService {
     }>
   > {
     const escalationDays = this.cfg.betaOps.commitmentEscalationDays;
-    const threshold = new Date(
-      args.now.getTime() - escalationDays * 24 * 3600 * 1000,
-    );
+    const threshold = new Date(args.now.getTime() - escalationDays * 24 * 3600 * 1000);
 
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
@@ -222,13 +162,6 @@ export class Specialist39PromiseKeeperService {
     return out;
   }
 
-  /**
-   * Отправить followup-probe автору обещания. После — атомарно проставить
-   * `commitmentStatus='asked'` + `commitmentAskedAt=now`.
-   *
-   * Best-effort: ошибка БД/Probe не валит. При rate_limit / cold_start —
-   * пропускаем апдейт статуса, чтобы cron попробовал ещё раз.
-   */
   async sendFollowupForBlock(args: {
     blockId: string;
     tenantId: string;
@@ -244,8 +177,6 @@ export class Specialist39PromiseKeeperService {
       payload: {
         message,
         suggestedQuestion: args.questionText,
-        // 2026-05-30 (Agents v2 Фаза 0.2): suggestedOptions удалены — probe без кнопок.
-        // suggestedActions оставлены как семантический контекст для LLM probe-formulate.
         suggestedActions: ['Сделано', 'Не сделано', 'Продлеваю срок'],
         contextBlockId: args.blockId,
       },
@@ -283,10 +214,6 @@ export class Specialist39PromiseKeeperService {
     }
   }
 
-  /**
-   * Эскалация: probe всем `coo`/`owner` Org'а с reason='commitment.silence_escalation'.
-   * Ставим `commitmentEscalatedAt=now` после первого успешного probe.
-   */
   async sendEscalationForBlock(args: {
     blockId: string;
     tenantId: string;
@@ -352,18 +279,10 @@ export class Specialist39PromiseKeeperService {
     }
   }
 
-  /**
-   * Найти userIds авторов обещания: ищем employee-Person'ы, упомянутые в
-   * блоке как subject (через IdeaBlockEntity.role='subject') или просто
-   * mentioned (если subject не указан).
-   */
   private async resolveAuthorUserIds(args: {
     tenantId: string;
     blockId: string;
   }): Promise<string[]> {
-    // 1) Любой Person с relationship='employee', привязанный через
-    //    Entity (type='person') к этому блоку. Entity.persons — список
-    //    Person'ов (Фаза 0b §8.3 EntityResolutionService).
     const links = await this.prisma.ideaBlockEntity.findMany({
       where: {
         blockId: args.blockId,
@@ -396,7 +315,6 @@ export class Specialist39PromiseKeeperService {
       },
     });
     if (links.length === 0) return [];
-    // Приоритет role='subject', иначе — любой mentioned.
     const subjects = links.filter((l) => l.role === 'subject');
     const pool = subjects.length > 0 ? subjects : links;
     const userIds = new Set<string>();

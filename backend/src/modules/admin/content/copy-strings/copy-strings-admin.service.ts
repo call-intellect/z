@@ -2,15 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AdminSettingsService } from '../../settings/admin-settings.service';
 
-/**
- * Admin-redesign Фаза 5 — `CopyStringsAdminService`.
- *
- * MVP-стратегия: глоссарий и UI-строки хранятся в `AdminSetting` с
- * `category='content', section='copy-strings'`. Никакой отдельной модели
- * (см. ТЗ §5.5). Это даёт «бесплатно» history/audit через существующий
- * `AdminSettingsHistory` и pub/sub-инвалидацию кэша.
- */
-
 const CATEGORY = 'content';
 const SECTION = 'copy-strings';
 
@@ -60,11 +51,6 @@ export class CopyStringsAdminService {
     return { ok: true };
   }
 
-  /**
-   * Bulk-import: массовая загрузка пар key→value. Каждая пара пишется как
-   * отдельный `AdminSetting.set()` — наследует history/audit/инвалидацию.
-   * Возвращает количество успешно записанных ключей.
-   */
   async bulkImport(
     entries: Record<string, string>,
     userId: string | null,

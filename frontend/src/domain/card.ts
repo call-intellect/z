@@ -1,24 +1,18 @@
-/**
- * Доменная модель CRM-карточки. Маппинг из ApiDto — `cardFromApi`.
- *
- * Контракт: `backend/src/modules/cards/`.
- */
-
 export type CardKind =
-  | 'client'
-  | 'deal'
-  | 'project'
-  | 'topic'
-  | 'custom'
-  | 'vendor';
+  | "client"
+  | "deal"
+  | "project"
+  | "topic"
+  | "custom"
+  | "vendor";
 
 export const CARD_KIND_LABELS: Record<CardKind, string> = {
-  client: 'Клиент',
-  deal: 'Сделка',
-  project: 'Проект',
-  topic: 'Тема',
-  custom: 'Прочее',
-  vendor: 'Поставщик',
+  client: "Клиент",
+  deal: "Сделка",
+  project: "Проект",
+  topic: "Тема",
+  custom: "Прочее",
+  vendor: "Поставщик",
 };
 
 export type CardDomain = {
@@ -33,7 +27,6 @@ export type CardDomain = {
   contactPhone: string | null;
   pinned: boolean;
   archivedAt: Date | null;
-  /** AI rollup-кэш карточки (markdown). null если ещё не собирали. */
   summary: string | null;
   summaryUpdatedAt: Date | null;
   meetingCount: number;
@@ -89,15 +82,15 @@ export type CardMeetingsListApi = {
 };
 
 const KNOWN_KINDS: ReadonlySet<string> = new Set([
-  'client',
-  'deal',
-  'project',
-  'topic',
-  'custom',
+  "client",
+  "deal",
+  "project",
+  "topic",
+  "custom",
 ]);
 
 function parseKind(raw: string): CardKind {
-  return KNOWN_KINDS.has(raw) ? (raw as CardKind) : 'custom';
+  return KNOWN_KINDS.has(raw) ? (raw as CardKind) : "custom";
 }
 
 const parseDate = (s: string | null | undefined): Date | null =>

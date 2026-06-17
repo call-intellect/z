@@ -1,25 +1,10 @@
-'use client';
+"use client";
 
-/**
- * useSprints — SWR-хук списка спринтов с фильтрами (master-detail /sprints).
- *
- * Backend: `GET /api/v1/sprints` (ТЗ 2026-05-28).
- *
- * Возвращаем доменные модели через `mapApiSprint`. SWR-ключ включает все
- * фильтры — это даёт автоматический кэш по URL-комбинации. `keepPreviousData`
- * — чтобы при смене фильтра не схлопывалась карточка превью.
- */
-import { useMemo } from 'react';
-import useSWR from 'swr';
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import {
-  sprintsListApi,
-  type ListSprintsRequest,
-} from '@/api/sprints.api';
-import {
-  mapApiSprint,
-  type DomainSprintListItem,
-} from '@/domain/sprint';
+import { sprintsListApi, type ListSprintsRequest } from "@/api/sprints.api";
+import { mapApiSprint, type DomainSprintListItem } from "@/domain/sprint";
 
 export function useSprints(
   orgId: string | null | undefined,
@@ -36,13 +21,13 @@ export function useSprints(
 } {
   const key = orgId
     ? [
-        'sprints.list',
+        "sprints.list",
         orgId,
-        req.status ?? 'all',
+        req.status ?? "all",
         req.scopeKind ?? null,
-        req.q ?? '',
-        req.sortBy ?? 'startDate',
-        req.sortDir ?? 'desc',
+        req.q ?? "",
+        req.sortBy ?? "startDate",
+        req.sortDir ?? "desc",
         req.page ?? 1,
         req.limit ?? 20,
       ]
@@ -51,7 +36,7 @@ export function useSprints(
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId required');
+      if (!orgId) throw new Error("orgId required");
       return sprintsListApi.list(orgId, req);
     },
     { revalidateOnFocus: false, keepPreviousData: true },

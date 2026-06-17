@@ -1,26 +1,3 @@
-/**
- * ТЗ-2 Ф4 (daily-value-dashboards) — Seed AdminSetting для self-view
- * недельного план-факта по людям (`GET /api/v1/me/weekly-per-person`).
- *
- * Регистрирует kill-switch self-view'а (редактируется super_admin'ом в админке,
- * code-fallback `true` в самом контроллере):
- *
- *   - `operations.per_person_self_view.enabled` (bool, default true) —
- *     kill-switch (ON). Гейтит ТОЛЬКО self-эндпоинт `/me/weekly-per-person`:
- *     любой пользователь с Person видит свою строку недельного план-факта +
- *     среднюю надёжность команды. OFF → эндпоинт отдаёт пустой self DTO
- *     (graceful 200). На COO-дашборд (RBAC-эндпоинт) не влияет.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-operations-per-person.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -79,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

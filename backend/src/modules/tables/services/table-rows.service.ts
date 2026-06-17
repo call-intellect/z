@@ -11,27 +11,8 @@ import { type TableRow, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import type {
-  CreateRowBody,
-  RowsListQuery,
-  UpdateRowBody,
-} from '../dto/tables.dto';
+import type { CreateRowBody, RowsListQuery, UpdateRowBody } from '../dto/tables.dto';
 
-/**
- * Smart Tables — CRUD строк (`TableRow`). Фаза 0.
- *
- *   - list / findById / create / update
- *   - archive (soft) / unarchive
- *   - hardDelete — только если уже archived
- *
- * Лимиты:
- *   - `TABLE_MAX_ROWS_PER_TABLE` — общая ёмкость таблицы.
- *   - `TABLE_MAX_CELL_SIZE_BYTES` — размер одного value в `cells`.
- *     При превышении возвращаем 400 с конкретным propertyId.
- *
- * Multi-tenant scope: `tenantId` родительской `Table` проверяется на каждой
- * операции (`requireTable` / `requireRow`).
- */
 @Injectable()
 export class TableRowsService {
   private readonly logger = new Logger(TableRowsService.name);
@@ -40,8 +21,6 @@ export class TableRowsService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
-
-  // ─────────────────────────── list ───────────────────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -73,13 +52,9 @@ export class TableRowsService {
     return { items, total };
   }
 
-  // ─────────────────────────── findById ───────────────────────────────────
-
   async findById(args: { tenantId: string; rowId: string }): Promise<TableRow> {
     return this.requireRow(args.tenantId, args.rowId);
   }
-
-  // ─────────────────────────── create ─────────────────────────────────────
 
   async create(args: {
     tenantId: string;
@@ -106,9 +81,7 @@ export class TableRowsService {
     this.assertCellsSize(args.input.cells ?? {});
 
     const order =
-      args.input.order !== undefined
-        ? args.input.order
-        : await this.nextOrder(args.tableId);
+      args.input.order !== undefined ? args.input.order : await this.nextOrder(args.tableId);
 
     return this.prisma.tableRow.create({
       data: {
@@ -126,15 +99,6 @@ export class TableRowsService {
     });
   }
 
-  // ─────────────────────────── createMany ─────────────────────────────────
-
-  /**
-   * Bulk-вставка строк (Smart-tables Фаза 2 — initial backfill).
-   *
-   * order назначается возрастающим от maxOrder+1. Не проверяет лимит строк
-   * по-одному (вызывается только системным backfill'ом по «живым» Entity);
-   * cells-размер проверяется на каждой строке. createdBy='system' по умолчанию.
-   */
   async createMany(args: {
     tenantId: string;
     tableId: string;
@@ -160,18 +124,9 @@ export class TableRowsService {
     return { created: res.count };
   }
 
-  // ─────────────────────────── update ─────────────────────────────────────
-
-  async update(args: {
-    tenantId: string;
-    rowId: string;
-    input: UpdateRowBody;
-  }): Promise<TableRow> {
+  async update(args: { tenantId: string; rowId: string; input: UpdateRowBody }): Promise<TableRow> {
     const existing = await this.requireRow(args.tenantId, args.rowId);
 
-    // Smart-tables Фаза 2 — read-only guard. Если в input есть значение для
-    // колонки, привязанной к Entity (config.source==='entity' или readonly),
-    // редактирование запрещено: значение приходит из памяти компании.
     if (args.input.cells !== undefined) {
       await this.assertNoReadonlyCells(existing.tableId, args.input.cells);
     }
@@ -198,8 +153,6 @@ export class TableRowsService {
     });
   }
 
-  // ─────────────────────────── archive / unarchive ────────────────────────
-
   async archive(args: { tenantId: string; rowId: string }): Promise<TableRow> {
     const existing = await this.requireRow(args.tenantId, args.rowId);
     if (existing.archivedAt) return existing;
@@ -218,32 +171,21 @@ export class TableRowsService {
     });
   }
 
-  // ─────────────────────────── hardDelete ─────────────────────────────────
-
-  async hardDelete(args: {
-    tenantId: string;
-    rowId: string;
-  }): Promise<{ id: string }> {
+  async hardDelete(args: { tenantId: string; rowId: string }): Promise<{ id: string }> {
     const existing = await this.requireRow(args.tenantId, args.rowId);
     if (!existing.archivedAt) {
       throw new ForbiddenException({
         ok: false,
         error: {
           code: 'row_must_be_archived',
-          message:
-            'Удалить можно только архивированную строку. Сначала переведите её в архив.',
+          message: 'Удалить можно только архивированную строку. Сначала переведите её в архив.',
         },
       });
     }
     await this.prisma.tableRow.delete({ where: { id: existing.id } });
-    this.logger.log(
-      { rowId: existing.id, tableId: existing.tableId },
-      'tables.rows: hard-delete',
-    );
+    this.logger.log({ rowId: existing.id, tableId: existing.tableId }, 'tables.rows: hard-delete');
     return { id: existing.id };
   }
-
-  // ─────────────────────────── helpers ────────────────────────────────────
 
   private async requireTable(tenantId: string, tableId: string): Promise<void> {
     const table = await this.prisma.table.findUnique({
@@ -281,15 +223,6 @@ export class TableRowsService {
     return Number(last.order.toString()) + 1;
   }
 
-  /**
-   * Smart-tables Фаза 2 — read-only guard. Бросает 422 `table_cell_readonly`,
-   * если input меняет ячейку колонки, привязанной к Entity графа
-   * (config.readonly===true ИЛИ config.source==='entity'). Такие значения
-   * приходят из памяти компании и редактируются в самой сущности.
-   *
-   * Проверяем ДО записи. Считаем «изменением» само присутствие ключа
-   * propertyId в input.cells (PATCH-семантика: переданные ячейки перезаписывают).
-   */
   private async assertNoReadonlyCells(
     tableId: string,
     cells: Record<string, unknown>,
@@ -316,11 +249,6 @@ export class TableRowsService {
     }
   }
 
-  /**
-   * Проверяет размер каждого value в `cells`. JSON-сериализация каждого
-   * значения по отдельности — чтобы в сообщении вернуть конкретный
-   * propertyId, превысивший лимит.
-   */
   private assertCellsSize(cells: Record<string, unknown>): void {
     const cap = this.cfg.smartTables.maxCellSizeBytes;
     for (const [propertyId, value] of Object.entries(cells)) {

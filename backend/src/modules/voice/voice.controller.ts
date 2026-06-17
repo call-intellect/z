@@ -14,18 +14,9 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 
-/**
- * Минимальный тип файла из multer (повторяет паттерн DocumentsController:
- * `@types/multer` опциональный peer-dep, тип объявляется локально).
- */
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -35,50 +26,22 @@ interface MulterFile {
 }
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
-import {
-  SynthesizeVoiceSchema,
-  type SynthesizeVoiceDto,
-} from './dto/voice.dto';
+import { SynthesizeVoiceSchema, type SynthesizeVoiceDto } from './dto/voice.dto';
 import { VoiceAdapterError } from './services/voice-channel-adapter.service';
 import { VoiceChannelAdapter } from './services/voice-channel-adapter.service';
 
-/**
- * `VoiceController` (SBA δ-3) — REST API для распознавания и синтеза речи.
- *
- * Защищён `CookieAuthGuard + TenantGuard`. RBAC ресурс — `voice`:
- *   - `voice.transcribe` → `canRead(voice)`.
- *   - `voice.synthesize` → `canWrite(voice)`.
- *
- * Эндпоинты:
- *   - `POST /api/v1/voice/transcribe` — multipart upload поля `audio` (любой
- *     формат, поддерживаемый Vox: ogg/mp3/wav/m4a/flac). Возвращает
- *     `{ text, durationSeconds, provider }`.
- *   - `POST /api/v1/voice/synthesize` — JSON `{ text, voice?, format? }`.
- *     Возвращает binary stream (Content-Type: audio/mpeg по умолчанию).
- *     Ограничение по text — 500 символов (см. TTS_MAX_CHARS).
- *
- * Метрики (см. BusinessMetricsService):
- *   - `voice_asr_requests_total{tenant_top, provider}`
- *   - `voice_asr_duration_seconds{provider}`
- *   - `voice_tts_requests_total{tenant_top, provider}`
- *   - `voice_tts_chars_total{tenant_top}`
- */
 @ApiTags('voice')
 @Controller('api/v1/voice')
 @UseGuards(CookieAuthGuard, TenantGuard)
 export class VoiceController {
   private readonly logger = new Logger(VoiceController.name);
 
-  /** Жёсткий лимит размера inbound audio (10 MB). */
   static readonly MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 
   constructor(
@@ -86,8 +49,6 @@ export class VoiceController {
     private readonly adapter: VoiceChannelAdapter,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ─────────────────────────── /transcribe ────────────────────────────
 
   @Post('transcribe')
   @HttpCode(HttpStatus.OK)
@@ -148,7 +109,6 @@ export class VoiceController {
       };
     } catch (err) {
       if (err instanceof VoiceAdapterError) {
-        // 502 — upstream-ошибка (ASR провайдер).
         throw new BadRequestException({
           ok: false,
           error: { code: err.code, message: err.message },
@@ -157,8 +117,6 @@ export class VoiceController {
       throw err;
     }
   }
-
-  // ─────────────────────────── /synthesize ───────────────────────────
 
   @Post('synthesize')
   @HttpCode(HttpStatus.OK)
@@ -208,8 +166,6 @@ export class VoiceController {
     }
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -250,9 +206,7 @@ export class VoiceController {
   }
 }
 
-function contentTypeForFormat(
-  format: 'mp3' | 'opus' | 'aac' | 'flac',
-): string {
+function contentTypeForFormat(format: 'mp3' | 'opus' | 'aac' | 'flac'): string {
   switch (format) {
     case 'mp3':
       return 'audio/mpeg';

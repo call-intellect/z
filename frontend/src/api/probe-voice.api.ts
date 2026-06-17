@@ -1,14 +1,4 @@
-/**
- * Probe voice helper — тонкая обёртка над `voiceApi.transcribe` для
- * компонента `ProbeAnswerInput` (Phase 0.3 ТЗ Agents v2 umbrella,
- * §«Probe без кнопок»). Цель — изолировать ASR-вызов от UI:
- * компонент работает с понятным контрактом `{ text }` и не знает про
- * multipart/form-data / orgId / провайдеров.
- *
- * Backend: `POST /api/v1/voice/transcribe` (модуль `backend/src/modules/voice`).
- * Это существующий ASR-эндпоинт, новый не создаём.
- */
-import { voiceApi } from './voice.api';
+import { voiceApi } from "./voice.api";
 
 export interface TranscribeProbeAnswerArgs {
   orgId: string;

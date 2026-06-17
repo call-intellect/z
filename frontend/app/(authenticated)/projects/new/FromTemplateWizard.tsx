@@ -1,78 +1,69 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSWRConfig } from 'swr';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSWRConfig } from "swr";
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Loader2,
   Search,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { projectsApi } from '@/api/tracker/projects.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError } from "@/api/api-error";
+import { projectsApi } from "@/api/tracker/projects.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   useTeamTemplate,
   useTeamTemplates,
-} from '@/hooks/tracker/useTeamTemplates';
+} from "@/hooks/tracker/useTeamTemplates";
 import {
   teamTemplateCategoryLabel,
   teamTemplateEmoji,
   type TeamTemplateListItem,
-} from '@/domain/tracker';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/tracker";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 type WizardStep = 1 | 2 | 3;
 
-const DEFAULT_TIMEZONE = 'Europe/Moscow';
+const DEFAULT_TIMEZONE = "Europe/Moscow";
 
 const TIMEZONES = [
-  'Europe/Kaliningrad',
-  'Europe/Moscow',
-  'Europe/Samara',
-  'Asia/Yekaterinburg',
-  'Asia/Omsk',
-  'Asia/Krasnoyarsk',
-  'Asia/Irkutsk',
-  'Asia/Yakutsk',
-  'Asia/Vladivostok',
-  'Asia/Magadan',
-  'Asia/Kamchatka',
+  "Europe/Kaliningrad",
+  "Europe/Moscow",
+  "Europe/Samara",
+  "Asia/Yekaterinburg",
+  "Asia/Omsk",
+  "Asia/Krasnoyarsk",
+  "Asia/Irkutsk",
+  "Asia/Yakutsk",
+  "Asia/Vladivostok",
+  "Asia/Magadan",
+  "Asia/Kamchatka",
 ];
 
-/**
- * 3-шаговый wizard «Создать проект из шаблона».
- *
- *   Шаг 1 — выбор TeamTemplate из 15 системных карточек (с поиском).
- *   Шаг 2 — название проекта, identifier (2-5 заглавных латинских),
- *           withExampleTasks (checkbox), timezone.
- *   Шаг 3 — preview: сколько статусов / ролей / регламентов / примеров задач
- *           будет создано.
- *
- * На «Создать» зовёт `POST /api/v1/projects/from-template` и редиректит
- * на `/projects/{slug}/board`.
- */
 export function FromTemplateWizard() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
   const { mutate: globalMutate } = useSWRConfig();
 
-  const { templates, isLoading: listLoading, error: listError } =
-    useTeamTemplates(currentOrgId);
+  const {
+    templates,
+    isLoading: listLoading,
+    error: listError,
+  } = useTeamTemplates(currentOrgId);
 
   const [step, setStep] = useState<WizardStep>(1);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
 
-  const [projectName, setProjectName] = useState('');
-  const [identifier, setIdentifier] = useState('');
+  const [projectName, setProjectName] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [withExampleTasks, setWithExampleTasks] = useState(false);
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
 
@@ -96,13 +87,8 @@ export function FromTemplateWizard() {
     [templates, selectedSlug],
   );
 
-  // Detail подгружаем только когда выбран шаблон (для шага 1 — counts,
-  // для шага 3 — preview). На шаге 1 ленивее не получится: нам нужны counts
-  // ролей/states/typicalTasks по карточке.
-  const { template: selectedDetail, isLoading: detailLoading } = useTeamTemplate(
-    currentOrgId,
-    selectedSlug,
-  );
+  const { template: selectedDetail, isLoading: detailLoading } =
+    useTeamTemplate(currentOrgId, selectedSlug);
 
   const canGoStep2 = selectedSlug !== null;
   const canGoStep3 =
@@ -111,7 +97,6 @@ export function FromTemplateWizard() {
 
   const handlePickTemplate = (slug: string) => {
     setSelectedSlug(slug);
-    // Подставим дефолтное имя проекта и identifier-предложение.
     const t = templates.find((x) => x.slug === slug);
     if (t && !projectName) setProjectName(t.name);
     if (!identifier) setIdentifier(buildDefaultIdentifier(slug));
@@ -129,17 +114,15 @@ export function FromTemplateWizard() {
         withExampleTasks,
         timezone,
       });
-      // Инвалидируем список проектов, чтобы при навигации SWR подхватил
-      // новый проект (иначе useProjectBySlug видел бы stale-кэш).
       void globalMutate(
         (key: unknown) =>
           Array.isArray(key) &&
-          typeof key[0] === 'string' &&
-          key[0] === 'tracker.projects',
+          typeof key[0] === "string" &&
+          key[0] === "tracker.projects",
         undefined,
         { revalidate: true },
       );
-      toast.success('Проект создан');
+      toast.success("Проект создан");
       router.push(`/projects/${encodeURIComponent(res.slug)}/board`);
     } catch (err) {
       const message =
@@ -147,15 +130,13 @@ export function FromTemplateWizard() {
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Не удалось создать проект';
+            : "Не удалось создать проект";
       setSubmitError(message);
       toast.error(message);
     } finally {
       setSubmitting(false);
     }
   };
-
-  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-4">
@@ -209,12 +190,14 @@ export function FromTemplateWizard() {
         <Button
           type="button"
           variant="ghost"
-          onClick={() => (step === 1 ? router.back() : setStep((step - 1) as WizardStep))}
+          onClick={() =>
+            step === 1 ? router.back() : setStep((step - 1) as WizardStep)
+          }
           disabled={submitting}
           className="gap-2"
         >
           <ArrowLeft size={14} />
-          {step === 1 ? 'Отмена' : 'Назад'}
+          {step === 1 ? "Отмена" : "Назад"}
         </Button>
 
         {step < 3 && (
@@ -250,21 +233,16 @@ export function FromTemplateWizard() {
   );
 }
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-/** Слаг → префикс-предложение: первые 3-5 заглавных букв. */
 function buildDefaultIdentifier(slug: string): string {
-  const base = slug.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const base = slug.toUpperCase().replace(/[^A-Z0-9]/g, "");
   return base.slice(0, Math.min(4, Math.max(3, base.length)));
 }
 
-// ─── Step indicator ─────────────────────────────────────────────────────────
-
 function StepIndicator({ step }: { step: WizardStep }) {
   const items: Array<{ n: WizardStep; label: string }> = [
-    { n: 1, label: 'Шаблон' },
-    { n: 2, label: 'Параметры' },
-    { n: 3, label: 'Проверка' },
+    { n: 1, label: "Шаблон" },
+    { n: 2, label: "Параметры" },
+    { n: 3, label: "Проверка" },
   ];
   return (
     <ol className="flex items-center gap-2 text-xs">
@@ -276,10 +254,10 @@ function StepIndicator({ step }: { step: WizardStep }) {
             <span
               className={`grid h-6 w-6 place-items-center rounded-full border text-[11px] font-semibold ${
                 active
-                  ? 'border-accent bg-accent text-accent-fg'
+                  ? "border-accent bg-accent text-accent-fg"
                   : done
-                    ? 'border-success bg-success/15 text-success'
-                    : 'border-border-subtle bg-bg-elevated text-fg-tertiary'
+                    ? "border-success bg-success/15 text-success"
+                    : "border-border-subtle bg-bg-elevated text-fg-tertiary"
               }`}
             >
               {done ? <CheckCircle2 size={12} /> : item.n}
@@ -287,10 +265,10 @@ function StepIndicator({ step }: { step: WizardStep }) {
             <span
               className={
                 active
-                  ? 'font-medium text-fg-primary'
+                  ? "font-medium text-fg-primary"
                   : done
-                    ? 'text-fg-secondary'
-                    : 'text-fg-tertiary'
+                    ? "text-fg-secondary"
+                    : "text-fg-tertiary"
               }
             >
               {item.label}
@@ -304,8 +282,6 @@ function StepIndicator({ step }: { step: WizardStep }) {
     </ol>
   );
 }
-
-// ─── Step 1 — выбор шаблона ─────────────────────────────────────────────────
 
 function Step1({
   search,
@@ -367,8 +343,8 @@ function Step1({
                   onClick={() => onPick(t.slug)}
                   className={`flex h-full w-full flex-col gap-2 rounded-md border p-3 text-left transition-colors ${
                     active
-                      ? 'border-accent bg-accent-muted/40 ring-1 ring-accent'
-                      : 'border-border-subtle bg-bg-elevated hover:border-border hover:bg-bg-card'
+                      ? "border-accent bg-accent-muted/40 ring-1 ring-accent"
+                      : "border-border-subtle bg-bg-elevated hover:border-border hover:bg-bg-card"
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -396,8 +372,6 @@ function Step1({
     </div>
   );
 }
-
-// ─── Step 2 — параметры ─────────────────────────────────────────────────────
 
 function Step2({
   template,
@@ -430,7 +404,9 @@ function Step2({
           {teamTemplateEmoji(template.slug)}
         </span>
         <div className="min-w-0">
-          <div className="text-sm font-medium text-fg-primary">{template.name}</div>
+          <div className="text-sm font-medium text-fg-primary">
+            {template.name}
+          </div>
           <div className="line-clamp-1 text-xs text-fg-tertiary">
             {template.description}
           </div>
@@ -459,7 +435,7 @@ function Step2({
             onIdentifier(
               e.target.value
                 .toUpperCase()
-                .replace(/[^A-Z0-9]/g, '')
+                .replace(/[^A-Z0-9]/g, "")
                 .slice(0, 5),
             )
           }
@@ -469,8 +445,8 @@ function Step2({
           maxLength={5}
         />
         <span className="text-[11px] text-fg-tertiary">
-          2–5 заглавных латинских букв или цифр. Подставится в номера задач:
-          «{identifier || 'SALE'}-1».
+          2–5 заглавных латинских букв или цифр. Подставится в номера задач: «
+          {identifier || "SALE"}-1».
         </span>
         {!idIsValid && (
           <span className="text-[11px] text-danger">
@@ -509,15 +485,14 @@ function Step2({
             Создать 2–3 примера задач
           </span>
           <span className="text-xs text-fg-tertiary">
-            Из «типичных задач» шаблона — чтобы было что показать команде на старте.
+            Из «типичных задач» шаблона — чтобы было что показать команде на
+            старте.
           </span>
         </span>
       </label>
     </div>
   );
 }
-
-// ─── Step 3 — preview ───────────────────────────────────────────────────────
 
 function Step3({
   template,
@@ -530,7 +505,7 @@ function Step3({
 }: {
   template: TeamTemplateListItem;
   detailLoading: boolean;
-  definition: import('@/domain/tracker').TeamTemplateDefinition | null;
+  definition: import("@/domain/tracker").TeamTemplateDefinition | null;
   projectName: string;
   identifier: string;
   timezone: string;
@@ -551,7 +526,9 @@ function Step3({
             {teamTemplateEmoji(template.slug)}
           </span>
           <div>
-            <div className="text-sm font-medium text-fg-primary">{projectName}</div>
+            <div className="text-sm font-medium text-fg-primary">
+              {projectName}
+            </div>
             <div className="text-xs text-fg-tertiary">
               Префикс «{identifier}» · часовой пояс {timezone} · шаблон «
               {template.name}»
@@ -612,7 +589,7 @@ function Step3({
               <li key={r.key} className="rounded-md bg-bg-card px-2 py-1.5">
                 <div className="text-sm text-fg-primary">{r.name}</div>
                 <div className="line-clamp-2 text-[11px] text-fg-tertiary">
-                  {r.responsibilities[0] ?? ''}
+                  {r.responsibilities[0] ?? ""}
                 </div>
               </li>
             ))}
@@ -620,23 +597,21 @@ function Step3({
         </div>
       )}
 
-      {definition &&
-        withExampleTasks &&
-        definition.typicalTasks.length > 0 && (
-          <div className="rounded-md border border-border-subtle bg-bg-elevated p-3">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
-              Примеры задач
-            </div>
-            <ul className="flex flex-col gap-1 text-sm text-fg-secondary">
-              {definition.typicalTasks.slice(0, 3).map((t, i) => (
-                <li key={i} className="flex items-center gap-2">
-                  <span className="text-fg-tertiary">·</span>
-                  {t.title}
-                </li>
-              ))}
-            </ul>
+      {definition && withExampleTasks && definition.typicalTasks.length > 0 && (
+        <div className="rounded-md border border-border-subtle bg-bg-elevated p-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-fg-tertiary">
+            Примеры задач
           </div>
-        )}
+          <ul className="flex flex-col gap-1 text-sm text-fg-secondary">
+            {definition.typicalTasks.slice(0, 3).map((t, i) => (
+              <li key={i} className="flex items-center gap-2">
+                <span className="text-fg-tertiary">·</span>
+                {t.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,35 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ExecutablePersonaTriggerWatcherCron } from './executable-persona-trigger-watcher.cron';
 
-/**
- * SBA γ-1 доделки + Фаза 5 «clone reliability hardening» —
- * unit-тесты ExecutablePersonaTriggerWatcherCron.
- *
- * Покрывают:
- *   1. Skip: если нет ни одного snapshot — увеличиваем skippedNoSnapshotYet.
- *   2. trait_delta: ≥ traitDeltaThreshold новых traits за 24ч → trigger,
- *      метрика persona_rebuild_triggered_total{reason=trait_delta}.
- *   3. max_age: age >= maxAgeHours без новых черт → trigger,
- *      метрика persona_rebuild_triggered_total{reason=max_age}.
- *   4. Оба условия не выполнены → нет rebuild.
- *   5. Critical: ≥1 trait misleading + severity=critical → trigger.
- *   6. Locked: VersioningService → skippedLocked++.
- */
 describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   function makeCron(opts: {
     profiles: Array<{ id: string; tenantId: string }>;
     findFirstLatest: (profileId: string) => { snapshotAt: Date } | null;
-    findCriticalMisleading: (
-      profileId: string,
-    ) => { id: string; misleadingFlaggedAt: Date } | null;
+    findCriticalMisleading: (profileId: string) => { id: string; misleadingFlaggedAt: Date } | null;
     newTraitsCount: (profileId: string) => number;
     findNewestTrait: (profileId: string) => { createdAt: Date } | null;
     triggerRebuildImpl?: (args: {
       profileId: string;
       reason: string;
-    }) =>
-      | { built: true; personaId: string }
-      | { built: false; reason: string };
+    }) => { built: true; personaId: string } | { built: false; reason: string };
     traitDeltaThreshold?: number;
     maxAgeHours?: number;
   }): {
@@ -39,11 +21,10 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
     incPersonaRebuildTriggered: ReturnType<typeof vi.fn>;
     profileFindMany: ReturnType<typeof vi.fn>;
   } {
-    const triggerRebuild = vi.fn(
-      async (args: { profileId: string; reason: string }) =>
-        opts.triggerRebuildImpl
-          ? opts.triggerRebuildImpl(args)
-          : { built: true, personaId: `p_${args.profileId}` },
+    const triggerRebuild = vi.fn(async (args: { profileId: string; reason: string }) =>
+      opts.triggerRebuildImpl
+        ? opts.triggerRebuildImpl(args)
+        : { built: true, personaId: `p_${args.profileId}` },
     );
     const incPersonaRebuildTriggered = vi.fn();
     const profileFindMany = vi.fn(async () => opts.profiles);
@@ -57,18 +38,12 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
         ),
       },
       skillTrait: {
-        findFirst: vi.fn(
-          async ({
-            where,
-          }: {
-            where: { profileId: string; status: string };
-          }) => {
-            if (where.status === 'misleading') {
-              return opts.findCriticalMisleading(where.profileId);
-            }
-            return opts.findNewestTrait(where.profileId);
-          },
-        ),
+        findFirst: vi.fn(async ({ where }: { where: { profileId: string; status: string } }) => {
+          if (where.status === 'misleading') {
+            return opts.findCriticalMisleading(where.profileId);
+          }
+          return opts.findNewestTrait(where.profileId);
+        }),
         count: vi.fn(async ({ where }: { where: { profileId: string } }) =>
           opts.newTraitsCount(where.profileId),
         ),
@@ -107,11 +82,11 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   });
 
   it('critical: найден mark_as_misleading с [severity=critical] → trigger', async () => {
-    const flaggedAt = new Date(Date.now() - 60 * 60 * 1000); // 1ч назад
+    const flaggedAt = new Date(Date.now() - 60 * 60 * 1000);
     const { cron, triggerRebuild } = makeCron({
       profiles: [{ id: 'p1', tenantId: 't1' }],
       findFirstLatest: () => ({
-        snapshotAt: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6ч назад
+        snapshotAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
       }),
       findCriticalMisleading: () => ({
         id: 'tr1',
@@ -132,10 +107,9 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   });
 
   it('trait_delta: ≥2 новых traits за 24ч → trigger + метрика', async () => {
-    const newTraitCreated = new Date(Date.now() - 60 * 60 * 1000); // 1ч назад
+    const newTraitCreated = new Date(Date.now() - 60 * 60 * 1000);
     const { cron, triggerRebuild, incPersonaRebuildTriggered } = makeCron({
       profiles: [{ id: 'p1', tenantId: 't1' }],
-      // snapshot свежий (6ч назад) — max_age НЕ сработает
       findFirstLatest: () => ({
         snapshotAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
       }),
@@ -157,12 +131,12 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   });
 
   it('max_age: age >= 48ч без новых черт → trigger + метрика max_age', async () => {
-    const oldSnapshotAt = new Date(Date.now() - 50 * 60 * 60 * 1000); // 50ч назад
+    const oldSnapshotAt = new Date(Date.now() - 50 * 60 * 60 * 1000);
     const { cron, triggerRebuild, incPersonaRebuildTriggered } = makeCron({
       profiles: [{ id: 'p1', tenantId: 't1' }],
       findFirstLatest: () => ({ snapshotAt: oldSnapshotAt }),
       findCriticalMisleading: () => null,
-      newTraitsCount: () => 0, // нет новых черт → trait_delta не сработает
+      newTraitsCount: () => 0,
       findNewestTrait: () => null,
       traitDeltaThreshold: 2,
       maxAgeHours: 48,
@@ -181,12 +155,11 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
   it('skip: оба условия не выполнены → нет rebuild, skippedNoNewActivity++', async () => {
     const { cron, triggerRebuild, incPersonaRebuildTriggered } = makeCron({
       profiles: [{ id: 'p1', tenantId: 't1' }],
-      // snapshot свежий (6ч назад), age < 48ч
       findFirstLatest: () => ({
         snapshotAt: new Date(Date.now() - 6 * 60 * 60 * 1000),
       }),
       findCriticalMisleading: () => null,
-      newTraitsCount: () => 1, // < threshold(2)
+      newTraitsCount: () => 1,
       findNewestTrait: () => null,
       traitDeltaThreshold: 2,
       maxAgeHours: 48,
@@ -211,10 +184,7 @@ describe('ExecutablePersonaTriggerWatcherCron.runOnce', () => {
     });
     await cron.runOnce();
     const arg = profileFindMany.mock.calls[0]![0] as { orderBy: unknown };
-    expect(arg.orderBy).toEqual([
-      { lastBuildAt: { sort: 'asc', nulls: 'first' } },
-      { id: 'asc' },
-    ]);
+    expect(arg.orderBy).toEqual([{ lastBuildAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }]);
   });
 
   it('locked: VersioningService возвращает built=false reason=locked → skippedLocked++', async () => {

@@ -1,10 +1,3 @@
-/**
- * Pulse Wave 6 §6.8 — DecisionHygieneScorerWorker (unit).
- *
- * Проверяем: happy type-1 / happy type-2 / skip уже классифицированного /
- * невалидный JSON от LLM.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -182,7 +175,6 @@ describe('DecisionHygieneScorerWorker.process', () => {
     await h.worker.process(JOB);
 
     expect(h.decisionUpdate).toHaveBeenCalledTimes(1);
-    // basisCount запрошен с sourceBlockIds.
     expect(h.basisCount).toHaveBeenCalled();
   });
 

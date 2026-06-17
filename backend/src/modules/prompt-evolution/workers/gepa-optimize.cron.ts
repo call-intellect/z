@@ -8,30 +8,11 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import { GepaRunnerService } from '../services/gepa-runner.service';
 
-/**
- * Agents v2 Фаза C2 (2026-05-30) — gepa-optimize cron (weekly Sun 04:00).
- *
- * Раз в неделю:
- *   1. Находит (tenantId × promptKey) пары с ≥30 PromptFeedback (edited)
- *      за прошлую неделю И с LlmTaskRoute.evolutionEnabled=true.
- *   2. Для каждой пары:
- *      - грузит feedback за 30 дней,
- *      - дёргает GepaRunnerService.runOptimization,
- *      - сохраняет каждый кандидат из pareto frontier в PromptCandidate
- *        со status='pareto_pool'.
- *   3. Per-(tenant, promptKey) Redis SETNX lock (TTL 7 дней).
- *
- * Master-флаг: cfg.gepa.enabled (default false). Если выключен — no-op.
- *
- * См. plans/tz/2026-05-29-agents-v2-umbrella.md §C2.
- */
 @Injectable()
 export class GepaOptimizeCron {
   private readonly logger = new Logger(GepaOptimizeCron.name);
 
-  /** Минимум edited-feedback за неделю на пару (tenant, promptKey) для запуска. */
   private readonly minFeedbackPerWeek = 30;
-  /** Окно feedback'ов для optimization (30 дней). */
   private readonly feedbackWindowDays = 30;
 
   constructor(
@@ -84,7 +65,6 @@ export class GepaOptimizeCron {
       });
     }
 
-    // Обновим gauge кол-ва candidates по статусам после прогона.
     await this.refreshCandidatesGauge().catch((err) => {
       this.logger.debug(
         `gepa-optimize: refreshCandidatesGauge: ${err instanceof Error ? err.message : String(err)}`,
@@ -94,20 +74,12 @@ export class GepaOptimizeCron {
     this.logger.debug('gepa-optimize cron: DONE');
   }
 
-  /**
-   * Запуск GEPA для одной пары (tenantId, promptKey). Берёт Redis SETNX lock,
-   * проверяет `LlmTaskRoute.evolutionEnabled`, грузит feedback за 30 дней,
-   * дёргает runner, сохраняет кандидатов.
-   */
   private async runOne(tenantId: string, promptKey: string): Promise<void> {
     const lockKey = `gepa:optimize:${tenantId}:${promptKey}`;
     const token = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     let locked = false;
 
     try {
-      // TTL 7 дней — чтобы повторный weekly cron не запустился, если предыдущий
-      // ещё не отработал (1ч timeout на subprocess × несколько prompt'ов
-      // на одной Org может занять несколько часов).
       const ok = await this.redis.client.set(lockKey, token, 'EX', 7 * 86400, 'NX');
       if (ok !== 'OK') {
         this.logger.debug(`gepa-optimize: lock busy ${lockKey}`);
@@ -115,9 +87,6 @@ export class GepaOptimizeCron {
       }
       locked = true;
 
-      // Проверка evolutionEnabled на route. Ищем primary route (с tier='primary'
-      // и tenantId=null или per-tenant). evolutionEnabled живёт на каждой записи —
-      // достаточно если хоть одна включена.
       const routes = await this.prisma.llmTaskRoute.findMany({
         where: {
           taskType: promptKey,
@@ -133,18 +102,13 @@ export class GepaOptimizeCron {
         return;
       }
 
-      // Seed prompt: берём promptOverride с primary tenant-specific route,
-      // иначе primary global, иначе пустую строку (caller сам подмешает code-fallback).
       const primary =
         routes.find((r) => r.tenantId === tenantId && r.tier === 'primary') ??
         routes.find((r) => r.tenantId === null && r.tier === 'primary');
       const seedPrompt =
-        primary?.promptOverride ??
-        `(no-override) prompt for ${promptKey}: edit me`;
+        primary?.promptOverride ?? `(no-override) prompt for ${promptKey}: edit me`;
 
-      const since = new Date(
-        Date.now() - this.feedbackWindowDays * 24 * 60 * 60 * 1000,
-      );
+      const since = new Date(Date.now() - this.feedbackWindowDays * 24 * 60 * 60 * 1000);
       const feedback = await this.prisma.promptFeedback.findMany({
         where: {
           tenantId,
@@ -198,17 +162,11 @@ export class GepaOptimizeCron {
         try {
           const cur = await this.redis.client.get(lockKey);
           if (cur === token) await this.redis.client.del(lockKey);
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
     }
   }
 
-  /**
-   * Снимок кол-ва кандидатов по статусам в Prometheus gauge (для grafana).
-   * Дёшево — простой GROUP BY.
-   */
   private async refreshCandidatesGauge(): Promise<void> {
     const rows = await this.prisma.promptCandidate.groupBy({
       by: ['promptKey', 'status'],

@@ -1,10 +1,4 @@
-import { apiClient } from './api-client';
-
-/**
- * Публичные share-эндпоинты (без auth, под `/api/v1/public`).
- * Используются страницами `/share/[token]` и `/share/clip/[token]` —
- * страница вызывает их (server- или client-side) без cookie.
- */
+import { apiClient } from "./api-client";
 
 export type PublicShareMeetingApi = {
   meeting: {
@@ -19,10 +13,8 @@ export type PublicShareMeetingApi = {
     allowTranscript: boolean;
     allowTasks: boolean;
     allowChapters: boolean;
-    /** Разрешён ли публичный показ in-meeting чата участников. */
     allowChat: boolean;
   };
-  /** In-meeting чат — приходит только если `permissions.allowChat=true`. */
   messages?: Array<{
     id: string;
     authorName: string;
@@ -65,13 +57,11 @@ export type PublicShareClipApi = {
 };
 
 export const publicShareApi = {
-  /** Получить публичную встречу по токену. Вернёт 404 / 410 при невалидном/просроченном токене. */
   getMeeting: (token: string) =>
     apiClient.get<PublicShareMeetingApi>(
       `/api/v1/public/share/${encodeURIComponent(token)}`,
     ),
 
-  /** Получить публичный клип. */
   getClip: (token: string) =>
     apiClient.get<PublicShareClipApi>(
       `/api/v1/public/share/clip/${encodeURIComponent(token)}`,

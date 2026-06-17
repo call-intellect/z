@@ -14,22 +14,6 @@ import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
-/**
- * ТЗ-2 Ф1 — unit-тесты «Полосы пользы» (`fetchValueStrip`).
- *
- *   - 5 счётчиков мапятся на правильные запросы Prisma:
- *       meetingsProtocoled  → meeting.count (OR aiResult.summaryFast/summary);
- *       tasksExtracted      → task.count;
- *       decisionsExtracted  → decision.count;
- *       questionsAnswered…  → $queryRaw (jsonb citations type-guard);
- *       commitmentsKept     → ideaBlock.count (commitment + fulfilled).
- *   - Негативный путь: пустое окно → все нули.
- *
- * Тестируем приватный метод через bracket-access (детерминирован,
- * без реального времени/сети). Совпадение значений assert'им через
- * objectContaining (без индексации mock.calls — strict-TS).
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 interface PrismaMocks {
@@ -78,7 +62,6 @@ function makeService(mocks: PrismaMocks): {
   return { svc, meetingCount, taskCount, decisionCount, ideaBlockCount, queryRaw };
 }
 
-// Доступ к приватному методу без any-каста на каждый вызов.
 type Privates = {
   fetchValueStrip: (
     tenantId: string,
@@ -96,10 +79,7 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       queryRaw: vi.fn(async () => [{ cnt: 7 }]),
     });
 
-    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip(
-      't1',
-      'week',
-    );
+    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip('t1', 'week');
 
     expect(strip).toEqual({
       meetingsProtocoled: 4,
@@ -109,7 +89,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       commitmentsKept: 2,
     });
 
-    // Каждый count — с фильтром по tenantId и окну createdAt.
     expect(ctx.meetingCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ tenantId: 't1' }),
@@ -125,7 +104,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
         where: expect.objectContaining({ tenantId: 't1' }),
       }),
     );
-    // commitmentsKept — именно commitment + fulfilled.
     expect(ctx.ideaBlockCount).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -135,7 +113,6 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
         }),
       }),
     );
-    // questionsAnsweredByMemory — через raw-query (citations type-guard).
     expect(ctx.queryRaw).toHaveBeenCalledTimes(1);
   });
 
@@ -145,12 +122,9 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
 
     await (ctx.svc as unknown as Privates).fetchValueStrip('t1', 'week');
 
-    // tagged-template `$queryRaw`: первый аргумент — массив строковых частей.
     const firstCall = (queryRaw.mock.calls as unknown[][])[0] ?? [];
     const sqlParts = Array.isArray(firstCall[0]) ? (firstCall[0] as string[]) : [];
     const joined = sqlParts.join(' ');
-    // jsonb_array_length вызывается ТОЛЬКО внутри CASE (детерминированный
-    // порядок) — иначе Postgres падает 22023 на скалярных citations.
     expect(joined).toContain('CASE');
     expect(joined).toContain('jsonb_typeof');
     expect(joined).toContain('jsonb_array_length');
@@ -161,10 +135,7 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       queryRaw: vi.fn(async () => [{ cnt: 9n }]),
     });
 
-    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip(
-      't1',
-      'month',
-    );
+    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip('t1', 'month');
 
     expect(strip.questionsAnsweredByMemory).toBe(9);
   });
@@ -175,13 +146,10 @@ describe('DirectorDashboardService — value strip (ТЗ-2 Ф1)', () => {
       taskCount: vi.fn(async () => 0),
       decisionCount: vi.fn(async () => 0),
       ideaBlockCount: vi.fn(async () => 0),
-      queryRaw: vi.fn(async () => []), // пустой результат raw-query
+      queryRaw: vi.fn(async () => []),
     });
 
-    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip(
-      't1',
-      'week',
-    );
+    const strip = await (ctx.svc as unknown as Privates).fetchValueStrip('t1', 'week');
 
     expect(strip).toEqual({
       meetingsProtocoled: 0,

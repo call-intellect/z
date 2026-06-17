@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { mapStructuredToReportFacts } from './report-fact-mapper';
 
-/**
- * Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §2.1,
- * §2.4). Маппер раскладывает структурный AI-отчёт по типу встречи в плоский
- * массив гранулярных фактов. Whitelist внутренних полей — машинная граница D6
- * (клиентский протокол НЕ попадает в граф).
- */
 describe('mapStructuredToReportFacts (Фаза 2)', () => {
   it('sales: pain→pain, objections[]→risk, competitors[]→summary_point, next_step→next_step, main_blocker→blocker', () => {
     const facts = mapStructuredToReportFacts('sales', {
@@ -38,7 +32,6 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
       reportKind: 'blocker',
       text: 'Бюджет не утверждён',
     });
-    // budget/decision_maker/urgency/interest_level НЕ мапятся (не в whitelist фактов).
     expect(facts.some((f) => f.text === '400к')).toBe(false);
     expect(facts.some((f) => f.text === 'Финдир')).toBe(false);
   });
@@ -67,13 +60,11 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
       next_step: 'собраться в пятницу',
     });
 
-    // decision со speaker сохранён.
     expect(facts).toContainEqual({
       reportKind: 'decision',
       text: 'Переходим на новый стек',
       speaker: 'Алиса',
     });
-    // decision без speaker (null) → speaker НЕ добавляется.
     expect(facts).toContainEqual({
       reportKind: 'decision',
       text: 'Откладываем фичу',
@@ -87,7 +78,6 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
       reportKind: 'next_step',
       text: 'собраться в пятницу',
     });
-    // discussed НЕ мапится.
     expect(facts.some((f) => f.text === 'тема1')).toBe(false);
   });
 
@@ -105,7 +95,6 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
     expect(facts).toContainEqual({ reportKind: 'blocker', text: 'CI красный' });
     expect(facts).toContainEqual({ reportKind: 'task', text: 'Поправить баг' });
     expect(facts).toContainEqual({ reportKind: 'summary_point', text: 'Релиз' });
-    // who_does_what (объекты person/doing) — НЕ мапится.
     expect(facts.some((f) => f.text === 'кодит')).toBe(false);
   });
 
@@ -136,7 +125,6 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
       reportKind: 'next_step',
       text: 'Запланировать ретро',
     });
-    // went_well/subject/verdict НЕ мапятся.
     expect(facts.some((f) => f.text === 'успели')).toBe(false);
   });
 
@@ -160,18 +148,14 @@ describe('mapStructuredToReportFacts (Фаза 2)', () => {
       pain: 'Теряют заявки',
       objections: ['Дорого'],
       next_step: 'дождаться ответа',
-      // Клиентский протокол мержится в structuredData отдельным top-level ключом
-      // (analyze.worker.ts:346). Маппер по whitelist его НЕ читает.
       client_protocol_md: protocolText,
     });
 
-    // Ни один факт не содержит текста протокола (ни целиком, ни подстрокой).
     for (const f of facts) {
       expect(f.text).not.toContain('Нейтральный протокол');
       expect(f.text).not.toContain('client_protocol');
       expect(f.text).not.toContain(protocolText);
     }
-    // А внутренние факты при этом извлеклись.
     expect(facts).toContainEqual({ reportKind: 'pain', text: 'Теряют заявки' });
     expect(facts).toContainEqual({ reportKind: 'risk', text: 'Дорого' });
   });

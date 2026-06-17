@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type {
   Channel,
   ChannelBinding,
@@ -23,11 +18,7 @@ import { QueryClassifierService } from '../../../dialog-layer/services/query-cla
 import { DocumentsService } from '../../../documents/documents.service';
 import { ChannelRegistry } from '../../channel-registry';
 import { ConversationalLinkCodeService } from '../../link-code.service';
-import type {
-  ConversationalJson,
-  IChannel,
-  InboundMessage,
-} from '../../types/channel.types';
+import type { ConversationalJson, IChannel, InboundMessage } from '../../types/channel.types';
 
 import { MaxApiClient, MaxApiError } from './max-api-client';
 import type {
@@ -37,27 +28,6 @@ import type {
   MaxUpdate,
 } from './max.types';
 
-/**
- * MAX Bot ChannelAdapter (SBA β-1, zero-button rip-out 2026-05-23).
- *
- * **Zero-button:** удалены inline-кнопки (`attachments[type='inline_keyboard']`),
- * `message_callback` updates, slash-commands. Единственная hard-coded команда
- * `/start <token>` обрабатывается в адаптере как deep-link.
- *
- * Параллельная реализация `TelegramBotChannelAdapter` для MAX. MAX Bot API
- * (dev.max.ru/docs-api, context7 verified 2026-05-22):
- *   - sendMessage:    `POST /messages` (без attachments в β-1 rip-out).
- *   - subscribe webhook: `POST /subscriptions { url }`.
- *   - update types:   `message_created` (новое сообщение боту);
- *                     `message_callback` — больше не подписываемся.
- *
- * Voice/document inbound — приходит через `body.attachments[]`. Формат
- * атрибутов attachment'а в MAX более лаконичен, чем в Telegram —
- * defensive-парсинг по нескольким возможным полям (`type='voice'|'audio'|
- * 'document'|'file'`, `payload.file_id`, `payload.url`, `payload.duration`).
- *
- * `maxDataClass='internal'` — MAX внешний канал.
- */
 @Injectable()
 export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
   private readonly logger = new Logger(MaxBotChannelAdapter.name);
@@ -87,11 +57,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
   onModuleInit(): void {
     this.registry.register(this);
-    // MAX не имеет аналога setMyCommands — menu кнопок у бота нет
-    // по умолчанию. Здесь ничего «очищать» не нужно.
   }
-
-  // ─────────────────────────────── send ────────────────────────────
 
   async send(args: {
     delivery: NotificationDelivery;
@@ -132,12 +98,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
-  // ─────────────────────────────── ingest ──────────────────────────
-
-  async ingest(
-     
-    _rawMessage: ConversationalJson,
-  ): Promise<InboundMessage> {
+  async ingest(_rawMessage: ConversationalJson): Promise<InboundMessage> {
     throw new Error(
       'MaxBotChannelAdapter.ingest: используйте ingestUpdate(update, tenantId, channel)',
     );
@@ -170,19 +131,12 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     });
   }
 
-  // ─────────────────────────────── parseResponse (stub) ─────────────
-
-  async parseResponse(
-     
-    _args: {
-      rawMessage: ConversationalJson;
-      openProbes: Notification[];
-    },
-  ): Promise<null> {
+  async parseResponse(_args: {
+    rawMessage: ConversationalJson;
+    openProbes: Notification[];
+  }): Promise<null> {
     return null;
   }
-
-  // ─────────────────────────────── handlers ────────────────────────
 
   private async handleMessage(args: {
     message: MaxMessage;
@@ -203,7 +157,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     const text = (message.body?.text ?? '').trim();
     const attachments = message.body?.attachments ?? [];
 
-    // 1. /start <token> — deep-link флоу.
     const startMatch = text.match(/^\/start(?:\s+(\S+))?$/i);
     if (startMatch) {
       this.metrics.incBotInbound({ channel: 'max_bot', kind: 'start_command' });
@@ -219,10 +172,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
-    // 2. Voice attachment.
-    const voiceAtt = attachments.find((a) =>
-      isVoiceAttachment(a),
-    );
+    const voiceAtt = attachments.find((a) => isVoiceAttachment(a));
     if (voiceAtt) {
       this.metrics.incBotInbound({ channel: 'max_bot', kind: 'voice' });
       const binding = await this.requireVerifiedBinding({
@@ -250,7 +200,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       });
     }
 
-    // 3. Document attachment.
     const docAtt = attachments.find((a) => isDocumentAttachment(a));
     if (docAtt) {
       this.metrics.incBotInbound({ channel: 'max_bot', kind: 'document' });
@@ -278,7 +227,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         config,
       });
       if (!text) return null;
-      // если был и текст-caption — обработаем дальше
     }
 
     if (!text) {
@@ -286,7 +234,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
-    // 4. Голый код привязки (если ещё не привязан).
     if (MaxBotChannelAdapter.LINK_CODE_REGEX.test(text)) {
       const existing = await this.prisma.channelBinding.findFirst({
         where: { channelId: channel.id, externalId: externalUserId },
@@ -305,7 +252,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       }
     }
 
-    // 5. Резолв binding'а.
     const binding = await this.requireVerifiedBinding({
       externalUserId,
       channelId: channel.id,
@@ -316,13 +262,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
 
-    // Ф5 assistant-channels (2026-06-11) — за kill-switch'ем
-    // ASSISTANT_CHANNEL_ROUTING_ENABLED весь свободный текст уходит единому
-    // AI-помощнику (assistant_turn → AssistantChannelBridge →
-    // ConciergeService). В отличие от Telegram, у MAX нет чек-ин ветки —
-    // оба исхода classifyIntent (chat_query/free_note) попали бы в
-    // assistant_turn, поэтому классификатор здесь не вызываем (экономим
-    // LLM-вызов). OFF — прежний узкий роутер бит-в-бит.
     if (this.isAssistantRoutingEnabled()) {
       return {
         type: 'assistant_turn',
@@ -334,7 +273,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       };
     }
 
-    // 6. Intent classification.
     const intent = await this.classifyIntent({
       text,
       tenantId,
@@ -372,8 +310,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Добро пожаловать. Чтобы привязать аккаунт, получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
+        text: 'Добро пожаловать. Чтобы привязать аккаунт, получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
       });
       return;
     }
@@ -428,8 +365,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     await this.replyToUserBestEffort({
       config: args.config,
       chatId: args.chatId,
-      text:
-        'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Просто напишите текст, голос или пришлите документ.',
+      text: 'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Просто напишите текст, голос или пришлите документ.',
     });
   }
 
@@ -504,8 +440,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Не удалось распознать голос. Попробуйте отправить текст или повторите голосовое.',
+        text: 'Не удалось распознать голос. Попробуйте отправить текст или повторите голосовое.',
       });
       return null;
     }
@@ -522,10 +457,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       return null;
     }
 
-    // Ф5 assistant-channels (2026-06-11) — голос идёт тем же путём, что и
-    // текст: Vox-транскрипт → при включённом kill-switch сразу assistant_turn
-    // (классификатор не нужен — у MAX нет чек-ин ветки, оба исхода ушли бы
-    // помощнику). OFF — прежний путь бит-в-бит.
     if (this.isAssistantRoutingEnabled()) {
       return {
         type: 'assistant_turn',
@@ -574,17 +505,13 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Файл слишком большой (>20 МБ). Загрузите его через веб-кабинет.',
+        text: 'Файл слишком большой (>20 МБ). Загрузите его через веб-кабинет.',
       });
       return;
     }
     const url = args.attachment.payload?.url;
     if (!url) {
-      this.logger.warn(
-        { attachment: args.attachment },
-        'max document: нет payload.url — игнор',
-      );
+      this.logger.warn({ attachment: args.attachment }, 'max document: нет payload.url — игнор');
       return;
     }
 
@@ -604,8 +531,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Не удалось привязать файл к профилю сотрудника. Обратитесь к админу.',
+        text: 'Не удалось привязать файл к профилю сотрудника. Обратитесь к админу.',
       });
       return;
     }
@@ -635,10 +561,8 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         uploaderPersonId: person.id,
         file: {
           buffer,
-          originalName:
-            args.attachment.payload?.file_name ?? 'max-document',
-          mimeType:
-            args.attachment.payload?.mime_type ?? 'application/octet-stream',
+          originalName: args.attachment.payload?.file_name ?? 'max-document',
+          mimeType: args.attachment.payload?.mime_type ?? 'application/octet-stream',
           size: buffer.byteLength,
         },
       });
@@ -653,15 +577,11 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Документ принят. Я разберу его и подключу к знаниям компании.',
+        text: 'Документ принят. Я разберу его и подключу к знаниям компании.',
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(
-        { tenantId: args.tenantId, err: message },
-        'max document: upload failed',
-      );
+      this.logger.warn({ tenantId: args.tenantId, err: message }, 'max document: upload failed');
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
@@ -670,21 +590,11 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
-  // ─────────────────────────────── helpers ──────────────────────────
-
-  /**
-   * Ф5 assistant-channels (2026-06-11) — kill-switch единого помощника в
-   * каналах (ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`, default true).
-   * Строгая проверка `=== true`: моки cfg в старых unit-тестах без поля
-   * остаются на прежнем узком роутере (OFF, бит-в-бит).
-   */
   private isAssistantRoutingEnabled(): boolean {
     return this.cfg.bot.assistantChannelRoutingEnabled === true;
   }
 
-  private async checkVoiceRateLimit(args: {
-    userId: string;
-  }): Promise<boolean> {
+  private async checkVoiceRateLimit(args: { userId: string }): Promise<boolean> {
     const hour = Math.floor(Date.now() / 3_600_000);
     const key = `bot:voice:rl:${args.userId}:${hour}`;
     const count = await this.redis.client.incr(key);
@@ -707,8 +617,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       await this.replyToUserBestEffort({
         config: args.config,
         chatId: args.chatId,
-        text:
-          'Аккаунт не привязан. Получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
+        text: 'Аккаунт не привязан. Получите код в личном кабинете (раздел «Каналы») и отправьте его сюда сообщением.',
       });
       return null;
     }
@@ -735,8 +644,7 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
           result.intent === 'clone_roleplay'
             ? 'chat_query'
             : 'free_note';
-        const source: 'llm' | 'heuristic' =
-          result.source === 'heuristic' ? 'heuristic' : 'llm';
+        const source: 'llm' | 'heuristic' = result.source === 'heuristic' ? 'heuristic' : 'llm';
         this.metrics.incBotIntentClassified({
           channel: 'max_bot',
           intent,
@@ -759,21 +667,15 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     return intent;
   }
 
-  // ─────────────────────────────── render helpers ───────────────────
-
   private renderText(notification: Notification): string {
-    const payload =
-      (notification.payload as Record<string, unknown> | null) ?? {};
+    const payload = (notification.payload as Record<string, unknown> | null) ?? {};
     switch (notification.eventType) {
       case 'probe.question': {
         const q = (payload['question'] as string | undefined) ?? '';
         const ctx = (payload['context'] as string | undefined) ?? '';
         const head = 'Кора уточняет:';
         const tail = ctx ? `\n\n${ctx}` : '';
-        return `${head}\n\n${q}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(
-          0,
-          4000,
-        );
+        return `${head}\n\n${q}${tail}\n\nОтветьте текстом этим же сообщением.`.slice(0, 4000);
       }
       case 'specialist.probe': {
         const msg = (payload['message'] as string | undefined) ?? '';
@@ -796,19 +698,15 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         return `${title}\n\n${body}`.slice(0, 4000);
       }
       case 'meeting.invite': {
-        // ТЗ 2026-06-04 (meeting-identity) Фаза 3.3 — приглашение на встречу.
         const title = (payload['meetingTitle'] as string | undefined) ?? '';
         const host = (payload['hostName'] as string | undefined) ?? '';
         const joinUrl = (payload['joinUrl'] as string | undefined) ?? '';
-        const who = host
-          ? `${host} приглашает вас на встречу:`
-          : 'Вас приглашают на встречу:';
+        const who = host ? `${host} приглашает вас на встречу:` : 'Вас приглашают на встречу:';
         const body = title ? `\n«${title}»` : '';
         const link = joinUrl ? `\n\nПрисоединиться:\n${joinUrl}` : '';
         return `Приглашение на встречу\n\n${who}${body}${link}`.slice(0, 4000);
       }
       case 'probe.digest': {
-        // Probe Фаза 3 — батч-дайджест: человеческий текст уже собран в summary.
         const summary = (payload['summary'] as string | undefined) ?? '';
         return `Кора собрала вопросы:\n\n${summary}\n\nОтветьте на любой из них текстом этим же сообщением.`.slice(
           0,
@@ -816,7 +714,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         );
       }
       case 'probe.answer_acknowledged': {
-        // Probe Фаза 6 — видимое следствие: текст подтверждения уже человеческий.
         const text =
           (payload['text'] as string | undefined) ??
           (payload['summary'] as string | undefined) ??
@@ -824,31 +721,22 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         return `${text}`.slice(0, 4000);
       }
       case 'checkin.prompt': {
-        // Ф2 (assistant-channels 2026-06-11) — утренний/вечерний чек-ин:
-        // готовый текст вопроса уже лежит в payload.question.
         const q = (payload['question'] as string | undefined) ?? '';
         if (q.trim()) {
-          return `${q}\n\nОтветьте текстом или голосом — Кора запишет.`.slice(
-            0,
-            4000,
-          );
+          return `${q}\n\nОтветьте текстом или голосом — Кора запишет.`.slice(0, 4000);
         }
-        // Пустой вопрос — деградация в универсальную ветку / default ниже.
         break;
       }
       case 'note.ack': {
-        // Ф2 — подтверждение записи свободной заметки (тип в registry добавляет Ф1).
         const text = (payload['text'] as string | undefined) ?? '';
         return (text.trim() ? text : 'Записал в память Коры 🧠').slice(0, 4000);
       }
       case 'event.reminder': {
-        // Ф2 — напоминание о событии календаря: в payload НЕТ title/body.
         const eventTitle = (payload['eventTitle'] as string | undefined) ?? '';
         const startAtIso = (payload['startAtIso'] as string | undefined) ?? '';
         const location = (payload['location'] as string | undefined) ?? '';
         const d = new Date(startAtIso);
         const pad = (n: number): string => String(n).padStart(2, '0');
-        // Сервер в UTC, локаль пользователя не угадываем — выводим явно (UTC).
         const when =
           startAtIso && !Number.isNaN(d.getTime())
             ? `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} ${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}`
@@ -859,26 +747,21 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         return `${head}${whenLine}${locLine}`.slice(0, 4000);
       }
       case 'issue.mention': {
-        // Ф2 — @-упоминание в комментарии задачи: в payload НЕТ title/body.
         const ref =
           (payload['issueIdentifier'] as string | undefined) ??
           (payload['issueTitle'] as string | undefined) ??
           '';
         const snippet = (payload['snippet'] as string | undefined) ?? '';
-        const head = ref
-          ? `Вас упомянули в задаче ${ref}`
-          : 'Вас упомянули в задаче';
+        const head = ref ? `Вас упомянули в задаче ${ref}` : 'Вас упомянули в задаче';
         const tail = snippet ? `\n\n${snippet}` : '';
         return `${head}${tail}`.slice(0, 4000);
       }
       case 'support.ticket_created': {
-        // Ф2 — подтверждение создания обращения в поддержку.
         const num = String(payload['ticketNumber'] ?? '');
         const subject = (payload['subject'] as string | undefined) ?? '';
         return `Обращение №${num} создано: ${subject}`.slice(0, 4000);
       }
       case 'support.ticket_reply': {
-        // Ф2 — ответ поддержки по обращению.
         const num = String(payload['ticketNumber'] ?? '');
         const subject = (payload['subject'] as string | undefined) ?? '';
         const snippet = (payload['snippet'] as string | undefined) ?? '';
@@ -887,8 +770,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         return `${head}${tail}`.slice(0, 4000);
       }
       case 'idea.status_changed': {
-        // Ф2 — смена статуса идеи. Если LLM уже собрал title+body —
-        // рендерим их универсальной веткой ниже (break).
         const title = (payload['title'] as string | undefined) ?? '';
         const body = (payload['body'] as string | undefined) ?? '';
         if (title.trim() && body.trim()) break;
@@ -897,15 +778,11 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
         const newStatus = (payload['newStatus'] as string | undefined) ?? '';
         const reason = (payload['reason'] as string | undefined) ?? '';
         const head = `Идея сменила статус: ${statement}`;
-        const transition =
-          oldStatus || newStatus ? `\n${oldStatus} → ${newStatus}` : '';
+        const transition = oldStatus || newStatus ? `\n${oldStatus} → ${newStatus}` : '';
         const why = reason ? `\nПричина: ${reason}` : '';
         return `${head}${transition}${why}`.slice(0, 4000);
       }
       case 'actions.reminder': {
-        // Ф2 — сводка pending-подтверждений. Фактическая доставка идёт как
-        // system.message (PendingActionsReminderCron), но policy допускает
-        // прямой вызов с этим eventType — рендерим, а не падаем в default.
         const total = Number(payload['total'] ?? 0);
         const urgent = Number(payload['urgentCount'] ?? 0);
         const rawLines = Array.isArray(payload['lines'])
@@ -920,10 +797,6 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       default:
         break;
     }
-    // Ф2 — универсальная ветка ПЕРЕД default: любой payload с готовыми
-    // непустыми title+body (operations.weekly_digest, goals.pulse,
-    // operations.monthly_recap, proactive.notification и будущие типы).
-    // Ссылка оформлена как у meeting.invite — метка, затем URL строкой ниже.
     const genericTitle = (payload['title'] as string | undefined) ?? '';
     const genericBody = (payload['body'] as string | undefined) ?? '';
     if (genericTitle.trim() && genericBody.trim()) {
@@ -931,11 +804,8 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
       const link = actionUrl ? `\n\nОткрыть:\n${actionUrl}` : '';
       return `${genericTitle}\n\n${genericBody}${link}`.slice(0, 4000);
     }
-    // Неизвестный тип без title/body — прежний generic-fallback.
     return `Уведомление: ${notification.eventType}`;
   }
-
-  // ─────────────────────────────── config ──────────────────────────
 
   private readChannelConfig(channel: Channel): MaxBotChannelConfig {
     const raw = channel.config as Record<string, unknown> | null;

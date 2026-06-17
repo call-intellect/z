@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { DestinationType, IntegrationDestination, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -12,23 +7,9 @@ import { AUDIT } from '../audit/audit.types';
 import { EncryptionService } from '../security/encryption.service';
 
 import { DestinationsRepository } from './destinations.repository';
-import type {
-  CreateDestinationDto,
-  UpdateDestinationDto,
-} from './dto/destination.dto';
+import type { CreateDestinationDto, UpdateDestinationDto } from './dto/destination.dto';
 import { SenderFactory } from './senders/sender.factory';
 
-/**
- * Бизнес-сервис destinations.
- *
- * Шифрование секретов:
- *   - `slack_webhook.config.url` → `url_encrypted` (URL содержит секрет в pathname).
- *   - `telegram_bot.config.bot_token` → `bot_token_encrypted`.
- *   - `generic_webhook.config.url` → `url_encrypted`.
- *   - `email.config.recipient_email` → не шифруем (email — не секрет).
- *
- * При выдаче в API — исходные поля не возвращаем, только маркеры `*_present: true`.
- */
 @Injectable()
 export class DestinationsService {
   constructor(
@@ -44,10 +25,7 @@ export class DestinationsService {
     return items.map((d) => this.toView(d));
   }
 
-  async create(
-    userId: string,
-    dto: CreateDestinationDto,
-  ): Promise<ReturnType<typeof this.toView>> {
+  async create(userId: string, dto: CreateDestinationDto): Promise<ReturnType<typeof this.toView>> {
     const max = this.cfg.workspace.maxDestinationsPerUser;
     const count = await this.repo.countByUser(userId);
     if (count >= max) {
@@ -138,10 +116,6 @@ export class DestinationsService {
     return { ok: true };
   }
 
-  /**
-   * Public-метод: используется TasksDispatcherService.sendTask и
-   * `WebhookDeliveryWorker` (если кто-то захочет переотправить).
-   */
   async findOwned(id: string, userId: string): Promise<IntegrationDestination> {
     const dest = await this.repo.findById(id);
     if (!dest || dest.userId !== userId) {
@@ -152,8 +126,6 @@ export class DestinationsService {
     }
     return dest;
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private encryptSecrets(
     type: DestinationType,
@@ -177,9 +149,6 @@ export class DestinationsService {
     return result;
   }
 
-  /**
-   * Безопасный view для API (без plaintext секретов).
-   */
   private toView(d: IntegrationDestination): {
     id: string;
     type: DestinationType;
@@ -197,7 +166,6 @@ export class DestinationsService {
         } else if (k === 'bot_token_encrypted') {
           safeConfig.bot_token_present = true;
         } else if (k === 'bot_token' || k === 'url') {
-          // Plain «пришло из dev» — если по каким-то причинам не зашифровалось.
           safeConfig[`${k}_present`] = true;
         } else {
           safeConfig[k] = v;

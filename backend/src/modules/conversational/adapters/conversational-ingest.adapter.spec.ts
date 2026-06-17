@@ -1,15 +1,3 @@
-/**
- * SBA β-5 closing-loop (sub-TZ 2026-05-23) — unit-тесты для
- * `ConversationalIngestAdapter.ingestNotificationResponse`.
- *
- * Покрывает:
- *   - корректный payload (kind='notification_response',
- *     respondsToNotificationId, eventType, sourceChannelKind),
- *   - детерминированный sourceExternalId (`resp:<notificationId>`),
- *   - upsert Source(type=conversational) перед ingest'ом,
- *   - идемпотентный повторный вызов (IngestService возвращает existing).
- */
-
 import type { RawEvent, Source } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -65,9 +53,7 @@ function makeAdapter() {
 
   const rawEvent = makeRawEvent();
   const ingest = {
-    ingest: vi
-      .fn()
-      .mockResolvedValue({ rawEvent, idempotent: false }),
+    ingest: vi.fn().mockResolvedValue({ rawEvent, idempotent: false }),
   } as unknown as IngestService;
 
   const adapter = new ConversationalIngestAdapter(prisma, ingest);
@@ -96,8 +82,8 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
     expect(result).toBeDefined();
     expect(ingest.ingest).toHaveBeenCalledTimes(1);
 
-    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0]![0] as {
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as {
       tenantId: string;
       sourceId: string;
       sourceExternalId: string | null;
@@ -132,9 +118,8 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
       payload: {},
     });
 
-    const upsert = (
-      prisma.source.upsert as unknown as { mock: { calls: unknown[][] } }
-    ).mock.calls[0]![0] as {
+    const upsert = (prisma.source.upsert as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as {
       where: { tenantId_type_name: { tenantId: string; type: string; name: string } };
       create: { tenantId: string; type: string; name: string };
     };
@@ -150,10 +135,11 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
   it('идемпотентный повторный вызов возвращает existing RawEvent', async () => {
     const { adapter, ingest } = makeAdapter();
 
-    // Замена mock: имитируем «уже было».
     const existing = makeRawEvent({ id: 'raw-existing' });
-    (ingest.ingest as unknown as { mockResolvedValue: (v: unknown) => void })
-      .mockResolvedValue({ rawEvent: existing, idempotent: true });
+    (ingest.ingest as unknown as { mockResolvedValue: (v: unknown) => void }).mockResolvedValue({
+      rawEvent: existing,
+      idempotent: true,
+    });
 
     const result1 = await adapter.ingestNotificationResponse({
       tenantId: 'org-1',
@@ -173,11 +159,10 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
     expect(result1.id).toBe('raw-existing');
     expect(result2.id).toBe('raw-existing');
     expect(ingest.ingest).toHaveBeenCalledTimes(2);
-    // Оба вызова идут с одним sourceExternalId — IngestService дедуплицирует.
-    const call1 = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0]![0] as { sourceExternalId: string };
-    const call2 = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[1]![0] as { sourceExternalId: string };
+    const call1 = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as { sourceExternalId: string };
+    const call2 = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[1]![0] as { sourceExternalId: string };
     expect(call1.sourceExternalId).toBe('resp:notif-99');
     expect(call2.sourceExternalId).toBe('resp:notif-99');
   });
@@ -194,12 +179,11 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
       dataClass: 'sensitive',
     });
 
-    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0]![0] as { dataClass: string };
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as { dataClass: string };
     expect(call.dataClass).toBe('sensitive');
   });
 
-  // ─── TZ clone-method Э3.1 — questionText + signalTypeHint ────────────
   it('questionText и signalTypeHint попадают в rawPayload (signalTypeHint — top-level, его читает block-ingest)', async () => {
     const { adapter, ingest } = makeAdapter();
 
@@ -213,8 +197,8 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
       signalTypeHint: 'reasoning',
     });
 
-    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0]![0] as { payload: Record<string, unknown> };
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as { payload: Record<string, unknown> };
     expect(call.payload).toMatchObject({
       kind: 'notification_response',
       questionText: 'Какие альтернативы вы рассматривали?',
@@ -233,11 +217,9 @@ describe('ConversationalIngestAdapter.ingestNotificationResponse', () => {
       payload: { text: 'Просто ответ' },
     });
 
-    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls[0]![0] as { payload: Record<string, unknown> };
-    expect(
-      Object.prototype.hasOwnProperty.call(call.payload, 'signalTypeHint'),
-    ).toBe(false);
+    const call = (ingest.ingest as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0]![0] as { payload: Record<string, unknown> };
+    expect(Object.prototype.hasOwnProperty.call(call.payload, 'signalTypeHint')).toBe(false);
     expect(call.payload.questionText).toBeNull();
   });
 });

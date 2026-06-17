@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   CloudUpload,
@@ -10,12 +10,12 @@ import {
   Map as MapIcon,
   RefreshCcw,
   Users,
-} from 'lucide-react';
-import useSWR from 'swr';
+} from "lucide-react";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { documentsApi } from '@/api/documents.api';
-import { roleMapApi } from '@/api/role-map.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { documentsApi } from "@/api/documents.api";
+import { roleMapApi } from "@/api/role-map.api";
 import {
   personsDomainApi,
   roleProfilesApi,
@@ -24,29 +24,29 @@ import {
   type RoleDomainApi,
   type RoleProfileApi,
   type RoleProfileBuildStatusApi,
-} from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   RoleMapGrid,
   isRoleMapEmpty,
-} from '@/ui/components/role-map/RoleMapCards';
+} from "@/ui/components/role-map/RoleMapCards";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/ui/shadcn/dialog";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 const REBUILD_COOLDOWN_MS = 60_000;
 const BUILD_STATUS_POLL_MS = 10_000;
@@ -62,7 +62,7 @@ export function RoleDetailClient({ roleId }: { roleId: string }) {
       />
     );
   }
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
   return <Content orgId={currentOrgId} roleId={roleId} canEdit={canEdit} />;
 }
 
@@ -75,13 +75,13 @@ function Content({
   roleId: string;
   canEdit: boolean;
 }) {
-  const roleSwr = useSWR(['role', orgId, roleId], () =>
+  const roleSwr = useSWR(["role", orgId, roleId], () =>
     rolesDomainApi.byId(orgId, roleId),
   );
-  const personsSwr = useSWR(['role-persons', orgId, roleId], () =>
+  const personsSwr = useSWR(["role-persons", orgId, roleId], () =>
     personsDomainApi.list(orgId, { roleId }),
   );
-  const profileSwr = useSWR(['role-profile', orgId, roleId], () =>
+  const profileSwr = useSWR(["role-profile", orgId, roleId], () =>
     roleProfilesApi.byRole(orgId, roleId),
   );
 
@@ -95,7 +95,10 @@ function Content({
   }
 
   if (roleSwr.error) {
-    if (roleSwr.error instanceof ApiError && roleSwr.error.code === 'http_404') {
+    if (
+      roleSwr.error instanceof ApiError &&
+      roleSwr.error.code === "http_404"
+    ) {
       return (
         <div className="mx-auto w-full max-w-5xl px-6 py-8">
           <AdminEmpty
@@ -111,7 +114,7 @@ function Content({
           message={
             roleSwr.error instanceof Error
               ? roleSwr.error.message
-              : 'Ошибка загрузки'
+              : "Ошибка загрузки"
           }
           onRetry={() => void roleSwr.mutate()}
         />
@@ -175,7 +178,7 @@ function Header({ role }: { role: RoleDomainApi }) {
           {role.name}
         </h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          {role.departmentName ? `Отдел: ${role.departmentName}` : 'Без отдела'}
+          {role.departmentName ? `Отдел: ${role.departmentName}` : "Без отдела"}
         </p>
       </div>
       <Link
@@ -225,10 +228,10 @@ function PersonsSection({
   const unassign = async (person: PersonDomainApi) => {
     try {
       await personsDomainApi.update(orgId, person.id, { roleId: null });
-      toast.success('Сотрудник снят с должности.');
+      toast.success("Сотрудник снят с должности.");
       onChanged();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить.'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить."));
     }
   };
   return (
@@ -304,12 +307,12 @@ function JobDescriptionSection({
         file,
         attachedRoleId: role.id,
       });
-      toast.success('Должностная инструкция загружена.');
+      toast.success("Должностная инструкция загружена.");
       setDialogOpen(false);
       setFile(null);
       onUploaded();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось загрузить.'));
+      toast.error(humanizeApiError(e, "Не удалось загрузить."));
     } finally {
       setBusy(false);
     }
@@ -326,7 +329,7 @@ function JobDescriptionSection({
         canEdit && (
           <Button size="sm" variant="ghost" onClick={() => setDialogOpen(true)}>
             <CloudUpload size={14} className="mr-1" />
-            {role.hasJobDescription ? 'Заменить' : 'Загрузить'}
+            {role.hasJobDescription ? "Заменить" : "Загрузить"}
           </Button>
         )
       }
@@ -363,14 +366,14 @@ function JobDescriptionSection({
             }}
             className={`flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-sm transition-colors ${
               dragOver
-                ? 'border-accent bg-accent/10 text-accent'
-                : 'border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary'
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border-subtle text-fg-tertiary hover:border-accent/60 hover:text-fg-secondary"
             }`}
           >
             <CloudUpload size={16} />
             {file
               ? `Выбран файл: ${file.name}`
-              : 'Перетащите файл или нажмите, чтобы выбрать'}
+              : "Перетащите файл или нажмите, чтобы выбрать"}
             <input
               id="jd-detail-upload"
               type="file"
@@ -387,8 +390,13 @@ function JobDescriptionSection({
             >
               Отмена
             </Button>
-            <Button onClick={() => void handleUpload()} disabled={!file || busy}>
-              {busy ? <Loader2 size={14} className="mr-1 animate-spin" /> : null}
+            <Button
+              onClick={() => void handleUpload()}
+              disabled={!file || busy}
+            >
+              {busy ? (
+                <Loader2 size={14} className="mr-1 animate-spin" />
+              ) : null}
               Загрузить
             </Button>
           </DialogFooter>
@@ -421,19 +429,13 @@ function RoleProfileSection({
   const [now, setNow] = useState(() => Date.now());
   const pollTimerRef = useRef<number | null>(null);
 
-  // Тело карты должности берём из того же источника, что и `/roles/[id]/map`
-  // (нормализованные таблицы Role Map через RoleMapBuilderService), а не из
-  // `roleProfilesApi.byRole().summaryCache.blocks` — этого поля бэкенд не отдаёт
-  // (см. plans/tz/2026-06-15-me-role-map-card-contract.md). `profile` остаётся
-  // для статуса сборки / rebuild / источников.
-  const mapSwr = useSWR(['role-map-overview', orgId, roleId], () =>
+  const mapSwr = useSWR(["role-map-overview", orgId, roleId], () =>
     roleMapApi.getMap(orgId, roleId),
   );
   const roleMap = mapSwr.data ?? null;
   const hasMap =
     roleMap !== null && !roleMap.isForming && !isRoleMapEmpty(roleMap);
 
-  // Тикер для секунд cooldown.
   useEffect(() => {
     if (!cooldownUntil) return;
     const id = window.setInterval(() => setNow(Date.now()), 500);
@@ -446,9 +448,8 @@ function RoleProfileSection({
     }
   }, [now, cooldownUntil]);
 
-  // Polling build-status пока активный.
   useEffect(() => {
-    if (!buildStatus || buildStatus.status === 'idle') {
+    if (!buildStatus || buildStatus.status === "idle") {
       if (pollTimerRef.current) {
         window.clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
@@ -460,12 +461,10 @@ function RoleProfileSection({
       try {
         const s = await roleProfilesApi.buildStatus(orgId, roleId);
         setBuildStatus(s);
-        if (s.status === 'idle') {
+        if (s.status === "idle") {
           onRebuilt();
         }
-      } catch {
-        // ignore — продолжим polling
-      }
+      } catch {}
     }, BUILD_STATUS_POLL_MS);
     return () => {
       if (pollTimerRef.current) {
@@ -479,31 +478,32 @@ function RoleProfileSection({
     setCooldownUntil(Date.now() + REBUILD_COOLDOWN_MS);
     try {
       await roleProfilesApi.rebuild(orgId, roleId);
-      setBuildStatus({ status: 'queued' });
-      toast.success('Пересборка карты должности запущена.');
+      setBuildStatus({ status: "queued" });
+      toast.success("Пересборка карты должности запущена.");
       onRebuilt();
     } catch (e) {
-      if (e instanceof ApiError && (e.code === 'http_409' || e.code === 'conflict')) {
-        // Уже собирается — узнаём с какого момента.
+      if (
+        e instanceof ApiError &&
+        (e.code === "http_409" || e.code === "conflict")
+      ) {
         try {
           const s = await roleProfilesApi.buildStatus(orgId, roleId);
           setBuildStatus(s);
         } catch {
-          setBuildStatus({ status: 'queued' });
+          setBuildStatus({ status: "queued" });
         }
-        toast('Карта уже собирается. Дождитесь окончания.');
+        toast("Карта уже собирается. Дождитесь окончания.");
         return;
       }
-      toast.error(e instanceof ApiError
-            ? e.message
-            : 'Не удалось запустить пересборку.');
+      toast.error(
+        e instanceof ApiError ? e.message : "Не удалось запустить пересборку.",
+      );
     }
   };
 
-  const isApiMissing =
-    error instanceof ApiError && error.code === 'http_404';
+  const isApiMissing = error instanceof ApiError && error.code === "http_404";
 
-  const inBuild = Boolean(buildStatus && buildStatus.status !== 'idle');
+  const inBuild = Boolean(buildStatus && buildStatus.status !== "idle");
   const cooldownLeftSec = cooldownUntil
     ? Math.max(0, Math.ceil((cooldownUntil - now) / 1000))
     : 0;
@@ -512,10 +512,10 @@ function RoleProfileSection({
   const buttonLabel = inBuild
     ? buildStatus?.since
       ? `Карта уже собирается с ${formatTime(buildStatus.since)}`
-      : 'Карта уже собирается'
+      : "Карта уже собирается"
     : cooldownLeftSec > 0
       ? `Можно повторить через ${cooldownLeftSec} с`
-      : 'Пересобрать карту';
+      : "Пересобрать карту";
 
   return (
     <Section
@@ -564,7 +564,9 @@ function RoleProfileSection({
           <ul className="space-y-1 text-sm">
             {profile.sources.slice(0, 12).map((s) => (
               <li key={`${s.type}-${s.id}`} className="text-fg-secondary">
-                <span className="mr-2 text-fg-tertiary">[{sourceLabel(s.type)}]</span>
+                <span className="mr-2 text-fg-tertiary">
+                  [{sourceLabel(s.type)}]
+                </span>
                 {s.title}
               </li>
             ))}
@@ -575,17 +577,17 @@ function RoleProfileSection({
   );
 }
 
-function sourceLabel(t: 'meeting' | 'document' | 'dump'): string {
-  if (t === 'meeting') return 'встреча';
-  if (t === 'document') return 'документ';
-  return 'дамп';
+function sourceLabel(t: "meeting" | "document" | "dump"): string {
+  if (t === "meeting") return "встреча";
+  if (t === "document") return "документ";
+  return "дамп";
 }
 
 function formatTime(iso: string): string {
   try {
-    return new Date(iso).toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Date(iso).toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return iso;

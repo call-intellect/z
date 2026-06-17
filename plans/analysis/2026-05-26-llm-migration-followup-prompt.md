@@ -13,7 +13,7 @@ purpose: Промпт для нового агента — проанализи�
 
 ## Контекст: что произошло в сессии 2026-05-25/26
 
-В одну сессию была применена ТЗ-копилка `plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md` — миграция всех LLM-агентов проекта Z на DeepSeek-V4-Pro. Сделано 8 коммитов (`5921a20`..`cad4aef` + docs `8de57ee`, `d608968`), ~9 700 строк кода + тестов.
+В одну сессию была применена ТЗ-копилка `plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md` — миграция всех LLM-агентов проекта Z на DeepSeek-V4-Pro. Сделано 8 коммитов (`5921a20`..`cad4aef` + docs `8de57ee`, `d608968`), ~9 700 строк кода + тестов.
 
 **Все 8 коммитов уже в `origin/dev`. Push сделан.** Прод-инструкция в рефлексии: `second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md`.
 
@@ -31,7 +31,7 @@ purpose: Промпт для нового агента — проанализи�
 
 ### Источники правды для контекста (читать первыми)
 
-1. **Главный ТЗ-документ:** [plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md](../tz/2026-05-25-llm-architecture-changes-from-experiments.md) — особенно §1, §3, §9 целиком
+1. **Главный ТЗ-документ:** [plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md](../tz/2026-05-25-llm-architecture-changes-from-experiments.md) — особенно §1, §3, §9 целиком
 2. **Рефлексия сессии:** [second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md](../../second-brain/05_история/2026-05-26-llm-migration-deepseek-pro-wave.md)
 3. **Карта AI-агентов:** [second-brain/02_architecture/ai-agents-map.md](../../second-brain/02_architecture/ai-agents-map.md)
 4. **CLAUDE.md в корне** — правила проекта
@@ -55,7 +55,7 @@ purpose: Промпт для нового агента — проанализи�
 
 ### Что уже есть (контекст)
 
-- Клоны теперь **ролевые**, не персональные (рефакторинг Clones-Roles Ф1-Ф6 сделан раньше). Документ-источник: `plans/tz/2026-05-25-clones-role-based-rebrand.md`.
+- Клоны теперь **ролевые**, не персональные (рефакторинг Clones-Roles Ф1-Ф6 сделан раньше). Документ-источник: `plans/archive/2026-05-25-clones-role-based-rebrand.md`.
 - В `ExecutablePersona` есть поля `roleVersion`, `currentBearerPersonId`, `publicName`, `succeedsPersonaId` — версионирование при смене bearer'а.
 - `SkillProfile.status` enum уже существует (поле есть).
 - Event `role.bearer_changed` — есть слушатель `RoleClonePersonaVersioningHandler` (создан параллельной сессией в Clones-Roles Ф2 `6a15b88`).

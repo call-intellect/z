@@ -1,16 +1,5 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import {
-  type Channel,
-  type ChannelBinding,
-  type ChannelStatus,
-  Prisma,
-} from '@prisma/client';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { type Channel, type ChannelBinding, type ChannelStatus, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../../common/config/index';
 import { CryptoService } from '../../../../common/crypto/crypto.service';
@@ -31,18 +20,8 @@ import type {
   UpdateTemplatesDto,
 } from './admin-telegram-bot.dto';
 
-/**
- * Глобальный канал: `Channel WHERE tenantId IS NULL AND kind='telegram_bot'`.
- * (см. ТЗ §3 п.14 и §5; partial unique index гарантирует не более одной такой
- * строки на kind).
- */
 const TELEGRAM_GLOBAL_CHANNEL_KIND = 'telegram_bot' as const;
 
-/**
- * Дефолтные шаблоны сообщений бота. Используются как fallback, если
- * `Channel.config.templates.*` не задано админом. Тексты — на русском
- * (правило `feedback_admin_ui_russian_only.md`).
- */
 const DEFAULT_TEMPLATES = {
   welcome:
     'Готово! Аккаунт привязан. Теперь сюда будут приходить вопросы и уведомления Коры. Просто напишите текст, голос или пришлите документ.',
@@ -54,26 +33,10 @@ const DEFAULT_TEMPLATES = {
     'Ваша компания «{{orgName}}» временно заморожена. Когда работа возобновится, бот снова станет доступен.',
 } as const;
 
-/** Считаем привязку «inactive» после стольких дней без входящих. */
 const INACTIVE_THRESHOLD_DAYS = 30;
 
-/**
- * Ключ Redis в котором health-cron хранит булев результат пинга
- * прокси. См. `TelegramProxyHealthCron` (Фаза 5).
- */
 export const TELEGRAM_PROXY_HEALTHY_REDIS_KEY = 'tg:proxy:healthy';
 
-/**
- * AdminTelegramBotService (β-9 Phase 4).
- *
- * Управляет глобальным каналом Telegram-бота из админки Z. Записывает токен
- * и webhook-секрет в зашифрованном виде через `CryptoService` в
- * `Channel.config`. Никогда не возвращает токен наружу в plain — отдаёт
- * только метаданные (`tokenIsSet`, `tokenLastChars`).
- *
- * Список привязок — только метаданные (см. продуктовый принцип №1 —
- * содержимое переписки сотрудников super-admin'у не видно).
- */
 @Injectable()
 export class AdminTelegramBotService {
   private readonly logger = new Logger(AdminTelegramBotService.name);
@@ -90,13 +53,6 @@ export class AdminTelegramBotService {
     @Inject(RedisService) private readonly redis: RedisService,
   ) {}
 
-  // ─────────────────────────────── settings ────────────────────────────
-
-  /**
-   * Получить текущие настройки глобального канала. Если канала ещё нет —
-   * вернём `channelExists=false` с дефолтными шаблонами; админ потом
-   * установит токен — и канал создастся.
-   */
   async getSettings(): Promise<TelegramBotSettingsResponseDto> {
     const channel = await this.findGlobalChannel();
     this.metrics.incAdminTelegramBotAction({ action: 'settings_read' });
@@ -128,20 +84,13 @@ export class AdminTelegramBotService {
     }
 
     const config = this.readConfig(channel);
-    const decryptedToken = config.tokenEnc
-      ? this.tryDecrypt(config.tokenEnc)
-      : '';
-    const tokenLastChars = decryptedToken
-      ? this.maskToken(decryptedToken)
-      : null;
+    const decryptedToken = config.tokenEnc ? this.tryDecrypt(config.tokenEnc) : '';
+    const tokenLastChars = decryptedToken ? this.maskToken(decryptedToken) : null;
 
     const raw = (channel.config as Record<string, unknown> | null) ?? {};
-    const proxyBotId =
-      typeof raw['proxyBotId'] === 'string' ? (raw['proxyBotId'] as string) : null;
+    const proxyBotId = typeof raw['proxyBotId'] === 'string' ? (raw['proxyBotId'] as string) : null;
     const proxyRegisteredAt =
-      typeof raw['proxyRegisteredAt'] === 'string'
-        ? (raw['proxyRegisteredAt'] as string)
-        : null;
+      typeof raw['proxyRegisteredAt'] === 'string' ? (raw['proxyRegisteredAt'] as string) : null;
     const proxyLastSyncError =
       typeof raw['proxyLastSyncError'] === 'string' && raw['proxyLastSyncError']
         ? (raw['proxyLastSyncError'] as string)
@@ -170,13 +119,6 @@ export class AdminTelegramBotService {
     };
   }
 
-  // ─────────────────────────────── ping ────────────────────────────────
-
-  /**
-   * Синхронный пинг прокси из админки («Проверить прокси сейчас»). Не
-   * пишет в Channel.config — это диагностика. Сам результат не
-   * кэширует; health-cron хранит долгосрочный статус отдельно.
-   */
   async pingProxy(): Promise<TelegramProxyPingResponseDto> {
     if (!this.cfg.telegramProxy.enabled) {
       return {
@@ -195,22 +137,10 @@ export class AdminTelegramBotService {
     };
   }
 
-  // ─────────────────────────────── token ───────────────────────────────
-
   async updateToken(args: { token: string }): Promise<TelegramBotSettingsResponseDto> {
     const trimmed = args.token.trim();
     const useProxy = this.cfg.telegramProxy.enabled;
 
-    // Валидация токена.
-    //   - direct-режим: `getMe` напрямую через api.telegram.org (Telegram
-    //     достижим) — удобство админу и защита от опечатки.
-    //   - proxy-режим: `getMe` ДО регистрации НЕВОЗМОЖЕН — прокси
-    //     `telegram.crossmark.ru` проксирует Bot API только для УЖЕ
-    //     зарегистрированных ботов (защита от open-relay, иначе 403
-    //     «Токен бота не зарегистрирован в этом прокси»). Поэтому токен
-    //     валидируется самой регистрацией ниже (прокси дёрнет `setWebhook`
-    //     у Telegram; невалидный токен → `webhookError` → ошибка), а
-    //     `getMe` для username делаем ПОСЛЕ регистрации (best-effort).
     if (!useProxy) {
       try {
         await this.tgApi.getMe({ token: trimmed });
@@ -227,11 +157,6 @@ export class AdminTelegramBotService {
 
     const tokenEnc = this.crypto.encrypt(trimmed);
 
-    // Auto-register в прокси (2026-05-26): убирает необходимость двойного
-    // клика «Установить токен → Перенастроить webhook» и patch-скрипта на
-    // bootstrap. Best-effort: если прокси не отвечает — токен всё равно
-    // сохраняется, ошибка пишется в `proxyLastSyncError`. Юзер увидит её
-    // в админке и сможет нажать «Перенастроить webhook» вручную позже.
     let proxyPatch: Record<string, unknown> = {};
     let webhookSecretToPersist: string | undefined;
     let autoRegisterOutcome: 'skipped' | 'ok' | 'failed' = 'skipped';
@@ -242,8 +167,6 @@ export class AdminTelegramBotService {
       autoRegisterOutcome = reg.outcome;
       proxyPatch = reg.patch;
       webhookSecretToPersist = reg.webhookSecretToPersist;
-      // Бот зарегистрирован → прокси теперь проксирует Bot API → getMe
-      // для username работает (best-effort, не валит сохранение токена).
       botUsername = await this.fetchBotUsernameSafe(trimmed);
     } else {
       botUsername = await this.fetchBotUsernameSafe(trimmed);
@@ -268,36 +191,13 @@ export class AdminTelegramBotService {
     return this.getSettings();
   }
 
-  /**
-   * Auto-register бота в прокси при `updateToken`. Best-effort:
-   * исключение НЕ бросает, а возвращает patch для записи в `Channel.config`
-   * (включая `proxyLastSyncError` при провале).
-   *
-   * Контракт:
-   *   - Существующий `webhookSecret` переиспользуется (не ротируется), чтобы
-   *     не обнулять активные подписки Telegram без явного действия юзера
-   *     («Перенастроить webhook»).
-   *   - Если webhookSecret в `Channel.config` ещё не задан — генерируем
-   *     новый, кладём в `webhookSecretToPersist` (шифрованный) для записи.
-   *   - На успех `upsertBot` — пишем `proxyBotId`, `proxyRegisteredAt`,
-   *     `proxyLastSyncError=null`, `webhookUrl=<computed>`.
-   *   - На fail — только `proxyLastSyncError=<message>`. Токен всё равно
-   *     сохранится в основном upsert.
-   */
-  private async autoRegisterInProxy(args: {
-    token: string;
-  }): Promise<{
+  private async autoRegisterInProxy(args: { token: string }): Promise<{
     outcome: 'ok' | 'failed';
     patch: Record<string, unknown>;
     webhookSecretToPersist?: string;
   }> {
-    // Существующий secret вытаскиваем из current Channel (если есть).
     const existing = await this.findGlobalChannel();
-    const existingSecretEnc = existing
-      ? this.readConfig(existing).webhookSecretEnc
-      : '';
-    // Имя для карточки бота в прокси — известный username, иначе провизорное
-    // (getMe ещё недоступен через прокси до регистрации).
+    const existingSecretEnc = existing ? this.readConfig(existing).webhookSecretEnc : '';
     const name = (existing ? this.readConfig(existing).botUsername : undefined) ?? 'Kora Bot';
     let secret = '';
     if (existingSecretEnc) {
@@ -309,10 +209,6 @@ export class AdminTelegramBotService {
       webhookSecretToPersist = this.crypto.encrypt(secret);
     }
 
-    // Прокси не отдаёт свой webhook-secret через REST, поэтому мы кладём
-    // СВОЙ секрет в путь targetWebhookUrl. Прокси POST-ит апдейты ровно на
-    // этот URL — секрет в пути и есть наша аутентификация (см.
-    // TelegramWebhooksController, роут `/s/:secret`).
     const targetUrl = this.computeWebhookTargetUrl(secret);
     try {
       const info = await this.proxyAdmin.upsertBot({
@@ -346,23 +242,7 @@ export class AdminTelegramBotService {
     }
   }
 
-  // ─────────────────────────────── webhook ────────────────────────────
-
-  /**
-   * Перенастроить webhook: генерим новый secret, регистрируем (или
-   * обновляем) бота в прокси `telegram.crossmark.ru`. После успеха
-   * прокси сам вызывает `setWebhook` у Telegram, указывая свой
-   * `/webhook/<secret>` как URL. Без токена — 400.
-   *
-   * Legacy-режим (`TELEGRAM_PROXY_ENABLED=false`, для dev и аварийного
-   * rollback) — старое поведение: дёргаем `setWebhook` напрямую через
-   * `TelegramApiClient`.
-   *
-   * См. ТЗ plans/tz/2026-05-26-telegram-via-crossmark-proxy.md §3 п.9 и §7.
-   */
-  async resetWebhook(args?: {
-    webhookUrl?: string;
-  }): Promise<TelegramBotSettingsResponseDto> {
+  async resetWebhook(args?: { webhookUrl?: string }): Promise<TelegramBotSettingsResponseDto> {
     const channel = await this.findGlobalChannel();
     if (!channel) {
       throw new BadRequestException({
@@ -380,8 +260,7 @@ export class AdminTelegramBotService {
         ok: false,
         error: {
           code: 'token_not_set',
-          message:
-            'Токен бота не установлен. Сначала задайте токен — потом перенастройте webhook.',
+          message: 'Токен бота не установлен. Сначала задайте токен — потом перенастройте webhook.',
         },
       });
     }
@@ -404,8 +283,6 @@ export class AdminTelegramBotService {
     let proxyLastSyncError: string | null = null;
 
     if (useProxy) {
-      // В proxy-режиме секрет передаётся в пути targetWebhookUrl (прокси
-      // не принимает secret_token и не отдаёт свой через REST).
       const botUsername = config.botUsername;
       try {
         const info = await this.proxyAdmin.upsertBot({
@@ -427,7 +304,6 @@ export class AdminTelegramBotService {
         });
       }
     } else {
-      // Legacy direct mode: дёргаем setWebhook у Telegram сами.
       try {
         await this.tgApi.setWebhook({
           token,
@@ -463,15 +339,9 @@ export class AdminTelegramBotService {
     return this.getSettings();
   }
 
-  // ─────────────────────────────── templates ──────────────────────────
-
-  async updateTemplates(
-    dto: UpdateTemplatesDto,
-  ): Promise<TelegramBotSettingsResponseDto> {
+  async updateTemplates(dto: UpdateTemplatesDto): Promise<TelegramBotSettingsResponseDto> {
     const channel = await this.upsertGlobalChannel((existingConfig) => {
-      const current =
-        (existingConfig['templates'] as Record<string, string> | undefined) ??
-        {};
+      const current = (existingConfig['templates'] as Record<string, string> | undefined) ?? {};
       const merged: Record<string, string> = { ...current };
       if (dto.welcome !== undefined) merged['welcome'] = dto.welcome;
       if (dto.notLinked !== undefined) merged['notLinked'] = dto.notLinked;
@@ -482,15 +352,11 @@ export class AdminTelegramBotService {
       return { ...existingConfig, templates: merged };
     });
 
-    this.logger.log(
-      `admin: шаблоны глобального Telegram-бота обновлены channelId=${channel.id}`,
-    );
+    this.logger.log(`admin: шаблоны глобального Telegram-бота обновлены channelId=${channel.id}`);
     this.metrics.incAdminTelegramBotAction({ action: 'templates_updated' });
     await this.publishChannelUpdated({ channelId: channel.id, reason: 'templates_updated' });
     return this.getSettings();
   }
-
-  // ─────────────────────────────── status ─────────────────────────────
 
   async setStatus(args: {
     status: 'active' | 'global_disabled';
@@ -517,8 +383,6 @@ export class AdminTelegramBotService {
     await this.publishChannelUpdated({ channelId: channel.id, reason: 'status_toggled' });
     return this.getSettings();
   }
-
-  // ─────────────────────────────── bindings ───────────────────────────
 
   async listBindings(query: ListBindingsQueryDto): Promise<BindingsPageDto> {
     this.metrics.incAdminTelegramBotAction({ action: 'bindings_read' });
@@ -575,36 +439,27 @@ export class AdminTelegramBotService {
       }),
     ]);
 
-    // Получаем счётчики deliveries (outbound) и notifications (inbound аналог
-    // нам недоступен без сообщений; берём `verifiedAt` как момент привязки
-    // и Notifications.responseStatus как маркер активности. Inbound «количество
-    // сообщений» считаем через ChannelInboundLog если он есть, иначе как 0
-    // — счётчики на проде накапливаются метриками Prometheus). Чтобы не
-    // зависеть от ChannelInboundLog (его в схеме нет), считаем outbound через
-    // `notificationDelivery.count` и inbound — через `notification.count` по
-    // recipientUserId. Это даёт грубую оценку без раскрытия содержимого.
     const items: BindingRowDto[] = await Promise.all(
       raws.map(async (b) => {
-        const [outboundCount, inboundCountAnswered, lastInbound] =
-          await Promise.all([
-            this.prisma.notificationDelivery.count({
-              where: { channelBindingId: b.id },
-            }),
-            this.prisma.notification.count({
-              where: {
-                recipientUserId: b.userId,
-                responseStatus: 'answered',
-              },
-            }),
-            this.prisma.notification.findFirst({
-              where: {
-                recipientUserId: b.userId,
-                respondedAt: { not: null },
-              },
-              orderBy: { respondedAt: 'desc' },
-              select: { respondedAt: true },
-            }),
-          ]);
+        const [outboundCount, inboundCountAnswered, lastInbound] = await Promise.all([
+          this.prisma.notificationDelivery.count({
+            where: { channelBindingId: b.id },
+          }),
+          this.prisma.notification.count({
+            where: {
+              recipientUserId: b.userId,
+              responseStatus: 'answered',
+            },
+          }),
+          this.prisma.notification.findFirst({
+            where: {
+              recipientUserId: b.userId,
+              respondedAt: { not: null },
+            },
+            orderBy: { respondedAt: 'desc' },
+            select: { respondedAt: true },
+          }),
+        ]);
 
         const status = this.computeBindingStatus({
           binding: b,
@@ -621,17 +476,13 @@ export class AdminTelegramBotService {
           userName: b.user?.name ?? null,
           status,
           linkedAt: b.verifiedAt ? b.verifiedAt.toISOString() : null,
-          lastInboundAt: lastInbound?.respondedAt
-            ? lastInbound.respondedAt.toISOString()
-            : null,
+          lastInboundAt: lastInbound?.respondedAt ? lastInbound.respondedAt.toISOString() : null,
           inboundCount: inboundCountAnswered,
           outboundCount,
         };
       }),
     );
 
-    // Дополнительный server-side фильтр по computed status, если query.status
-    // — это `no_membership` или `inactive` (для них нет прямого SQL where).
     const filtered =
       query.status === 'no_membership' || query.status === 'inactive'
         ? items.filter((it) => it.status === query.status)
@@ -645,22 +496,7 @@ export class AdminTelegramBotService {
     };
   }
 
-  // ─────────────────────────────── helpers ────────────────────────────
-
-  /**
-   * Публикует в Redis pub/sub `TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC`
-   * для инвалидации in-process кэша глобального канала во всех
-   * нодах/воркерах. ТЗ 2026-05-26 §2 — без этого после ротации
-   * `webhookSecret` входящие webhook'и продолжат проверяться против
-   * старого секрета до рестарта.
-   *
-   * Best-effort: если publish упал — пишем warn и продолжаем (config
-   * уже сохранён в БД, после ближайшего рестарта подхватится).
-   */
-  private async publishChannelUpdated(args: {
-    channelId: string;
-    reason: string;
-  }): Promise<void> {
+  private async publishChannelUpdated(args: { channelId: string; reason: string }): Promise<void> {
     try {
       await this.redis.client.publish(
         TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC,
@@ -680,10 +516,6 @@ export class AdminTelegramBotService {
     });
   }
 
-  /**
-   * Читает свежесть прокси из Redis (записывает `TelegramProxyHealthCron`).
-   * `null` — cron ещё не отрабатывал; UI рисует серым «нет данных».
-   */
   private async readProxyHealthy(): Promise<boolean | null> {
     try {
       const v = await this.redis.client.get(TELEGRAM_PROXY_HEALTHY_REDIS_KEY);
@@ -699,20 +531,12 @@ export class AdminTelegramBotService {
     }
   }
 
-  /**
-   * Создать или обновить глобальный канал. Принимает функцию-mutator,
-   * которая получает текущий config (или `{}` если канала нет) и возвращает
-   * новый config. Намеренно делаем upsert вручную через find + create/update,
-   * потому что у нас составной partial-unique-index, а не объявленный
-   * `@@unique` для NULL.
-   */
   private async upsertGlobalChannel(
     mutateConfig: (cur: Record<string, unknown>) => Record<string, unknown>,
   ): Promise<Channel> {
     const existing = await this.findGlobalChannel();
     if (existing) {
-      const curConfig =
-        (existing.config as Record<string, unknown> | null) ?? {};
+      const curConfig = (existing.config as Record<string, unknown> | null) ?? {};
       const nextConfig = mutateConfig(curConfig);
       return this.prisma.channel.update({
         where: { id: existing.id },
@@ -738,8 +562,7 @@ export class AdminTelegramBotService {
     botUsername?: string;
     templates: Record<string, string>;
   } {
-    const raw =
-      (channel.config as Record<string, unknown> | null) ?? {};
+    const raw = (channel.config as Record<string, unknown> | null) ?? {};
     const templatesRaw = raw['templates'];
     const templates: Record<string, string> =
       templatesRaw && typeof templatesRaw === 'object' && !Array.isArray(templatesRaw)
@@ -759,7 +582,6 @@ export class AdminTelegramBotService {
   private tryDecrypt(value: string): string {
     if (!value) return '';
     if (!this.crypto.isEncrypted(value)) {
-      // На случай legacy plain-токенов до миграции — возвращаем как есть.
       return value;
     }
     try {
@@ -784,8 +606,7 @@ export class AdminTelegramBotService {
     return {
       welcome: stored['welcome'] ?? DEFAULT_TEMPLATES.welcome,
       notLinked: stored['notLinked'] ?? DEFAULT_TEMPLATES.notLinked,
-      employeeOffboarded:
-        stored['employeeOffboarded'] ?? DEFAULT_TEMPLATES.employeeOffboarded,
+      employeeOffboarded: stored['employeeOffboarded'] ?? DEFAULT_TEMPLATES.employeeOffboarded,
       orgFrozen: stored['orgFrozen'] ?? DEFAULT_TEMPLATES.orgFrozen,
     };
   }
@@ -795,18 +616,11 @@ export class AdminTelegramBotService {
     return `${base}/api/v1/webhooks/telegram-bot`;
   }
 
-  /**
-   * URL приёма webhook'ов с секретом в пути — то, что мы регистрируем в
-   * прокси как `targetWebhookUrl`. Прокси POST-ит апдейты ровно сюда;
-   * секрет в пути — наша аутентификация (`TelegramWebhooksController`
-   * роут `/s/:secret`). См. также `feedback conversational_channels_principles`.
-   */
   private computeWebhookTargetUrl(secret: string): string {
     return `${this.computeWebhookUrl()}/s/${secret}`;
   }
 
   private generateWebhookSecret(): string {
-    // Telegram требует 1..256 символов из [A-Za-z0-9_-]. 32 hex символа — 128 бит энтропии.
     const bytes = new Uint8Array(16);
     if (typeof crypto !== 'undefined' && 'getRandomValues' in crypto) {
       crypto.getRandomValues(bytes);
@@ -844,12 +658,10 @@ export class AdminTelegramBotService {
     const prefs = binding.preferences as Record<string, unknown> | null;
     if (prefs && prefs['botBlocked'] === true) return 'bot_blocked';
     if (lastInboundAt) {
-      const ageDays =
-        (Date.now() - lastInboundAt.getTime()) / (24 * 3_600_000);
+      const ageDays = (Date.now() - lastInboundAt.getTime()) / (24 * 3_600_000);
       if (ageDays > INACTIVE_THRESHOLD_DAYS) return 'inactive';
     } else if (binding.verifiedAt) {
-      const ageDays =
-        (Date.now() - binding.verifiedAt.getTime()) / (24 * 3_600_000);
+      const ageDays = (Date.now() - binding.verifiedAt.getTime()) / (24 * 3_600_000);
       if (ageDays > INACTIVE_THRESHOLD_DAYS) return 'inactive';
     }
     return 'linked';

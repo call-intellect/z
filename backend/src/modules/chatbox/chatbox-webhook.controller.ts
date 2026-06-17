@@ -18,19 +18,6 @@ import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * Inbound webhook-приёмник ChatBox (ТЗ 2026-06-05, Фаза 4).
- *
- * URL: `POST /api/v1/webhooks/chatbox/:tenantId/:secret`. ChatBox шлёт сюда
- * события чатов/сообщений/клиентов; secret в path — shared-secret (сравнивается
- * с `ChatboxIntegration.webhookSecret` через timingSafeEqual).
- *
- * Любое событие → точечный `incremental`-добор через очередь (дедуп по jobId
- * схлопнёт бурст). БЕЗ авторизации (внешний вызов от ChatBox).
- *
- * На любую внутреннюю ошибку (кроме явного Forbidden) — возвращаем 200, чтобы
- * ChatBox не зацикливал ретраи.
- */
 @ApiExcludeController()
 @Controller('api/v1/webhooks/chatbox')
 export class ChatboxWebhookController {
@@ -70,15 +57,10 @@ export class ChatboxWebhookController {
       });
     }
 
-    // С этого момента — best-effort: любая ошибка → 200 (ChatBox дублирует ретраи).
     try {
-      const enabled =
-        (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;
+      const enabled = (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;
       if (!enabled) {
-        this.logger.debug(
-          { tenantId },
-          'chatbox webhook: chatbox.enabled=false — no-op',
-        );
+        this.logger.debug({ tenantId }, 'chatbox webhook: chatbox.enabled=false — no-op');
         return { ok: true };
       }
 
@@ -99,13 +81,11 @@ export class ChatboxWebhookController {
   }
 }
 
-/** Constant-time сравнение строк (разная длина → false, без timing-утечки). */
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'));
 }
 
-/** Осторожно достаёт `event` из тела `{event, data}`; не падает на чужой форме. */
 function extractEvent(body: unknown): string | undefined {
   if (body && typeof body === 'object') {
     const ev = (body as Record<string, unknown>)['event'];

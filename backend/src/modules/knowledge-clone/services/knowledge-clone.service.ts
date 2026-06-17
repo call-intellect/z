@@ -19,17 +19,6 @@ import type {
   MarkWrongResponseDto,
 } from '../dto/knowledge-clone.dto';
 
-/**
- * SBA β-2 — KnowledgeCloneService.
- *
- * Публичные методы:
- *   - `getMyProfile` — текущий пользователь → Person через User.persons →
- *     возвращает свой профиль.
- *   - `getPersonProfile` — профиль другого Person'а с учётом RBAC-уровня
- *     (member видит только сводку без цитат, owner/admin — с цитатами).
- *   - `markWrong` — создаёт CurationItem (deep review) для admin/manager
- *     review. Носитель профиля помечает категорию как неверную.
- */
 @Injectable()
 export class KnowledgeCloneService {
   private readonly logger = new Logger(KnowledgeCloneService.name);
@@ -39,10 +28,7 @@ export class KnowledgeCloneService {
     @Inject(CurationService) private readonly curation: CurationService,
   ) {}
 
-  async getMyProfile(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<KnowledgeProfileDto> {
+  async getMyProfile(args: { tenantId: string; userId: string }): Promise<KnowledgeProfileDto> {
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -85,25 +71,12 @@ export class KnowledgeCloneService {
         },
       });
     }
-    const isSelf =
-      person.userId !== null && person.userId === args.requesterUserId;
-    // sampleStatements (цитаты) видят owner / admin / сам носитель;
-    // member видит только сводку без цитат.
+    const isSelf = person.userId !== null && person.userId === args.requesterUserId;
     const includeSampleStatements =
-      isSelf ||
-      args.requesterRole === 'owner' ||
-      args.requesterRole === 'admin';
+      isSelf || args.requesterRole === 'owner' || args.requesterRole === 'admin';
     return this.serialize(person, { includeSampleStatements, isSelf });
   }
 
-  /**
-   * Текущий пользователь помечает категорию своего профиля как неверную.
-   * Создаём CurationItem с level='deep' для admin/manager review.
-   *
-   * NB: payload пробрасываем в `proposedPayload`, чтобы куратор увидел
-   * содержимое (название категории + текст пользователя). Решение
-   * куратора (approve/reject) обрабатывается в обычном Curation flow.
-   */
   async markWrong(args: {
     tenantId: string;
     userId: string;
@@ -150,9 +123,6 @@ export class KnowledgeCloneService {
       reportedAt: new Date().toISOString(),
     };
 
-    // Triage с conflictSignal='hard' и confidence=0.0 — гарантированно
-    // упадёт в `deep` review (knowledge_profile НЕ в critical, но hard-сигнал
-    // + низкий confidence перевешивают auto-threshold).
     try {
       const res = await this.curation.triage({
         tenantId: args.tenantId,
@@ -194,8 +164,6 @@ export class KnowledgeCloneService {
     }
   }
 
-  // ─────────────────────────── helpers ────────────────────────────
-
   private personSelect() {
     return {
       id: true,
@@ -225,9 +193,7 @@ export class KnowledgeCloneService {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const obj = raw as Record<string, unknown>;
     const categoriesRaw = Array.isArray(obj.categories) ? obj.categories : [];
-    const highlightsRaw = Array.isArray(obj.experienceHighlights)
-      ? obj.experienceHighlights
-      : [];
+    const highlightsRaw = Array.isArray(obj.experienceHighlights) ? obj.experienceHighlights : [];
     const categories: Array<{
       name: string;
       confidence: 'low' | 'medium' | 'high';
@@ -241,13 +207,10 @@ export class KnowledgeCloneService {
       const cat = c as Record<string, unknown>;
       if (typeof cat.name !== 'string') continue;
       const conf =
-        cat.confidence === 'low' ||
-        cat.confidence === 'medium' ||
-        cat.confidence === 'high'
+        cat.confidence === 'low' || cat.confidence === 'medium' || cat.confidence === 'high'
           ? cat.confidence
           : 'low';
-      const obsCount =
-        typeof cat.observationCount === 'number' ? cat.observationCount : 1;
+      const obsCount = typeof cat.observationCount === 'number' ? cat.observationCount : 1;
       const sampleStatements: Array<{ quote: string; blockId: string }> = [];
       if (Array.isArray(cat.sampleStatements)) {
         for (const s of cat.sampleStatements) {
@@ -265,9 +228,7 @@ export class KnowledgeCloneService {
         }
       }
       const lastObservedAt =
-        typeof cat.lastObservedAt === 'string'
-          ? cat.lastObservedAt
-          : new Date().toISOString();
+        typeof cat.lastObservedAt === 'string' ? cat.lastObservedAt : new Date().toISOString();
       categories.push({
         name: cat.name,
         confidence: conf,
@@ -313,31 +274,28 @@ export class KnowledgeCloneService {
     opts: { includeSampleStatements: boolean; isSelf: boolean },
   ): KnowledgeProfileDto {
     const profile = this.readProfile(person.knowledgeProfile);
-    const categories: KnowledgeProfileCategoryDto[] = (
-      profile?.categories ?? []
-    ).map((c): KnowledgeProfileCategoryDto => {
-      const sampleStatements: KnowledgeProfileSampleStatementDto[] =
-        opts.includeSampleStatements
+    const categories: KnowledgeProfileCategoryDto[] = (profile?.categories ?? []).map(
+      (c): KnowledgeProfileCategoryDto => {
+        const sampleStatements: KnowledgeProfileSampleStatementDto[] = opts.includeSampleStatements
           ? c.sampleStatements.map((s) => ({ quote: s.quote, blockId: s.blockId }))
           : [];
-      return {
-        name: c.name,
-        confidence: c.confidence,
-        observationCount: c.observationCount,
-        sampleStatements,
-        relatedEntityIds: c.relatedEntityIds,
-        lastObservedAt: c.lastObservedAt,
-      };
-    });
+        return {
+          name: c.name,
+          confidence: c.confidence,
+          observationCount: c.observationCount,
+          sampleStatements,
+          relatedEntityIds: c.relatedEntityIds,
+          lastObservedAt: c.lastObservedAt,
+        };
+      },
+    );
     const experienceHighlights: KnowledgeProfileHighlightDto[] = (
       profile?.experienceHighlights ?? []
     ).map((h) => ({ summary: h.summary, blockIds: h.blockIds }));
 
     const builtAt =
       profile?.builtAt ??
-      (person.lastProfileBuildAt
-        ? person.lastProfileBuildAt.toISOString()
-        : '');
+      (person.lastProfileBuildAt ? person.lastProfileBuildAt.toISOString() : '');
 
     return {
       personId: person.id,

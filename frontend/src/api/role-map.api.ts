@@ -1,41 +1,11 @@
-/**
- * SBA α-8 wave 4 — API клиент для Role Map.
- *
- * Эндпоинты (см. backend/src/modules/role-map/role-map.controller.ts):
- *   GET    /api/v1/roles/:id/map
- *   GET    /api/v1/roles/:id/maturity
- *   GET    /api/v1/roles/:id/responsibilities[?kind=]
- *   POST   /api/v1/roles/:id/responsibilities
- *   PATCH  /api/v1/roles/:id/responsibilities/:itemId
- *   DELETE /api/v1/roles/:id/responsibilities/:itemId
- *   ... (аналогично для authority, knowledge, decision-policies, interactions)
- *
- * Защита: CookieAuthGuard + TenantGuard. RBAC ResourceType — `role`.
- */
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
-
-// ─────────────────────────── DTO ───────────────────────────────────
-
-export type ResponsibilityKindApi = 'outcome' | 'function' | 'activity';
-export type AuthorityKindApi =
-  | 'allowed'
-  | 'requires_approval'
-  | 'forbidden';
-export type KnowledgeImportanceApi =
-  | 'mandatory'
-  | 'preferred'
-  | 'nice_to_have';
-export type KnowledgeLevelApi =
-  | 'beginner'
-  | 'intermediate'
-  | 'expert';
-export type InteractionFrequencyApi =
-  | 'daily'
-  | 'weekly'
-  | 'monthly'
-  | 'ad_hoc';
+export type ResponsibilityKindApi = "outcome" | "function" | "activity";
+export type AuthorityKindApi = "allowed" | "requires_approval" | "forbidden";
+export type KnowledgeImportanceApi = "mandatory" | "preferred" | "nice_to_have";
+export type KnowledgeLevelApi = "beginner" | "intermediate" | "expert";
+export type InteractionFrequencyApi = "daily" | "weekly" | "monthly" | "ad_hoc";
 
 export interface ResponsibilityElementApi {
   id: string;
@@ -168,8 +138,6 @@ export interface RoleMaturityApi {
     metrics: number;
   };
 }
-
-// ─────────────────────────── API ───────────────────────────────────
 
 export const roleMapApi = {
   getMap: (orgId: string, roleId: string) =>

@@ -1,19 +1,10 @@
-/**
- * Unit-тесты чистых функций backfill-merge-duplicate-persons (без БД).
- * ТЗ plans/tz/2026-06-10-meeting-stuck-and-team-roster-fixes.md (Ф3).
- */
 import { describe, expect, it } from 'vitest';
 
-import {
-  isWeakName,
-  planMerge,
-  type MergePersonInput,
-} from './backfill-merge-duplicate-persons';
+import { isWeakName, planMerge, type MergePersonInput } from './backfill-merge-duplicate-persons';
 
 const D1 = new Date('2026-01-01');
 const D2 = new Date('2026-02-01');
 
-/** Хелпер: дефолтная карточка, переопределяемая частично. */
 function person(over: Partial<MergePersonInput> & { id: string }): MergePersonInput {
   return {
     userId: null,
@@ -93,7 +84,6 @@ describe('planMerge', () => {
     const older = person({ id: 'old', createdAt: D1 });
     const newer = person({ id: 'new', createdAt: D2 });
 
-    // Подаём в обратном порядке, чтобы проверить именно сортировку по createdAt.
     const plan = planMerge([newer, older]);
     expect('skip' in plan).toBe(false);
     if ('skip' in plan) return;

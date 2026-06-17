@@ -12,18 +12,6 @@ import { LivekitService } from '../livekit/livekit.service';
 
 import { assertTransition } from './fsm/meeting-fsm';
 
-/**
- * Сервис host-controls: mute/unmute, kick, lower-hand, finish.
- *
- * Все методы проверяют:
- *   1. Встреча существует.
- *   2. Действующий пользователь — owner встречи.
- *   3. Для mute/kick/lower-hand: meeting.status === 'active'.
- *   4. Для finish: meeting.status === 'active' (FSM сама проверит).
- *
- * Выполняемое действие в LiveKit + запись в `MeetingEvent` с типом
- * `host_action:<action>` для аудита.
- */
 @Injectable()
 export class HostControlsService {
   private readonly logger = new Logger(HostControlsService.name);
@@ -64,22 +52,13 @@ export class HostControlsService {
     this.logger.log({ meetingId, participantId }, 'Хост выкинул участника');
   }
 
-  /**
-   * Опустить чужую руку. Backend, потому что свою — frontend сам через
-   * `livekit-client.setAttributes`. Атрибут `hand_raised` зарезервирован.
-   */
-  async lowerHand(
-    meetingId: string,
-    participantId: string,
-    hostUserId: string,
-  ): Promise<void> {
+  async lowerHand(meetingId: string, participantId: string, hostUserId: string): Promise<void> {
     const { participant } = await this.assertHostAndActive(meetingId, hostUserId, participantId);
 
-    await this.livekit.updateParticipantAttributes(
-      { id: meetingId },
-      participant.livekitIdentity,
-      { hand_raised: 'false', hand_raised_at: '' },
-    );
+    await this.livekit.updateParticipantAttributes({ id: meetingId }, participant.livekitIdentity, {
+      hand_raised: 'false',
+      hand_raised_at: '',
+    });
     await this.recordEvent(meetingId, 'host_action:lower_hand', {
       participantId: participant.id,
       identity: participant.livekitIdentity,
@@ -87,13 +66,6 @@ export class HostControlsService {
     this.logger.log({ meetingId, participantId }, 'Хост опустил руку');
   }
 
-  /**
-   * Завершить встречу (устойчиво к потере вебхука room_started — ТЗ Ф5/Р1).
-   *   active     → deleteRoom; вебхук room_finished довершит active→completed.
-   *   scheduled  → записи физически нет (egress стартует в room_started) →
-   *                scheduled→failed(ended_before_start), 200 (не 409); deleteRoom best-effort.
-   *   иное       → идемпотентный no-op 200 (уже завершается/завершена), без 409/5xx.
-   */
   async finish(
     meetingId: string,
     hostUserId: string,
@@ -115,7 +87,6 @@ export class HostControlsService {
     }
 
     if (meeting.status === 'scheduled') {
-      // room_started потерян → записи нет. Завершаем как «не состоялась».
       try {
         await this.livekit.deleteRoom({ id: meetingId });
       } catch (err) {
@@ -141,15 +112,12 @@ export class HostControlsService {
       return { status: 'failed', failureReason: 'ended_before_start' };
     }
 
-    // Терминальные/в обработке — идемпотентный no-op (Р1).
     this.logger.log(
       { meetingId, status: meeting.status },
       'finish: встреча уже завершается/завершена — no-op',
     );
     return { status: meeting.status, failureReason: meeting.failureReason ?? null };
   }
-
-  // ─────────────────────────── helpers ───────────────────────────────────
 
   private async runMuteAction(
     meetingId: string,
@@ -170,13 +138,6 @@ export class HostControlsService {
     );
   }
 
-  /**
-   * Общий guard:
-   *   - встреча есть;
-   *   - юзер — owner;
-   *   - встреча в статусе active;
-   *   - participant принадлежит этой встрече.
-   */
   private async assertHostAndActive(
     meetingId: string,
     hostUserId: string,

@@ -14,7 +14,7 @@ status: active
 - Не работал фильтр «мои задачи» по `User.id`.
 - AI-чат компании и Employee Clones не могли связать обсуждение с конкретным сотрудником.
 
-ТЗ 2026-05-25 [`hard-participant-identification`](../../plans/tz/2026-05-25-hard-participant-identification.md) добавил жёсткую цепочку: LiveKit → Participant → AI-промпт → LLM → Task.assigneeUserId.
+ТЗ 2026-05-25 [`hard-participant-identification`](../../plans/archive/2026-05-25-hard-participant-identification.md) добавил жёсткую цепочку: LiveKit → Participant → AI-промпт → LLM → Task.assigneeUserId.
 
 ## Архитектура цепочки
 

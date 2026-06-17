@@ -10,11 +10,7 @@ import { Prisma, type Tag } from '@prisma/client';
 import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-import type {
-  CreateTagDto,
-  SetMeetingTagsDto,
-  UpdateTagDto,
-} from './dto/tag.dto';
+import type { CreateTagDto, SetMeetingTagsDto, UpdateTagDto } from './dto/tag.dto';
 import { TagsRepository } from './tags.repository';
 
 @Injectable()
@@ -120,8 +116,6 @@ export class TagsService {
     await this.assertMeetingOwner(meetingId, userId);
     return this.repo.listMeetingTags(meetingId);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private async assertMeetingOwner(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({

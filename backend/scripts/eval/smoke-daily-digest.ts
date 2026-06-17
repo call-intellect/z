@@ -1,11 +1,3 @@
-/**
- * Smoke-тест агента `operations-daily-digest` на DeepSeek-V4-Pro.
- * Промпт из backend/src/modules/operations/prompts/daily-digest.prompt.ts.
- *
- * Ответ — markdown с разделителем ---SHORT_SUMMARY---. Без tool/JSON.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-daily-digest.ts
- */
 import {
   client,
   computeCost,

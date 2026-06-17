@@ -1,28 +1,3 @@
-/**
- * KC-Temporal W4.3 (2026-05-25) — backfill DataClass-полей outbound-каналов.
- *
- * Что делает (идемпотентно):
- *   - `ChannelBinding.maxDataClass` IS NULL ИЛИ default отсутствует → `internal`.
- *     (Prisma 7 не позволяет нативно проверить «было ли поле задано» — поэтому
- *     поле в schema.prisma уже non-null с default. Скрипт безопасен: он
- *     пытается обновить только те binding'и, где явно `maxDataClass=NULL`
- *     через raw SQL — это покрывает кейс, когда поле было добавлено через
- *     prisma:push на существующую таблицу.)
- *   - `IssueWebhook.allowedDataClasses` IS NULL ИЛИ пустой массив →
- *     `['public', 'internal']` (default из §W4.3 ТЗ).
- *
- * Безопасность (skill safe-seed-rules):
- *   - WHERE-условия исключают уже обработанные строки.
- *   - --dry-run печатает COUNT не пиша; --limit=N ограничивает прогон.
- *   - Транзакция per-batch.
- *
- * Запуск:
- *   cd backend
- *   bun run scripts/patch-channel-binding-defaults.ts            # обычный
- *   bun run scripts/patch-channel-binding-defaults.ts --dry-run  # сухой прогон
- *   bun run scripts/patch-channel-binding-defaults.ts --limit=500
- */
-
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
@@ -56,10 +31,6 @@ async function main(): Promise<void> {
     limit: opts.limit ?? '∞',
   });
 
-  // 1) ChannelBinding.maxDataClass — заполняем NULL'ы значением 'internal'.
-  // Prisma-схема имеет default, но если поле было добавлено `prisma:push`
-  // на существующую таблицу с данными — Postgres заполнил его дефолтом
-  // автоматически. Раздел оставлен для безопасности (raw SQL).
   const bindingNullCount = await prisma.$queryRaw<{ count: bigint }[]>`
     SELECT COUNT(*)::bigint AS count
     FROM channel_bindings
@@ -68,11 +39,7 @@ async function main(): Promise<void> {
   const cbNulls = Number(bindingNullCount[0]?.count ?? 0);
   console.log('[W4.3 backfill] ChannelBinding.maxDataClass IS NULL:', cbNulls);
   if (cbNulls > 0 && !opts.dryRun) {
-    const limitClause =
-      opts.limit !== null
-        ? `LIMIT ${Math.max(1, opts.limit)}`
-        : '';
-    // PG не поддерживает LIMIT в UPDATE напрямую — через подзапрос.
+    const limitClause = opts.limit !== null ? `LIMIT ${Math.max(1, opts.limit)}` : '';
     const rows = await prisma.$executeRawUnsafe(`
       UPDATE channel_bindings
       SET "maxDataClass" = 'internal'::"DataClass"
@@ -85,7 +52,6 @@ async function main(): Promise<void> {
     console.log('[W4.3 backfill] ChannelBinding updated rows:', rows);
   }
 
-  // 2) IssueWebhook.allowedDataClasses — заполняем пустые массивы.
   const webhookEmptyCount = await prisma.$queryRaw<{ count: bigint }[]>`
     SELECT COUNT(*)::bigint AS count
     FROM "IssueWebhook"
@@ -93,15 +59,9 @@ async function main(): Promise<void> {
        OR cardinality("allowedDataClasses") = 0
   `;
   const whEmpty = Number(webhookEmptyCount[0]?.count ?? 0);
-  console.log(
-    '[W4.3 backfill] IssueWebhook.allowedDataClasses пуст:',
-    whEmpty,
-  );
+  console.log('[W4.3 backfill] IssueWebhook.allowedDataClasses пуст:', whEmpty);
   if (whEmpty > 0 && !opts.dryRun) {
-    const limitClause =
-      opts.limit !== null
-        ? `LIMIT ${Math.max(1, opts.limit)}`
-        : '';
+    const limitClause = opts.limit !== null ? `LIMIT ${Math.max(1, opts.limit)}` : '';
     const rows = await prisma.$executeRawUnsafe(`
       UPDATE "IssueWebhook"
       SET "allowedDataClasses" = ARRAY['public'::"DataClass", 'internal'::"DataClass"]
@@ -115,7 +75,6 @@ async function main(): Promise<void> {
     console.log('[W4.3 backfill] IssueWebhook updated rows:', rows);
   }
 
-  // Прогресс-репорт для batch (placeholder; данные обычно невелики).
   void BATCH_SIZE;
 
   console.log('[W4.3 backfill] done');

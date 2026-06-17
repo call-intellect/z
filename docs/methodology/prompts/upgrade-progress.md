@@ -26,7 +26,7 @@
 | `concierge-respond` (помощник — развилка + руки + уточнитель + границы) | [concierge.service.ts](../../../backend/src/modules/concierge/services/concierge.service.ts) | 🟡 | ТЗ 2026-06-14 (assistant-router-dedup), Прил. A | 2026-06-14 |
 | chat-v2 (единый ответчик — слияние BASE + «факт» + «синтез», без режимов; человеческий русский контекст; **часть A реализована в коде**) | [chat-v2.service.ts](../../../backend/src/modules/knowledge-core/services/chat-v2.service.ts) · [эталон](examples/chat-v2-answer.md) | 🟡 | ТЗ 2026-06-15, Прил. A | 2026-06-15 |
 
-ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/tz/2026-06-14-dialog-layer-unified-query-understanding.md) · [plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md](../../../plans/tz/2026-06-15-chat-v2-unified-answer-prompt.md)
+ТЗ выката: [plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md](../../../plans/tz/2026-06-11-meeting-report-consolidation-graph-and-prompts.md) · [plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md](../../../plans/archive/2026-06-14-dialog-layer-unified-query-understanding.md) · [plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md](../../../plans/archive/2026-06-15-chat-v2-unified-answer-prompt.md)
 
 ## Очередь — отчёты по типам встреч (`extract_*`)
 

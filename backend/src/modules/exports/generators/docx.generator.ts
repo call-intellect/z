@@ -1,30 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  AiResult,
-  Meeting,
-  MeetingChapter,
-} from '@prisma/client';
-import {
-  Document,
-  HeadingLevel,
-  Packer,
-  Paragraph,
-  TextRun,
-} from 'docx';
+import type { AiResult, Meeting, MeetingChapter } from '@prisma/client';
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { pickPrimarySummary } from '../../ai/utils/pick-primary-summary';
 
-/**
- * Генератор DOCX. Возвращает Buffer; вызывающий код заливает в S3.
- */
 @Injectable()
 export class DocxGenerator {
   async build(input: {
     meeting: Meeting;
     aiResult: AiResult | null;
     chapters: MeetingChapter[];
-    // ТЗ Ф5.2 — рендерим только title; принимаем минимальную форму, чтобы сюда
-    // подходил и Prisma `Task`, и нормализованный `MeetingActionItem`.
     tasks: ReadonlyArray<{ title: string }>;
   }): Promise<Buffer> {
     const sections: Paragraph[] = [];
@@ -35,9 +20,7 @@ export class DocxGenerator {
         heading: HeadingLevel.HEADING_1,
       }),
       new Paragraph({
-        children: [
-          new TextRun({ text: `Тип: ${input.meeting.type}`, bold: false }),
-        ],
+        children: [new TextRun({ text: `Тип: ${input.meeting.type}`, bold: false })],
       }),
       new Paragraph({
         children: [

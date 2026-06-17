@@ -13,28 +13,6 @@ import {
   AUTORULE_EXTRACT_USER_TEMPLATE,
 } from '../prompts/autorule-extract.prompt';
 
-/**
- * Agents v2 Фаза B1 (2026-05-30) — AutoRuleExtractorService.
- *
- * Ночной cron вызывает `extractForPromptKey(promptKey, tenantId)`:
- *   1. Загружает PromptFeedback за 24ч с editedOutput != null.
- *   2. Группирует по KNN cosine ≥ knnGroupThreshold (default 0.78) на
- *      `inputEmbedding`. Если эмбеддинга нет — fallback на group-by inputDigest.
- *   3. Для групп ≥3 элементов → один LLM-вызов `autorule-extract` → draft rule.
- *   4. Если `confidence >= minConfidenceForPromote` — продолжаем; иначе skip.
- *   5. KNN-check на existing PromptRule (≥ ruleSimilarityThreshold cosine):
- *      - если `overridden_by_admin` → skip (sticky);
- *      - если есть — `appendExamples` (обновляем existing);
- *      - иначе → новое PromptRule(status='shadow').
- *
- * В Фазе B статус active НЕ ставим — всё остаётся shadow, для будущей
- * валидации админом + A/B-сравнения в Фазе C.
- *
- * Метрики:
- *   - `z_autorule_extracted_total{promptKey, ruleType}` — каждое новое правило.
- *   - `z_autorule_rules_total{promptKey, status, source}` — gauge (обновляется
- *     отдельным snapshot-cron'ом, здесь не трогаем).
- */
 @Injectable()
 export class AutoRuleExtractorService {
   private readonly logger = new Logger(AutoRuleExtractorService.name);
@@ -49,13 +27,7 @@ export class AutoRuleExtractorService {
     private readonly embeddings?: EmbeddingFallbackService,
   ) {}
 
-  /**
-   * Главный entry-point. Вызывается из cron'а для каждой пары (promptKey, tenantId).
-   */
-  async extractForPromptKey(
-    promptKey: string,
-    tenantId: string | null,
-  ): Promise<PromptRule[]> {
+  async extractForPromptKey(promptKey: string, tenantId: string | null): Promise<PromptRule[]> {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const feedback = await this.prisma.promptFeedback.findMany({
       where: {
@@ -65,8 +37,6 @@ export class AutoRuleExtractorService {
         createdAt: { gte: since },
       },
       orderBy: { createdAt: 'desc' },
-      // Защита от memory blow-up: даже на «глобальной» волне берём не больше 500
-      // самых свежих feedback'ов одного promptKey.
       take: 500,
     });
 
@@ -105,7 +75,6 @@ export class AutoRuleExtractorService {
         continue;
       }
 
-      // KNN-check на existing rule (cosine ≥ ruleSimilarityThreshold).
       const existing = await this.findSimilarRule(
         promptKey,
         tenantId,
@@ -120,7 +89,6 @@ export class AutoRuleExtractorService {
           );
           continue;
         }
-        // Update examples — мерж до 3.
         await this.appendExamples(existing.id, draft.examples);
         continue;
       }
@@ -137,7 +105,6 @@ export class AutoRuleExtractorService {
           status: 'shadow',
         },
       });
-      // Эмбеддинг текста rule — отдельным raw update'ом.
       try {
         await this.upsertRuleEmbedding(created.id, draft.rule);
       } catch (err) {
@@ -154,30 +121,14 @@ export class AutoRuleExtractorService {
     return newRules;
   }
 
-  /**
-   * Группирует feedback в кластеры. Использует KNN по `inputEmbedding`
-   * (cosine similarity), если эмбеддинги есть. Иначе fallback на group-by
-   * `inputDigest` (хуже recall, но работает без embedding'ов).
-   *
-   * Алгоритм: greedy single-link.
-   *   - sort feedback descending по createdAt;
-   *   - для каждого: ищем существующий кластер с representative, у которого
-   *     cosine >= threshold; если есть — добавляем туда, иначе создаём новый.
-   */
   private async knnGroup(
     feedback: PromptFeedback[],
     threshold: number,
   ): Promise<PromptFeedback[][]> {
     if (feedback.length === 0) return [];
 
-    // Загружаем эмбеддинги (vector → number[]) одним raw запросом. Prisma
-    // не отдаёт Unsupported поля, поэтому делаем отдельный SELECT.
     const ids = feedback.map((f) => f.id);
-    const rows = await this.prisma.$queryRawUnsafe<
-      Array<{ id: string; emb: number[] | null }>
-    >(
-      // pgvector экспортирует vector → text как '[v1,v2,...]'; пробуем cast в float8[]
-      // через ARRAY-парсинг безопаснее: используем pgvector функцию `to_text` и парсим в JS.
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; emb: number[] | null }>>(
       `SELECT id, "inputEmbedding"::text AS emb FROM "PromptFeedback" WHERE id = ANY($1::text[])`,
       ids,
     );
@@ -198,7 +149,6 @@ export class AutoRuleExtractorService {
     for (const f of feedback) {
       const vec = idToVec.get(f.id) ?? null;
       if (hasAnyEmbedding && vec) {
-        // KNN-similarity путь.
         let added = false;
         for (const c of clusters) {
           if (!c.vec) continue;
@@ -213,7 +163,6 @@ export class AutoRuleExtractorService {
           clusters.push({ representative: f, vec, members: [f] });
         }
       } else {
-        // Fallback: group-by inputDigest точным match'ем.
         let added = false;
         for (const c of clusters) {
           if (c.representative.inputDigest === f.inputDigest) {
@@ -264,17 +213,17 @@ export class AutoRuleExtractorService {
         : 0;
     const examplesOut = Array.isArray(parsed.examples)
       ? (parsed.examples as Array<unknown>)
-          .filter((e): e is AutoRuleExample =>
-            !!e &&
-            typeof e === 'object' &&
-            typeof (e as AutoRuleExample).originalSnippet === 'string' &&
-            typeof (e as AutoRuleExample).editedSnippet === 'string' &&
-            typeof (e as AutoRuleExample).why === 'string',
+          .filter(
+            (e): e is AutoRuleExample =>
+              !!e &&
+              typeof e === 'object' &&
+              typeof (e as AutoRuleExample).originalSnippet === 'string' &&
+              typeof (e as AutoRuleExample).editedSnippet === 'string' &&
+              typeof (e as AutoRuleExample).why === 'string',
           )
           .slice(0, 3)
       : [];
-    const reasoning =
-      typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
+    const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
 
     if (rule.length === 0 || examplesOut.length === 0) {
       throw new Error('autorule-extract: пустой rule или examples в LLM-ответе');
@@ -282,22 +231,15 @@ export class AutoRuleExtractorService {
     return { rule, ruleType, confidence, examples: examplesOut, reasoning };
   }
 
-  /**
-   * Ищет похожее правило (KNN cosine ≥ threshold). Возвращает null если нет.
-   * Если эмбеддинги ещё не сохранены — fallback на substring-match
-   * (точное равенство rule.text).
-   */
   private async findSimilarRule(
     promptKey: string,
     tenantId: string | null,
     ruleText: string,
     threshold: number,
   ): Promise<PromptRule | null> {
-    // Substring-fallback всегда работает быстро.
     const exactByText = await this.prisma.promptRule.findFirst({
       where: {
         promptKey,
-        // global rules видим из per-tenant контекста и наоборот не дублируем
         ...(tenantId === null ? { tenantId: null } : { tenantId }),
         rule: ruleText,
       },
@@ -315,7 +257,6 @@ export class AutoRuleExtractorService {
     }
     if (!queryVec) return null;
 
-    // pgvector cosine distance: `embedding <=> query`; similarity = 1 - distance.
     const minDistance = 1 - threshold;
     const tenantClause = tenantId === null ? `"tenantId" IS NULL` : `"tenantId" = $2`;
     const params: unknown[] = [`[${queryVec.join(',')}]`];
@@ -339,13 +280,12 @@ export class AutoRuleExtractorService {
     return this.prisma.promptRule.findUnique({ where: { id: best.id } });
   }
 
-  private async appendExamples(
-    ruleId: string,
-    examples: AutoRuleExample[],
-  ): Promise<void> {
+  private async appendExamples(ruleId: string, examples: AutoRuleExample[]): Promise<void> {
     const rule = await this.prisma.promptRule.findUnique({ where: { id: ruleId } });
     if (!rule) return;
-    const prev = Array.isArray(rule.examples) ? (rule.examples as unknown as AutoRuleExample[]) : [];
+    const prev = Array.isArray(rule.examples)
+      ? (rule.examples as unknown as AutoRuleExample[])
+      : [];
     const merged = dedupeExamples([...prev, ...examples]).slice(0, 5);
     await this.prisma.promptRule.update({
       where: { id: ruleId },
@@ -364,8 +304,6 @@ export class AutoRuleExtractorService {
     );
   }
 }
-
-// ─────────────────────────── types & helpers ──────────────────────────────
 
 export interface AutoRuleExample {
   originalSnippet: string;

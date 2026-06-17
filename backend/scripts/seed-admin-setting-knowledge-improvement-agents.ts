@@ -1,45 +1,3 @@
-/**
- * ТЗ-1 Ф4 (daily-value-engine) — Seed AdminSetting для агентов «улучшения и
- * знания» (лента идей + re-check инсайтов + знание-под-риском + capacity +
- * онбординг).
- *
- * Регистрирует пороги-«крутилки» (редактируются super_admin'ом в админке,
- * code-fallback в самих сервисах) и 5 kill-switch флагов:
- *
- * Ф4.A (лента идей):
- *   - `ideas.feed.rerank.weight` (number, default 1) — вклад веса идеи в ре-ранк.
- *   - `ideas.feed.rerank.freshness` (number, default 0.5) — вклад свежести.
- *   - `ideas.feed.rerank.goal_link` (number, default 0.75) — бонус за связь с целью.
- *   - `ideas.feed.freshness_days` (int, default 30) — окно свежести.
- *   - `ideas.feed.enabled` (bool, default true) — kill-switch ленты идей +
- *     авто-морфинга статуса при закрытии задачи.
- *
- * Ф4.B (re-check инсайтов):
- *   - `insight.recheck_days` (int, default 14) — после скольких дней митигации
- *     перепроверять инсайт на повтор паттерна.
- *   - `insights.recheck.enabled` (bool, default true) — kill-switch re-check.
- *
- * Ф4.C (знание-под-риском):
- *   - `operations.knowledge_at_risk.enabled` (bool, default true) — kill-switch.
- *
- * Ф4.D (capacity по командам):
- *   - `team_capacity.overload_percent` (int, default 120) — порог перегруза.
- *   - `team_capacity.underload_percent` (int, default 50) — порог недогруза.
- *   - `operations.team_capacity.enabled` (bool, default true) — kill-switch.
- *
- * Ф4.E (онбординг-рамп):
- *   - `onboarding.silent_days` (int, default 5) — за сколько дней молчания
- *     новичок считается не активировавшимся.
- *   - `operations.onboarding_ramp.enabled` (bool, default true) — kill-switch.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-knowledge-improvement-agents.ts
- *
- * Идемпотентность (skill `safe-seed-rules`): admin-edited записи
- * (`updatedBy != null && != 'system'`) — не перезаписываем value, обновляем
- * только метаданные. Системные — обновляем value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -58,7 +16,6 @@ interface SettingSeed {
 }
 
 const SEEDS: SettingSeed[] = [
-  // ── Ф4.A — лента идей ─────────────────────────────────────────────────
   {
     key: 'ideas.feed.rerank.weight',
     value: 1,
@@ -74,8 +31,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'ideas_feed',
     severity: 'low',
-    description:
-      'Вклад свежести (lastDiscussedAt) в ре-ранк ленты идей. По умолчанию 0.5.',
+    description: 'Вклад свежести (lastDiscussedAt) в ре-ранк ленты идей. По умолчанию 0.5.',
   },
   {
     key: 'ideas.feed.rerank.goal_link',
@@ -83,8 +39,7 @@ const SEEDS: SettingSeed[] = [
     category: 'operations',
     section: 'ideas_feed',
     severity: 'low',
-    description:
-      'Бонус ре-ранка идеи за привязку к цели (goalId != null). По умолчанию 0.75.',
+    description: 'Бонус ре-ранка идеи за привязку к цели (goalId != null). По умолчанию 0.75.',
   },
   {
     key: 'ideas.feed.freshness_days',
@@ -105,7 +60,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) ленты идей и авто-продвижения статуса идеи при закрытии связанной задачи. По умолчанию ВКЛ.',
   },
 
-  // ── Ф4.B — re-check митигированных инсайтов ───────────────────────────
   {
     key: 'insight.recheck_days',
     value: 14,
@@ -125,7 +79,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) re-check митигированных инсайтов (в insight-clusterer cron). По умолчанию ВКЛ.',
   },
 
-  // ── Ф4.C — знание-под-риском × уход человека ──────────────────────────
   {
     key: 'operations.knowledge_at_risk.enabled',
     value: true,
@@ -136,7 +89,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) еженедельного синтеза знание-под-риском (cron пн 05:00, push только руководителю). По умолчанию ВКЛ.',
   },
 
-  // ── Ф4.D — capacity-агрегат по командам ───────────────────────────────
   {
     key: 'team_capacity.overload_percent',
     value: 120,
@@ -165,7 +117,6 @@ const SEEDS: SettingSeed[] = [
       'Аварийный рубильник (kill-switch) capacity-агрегата по командам (endpoint /dashboard/operations/team-capacity + строка в COO-дайджесте). По умолчанию ВКЛ.',
   },
 
-  // ── Ф4.E — онбординг-рамп новичка ─────────────────────────────────────
   {
     key: 'onboarding.silent_days',
     value: 5,
@@ -215,7 +166,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

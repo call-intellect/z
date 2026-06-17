@@ -165,9 +165,7 @@ describe('HighlightsService', () => {
         deletedAt: null,
       });
       const svc = make();
-      await expect(svc.startRender('h1', 'u1')).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(svc.startRender('h1', 'u1')).rejects.toBeInstanceOf(ConflictException);
       expect(queue.enqueueClipRender).not.toHaveBeenCalled();
     });
 
@@ -185,9 +183,7 @@ describe('HighlightsService', () => {
         deletedAt: null,
       });
       const svc = make();
-      await expect(svc.startRender('h1', 'u1')).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(svc.startRender('h1', 'u1')).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('renderStatus=ready → возвращает presigned URL', async () => {
@@ -244,7 +240,6 @@ describe('HighlightsService', () => {
         durationMs: 10_000,
         deletedAt: null,
       });
-      // Реальный QuotaService на превышении бросает QuotaExceededError (HttpException 429).
       quota.checkAndIncrement.mockRejectedValue(
         new QuotaExceededError('render_jobs_per_hour', 60, 10),
       );
@@ -287,9 +282,7 @@ describe('HighlightsService', () => {
         deletedAt: null,
       });
       const svc = make();
-      await expect(svc.getDownloadUrl('h1', 'u1')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(svc.getDownloadUrl('h1', 'u1')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

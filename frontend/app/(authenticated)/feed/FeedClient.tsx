@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
-import { Newspaper, Check, ListChecks } from 'lucide-react';
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
+import { Newspaper, Check, ListChecks } from "lucide-react";
 
-import { coraFeedApi, probeControlApi } from '@/api/cora-feed.api';
+import { coraFeedApi, probeControlApi } from "@/api/cora-feed.api";
 import {
   CORA_FILTER_CHIPS,
   coraFeedViewFromApi,
@@ -14,56 +14,42 @@ import {
   type CoraFeedItem,
   type CoraFeedTone,
   type ProbeControlItem,
-} from '@/domain/cora-feed';
-import { useAuth } from '@/contexts/auth-context';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-
-/**
- * «Лента Коры» — `/feed` (ТЗ редизайн кабинета 2026-06-13, Ф8.6).
- *
- * Живая лента-новости компании с анализом: идеи, сигналы, блокеры, решения,
- * конфликты, активность + вопросы Коры и вопросы людей. Переключатель-чипы
- * фильтруют по типу; счётчики — из `counters`. Под-вкладка «Контроль» (вопросы
- * Коры — кто ответил / молчит / не видел / протух) видна только владельцу /
- * админу / COO. Сортировка карточек — как пришла с бэка (по severity).
- */
+} from "@/domain/cora-feed";
+import { useAuth } from "@/contexts/auth-context";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
 
 const TONE_CHIP: Record<CoraFeedTone, string> = {
-  info: 'bg-chip-info-bg text-chip-info-fg',
-  warning: 'bg-chip-warning-bg text-chip-warning-fg',
-  danger: 'bg-chip-danger-bg text-chip-danger-fg',
+  info: "bg-chip-info-bg text-chip-info-fg",
+  warning: "bg-chip-warning-bg text-chip-warning-fg",
+  danger: "bg-chip-danger-bg text-chip-danger-fg",
 };
 
 const TONE_DOT: Record<CoraFeedTone, string> = {
-  info: 'bg-chip-info-fg',
-  warning: 'bg-chip-warning-fg',
-  danger: 'bg-chip-danger-fg',
+  info: "bg-chip-info-fg",
+  warning: "bg-chip-warning-fg",
+  danger: "bg-chip-danger-fg",
 };
 
-/** Окно ленты в днях по умолчанию (свежие новости компании). */
 const FEED_WINDOW_DAYS = 30;
 const FEED_LIMIT = 60;
 
 function formatRelative(date: Date): string {
   const diffMs = Date.now() - date.getTime();
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return 'только что';
+  if (min < 1) return "только что";
   if (min < 60) return `${min} мин назад`;
   const hours = Math.floor(min / 60);
   if (hours < 24) return `${hours} ч назад`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days} дн назад`;
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
 
 function formatScore(score: number): string {
-  // payload.score приходит 0..1; рендерим как проценты.
   const pct = score <= 1 ? Math.round(score * 100) : Math.round(score);
   return `${pct}%`;
 }
-
-// ─── Гейт ──────────────────────────────────────────────────────────────────
 
 export function FeedClient() {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
@@ -91,16 +77,13 @@ export function FeedClient() {
     );
   }
 
-  // Контроль вопросов Коры — только владелец / админ / COO.
   const canControl =
-    currentOrgRole === 'owner' ||
-    currentOrgRole === 'admin' ||
-    currentOrgRole === 'coo';
+    currentOrgRole === "owner" ||
+    currentOrgRole === "admin" ||
+    currentOrgRole === "coo";
 
   return <FeedContent orgId={currentOrgId} canControl={canControl} />;
 }
-
-// ─── Контент ──────────────────────────────────────────────────────────────
 
 function FeedContent({
   orgId,
@@ -109,11 +92,10 @@ function FeedContent({
   orgId: string;
   canControl: boolean;
 }) {
-  const [filter, setFilter] = useState<CoraFeedFilter>('all');
+  const [filter, setFilter] = useState<CoraFeedFilter>("all");
 
-  // Лента Коры.
   const feedSwr = useSWR(
-    ['cora-feed', orgId, filter] as const,
+    ["cora-feed", orgId, filter] as const,
     async ([, , type]) => {
       const dto = await coraFeedApi.list(orgId, {
         type,
@@ -124,11 +106,9 @@ function FeedContent({
     },
   );
 
-  // Контроль вопросов Коры (probe/control) — грузим только при наличии прав
-  // и когда пользователь смотрит на вопросы Коры.
-  const controlActive = canControl && filter === 'probe_question';
+  const controlActive = canControl && filter === "probe_question";
   const controlSwr = useSWR(
-    controlActive ? (['probe-control', orgId] as const) : null,
+    controlActive ? (["probe-control", orgId] as const) : null,
     async ([, oid]) => {
       const dto = await probeControlApi.list(oid, {
         window: FEED_WINDOW_DAYS,
@@ -138,7 +118,6 @@ function FeedContent({
     },
   );
 
-  // markSeen при первом успешном заходе в ленту (обнуляет unread на бэке).
   const [seen, setSeen] = useState(false);
   const [seenPending, setSeenPending] = useState(false);
   const unreadCount = feedSwr.data?.unreadCount ?? 0;
@@ -152,7 +131,6 @@ function FeedContent({
         setSeen(true);
         await feedSwr.mutate();
       } catch {
-        // тихо — отметка прочтения не критична для просмотра ленты
       } finally {
         setSeenPending(false);
       }
@@ -160,7 +138,6 @@ function FeedContent({
     [orgId, seenPending, feedSwr],
   );
 
-  // Авто-отметка прочтения один раз, когда лента загрузилась и есть unread.
   useEffect(() => {
     if (!seen && !seenPending && unreadCount > 0 && feedSwr.data) {
       void markSeen();
@@ -173,7 +150,7 @@ function FeedContent({
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-8">
-      {/* Шапка */}
+      {}
       <header className="mb-6 flex flex-wrap items-start gap-3">
         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-chip-info-bg text-chip-info-fg">
           <Newspaper size={20} />
@@ -197,15 +174,14 @@ function FeedContent({
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong disabled:cursor-default disabled:opacity-50"
         >
           <Check size={14} />
-          {unreadCount > 0 ? `Прочитать (${unreadCount})` : 'Всё прочитано'}
+          {unreadCount > 0 ? `Прочитать (${unreadCount})` : "Всё прочитано"}
         </button>
       </header>
 
-      {/* Переключатель-чипы */}
+      {}
       <div className="mb-5 flex flex-wrap gap-2">
         {CORA_FILTER_CHIPS.map((chip) => {
-          const count =
-            chip.value === 'all' ? undefined : counters[chip.value];
+          const count = chip.value === "all" ? undefined : counters[chip.value];
           return (
             <button
               key={chip.value}
@@ -213,17 +189,17 @@ function FeedContent({
               onClick={() => setFilter(chip.value)}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
                 filter === chip.value
-                  ? 'border-accent bg-accent/10 text-accent'
-                  : 'border-border-subtle text-fg-secondary hover:border-border-strong'
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border-subtle text-fg-secondary hover:border-border-strong"
               }`}
             >
               {chip.label}
-              {typeof count === 'number' && count > 0 ? (
+              {typeof count === "number" && count > 0 ? (
                 <span
                   className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] ${
                     filter === chip.value
-                      ? 'bg-accent/20 text-accent'
-                      : 'bg-bg-subtle text-fg-tertiary'
+                      ? "bg-accent/20 text-accent"
+                      : "bg-bg-subtle text-fg-tertiary"
                   }`}
                 >
                   {count}
@@ -234,7 +210,7 @@ function FeedContent({
         })}
       </div>
 
-      {/* Контроль вопросов Коры — отдельная секция при выбранном чипе */}
+      {}
       {controlActive ? (
         <ControlSection
           isLoading={controlSwr.isLoading}
@@ -247,7 +223,7 @@ function FeedContent({
         />
       ) : null}
 
-      {/* Лента карточек (Б-6: loading / empty / error) */}
+      {}
       <QueryGate
         isLoading={feedSwr.isLoading}
         error={feedSwr.error}
@@ -272,14 +248,7 @@ function FeedContent({
   );
 }
 
-// ─── Сводка-счётчики в шапке ────────────────────────────────────────────────
-
-function CountersSummary({
-  counters,
-}: {
-  counters: Record<string, number>;
-}) {
-  // Компактная строка: «+N сигналов, M блокеров, K идей …».
+function CountersSummary({ counters }: { counters: Record<string, number> }) {
   const parts: string[] = [];
   const push = (key: string, one: string, few: string, many: string) => {
     const n = counters[key];
@@ -292,35 +261,35 @@ function CountersSummary({
       word = few;
     parts.push(`${n} ${word}`);
   };
-  push('insight', 'сигнал', 'сигнала', 'сигналов');
-  push('blocker', 'блокер', 'блокера', 'блокеров');
-  push('idea', 'идея', 'идеи', 'идей');
-  push('decision', 'решение', 'решения', 'решений');
-  push('conflict', 'конфликт', 'конфликта', 'конфликтов');
+  push("insight", "сигнал", "сигнала", "сигналов");
+  push("blocker", "блокер", "блокера", "блокеров");
+  push("idea", "идея", "идеи", "идей");
+  push("decision", "решение", "решения", "решений");
+  push("conflict", "конфликт", "конфликта", "конфликтов");
 
   if (parts.length === 0) return null;
   return (
-    <p className="mt-2 text-xs text-fg-tertiary">За период: {parts.join(' · ')}</p>
+    <p className="mt-2 text-xs text-fg-tertiary">
+      За период: {parts.join(" · ")}
+    </p>
   );
 }
-
-// ─── Карточка ленты ──────────────────────────────────────────────────────────
 
 function FeedCard({ item }: { item: CoraFeedItem }) {
   return (
     <article
       className={`relative rounded-xl border bg-bg-surface p-4 transition-colors ${
         item.unread
-          ? 'border-accent/40 bg-accent/[0.03]'
-          : 'border-border-subtle'
+          ? "border-accent/40 bg-accent/[0.03]"
+          : "border-border-subtle"
       }`}
     >
       <div className="flex items-start gap-3">
-        {/* Индикатор unread */}
+        {}
         <span
           aria-hidden="true"
           className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-            item.unread ? TONE_DOT[item.tone] : 'bg-transparent'
+            item.unread ? TONE_DOT[item.tone] : "bg-transparent"
           }`}
         />
         <div className="min-w-0 flex-1">
@@ -330,8 +299,8 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             >
               {item.typeLabel}
             </span>
-            {/* R9 — подсветка «спросил руководитель» на вопросах людей */}
-            {item.type === 'open_question' && item.askedByManager ? (
+            {}
+            {item.type === "open_question" && item.askedByManager ? (
               <span className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
                 Спросил руководитель
               </span>
@@ -347,7 +316,7 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             {item.title}
           </h3>
 
-          {/* Инсайт «оценка%→рекомендация→срок», если payload несёт */}
+          {}
           {item.insight ? (
             <p className="mt-1.5 text-xs text-fg-secondary">
               {item.insight.score !== undefined ? (
@@ -357,19 +326,22 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
               ) : null}
               {item.insight.recommendation ? (
                 <>
-                  {item.insight.score !== undefined ? ' → ' : ''}
+                  {item.insight.score !== undefined ? " → " : ""}
                   {item.insight.recommendation}
                 </>
               ) : null}
               {item.insight.due ? (
-                <span className="text-fg-tertiary"> · срок: {item.insight.due}</span>
+                <span className="text-fg-tertiary">
+                  {" "}
+                  · срок: {item.insight.due}
+                </span>
               ) : null}
             </p>
           ) : item.analysis ? (
             <p className="mt-1.5 text-xs text-fg-secondary">{item.analysis}</p>
           ) : null}
 
-          {/* Мета */}
+          {}
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-tertiary">
             <span>{formatRelative(item.createdAtDate)}</span>
             {item.meetingId ? (
@@ -379,7 +351,7 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
                   href={`/meetings/${item.meetingId}`}
                   className="text-chip-info-fg hover:underline"
                 >
-                  {item.cite ? `встреча ${item.cite}` : 'встреча'}
+                  {item.cite ? `встреча ${item.cite}` : "встреча"}
                 </Link>
               </>
             ) : item.cite ? (
@@ -394,8 +366,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
     </article>
   );
 }
-
-// ─── Секция «Контроль» (вопросы Коры) ────────────────────────────────────────
 
 function ControlSection({
   isLoading,
@@ -473,10 +443,10 @@ function ControlSection({
                     <span className="line-clamp-2">{q.question}</span>
                   </td>
                   <td className="py-2.5 pr-3 align-top text-fg-secondary">
-                    {q.recipientName ?? '—'}
+                    {q.recipientName ?? "—"}
                   </td>
                   <td className="whitespace-nowrap py-2.5 pr-3 align-top text-fg-secondary">
-                    {q.waitingDays > 0 ? `${q.waitingDays} дн` : 'сегодня'}
+                    {q.waitingDays > 0 ? `${q.waitingDays} дн` : "сегодня"}
                   </td>
                   <td className="whitespace-nowrap py-2.5 align-top">
                     <span

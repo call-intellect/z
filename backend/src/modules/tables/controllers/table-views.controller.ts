@@ -13,18 +13,10 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -40,20 +32,6 @@ import {
 } from '../dto/tables.dto';
 import { TableViewsService } from '../services/table-views.service';
 
-/**
- * Smart Tables — REST CRUD сохраняемых видов (`TableView`, Фаза 3).
- *
- *   GET    /api/v1/tables/:tableId/views           — список доступных видов
- *   POST   /api/v1/tables/:tableId/views           — создать вид
- *   GET    /api/v1/tables/:tableId/views/:viewId   — карточка вида
- *   PATCH  /api/v1/tables/:tableId/views/:viewId   — обновить
- *   DELETE /api/v1/tables/:tableId/views/:viewId   — удалить
- *
- * RBAC: ресурс `table`. Read — все member'ы Org (видят shared/public + свои
- * personal); write/delete — владелец или admin (см. policy.csv §Smart Tables).
- *
- * Multi-tenancy: `TenantGuard` обязателен.
- */
 @ApiTags('tables')
 @ApiBearerAuth()
 @Controller('api/v1/tables/:tableId/views')
@@ -93,9 +71,6 @@ export class TableViewsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<TableViewViewDto> {
     const t = this.requireTenant(tenantId);
-    // На write вид требуем canRead на table — любой member может создать
-    // свой personal-вид. Shared/public — тоже создаёт любой member, ограничения
-    // на «кто может опубликовать» оставим на Фазу 14 (public-share).
     await this.requireRead(user.id, t);
     const row = await this.views.create({
       tenantId: t,
@@ -164,8 +139,6 @@ export class TableViewsController {
       userId: user.id,
     });
   }
-
-  // ─────────────────────────── helpers ────────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import useSWR from "swr";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -13,14 +13,14 @@ import {
   Plus,
   Sparkles,
   Target,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
+} from "lucide-react";
+import { toast } from "sonner";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { goalsApi } from '@/api/goals.api';
-import { usePersons } from '@/hooks/usePersons';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { goalsApi } from "@/api/goals.api";
+import { usePersons } from "@/hooks/usePersons";
+import { useAuth } from "@/contexts/auth-context";
 import {
   CONFIDENCE_LEVEL_LABELS,
   GOAL_STATUS_LABELS,
@@ -42,61 +42,60 @@ import {
   type ConfidenceLevel,
   type GoalDomain,
   type GoalStatus,
-} from '@/domain/goal';
-import { GoalsTreeView } from './GoalsTreeView';
-import { GlassCard, MODERN_PAGE_BG } from '@/ui/components/dashboard/modern';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/goal";
+import { GoalsTreeView } from "./GoalsTreeView";
+import { GlassCard, MODERN_PAGE_BG } from "@/ui/components/dashboard/modern";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Tabs, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-type StatusFilter = GoalStatus | 'all';
-type ViewMode = 'list' | 'tree';
+type StatusFilter = GoalStatus | "all";
+type ViewMode = "list" | "tree";
 
 const STATUS_TABS: Array<{ value: StatusFilter; label: string }> = [
-  { value: 'all', label: 'Все' },
-  { value: 'active', label: 'Активные' },
-  { value: 'paused', label: 'На паузе' },
-  { value: 'achieved', label: 'Достигнутые' },
-  { value: 'abandoned', label: 'Архив' },
+  { value: "all", label: "Все" },
+  { value: "active", label: "Активные" },
+  { value: "paused", label: "На паузе" },
+  { value: "achieved", label: "Достигнутые" },
+  { value: "abandoned", label: "Архив" },
 ];
 
 export function GoalsClient() {
   const { currentOrgId, currentOrgRole } = useAuth();
-  const isOwner = currentOrgRole === 'owner';
+  const isOwner = currentOrgRole === "owner";
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
-  const [viewMode, setViewMode] = useState<ViewMode>('list');
-  const [searchInput, setSearchInput] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<GoalDomain | null>(null);
 
-  // Debounce поиска по имени.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
   const swrKey = currentOrgId
-    ? (['goals', currentOrgId, statusFilter] as const)
+    ? (["goals", currentOrgId, statusFilter] as const)
     : null;
 
   const { data, isLoading, error, mutate } = useSWR(
@@ -118,14 +117,11 @@ export function GoalsClient() {
     return goals.filter((g) => g.name.toLowerCase().includes(needle));
   }, [goals, debouncedSearch]);
 
-  // Дерево строим из всех загруженных целей (по текущему статус-фильтру),
-  // игнорируя поиск по названию — иначе фильтр обрезал бы родителей и ломал
-  // иерархию (сирота → корень в buildTree).
   const tree = useMemo(() => buildTree(goals), [goals]);
 
   if (!currentOrgId) {
     return (
-      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
         <div className="mx-auto w-full max-w-6xl px-6 py-8">
           <p className="text-sm text-fg-tertiary">
             Не определена организация. Перейдите на главную.
@@ -136,165 +132,157 @@ export function GoalsClient() {
   }
 
   return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex-1 min-w-[240px]">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-fg-primary">
-            <Target size={22} className="text-accent" />
-            Цели компании
-          </h1>
-          <p className="mt-1 text-sm text-fg-tertiary">
-            Кора оценивает движение компании к каждой цели по связанным темам и
-            свежим сигналам. Раз в сутки — суточный пересчёт.
-          </p>
-        </div>
-        {isOwner && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus size={16} /> Создать цель
-          </Button>
-        )}
-      </header>
+    <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+          <div className="flex-1 min-w-[240px]">
+            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight text-fg-primary">
+              <Target size={22} className="text-accent" />
+              Цели компании
+            </h1>
+            <p className="mt-1 text-sm text-fg-tertiary">
+              Кора оценивает движение компании к каждой цели по связанным темам
+              и свежим сигналам. Раз в сутки — суточный пересчёт.
+            </p>
+          </div>
+          {isOwner && (
+            <Button onClick={() => setCreateOpen(true)} className="gap-2">
+              <Plus size={16} /> Создать цель
+            </Button>
+          )}
+        </header>
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Tabs
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-        >
-          <TabsList>
-            {STATUS_TABS.map((t) => (
-              <TabsTrigger key={t.value} value={t.value}>
-                {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        {viewMode === 'list' && (
-          <Input
-            placeholder="Поиск по названию"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="max-w-xs"
-          />
-        )}
-        <div className="ml-auto inline-flex items-center rounded-md border border-border-subtle bg-bg-card p-0.5 text-sm">
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors',
-              viewMode === 'list'
-                ? 'bg-accent text-accent-fg'
-                : 'text-fg-secondary hover:text-fg-primary',
-            )}
-            aria-pressed={viewMode === 'list'}
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <Tabs
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
           >
-            <List size={14} />
-            Список
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('tree')}
-            className={cn(
-              'inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors',
-              viewMode === 'tree'
-                ? 'bg-accent text-accent-fg'
-                : 'text-fg-secondary hover:text-fg-primary',
-            )}
-            aria-pressed={viewMode === 'tree'}
-          >
-            <Network size={14} />
-            Дерево
-          </button>
+            <TabsList>
+              {STATUS_TABS.map((t) => (
+                <TabsTrigger key={t.value} value={t.value}>
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          {viewMode === "list" && (
+            <Input
+              placeholder="Поиск по названию"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="max-w-xs"
+            />
+          )}
+          <div className="ml-auto inline-flex items-center rounded-md border border-border-subtle bg-bg-card p-0.5 text-sm">
+            <button
+              type="button"
+              onClick={() => setViewMode("list")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
+                viewMode === "list"
+                  ? "bg-accent text-accent-fg"
+                  : "text-fg-secondary hover:text-fg-primary",
+              )}
+              aria-pressed={viewMode === "list"}
+            >
+              <List size={14} />
+              Список
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("tree")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-sm px-3 py-1 transition-colors",
+                viewMode === "tree"
+                  ? "bg-accent text-accent-fg"
+                  : "text-fg-secondary hover:text-fg-primary",
+              )}
+              aria-pressed={viewMode === "tree"}
+            >
+              <Network size={14} />
+              Дерево
+            </button>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-          {humanizeApiError(error, 'Не удалось загрузить цели')}
-        </div>
-      )}
+        {error && (
+          <div className="mb-4 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+            {humanizeApiError(error, "Не удалось загрузить цели")}
+          </div>
+        )}
 
-      {isLoading ? (
-        <div className="flex items-center gap-2 text-sm text-fg-tertiary">
-          <Loader2 size={14} className="animate-spin" /> Загрузка…
-        </div>
-      ) : viewMode === 'tree' ? (
-        goals.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-fg-tertiary">
+            <Loader2 size={14} className="animate-spin" /> Загрузка…
+          </div>
+        ) : viewMode === "tree" ? (
+          goals.length === 0 ? (
+            <EmptyState isOwner={isOwner} />
+          ) : (
+            <GoalsTreeView nodes={tree} />
+          )
+        ) : filteredGoals.length === 0 ? (
           <EmptyState isOwner={isOwner} />
         ) : (
-          <GoalsTreeView nodes={tree} />
-        )
-      ) : filteredGoals.length === 0 ? (
-        <EmptyState isOwner={isOwner} />
-      ) : (
-        <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {filteredGoals.map((g) => (
-            <GoalCard
-              key={g.id}
-              goal={g}
-              canEdit={isOwner}
-              onEdit={() => setEditingGoal(g)}
-            />
-          ))}
-        </ul>
-      )}
+          <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {filteredGoals.map((g) => (
+              <GoalCard
+                key={g.id}
+                goal={g}
+                canEdit={isOwner}
+                onEdit={() => setEditingGoal(g)}
+              />
+            ))}
+          </ul>
+        )}
 
-      {isOwner && (
-        <CreateGoalDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          orgId={currentOrgId}
-          onCreated={() => {
-            void mutate();
-          }}
-        />
-      )}
+        {isOwner && (
+          <CreateGoalDialog
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            orgId={currentOrgId}
+            onCreated={() => {
+              void mutate();
+            }}
+          />
+        )}
 
-      {isOwner && editingGoal && (
-        <EditGoalDialog
-          open={editingGoal !== null}
-          onOpenChange={(v) => {
-            if (!v) setEditingGoal(null);
-          }}
-          orgId={currentOrgId}
-          goal={editingGoal}
-          onUpdated={() => {
-            setEditingGoal(null);
-            void mutate();
-          }}
-          onArchived={() => {
-            setEditingGoal(null);
-            void mutate();
-          }}
-        />
-      )}
-    </div>
+        {isOwner && editingGoal && (
+          <EditGoalDialog
+            open={editingGoal !== null}
+            onOpenChange={(v) => {
+              if (!v) setEditingGoal(null);
+            }}
+            orgId={currentOrgId}
+            goal={editingGoal}
+            onUpdated={() => {
+              setEditingGoal(null);
+              void mutate();
+            }}
+            onArchived={() => {
+              setEditingGoal(null);
+              void mutate();
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
-
-// ─── Empty state ────────────────────────────────────────────────────────────
 
 function EmptyState({ isOwner }: { isOwner: boolean }) {
   return (
     <GlassCard className="flex flex-col items-center px-6 py-16 text-center">
-      <Target
-        size={42}
-        strokeWidth={1.5}
-        className="mb-3 text-fg-tertiary"
-      />
+      <Target size={42} strokeWidth={1.5} className="mb-3 text-fg-tertiary" />
       <h3 className="mb-2 text-lg font-medium">Нет целей по этому фильтру</h3>
       <p className="max-w-md text-sm text-fg-tertiary">
         {isOwner
-          ? 'Цели компании не заданы. Owner может создать первую цель — это включит еженедельный мониторинг движения компании к стратегии.'
-          : 'Цели компании не заданы. Только владелец организации может создавать цели.'}
+          ? "Цели компании не заданы. Owner может создать первую цель — это включит еженедельный мониторинг движения компании к стратегии."
+          : "Цели компании не заданы. Только владелец организации может создавать цели."}
       </p>
     </GlassCard>
   );
 }
-
-// ─── Goal card ──────────────────────────────────────────────────────────────
 
 function GoalCard({
   goal,
@@ -325,141 +313,146 @@ function GoalCard({
   return (
     <li className="contents">
       <GlassCard className="flex h-full flex-col gap-3 p-4 transition-colors hover:border-accent/60">
-      <div className="flex items-start justify-between gap-2">
-        <Link
-          href={`/goals/${encodeURIComponent(goal.id)}`}
-          className="flex-1 min-w-0"
-        >
-          <h3 className="truncate text-base font-medium text-fg-primary">
-            {goal.name}
-          </h3>
-        </Link>
-        <Badge variant={statusBadgeVariant(goal.status)} className="shrink-0">
-          {GOAL_STATUS_LABELS[goal.status]}
-        </Badge>
-      </div>
-
-      {(goal.source === 'ai' || goal.promotionState === 'suggested') && (
-        <SuggestedByKoraBadge />
-      )}
-
-      {goal.description && (
-        <p className="line-clamp-3 text-sm text-fg-secondary">
-          {goal.description.length > 200
-            ? `${goal.description.slice(0, 200)}…`
-            : goal.description}
-        </p>
-      )}
-
-      <div>
-        <span
-          className={cn(
-            'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-            verdictChip.bg,
-            verdictChip.fg,
-          )}
-        >
-          {verdict.label}
-        </span>
-      </div>
-
-      {/* Alignment progress */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-fg-tertiary">Согласованность</span>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                'tabular-nums font-semibold',
-                alignmentTextColor(alignmentClamped),
-              )}
-            >
-              {formatAlignment(alignmentClamped)}
-            </span>
-            {tone && deltaText && (
-              <span
-                className={cn(
-                  'inline-flex items-center gap-0.5 text-[11px] tabular-nums',
-                  tone === 'up' && 'text-success',
-                  tone === 'down' && 'text-danger',
-                  tone === 'flat' && 'text-fg-tertiary',
-                )}
-              >
-                {tone === 'up' && <ArrowUpRight size={10} />}
-                {tone === 'down' && <ArrowDownRight size={10} />}
-                {tone === 'flat' && <Minus size={10} />}
-                {deltaText}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="h-2 w-full overflow-hidden rounded-full bg-bg-overlay">
-          {alignmentClamped !== null ? (
-            <div
-              className={cn('h-full rounded-full', alignmentBarColor(alignmentClamped))}
-              style={{ width: `${alignmentClamped}%` }}
-            />
-          ) : null}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-fg-tertiary">Достоверность:</span>
-          <span
-            className={cn(
-              'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-              confChip.bg,
-              confChip.fg,
-            )}
+        <div className="flex items-start justify-between gap-2">
+          <Link
+            href={`/goals/${encodeURIComponent(goal.id)}`}
+            className="flex-1 min-w-0"
           >
-            {CONFIDENCE_LEVEL_LABELS[confLevel]}
-          </span>
+            <h3 className="truncate text-base font-medium text-fg-primary">
+              {goal.name}
+            </h3>
+          </Link>
+          <Badge variant={statusBadgeVariant(goal.status)} className="shrink-0">
+            {GOAL_STATUS_LABELS[goal.status]}
+          </Badge>
         </div>
-        {alignmentClamped === null && (
-          <p className="text-[11px] text-fg-tertiary">
-            Пока не рассчитано. Кора обновляет оценку каждую ночь, либо
-            нажмите «Пересчитать» внутри цели.
+
+        {(goal.source === "ai" || goal.promotionState === "suggested") && (
+          <SuggestedByKoraBadge />
+        )}
+
+        {goal.description && (
+          <p className="line-clamp-3 text-sm text-fg-secondary">
+            {goal.description.length > 200
+              ? `${goal.description.slice(0, 200)}…`
+              : goal.description}
           </p>
         )}
-      </div>
 
-      {goal.ownerPersonName && (
-        <div className="flex items-center gap-1 text-xs text-fg-tertiary">
-          <span className="text-fg-tertiary">Ответственный:</span>
-          <span className="font-medium text-fg-secondary">{goal.ownerPersonName}</span>
-        </div>
-      )}
-
-      <div className="mt-auto flex items-center justify-between text-xs text-fg-tertiary">
-        <span>
-          {goal.themesCount} {pluralizeRu(goal.themesCount, ['тема', 'темы', 'тем'])}
-        </span>
-        {targetLabel && (
-          <span className={cn(overdueTarget && 'text-danger font-medium')}>
-            {targetLabel}
+        <div>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+              verdictChip.bg,
+              verdictChip.fg,
+            )}
+          >
+            {verdict.label}
           </span>
-        )}
-      </div>
+        </div>
 
-      <div className="flex items-center gap-2">
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="flex-1 justify-center"
-        >
-          <Link href={`/goals/${encodeURIComponent(goal.id)}`}>Открыть</Link>
-        </Button>
-        {canEdit && (
-          <Button variant="outline" size="sm" onClick={onEdit}>
-            Редактировать
-          </Button>
+        {}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-fg-tertiary">Согласованность</span>
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "tabular-nums font-semibold",
+                  alignmentTextColor(alignmentClamped),
+                )}
+              >
+                {formatAlignment(alignmentClamped)}
+              </span>
+              {tone && deltaText && (
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-0.5 text-[11px] tabular-nums",
+                    tone === "up" && "text-success",
+                    tone === "down" && "text-danger",
+                    tone === "flat" && "text-fg-tertiary",
+                  )}
+                >
+                  {tone === "up" && <ArrowUpRight size={10} />}
+                  {tone === "down" && <ArrowDownRight size={10} />}
+                  {tone === "flat" && <Minus size={10} />}
+                  {deltaText}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-bg-overlay">
+            {alignmentClamped !== null ? (
+              <div
+                className={cn(
+                  "h-full rounded-full",
+                  alignmentBarColor(alignmentClamped),
+                )}
+                style={{ width: `${alignmentClamped}%` }}
+              />
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-fg-tertiary">Достоверность:</span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
+                confChip.bg,
+                confChip.fg,
+              )}
+            >
+              {CONFIDENCE_LEVEL_LABELS[confLevel]}
+            </span>
+          </div>
+          {alignmentClamped === null && (
+            <p className="text-[11px] text-fg-tertiary">
+              Пока не рассчитано. Кора обновляет оценку каждую ночь, либо
+              нажмите «Пересчитать» внутри цели.
+            </p>
+          )}
+        </div>
+
+        {goal.ownerPersonName && (
+          <div className="flex items-center gap-1 text-xs text-fg-tertiary">
+            <span className="text-fg-tertiary">Ответственный:</span>
+            <span className="font-medium text-fg-secondary">
+              {goal.ownerPersonName}
+            </span>
+          </div>
         )}
-      </div>
+
+        <div className="mt-auto flex items-center justify-between text-xs text-fg-tertiary">
+          <span>
+            {goal.themesCount}{" "}
+            {pluralizeRu(goal.themesCount, ["тема", "темы", "тем"])}
+          </span>
+          {targetLabel && (
+            <span className={cn(overdueTarget && "text-danger font-medium")}>
+              {targetLabel}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            className="flex-1 justify-center"
+          >
+            <Link href={`/goals/${encodeURIComponent(goal.id)}`}>Открыть</Link>
+          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={onEdit}>
+              Редактировать
+            </Button>
+          )}
+        </div>
       </GlassCard>
     </li>
   );
 }
 
-/** Маркер AI-кандидата цели. Парные токены chip-info (bg + fg). */
 function SuggestedByKoraBadge() {
   return (
     <span className="inline-flex w-fit items-center gap-1 rounded-full bg-chip-info-bg px-2 py-0.5 text-[11px] font-medium text-chip-info-fg">
@@ -477,8 +470,6 @@ function pluralizeRu(n: number, forms: [string, string, string]): string {
   return forms[2];
 }
 
-// ─── Create goal dialog ─────────────────────────────────────────────────────
-
 function CreateGoalDialog({
   open,
   onOpenChange,
@@ -490,20 +481,20 @@ function CreateGoalDialog({
   orgId: string;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [targetDate, setTargetDate] = useState('');
-  const [weight, setWeight] = useState('1');
-  const [ownerPersonId, setOwnerPersonId] = useState('__none__');
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [targetDate, setTargetDate] = useState("");
+  const [weight, setWeight] = useState("1");
+  const [ownerPersonId, setOwnerPersonId] = useState("__none__");
   const [submitting, setSubmitting] = useState(false);
   const { persons } = usePersons(orgId);
 
   function reset() {
-    setName('');
-    setDescription('');
-    setTargetDate('');
-    setWeight('1');
-    setOwnerPersonId('__none__');
+    setName("");
+    setDescription("");
+    setTargetDate("");
+    setWeight("1");
+    setOwnerPersonId("__none__");
   }
 
   function handleOpenChange(v: boolean) {
@@ -515,12 +506,12 @@ function CreateGoalDialog({
     e.preventDefault();
     if (submitting) return;
     if (!name.trim() || !description.trim()) {
-      toast.error('Укажите название и описание');
+      toast.error("Укажите название и описание");
       return;
     }
     const w = Number(weight);
     if (Number.isNaN(w) || w < 0.001 || w > 1) {
-      toast.error('Вес должен быть в диапазоне 0.001..1.0');
+      toast.error("Вес должен быть в диапазоне 0.001..1.0");
       return;
     }
     setSubmitting(true);
@@ -533,13 +524,13 @@ function CreateGoalDialog({
         description: description.trim(),
         ...(targetIso ? { targetDate: targetIso } : {}),
         weight: w,
-        ...(ownerPersonId !== '__none__' ? { ownerPersonId } : {}),
+        ...(ownerPersonId !== "__none__" ? { ownerPersonId } : {}),
       });
-      toast.success('Цель создана');
+      toast.success("Цель создана");
       onOpenChange(false);
       onCreated();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось создать цель');
+      const msg = humanizeApiError(err, "Не удалось создать цель");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -612,7 +603,7 @@ function CreateGoalDialog({
                 <SelectItem value="__none__">Не назначен</SelectItem>
                 {persons.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.fullName || 'Без имени'}
+                    {p.fullName || "Без имени"}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -628,7 +619,7 @@ function CreateGoalDialog({
               Отмена
             </Button>
             <Button type="submit" disabled={submitting}>
-              {submitting ? 'Сохраняем…' : 'Создать'}
+              {submitting ? "Сохраняем…" : "Создать"}
             </Button>
           </DialogFooter>
         </form>
@@ -636,8 +627,6 @@ function CreateGoalDialog({
     </Dialog>
   );
 }
-
-// ─── Edit goal dialog ───────────────────────────────────────────────────────
 
 function EditGoalDialog({
   open,
@@ -657,29 +646,28 @@ function EditGoalDialog({
   const [name, setName] = useState(goal.name);
   const [description, setDescription] = useState(goal.description);
   const [targetDate, setTargetDate] = useState(
-    goal.targetDate ? formatDateInput(goal.targetDate) : '',
+    goal.targetDate ? formatDateInput(goal.targetDate) : "",
   );
   const [status, setStatus] = useState<GoalStatus>(goal.status);
   const [weight, setWeight] = useState(String(goal.weight));
   const [ownerPersonId, setOwnerPersonId] = useState(
-    goal.ownerPersonId ?? '__none__',
+    goal.ownerPersonId ?? "__none__",
   );
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
   const { persons } = usePersons(orgId);
 
-  // Сброс на текущие значения при открытии.
   const lastGoalIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (open && lastGoalIdRef.current !== goal.id) {
       lastGoalIdRef.current = goal.id;
       setName(goal.name);
       setDescription(goal.description);
-      setTargetDate(goal.targetDate ? formatDateInput(goal.targetDate) : '');
+      setTargetDate(goal.targetDate ? formatDateInput(goal.targetDate) : "");
       setStatus(goal.status);
       setWeight(String(goal.weight));
-      setOwnerPersonId(goal.ownerPersonId ?? '__none__');
+      setOwnerPersonId(goal.ownerPersonId ?? "__none__");
     }
   }, [open, goal]);
 
@@ -687,12 +675,12 @@ function EditGoalDialog({
     e.preventDefault();
     if (submitting) return;
     if (!name.trim() || !description.trim()) {
-      toast.error('Название и описание обязательны');
+      toast.error("Название и описание обязательны");
       return;
     }
     const w = Number(weight);
     if (Number.isNaN(w) || w < 0.001 || w > 1) {
-      toast.error('Вес должен быть 0.001..1.0');
+      toast.error("Вес должен быть 0.001..1.0");
       return;
     }
     setSubmitting(true);
@@ -706,12 +694,12 @@ function EditGoalDialog({
         targetDate: targetIso,
         weight: w,
         status,
-        ownerPersonId: ownerPersonId === '__none__' ? null : ownerPersonId,
+        ownerPersonId: ownerPersonId === "__none__" ? null : ownerPersonId,
       });
-      toast.success('Цель обновлена');
+      toast.success("Цель обновлена");
       onUpdated();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось обновить');
+      const msg = humanizeApiError(err, "Не удалось обновить");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -721,19 +709,19 @@ function EditGoalDialog({
   async function handleArchive() {
     if (archiving) return;
     const ok = await ask({
-      title: 'Архивировать цель?',
-      description: 'Она будет помечена как abandoned.',
-      confirmLabel: 'Архивировать',
+      title: "Архивировать цель?",
+      description: "Она будет помечена как abandoned.",
+      confirmLabel: "Архивировать",
       destructive: true,
     });
     if (!ok) return;
     setArchiving(true);
     try {
       await goalsApi.archive(orgId, goal.id);
-      toast.success('Цель архивирована');
+      toast.success("Цель архивирована");
       onArchived();
     } catch (err) {
-      const msg = humanizeApiError(err, 'Не удалось архивировать');
+      const msg = humanizeApiError(err, "Не удалось архивировать");
       toast.error(msg);
     } finally {
       setArchiving(false);
@@ -822,7 +810,7 @@ function EditGoalDialog({
                 <SelectItem value="__none__">Не назначен</SelectItem>
                 {persons.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.fullName || 'Без имени'}
+                    {p.fullName || "Без имени"}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -836,7 +824,7 @@ function EditGoalDialog({
               disabled={archiving || submitting}
               onClick={() => void handleArchive()}
             >
-              {archiving ? 'Архивируем…' : 'Архивировать'}
+              {archiving ? "Архивируем…" : "Архивировать"}
             </Button>
             <div className="flex items-center gap-2">
               <Button
@@ -848,7 +836,7 @@ function EditGoalDialog({
                 Отмена
               </Button>
               <Button type="submit" disabled={submitting || archiving}>
-                {submitting ? 'Сохраняем…' : 'Сохранить'}
+                {submitting ? "Сохраняем…" : "Сохранить"}
               </Button>
             </div>
           </DialogFooter>
@@ -861,10 +849,9 @@ function EditGoalDialog({
 
 function formatDateInput(d: Date): string {
   const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
-// Экспорт служебных компонентов для overlay-страниц.
 export { EditGoalDialog };

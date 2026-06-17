@@ -7,20 +7,14 @@ import {
   type CommitmentForCascade,
 } from './promise-cascade.scoring';
 
-/**
- * TZ-1 Фаза 3.C (daily-value-engine) — unit-тесты чистой детекции каскада
- * обещаний. Без БД/времени/сети.
- */
 const NOW = new Date('2026-06-08T10:00:00.000Z');
 
-function commitment(
-  over: Partial<CommitmentForCascade> = {},
-): CommitmentForCascade {
+function commitment(over: Partial<CommitmentForCascade> = {}): CommitmentForCascade {
   return {
     id: 'c1',
     authorPersonId: 'pAuthor',
     recipientPersonId: 'pRecipient',
-    dueDate: new Date('2026-06-01T00:00:00.000Z'), // просрочено
+    dueDate: new Date('2026-06-01T00:00:00.000Z'),
     status: 'open',
     hasOutgoingDependency: true,
     ...over,
@@ -31,18 +25,12 @@ describe('promise-cascade.scoring', () => {
   describe('isCommitmentOverdue', () => {
     it('dueDate в прошлом + статус open → overdue', () => {
       expect(
-        isCommitmentOverdue(
-          { dueDate: new Date('2026-06-01T00:00:00Z'), status: 'open' },
-          NOW,
-        ),
+        isCommitmentOverdue({ dueDate: new Date('2026-06-01T00:00:00Z'), status: 'open' }, NOW),
       ).toBe(true);
     });
     it('dueDate в будущем → не overdue', () => {
       expect(
-        isCommitmentOverdue(
-          { dueDate: new Date('2026-06-20T00:00:00Z'), status: 'open' },
-          NOW,
-        ),
+        isCommitmentOverdue({ dueDate: new Date('2026-06-20T00:00:00Z'), status: 'open' }, NOW),
       ).toBe(false);
     });
     it('fulfilled → не overdue (закрыто)', () => {
@@ -54,16 +42,11 @@ describe('promise-cascade.scoring', () => {
       ).toBe(false);
     });
     it('нет dueDate → не overdue', () => {
-      expect(isCommitmentOverdue({ dueDate: null, status: 'open' }, NOW)).toBe(
-        false,
-      );
+      expect(isCommitmentOverdue({ dueDate: null, status: 'open' }, NOW)).toBe(false);
     });
     it('asked тоже считается висящим', () => {
       expect(
-        isCommitmentOverdue(
-          { dueDate: new Date('2026-06-01T00:00:00Z'), status: 'asked' },
-          NOW,
-        ),
+        isCommitmentOverdue({ dueDate: new Date('2026-06-01T00:00:00Z'), status: 'asked' }, NOW),
       ).toBe(true);
     });
   });
@@ -73,21 +56,14 @@ describe('promise-cascade.scoring', () => {
       expect(isCascadeCritical(commitment(), NOW)).toBe(true);
     });
     it('нет автора → не каскад (нет адресности)', () => {
-      expect(isCascadeCritical(commitment({ authorPersonId: null }), NOW)).toBe(
-        false,
-      );
+      expect(isCascadeCritical(commitment({ authorPersonId: null }), NOW)).toBe(false);
     });
     it('нет исходящей зависимости → не каскад', () => {
-      expect(
-        isCascadeCritical(commitment({ hasOutgoingDependency: false }), NOW),
-      ).toBe(false);
+      expect(isCascadeCritical(commitment({ hasOutgoingDependency: false }), NOW)).toBe(false);
     });
     it('не просрочено → не каскад', () => {
       expect(
-        isCascadeCritical(
-          commitment({ dueDate: new Date('2026-06-20T00:00:00Z') }),
-          NOW,
-        ),
+        isCascadeCritical(commitment({ dueDate: new Date('2026-06-20T00:00:00Z') }), NOW),
       ).toBe(false);
     });
   });

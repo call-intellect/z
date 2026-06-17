@@ -8,19 +8,6 @@ import { ChecklistsService } from './checklists.service';
 import type { IssuesService } from './issues.service';
 import type { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Unit-тесты ChecklistsService (2026-05-27).
- *
- * Покрытие:
- *  1. createChecklist — вызывает Prisma.create + metrics + WS, sequence = max+1.
- *  2. createItem — recountCounters обновляет totalCount, эмитит progress_changed.
- *  3. updateItem isDone=true — увеличивает doneCount и счётчик метрик.
- *  4. updateItem isDone=true когда все пункты выполнены — пишет
- *     IssueActivity verb='checklist_completed'.
- *  5. bulkCreateItems — создаёт N пунктов, инкремент via_bulk=true.
- *  6. deleteItem — recountCounters пересчитывает total/done.
- */
-
 interface FakeItem {
   id: string;
   tenantId: string;
@@ -128,9 +115,7 @@ function makeService(store: Store): {
           }));
       }),
       aggregate: vi.fn(async () => {
-        const arr = Array.from(store.checklists.values()).filter(
-          (c) => !c.deletedAt,
-        );
+        const arr = Array.from(store.checklists.values()).filter((c) => !c.deletedAt);
         if (arr.length === 0) return { _max: { sequence: null } };
         return {
           _max: {
@@ -192,8 +177,6 @@ function makeService(store: Store): {
         }) => {
           const item = where.id ? store.items.get(where.id) : null;
           if (!item) return null;
-          // Б11 (audit-fixes): requireItem теперь требует
-          // `checklist: { deletedAt: null }`. Симулируем join.
           if (where.checklist?.deletedAt === null) {
             const cl = store.checklists.get(item.checklistId);
             if (!cl || cl.deletedAt) return null;
@@ -201,21 +184,11 @@ function makeService(store: Store): {
           return item;
         },
       ),
-      findMany: vi.fn(
-        async ({
-          where,
-        }: {
-          where: { checklistId: string; tenantId: string };
-        }) => {
-          return Array.from(store.items.values())
-            .filter(
-              (it) =>
-                it.checklistId === where.checklistId &&
-                it.tenantId === where.tenantId,
-            )
-            .sort((a, b) => a.sequence - b.sequence);
-        },
-      ),
+      findMany: vi.fn(async ({ where }: { where: { checklistId: string; tenantId: string } }) => {
+        return Array.from(store.items.values())
+          .filter((it) => it.checklistId === where.checklistId && it.tenantId === where.tenantId)
+          .sort((a, b) => a.sequence - b.sequence);
+      }),
       aggregate: vi.fn(async ({ where }: { where: { checklistId: string } }) => {
         const arr = Array.from(store.items.values()).filter(
           (it) => it.checklistId === where.checklistId,
@@ -254,25 +227,17 @@ function makeService(store: Store): {
         store.items.set(id, created);
         return created;
       }),
-      update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Partial<FakeItem>;
-        }) => {
-          const existing = store.items.get(where.id);
-          if (!existing) throw new Error('not found');
-          const next: FakeItem = {
-            ...existing,
-            ...data,
-            updatedAt: new Date(),
-          };
-          store.items.set(where.id, next);
-          return next;
-        },
-      ),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: Partial<FakeItem> }) => {
+        const existing = store.items.get(where.id);
+        if (!existing) throw new Error('not found');
+        const next: FakeItem = {
+          ...existing,
+          ...data,
+          updatedAt: new Date(),
+        };
+        store.items.set(where.id, next);
+        return next;
+      }),
       delete: vi.fn(async ({ where }: { where: { id: string } }) => {
         const existing = store.items.get(where.id);
         store.items.delete(where.id);
@@ -305,7 +270,6 @@ function makeService(store: Store): {
     },
     $transaction: vi.fn(async (arg: unknown) => {
       if (Array.isArray(arg)) {
-        // массив операций — последовательно
         const results: unknown[] = [];
         for (const op of arg) {
           results.push(await op);
@@ -317,7 +281,6 @@ function makeService(store: Store): {
       }
       return undefined;
     }),
-    // audit С16: recountCounters берёт advisory_xact_lock — mock'аем no-op.
     $executeRawUnsafe: vi.fn(async () => 0),
   } as unknown as PrismaService;
 
@@ -330,16 +293,14 @@ function makeService(store: Store): {
   } as unknown as IssuesService;
 
   const activity = {
-    record: vi.fn(
-      async (args: { issueId: string; verb: string; metadata: unknown }) => {
-        store.activities.push({
-          verb: args.verb,
-          issueId: args.issueId,
-          metadata: args.metadata,
-        });
-        return 'activity-id';
-      },
-    ),
+    record: vi.fn(async (args: { issueId: string; verb: string; metadata: unknown }) => {
+      store.activities.push({
+        verb: args.verb,
+        issueId: args.issueId,
+        metadata: args.metadata,
+      });
+      return 'activity-id';
+    }),
   } as unknown as ActivityRecorderService;
 
   const events = {
@@ -385,8 +346,7 @@ function makeService(store: Store): {
       publishChecklistItemCreated: events.publishChecklistItemCreated,
       publishChecklistItemUpdated: events.publishChecklistItemUpdated,
       publishChecklistItemDeleted: events.publishChecklistItemDeleted,
-      publishIssueChecklistProgressChanged:
-        events.publishIssueChecklistProgressChanged,
+      publishIssueChecklistProgressChanged: events.publishIssueChecklistProgressChanged,
     },
   };
 }
@@ -400,13 +360,9 @@ describe('ChecklistsService', () => {
 
   it('createChecklist: sequence=max+1, инкремент метрики, WS-event', async () => {
     const { svc, metrics, events } = makeService(store);
-    const result = await svc.createChecklist(
-      'issue-1',
-      { title: 'Подготовка' },
-      'tenant-1',
-    );
+    const result = await svc.createChecklist('issue-1', { title: 'Подготовка' }, 'tenant-1');
     expect(result.title).toBe('Подготовка');
-    expect(result.sequence).toBe(1); // в store уже есть checklist-1 с sequence=0
+    expect(result.sequence).toBe(1);
     expect(metrics.incChecklistCreated).toHaveBeenCalledWith({
       tenant: 'tenant-1',
       project: 'project-1',
@@ -416,11 +372,7 @@ describe('ChecklistsService', () => {
 
   it('createItem: recountCounters → totalCount=1, событие progress_changed', async () => {
     const { svc, metrics, events } = makeService(store);
-    const item = await svc.createItem(
-      'checklist-1',
-      { text: 'Позвонить клиенту' },
-      'tenant-1',
-    );
+    const item = await svc.createItem('checklist-1', { text: 'Позвонить клиенту' }, 'tenant-1');
     expect(item.text).toBe('Позвонить клиенту');
     expect(item.isDone).toBe(false);
 
@@ -434,9 +386,7 @@ describe('ChecklistsService', () => {
       viaBulk: false,
     });
     expect(events.publishChecklistItemCreated).toHaveBeenCalledTimes(1);
-    expect(
-      events.publishIssueChecklistProgressChanged,
-    ).toHaveBeenCalledWith({
+    expect(events.publishIssueChecklistProgressChanged).toHaveBeenCalledWith({
       tenantId: 'tenant-1',
       projectId: 'project-1',
       issueId: 'issue-1',
@@ -447,11 +397,7 @@ describe('ChecklistsService', () => {
 
   it('updateItem isDone=true: doneCount++, метрика completed, прогресс эмитится', async () => {
     const { svc, metrics } = makeService(store);
-    const item = await svc.createItem(
-      'checklist-1',
-      { text: 'Пункт' },
-      'tenant-1',
-    );
+    const item = await svc.createItem('checklist-1', { text: 'Пункт' }, 'tenant-1');
     metrics.incChecklistItemCompleted.mockClear();
 
     await svc.updateItem(item.id, { isDone: true }, 'tenant-1', 'user-1');
@@ -466,33 +412,17 @@ describe('ChecklistsService', () => {
 
   it('updateItem: при завершении ВСЕХ пунктов → IssueActivity checklist_completed', async () => {
     const { svc } = makeService(store);
-    const a = await svc.createItem(
-      'checklist-1',
-      { text: 'A' },
-      'tenant-1',
-    );
-    const b = await svc.createItem(
-      'checklist-1',
-      { text: 'B' },
-      'tenant-1',
-    );
+    const a = await svc.createItem('checklist-1', { text: 'A' }, 'tenant-1');
+    const b = await svc.createItem('checklist-1', { text: 'B' }, 'tenant-1');
 
-    // Завершаем A — total=2, done=1 → НЕ checklist_completed.
     await svc.updateItem(a.id, { isDone: true }, 'tenant-1', 'user-1');
-    expect(
-      store.activities.filter((a) => a.verb === 'checklist_completed'),
-    ).toHaveLength(0);
+    expect(store.activities.filter((a) => a.verb === 'checklist_completed')).toHaveLength(0);
 
-    // Завершаем B — total=2, done=2 → checklist_completed.
     await svc.updateItem(b.id, { isDone: true }, 'tenant-1', 'user-1');
-    const completed = store.activities.filter(
-      (act) => act.verb === 'checklist_completed',
-    );
+    const completed = store.activities.filter((act) => act.verb === 'checklist_completed');
     expect(completed).toHaveLength(1);
     expect(completed[0]?.issueId).toBe('issue-1');
-    expect((completed[0]?.metadata as { totalItems: number }).totalItems).toBe(
-      2,
-    );
+    expect((completed[0]?.metadata as { totalItems: number }).totalItems).toBe(2);
   });
 
   it('bulkCreateItems: 3 строки → 3 пункта, via_bulk=true, прогресс пересчитан', async () => {
@@ -515,21 +445,14 @@ describe('ChecklistsService', () => {
     expect(issue?.checklistDoneCount).toBe(0);
 
     expect(metrics.incChecklistItemAdded).toHaveBeenCalledTimes(3);
-    for (const call of metrics.incChecklistItemAdded.mock.calls as Array<
-      [{ viaBulk: boolean }]
-    >) {
+    for (const call of metrics.incChecklistItemAdded.mock.calls as Array<[{ viaBulk: boolean }]>) {
       expect(call[0].viaBulk).toBe(true);
     }
   });
 
   it('Б11: updateItem на soft-deleted checklist → 404 (checklist_item_not_found)', async () => {
     const { svc } = makeService(store);
-    const item = await svc.createItem(
-      'checklist-1',
-      { text: 'A' },
-      'tenant-1',
-    );
-    // Soft-delete родительский чек-лист напрямую в store.
+    const item = await svc.createItem('checklist-1', { text: 'A' }, 'tenant-1');
     const cl = store.checklists.get('checklist-1');
     if (!cl) throw new Error('checklist not seeded');
     cl.deletedAt = new Date('2026-05-29T00:00:00Z');
@@ -545,11 +468,7 @@ describe('ChecklistsService', () => {
 
   it('Б11: deleteItem на soft-deleted checklist → 404', async () => {
     const { svc } = makeService(store);
-    const item = await svc.createItem(
-      'checklist-1',
-      { text: 'A' },
-      'tenant-1',
-    );
+    const item = await svc.createItem('checklist-1', { text: 'A' }, 'tenant-1');
     const cl = store.checklists.get('checklist-1');
     if (!cl) throw new Error('checklist not seeded');
     cl.deletedAt = new Date('2026-05-29T00:00:00Z');
@@ -563,16 +482,8 @@ describe('ChecklistsService', () => {
 
   it('deleteItem: total/done пересчитываются, событие deleted', async () => {
     const { svc, events } = makeService(store);
-    const a = await svc.createItem(
-      'checklist-1',
-      { text: 'A' },
-      'tenant-1',
-    );
-    const b = await svc.createItem(
-      'checklist-1',
-      { text: 'B' },
-      'tenant-1',
-    );
+    const a = await svc.createItem('checklist-1', { text: 'A' }, 'tenant-1');
+    const b = await svc.createItem('checklist-1', { text: 'B' }, 'tenant-1');
     await svc.updateItem(a.id, { isDone: true }, 'tenant-1', 'user-1');
 
     let issue = store.issues.get('issue-1');

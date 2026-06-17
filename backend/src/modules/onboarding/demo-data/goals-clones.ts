@@ -1,17 +1,8 @@
-/**
- * Демо-данные «ТехноСтрим» — цели, клоны, решения, инсайты.
- *
- * Создаёт: Goal (4), GoalAlignmentSnapshot (12), GoalTheme (10),
- * SkillProfile (4), SkillTrait (18), ExecutablePersona (4),
- * CloneAccessGrant (4), Decision (5), Insight (7).
- */
 import type { SeedFn } from './types';
 import { daysAgo, req } from './types';
 
 export const seedGoalsClones: SeedFn = async (ctx, ids) => {
   const { prisma, tenantId, ownerUserId } = ctx;
-
-  // ── 1. Goals (4) ─────────────────────────────────────────────────────
 
   console.log('[demo/goals-clones] Создание целей...');
 
@@ -19,7 +10,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'goal_arr',
       name: 'ARR 10M к концу года',
-      description: 'Достижение годового регулярного дохода 10 миллионов рублей к 31 декабря 2026. Ключевой стратегический KPI компании.',
+      description:
+        'Достижение годового регулярного дохода 10 миллионов рублей к 31 декабря 2026. Ключевой стратегический KPI компании.',
       horizon: 'annual' as const,
       cachedAlignment: 72,
       cachedAlignmentDelta: 5,
@@ -28,7 +20,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'goal_v2',
       name: 'Релиз платформы v2.0 к 1 июля',
-      description: 'Выпуск версии платформы 2.0 с AI-отчётами, графом знаний и обновлённым UI. Ключевой продуктовый milestone.',
+      description:
+        'Выпуск версии платформы 2.0 с AI-отчётами, графом знаний и обновлённым UI. Ключевой продуктовый milestone.',
       horizon: 'quarterly' as const,
       cachedAlignment: 65,
       cachedAlignmentDelta: -3,
@@ -37,7 +30,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'goal_mobile',
       name: 'Мобильное приложение в App Store',
-      description: 'Публикация мобильного приложения в Apple App Store и Google Play. Включает видеозвонки, чат и push-уведомления.',
+      description:
+        'Публикация мобильного приложения в Apple App Store и Google Play. Включает видеозвонки, чат и push-уведомления.',
       horizon: 'quarterly' as const,
       cachedAlignment: 55,
       cachedAlignmentDelta: 8,
@@ -46,7 +40,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'goal_nps',
       name: 'NPS клиентов > 50',
-      description: 'Достижение Net Promoter Score выше 50 среди активных клиентов. Индикатор удовлетворённости продуктом.',
+      description:
+        'Достижение Net Promoter Score выше 50 среди активных клиентов. Индикатор удовлетворённости продуктом.',
       horizon: 'quarterly' as const,
       cachedAlignment: 80,
       cachedAlignmentDelta: 2,
@@ -70,8 +65,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
     ids.goals[g.key] = goal.id;
   }
-
-  // ── 2. GoalAlignmentSnapshot (3 per goal = 12) ───────────────────────
 
   console.log('[demo/goals-clones] Создание snapshots выравнивания целей...');
 
@@ -137,8 +130,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     }
   }
 
-  // ── 3. GoalTheme (10) ────────────────────────────────────────────────
-
   console.log('[demo/goals-clones] Привязка целей к темам...');
 
   const goalThemeDefs: { goalKey: string; themeKey: string; weight: number }[] = [
@@ -165,8 +156,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
   }
 
-  // ── 4. SkillProfile + SkillTrait + ExecutablePersona (4 clones) ──────
-
   console.log('[demo/goals-clones] Создание skill-профилей и клонов...');
 
   interface CloneDef {
@@ -187,63 +176,152 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       key: 'kozlov',
       personKey: 'kozlov',
       traits: [
-        { category: 'Экспертиза', statement: 'Глубокая экспертиза в безопасности', confidence: 'high', observationCount: 8 },
-        { category: 'Рабочее поведение', statement: 'Склонен брать на себя критические задачи', confidence: 'high', observationCount: 6 },
-        { category: 'Технический долг', statement: 'Предпочитает технический долг рефакторингу', confidence: 'medium', observationCount: 4 },
-        { category: 'Коммуникация', statement: 'Хорошо объясняет сложные концепции', confidence: 'high', observationCount: 5 },
-        { category: 'Нагрузка', statement: 'Иногда перегружен — 5+ задач в спринте', confidence: 'high', observationCount: 7 },
+        {
+          category: 'Экспертиза',
+          statement: 'Глубокая экспертиза в безопасности',
+          confidence: 'high',
+          observationCount: 8,
+        },
+        {
+          category: 'Рабочее поведение',
+          statement: 'Склонен брать на себя критические задачи',
+          confidence: 'high',
+          observationCount: 6,
+        },
+        {
+          category: 'Технический долг',
+          statement: 'Предпочитает технический долг рефакторингу',
+          confidence: 'medium',
+          observationCount: 4,
+        },
+        {
+          category: 'Коммуникация',
+          statement: 'Хорошо объясняет сложные концепции',
+          confidence: 'high',
+          observationCount: 5,
+        },
+        {
+          category: 'Нагрузка',
+          statement: 'Иногда перегружен — 5+ задач в спринте',
+          confidence: 'high',
+          observationCount: 7,
+        },
       ],
-      personaPrompt: 'Ты — Дмитрий Козлов, Tech Lead компании ТехноСтрим.\nТы глубоко разбираешься в архитектуре микросервисов и безопасности.\nПредпочитаешь прагматичный подход: сначала hotfix, потом рефакторинг.\nЗнаешь auth-модуль от и до. Отвечай конкретно, с примерами кода.',
+      personaPrompt:
+        'Ты — Дмитрий Козлов, Tech Lead компании ТехноСтрим.\nТы глубоко разбираешься в архитектуре микросервисов и безопасности.\nПредпочитаешь прагматичный подход: сначала hotfix, потом рефакторинг.\nЗнаешь auth-модуль от и до. Отвечай конкретно, с примерами кода.',
       publicName: 'Клон Tech Lead',
     },
     {
       key: 'volkova',
       personKey: 'volkova',
       traits: [
-        { category: 'Продуктовое мышление', statement: 'Фокус на пользовательских метриках', confidence: 'high', observationCount: 7 },
-        { category: 'Принятие решений', statement: 'Быстро принимает решения на данных', confidence: 'high', observationCount: 5 },
-        { category: 'Нагрузка', statement: 'Перегружена — ведёт 3 проекта одновременно', confidence: 'high', observationCount: 8 },
-        { category: 'CustDev', statement: 'Активно участвует в CustDev', confidence: 'medium', observationCount: 4 },
-        { category: 'Приоритизация', statement: 'Хорошо приоритезирует бэклог', confidence: 'high', observationCount: 6 },
+        {
+          category: 'Продуктовое мышление',
+          statement: 'Фокус на пользовательских метриках',
+          confidence: 'high',
+          observationCount: 7,
+        },
+        {
+          category: 'Принятие решений',
+          statement: 'Быстро принимает решения на данных',
+          confidence: 'high',
+          observationCount: 5,
+        },
+        {
+          category: 'Нагрузка',
+          statement: 'Перегружена — ведёт 3 проекта одновременно',
+          confidence: 'high',
+          observationCount: 8,
+        },
+        {
+          category: 'CustDev',
+          statement: 'Активно участвует в CustDev',
+          confidence: 'medium',
+          observationCount: 4,
+        },
+        {
+          category: 'Приоритизация',
+          statement: 'Хорошо приоритезирует бэклог',
+          confidence: 'high',
+          observationCount: 6,
+        },
       ],
-      personaPrompt: 'Ты — Марина Волкова, CPO компании ТехноСтрим.\nФокусируешься на пользовательских метриках и данных.\nВедёшь три продукта: платформу, мобайл и CustDev.\nОтвечай с точки зрения продукта и пользовательской ценности.',
+      personaPrompt:
+        'Ты — Марина Волкова, CPO компании ТехноСтрим.\nФокусируешься на пользовательских метриках и данных.\nВедёшь три продукта: платформу, мобайл и CustDev.\nОтвечай с точки зрения продукта и пользовательской ценности.',
       publicName: 'Клон CPO',
     },
     {
       key: 'sokolova',
       personKey: 'sokolova',
       traits: [
-        { category: 'Презентация', statement: 'Сильные навыки презентации продукта', confidence: 'high', observationCount: 6 },
-        { category: 'Клиентская работа', statement: 'Умеет выявлять боли клиента', confidence: 'high', observationCount: 7 },
-        { category: 'Стиль продаж', statement: 'Агрессивный стиль закрытия сделок', confidence: 'medium', observationCount: 4 },
-        { category: 'Конкурентный анализ', statement: 'Знает конкурентов лучше всех в команде', confidence: 'high', observationCount: 5 },
+        {
+          category: 'Презентация',
+          statement: 'Сильные навыки презентации продукта',
+          confidence: 'high',
+          observationCount: 6,
+        },
+        {
+          category: 'Клиентская работа',
+          statement: 'Умеет выявлять боли клиента',
+          confidence: 'high',
+          observationCount: 7,
+        },
+        {
+          category: 'Стиль продаж',
+          statement: 'Агрессивный стиль закрытия сделок',
+          confidence: 'medium',
+          observationCount: 4,
+        },
+        {
+          category: 'Конкурентный анализ',
+          statement: 'Знает конкурентов лучше всех в команде',
+          confidence: 'high',
+          observationCount: 5,
+        },
       ],
-      personaPrompt: 'Ты — Екатерина Соколова, Head of Sales компании ТехноСтрим.\nСпециализируешься на B2B enterprise-продажах.\nЗнаешь всех конкурентов и их слабые места.\nОтвечай с фокусом на клиентскую ценность и закрытие сделок.',
+      personaPrompt:
+        'Ты — Екатерина Соколова, Head of Sales компании ТехноСтрим.\nСпециализируешься на B2B enterprise-продажах.\nЗнаешь всех конкурентов и их слабые места.\nОтвечай с фокусом на клиентскую ценность и закрытие сделок.',
       publicName: 'Клон Head of Sales',
     },
     {
       key: 'morozov',
       personKey: 'morozov',
       traits: [
-        { category: 'Стратегия', statement: 'Стратегическое мышление', confidence: 'high', observationCount: 6 },
-        { category: 'Принятие решений', statement: 'Data-driven принятие решений', confidence: 'high', observationCount: 8 },
-        { category: 'Делегирование', statement: 'Делегирует технические детали Козлову', confidence: 'medium', observationCount: 5 },
-        { category: 'Метрики', statement: 'Фокусируется на метриках роста', confidence: 'high', observationCount: 7 },
+        {
+          category: 'Стратегия',
+          statement: 'Стратегическое мышление',
+          confidence: 'high',
+          observationCount: 6,
+        },
+        {
+          category: 'Принятие решений',
+          statement: 'Data-driven принятие решений',
+          confidence: 'high',
+          observationCount: 8,
+        },
+        {
+          category: 'Делегирование',
+          statement: 'Делегирует технические детали Козлову',
+          confidence: 'medium',
+          observationCount: 5,
+        },
+        {
+          category: 'Метрики',
+          statement: 'Фокусируется на метриках роста',
+          confidence: 'high',
+          observationCount: 7,
+        },
       ],
-      personaPrompt: 'Ты — Алексей Морозов, CEO и основатель компании ТехноСтрим.\nПринимаешь решения на основе данных и метрик.\nДелегируешь технические вопросы Tech Lead\'у.\nОтвечай стратегически, с фокусом на рост и ARR.',
+      personaPrompt:
+        "Ты — Алексей Морозов, CEO и основатель компании ТехноСтрим.\nПринимаешь решения на основе данных и метрик.\nДелегируешь технические вопросы Tech Lead'у.\nОтвечай стратегически, с фокусом на рост и ARR.",
       publicName: 'Клон CEO',
     },
   ];
 
   for (const cl of cloneDefs) {
-    // id ОБЯЗАН быть org-scoped (включать tenantId): иначе вторая Org,
-    // заливающая демо, падает на дубле PK (регрессия мержа #7 — глобальные
-    // demo-sp/ep/st-id ломали multi-org demo-seed; demoId-helper для PK здесь
-    // не использовался).
     const profileId = `demo-sp-${cl.key}-${tenantId}`;
     const personaId = `demo-ep-${cl.key}-${tenantId}`;
 
-    // SkillProfile
     await prisma.skillProfile.create({
       data: {
         id: profileId,
@@ -256,7 +334,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
     ids.skillProfiles[cl.key] = profileId;
 
-    // SkillTraits
     const traitIds: string[] = [];
     for (let i = 0; i < cl.traits.length; i++) {
       const t = cl.traits[i]!;
@@ -277,7 +354,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
       });
     }
 
-    // ExecutablePersona
     await prisma.executablePersona.create({
       data: {
         id: personaId,
@@ -294,8 +370,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
   }
 
-  // ── 5. CloneAccessGrant (4) ──────────────────────────────────────────
-
   console.log('[demo/goals-clones] Выдача доступа к клонам...');
 
   for (const cl of cloneDefs) {
@@ -310,15 +384,14 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
   }
 
-  // ── 6. Decisions (5) ─────────────────────────────────────────────────
-
   console.log('[demo/goals-clones] Создание решений...');
 
   const decisionDefs = [
     {
       key: 'd_oauth2',
       statement: 'Миграция на OAuth2 + PKCE',
-      rationale: 'JWT-токены без expiration — критическая уязвимость. OAuth2 + PKCE решает проблему безопасной авторизации для SPA и мобильных клиентов.',
+      rationale:
+        'JWT-токены без expiration — критическая уязвимость. OAuth2 + PKCE решает проблему безопасной авторизации для SPA и мобильных клиентов.',
       decidedByPersonKeys: ['kozlov', 'morozov'],
       meetingKey: 'security_discussion',
       decidedAt: daysAgo(2),
@@ -332,7 +405,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'd_design',
       statement: 'Дизайн CallScreen v3 — финальный',
-      rationale: 'PiP, запись, шаринг экрана, адаптив под iOS и Android. Утверждён после трёх итераций с командой.',
+      rationale:
+        'PiP, запись, шаринг экрана, адаптив под iOS и Android. Утверждён после трёх итераций с командой.',
       decidedByPersonKeys: ['volkova', 'petrova'],
       meetingKey: 'mobile_review',
       decidedAt: daysAgo(6),
@@ -345,20 +419,25 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'd_pilot',
       statement: 'Пилот Ростелеком: 500 юзеров',
-      rationale: 'Ростелеком готов к пилоту на 500 пользователей. Это ключевой enterprise-клиент для валидации product-market fit.',
+      rationale:
+        'Ростелеком готов к пилоту на 500 пользователей. Это ключевой enterprise-клиент для валидации product-market fit.',
       decidedByPersonKeys: ['sokolova', 'morozov'],
       meetingKey: 'custdev_rostelecom',
       decidedAt: daysAgo(8),
       status: 'approved' as const,
       reversibility: 'type-1' as const,
       alternatives: [
-        { option: 'Пилот на 100 юзеров', reasonRejected: 'Недостаточно для валидации enterprise-сценариев' },
+        {
+          option: 'Пилот на 100 юзеров',
+          reasonRejected: 'Недостаточно для валидации enterprise-сценариев',
+        },
       ],
     },
     {
       key: 'd_zoom',
       statement: 'Отложить Zoom-интеграцию',
-      rationale: 'Zoom демпингует цены. Интеграция не принесёт конкурентного преимущества. Сфокусироваться на собственных AI-фичах.',
+      rationale:
+        'Zoom демпингует цены. Интеграция не принесёт конкурентного преимущества. Сфокусироваться на собственных AI-фичах.',
       decidedByPersonKeys: ['kozlov'],
       meetingKey: 'retro13',
       decidedAt: daysAgo(10),
@@ -371,7 +450,8 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'd_review_sl',
       statement: 'Code review SLA: 24 часа',
-      rationale: 'Code review занимает более 2 дней, что замедляет delivery. Установить SLA 24 часа с эскалацией к Tech Lead.',
+      rationale:
+        'Code review занимает более 2 дней, что замедляет delivery. Установить SLA 24 часа с эскалацией к Tech Lead.',
       decidedByPersonKeys: ['kozlov', 'novikov'],
       meetingKey: 'retro13',
       decidedAt: daysAgo(10),
@@ -384,32 +464,37 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     {
       key: 'd_arr_target',
       statement: 'ARR-цель 10M к концу года',
-      rationale: 'Совет директоров утвердил публичную цель 10M ARR на 2026 как условие следующего раунда.',
+      rationale:
+        'Совет директоров утвердил публичную цель 10M ARR на 2026 как условие следующего раунда.',
       decidedByPersonKeys: ['morozov'],
       meetingKey: 'custdev_rostelecom',
       decidedAt: daysAgo(15),
       status: 'approved' as const,
       reversibility: 'type-1' as const,
-      // Намеренно пустой — alertCount должен инкрементнуться (см. pulse-patterns).
       alternatives: [] as Array<{ option: string; reasonRejected: string }>,
     },
     {
       key: 'd_partner_1c',
       statement: 'Стратегическое партнёрство с 1С',
-      rationale: 'Совместный canal-sales-канал в SMB-сегменте: 1С пушит нас в свою клиентскую базу.',
+      rationale:
+        'Совместный canal-sales-канал в SMB-сегменте: 1С пушит нас в свою клиентскую базу.',
       decidedByPersonKeys: ['morozov', 'sokolova'],
       meetingKey: 'custdev_rostelecom',
       decidedAt: daysAgo(20),
       status: 'approved' as const,
       reversibility: 'type-2' as const,
       alternatives: [
-        { option: 'Самостоятельный SMB-канал', reasonRejected: 'Слишком дорогой CAC на стадии MVP' },
+        {
+          option: 'Самостоятельный SMB-канал',
+          reasonRejected: 'Слишком дорогой CAC на стадии MVP',
+        },
       ],
     },
     {
       key: 'd_freeze_features',
       statement: 'Заморозить новые фичи в Q3 в пользу стабильности',
-      rationale: 'Команда перегружена, NPS под угрозой. Q3 — стабилизация и bug-fix, без новых фич.',
+      rationale:
+        'Команда перегружена, NPS под угрозой. Q3 — стабилизация и bug-fix, без новых фич.',
       decidedByPersonKeys: ['morozov', 'volkova'],
       meetingKey: 'retro13',
       decidedAt: daysAgo(18),
@@ -430,7 +515,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
         statement: d.statement,
         rationale: d.rationale,
         decidedByPersonIds: d.decidedByPersonKeys.map((k) => req(ids.persons[k], `person:${k}`)),
-        decidedByPersonId: req(ids.persons[d.decidedByPersonKeys[0]!], `person:${d.decidedByPersonKeys[0]}`),
+        decidedByPersonId: req(
+          ids.persons[d.decidedByPersonKeys[0]!],
+          `person:${d.decidedByPersonKeys[0]}`,
+        ),
         sourceMeetingId: req(ids.meetings[d.meetingKey], `meeting:${d.meetingKey}`),
         decidedAt: d.decidedAt,
         status: d.status,
@@ -443,8 +531,6 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
     });
     decisionIds[d.key] = dec.id;
   }
-
-  // ── 7. Insights (7) ──────────────────────────────────────────────────
 
   console.log('[demo/goals-clones] Создание инсайтов...');
 
@@ -527,10 +613,10 @@ export const seedGoalsClones: SeedFn = async (ctx, ids) => {
 
   console.log(
     `[demo/goals-clones] Создано: ${goalDefs.length} целей, ` +
-    `${snapshotDefs.length * 3} snapshots, ${goalThemeDefs.length} GoalTheme, ` +
-    `${cloneDefs.length} skill-профилей, ` +
-    `${cloneDefs.reduce((s, c) => s + c.traits.length, 0)} trait'ов, ` +
-    `${cloneDefs.length} персон, ${cloneDefs.length} грантов, ` +
-    `${decisionDefs.length} решений, ${insightDefs.length} инсайтов.`,
+      `${snapshotDefs.length * 3} snapshots, ${goalThemeDefs.length} GoalTheme, ` +
+      `${cloneDefs.length} skill-профилей, ` +
+      `${cloneDefs.reduce((s, c) => s + c.traits.length, 0)} trait'ов, ` +
+      `${cloneDefs.length} персон, ${cloneDefs.length} грантов, ` +
+      `${decisionDefs.length} решений, ${insightDefs.length} инсайтов.`,
   );
 };

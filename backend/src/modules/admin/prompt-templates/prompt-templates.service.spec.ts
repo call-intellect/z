@@ -1,14 +1,3 @@
-/**
- * Фаза A.2 — unit-тесты на AdminPromptTemplatesService.
- *
- * Покрываем (≥4 сценария по DoD):
- *   1) create() — валидация scope='org' без orgId.
- *   2) create() — дубликат key в Org бросает ошибку.
- *   3) createVersion() — лимит maxTokens (16000) проверяется.
- *   4) softDelete() — system-шаблон защищён от удаления.
- *   5) activateVersion() — обновляет activeVersionId и status.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -72,7 +61,7 @@ function buildPrismaMock() {
         if (row[k] !== null && row[k] !== undefined) return false;
         continue;
       }
-      if (typeof v === 'object' && v !== null && 'contains' in v) continue; // search — пропускаем
+      if (typeof v === 'object' && v !== null && 'contains' in v) continue;
       if (row[k] !== v) return false;
     }
     return true;
@@ -83,11 +72,13 @@ function buildPrismaMock() {
       findMany: vi.fn(async ({ where }: { where?: Record<string, unknown> }) =>
         templates.filter((t) => (where ? matches(t as never, where) : true)),
       ),
-      findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-        templates.find((t) => matches(t as never, where)) ?? null,
+      findFirst: vi.fn(
+        async ({ where }: { where: Record<string, unknown> }) =>
+          templates.find((t) => matches(t as never, where)) ?? null,
       ),
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
-        templates.find((t) => t.id === where.id) ?? null,
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          templates.find((t) => t.id === where.id) ?? null,
       ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row: TemplateRow = {
@@ -111,13 +102,7 @@ function buildPrismaMock() {
         return row;
       }),
       update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Record<string, unknown>;
-        }) => {
+        async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) => {
           const idx = templates.findIndex((t) => t.id === where.id);
           if (idx >= 0) {
             templates[idx] = { ...templates[idx]!, ...(data as Partial<TemplateRow>) };
@@ -129,14 +114,12 @@ function buildPrismaMock() {
     },
     promptTemplateVersion: {
       findFirst: vi.fn(
-        async ({
-          where,
-        }: {
-          where: Record<string, unknown>;
-        }) => versions.find((v) => matches(v as never, where)) ?? null,
+        async ({ where }: { where: Record<string, unknown> }) =>
+          versions.find((v) => matches(v as never, where)) ?? null,
       ),
-      findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
-        versions.find((v) => v.id === where.id) ?? null,
+      findUnique: vi.fn(
+        async ({ where }: { where: { id: string } }) =>
+          versions.find((v) => v.id === where.id) ?? null,
       ),
       create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
         const row: VersionRow = {
@@ -165,15 +148,12 @@ function buildPrismaMock() {
     $transaction: vi.fn(async (cb: (tx: Tx) => unknown) => cb(prisma as unknown as Tx)),
   };
 
-  // include logic для detail() — обрабатываем "include" вручную через wrapper:
   const originalTemplateFindUnique = prisma.promptTemplate.findUnique;
   prisma.promptTemplate.findUnique = vi.fn(async (args: { where: { id: string } }) => {
     const row = await originalTemplateFindUnique(args);
     if (!row) return null;
     const tplVersions = versions.filter((v) => v.templateId === row.id);
-    const active = row.activeVersionId
-      ? versions.find((v) => v.id === row.activeVersionId)
-      : null;
+    const active = row.activeVersionId ? versions.find((v) => v.id === row.activeVersionId) : null;
     return {
       ...row,
       versions: tplVersions,

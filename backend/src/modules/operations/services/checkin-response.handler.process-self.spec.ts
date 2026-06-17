@@ -1,13 +1,3 @@
-/**
- * ТЗ 2026-05-29 telegram-self-initiated-checkins Phase 4 / DoD:
- *   «CheckinResponseHandler.processSelfInitiated покрыт unit-тестами:
- *    успешный путь, low-parser-confidence (создаёт запись с curatorReview,
- *    не уходит в free_note), отсутствие Person, отсутствие Membership,
- *    закрытие pending notification, replace-сценарий.»
- *
- * markAsAnsweredByCheckin покрыт смежным spec'ом ниже:
- *   «помечает notification answered, не эмитит notification.responded».
- */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { CheckinResponseHandler } from './checkin-response.handler';
@@ -68,7 +58,16 @@ function build(): MockedHandler {
     eventEmitter as unknown as never,
   );
 
-  return { handler, prisma, parser, checkinService, dashboard, metrics, conversational, eventEmitter };
+  return {
+    handler,
+    prisma,
+    parser,
+    checkinService,
+    dashboard,
+    metrics,
+    conversational,
+    eventEmitter,
+  };
 }
 
 describe('CheckinResponseHandler.processSelfInitiated', () => {
@@ -181,7 +180,6 @@ describe('CheckinResponseHandler.processSelfInitiated', () => {
       blockers: [],
       confidence: 0.9,
     });
-    // build dateLocal под UTC текущей даты
     const todayUtc = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'UTC',
       year: 'numeric',

@@ -12,20 +12,8 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { RedisService } from '../../common/redis/redis.service';
 
 import { ChatboxSyncService } from './chatbox-sync.service';
-import {
-  CHATBOX_SYNC_QUEUE,
-  type ChatboxSyncJobData,
-} from './queue/chatbox-sync.queue';
+import { CHATBOX_SYNC_QUEUE, type ChatboxSyncJobData } from './queue/chatbox-sync.queue';
 
-/**
- * Worker очереди `chatbox.sync` (ТЗ 2026-06-05, Фаза 3).
- *
- * Один job → ChatboxSyncService:
- *   - scope='incremental' → incrementalSync(tenantId)
- *   - иначе               → syncByScope(tenantId, scope)
- *
- * Регистрируется в WorkersModule (in-process, как остальные воркеры).
- */
 @Injectable()
 export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChatboxSyncWorker.name);
@@ -35,7 +23,6 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(ChatboxSyncService)
     private readonly syncService: ChatboxSyncService,
-    // Метрики синка (Ф3). @Optional — тесты воркера без метрик-сервиса не падают.
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -51,10 +38,7 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
       },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        { jobId: job?.id, err: err.message },
-        'ChatboxSyncWorker: job failed',
-      );
+      this.logger.warn({ jobId: job?.id, err: err.message }, 'ChatboxSyncWorker: job failed');
     });
     this.logger.log(`ChatboxSyncWorker запущен (${CHATBOX_SYNC_QUEUE})`);
   }
@@ -66,7 +50,6 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для тестирования. */
   async process(job: Job<ChatboxSyncJobData>): Promise<void> {
     const { tenantId, scope, since } = job.data;
     this.logger.debug(
@@ -81,7 +64,6 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
           since: since ? new Date(since) : undefined,
         });
       }
-      // Успех — метрики синка (Ф3): счётчик + отметка времени последнего синка.
       this.metrics?.incChatboxSync({ scope, status: 'success' });
       this.metrics?.setChatboxLastSyncTs({
         scope,
@@ -91,7 +73,6 @@ export class ChatboxSyncWorker implements OnModuleInit, OnModuleDestroy {
         `ChatboxSync готово: tenant=${tenantId} scope=${scope} ${JSON.stringify(result)}`,
       );
     } catch (err) {
-      // Провал — метрика failed и проброс дальше (BullMQ отметит job failed).
       this.metrics?.incChatboxSync({ scope, status: 'failed' });
       throw err;
     }

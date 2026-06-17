@@ -6,7 +6,7 @@ status: draft (research-backed)
 method: 9-агентный workflow (6 исследователей по коду/рынку → синтез → 2 состязательных верификатора), грунтован по реальному коду и схеме БД
 related:
   - second-brain/06_marketing/client-value-framework.md
-  - second-brain/01_projects/ai-value-director.md
+  - plans/analysis/2026-05-21-ai-value-director.md
   - second-brain/01_projects/director-dashboard.md
   - plans/analysis/2026-05-29-dashboards-proof.md
   - plans/analysis/2026-06-07-retest2-RESULTS-technical.md

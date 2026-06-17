@@ -1,24 +1,3 @@
-/**
- * Patch (Rebrand Z → Кора) — обновление email-шаблонов в БД.
- *
- * Что делает:
- *   1. Находит записи EmailTemplate с ключами 'register-temp-password' и
- *      'password-reset', в которых тема письма содержит старый бренд «Z».
- *   2. Если запись не редактировалась администратором (updatedBy IS NULL) —
- *      обновляет subject и body из актуальных code-констант (mail.templates.ts).
- *   3. Если updatedBy IS NOT NULL — пропускает и выводит предупреждение:
- *      нужна ручная правка в /admin/content/email-templates.
- *
- * Идемпотентен: повторный запуск находит темы «Кора» и пропускает без изменений.
- *
- * Промпты в таблице PromptTemplate обновляет seed-prompt-templates.ts:
- * у него есть механизм update'а неадминских шаблонов — его достаточно.
- *
- * Запуск:
- *   bun run scripts/patch-rebrand-z-to-kora.ts           — реальное обновление
- *   bun run scripts/patch-rebrand-z-to-kora.ts --dry-run — только проверка
- */
-
 import { createPrismaClient } from './_lib/prisma';
 import {
   REGISTER_TEMP_PASSWORD_TEMPLATE,
@@ -50,9 +29,7 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient();
   /* eslint-disable no-console */
   try {
-    console.log(
-      `=== patch-rebrand-z-to-kora START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
-    );
+    console.log(`=== patch-rebrand-z-to-kora START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`);
 
     let updated = 0;
     let skippedAdminEdited = 0;
@@ -65,29 +42,25 @@ async function main(): Promise<void> {
       });
 
       if (!row) {
-        console.log(`[not-found] ${target.key} — не в БД, bootstrap подхватит новые значения из кода`);
+        console.log(
+          `[not-found] ${target.key} — не в БД, bootstrap подхватит новые значения из кода`,
+        );
         notFound += 1;
         continue;
       }
 
-      // audit С15 (2026-05-29): сверяем И subject И body — раньше
-      // достаточно было совпадения subject, и patch пропускал устаревший body
-      // (например, после обновления mail.templates.ts константы).
       const subjectMatches = row.subject === target.newSubject;
       const bodyMatches = row.body === target.newBody;
       if (subjectMatches && bodyMatches) {
-        console.log(
-          `[already-done] ${target.key} — тема и тело уже совпадают с code-константой`,
-        );
+        console.log(`[already-done] ${target.key} — тема и тело уже совпадают с code-константой`);
         skippedAlready += 1;
         continue;
       }
 
-      // Если администратор редактировал вручную — не перезаписываем.
       if (row.updatedBy !== null) {
         console.warn(
           `[skip admin-edited] ${target.key} — updatedBy=${row.updatedBy}. ` +
-          `Смените тему вручную на «${target.newSubject}» в /admin/content/email-templates`,
+            `Смените тему вручную на «${target.newSubject}» в /admin/content/email-templates`,
         );
         skippedAdminEdited += 1;
         continue;
@@ -113,7 +86,7 @@ async function main(): Promise<void> {
 
     console.log(
       `Итог: обновлено=${updated}, уже-готово=${skippedAlready}, ` +
-      `admin-edited(пропущено)=${skippedAdminEdited}, не-в-БД=${notFound}`,
+        `admin-edited(пропущено)=${skippedAdminEdited}, не-в-БД=${notFound}`,
     );
     if (DRY_RUN) console.log('DRY-RUN: изменения НЕ записаны.');
     console.log('=== patch-rebrand-z-to-kora DONE ===');

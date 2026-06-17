@@ -23,7 +23,6 @@ export const SCHEMA = z
     role_fit: z.enum(['low', 'medium', 'high']).nullable(),
     overall_rating: z.string().nullable(),
     next_step: z.string().nullable(),
-    // A11-Волна2 (additive, опциональные — обратная совместимость):
     competing_offers: z.string().nullable().optional(),
     data_quality: z.string().nullable().optional(),
   })

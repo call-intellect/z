@@ -26,23 +26,13 @@ describe('OrgEconomicsCron', () => {
   });
 
   it('computeForOrg возвращает агрегаты + topTaskTypes', async () => {
-    // 30d sum
-    $queryRaw.mockResolvedValueOnce([
-      { cost_usd: '5.0', cost_rub: '450', calls: 100n },
-    ]);
-    // mtd sum
-    $queryRaw.mockResolvedValueOnce([
-      { cost_usd: '3.0', cost_rub: '270', calls: 60n },
-    ]);
-    // top tasks
+    $queryRaw.mockResolvedValueOnce([{ cost_usd: '5.0', cost_rub: '450', calls: 100n }]);
+    $queryRaw.mockResolvedValueOnce([{ cost_usd: '3.0', cost_rub: '270', calls: 60n }]);
     $queryRaw.mockResolvedValueOnce([
       { task_type: 'summary', cost_rub: '300', calls: 50n },
       { task_type: 'chat', cost_rub: '150', calls: 50n },
     ]);
-    aiUsageLogFindMany.mockResolvedValueOnce([
-      { userId: 'u1' },
-      { userId: 'u2' },
-    ]);
+    aiUsageLogFindMany.mockResolvedValueOnce([{ userId: 'u1' }, { userId: 'u2' }]);
     const cron = new OrgEconomicsCron(prisma, fx, metrics);
     const r = await cron.computeForOrg('org-1', 90);
     expect(r.callsCountLast30d).toBe(100);
@@ -54,13 +44,11 @@ describe('OrgEconomicsCron', () => {
 
   it('runForAll проходит по orgs и не падает на ошибке одного', async () => {
     orgFindMany.mockResolvedValueOnce([{ id: 'org-1' }, { id: 'org-2' }]);
-    // org-1 успешен
     $queryRaw.mockResolvedValueOnce([{ cost_usd: '0', cost_rub: '0', calls: 0n }]);
     $queryRaw.mockResolvedValueOnce([{ cost_usd: '0', cost_rub: '0', calls: 0n }]);
     $queryRaw.mockResolvedValueOnce([]);
     aiUsageLogFindMany.mockResolvedValueOnce([]);
     capFindUnique.mockResolvedValueOnce(null);
-    // org-2 — exception
     $queryRaw.mockRejectedValueOnce(new Error('boom'));
     const cron = new OrgEconomicsCron(prisma, fx, metrics);
     const r = await cron.runForAll();

@@ -12,32 +12,12 @@ import { Prisma, type Board } from '@prisma/client';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
-import type {
-  BoardResponseDto,
-  ListBoardsResponse,
-} from '../dto/boards/board-response.dto';
+import type { BoardResponseDto, ListBoardsResponse } from '../dto/boards/board-response.dto';
 import type { CreateBoardDto, UpdateBoardDto } from '../dto/boards/board-schemas';
 
 import { ProjectsService } from './projects.service';
 import { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Tracker Boards (2026-05-27) — управление досками внутри проекта.
- *
- * Бизнес-правила:
- *   1. У каждого проекта всегда есть ровно одна доска с `isDefault=true`.
- *      Она создаётся автоматически (`ensureDefaultBoard`) и не может быть
- *      удалена/архивирована.
- *   2. При удалении не-default доски все её задачи переносятся на default
- *      (одна транзакция: `boardId = defaultBoardId`).
- *   3. Колонки доски (статусы) — общие для всего проекта (`IssueState`).
- *      В этом ТЗ per-board statuses НЕ поддерживаем.
- *   4. `@@unique([projectId, name])` — имя доски уникально внутри проекта.
- *
- * RBAC: ResourceType=`board`. Проверка в контроллере через RbacService.
- *
- * ТЗ: plans/tz/2026-05-27-tracker-boards.md.
- */
 @Injectable()
 export class BoardsService {
   private readonly logger = new Logger(BoardsService.name);
@@ -47,28 +27,12 @@ export class BoardsService {
     @Inject(ProjectsService) private readonly projects: ProjectsService,
     @Inject(TrackerEventsService)
     private readonly events: TrackerEventsService,
-    // Метрики Optional — unit-тесты сервиса могут работать без MetricsModule.
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Гарантировать существование default-доски для проекта. Идемпотентно:
-   * если уже есть `isDefault=true` доска — возвращает её. Если нет — создаёт
-   * `{ name: 'Доска', isDefault: true, sequence: 0 }` и возвращает.
-   *
-   * Используется:
-   *   - `ProjectsService.create` — при создании проекта (в той же транзакции
-   *      нельзя — `ProjectsService` уже в транзакции; вызываем после commit).
-   *   - `backfill-default-board.ts` — массовый backfill для legacy-проектов.
-   *
-   * @returns id default-доски.
-   */
-  async ensureDefaultBoard(args: {
-    tenantId: string;
-    projectId: string;
-  }): Promise<string> {
+  async ensureDefaultBoard(args: { tenantId: string; projectId: string }): Promise<string> {
     const existing = await this.prisma.board.findFirst({
       where: {
         projectId: args.projectId,
@@ -80,9 +44,6 @@ export class BoardsService {
     });
     if (existing) return existing.id;
 
-    // Идемпотентность через @@unique([projectId, name]): если две сессии
-    // одновременно ensureDefaultBoard() — одна выиграет, другая получит
-    // P2002 и подхватит уже созданную.
     try {
       const created = await this.prisma.board.create({
         data: {
@@ -97,10 +58,7 @@ export class BoardsService {
       });
       return created.id;
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const fallback = await this.prisma.board.findFirst({
           where: {
             projectId: args.projectId,
@@ -116,7 +74,6 @@ export class BoardsService {
     }
   }
 
-  /** Список досок проекта. По умолчанию без архивных, отсортирован по sequence. */
   async findAll(
     projectId: string,
     tenantId: string,
@@ -133,7 +90,6 @@ export class BoardsService {
       where,
       orderBy: [{ sequence: 'asc' }, { createdAt: 'asc' }],
     });
-    // Лёгкий count живых задач на доску — один запрос группировкой.
     const counts = boards.length
       ? await this.prisma.issue.groupBy({
           by: ['boardId'],
@@ -149,14 +105,11 @@ export class BoardsService {
       counts.map((c) => [c.boardId ?? '', c._count._all]),
     );
     return {
-      items: boards.map((b) =>
-        this.toResponse(b, countByBoardId.get(b.id) ?? 0),
-      ),
+      items: boards.map((b) => this.toResponse(b, countByBoardId.get(b.id) ?? 0)),
       total: boards.length,
     };
   }
 
-  /** Найти доску по id + tenant. NotFound если нет/чужая/удалена. */
   async findById(id: string, tenantId: string): Promise<BoardResponseDto> {
     const b = await this.requireBoard(id, tenantId);
     const count = await this.prisma.issue.count({
@@ -165,10 +118,6 @@ export class BoardsService {
     return this.toResponse(b, count);
   }
 
-  /**
-   * Создать доску в проекте. sequence = max(sequence)+1 для не-default.
-   * @@unique([projectId, name]) даёт 409 на дубликат имени.
-   */
   async create(
     projectId: string,
     dto: CreateBoardDto,
@@ -176,7 +125,6 @@ export class BoardsService {
     _userId: string,
   ): Promise<BoardResponseDto> {
     await this.projects.requireProject(projectId, tenantId);
-    // Считаем sequence как max(existing)+1 (не учитывая deletedAt).
     const agg = await this.prisma.board.aggregate({
       where: { projectId, tenantId, deletedAt: null },
       _max: { sequence: true },
@@ -203,10 +151,7 @@ export class BoardsService {
       });
       return response;
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -219,7 +164,6 @@ export class BoardsService {
     }
   }
 
-  /** PATCH доски (name/color/icon/description/sequence). */
   async update(
     id: string,
     dto: UpdateBoardDto,
@@ -250,7 +194,6 @@ export class BoardsService {
       changedFields.push('sequence');
     }
     if (changedFields.length === 0) {
-      // ничего не поменялось — отдаём существующую запись без эмита WS.
       return this.findById(id, tenantId);
     }
     try {
@@ -262,10 +205,7 @@ export class BoardsService {
       this.events.publishBoardUpdated(response, tenantId, changedFields);
       return response;
     } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -278,11 +218,6 @@ export class BoardsService {
     }
   }
 
-  /**
-   * Soft-delete доски с переносом задач на default. Защита:
-   *   - default доску удалить нельзя → 409 `cannot_delete_default_board`.
-   *   - Если default доски нет вовсе — создаём через ensureDefaultBoard.
-   */
   async softDelete(
     id: string,
     tenantId: string,
@@ -299,14 +234,11 @@ export class BoardsService {
         },
       });
     }
-    // Гарантируем default доску (вне транзакции — отдельная гарантированная
-    // запись или существующая).
     const defaultBoardId = await this.ensureDefaultBoard({
       tenantId,
       projectId: existing.projectId,
     });
     if (defaultBoardId === existing.id) {
-      // Не должно произойти после isDefault-проверки, но защитимся.
       throw new ConflictException({
         ok: false,
         error: {
@@ -343,12 +275,7 @@ export class BoardsService {
     return { ok: true, movedIssuesCount, movedToBoardId: defaultBoardId };
   }
 
-  /** Архивировать доску. Default архивировать нельзя. */
-  async archive(
-    id: string,
-    tenantId: string,
-    _userId: string,
-  ): Promise<BoardResponseDto> {
+  async archive(id: string, tenantId: string, _userId: string): Promise<BoardResponseDto> {
     const existing = await this.requireBoard(id, tenantId);
     if (existing.isDefault) {
       throw new ConflictException({
@@ -360,7 +287,6 @@ export class BoardsService {
       });
     }
     if (existing.archivedAt) {
-      // Идемпотентно: уже архивирована.
       return this.findById(id, tenantId);
     }
     const updated = await this.prisma.board.update({
@@ -379,12 +305,7 @@ export class BoardsService {
     return response;
   }
 
-  /** Снять архив. */
-  async unarchive(
-    id: string,
-    tenantId: string,
-    _userId: string,
-  ): Promise<BoardResponseDto> {
+  async unarchive(id: string, tenantId: string, _userId: string): Promise<BoardResponseDto> {
     const existing = await this.requireBoard(id, tenantId);
     if (!existing.archivedAt) {
       return this.findById(id, tenantId);
@@ -401,12 +322,6 @@ export class BoardsService {
     return response;
   }
 
-  /**
-   * Массовая переустановка `sequence` досок проекта. Индекс в массиве = новый
-   * sequence. Все boardId должны принадлежать одному проекту в текущем tenant'е.
-   *
-   * Возвращает обновлённый список (без архивных, отсортированный).
-   */
   async reorder(
     boardIds: string[],
     tenantId: string,
@@ -421,7 +336,6 @@ export class BoardsService {
         },
       });
     }
-    // Загружаем все указанные доски, проверяем что все из одного проекта.
     const boards = await this.prisma.board.findMany({
       where: { id: { in: boardIds }, tenantId, deletedAt: null },
       select: { id: true, projectId: true },
@@ -447,13 +361,6 @@ export class BoardsService {
     }
     const projectId = boards[0]!.projectId;
 
-    // audit В11 (2026-05-29): reorder под callback-transaction с
-    // SELECT ... FOR UPDATE. Прежний массив-style $transaction
-    // (Promise.all-эквивалент) выполняется параллельно — два конкурентных
-    // reorder'а на одних и тех же досках могли приводить к "перемешанному"
-    // sequence (T1 пишет idx=0..3, T2 пишет idx=0..2 — результат
-    // непредсказуем). FOR UPDATE сериализует параллельные транзакции
-    // на тех же row'ах.
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`
         SELECT id FROM "Board"
@@ -474,10 +381,6 @@ export class BoardsService {
     return this.findAll(projectId, tenantId, { includeArchived: false });
   }
 
-  /**
-   * Проверка существования доски + tenant ownership. Возвращает запись.
-   * Кидает 404 если не найдена / удалена / в другом tenant'е.
-   */
   async requireBoard(id: string, tenantId: string): Promise<Board> {
     const b = await this.prisma.board.findFirst({
       where: { id, tenantId, deletedAt: null },
@@ -491,28 +394,11 @@ export class BoardsService {
     return b;
   }
 
-  /**
-   * Резолв default-доски проекта. Если её ещё нет (legacy-проекты до
-   * backfill) — лениво создаём через ensureDefaultBoard. Кидает 404 если
-   * проект не найден / удалён.
-   *
-   * Используется `IssuesService.create()` когда фронт не передал `boardId`.
-   */
-  async resolveDefaultBoardId(args: {
-    tenantId: string;
-    projectId: string;
-  }): Promise<string> {
-    // requireProject убедится в существовании и tenant-scope; если проекта
-    // нет — кидает 404 (caller получит понятную ошибку).
+  async resolveDefaultBoardId(args: { tenantId: string; projectId: string }): Promise<string> {
     await this.projects.requireProject(args.projectId, args.tenantId);
     return this.ensureDefaultBoard(args);
   }
 
-  /**
-   * Валидация что `boardId` принадлежит указанному проекту в текущем tenant'е.
-   * Используется при PATCH issue, чтобы фронт не мог перенести задачу
-   * в чужую доску.
-   */
   async assertBoardInProject(args: {
     boardId: string;
     projectId: string;
@@ -537,8 +423,6 @@ export class BoardsService {
       });
     }
   }
-
-  // ── mappers ──
 
   private toResponse(b: Board, issuesCount: number | null = null): BoardResponseDto {
     return {

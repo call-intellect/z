@@ -1,31 +1,7 @@
-/**
- * Промпт `theme-classify` — LLM-классификатор тематического кластера
- * IdeaBlock'ов: имя / описание / 12-веточная классификация / теги / weight / confidence.
- *
- * Используется `ThemeClassificationService.classifyTheme` (вызывается
- * `theme-clusterer.cron` по каждому устойчивому кластеру).
- *
- * Вынесено из `services/theme-classification.service.ts` в рамках Фазы 8 §10
- * Find 2 (ТЗ 2026-05-25-llm-architecture-changes-from-experiments.md) —
- * для единообразия и admin-редактируемости.
- *
- * NB: enum `THEME_BRANCH_VALUES` остался публичным экспортом сервиса —
- * это значения, известные снаружи (Prisma ThemeBranch, UI). Реэкспортим
- * его и здесь, чтобы JSON Schema / Zod / сервис ссылались на единый источник.
- */
-
 import { z } from 'zod';
 
-import {
-  withAsrNote,
-  withConfidenceCalibration,
-} from '../../ai/services/prompts/common';
+import { withAsrNote, withConfidenceCalibration } from '../../ai/services/prompts/common';
 
-/**
- * 12 веток компании из delivery M-07. В JSON-схеме / Zod к ним добавляется
- * sentinel `'none'` — он маппится в `null` (ветка не определилась) на стороне
- * сервиса.
- */
 export const THEME_BRANCH_VALUES = [
   'strategy',
   'clients',

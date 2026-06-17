@@ -1,67 +1,53 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ChevronLeft } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
-import { toast } from 'sonner';
-import useSWR from 'swr';
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ChevronLeft } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import {
-  curationApi,
-  type ConflictResolutionApi,
-} from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { curationApi, type ConflictResolutionApi } from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   conflictRelationLabel,
   conflictResolutionLabel,
   conflictStatusLabel,
   mapConflictItem,
-} from '@/domain/curation';
-import { resourceTypeRu } from '@/domain/resource-type';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/curation";
+import { resourceTypeRu } from "@/domain/resource-type";
+import { Button } from "@/ui/shadcn/button";
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-import { isConflictAccessAllowed } from '../ConflictsListClient';
+import { isConflictAccessAllowed } from "../ConflictsListClient";
 
-/** Поля окна валидности для резолюции «Эволюция» (raw из datetime-local). */
 export interface EvolvingMetaInput {
   existingValidUntil: string;
   newValidFrom: string;
 }
 
-/** Полный список вариантов резолюции конфликта (совпадает с domain-слоем). */
 const RESOLUTION_OPTIONS: readonly ConflictResolutionApi[] = [
-  'accept_new',
-  'keep_old',
-  'merge',
-  'evolving',
+  "accept_new",
+  "keep_old",
+  "merge",
+  "evolving",
 ];
 
-/**
- * Чистая блокирующая валидация резолюции конфликта.
- *
- * Резолюция `evolving` требует ОБЕ даты окна валидности
- * (`existingValidUntil` + `newValidFrom`). Остальные варианты
- * (`accept_new`/`keep_old`/`merge`) валидны всегда.
- *
- * Вынесено отдельным экспортом для unit-покрытия
- * (см. `ConflictDetailClient.spec.ts`).
- *
- * @returns текст подсказки (почему нельзя) или `null`, если всё валидно.
- */
 export function isResolveBlocked(
   resolution: ConflictResolutionApi,
   evolvingMeta: EvolvingMetaInput,
 ): string | null {
-  if (resolution === 'evolving') {
-    if (!evolvingMeta.existingValidUntil.trim() || !evolvingMeta.newValidFrom.trim()) {
-      return 'Для «Эволюции» укажите обе даты: старое действовало до и новое действует с.';
+  if (resolution === "evolving") {
+    if (
+      !evolvingMeta.existingValidUntil.trim() ||
+      !evolvingMeta.newValidFrom.trim()
+    ) {
+      return "Для «Эволюции» укажите обе даты: старое действовало до и новое действует с.";
     }
   }
   return null;
@@ -75,12 +61,15 @@ export function ConflictDetailClient({ conflictId }: { conflictId: string }) {
     isSuperAdmin,
   } = useAuth();
 
-  const conflictSwr = useSWR(['curation-conflict', conflictId], async () => {
+  const conflictSwr = useSWR(["curation-conflict", conflictId], async () => {
     const api = await curationApi.getConflict(conflictId);
     return mapConflictItem(api);
   });
 
-  if (authLoading || (conflictSwr.isLoading && !conflictSwr.data && !conflictSwr.error)) {
+  if (
+    authLoading ||
+    (conflictSwr.isLoading && !conflictSwr.data && !conflictSwr.error)
+  ) {
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         <AdminLoading rows={6} />
@@ -118,10 +107,10 @@ export function ConflictDetailClient({ conflictId }: { conflictId: string }) {
   if (conflictSwr.error) {
     const notFound =
       conflictSwr.error instanceof ApiError &&
-      (conflictSwr.error.code === 'conflict_not_found' ||
-        conflictSwr.error.code === 'http_404' ||
-        conflictSwr.error.code === 'forbidden' ||
-        conflictSwr.error.code === 'http_403');
+      (conflictSwr.error.code === "conflict_not_found" ||
+        conflictSwr.error.code === "http_404" ||
+        conflictSwr.error.code === "forbidden" ||
+        conflictSwr.error.code === "http_403");
     return (
       <div className="mx-auto w-full max-w-4xl px-6 py-8">
         {notFound ? (
@@ -134,7 +123,7 @@ export function ConflictDetailClient({ conflictId }: { conflictId: string }) {
             message={
               conflictSwr.error instanceof ApiError
                 ? conflictSwr.error.message
-                : 'Не удалось загрузить конфликт'
+                : "Не удалось загрузить конфликт"
             }
             onRetry={() => void conflictSwr.mutate()}
           />
@@ -175,13 +164,13 @@ function ConflictDetailView({
   const router = useRouter();
 
   const [resolution, setResolution] =
-    useState<ConflictResolutionApi>('accept_new');
-  const [existingValidUntil, setExistingValidUntil] = useState('');
-  const [newValidFrom, setNewValidFrom] = useState('');
-  const [reasoning, setReasoning] = useState('');
+    useState<ConflictResolutionApi>("accept_new");
+  const [existingValidUntil, setExistingValidUntil] = useState("");
+  const [newValidFrom, setNewValidFrom] = useState("");
+  const [reasoning, setReasoning] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const isOpen = conflict.status === 'open';
+  const isOpen = conflict.status === "open";
 
   const blockReason = useMemo<string | null>(
     () => isResolveBlocked(resolution, { existingValidUntil, newValidFrom }),
@@ -194,7 +183,7 @@ function ConflictDetailView({
     try {
       await curationApi.resolveConflict(conflict.id, {
         resolution,
-        ...(resolution === 'evolving'
+        ...(resolution === "evolving"
           ? {
               evolvingMeta: {
                 existingValidUntil: new Date(existingValidUntil).toISOString(),
@@ -204,13 +193,11 @@ function ConflictDetailView({
           : {}),
         ...(reasoning.trim() ? { reasoning: reasoning.trim() } : {}),
       });
-      toast.success('Конфликт разрешён');
+      toast.success("Конфликт разрешён");
       onAfterResolve();
-      router.push('/curation/conflicts');
+      router.push("/curation/conflicts");
     } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось разрешить конфликт'),
-      );
+      toast.error(humanizeApiError(e, "Не удалось разрешить конфликт"));
     } finally {
       setSubmitting(false);
     }
@@ -228,14 +215,15 @@ function ConflictDetailView({
   const dismiss = useCallback(async () => {
     setSubmitting(true);
     try {
-      await curationApi.dismissConflict(conflict.id, reasoning.trim() || undefined);
-      toast.success('Конфликт отклонён');
-      onAfterResolve();
-      router.push('/curation/conflicts');
-    } catch (e) {
-      toast.error(
-        humanizeApiError(e, 'Не удалось отклонить конфликт'),
+      await curationApi.dismissConflict(
+        conflict.id,
+        reasoning.trim() || undefined,
       );
+      toast.success("Конфликт отклонён");
+      onAfterResolve();
+      router.push("/curation/conflicts");
+    } catch (e) {
+      toast.error(humanizeApiError(e, "Не удалось отклонить конфликт"));
     } finally {
       setSubmitting(false);
     }
@@ -244,14 +232,19 @@ function ConflictDetailView({
   return (
     <div className="mx-auto w-full max-w-4xl px-6 py-8">
       <div className="mb-4">
-        <Button asChild variant="ghost" size="sm" className="gap-1 text-fg-tertiary">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="gap-1 text-fg-tertiary"
+        >
           <Link href="/curation/conflicts">
             <ChevronLeft size={16} /> К списку конфликтов
           </Link>
         </Button>
       </div>
 
-      {/* Заголовок */}
+      {}
       <header className="mb-6">
         <div className="text-xs uppercase tracking-wide text-fg-tertiary">
           {resourceTypeRu(conflict.resourceType)}
@@ -273,11 +266,11 @@ function ConflictDetailView({
           </span>
         </div>
         <div className="mt-2 text-xs text-fg-tertiary">
-          обнаружено {conflict.createdAt.toLocaleString('ru-RU')}
+          обнаружено {conflict.createdAt.toLocaleString("ru-RU")}
         </div>
       </header>
 
-      {/* Две карточки: существующая vs новая */}
+      {}
       <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-lg border border-border-subtle bg-bg-card p-4">
           <div className="mb-1 text-xs uppercase tracking-wide text-fg-tertiary">
@@ -303,38 +296,38 @@ function ConflictDetailView({
         </div>
       </section>
 
-      {/* Объяснение Коры — человекочитаемо, без сырого JSON */}
+      {}
       <section className="mb-6">
         <h2 className="mb-1.5 text-sm font-medium">Почему Кора так решила</h2>
         <ConflictEvidence evidence={conflict.evidence} />
       </section>
 
-      {/* Уже разрешён — показываем результат */}
-      {conflict.status === 'resolved' && conflict.resolution && (
+      {}
+      {conflict.status === "resolved" && conflict.resolution && (
         <section className="mb-6 space-y-1 rounded-lg border border-success/40 bg-success/5 p-4 text-sm">
           <div className="font-medium">
             Решение: {conflictResolutionLabel(conflict.resolution)}
           </div>
           {conflict.resolvedAt && (
             <div className="text-xs text-fg-tertiary">
-              разрешён {conflict.resolvedAt.toLocaleString('ru-RU')}
+              разрешён {conflict.resolvedAt.toLocaleString("ru-RU")}
             </div>
           )}
           {conflict.evolvingMeta && (
             <div className="text-xs text-fg-secondary">
               {conflict.evolvingMeta.existingValidUntil && (
                 <span>
-                  старое действовало до:{' '}
+                  старое действовало до:{" "}
                   {new Date(
                     conflict.evolvingMeta.existingValidUntil,
-                  ).toLocaleString('ru-RU')}
+                  ).toLocaleString("ru-RU")}
                 </span>
               )}
               {conflict.evolvingMeta.newValidFrom && (
                 <span className="ml-2">
-                  новое действует с:{' '}
+                  новое действует с:{" "}
                   {new Date(conflict.evolvingMeta.newValidFrom).toLocaleString(
-                    'ru-RU',
+                    "ru-RU",
                   )}
                 </span>
               )}
@@ -346,12 +339,12 @@ function ConflictDetailView({
         </section>
       )}
 
-      {conflict.status === 'dismissed' && (
+      {conflict.status === "dismissed" && (
         <section className="mb-6 space-y-1 rounded-lg border border-border-subtle bg-bg-overlay p-4 text-sm">
           <div className="font-medium">Конфликт отклонён</div>
           {conflict.resolvedAt && (
             <div className="text-xs text-fg-tertiary">
-              {conflict.resolvedAt.toLocaleString('ru-RU')}
+              {conflict.resolvedAt.toLocaleString("ru-RU")}
             </div>
           )}
           {conflict.reasoning && (
@@ -360,7 +353,7 @@ function ConflictDetailView({
         </section>
       )}
 
-      {/* Панель резолюции — только для открытых конфликтов */}
+      {}
       {isOpen ? (
         <section className="space-y-3 rounded-lg border border-border-subtle bg-bg-card p-5">
           <h2 className="text-sm font-medium">Разрешить конфликт</h2>
@@ -388,7 +381,7 @@ function ConflictDetailView({
             </select>
           </div>
 
-          {resolution === 'evolving' && (
+          {resolution === "evolving" && (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
                 <label
@@ -448,13 +441,13 @@ function ConflictDetailView({
               onClick={() => void dismiss()}
               disabled={submitting}
             >
-              {submitting ? 'Сохраняем…' : 'Отклонить'}
+              {submitting ? "Сохраняем…" : "Отклонить"}
             </Button>
             <Button
               onClick={() => void resolve()}
               disabled={submitting || !!blockReason}
             >
-              {submitting ? 'Сохраняем…' : 'Разрешить'}
+              {submitting ? "Сохраняем…" : "Разрешить"}
             </Button>
           </div>
         </section>
@@ -467,27 +460,17 @@ function ConflictDetailView({
   );
 }
 
-/**
- * Человекочитаемый рендер «доказательств» конфликта. Раньше здесь показывался
- * сырой `JSON.stringify(evidence)` — техническая утечка в интерфейс. Теперь:
- * текст объяснения (поле `explanation`) + уверенность в процентах. Остальные
- * технические поля (blockIds/relationType) пользователю не показываем.
- */
-function ConflictEvidence({
-  evidence,
-}: {
-  evidence: Record<string, unknown>;
-}) {
+function ConflictEvidence({ evidence }: { evidence: Record<string, unknown> }) {
   const explanation =
-    typeof evidence.explanation === 'string' ? evidence.explanation.trim() : '';
+    typeof evidence.explanation === "string" ? evidence.explanation.trim() : "";
   const confidence =
-    typeof evidence.confidence === 'number' ? evidence.confidence : null;
+    typeof evidence.confidence === "number" ? evidence.confidence : null;
 
   return (
     <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-card p-4 text-sm">
       <p className="leading-relaxed text-fg-secondary">
         {explanation ||
-          'Кора нашла возможное противоречие между двумя карточками знания.'}
+          "Кора нашла возможное противоречие между двумя карточками знания."}
       </p>
       {confidence !== null ? (
         <p className="text-xs text-fg-tertiary">

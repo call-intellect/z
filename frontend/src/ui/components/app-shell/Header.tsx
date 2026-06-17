@@ -1,23 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Menu } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
-import { Sidebar } from './Sidebar';
-import { OrgSwitcher } from './OrgSwitcher';
-import { PendingActionsBell } from './PendingActionsBell';
+import { useState } from "react";
+import { Menu } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { Sheet, SheetContent } from "@/ui/shadcn/sheet";
+import { Sidebar } from "./Sidebar";
+import { OrgSwitcher } from "./OrgSwitcher";
+import { PendingActionsBell } from "./PendingActionsBell";
 
-/**
- * Mobile header — burger который открывает sidebar в Sheet.
- * На desktop этот компонент не показывается (см. AppShell).
- *
- * Расположение элементов (Фаза 0c §5.3):
- *   [Лого Z] [OrgSwitcher mobile] ...spacer... [бургер]
- *
- * `OrgSwitcher` сам решает, что рендерить (0/1/N memberships) и скрывается
- * автоматически на роутах wizard'а `/onboarding/company/*`.
- */
 export function MobileHeader() {
   const [open, setOpen] = useState(false);
   return (
@@ -33,7 +23,7 @@ export function MobileHeader() {
         <OrgSwitcher variant="mobile" />
       </div>
 
-      {/* Action Center B1 — глобальный колокольчик рядом с бургером. */}
+      {}
       <PendingActionsBell />
 
       <Button

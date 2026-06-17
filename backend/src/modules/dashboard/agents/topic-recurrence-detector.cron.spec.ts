@@ -1,6 +1,3 @@
-/**
- * Unit-тесты `TopicRecurrenceDetectorCron` (Pulse Wave 6 §6.2).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -16,9 +13,7 @@ function buildCron(opts: {
   orgs: Array<{ id: string }>;
   themesByOrg?: Record<string, Array<{ id: string; name: string }>>;
   themeBlocksByTheme?: Record<string, MockThemeBlock[]>;
-  decisionCountFn?: (args: {
-    where: { sourceBlockIds: { hasSome: string[] } };
-  }) => Promise<number>;
+  decisionCountFn?: (args: { where: { sourceBlockIds: { hasSome: string[] } } }) => Promise<number>;
 }): {
   cron: TopicRecurrenceDetectorCron;
   recurringCreate: ReturnType<typeof vi.fn>;
@@ -26,8 +21,7 @@ function buildCron(opts: {
   const recurringCreate = vi.fn();
   const orgFindMany = vi.fn(async () => opts.orgs);
   const themeFindMany = vi.fn(
-    async (args: { where: { tenantId: string } }) =>
-      opts.themesByOrg?.[args.where.tenantId] ?? [],
+    async (args: { where: { tenantId: string } }) => opts.themesByOrg?.[args.where.tenantId] ?? [],
   );
   const themeBlockFindMany = vi.fn(
     async (args: { where: { themeId: string } }) =>
@@ -52,7 +46,7 @@ describe('TopicRecurrenceDetectorCron.runOnce', () => {
       blockId: `b${i}`,
       block: {
         id: `b${i}`,
-        evidence: [{ rawEventId: `re${i % 3}` }], // 3 разных rawEventId
+        evidence: [{ rawEventId: `re${i % 3}` }],
       },
     }));
 
@@ -62,7 +56,7 @@ describe('TopicRecurrenceDetectorCron.runOnce', () => {
         org1: [{ id: 't1', name: 'Бэклог фронта' }],
       },
       themeBlocksByTheme: { t1: themeBlocks },
-      decisionCountFn: async () => 0, // нет implemented Decision
+      decisionCountFn: async () => 0,
     });
 
     const stats = await cron.runOnce();
@@ -75,13 +69,7 @@ describe('TopicRecurrenceDetectorCron.runOnce', () => {
     expect(data.mentionCount).toBe(5);
     expect(data.meetingCount).toBe(3);
     expect(data.hasImplementedDecision).toBe(false);
-    expect(data.blockIdsJson.ids).toEqual([
-      'b0',
-      'b1',
-      'b2',
-      'b3',
-      'b4',
-    ]);
+    expect(data.blockIdsJson.ids).toEqual(['b0', 'b1', 'b2', 'b3', 'b4']);
   });
 
   it('пропускает Theme с implemented Decision', async () => {
@@ -93,7 +81,7 @@ describe('TopicRecurrenceDetectorCron.runOnce', () => {
       orgs: [{ id: 'org1' }],
       themesByOrg: { org1: [{ id: 't1', name: 'Тема X' }] },
       themeBlocksByTheme: { t1: themeBlocks },
-      decisionCountFn: async () => 1, // есть implemented
+      decisionCountFn: async () => 1,
     });
     const stats = await cron.runOnce();
     expect(stats.snapshotsCreated).toBe(0);

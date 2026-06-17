@@ -1,29 +1,3 @@
-/**
- * TZ-1 Фаза 0 (daily-value-engine) — включить доставку дайджестов в Telegram.
- *
- * Контекст (LOCKED DECISION 1): владелец авторизовал доставку в Telegram для
- * батча daily-value (2026-06-08). Переводим в `true` два существующих флага,
- * которые исторически засеяны `false` («дефолт OFF, включим потом»):
- *   - operations.daily_digest.deliver_to_telegram — ежедневный отчёт COO в ТГ.
- *   - goals.pulse.deliver_to_telegram             — еженедельный пульс целей в ТГ.
- *
- * Cron-код НЕ меняем — он читает эти AdminSetting через getDynamic; достаточно
- * флипнуть значение.
- *
- * Уважение admin-override (safe-seed-rules):
- *   - запись отсутствует → пропускаем (seed её покроет);
- *   - value === true → no-op (already-true);
- *   - updatedBy != null И != 'system' (правил человек) → no-op (уважаем override);
- *   - иначе → update → true.
- *
- * Идемпотентность: повторный прогон → всё already-true → 0 updated.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-enable-telegram-digests.ts
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'patch', skipBootstrap).
- */
-
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -38,17 +12,11 @@ export interface ExistingSetting {
   updatedBy: string | null;
 }
 
-export type Decision =
-  | 'update'
-  | 'skip-absent'
-  | 'skip-already-true'
-  | 'skip-admin-edited';
+export type Decision = 'update' | 'skip-absent' | 'skip-already-true' | 'skip-admin-edited';
 
-/** Чистое решение по одной записи — для unit-теста. */
 export function decide(existing: ExistingSetting | null): Decision {
   if (existing === null) return 'skip-absent';
   if (existing.value === true) return 'skip-already-true';
-  // updatedBy != null И != 'system' → правил человек, уважаем override.
   if (existing.updatedBy !== null && existing.updatedBy !== 'system') {
     return 'skip-admin-edited';
   }
@@ -62,9 +30,7 @@ export interface Stats {
   skippedAdminEdited: number;
 }
 
-export async function patchEnableTelegramDigests(
-  prisma: PrismaClient,
-): Promise<Stats> {
+export async function patchEnableTelegramDigests(prisma: PrismaClient): Promise<Stats> {
   const stats: Stats = {
     updated: 0,
     skippedAbsent: 0,

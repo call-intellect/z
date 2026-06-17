@@ -2,16 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SkillTraitCategoryService } from './skill-trait-categories.service';
 
-/**
- * SBA γ-1 доделки — unit-тесты SkillTraitCategoryService.
- *
- * Полный спект (CRUD + merge) тестируется через integration spec
- * `skill-trait-categories.integration.spec.ts` (требует PrismaService;
- * откладывается до отдельного integration stand). Здесь — чистые функции
- * без зависимостей от БД: `slugify`.
- */
 describe('SkillTraitCategoryService.slugify', () => {
-  // Создаём instance со стабами — slugify не использует prisma/audit/metrics.
   const svc = new SkillTraitCategoryService(
     {} as never,
     { log: () => Promise.resolve() } as never,

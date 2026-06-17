@@ -1,22 +1,3 @@
-/**
- * SpecialistsCombinedWorker — ТЗ 2026-05-25 llm-architecture-changes §3
- * (Variant Б+).
- *
- * Consumer `core.specialists-combined`. На вход — `{ meetingId }`. Загружает
- * canonical-блоки встречи через `BlockFetchService`, конвертирует в
- * `CombinedInputBlock[]` (формат из §3.5 ТЗ) и дёргает
- * `SpecialistsCombinedService.extractAll`. Один LLM-вызов на ВСЕ блоки.
- *
- * Producer'ы: на 2026-06-10 cron-producer удалён вместе с v2-стеком (он работал
- * только при `KNOWLEDGE_CORE_V2_AGENTS_ENABLED=true`, который прод никогда не
- * включал). Enqueue остаётся доступен через `CoreQueueService.enqueueSpecialistsCombined`
- * (ручной запуск / тесты); per-block специалисты продолжают работать через
- * `block-ingest.worker → router.dispatch`.
- *
- * Идемпотентность через jobId=`specialists_combined_<meetingId>` (CoreQueueService).
- * Concurrency=1 — один большой LLM-вызов на встречу, упираемся в провайдера.
- */
-
 import {
   Inject,
   Injectable,
@@ -27,14 +8,10 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  CORE_QUEUE_NAMES,
-  type SpecialistsCombinedJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type SpecialistsCombinedJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import type { CombinedInputBlock } from '../prompts/specialists-combined.prompt';
 import { BlockFetchService } from '../services/block-fetch.service';
@@ -66,8 +43,11 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
     this.worker = new Worker<SpecialistsCombinedJobData>(
       CORE_QUEUE_NAMES.SPECIALISTS_COMBINED,
       async (job) =>
-        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'kc.specialists-combined', job.data.meetingId, () =>
-          this.process(job),
+        this.pipe.meeting(
+          SystemLogPipeline.AI_ANALYSIS,
+          'kc.specialists-combined',
+          job.data.meetingId,
+          () => this.process(job),
         ),
       {
         connection: this.redis.client,
@@ -97,14 +77,9 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
     }
   }
 
-  /**
-   * Главный handler. Public — удобно дёргать из integration-тестов без BullMQ.
-   */
   async process(job: Job<SpecialistsCombinedJobData>): Promise<void> {
     const { meetingId } = job.data;
 
-    // Master-флаг — даже если в очереди уже есть jobs, при отключении флага
-    // на проде хотим тихо пропускать (best-effort на rollback).
     if (this.cfg && this.cfg.specialistsCombined.enabled === false) {
       this.logger.debug(
         { meetingId },
@@ -118,32 +93,20 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       select: { id: true, tenantId: true, title: true, deletedAt: true },
     });
     if (!meeting) {
-      this.logger.debug(
-        { meetingId },
-        'specialists-combined: meeting не найден — skip',
-      );
+      this.logger.debug({ meetingId }, 'specialists-combined: meeting не найден — skip');
       return;
     }
     if (meeting.deletedAt) {
-      this.logger.debug(
-        { meetingId },
-        'specialists-combined: meeting удалён — skip',
-      );
+      this.logger.debug({ meetingId }, 'specialists-combined: meeting удалён — skip');
       return;
     }
     if (!meeting.tenantId) {
-      this.logger.warn(
-        { meetingId },
-        'specialists-combined: tenantId=null (legacy) — skip',
-      );
+      this.logger.warn({ meetingId }, 'specialists-combined: tenantId=null (legacy) — skip');
       return;
     }
     const tenantId = meeting.tenantId;
 
-    const meetingBlocks = await this.blockFetch.getCanonicalBlocksForMeeting(
-      meetingId,
-      tenantId,
-    );
+    const meetingBlocks = await this.blockFetch.getCanonicalBlocksForMeeting(meetingId, tenantId);
     if (meetingBlocks.length === 0) {
       this.logger.debug(
         { meetingId, tenantId },
@@ -152,9 +115,6 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       return;
     }
 
-    // Для knowledge_categories / skill_traits / helpfulness_traits нужны
-    // имена участников блока. Один SQL — IdeaBlockEntity → Entity (type=person)
-    // → Person.name. Ограничиваем 200 ассоциациями (защита от баласта).
     const blockIds = meetingBlocks.map((b) => b.id);
     const personMentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
@@ -175,7 +135,6 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       personNamesByBlock.set(m.blockId, list);
     }
 
-    // Конвертация в CombinedInputBlock[].
     const inputBlocks: CombinedInputBlock[] = meetingBlocks.map((b) => {
       const evidence0 = b.evidence[0];
       return {
@@ -215,9 +174,6 @@ export class SpecialistsCombinedWorker implements OnModuleInit, OnModuleDestroy 
       );
     } catch (err) {
       if (err instanceof SpecialistsCombinedParseError) {
-        // Парсер упал — это не баг провайдера, retry не поможет.
-        // Логируем и завершаем без throw (job уйдёт в completed,
-        // не будет крутиться).
         this.logger.error(
           {
             meetingId,

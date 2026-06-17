@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -39,20 +36,6 @@ import {
 } from './dto/kpi.dto';
 import { KpiService } from './services/kpi.service';
 
-/**
- * SBA α-8 wave 3 — REST API для KPI (Metric с attachedTo*Id).
- *
- *   GET    /api/v1/kpi?attachedToRoleId=&attachedToDepartmentId=...
- *   GET    /api/v1/kpi/:id
- *   POST   /api/v1/kpi
- *   PATCH  /api/v1/kpi/:id
- *   DELETE /api/v1/kpi/:id
- *   PATCH  /api/v1/kpi/:id/measurement
- *
- * RBAC ресурс — `kpi`. owner/admin — read/write/delete/manage.
- * `manage` — для measurement (атомарное обновление currentValue).
- * manager — read.
- */
 @ApiTags('kpi')
 @Controller('api/v1/kpi')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -89,8 +72,7 @@ export class KpiController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary:
-      'Создать KPI (Metric с attachedTo*Id). Требуется хотя бы один attached*Id.',
+    summary: 'Создать KPI (Metric с attachedTo*Id). Требуется хотя бы один attached*Id.',
   })
   async create(
     @Body(new ZodValidationPipe(CreateKpiSchema)) body: CreateKpiDto,
@@ -129,8 +111,7 @@ export class KpiController {
 
   @Patch(':id/measurement')
   @ApiOperation({
-    summary:
-      'Атомарное обновление currentValue + lastMeasuredAt (опц. currentValueUnit)',
+    summary: 'Атомарное обновление currentValue + lastMeasuredAt (опц. currentValueUnit)',
   })
   async measurement(
     @Param('id') id: string,
@@ -143,8 +124,6 @@ export class KpiController {
     await this.requireManage(user.id, t);
     return this.kpi.measurement({ tenantId: t, userId: user.id, id, body });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -164,9 +143,7 @@ export class KpiController {
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'kpi');
     if (!ok) {
-      throw this.forbidden(
-        'Изменять KPI может только владелец/администратор Org',
-      );
+      throw this.forbidden('Изменять KPI может только владелец/администратор Org');
     }
   }
 
@@ -178,9 +155,7 @@ export class KpiController {
       act: 'delete',
     });
     if (!ok) {
-      throw this.forbidden(
-        'Удалять KPI может только владелец/администратор Org',
-      );
+      throw this.forbidden('Удалять KPI может только владелец/администратор Org');
     }
   }
 
@@ -192,9 +167,7 @@ export class KpiController {
       act: 'manage',
     });
     if (!ok) {
-      throw this.forbidden(
-        'Регистрировать измерения KPI может только владелец/администратор Org',
-      );
+      throw this.forbidden('Регистрировать измерения KPI может только владелец/администратор Org');
     }
   }
 

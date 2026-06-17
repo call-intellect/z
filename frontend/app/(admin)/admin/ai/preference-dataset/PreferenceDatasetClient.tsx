@@ -1,54 +1,54 @@
-'use client';
+"use client";
 
-import { Download } from 'lucide-react';
-import { useState } from 'react';
+import { Download } from "lucide-react";
+import { useState } from "react";
 
-import { adminLlmPreferenceDatasetApi } from '@/api/admin-llm-preference-dataset.api';
+import { adminLlmPreferenceDatasetApi } from "@/api/admin-llm-preference-dataset.api";
 import {
   adminPreferenceSampleFromApi,
   type AdminPreferenceSampleDomain,
   type AdminPreferenceStatsApi,
-} from '@/domain/admin-llm-preference-sample';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-llm-preference-sample";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
 type Filters = {
   taskType: string;
-  label: '' | 'correct' | 'wrong' | 'misleading';
+  label: "" | "correct" | "wrong" | "misleading";
   from: string;
   to: string;
   limit: number;
 };
 
 const DEFAULT_FILTERS: Filters = {
-  taskType: '',
-  label: '',
-  from: '',
-  to: '',
+  taskType: "",
+  label: "",
+  from: "",
+  to: "",
   limit: 200,
 };
 
 const LABEL_RU: Record<string, string> = {
-  correct: 'верно',
-  wrong: 'неверно',
-  misleading: 'вводит в заблуждение',
+  correct: "верно",
+  wrong: "неверно",
+  misleading: "вводит в заблуждение",
 };
 
 function labelVariant(
   label: string,
-): 'default' | 'secondary' | 'outline' | 'success' | 'warning' | 'danger' {
-  if (label === 'correct') return 'success';
-  if (label === 'wrong') return 'danger';
-  if (label === 'misleading') return 'warning';
-  return 'outline';
+): "default" | "secondary" | "outline" | "success" | "warning" | "danger" {
+  if (label === "correct") return "success";
+  if (label === "wrong") return "danger";
+  if (label === "misleading") return "warning";
+  return "outline";
 }
 
 export function PreferenceDatasetClient() {
@@ -100,9 +100,9 @@ export function PreferenceDatasetClient() {
         <div>
           <h1 className="text-2xl font-semibold">Preference dataset</h1>
           <p className="text-sm text-fg-tertiary">
-            Записи, которые куратор пометил как «верно», «неверно» или «вводит
-            в заблуждение». Используются для оффлайн-обучения few-shot
-            промптов специалистов LLM (taskType 3.x).
+            Записи, которые куратор пометил как «верно», «неверно» или «вводит в
+            заблуждение». Используются для оффлайн-обучения few-shot промптов
+            специалистов LLM (taskType 3.x).
           </p>
         </div>
         <a href={downloadUrl} download>
@@ -113,7 +113,7 @@ export function PreferenceDatasetClient() {
         </a>
       </div>
 
-      {/* ── Сводка ─────────────────────────────────────────────── */}
+      {}
       <section className="rounded-lg border border-border-subtle bg-bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
           Сводка
@@ -123,12 +123,10 @@ export function PreferenceDatasetClient() {
         {!statsQ.isLoading && statsQ.error && (
           <AdminError message={statsQ.error} onRetry={statsQ.refetch} />
         )}
-        {!statsQ.isLoading && statsQ.data && (
-          <StatsBlock stats={statsQ.data} />
-        )}
+        {!statsQ.isLoading && statsQ.data && <StatsBlock stats={statsQ.data} />}
       </section>
 
-      {/* ── Фильтры ────────────────────────────────────────────── */}
+      {}
       <section className="rounded-lg border border-border-subtle bg-bg-card p-4">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
           Фильтры
@@ -154,7 +152,7 @@ export function PreferenceDatasetClient() {
               onChange={(e) =>
                 setFilters((f) => ({
                   ...f,
-                  label: e.target.value as Filters['label'],
+                  label: e.target.value as Filters["label"],
                 }))
               }
             >
@@ -197,7 +195,10 @@ export function PreferenceDatasetClient() {
               onChange={(e) =>
                 setFilters((f) => ({
                   ...f,
-                  limit: Math.max(1, Math.min(1000, Number(e.target.value) || 200)),
+                  limit: Math.max(
+                    1,
+                    Math.min(1000, Number(e.target.value) || 200),
+                  ),
                 }))
               }
             />
@@ -213,7 +214,7 @@ export function PreferenceDatasetClient() {
         </div>
       </section>
 
-      {/* ── Таблица ────────────────────────────────────────────── */}
+      {}
       <section>
         {listQ.isLoading && <AdminLoading rows={5} />}
         {!listQ.isLoading && listQ.isForbidden && <AdminForbidden />}
@@ -246,12 +247,12 @@ function StatsBlock({ stats }: { stats: AdminPreferenceStatsApi }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="text-3xl font-semibold tabular-nums">
-          {stats.total.toLocaleString('ru-RU')}
+          {stats.total.toLocaleString("ru-RU")}
         </span>
         <span className="text-sm text-fg-tertiary">записей всего</span>
         {Object.entries(stats.byLabel).map(([label, count]) => (
           <Badge key={label} variant={labelVariant(label)}>
-            {LABEL_RU[label] ?? label}: {count.toLocaleString('ru-RU')}
+            {LABEL_RU[label] ?? label}: {count.toLocaleString("ru-RU")}
           </Badge>
         ))}
       </div>
@@ -263,7 +264,9 @@ function StatsBlock({ stats }: { stats: AdminPreferenceStatsApi }) {
                 <th className="px-3 py-1.5 text-left">taskType</th>
                 <th className="px-3 py-1.5 text-right">верно</th>
                 <th className="px-3 py-1.5 text-right">неверно</th>
-                <th className="px-3 py-1.5 text-right">вводит в&nbsp;заблуждение</th>
+                <th className="px-3 py-1.5 text-right">
+                  вводит в&nbsp;заблуждение
+                </th>
                 <th className="px-3 py-1.5 text-right">всего</th>
               </tr>
             </thead>
@@ -317,7 +320,7 @@ function SamplesTable({ items }: { items: AdminPreferenceSampleDomain[] }) {
               className="border-t border-border-subtle align-top hover:bg-bg-overlay"
             >
               <td className="px-3 py-2 whitespace-nowrap text-xs tabular-nums">
-                {s.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
+                {s.createdAt.toISOString().slice(0, 16).replace("T", " ")}
               </td>
               <td className="px-3 py-2 font-mono text-xs">{s.tenantId}</td>
               <td className="px-3 py-2 font-mono text-xs">{s.taskType}</td>

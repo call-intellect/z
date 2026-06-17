@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { MeetingChapter } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -14,12 +8,6 @@ import { ChaptersRepository } from './chapters.repository';
 import type { CreateChapterDto } from './dto/create-chapter.dto';
 import type { UpdateChapterDto } from './dto/update-chapter.dto';
 
-/**
- * Сервис глав встречи. Генерация — через перезапуск ЕДИНОГО воркера
- * `meeting-report-fast` (`CoreQueueService.enqueueMeetingReportFast`),
- * который делает главы / задачи / качество одним LLM-вызовом. Ручные
- * правки — синхронные.
- */
 @Injectable()
 export class ChaptersService {
   private readonly logger = new Logger(ChaptersService.name);
@@ -35,16 +23,9 @@ export class ChaptersService {
     return this.repo.listByMeeting(meetingId);
   }
 
-  async create(
-    meetingId: string,
-    userId: string,
-    dto: CreateChapterDto,
-  ): Promise<MeetingChapter> {
+  async create(meetingId: string, userId: string, dto: CreateChapterDto): Promise<MeetingChapter> {
     await this.assertMeetingOwner(meetingId, userId);
-    const order =
-      dto.order !== undefined
-        ? dto.order
-        : await this.repo.countByMeeting(meetingId);
+    const order = dto.order !== undefined ? dto.order : await this.repo.countByMeeting(meetingId);
     return this.repo.create({
       meetingId,
       startMs: dto.startMs,
@@ -55,11 +36,7 @@ export class ChaptersService {
     });
   }
 
-  async update(
-    id: string,
-    userId: string,
-    dto: UpdateChapterDto,
-  ): Promise<MeetingChapter> {
+  async update(id: string, userId: string, dto: UpdateChapterDto): Promise<MeetingChapter> {
     const chapter = await this.repo.findById(id);
     if (!chapter) throw new NotFoundException('chapter_not_found');
     await this.assertMeetingOwner(chapter.meetingId, userId);
@@ -79,12 +56,6 @@ export class ChaptersService {
     await this.repo.delete(id);
   }
 
-  /**
-   * Идемпотентность: если `reportFastStatus === 'processing'` — 409 (главы
-   * считает ЕДИНЫЙ воркер meeting-report-fast). Иначе перезапускаем его.
-   * reason=`regen-<ts>` варьирует jobId, чтобы дедуп removeOnComplete не съел
-   * повторную постановку.
-   */
   async regenerate(meetingId: string, userId: string): Promise<{ status: 'queued' }> {
     await this.assertMeetingOwner(meetingId, userId);
     const meeting = await this.prisma.meeting.findUnique({
@@ -107,8 +78,6 @@ export class ChaptersService {
     this.logger.log(`chapters.regenerate enqueued meeting=${meetingId}`);
     return { status: 'queued' };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private async assertMeetingOwner(meetingId: string, userId: string): Promise<void> {
     const meeting = await this.prisma.meeting.findUnique({

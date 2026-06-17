@@ -8,7 +8,7 @@ owners_human:
   - инженер knowledge-core
   - продакт «памяти компании»
 related_plans:
-  - plans/tz/2026-05-10-knowledge-core-tz.md
+  - plans/archive/2026-05-10-knowledge-core-tz.md
 related_projects:
   - 02_architecture/knowledge-core.md
   - 01_projects/workers-queues.md
@@ -147,4 +147,4 @@ Theme { tenantId, name, description, branch, weight Decimal(4,3),
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
 | 2026-05-29 | Карточка создана | этот документ |
-| 2026-05-10 | Theme-clusterer + ThemeClassificationService запущены (Фаза 4) | plans/tz/2026-05-10-knowledge-core-tz.md |
+| 2026-05-10 | Theme-clusterer + ThemeClassificationService запущены (Фаза 4) | plans/archive/2026-05-10-knowledge-core-tz.md |

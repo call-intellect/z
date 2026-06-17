@@ -7,7 +7,7 @@ author: claude (оркестратор; работа выполнена пара
 related:
   - plans/analysis/2026-05-22-unified-product-architecture.md
   - plans/analysis/2026-05-22-code-reality-deltas.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-22-final-roadmap.md
 ---
 
 # Кора v2 — Shipping Report (19 sub-ТЗ batch)

@@ -233,7 +233,7 @@ ended_at
 
 ## Org / Membership / OrgInvitation / LlmModelPrice (Фаза 0 knowledge-core, 2026-05-10)
 
-Подробнее: [[../01_projects/orgs-and-rbac|orgs-and-rbac]] и [[../01_projects/llm-router|llm-router]].
+Подробнее: [[../01_projects/rbac-access-control|rbac-access-control]] и [[../01_projects/llm-router|llm-router]].
 
 ### Org
 
@@ -704,7 +704,7 @@ erDiagram
 - `MeetingType` enum + `review`, `retrospective`.
 - `IdeaBlock.roleRelevant Boolean`, `IdeaBlock.roleId?`.
 - `EntityLink` полиморфизована: `fromType?`, `toType?`, `validFrom`, `validTo?`, `properties Json`. Composite unique включает fromType/toType. FK на Entity убраны.
-- `EntityLinkType` enum +17 типов рёбер (см. `plans/tz/2026-05-21-phase-0a-data-model-and-graph-infra.md` §4.4).
+- `EntityLinkType` enum +17 типов рёбер (см. `plans/archive/2026-05-21-phase-0a-data-model-and-graph-infra.md` §4.4).
 - `Membership.personId?`, `OrgInvitation.personId?`, `User.persons[]`.
 
 ### Графовая инфраструктура
@@ -911,7 +911,7 @@ enum MailInboundStatus {
 
 ### SBA β-8.1 — DailyCheckIn.sentiment + WeeklyOperationsDigest (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md).
+**Источник:** [`plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md`](../../plans/archive/2026-05-24-sba-beta-8-1-coo-dobivka.md).
 
 **`DailyCheckIn` (расширение, β-8 + β-8.1):**
 
@@ -947,7 +947,7 @@ model WeeklyOperationsDigest {
 
 ### SBA β-8.3 — DailyOperationsDigest (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
+**Источник:** [`plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md`](../../plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md).
 
 **`DailyOperationsDigest` (новая, зеркало `WeeklyOperationsDigest` в окне 1 день МСК):**
 
@@ -972,7 +972,7 @@ model DailyOperationsDigest {
 
 ### SBA β-8.2 — IdeaBlock.commitment* + ребро `resolves` (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/tz/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).
+**Источник:** [`plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md`](../../plans/archive/2026-05-24-sba-beta-8-2-promise-keeper.md), [`plans/analysis/2026-05-24-zamykanie-obeschanij.md`](../../plans/analysis/2026-05-24-zamykanie-obeschanij.md).
 
 **`IdeaBlock` (расширение для `signalType='commitment'`):**
 
@@ -1007,7 +1007,7 @@ Autonomy W2 (2026-06-12) добавила **ещё два значения** (м
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
-**Источник:** [`plans/tz/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/tz/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
+**Источник:** [`plans/archive/2026-05-25-user-feedback-with-ai-clustering.md`](../../plans/archive/2026-05-25-user-feedback-with-ai-clustering.md). Полная заметка фичи — [[../01_projects/feedback]].
 
 Фича **глобальная (не tenant-bound)** — фидбэк адресован команде Z, а не конкретной `Org`. Поля `tenantId` в моделях нет.
 
@@ -1080,7 +1080,7 @@ model FeedbackItem {
 
 ## Clones v2 — CloneAccessGrant (Фаза 7 §9, 2026-05-26)
 
-**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2) + расширение из [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) (admin CRUD + soft-revoke + срок действия). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
+**Источник:** [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9 (clone-respond v2) + расширение из [`plans/archive/2026-05-26-clone-access-grant-admin-api.md`](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) (admin CRUD + soft-revoke + срок действия). Связь с UI/политикой ролевых клонов — [[../01_projects/skill-and-clone]] §«Доработки 2026-05-26».
 
 Многотуровый чат с клоном (persona или role) теперь требует явного гранта доступа — раньше доступ резолвился чисто RBAC-правилом owner/admin/self/manager, теперь добавляется per-pair (grantee × clone) ACL для коллабораций «дай мне поговорить с твоим клоном».
 
@@ -1198,7 +1198,7 @@ GIN-индекс `table_row_cells_gin ON "TableRow" USING GIN (cells jsonb_path_
 
 ## Goals OKR v2 — Граф целей (2026-06-02)
 
-**Источник:** [`plans/tz/2026-06-02-goals-okr-v2.md`](../../plans/tz/2026-06-02-goals-okr-v2.md) §2. Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` (НЕ переписывание) — расширение `Goal`, две новые модели измеримых ориентиров, тонкие FK слоёв, 4 enum'а. Применяется через `bun run prisma:push` (не migrate).
+**Источник:** [`plans/archive/2026-06-02-goals-okr-v2.md`](../../plans/archive/2026-06-02-goals-okr-v2.md) §2. Профильная заметка — [[../01_projects/goals-and-strategic-alignment]] §«Goals OKR v2». Достройка модуля `goals` (НЕ переписывание) — расширение `Goal`, две новые модели измеримых ориентиров, тонкие FK слоёв, 4 enum'а. Применяется через `bun run prisma:push` (не migrate).
 
 ### Расширение `model Goal`
 
@@ -1512,7 +1512,7 @@ enum MeetingStatus { ... ai_ready  ai_failed }   // новое значение
 
 ## Bitrix24-интеграция (2026-06-09)
 
-**Источник:** [`plans/tz/2026-06-09-bitrix24-integration-install.md`](../../plans/tz/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Модули — [[module-map]] §«Bitrix24-интеграция». Миграция `20260609112355_bitrix_integration` (1 таблица + 1 enum), применяется авто через `migrate deploy`.
+**Источник:** [`plans/archive/2026-06-09-bitrix24-integration-install.md`](../../plans/archive/2026-06-09-bitrix24-integration-install.md). Ветка `bitrix`. Модули — [[module-map]] §«Bitrix24-интеграция». Миграция `20260609112355_bitrix_integration` (1 таблица + 1 enum), применяется авто через `migrate deploy`.
 
 - **`BitrixIntegration`** — конфиг портала Bitrix24 ↔ org. Натуральный ключ `memberId @unique` (портал); `tenantId String?` (null пока `pending` — установка из Маркета до claim), `@@index([tenantId])`, `@@index([status])`. Поля: `portalDomain`, `clientEndpoint`/`serverEndpoint`, `scope`, `accessTokenEnc`/`refreshTokenEnc`/`applicationTokenEnc` (AES-256-GCM, никогда не plain), `accessExpiresAt`, `status` (enum), `lastError`, `lastConnectedAt`. Relation `org → Org?` (Cascade). Уникальность «одна connected на org» — на уровне сервиса.
 - **`enum BitrixIntegrationStatus`** — `pending | connected | error | disconnected`.
@@ -1639,7 +1639,7 @@ enum SkillTraitStatus {
 
 ## Батч 5 — дашборды + загрузка/импорт документов + загрузка встречи (2026-06-09)
 
-**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/tz/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/tz/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
+**Источник:** ТЗ-2 [`plans/tz/2026-06-08-dashboards-info-rework.md`](../../plans/tz/2026-06-08-dashboards-info-rework.md) ⊕ ТЗ-3 [`plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md`](../../plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md), ТЗ-4 [`plans/archive/2026-06-08-manual-document-upload-and-import-tz.md`](../../plans/archive/2026-06-08-manual-document-upload-and-import-tz.md), ТЗ-5 [`plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md`](../../plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md). Ветка `feature/2026-06-08-daily-value-dashboards-uploads`. Модули — [[module-map]] §«Батч 5»; рефлексия [[../05_история/2026-06-09-batch5-stage2-stage3]].
 
 ### Здоровье портфеля целей (S2.6 / ТЗ-2 Ф6, миграция `20260608190000_goal_priority_moscow`)
 
@@ -1688,7 +1688,7 @@ enum SkillTraitStatus {
 
 ## Служба поддержки — деск + закрытый контур + клон (2026-06-09)
 
-**Источник:** ТЗ [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
+**Источник:** ТЗ [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф4). Модуль — [[module-map]] §«support»; профильная заметка — [[../01_projects/support-desk]]. 3 миграции: `20260609120000_support_desk_phase1`, `20260609130000_support_draft_outcome`, `20260609140000_support_curator_action`. Все изменения аддитивны (ADD COLUMN / CREATE TABLE / ADD enum value).
 
 ### Расширение существующих сущностей (миграция `_phase1`)
 
@@ -1711,7 +1711,7 @@ enum SkillTraitStatus {
 
 ## Слой метода клона — RolePrinciple + SkillTrait.layer + CloneQueryLog (2026-06-12)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
+**Источник:** ТЗ [`plans/archive/2026-06-11-clone-persona-method-layer.md`](../../plans/archive/2026-06-11-clone-persona-method-layer.md) (Э0.1/Э1.1). Ветка `feature/clone-persona-method-layer`. Миграция **`20260612000000_clone_method_layer`** (аддитивная: 2 новые таблицы + enum + колонка с default). Полная карта фичи — [[../01_projects/skill-and-clone]] §«Доработки 2026-06-12»; cron'ы — [[../01_projects/workers-queues]]; taskType — [[../01_projects/ai-jobs]].
 
 ### `RolePrinciple` (новая, `@@map("role_principles")`) — Reflection-слой принципов роли
 

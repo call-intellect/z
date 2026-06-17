@@ -1,17 +1,7 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для интеграции с Чат боксом (ТЗ 2026-06-05 chatbox-integration,
- * Фаза 7). Контракт — `backend/src/modules/chatbox/`.
- *
- * Все эндпоинты под `CookieAuthGuard` + `TenantGuard`; `X-Org-Id`
- * подставляется `apiClient`'ом автоматически.
- *
- * Backend никогда не возвращает плейн-токен — вместо него флаг `hasToken`.
- */
-
-export type ChatboxSyncMode = 'hourly' | 'daily' | 'realtime';
-export type ChatboxStatus = 'connected' | 'error' | 'disconnected';
+export type ChatboxSyncMode = "hourly" | "daily" | "realtime";
+export type ChatboxStatus = "connected" | "error" | "disconnected";
 
 export type ChatboxIntegrationApi = {
   id: string;
@@ -54,28 +44,17 @@ export type ChatboxSyncStatusApi =
       counts: ChatboxSyncCountsApi;
     };
 
-export type ChatboxSyncScope = 'all' | 'customers' | 'managers' | 'chats';
-
-// --- Сводка «Чаты в памяти» (ТЗ 2026-06-11 remaining-handoff, блок A, Ф2) ---
+export type ChatboxSyncScope = "all" | "customers" | "managers" | "chats";
 
 export type ChatboxMemorySummaryApi = {
-  /** Настроена ли интеграция (иначе сводки нет). */
   configured: boolean;
-  /** Включён ли AI-анализ переписок. */
   analysisEnabled: boolean;
-  /** Забрано диалогов (ChatboxChat). */
   dialogs: number;
-  /** Сессий всего. */
   sessions: number;
-  /** Проанализировано сессий (analysisStatus='done'). */
   analyzed: number;
-  /** В работе (pending + analyzing). */
   inProgress: number;
-  /** Ошибки анализа. */
   failed: number;
-  /** Карточки памяти из переписки (RawEvent sourceType='chatbox'). */
   blocks: number;
-  /** Задачи из переписки (Task sourceType='chatbox'). */
   tasks: number;
 };
 
@@ -86,9 +65,7 @@ export type SaveChatboxIntegrationRequest = {
   analysisEnabled?: boolean;
 };
 
-// --- Просмотр чатов (ТЗ 2026-06-05 chatbox-integration, Фаза 8) ---
-
-export type ChatboxChatStatusApi = 'active' | 'closed';
+export type ChatboxChatStatusApi = "active" | "closed";
 
 export type ChatboxPartyApi = {
   externalId: string;
@@ -132,26 +109,25 @@ export type ChatboxChatDetailApi = ChatboxChatApi & {
 };
 
 export type ChatboxSenderTypeApi =
-  | 'CLIENT'
-  | 'USER'
-  | 'ASSISTANT'
-  | 'QUALITY_CONTROL';
+  | "CLIENT"
+  | "USER"
+  | "ASSISTANT"
+  | "QUALITY_CONTROL";
 
 export type ChatboxContentTypeApi =
-  | 'TEXT'
-  | 'IMAGE'
-  | 'AUDIO'
-  | 'VIDEO'
-  | 'VIDEO_NOTE'
-  | 'FILE'
-  | 'VOICE'
-  | 'COMMAND';
+  | "TEXT"
+  | "IMAGE"
+  | "AUDIO"
+  | "VIDEO"
+  | "VIDEO_NOTE"
+  | "FILE"
+  | "VOICE"
+  | "COMMAND";
 
 export type ChatboxMessageApi = {
   id: string;
   senderType: ChatboxSenderTypeApi;
   senderName: string | null;
-  /** Person Коры, связанный с отправителем-менеджером (ссылка на профиль). */
   senderPersonId: string | null;
   contentType: ChatboxContentTypeApi;
   text: string | null;
@@ -164,9 +140,7 @@ export type ChatboxMessageApi = {
   sessionId: string | null;
 };
 
-// --- Менеджеры → сотрудники (ТЗ 2026-06-05 chatbox-integration, Фаза 9) ---
-
-export type ChatboxLinkMode = 'auto' | 'manual' | 'none';
+export type ChatboxLinkMode = "auto" | "manual" | "none";
 
 export type ChatboxMemberApi = {
   id: string;
@@ -177,8 +151,6 @@ export type ChatboxMemberApi = {
   linkMode: ChatboxLinkMode;
   linkedPerson: { id: string; name: string | null } | null;
 };
-
-// --- Клиенты → сотрудники (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1) ---
 
 export type ChatboxCustomerApi = {
   id: string;
@@ -201,116 +173,109 @@ export type ListChatsQuery = {
 export type ListMessagesQuery = {
   limit?: number;
   offset?: number;
-  order?: 'asc' | 'desc';
+  order?: "asc" | "desc";
 };
 
 function buildQuery(q?: Record<string, string | number | undefined>): string {
-  if (!q) return '';
+  if (!q) return "";
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(q)) {
-    if (value === undefined || value === '') continue;
+    if (value === undefined || value === "") continue;
     params.set(key, String(value));
   }
   const s = params.toString();
-  return s ? `?${s}` : '';
+  return s ? `?${s}` : "";
 }
 
 export const chatboxApi = {
   getIntegration: () =>
-    apiClient.get<ChatboxIntegrationApi | null>('/api/v1/chatbox/integration'),
+    apiClient.get<ChatboxIntegrationApi | null>("/api/v1/chatbox/integration"),
 
-  // Бэк отдаёт голый массив воркспейсов (уже отфильтрованных по OWNER/ADMIN).
   listWorkspaces: (token: string) =>
     apiClient.post<ChatboxWorkspaceApi[]>(
-      '/api/v1/chatbox/integration/workspaces',
+      "/api/v1/chatbox/integration/workspaces",
       { token },
     ),
 
   saveIntegration: (body: SaveChatboxIntegrationRequest) =>
-    apiClient.put<ChatboxIntegrationApi>('/api/v1/chatbox/integration', body),
+    apiClient.put<ChatboxIntegrationApi>("/api/v1/chatbox/integration", body),
 
   deleteIntegration: () =>
-    apiClient.del<{ ok: true }>('/api/v1/chatbox/integration'),
+    apiClient.del<{ ok: true }>("/api/v1/chatbox/integration"),
 
-  // `since` (ISO) — бэкафилл чатов за период (scope='chats').
   sync: (scope: ChatboxSyncScope, since?: string) =>
     apiClient.post<{ ok: true; jobId: string }>(
-      '/api/v1/chatbox/integration/sync',
+      "/api/v1/chatbox/integration/sync",
       since ? { scope, since } : { scope },
     ),
 
   syncStatus: () =>
-    apiClient.get<ChatboxSyncStatusApi>('/api/v1/chatbox/integration/sync/status'),
-
-  // Сводка «Чаты в памяти» — счётчики по диалогам/анализу/графу (Ф2).
-  memorySummary: () =>
-    apiClient.get<ChatboxMemorySummaryApi>(
-      '/api/v1/chatbox/integration/memory-summary',
+    apiClient.get<ChatboxSyncStatusApi>(
+      "/api/v1/chatbox/integration/sync/status",
     ),
 
-  // --- Просмотр чатов (Фаза 8) ---
+  memorySummary: () =>
+    apiClient.get<ChatboxMemorySummaryApi>(
+      "/api/v1/chatbox/integration/memory-summary",
+    ),
 
   listChats: (q?: ListChatsQuery) =>
     apiClient.get<{ items: ChatboxChatApi[]; total: number }>(
-      '/api/v1/chatbox/chats' + buildQuery(q),
+      "/api/v1/chatbox/chats" + buildQuery(q),
     ),
 
   getChat: (id: string) =>
     apiClient.get<ChatboxChatDetailApi>(
-      '/api/v1/chatbox/chats/' + encodeURIComponent(id),
+      "/api/v1/chatbox/chats/" + encodeURIComponent(id),
     ),
 
   listMessages: (id: string, q?: ListMessagesQuery) =>
     apiClient.get<{ items: ChatboxMessageApi[]; total: number }>(
-      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/messages' + buildQuery(q),
+      "/api/v1/chatbox/chats/" +
+        encodeURIComponent(id) +
+        "/messages" +
+        buildQuery(q),
     ),
 
   sendMessage: (id: string, text: string) =>
     apiClient.post<{ ok: true; id: string }>(
-      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/messages',
+      "/api/v1/chatbox/chats/" + encodeURIComponent(id) + "/messages",
       { text },
     ),
 
-  // Ручной запуск AI-анализа по чату (закрытые pending-сессии).
   analyzeChat: (id: string) =>
     apiClient.post<{ ok: true; enqueued: number }>(
-      '/api/v1/chatbox/chats/' + encodeURIComponent(id) + '/analyze',
+      "/api/v1/chatbox/chats/" + encodeURIComponent(id) + "/analyze",
       {},
     ),
 
-  // --- Менеджеры → сотрудники (Фаза 9) ---
-
   listMembers: () =>
-    apiClient.get<ChatboxMemberApi[]>('/api/v1/chatbox/members'),
+    apiClient.get<ChatboxMemberApi[]>("/api/v1/chatbox/members"),
 
   linkMember: (id: string, personId: string | null) =>
     apiClient.put<{ ok: true; member: ChatboxMemberApi }>(
-      '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/link',
+      "/api/v1/chatbox/members/" + encodeURIComponent(id) + "/link",
       { personId },
     ),
 
-  // Создать сотрудника Коры из менеджера ChatBox и сразу привязать.
   createMemberPerson: (id: string) =>
     apiClient.post<{ ok: true; member: ChatboxMemberApi }>(
-      '/api/v1/chatbox/members/' + encodeURIComponent(id) + '/create-person',
+      "/api/v1/chatbox/members/" + encodeURIComponent(id) + "/create-person",
       {},
     ),
 
-  // --- Клиенты → сотрудники (Ф1) ---
-
   listCustomers: () =>
-    apiClient.get<ChatboxCustomerApi[]>('/api/v1/chatbox/customers'),
+    apiClient.get<ChatboxCustomerApi[]>("/api/v1/chatbox/customers"),
 
   linkCustomer: (id: string, personId: string | null) =>
     apiClient.put<{ ok: true; customer: ChatboxCustomerApi }>(
-      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/link',
+      "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/link",
       { personId },
     ),
 
-  // Создать сотрудника Коры из клиента ChatBox и сразу привязать.
   createCustomerPerson: (id: string) =>
     apiClient.post<{ ok: true; customer: ChatboxCustomerApi }>(
-      '/api/v1/chatbox/customers/' + encodeURIComponent(id) + '/create-person',
+      "/api/v1/chatbox/customers/" + encodeURIComponent(id) + "/create-person",
       {},
     ),
 };

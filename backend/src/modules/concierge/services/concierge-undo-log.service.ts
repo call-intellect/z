@@ -1,31 +1,12 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { type ConciergeUndoLog, Prisma } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-import {
-  ServiceMapGeneratorService,
-  type ToolSchema,
-} from './service-map-generator.service';
+import { ServiceMapGeneratorService, type ToolSchema } from './service-map-generator.service';
 import { ToolRouterService } from './tool-router.service';
 
-/**
- * SBA γ-2 — ConciergeUndoLogService.
- *
- * Хранит executed tool calls с rollback-инструкциями.
- *
- *   - `record(...)` — пишет лог после успешного tool execution.
- *   - `undo(logId, userId, tenantId, baseUrl, authCookie)` — выполняет rollback
- *     через ToolRouterService (вызывает undoableVia tool с теми же args или
- *     transformed).
- */
 @Injectable()
 export class ConciergeUndoLogService {
   private readonly logger = new Logger(ConciergeUndoLogService.name);
@@ -39,10 +20,6 @@ export class ConciergeUndoLogService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Зафиксировать выполненный tool call. Если у tool'а есть `undoableVia` —
-   * сохраняем инструкцию для последующего rollback'а.
-   */
   async record(args: {
     tenantId: string;
     conversationId: string;
@@ -53,7 +30,6 @@ export class ConciergeUndoLogService {
     const undoInstruction = args.tool.undoableVia
       ? {
           undoTool: args.tool.undoableVia,
-          // По умолчанию переиспользуем те же args + id из result (если есть).
           inheritedParams: args.params,
           resultIdHint: this.extractIdFromResult(args.result),
         }
@@ -73,11 +49,6 @@ export class ConciergeUndoLogService {
     });
   }
 
-  /**
-   * Выполнить rollback. Tool, на который ссылается undoInstruction.undoTool,
-   * должен присутствовать в whitelist; RBAC проверяется как при обычном
-   * execute.
-   */
   async undo(args: {
     logId: string;
     tenantId: string;
@@ -148,12 +119,6 @@ export class ConciergeUndoLogService {
     };
   }
 
-  // ──────────────────────────── private ────────────────────────────────
-
-  /**
-   * Попытаться извлечь `id` из result для подстановки в undoTool. Поддерживаем
-   * самые частые формы: { id }, { data: { id } }, { meeting: { id } }.
-   */
   private extractIdFromResult(result: unknown): string | null {
     if (!result || typeof result !== 'object') return null;
     const r = result as Record<string, unknown>;

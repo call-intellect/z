@@ -1,31 +1,3 @@
-/**
- * TochkaBillingProvider — реализация BillingProviderPort для Точка Банка.
- *
- * Endpoint'ы (см. документацию Точки):
- *   - acquiring/{v}/payments              — одноразовый платёж картой/СБП
- *   - acquiring/{v}/payments/{id}         — статус платежа
- *   - acquiring/{v}/payments/{id}/refund  — возврат
- *   - acquiring/{v}/subscriptions          — создание recurring подписки
- *   - acquiring/{v}/subscriptions/{id}/charge — попытка списания
- *   - acquiring/{v}/subscriptions/{id}/status — статус / отмена
- *   - invoice/{v}/bills                   — выставление безналичного счёта
- *   - invoice/{v}/bills/{cc}/{id}/...     — статус/email/файл/удаление
- *
- * Денежные суммы: Точка принимает **рубли** числом → конвертируем
- * `amountKopecks / 100` (с сохранением копеек до 2 знаков, audit В4).
- * В webhook'е приходит так же.
- *
- * Retry: GET/DELETE до 3 попыток с экспоненциальным backoff'ом (250×2^n мс)
- * при HTTP ≥ 500. POST/PUT — без retry (idempotency-key мы не используем).
- *
- * Webhook парсинг и верификация JWT-подписи вынесены в отдельный сервис
- * (`TochkaWebhookVerifierService`), но методы интерфейса `parseWebhook` и
- * `verifyWebhookSignature` всё равно остаются здесь — провайдер их
- * делегирует verifier'у.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.3 + port-brief §6.
- */
-
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../../common/config/index';
@@ -50,10 +22,7 @@ import { BillingProviderResourceNotFoundError } from '../billing-provider.port';
 
 import { TochkaOAuthService } from './tochka-oauth.service';
 import { TochkaWebhookVerifierService } from './tochka-webhook-verifier.service';
-import {
-  TOCHKA_SANDBOX_BEARER_TOKEN,
-  type TochkaEnvelope,
-} from './tochka.types';
+import { TOCHKA_SANDBOX_BEARER_TOKEN, type TochkaEnvelope } from './tochka.types';
 
 interface RequestInitWithRetry extends Omit<RequestInit, 'method'> {
   method?: string;
@@ -76,8 +45,6 @@ export class TochkaBillingProvider implements BillingProviderPort {
     @Inject(TochkaWebhookVerifierService)
     private readonly verifier?: TochkaWebhookVerifierService,
   ) {}
-
-  // ════════════════════════ ACQUIRING ════════════════════════
 
   async createPayment(req: CreatePaymentRequest): Promise<CreatePaymentResult> {
     const response = await this.request<TochkaEnvelope<Record<string, unknown>>>(
@@ -114,7 +81,6 @@ export class TochkaBillingProvider implements BillingProviderPort {
     req: CreateRecurringSubscriptionRequest,
   ): Promise<CreateRecurringSubscriptionResult> {
     if (req.recurring && req.options) {
-      // Tochka API не разрешает recurring=true и Options одновременно.
       throw new Error(
         'Tochka: createRecurringSubscription нельзя вызывать с recurring=true и options одновременно',
       );
@@ -141,8 +107,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     );
     const data = (response.Data ?? {}) as Record<string, string | undefined>;
     return {
-      providerSubscriptionId:
-        data.subscriptionId ?? data.operationId ?? req.invoiceId,
+      providerSubscriptionId: data.subscriptionId ?? data.operationId ?? req.invoiceId,
       providerInvoiceId: data.operationId ?? data.paymentId,
       paymentUrl: data.paymentLink,
       consumerId: data.consumerId,
@@ -153,11 +118,6 @@ export class TochkaBillingProvider implements BillingProviderPort {
   async chargeRecurringSubscription(
     req: ChargeRecurringSubscriptionRequest,
   ): Promise<ChargeRecurringSubscriptionResult> {
-    // audit-fixes Б15: возвращаем РЕАЛЬНЫЙ operationId Точки, не
-    // синтетический `${subId}:${Date.now()}`. Иначе webhook
-    // BillingEventLog.externalEventId с настоящим operationId не найдёт
-    // соответствующий Invoice и подписка падает в PAST_DUE при успешном
-    // списании.
     const response = await this.request<TochkaEnvelope<Record<string, unknown>>>(
       `/acquiring/${this.apiVersion}/subscriptions/${encodeURIComponent(
         req.providerSubscriptionId,
@@ -170,13 +130,8 @@ export class TochkaBillingProvider implements BillingProviderPort {
       },
     );
     const data = (response.Data ?? {}) as Record<string, string | undefined>;
-    const operationId =
-      data.operationId ?? data.paymentId ?? data.subscriptionPaymentId;
+    const operationId = data.operationId ?? data.paymentId ?? data.subscriptionPaymentId;
     if (!operationId) {
-      // Точка не вернула operationId — это аномалия. Логируем и
-      // фолбэчимся к синтетическому ID, чтобы Subscription.lastRenewalAttemptAt
-      // обновилось и cron не зациклился, но Invoice по такому фолбэку
-      // не финализируется (webhook искал бы по operationId).
       this.logger.warn(
         `chargeRecurringSubscription: Точка не вернула operationId (subId=${req.providerSubscriptionId})`,
       );
@@ -191,9 +146,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     };
   }
 
-  async getRecurringSubscriptionStatus(
-    providerSubscriptionId: string,
-  ): Promise<string> {
+  async getRecurringSubscriptionStatus(providerSubscriptionId: string): Promise<string> {
     try {
       const response = await this.request<TochkaEnvelope<unknown>>(
         `/acquiring/${this.apiVersion}/subscriptions/${encodeURIComponent(
@@ -202,13 +155,8 @@ export class TochkaBillingProvider implements BillingProviderPort {
         { method: 'GET', retryable: true },
       );
       const raw = response.Data;
-      const row = (Array.isArray(raw) ? raw[0] : raw) as
-        | Record<string, string>
-        | null
-        | undefined;
-      return String(
-        row?.status ?? row?.subscriptionStatus ?? row?.State ?? 'Unknown',
-      );
+      const row = (Array.isArray(raw) ? raw[0] : raw) as Record<string, string> | null | undefined;
+      return String(row?.status ?? row?.subscriptionStatus ?? row?.State ?? 'Unknown');
     } catch (err) {
       const parsed = this.parseTochkaRequestError(err);
       if (this.isResourceMissingResponse(parsed.status, parsed.body)) {
@@ -218,9 +166,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     }
   }
 
-  async cancelRecurringSubscription(
-    providerSubscriptionId: string,
-  ): Promise<void> {
+  async cancelRecurringSubscription(providerSubscriptionId: string): Promise<void> {
     try {
       await this.request(
         `/acquiring/${this.apiVersion}/subscriptions/${encodeURIComponent(
@@ -238,14 +184,9 @@ export class TochkaBillingProvider implements BillingProviderPort {
     }
   }
 
-  async refundPayment(req: {
-    providerInvoiceId: string;
-    amountKopecks: number;
-  }): Promise<void> {
+  async refundPayment(req: { providerInvoiceId: string; amountKopecks: number }): Promise<void> {
     await this.request(
-      `/acquiring/${this.apiVersion}/payments/${encodeURIComponent(
-        req.providerInvoiceId,
-      )}/refund`,
+      `/acquiring/${this.apiVersion}/payments/${encodeURIComponent(req.providerInvoiceId)}/refund`,
       {
         method: 'POST',
         body: JSON.stringify({
@@ -256,9 +197,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
   }
 
   async getPaymentStatus(providerInvoiceId: string): Promise<PaymentStatusResult> {
-    const path = `/acquiring/${this.apiVersion}/payments/${encodeURIComponent(
-      providerInvoiceId,
-    )}`;
+    const path = `/acquiring/${this.apiVersion}/payments/${encodeURIComponent(providerInvoiceId)}`;
     const { status, text } = await this.fetchWithStatus(path, {
       method: 'GET',
       retryable: true,
@@ -278,11 +217,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     };
   }
 
-  // ════════════════════════ BANK INVOICE ════════════════════════
-
-  async createBankInvoice(
-    req: CreateBankInvoiceRequest,
-  ): Promise<CreateBankInvoiceResult> {
+  async createBankInvoice(req: CreateBankInvoiceRequest): Promise<CreateBankInvoiceResult> {
     const number = (req.invoiceNumber ?? req.invoiceId).slice(0, 32);
     const amountRub = this.kopecksToRubles(req.amountKopecks);
     const response = await this.request<TochkaEnvelope<Record<string, string>>>(
@@ -306,9 +241,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
                 date: this.toDateString(new Date()),
                 basedOn: req.description,
                 comment: `Подписка ${this.toDateString(req.periodStart)} - ${this.toDateString(req.periodEnd)}`,
-                paymentExpiryDate: req.dueDate
-                  ? this.toDateString(req.dueDate)
-                  : undefined,
+                paymentExpiryDate: req.dueDate ? this.toDateString(req.dueDate) : undefined,
                 totalAmount: amountRub,
                 totalNds: 0,
                 Positions: [
@@ -335,9 +268,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     };
   }
 
-  async getBankInvoiceStatus(
-    providerInvoiceId: string,
-  ): Promise<GetBankInvoiceStatusResult> {
+  async getBankInvoiceStatus(providerInvoiceId: string): Promise<GetBankInvoiceStatusResult> {
     const path = `/invoice/${this.apiVersion}/bills/${encodeURIComponent(
       this.customerCode(),
     )}/${encodeURIComponent(providerInvoiceId)}/payment-status`;
@@ -360,10 +291,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     };
   }
 
-  async sendBankInvoiceToEmail(req: {
-    providerInvoiceId: string;
-    email: string;
-  }): Promise<void> {
+  async sendBankInvoiceToEmail(req: { providerInvoiceId: string; email: string }): Promise<void> {
     await this.request(
       `/invoice/${this.apiVersion}/bills/${encodeURIComponent(
         this.customerCode(),
@@ -375,9 +303,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     );
   }
 
-  async getBankInvoiceFile(
-    providerInvoiceId: string,
-  ): Promise<BankInvoiceFileResult> {
+  async getBankInvoiceFile(providerInvoiceId: string): Promise<BankInvoiceFileResult> {
     const buffer = await this.request<Buffer>(
       `/invoice/${this.apiVersion}/bills/${encodeURIComponent(
         this.customerCode(),
@@ -400,18 +326,13 @@ export class TochkaBillingProvider implements BillingProviderPort {
     );
   }
 
-  // ════════════════════════ WEBHOOK ════════════════════════
-
   async registerWebhooks(req: RegisterWebhooksRequest): Promise<RegisterWebhooksResult> {
     const clientId = this.cfg.billing.tochka.clientId ?? 'test_app';
     const path = `/webhook/${this.apiVersion}/${encodeURIComponent(clientId)}`;
-    const response = await this.request<TochkaEnvelope<{ webhooksList?: string[] }>>(
-      path,
-      {
-        method: 'PUT',
-        body: JSON.stringify({ url: req.url, webhooksList: req.events }),
-      },
-    );
+    const response = await this.request<TochkaEnvelope<{ webhooksList?: string[] }>>(path, {
+      method: 'PUT',
+      body: JSON.stringify({ url: req.url, webhooksList: req.events }),
+    });
     return {
       ok: true,
       webhookIds: response.Data?.webhooksList ?? [],
@@ -420,32 +341,20 @@ export class TochkaBillingProvider implements BillingProviderPort {
 
   parseWebhook(headers: Record<string, string>, body: unknown): WebhookEvent {
     if (!this.verifier) {
-      throw new Error(
-        'TochkaWebhookVerifierService не подключён — невозможно распарсить webhook',
-      );
+      throw new Error('TochkaWebhookVerifierService не подключён — невозможно распарсить webhook');
     }
     return this.verifier.parseWebhookEvent(headers, body);
   }
 
-  async verifyWebhookSignature(
-    headers: Record<string, string>,
-    body: unknown,
-  ): Promise<boolean> {
+  async verifyWebhookSignature(headers: Record<string, string>, body: unknown): Promise<boolean> {
     if (!this.verifier) {
-      this.logger.warn(
-        'TochkaWebhookVerifierService не подключён — webhook отклонён',
-      );
+      this.logger.warn('TochkaWebhookVerifierService не подключён — webhook отклонён');
       return false;
     }
     return this.verifier.verify(headers, body);
   }
 
-  // ════════════════════════ HTTP-обёртка ════════════════════════
-
-  private async request<T = unknown>(
-    path: string,
-    init: RequestInitWithRetry,
-  ): Promise<T> {
+  private async request<T = unknown>(path: string, init: RequestInitWithRetry): Promise<T> {
     const parseAs = init.parseAs ?? 'json';
     const method = (init.method ?? 'GET').toUpperCase();
     const retryable = (init.retryable ?? false) && (method === 'GET' || method === 'DELETE');
@@ -510,23 +419,12 @@ export class TochkaBillingProvider implements BillingProviderPort {
     return { status: response.status, text: await response.text() };
   }
 
-  // ════════════════════════ Helpers ════════════════════════
-
-  /**
-   * audit В4 (2026-05-29): копейки → рубли с сохранением копеек.
-   * `Math.round` округлял до целых рублей (4950 коп → 50 руб вместо 49.50),
-   * что превращает 100 ₽ 50 копеек в 101 ₽ и ведёт к рассинхрону суммы
-   * между нашим Invoice и Точкой. `toFixed(2)` сохраняет до 2 знаков,
-   * `Number()` снимает trailing zeros.
-   */
   private kopecksToRubles(amountKopecks: number): number {
     return Number((amountKopecks / 100).toFixed(2));
   }
 
   private compact<T extends Record<string, unknown>>(input: T): T {
-    return Object.fromEntries(
-      Object.entries(input).filter(([, v]) => v !== undefined),
-    ) as T;
+    return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as T;
   }
 
   private isResourceMissingResponse(status: number, text: string): boolean {
@@ -552,9 +450,7 @@ export class TochkaBillingProvider implements BillingProviderPort {
     return 'pending';
   }
 
-  private mapOperationStatus(
-    status?: string,
-  ): 'pending' | 'succeeded' | 'failed' | 'canceled' {
+  private mapOperationStatus(status?: string): 'pending' | 'succeeded' | 'failed' | 'canceled' {
     if (status === 'APPROVED') return 'succeeded';
     if (status === 'REFUNDED' || status === 'EXPIRED') return 'failed';
     if (status === 'CANCELED' || status === 'Cancelled') return 'canceled';
@@ -568,8 +464,6 @@ export class TochkaBillingProvider implements BillingProviderPort {
   private toDateString(d: Date): string {
     return d.toISOString().slice(0, 10);
   }
-
-  // ──────────────────────── config ────────────────────────
 
   private get apiVersion(): string {
     return this.cfg.billing.tochka.apiVersion;

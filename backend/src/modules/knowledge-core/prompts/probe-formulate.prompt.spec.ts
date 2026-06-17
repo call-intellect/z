@@ -1,14 +1,3 @@
-/**
- * Probe-система Фаза 1 (2026-06-11) — probe-formulate v3.
- *
- * Проверяет контракт промпта:
- *   - SCHEMA_NAME = probe_formulate_v3;
- *   - JSON Schema требует только `question`, без `options`;
- *   - SYSTEM стабилен (строка, без переменных), содержит правило «без
- *     вариантов ответа» и запрет на коды/английские слова;
- *   - USER-шаблон подаёт человеческий `reasonLabel` и НЕ содержит машинных
- *     кодов (emittedByService/сырой reason), подсказки — как контекст.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -27,17 +16,13 @@ describe('probe-formulate prompt — v3 (Фаза 1)', () => {
     const required = PROBE_FORMULATE_JSON_SCHEMA.required;
     expect(Array.isArray(required)).toBe(true);
     expect(required).toEqual(['question']);
-    const properties = PROBE_FORMULATE_JSON_SCHEMA.properties as Record<
-      string,
-      unknown
-    >;
+    const properties = PROBE_FORMULATE_JSON_SCHEMA.properties as Record<string, unknown>;
     expect(properties.options).toBeUndefined();
     expect(properties.question).toBeDefined();
   });
 
   it('SYSTEM стабилен (тип string, без интерполяции) и задаёт правила', () => {
     expect(typeof PROBE_FORMULATE_SYSTEM_PROMPT).toBe('string');
-    // Стабильность для prompt-caching: никаких ${...} плейсхолдеров.
     expect(PROBE_FORMULATE_SYSTEM_PROMPT).not.toContain('${');
     expect(PROBE_FORMULATE_SYSTEM_PROMPT).toContain('Без вариантов ответа');
     expect(PROBE_FORMULATE_SYSTEM_PROMPT).toContain('Чистый русский');
@@ -52,12 +37,10 @@ describe('probe-formulate prompt — v3 (Фаза 1)', () => {
     });
     expect(user).toContain('Тип ситуации: решение просрочено');
     expect(user).toContain('Объект: Решение «Новый подрядчик»');
-    // Машинных кодов быть не должно.
     expect(user).not.toContain('decision.overdue');
     expect(user).not.toContain('3-3-decisions');
     expect(user).not.toContain('Источник: специалист');
     expect(user).not.toContain('Причина:');
-    // Подсказки — как контекст, с явным запретом перечислять.
     expect(user).toContain('НЕ перечисляй');
     expect(user).toContain('probe_formulate_v3');
   });

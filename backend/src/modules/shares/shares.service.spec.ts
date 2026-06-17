@@ -96,8 +96,6 @@ describe('SharesService', () => {
     );
   }
 
-  // ─────────────────────────── createMeetingShare ──────────────────────
-
   describe('createMeetingShare', () => {
     it('успех: owner совпадает, expiration валидно', async () => {
       prisma.meeting.findUnique.mockResolvedValue({
@@ -161,8 +159,6 @@ describe('SharesService', () => {
     });
   });
 
-  // ─────────────────────────── public meeting share ──────────────────────
-
   describe('getPublicMeetingShare', () => {
     function buildShare(over: Partial<{ revokedAt: Date | null; expiresAt: Date }> = {}) {
       return {
@@ -196,9 +192,7 @@ describe('SharesService', () => {
     });
 
     it('expired → 410', async () => {
-      repo.findByToken.mockResolvedValue(
-        buildShare({ expiresAt: new Date(Date.now() - 1000) }),
-      );
+      repo.findByToken.mockResolvedValue(buildShare({ expiresAt: new Date(Date.now() - 1000) }));
       const svc = make();
       await expect(
         svc.getPublicMeetingShare('tok', { ip: '1', userAgent: null, referrer: null }),
@@ -235,8 +229,6 @@ describe('SharesService', () => {
             dueDate: null,
           },
         ],
-        // Р6: select тянет summaryFast/summary; legacy-only встреча (fast ещё
-        // не сгенерирован) → pickPrimarySummary падает на summary.
         aiResult: { summaryFast: null, summary: 'Краткое резюме' },
         transcript: null,
         recording: null,
@@ -251,10 +243,8 @@ describe('SharesService', () => {
       expect(result.summary).toBe('Краткое резюме');
       expect(result.chapters).toHaveLength(1);
       expect(result.tasks).toHaveLength(1);
-      // allowVideo=false и allowTranscript=false → видео/транскрипта нет
       expect(result.videoUrl).toBeUndefined();
       expect(result.transcript).toBeUndefined();
-      // просмотр зарегистрирован
       expect(repo.incrementView).toHaveBeenCalled();
     });
 
@@ -288,8 +278,6 @@ describe('SharesService', () => {
     });
   });
 
-  // ─────────────────────────── getPublicHighlightShare ───────────────────
-
   describe('getPublicHighlightShare', () => {
     function buildShare(over: Partial<{ revokedAt: Date | null; expiresAt: Date }> = {}) {
       return {
@@ -312,19 +300,13 @@ describe('SharesService', () => {
     it('токена нет → 404', async () => {
       repo.findHighlightShareByToken.mockResolvedValue(null);
       const svc = make();
-      await expect(svc.getPublicHighlightShare('xx')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(svc.getPublicHighlightShare('xx')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('revoked → 410', async () => {
-      repo.findHighlightShareByToken.mockResolvedValue(
-        buildShare({ revokedAt: new Date() }),
-      );
+      repo.findHighlightShareByToken.mockResolvedValue(buildShare({ revokedAt: new Date() }));
       const svc = make();
-      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(
-        GoneException,
-      );
+      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(GoneException);
     });
 
     it('expired → 410', async () => {
@@ -332,9 +314,7 @@ describe('SharesService', () => {
         buildShare({ expiresAt: new Date(Date.now() - 100) }),
       );
       const svc = make();
-      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(
-        GoneException,
-      );
+      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(GoneException);
     });
 
     it('renderStatus≠ready → 409 clip_not_ready', async () => {
@@ -343,9 +323,7 @@ describe('SharesService', () => {
       sh.highlight.renderedMp4Key = null as unknown as string;
       repo.findHighlightShareByToken.mockResolvedValue(sh);
       const svc = make();
-      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(
-        HttpException,
-      );
+      await expect(svc.getPublicHighlightShare('tok2')).rejects.toBeInstanceOf(HttpException);
     });
 
     it('happy path: возвращает presigned URL', async () => {

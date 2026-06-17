@@ -5,7 +5,7 @@ title: Document Conversion Service (DCS) — research + smoke (Фаза 0)
 status_overall: research_complete
 last_audited: 2026-05-31
 related_plans:
-  - plans/tz/2026-05-31-document-ingest-universal.md
+  - plans/archive/2026-05-31-document-ingest-universal.md
   - plans/analysis/2026-05-31-document-conversion-stack.md
 related_projects: []
 ---
@@ -16,7 +16,7 @@ related_projects: []
 
 Отдельный Python-микросервис в `infra/document-conversion/` (sidecar в docker-compose, не в основном backend-контейнере). Принимает файлы любого формата через REST `POST /convert` и отдаёт markdown + структурированные таблицы + метаданные. Используется backend Z-knowledge-core для ingest-pipeline.
 
-Полное ТЗ: [plans/tz/2026-05-31-document-ingest-universal.md](../../plans/tz/2026-05-31-document-ingest-universal.md).
+Полное ТЗ: [plans/archive/2026-05-31-document-ingest-universal.md](../../plans/archive/2026-05-31-document-ingest-universal.md).
 Research стека: [plans/analysis/2026-05-31-document-conversion-stack.md](../../plans/analysis/2026-05-31-document-conversion-stack.md).
 
 ## Текущий статус (Фаза 0 закрыта 2026-05-31)

@@ -12,26 +12,6 @@ import type {
   UserBadgeDto,
 } from '../dto/recognition.dto';
 
-/**
- * Wave 2 — RecognitionService.
- *
- * Высокоуровневый фасад над `Recognition` / `Badge` / `UserBadge` /
- * `ContributionSnapshot`.
- *
- *   - `enqueueFormulate(args)` — единая точка входа: складывает job в
- *     `core.recognition-formulate`, который потом подтянет
- *     `RecognitionFormulateWorker`. НИКОГДА не вызывает LLM синхронно.
- *
- *   - read-методы (`getMyContributions`, `listMyRecognitions`, ...) — для
- *     контроллеров, маппят Prisma → DTO. Никаких side-effect'ов.
- *
- * Этическая защита (важно):
- *   - При `enqueueFormulate({ type: 'thanks_*', fromUserId: U })` — fromUserId
- *     остаётся в Recognition (это значит «коллега U поблагодарил») — НО message
- *     формулирует AI от имени AI, а не от имени U. См. prompt'ы.
- *   - Для weekly_summary / streak_milestone / mention_helped / idea_shipped
- *     fromUserId = null (благодарность от системы).
- */
 @Injectable()
 export class RecognitionService {
   private readonly logger = new Logger(RecognitionService.name);
@@ -41,23 +21,15 @@ export class RecognitionService {
     @Inject(CoreQueueService) private readonly queue: CoreQueueService,
   ) {}
 
-  /** Поставить job в core.recognition-formulate. Идемпотентно (см. queue jobId). */
-  async enqueueFormulate(
-    args: RecognitionFormulateJobData,
-  ): Promise<{ jobId: string }> {
+  async enqueueFormulate(args: RecognitionFormulateJobData): Promise<{ jobId: string }> {
     return this.queue.enqueueRecognitionFormulate(args);
   }
 
-  // ─────────────────────────── Read API ────────────────────────────────────
-
-  async getContributionsForUser(
-    userId: string,
-  ): Promise<ContributionsSnapshotDto> {
+  async getContributionsForUser(userId: string): Promise<ContributionsSnapshotDto> {
     const snap = await this.prisma.contributionSnapshot.findUnique({
       where: { userId },
     });
     if (!snap) {
-      // Snapshot ещё не считался cron'ом — отдаём «нулевой».
       return {
         userId,
         ideasInDevelopment: 0,
@@ -85,7 +57,6 @@ export class RecognitionService {
     };
   }
 
-  /** Бейджи user'а с join по каталогу. */
   async getBadgesForUser(userId: string): Promise<UserBadgeDto[]> {
     const rows = await this.prisma.userBadge.findMany({
       where: { userId },
@@ -103,10 +74,7 @@ export class RecognitionService {
     }));
   }
 
-  async getMyContributions(
-    userId: string,
-    tenantId: string,
-  ): Promise<MyContributionsResponseDto> {
+  async getMyContributions(userId: string, tenantId: string): Promise<MyContributionsResponseDto> {
     const [snapshot, badges, recent] = await Promise.all([
       this.getContributionsForUser(userId),
       this.getBadgesForUser(userId),
@@ -153,8 +121,6 @@ export class RecognitionService {
       totalPages: Math.max(1, Math.ceil(total / q.limit)),
     };
   }
-
-  // ─────────────────────────── Mappers ─────────────────────────────────────
 
   private toResponse(r: {
     id: string;

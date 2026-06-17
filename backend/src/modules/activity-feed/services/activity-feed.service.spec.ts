@@ -7,30 +7,12 @@ import type { ActivityFeedGateway } from '../gateways/activity-feed.gateway';
 
 import { ActivityFeedService } from './activity-feed.service';
 
-/**
- * Юнит-тесты ActivityFeedService — Wave 2 Поток D (2026-05-24).
- *
- * Покрывают ключевые сценарии:
- *   1.  publish — счётчик метрики и WS-событие.
- *   2.  publish с visibility='team' — WS летит в tenant + team room.
- *   3.  publish с targetUserId — WS летит и в user room.
- *   4.  markSeen — переход emitted → seen, метрика incFeedItemActioned.
- *   5.  markSeen → markSeen (повторно) — идемпотентность (без второй метрики).
- *   6.  dismiss → markSeen — запрещённый backward переход, no-op.
- *   7.  react thanks — добавляет userId в массив, метрика incFeedReaction.
- *   8.  react thanks дважды — дедуп per-user (метрика не растёт).
- *   9.  react разными пользователями — оба попадают в массив.
- *   10. expire — updateMany кандидатов, метрика incFeedItemExpired
- *       инкрементируется на каждого, плюс WS feed.item_expired.
- *   11. transition на несуществующий id — NotFoundException.
- */
 describe('ActivityFeedService', () => {
   let prisma: PrismaService;
   let metrics: BusinessMetricsService;
   let gateway: ActivityFeedGateway;
   let svc: ActivityFeedService;
 
-  // Прямой stub Prisma — мокируем только нужные модели.
   let createMock: ReturnType<typeof vi.fn>;
   let findFirstMock: ReturnType<typeof vi.fn>;
   let updateMock: ReturnType<typeof vi.fn>;
@@ -84,10 +66,7 @@ describe('ActivityFeedService', () => {
     findManyMock = vi.fn();
     updateManyMock = vi.fn();
 
-    // $transaction — выполняем коллбек с самим prisma-моком.
-    transactionMock = vi.fn(async (cb: (tx: typeof prisma) => unknown) =>
-      cb(prisma),
-    );
+    transactionMock = vi.fn(async (cb: (tx: typeof prisma) => unknown) => cb(prisma));
 
     prisma = {
       activityFeedItem: {
@@ -122,8 +101,6 @@ describe('ActivityFeedService', () => {
     svc = new ActivityFeedService(prisma, metrics, gateway);
   });
 
-  // ─────────────────────────── publish ───────────────────────────
-
   it('publish — создаёт запись, инкрементирует метрику emitted и эмитит WS-событие', async () => {
     createMock.mockResolvedValueOnce(makeItem());
 
@@ -149,7 +126,6 @@ describe('ActivityFeedService', () => {
     expect(emitMock).toHaveBeenCalledTimes(1);
     const [rooms, eventName, payload] = emitMock.mock.calls[0]!;
     expect(eventName).toBe('feed.new_item');
-    // private + targetUserId='u-1' → tenant + user room.
     expect(rooms).toContain('tenant:t-1');
     expect(rooms).toContain('user:u-1');
     expect((payload as { type: string }).type).toBe('feed.new_item');
@@ -174,19 +150,13 @@ describe('ActivityFeedService', () => {
     });
 
     const [rooms] = emitMock.mock.calls[0]!;
-    expect(rooms).toEqual(
-      expect.arrayContaining(['tenant:t-1', 'team:team-A']),
-    );
+    expect(rooms).toEqual(expect.arrayContaining(['tenant:t-1', 'team:team-A']));
     expect(rooms).not.toContain('user:u-1');
   });
 
-  // ─────────────────────────── markSeen ───────────────────────────
-
   it('markSeen — переход emitted → seen, метрика actioned, обновлён seenAt', async () => {
     findFirstMock.mockResolvedValueOnce(makeItem({ status: 'emitted' }));
-    updateMock.mockResolvedValueOnce(
-      makeItem({ status: 'seen', seenAt: new Date() }),
-    );
+    updateMock.mockResolvedValueOnce(makeItem({ status: 'seen', seenAt: new Date() }));
 
     const dto = await svc.markSeen({
       tenantId: 't-1',
@@ -235,13 +205,9 @@ describe('ActivityFeedService', () => {
     expect(incActionedMock).not.toHaveBeenCalled();
   });
 
-  // ─────────────────────────── react ──────────────────────────────
-
   it('react thanks — добавляет userId в массив и инкрементирует метрику', async () => {
     findFirstMock.mockResolvedValueOnce(makeItem());
-    updateMock.mockResolvedValueOnce(
-      makeItem({ reactions: { thanks: ['u-2'], votes: [] } }),
-    );
+    updateMock.mockResolvedValueOnce(makeItem({ reactions: { thanks: ['u-2'], votes: [] } }));
 
     const dto = await svc.react({
       tenantId: 't-1',
@@ -262,9 +228,7 @@ describe('ActivityFeedService', () => {
   });
 
   it('react thanks дважды — второй вызов дедупится, метрика не растёт', async () => {
-    findFirstMock.mockResolvedValueOnce(
-      makeItem({ reactions: { thanks: ['u-2'], votes: [] } }),
-    );
+    findFirstMock.mockResolvedValueOnce(makeItem({ reactions: { thanks: ['u-2'], votes: [] } }));
 
     await svc.react({
       tenantId: 't-1',
@@ -278,9 +242,7 @@ describe('ActivityFeedService', () => {
   });
 
   it('react разными пользователями — оба попадают в массив', async () => {
-    findFirstMock.mockResolvedValueOnce(
-      makeItem({ reactions: { thanks: ['u-2'], votes: [] } }),
-    );
+    findFirstMock.mockResolvedValueOnce(makeItem({ reactions: { thanks: ['u-2'], votes: [] } }));
     updateMock.mockResolvedValueOnce(
       makeItem({ reactions: { thanks: ['u-2', 'u-3'], votes: [] } }),
     );
@@ -294,8 +256,6 @@ describe('ActivityFeedService', () => {
 
     expect(dto.reactions.thanks).toEqual(['u-2', 'u-3']);
   });
-
-  // ─────────────────────────── expire ─────────────────────────────
 
   it('expire — помечает кандидатов, инкрементирует метрику и шлёт WS на каждого', async () => {
     findManyMock.mockResolvedValueOnce([
@@ -321,7 +281,6 @@ describe('ActivityFeedService', () => {
       tenant: 't-2',
       feedType: 'insight',
     });
-    // Каждый кандидат → один WS event feed.item_expired.
     expect(emitMock).toHaveBeenCalledTimes(3);
     expect(emitMock.mock.calls[0]![1]).toBe('feed.item_expired');
   });
@@ -336,8 +295,6 @@ describe('ActivityFeedService', () => {
     expect(incExpiredMock).not.toHaveBeenCalled();
     expect(emitMock).not.toHaveBeenCalled();
   });
-
-  // ─────────────────────────── errors ─────────────────────────────
 
   it('markSeen на несуществующий id — NotFoundException', async () => {
     findFirstMock.mockResolvedValueOnce(null);
@@ -361,8 +318,6 @@ describe('ActivityFeedService', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
-
-  // ─────────────────────────── dismiss ───────────────────────────
 
   it('dismiss — переход → dismissed + WS feed.item_dismissed с userId', async () => {
     findFirstMock.mockResolvedValueOnce(makeItem({ status: 'seen' }));

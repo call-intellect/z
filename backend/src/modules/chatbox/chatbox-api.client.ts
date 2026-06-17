@@ -2,25 +2,6 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { TypedConfigService } from '../../common/config/index';
 
-/**
- * Типизированный клиент ChatBox Public API (app.agent-lia.ru / «Call Intellect:
- * Чаты»). ТЗ: plans/tz/2026-06-05-chatbox-integration.md (Фаза 2).
- * Факты по API: plans/analysis/2026-06-05-chatbox-integration-api-facts.md.
- *
- *   - Base URL: `CHATBOX_API_BASE_URL` (default `https://app.agent-lia.ru`),
- *     префикс `/api/v1`.
- *   - Авторизация: header `Authorization: Bearer <token>`. Токен —
- *     долгоживущий статический per-tenant (лежит в `ChatboxIntegration.tokenEnc`,
- *     передаётся первым аргументом каждого метода — клиент stateless).
- *   - Пагинация: query `limit`/`offset`/`order`(asc|desc)/`search`.
- *
- * Здесь — только методы, нужные Фазе 2 (read интеграции) + методы Фаз 3/4/6
- * (синк / webhook / отправка), которые удобно объявить сразу одним клиентом.
- */
-
-// ─────────────────────────── формы ответов ChatBox ──────────────────────
-
-/** Воркспейс токена (+ роль текущего пользователя в нём). */
 export interface ChatboxWorkspace {
   id: string;
   name: string;
@@ -28,12 +9,11 @@ export interface ChatboxWorkspace {
   role: string;
 }
 
-/** Канал (мессенджер) воркспейса. */
 export interface ChatboxApiChannel {
   id: string;
   title: string;
   description?: string | null;
-  type: string; // CHAT_WIDGET|TELEGRAM|EXT_MAX|... (String — ChatBox добавляет новые)
+  type: string;
   isActive: boolean;
   license?: {
     id?: string;
@@ -43,18 +23,16 @@ export interface ChatboxApiChannel {
   } | null;
 }
 
-/** Унифицированный контакт (Customer) — ключ объединения клиента по мессенджерам. */
 export interface ChatboxApiCustomer {
   id: string;
   name?: string | null;
   phone?: string | null;
   email?: string | null;
-  externalId?: string | null; // id из внешней CRM
+  externalId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Identity клиента в конкретном мессенджере (ChannelClient). */
 export interface ChatboxApiChannelClient {
   id: string;
   name?: string | null;
@@ -62,32 +40,30 @@ export interface ChatboxApiChannelClient {
   email?: string | null;
   channelType: string;
   channelId: string;
-  customerId?: string | null; // → Customer
-  externalId?: string | null; // id в мессенджере (напр. telegram user id)
+  customerId?: string | null;
+  externalId?: string | null;
   isBlocked: boolean;
   avatarUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Чат (тред). */
 export interface ChatboxApiChat {
   id: string;
   channelId: string;
-  status: string; // ACTIVE | CLOSED
+  status: string;
   client?: { id?: string; name?: string | null; phone?: string | null } | null;
   responsible?: { id?: string; name?: string | null } | null;
   createdAt: string;
   updatedAt: string;
 }
 
-/** Сообщение чата. */
 export interface ChatboxApiMessage {
   id: string;
   chatId: string;
   content: {
     text?: string | null;
-    type: string; // TEXT | IMAGE | AUDIO | VIDEO | VIDEO_NOTE | FILE | VOICE | COMMAND
+    type: string;
     imageUrl?: string | null;
     fileUrl?: string | null;
     audioUrl?: string | null;
@@ -96,21 +72,19 @@ export interface ChatboxApiMessage {
   sender: {
     id?: string | null;
     name?: string | null;
-    type: string; // ASSISTANT | USER | CLIENT | QUALITY_CONTROL
+    type: string;
   };
   createdAt: string;
 }
 
-/** Участник (менеджер/сотрудник) воркспейса. */
 export interface ChatboxApiMember {
   id: string;
   email?: string | null;
   name?: string | null;
-  role: string; // OWNER | ADMIN | MANAGER | USER
+  role: string;
   createdAt: string;
 }
 
-/** Вебхук воркспейса. */
 export interface ChatboxApiWebhook {
   id: string;
   url: string;
@@ -123,16 +97,9 @@ export interface ChatboxApiWebhook {
   updatedAt: string;
 }
 
-/**
- * Generic пагинированный ответ. Имя поля-массива зависит от эндпоинта
- * (`workspaces`/`channels`/`chats`/`messages`/`clients`/`customers`/
- * `members`/`webhooks`) — отражаем как union ключей + `total`.
- */
 export type ChatboxPaginated<T, K extends string> = {
   total: number;
 } & { [P in K]: T[] };
-
-// ─────────────────────────── параметры запросов ─────────────────────────
 
 type PageParams = {
   limit?: number;
@@ -141,18 +108,11 @@ type PageParams = {
   search?: string;
 };
 type ChatListParams = PageParams & {
-  status?: string; // ACTIVE | CLOSED
+  status?: string;
 };
 
-/** Сериализуемый query-объект. */
 type QueryParams = Record<string, string | number | undefined>;
 
-// ─────────────────────────── error ──────────────────────────────────────
-
-/**
- * Ошибка вызова ChatBox API. `transient=true` для retryable-кодов (429 / 5xx).
- * `status===401` — невалидный токен (вышестоящий маппит в `chatbox_token_invalid`).
- */
 export class ChatboxApiError extends Error {
   constructor(
     public readonly status: number,
@@ -164,19 +124,13 @@ export class ChatboxApiError extends Error {
   }
 }
 
-// ─────────────────────────── client ─────────────────────────────────────
-
 @Injectable()
 export class ChatboxApiClient {
   private readonly logger = new Logger(ChatboxApiClient.name);
   private static readonly TIMEOUT_MS = 20_000;
   private static readonly PREFIX = '/api/v1';
 
-  constructor(
-    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
-  ) {}
-
-  // ─────────────────────── workspaces ──────────────────────────────
+  constructor(@Inject(TypedConfigService) private readonly cfg: TypedConfigService) {}
 
   async listWorkspaces(
     token: string,
@@ -189,8 +143,6 @@ export class ChatboxApiClient {
       params,
     );
   }
-
-  // ─────────────────────── channels ────────────────────────────────
 
   async listChannels(
     token: string,
@@ -205,8 +157,6 @@ export class ChatboxApiClient {
     );
   }
 
-  // ─────────────────────── chats ───────────────────────────────────
-
   async listChats(
     token: string,
     ws: string,
@@ -220,11 +170,7 @@ export class ChatboxApiClient {
     );
   }
 
-  async getChat(
-    token: string,
-    ws: string,
-    chatId: string,
-  ): Promise<ChatboxApiChat> {
+  async getChat(token: string, ws: string, chatId: string): Promise<ChatboxApiChat> {
     return this.call<ChatboxApiChat>(
       token,
       'GET',
@@ -261,8 +207,6 @@ export class ChatboxApiClient {
     );
   }
 
-  // ─────────────────────── clients / customers ─────────────────────
-
   async listChannelClients(
     token: string,
     ws: string,
@@ -289,8 +233,6 @@ export class ChatboxApiClient {
     );
   }
 
-  // ─────────────────────── members ─────────────────────────────────
-
   async listMembers(
     token: string,
     ws: string,
@@ -303,8 +245,6 @@ export class ChatboxApiClient {
       params,
     );
   }
-
-  // ─────────────────────── webhooks ────────────────────────────────
 
   async listWebhooks(
     token: string,
@@ -336,19 +276,13 @@ export class ChatboxApiClient {
     );
   }
 
-  async deleteWebhook(
-    token: string,
-    ws: string,
-    webhookId: string,
-  ): Promise<void> {
+  async deleteWebhook(token: string, ws: string, webhookId: string): Promise<void> {
     await this.call<unknown>(
       token,
       'DELETE',
       `/workspaces/${encodeURIComponent(ws)}/webhooks/${encodeURIComponent(webhookId)}`,
     );
   }
-
-  // ─────────────────────── internals ───────────────────────────────
 
   private async call<T>(
     token: string,
@@ -380,8 +314,7 @@ export class ChatboxApiClient {
     const parsed = await this.parseBody(res);
 
     if (!res.ok) {
-      const description =
-        extractMessage(parsed) ?? `ChatBox API ${path} → HTTP ${res.status}`;
+      const description = extractMessage(parsed) ?? `ChatBox API ${path} → HTTP ${res.status}`;
       const transient = res.status === 429 || res.status >= 500;
       throw new ChatboxApiError(res.status, description, transient);
     }

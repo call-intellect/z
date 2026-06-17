@@ -4,10 +4,7 @@ import { z } from 'zod';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   BLOCK_INGEST_JSON_SCHEMA,
   ENTITY_TYPE_VALUES,
@@ -21,31 +18,14 @@ import {
 
 import type { Segment } from './segment-builder.service';
 
-/**
- * Извлечённая сущность, упомянутая в блоке. Совпадает по полям со схемой
- * `mentionedEntities[]` из block-ingest JSON-схемы.
- */
 export interface ExtractedEntityMention {
   type: (typeof ENTITY_TYPE_VALUES)[number];
   name: string;
   mentionContext: string;
   metadata?: Record<string, unknown>;
-  /**
-   * KC-Temporal W1.4 (2026-05-25) — опциональный таймкод цитаты, где
-   * упомянута сущность. Маппится в `IdeaBlock.propertySpans[*]` в
-   * block-ingest.worker'е. LLM может не вернуть — это допустимо.
-   */
   sourceSpan?: { startMs: number; endMs: number };
 }
 
-/**
- * Извлечённый блок (до записи в БД). Структура соответствует JSON Schema
- * block-ingest LLM-ответа (v2 Фазы 0b).
- *
- * Поля v2:
- *   - `role_relevant` — классификатор прямой отнесённости блока к должности.
- *   - `roleHint` — имя должности из контекста, если упомянуто.
- */
 export interface ExtractedBlock {
   name: string;
   criticalQuestion: string;
@@ -57,33 +37,13 @@ export interface ExtractedBlock {
   evidenceStartMs: number;
   evidenceEndMs: number;
   mentionedEntities: ExtractedEntityMention[];
-  /** Фаза 0b — прямая отнесённость к должности (из LLM-классификатора). */
   role_relevant: boolean;
-  /** Фаза 0b — имя должности из контекста, если упомянуто. */
   roleHint?: string | undefined;
-  /**
-   * SBA β-8.2 — для signalType='commitment': срок в формате YYYY-MM-DD,
-   * извлечённый LLM из текста. null если не извлечён или не commitment.
-   */
   commitmentDueDateGuess?: string | null | undefined;
-  /**
-   * SBA β-8.2 — имя адресата обещания, как звучит в тексте. null если
-   * не извлечён или не commitment. Сопоставление с Person — в worker'е.
-   */
   commitmentRecipientNameGuess?: string | null | undefined;
-  /**
-   * Wave 3b (2026-06-10) — сторона факта для клиентских типов встреч
-   * (sales/customer_success/partner/custdev). null для внутренних встреч
-   * или если LLM/кэш не вернул поле. Пока не используется обработчиком.
-   */
   sideHint?: 'our' | 'client' | 'unknown' | null | undefined;
 }
 
-/**
- * Группа Б — типизированные сущности, извлечённые тем же проходом LLM,
- * что и блоки. У каждой есть `sourceBlockIndex` (нумерация по `blocks[]` в
- * том же ответе) — для провенанса «откуда взялась сущность».
- */
 export interface ExtractedProcess {
   name: string;
   description?: string | null;
@@ -145,44 +105,23 @@ export interface ExtractedTypedEntities {
   tools: ExtractedTool[];
 }
 
-/**
- * Wave 3b (2026-06-10) — самооценка качества входных данных окна. Опциональна
- * (старые кэш-результаты её не содержат). Пока не используется обработчиком —
- * зарезервировано для будущих метрик надёжности извлечения.
- */
 export interface ExtractedDataQuality {
   speakerCoveragePercent: number | null;
   transcriptTruncated: boolean;
   lowConfidenceBlockCount: number;
 }
 
-/**
- * Один LLM-ответ из block-ingest v2.
- *
- * sourceBlockIndex у типизированных сущностей — индекс в `blocks` ТОГО ЖЕ
- * окна (один LLM-вызов = одно окно). Caller (`block-ingest.worker.ts`)
- * соответственно мапит индекс → реальный blockId после persist.
- */
 export interface ExtractedWindow {
   blocks: ExtractedBlock[];
   typed: ExtractedTypedEntities;
-  /**
-   * Wave 3b (2026-06-10) — опциональная самооценка качества данных окна.
-   * undefined, если LLM/кэш её не вернул. Пока не агрегируется в extractFull.
-   */
   dataQuality?: ExtractedDataQuality | undefined;
 }
 
-/**
- * Zod-схема для валидации LLM-ответа после JSON-парсинга. Дублирует
- * правила JSON Schema, но даёт нам типизированный объект на TS-стороне.
- */
 const ExtractedEntityMentionSchema = z.object({
   type: z.enum(ENTITY_TYPE_VALUES),
   name: z.string().min(1),
   mentionContext: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-  // KC-Temporal W1.4 — опциональный span (старые LLM-промпты могут не возвращать).
   sourceSpan: z
     .object({
       startMs: z.number().int().min(0),
@@ -202,17 +141,10 @@ const ExtractedBlockSchema = z.object({
   evidenceStartMs: z.number().int().min(0),
   evidenceEndMs: z.number().int().min(0),
   mentionedEntities: z.array(ExtractedEntityMentionSchema),
-  // v2 поля — могут отсутствовать на legacy-ответах, добавляем безопасные
-  // дефолты, чтобы старые промпты/модели не валили парсинг.
   role_relevant: z.boolean().optional().default(false),
   roleHint: z.string().nullable().optional(),
-  // SBA β-8.2 — два поля для signalType='commitment'. Опциональные —
-  // старые модели/промпты могут не возвращать.
   commitmentDueDateGuess: z.string().nullable().optional(),
   commitmentRecipientNameGuess: z.string().nullable().optional(),
-  // Wave 3b (2026-06-10) — сторона факта для клиентских типов встреч.
-  // Опционально + nullable: старые кэш-результаты поля не содержат, для
-  // внутренних встреч приходит null.
   sideHint: z.enum(['our', 'client', 'unknown']).nullable().optional(),
 });
 
@@ -270,21 +202,16 @@ const ExtractedToolSchema = z.object({
 
 const BlockIngestResponseSchema = z.object({
   blocks: z.array(ExtractedBlockSchema),
-  // Все группы Б — опц. (старые модели могут не вернуть). Дефолт — пустой массив.
   processes: z.array(ExtractedProcessSchema).optional().default([]),
   decisions: z.array(ExtractedDecisionSchema).optional().default([]),
   regulations: z.array(ExtractedRegulationSchema).optional().default([]),
   policies: z.array(ExtractedPolicySchema).optional().default([]),
   metrics: z.array(ExtractedMetricSchema).optional().default([]),
   tools: z.array(ExtractedToolSchema).optional().default([]),
-  // Mission/Vision/Strategy — ожидаем null (EXTRACTION_ENABLE_TOP_LEVEL=false).
   mission: z.null().optional(),
   vision: z.null().optional(),
   strategy: z.null().optional(),
-  // Links — опц.; на эту итерацию не используем, оставляем для совместимости.
   links: z.array(z.unknown()).optional().default([]),
-  // Wave 3b (2026-06-10) — самооценка качества данных окна. Опциональна
-  // (старые кэш-результаты её не содержат). Пока не используется обработчиком.
   dataQuality: z
     .object({
       speakerCoveragePercent: z.number().min(0).max(100).nullable(),
@@ -299,30 +226,9 @@ interface ExtractArgs {
   rawEventId: string;
   meetingTitle?: string | undefined;
   segments: Segment[];
-  /** Фаза 11: dataClass исходного RawEvent — пробрасывается в LLM-вызов. */
   dataClass?: DataClass;
 }
 
-/**
- * BlockExtractionService — оркестратор block-ingest LLM-вызовов.
- *
- *   - Скользящее окно `cfg.knowledgeCore.blockIngestWindowSegments` сегментов.
- *     Без overlap (overlap появится позже, если будет ловиться разрыв смысла).
- *   - На каждое окно — один LLM-вызов через `LlmRouterService.call(...)`
- *     с `responseFormat: 'json_schema' strict`.
- *   - На invalid JSON — один retry; если опять fail — окно пропускается с warn.
- *   - Все блоки склеиваются в один общий список (отсортированный по
- *     evidenceStartMs).
- *
- * Фаза 0b: возвращаем ТАКЖЕ типизированные сущности группы Б. Они
- * привязываются к блокам через `sourceBlockIndex`, который указывает на
- * индекс блока в МАССИВЕ ТОГО ЖЕ ОКНА. Worker'у нужно после persist'а
- * замапить их в реальный `blockId`.
- *
- * TODO (Фаза γ или позже): эксперимент B — три прохода (блоки + сущности +
- * рёбра отдельными запросами) для длинных документов. Пока — вариант A
- * (один промпт за окно).
- */
 @Injectable()
 export class BlockExtractionService {
   private readonly logger = new Logger(BlockExtractionService.name);
@@ -332,11 +238,6 @@ export class BlockExtractionService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   * Defensive try/catch — старые unit-тесты могут мокать cfg без `aiFeatures`.
-   * Default — true (как в env.schema).
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -345,15 +246,6 @@ export class BlockExtractionService {
     }
   }
 
-  /**
-   * Главный метод извлечения. Возвращает:
-   *   - `blocks` — блоки в порядке по `evidenceStartMs` (для UI/таймлайна).
-   *   - `blocksInOrder` — блоки в исходном порядке выдачи LLM (для маппинга
-   *     `sourceBlockIndex` → реальный `blockId` после persist).
-   *   - `typed` — типизированные сущности группы Б, отфильтрованные по
-   *     `cfg.extraction.typedEntityMinConfidence`. `sourceBlockIndex` у них
-   *     глобализован относительно `blocksInOrder`.
-   */
   async extractFull(args: ExtractArgs): Promise<{
     blocks: ExtractedBlock[];
     blocksInOrder: ExtractedBlock[];
@@ -404,13 +296,9 @@ export class BlockExtractionService {
         typed.tools.push(this.shiftIdx(t, baseOffset));
       }
     }
-    const sorted = [...inOrder].sort(
-      (a, b) => a.evidenceStartMs - b.evidenceStartMs,
-    );
+    const sorted = [...inOrder].sort((a, b) => a.evidenceStartMs - b.evidenceStartMs);
     return { blocks: sorted, blocksInOrder: inOrder, typed };
   }
-
-  // ─────────────────────────── window ──────────────────────────────────────
 
   private async processWindow(args: {
     tenantId: string;
@@ -424,10 +312,6 @@ export class BlockExtractionService {
       meetingTitle: args.meetingTitle,
       segments: args.segments,
     });
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть транскрипт-сегменты + meetingTitle
-    // в маркеры данных + INJECTION_GUARD_NOTE в system. Источник = 'transcript'.
-    // Sanitize по транскрипту не делаем — естественная речь даёт много
-    // false positives на regex'ах вроде «забудь предыдущие шаги».
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(system) : system;
     const guardedUser = guardOn ? wrapUserData(user) : user;
@@ -475,9 +359,6 @@ export class BlockExtractionService {
     return { blocks: [], typed: this.emptyTyped() };
   }
 
-  /**
-   * Парсит JSON-ответ LLM и валидирует через Zod. На любую ошибку — null.
-   */
   private parseAndValidate(text: string): ExtractedWindow | null {
     let raw: unknown;
     try {
@@ -561,8 +442,6 @@ export class BlockExtractionService {
     };
   }
 
-  // ─────────────────────────── helpers ─────────────────────────────────────
-
   private emptyTyped(): ExtractedTypedEntities {
     return {
       processes: [],
@@ -574,10 +453,7 @@ export class BlockExtractionService {
     };
   }
 
-  private shiftIdx<T extends { sourceBlockIndex: number | null }>(
-    entity: T,
-    offset: number,
-  ): T {
+  private shiftIdx<T extends { sourceBlockIndex: number | null }>(entity: T, offset: number): T {
     if (entity.sourceBlockIndex == null) return entity;
     return { ...entity, sourceBlockIndex: entity.sourceBlockIndex + offset };
   }

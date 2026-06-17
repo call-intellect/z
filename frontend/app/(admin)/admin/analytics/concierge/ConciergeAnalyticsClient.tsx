@@ -1,62 +1,45 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import {
-  AlertOctagon,
-  BarChart3,
-  MessageSquare,
-  ThumbsUp,
-} from 'lucide-react';
+import { useState } from "react";
+import { AlertOctagon, BarChart3, MessageSquare, ThumbsUp } from "lucide-react";
 
-import { adminConciergeAnalyticsApi } from '@/api/admin-concierge-analytics.api';
+import { adminConciergeAnalyticsApi } from "@/api/admin-concierge-analytics.api";
 import {
   adminConciergeNoAnswerFromApi,
   adminConciergeOverviewFromApi,
   adminConciergeTopQueriesFromApi,
   type AdminConciergeNoAnswerRowDomain,
   type AdminConciergeTopQueryApi,
-} from '@/domain/admin-concierge-analytics';
+} from "@/domain/admin-concierge-analytics";
 import {
   ADMIN_PERIOD_LABELS,
   formatDurationMs,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs } from '@/ui/components/admin/AdminTabs';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+} from "@/domain/admin-usage";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs } from "@/ui/components/admin/AdminTabs";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
-/**
- * Аналитика Concierge / AI-чата: объём, no-answer rate, средняя задержка,
- * топ-запросы, лента «не ответил».
- *
- * Бэкенд `/api/v1/admin/analytics/concierge/*` готовится параллельно. Любой
- * 404/501 показывает `AdminEmpty` с пометкой про chat-модуль.
- */
 export function ConciergeAnalyticsClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
 
   return (
     <AdminSection
@@ -82,26 +65,24 @@ export function ConciergeAnalyticsClient() {
     >
       <AdminTabs
         tabs={[
-          { value: 'overview', label: 'Обзор', icon: BarChart3 },
-          { value: 'top-queries', label: 'Запросы', icon: MessageSquare },
-          { value: 'no-answer', label: 'No-answer', icon: AlertOctagon },
-          { value: 'feedback', label: 'Feedback', icon: ThumbsUp },
+          { value: "overview", label: "Обзор", icon: BarChart3 },
+          { value: "top-queries", label: "Запросы", icon: MessageSquare },
+          { value: "no-answer", label: "No-answer", icon: AlertOctagon },
+          { value: "feedback", label: "Feedback", icon: ThumbsUp },
         ]}
       >
         {(tab) => (
           <>
-            {tab === 'overview' && <OverviewTab period={period} />}
-            {tab === 'top-queries' && <TopQueriesTab period={period} />}
-            {tab === 'no-answer' && <NoAnswerTab period={period} />}
-            {tab === 'feedback' && <FeedbackTab />}
+            {tab === "overview" && <OverviewTab period={period} />}
+            {tab === "top-queries" && <TopQueriesTab period={period} />}
+            {tab === "no-answer" && <NoAnswerTab period={period} />}
+            {tab === "feedback" && <FeedbackTab />}
           </>
         )}
       </AdminTabs>
     </AdminSection>
   );
 }
-
-// ─── Обзор ────────────────────────────────────────────────────────────────
 
 function OverviewTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -127,9 +108,7 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
 
   const t = q.data.totals;
 
-  // Defensive guard: форма API внезапно без ключевого поля — показать пусто,
-  // а не ронять сегмент.
-  if (t === undefined || typeof t.totalQuestions !== 'number') {
+  if (t === undefined || typeof t.totalQuestions !== "number") {
     return (
       <AdminEmpty
         title="Нет данных"
@@ -142,23 +121,23 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
       <KpiCard
         title="Всего вопросов"
-        value={t.totalQuestions.toLocaleString('ru-RU')}
+        value={t.totalQuestions.toLocaleString("ru-RU")}
       />
       <KpiCard
         title="Доля «не ответил»"
         value={
           t.noAnswerRate === null
-            ? 'нет данных'
+            ? "нет данных"
             : `${(t.noAnswerRate * 100).toFixed(1)}%`
         }
         hint={
           t.noAnswerCount > 0
-            ? `${t.noAnswerCount.toLocaleString('ru-RU')} запросов`
+            ? `${t.noAnswerCount.toLocaleString("ru-RU")} запросов`
             : undefined
         }
         tone={
           t.noAnswerRate !== null && t.noAnswerRate > 0.1
-            ? 'warning'
+            ? "warning"
             : undefined
         }
       />
@@ -166,13 +145,13 @@ function OverviewTab({ period }: { period: AdminPeriod }) {
         title="Средняя задержка"
         value={
           t.avgLatencyMs === null
-            ? 'нет данных'
+            ? "нет данных"
             : formatDurationMs(t.avgLatencyMs)
         }
       />
       <KpiCard
         title="Активных пользователей"
-        value={t.activeUsers.toLocaleString('ru-RU')}
+        value={t.activeUsers.toLocaleString("ru-RU")}
       />
     </div>
   );
@@ -187,7 +166,7 @@ function KpiCard({
   title: string;
   value: string;
   hint?: string;
-  tone?: 'warning';
+  tone?: "warning";
 }) {
   return (
     <Card>
@@ -199,7 +178,7 @@ function KpiCard({
       <CardContent>
         <div
           className={`text-2xl font-semibold tabular-nums ${
-            tone === 'warning' ? 'text-warning' : ''
+            tone === "warning" ? "text-warning" : ""
           }`}
         >
           {value}
@@ -211,8 +190,6 @@ function KpiCard({
     </Card>
   );
 }
-
-// ─── Top queries ──────────────────────────────────────────────────────────
 
 function TopQueriesTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -260,8 +237,8 @@ function TopQueriesTable({
         <AdminCsvDownloadButton
           rows={csvRows}
           columns={[
-            { key: 'query', label: 'Запрос' },
-            { key: 'count', label: 'Раз' },
+            { key: "query", label: "Запрос" },
+            { key: "count", label: "Раз" },
           ]}
           filename={`admin-concierge-top-queries-${period}.csv`}
         />
@@ -284,7 +261,7 @@ function TopQueriesTable({
                   <span className="line-clamp-2">{row.query}</span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {row.count.toLocaleString('ru-RU')}
+                  {row.count.toLocaleString("ru-RU")}
                 </td>
               </tr>
             ))}
@@ -294,8 +271,6 @@ function TopQueriesTable({
     </div>
   );
 }
-
-// ─── No-answer ────────────────────────────────────────────────────────────
 
 function NoAnswerTab({ period }: { period: AdminPeriod }) {
   const q = useAdminQuery(
@@ -335,7 +310,7 @@ function NoAnswerList({
   const csvRows: Array<Record<string, unknown>> = items.map((r) => ({
     createdAt: r.createdAt.toISOString(),
     query: r.query,
-    userEmail: r.userEmail ?? '',
+    userEmail: r.userEmail ?? "",
   }));
 
   return (
@@ -344,9 +319,9 @@ function NoAnswerList({
         <AdminCsvDownloadButton
           rows={csvRows}
           columns={[
-            { key: 'createdAt', label: 'Когда' },
-            { key: 'query', label: 'Запрос' },
-            { key: 'userEmail', label: 'Пользователь' },
+            { key: "createdAt", label: "Когда" },
+            { key: "query", label: "Запрос" },
+            { key: "userEmail", label: "Пользователь" },
           ]}
           filename={`admin-concierge-no-answer-${period}.csv`}
         />
@@ -361,7 +336,7 @@ function NoAnswerList({
               <div className="min-w-0 flex-1">
                 <div className="text-fg-primary">{row.query}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-fg-tertiary">
-                  <span>{row.createdAt.toLocaleString('ru-RU')}</span>
+                  <span>{row.createdAt.toLocaleString("ru-RU")}</span>
                   {row.userEmail && (
                     <span className="rounded bg-bg-overlay px-1.5 py-0.5">
                       {row.userEmail}
@@ -376,8 +351,6 @@ function NoAnswerList({
     </div>
   );
 }
-
-// ─── Feedback ─────────────────────────────────────────────────────────────
 
 function FeedbackTab() {
   return (

@@ -1,27 +1,12 @@
-/**
- * Юнит-тесты `backfillOwnerPerson` (Ф9 backfill,
- * `plans/tz/2026-06-04-razblokirovka-konveyera.md`).
- *
- * Покрытие:
- *   - dry-run: считает кандидатов, ничего не пишет;
- *   - apply: создаёт Person + проставляет membership.personId;
- *   - идемпотентность: второй прогон (нет Membership без personId) → 0 действий;
- *   - Membership с уже существующей Person по userId → только linking,
- *     Person не создаётся.
- *
- * Полный прогон против реального Postgres НЕ выполнялся (Docker недоступен).
- */
 import type { PrismaClient } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
 import { backfillOwnerPerson } from './backfill-owner-person';
 
-/** Мок-prisma с управляемым набором Membership без personId. */
 function buildPrisma(opts: {
   memberships: { id: string; orgId: string; userId: string; personId: string | null }[];
   personByUser?: (tenantId: string, userId: string) => { id: string } | null;
 }) {
-  // findMany эмулирует курсор: возвращает все за один батч, затем пусто.
   let served = false;
   const personFindFirst = vi.fn(async (args: { where: { userId?: string; tenantId?: string } }) => {
     const found = opts.personByUser?.(args.where.tenantId ?? '', args.where.userId ?? '') ?? null;

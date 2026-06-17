@@ -1,20 +1,11 @@
-'use client';
+"use client";
 
-/**
- * HealthS3Tab — вкладка «S3» в /admin/health.
- * Источник: `GET /api/v1/admin/health/s3` (Фаза 1 ТЗ admin-redesign).
- */
+import { ApiError } from "@/api/api-error";
+import { apiClient } from "@/api/api-client";
+import { Badge } from "@/ui/shadcn/badge";
 
-import { ApiError } from '@/api/api-error';
-import { apiClient } from '@/api/api-client';
-import { Badge } from '@/ui/shadcn/badge';
-
-import {
-  AdminEmpty,
-  AdminError,
-  AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+import { AdminEmpty, AdminError, AdminLoading } from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 type S3HealthApi = {
   provider: string;
@@ -27,14 +18,14 @@ type S3HealthApi = {
 
 export function HealthS3Tab() {
   const q = useAdminQuery(
-    'admin-health-s3',
+    "admin-health-s3",
     async () => {
       try {
-        return await apiClient.get<S3HealthApi>('/api/v1/admin/health/s3');
+        return await apiClient.get<S3HealthApi>("/api/v1/admin/health/s3");
       } catch (e) {
         if (
           e instanceof ApiError &&
-          (e.code === 'http_404' || e.code === 'not_found')
+          (e.code === "http_404" || e.code === "not_found")
         ) {
           return null;
         }
@@ -59,11 +50,11 @@ export function HealthS3Tab() {
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Tile title="Провайдер">{d.provider || '—'}</Tile>
+      <Tile title="Провайдер">{d.provider || "—"}</Tile>
       <Tile title="Endpoint">
-        <span className="font-mono text-xs">{d.endpoint || '—'}</span>
+        <span className="font-mono text-xs">{d.endpoint || "—"}</span>
       </Tile>
-      <Tile title="Бакет">{d.bucket || '—'}</Tile>
+      <Tile title="Бакет">{d.bucket || "—"}</Tile>
       <Tile title="Доступность">
         {d.available ? (
           <Badge variant="success">в строю</Badge>
@@ -72,7 +63,7 @@ export function HealthS3Tab() {
         )}
       </Tile>
       <Tile title="Задержка">
-        {d.latencyMs !== null ? `${d.latencyMs} мс` : '—'}
+        {d.latencyMs !== null ? `${d.latencyMs} мс` : "—"}
       </Tile>
       <Tile title="Последняя ошибка">
         {d.lastError ? (

@@ -1,19 +1,11 @@
-'use client';
+"use client";
 
-/**
- * Tracker Project Overview — последние документы проекта.
- *
- * Модель ProjectDocument может ещё не быть в схеме (соседний агент Wave 2).
- * В этом случае backend возвращает `recentDocuments: []`. Виджет показывает
- * аккуратный empty-state.
- */
-
-import type { ProjectRecentDocument } from '@/domain/tracker/overview';
+import type { ProjectRecentDocument } from "@/domain/tracker/overview";
 
 function fmt(d: Date): string {
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
+  return d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
   });
 }
 
@@ -27,9 +19,7 @@ export function RecentDocumentsWidget({
       <h3 className="text-sm font-medium text-fg-primary">Документы проекта</h3>
 
       {documents.length === 0 ? (
-        <p className="mt-2 text-sm text-fg-tertiary">
-          Документов пока нет.
-        </p>
+        <p className="mt-2 text-sm text-fg-tertiary">Документов пока нет.</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
           {documents.map((d) => (

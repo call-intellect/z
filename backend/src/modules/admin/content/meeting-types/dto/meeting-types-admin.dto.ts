@@ -1,18 +1,6 @@
-/**
- * Admin-redesign Фаза 5 — DTO для `MeetingTypesAdminController`.
- *
- * CRUD конфигурации типов встреч (модель `MeetingTypeConfig`). id матчится
- * со значениями enum `MeetingType` (Prisma), валидация — Zod refine.
- */
-
 import { MeetingType } from '@prisma/client';
 import { z } from 'zod';
 
-/**
- * Перечень допустимых id — берём из Prisma-enum в runtime, чтобы при
- * добавлении нового значения в schema.prisma валидация автоматически
- * подхватила его без правки этого файла.
- */
 export const MEETING_TYPE_IDS = Object.values(MeetingType) as readonly string[];
 
 const MeetingTypeIdSchema = z

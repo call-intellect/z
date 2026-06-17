@@ -11,18 +11,13 @@ describe('withGlossary', () => {
     expect(out).toContain('Глоссарий бизнес-терминов:');
     expect(out).toContain('Pain —');
     expect(out).toContain('Churn risk —');
-    // Только запрошенные — других не подмешиваем.
     expect(out).not.toContain('Commitment —');
     expect(out).not.toContain('Mentoring —');
   });
 
   it('неизвестный термин silently skip (тип — кастуем через unknown для негативного кейса)', () => {
-    const out = withGlossary(SYSTEM, [
-      'pain',
-      'nonexistent_term' as unknown as 'pain',
-    ]);
+    const out = withGlossary(SYSTEM, ['pain', 'nonexistent_term' as unknown as 'pain']);
     expect(out).toContain('Pain —');
-    // Промт остался корректным — никаких «- undefined» / «- nonexistent».
     expect(out).not.toContain('undefined');
     expect(out).not.toContain('nonexistent_term');
   });

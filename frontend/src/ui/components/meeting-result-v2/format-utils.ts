@@ -1,33 +1,27 @@
-/**
- * Утилиты форматирования для AI Meeting Workspace v2.
- */
-
 export function fmtTime(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '0:00';
+  if (!Number.isFinite(ms) || ms < 0) return "0:00";
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return h > 0
-    ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-    : `${m}:${sec.toString().padStart(2, '0')}`;
+    ? `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`
+    : `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
 export function fmtDurationCompact(ms: number | null | undefined): string {
-  if (typeof ms !== 'number' || ms <= 0) return '—';
+  if (typeof ms !== "number" || ms <= 0) return "—";
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
-  // S6-12: <1 минуты (напр. запись 47 с) не должно показываться как «0м».
-  if (h === 0 && m === 0) return '<1 мин';
-  return h > 0 ? `${h}ч ${m.toString().padStart(2, '0')}м` : `${m}м`;
+  if (h === 0 && m === 0) return "<1 мин";
+  return h > 0 ? `${h}ч ${m.toString().padStart(2, "0")}м` : `${m}м`;
 }
 
 export function parseTimeInput(input: string): number | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
-  // mm:ss или hh:mm:ss
-  const parts = trimmed.split(':').map((p) => p.trim());
+  const parts = trimmed.split(":").map((p) => p.trim());
   if (parts.length < 2 || parts.length > 3) return null;
   const nums = parts.map((p) => Number(p));
   if (nums.some((n) => !Number.isFinite(n) || n < 0)) return null;

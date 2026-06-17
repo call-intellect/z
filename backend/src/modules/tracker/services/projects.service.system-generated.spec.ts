@@ -5,16 +5,6 @@ import type { ListProjectsQuery } from '../dto/projects/list-projects-query.dto'
 
 import { ProjectsService } from './projects.service';
 
-/**
- * A6 (2026-06-06) — unit-тест фильтра системных проектов в `findAll`.
- *
- * Покрытие:
- *   org-контейнеры «Спринт компании» (Project.systemGenerated=true) скрыты
- *   из `GET /projects` — `findAll` всегда строит `where` с
- *   `systemGenerated: false`, и для findMany, и для count.
- *
- * ТЗ: A6 (скрыть теневой проект «Спринт компании» из GET /projects).
- */
 describe('ProjectsService.findAll — фильтр systemGenerated', () => {
   const tenantId = 'org_1';
 

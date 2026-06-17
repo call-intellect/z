@@ -1,29 +1,17 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { curationApi, type CurationItemApi } from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { curationApi, type CurationItemApi } from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   curationLevelLabel,
   mapCurationItem,
   type CurationItem,
-} from '@/domain/curation';
+} from "@/domain/curation";
 
-/**
- * <CurationBanner> — inline-виджет Слоя 4 (SBA α-4 §6.2).
- *
- * Показывается на странице карточки специалиста (Regulation, Decision,
- * Process, ...). Если для пары `(resourceType, resourceId)` есть открытый
- * `CurationItem` И текущий пользователь — кандидат-куратор (или назначен) —
- * показывает короткий баннер «На проверке» с кнопками «Открыть» / «Одобрить»
- * / «Отклонить». Если нет — рендерит null.
- *
- * На α-4 — задел; интеграция в страницы карточек — задача α-6 / α-7 / γ-1
- * (когда появятся UI карточек специалистов).
- */
 export function CurationBanner({
   resourceType,
   resourceId,
@@ -45,7 +33,7 @@ export function CurationBanner({
         const res = await curationApi.listQueue({
           resourceType,
           resourceId,
-          status: 'pending',
+          status: "pending",
           limit: 1,
         });
         if (cancelled) return;
@@ -53,9 +41,7 @@ export function CurationBanner({
         setItem(first ? mapCurationItem(first) : null);
       } catch (e) {
         if (cancelled) return;
-        // Тихая ошибка: для inline-виджета не показываем ничего, чтобы не
-        // мешать основной странице.
-        setError(humanizeApiError(e, 'error'));
+        setError(humanizeApiError(e, "error"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -73,14 +59,13 @@ export function CurationBanner({
     item.assignedToUserId === user.id;
   if (!isCandidate) return null;
 
-  async function decide(decisionType: 'approve' | 'reject') {
+  async function decide(decisionType: "approve" | "reject") {
     if (!item) return;
     setSubmitting(true);
     try {
       await curationApi.decide(item.id, { decisionType });
       setItem(null);
     } catch {
-      // ignore — пользователь увидит ошибку при следующем действии.
     } finally {
       setSubmitting(false);
     }
@@ -104,11 +89,11 @@ export function CurationBanner({
         >
           Открыть
         </Link>
-        {item.level === 'light' && (
+        {item.level === "light" && (
           <>
             <button
               type="button"
-              onClick={() => void decide('approve')}
+              onClick={() => void decide("approve")}
               disabled={submitting}
               className="rounded-md bg-accent px-3 py-1 text-xs text-accent-fg disabled:opacity-50"
             >
@@ -116,7 +101,7 @@ export function CurationBanner({
             </button>
             <button
               type="button"
-              onClick={() => void decide('reject')}
+              onClick={() => void decide("reject")}
               disabled={submitting}
               className="rounded-md border border-danger/40 px-3 py-1 text-xs text-danger disabled:opacity-50"
             >

@@ -7,11 +7,6 @@ import type { AdminSettingsService } from '../admin/settings/admin-settings.serv
 import { ChatboxWebhookController } from './chatbox-webhook.controller';
 import type { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * Unit-тесты inbound webhook ChatBox: Prisma / Queue / AdminSettings замоканы.
- * Контракт: всегда 200 (`{ok:true}`) кроме явного ForbiddenException
- * (нет интеграции / нет secret'а / несовпадение secret'а).
- */
 describe('ChatboxWebhookController', () => {
   const SECRET = 'a'.repeat(48);
 
@@ -50,9 +45,7 @@ describe('ChatboxWebhookController', () => {
       webhookSecret: null,
     });
 
-    await expect(
-      controller.receive('t1', SECRET, {}),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.receive('t1', SECRET, {})).rejects.toBeInstanceOf(ForbiddenException);
     expect(queueMock.enqueue).not.toHaveBeenCalled();
   });
 
@@ -61,9 +54,9 @@ describe('ChatboxWebhookController', () => {
       webhookSecret: SECRET,
     });
 
-    await expect(
-      controller.receive('t1', 'b'.repeat(48), {}),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.receive('t1', 'b'.repeat(48), {})).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(queueMock.enqueue).not.toHaveBeenCalled();
   });
 

@@ -2,23 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PersonalDailyBriefService } from './personal-daily-brief.service';
 
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — unit-тесты PersonalDailyBriefService.
- *
- * Покрываем:
- *   - buildFor: дедуп (обещание-ставшее-задачей считается один раз);
- *   - buildFor: «тебе обещали» собирается отдельно;
- *   - upsert: идемпотентность (повтор за день → тот же снимок, alreadyDelivered);
- *   - markOpened: self-scope (чужой бриф открыть нельзя → false).
- *
- * Prisma/cfg/llm/knowsWho/metrics — моки.
- */
-
-function makeService(over: {
-  prisma?: Record<string, unknown>;
-  llm?: Record<string, unknown>;
-  knowsWho?: Record<string, unknown>;
-} = {}): {
+function makeService(
+  over: {
+    prisma?: Record<string, unknown>;
+    llm?: Record<string, unknown>;
+    knowsWho?: Record<string, unknown>;
+  } = {},
+): {
   svc: PersonalDailyBriefService;
   prisma: Record<string, any>;
   metrics: Record<string, any>;
@@ -63,7 +53,6 @@ function makeService(over: {
 describe('PersonalDailyBriefService.buildFor', () => {
   it('обещание, ставшее задачей (общий sourceBlockId), считается ОДИН раз', async () => {
     const { svc, prisma } = makeService();
-    // Issue: пусто. Task из встречи, порождённая блоком block-1.
     prisma.task.findMany.mockResolvedValue([
       {
         id: 'task-x',
@@ -72,9 +61,7 @@ describe('PersonalDailyBriefService.buildFor', () => {
         evidenceBlockIds: ['block-1'],
       },
     ]);
-    // ideaBlock.findMany вызывается трижды: promises(author), blockers, promisedToMe.
     prisma.ideaBlock.findMany
-      // 1) мои обещания (author) — block-1 (то же обещание, что стало задачей)
       .mockResolvedValueOnce([
         {
           id: 'block-1',
@@ -84,9 +71,7 @@ describe('PersonalDailyBriefService.buildFor', () => {
           commitmentRecipient: { name: 'Маша' },
         },
       ])
-      // 2) блокеры
       .mockResolvedValueOnce([])
-      // 3) обещано мне
       .mockResolvedValueOnce([]);
 
     const payload = await svc.buildFor({
@@ -95,7 +80,6 @@ describe('PersonalDailyBriefService.buildFor', () => {
       dateLocal: '2026-06-08',
     });
 
-    // Задача осталась, обещание-источник схлопнуто (не задвоено).
     expect(payload.counts.tasks).toBe(1);
     expect(payload.counts.promises).toBe(0);
     expect(payload.myPromises).toHaveLength(0);
@@ -104,8 +88,8 @@ describe('PersonalDailyBriefService.buildFor', () => {
   it('«тебе обещали» собирается отдельно от моих обещаний', async () => {
     const { svc, prisma } = makeService();
     prisma.ideaBlock.findMany
-      .mockResolvedValueOnce([]) // мои обещания
-      .mockResolvedValueOnce([]) // блокеры
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           id: 'b-to-me',
@@ -134,7 +118,7 @@ describe('PersonalDailyBriefService.buildFor', () => {
         id: 'i1',
         title: 'Срочная задача',
         identifier: 'PRJ-1',
-        dueDate: new Date('2026-06-01T00:00:00.000Z'), // просрочено
+        dueDate: new Date('2026-06-01T00:00:00.000Z'),
       },
     ]);
     prisma.ideaBlock.findMany.mockResolvedValue([]);
@@ -174,7 +158,6 @@ describe('PersonalDailyBriefService.upsert (идемпотентность)', ()
     expect(res.id).toBe('brief-1');
     expect(res.alreadyDelivered).toBe(true);
     expect(metrics.incPersonalDailyBriefBuilt).toHaveBeenCalledOnce();
-    // upsert идёт по unique (tenantId, personId, dateLocal).
     const call = prisma.personalDailyBrief.upsert.mock.calls[0]![0];
     expect(call.where.tenantId_personId_dateLocal).toEqual({
       tenantId: 'org1',

@@ -1,28 +1,5 @@
-/**
- * InnLookupController — эндпоинты лукапа реквизитов по ИНН.
- *
- * Маршруты:
- *   POST /api/v1/inn-lookup               (auth + throttle 30/min/IP)
- *   POST /api/v1/admin/inn-lookup/invalidate (super_admin + throttle 60/min)
- *
- * Body вместо path-param — чтобы ИНН не светился в access-логах.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §8 + §11.
- */
-
-import {
-  Body,
-  Controller,
-  Inject,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { Body, Controller, Inject, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -45,13 +22,8 @@ import { InnLookupService } from './inn-lookup.service';
 @ApiBearerAuth()
 @Controller('api/v1')
 export class InnLookupController {
-  constructor(
-    @Inject(InnLookupService) private readonly service: InnLookupService,
-  ) {}
+  constructor(@Inject(InnLookupService) private readonly service: InnLookupService) {}
 
-  /**
-   * Лукап по ИНН. Кэш 30 дней (Redis). Под auth, throttle 30/min на IP.
-   */
   @Post('inn-lookup')
   @UseGuards(CookieAuthGuard)
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
@@ -68,10 +40,6 @@ export class InnLookupController {
     return this.service.lookup(body.inn);
   }
 
-  /**
-   * Сбросить кэш по конкретному ИНН (super_admin). Полезно если DaData
-   * обновила данные раньше истечения TTL.
-   */
   @Post('admin/inn-lookup/invalidate')
   @UseGuards(CookieAuthGuard, SuperAdminGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })

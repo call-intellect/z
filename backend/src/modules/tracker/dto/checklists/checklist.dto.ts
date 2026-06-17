@@ -1,16 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO для чек-листов внутри задачи (2026-05-27).
- *
- * Контракт: plans/tz/2026-05-27-tracker-checklists.md §DTO (Zod).
- *
- * Чек-лист — плоский список пунктов с галочками. У пункта нет исполнителя/срока,
- * только текст и `isDone`. Несколько чек-листов на одну задачу разрешено.
- */
-
-// ── IssueChecklist ─────────────────────────────────────────────────────
-
 export const CreateChecklistSchema = z
   .object({
     title: z.string().min(1).max(200).optional(),
@@ -32,8 +21,6 @@ export const ReorderChecklistsSchema = z
   })
   .strict();
 export type ReorderChecklistsDto = z.infer<typeof ReorderChecklistsSchema>;
-
-// ── IssueChecklistItem ─────────────────────────────────────────────────
 
 export const CreateChecklistItemSchema = z
   .object({
@@ -59,21 +46,13 @@ export const ReorderChecklistItemsSchema = z
   .strict();
 export type ReorderChecklistItemsDto = z.infer<typeof ReorderChecklistItemsSchema>;
 
-/**
- * Массовое создание пунктов чек-листа (UX «paste 10 строк сразу»).
- * Endpoint — `POST /checklist-items/bulk-create`, поэтому checklistId в body.
- */
 export const BulkCreateChecklistItemsSchema = z
   .object({
     checklistId: z.string().min(1).max(64),
     lines: z.array(z.string().min(1).max(500)).min(1).max(50),
   })
   .strict();
-export type BulkCreateChecklistItemsDto = z.infer<
-  typeof BulkCreateChecklistItemsSchema
->;
-
-// ── Response DTO ───────────────────────────────────────────────────────
+export type BulkCreateChecklistItemsDto = z.infer<typeof BulkCreateChecklistItemsSchema>;
 
 export interface ChecklistItemResponseDto {
   id: string;
@@ -98,14 +77,6 @@ export interface ChecklistResponseDto {
   updatedAt: string;
   deletedAt: string | null;
   items: ChecklistItemResponseDto[];
-  // Per-checklist прогресс (вычисленный) — удобно для прогресс-бара в UI.
   totalCount: number;
   doneCount: number;
-}
-
-/** Сводка денормализованных счётчиков задачи (для WS-события progress_changed). */
-export interface IssueChecklistProgressDto {
-  issueId: string;
-  total: number;
-  done: number;
 }

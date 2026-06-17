@@ -2,19 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { OperationsWeeklyDigestCron } from './operations-weekly-digest.cron';
 
-/**
- * SBA β-8.1 — OperationsWeeklyDigestCron unit-тесты.
- *
- *   - Фильтрация по часовому поясу + понедельник 08:00 — корректная.
- *   - Идемпотентность: если дайджест уже сгенерирован — пропускает.
- *   - COO_WEEKLY_DIGEST_ENABLED=false → cron в no-op.
- */
 describe('OperationsWeeklyDigestCron', () => {
   const baseCfg = {
     betaOps: {
       weeklyDigestEnabled: true,
       weeklyDigestLocalHour: 8,
-      weeklyDigestLocalDay: 1, // понедельник
+      weeklyDigestLocalDay: 1,
     },
   };
 
@@ -29,10 +22,9 @@ describe('OperationsWeeklyDigestCron', () => {
         findMany: vi.fn().mockResolvedValue(overrides.orgs),
       },
       membership: {
-        findMany: vi.fn().mockResolvedValue(overrides.memberships ?? [
-          { userId: 'u_coo' },
-          { userId: 'u_owner' },
-        ]),
+        findMany: vi
+          .fn()
+          .mockResolvedValue(overrides.memberships ?? [{ userId: 'u_coo' }, { userId: 'u_owner' }]),
       },
     };
     const digestService = {
@@ -70,8 +62,6 @@ describe('OperationsWeeklyDigestCron', () => {
     const { cron, digestService, conversational } = buildCron({
       orgs: [{ id: 'org-1', timezone: 'Europe/Moscow' }],
     });
-    // Понедельник 2026-05-25 в Europe/Moscow.
-    // 08:00 MSK = 05:00 UTC того же дня.
     const now = new Date('2026-05-25T05:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.digestsGenerated).toBe(1);
@@ -84,7 +74,6 @@ describe('OperationsWeeklyDigestCron', () => {
     };
     expect(arg.weekStart).toBe('2026-05-18');
     expect(arg.weekEnd).toBe('2026-05-24');
-    // По 2 нотификации (coo + owner).
     expect(conversational.sendNotification).toHaveBeenCalledTimes(2);
     expect(stats.notificationsSent).toBe(2);
   });
@@ -93,7 +82,6 @@ describe('OperationsWeeklyDigestCron', () => {
     const { cron, digestService, conversational } = buildCron({
       orgs: [{ id: 'org-1', timezone: 'Europe/Moscow' }],
     });
-    // Среда 2026-05-27 08:00 MSK (05:00 UTC).
     const now = new Date('2026-05-27T05:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.digestsGenerated).toBe(0);
@@ -106,7 +94,6 @@ describe('OperationsWeeklyDigestCron', () => {
     const { cron, digestService } = buildCron({
       orgs: [{ id: 'org-1', timezone: 'Europe/Moscow' }],
     });
-    // Понедельник 09:00 MSK (06:00 UTC).
     const now = new Date('2026-05-25T06:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.digestsGenerated).toBe(0);
@@ -155,7 +142,6 @@ describe('OperationsWeeklyDigestCron', () => {
     const { cron, digestService } = buildCron({
       orgs: [{ id: 'org-1', timezone: null }],
     });
-    // 05:00 UTC = 08:00 MSK по дефолту.
     const now = new Date('2026-05-25T05:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.digestsGenerated).toBe(1);

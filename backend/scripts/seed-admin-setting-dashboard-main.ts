@@ -1,22 +1,3 @@
-/**
- * ТЗ-2 Ф1 — Seed AdminSetting для новой компоновки главной директора.
- *
- * Регистрирует один ключ динамической конфигурации:
- *   - `dashboard.main_rework.enabled` (boolean, default true) — kill-switch
- *     (ON) новой раскладки первого экрана главной директора. OFF возвращает
- *     прежнюю компоновку. На backend ничего не гейтит — «Полоса пользы»
- *     считается всегда; флаг лишь едет на фронт как `mainReworkEnabled`.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-dashboard-main.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем
- *     только метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -75,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

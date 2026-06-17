@@ -1,30 +1,9 @@
-/**
- * Контрольный эксперимент: работает ли prompt caching у OpenAI Responses API,
- * когда мы ходим через наш прокси `proxy.agent-lia.ru` (т.е. в проде).
- *
- * Запуск (из backend):
- *   bun run scripts/eval/probe-openai-proxy-cache.ts
- *
- * Тот же набор сценариев, что и в probe-deepseek-cache.ts:
- *   S1 sequential identical, S2 parallel identical, S3 sequential variable tail.
- *
- * Особенности OpenAI Responses API:
- *   - endpoint: <baseURL>/responses (НЕ /chat/completions)
- *   - auth: Bearer <PROXY_PREFIX>:<OPENAI_API_KEY> (см. OpenAiProxyService)
- *   - usage.input_tokens_details.cached_tokens — поле для cached prompt
- *   - минимальный размер для попадания в кэш — 1024 токена (OpenAI policy)
- *   - cached input скидка ≈ 90%
- *   - reasoning-модели (gpt-5*) — без temperature, с reasoning.effort
- *
- * Бюджет: ≈ $0.05-0.15 на gpt-5-mini.
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
 import 'dotenv/config';
 
 const MODEL = process.env.OPENAI_CACHE_MODEL ?? 'gpt-5-mini';
-// Цены gpt-5-mini (на момент 2026-05-25): уточни если поменялись.
 const PRICE_IN = 0.25 / 1_000_000;
 const PRICE_CACHED_IN = 0.025 / 1_000_000;
 const PRICE_OUT = 2.0 / 1_000_000;
@@ -34,13 +13,8 @@ const BASE_URL = process.env.PROXY_BASE_URL ?? 'https://proxy.agent-lia.ru/v1';
 const PROXY_PREFIX = process.env.PROXY_PREFIX ?? 'myFeedproxy3128';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
-const REPORTS_DIR = path.resolve(
-  SCRIPT_DIR,
-  '../../test/eval/cache-experiment/reports',
-);
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
+const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/cache-experiment/reports');
 
 if (!OPENAI_API_KEY) {
   console.error('✗ OPENAI_API_KEY не задан в backend/.env');
@@ -51,7 +25,6 @@ const client = new OpenAI({
   baseURL: BASE_URL,
 });
 
-// Тот же FILLER, что в probe-deepseek-cache.ts — для сопоставимости результатов.
 const FILLER_PARAGRAPH = `
 Встреча Z — это рабочая сессия команды, где обсуждаются текущие задачи и принимаются решения.
 Каждая встреча имеет тип: продажная, внутренняя планёрка, ретроспектива, интервью, демо, обучение.
@@ -80,8 +53,7 @@ function buildText(targetChars: number): string {
   return parts.join('\n').slice(0, targetChars);
 }
 
-const SYSTEM_INSTRUCTIONS =
-  'Ты — ассистент. Отвечай ровно одним словом «ок» и ничего больше.';
+const SYSTEM_INSTRUCTIONS = 'Ты — ассистент. Отвечай ровно одним словом «ок» и ничего больше.';
 
 interface CallResult {
   ok: boolean;
@@ -117,9 +89,7 @@ async function callOnce(userText: string): Promise<CallResult> {
     const resp = (await (
       client as unknown as {
         responses: {
-          create: (
-            p: Record<string, unknown>,
-          ) => Promise<{ usage?: RespUsage }>;
+          create: (p: Record<string, unknown>) => Promise<{ usage?: RespUsage }>;
         };
       }
     ).responses.create(params)) as { usage?: RespUsage };
@@ -130,9 +100,7 @@ async function callOnce(userText: string): Promise<CallResult> {
     const cachedTokens = u.input_tokens_details?.cached_tokens ?? 0;
     const uncached = Math.max(0, promptTokens - cachedTokens);
     const costUsd =
-      uncached * PRICE_IN +
-      cachedTokens * PRICE_CACHED_IN +
-      completionTokens * PRICE_OUT;
+      uncached * PRICE_IN + cachedTokens * PRICE_CACHED_IN + completionTokens * PRICE_OUT;
     return {
       ok: true,
       ms,
@@ -156,7 +124,6 @@ async function callOnce(userText: string): Promise<CallResult> {
   }
 }
 
-// Размеры старта от 1024 — у OpenAI <1024 токенов не кэшируется.
 const TARGET_TOKENS = [1024, 2048, 2700, 3500, 5000, 10000, 20000, 50000];
 let CHARS_PER_TOKEN = 2.8;
 
@@ -180,9 +147,7 @@ interface S1Row {
 
 async function scenarioS1(): Promise<S1Row[]> {
   console.log('\n═══ S1: sequential identical ═══');
-  console.log(
-    'target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | ms_1 | ms_2',
-  );
+  console.log('target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | ms_1 | ms_2');
   console.log('-'.repeat(74));
   const rows: S1Row[] = [];
   for (const target of TARGET_TOKENS) {
@@ -193,8 +158,7 @@ async function scenarioS1(): Promise<S1Row[]> {
       continue;
     }
     if (target === TARGET_TOKENS[0]) {
-      CHARS_PER_TOKEN =
-        (userText.length / Math.max(1, r1.promptTokens)) * 1.02;
+      CHARS_PER_TOKEN = (userText.length / Math.max(1, r1.promptTokens)) * 1.02;
     }
     const r2 = await callOnce(userText);
     if (!r2.ok) {
@@ -242,9 +206,7 @@ async function scenarioS2(): Promise<S2Row[]> {
   console.log('\n═══ S2: 8 parallel identical (~10k токенов) ═══');
   const target = 10000;
   const userText = buildText(Math.round(target * CHARS_PER_TOKEN));
-  const results = await Promise.all(
-    Array.from({ length: 8 }, () => callOnce(userText)),
-  );
+  const results = await Promise.all(Array.from({ length: 8 }, () => callOnce(userText)));
   console.log('idx | prompt | cached | hit %  | ms');
   console.log('-'.repeat(42));
   const rows: S2Row[] = [];
@@ -266,8 +228,7 @@ async function scenarioS2(): Promise<S2Row[]> {
       ` ${i}  | ${fmt(r.promptTokens, 6)} | ${fmt(r.cachedTokens, 6)} | ${pct(r.cacheHitRatio)} | ${fmt(r.ms, 7)}`,
     );
   });
-  const avgHit =
-    rows.reduce((s, x) => s + x.cacheHitRatio, 0) / Math.max(1, rows.length);
+  const avgHit = rows.reduce((s, x) => s + x.cacheHitRatio, 0) / Math.max(1, rows.length);
   console.log(`  средний hit ratio: ${pct(avgHit)}`);
   return rows;
 }
@@ -286,9 +247,7 @@ interface S3Row {
 
 async function scenarioS3(): Promise<S3Row[]> {
   console.log('\n═══ S3: общий префикс + переменный хвост ═══');
-  console.log(
-    'target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | tail_len',
-  );
+  console.log('target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | tail_len');
   console.log('-'.repeat(74));
   const sizes = [2700, 10000, 20000];
   const rows: S3Row[] = [];
@@ -336,9 +295,7 @@ async function main(): Promise<void> {
   console.log(`  модель:    ${MODEL}`);
   console.log(`  baseURL:   ${BASE_URL}`);
   console.log(`  auth:      Bearer ${PROXY_PREFIX}:<OPENAI_API_KEY>`);
-  console.log(
-    `  размеры:   ${TARGET_TOKENS.join(', ')} токенов (calibrated от первого ответа)`,
-  );
+  console.log(`  размеры:   ${TARGET_TOKENS.join(', ')} токенов (calibrated от первого ответа)`);
 
   const startAll = Date.now();
   const s1 = await scenarioS1();
@@ -357,9 +314,7 @@ async function main(): Promise<void> {
       `✗ Кэш через прокси НЕ работает (везде 0). Проверь, не режет ли прокси заголовки/идентификацию.`,
     );
   } else if (maxCachedS1 > 5000) {
-    console.log(
-      `✓ Кэш через прокси работает, до ${maxCachedS1} токенов префикса покрывается.`,
-    );
+    console.log(`✓ Кэш через прокси работает, до ${maxCachedS1} токенов префикса покрывается.`);
   } else {
     console.log(
       `? Кэш работает, но ограничен ${maxCachedS1} токенами. Нужно понять, потолок это OpenAI или эффект прокси.`,

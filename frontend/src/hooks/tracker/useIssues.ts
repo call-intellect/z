@@ -1,27 +1,17 @@
-'use client';
+"use client";
 
-import { useMemo } from 'react';
-import useSWR, { type KeyedMutator } from 'swr';
+import { useMemo } from "react";
+import useSWR, { type KeyedMutator } from "swr";
 
-import {
-  issuesApi,
-  type ListIssuesRequest,
-} from '@/api/tracker/issues.api';
+import { issuesApi, type ListIssuesRequest } from "@/api/tracker/issues.api";
 import {
   issueFromApi,
   type Issue,
   type ListIssuesResponseApi,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
-import { useTrackerLiveRefresh } from './useTrackerLiveRefresh';
+import { useTrackerLiveRefresh } from "./useTrackerLiveRefresh";
 
-/**
- * Список задач проекта с фильтрами state/assignee/label/cycle/goal/priority.
- *
- * Подписывается на live-события трекера (issue.*, intake.triaged) через
- * `useTrackerLiveRefresh` — на любое событие нужного типа SWR ре-валидирует
- * этот список.
- */
 export function useIssues(
   orgId: string | null | undefined,
   projectId: string | null | undefined,
@@ -33,17 +23,12 @@ export function useIssues(
   limit: number;
   error: unknown;
   isLoading: boolean;
-  /**
-   * Полная SWR-`mutate` для этого ключа — поддерживает optimistic update,
-   * rollback и кастомный fetcher. Сигнатура совпадает с `KeyedMutator`
-   * SWR — это нужно `Board.tsx` для drag-and-drop transition.
-   */
   mutate: KeyedMutator<ListIssuesResponseApi>;
 } {
   const key =
     orgId && projectId
       ? [
-          'tracker.issues',
+          "tracker.issues",
           orgId,
           projectId,
           req.stateId ?? null,
@@ -52,17 +37,13 @@ export function useIssues(
           req.labelId ?? null,
           req.cycleId ?? null,
           req.goalId ?? null,
-          // Tracker Boards (2026-05-27) — фильтр по доске.
           req.boardId ?? null,
           req.priority ?? null,
           req.parentId ?? null,
           req.includeArchived ?? false,
           req.includeDeleted ?? false,
-          // Tracker subtasks UI (2026-05-27) — ключ должен учитывать флаг,
-          // иначе SWR закэширует ответ без childrenCount, и переключение
-          // вьюхи (которая ждёт badge'и) на ту же страницу даст пустые.
           req.includeChildrenCount ?? false,
-          req.q ?? '',
+          req.q ?? "",
           req.page ?? 1,
           req.limit ?? 50,
         ]
@@ -71,15 +52,17 @@ export function useIssues(
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !projectId) throw new Error('orgId/projectId required');
+      if (!orgId || !projectId) throw new Error("orgId/projectId required");
       return issuesApi.list(orgId, projectId, req);
     },
     { revalidateOnFocus: false },
   );
 
-  // Live-обновление: подписка на issue.* и intake.triaged. Project room
-  // прицельно — чтобы получать только события своего проекта.
-  useTrackerLiveRefresh(orgId, { projectId: projectId ?? null }, Boolean(orgId && projectId));
+  useTrackerLiveRefresh(
+    orgId,
+    { projectId: projectId ?? null },
+    Boolean(orgId && projectId),
+  );
 
   const issues = useMemo<Issue[]>(
     () => (swr.data?.items ? swr.data.items.map(issueFromApi) : []),

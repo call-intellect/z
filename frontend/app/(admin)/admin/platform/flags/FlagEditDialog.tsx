@@ -1,32 +1,18 @@
-'use client';
+"use client";
 
-/**
- * Диалог редактирования / создания FeatureFlag для `/admin/platform/flags`.
- *
- * Поля:
- *   - key (read-only в режиме edit, snake_case в create);
- *   - description, category (Select);
- *   - defaultValue (Switch);
- *   - rolloutPercent (Input number, опц.);
- *   - orgOverrides — динамическая таблица: Org select (свободный ввод
- *     tenantId или выбор из выпадающего) + value switch + remove.
- *
- * Save → POST или PATCH в зависимости от режима.
- */
+import { useEffect, useMemo, useState } from "react";
+import { Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminFeatureFlagsApi } from '@/api/admin-feature-flags.api';
-import { adminOrgsApi } from '@/api/admin-orgs.api';
-import { ApiError } from '@/api/api-error';
+import { adminFeatureFlagsApi } from "@/api/admin-feature-flags.api";
+import { adminOrgsApi } from "@/api/admin-orgs.api";
+import { ApiError } from "@/api/api-error";
 import {
   type FeatureFlagDomain,
   FEATURE_FLAG_CATEGORIES,
-} from '@/domain/admin-feature-flag';
-import { adminOrgListFromApi } from '@/domain/admin-org';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-feature-flag";
+import { adminOrgListFromApi } from "@/domain/admin-org";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -34,24 +20,24 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
-import { useAdminQuery } from '../../useAdminQuery';
+import { useAdminQuery } from "../../useAdminQuery";
 
 type Props = {
   flag: FeatureFlagDomain | null;
-  mode: 'create' | 'edit';
+  mode: "create" | "edit";
   open: boolean;
   onOpenChange: (next: boolean) => void;
   onSaved: () => void;
@@ -69,24 +55,22 @@ export function FlagEditDialog({
   onOpenChange,
   onSaved,
 }: Props) {
-  const isEdit = mode === 'edit' && flag !== null;
+  const isEdit = mode === "edit" && flag !== null;
 
-  const [key, setKey] = useState('');
-  const [description, setDescription] = useState('');
+  const [key, setKey] = useState("");
+  const [description, setDescription] = useState("");
   const [category, setCategory] = useState<string>(
-    FEATURE_FLAG_CATEGORIES[0]?.value ?? 'ai',
+    FEATURE_FLAG_CATEGORIES[0]?.value ?? "ai",
   );
   const [defaultValue, setDefaultValue] = useState(false);
-  const [rolloutPercent, setRolloutPercent] = useState<string>('');
+  const [rolloutPercent, setRolloutPercent] = useState<string>("");
   const [overrides, setOverrides] = useState<OverrideRow[]>([]);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Загружаем список Org для подсказок в Select. Если 403/404 — fallback
-  // на свободный ввод tenantId.
   const orgsQuery = useAdminQuery(
-    open ? 'admin-flags-orgs' : '',
+    open ? "admin-flags-orgs" : "",
     async () => {
       const res = await adminOrgsApi.list({ limit: 200 });
       return adminOrgListFromApi(res);
@@ -94,18 +78,17 @@ export function FlagEditDialog({
     [open],
   );
 
-  // Инициализация формы при открытии.
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setReason('');
+    setReason("");
     if (isEdit && flag) {
       setKey(flag.key);
       setDescription(flag.description);
       setCategory(flag.category);
       setDefaultValue(flag.defaultValue);
       setRolloutPercent(
-        flag.rolloutPercent === null ? '' : String(flag.rolloutPercent),
+        flag.rolloutPercent === null ? "" : String(flag.rolloutPercent),
       );
       setOverrides(
         Object.entries(flag.orgOverrides ?? {}).map(([orgId, value]) => ({
@@ -115,11 +98,11 @@ export function FlagEditDialog({
         })),
       );
     } else {
-      setKey('');
-      setDescription('');
-      setCategory(FEATURE_FLAG_CATEGORIES[0]?.value ?? 'ai');
+      setKey("");
+      setDescription("");
+      setCategory(FEATURE_FLAG_CATEGORIES[0]?.value ?? "ai");
       setDefaultValue(false);
-      setRolloutPercent('');
+      setRolloutPercent("");
       setOverrides([]);
     }
   }, [open, isEdit, flag]);
@@ -127,18 +110,14 @@ export function FlagEditDialog({
   const keyValid = useMemo(() => KEY_REGEX.test(key.trim()), [key]);
   const descriptionValid = description.trim().length >= 1;
   const rolloutValid = useMemo(() => {
-    if (rolloutPercent.trim() === '') return true;
+    if (rolloutPercent.trim() === "") return true;
     const n = Number(rolloutPercent);
     return Number.isFinite(n) && n >= 0 && n <= 100;
   }, [rolloutPercent]);
-  const canSave =
-    descriptionValid && rolloutValid && (isEdit || keyValid);
+  const canSave = descriptionValid && rolloutValid && (isEdit || keyValid);
 
   const addOverride = () => {
-    setOverrides((prev) => [
-      ...prev,
-      { id: rowId(), orgId: '', value: true },
-    ]);
+    setOverrides((prev) => [...prev, { id: rowId(), orgId: "", value: true }]);
   };
 
   const updateOverride = (id: string, patch: Partial<OverrideRow>) => {
@@ -169,7 +148,7 @@ export function FlagEditDialog({
     }
 
     const rollout =
-      rolloutPercent.trim() === '' ? null : Math.floor(Number(rolloutPercent));
+      rolloutPercent.trim() === "" ? null : Math.floor(Number(rolloutPercent));
 
     setSaving(true);
     try {
@@ -202,7 +181,7 @@ export function FlagEditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -221,12 +200,12 @@ export function FlagEditDialog({
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? `Редактировать «${flag!.key}»` : 'Новый feature flag'}
+            {isEdit ? `Редактировать «${flag!.key}»` : "Новый feature flag"}
           </DialogTitle>
           <DialogDescription>
             {isEdit
-              ? 'Изменения немедленно применяются во всех процессах. Org-overrides перекрывают defaultValue.'
-              : 'Ключ нельзя поменять после создания. Используйте формат snake_case с точками: `ai.copilot.enabled`.'}
+              ? "Изменения немедленно применяются во всех процессах. Org-overrides перекрывают defaultValue."
+              : "Ключ нельзя поменять после создания. Используйте формат snake_case с точками: `ai.copilot.enabled`."}
           </DialogDescription>
         </DialogHeader>
 
@@ -247,16 +226,14 @@ export function FlagEditDialog({
                 />
                 {!isEdit && key.length > 0 && !keyValid ? (
                   <p className="text-[11px] text-danger">
-                    Только латиница, цифры, точка и подчёркивание. От 2 до 64 символов.
+                    Только латиница, цифры, точка и подчёркивание. От 2 до 64
+                    символов.
                   </p>
                 ) : null}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="flag-category">Категория</Label>
-                <Select
-                  value={category}
-                  onValueChange={(v) => setCategory(v)}
-                >
+                <Select value={category} onValueChange={(v) => setCategory(v)}>
                   <SelectTrigger id="flag-category">
                     <SelectValue />
                   </SelectTrigger>
@@ -293,7 +270,7 @@ export function FlagEditDialog({
                 />
                 <div className="min-w-0 text-xs">
                   <p className="font-medium text-fg-primary">
-                    Глобальный default: {defaultValue ? 'вкл' : 'выкл'}
+                    Глобальный default: {defaultValue ? "вкл" : "выкл"}
                   </p>
                   <p className="text-fg-tertiary">
                     Используется для Org, у которых нет override.
@@ -324,10 +301,12 @@ export function FlagEditDialog({
 
           <OverridesSection
             rows={overrides}
-            orgs={orgsQuery.data?.items.map((o) => ({
-              id: o.id,
-              name: o.name,
-            })) ?? null}
+            orgs={
+              orgsQuery.data?.items.map((o) => ({
+                id: o.id,
+                name: o.name,
+              })) ?? null
+            }
             onAdd={addOverride}
             onUpdate={updateOverride}
             onRemove={removeOverride}
@@ -382,15 +361,13 @@ export function FlagEditDialog({
             ) : (
               <Save size={13} className="mr-1" aria-hidden />
             )}
-            {isEdit ? 'Сохранить' : 'Создать'}
+            {isEdit ? "Сохранить" : "Создать"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
-// ─────────────────────────── Overrides section ───────────────────────────
 
 function OverridesSection({
   rows,
@@ -411,9 +388,7 @@ function OverridesSection({
     <section className="space-y-2 rounded-md border border-border-subtle p-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="text-sm font-medium text-fg-primary">
-            Org-overrides
-          </h3>
+          <h3 className="text-sm font-medium text-fg-primary">Org-overrides</h3>
           <p className="text-xs text-fg-tertiary">
             Индивидуальное значение для конкретной Org. Перекрывает default.
           </p>
@@ -500,7 +475,7 @@ function OverrideRowEditor({
           disabled={disabled}
         />
         <span className="text-xs text-fg-secondary">
-          {row.value ? 'вкл' : 'выкл'}
+          {row.value ? "вкл" : "выкл"}
         </span>
       </div>
       <Button
@@ -518,13 +493,11 @@ function OverrideRowEditor({
   );
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
 function rowId(): string {
   if (
-    typeof globalThis !== 'undefined' &&
-    'crypto' in globalThis &&
-    typeof globalThis.crypto.randomUUID === 'function'
+    typeof globalThis !== "undefined" &&
+    "crypto" in globalThis &&
+    typeof globalThis.crypto.randomUUID === "function"
   ) {
     return globalThis.crypto.randomUUID();
   }

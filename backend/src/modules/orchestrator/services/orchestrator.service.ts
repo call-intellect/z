@@ -21,26 +21,6 @@ const POLL_INTERVAL_MS = 1500;
 const VERIFICATION_RETRY_THRESHOLD = 0.6;
 const MAX_VERIFICATION_RETRIES = 1;
 
-/**
- * SBA δ-1 — OrchestratorService.
- *
- * Главный фасад. 4 шага:
- *   planning → subagents_running → synthesizing → verifying → done|failed.
- *
- * `run({task, tenantId, userId, depth=1}) → AsyncIterable<Event>`.
- *
- * Hard limits (anti-cost-runaway):
- *   - depth=1 (clamp принудительно);
- *   - max `maxSubagentsPerRun` subagents;
- *   - 15-min run timeout;
- *   - feature-flag `ORCHESTRATOR_ENABLED=false` default → возвращает error event.
- *
- * Subagent context isolation — каждый subagent получает только свой
- * `OrchestratorPlanStep.contextSlice`, НЕ полную историю.
- *
- * Verification retry: если verification.confidence < 0.6 — один retry
- * (повторный synthesis по тем же subagent-результатам + re-verify).
- */
 @Injectable()
 export class OrchestratorService {
   private readonly logger = new Logger(OrchestratorService.name);
@@ -57,9 +37,7 @@ export class OrchestratorService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  async *run(
-    input: OrchestratorRunInput,
-  ): AsyncIterable<OrchestratorStreamEvent> {
+  async *run(input: OrchestratorRunInput): AsyncIterable<OrchestratorStreamEvent> {
     const limits = readOrchestratorLimits();
     if (!limits.enabled) {
       yield {
@@ -73,10 +51,8 @@ export class OrchestratorService {
     const startMs = Date.now();
     const timeoutMs = limits.runTimeoutMinutes * 60_000;
     const deadlineMs = startMs + timeoutMs;
-    // Per-subagent timeout — половина run timeout (anti-runaway).
     const timeoutMsPerStep = Math.max(60_000, Math.floor(timeoutMs / 2));
 
-    // 1) создаём run.
     const run = await this.prisma.orchestratorRun.create({
       data: {
         tenantId: input.tenantId,
@@ -90,13 +66,11 @@ export class OrchestratorService {
 
     let finalStatus: 'done' | 'failed' | 'timeout' | 'cancelled' = 'done';
     try {
-      // 2) planning.
       const plan = await this.planning.plan({
         task: input.task,
         tenantId: input.tenantId,
         userId: input.userId,
       });
-      // hard-clamp steps to maxSubagentsPerRun.
       const cappedSteps = plan.steps
         .slice(0, limits.maxSubagentsPerRun)
         .map((s, i) => ({ ...s, stepIndex: i }));
@@ -110,7 +84,6 @@ export class OrchestratorService {
       });
       yield { type: 'plan', plan: cappedPlan };
 
-      // 3) spawn subagents.
       const spawned = await this.spawner.spawn({
         runId: run.id,
         tenantId: input.tenantId,
@@ -127,14 +100,12 @@ export class OrchestratorService {
         };
       }
 
-      // 4) poll subagent statuses до завершения (или timeout).
       const results = await this.waitForSubagents({
         runId: run.id,
         expectedCount: spawned.length,
         deadlineMs,
       });
 
-      // emit per-subagent events для всех.
       for (const r of results) {
         const step = cappedSteps.find((s) => s.stepIndex === r.stepIndex);
         if (!step) continue;
@@ -147,7 +118,6 @@ export class OrchestratorService {
         };
       }
 
-      // Если ВСЕ упали — это failed run.
       const successResults = results.filter((r) => r.ok);
       if (successResults.length === 0) {
         finalStatus = 'failed';
@@ -167,7 +137,6 @@ export class OrchestratorService {
         return;
       }
 
-      // 5) synthesizing.
       await this.prisma.orchestratorRun.update({
         where: { id: run.id },
         data: { status: 'synthesizing' },
@@ -192,7 +161,6 @@ export class OrchestratorService {
       });
       yield { type: 'synthesis', synthesis };
 
-      // 6) verifying (+ retry max 1).
       await this.prisma.orchestratorRun.update({
         where: { id: run.id },
         data: { status: 'verifying' },
@@ -244,7 +212,6 @@ export class OrchestratorService {
       });
       yield { type: 'verification', verification };
 
-      // 7) done.
       await this.prisma.orchestratorRun.update({
         where: { id: run.id },
         data: { status: 'done', completedAt: new Date() },
@@ -253,10 +220,7 @@ export class OrchestratorService {
     } catch (err) {
       finalStatus = err instanceof TimeoutError ? 'timeout' : 'failed';
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        { runId: run.id, err: msg },
-        'orchestrator run failed',
-      );
+      this.logger.error({ runId: run.id, err: msg }, 'orchestrator run failed');
       try {
         await this.prisma.orchestratorRun.update({
           where: { id: run.id },
@@ -283,43 +247,33 @@ export class OrchestratorService {
     }
   }
 
-  /**
-   * Polling: ждём, пока все subagent-jobs run'а перейдут в done/failed,
-   * либо наступит deadline.
-   */
   private async waitForSubagents(args: {
     runId: string;
     expectedCount: number;
     deadlineMs: number;
-  }): Promise<
-    Array<{ stepIndex: number; ok: boolean; result: OrchestratorSubagentResult }>
-  > {
+  }): Promise<Array<{ stepIndex: number; ok: boolean; result: OrchestratorSubagentResult }>> {
     while (Date.now() < args.deadlineMs) {
       const jobs = await this.prisma.orchestratorSubagentJob.findMany({
         where: { runId: args.runId },
         orderBy: { stepIndex: 'asc' },
       });
-      const terminal = jobs.every(
-        (j) => j.status === 'done' || j.status === 'failed',
-      );
+      const terminal = jobs.every((j) => j.status === 'done' || j.status === 'failed');
       if (terminal || jobs.length === 0) {
         return jobs.map((j) => ({
           stepIndex: j.stepIndex,
           ok: j.status === 'done',
-          result:
-            (j.resultJson as unknown as OrchestratorSubagentResult | null) ?? {
-              text:
-                j.status === 'failed'
-                  ? `(subagent упал: ${j.errorMessage ?? 'unknown error'})`
-                  : '(нет результата)',
-              citations: [],
-              confidence: 0,
-            },
+          result: (j.resultJson as unknown as OrchestratorSubagentResult | null) ?? {
+            text:
+              j.status === 'failed'
+                ? `(subagent упал: ${j.errorMessage ?? 'unknown error'})`
+                : '(нет результата)',
+            citations: [],
+            confidence: 0,
+          },
         }));
       }
       await sleep(POLL_INTERVAL_MS);
     }
-    // timeout — пометим pending/running как failed и вернём.
     await this.prisma.orchestratorSubagentJob.updateMany({
       where: {
         runId: args.runId,

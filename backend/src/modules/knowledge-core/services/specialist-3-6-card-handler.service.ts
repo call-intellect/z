@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -13,17 +8,8 @@ import {
   CardSpecialistRegistry,
 } from '../../chat-v2/services/card-specialist-registry.service';
 
-/**
- * SBA β-5 — Specialist36CardHandler (Ideas Collector).
- *
- * Регистрируется в CardSpecialistRegistry chat-v2. Возвращает Idea-карточки,
- * чьи sourceBlockIds пересекаются с candidateBlockIds или statement/rationale
- * содержит подстроку запроса.
- */
 @Injectable()
-export class Specialist36CardHandler
-  implements OnModuleInit, CardSpecialistHandler
-{
+export class Specialist36CardHandler implements OnModuleInit, CardSpecialistHandler {
   private readonly logger = new Logger(Specialist36CardHandler.name);
   static readonly SPECIALIST_NAME = '3-6-ideas';
   private static readonly DEFAULT_CONFIDENCE = 0.6;
@@ -98,7 +84,9 @@ export class Specialist36CardHandler
               : Specialist36CardHandler.DEFAULT_CONFIDENCE;
           const finalConfidence = Math.min(
             1,
-            baseConfidence + Math.min(0.1, overlap * 0.02) + Math.min(0.05, Number(i.weight) * 0.001),
+            baseConfidence +
+              Math.min(0.1, overlap * 0.02) +
+              Math.min(0.05, Number(i.weight) * 0.001),
           );
           const text =
             i.rationale && i.rationale.length > 0

@@ -1,33 +1,3 @@
-/**
- * patch-migrate-old-demo-orgs.ts
- *
- * Мигрирует existing Org с старой моделью «копия ТехноСтрим» в новую:
- *   1. Находит Org где demoWorkspaceSeededAt != null AND isReferenceDemo=false.
- *   2. Для каждой:
- *      a. Проверяет: есть ли в Org **реальные** данные (Meeting с roomName,
- *         НЕ начинающимся на 'demo-room-', ИЛИ Person без externalSource='demo').
- *         Если есть — skip (это «обжитая» Org, в которой пользователь начал
- *         работать; не трогаем).
- *      b. Иначе чистит данные с externalSource='demo' через resetDemoWorkspace
- *         из CLI seed-demo-workspace.ts.
- *      c. Создаёт Membership(userId=ownerId, orgId=ZDEMO_ORG_ID, role='demo_observer')
- *         если ENV ZDEMO_ORG_ID задана (иначе skip с warning).
- *      d. Логирует.
- *   3. В конце — статистика: N очищены, M пропущены (обжитые), K без эталона.
- *
- * Идемпотентность: повторный запуск — найдёт уже сброшенные (нечего чистить),
- * увидит existing memberships (skip create).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-migrate-old-demo-orgs.ts
- *   docker compose exec backend bun run scripts/patch-migrate-old-demo-orgs.ts --dry-run
- *
- * Требует: ENV ZDEMO_ORG_ID должен быть выставлен (результат
- * patch-create-reference-demo-org). Если не задан — все Org пропускаются с warning.
- *
- * Источник: ТЗ plans/tz/2026-06-01-demo-shared-org-model.md §6.2.
- */
-
 import { createPrismaClient } from './_lib/prisma';
 import { resetDemoWorkspace } from './seed-demo-workspace';
 
@@ -46,7 +16,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // Список старых «копий».
   const oldDemoOrgs = await prisma.org.findMany({
     where: {
       demoWorkspaceSeededAt: { not: null },
@@ -70,7 +39,6 @@ async function main(): Promise<void> {
   let observerSkipped = 0;
 
   for (const org of oldDemoOrgs) {
-    // Проверка «обжитой Org»: реальные Meeting (не demo-room-*) ИЛИ реальные Persons.
     const realMeetings = await prisma.meeting.count({
       where: {
         tenantId: org.id,
@@ -100,13 +68,11 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Чистим демо-данные.
     // eslint-disable-next-line no-console
     console.log(`[cleanup] Org ${org.id} (${org.name})...`);
     await resetDemoWorkspace(prisma, org.id);
     cleaned++;
 
-    // Прикрепляем owner'а к эталону (если есть).
     if (demoOrgId) {
       try {
         const exists = await prisma.membership.findUnique({

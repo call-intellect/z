@@ -1,37 +1,3 @@
-/**
- * Ф3 (knowledge-access-groups-and-provenance, 2026-06-06) — Backfill групп
- * доступа (`IdeaBlockAccess`) для исторических canonical-блоков.
- *
- * Контекст:
- *   ТЗ `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md` Фаза 3.
- *   Решение владельца В5: историческое знание = «открыто» (дефолт памяти). Поэтому
- *   ПО УМОЛЧАНИЮ (без флага `--departments`) скрипт НИЧЕГО не делает — старым блокам
- *   group-строки не назначаются (=открыты всем). closed-группы задним числом НЕ
- *   назначаются НИКОГДА (нет источника правды о закрытости постфактум).
- *
- *   С флагом `--departments` — для canonical-блоков БЕЗ единой `IdeaBlockAccess`
- *   выводит ТОЛЬКО department-группы из уже существующих functional axisLabels
- *   (+ отделы участников/автора, если payload/subject доступны). Логику резолва
- *   НЕ дублируем — зовём `BlockAccessDeriverService.deriveDepartmentsOnly`.
- *
- * Идемпотентность:
- *   - Кандидаты — только блоки без `IdeaBlockAccess` (`blockAccess: { none: {} }`) →
- *     повторный прогон = 0 кандидатов = no-op (если у блока появилась хоть одна
- *     access-строка, он выпадает из выборки).
- *   - createMany skipDuplicates по @@id([blockId, groupId]) — страховка от гонки.
- *   - Курсорная пагинация по id (обработанные блоки выпадают из where → курсор
- *     обязателен, иначе бесконечный цикл на блоках-«пропусках» без домена).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-block-access.ts            # no-op (исторические = открыты)
- *   docker compose exec backend bun run scripts/backfill-block-access.ts --departments --dry-run
- *   docker compose exec backend bun run scripts/backfill-block-access.ts --departments
- *   docker compose exec backend bun run scripts/backfill-block-access.ts --departments --tenant=<orgId>
- *   docker compose exec backend bun run scripts/backfill-block-access.ts --departments --limit=5000
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'backfill', skipBootstrap, args=['--departments']).
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -48,7 +14,6 @@ interface Options {
   tenantId?: string;
   limit?: number;
   dryRun: boolean;
-  /** Без этого флага — no-op (исторические блоки остаются открытыми, В5). */
   departments: boolean;
 }
 
@@ -91,9 +56,6 @@ async function main(opts: Options): Promise<void> {
       `tenant=${opts.tenantId ?? '<all>'}, limit=${opts.limit ?? '<none>'}) ===`,
   );
 
-  // В5 — без --departments историческое знание остаётся «открыто» (дефолт памяти).
-  // Скрипт регистрируется в STEPS, чтобы прогон через apply-prod-deploy был
-  // осмысленным, но без флага он сознательно no-op.
   if (!opts.departments) {
     console.log(
       'backfill-block-access: флаг --departments не передан — историческое знание ' +
@@ -102,15 +64,12 @@ async function main(opts: Options): Promise<void> {
     return;
   }
 
-  // Кандидаты — canonical-блоки БЕЗ единой access-строки (идемпотентность +
-  // инкрементальность).
   const blockWhere = {
     status: 'canonical' as const,
     blockAccess: { none: {} },
     ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
   };
 
-  // Лёгкий pre-check ДО подъёма AppModule.
   const preCheck = createPrismaClient();
   try {
     const pending = await preCheck.ideaBlock.count({ where: blockWhere });
@@ -136,7 +95,6 @@ async function main(opts: Options): Promise<void> {
     const deriver = app.get(BlockAccessDeriverService);
     const s3 = app.get(S3Service);
 
-    // Кэш payload по rawEventId (участники резолвятся из payload).
     const payloadCache = new Map<string, unknown>();
     const loadPayload = async (event: {
       id: string;
@@ -177,8 +135,6 @@ async function main(opts: Options): Promise<void> {
         stats.scanned++;
         processed++;
         try {
-          // payload первого evidence блока (для отделов участников). Не критично:
-          // department-путь работает и без payload (functional axisLabels + subject).
           let payload: unknown = null;
           const evidence = await prisma.ideaBlockEvidence.findFirst({
             where: { blockId: block.id },

@@ -1,18 +1,3 @@
-/**
- * SBA γ-1 — Specialist 3.7 (SkillProfile).
- *
- * LLM-промпт `skill-trait-merge` — арбитр между новым черновиком trait'а и
- * top-K KNN-кандидатами (близкими существующими активными traits того же
- * profileId). Возвращает verdict: 'merge' | 'supersedes' | 'new' + reasoning.
- *
- * Контракт:
- *   - 'merge' — новый trait дополняет существующий (та же черта, новые наблюдения).
- *     Сервис: append sourceBlockIds к existing + recompute confidence (медиана).
- *   - 'supersedes' — формулировка стала точнее/изменилась суть. Сервис: старый
- *     получает status='superseded_by', supersededById; новый — active.
- *   - 'new' — новая черта (не пересекается с существующими). Insert новый trait.
- */
-
 export const SKILL_TRAIT_MERGE_SYSTEM_PROMPT = [
   'Ты — knowledge-инженер. Тебе дают новый черновик черты сотрудника и список близких существующих активных черт того же сотрудника.',
   'Твоя задача — решить, что делать с новым черновиком. Отвечай строго в формате JSON по предоставленной схеме.',
@@ -55,7 +40,7 @@ export const SKILL_TRAIT_MERGE_SYSTEM_PROMPT = [
   '',
   'САМОПРОВЕРКА перед ответом:',
   '1. Если cosine ≥ 0.85 и категория совпадает — вердикт точно НЕ "new"?',
-  '2. Для merge/supersedes targetId заполнен id\'ом кандидата (не null)?',
+  "2. Для merge/supersedes targetId заполнен id'ом кандидата (не null)?",
   '3. На supersedes в reasoning сказано, ЧЕМ именно новая черта отличается?',
   'Любой «нет» — исправь вердикт.',
 ].join('\n');

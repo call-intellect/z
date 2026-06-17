@@ -6,12 +6,6 @@ import type { PersonsService } from '../persons/services/persons.service';
 
 import { ChatboxMembersService } from './chatbox-members.service';
 
-/**
- * Unit-тесты ChatboxMembersService с замоканным prisma (БД нет). Проверяем
- * батч-резолв Person (без N+1), форму DTO и ветки linkMember (manual / none /
- * not-found). objectContaining, без mock.calls[][].
- */
-
 describe('ChatboxMembersService', () => {
   let prismaMock: {
     chatboxMember: {
@@ -78,13 +72,10 @@ describe('ChatboxMembersService', () => {
           linkedPersonId: null,
         },
       ]);
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', name: 'Person One' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Person One' }]);
 
       const res = await service.listMembers('t1');
 
-      // Один батч-запрос Person для двух членов с p1 (без N+1).
       expect(prismaMock.person.findMany).toHaveBeenCalledTimes(1);
       expect(prismaMock.person.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -131,9 +122,7 @@ describe('ChatboxMembersService', () => {
       const res = await service.listMembers('t1');
 
       expect(prismaMock.person.findMany).not.toHaveBeenCalled();
-      expect(res[0]).toEqual(
-        expect.objectContaining({ id: 'm1', linkedPerson: null }),
-      );
+      expect(res[0]).toEqual(expect.objectContaining({ id: 'm1', linkedPerson: null }));
     });
   });
 
@@ -150,9 +139,7 @@ describe('ChatboxMembersService', () => {
         linkMode: 'manual',
         linkedPersonId: 'p1',
       });
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', name: 'Person One' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Person One' }]);
 
       const res = await service.linkMember('t1', 'm1', 'p1');
 
@@ -175,9 +162,7 @@ describe('ChatboxMembersService', () => {
       prismaMock.chatboxMember.findFirst.mockResolvedValue({ id: 'm1' });
       prismaMock.person.findFirst.mockResolvedValue(null);
 
-      await expect(service.linkMember('t1', 'm1', 'p404')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.linkMember('t1', 'm1', 'p404')).rejects.toThrow(BadRequestException);
       expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
     });
 
@@ -202,17 +187,13 @@ describe('ChatboxMembersService', () => {
           data: { linkedPersonId: null, linkMode: 'none' },
         }),
       );
-      expect(res).toEqual(
-        expect.objectContaining({ linkMode: 'none', linkedPerson: null }),
-      );
+      expect(res).toEqual(expect.objectContaining({ linkMode: 'none', linkedPerson: null }));
     });
 
     it('член не найден → chatbox_member_not_found', async () => {
       prismaMock.chatboxMember.findFirst.mockResolvedValue(null);
 
-      await expect(service.linkMember('t1', 'm404', 'p1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.linkMember('t1', 'm404', 'p1')).rejects.toThrow(BadRequestException);
       expect(prismaMock.person.findFirst).not.toHaveBeenCalled();
       expect(prismaMock.chatboxMember.update).not.toHaveBeenCalled();
     });

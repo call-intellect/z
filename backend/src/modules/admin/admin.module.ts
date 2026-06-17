@@ -68,49 +68,22 @@ import { SuperAdminAuditInterceptor } from './super-admin.audit.interceptor';
 import { AdminTelegramBotController } from './system/telegram-bot/admin-telegram-bot.controller';
 import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bot.service';
 
-/**
- * Admin-модуль (Phase 8.2).
- *
- * Все контроллеры — под `CookieAuthGuard + AdminGuard` и
- * `AdminAuditInterceptor` (адресно через `@UseInterceptors`, чтобы НЕ
- * аудитировать обычные user/guest эндпоинты).
- *
- * Зависит только от глобальных модулей: PrismaService, AuthModule,
- * LivekitModule, AiModule.
- */
 @Global()
 @Module({
   imports: [
-    // Admin-redesign Фаза 0 — глобальные модули для динамических настроек
-    // и менеджмента cron-джобов.
     AdminSettingsModule,
     AdminCronsModule,
-    // Admin-redesign Фаза 1 — журнал super_admin и инциденты (BullMQ failed-jobs).
     AdminAuditModule,
     AdminIncidentsModule,
-    // Admin-redesign Фаза 2 — read-only аналитика (knowledge + concierge).
     AnalyticsModule,
-    // Admin-redesign Фаза 3 — AI smoke-test endpoints.
     AdminAiModule,
-    // Admin-redesign Фаза 4 — Plans (CRUD планов продукта) и Entitlements
-    // (глобальный обзор overrides + per-org мутации).
     AdminPlansModule,
     AdminEntitlementsModule,
-    // Admin-redesign Фаза 5 — Контент продукта: типы встреч, шаблоны писем,
-    // системные сообщения (баннеры), глобальные каналы, UI-строки.
     ContentAdminModule,
-    // Admin-redesign Фаза 6 — Каналы и интеграции: Telegram/MAX-боты,
-    // webhook subscriptions/deliveries management, LiveKit health.
     IntegrationsAdminModule,
-    // Admin-redesign Фаза 7 — Записи и медиа: retention (RetentionPolicy)
-    // и storage (S3 buckets stats + provider switch).
     AdminMediaModule,
-    // Admin-redesign Фаза 8 — Платформа: BullMQ workers inspector, лимиты,
-    // feature flags, security-настройки, maintenance статус.
     PlatformAdminModule,
-    // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — Смысловые блоки навыка.
     AdminSkillTraitConceptsModule,
-    // 2026-05-29 — демо-кабинет «ТехноСтрим» из админки (AdminDemoController).
     OnboardingModule,
   ],
   controllers: [
@@ -132,18 +105,13 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminOrgsController,
     AdminHealthController,
     OrgAdminKnowledgeController,
-    // ТЗ 2026-05-26 §6 — управление доступом member к «Памяти компании».
     OrgAdminMemoryAccessController,
-    // SBA α-10 wave 3 — Admin LLM + Unit Economics.
     AdminLlmProvidersController,
     AdminLlmModelsController,
     AdminEconomicsController,
     OrgEconomicsController,
-    // β-9 Phase 4 — главная админка Z, глобальный Telegram-бот.
     AdminTelegramBotController,
-    // W2.3 KC-Temporal (2026-05-25) — admin download preference-dataset.
     LlmPreferenceDatasetController,
-    // G.2 KC-Temporal (2026-05-25) — admin view матрицы переходов signalType.
     SignalTypeMonitorController,
   ],
   providers: [
@@ -163,7 +131,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     AdminOrgsService,
     AdminHealthService,
     OrgAdminKnowledgeService,
-    // SBA α-10 wave 3 — services + cron'ы.
     AdminLlmProvidersService,
     AdminLlmModelsService,
     UnitEconomicsService,
@@ -173,10 +140,7 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     BudgetAlertCron,
     CurrencyRateSyncCron,
     ProviderSmokeTestCron,
-    // β-9 Phase 4 — service для админки Telegram-бота. TelegramApiClient
-    // импортируется из ConversationalModule (global).
     AdminTelegramBotService,
-    // G.2 KC-Temporal (2026-05-25) — чтение AdminSetting{key=signal_type_transition_matrix:*}.
     SignalTypeMonitorService,
   ],
   exports: [
@@ -192,7 +156,6 @@ import { AdminTelegramBotService } from './system/telegram-bot/admin-telegram-bo
     OrgAdminKnowledgeService,
     PromptExperimentsService,
     AiResultFeedbackService,
-    // SBA α-10 wave 3.
     AdminLlmProvidersService,
     AdminLlmModelsService,
     UnitEconomicsService,

@@ -1,11 +1,3 @@
-/**
- * DomainModel службы поддержки (ТЗ 2026-06-09 support-desk Ф1).
- *
- * Слой ApiDto → DomainModel: компоненты работают только с этими моделями
- * (ISO-строки преобразованы в Date, готовы к форматированию). Мапперы —
- * чистые функции без побочных эффектов.
- */
-
 import type {
   DeskMetaApi,
   DeskMetaAgentApi,
@@ -17,9 +9,7 @@ import type {
   MyTicketListItemApi,
   MyTicketMessageApi,
   SupportStatusApi,
-} from '../api/support.api';
-
-// ─────────────────────────── статус ───────────────────────────
+} from "../api/support.api";
 
 export interface SupportStatus {
   deskEnabled: boolean;
@@ -29,8 +19,6 @@ export interface SupportStatus {
 export function toSupportStatus(dto: SupportStatusApi): SupportStatus {
   return { deskEnabled: dto.deskEnabled, isAgent: dto.isAgent };
 }
-
-// ─────────────────────────── клиент ───────────────────────────
 
 export interface SupportTicketListItem {
   ticketId: string;
@@ -94,8 +82,6 @@ export function toSupportTicketDetail(
   };
 }
 
-// ─────────────────────────── деск ───────────────────────────
-
 export interface DeskTicketListItem {
   ticketId: string;
   ticketNumber: string;
@@ -113,7 +99,6 @@ export interface DeskMessage {
   id: string;
   authorId: string;
   authorType: string;
-  /** 'external' (видно клиенту) | 'internal' (заметка). */
   access: string;
   content: string;
   createdAt: Date;
@@ -220,18 +205,13 @@ export function toSupportMeta(dto: DeskMetaApi): SupportMeta {
   };
 }
 
-/**
- * Считается ли тикет «закрытым» по названию статуса — для показа CSAT-оценки
- * клиенту. Бэк не отдаёт category в клиентском детале, поэтому матчим по
- * человекочитаемым названиям статусов Support-проекта.
- */
 export function isTicketResolvedStatus(status: string | null): boolean {
   if (!status) return false;
   const s = status.trim().toLowerCase();
   return (
-    s.includes('решен') ||
-    s.includes('закрыт') ||
-    s.includes('выполн') ||
-    s.includes('готов')
+    s.includes("решен") ||
+    s.includes("закрыт") ||
+    s.includes("выполн") ||
+    s.includes("готов")
   );
 }

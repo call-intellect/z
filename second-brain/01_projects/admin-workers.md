@@ -22,7 +22,7 @@ Z крутит десятки BullMQ-очередей (`core.raw-events`, `core.
 
 ## Контроллер
 
-[backend/src/modules/admin/workers/admin-workers.controller.ts](backend/src/modules/admin/workers/admin-workers.controller.ts):
+[backend/src/modules/admin/platform/workers/workers-admin.controller.ts](backend/src/modules/admin/platform/workers/workers-admin.controller.ts):
 
 ```
 GET    /api/v1/admin/workers/queues                   — список очередей + счётчики
@@ -45,7 +45,7 @@ Severity для всех destructive-операций (`retry-failed` массо
 
 ## UI
 
-[frontend/app/(authenticated)/admin/platform/workers/](frontend/app/(authenticated)/admin/platform/workers/):
+[frontend/app/(admin)/admin/platform/workers/](frontend/app/(admin)/admin/platform/workers/):
 
 - Сводная таблица: имя очереди / counts (active/waiting/failed/delayed) / `paused?` / последний failed-error.
 - Карточка очереди — `AdminSection` + `AdminTabs`:

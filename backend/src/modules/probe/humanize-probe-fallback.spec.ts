@@ -1,10 +1,3 @@
-/**
- * Кабинет §3 Ф2 (2026-06-11) — чистый unit-тест `humanizeProbeFallback`.
- *
- * Fallback-вопрос диспетчера probe не должен показывать человеку cuid-подобные
- * технические идентификаторы. Детерминизм: без сети, без времени, без БД.
- */
-
 import { describe, expect, it } from 'vitest';
 
 import { humanizeProbeFallback } from './probe-dispatcher.worker';
@@ -21,9 +14,7 @@ describe('humanizeProbeFallback', () => {
   });
 
   it('строку только из cuid заменяет на вежливый запрос уточнения', () => {
-    expect(humanizeProbeFallback('cmpzl0mf3k2x9abcd1234')).toBe(
-      'Можете уточнить, пожалуйста?',
-    );
+    expect(humanizeProbeFallback('cmpzl0mf3k2x9abcd1234')).toBe('Можете уточнить, пожалуйста?');
   });
 
   it('обычный человеческий текст не ломает', () => {

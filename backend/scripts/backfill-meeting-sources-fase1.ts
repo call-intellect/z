@@ -1,20 +1,3 @@
-/**
- * Backfill для Фазы 1 knowledge-core ТЗ.
- *
- * Задача: для каждой существующей `Org`, у которой ещё нет дефолтного
- * `Source(type=meeting, name='Встречи Z')`, создать его. Это нужно
- * для уже-существующих Org из Фазы 0; новые Org с Фазы 1 получают
- * дефолтный Source автоматически в `OrgsService.createForOwner`.
- *
- * Запуск:
- *   tsx scripts/backfill-meeting-sources-fase1.ts
- *
- * Идемпотентен: повторный запуск ничего не ломает (пропускает уже-созданные).
- *
- * См. правила safe-seed-rules: используем createMany с skipDuplicates,
- * не делаем mass updateMany без явного where.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

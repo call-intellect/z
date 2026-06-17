@@ -54,7 +54,7 @@
 
 ## REST API endpoints
 
-См. [`01_projects/api-layer`](api-layer.md) если есть, или [`plans/tz/2026-05-23-tracker-phase-1-models-api.md`](../../plans/tz/2026-05-23-tracker-phase-1-models-api.md). Сводка:
+См. [`01_projects/api-layer`](api-layer.md) если есть, или [`plans/archive/2026-05-23-tracker-phase-1-models-api.md`](../../plans/archive/2026-05-23-tracker-phase-1-models-api.md). Сводка:
 
 ```
 GET    /api/v1/projects                          # список + фильтры
@@ -193,7 +193,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 - Кнопки «+ Проект», «+ Задача», FAB «+ Задача» на мобиле — остаются как есть, параллельно с концьержем.
 - PWA — manifest + service worker + web push.
 
-См. [`plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md`](../../plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md).
+См. [`plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md`](../../plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md).
 
 ## Mobile native (R1 — параллельный поток)
 
@@ -226,7 +226,7 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 |---|---|
 | **KNN похожие задачи** | `Issue.embedding vector(1536)` + `embeddingHash` (commit 1c49eea). IssueEmbedWorker (sha256-skip). SimilarIssuesService (KNN cosine threshold 0.18). `GET /api/v1/tracker/issues/:id/similar`. HNSW partial-index в postgres-init.sql. |
 | **meeting-extract-actions** | После ai_ready встречи → MeetingExtractActionsService → IntakeIssue с suggested* (assignee/project/dueDate/priority/confidence/sourceQuote). LlmTaskType `meeting-extract-actions`. |
-| **Ф7-калибровка интента (2026-06-15)** | Вопросы/команды сотрудников («какие у меня задачи?», `/actions`, запросы статуса) **больше НЕ становятся `IntakeIssue`/кандидатами в задачи**. Константа `NOT_A_TASK_DISCRIMINATOR` в хвосте SYSTEM-промптов (`common.ts` → `telegram-task-parser.service.ts` главный источник + `tasks-unified.ts` встречи/ChatBox); ChatBox теперь пишет в `Task`, не в `IntakeIssue`. ТЗ [`2026-06-15-intent-questions-are-not-commitments`](../../plans/tz/2026-06-15-intent-questions-are-not-commitments.md), коммит `dfb82a6f`. |
+| **Ф7-калибровка интента (2026-06-15)** | Вопросы/команды сотрудников («какие у меня задачи?», `/actions`, запросы статуса) **больше НЕ становятся `IntakeIssue`/кандидатами в задачи**. Константа `NOT_A_TASK_DISCRIMINATOR` в хвосте SYSTEM-промптов (`common.ts` → `telegram-task-parser.service.ts` главный источник + `tasks-unified.ts` встречи/ChatBox); ChatBox теперь пишет в `Task`, не в `IntakeIssue`. ТЗ [`2026-06-15-intent-questions-are-not-commitments`](../../plans/archive/2026-06-15-intent-questions-are-not-commitments.md), коммит `dfb82a6f`. |
 | **intake-auto-triage** | IntakeAutoTriageWorker (consumer `core.intake-auto-triage`) — confidence ≥ 0.92 + source='meeting' + assigneeId → auto-create Issue. LlmTaskType `intake-auto-triage`. |
 | **issue-infer-fields** | POST /issues с `inferSuggestions: true` → IssueInferFieldsService → `aiSuggestions` inline в response (timeout 8s). LlmTaskType `issue-infer-fields`. |
 | **issue-goal-suggest** | KNN (top-10, distance ≤ 0.20, voting ≥ 60%) → LLM fallback. LlmTaskType `issue-goal-suggest`. |
@@ -326,8 +326,8 @@ POST   /api/v1/projects/from-template            # 501 пока (Phase 4 / Sprin
 ## Активные планы
 
 - [Sprint Plan Wave 1](../../plans/sprints/2026-05-24-sprint-plan-wave-1.md) — детальный план 3 спринтов × 2 нед.
-- [Зонтичный план COO + Tracker](../../plans/tz/2026-05-23-coo-and-tracker-umbrella.md) — карта всех sub-ТЗ.
-- [Phase 1 sub-ТЗ](../../plans/tz/2026-05-23-tracker-phase-1-models-api.md), [Phase 2](../../plans/tz/2026-05-23-tracker-phase-2-frontend-mobile-first.md), [Phase 3](../../plans/tz/2026-05-23-tracker-phase-3-ai-features.md), [Phase 4](../../plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md), [Phase 5](../../plans/tz/2026-05-23-tracker-phase-5-import.md).
+- [Зонтичный план COO + Tracker](../../plans/archive/2026-05-23-coo-and-tracker-umbrella.md) — карта всех sub-ТЗ.
+- [Phase 1 sub-ТЗ](../../plans/archive/2026-05-23-tracker-phase-1-models-api.md), [Phase 2](../../plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md), [Phase 3](../../plans/archive/2026-05-23-tracker-phase-3-ai-features.md), [Phase 4](../../plans/tz/2026-05-23-tracker-phase-4-rf-musthave.md), [Phase 5](../../plans/archive/2026-05-23-tracker-phase-5-import.md).
 
 ---
 

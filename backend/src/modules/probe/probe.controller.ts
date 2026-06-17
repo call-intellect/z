@@ -11,10 +11,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -34,15 +31,6 @@ import {
   type ProbeControlStateDto,
 } from './dto/probe.dto';
 
-/**
- * REST API Probe-Agent (SBA β-5).
- *
- *   GET /api/v1/probe/queue        — admin: список ProbeEvent с фильтром.
- *   GET /api/v1/me/probe-history   — текущему user'у: история probe-уведомлений.
- *
- * RBAC: ProbeEvent — admin/owner; me/probe-history — self-фильтр через
- * `recipientUserId`, RBAC обходит (стандартный pattern me-endpoint'ов).
- */
 @ApiTags('probe')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -61,7 +49,6 @@ export class ProbeController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<ListProbeQueueResponse> {
     const t = this.requireTenant(tenantId);
-    // owner/admin only — пробуем сначала через org read, потом упадём
     const ok = await this.rbac.check({
       userId: user.id,
       tenantId: t,
@@ -160,7 +147,6 @@ export class ProbeController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<ProbeControlResponse> {
     const t = this.requireTenant(tenantId);
-    // Взгляд «сверху» — owner / admin / coo (тот же гейт, что у COO-дашборда).
     const ok = await this.rbac.canViewOperationsDashboard(user.id, t);
     if (!ok) {
       throw new ForbiddenException({
@@ -198,10 +184,7 @@ export class ProbeController {
       },
     });
 
-    // Резолвим имена адресатов (User → Person.name) одним запросом.
-    const recipientIds = Array.from(
-      new Set(notifications.map((n) => n.recipientUserId)),
-    );
+    const recipientIds = Array.from(new Set(notifications.map((n) => n.recipientUserId)));
     const persons = recipientIds.length
       ? await this.prisma.person.findMany({
           where: { tenantId: t, userId: { in: recipientIds } },
@@ -233,14 +216,10 @@ export class ProbeController {
         typeof payload.question === 'string' && payload.question.trim().length > 0
           ? payload.question
           : 'Вопрос Коры';
-      // waitingDays: для answered — до respondedAt; иначе — до now.
-      const endRef =
-        state === 'answered' && n.respondedAt ? n.respondedAt : now;
+      const endRef = state === 'answered' && n.respondedAt ? n.respondedAt : now;
       const waitingDays = Math.max(
         0,
-        Math.floor(
-          (endRef.getTime() - n.createdAt.getTime()) / (24 * 60 * 60 * 1000),
-        ),
+        Math.floor((endRef.getTime() - n.createdAt.getTime()) / (24 * 60 * 60 * 1000)),
       );
       return {
         notificationId: n.id,
@@ -256,11 +235,6 @@ export class ProbeController {
     return { items, counts };
   }
 
-  /**
-   * Маппинг состояния вопроса Коры. Приоритет:
-   *   answered (responseStatus) > expired (responseStatus/expiresAt) >
-   *   read_silent (status=read && pending) > unseen.
-   */
   static deriveState(args: {
     status: string;
     responseStatus: string | null;
@@ -276,7 +250,10 @@ export class ProbeController {
     ) {
       return 'expired';
     }
-    if (args.status === 'read' && (args.responseStatus === 'pending' || args.responseStatus == null)) {
+    if (
+      args.status === 'read' &&
+      (args.responseStatus === 'pending' || args.responseStatus == null)
+    ) {
       return 'read_silent';
     }
     return 'unseen';

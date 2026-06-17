@@ -1,11 +1,6 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для webhook-подписок (исходящие webhooks).
- * Контракт — `backend/src/modules/webhooks-out/`.
- */
-
-export type WebhookStatus = 'active' | 'paused' | 'failing';
+export type WebhookStatus = "active" | "paused" | "failing";
 
 export type WebhookSubscriptionApi = {
   id: string;
@@ -31,7 +26,7 @@ export type CreateWebhookSubscriptionApiResponse = {
   secret: string;
 };
 
-export type DeliveryStatus = 'pending' | 'retrying' | 'delivered' | 'failed';
+export type DeliveryStatus = "pending" | "retrying" | "delivered" | "failed";
 
 export type WebhookDeliveryApi = {
   id: string;
@@ -52,23 +47,19 @@ export type WebhookDeliveriesListApiResponse = {
   items: WebhookDeliveryApi[];
 };
 
-/**
- * Whitelist допустимых событий — синхронизирован с
- * `backend/src/modules/webhooks-out/webhook-events.types.ts`.
- */
 export const WEBHOOK_EVENTS = [
-  'meeting.completed',
-  'meeting.regenerated',
-  'meeting.deleted',
-  'task.created',
-  'task.updated',
-  'task.deleted',
-  'highlight.created',
-  'highlight.rendered',
-  'share.created',
-  'share.viewed',
-  'export.completed',
-  'chat.completed',
+  "meeting.completed",
+  "meeting.regenerated",
+  "meeting.deleted",
+  "task.created",
+  "task.updated",
+  "task.deleted",
+  "highlight.created",
+  "highlight.rendered",
+  "share.created",
+  "share.viewed",
+  "export.completed",
+  "chat.completed",
 ] as const;
 
 export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number];
@@ -76,12 +67,12 @@ export type WebhookEventName = (typeof WEBHOOK_EVENTS)[number];
 export const webhooksOutApi = {
   list: () =>
     apiClient.get<WebhookSubscriptionsListApiResponse>(
-      '/api/v1/webhooks/subscriptions',
+      "/api/v1/webhooks/subscriptions",
     ),
 
   create: (body: CreateWebhookSubscriptionRequest) =>
     apiClient.post<CreateWebhookSubscriptionApiResponse>(
-      '/api/v1/webhooks/subscriptions',
+      "/api/v1/webhooks/subscriptions",
       body,
     ),
 

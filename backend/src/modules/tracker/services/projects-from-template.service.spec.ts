@@ -7,15 +7,6 @@ import type { CreateFromTemplateDto } from '../dto/projects/create-from-template
 
 import { ProjectsFromTemplateService } from './projects-from-template.service';
 
-/**
- * Покрываем:
- *   1. 404, если шаблон не найден.
- *   2. 409, если slug проекта уже занят.
- *   3. Happy path: создаются Project + states + 1 member; usageCount++;
- *      метрика team_template_used.
- *   4. withExampleTasks=true → создаются Issue (до 3).
- */
-
 const SYSTEM_TEMPLATE = {
   id: 'tmpl-sales-1',
   slug: 'sales',
@@ -45,11 +36,8 @@ const SYSTEM_TEMPLATE = {
 };
 
 interface MockOpts {
-  /** Что вернуть из teamTemplate.findFirst (как кортеж сценариев). */
   templateLookups?: Array<typeof SYSTEM_TEMPLATE | null>;
-  /** Существует ли уже project с таким slug. */
   slugTaken?: boolean;
-  /** Существует ли уже project с identifier. */
   identifierTaken?: boolean;
 }
 
@@ -102,9 +90,6 @@ function makeMockPrisma(opts: MockOpts = {}): {
     id: 'reg-1',
     ...args.data,
   }));
-  // Tracker Boards (2026-05-27) — после `898bc20` сервис создаёт default Board
-  // внутри транзакции (`tx.board.create`). Mock возвращает фейк, чтобы тесты
-  // не падали с `Cannot read properties of undefined (reading 'create')`.
   const boardCreate = vi.fn(async (args: { data: Record<string, unknown> }) => ({
     id: 'board-1',
     isDefault: true,
@@ -151,10 +136,7 @@ function makeService(opts: MockOpts = {}): {
   const metrics = {
     incTeamTemplateUsed: vi.fn(),
   };
-  const svc = new ProjectsFromTemplateService(
-    prisma,
-    metrics as unknown as BusinessMetricsService,
-  );
+  const svc = new ProjectsFromTemplateService(prisma, metrics as unknown as BusinessMetricsService);
   return { svc, metrics, txCalls };
 }
 
@@ -252,7 +234,7 @@ describe('ProjectsFromTemplateService.createFromTemplate', () => {
       description: 'Org-овский шаблон',
     };
     const { svc } = makeService({
-      templateLookups: [tenantOverride], // первый вызов = per-tenant → найден, второй не происходит
+      templateLookups: [tenantOverride],
     });
     const result = await svc.createFromTemplate({
       tenantId: 'tenant-A',
@@ -287,7 +269,6 @@ describe('ProjectsFromTemplateService.createFromTemplate', () => {
     const projectCreateArgs = txCalls.projectCreate.mock.calls[0]?.[0] as {
       data: { timezone?: string };
     };
-    // Поле timezone не задано — Prisma применит schema default 'Europe/Moscow'.
     expect(projectCreateArgs.data.timezone).toBeUndefined();
   });
 });

@@ -5,7 +5,7 @@ feature: AI-COO readiness — что готово в коде / что нужн�
 date: 2026-05-23
 author: claude (по запросу владельца «сделать gap-анализ концепции COO-дашборда»)
 related:
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-22-final-roadmap.md
   - plans/analysis/2026-05-22-code-reality-deltas.md
   - plans/analysis/2026-05-22-unified-product-architecture.md
   - plans/analysis/2026-05-23-positioning-research-v2.md

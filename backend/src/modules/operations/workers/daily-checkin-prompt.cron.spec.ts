@@ -2,14 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DailyCheckInPromptCron } from './daily-checkin-prompt.cron';
 
-/**
- * SBA β-8 — DailyCheckInPromptCron unit-тесты.
- *
- *   - TZ-фильтр: для Europe/Moscow (UTC+3) 9:00 локально = 6:00 UTC.
- *   - Уже completed чек-ин → skipped_already_completed, без sendNotification.
- *   - mismatch hour → skipped_outside_window.
- *   - DAILY_CHECKIN_ENABLED=false → cron в no-op.
- */
 describe('DailyCheckInPromptCron', () => {
   const baseCfg = {
     betaOps: {
@@ -38,9 +30,7 @@ describe('DailyCheckInPromptCron', () => {
     };
     const checkin = {
       hasCompletedToday: vi.fn().mockResolvedValue(overrides.hasCompleted ?? false),
-      createPromptPlaceholder: vi
-        .fn()
-        .mockResolvedValue({ id: 'cin1', notificationId: 'n1' }),
+      createPromptPlaceholder: vi.fn().mockResolvedValue({ id: 'cin1', notificationId: 'n1' }),
     };
     const conversational = {
       sendNotification: vi.fn().mockResolvedValue({ id: 'n1' }),
@@ -70,7 +60,6 @@ describe('DailyCheckInPromptCron', () => {
         },
       ],
     });
-    // 06:00 UTC = 09:00 MSK
     const now = new Date('2026-05-23T06:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.promptsSent).toBe(1);
@@ -112,7 +101,6 @@ describe('DailyCheckInPromptCron', () => {
         },
       ],
     });
-    // 08:00 UTC = 11:00 MSK — не 9 и не 18.
     const now = new Date('2026-05-23T08:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.promptsSent).toBe(0);
@@ -147,7 +135,7 @@ describe('DailyCheckInPromptCron', () => {
         },
       ],
     });
-    const now = new Date('2026-05-23T15:00:00Z'); // 18:00 MSK
+    const now = new Date('2026-05-23T15:00:00Z');
     const stats = await cron.runOnce(now);
     expect(stats.promptsSent).toBe(1);
     const callArg = conversational.sendNotification.mock.calls[0]?.[0] as

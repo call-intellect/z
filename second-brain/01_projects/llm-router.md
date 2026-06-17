@@ -8,6 +8,8 @@ updated: 2026-05-10
 
 `backend/src/modules/ai/services/llm-router.service.ts` — центральный диспетчер LLM-вызовов в Z. Через него проходят ВСЕ AI-задачи.
 
+> Этот файл — про **реализацию роутера** (контракт `call()`, схемы, кэш). Какие провайдеры/модели реально работают и какие закладывать в дефолты — единственный источник правды [llm-providers-verified.md](llm-providers-verified.md).
+
 ## Зачем нужен
 
 - **DB-конфигурируемая маршрутизация:** для каждого `taskType` (chapters, summary, chat, card-rollup, regenerate-section, и т.д.) указан список провайдеров в `LlmTaskRoute.providers` (JSON). Меняется через Z-Admin без передеплоя.
@@ -41,11 +43,11 @@ Helpers:
 
 ## taskType (Фаза 0)
 
-Существующие (legacy, до Фаз 5-6):
+Legacy (до Фаз 5-6):
 - `summary`, `chapters`, `tasks`, `chat`, `card-chat`, `card-rollup`
 - `regenerate-section`, `custom-prompt`, `follow-up`, `clip-title`
 
-Будущие (Фазы 1-6 knowledge-core):
+Knowledge-core (Фазы 1-6, реализованы и активно вызываются из воркеров/сервисов):
 - `block-ingest`, `block-distill`, `block-linker`
 - `entity-resolver`, `entity-merge-arbiter`
 - `theme-classify`, `theme-clusterer`
@@ -117,15 +119,17 @@ AiUsageLog {
 
 ## Adapters (текущие)
 
-- `AnthropicService` — Anthropic Messages API (через прокси при `ANTHROPIC_USE_PROXY`).
+- `AnthropicService` — Anthropic Messages API (через прокси при `ANTHROPIC_USE_PROXY`). **Не используется и не закладывается в дефолты:** по решению владельца Claude в Z не подключён (ключ невалиден), сервис остаётся в коде на случай будущего подключения. См. [llm-providers-verified.md](llm-providers-verified.md) (раздел «Каналы, которые НЕ работают»).
 - `MinimaxService` — Anthropic-совместимый.
 - `OpenAiProxyService` — OpenAI через прокси.
 - `DeepSeekService` (Фаза 2 шаг 0, 2026-05-10) — DeepSeek native API:
   поддерживает `responseFormat: 'text' | 'json_object' | 'json_schema'`
   и `reasoningEffort` (`low/medium/high`) для DeepSeek-V4-pro.
-- `OllamaService` (Фаза 2 шаг 0, 2026-05-10) — self-hosted моделей
-  (qwen3 / llama4 / bge-m3 embeddings). API-совместим с OpenAI Chat
-  Completions.
+- `OllamaService` (Фаза 2 шаг 0, 2026-05-10) — self-hosted chat-моделей
+  (`qwen3.5:9b`). API-совместим с OpenAI Chat Completions. Embeddings `bge-m3`
+  не реализованы (модели на инстансе нет — эмбеддинги идут через
+  `text-embedding-3-small`); сам канал выведен из боевых LLM-цепочек 2026-06-05.
+  Канал-SoT — [llm-providers-verified.md](llm-providers-verified.md).
 
 ## Структурированный вывод (Фаза 2)
 
@@ -144,12 +148,15 @@ Anthropic) возвращают; пишется в AiUsageLog.
 - `block-ingest` — извлечение IdeaBlock'ов из сегментов диалога.
 - `block-distill` — арбитр merge / distinct между новым и top-5 candidate'ом.
 - `entity-merge-arbiter` — арбитр сущностей с metadata-контекстом.
-- `block-linker` (Фаза 3), `theme-classify` (Фаза 4), `reframing` (Фаза 3) —
-  pending.
+- `block-linker`, `theme-classify`, `reframing` — реализованы и вызываются
+  из соответствующих сервисов/кронов knowledge-core.
 
-Routes сидятся через `seed-llm-task-routes-knowledge-core.ts` (политика
-2026-05): primary — `deepseek:deepseek-v4-flash`, fallback —
-`openai-via-proxy:gpt-5.4-mini` → `ollama:qwen3:30b`.
+Дефолтные routes изначально засеяны через `seed-llm-task-routes-knowledge-core.ts`
+(политика 2026-05): primary — `deepseek:deepseek-v4-flash`, fallback —
+`openai-via-proxy:gpt-5.4-mini`. С 2026-06-05 цепочки нормализованы к
+стандарту `deepseek → openai(gpt) → kie:gemini-3.1-pro` (ollama выведен из всех
+боевых цепочек) — патч `patch-normalize-llm-chains-deepseek-openai-kie.ts`.
+Актуальная карта каналов — [llm-providers-verified.md](llm-providers-verified.md).
 
 ## Providers как массив
 

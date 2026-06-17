@@ -2,18 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ExecutablePersonaBuildCron } from './executable-persona-build.cron';
 
-/**
- * Б14/Б15 (TZ 2026-06-16 §8.4) — unit-тесты ExecutablePersonaBuildCron.runOnce.
- *
- * Покрывают:
- *   Б15 — предфильтр профилей считает traits ТОЛЬКО layer='skill'
- *         (как гейтит buildForProfile), а не все слои.
- *   Б14 — выборка профилей и ролей идёт с детерминированным orderBy
- *         «самые несвежие первыми» + курсор (а не первые MAX по scan-order),
- *         и проходит ВЕСЬ хвост (пагинация при заполненной странице).
- *
- * Все Prisma/Cfg/Builder/Metrics мокированы.
- */
 describe('ExecutablePersonaBuildCron.runOnce — Б14/Б15', () => {
   function makeCron(opts: {
     profilePages: Array<Array<{ id: string; traits: Array<{ id: string }> }>>;
@@ -85,18 +73,13 @@ describe('ExecutablePersonaBuildCron.runOnce — Б14/Б15', () => {
     await cron.runOnce();
 
     const pArg = profileFindMany.mock.calls[0]![0] as { orderBy: unknown };
-    expect(pArg.orderBy).toEqual([
-      { lastBuildAt: { sort: 'asc', nulls: 'first' } },
-      { id: 'asc' },
-    ]);
+    expect(pArg.orderBy).toEqual([{ lastBuildAt: { sort: 'asc', nulls: 'first' } }, { id: 'asc' }]);
 
     const rArg = roleFindMany.mock.calls[0]![0] as { orderBy: unknown };
     expect(rArg.orderBy).toEqual([{ updatedAt: 'asc' }, { id: 'asc' }]);
   });
 
   it('Б14: курсор проходит весь хвост (заполненная страница → второй запрос с cursor)', async () => {
-    // Имитируем переполнение: первый запрос вернул ровно MAX (500) элементов →
-    // должен последовать второй запрос с cursor по последнему id.
     const fullPage = Array.from({ length: 500 }, (_, i) => ({
       id: `p${i}`,
       traits: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],

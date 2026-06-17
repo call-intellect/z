@@ -1,19 +1,8 @@
-'use client';
+"use client";
 
-/**
- * EventForm — модалка создания / редактирования события календаря.
- *
- * Если `eventId` передан — режим редактирования; кнопка «Удалить» показывается.
- * При сохранении вызывает `calendarApi.createEvent` / `updateEvent`,
- * после успеха зовёт `onSaved()` (триггерит revalidate SWR).
- *
- * Поля: title, kind, startAt, endAt, location, description, visibility,
- * participants (упрощённый ввод email-ов через запятую — MVP).
- */
+import { useEffect, useMemo, useState, type JSX } from "react";
 
-import { useEffect, useMemo, useState, type JSX } from 'react';
-
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   calendarApi,
   type CreateEventRequestApi,
@@ -23,11 +12,11 @@ import {
   type ReminderChannelApi,
   type ReminderInputApi,
   type UpdateEventRequestApi,
-} from '@/api/calendar.api';
-import { EVENT_KIND_LABELS, EVENT_VISIBILITY_LABELS } from '@/domain/calendar';
-import type { CalendarEventDomain } from '@/domain/calendar';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/api/calendar.api";
+import { EVENT_KIND_LABELS, EVENT_VISIBILITY_LABELS } from "@/domain/calendar";
+import type { CalendarEventDomain } from "@/domain/calendar";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,60 +24,52 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
 import {
   ParticipantPicker,
   type ParticipantPickerValue,
-} from '@/ui/shared/ParticipantPicker';
+} from "@/ui/shared/ParticipantPicker";
 
 const KIND_OPTIONS: EventKindApi[] = [
-  'meeting',
-  'call',
-  'offline_meeting',
-  'personal_block',
-  'deadline',
+  "meeting",
+  "call",
+  "offline_meeting",
+  "personal_block",
+  "deadline",
 ];
 
-const VISIBILITY_OPTIONS: EventVisibilityApi[] = ['company', 'team', 'personal'];
+const VISIBILITY_OPTIONS: EventVisibilityApi[] = [
+  "company",
+  "team",
+  "personal",
+];
 
-// ─────────────────────── Повторяемость (RFC-5545) ────────────────────
-
-/**
- * Пресеты повторяемости. `value` — строка RFC-5545 (пустая = не повторять).
- * Бэк принимает любой валидный RRULE; UI ограничен набором MVP-пресетов.
- */
 const RRULE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '', label: 'Не повторять' },
-  { value: 'FREQ=DAILY', label: 'Каждый день' },
-  { value: 'FREQ=WEEKLY', label: 'Каждую неделю' },
-  { value: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR', label: 'По будням' },
-  { value: 'FREQ=MONTHLY', label: 'Каждый месяц' },
-  { value: 'FREQ=YEARLY', label: 'Каждый год' },
+  { value: "", label: "Не повторять" },
+  { value: "FREQ=DAILY", label: "Каждый день" },
+  { value: "FREQ=WEEKLY", label: "Каждую неделю" },
+  { value: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", label: "По будням" },
+  { value: "FREQ=MONTHLY", label: "Каждый месяц" },
+  { value: "FREQ=YEARLY", label: "Каждый год" },
 ];
 
-/** Спецзначение для select, когда rrule не совпал ни с одним пресетом. */
-const RRULE_CUSTOM_SENTINEL = '__custom__';
+const RRULE_CUSTOM_SENTINEL = "__custom__";
 
-/**
- * Нормализует RRULE к каноническому виду пресета для сравнения:
- * убирает префикс `RRULE:`, регистр, пробелы и сортирует пары `KEY=VAL`.
- */
 function normalizeRrule(rrule: string): string {
   const cleaned = rrule
     .trim()
-    .replace(/^RRULE:/i, '')
+    .replace(/^RRULE:/i, "")
     .toUpperCase()
-    .replace(/\s+/g, '');
-  if (!cleaned) return '';
-  return cleaned.split(';').filter(Boolean).sort().join(';');
+    .replace(/\s+/g, "");
+  if (!cleaned) return "";
+  return cleaned.split(";").filter(Boolean).sort().join(";");
 }
 
-/** Подбирает пресет по существующему rrule. '' если не повторять/не совпал. */
 function matchRrulePreset(rrule: string | null | undefined): string {
-  if (!rrule || !rrule.trim()) return '';
+  if (!rrule || !rrule.trim()) return "";
   const norm = normalizeRrule(rrule);
   for (const preset of RRULE_PRESETS) {
     if (preset.value && normalizeRrule(preset.value) === norm) {
@@ -98,33 +79,31 @@ function matchRrulePreset(rrule: string | null | undefined): string {
   return RRULE_CUSTOM_SENTINEL;
 }
 
-// ─────────────────────────── Напоминания ─────────────────────────────
-
 const REMINDER_OFFSET_OPTIONS: ReadonlyArray<{
   value: number;
   label: string;
 }> = [
-  { value: 0, label: 'В момент начала' },
-  { value: 5, label: 'За 5 минут' },
-  { value: 15, label: 'За 15 минут' },
-  { value: 30, label: 'За 30 минут' },
-  { value: 60, label: 'За 1 час' },
-  { value: 1440, label: 'За 1 день' },
+  { value: 0, label: "В момент начала" },
+  { value: 5, label: "За 5 минут" },
+  { value: 15, label: "За 15 минут" },
+  { value: 30, label: "За 30 минут" },
+  { value: 60, label: "За 1 час" },
+  { value: 1440, label: "За 1 день" },
 ];
 
 const REMINDER_CHANNEL_OPTIONS: ReadonlyArray<{
   value: ReminderChannelApi;
   label: string;
 }> = [
-  { value: 'push', label: 'Push' },
-  { value: 'email', label: 'Почта' },
-  { value: 'telegram', label: 'Telegram' },
+  { value: "push", label: "Push" },
+  { value: "email", label: "Почта" },
+  { value: "telegram", label: "Telegram" },
 ];
 
 const REMINDER_CHANNEL_LABELS: Record<ReminderChannelApi, string> = {
-  push: 'Push',
-  email: 'Почта',
-  telegram: 'Telegram',
+  push: "Push",
+  email: "Почта",
+  telegram: "Telegram",
 };
 
 const MAX_REMINDERS = 20;
@@ -134,32 +113,26 @@ interface ReminderDraft {
   channel: ReminderChannelApi;
 }
 
-// ─────────────────────────── Часовые пояса ───────────────────────────
-
 const TIMEZONE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
-  { value: 'Europe/Moscow', label: 'Москва (UTC+3)' },
-  { value: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
-  { value: 'Asia/Novosibirsk', label: 'Новосибирск (UTC+7)' },
-  { value: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
-  { value: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
-  { value: 'Asia/Almaty', label: 'Алматы (UTC+5)' },
+  { value: "Europe/Kaliningrad", label: "Калининград (UTC+2)" },
+  { value: "Europe/Moscow", label: "Москва (UTC+3)" },
+  { value: "Asia/Yekaterinburg", label: "Екатеринбург (UTC+5)" },
+  { value: "Asia/Novosibirsk", label: "Новосибирск (UTC+7)" },
+  { value: "Asia/Krasnoyarsk", label: "Красноярск (UTC+7)" },
+  { value: "Asia/Vladivostok", label: "Владивосток (UTC+10)" },
+  { value: "Asia/Almaty", label: "Алматы (UTC+5)" },
 ];
 
-const DEFAULT_TIMEZONE = 'Europe/Moscow';
+const DEFAULT_TIMEZONE = "Europe/Moscow";
 
-/** Единый класс для нативных select (повторяет стиль поля «Тип события»). */
 const SELECT_CLASS =
-  'flex h-10 w-full rounded-md border border-border-subtle bg-bg-overlay px-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent';
+  "flex h-10 w-full rounded-md border border-border-subtle bg-bg-overlay px-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent";
 
 export interface EventFormProps {
   open: boolean;
   onClose: () => void;
-  /** Существующее событие (режим редактирования). */
   event?: CalendarEventDomain | null;
-  /** Дата/время, на которое создаётся новое событие (для default startAt). */
   defaultStartAt?: Date;
-  /** Опц. projectId — событие сразу привязывается к проекту. */
   projectId?: string;
   onSaved: () => void;
 }
@@ -167,34 +140,21 @@ export interface EventFormProps {
 interface FormState {
   title: string;
   kind: EventKindApi;
-  startAt: string; // datetime-local значение
+  startAt: string;
   endAt: string;
   location: string;
   description: string;
   visibility: EventVisibilityApi;
-  /** Calendar MVP Фаза P4 — структурированный список участников. */
   participants: ParticipantPickerValue[];
-  /** Редизайн Ф6 — событие на весь день (скрывает время). */
   allDay: boolean;
-  /** Редизайн Ф6 — часовой пояс события (IANA). */
   timezone: string;
-  /**
-   * Редизайн Ф6 — выбранный пресет повторяемости (RFC-5545).
-   * Пусто = не повторять; RRULE_CUSTOM_SENTINEL = заданное вручную значение.
-   */
   rrulePreset: string;
-  /**
-   * Редизайн Ф6 — исходный rrule события (для сохранения при редактировании,
-   * если пользователь не трогал нераспознанное «Другое» значение).
-   */
   rruleRaw: string;
-  /** Редизайн Ф6 — черновики напоминаний (отправляются только при создании). */
   reminders: ReminderDraft[];
 }
 
 function toLocalInputValue(d: Date): string {
-  // datetime-local требует формат YYYY-MM-DDTHH:mm без timezone-суффикса.
-  const pad = (n: number): string => String(n).padStart(2, '0');
+  const pad = (n: number): string => String(n).padStart(2, "0");
   const yyyy = d.getFullYear();
   const mm = pad(d.getMonth() + 1);
   const dd = pad(d.getDate());
@@ -204,22 +164,16 @@ function toLocalInputValue(d: Date): string {
 }
 
 function fromLocalInputValue(v: string): Date {
-  // new Date("YYYY-MM-DDTHH:mm") интерпретируется как локальное время.
   return new Date(v);
 }
 
-/** Выделяет дату (YYYY-MM-DD) из значения datetime-local (для режима «весь день»). */
 function dateOnly(v: string): string {
   return v.slice(0, 10);
 }
 
-/**
- * Меняет дату в datetime-local-значении, сохраняя время.
- * Если времени ещё нет (был режим «весь день») — ставит 00:00.
- */
 function withDate(prev: string, date: string): string {
   if (!date) return prev;
-  const time = prev.slice(11, 16) || '00:00';
+  const time = prev.slice(11, 16) || "00:00";
   return `${date}T${time}`;
 }
 
@@ -229,22 +183,20 @@ function buildDefaultState(
 ): FormState {
   if (event) {
     const startAt = toLocalInputValue(event.startAt);
-    const endAt = event.endAt ? toLocalInputValue(event.endAt) : '';
+    const endAt = event.endAt ? toLocalInputValue(event.endAt) : "";
     return {
       title: event.title,
       kind: event.kind,
       startAt,
       endAt,
-      location: event.location ?? '',
-      description: event.description ?? '',
+      location: event.location ?? "",
+      description: event.description ?? "",
       visibility: event.visibility,
-      // В edit-режиме participants не редактируются (имена не приходят в EventDto).
       participants: [],
       allDay: event.allDay,
       timezone: event.timezone || DEFAULT_TIMEZONE,
       rrulePreset: matchRrulePreset(event.rrule),
-      rruleRaw: event.rrule ?? '',
-      // Напоминания в edit-режиме показываются read-only из EventDto.
+      rruleRaw: event.rrule ?? "",
       reminders: event.reminders.map((r) => ({
         offsetMin: r.offsetMin,
         channel: r.channel,
@@ -252,23 +204,22 @@ function buildDefaultState(
     };
   }
   const base = defaultStartAt ?? new Date();
-  // Округляем до ближайших 30 минут вперёд.
   const rounded = new Date(base);
   rounded.setMinutes(Math.ceil(rounded.getMinutes() / 30) * 30, 0, 0);
   const endDefault = new Date(rounded.getTime() + 30 * 60 * 1000);
   return {
-    title: '',
-    kind: 'meeting',
+    title: "",
+    kind: "meeting",
     startAt: toLocalInputValue(rounded),
     endAt: toLocalInputValue(endDefault),
-    location: '',
-    description: '',
-    visibility: 'company',
+    location: "",
+    description: "",
+    visibility: "company",
     participants: [],
     allDay: false,
     timezone: DEFAULT_TIMEZONE,
-    rrulePreset: '',
-    rruleRaw: '',
+    rrulePreset: "",
+    rruleRaw: "",
     reminders: [],
   };
 }
@@ -298,7 +249,7 @@ export function EventForm({
   }, [open, event?.id]);
 
   const requiresEndAt = useMemo(
-    () => state.kind !== 'personal_block' && state.kind !== 'deadline',
+    () => state.kind !== "personal_block" && state.kind !== "deadline",
     [state.kind],
   );
 
@@ -309,14 +260,13 @@ export function EventForm({
     setState((s) => ({ ...s, [key]: value }));
   }
 
-  /** Добавляет новое напоминание (только в режиме создания). */
   function addReminder(): void {
     setState((s) =>
       s.reminders.length >= MAX_REMINDERS
         ? s
         : {
             ...s,
-            reminders: [...s.reminders, { offsetMin: 15, channel: 'push' }],
+            reminders: [...s.reminders, { offsetMin: 15, channel: "push" }],
           },
     );
   }
@@ -337,36 +287,32 @@ export function EventForm({
     }));
   }
 
-  /**
-   * Разрешает выбранный пресет повторяемости в строку RFC-5545.
-   * Для нераспознанного «Другое» сохраняем исходное значение rruleRaw.
-   */
   function resolveRrule(): string {
     if (state.rrulePreset === RRULE_CUSTOM_SENTINEL) return state.rruleRaw;
     return state.rrulePreset;
   }
 
   function validate(): string | null {
-    if (!state.title.trim()) return 'Укажите название события.';
-    if (!state.startAt) return 'Укажите дату и время начала.';
+    if (!state.title.trim()) return "Укажите название события.";
+    if (!state.startAt) return "Укажите дату и время начала.";
     const startDate = fromLocalInputValue(state.startAt);
     if (Number.isNaN(startDate.getTime())) {
-      return 'Некорректная дата начала.';
+      return "Некорректная дата начала.";
     }
     if (requiresEndAt && !state.endAt) {
-      return 'Для этого типа события нужно указать окончание.';
+      return "Для этого типа события нужно указать окончание.";
     }
     if (state.endAt) {
       const endDate = fromLocalInputValue(state.endAt);
       if (Number.isNaN(endDate.getTime())) {
-        return 'Некорректная дата окончания.';
+        return "Некорректная дата окончания.";
       }
       if (endDate < startDate) {
-        return 'Окончание не может быть раньше начала.';
+        return "Окончание не может быть раньше начала.";
       }
       const minutes = (endDate.getTime() - startDate.getTime()) / 60000;
-      if (state.kind === 'meeting' && minutes < 5) {
-        return 'Длительность встречи должна быть не меньше 5 минут.';
+      if (state.kind === "meeting" && minutes < 5) {
+        return "Длительность встречи должна быть не меньше 5 минут.";
       }
     }
     return null;
@@ -374,9 +320,9 @@ export function EventForm({
 
   function buildParticipantsPayload(): ParticipantInputApi[] {
     return state.participants.map<ParticipantInputApi>((p) =>
-      p.type === 'user'
-        ? { userId: p.userId, role: 'required' }
-        : { personId: p.personId, role: 'required' },
+      p.type === "user"
+        ? { userId: p.userId, role: "required" }
+        : { personId: p.personId, role: "required" },
     );
   }
 
@@ -409,7 +355,6 @@ export function EventForm({
             : null,
           allDay: state.allDay,
           timezone: state.timezone,
-          // Пусто → null (снять повторяемость); update принимает rrule, но НЕ reminders.
           rrule: rrule ? rrule : null,
         };
         await calendarApi.updateEvent(event.id, patch);
@@ -431,7 +376,6 @@ export function EventForm({
         };
         const participants = buildParticipantsPayload();
         if (participants.length > 0) body.participants = participants;
-        // Напоминания принимаются только при создании события.
         if (state.reminders.length > 0) {
           body.reminders = state.reminders.map<ReminderInputApi>((r) => ({
             offsetMin: r.offsetMin,
@@ -443,9 +387,7 @@ export function EventForm({
       onSaved();
       onClose();
     } catch (e2) {
-      setError(
-        humanizeApiError(e2, 'Не удалось сохранить событие.'),
-      );
+      setError(humanizeApiError(e2, "Не удалось сохранить событие."));
     } finally {
       setSaving(false);
     }
@@ -454,8 +396,8 @@ export function EventForm({
   async function handleDelete(): Promise<void> {
     if (!event) return;
     if (
-      typeof window !== 'undefined' &&
-      !window.confirm('Отменить и удалить это событие?')
+      typeof window !== "undefined" &&
+      !window.confirm("Отменить и удалить это событие?")
     ) {
       return;
     }
@@ -466,9 +408,7 @@ export function EventForm({
       onSaved();
       onClose();
     } catch (e2) {
-      setError(
-        humanizeApiError(e2, 'Не удалось удалить событие.'),
-      );
+      setError(humanizeApiError(e2, "Не удалось удалить событие."));
     } finally {
       setDeleting(false);
     }
@@ -479,7 +419,7 @@ export function EventForm({
       <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? 'Редактирование события' : 'Новое событие'}
+            {isEdit ? "Редактирование события" : "Новое событие"}
           </DialogTitle>
           <DialogDescription>
             Заполните поля и сохраните. Поля со звёздочкой обязательны.
@@ -492,7 +432,7 @@ export function EventForm({
             <Input
               id="event-title"
               value={state.title}
-              onChange={(e) => setField('title', e.target.value)}
+              onChange={(e) => setField("title", e.target.value)}
               placeholder="Например, Созвон с командой по релизу"
               required
               maxLength={300}
@@ -504,7 +444,7 @@ export function EventForm({
             <select
               id="event-kind"
               value={state.kind}
-              onChange={(e) => setField('kind', e.target.value as EventKindApi)}
+              onChange={(e) => setField("kind", e.target.value as EventKindApi)}
               className="flex h-10 w-full rounded-md border border-border-subtle bg-bg-overlay px-3 text-sm text-fg-primary focus:outline-none focus:ring-2 focus:ring-accent"
             >
               {KIND_OPTIONS.map((k) => (
@@ -518,7 +458,7 @@ export function EventForm({
           <label className="flex items-center gap-2 text-sm text-fg-secondary">
             <Checkbox
               checked={state.allDay}
-              onCheckedChange={(c) => setField('allDay', c === true)}
+              onCheckedChange={(c) => setField("allDay", c === true)}
             />
             <span>Весь день</span>
           </label>
@@ -532,7 +472,7 @@ export function EventForm({
                   type="date"
                   value={dateOnly(state.startAt)}
                   onChange={(e) =>
-                    setField('startAt', withDate(state.startAt, e.target.value))
+                    setField("startAt", withDate(state.startAt, e.target.value))
                   }
                   required
                 />
@@ -541,14 +481,14 @@ export function EventForm({
                   id="event-start"
                   type="datetime-local"
                   value={state.startAt}
-                  onChange={(e) => setField('startAt', e.target.value)}
+                  onChange={(e) => setField("startAt", e.target.value)}
                   required
                 />
               )}
             </div>
             <div>
               <Label htmlFor="event-end">
-                Окончание{requiresEndAt ? ' *' : ''}
+                Окончание{requiresEndAt ? " *" : ""}
               </Label>
               {state.allDay ? (
                 <Input
@@ -556,7 +496,7 @@ export function EventForm({
                   type="date"
                   value={dateOnly(state.endAt)}
                   onChange={(e) =>
-                    setField('endAt', withDate(state.endAt, e.target.value))
+                    setField("endAt", withDate(state.endAt, e.target.value))
                   }
                   {...(requiresEndAt ? { required: true } : {})}
                 />
@@ -565,7 +505,7 @@ export function EventForm({
                   id="event-end"
                   type="datetime-local"
                   value={state.endAt}
-                  onChange={(e) => setField('endAt', e.target.value)}
+                  onChange={(e) => setField("endAt", e.target.value)}
                   {...(requiresEndAt ? { required: true } : {})}
                 />
               )}
@@ -577,7 +517,7 @@ export function EventForm({
             <Input
               id="event-location"
               value={state.location}
-              onChange={(e) => setField('location', e.target.value)}
+              onChange={(e) => setField("location", e.target.value)}
               placeholder="Переговорка №2 или https://..."
               maxLength={300}
             />
@@ -588,7 +528,7 @@ export function EventForm({
             <Textarea
               id="event-description"
               value={state.description}
-              onChange={(e) => setField('description', e.target.value)}
+              onChange={(e) => setField("description", e.target.value)}
               rows={3}
               placeholder="Краткая повестка или контекст"
               maxLength={8000}
@@ -601,11 +541,11 @@ export function EventForm({
               <select
                 id="event-rrule"
                 value={state.rrulePreset}
-                onChange={(e) => setField('rrulePreset', e.target.value)}
+                onChange={(e) => setField("rrulePreset", e.target.value)}
                 className={SELECT_CLASS}
               >
                 {RRULE_PRESETS.map((p) => (
-                  <option key={p.value || 'none'} value={p.value}>
+                  <option key={p.value || "none"} value={p.value}>
                     {p.label}
                   </option>
                 ))}
@@ -621,7 +561,7 @@ export function EventForm({
               <select
                 id="event-timezone"
                 value={state.timezone}
-                onChange={(e) => setField('timezone', e.target.value)}
+                onChange={(e) => setField("timezone", e.target.value)}
                 className={SELECT_CLASS}
               >
                 {TIMEZONE_OPTIONS.map((tz) => (
@@ -629,7 +569,9 @@ export function EventForm({
                     {tz.label}
                   </option>
                 ))}
-                {!TIMEZONE_OPTIONS.some((tz) => tz.value === state.timezone) && (
+                {!TIMEZONE_OPTIONS.some(
+                  (tz) => tz.value === state.timezone,
+                ) && (
                   <option value={state.timezone} disabled>
                     {state.timezone}
                   </option>
@@ -638,8 +580,7 @@ export function EventForm({
             </div>
           </div>
 
-          {/* Редизайн Ф6 — напоминания. При создании редактируемы, при
-              редактировании показываются read-only (бэк не принимает их в update). */}
+          {}
           <div>
             <div className="flex items-center justify-between">
               <Label>Напоминания</Label>
@@ -659,8 +600,8 @@ export function EventForm({
             {state.reminders.length === 0 ? (
               <p className="mt-1 text-xs text-fg-tertiary">
                 {isEdit
-                  ? 'Напоминания не настроены.'
-                  : 'Напоминаний нет. Добавьте, чтобы получить уведомление заранее.'}
+                  ? "Напоминания не настроены."
+                  : "Напоминаний нет. Добавьте, чтобы получить уведомление заранее."}
               </p>
             ) : isEdit ? (
               <ul className="mt-2 space-y-1 text-sm text-fg-secondary">
@@ -673,7 +614,7 @@ export function EventForm({
                     <span>
                       {REMINDER_OFFSET_OPTIONS.find(
                         (o) => o.value === r.offsetMin,
-                      )?.label ?? `За ${r.offsetMin} мин`}{' '}
+                      )?.label ?? `За ${r.offsetMin} мин`}{" "}
                       · {REMINDER_CHANNEL_LABELS[r.channel]}
                     </span>
                   </li>
@@ -741,7 +682,7 @@ export function EventForm({
                     name="visibility"
                     value={v}
                     checked={state.visibility === v}
-                    onChange={() => setField('visibility', v)}
+                    onChange={() => setField("visibility", v)}
                     className="text-accent"
                   />
                   <span>{EVENT_VISIBILITY_LABELS[v]}</span>
@@ -751,18 +692,18 @@ export function EventForm({
           </div>
 
           {!isEdit &&
-            state.kind !== 'personal_block' &&
-            state.kind !== 'deadline' && (
+            state.kind !== "personal_block" &&
+            state.kind !== "deadline" && (
               <div>
                 <Label htmlFor="event-participants">Участники</Label>
                 <ParticipantPicker
                   value={state.participants}
-                  onChange={(next) => setField('participants', next)}
+                  onChange={(next) => setField("participants", next)}
                   placeholder="Найти коллегу или внешний контакт"
                 />
                 <p className="mt-1 text-xs text-fg-tertiary">
-                  Поиск по коллегам Org и внешним контактам. Если человека нет
-                  в списке — вы можете добавить его как новый контакт прямо из
+                  Поиск по коллегам Org и внешним контактам. Если человека нет в
+                  списке — вы можете добавить его как новый контакт прямо из
                   выпадающего меню.
                 </p>
               </div>
@@ -774,8 +715,7 @@ export function EventForm({
             </p>
           )}
 
-          {/* Calendar MVP Polish P1: для встреч с автосозданной LiveKit-комнатой
-              показываем явную кнопку «Войти во встречу». Открываем в новой вкладке. */}
+          {}
           {isEdit && event && event.joinUrl && (
             <a
               href={event.joinUrl}
@@ -795,7 +735,7 @@ export function EventForm({
                 onClick={() => void handleDelete()}
                 disabled={deleting || saving}
               >
-                {deleting ? 'Удаление…' : 'Удалить'}
+                {deleting ? "Удаление…" : "Удалить"}
               </Button>
             )}
             <Button
@@ -807,7 +747,7 @@ export function EventForm({
               Отмена
             </Button>
             <Button type="submit" disabled={saving || deleting}>
-              {saving ? 'Сохранение…' : 'Сохранить'}
+              {saving ? "Сохранение…" : "Сохранить"}
             </Button>
           </DialogFooter>
         </form>

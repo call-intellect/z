@@ -7,7 +7,7 @@ phase: 9
 # Z-Admin (super_admin консоль) — после редизайна 2026-05-25
 
 > Глобальная админка владельца продукта Z/Кора. Доступ только под `User.isSuperAdmin = true` (отдельно от Membership-ролей Org).
-> Реализована поэтапно (Фазы 0–9), источник правды по дизайну — [plans/tz/2026-05-25-admin-redesign-tz.md](plans/tz/2026-05-25-admin-redesign-tz.md).
+> Реализована поэтапно (Фазы 0–9), источник правды по дизайну — [plans/archive/2026-05-25-admin-redesign-tz.md](plans/archive/2026-05-25-admin-redesign-tz.md).
 
 ## Назначение
 
@@ -41,7 +41,7 @@ CookieAuthGuard → SuperAdminGuard → SuperAdminAuditInterceptor
 
 ## Новая информационная архитектура (8 категорий × 36 разделов)
 
-Каркас — двухуровневый сайдбар [AdminShell.tsx](frontend/app/(authenticated)/admin/AdminShell.tsx) + [navigation.ts](frontend/app/(authenticated)/admin/navigation.ts) (единый источник правды по структуре сайдбара и Cmd+K-палитры).
+Каркас — двухуровневый сайдбар [AdminShell.tsx](frontend/app/(admin)/admin/AdminShell.tsx) + [navigation.ts](frontend/app/(admin)/admin/navigation.ts) (единый источник правды по структуре сайдбара и Cmd+K-палитры).
 
 ### 1. Пульс
 | URL | Раздел |
@@ -133,9 +133,9 @@ CookieAuthGuard → SuperAdminGuard → SuperAdminAuditInterceptor
 - `AdminSettingHistoryDrawer` — выезжающая панель со списком предыдущих значений настройки.
 - `AdminCsvDownloadButton` — CSV-экспорт текущей таблицы.
 
-Хуки — [useAdminQuery](frontend/app/(authenticated)/admin/useAdminQuery.ts), `useAdminSettingValue`, `useAdminSettingEditor`, `useAdminCsvExport`, `useAdminCommandPalette`.
+Хуки — [useAdminQuery](frontend/app/(admin)/admin/useAdminQuery.ts), `useAdminSettingValue`, `useAdminSettingEditor`, `useAdminCsvExport`, `useAdminCommandPalette`.
 
-В Фазе 9 финально мигрированы оставшиеся `useEffect + useState + fetchData` дубликаты ([prompts/PromptsListClient](frontend/app/(authenticated)/admin/prompts/PromptsListClient.tsx), [ai-models/AiModelsClient](frontend/app/(authenticated)/admin/ai-models/AiModelsClient.tsx)) — теперь единственный паттерн в админке — `useAdminQuery`.
+В Фазе 9 финально мигрированы оставшиеся `useEffect + useState + fetchData` дубликаты ([prompts/PromptsListClient](frontend/app/(admin)/admin/prompts/PromptsListClient.tsx), [ai-models/AiModelsClient](frontend/app/(admin)/admin/ai-models/AiModelsClient.tsx)) — теперь единственный паттерн в админке — `useAdminQuery`.
 
 ## ENV → AdminSetting
 
@@ -167,7 +167,7 @@ UI журнала — `/admin/audit` — фильтры по `adminId` / `entity
 
 [AdminCommandPalette.tsx](frontend/ui/components/admin/AdminCommandPalette.tsx) — `cmdk`, секции:
 
-- **Разделы** — клиентский индекс из `ADMIN_NAV_FLAT` (см. [navigation.ts](frontend/app/(authenticated)/admin/navigation.ts)).
+- **Разделы** — клиентский индекс из `ADMIN_NAV_FLAT` (см. [navigation.ts](frontend/app/(admin)/admin/navigation.ts)).
 - **Действия** — частые операции (Refresh кэша, Очистить DLQ, …).
 - **Org / Юзеры / Встречи** — server-side через `/admin/search` (debounce 200ms).
 

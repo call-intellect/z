@@ -1,38 +1,3 @@
-/**
- * Action Center A1 «лестница доверия» (2026-06-02) — Seed маршрутов LLM для
- * taskType'ов семейства `curation-verify` (AI-судья канонизации критических
- * карточек Слоя 4 — regulation / process / decision).
- *
- * 4 taskType:
- *   - debate-curation-verify           — зонтичный (агрегатная аналитика/smoke).
- *   - debate-curation-verify-critic    — stance "strict-critic".
- *   - debate-curation-verify-supporter — stance "empathetic-supporter".
- *   - debate-curation-verify-neutral   — stance "neutral-judge".
- *
- * Цепочка — дешёвая (cheap), как у `goal-hierarchy-link` / probe-classify:
- *   primary   = deepseek/deepseek-v4-flash
- *   secondary = openai-via-proxy/gpt-5.4-mini  (diverse провайдер)
- *   tertiary  = ollama/qwen3.5:9b              (safety-net)
- *
- * Решение: критик НЕ делаем capable (deepseek-v4-pro). Задача
- * curation-verify — бинарный вердикт accept|reject по уже готовому payload'у
- * (не nuanced extraction). Это дешёвая задача; cheap-цепочка достаточна и
- * экономит бюджет (карточек на проверку много). НИКАКОГО anthropic.
- *
- * Источник цепочек: docs/reference/llm-models-playbook.md §2.1 + verified-
- * карта second-brain/01_projects/llm-providers-verified.md + правило
- * feedback `Ollama qwen3.5:9b — только tertiary fallback`.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-curation.ts
- *   bun run scripts/seed-llm-task-routes-curation.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true — не перезаписываем.
- *   - Без флага — пропускаем existing.
- *   - С `--update-existing` — обновляем model/priority/isActive (но НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -51,7 +16,6 @@ interface TaskRouteSeed {
   pinnedVersionNote?: string;
 }
 
-/** Общая cheap-цепочка для всех curation-verify taskType. */
 const CHEAP_CHAIN: TierEntry[] = [
   { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
   { tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4-mini' },
@@ -136,17 +100,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -174,18 +134,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-curation START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-curation START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

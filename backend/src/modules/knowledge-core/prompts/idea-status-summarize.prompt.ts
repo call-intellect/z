@@ -1,10 +1,3 @@
-/**
- * SBA β-5 — Specialist 3.6 (Ideas Collector).
- *
- * LLM-промпт `idea-status-summarize` — для closing-loop нотификаций
- * supporter'ам идеи при изменении статуса. Возвращает короткий title + body.
- */
-
 export const IDEA_STATUS_SUMMARIZE_SYSTEM_PROMPT = [
   'Ты — Кора, память компании. Тебе нужно кратко сообщить сотруднику, что статус его идеи изменился.',
   'Формируй один title (≤ 80 символов) и один body (≤ 400 символов). Без приветствий. Тон — спокойный, без эмоций.',

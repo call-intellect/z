@@ -1,16 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Pencil, X, Check } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { issuesApi } from '@/api/tracker/issues.api';
-import type { Issue } from '@/domain/tracker';
-import { IssueStateBadge } from './IssueStateBadge';
+import { useState } from "react";
+import { Pencil, X, Check } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { issuesApi } from "@/api/tracker/issues.api";
+import type { Issue } from "@/domain/tracker";
+import { IssueStateBadge } from "./IssueStateBadge";
 
-/**
- * IssueHeader — заголовок страницы задачи: identifier + title (inline-editable) + статус.
- */
 export function IssueHeader({
   issue,
   orgId,
@@ -40,12 +37,11 @@ export function IssueHeader({
     }
   };
 
-  const category =
-    issue.isCompleted
-      ? 'completed'
-      : issue.isArchived
-        ? 'cancelled'
-        : 'unstarted';
+  const category = issue.isCompleted
+    ? "completed"
+    : issue.isArchived
+      ? "cancelled"
+      : "unstarted";
 
   return (
     <div className="flex flex-col gap-2 border-b border-border-subtle pb-4">
@@ -62,10 +58,10 @@ export function IssueHeader({
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 e.preventDefault();
                 void handleSave();
-              } else if (e.key === 'Escape') {
+              } else if (e.key === "Escape") {
                 setEditing(false);
                 setValue(issue.title);
               }

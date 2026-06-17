@@ -3,28 +3,15 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { MeetingActionItemsService } from '../meetings/meeting-action-items.service';
 
-/**
- * Глобальный поиск для `⌘K` командной палитры.
- *
- * Реализация — Postgres ILIKE по relevant-полям. Все запросы owner-scoped
- * (cards/meetings/tasks) либо tenant-scoped (Фаза 0a — структура компании и
- * каркас 5 уровней).
- *
- * Унифицированный результат — массив `results` с типизированными
- * элементами + сохраняются группы по типам для обратной совместимости с
- * существующим фронтом.
- */
 export type SearchTypeKey =
   | 'cards'
   | 'meetings'
   | 'tasks'
-  // Фаза 0a — структура компании (группа А)
   | 'role'
   | 'department'
   | 'person'
   | 'document'
   | 'role-profile'
-  // Фаза 0a — каркас 5 уровней (группа Б)
   | 'process'
   | 'regulation'
   | 'policy'
@@ -65,11 +52,9 @@ export interface UnifiedSearchResult {
 }
 
 export interface SearchResult {
-  // Legacy-группировки — сохраняем для обратной совместимости с ⌘K UI.
   cards: SearchResultCardItem[];
   meetings: SearchResultMeetingItem[];
   tasks: SearchResultTaskItem[];
-  // Унифицированный массив всех результатов (Фаза 0a.3).
   results: UnifiedSearchResult[];
   total: number;
 }
@@ -99,7 +84,6 @@ export class SearchService {
     const wantsMeetings = args.types.includes('meetings');
     const wantsTasks = args.types.includes('tasks');
 
-    // Tenant-scoped поиски (Фаза 0a) выполняются только если tenantId доступен.
     const tenantId = args.tenantId ?? null;
     const tenantWants = (k: SearchTypeKey) => tenantId && args.types.includes(k);
 
@@ -125,7 +109,9 @@ export class SearchService {
       tenantWants('department') ? this.searchDepartments(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('person') ? this.searchPersons(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('document') ? this.searchDocuments(tenantId!, q, limit) : Promise.resolve([]),
-      tenantWants('role-profile') ? this.searchRoleProfiles(tenantId!, q, limit) : Promise.resolve([]),
+      tenantWants('role-profile')
+        ? this.searchRoleProfiles(tenantId!, q, limit)
+        : Promise.resolve([]),
       tenantWants('process') ? this.searchProcesses(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('regulation') ? this.searchRegulations(tenantId!, q, limit) : Promise.resolve([]),
       tenantWants('policy') ? this.searchPolicies(tenantId!, q, limit) : Promise.resolve([]),
@@ -178,8 +164,6 @@ export class SearchService {
       total: results.length,
     };
   }
-
-  // ─────────────────────────── legacy: cards/meetings/tasks ─────────────
 
   private async searchCards(
     userId: string,
@@ -251,9 +235,6 @@ export class SearchService {
     q: string,
     limit: number,
   ): Promise<SearchResultTaskItem[]> {
-    // ТЗ Ф5.2 — поиск action-items через единый helper. По дефолту (флаг OFF)
-    // ищет по Task пользователя (форма {id,title,status,meetingId} прежняя);
-    // при включённом флаге — по связанным со встречами Issue.
     const rows = await this.actionItems.searchTitlesForUser({
       tenantId: tenantId ?? '',
       userId,
@@ -267,8 +248,6 @@ export class SearchService {
       meetingId: t.meetingId,
     }));
   }
-
-  // ─────────────────────────── Фаза 0a — группа А ───────────────────────
 
   private async searchRoles(
     tenantId: string,
@@ -409,8 +388,6 @@ export class SearchService {
     }));
   }
 
-  // ─────────────────────────── Фаза 0a — группа Б ───────────────────────
-
   private async searchProcesses(
     tenantId: string,
     q: string,
@@ -512,7 +489,6 @@ export class SearchService {
     q: string,
     limit: number,
   ): Promise<UnifiedSearchResult[]> {
-    // SBA β-3: ищем по statement (приоритет) + text (legacy fallback).
     const rows = await this.prisma.decision.findMany({
       where: {
         tenantId,

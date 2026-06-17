@@ -1,33 +1,3 @@
-/**
- * ТЗ 2026-05-25 clone-reliability-hardening, Фаза 4 — backfill
- * семантического индекса `PersonKnowledgeCategoryEmbedding`.
- *
- * Контекст:
- *   Внедрена таблица `PersonKnowledgeCategoryEmbedding` для запросов
- *   «кто разбирается в X». Новые/пересобираемые профили заполняют её
- *   автоматически (`Specialist32Service.rebuildCategoryEmbeddings`).
- *   Существующие Person'ы с уже построенным `knowledgeProfile` нужно
- *   проиндексировать единоразово.
- *
- * Логика:
- *   1. Курсор-пагинация по `Person` где `knowledgeProfile IS NOT NULL`,
- *      `relationship='employee'`, `deletedAt IS NULL`.
- *   2. Для каждого Person'а:
- *      a. Парсим `knowledgeProfile` → categories.
- *      b. Удаляем все старые embedding-строки этого Person'а.
- *      c. Для каждой категории считаем embedding и пишем строку.
- *
- * Идемпотентность:
- *   На каждый Person сначала deleteMany, затем создание заново. Повторный
- *   запуск даёт тот же результат (но дороже по LLM-quota — есть
- *   `--skip-existing` для пропуска Person'ов, у которых embedding'и уже есть).
- *
- * Запуск:
- *   bun run scripts/person-knowledge-embeddings-backfill.ts
- *   bun run scripts/person-knowledge-embeddings-backfill.ts --dry-run
- *   bun run scripts/person-knowledge-embeddings-backfill.ts --skip-existing
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -61,18 +31,14 @@ function parseProfile(raw: unknown): SerializedKnowledgeProfile | null {
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
   const categoriesRaw = Array.isArray(obj.categories) ? obj.categories : [];
-  const highlightsRaw = Array.isArray(obj.experienceHighlights)
-    ? obj.experienceHighlights
-    : [];
+  const highlightsRaw = Array.isArray(obj.experienceHighlights) ? obj.experienceHighlights : [];
   const categories: SerializedKnowledgeProfile['categories'] = [];
   for (const c of categoriesRaw) {
     if (!c || typeof c !== 'object') continue;
     const cat = c as Record<string, unknown>;
     if (typeof cat.name !== 'string' || cat.name.length < 2) continue;
     const conf =
-      cat.confidence === 'low' ||
-      cat.confidence === 'medium' ||
-      cat.confidence === 'high'
+      cat.confidence === 'low' || cat.confidence === 'medium' || cat.confidence === 'high'
         ? cat.confidence
         : 'low';
     const sampleStatements: Array<{ quote: string; blockId: string }> = [];
@@ -94,20 +60,16 @@ function parseProfile(raw: unknown): SerializedKnowledgeProfile | null {
     categories.push({
       name: cat.name,
       confidence: conf,
-      observationCount:
-        typeof cat.observationCount === 'number' ? cat.observationCount : 1,
+      observationCount: typeof cat.observationCount === 'number' ? cat.observationCount : 1,
       sampleStatements,
       relatedEntityIds,
       lastObservedAt:
-        typeof cat.lastObservedAt === 'string'
-          ? cat.lastObservedAt
-          : new Date().toISOString(),
+        typeof cat.lastObservedAt === 'string' ? cat.lastObservedAt : new Date().toISOString(),
     });
   }
   if (categories.length === 0) return null;
   const version = typeof obj.version === 'number' ? obj.version : 1;
-  const builtAt =
-    typeof obj.builtAt === 'string' ? obj.builtAt : new Date().toISOString();
+  const builtAt = typeof obj.builtAt === 'string' ? obj.builtAt : new Date().toISOString();
   return {
     version,
     builtAt,
@@ -193,12 +155,9 @@ async function main(): Promise<void> {
         continue;
       }
       try {
-        // Используем тот же метод, что вызывает Specialist32Service в rebuild.
-        // Передаём profileBuildVersion как version, чтобы deleteMany ничего
-        // не подтёр (мы хотим пересоздать всё ровно для текущей версии).
         const serialized: SerializedKnowledgeProfile = {
           ...profile,
-          version: p.profileBuildVersion + 1, // увеличиваем, чтобы deleteMany снёс старые
+          version: p.profileBuildVersion + 1,
         };
         const res = await specialist.rebuildCategoryEmbeddings({
           tenantId: p.tenantId,

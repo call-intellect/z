@@ -1,28 +1,10 @@
-/**
- * BillingOverviewService — агрегированные метрики для /admin/billing-overview.
- *
- * MRR (Monthly Recurring Revenue) — сумма ежемесячных платежей всех ACTIVE-
- * подписок в paymentMode='paid'. Yearly-подписки нормализуются к месяцу
- * (totalKopecks / 12).
- *
- * ARR (Annual Recurring Revenue) = MRR × 12. Не учитывает churn/expansion —
- * это «снимок дохода в моменте».
- *
- * Считается всё в реальном времени (без materialized view). При ~1000 ACTIVE
- * Org это даёт <50мс по индексу `idx_status` на Subscription.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4 + §14 Фаза 9.
- */
-
 import { Inject, Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
 export interface BillingOverviewView {
-  /** Дата снимка. */
   asOf: string;
 
-  /** Subscription по статусам. */
   subscriptions: {
     active: number;
     activePaid: number;
@@ -35,17 +17,13 @@ export interface BillingOverviewView {
     total: number;
   };
 
-  /** Денежные метрики (в копейках). */
   revenue: {
     mrrKopecks: number;
     arrKopecks: number;
-    /** Общая сумма paid-инвойсов за всё время. */
     totalPaidKopecks: number;
-    /** Сумма paid-инвойсов за текущий календарный месяц UTC. */
     currentMonthPaidKopecks: number;
   };
 
-  /** Реферальные метрики. */
   referrals: {
     totalActivePartners: number;
     payoutsPending: number;
@@ -54,7 +32,6 @@ export interface BillingOverviewView {
     payoutsPaidThisMonthKopecks: number;
   };
 
-  /** Инвойсы. */
   invoices: {
     totalIssued: number;
     totalPaid: number;
@@ -69,12 +46,8 @@ export class BillingOverviewService {
 
   async getOverview(): Promise<BillingOverviewView> {
     const now = new Date();
-    const monthStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const monthEnd = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-    );
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
     const periodMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 
     const [
@@ -98,8 +71,6 @@ export class BillingOverviewService {
       this.prisma.subscription.count({
         where: {
           status: 'ACTIVE',
-          // ТЗ 2026-06-01-demo-shared-org-model §4.9: исключаем эталонную
-          // демо-Org (paymentMode='reference') из счётчика активных клиентов.
           paymentMode: { in: ['paid', 'bonus'] },
         },
       }),
@@ -115,20 +86,16 @@ export class BillingOverviewService {
       this.prisma.subscription.count({ where: { status: 'EXPIRED' } }),
       this.prisma.subscription.count({ where: { status: 'DEMO' } }),
 
-      // Для расчёта MRR — все ACTIVE/paid подписки с их месячной ценой
-      // (yearly уже нормализована в `monthlyPriceKopecks` при активации).
       this.prisma.subscription.findMany({
         where: { status: 'ACTIVE', paymentMode: 'paid' },
         select: { monthlyPriceKopecks: true },
       }),
 
-      // Сумма всех paid-инвойсов за всё время.
       this.prisma.invoice.aggregate({
         where: { status: 'paid' },
         _sum: { totalKopecks: true },
       }),
 
-      // Сумма paid-инвойсов за текущий календарный месяц UTC.
       this.prisma.invoice.aggregate({
         where: {
           status: 'paid',
@@ -165,17 +132,9 @@ export class BillingOverviewService {
     ]);
 
     const total =
-      activeCount +
-      pastDueCount +
-      suspendedCount +
-      canceledCount +
-      expiredCount +
-      demoCount;
+      activeCount + pastDueCount + suspendedCount + canceledCount + expiredCount + demoCount;
 
-    const mrrKopecks = activeSubscriptions.reduce(
-      (sum, s) => sum + s.monthlyPriceKopecks,
-      0,
-    );
+    const mrrKopecks = activeSubscriptions.reduce((sum, s) => sum + s.monthlyPriceKopecks, 0);
     const arrKopecks = mrrKopecks * 12;
 
     const invoiceByStatus: Record<string, number> = {};
@@ -207,8 +166,7 @@ export class BillingOverviewService {
         payoutsPending: payoutsPendingAgg._count,
         payoutsPendingKopecks: payoutsPendingAgg._sum.amountKopecks ?? 0,
         payoutsPaidThisMonth: payoutsPaidThisMonthAgg._count,
-        payoutsPaidThisMonthKopecks:
-          payoutsPaidThisMonthAgg._sum.amountKopecks ?? 0,
+        payoutsPaidThisMonthKopecks: payoutsPaidThisMonthAgg._sum.amountKopecks ?? 0,
       },
       invoices: {
         totalIssued: invoiceByStatus.issued ?? 0,

@@ -1,11 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { WebhookDelivery, WebhookSubscription } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -60,10 +55,8 @@ export class SubscriptionsService {
       });
     }
 
-    // SSRF-валидация URL.
     await this.ssrf.assertSafeOutboundUrl(dto.url);
 
-    // Валидация events (whitelist).
     for (const e of dto.events) {
       if (!isValidEvent(e)) {
         throw new BadRequestException({
@@ -145,7 +138,6 @@ export class SubscriptionsService {
     return sub;
   }
 
-  /** Whitelist допустимых тестовых событий. */
   buildTestPayload(event: WebhookEvent | string): Record<string, unknown> {
     return {
       type: event,

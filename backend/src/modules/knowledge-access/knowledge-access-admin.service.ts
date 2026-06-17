@@ -1,28 +1,10 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { KnowledgeAccessResolver } from '../rbac/knowledge-access-resolver.service';
 
 import type { ClosedGroupKind } from './dto/knowledge-access.dto';
 
-/**
- * KnowledgeAccessAdminService — управление доступом к знаниям через группы
- * (ТЗ 2026-06-06 knowledge-access-groups, Фаза 7 часть A).
- *
- * Все методы tenant-scoped: `tenantId` передаётся из контроллера (@CurrentOrg);
- * проверка прав owner/admin делается guard'ом `OrgAdminGuard`.
- *
- * КРИТИЧНО: любая мутация членства/матрицы зовёт
- * `KnowledgeAccessResolver.invalidateAll()`, иначе кэш групп (TTL 60с) отдаёт
- * устаревший доступ. Изменения групп редкие — глобальная инвалидация дешевле
- * и безопаснее точечной.
- */
 @Injectable()
 export class KnowledgeAccessAdminService {
   private readonly logger = new Logger(KnowledgeAccessAdminService.name);
@@ -33,9 +15,6 @@ export class KnowledgeAccessAdminService {
     private readonly accessResolver: KnowledgeAccessResolver,
   ) {}
 
-  // ─────────────────────────── группы ─────────────────────────────────────
-
-  /** Список групп Org с числом участников (для UI). */
   async listGroups(tenantId: string): Promise<{
     items: Array<{
       id: string;
@@ -70,9 +49,6 @@ export class KnowledgeAccessAdminService {
     };
   }
 
-  // ─────────────────────────── матрица видимости ──────────────────────────
-
-  /** Все политики видимости Org (+ имена групп для UI). */
   async getMatrix(tenantId: string): Promise<{
     items: Array<{
       subjectGroupId: string;
@@ -102,17 +78,11 @@ export class KnowledgeAccessAdminService {
     };
   }
 
-  /**
-   * Направленно задать список видимых отделов для subject-группы.
-   * Идемпотентно: удаляет старые политики subject-группы и создаёт новые.
-   * Проверяет, что subject и все visible — department-группы этой Org.
-   */
   async setMatrix(
     tenantId: string,
     subjectGroupId: string,
     visibleGroupIds: string[],
   ): Promise<{ ok: true; count: number }> {
-    // Subject должна существовать в Org и быть department-группой.
     const subject = await this.prisma.knowledgeGroup.findFirst({
       where: { id: subjectGroupId, tenantId },
       select: { id: true, kind: true },
@@ -136,10 +106,7 @@ export class KnowledgeAccessAdminService {
       });
     }
 
-    // Дедуп + исключаем self-ссылку (свой отдел и так доступен).
-    const targetIds = [...new Set(visibleGroupIds)].filter(
-      (id) => id !== subjectGroupId,
-    );
+    const targetIds = [...new Set(visibleGroupIds)].filter((id) => id !== subjectGroupId);
 
     if (targetIds.length > 0) {
       const visible = await this.prisma.knowledgeGroup.findMany({
@@ -181,9 +148,6 @@ export class KnowledgeAccessAdminService {
     return { ok: true, count: targetIds.length };
   }
 
-  // ─────────────────────────── членство ───────────────────────────────────
-
-  /** Список членов группы (personId, имя, источник). */
   async listMembers(
     tenantId: string,
     groupId: string,
@@ -213,11 +177,6 @@ export class KnowledgeAccessAdminService {
     };
   }
 
-  /**
-   * Добавить человека в группу (source='manual'). Идемпотентно: повтор = no-op.
-   * Используется и для clearance-override (поднять человека в leadership/council
-   * без должности — это просто POST member в закрытую группу).
-   */
   async addMember(
     tenantId: string,
     groupId: string,
@@ -252,13 +211,10 @@ export class KnowledgeAccessAdminService {
     });
 
     this.accessResolver.invalidateAll();
-    this.logger.log(
-      `Член добавлен в группу ${groupId}: person=${personId} (tenant=${tenantId})`,
-    );
+    this.logger.log(`Член добавлен в группу ${groupId}: person=${personId} (tenant=${tenantId})`);
     return { ok: true, added: true };
   }
 
-  /** Убрать человека из группы. Идемпотентно: нет строки = no-op. */
   async removeMember(
     tenantId: string,
     groupId: string,
@@ -277,12 +233,6 @@ export class KnowledgeAccessAdminService {
     return { ok: true, removed: result.count > 0 };
   }
 
-  // ─────────────────────────── дефолт закрытости по типу ──────────────────
-
-  /**
-   * Admin-editable дефолт закрытости по типу встречи (крутилка).
-   * Обновляет MeetingTypeConfig.defaultClosedGroupKind.
-   */
   async setMeetingTypeClosedDefault(
     typeId: string,
     defaultClosedGroupKind: ClosedGroupKind,
@@ -313,9 +263,6 @@ export class KnowledgeAccessAdminService {
     return { ok: true, typeId, defaultClosedGroupKind };
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
-  /** Проверка, что группа принадлежит Org; иначе 404. */
   private async requireGroup(tenantId: string, groupId: string): Promise<void> {
     const group = await this.prisma.knowledgeGroup.findFirst({
       where: { id: groupId, tenantId },

@@ -1,30 +1,17 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 
 import {
   orchestratorApi,
   type OrchestratorRunDetailApi,
   type OrchestratorStreamEvent,
-} from '@/api/orchestrator.api';
+} from "@/api/orchestrator.api";
 
 interface Props {
   runId: string;
 }
 
-/**
- * SBA δ-1 — клиент `/orchestrator/runs/[id]` (live view).
- *
- * Принцип:
- *   1) загружаем GET /runs/:id для базового состояния.
- *   2) если status терминальный (done|failed) — просто рендерим.
- *   3) если активный — polling каждые 2с (для простоты MVP; vNext —
- *      SSE replay через /events).
- *
- * Отображение:
- *   - timeline: план, subagent-ы с их статусом, synthesis, verification.
- *   - кнопка «Отменить» (только для активного status).
- */
 export function OrchestratorRunClient({ runId }: Props): ReactElement {
   const [run, setRun] = useState<OrchestratorRunDetailApi | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +32,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
 
   useEffect(() => {
     if (!run) return;
-    if (run.status === 'done' || run.status === 'failed') return;
+    if (run.status === "done" || run.status === "failed") return;
     const t = setInterval(() => {
       void refresh();
     }, 2000);
@@ -55,7 +42,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
   const onCancel = async () => {
     try {
       await orchestratorApi.cancel(runId);
-      setEvents((prev) => [...prev, { type: 'cancelled' as const }]);
+      setEvents((prev) => [...prev, { type: "cancelled" as const }]);
       void refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -77,8 +64,8 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
     );
   }
 
-  const isActive = run.status !== 'done' && run.status !== 'failed';
-  const synthesisText = run.synthesisJson?.text ?? '';
+  const isActive = run.status !== "done" && run.status !== "failed";
+  const synthesisText = run.synthesisJson?.text ?? "";
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6 text-fg-primary">
@@ -86,7 +73,7 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
         <div>
           <h1 className="text-xl font-bold">Research-run</h1>
           <p className="mt-1 text-sm text-fg-tertiary">
-            <span className="font-mono">{run.id}</span> ·{' '}
+            <span className="font-mono">{run.id}</span> ·{" "}
             <StatusBadge status={run.status} />
           </p>
         </div>
@@ -128,7 +115,8 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
                         {s.stepIndex + 1}. {s.description}
                       </div>
                       <div className="mt-1 text-xs text-fg-tertiary">
-                        Стратегия: <span className="font-mono">{s.agentType}</span>
+                        Стратегия:{" "}
+                        <span className="font-mono">{s.agentType}</span>
                       </div>
                       <div className="mt-1 text-xs text-fg-tertiary">
                         Focus: {s.contextSlice.focus}
@@ -175,12 +163,12 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
             Верификация
           </h2>
           <p className="text-sm text-fg-secondary">
-            Confidence:{' '}
+            Confidence:{" "}
             <span
               className={
                 run.verificationJson.confidence >= 0.6
-                  ? 'font-bold text-success'
-                  : 'font-bold text-warning'
+                  ? "font-bold text-success"
+                  : "font-bold text-warning"
               }
             >
               {run.verificationJson.confidence.toFixed(2)}
@@ -212,13 +200,13 @@ export function OrchestratorRunClient({ runId }: Props): ReactElement {
 
 function StatusBadge({ status }: { status: string }): ReactElement {
   const cls =
-    status === 'done'
-      ? 'bg-chip-success-bg text-chip-success-fg'
-      : status === 'failed'
-        ? 'bg-chip-danger-bg text-chip-danger-fg'
-        : status === 'running'
-          ? 'bg-chip-warning-bg text-chip-warning-fg animate-pulse'
-          : 'bg-bg-subtle text-fg-secondary';
+    status === "done"
+      ? "bg-chip-success-bg text-chip-success-fg"
+      : status === "failed"
+        ? "bg-chip-danger-bg text-chip-danger-fg"
+        : status === "running"
+          ? "bg-chip-warning-bg text-chip-warning-fg animate-pulse"
+          : "bg-bg-subtle text-fg-secondary";
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-mono ${cls}`}>
       {status}

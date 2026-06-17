@@ -2,15 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { ProcessTemplateCompletenessService } from './process-template-completeness.service';
 
-/**
- * SBA α-7 wave 2 — юнит-тесты для pure-функции `compute()`
- * `ProcessTemplateCompletenessService`. Не используют БД.
- */
 describe('ProcessTemplateCompletenessService.compute', () => {
-  // Сервис без DI — PrismaService нам тут не нужен (compute pure).
-  const svc = new ProcessTemplateCompletenessService({
-    /* мок не используется в compute */
-  } as never);
+  const svc = new ProcessTemplateCompletenessService({} as never);
 
   it('пустой шаблон без version → completeness=0', () => {
     const score = svc.compute({
@@ -20,8 +13,6 @@ describe('ProcessTemplateCompletenessService.compute', () => {
       handoffsCount: 0,
       siblingTemplatesCount: 0,
     });
-    // siblingTemplatesCount=0 даёт «handoff_or_terminal» = true (0.2).
-    // Также «decision_or_simple» = true (нет шагов → simple, 0.15).
     expect(score).toBeCloseTo(0.35, 2);
   });
 
@@ -79,10 +70,6 @@ describe('ProcessTemplateCompletenessService.compute', () => {
       handoffsCount: 0,
       siblingTemplatesCount: 0,
     });
-    // has_current_version=true(0.2), has_owner=true(0.15),
-    // steps_have_owner=false(0), steps_have_artifacts=true(0.15),
-    // decision_or_simple=true (<= 2 шагов, 0.15),
-    // handoff_or_terminal=true (siblings=0, 0.2)
     expect(score).toBeCloseTo(0.85, 2);
   });
 

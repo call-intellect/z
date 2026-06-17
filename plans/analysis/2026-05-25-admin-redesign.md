@@ -413,4 +413,4 @@ _Все вопросы закрыты 2026-05-25 (см. «Решения при�
 
 ## Следующий шаг
 
-→ ТЗ: [plans/tz/2026-05-25-admin-redesign-tz.md](plans/tz/2026-05-25-admin-redesign-tz.md) — детальная разбивка по фазам с DoD, файлами, тестами.
+→ ТЗ: [plans/archive/2026-05-25-admin-redesign-tz.md](plans/archive/2026-05-25-admin-redesign-tz.md) — детальная разбивка по фазам с DoD, файлами, тестами.

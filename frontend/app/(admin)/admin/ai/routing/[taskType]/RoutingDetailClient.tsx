@@ -1,61 +1,48 @@
-'use client';
+"use client";
 
-/**
- * Фаза 3 редизайна — клиент `/admin/ai/routing/[taskType]`.
- *
- * Раскладывает существующий `TaskTypeDetailsClient` на 4 URL-driven
- * вкладки через `AdminTabs`:
- *   - chain      — Цепочка primary/secondary/tertiary + действия (Switch,
- *                  Remove provider) — целиком берётся из существующего
- *                  `TaskTypeDetailsClient`, чтобы не дублировать сложный
- *                  state-management.
- *   - metrics    — Только секция метрик (отдельный fetch).
- *   - history    — Audit log переключений (`RouteChangeApi`).
- *   - ab         — Активный эксперимент или кнопка «Запустить A/B».
- *
- * URL-state синхронизируется через `AdminTabs` (`?tab=chain|metrics|history|ab`).
- *
- * Поскольку TaskTypeDetailsClient внутри сам отрисовывает шапку, метрики и
- * историю — на вкладке «chain» мы используем его в исходном виде; остальные
- * вкладки используют тот же API напрямую, но рендерят только нужный кусок.
- */
+import { useCallback, useEffect, useState } from "react";
+import {
+  FlaskConical,
+  History,
+  LineChart,
+  ListTree,
+  Loader2,
+  Play,
+} from "lucide-react";
+import Link from "next/link";
 
-import { useCallback, useEffect, useState } from 'react';
-import { FlaskConical, History, LineChart, ListTree, Loader2, Play } from 'lucide-react';
-import Link from 'next/link';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   adminAiModelsApi,
   type ModelExperimentApi,
   type RouteChangeApi,
   type TaskTypeMetricsApi,
-} from '@/api/admin-ai-models.api';
+} from "@/api/admin-ai-models.api";
 import {
   changeTypeLabel,
   formatCostRub,
   formatLatency,
   formatPercent,
   tierLabel,
-} from '@/domain/admin-ai-model';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminTabs, type AdminTabDef } from '@/ui/components/admin/AdminTabs';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-ai-model";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminTabs, type AdminTabDef } from "@/ui/components/admin/AdminTabs";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
-import { AdminEmpty } from '../../../AdminStateViews';
-import { TaskTypeDetailsClient } from '../../../ai-models/[taskType]/TaskTypeDetailsClient';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+import { AdminEmpty } from "../../../AdminStateViews";
+import { TaskTypeDetailsClient } from "../../../ai-models/[taskType]/TaskTypeDetailsClient";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 interface Props {
   taskType: string;
 }
 
 const TABS: AdminTabDef[] = [
-  { value: 'chain', label: 'Цепочка', icon: ListTree },
-  { value: 'metrics', label: 'Метрики', icon: LineChart },
-  { value: 'history', label: 'История переключений', icon: History },
-  { value: 'ab', label: 'A/B', icon: FlaskConical },
+  { value: "chain", label: "Цепочка", icon: ListTree },
+  { value: "metrics", label: "Метрики", icon: LineChart },
+  { value: "history", label: "История переключений", icon: History },
+  { value: "ab", label: "A/B", icon: FlaskConical },
 ];
 
 export function RoutingDetailClient({ taskType }: Props) {
@@ -63,8 +50,8 @@ export function RoutingDetailClient({ taskType }: Props) {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'AI и модели' },
-        { label: 'Роутинг моделей', href: '/admin/ai/routing' },
+        { label: "AI и модели" },
+        { label: "Роутинг моделей", href: "/admin/ai/routing" },
         { label: taskType },
       ]}
       title={taskType}
@@ -73,10 +60,12 @@ export function RoutingDetailClient({ taskType }: Props) {
       <AdminTabs tabs={TABS}>
         {(active) => (
           <>
-            {active === 'chain' && <TaskTypeDetailsClient taskType={taskType} />}
-            {active === 'metrics' && <MetricsTabSection taskType={taskType} />}
-            {active === 'history' && <HistoryTabSection taskType={taskType} />}
-            {active === 'ab' && <AbTabSection taskType={taskType} />}
+            {active === "chain" && (
+              <TaskTypeDetailsClient taskType={taskType} />
+            )}
+            {active === "metrics" && <MetricsTabSection taskType={taskType} />}
+            {active === "history" && <HistoryTabSection taskType={taskType} />}
+            {active === "ab" && <AbTabSection taskType={taskType} />}
           </>
         )}
       </AdminTabs>
@@ -84,26 +73,19 @@ export function RoutingDetailClient({ taskType }: Props) {
   );
 }
 
-// ────────────────────────────────────────── Метрики ──
-
-/**
- * Унифицированная ось периода (Фаза 9 редизайна): `day/week/month`.
- * Бэкенд `adminAiModelsApi.metrics` пока ждёт legacy-значения `24h/7d/30d`,
- * поэтому конвертируем на лету при вызове API. Лейблы и UI-state — на новой оси.
- */
-type UnifiedPeriod = 'day' | 'week' | 'month';
+type UnifiedPeriod = "day" | "week" | "month";
 const PERIOD_OPTIONS: ReadonlyArray<{ value: UnifiedPeriod; label: string }> = [
-  { value: 'day', label: 'Сутки' },
-  { value: 'week', label: 'Неделя' },
-  { value: 'month', label: 'Месяц' },
+  { value: "day", label: "Сутки" },
+  { value: "week", label: "Неделя" },
+  { value: "month", label: "Месяц" },
 ];
-function periodToApi(p: UnifiedPeriod): '24h' | '7d' | '30d' {
-  return p === 'day' ? '24h' : p === 'week' ? '7d' : '30d';
+function periodToApi(p: UnifiedPeriod): "24h" | "7d" | "30d" {
+  return p === "day" ? "24h" : p === "week" ? "7d" : "30d";
 }
 
 function MetricsTabSection({ taskType }: { taskType: string }) {
   const [metrics, setMetrics] = useState<TaskTypeMetricsApi | null>(null);
-  const [period, setPeriod] = useState<UnifiedPeriod>('week');
+  const [period, setPeriod] = useState<UnifiedPeriod>("week");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -114,7 +96,9 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
       const m = await adminAiModelsApi.metrics(taskType, periodToApi(period));
       setMetrics(m);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить метрики');
+      setError(
+        e instanceof ApiError ? e.message : "Не удалось загрузить метрики",
+      );
     } finally {
       setLoading(false);
     }
@@ -127,7 +111,9 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-fg-primary">Метрики за период</h2>
+        <h2 className="text-base font-semibold text-fg-primary">
+          Метрики за период
+        </h2>
         <div className="flex gap-1">
           {PERIOD_OPTIONS.map((p) => (
             <button
@@ -136,8 +122,8 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
               onClick={() => setPeriod(p.value)}
               className={`rounded px-2 py-1 text-xs ${
                 period === p.value
-                  ? 'bg-fg-primary text-bg-card'
-                  : 'bg-bg-subtle text-fg-secondary hover:bg-bg-overlay'
+                  ? "bg-fg-primary text-bg-card"
+                  : "bg-bg-subtle text-fg-secondary hover:bg-bg-overlay"
               }`}
             >
               {p.label}
@@ -164,20 +150,28 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
                 <th className="px-3 py-2 text-left font-medium">Уровень</th>
                 <th className="px-3 py-2 text-right font-medium">Вызовов</th>
                 <th className="px-3 py-2 text-right font-medium">Успех</th>
-                <th className="px-3 py-2 text-right font-medium">Латентность p95</th>
+                <th className="px-3 py-2 text-right font-medium">
+                  Латентность p95
+                </th>
                 <th className="px-3 py-2 text-right font-medium">Стоимость</th>
               </tr>
             </thead>
             <tbody>
-              {(['primary', 'secondary', 'tertiary'] as const).map((t) => {
+              {(["primary", "secondary", "tertiary"] as const).map((t) => {
                 const row = metrics.perTier[t];
                 return (
                   <tr key={t} className="border-t border-border-subtle">
                     <td className="px-3 py-2">{tierLabel(t)}</td>
                     <td className="px-3 py-2 text-right">{row.calls}</td>
-                    <td className="px-3 py-2 text-right">{formatPercent(row.successRate)}</td>
-                    <td className="px-3 py-2 text-right">{formatLatency(row.p95LatencyMs)}</td>
-                    <td className="px-3 py-2 text-right">{formatCostRub(row.costUsd)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {formatPercent(row.successRate)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatLatency(row.p95LatencyMs)}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {formatCostRub(row.costUsd)}
+                    </td>
                   </tr>
                 );
               })}
@@ -186,13 +180,17 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
                 <td className="px-3 py-2 text-right">{metrics.totals.calls}</td>
                 <td className="px-3 py-2 text-right">
                   {metrics.totals.calls > 0
-                    ? formatPercent(metrics.totals.successCalls / metrics.totals.calls)
-                    : '—'}
+                    ? formatPercent(
+                        metrics.totals.successCalls / metrics.totals.calls,
+                      )
+                    : "—"}
                 </td>
                 <td className="px-3 py-2 text-right text-xs text-fg-secondary">
                   fallback: {formatPercent(metrics.totals.fallbackRate)}
                 </td>
-                <td className="px-3 py-2 text-right">{formatCostRub(metrics.totals.totalCostUsd)}</td>
+                <td className="px-3 py-2 text-right">
+                  {formatCostRub(metrics.totals.totalCostUsd)}
+                </td>
               </tr>
             </tbody>
           </table>
@@ -201,8 +199,6 @@ function MetricsTabSection({ taskType }: { taskType: string }) {
     </section>
   );
 }
-
-// ────────────────────────────────────────── История ──
 
 function HistoryTabSection({ taskType }: { taskType: string }) {
   const [items, setItems] = useState<RouteChangeApi[]>([]);
@@ -216,7 +212,9 @@ function HistoryTabSection({ taskType }: { taskType: string }) {
       const h = await adminAiModelsApi.history(taskType);
       setItems(h.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить историю');
+      setError(
+        e instanceof ApiError ? e.message : "Не удалось загрузить историю",
+      );
     } finally {
       setLoading(false);
     }
@@ -228,7 +226,9 @@ function HistoryTabSection({ taskType }: { taskType: string }) {
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-4">
-      <h2 className="mb-3 text-base font-semibold text-fg-primary">История переключений</h2>
+      <h2 className="mb-3 text-base font-semibold text-fg-primary">
+        История переключений
+      </h2>
       {loading && (
         <div className="flex items-center gap-2 py-4 text-sm text-fg-secondary">
           <Loader2 size={14} className="animate-spin" /> Загружаем…
@@ -254,13 +254,15 @@ function HistoryTabSection({ taskType }: { taskType: string }) {
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[10px] text-fg-secondary">
-                  {new Date(h.createdAt).toLocaleString('ru-RU')}
+                  {new Date(h.createdAt).toLocaleString("ru-RU")}
                 </span>
                 <Badge variant="outline" className="text-[10px]">
                   {changeTypeLabel(h.changeType)}
                 </Badge>
                 {h.tier ? (
-                  <span className="text-[10px] text-fg-secondary">{tierLabel(h.tier)}</span>
+                  <span className="text-[10px] text-fg-secondary">
+                    {tierLabel(h.tier)}
+                  </span>
                 ) : null}
               </div>
               {h.reason ? (
@@ -274,8 +276,6 @@ function HistoryTabSection({ taskType }: { taskType: string }) {
   );
 }
 
-// ────────────────────────────────────────── A/B ──
-
 function AbTabSection({ taskType }: { taskType: string }) {
   const [items, setItems] = useState<ModelExperimentApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -288,7 +288,9 @@ function AbTabSection({ taskType }: { taskType: string }) {
       const res = await adminAiModelsApi.experimentsList({ taskType });
       setItems(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить эксперименты');
+      setError(
+        e instanceof ApiError ? e.message : "Не удалось загрузить эксперименты",
+      );
     } finally {
       setLoading(false);
     }
@@ -298,12 +300,14 @@ function AbTabSection({ taskType }: { taskType: string }) {
     void refresh();
   }, [refresh]);
 
-  const running = items.find((it) => it.status === 'running');
+  const running = items.find((it) => it.status === "running");
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-fg-primary">A/B-эксперимент</h2>
+        <h2 className="text-base font-semibold text-fg-primary">
+          A/B-эксперимент
+        </h2>
         <Link href="/admin/ai-models/experiments">
           <Button size="sm" variant="outline">
             <Play size={12} className="mr-1" /> Все эксперименты
@@ -375,13 +379,15 @@ function AbTabSection({ taskType }: { taskType: string }) {
                   {it.status}
                 </Badge>
                 <span className="font-mono text-[10px] text-fg-secondary">
-                  {new Date(it.createdAt).toLocaleString('ru-RU')}
+                  {new Date(it.createdAt).toLocaleString("ru-RU")}
                 </span>
                 <span className="text-fg-secondary">
                   {it.splitPercent}% · {it.variantProvider}/{it.variantModel}
                 </span>
               </div>
-              {it.notes ? <p className="mt-1 text-fg-secondary">{it.notes}</p> : null}
+              {it.notes ? (
+                <p className="mt-1 text-fg-secondary">{it.notes}</p>
+              ) : null}
             </li>
           ))}
         </ul>

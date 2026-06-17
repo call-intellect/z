@@ -1,14 +1,8 @@
-/**
- * Unit-тесты `BusFactorAnalyzerCron` (Pulse Wave 6 §6.1).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
-import {
-  BusFactorAnalyzerCron,
-  computeRiskLevel,
-} from './bus-factor-analyzer.cron';
+import { BusFactorAnalyzerCron, computeRiskLevel } from './bus-factor-analyzer.cron';
 
 interface MockRow {
   categoryName: string;
@@ -17,20 +11,15 @@ interface MockRow {
   person: { name: string; deletedAt: Date | null };
 }
 
-function buildCron(opts: {
-  orgs: Array<{ id: string }>;
-  rowsByOrg?: Record<string, MockRow[]>;
-}): {
+function buildCron(opts: { orgs: Array<{ id: string }>; rowsByOrg?: Record<string, MockRow[]> }): {
   cron: BusFactorAnalyzerCron;
   snapshotCreate: ReturnType<typeof vi.fn>;
 } {
   const snapshotCreate = vi.fn();
   const orgFindMany = vi.fn(async () => opts.orgs);
-  const embedFindMany = vi.fn(
-    async (args: { where: { tenantId: string } }) => {
-      return opts.rowsByOrg?.[args.where.tenantId] ?? [];
-    },
-  );
+  const embedFindMany = vi.fn(async (args: { where: { tenantId: string } }) => {
+    return opts.rowsByOrg?.[args.where.tenantId] ?? [];
+  });
 
   const prisma = {
     org: { findMany: orgFindMany },
@@ -86,7 +75,7 @@ describe('BusFactorAnalyzerCron.runOnce', () => {
     const stats = await cron.runOnce();
 
     expect(stats.orgsProcessed).toBe(1);
-    expect(stats.snapshotsCreated).toBe(2); // Кубернетес + GraphQL
+    expect(stats.snapshotsCreated).toBe(2);
     expect(stats.errors).toBe(0);
 
     const calls = snapshotCreate.mock.calls.map((c) => c[0].data);
@@ -94,7 +83,7 @@ describe('BusFactorAnalyzerCron.runOnce', () => {
     expect(k8s).toBeDefined();
     expect(k8s.highConfidenceCount).toBe(1);
     expect(k8s.totalExpertsCount).toBe(2);
-    expect(k8s.riskLevel).toBe('critical'); // 1 high → critical
+    expect(k8s.riskLevel).toBe('critical');
     expect(k8s.topExpertsJson).toEqual({
       experts: [
         { personId: 'p1', name: 'Иван', confidence: 'high' },
@@ -104,7 +93,7 @@ describe('BusFactorAnalyzerCron.runOnce', () => {
 
     const graphql = calls.find((c) => c.categoryName === 'GraphQL');
     expect(graphql.highConfidenceCount).toBe(0);
-    expect(graphql.totalExpertsCount).toBe(0); // только low
+    expect(graphql.totalExpertsCount).toBe(0);
     expect(graphql.riskLevel).toBe('critical');
   });
 

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 type Props = {
   from: string;
@@ -7,10 +7,6 @@ type Props = {
   onToChange: (v: string) => void;
 };
 
-/**
- * Простой date-range picker. Только нативные `<input type="date">`.
- * Хранит даты в формате `YYYY-MM-DD` (локальное время).
- */
 export function DateRangePicker({ from, to, onFromChange, onToChange }: Props) {
   return (
     <div className="flex flex-wrap items-end gap-3">

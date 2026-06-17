@@ -2,17 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { OperationsDashboardService } from './operations-dashboard.service';
 
-/**
- * ТЗ Ф8.7 (cabinet-redesign-rhythms) — unit-тесты `getCheckinDiscipline`.
- *
- * Мокаем `prisma.dailyCheckIn.groupBy` (expected — все строки, completed —
- * только `completedAt != null`) и `prisma.person.findMany` (имена). Сети и
- * времени нет — детерминированно. Покрываем:
- *   (а) обычные данные утро/вечер сдано/пропущено → totals + byPerson;
- *   (б) нет данных → нули, completionRate=null;
- *   (в) флаг DAILY_CHECKIN_ENABLED=false → enabled:false, нулевые totals.
- */
-
 type Group = { personId: string; kind: string; _count: { _all: number } };
 
 function buildSvc(opts: {
@@ -21,7 +10,6 @@ function buildSvc(opts: {
   completed?: Group[];
   persons?: Array<{ id: string; name: string }>;
 }) {
-  // groupBy вызывается дважды: 1-й — expected (все), 2-й — completed.
   const groupBy = vi
     .fn()
     .mockResolvedValueOnce(opts.expected ?? [])
@@ -37,11 +25,7 @@ function buildSvc(opts: {
   };
   const metrics = {};
 
-  const svc = new OperationsDashboardService(
-    prisma as never,
-    cfg as never,
-    metrics as never,
-  );
+  const svc = new OperationsDashboardService(prisma as never, cfg as never, metrics as never);
   return { svc, groupBy, personFindMany };
 }
 
@@ -55,8 +39,6 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
   it('(а) обычные данные: утро/вечер сдано/пропущено → totals + byPerson', async () => {
     const { svc } = buildSvc({
       enabled: true,
-      // Анна: утро 5 ожидаемо / 4 сдано, вечер 5 / 3.
-      // Борис: утро 5 / 5, вечер 5 / 0.
       expected: [
         g('p-anna', 'morning', 5),
         g('p-anna', 'evening', 5),
@@ -85,14 +67,12 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
     expect(dto.from).toBe('2026-06-08');
     expect(dto.to).toBe('2026-06-12');
 
-    // Totals: утро 10 ожид / 9 сдано / 1 пропуск; вечер 10 / 3 / 7.
     expect(dto.totals.morningExpected).toBe(10);
     expect(dto.totals.morningCompleted).toBe(9);
     expect(dto.totals.morningMissed).toBe(1);
     expect(dto.totals.eveningExpected).toBe(10);
     expect(dto.totals.eveningCompleted).toBe(3);
     expect(dto.totals.eveningMissed).toBe(7);
-    // (9+3)/(10+10) = 12/20 = 0.6
     expect(dto.totals.completionRate).toBe(0.6);
 
     expect(dto.byPerson).toHaveLength(2);
@@ -104,14 +84,12 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
     expect(anna.eveningExpected).toBe(5);
     expect(anna.eveningCompleted).toBe(3);
     expect(anna.eveningMissed).toBe(2);
-    // (4+3)/(5+5) = 0.7
     expect(anna.completionRate).toBe(0.7);
 
     const boris = dto.byPerson.find((p) => p.personId === 'p-boris')!;
     expect(boris.morningCompleted).toBe(5);
     expect(boris.eveningCompleted).toBe(0);
     expect(boris.eveningMissed).toBe(5);
-    // (5+0)/(5+5) = 0.5
     expect(boris.completionRate).toBe(0.5);
   });
 
@@ -137,7 +115,6 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
     expect(dto.totals.eveningCompleted).toBe(0);
     expect(dto.totals.eveningMissed).toBe(0);
     expect(dto.totals.completionRate).toBeNull();
-    // Без personId — findMany не дёргаем.
     expect(personFindMany).not.toHaveBeenCalled();
   });
 
@@ -157,19 +134,14 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
     expect(dto.totals.completionRate).toBeNull();
     expect(dto.totals.morningExpected).toBe(0);
     expect(dto.totals.eveningExpected).toBe(0);
-    // Выключенная фича не должна ходить в БД.
     expect(groupBy).not.toHaveBeenCalled();
   });
 
   it('детерминизм: при отсутствии имени Person → «Без имени», порядок по expected desc', async () => {
     const { svc } = buildSvc({
       enabled: true,
-      expected: [
-        g('p-low', 'morning', 1),
-        g('p-high', 'morning', 9),
-      ],
+      expected: [g('p-low', 'morning', 1), g('p-high', 'morning', 9)],
       completed: [g('p-high', 'morning', 9)],
-      // p-low отсутствует в persons → имя fallback.
       persons: [{ id: 'p-high', name: 'Главный' }],
     });
 
@@ -179,7 +151,6 @@ describe('OperationsDashboardService.getCheckinDiscipline', () => {
       to: '2026-06-12',
     });
 
-    // Сортировка: больше expected — выше.
     expect(dto.byPerson[0]!.personId).toBe('p-high');
     expect(dto.byPerson[1]!.personId).toBe('p-low');
     expect(dto.byPerson[1]!.personName).toBe('Без имени');

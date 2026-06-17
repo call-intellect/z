@@ -1,28 +1,3 @@
-/**
- * Pulse Wave 6 §6.8 — Decision Hygiene Scorer.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.8.
- *
- * Промпт для LLM-классификации каждого нового Decision по Bezos two-way door:
- *   - type-1 = необратимое (large investments, hiring senior, public commitments,
- *              regulatory commitments, public communication, founder hires).
- *   - type-2 = обратимое (pilot, experiment, internal process change, A/B test,
- *              feature toggle).
- *
- * Cache-friendly (см. feedback_llm_prompts_cache_friendly.md):
- *   - SYSTEM полностью статичен — стабильный набор правил и enum'ов;
- *   - переменные данные (statement + alternatives) — В КОНЦЕ user-сообщения;
- *   - префикс user тоже стабилен.
- * Это даёт ~99% prompt cache hit на DeepSeek / OpenAI-proxy.
- *
- * EU AI Act: классификатор работает только над текстом самого решения,
- * без анализа голоса/видео/эмоций спикера.
- */
-
-/**
- * Стабильный системный промпт. Менять только при mass-recompute (ломает кэш
- * провайдера и инвалидирует ранее посчитанные reversibility).
- */
 export const DECISION_HYGIENE_SYSTEM_PROMPT = `Ты классифицируешь корпоративные решения по принципу Bezos two-way door.
 
 Type-1 (необратимое) — решение, которое крайне сложно или дорого откатить:
@@ -51,11 +26,6 @@ Type-2 (обратимое) — решение, которое можно отк
 
 Без markdown-fences, без полей кроме перечисленных.`;
 
-/**
- * JSON-schema для `responseFormat: json_schema` (strict). Используется
- * провайдерами, поддерживающими structured output (OpenAI / DeepSeek). Для
- * остальных LlmRouter falls back в plain text + парсер ниже разбирает JSON.
- */
 export const DECISION_HYGIENE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -66,20 +36,11 @@ export const DECISION_HYGIENE_JSON_SCHEMA: Record<string, unknown> = {
   required: ['reversibility', 'rationale'],
 };
 
-/**
- * Альтернатива решения, как хранится в `Decision.alternatives` (Json массив).
- */
 export interface DecisionHygieneAlternative {
   option: string;
   reasonRejected?: string | null;
 }
 
-/**
- * Сборка user-сообщения для `decision-hygiene`.
- *
- * Cache-friendly правило: фиксированный заголовок и инструкция — сверху,
- * переменные данные (statement, rationale, alternatives) — внизу JSON-блоком.
- */
 export function buildDecisionHygieneUserMessage(args: {
   statement: string;
   rationale?: string | null;
@@ -104,21 +65,12 @@ export function buildDecisionHygieneUserMessage(args: {
   ].join('\n');
 }
 
-/**
- * Тип распарсенного ответа Decision-Hygiene LLM.
- */
 export interface DecisionHygieneParsedResponse {
   reversibility: 'type-1' | 'type-2';
   rationale: string;
 }
 
-/**
- * Безопасный парсер: возвращает null при невалидном JSON или нарушении схемы.
- * Поддерживает code-fence (```json) на случай если провайдер всё-таки обернул.
- */
-export function parseDecisionHygieneResponse(
-  text: string,
-): DecisionHygieneParsedResponse | null {
+export function parseDecisionHygieneResponse(text: string): DecisionHygieneParsedResponse | null {
   const stripped = stripCodeFence(text);
   let raw: unknown;
   try {

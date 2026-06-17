@@ -1,17 +1,3 @@
-/**
- * §4 Ф1 (2026-06-11) — chat-v2 эмитит стадии прогресса через колбэк onStage
- * по ходу ask() для SSE-стриминга («Ищу в памяти → Пишу ответ»). Стадия
- * 'understanding' эмитится раньше (в оркестраторе), здесь проверяем именно
- * 'searching' и 'writing' на уровне knowledge-core ChatV2Service.
- *
- * Тест изолирует синтез: private retrieval/prisma-методы заспаены (stub),
- * чтобы `ask` детерминированно дошёл до `this.llm.call` без сети/БД.
- * Проверяем:
- *   1) при переданном onStage он вызывается 'searching', затем 'writing' (в этом порядке);
- *   2) без onStage (undefined) `ask` не падает (обратная совместимость).
- *
- * ТЗ: plans/tz/2026-06-11-cabinet-leftovers-ui-probe-chat.md
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -27,8 +13,6 @@ function makeService(): {
   svc: ChatV2Service;
   llmCall: ReturnType<typeof vi.fn>;
 } {
-  // ТЗ 2026-06-15 — ask() читает CompanyProfile для хвоста «О компании».
-  // Здесь профиля нет (findUnique→null) → секция опускается.
   const prisma = {
     companyProfile: { findUnique: vi.fn().mockResolvedValue(null) },
   } as unknown as PrismaService;
@@ -81,8 +65,6 @@ function makeService(): {
     undefined,
   );
 
-  // Изолируем синтез: заглушаем retrieval/prisma-зависимые private-методы,
-  // чтобы `ask` детерминированно дошёл до `this.llm.call` без сети/БД.
   const block = {
     id: 'b-1',
     name: 'seed',
@@ -132,7 +114,6 @@ describe('ChatV2Service — стадии прогресса onStage (§4 Ф1)', 
       ...baseInput,
       onStage: (s) => order.push(`stage:${s}`),
     });
-    // llmCall зафиксирован отдельно: writing эмитится перед ним.
     expect(order).toEqual(['stage:searching', 'stage:writing']);
     expect(llmCall).toHaveBeenCalledTimes(1);
   });

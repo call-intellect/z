@@ -16,7 +16,10 @@ import {
 } from './prompts/regenerate-section';
 
 export class RegenerateConflictError extends Error {
-  constructor(readonly meetingId: string, readonly currentVersion: number) {
+  constructor(
+    readonly meetingId: string,
+    readonly currentVersion: number,
+  ) {
     super(`recap_version_mismatch: meeting=${meetingId} current=${currentVersion}`);
     this.name = 'RegenerateConflictError';
   }
@@ -30,7 +33,10 @@ export class RegenerateForbiddenError extends Error {
 }
 
 export class QuotaExceededError extends Error {
-  constructor(readonly limit: number, readonly windowHours: number) {
+  constructor(
+    readonly limit: number,
+    readonly windowHours: number,
+  ) {
     super(`quota_exceeded: limit=${limit} window=${windowHours}h`);
     this.name = 'QuotaExceededError';
   }
@@ -40,7 +46,6 @@ export interface RegenerateMeetingInput {
   meetingId: string;
   userId: string;
   expectedRecapVersion: number;
-  /** UserTemplate.id (опц.) — analyze.worker возьмёт его prompt вместо стандартного. */
   templateId?: string;
 }
 
@@ -49,27 +54,9 @@ export interface RegenerateSectionInput {
   userId: string;
   expectedRecapVersion: number;
   sectionKey: string;
-  /** Опц. инструкция от пользователя. */
   userInstruction?: string;
 }
 
-/**
- * Сервис регенерации AI-отчёта.
- *
- *   - `regenerateMeeting` — полная регенерация: bumps recapVersion, ставит
- *     analyze (с опц. templateId) + перезапускает meeting-report-fast (главы /
- *     задачи / качество встречи). Embeddings НЕ перезапускаем — текст
- *     транскрипта не менялся.
- *   - `regenerateSection` — частичная: одна секция через `LlmRouter`
- *     с `taskType='regenerate-section'`. recapVersion инкрементируется.
- *     Не трогает meeting-report-fast/embeddings.
- *
- * Optimistic lock — `expectedRecapVersion` сравнивается атомарно через
- * `prisma.meeting.update` с `where: { id, recapVersion }`.
- *
- * Квота — `MAX_REGENERATE_PER_MEETING_PER_DAY` через прямой counter на
- * `AuditLog.action='meeting.regenerate'` за последние 24 часа.
- */
 @Injectable()
 export class RegenerateService {
   private readonly logger = new Logger(RegenerateService.name);
@@ -85,9 +72,7 @@ export class RegenerateService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  async regenerateMeeting(
-    input: RegenerateMeetingInput,
-  ): Promise<{ recapVersion: number }> {
+  async regenerateMeeting(input: RegenerateMeetingInput): Promise<{ recapVersion: number }> {
     const meeting = await this.prisma.meeting.findUnique({
       where: { id: input.meetingId },
       select: {
@@ -102,7 +87,6 @@ export class RegenerateService {
       throw new Error(`regenerateMeeting: meeting ${input.meetingId} не найден`);
     }
     if (meeting.ownerId !== input.userId) {
-      // Admin-ветку оставляем caller'у (контроллер проверит роль).
       throw new RegenerateForbiddenError();
     }
     if (meeting.recapVersion !== input.expectedRecapVersion) {
@@ -110,7 +94,6 @@ export class RegenerateService {
     }
     await this.checkRegenerateQuota(input.meetingId);
 
-    // Optimistic lock через where.
     let updated;
     try {
       updated = await this.prisma.meeting.update({
@@ -125,17 +108,12 @@ export class RegenerateService {
         select: { recapVersion: true },
       });
     } catch (err) {
-      // P2025 — record not found → версия успела измениться.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw new RegenerateConflictError(meeting.id, meeting.recapVersion);
       }
       throw err;
     }
 
-    // Audit-лог. Не падаем, если запись не удастся.
     await this.prisma.auditLog
       .create({
         data: {
@@ -155,9 +133,6 @@ export class RegenerateService {
         );
       });
 
-    // Перезапускаем analyze + meeting-report-fast (главы / задачи / качество).
-    // Embeddings НЕ трогаем. reason=`v<recapVersion>` варьирует jobId, чтобы
-    // дедуп removeOnComplete не съел повторную постановку.
     await Promise.all([
       this.queue.enqueueAnalyzeWithTemplate(
         input.meetingId,
@@ -181,10 +156,6 @@ export class RegenerateService {
     return { recapVersion: updated.recapVersion };
   }
 
-  /**
-   * Регенерирует одну секцию `AiResult.structuredData[sectionKey]`.
-   * recapVersion инкрементируется (для UI-инвалидации). Other sections — не меняются.
-   */
   async regenerateSection(
     input: RegenerateSectionInput,
   ): Promise<{ recapVersion: number; newSectionValue: unknown }> {
@@ -214,15 +185,15 @@ export class RegenerateService {
     await this.checkRegenerateQuota(input.meetingId);
 
     const structured =
-      (meeting.aiResult?.structuredData as Record<string, unknown> | null | undefined) ??
-      {};
+      (meeting.aiResult?.structuredData as Record<string, unknown> | null | undefined) ?? {};
     const currentValue = structured[input.sectionKey] ?? null;
     const otherSections: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(structured)) {
       if (k !== input.sectionKey) otherSections[k] = v;
     }
 
-    const turns = (meeting.transcript?.turns as Array<{ speaker: string; text: string }> | null) ?? [];
+    const turns =
+      (meeting.transcript?.turns as Array<{ speaker: string; text: string }> | null) ?? [];
     const mergedTranscriptText = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
 
     const prompt = buildRegenerateSectionPrompt({
@@ -235,16 +206,10 @@ export class RegenerateService {
       currentValue,
       otherSections,
       mergedTranscriptText,
-      ...(input.userInstruction !== undefined
-        ? { userInstruction: input.userInstruction }
-        : {}),
+      ...(input.userInstruction !== undefined ? { userInstruction: input.userInstruction } : {}),
     });
 
-    // A2-AI: вход — сырой транскрипт встречи + пользовательская инструкция к
-    // секции. Оборачиваем user в маркеры данных + ASR-нота. Глобальный
-    // kill-switch читаем из TypedConfigService (дефолт ON).
-    const guardOn =
-      this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+    const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(prompt.system, prompt.user, {
       enabled: guardOn,
       injection: true,
@@ -258,9 +223,6 @@ export class RegenerateService {
       tenantId: meeting.tenantId,
       meetingId: input.meetingId,
       userId: input.userId,
-      // T7-F6: strict JSON Schema через wrapper { value: <any> }. Для
-      // провайдеров без strict (Ollama / KIE / GRSAI) LlmRouter перейдёт на
-      // следующего — DeepSeek/OpenAI/Anthropic справятся.
       responseFormat: {
         type: 'json_schema',
         name: 'regenerate_section_response',
@@ -274,9 +236,6 @@ export class RegenerateService {
     let newSectionValue: unknown;
     try {
       const parsed = JSON.parse(stripped) as unknown;
-      // T7-F6: гибко принимаем и { value: ... } (новый wrapper), и голый
-      // payload (legacy провайдер). Если структура { value } — извлекаем,
-      // иначе берём как есть.
       if (
         parsed !== null &&
         typeof parsed === 'object' &&
@@ -288,8 +247,6 @@ export class RegenerateService {
         newSectionValue = parsed;
       }
     } catch {
-      // Если LLM вернул не-JSON (например, простую строку без кавычек) —
-      // сохраняем сырой текст. Это допустимо, т.к. секция может быть просто строкой.
       this.metrics?.incPromptInvalidResponse({
         taskType: REGENERATE_SECTION_TASK_TYPE,
         model: result.modelUsed,
@@ -298,7 +255,6 @@ export class RegenerateService {
       newSectionValue = stripped;
     }
 
-    // Атомарный апдейт с проверкой версии.
     let updated;
     try {
       updated = await this.prisma.$transaction(async (tx) => {
@@ -318,10 +274,7 @@ export class RegenerateService {
         return m;
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2025'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw new RegenerateConflictError(meeting.id, meeting.recapVersion);
       }
       throw err;
@@ -342,8 +295,6 @@ export class RegenerateService {
       })
       .catch(() => undefined);
 
-    // Если встреча в карточке — пересобираем rollup. Особенно важно при
-    // регенерации секции `summary` (rollup строится поверх summary встреч).
     if (meeting.cardId) {
       await this.queue
         .enqueueCardRollup(meeting.cardId, 'regenerate')
@@ -356,8 +307,6 @@ export class RegenerateService {
 
     return { recapVersion: updated.recapVersion, newSectionValue };
   }
-
-  // ─────────────────────────── private ─────────────────────────────────────
 
   private async checkRegenerateQuota(meetingId: string): Promise<void> {
     const limit = this.cfg.workspace.maxRegeneratePerMeetingPerDay;

@@ -22,21 +22,6 @@ import type {
   UpdateKpiDto,
 } from '../dto/kpi.dto';
 
-/**
- * SBA α-8 wave 3 — сервис KPI.
- *
- * KPI = `Metric` с заполненным `attachedTo*Id`. Это subset, не отдельная
- * сущность. CRUD идёт по `metric`-таблице, фильтр KPI применяем через
- * `kpiOnly` (хотя бы один attachedTo*Id NOT NULL).
- *
- * `PATCH /:id/measurement` атомарно обновляет `currentValue` + `lastMeasuredAt`
- * (опционально `currentValueUnit`). Это hot-path операция, без транзакции — одна update.
- *
- * Метрики:
- *   - `kpi_measurements_total{tenant_top}` — счётчик measurement-вызовов.
- *
- * RBAC — `kpi.read|write|delete`, measurement — `kpi.manage`.
- */
 @Injectable()
 export class KpiService {
   private readonly logger = new Logger(KpiService.name);
@@ -48,24 +33,19 @@ export class KpiService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────────── list / get ───────────────────────────
-
   async list(args: {
     tenantId: string;
     query: ListKpiQuery;
   }): Promise<{ items: KpiDto[]; total: number }> {
     const where: Prisma.MetricWhereInput = {
       tenantId: args.tenantId,
-      ...(args.query.attachedToRoleId
-        ? { attachedToRoleId: args.query.attachedToRoleId }
-        : {}),
+      ...(args.query.attachedToRoleId ? { attachedToRoleId: args.query.attachedToRoleId } : {}),
       ...(args.query.attachedToDepartmentId
         ? { attachedToDepartmentId: args.query.attachedToDepartmentId }
         : {}),
       ...(args.query.attachedToResponsibilityElementId
         ? {
-            attachedToResponsibilityElementId:
-              args.query.attachedToResponsibilityElementId,
+            attachedToResponsibilityElementId: args.query.attachedToResponsibilityElementId,
           }
         : {}),
       ...(args.query.frequency ? { frequency: args.query.frequency } : {}),
@@ -105,21 +85,12 @@ export class KpiService {
     return this.toDto(row);
   }
 
-  // ─────────────────────────── create / update / delete ─────────────
-
-  async create(args: {
-    tenantId: string;
-    userId: string;
-    body: CreateKpiDto;
-  }): Promise<KpiDto> {
+  async create(args: { tenantId: string; userId: string; body: CreateKpiDto }): Promise<KpiDto> {
     if (args.body.attachedToRoleId) {
       await this.assertRoleExists(args.tenantId, args.body.attachedToRoleId);
     }
     if (args.body.attachedToDepartmentId) {
-      await this.assertDepartmentExists(
-        args.tenantId,
-        args.body.attachedToDepartmentId,
-      );
+      await this.assertDepartmentExists(args.tenantId, args.body.attachedToDepartmentId);
     }
     if (args.body.attachedToResponsibilityElementId) {
       await this.assertResponsibilityElementExists(
@@ -136,12 +107,10 @@ export class KpiService {
           description: args.body.description ?? null,
           unit: args.body.unit,
           target: args.body.target ?? null,
-          valueType: (args.body.valueType ??
-            'count') as MetricValueType,
+          valueType: (args.body.valueType ?? 'count') as MetricValueType,
           attachedToRoleId: args.body.attachedToRoleId ?? null,
           attachedToDepartmentId: args.body.attachedToDepartmentId ?? null,
-          attachedToResponsibilityElementId:
-            args.body.attachedToResponsibilityElementId ?? null,
+          attachedToResponsibilityElementId: args.body.attachedToResponsibilityElementId ?? null,
           frequency: args.body.frequency ?? null,
         },
       });
@@ -155,8 +124,7 @@ export class KpiService {
           name: args.body.name,
           attachedToRoleId: args.body.attachedToRoleId ?? null,
           attachedToDepartmentId: args.body.attachedToDepartmentId ?? null,
-          attachedToResponsibilityElementId:
-            args.body.attachedToResponsibilityElementId ?? null,
+          attachedToResponsibilityElementId: args.body.attachedToResponsibilityElementId ?? null,
         },
       });
 
@@ -187,10 +155,7 @@ export class KpiService {
       await this.assertRoleExists(args.tenantId, args.body.attachedToRoleId);
     }
     if (args.body.attachedToDepartmentId) {
-      await this.assertDepartmentExists(
-        args.tenantId,
-        args.body.attachedToDepartmentId,
-      );
+      await this.assertDepartmentExists(args.tenantId, args.body.attachedToDepartmentId);
     }
     if (args.body.attachedToResponsibilityElementId) {
       await this.assertResponsibilityElementExists(
@@ -257,11 +222,7 @@ export class KpiService {
     }
   }
 
-  async delete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ id: string }> {
+  async delete(args: { tenantId: string; userId: string; id: string }): Promise<{ id: string }> {
     const existing = await this.prisma.metric.findUnique({
       where: { id: args.id },
     });
@@ -281,10 +242,6 @@ export class KpiService {
     return { id: args.id };
   }
 
-  /**
-   * Атомарно обновляет `currentValue` + `lastMeasuredAt` (опц.
-   * `currentValueUnit`). Hot-path операция.
-   */
   async measurement(args: {
     tenantId: string;
     userId: string;
@@ -330,12 +287,7 @@ export class KpiService {
     return this.toDto(updated);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -351,10 +303,7 @@ export class KpiService {
     }
   }
 
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },
@@ -390,10 +339,7 @@ export class KpiService {
   }
 
   private handleUniqueViolation(err: unknown, name: string | undefined): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {
@@ -432,14 +378,10 @@ export class KpiService {
       valueType: row.valueType as MetricValueTypeLiteral,
       attachedToRoleId: row.attachedToRoleId,
       attachedToDepartmentId: row.attachedToDepartmentId,
-      attachedToResponsibilityElementId:
-        row.attachedToResponsibilityElementId,
-      currentValue:
-        row.currentValue !== null ? Number(row.currentValue) : null,
+      attachedToResponsibilityElementId: row.attachedToResponsibilityElementId,
+      currentValue: row.currentValue !== null ? Number(row.currentValue) : null,
       currentValueUnit: row.currentValueUnit,
-      lastMeasuredAt: row.lastMeasuredAt
-        ? row.lastMeasuredAt.toISOString()
-        : null,
+      lastMeasuredAt: row.lastMeasuredAt ? row.lastMeasuredAt.toISOString() : null,
       frequency: (row.frequency as KpiFrequency | null) ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

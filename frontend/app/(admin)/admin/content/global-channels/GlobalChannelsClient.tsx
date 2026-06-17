@@ -1,45 +1,36 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Edit3, Plus, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { Edit3, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminGlobalChannelsApi } from '@/api/admin-global-channels.api';
+import { ApiError } from "@/api/api-error";
+import { adminGlobalChannelsApi } from "@/api/admin-global-channels.api";
 import {
   GLOBAL_CHANNEL_KIND_LABELS,
   GLOBAL_CHANNEL_STATUS_LABELS,
   globalChannelListFromApi,
   type GlobalChannelItemDomain,
-} from '@/domain/admin-global-channel';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-global-channel";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { ChannelEditDialog } from './ChannelEditDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { ChannelEditDialog } from "./ChannelEditDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
-/**
- * `/admin/content/global-channels` — управление глобальными каналами
- * (`Channel.tenantId IS NULL`). Один kind = одна глобальная строка
- * (партиал-уникальный индекс в БД).
- *
- * Soft-delete: переводим статус в `disabled`. Полное удаление
- * предусмотрено отдельным эндпоинтом — но в UI выводим как «деактивировать»,
- * чтобы не оставлять чувствительные секреты в памяти.
- */
 export function GlobalChannelsClient() {
   const [editing, setEditing] = useState<GlobalChannelItemDomain | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  const q = useAdminQuery('admin-global-channels', async () => {
+  const q = useAdminQuery("admin-global-channels", async () => {
     const res = await adminGlobalChannelsApi.list();
     return globalChannelListFromApi(res);
   });
@@ -57,10 +48,10 @@ export function GlobalChannelsClient() {
   const remove = async (c: GlobalChannelItemDomain) => {
     try {
       await adminGlobalChannelsApi.remove(c.id);
-      toast.success('Канал деактивирован');
+      toast.success("Канал деактивирован");
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить");
     }
   };
 
@@ -68,8 +59,8 @@ export function GlobalChannelsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Контент' },
-        { label: 'Глобальные каналы' },
+        { label: "Контент" },
+        { label: "Глобальные каналы" },
       ]}
       title="Глобальные каналы"
       description="Каналы без привязки к Org (tenantId IS NULL): глобальный Telegram-бот @kora_bot, общий SMTP, etc. На один kind допустим ровно один глобальный канал."
@@ -139,14 +130,14 @@ function ChannelRow({
   onEdit: () => void;
   onRemove: () => void;
 }) {
-  const statusVariant: 'success' | 'warning' | 'danger' | 'secondary' =
-    item.status === 'active'
-      ? 'success'
-      : item.status === 'broken'
-        ? 'danger'
-        : item.status === 'disabled'
-          ? 'secondary'
-          : 'secondary';
+  const statusVariant: "success" | "warning" | "danger" | "secondary" =
+    item.status === "active"
+      ? "success"
+      : item.status === "broken"
+        ? "danger"
+        : item.status === "disabled"
+          ? "secondary"
+          : "secondary";
   const configPreview = JSON.stringify(item.config);
 
   return (
@@ -170,7 +161,7 @@ function ChannelRow({
       </td>
       <td className="max-w-[280px] px-3 py-3 text-[11px] font-mono text-fg-tertiary">
         <span className="line-clamp-2">
-          {configPreview.length > 2 ? configPreview : '—'}
+          {configPreview.length > 2 ? configPreview : "—"}
         </span>
       </td>
       <td className="px-3 py-3 text-right tabular-nums">

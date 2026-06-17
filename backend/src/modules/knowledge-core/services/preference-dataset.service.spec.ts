@@ -2,17 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PreferenceDatasetService } from './preference-dataset.service';
 
-/**
- * W2.3 KC-Temporal (2026-05-25) — unit-тесты PreferenceDatasetService.
- *
- * Тестируем:
- *   1) `approved` decisionType → label='correct', sample записан.
- *   2) `mark_as_misleading` → label='misleading'.
- *   3) `rejected` → label='wrong'.
- *   4) `escalate` (не релевантный) → sample НЕ записан.
- *   5) Сбой prisma.create → не падает (best-effort).
- */
-
 function makeService(prismaCreate: ReturnType<typeof vi.fn>) {
   const fakePrisma = {
     llmPreferenceSample: {

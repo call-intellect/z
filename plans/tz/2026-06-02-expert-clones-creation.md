@@ -7,8 +7,8 @@ owner: sergrv80@gmail.com
 relates_to:
   - second-brain/02_architecture/knowledge-core.md
   - second-brain/02_architecture/module-map.md
-  - plans/tz/2026-05-31-document-ingest-universal.md
-  - plans/tz/2026-05-31-z-admin-standalone-route-group.md
+  - plans/archive/2026-05-31-document-ingest-universal.md
+  - plans/archive/2026-05-31-z-admin-standalone-route-group.md
 phases:
   - 0
   - 1

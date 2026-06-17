@@ -10,33 +10,15 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  ListStatesQuerySchema,
-  type ListStatesQuery,
-} from '../dto/states/list-states-query.dto';
+import { ListStatesQuerySchema, type ListStatesQuery } from '../dto/states/list-states-query.dto';
 import type { ListStatesResponse } from '../dto/states/state-response.dto';
 import { StatesService } from '../services/states.service';
 
-/**
- * REST `/api/v1/states` — справочник статусов (`IssueState`) для трекера.
- *
- * Read-only endpoint, нужен фронту для:
- *   - рендера board-колонок (статус = колонка);
- *   - фильтра «Статус» в списке задач (включая `/me/inbox`);
- *   - валидации drag-and-drop переходов на UI.
- *
- * RBAC: используем `project` resource — отдельного `issue_state` в RBAC
- * нет, а семантически право видеть states проекта = праву видеть проект
- * (states — это атрибут конфигурации проекта).
- */
 @ApiTags('tracker / states')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -65,8 +47,6 @@ export class StatesController {
     await this.requireRead(user.id, t);
     return this.svc.findAll(t, query);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

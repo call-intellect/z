@@ -1,25 +1,8 @@
-'use client';
+"use client";
 
-/**
- * Production-версия страницы результата AI-встречи.
- *
- * Использует тот же визуальный язык, что и
- * `__design-reference__/MeetingResultPage.reference.tsx`,
- * но с реальными данными из API:
- *
- *   - useMeeting (детальная встреча + опрос статусов)
- *   - useMeetingChapters / Tasks / Highlights
- *   - useMeetingChat (стейт-машина чата)
- *
- * Layout: 3 колонки. Левый sidebar — глобальный (через AppShell),
- * центральная — плеер + tabs, правая — AI-чат (коллапсируемая).
- *
- * TODO M7: cleanup старого `meeting-result/*`.
- */
-
-import { useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'motion/react';
+import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { motion, AnimatePresence } from "motion/react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -48,55 +31,50 @@ import {
   Share2,
   Sparkles,
   Trash2,
-} from 'lucide-react';
-import useSWR from 'swr';
-import { useRouter } from 'next/navigation';
+} from "lucide-react";
+import useSWR from "swr";
+import { useRouter } from "next/navigation";
 
-import { meetingsApi } from '@/api/meetings.api';
-import { templatesApi } from '@/api/templates.api';
-import { chaptersApi } from '@/api/chapters.api';
-import { tasksApi } from '@/api/tasks.api';
-import { highlightsApi } from '@/api/highlights.api';
-import { exportsApi } from '@/api/exports.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { useMeeting } from '@/hooks/use-meeting';
-import { useMeetingChapters } from '@/hooks/use-meeting-chapters';
-import { useMeetingTasks } from '@/hooks/use-meeting-tasks';
-import { useMeetingHighlights } from '@/hooks/use-meeting-highlights';
-import { useMeetingRoomMessages } from '@/hooks/use-meeting-room-messages';
-import { useVideoPlayer } from '@/hooks/use-video-player';
+import { meetingsApi } from "@/api/meetings.api";
+import { templatesApi } from "@/api/templates.api";
+import { chaptersApi } from "@/api/chapters.api";
+import { tasksApi } from "@/api/tasks.api";
+import { highlightsApi } from "@/api/highlights.api";
+import { exportsApi } from "@/api/exports.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { useMeeting } from "@/hooks/use-meeting";
+import { useMeetingChapters } from "@/hooks/use-meeting-chapters";
+import { useMeetingTasks } from "@/hooks/use-meeting-tasks";
+import { useMeetingHighlights } from "@/hooks/use-meeting-highlights";
+import { useMeetingRoomMessages } from "@/hooks/use-meeting-room-messages";
+import { useVideoPlayer } from "@/hooks/use-video-player";
 
-import type { RoomMessageDomain } from '@/domain/room-message';
+import type { RoomMessageDomain } from "@/domain/room-message";
 
-import { aiResultFromApi, pickPrimarySummary } from '@/domain/ai-result';
-import { pickPrimaryChapters } from '@/domain/chapter';
+import { aiResultFromApi, pickPrimarySummary } from "@/domain/ai-result";
+import { pickPrimaryChapters } from "@/domain/chapter";
 import {
   CLOSED_GROUP_OPTIONS,
   type ClosedGroupKind,
-} from '@/domain/knowledge-access';
-import type { MeetingDomain } from '@/domain/meeting';
+} from "@/domain/knowledge-access";
+import type { MeetingDomain } from "@/domain/meeting";
 import {
   meetingStatusView,
   visibilityScopeLabel,
   MEETING_TYPE_LABEL_RU,
-} from '@/domain/meeting';
-import type { MeetingType } from '@/domain/enums';
-import { templateFromApi } from '@/domain/template';
-import type { TaskDomain } from '@/domain/task';
-import { pickPrimaryTasks } from '@/domain/task';
+} from "@/domain/meeting";
+import type { MeetingType } from "@/domain/enums";
+import { templateFromApi } from "@/domain/template";
+import type { TaskDomain } from "@/domain/task";
+import { pickPrimaryTasks } from "@/domain/task";
 
-import { MeetingBehaviorSection } from '@/ui/components/behavior-metrics/MeetingBehaviorSection';
-import { MeetingQualityScoreSection } from '@/ui/components/quality-score/MeetingQualityScoreSection';
+import { MeetingBehaviorSection } from "@/ui/components/behavior-metrics/MeetingBehaviorSection";
+import { MeetingQualityScoreSection } from "@/ui/components/quality-score/MeetingQualityScoreSection";
 
-import { Button } from '@/ui/shadcn/button';
-import { Badge } from '@/ui/shadcn/badge';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/ui/shadcn/tabs';
+import { Button } from "@/ui/shadcn/button";
+import { Badge } from "@/ui/shadcn/badge";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -107,90 +85,78 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/ui/shadcn/dropdown-menu';
-import { toast } from '@/ui/shadcn/toast';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { useTour } from '@/ui/tour';
+} from "@/ui/shadcn/dropdown-menu";
+import { toast } from "@/ui/shadcn/toast";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useTour } from "@/ui/tour";
 
-import { FeedbackButton } from './FeedbackButton';
-import { MeetingPlayer } from './MeetingPlayer';
-import { MeetingChatPanel } from './MeetingChatPanel';
-import { MeetingSummaryRender } from './MeetingSummaryRender';
-import { ReportsTab } from './ReportsTab';
-import { ShareDialog } from './ShareDialog';
-import { VisibilityDialog } from './VisibilityDialog';
-import { HighlightCreatorDialog } from './HighlightCreatorDialog';
-import { fmtTime, fmtDurationCompact } from './format-utils';
+import { FeedbackButton } from "./FeedbackButton";
+import { MeetingPlayer } from "./MeetingPlayer";
+import { MeetingChatPanel } from "./MeetingChatPanel";
+import { MeetingSummaryRender } from "./MeetingSummaryRender";
+import { ReportsTab } from "./ReportsTab";
+import { ShareDialog } from "./ShareDialog";
+import { VisibilityDialog } from "./VisibilityDialog";
+import { HighlightCreatorDialog } from "./HighlightCreatorDialog";
+import { fmtTime, fmtDurationCompact } from "./format-utils";
 import {
   structuredFieldLabel,
   isEmptyStructuredValue,
   StructuredFieldValue,
-} from './structured-report';
-import { ReportActions } from './ReportActions';
+} from "./structured-report";
+import { ReportActions } from "./ReportActions";
 import {
   NextStepsSection,
   collectNextSteps,
   NEXT_STEP_KEYS,
-} from './NextStepsSection';
+} from "./NextStepsSection";
 
 type TabKey =
-  | 'overview'
-  | 'reports'
-  | 'chapters'
-  | 'transcript'
-  | 'chat'
-  | 'tasks';
+  | "overview"
+  | "reports"
+  | "chapters"
+  | "transcript"
+  | "chat"
+  | "tasks";
 
 export type MeetingResultPageRealProps = {
   meetingId: string;
 };
 
-export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps) {
-  // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «meeting» при первом
-  // открытии страницы результата встречи. Если уже завершён/пропущен — no-op.
-  useTour('meeting');
+export function MeetingResultPageReal({
+  meetingId,
+}: MeetingResultPageRealProps) {
+  useTour("meeting");
 
-  // Базовая встреча.
   const {
     meeting,
     isLoading: meetingLoading,
     mutate: mutateMeeting,
   } = useMeeting(meetingId);
 
-  /**
-   * ТЗ-2 Фаза 4 — честный UI обработки. `aiProcessing` истинно, пока встреча
-   * НЕ дошла до финального AI-статуса (`ai_ready` / `ai_failed` / `failed`).
-   * Пока он истинен — показываем баннер «Отчёт готовится» и держим поллинг.
-   *
-   * Поллинг самой встречи (а значит — обновление `meeting.status`) обеспечивает
-   * внутренний `refreshInterval` хука `useMeeting` на время AI-обработки;
-   * здесь же мы поллим SWR результата, чтобы отчёт подтянулся, как только будет
-   * готов. Когда статус становится финальным → `aiProcessing=false` →
-   * `refreshInterval=0` → поллинг встаёт.
-   */
   const aiProcessing =
-    !!meeting && !['ai_ready', 'ai_failed', 'failed'].includes(meeting.status);
+    !!meeting && !["ai_ready", "ai_failed", "failed"].includes(meeting.status);
 
-  // Детальный «result» с aiResult и recording info.
   const {
     data: result,
     isLoading: resultLoading,
     mutate: mutateResult,
   } = useSWR(
-    meetingId ? ['meeting-result', meetingId] : null,
+    meetingId ? ["meeting-result", meetingId] : null,
     () => meetingsApi.result(meetingId),
     { revalidateOnFocus: false, refreshInterval: aiProcessing ? 15000 : 0 },
   );
 
   const { chapters, mutate: mutateChapters } = useMeetingChapters(meetingId);
   const { tasks, mutate: mutateTasks } = useMeetingTasks(meetingId);
-  const { highlights, mutate: mutateHighlights } = useMeetingHighlights(meetingId);
+  const { highlights, mutate: mutateHighlights } =
+    useMeetingHighlights(meetingId);
   const { messages: roomMessages } = useMeetingRoomMessages(meetingId);
 
   const player = useVideoPlayer();
   const [currentMs, setCurrentMs] = useState(0);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [shareOpen, setShareOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
 
@@ -199,35 +165,21 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     [result],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка для UI:
-   * fast → v2 → legacy. Возвращает `{ markdown, source }` либо `null`.
-   */
   const primarySummary = useMemo(
     () => pickPrimarySummary(aiResult),
     [aiResult],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные главы:
-   * если есть fast → только fast, иначе v2 + legacy.
-   */
   const primaryChapters = useMemo(
     () => pickPrimaryChapters(chapters),
     [chapters],
   );
 
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетные задачи:
-   * если есть fast → только fast, иначе v2 + legacy + ручные.
-   */
   const primaryTasks = useMemo(() => pickPrimaryTasks(tasks), [tasks]);
 
-  // Presigned URL — отдельный endpoint; null-ключ отключает запрос до готовности.
-  // Хук должен быть ДО любых early return'ов (Rules of Hooks).
   const isRecordingReady = result?.recording?.hasRecording === true;
   const { data: downloadData } = useSWR(
-    isRecordingReady ? ['recording-download', meetingId] : null,
+    isRecordingReady ? ["recording-download", meetingId] : null,
     () => meetingsApi.downloadUrl(meetingId),
     { revalidateOnFocus: false },
   );
@@ -238,7 +190,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     setCurrentMs(ms);
   };
 
-  // Скелетон — только истинная первичная загрузка (встречи ещё нет).
   if (meetingLoading && !meeting) {
     return <MeetingResultSkeleton />;
   }
@@ -259,18 +210,12 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
     );
   }
 
-  // ТЗ-2 Фаза 4 — пока встреча обрабатывается и отчёта ещё нет, показываем
-  // честный баннер «Отчёт готовится» вместо бесконечного скелетона/пустоты.
-  // Поллинг (refreshInterval выше) сам подтянет отчёт и сменит экран.
   if (aiProcessing && !result) {
     return <ReportProcessingBanner title={meeting.title} />;
   }
 
   const recording = result?.recording;
 
-  // Длительность в миллисекундах: приоритет — meeting.durationMs, fallback — recording.
-  // S6-12: meeting.durationMs может быть 0 (FSM не проставил) при реальной
-  // записи — тогда берём длительность из recording, а не показываем «—»/«0м».
   const durationMs =
     meeting.durationMs && meeting.durationMs > 0
       ? meeting.durationMs
@@ -280,7 +225,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
 
   return (
     <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
-      {/* Center column */}
+      {}
       <div className="flex min-w-0 flex-col gap-5">
         <MeetingHeader
           meeting={meeting}
@@ -292,11 +237,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           }}
         />
 
-        {/*
-         * Развязка записи от AI-статуса: если AI-ветка упала (`ai_failed`) или
-         * встреча в `failed`, но запись готова — показываем НЕнавязчивый баннер
-         * и НЕ прячем плеер ниже.
-         */}
+        {}
         <AiFailedBanner
           status={meeting.status}
           hasRecording={isRecordingReady}
@@ -320,7 +261,10 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
           onMutate={mutateHighlights}
         />
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabKey)}>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as TabKey)}
+        >
           <TabsList>
             <TabsTrigger value="overview" data-tour-target="meeting.ai-report">
               <FileText size={14} strokeWidth={1.75} />
@@ -339,7 +283,10 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                 </span>
               )}
             </TabsTrigger>
-            <TabsTrigger value="transcript" data-tour-target="meeting.transcript">
+            <TabsTrigger
+              value="transcript"
+              data-tour-target="meeting.transcript"
+            >
               <MessageSquareText size={14} strokeWidth={1.75} />
               Транскрипт
             </TabsTrigger>
@@ -382,12 +329,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                   tasksCount={primaryTasks.length}
                   highlightsCount={highlights.length}
                 />
-                {/*
-                 * Zoom-модель (commercial-reliability pack, 2026-05-30, Фаза 3):
-                 * хост видит участников встречи и может переименовать гостей
-                 * (тех, у кого `isRegisteredUser=false`). Зарегистрированных
-                 * нельзя — их имя из User.name.
-                 */}
+                {}
                 {result?.participants && (
                   <div className="mt-4">
                     <ParticipantsSection
@@ -397,15 +339,15 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
                     />
                   </div>
                 )}
-                {/* Фаза A.3 — Кнопка обратной связи 👍/👎 на AI-отчёт. */}
+                {}
                 <div className="mt-4">
                   <FeedbackButton meetingId={meetingId} />
                 </div>
-                {/* Фаза C — AI-оценка качества встречи (ПОСЛЕ AI-отчёта, ПЕРЕД поведением). Видна только хосту/org-admin: backend возвращает 403 для остальных, секция автоматически скрывается. */}
+                {}
                 <div className="mt-6">
                   <MeetingQualityScoreSection meetingId={meetingId} />
                 </div>
-                {/* Фаза B — Поведение участников (рядом с summary). */}
+                {}
                 <div className="mt-6">
                   <MeetingBehaviorSection meetingId={meetingId} />
                 </div>
@@ -445,7 +387,7 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
         </Tabs>
       </div>
 
-      {/* Right column — AI chat */}
+      {}
       <MeetingChatPanel meetingId={meetingId} onSeek={onSeek} />
 
       <ShareDialog
@@ -465,8 +407,6 @@ export function MeetingResultPageReal({ meetingId }: MeetingResultPageRealProps)
   );
 }
 
-// ─────────────── Header ───────────────
-
 function MeetingHeader({
   meeting,
   durationMs,
@@ -479,18 +419,19 @@ function MeetingHeader({
   onMutateMeeting: () => void;
 }) {
   const router = useRouter();
-  const typeLabel = MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
+  const typeLabel =
+    MEETING_TYPE_LABEL_RU[meeting.type as MeetingType] ?? meeting.type;
   const { ask, dialog: confirmDialog } = useConfirmDialog();
   const [visibilityOpen, setVisibilityOpen] = useState(false);
 
-  // Список юзерских и системных шаблонов для regenerate sub-menu.
   const { data: templatesData } = useSWR(
-    'templates-list',
+    "templates-list",
     () => templatesApi.list(),
     { revalidateOnFocus: false },
   );
   const templates = useMemo(
-    () => (templatesData?.items ? templatesData.items.map(templateFromApi) : []),
+    () =>
+      templatesData?.items ? templatesData.items.map(templateFromApi) : [],
     [templatesData],
   );
 
@@ -500,30 +441,30 @@ function MeetingHeader({
         expectedRecapVersion: meeting.recapVersion,
         ...(templateId !== undefined ? { templateId } : {}),
       });
-      toast.success('Регенерация запущена');
+      toast.success("Регенерация запущена");
       onMutateMeeting();
     } catch (e) {
       if (e instanceof ApiError) {
-        if (e.code === 'recap_version_mismatch') {
-          toast.error('Кто-то уже перегенерирует встречу. Обновляю...');
+        if (e.code === "recap_version_mismatch") {
+          toast.error("Кто-то уже перегенерирует встречу. Обновляю...");
           onMutateMeeting();
           return;
         }
-        if (e.code === 'quota_exceeded' || e.code === 'http_429') {
-          toast.error('Лимит регенераций исчерпан, попробуйте через час.');
+        if (e.code === "quota_exceeded" || e.code === "http_429") {
+          toast.error("Лимит регенераций исчерпан, попробуйте через час.");
           return;
         }
         toast.error(humanizeApiError(e));
         return;
       }
-      toast.error('Не удалось запустить регенерацию');
+      toast.error("Не удалось запустить регенерацию");
     }
   };
 
-  const onExport = async (format: 'md' | 'docx') => {
+  const onExport = async (format: "md" | "docx") => {
     try {
       const job =
-        format === 'md'
+        format === "md"
           ? await exportsApi.meetingMd(meeting.id)
           : await exportsApi.meetingDocx(meeting.id);
       toast.success(
@@ -531,41 +472,40 @@ function MeetingHeader({
       );
       void job;
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка экспорта');
+      const msg = humanizeApiError(e, "Ошибка экспорта");
       toast.error(msg);
     }
   };
 
   const onDelete = async () => {
     const ok = await ask({
-      title: 'Удалить встречу?',
-      description: 'Запись будет помечена как удалённая.',
-      confirmLabel: 'Удалить',
+      title: "Удалить встречу?",
+      description: "Запись будет помечена как удалённая.",
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await meetingsApi.softDelete(meeting.id);
-      toast.success('Встреча удалена');
-      router.push('/meetings');
+      toast.success("Встреча удалена");
+      router.push("/meetings");
     } catch (e) {
-      const msg = humanizeApiError(e, 'Не удалось удалить');
+      const msg = humanizeApiError(e, "Не удалось удалить");
       toast.error(msg);
     }
   };
 
-  // ТЗ 2026-06-06 knowledge-access (Ф7) — пометить закрытость встречи постфактум.
-  const onSetClosedGroup = async (value: ClosedGroupKind | 'none') => {
+  const onSetClosedGroup = async (value: ClosedGroupKind | "none") => {
     const label =
-      CLOSED_GROUP_OPTIONS.find((o) => o.value === value)?.label ?? '';
+      CLOSED_GROUP_OPTIONS.find((o) => o.value === value)?.label ?? "";
     try {
       await meetingsApi.setClosedGroup(
         meeting.id,
-        value === 'none' ? null : value,
+        value === "none" ? null : value,
       );
       toast.success(`Доступ обновлён: ${label}`);
     } catch (e) {
-      const msg = humanizeApiError(e, 'Не удалось изменить доступ');
+      const msg = humanizeApiError(e, "Не удалось изменить доступ");
       toast.error(msg);
     }
   };
@@ -585,22 +525,27 @@ function MeetingHeader({
             {meeting.title}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-secondary">
-            <Badge variant="outline" className="border-accent-border bg-accent-muted text-accent">
+            <Badge
+              variant="outline"
+              className="border-accent-border bg-accent-muted text-accent"
+            >
               {typeLabel}
             </Badge>
             <span className="inline-flex items-center gap-1.5">
               <Clock size={12} strokeWidth={1.75} />
-              <span className="font-mono">{fmtDurationCompact(durationMs)}</span>
+              <span className="font-mono">
+                {fmtDurationCompact(durationMs)}
+              </span>
             </span>
             {meeting.startedAt && (
-              <span>{meeting.startedAt.toLocaleString('ru-RU')}</span>
+              <span>{meeting.startedAt.toLocaleString("ru-RU")}</span>
             )}
             <span className="font-mono text-xs text-fg-tertiary">
               v{meeting.recapVersion}
             </span>
             <span className="inline-flex items-center gap-1.5 text-fg-tertiary">
               <Eye size={12} strokeWidth={1.75} />
-              Кому видно:{' '}
+              Кому видно:{" "}
               <span className="text-fg-secondary">
                 {visibilityScopeLabel(meeting.visibilityScope)}
               </span>
@@ -626,11 +571,15 @@ function MeetingHeader({
                 С тем же шаблоном
               </DropdownMenuItem>
               <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Использовать другой шаблон…</DropdownMenuSubTrigger>
+                <DropdownMenuSubTrigger>
+                  Использовать другой шаблон…
+                </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56">
                   <DropdownMenuLabel>Шаблоны</DropdownMenuLabel>
                   {templates.length === 0 && (
-                    <DropdownMenuItem disabled>Нет доступных шаблонов</DropdownMenuItem>
+                    <DropdownMenuItem disabled>
+                      Нет доступных шаблонов
+                    </DropdownMenuItem>
                   )}
                   {templates.map((t) => (
                     <DropdownMenuItem
@@ -639,7 +588,9 @@ function MeetingHeader({
                     >
                       {t.name}
                       {t.isSystem && (
-                        <span className="ml-1 text-[10px] text-fg-tertiary">·system</span>
+                        <span className="ml-1 text-[10px] text-fg-tertiary">
+                          ·system
+                        </span>
                       )}
                     </DropdownMenuItem>
                   ))}
@@ -657,10 +608,10 @@ function MeetingHeader({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => void onExport('md')}>
+              <DropdownMenuItem onSelect={() => void onExport("md")}>
                 Markdown (.md)
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void onExport('docx')}>
+              <DropdownMenuItem onSelect={() => void onExport("docx")}>
                 Word (.docx)
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -732,13 +683,8 @@ function MeetingHeader({
 }
 
 function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
-  // Консолидация отчётов (ТЗ 2026-06-11 §1.2.1): главы/задачи теперь делает
-  // единый meeting-report-fast, отдельных воркеров chapters/tasks больше нет —
-  // их статусы (chaptersStatus/tasksStatus) более не выставляются и убраны из
-  // условия (иначе спиннер висел бы вечно). Остаётся embeddingsStatus
-  // (transcript-index жив).
   const states = [meeting.embeddingsStatus];
-  const inProgress = states.some((s) => s === 'queued' || s === 'processing');
+  const inProgress = states.some((s) => s === "queued" || s === "processing");
   if (!inProgress) return null;
   return (
     <div className="flex items-center gap-3 rounded-md border border-accent-border bg-accent-muted px-4 py-2.5 text-sm text-accent">
@@ -748,23 +694,12 @@ function ProcessingBanner({ meeting }: { meeting: MeetingDomain }) {
   );
 }
 
-/**
- * Баннер «AI-отчёт не сформирован». Показывается, когда AI-ветка упала, но
- * запись доступна — чтобы не прятать готовое видео и при этом честно сообщить
- * о сбое отчёта.
- *
- *  - `ai_failed`        — упала ТОЛЬКО AI-ветка, запись в порядке.
- *  - `failed` + запись  — та же болезнь: показываем баннер, но НЕ прячем плеер.
- *
- * При `failed` без записи баннер не нужен (там нечего показывать — этим занят
- * отдельный экран ошибки).
- */
 function AiFailedBanner({
   status,
   hasRecording,
   failureReason,
 }: {
-  status: MeetingDomain['status'];
+  status: MeetingDomain["status"];
   hasRecording: boolean;
   failureReason?: string | null;
 }) {
@@ -772,11 +707,10 @@ function AiFailedBanner({
   const shouldShow = view.isAiFailed || (view.isFailed && hasRecording);
   if (!shouldShow) return null;
 
-  // Встреча создана, но так и не была начата — нет ни записи, ни отчёта.
   const neverHeld =
     view.isFailed &&
-    (failureReason === 'never_activated' ||
-      failureReason === 'ended_before_start');
+    (failureReason === "never_activated" ||
+      failureReason === "ended_before_start");
 
   if (neverHeld) {
     return (
@@ -784,7 +718,11 @@ function AiFailedBanner({
         role="status"
         className="flex items-start gap-3 rounded-md border border-chip-warning-bg bg-chip-warning-bg px-4 py-2.5 text-sm text-chip-warning-fg"
       >
-        <AlertTriangle size={16} strokeWidth={1.75} className="mt-0.5 shrink-0" />
+        <AlertTriangle
+          size={16}
+          strokeWidth={1.75}
+          className="mt-0.5 shrink-0"
+        />
         <div>
           <div className="font-medium">Встреча не состоялась</div>
           <div className="mt-0.5 opacity-90">
@@ -812,15 +750,13 @@ function AiFailedBanner({
   );
 }
 
-// ─────────────── Highlights strip ───────────────
-
 function HighlightsStrip({
   highlights,
   onCreate,
   onSeek,
   onMutate,
 }: {
-  highlights: ReturnType<typeof useMeetingHighlights>['highlights'];
+  highlights: ReturnType<typeof useMeetingHighlights>["highlights"];
   onCreate: () => void;
   onSeek: (ms: number) => void;
   onMutate: () => void;
@@ -870,7 +806,7 @@ function HighlightCard({
   onSeek,
   onMutate,
 }: {
-  highlight: ReturnType<typeof useMeetingHighlights>['highlights'][number];
+  highlight: ReturnType<typeof useMeetingHighlights>["highlights"][number];
   onSeek: (ms: number) => void;
   onMutate: () => void;
 }) {
@@ -879,32 +815,33 @@ function HighlightCard({
   const onDownload = async () => {
     setDownloading(true);
     try {
-      if (highlight.renderStatus !== 'ready') {
+      if (highlight.renderStatus !== "ready") {
         const res = await highlightsApi.renderMp4(highlight.id);
-        if (res.status === 'ready') {
-          // ничего, переход дальше через download
+        if (res.status === "ready") {
         } else {
-          toast.success('Рендер MP4 запущен. Скоро появится ссылка для скачивания.');
+          toast.success(
+            "Рендер MP4 запущен. Скоро появится ссылка для скачивания.",
+          );
           onMutate();
           return;
         }
       }
       const dl = await highlightsApi.download(highlight.id);
-      window.open(dl.url, '_blank', 'noopener');
+      window.open(dl.url, "_blank", "noopener");
     } catch (e) {
       if (e instanceof ApiError) {
-        if (e.code === 'render_in_progress' || e.code === 'http_409') {
-          toast.message('Рендер уже идёт. Попробуйте через минуту.');
+        if (e.code === "render_in_progress" || e.code === "http_409") {
+          toast.message("Рендер уже идёт. Попробуйте через минуту.");
           return;
         }
-        if (e.code === 'http_429' || e.code === 'quota_exceeded') {
-          toast.error('Превышен лимит рендеринга MP4.');
+        if (e.code === "http_429" || e.code === "quota_exceeded") {
+          toast.error("Превышен лимит рендеринга MP4.");
           return;
         }
         toast.error(humanizeApiError(e));
         return;
       }
-      toast.error('Ошибка при скачивании');
+      toast.error("Ошибка при скачивании");
     } finally {
       setDownloading(false);
     }
@@ -922,7 +859,7 @@ function HighlightCard({
             {highlight.title}
           </div>
           <div className="font-mono text-xs text-fg-tertiary">
-            {fmtTime(highlight.startMs)} – {fmtTime(highlight.endMs)} ·{' '}
+            {fmtTime(highlight.startMs)} – {fmtTime(highlight.endMs)} ·{" "}
             {fmtTime(highlight.durationMs)}
           </div>
         </div>
@@ -936,8 +873,12 @@ function HighlightCard({
           onClick={onDownload}
           disabled={downloading}
         >
-          {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-          {highlight.renderStatus === 'ready' ? 'MP4' : 'Запустить рендер'}
+          {downloading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Download size={12} />
+          )}
+          {highlight.renderStatus === "ready" ? "MP4" : "Запустить рендер"}
         </Button>
       </div>
     </article>
@@ -947,20 +888,26 @@ function HighlightCard({
 function RenderStatusBadge({
   status,
 }: {
-  status: ReturnType<typeof useMeetingHighlights>['highlights'][number]['renderStatus'];
+  status: ReturnType<
+    typeof useMeetingHighlights
+  >["highlights"][number]["renderStatus"];
 }) {
   const map: Record<typeof status, { label: string; cls: string }> = {
-    none: { label: 'без MP4', cls: 'text-fg-tertiary' },
-    queued: { label: 'в очереди', cls: 'text-warning' },
-    processing: { label: 'рендер...', cls: 'text-warning' },
-    ready: { label: 'MP4 готов', cls: 'text-accent' },
-    failed: { label: 'ошибка', cls: 'text-danger' },
+    none: { label: "без MP4", cls: "text-fg-tertiary" },
+    queued: { label: "в очереди", cls: "text-warning" },
+    processing: { label: "рендер...", cls: "text-warning" },
+    ready: { label: "MP4 готов", cls: "text-accent" },
+    failed: { label: "ошибка", cls: "text-danger" },
   };
   const v = map[status];
-  return <span className={cn('font-mono text-[10px] uppercase tracking-wider', v.cls)}>{v.label}</span>;
+  return (
+    <span
+      className={cn("font-mono text-[10px] uppercase tracking-wider", v.cls)}
+    >
+      {v.label}
+    </span>
+  );
 }
-
-// ─────────────── Tabs ───────────────
 
 function OverviewTab({
   meeting,
@@ -975,11 +922,7 @@ function OverviewTab({
 }: {
   meeting: MeetingDomain;
   durationMs: number | null;
-  /**
-   * Результат `pickPrimarySummary`: `{ markdown, source: 'fast'|'legacy' }`
-   * либо `null` если ни одного варианта нет.
-   */
-  primarySummary: { markdown: string; source: 'fast' | 'legacy' } | null;
+  primarySummary: { markdown: string; source: "fast" | "legacy" } | null;
   followUpEmail: string | null;
   structuredData: unknown;
   customMd: string | null;
@@ -988,35 +931,27 @@ function OverviewTab({
   highlightsCount: number;
 }) {
   const stats: Array<{ label: string; value: string | number }> = [
-    { label: 'Главы', value: chaptersCount },
-    { label: 'Задачи', value: tasksCount },
-    { label: 'Клипы', value: highlightsCount },
-    { label: 'Длительность', value: fmtDurationCompact(durationMs) },
+    { label: "Главы", value: chaptersCount },
+    { label: "Задачи", value: tasksCount },
+    { label: "Клипы", value: highlightsCount },
+    { label: "Длительность", value: fmtDurationCompact(durationMs) },
   ];
 
-  /**
-   * Ф5а — «следующие шаги» отчёта выносим отдельной секцией с кнопкой «В задачу»
-   * (вместо generic-грида StructuredDataCard, где они исключены NEXT_STEP_KEYS).
-   */
   const nextSteps = useMemo(
     () => collectNextSteps(structuredData),
     [structuredData],
   );
 
-  /**
-   * Волна 4, B1.4 — клиентский протокол. Backend кладёт нейтральный текст для
-   * отправки клиенту в `structuredData.client_protocol_md` (markdown-строка).
-   * Рендерим его отдельной секцией «Протокол для клиента» (ниже), а из общего
-   * generic-грида `StructuredDataCard` ключ исключён, чтобы не дублировать.
-   */
   const clientProtocolMd =
     structuredData &&
-    typeof structuredData === 'object' &&
+    typeof structuredData === "object" &&
     typeof (structuredData as Record<string, unknown>).client_protocol_md ===
-      'string'
-      ? ((structuredData as Record<string, unknown>)
-          .client_protocol_md as string).trim()
-      : '';
+      "string"
+      ? (
+          (structuredData as Record<string, unknown>)
+            .client_protocol_md as string
+        ).trim()
+      : "";
 
   return (
     <div className="flex flex-col gap-4">
@@ -1024,11 +959,7 @@ function OverviewTab({
       {primarySummary && (
         <Card>
           <CardHeader title="Краткое содержание" />
-          {/*
-           * `fast` и `v2` приходят как markdown. `legacy` исторически приходит
-           * как plain-text, но markdown-рендер совместим (отсутствие разметки
-           * выглядит как обычный текст).
-           */}
+          {}
           <MeetingSummaryRender markdown={primarySummary.markdown} />
         </Card>
       )}
@@ -1039,7 +970,9 @@ function OverviewTab({
           </div>
         </Card>
       )}
-      {clientProtocolMd ? <ClientProtocolCard markdown={clientProtocolMd} /> : null}
+      {clientProtocolMd ? (
+        <ClientProtocolCard markdown={clientProtocolMd} />
+      ) : null}
       {nextSteps.length > 0 ? (
         <NextStepsSection meetingId={meeting.id} steps={nextSteps} />
       ) : null}
@@ -1057,7 +990,6 @@ function OverviewTab({
   );
 }
 
-/** Русская плюрализация: pluralRu(1,'реплика','реплики','реплик') → 'реплика'. */
 function pluralRu(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -1066,7 +998,11 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-function StatsRow({ stats }: { stats: Array<{ label: string; value: string | number }> }) {
+function StatsRow({
+  stats,
+}: {
+  stats: Array<{ label: string; value: string | number }>;
+}) {
   return (
     <div
       className="grid gap-px overflow-hidden rounded-xl border border-border-subtle bg-border-subtle"
@@ -1086,26 +1022,15 @@ function StatsRow({ stats }: { stats: Array<{ label: string; value: string | num
   );
 }
 
-/** Ключи отчёта с отдельным (не-generic) рендером — вынимаются из общего грида. */
 const STRUCTURED_SPECIAL_KEYS = new Set([
-  'data_quality',
-  'churn_risk_quote',
-  'ideas',
-  'proposals',
-  // Волна 4, B1.4 — клиентский протокол рендерится ОТДЕЛЬНОЙ секцией
-  // «Протокол для клиента» (ClientProtocolCard) над StructuredDataCard, поэтому
-  // из общего generic-грида он исключён, чтобы не дублироваться.
-  'client_protocol_md',
-  // Ф5а — «следующие шаги» рендерятся отдельной секцией NextStepsSection с
-  // кнопкой «В задачу» (над StructuredDataCard), поэтому из generic-грида
-  // исключены, чтобы не дублироваться.
+  "data_quality",
+  "churn_risk_quote",
+  "ideas",
+  "proposals",
+  "client_protocol_md",
   ...NEXT_STEP_KEYS,
 ]);
 
-/**
- * data_quality (строка) — приглушённый блок-бейдж «Качество данных» ВНЕ грида.
- * Это НЕ оценка качества встречи (QualityScore) — это полнота входных данных отчёта.
- */
 function DataQualityBadge({ value }: { value: unknown }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-base px-4 py-3">
@@ -1122,7 +1047,6 @@ function DataQualityBadge({ value }: { value: unknown }) {
   );
 }
 
-/** churn_risk_quote (строка) — выделенная цитата риска оттока. */
 function ChurnRiskQuote({ value }: { value: unknown }) {
   return (
     <Card>
@@ -1136,7 +1060,6 @@ function ChurnRiskQuote({ value }: { value: unknown }) {
   );
 }
 
-/** ideas / proposals (массивы) — отдельная секция с лампочкой, отличная от Задач. */
 function IdeasSection({ entries }: { entries: Array<[string, unknown]> }) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1157,19 +1080,21 @@ function IdeasSection({ entries }: { entries: Array<[string, unknown]> }) {
 
 function StructuredDataCard({ data }: { data: unknown }) {
   const entries = useMemo(() => {
-    if (!data || typeof data !== 'object') return [];
+    if (!data || typeof data !== "object") return [];
     return Object.entries(data as Record<string, unknown>).filter(
       ([, v]) => !isEmptyStructuredValue(v),
     );
   }, [data]);
   if (entries.length === 0) return null;
 
-  const genericEntries = entries.filter(([k]) => !STRUCTURED_SPECIAL_KEYS.has(k));
-  const ideasEntries = entries.filter(
-    ([k]) => k === 'ideas' || k === 'proposals',
+  const genericEntries = entries.filter(
+    ([k]) => !STRUCTURED_SPECIAL_KEYS.has(k),
   );
-  const dataQuality = entries.find(([k]) => k === 'data_quality');
-  const churnQuote = entries.find(([k]) => k === 'churn_risk_quote');
+  const ideasEntries = entries.filter(
+    ([k]) => k === "ideas" || k === "proposals",
+  );
+  const dataQuality = entries.find(([k]) => k === "data_quality");
+  const churnQuote = entries.find(([k]) => k === "churn_risk_quote");
 
   return (
     <div className="flex flex-col gap-3">
@@ -1206,7 +1131,7 @@ function FollowUpCard({ text }: { text: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
   return (
@@ -1216,7 +1141,7 @@ function FollowUpCard({ text }: { text: string }) {
         accessory={
           <Button variant="outline" size="sm" onClick={onCopy}>
             <Copy size={12} />
-            {copied ? 'Скопировано' : 'Скопировать'}
+            {copied ? "Скопировано" : "Скопировать"}
           </Button>
         }
       />
@@ -1227,12 +1152,6 @@ function FollowUpCard({ text }: { text: string }) {
   );
 }
 
-/**
- * Волна 4, B1.4 — клиентский протокол. Нейтральный текст для отправки клиенту
- * (markdown), который backend кладёт в `structuredData.client_protocol_md`.
- * Отдельная секция со своей кнопкой «Скопировать» (по образцу FollowUpCard),
- * markdown-рендер через тот же `MeetingSummaryRender`, что и краткое содержание.
- */
 function ClientProtocolCard({ markdown }: { markdown: string }) {
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {
@@ -1241,7 +1160,7 @@ function ClientProtocolCard({ markdown }: { markdown: string }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
   return (
@@ -1251,7 +1170,7 @@ function ClientProtocolCard({ markdown }: { markdown: string }) {
         accessory={
           <Button variant="outline" size="sm" onClick={onCopy}>
             <Copy size={12} />
-            {copied ? 'Скопировано' : 'Скопировать'}
+            {copied ? "Скопировано" : "Скопировать"}
           </Button>
         }
       />
@@ -1270,22 +1189,22 @@ function ChaptersTab({
   onMutate,
 }: {
   meetingId: string;
-  chapters: ReturnType<typeof useMeetingChapters>['chapters'];
+  chapters: ReturnType<typeof useMeetingChapters>["chapters"];
   onSeek: (ms: number) => void;
   onMutate: () => void;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftTitle, setDraftTitle] = useState('');
+  const [draftTitle, setDraftTitle] = useState("");
   const [adding, setAdding] = useState(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const onRegenerate = async () => {
     try {
       await chaptersApi.regenerate(meetingId);
-      toast.success('Регенерация глав запущена');
+      toast.success("Регенерация глав запущена");
       onMutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
@@ -1294,46 +1213,46 @@ function ChaptersTab({
     if (!draftTitle.trim()) return;
     try {
       await chaptersApi.update(id, { title: draftTitle.trim() });
-      toast.success('Глава обновлена');
+      toast.success("Глава обновлена");
       setEditingId(null);
       onMutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
 
   const onDelete = async (id: string) => {
     const ok = await ask({
-      title: 'Удалить главу?',
-      confirmLabel: 'Удалить',
+      title: "Удалить главу?",
+      confirmLabel: "Удалить",
       destructive: true,
     });
     if (!ok) return;
     try {
       await chaptersApi.remove(id);
-      toast.success('Удалено');
+      toast.success("Удалено");
       onMutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
 
   const onAdd = async (form: HTMLFormElement) => {
     const fd = new FormData(form);
-    const title = String(fd.get('title') ?? '').trim();
-    const startMs = Number(fd.get('startMs') ?? 0);
-    const endMs = Number(fd.get('endMs') ?? startMs + 60_000);
+    const title = String(fd.get("title") ?? "").trim();
+    const startMs = Number(fd.get("startMs") ?? 0);
+    const endMs = Number(fd.get("endMs") ?? startMs + 60_000);
     if (!title) return;
     try {
       await chaptersApi.create(meetingId, { title, startMs, endMs });
-      toast.success('Глава добавлена');
+      toast.success("Глава добавлена");
       setAdding(false);
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
@@ -1378,13 +1297,16 @@ function ChaptersTab({
             className="w-32 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 font-mono text-sm outline-none"
             defaultValue={60000}
           />
-          <Button type="submit" size="sm">Сохранить</Button>
+          <Button type="submit" size="sm">
+            Сохранить
+          </Button>
         </form>
       )}
       {chapters.length === 0 ? (
         <Card>
           <div className="py-6 text-center text-sm text-fg-secondary">
-            Глав ещё нет. Запустите автоматическое определение или добавьте вручную.
+            Глав ещё нет. Запустите автоматическое определение или добавьте
+            вручную.
           </div>
         </Card>
       ) : (
@@ -1459,13 +1381,13 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
   const [copied, setCopied] = useState(false);
 
   const { data, error, isLoading } = useSWR(
-    ['transcript', meetingId],
+    ["transcript", meetingId],
     () => meetingsApi.transcript(meetingId),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
   const { data: tracksData } = useSWR(
-    meetingId ? ['audio-tracks', meetingId] : null,
+    meetingId ? ["audio-tracks", meetingId] : null,
     () => meetingsApi.audioTracks(meetingId),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
@@ -1475,13 +1397,13 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
     if (turns.length === 0) return;
     const text = turns
       .map((t) => `[${formatSec(t.startSec)}] ${t.speaker}: ${t.text}`)
-      .join('\n');
+      .join("\n");
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
 
@@ -1523,8 +1445,8 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
       {hasTracks && (
         <div className="rounded-xl border border-border-subtle bg-bg-card p-4">
           <h3 className="mb-3 text-sm font-semibold text-fg-primary">
-            Аудиодорожки · {tracksData!.tracks.length}{' '}
-            {tracksData!.tracks.length === 1 ? 'участник' : 'участника'}
+            Аудиодорожки · {tracksData!.tracks.length}{" "}
+            {tracksData!.tracks.length === 1 ? "участник" : "участника"}
           </h3>
           <div className="flex flex-col gap-3">
             {tracksData!.tracks.map((track) => (
@@ -1556,14 +1478,14 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
         <div className="rounded-xl border border-border-subtle bg-bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-fg-primary">
-              Транскрипт · {data!.turns.length}{' '}
-              {pluralRu(data!.turns.length, 'реплика', 'реплики', 'реплик')}
+              Транскрипт · {data!.turns.length}{" "}
+              {pluralRu(data!.turns.length, "реплика", "реплики", "реплик")}
             </h3>
             <div className="flex items-center gap-2">
               {(data!.durationSeconds ?? 0) > 0 && (
                 <span className="font-mono text-xs text-fg-tertiary">
                   {(data!.durationSeconds ?? 0) < 60
-                    ? '<1 мин'
+                    ? "<1 мин"
                     : `${Math.round((data!.durationSeconds ?? 0) / 60)} мин`}
                 </span>
               )}
@@ -1572,7 +1494,7 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
                 size="icon"
                 onClick={onCopyTranscript}
                 aria-label="Скопировать транскрипт"
-                title={copied ? 'Скопировано' : 'Скопировать транскрипт'}
+                title={copied ? "Скопировано" : "Скопировать транскрипт"}
               >
                 {copied ? <CheckCircle2 size={14} /> : <Copy size={14} />}
               </Button>
@@ -1585,10 +1507,12 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
                   type="button"
                   onClick={() => seekTo(turn.startSec, turn.speaker)}
                   className={cn(
-                    'w-16 shrink-0 pt-0.5 text-left font-mono text-[11px] text-fg-tertiary',
-                    hasTracks && 'cursor-pointer hover:text-accent',
+                    "w-16 shrink-0 pt-0.5 text-left font-mono text-[11px] text-fg-tertiary",
+                    hasTracks && "cursor-pointer hover:text-accent",
                   )}
-                  title={hasTracks ? 'Перейти к этому моменту в аудио' : undefined}
+                  title={
+                    hasTracks ? "Перейти к этому моменту в аудио" : undefined
+                  }
                 >
                   {formatSec(turn.startSec)}
                 </button>
@@ -1620,7 +1544,7 @@ function TranscriptTab({ meetingId }: { meetingId: string }) {
 function formatSec(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 function TasksTab({
@@ -1638,30 +1562,30 @@ function TasksTab({
 
   const onAdd = async (form: HTMLFormElement) => {
     const fd = new FormData(form);
-    const title = String(fd.get('title') ?? '').trim();
+    const title = String(fd.get("title") ?? "").trim();
     if (!title) return;
     try {
       await tasksApi.create(meetingId, {
         title,
-        assigneeRaw: String(fd.get('assignee') ?? '') || null,
+        assigneeRaw: String(fd.get("assignee") ?? "") || null,
       });
-      toast.success('Задача добавлена');
+      toast.success("Задача добавлена");
       setAdding(false);
       onMutate();
       form.reset();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
 
   const onToggleDone = async (task: TaskDomain) => {
-    const next = task.status === 'done' ? 'open' : 'done';
+    const next = task.status === "done" ? "open" : "done";
     try {
       await tasksApi.update(task.id, { status: next });
       onMutate();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Ошибка');
+      const msg = humanizeApiError(e, "Ошибка");
       toast.error(msg);
     }
   };
@@ -1671,7 +1595,8 @@ function TasksTab({
       {tasks.length === 0 && !adding && (
         <Card>
           <div className="py-6 text-center text-sm text-fg-secondary">
-            Задач пока нет. Кора определит их при следующем анализе или добавьте вручную.
+            Задач пока нет. Кора определит их при следующем анализе или добавьте
+            вручную.
           </div>
         </Card>
       )}
@@ -1686,10 +1611,10 @@ function TasksTab({
               type="button"
               onClick={() => void onToggleDone(t)}
               className={cn(
-                'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors',
-                t.status === 'done'
-                  ? 'border-accent bg-accent text-accent-fg'
-                  : 'border-border-strong text-transparent hover:border-accent',
+                "mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition-colors",
+                t.status === "done"
+                  ? "border-accent bg-accent text-accent-fg"
+                  : "border-border-strong text-transparent hover:border-accent",
               )}
               aria-label="Отметить выполненной"
             >
@@ -1698,8 +1623,10 @@ function TasksTab({
             <div className="min-w-0 flex-1">
               <div
                 className={cn(
-                  'text-sm leading-snug',
-                  t.status === 'done' ? 'text-fg-tertiary line-through' : 'text-fg-primary',
+                  "text-sm leading-snug",
+                  t.status === "done"
+                    ? "text-fg-tertiary line-through"
+                    : "text-fg-primary",
                 )}
               >
                 {t.title}
@@ -1712,15 +1639,15 @@ function TasksTab({
                 )}
                 {t.dueDate && (
                   <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
-                    до {t.dueDate.toLocaleDateString('ru-RU')}
+                    до {t.dueDate.toLocaleDateString("ru-RU")}
                   </span>
                 )}
-                {typeof t.confidence === 'number' && (
+                {typeof t.confidence === "number" && (
                   <span className="rounded border border-border-subtle bg-bg-base px-2 py-0.5">
                     Кора · {(t.confidence * 100).toFixed(0)}%
                   </span>
                 )}
-                {typeof t.sourceStartMs === 'number' && (
+                {typeof t.sourceStartMs === "number" && (
                   <button
                     type="button"
                     onClick={() => onSeek(t.sourceStartMs!)}
@@ -1754,8 +1681,15 @@ function TasksTab({
             placeholder="Кому (опционально)"
             className="w-48 rounded-md border border-border-subtle bg-bg-overlay px-3 py-1.5 text-sm outline-none placeholder:text-fg-tertiary"
           />
-          <Button type="submit" size="sm">Сохранить</Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setAdding(false)}>
+          <Button type="submit" size="sm">
+            Сохранить
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdding(false)}
+          >
             Отмена
           </Button>
         </form>
@@ -1774,7 +1708,7 @@ function TasksTab({
 }
 
 function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1786,10 +1720,12 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
     );
   }, [messages, query]);
 
-  // Группировка подряд идущих сообщений одного автора (по `authorIdentity`,
-  // fallback — `authorName`).
   const groups = useMemo(() => {
-    const out: Array<{ author: string; key: string; items: RoomMessageDomain[] }> = [];
+    const out: Array<{
+      author: string;
+      key: string;
+      items: RoomMessageDomain[];
+    }> = [];
     for (const m of filtered) {
       const groupKey = m.authorIdentity || m.authorName;
       const last = out[out.length - 1];
@@ -1847,9 +1783,9 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
                   className="flex items-baseline gap-2"
                 >
                   <span className="shrink-0 font-mono text-[10px] text-fg-tertiary">
-                    {m.sentAt.toLocaleTimeString('ru-RU', {
-                      hour: '2-digit',
-                      minute: '2-digit',
+                    {m.sentAt.toLocaleTimeString("ru-RU", {
+                      hour: "2-digit",
+                      minute: "2-digit",
                     })}
                   </span>
                   <p className="m-0 whitespace-pre-wrap break-words text-sm text-fg-primary">
@@ -1865,19 +1801,13 @@ function RoomChatTab({ messages }: { messages: RoomMessageDomain[] }) {
   );
 }
 
-// ─────────────── Participants (Zoom-rename) ───────────────
-
 type ParticipantRowDto = {
   id: string;
   name: string;
-  role: 'host' | 'guest';
+  role: "host" | "guest";
   isRegisteredUser: boolean;
 };
 
-/**
- * Список участников встречи. Для хоста — inline-edit имени гостя
- * (`isRegisteredUser=false`). Зарегистрированных не редактируем.
- */
 function ParticipantsSection({
   meetingId,
   participants,
@@ -1931,7 +1861,7 @@ function ParticipantRow({
   const onSave = async () => {
     const trimmed = draft.trim();
     if (!trimmed) {
-      toast.error('Имя не может быть пустым');
+      toast.error("Имя не может быть пустым");
       return;
     }
     if (trimmed === participant.name) {
@@ -1943,11 +1873,11 @@ function ParticipantRow({
       await meetingsApi.renameParticipant(meetingId, participant.id, {
         name: trimmed,
       });
-      toast.success('Имя обновлено');
+      toast.success("Имя обновлено");
       setEditing(false);
       onSaved();
     } catch (e) {
-      const msg = humanizeApiError(e, 'Не удалось переименовать');
+      const msg = humanizeApiError(e, "Не удалось переименовать");
       toast.error(msg);
     } finally {
       setSaving(false);
@@ -1964,10 +1894,10 @@ function ParticipantRow({
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   e.preventDefault();
                   void onSave();
-                } else if (e.key === 'Escape') {
+                } else if (e.key === "Escape") {
                   e.preventDefault();
                   onCancel();
                 }
@@ -1982,15 +1912,22 @@ function ParticipantRow({
               {saving ? <Loader2 size={12} className="animate-spin" /> : null}
               Сохранить
             </Button>
-            <Button size="sm" variant="ghost" onClick={onCancel} disabled={saving}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onCancel}
+              disabled={saving}
+            >
               Отмена
             </Button>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <span className="truncate text-sm text-fg-primary">{participant.name}</span>
+            <span className="truncate text-sm text-fg-primary">
+              {participant.name}
+            </span>
             <span className="font-mono text-[10px] uppercase tracking-wider text-fg-tertiary">
-              {participant.role === 'host' ? 'хост' : 'гость'}
+              {participant.role === "host" ? "хост" : "гость"}
             </span>
             {canEdit ? (
               <button
@@ -2010,13 +1947,6 @@ function ParticipantRow({
   );
 }
 
-// ─────────────── Processing banner (отчёт готовится) ───────────────
-
-/**
- * ТЗ-2 Фаза 4 — баннер на весь экран результата, пока встреча ещё не дошла до
- * финального AI-статуса и отчёта пока нет. Заменяет бесконечный скелетон —
- * страница сама обновится поллингом, когда отчёт будет готов.
- */
 function ReportProcessingBanner({ title }: { title?: string }) {
   return (
     <div className="mx-auto max-w-2xl px-4 py-10">
@@ -2037,8 +1967,6 @@ function ReportProcessingBanner({ title }: { title?: string }) {
   );
 }
 
-// ─────────────── Skeleton ───────────────
-
 function MeetingResultSkeleton() {
   return (
     <div className="grid grid-cols-1 gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_400px] lg:px-8">
@@ -2052,8 +1980,6 @@ function MeetingResultSkeleton() {
     </div>
   );
 }
-
-// ─────────────── Primitives ───────────────
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

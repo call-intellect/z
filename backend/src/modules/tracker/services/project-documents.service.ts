@@ -23,27 +23,8 @@ import { ProjectsService } from './projects.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 import { TrackerEventsService } from './tracker-events.service';
 
-/** Длина preview (plain text) в списке документов. */
 const PREVIEW_MAX_LEN = 240;
 
-/**
- * ProjectDocumentsService — CRUD документов проекта + список «Связанные карточки».
- *
- * ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
- *
- * Ключевые принципы:
- *   - tenantId фильтрует все запросы (multi-tenancy).
- *   - `requireProject` через `ProjectsService` — единая точка проверки 404.
- *   - На каждый create/update эмитим `tracker.project_document_changed` для
- *     knowledge-core (TrackerAdapter создаст RawEvent).
- *   - WS-события (`project_document.{created,updated,deleted}`) — через
- *     `TrackerEventsService` (fire-and-forget).
- *   - Soft-delete: `deletedAt`. `restore` снимает `deletedAt`.
- *   - Уникальность `(projectId, title)`: при коллизии — 409
- *     `project_document_title_taken`.
- *   - Sortable: при create — `sortOrder = max+1` (новые в конце); PATCH с
- *     `sortOrder` или `pinned` меняет порядок (UI делает DnD reorder).
- */
 @Injectable()
 export class ProjectDocumentsService {
   private readonly logger = new Logger(ProjectDocumentsService.name);
@@ -59,13 +40,7 @@ export class ProjectDocumentsService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ── CRUD ───────────────────────────────────────────────────────────────
-
-  /** Список документов проекта (плоский, без удалённых). */
-  async listForProject(
-    projectId: string,
-    tenantId: string,
-  ): Promise<ProjectDocumentSummaryDto[]> {
+  async listForProject(projectId: string, tenantId: string): Promise<ProjectDocumentSummaryDto[]> {
     await this.projects.requireProject(projectId, tenantId);
     const rows = await this.prisma.projectDocument.findMany({
       where: { projectId, tenantId, deletedAt: null },
@@ -74,16 +49,11 @@ export class ProjectDocumentsService {
     return rows.map((r) => this.toSummary(r));
   }
 
-  /** Один документ с полным контентом. */
-  async findById(
-    id: string,
-    tenantId: string,
-  ): Promise<ProjectDocumentResponseDto> {
+  async findById(id: string, tenantId: string): Promise<ProjectDocumentResponseDto> {
     const doc = await this.requireDocument(id, tenantId);
     return this.toResponse(doc);
   }
 
-  /** Создать документ. Доступ: project member, RBAC уровень — в контроллере. */
   async create(
     projectId: string,
     dto: CreateProjectDocumentDto,
@@ -113,7 +83,6 @@ export class ProjectDocumentsService {
       }
     }
 
-    // sortOrder = max+1 (новые в конце списка, выше — только pinned).
     const max = await this.prisma.projectDocument.aggregate({
       where: { projectId, tenantId, deletedAt: null },
       _max: { sortOrder: true },
@@ -137,10 +106,7 @@ export class ProjectDocumentsService {
         },
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -173,12 +139,6 @@ export class ProjectDocumentsService {
     return this.toResponse(created);
   }
 
-  /**
-   * PATCH документа. Возвращает полный response (с контентом).
-   *
-   * `userId` — для проверки author/admin permission в контроллере; здесь —
-   * только заполняем `updatedById`.
-   */
   async update(
     id: string,
     dto: UpdateProjectDocumentDto,
@@ -240,10 +200,6 @@ export class ProjectDocumentsService {
       changedFields.push('pinned');
     }
     if (dto.parentId !== undefined && dto.parentId !== existing.parentId) {
-      // audit С19 (2026-05-29): cycle-check. Без него можно сделать
-      // self-parent или закольцевать дерево (A.parent=B; B.parent=A) —
-      // в UI дерево уйдёт в бесконечный рендер, а запросы CTE будут
-      // зависать.
       if (dto.parentId !== null) {
         if (dto.parentId === id) {
           throw new ConflictException({
@@ -254,7 +210,6 @@ export class ProjectDocumentsService {
             },
           });
         }
-        // Идём по цепочке parentId вверх — если встретим текущий id, это цикл.
         let cursorId: string | null = dto.parentId;
         const visited = new Set<string>();
         while (cursorId !== null) {
@@ -263,11 +218,12 @@ export class ProjectDocumentsService {
               ok: false,
               error: {
                 code: 'project_document_cyclic_parent',
-                message: 'Цикл в дереве документов: новый parent ведёт обратно к текущему документу',
+                message:
+                  'Цикл в дереве документов: новый parent ведёт обратно к текущему документу',
               },
             });
           }
-          if (visited.has(cursorId)) break; // защита от уже существующих циклов в БД
+          if (visited.has(cursorId)) break;
           visited.add(cursorId);
           const node: { parentId: string | null } | null =
             await this.prisma.projectDocument.findUnique({
@@ -278,9 +234,7 @@ export class ProjectDocumentsService {
         }
       }
       data.parent =
-        dto.parentId === null
-          ? { disconnect: true }
-          : { connect: { id: dto.parentId } };
+        dto.parentId === null ? { disconnect: true } : { connect: { id: dto.parentId } };
       changedFields.push('parentId');
     }
     if (dto.sortOrder !== undefined && dto.sortOrder !== existing.sortOrder) {
@@ -289,7 +243,6 @@ export class ProjectDocumentsService {
     }
 
     if (changedFields.length === 0) {
-      // Ничего не меняли — возвращаем как есть, БЕЗ side-effects.
       return this.toResponse(existing);
     }
 
@@ -300,10 +253,7 @@ export class ProjectDocumentsService {
         data,
       });
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -323,8 +273,6 @@ export class ProjectDocumentsService {
     const summary = this.toSummary(updated);
     this.events.publishProjectDocumentUpdated(summary, tenantId, changedFields);
 
-    // В knowledge-core — только если изменился контент (или title — title
-    // используется LLM как контекст).
     if (changedFields.includes('content') || changedFields.includes('title')) {
       this.emitter.emitProjectDocumentChanged({
         tenantId,
@@ -341,15 +289,10 @@ export class ProjectDocumentsService {
     return this.toResponse(updated);
   }
 
-  /** Soft-delete (deletedAt). Восстановить — `restore`. */
   async delete(id: string, tenantId: string): Promise<{ ok: true }> {
     const existing = await this.requireDocument(id, tenantId);
     const now = new Date();
 
-    // audit С20 (2026-05-29): soft-delete каскадирует на children, чтобы
-    // в UI не висели «осиротевшие» документы со ссылкой на удалённый
-    // parent. Собираем всё поддерево через BFS (Prisma не умеет рекурсивные
-    // CTE декларативно), потом обновляем одним updateMany.
     const subtreeIds: string[] = [existing.id];
     let frontier: string[] = [existing.id];
     while (frontier.length > 0) {
@@ -379,11 +322,7 @@ export class ProjectDocumentsService {
     return { ok: true };
   }
 
-  /** Восстановить soft-deleted документ (deletedAt=null). */
-  async restore(
-    id: string,
-    tenantId: string,
-  ): Promise<ProjectDocumentResponseDto> {
+  async restore(id: string, tenantId: string): Promise<ProjectDocumentResponseDto> {
     const doc = await this.prisma.projectDocument.findFirst({
       where: { id, tenantId },
     });
@@ -397,7 +336,6 @@ export class ProjectDocumentsService {
       });
     }
     if (!doc.deletedAt) {
-      // уже активен — возвращаем как есть, идемпотентно.
       return this.toResponse(doc);
     }
     const restored = await this.prisma.projectDocument.update({
@@ -409,10 +347,6 @@ export class ProjectDocumentsService {
     return this.toResponse(restored);
   }
 
-  /**
-   * Duplicate: создать копию документа с suffix « (копия)». Использует
-   * `create`, потому что нужны ровно те же побочки (metrics, WS, ingest).
-   */
   async duplicate(
     id: string,
     tenantId: string,
@@ -420,10 +354,8 @@ export class ProjectDocumentsService {
   ): Promise<ProjectDocumentResponseDto> {
     const src = await this.requireDocument(id, tenantId);
     const baseTitle = `${src.title} (копия)`;
-    // Если уже есть «(копия)» — добавим суффикс с порядковым номером.
     let title = baseTitle;
     let attempt = 1;
-    // Простая защита от бесконечного цикла (если 50+ копий) — отдаём 409.
     while (attempt < 50) {
       const collision = await this.prisma.projectDocument.findFirst({
         where: { projectId: src.projectId, title, deletedAt: null },
@@ -457,15 +389,6 @@ export class ProjectDocumentsService {
     );
   }
 
-  // ── Permissions helpers ────────────────────────────────────────────────
-
-  /**
-   * Author OR admin/owner may write/delete. RBAC даёт первый уровень (member
-   * Org может read; manager open может write); per-resource ownership —
-   * проверяем здесь, а не в controller'е (чтобы не дублировать SQL).
-   *
-   * `isAdmin` — флаг с уровня RBAC (admin/owner — `true`; manager — `false`).
-   */
   async requireWritable(args: {
     documentId: string;
     tenantId: string;
@@ -484,28 +407,10 @@ export class ProjectDocumentsService {
     });
   }
 
-  // ── Linked cards ───────────────────────────────────────────────────────
-
-  /**
-   * Список CRM-карточек, связанных с проектом через подвязанные ко встречам
-   * задачи. SQL: `Card ←(cardId)— Meeting —(linkedIssueId)→ Issue
-   *                                                    (projectId=$1)`.
-   *
-   * Возвращает уникальные карточки, отсортированные по последней дате встречи
-   * (`Meeting.createdAt DESC`).
-   *
-   * Лимит — 50 (TZ §linked-cards).
-   */
-  async listLinkedCards(
-    projectId: string,
-    tenantId: string,
-  ): Promise<LinkedCardDto[]> {
+  async listLinkedCards(projectId: string, tenantId: string): Promise<LinkedCardDto[]> {
     await this.projects.requireProject(projectId, tenantId);
     this.metrics.incLinkedCardsView({ tenant: tenantId, project: projectId });
 
-    // Один SQL: JOIN Card ← Meeting ← Issue ← Project. DISTINCT ON по cardId.
-    // Используем raw, потому что Prisma не умеет нативно сделать
-    // `SELECT DISTINCT ON` с упорядочиванием.
     type Row = {
       id: string;
       name: string;
@@ -536,9 +441,6 @@ export class ProjectDocumentsService {
       LIMIT 50
     `;
 
-    // Sort by lastMeetingAt DESC уже после DISTINCT ON (DISTINCT ON ставит
-    // первое попадание per cardId, упорядоченность по m.createdAt DESC задаёт
-    // именно «последнюю встречу»).
     rows.sort((a, b) => {
       const aT = a.lastMeetingAt ? a.lastMeetingAt.getTime() : 0;
       const bT = b.lastMeetingAt ? b.lastMeetingAt.getTime() : 0;
@@ -556,16 +458,7 @@ export class ProjectDocumentsService {
     }));
   }
 
-  // ── internal ───────────────────────────────────────────────────────────
-
-  /**
-   * Найти активный (не удалённый) документ + проверить tenant. Для restore
-   * используется отдельный путь, который видит soft-deleted.
-   */
-  private async requireDocument(
-    id: string,
-    tenantId: string,
-  ): Promise<ProjectDocument> {
+  private async requireDocument(id: string, tenantId: string): Promise<ProjectDocument> {
     const doc = await this.prisma.projectDocument.findFirst({
       where: { id, tenantId, deletedAt: null },
     });
@@ -581,12 +474,10 @@ export class ProjectDocumentsService {
     return doc;
   }
 
-  /** Минимальный валидный TipTap JSON (пустой doc). */
   private emptyContent(): Prisma.InputJsonValue {
     return { type: 'doc', content: [] };
   }
 
-  /** Mapper: ProjectDocument → ProjectDocumentResponseDto (с контентом). */
   private toResponse(doc: ProjectDocument): ProjectDocumentResponseDto {
     return {
       id: doc.id,
@@ -608,7 +499,6 @@ export class ProjectDocumentsService {
     };
   }
 
-  /** Mapper: ProjectDocument → ProjectDocumentSummaryDto (без `content`). */
   private toSummary(doc: ProjectDocument): ProjectDocumentSummaryDto {
     const stripped = doc.contentStripped ?? '';
     const preview =

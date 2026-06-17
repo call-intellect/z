@@ -1,22 +1,13 @@
-/**
- * API-клиент модуля `tracker.project-documents` (2026-05-27).
- *
- * Контракт:
- *   - `backend/src/modules/tracker/controllers/project-documents.controller.ts`
- *   - `backend/src/modules/tracker/controllers/document-uploads.controller.ts`
- */
-
-import { apiClient } from '../api-client';
-import { orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { orgHeaders } from "../admin-helpers";
 import type {
   LinkedCardApi,
   ProjectDocumentApi,
   ProjectDocumentSummaryApi,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface CreateProjectDocumentRequest {
   title: string;
-  /** TipTap JSON (или произвольный JSON-объект; сервер не валидирует структуру). */
   content?: unknown;
   contentHtml?: string;
   contentStripped?: string;
@@ -34,9 +25,7 @@ export interface UpdateProjectDocumentRequest {
 }
 
 export interface UploadDocumentAssetResponse {
-  /** S3-ключ (для повторного presign / удаления). */
   key: string;
-  /** Presigned URL картинки (TTL ~1ч). Подставляется как `src` в `<img>`. */
   url: string;
   expiresAt: string;
   fileName: string;
@@ -105,26 +94,20 @@ export const projectDocumentsApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Загрузить картинку для вставки в редактор (multipart/form-data).
-   * Возвращает presigned URL, который вставляется как `<img src=...>` или в
-   * TipTap-image node. Идём через нативный fetch — `apiClient.post`
-   * сериализует body как JSON.
-   */
   uploadAsset: async (
     orgId: string,
     file: File,
   ): Promise<UploadDocumentAssetResponse> => {
     const baseUrl =
-      process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+      process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
     const fd = new FormData();
-    fd.append('file', file);
+    fd.append("file", file);
     const res = await fetch(
-      `${baseUrl.replace(/\/+$/, '')}/api/v1/uploads/document-asset`,
+      `${baseUrl.replace(/\/+$/, "")}/api/v1/uploads/document-asset`,
       {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-Org-Id': orgId },
+        method: "POST",
+        credentials: "include",
+        headers: { "X-Org-Id": orgId },
         body: fd,
       },
     );

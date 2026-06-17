@@ -1,13 +1,3 @@
-/**
- * Admin-redesign Фаза 6 — unit-тесты `AdminLiveKitService`.
- *
- * Покрываем:
- *   1) getSfu(): мок listRooms → активные комнаты + сумма participants.
- *   2) getSfu(): на ошибку SDK возвращает ok=false с сообщением.
- *   3) getTurn(): склейка ENV + динамический override через AdminSettings.
- *   4) switchTurnMode(): вызывает AdminSettings.set с user/reason.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import { AdminLiveKitService } from './admin-livekit.service';
@@ -34,8 +24,7 @@ function buildService(initial: {
     },
   } as unknown as ConstructorParameters<typeof AdminLiveKitService>[0];
 
-  const setMock =
-    initial.setMock ?? vi.fn(async () => undefined);
+  const setMock = initial.setMock ?? vi.fn(async () => undefined);
   const settings = {
     get: vi.fn(async (key: string) => {
       if (key === 'livekit.turn_mode') return initial.dynamicMode;
@@ -46,9 +35,6 @@ function buildService(initial: {
 
   const svc = new AdminLiveKitService(cfg, settings);
 
-  // Подмена внутренних клиентов через приватные поля (для теста — без сетевых
-  // вызовов). roomService / egressClient — ленивые геттеры, поэтому
-  // переопределяем сразу.
   (svc as unknown as { roomService: unknown }).roomService = {
     listRooms: async () => {
       if (initial.listRoomsError) throw initial.listRoomsError;

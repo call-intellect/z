@@ -14,10 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -41,17 +38,6 @@ import {
 import { SprintArchiveService } from '../services/sprint-archive.service';
 import { SprintsService } from '../services/sprints.service';
 
-/**
- * Sprints (2026-05-28) — REST для master-detail списка и мастера создания.
- *
- *   GET  /api/v1/sprints              — org-wide список с фильтрами/сортировкой
- *   POST /api/v1/sprints/quick-create — атомарное создание Project+Cycle+Board+States
- *
- * RBAC ресурс — `cycle`: read/write. См. policy.csv.
- *
- * Idempotency-Key для quick-create обрабатывается общим middleware (см.
- * `app.module.ts` — путь добавлен в `IdempotencyMiddleware.forRoutes`).
- */
 @ApiTags('tracker / sprints')
 @ApiBearerAuth()
 @Controller('api/v1/sprints')
@@ -80,8 +66,7 @@ export class SprintsController {
 
   @Get('archive')
   @ApiOperation({
-    summary:
-      'Pulse §5.3 — Архив гипотез: хроника всех Cycle tenant\'а за период',
+    summary: "Pulse §5.3 — Архив гипотез: хроника всех Cycle tenant'а за период",
   })
   async getArchive(
     @Query('period') period: string | undefined,
@@ -93,9 +78,7 @@ export class SprintsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     const validPeriod: SprintArchivePeriod =
-      period === 'month' || period === 'quarter' || period === 'year'
-        ? period
-        : 'quarter';
+      period === 'month' || period === 'quarter' || period === 'year' ? period : 'quarter';
     const statusFilter: SprintArchiveStatus | 'all' | undefined =
       statusRaw === 'completed' ||
       statusRaw === 'in_progress' ||
@@ -131,8 +114,6 @@ export class SprintsController {
     await this.requireWrite(user.id, t);
     return this.sprints.quickCreate({ tenantId: t, dto: body, userId: user.id });
   }
-
-  // ─────────────────────────── helpers ─────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

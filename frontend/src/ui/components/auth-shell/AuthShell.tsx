@@ -1,18 +1,11 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { motion } from 'motion/react';
-import type { ReactNode } from 'react';
+import Link from "next/link";
+import { motion } from "motion/react";
+import type { ReactNode } from "react";
 
-import { slideUp } from '@/ui/motion';
+import { slideUp } from "@/ui/motion";
 
-/**
- * Универсальная обёртка для публичных auth-страниц
- * (`/login`, `/signup`, `/forgot-password`, `/reset-password`).
- *
- * Стилистика — dark-first minimalism: subtle gradient mesh на фоне +
- * центрированная карточка ~480px. Логотип Z в шапке.
- */
 export function AuthShell({
   title,
   subtitle,
@@ -26,13 +19,13 @@ export function AuthShell({
 }) {
   return (
     <main className="relative flex min-h-screen flex-col items-center justify-center bg-bg-base px-4 py-10">
-      {/* Subtle radial mesh background — mint accent, низкая opacity. */}
+      {}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-0"
         style={{
           background:
-            'radial-gradient(circle at 30% 20%, rgba(94,234,212,0.08), transparent 60%), radial-gradient(circle at 80% 80%, rgba(94,234,212,0.04), transparent 60%)',
+            "radial-gradient(circle at 30% 20%, rgba(94,234,212,0.08), transparent 60%), radial-gradient(circle at 80% 80%, rgba(94,234,212,0.04), transparent 60%)",
         }}
       />
 

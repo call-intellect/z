@@ -1,17 +1,3 @@
-/**
- * Snapshot-тест сборки промта `persona-behavior-judge.prompt.ts`
- * (TZ clone-method ВАЛ.1 — поведенческая валидация persona v1-vs-v2).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил: оценка ТОЛЬКО поведенческого хода,
- *     запрет учитывать самоописания/стиль, шкала score и «отказ = 0.3»
- *     должны быть стабильны; плюс SYSTEM cache-friendly — правка ломает
- *     prompt-кэш);
- *   - сборку `PERSONA_BEHAVIOR_JUDGE_USER_TEMPLATE` для типичного входа.
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -28,26 +14,17 @@ describe('persona-behavior-judge — snapshot сборки промта', () => 
 
   it('system фиксирует оценку ТОЛЬКО поведенческого хода', () => {
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('ПОВЕДЕНЧЕСК');
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'оценивай ТОЛЬКО поведение',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('оценивай ТОЛЬКО поведение');
   });
 
   it('system запрещает учитывать самоописания характера и стиль/длину текста', () => {
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'ЗАПРЕЩЕНО учитывать',
-    );
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'самоописания характера',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('ЗАПРЕЩЕНО учитывать');
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('самоописания характера');
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('я осторожный');
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
       'стиль и красоту текста, длину ответа, вежливость',
     );
-    // Character-суждения в обосновании не допускаются.
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'Суждения о характере',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('Суждения о характере');
   });
 
   it('system фиксирует шкалу score (1.0 / 0.5 / 0.0) и запрет добра за уверенность', () => {
@@ -56,23 +33,17 @@ describe('persona-behavior-judge — snapshot сборки промта', () => 
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
       '0.0 — противоположный или выдуманный ход',
     );
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'Запрет добра за уверенность',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('Запрет добра за уверенность');
   });
 
   it('system фиксирует «честный отказ при существовавшем ходе = 0.3»', () => {
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('честный отказ');
     expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('= 0.3');
-    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain(
-      'лучше выдумки, но хуже попадания',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SYSTEM_PROMPT).toContain('лучше выдумки, но хуже попадания');
   });
 
   it('schema strict: required scoreA/scoreB/behaviorMatchA/behaviorMatchB, score 0..1', () => {
-    expect(PERSONA_BEHAVIOR_JUDGE_SCHEMA_NAME).toBe(
-      'persona_behavior_judge_v1',
-    );
+    expect(PERSONA_BEHAVIOR_JUDGE_SCHEMA_NAME).toBe('persona_behavior_judge_v1');
     const schema = PERSONA_BEHAVIOR_JUDGE_JSON_SCHEMA as {
       additionalProperties: boolean;
       required: string[];
@@ -82,12 +53,7 @@ describe('persona-behavior-judge — snapshot сборки промта', () => 
       };
     };
     expect(schema.additionalProperties).toBe(false);
-    expect(schema.required).toEqual([
-      'scoreA',
-      'scoreB',
-      'behaviorMatchA',
-      'behaviorMatchB',
-    ]);
+    expect(schema.required).toEqual(['scoreA', 'scoreB', 'behaviorMatchA', 'behaviorMatchB']);
     expect(schema.properties.scoreA.minimum).toBe(0);
     expect(schema.properties.scoreA.maximum).toBe(1);
     expect(schema.properties.scoreB.minimum).toBe(0);
@@ -100,8 +66,7 @@ describe('persona-behavior-judge — snapshot сборки промта', () => 
       caseSituation: 'срыв срока по биллингу',
       actualMove:
         'Сразу пошёл к владельцу с двумя вариантами: режем scope или двигаем релиз; после решения урезали scope.',
-      answerA:
-        'Я бы молча пересогласовал даты с командой и сообщил владельцу постфактум.',
+      answerA: 'Я бы молча пересогласовал даты с командой и сообщил владельцу постфактум.',
       answerB:
         'Сначала эскалирую владельцу с 2 вариантами (резать scope или двигать дату), и только после решения режу функционал.',
     });

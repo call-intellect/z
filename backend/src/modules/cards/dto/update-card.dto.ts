@@ -8,10 +8,6 @@ import {
   CardKindSchema,
 } from './card-kind';
 
-/**
- * `PATCH /api/v1/cards/:id`. Любое подмножество полей; `pinned` и `archived`
- * тоже здесь — отдельные эндпоинты под них не делаем (одна точка изменения).
- */
 export const UpdateCardSchema = z
   .object({
     name: z.string().trim().min(1).max(CARD_NAME_MAX).optional(),
@@ -23,12 +19,8 @@ export const UpdateCardSchema = z
     contactEmail: z.string().trim().max(CARD_CONTACT_FIELD_MAX).nullish(),
     contactPhone: z.string().trim().max(CARD_CONTACT_FIELD_MAX).nullish(),
     pinned: z.boolean().optional(),
-    /** true — `archivedAt = now()`, false — `archivedAt = null`. */
     archived: z.boolean().optional(),
   })
-  .refine(
-    (v) => Object.keys(v).length > 0,
-    { message: 'no_fields_to_update' },
-  );
+  .refine((v) => Object.keys(v).length > 0, { message: 'no_fields_to_update' });
 
 export type UpdateCardDto = z.infer<typeof UpdateCardSchema>;

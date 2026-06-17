@@ -1,28 +1,16 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
+import { cn } from "@/ui/shadcn/lib/utils";
 
 type Props = {
   to: number;
   durationMs?: number;
-  /**
-   * Форматтер. По умолчанию: целые без знаков после запятой, дробные —
-   * с 1 знаком после запятой.
-   */
   format?: (n: number) => string;
   className?: string;
 };
 
-/**
- * CountUp — плавная анимация числа от текущего значения к `to`.
- *
- * `requestAnimationFrame` + easing `easeOutCubic`. При смене `to` анимация
- * перезапускается с уже отображаемого значения (а не с 0). При
- * `prefers-reduced-motion: reduce` — финальное значение показывается сразу,
- * без анимации.
- */
 export function CountUp({
   to,
   durationMs = 600,
@@ -40,10 +28,9 @@ export function CountUp({
   }, [display]);
 
   useEffect(() => {
-    // Уважаем prefers-reduced-motion.
     const prefersReduced =
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
     if (prefersReduced || durationMs <= 0) {
       setDisplay(to);
@@ -79,10 +66,12 @@ export function CountUp({
     };
   }, [to, durationMs]);
 
-  return <span className={cn('tabular-nums', className)}>{format(display)}</span>;
+  return (
+    <span className={cn("tabular-nums", className)}>{format(display)}</span>
+  );
 }
 
 function defaultFormat(n: number): string {
-  if (!Number.isFinite(n)) return '—';
+  if (!Number.isFinite(n)) return "—";
   return Number.isInteger(n) ? n.toFixed(0) : n.toFixed(1);
 }

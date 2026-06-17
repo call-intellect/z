@@ -6,16 +6,6 @@ import type {
   DirectorDashboardThemeDto,
 } from '../dto/director-dashboard.dto';
 
-/**
- * Промпт для `dashboard-summary` LLM-агента (Фаза 8 шаг 2).
- *
- * Цель: 200-400 символов plain-text — 3-4 факта + 1 рекомендация поверх
- * сводки виджетов директорского дашборда. Без воды, на русском.
- *
- * Code-fallback (без prompt-registry) — допустимо на Фазе 8, как было в
- * Фазах 5-6 для tasks/chapters/summary v2 (см. ТЗ §«что не входит»).
- */
-
 export const DASHBOARD_SUMMARY_SYSTEM_PROMPT = `Ты — аналитик SaaS-компании. На основе сводки сигналов компании за период (неделя или месяц), скажи владельцу 3-4 главных факта и 1 рекомендацию.
 
 Жёсткие правила:
@@ -59,10 +49,6 @@ const SIGNAL_LABELS: Record<string, string> = {
   other: 'прочее',
 };
 
-/**
- * Сборка user-сообщения: компактная сводка топов (топ-3 темы, топ-5 сигналов,
- * счётчики, топ-3 сущности, топ-3 вопроса). Длинные поля обрезаются.
- */
 export function buildDashboardSummaryUserMessage(args: {
   period: 'week' | 'month';
   newThemes: DirectorDashboardThemeDto[];
@@ -81,7 +67,9 @@ export function buildDashboardSummaryUserMessage(args: {
     lines.push('Топ тем:');
     for (const t of themesForSummary.slice(0, 3)) {
       const branch = t.branch ? ` [${t.branch}]` : '';
-      lines.push(`- ${t.name}${branch} (вес ${t.weight.toFixed(2)}, блоков ${t.blocksCount}, динамика ${t.dynamic})`);
+      lines.push(
+        `- ${t.name}${branch} (вес ${t.weight.toFixed(2)}, блоков ${t.blocksCount}, динамика ${t.dynamic})`,
+      );
     }
   }
 

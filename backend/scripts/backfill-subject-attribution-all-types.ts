@@ -1,47 +1,3 @@
-/**
- * Ф1 (knowledge-access, 2026-06-06) — Backfill `role='subject'` для исторических
- * canonical-блоков ВСЕХ типов знания (не только reasoning-семейство) +
- * per-adapter identity автора + ре-rebuild ролевых клонов.
- *
- * Контекст:
- *   ТЗ `plans/tz/2026-06-06-knowledge-access-groups-and-provenance.md` Фаза 1.
- *   До Ф1 детерминированная привязка автора (`IdeaBlockEntity.role='subject'`)
- *   писалась ТОЛЬКО для 6 reasoning-типов. Обычные факты оставались без автора →
- *   who-ось пуста, клоны собираются узко. Ф1 расширила привязку на ВСЕ signalType
- *   (флаг `knowledge.subjectAttributionAllTypes`, code-fallback true) для НОВЫХ
- *   блоков. Этот backfill добивает `role='subject'` для уже сохранённых
- *   canonical-блоков любого типа, у которых ещё нет subject-связи.
- *
- *   Образец — `backfill-subject-attribution.ts` (reasoning-only). Отличия:
- *     - Сканирует canonical-блоки ЛЮБОГО signalType, но только без subject-связи
- *       (idempotent + incremental: `entities: { none: { role: 'subject' } }`).
- *     - Уважает ДВА флага: `knowledge.subjectAttributionEnabled` (как образец) И
- *       `knowledge.subjectAttributionAllTypes` (если false → выход, расширенная
- *       привязка выключена).
- *     - Identity автора — per-adapter (`tryGetActorIdentity`, зеркало воркера):
- *       tracker actor.userId / chatbox responsible.personId / dump uploaderId /
- *       free_note userId / email from.address. Для встреч (identity пуст) —
- *       сегмент по таймкоду evidence.startMs (speakerParticipantId/speakerName).
- *
- *   Сервисы переиспользуются через Nest DI (НЕ дублируем resolve-логику):
- *   SegmentBuilderService, EntityResolutionService, S3Service,
- *   Specialist37Service, CoreQueueService.
- *
- * Идемпотентность:
- *   - Кандидаты — только блоки без `IdeaBlockEntity{role='subject'}` →
- *     повторный прогон = 0 кандидатов = no-op.
- *   - upsert по композитному PK `@@id([blockId, entityId])` (страховка от гонки).
- *   - ре-enqueue дедуплицирован по personId (Set).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-subject-attribution-all-types.ts --dry-run
- *   docker compose exec backend bun run scripts/backfill-subject-attribution-all-types.ts
- *   docker compose exec backend bun run scripts/backfill-subject-attribution-all-types.ts --tenant=<orgId>
- *   docker compose exec backend bun run scripts/backfill-subject-attribution-all-types.ts --limit=5000
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'backfill', skipBootstrap).
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -68,7 +24,6 @@ interface Stats {
   scanned: number;
   attributed: number;
   skipped: number;
-  /** Кандидаты на rebuild (уникальные personId). */
   personsEnqueued: number;
 }
 
@@ -95,10 +50,6 @@ function parseArgs(argv: string[]): Options {
   return opts;
 }
 
-/**
- * Ф1 — зеркало `BlockIngestWorker.tryGetActorIdentity`. Извлекает per-adapter
- * identity автора события из payload (tracker/chatbox/dump/free_note/email).
- */
 function tryGetActorIdentity(payload: unknown): {
   authorUserId: string | null;
   authorPersonId: string | null;
@@ -112,7 +63,6 @@ function tryGetActorIdentity(payload: unknown): {
   if (typeof payload !== 'object' || payload === null) return empty;
   const p = payload as Record<string, unknown>;
 
-  // tracker — actor.userId
   const actor = p['actor'];
   if (actor && typeof actor === 'object') {
     const uid = (actor as { userId?: unknown }).userId;
@@ -120,7 +70,6 @@ function tryGetActorIdentity(payload: unknown): {
       return { ...empty, authorUserId: uid };
     }
   }
-  // chatbox — responsible.personId (linkedPersonId)
   const resp = p['responsible'];
   if (resp && typeof resp === 'object') {
     const pid = (resp as { personId?: unknown }).personId;
@@ -128,17 +77,14 @@ function tryGetActorIdentity(payload: unknown): {
       return { ...empty, authorPersonId: pid };
     }
   }
-  // dump/text — uploaderId (Person.id)
   const uploaderId = p['uploaderId'];
   if (typeof uploaderId === 'string' && uploaderId.trim().length > 0) {
     return { ...empty, authorPersonId: uploaderId };
   }
-  // free_note/in_app — userId
   const userIdRaw = p['userId'];
   if (typeof userIdRaw === 'string' && userIdRaw.trim().length > 0) {
     return { ...empty, authorUserId: userIdRaw };
   }
-  // email — from.address
   const from = p['from'];
   if (from && typeof from === 'object') {
     const addr = (from as { address?: unknown }).address;
@@ -156,15 +102,12 @@ async function main(opts: Options): Promise<void> {
       `limit=${opts.limit ?? '<none>'}) ===`,
   );
 
-  // Кандидаты — canonical-блоки ЛЮБОГО типа БЕЗ subject-связи (идемпотентность +
-  // инкрементальность: повторный прогон = 0 кандидатов).
   const blockWhere = {
     status: 'canonical' as const,
     entities: { none: { role: 'subject' as const } },
     ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
   };
 
-  // Лёгкий pre-check ДО подъёма AppModule.
   const preCheck = createPrismaClient();
   try {
     const pending = await preCheck.ideaBlock.count({ where: blockWhere });
@@ -174,9 +117,7 @@ async function main(opts: Options): Promise<void> {
       );
       return;
     }
-    console.log(
-      `backfill-subject-attribution-all-types: кандидатов-блоков ${pending}`,
-    );
+    console.log(`backfill-subject-attribution-all-types: кандидатов-блоков ${pending}`);
   } finally {
     await preCheck.$disconnect();
   }
@@ -201,7 +142,6 @@ async function main(opts: Options): Promise<void> {
     const specialist = app.get(Specialist37Service);
     const coreQueue = app.get(CoreQueueService);
 
-    // Уважаем ДВА флага: master-выключатель + расширенная привязка на все типы.
     const enabled = await cfg.getDynamic<boolean>(
       'knowledge.subjectAttributionEnabled',
       undefined,
@@ -225,10 +165,8 @@ async function main(opts: Options): Promise<void> {
       return;
     }
 
-    // Уникальные затронутые (tenantId, entityId) → Person'ы → ре-rebuild.
     const affected = new Map<string, { tenantId: string; entityId: string }>();
 
-    // Кэш payload по rawEventId.
     const payloadCache = new Map<string, unknown>();
     const loadPayload = async (event: {
       id: string;
@@ -240,9 +178,7 @@ async function main(opts: Options): Promise<void> {
       let result: unknown;
       if (event.payloadStorage === 's3') {
         if (!event.payloadS3Key) {
-          throw new Error(
-            `RawEvent ${event.id}: payloadStorage=s3, но payloadS3Key пустой`,
-          );
+          throw new Error(`RawEvent ${event.id}: payloadStorage=s3, но payloadS3Key пустой`);
         }
         result = await s3.getJson<unknown>(event.payloadS3Key);
       } else {
@@ -252,17 +188,11 @@ async function main(opts: Options): Promise<void> {
       return result;
     };
 
-    // Курсорная пагинация. ВАЖНО: курсор по id; т.к. мы фильтруем по «без
-    // subject-связи», уже обработанные в этом же прогоне блоки получают связь и
-    // выпадают из выборки — поэтому курсор обязателен (иначе бесконечный цикл
-    // на блоках-«пропусках», у которых identity не разрешилась).
     let cursorId: string | undefined = undefined;
     let processed = 0;
     while (true) {
       if (opts.limit && processed >= opts.limit) break;
-      const take = opts.limit
-        ? Math.min(BATCH_SIZE, opts.limit - processed)
-        : BATCH_SIZE;
+      const take = opts.limit ? Math.min(BATCH_SIZE, opts.limit - processed) : BATCH_SIZE;
 
       const batch = await prisma.ideaBlock.findMany({
         where: blockWhere,
@@ -277,7 +207,6 @@ async function main(opts: Options): Promise<void> {
         stats.scanned++;
         processed++;
         try {
-          // 1. Источник: первое evidence блока (rawEventId + startMs).
           const evidence = await prisma.ideaBlockEvidence.findFirst({
             where: { blockId: block.id },
             orderBy: { createdAt: 'asc' },
@@ -305,40 +234,30 @@ async function main(opts: Options): Promise<void> {
 
           const payload = await loadPayload(event);
 
-          // 2. Identity автора — зеркало tryGetActorIdentity воркера. Для встреч
-          //    (identity пуст) — сегмент по таймкоду evidence.startMs.
           const identity = tryGetActorIdentity(payload);
 
           let speakerParticipantId: string | null = null;
           let speakerName: string | null = null;
           const hasDirectIdentity =
-            !!identity.authorUserId ||
-            !!identity.authorPersonId ||
-            !!identity.authorEmail;
+            !!identity.authorUserId || !!identity.authorPersonId || !!identity.authorEmail;
           if (!hasDirectIdentity) {
             const segs = segments.buildSegments(payload);
             const evidenceStartMs = evidence.startMs ?? 0;
             const seg =
               segs.find(
-                (s) =>
-                  s.endMs > 0 &&
-                  evidenceStartMs >= s.startMs &&
-                  evidenceStartMs <= s.endMs,
+                (s) => s.endMs > 0 && evidenceStartMs >= s.startMs && evidenceStartMs <= s.endMs,
               ) ?? null;
             speakerParticipantId = seg?.speakerParticipantId ?? null;
             speakerName = seg?.speakers?.[0] ?? null;
           }
 
-          const subjectEntityId = await entities.resolveSubjectEntityId(
-            event.tenantId,
-            {
-              authorPersonId: identity.authorPersonId,
-              authorEmail: identity.authorEmail,
-              authorUserId: identity.authorUserId,
-              speakerParticipantId,
-              speakerName,
-            },
-          );
+          const subjectEntityId = await entities.resolveSubjectEntityId(event.tenantId, {
+            authorPersonId: identity.authorPersonId,
+            authorEmail: identity.authorEmail,
+            authorUserId: identity.authorUserId,
+            speakerParticipantId,
+            speakerName,
+          });
           if (!subjectEntityId) {
             stats.skipped++;
             continue;
@@ -349,7 +268,6 @@ async function main(opts: Options): Promise<void> {
               `[DRY-RUN] would upsert IdeaBlockEntity{blockId=${block.id}, entityId=${subjectEntityId}, role=subject}`,
             );
           } else {
-            // 3. Idempotent upsert — апгрейд mentioned→subject односторонний.
             await prisma.ideaBlockEntity.upsert({
               where: {
                 blockId_entityId: {
@@ -383,7 +301,6 @@ async function main(opts: Options): Promise<void> {
       if (batch.length < take) break;
     }
 
-    // 4. Ре-rebuild ролевых клонов по затронутым авторам (employee-Person).
     const enqueuedPersonIds = new Set<string>();
     for (const { tenantId, entityId } of affected.values()) {
       try {

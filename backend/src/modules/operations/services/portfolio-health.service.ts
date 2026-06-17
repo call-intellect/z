@@ -26,20 +26,6 @@ import {
   type PortfolioHealthWeights,
 } from './portfolio-health.scoring';
 
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — PortfolioHealthService.
- *
- * Считает «здоровье портфеля целей» компании: распределение живых целей по
- * статусу движения (`progressStatus`) → интегральный балл 0..100, разрез по
- * MoSCoW-приоритету (`priority`) и построчный список целей с провенансом.
- *
- * Веса/пороги — AdminSetting через `getDynamic`, не код. Балл считает чистая
- * функция `computePortfolioHealth` (покрыта unit-тестами). Снимок upsert'ится
- * per (tenantId, dateLocal) — для дельты к прошлой неделе.
- *
- * Живая цель — `{ status:'active', promotionState:'active', validUntil:null,
- * archivedAt:null }` (тот же фильтр, что у director-dashboard «север компаса»).
- */
 @Injectable()
 export class PortfolioHealthService {
   private readonly logger = new Logger(PortfolioHealthService.name);
@@ -51,21 +37,13 @@ export class PortfolioHealthService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Построить (и записать) снимок здоровья портфеля за `dateLocal`. Считает на
-   * лету; upsert per (tenantId, dateLocal) — идемпотентно. Возвращает DTO.
-   */
-  async compute(args: {
-    tenantId: string;
-    dateLocal: string;
-  }): Promise<PortfolioHealthDto> {
+  async compute(args: { tenantId: string; dateLocal: string }): Promise<PortfolioHealthDto> {
     const { tenantId, dateLocal } = args;
     const tenantTop = resolveOperationsTenantTop(tenantId);
 
     const weights = await this.resolveWeights();
     const thresholds = await this.resolveThresholds();
 
-    // Живые официальные цели компании (тот же фильтр, что и «север компаса»).
     const goals = await this.prisma.goal.findMany({
       where: {
         tenantId,
@@ -84,41 +62,31 @@ export class PortfolioHealthService {
       take: 5_000,
     });
 
-    // 1. Разрез по статусу движения.
     const byStatus = emptyByStatus();
     for (const g of goals) {
       const st = g.progressStatus as GoalProgressStatusKey;
       if (GOAL_PROGRESS_STATUSES.includes(st)) byStatus[st] += 1;
     }
 
-    // 2. Интегральный балл + уровень.
     const healthScore = computePortfolioHealth(byStatus, weights);
     const level = classifyPortfolioLevel(healthScore, thresholds);
 
-    // 3. Разрез по MoSCoW-приоритету (+ корзина 'none' для null).
     const byPriority = this.buildByPriority(goals);
 
-    // 4. Построчный список целей.
     const rows: PortfolioHealthRowDto[] = goals.map((g) => ({
       goalId: g.id,
       name: g.name,
       progressStatus: g.progressStatus,
       priority: (g.priority as PortfolioPriorityKey | null) ?? null,
-      reason:
-        g.sourceBlockIds.length > 0
-          ? { sourceBlockId: g.sourceBlockIds[0]! }
-          : null,
+      reason: g.sourceBlockIds.length > 0 ? { sourceBlockId: g.sourceBlockIds[0]! } : null,
     }));
 
-    // 5. Дельта к прошлой неделе ДО upsert текущего дня (берём предыдущий снимок
-    //    строго раньше dateLocal — не путаем с только что записанным).
     const deltaVsPrevWeek = await this.computeDelta({
       tenantId,
       dateLocal,
       healthScore,
     });
 
-    // 6. Upsert снимка (идемпотентно по (tenantId, dateLocal)).
     try {
       await this.prisma.portfolioHealthSnapshot.upsert({
         where: { tenantId_dateLocal: { tenantId, dateLocal } },
@@ -168,12 +136,6 @@ export class PortfolioHealthService {
     };
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
-  /**
-   * Разрез по MoSCoW-приоритету: для каждой корзины (must/should/could/wont +
-   * 'none' для null) — count, achievedCount, achievedPercent.
-   */
   private buildByPriority(
     goals: Array<{ priority: string | null; progressStatus: string }>,
   ): PortfolioByPriorityDto {
@@ -186,24 +148,17 @@ export class PortfolioHealthService {
     };
     for (const g of goals) {
       const key: PortfolioPriorityKey =
-        g.priority && isPriorityKey(g.priority)
-          ? (g.priority as PortfolioPriorityKey)
-          : 'none';
+        g.priority && isPriorityKey(g.priority) ? (g.priority as PortfolioPriorityKey) : 'none';
       acc[key].count += 1;
       if (g.progressStatus === 'achieved') acc[key].achievedCount += 1;
     }
     for (const key of PORTFOLIO_PRIORITY_KEYS) {
       const b = acc[key];
-      b.achievedPercent =
-        b.count > 0 ? Math.round((b.achievedCount / b.count) * 100) : 0;
+      b.achievedPercent = b.count > 0 ? Math.round((b.achievedCount / b.count) * 100) : 0;
     }
     return acc;
   }
 
-  /**
-   * Дельта balla к самому свежему снимку строго раньше `dateLocal` (прошлая
-   * неделя). null если предыдущего снимка нет (первый расчёт).
-   */
   private async computeDelta(args: {
     tenantId: string;
     dateLocal: string;
@@ -274,5 +229,4 @@ function isPriorityKey(v: string): boolean {
   return v === 'must' || v === 'should' || v === 'could' || v === 'wont';
 }
 
-// Re-export для удобства тестов / эндпоинтов «пустого» состояния.
 export { emptyByStatus, type PortfolioByStatus };

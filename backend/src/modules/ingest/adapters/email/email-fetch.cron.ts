@@ -8,20 +8,6 @@ import { EntitlementService } from '../../../entitlements/entitlement.service';
 
 import { EmailFetchService } from './email-fetch.service';
 
-/**
- * Cron-обёртка email-fetcher'а (Фаза 10 knowledge-core).
- *
- * Расписание из `ENV` `EMAIL_FETCH_CRON` (default `*\/5 * * * *`). Cron-decorator
- * `@Cron` принимает только литерал — значение из ENV используется только
- * для будущей перерегистрации через `SchedulerRegistry` (vNext).
- *
- * Каждые 5 минут проходим по `Source(type='email', isActive=true)` всех Org,
- * для каждого вызываем `EmailFetchService.fetchOne(...)`. Перед каждым
- * fetch — `WorkerOrgGate.checkOrThrow(tenantId, 'email-fetch')` (Org-Admin
- * может выключить email-ingest).
- *
- * Если `cfg.emailFetch.enabled === false` — cron выходит сразу.
- */
 @Injectable()
 export class EmailFetchCron {
   private readonly logger = new Logger(EmailFetchCron.name);
@@ -41,7 +27,6 @@ export class EmailFetchCron {
       return;
     }
     if (this.running) {
-      // Не запускаем второй экземпляр пока предыдущий не закончил.
       this.logger.debug('email-fetch.cron: prev run in progress, skip');
       return;
     }
@@ -56,17 +41,17 @@ export class EmailFetchCron {
           await this.gate.checkOrThrow(s.tenantId, 'email-fetch');
         } catch (err) {
           this.logger.debug(
-            { sourceId: s.id, tenantId: s.tenantId, err: err instanceof Error ? err.message : String(err) },
+            {
+              sourceId: s.id,
+              tenantId: s.tenantId,
+              err: err instanceof Error ? err.message : String(err),
+            },
             'email-fetch.cron: org-gate disabled',
           );
           continue;
         }
-        // Phase 12: skip Org без `feature.adapter_email`.
         try {
-          const allowed = await this.entitlements.hasFeature(
-            s.tenantId,
-            'feature.adapter_email',
-          );
+          const allowed = await this.entitlements.hasFeature(s.tenantId, 'feature.adapter_email');
           if (!allowed) {
             this.logger.debug(
               { sourceId: s.id, tenantId: s.tenantId },
@@ -75,7 +60,6 @@ export class EmailFetchCron {
             continue;
           }
         } catch (err) {
-          // Если EntitlementService сбоит — fail-open (не блокируем входящие письма).
           this.logger.warn(
             {
               sourceId: s.id,

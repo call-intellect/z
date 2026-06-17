@@ -1,31 +1,3 @@
-/**
- * Seed LlmTaskRoute для taskType='custom-report' (Фаза E).
- *
- * Источник: plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md §5.5.
- * Reference: docs/reference/llm-models-playbook.md §2.1 (generalPurpose chain).
- *
- * `custom-report` — общий taskType для ВСЕХ дополнительных AI-отчётов,
- * которые пользователь генерирует по выбранному шаблону. Per-template цепочки
- * (через UI /admin/ai-models) — это override-записи, которые резолвятся
- * раньше общей. Здесь мы заводим только дефолтную цепочку для taskType.
- *
- * Цепочка из трёх tier'ов:
- *   - primary    deepseek          deepseek-v4-flash   (хорошее соотношение цена/качество)
- *   - secondary  openai-via-proxy  gpt-5.4-mini        (резерв на длинных промптах со многими секциями)
- *   - tertiary   ollama            qwen3.5:9b          (local fallback; degraded mode флаг в output.warnings)
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - upsert по (taskType, tenantId=null, tier, providerName).
- *   - если запись существует и `editedByAdmin=true` → пропуск (ручные правки super_admin'а сохраняются).
- *   - если запись существует и `editedByAdmin=false` → пропуск (обновление — через UI, не через seed).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-phase-E.ts
- *
- * Этот seed выполняется однократно при rollout Фазы E на проде. См.
- * `docs/reference/llm-models-playbook.md §2.1` для актуальных моделей.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

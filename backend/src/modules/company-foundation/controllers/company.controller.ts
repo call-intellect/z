@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -30,15 +27,6 @@ import {
 } from '../dto/company-profile.dto';
 import { CompanyProfileService } from '../services/company-profile.service';
 
-/**
- * SBA α-9 wave 3 — REST API `/api/v1/company`.
- *
- *   GET   /         — текущий профиль (создаётся lazy если ещё нет).
- *   PATCH /         — обновить (только owner/admin Org).
- *   POST  /rebuild-completeness — ручной триггер пересчёта.
- *
- * RBAC ResourceType — `company_profile`.
- */
 @ApiTags('company')
 @Controller('api/v1/company')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -88,8 +76,6 @@ export class CompanyController {
     });
     return { ok: true as const, enqueued: r.enqueued, reason: r.reason };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

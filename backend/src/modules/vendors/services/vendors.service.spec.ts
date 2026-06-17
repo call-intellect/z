@@ -1,12 +1,3 @@
-/**
- * Sprints (2026-05-28) §1.1 — юнит-тесты VendorsService.create/update/softDelete.
- *
- * Покрытие:
- *   - create: успех (создание Entity + Vendor в транзакции) + tenantId isolation;
- *   - create: переиспользование существующего Entity при P2002 collision;
- *   - update: только разрешённые поля; 404 на чужой/удалённый vendor;
- *   - softDelete: проставляет deletedAt; идемпотентен; 404 на чужой.
- */
 import { NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -52,9 +43,7 @@ describe('VendorsService.create', () => {
   it('создаёт Entity + Vendor в транзакции, возвращает VendorDto', async () => {
     const entityCreate = vi.fn(async () => ({ id: 'e-1' }));
     const vendorFindUnique = vi.fn(async () => null);
-    const vendorCreate = vi.fn(async () =>
-      buildVendorRow({ name: 'ООО Альфа', entityId: 'e-1' }),
-    );
+    const vendorCreate = vi.fn(async () => buildVendorRow({ name: 'ООО Альфа', entityId: 'e-1' }));
     const prisma = {
       $transaction: async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
@@ -100,9 +89,7 @@ describe('VendorsService.create', () => {
     });
     const entityFindFirst = vi.fn(async () => ({ id: 'e-existing' }));
     const vendorFindUnique = vi.fn(async () => null);
-    const vendorCreate = vi.fn(async () =>
-      buildVendorRow({ entityId: 'e-existing', id: 'v-new' }),
-    );
+    const vendorCreate = vi.fn(async () => buildVendorRow({ entityId: 'e-existing', id: 'v-new' }));
     const prisma = {
       $transaction: async (cb: (tx: unknown) => Promise<unknown>) =>
         cb({
@@ -134,9 +121,7 @@ describe('VendorsService.create', () => {
     });
     const vendorFindUnique = vi
       .fn()
-      // первый вызов — проверка существования (idempotency)
       .mockResolvedValueOnce({ id: 'v-existing' })
-      // второй вызов — дотягиваем полную запись
       .mockResolvedValueOnce(existingVendor);
     const vendorCreate = vi.fn();
     const prisma = {
@@ -231,9 +216,7 @@ describe('VendorsService.update', () => {
   });
 
   it('404 если vendor в другом tenant', async () => {
-    const findUnique = vi.fn(async () =>
-      buildVendorRow({ tenantId: 'other-org' }),
-    );
+    const findUnique = vi.fn(async () => buildVendorRow({ tenantId: 'other-org' }));
     const prisma = { vendor: { findUnique, update: vi.fn() } };
     const svc = new VendorsService(prisma as never);
     await expect(
@@ -247,9 +230,7 @@ describe('VendorsService.update', () => {
   });
 
   it('404 если vendor soft-deleted', async () => {
-    const findUnique = vi.fn(async () =>
-      buildVendorRow({ deletedAt: new Date() }),
-    );
+    const findUnique = vi.fn(async () => buildVendorRow({ deletedAt: new Date() }));
     const prisma = { vendor: { findUnique, update: vi.fn() } };
     const svc = new VendorsService(prisma as never);
     await expect(

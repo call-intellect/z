@@ -1,9 +1,3 @@
-/**
- * Доменная модель health-страницы (Z-Admin Фаза 7).
- *
- * Контракт: backend `AdminHealthService.AdminHealthResult`.
- */
-
 export type AdminQueueCountsApi = {
   queueName: string;
   counts: Record<string, number>;
@@ -23,7 +17,7 @@ export type AdminHealthApi = {
     error?: string;
   };
   s3: {
-    available: 'unknown';
+    available: "unknown";
   };
   generatedAt: string;
 };
@@ -50,12 +44,12 @@ export type AdminHealthDomain = {
     aiUsageLogTotal: number;
   };
   redis: { available: boolean; error: string | null };
-  s3: { available: 'unknown' };
+  s3: { available: "unknown" };
   generatedAt: Date;
 };
 
 function formatBytes(bytes: number | null): string {
-  if (bytes === null) return 'неизвестно';
+  if (bytes === null) return "неизвестно";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
@@ -66,17 +60,17 @@ export function adminHealthFromApi(api: AdminHealthApi): AdminHealthDomain {
   return {
     queues: api.queues.map((q) => ({
       queueName: q.queueName,
-      waiting: q.counts['waiting'] ?? 0,
-      active: q.counts['active'] ?? 0,
-      completed: q.counts['completed'] ?? 0,
-      failed: q.counts['failed'] ?? 0,
-      delayed: q.counts['delayed'] ?? 0,
-      paused: q.counts['paused'] ?? 0,
+      waiting: q.counts["waiting"] ?? 0,
+      active: q.counts["active"] ?? 0,
+      completed: q.counts["completed"] ?? 0,
+      failed: q.counts["failed"] ?? 0,
+      delayed: q.counts["delayed"] ?? 0,
+      paused: q.counts["paused"] ?? 0,
       total:
-        (q.counts['waiting'] ?? 0) +
-        (q.counts['active'] ?? 0) +
-        (q.counts['delayed'] ?? 0) +
-        (q.counts['paused'] ?? 0),
+        (q.counts["waiting"] ?? 0) +
+        (q.counts["active"] ?? 0) +
+        (q.counts["delayed"] ?? 0) +
+        (q.counts["paused"] ?? 0),
     })),
     database: {
       sizeBytes: api.database.sizeBytes,

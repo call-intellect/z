@@ -16,20 +16,11 @@ interface BuildResult {
   bytes: number;
 }
 
-/**
- * Генератор bulk-zip для нескольких встреч.
- *
- * Содержимое:
- *   - `<title>.md` — MD-отчёт по каждой встрече
- *   - `<title>-transcript.json` — если includeTranscript
- *   - `_links.txt` — presigned URL'ы на видео/аудио (БЕЗ файлов; десятки гигабайт
- *     не пихаем в один zip)
- *
- * Лимит итогового размера — `cfg.workspace.exportZipMaxBytes`. Если превышен,
- * throw `ZipSizeLimitExceededError`.
- */
 export class ZipSizeLimitExceededError extends Error {
-  constructor(public readonly bytes: number, public readonly limit: number) {
+  constructor(
+    public readonly bytes: number,
+    public readonly limit: number,
+  ) {
     super(`Bulk zip превысил лимит: ${bytes} > ${limit}`);
     this.name = 'ZipSizeLimitExceededError';
   }
@@ -65,7 +56,6 @@ export class BulkZipGenerator {
       totalBytes += chunk.length;
       if (totalBytes > limit) {
         limitExceeded = true;
-        // Прерываем archiver — abort.
         archive.abort();
       } else {
         chunks.push(chunk);
@@ -84,7 +74,6 @@ export class BulkZipGenerator {
           where: { meetingId: meeting.id },
           orderBy: { startMs: 'asc' },
         }),
-        // ТЗ Ф5.2 — задачи встречи через единый helper (OFF → Task, ON → Issue).
         this.actionItems.listForMeeting({
           meetingId: meeting.id,
           tenantId: meeting.tenantId ?? '',
@@ -100,7 +89,6 @@ export class BulkZipGenerator {
       archive.append(md, { name: `${safeName}/${safeName}.md` });
 
       if (input.options.includeTranscript && transcript?.turns) {
-        // Транскрипт хранится в БД — включаем как текст в zip.
         const turns = transcript.turns as Array<{ speaker: string; text: string }>;
         const transcriptText = turns.map((t) => `${t.speaker}: ${t.text}`).join('\n');
         archive.append(transcriptText, { name: `${safeName}/${safeName}-transcript.txt` });
@@ -124,7 +112,6 @@ export class BulkZipGenerator {
     archive.append(linksLines.join('\n'), { name: '_links.txt' });
 
     await archive.finalize();
-    // Ждём, пока pipe закончит — небольшой defer.
     await new Promise<void>((resolve) => {
       stream.on('end', () => resolve());
       stream.on('close', () => resolve());

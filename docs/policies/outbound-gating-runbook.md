@@ -1,6 +1,6 @@
 # Runbook — Outbound DataClass Gating (W4.3 KC-Temporal)
 
-> **Codename:** KC-Temporal W4.3 (см. `plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md`).
+> **Codename:** KC-Temporal W4.3 (см. `plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md`).
 > **Источник правды по правилам:** `docs/policies/dataclass-policy-v1.md`.
 > **Owner:** @sergrv80.
 

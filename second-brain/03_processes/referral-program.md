@@ -8,7 +8,7 @@ owners_human:
   - продакт-партнёрский (отвечает за реф-программу)
   - финансовый директор (для подписания оферт и фактических выплат)
 related_plans:
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
   - plans/analysis/2026-05-25-billing-and-referrals.md
 related_projects:
   - 01_projects/referrals.md
@@ -20,7 +20,7 @@ related_projects:
 
 > **Как читать:** разделы 1–4 — для не-программиста. Раздел 5 — для разработчика. Номера шагов синхронизированы.
 
-> **Обновление 2026-05-31** ([ТЗ referrals-cabinet-revamp](plans/tz/2026-05-31-referrals-cabinet-revamp.md)):
+> **Обновление 2026-05-31** ([ТЗ referrals-cabinet-revamp](plans/archive/2026-05-31-referrals-cabinet-revamp.md)):
 > 1. Партнёр может получить ссылку **одним кликом**, без ИНН / `legalForm` / реквизитов. Чекбокс оферты при создании заменил отдельный `acceptContract`. ИНН и реквизиты требуются только перед фактическим выводом денег.
 > 2. `GET /referrals/me/clients` теперь **маскированный**: партнёр видит только `clientCode` (анонимный) + статус + суммы; `org.name` / `org.id` не отдаются (юридический приоритет — нельзя дать партнёру увести клиента).
 > 3. `ReferralPayoutCron` теперь требует `payoutDetails != null && Object.keys > 0` (плюс `innVerifiedAt && contractAcceptedAt` как раньше); иначе payout → `void`.
@@ -204,5 +204,5 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 | 2026-05-30 | Observability-gap закрыт: 4 метрики `referral_*`, алёрт `ReferralPayoutCronDidNotRun`, Grafana-панель. `status_overall: partial → implemented`. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 4 |
 | 2026-05-30 | First-touch fix: `attributeOrg` → `updateMany WHERE pendingAttributionSlug IS NULL`. Метрика `referral_attribution_first_touch_locked_total` зарегистрирована. | plans/tz/2026-05-29-commercial-reliability-package.md Фаза 2 |
 | 2026-05-29 | Карточка создана | этот документ |
-| 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов (Фаза 6 реализована) | `plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md` |
+| 2026-05-27 | ТЗ объединённого биллинга + InnLookup + рефералов (Фаза 6 реализована) | `plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md` |
 | 2026-05-25 | Анализ + решение владельца: фикс 20 000 ₽, окно 3 мес, cron 10-го | `plans/analysis/2026-05-25-billing-and-referrals.md` |

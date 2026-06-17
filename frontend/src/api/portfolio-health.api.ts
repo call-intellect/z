@@ -1,26 +1,21 @@
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — API-клиент «Здоровье портфеля целей».
- *
- * Контракт: `GET /api/v1/dashboard/operations/portfolio-health?date=YYYY-MM-DD`
- * (см. `backend/src/modules/operations/dto/portfolio-health.dto.ts`).
- * Auth: `CookieAuthGuard + TenantGuard` (cookie + `X-Org-Id` header).
- */
+import { apiClient } from "./api-client";
+import { buildQuery, orgHeaders } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { buildQuery, orgHeaders } from './admin-helpers';
+export type PortfolioPriorityKey =
+  | "must"
+  | "should"
+  | "could"
+  | "wont"
+  | "none";
 
-/** MoSCoW-приоритет цели (+ 'none' для нераспределённых). */
-export type PortfolioPriorityKey = 'must' | 'should' | 'could' | 'wont' | 'none';
-
-/** Статус движения цели (зеркало backend `GoalProgressStatusKey`). */
 export type PortfolioProgressStatusKey =
-  | 'on_track'
-  | 'at_risk'
-  | 'stalled'
-  | 'achieved'
-  | 'dropped';
+  | "on_track"
+  | "at_risk"
+  | "stalled"
+  | "achieved"
+  | "dropped";
 
-export type PortfolioHealthLevelApi = 'healthy' | 'warning' | 'critical';
+export type PortfolioHealthLevelApi = "healthy" | "warning" | "critical";
 
 export interface PortfolioPriorityBucketApi {
   count: number;
@@ -43,8 +38,7 @@ export interface PortfolioHealthRowApi {
   goalId: string;
   name: string;
   progressStatus: string;
-  /** MoSCoW-приоритет; null — без приоритета (для рядов список не агрегирует 'none'). */
-  priority: 'must' | 'should' | 'could' | 'wont' | null;
+  priority: "must" | "should" | "could" | "wont" | null;
   reason: PortfolioRowReasonApi | null;
 }
 
@@ -64,10 +58,6 @@ export interface PortfolioHealthApi {
 }
 
 export const portfolioHealthApi = {
-  /**
-   * `GET /dashboard/operations/portfolio-health?date=YYYY-MM-DD`.
-   * `date` не передан — backend резолвит сегодня. Доступ: owner/admin/coo.
-   */
   get: (orgId: string, date?: string) =>
     apiClient.get<PortfolioHealthApi>(
       `/api/v1/dashboard/operations/portfolio-health${buildQuery({ date })}`,

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { ConfirmDialog } from './ConfirmDialog';
+import { useCallback, useRef, useState, type ReactNode } from "react";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 type AskOptions = {
   title: string;
@@ -13,28 +13,13 @@ type AskOptions = {
 
 type DialogState = AskOptions & { open: boolean };
 
-/**
- * useConfirmDialog — promise-based замена нативному `confirm()`.
- *
- * Использование:
- *   const { ask, dialog } = useConfirmDialog();
- *   if (!(await ask({ title: 'Удалить?', destructive: true }))) return;
- *   await api.remove(...);
- *   ...
- *   return <>
- *     ...
- *     {dialog}
- *   </>;
- *
- * Под капотом — `<ConfirmDialog>` с управлением через ref на resolve.
- */
 export function useConfirmDialog(): {
   ask: (options: AskOptions) => Promise<boolean>;
   dialog: ReactNode;
 } {
   const [state, setState] = useState<DialogState>({
     open: false,
-    title: '',
+    title: "",
   });
   const resolveRef = useRef<((v: boolean) => void) | null>(null);
 

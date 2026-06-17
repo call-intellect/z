@@ -1,20 +1,13 @@
-'use client';
+"use client";
 
-/**
- * Tracker Project Overview — виджет активного цикла.
- *
- * Если у проекта есть Cycle с now BETWEEN start/end — показываем имя, даты,
- * прогресс. Если нет — placeholder со ссылкой на /cycles.
- */
+import Link from "next/link";
 
-import Link from 'next/link';
-
-import type { ProjectActiveCycle } from '@/domain/tracker/overview';
+import type { ProjectActiveCycle } from "@/domain/tracker/overview";
 
 function fmt(d: Date): string {
-  return d.toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'short',
+  return d.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "short",
   });
 }
 
@@ -23,13 +16,13 @@ function readProgress(snap: unknown): {
   total: number;
   pct: number;
 } | null {
-  if (!snap || typeof snap !== 'object') return null;
+  if (!snap || typeof snap !== "object") return null;
   const s = snap as Record<string, unknown>;
-  const total = typeof s.total === 'number' ? s.total : null;
+  const total = typeof s.total === "number" ? s.total : null;
   const done =
-    typeof s.completed === 'number'
+    typeof s.completed === "number"
       ? s.completed
-      : typeof s.done === 'number'
+      : typeof s.done === "number"
         ? s.done
         : null;
   if (total === null || done === null || total <= 0) return null;

@@ -6,12 +6,6 @@ import type { PersonsService } from '../persons/services/persons.service';
 
 import { ChatboxCustomersService } from './chatbox-customers.service';
 
-/**
- * Unit-тесты ChatboxCustomersService с замоканным prisma (БД нет). Клон тестов
- * ChatboxMembersService: батч-резолв Person (без N+1), форма DTO и ветки
- * linkCustomer (manual / none / not-found) + createPersonAndLink (дедуп по email).
- */
-
 describe('ChatboxCustomersService', () => {
   let prismaMock: {
     chatboxCustomer: {
@@ -68,9 +62,7 @@ describe('ChatboxCustomersService', () => {
           linkedPersonId: null,
         },
       ]);
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', name: 'Person One' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Person One' }]);
 
       const res = await service.listCustomers('t1');
 
@@ -115,9 +107,7 @@ describe('ChatboxCustomersService', () => {
       const res = await service.listCustomers('t1');
 
       expect(prismaMock.person.findMany).not.toHaveBeenCalled();
-      expect(res[0]).toEqual(
-        expect.objectContaining({ id: 'c1', linkedPerson: null }),
-      );
+      expect(res[0]).toEqual(expect.objectContaining({ id: 'c1', linkedPerson: null }));
     });
   });
 
@@ -134,9 +124,7 @@ describe('ChatboxCustomersService', () => {
         linkMode: 'manual',
         linkedPersonId: 'p1',
       });
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p1', name: 'Person One' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p1', name: 'Person One' }]);
 
       const res = await service.linkCustomer('t1', 'c1', 'p1');
 
@@ -159,9 +147,7 @@ describe('ChatboxCustomersService', () => {
       prismaMock.chatboxCustomer.findFirst.mockResolvedValue({ id: 'c1' });
       prismaMock.person.findFirst.mockResolvedValue(null);
 
-      await expect(service.linkCustomer('t1', 'c1', 'p404')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.linkCustomer('t1', 'c1', 'p404')).rejects.toThrow(BadRequestException);
       expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
     });
 
@@ -186,17 +172,13 @@ describe('ChatboxCustomersService', () => {
           data: { linkedPersonId: null, linkMode: 'none' },
         }),
       );
-      expect(res).toEqual(
-        expect.objectContaining({ linkMode: 'none', linkedPerson: null }),
-      );
+      expect(res).toEqual(expect.objectContaining({ linkMode: 'none', linkedPerson: null }));
     });
 
     it('клиент не найден → chatbox_customer_not_found', async () => {
       prismaMock.chatboxCustomer.findFirst.mockResolvedValue(null);
 
-      await expect(service.linkCustomer('t1', 'c404', 'p1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(service.linkCustomer('t1', 'c404', 'p1')).rejects.toThrow(BadRequestException);
       expect(prismaMock.person.findFirst).not.toHaveBeenCalled();
       expect(prismaMock.chatboxCustomer.update).not.toHaveBeenCalled();
     });
@@ -205,19 +187,16 @@ describe('ChatboxCustomersService', () => {
   describe('createPersonAndLink', () => {
     it('email уже есть у Person → связываем существующего (не плодим), linkMode=manual', async () => {
       prismaMock.chatboxCustomer.findFirst
-        // 1-й вызов — внутри createPersonAndLink.
         .mockResolvedValueOnce({
           id: 'c1',
           name: 'Клиент',
           email: 'a@x.ru',
           linkedPersonId: null,
         })
-        // 2-й вызов — внутри linkCustomer.
         .mockResolvedValueOnce({ id: 'c1' });
-      // Дедуп по email: Person существует.
       prismaMock.person.findFirst
-        .mockResolvedValueOnce({ id: 'p-existing' }) // дедуп
-        .mockResolvedValueOnce({ id: 'p-existing' }); // проверка в linkCustomer
+        .mockResolvedValueOnce({ id: 'p-existing' })
+        .mockResolvedValueOnce({ id: 'p-existing' });
       prismaMock.chatboxCustomer.update.mockResolvedValue({
         id: 'c1',
         externalId: 'e1',
@@ -227,22 +206,17 @@ describe('ChatboxCustomersService', () => {
         linkMode: 'manual',
         linkedPersonId: 'p-existing',
       });
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p-existing', name: 'Существующий' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p-existing', name: 'Существующий' }]);
 
       const res = await service.createPersonAndLink('t1', 'u1', 'c1');
 
-      // Нового Person не создавали.
       expect(personsMock.create).not.toHaveBeenCalled();
       expect(prismaMock.chatboxCustomer.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: { linkedPersonId: 'p-existing', linkMode: 'manual' },
         }),
       );
-      expect(res).toEqual(
-        expect.objectContaining({ linkMode: 'manual' }),
-      );
+      expect(res).toEqual(expect.objectContaining({ linkMode: 'manual' }));
     });
 
     it('клиент уже связан → chatbox_customer_already_linked', async () => {
@@ -253,9 +227,9 @@ describe('ChatboxCustomersService', () => {
         linkedPersonId: 'p1',
       });
 
-      await expect(
-        service.createPersonAndLink('t1', 'u1', 'c1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createPersonAndLink('t1', 'u1', 'c1')).rejects.toThrow(
+        BadRequestException,
+      );
       expect(personsMock.create).not.toHaveBeenCalled();
     });
 
@@ -279,9 +253,7 @@ describe('ChatboxCustomersService', () => {
         linkMode: 'manual',
         linkedPersonId: 'p-new',
       });
-      prismaMock.person.findMany.mockResolvedValue([
-        { id: 'p-new', name: 'Клиент Без Почты' },
-      ]);
+      prismaMock.person.findMany.mockResolvedValue([{ id: 'p-new', name: 'Клиент Без Почты' }]);
 
       const res = await service.createPersonAndLink('t1', 'u1', 'c1');
 

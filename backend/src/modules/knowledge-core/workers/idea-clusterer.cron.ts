@@ -5,14 +5,8 @@ import { type Idea, type IdeaCluster, Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   IDEA_CLUSTER_MERGE_JSON_SCHEMA,
   IDEA_CLUSTER_MERGE_SCHEMA_NAME,
@@ -30,20 +24,6 @@ interface ClusterMergeVerdict {
   confidence: number;
 }
 
-/**
- * SBA β-5 — IdeaClustererCron.
- *
- * Раз в N часов (по умолчанию `30 *‎/4 * * *`, см. IDEA_CLUSTERER_CRON):
- *   1. Для каждой Org находит Idea без clusterId.
- *   2. KNN cosine с existing IdeaCluster — threshold 0.80.
- *   3. На match — добавляем ideaId в cluster.ideaIds, recompute clusterWeight,
- *      пересчёт embedding'а как mean всех Idea-embedding'ов.
- *   4. На miss — LLM `idea-cluster-merge` (verdict). На 'new_cluster' создаём
- *      IdeaCluster ТОЛЬКО если в окне 14 дней набралось `IDEA_MIN_SUPPORTERS_FOR_CLUSTER`
- *      (минимальная критическая масса).
- *
- * Контракт: НЕ бросает.
- */
 @Injectable()
 export class IdeaClustererCron {
   private readonly logger = new Logger(IdeaClustererCron.name);
@@ -60,9 +40,6 @@ export class IdeaClustererCron {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -151,9 +128,7 @@ export class IdeaClustererCron {
     threshold: number;
   }): Promise<IdeaCluster | null> {
     try {
-      const rows = await this.prisma.$queryRawUnsafe<
-        Array<{ id: string; distance: number }>
-      >(
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; distance: number }>>(
         `SELECT c."id", (c."embedding" <=> (SELECT i."embedding" FROM "ideas" i WHERE i."id" = $2)) AS distance
          FROM "idea_clusters" c
          WHERE c."tenantId" = $1
@@ -177,26 +152,18 @@ export class IdeaClustererCron {
     }
   }
 
-  private async attachToCluster(args: {
-    idea: Idea;
-    cluster: IdeaCluster;
-  }): Promise<void> {
+  private async attachToCluster(args: { idea: Idea; cluster: IdeaCluster }): Promise<void> {
     const nextIds = Array.from(new Set([...args.cluster.ideaIds, args.idea.id]));
     const allIdeas = await this.prisma.idea.findMany({
       where: { id: { in: nextIds }, tenantId: args.idea.tenantId },
       select: { id: true, weight: true },
     });
-    const clusterWeight = allIdeas.reduce(
-      (acc, i) => acc + Number(i.weight),
-      0,
-    );
+    const clusterWeight = allIdeas.reduce((acc, i) => acc + Number(i.weight), 0);
     await this.prisma.ideaCluster.update({
       where: { id: args.cluster.id },
       data: {
         ideaIds: { set: nextIds },
-        clusterWeight: new Prisma.Decimal(
-          Math.round(clusterWeight * 1000) / 1000,
-        ),
+        clusterWeight: new Prisma.Decimal(Math.round(clusterWeight * 1000) / 1000),
       },
     });
     await this.prisma.idea.update({
@@ -205,10 +172,7 @@ export class IdeaClustererCron {
     });
   }
 
-  private async maybeCreateNewCluster(args: {
-    tenantId: string;
-    ideas: Idea[];
-  }): Promise<void> {
+  private async maybeCreateNewCluster(args: { tenantId: string; ideas: Idea[] }): Promise<void> {
     if (args.ideas.length < this.cfg.ideas.minSupportersForCluster) return;
     const seed = args.ideas[0];
     if (!seed) return;
@@ -235,22 +199,16 @@ export class IdeaClustererCron {
         return;
       }
     }
-    const newName =
-      verdict?.newClusterName ?? seed.statement.slice(0, 80);
+    const newName = verdict?.newClusterName ?? seed.statement.slice(0, 80);
     const ideaIds = args.ideas.map((i) => i.id);
-    const clusterWeight = args.ideas.reduce(
-      (acc, i) => acc + Number(i.weight),
-      0,
-    );
+    const clusterWeight = args.ideas.reduce((acc, i) => acc + Number(i.weight), 0);
     const cluster = await this.prisma.ideaCluster.create({
       data: {
         tenantId: args.tenantId,
         name: newName,
         description: verdict?.newClusterDescription ?? null,
         ideaIds,
-        clusterWeight: new Prisma.Decimal(
-          Math.round(clusterWeight * 1000) / 1000,
-        ),
+        clusterWeight: new Prisma.Decimal(Math.round(clusterWeight * 1000) / 1000),
       },
     });
     await this.prisma.idea.updateMany({
@@ -264,7 +222,6 @@ export class IdeaClustererCron {
     candidates: IdeaCluster[];
   }): Promise<ClusterMergeVerdict | null> {
     if (args.candidates.length === 0) {
-      // standalone — но мы всё равно дальше принимаем решение по фолбэку без LLM.
       return null;
     }
     let result: LlmCallResult;
@@ -284,7 +241,6 @@ export class IdeaClustererCron {
           };
         }),
       );
-      // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (statement + кандидаты) в маркеры.
       const guardOn = this.isPromptInjectionGuardEnabled();
       const rawUser = IDEA_CLUSTER_MERGE_USER_TEMPLATE({
         ideaStatement: args.idea.statement,
@@ -328,9 +284,7 @@ export class IdeaClustererCron {
     try {
       const parsed = JSON.parse(result.text) as ClusterMergeVerdict;
       if (parsed && typeof parsed.verdict === 'string') return parsed;
-    } catch {
-      // fallthrough
-    }
+    } catch {}
     return null;
   }
 }

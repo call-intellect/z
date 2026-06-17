@@ -62,7 +62,6 @@ describe('translit utils', () => {
     });
 
     it('добивка X для коротких', () => {
-      // 'ИТ' → 'it' → 'IT' (2 буквы), добивает до 3
       expect(deriveIdentifier('ИТ')).toBe('ITX');
     });
 
@@ -106,9 +105,9 @@ describe('translit utils', () => {
 
     it('падает после 5 попыток', async () => {
       const prisma = buildPrismaStub([true, true, true, true, true]);
-      await expect(
-        generateProjectSlug('Альфа', 'org-1', prisma as never),
-      ).rejects.toThrow('slug_collision');
+      await expect(generateProjectSlug('Альфа', 'org-1', prisma as never)).rejects.toThrow(
+        'slug_collision',
+      );
     });
   });
 
@@ -129,22 +128,13 @@ describe('translit utils', () => {
 
     it('возвращает base, если нет коллизии', async () => {
       const prisma = buildPrismaStub([false]);
-      const ident = await generateProjectIdentifier(
-        'Маркетинг',
-        'org-1',
-        prisma as never,
-      );
+      const ident = await generateProjectIdentifier('Маркетинг', 'org-1', prisma as never);
       expect(ident).toBe('MARKE');
     });
 
     it('добавляет числовой суффикс при коллизии (общая длина ≤ 5)', async () => {
       const prisma = buildPrismaStub([true, false]);
-      const ident = await generateProjectIdentifier(
-        'Маркетинг',
-        'org-1',
-        prisma as never,
-      );
-      // base='MARKE' (5 симв), при коллизии обрезаем до 4 и приклеиваем '2'
+      const ident = await generateProjectIdentifier('Маркетинг', 'org-1', prisma as never);
       expect(ident).toBe('MARK2');
     });
 

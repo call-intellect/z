@@ -1,14 +1,3 @@
-/**
- * ТЗ редизайн Ф7б (Б-3) — unit-тесты предиката ПОЛНОТЫ обязательства.
- *
- * Canon: complete ⟺ commitmentAuthorPersonId != null
- *        И (commitmentRecipientPersonId != null ИЛИ commitmentDueDate != null).
- *
- * Покрытие:
- *   - таблица кейсов полноты (in-memory `isCompleteCommitment`);
- *   - синхронность Prisma-`where`-фрагмента с canon-формулой;
- *   - причина неполноты и её RU-текст.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -31,10 +20,34 @@ describe('isCompleteCommitment — таблица кейсов', () => {
     { name: 'автор + адресат + срок', author: 'a', recipient: 'r', due: DUE, expected: true },
     { name: 'автор + адресат (без срока)', author: 'a', recipient: 'r', due: null, expected: true },
     { name: 'автор + срок (без адресата)', author: 'a', recipient: null, due: DUE, expected: true },
-    { name: 'автор, но ни адресата, ни срока', author: 'a', recipient: null, due: null, expected: false },
-    { name: 'нет автора (но есть адресат+срок)', author: null, recipient: 'r', due: DUE, expected: false },
-    { name: 'нет автора (есть только срок)', author: null, recipient: null, due: DUE, expected: false },
-    { name: 'нет автора (есть только адресат)', author: null, recipient: 'r', due: null, expected: false },
+    {
+      name: 'автор, но ни адресата, ни срока',
+      author: 'a',
+      recipient: null,
+      due: null,
+      expected: false,
+    },
+    {
+      name: 'нет автора (но есть адресат+срок)',
+      author: null,
+      recipient: 'r',
+      due: DUE,
+      expected: false,
+    },
+    {
+      name: 'нет автора (есть только срок)',
+      author: null,
+      recipient: null,
+      due: DUE,
+      expected: false,
+    },
+    {
+      name: 'нет автора (есть только адресат)',
+      author: null,
+      recipient: 'r',
+      due: null,
+      expected: false,
+    },
     { name: 'пусто всё', author: null, recipient: null, due: null, expected: false },
   ];
 
@@ -96,9 +109,7 @@ describe('incompleteCommitmentReason', () => {
 
 describe('incompleteCommitmentReasonText — RU без английских слов', () => {
   it('no_author', () => {
-    expect(incompleteCommitmentReasonText('no_author')).toBe(
-      'не определён автор обещания',
-    );
+    expect(incompleteCommitmentReasonText('no_author')).toBe('не определён автор обещания');
   });
   it('no_recipient_and_due', () => {
     expect(incompleteCommitmentReasonText('no_recipient_and_due')).toBe(

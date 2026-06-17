@@ -7,10 +7,7 @@ import { BusinessMetricsService } from '../../../../common/metrics/business-metr
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 import { tenantTopOf } from '../../../dialog-layer/utils/tenant-top';
-import {
-  getLocalDate,
-  getLocalHour,
-} from '../../../operations/utils/local-date';
+import { getLocalDate, getLocalHour } from '../../../operations/utils/local-date';
 import { ConversationalService } from '../../conversational.service';
 
 import {
@@ -19,50 +16,17 @@ import {
   TelegramTaskParserService,
 } from './telegram-task-parser.service';
 
-/**
- * Wave 3 / Tracker Phase 4 РФ (2026-05-24) — TelegramDigestCron.
- *
- * Утренний дайджест задач для каждого пользователя с активным
- * Telegram-каналом.
- *
- * Wave 3 finishing (2026-05-24): hourly tick + per-user TZ.
- *   - Запуск каждый час `@Cron('0 * * * *')`.
- *   - Для каждого user'а резолвим `Person.timezone` (default `Europe/Moscow`).
- *   - Если локальный час пользователя == `TELEGRAM_DIGEST_HOUR_LOCAL`
- *     (ENV, default 9) → отправляем; иначе тихо пропускаем (без метрики).
- *   - Dedup key теперь по локальной дате (YYYY-MM-DD в TZ user'а), TTL ~25h.
- *
- * Алгоритм:
- *   1. Найти все ChannelBinding с kind=telegram_bot, verifiedAt IS NOT NULL.
- *   2. Для каждого user'а собрать issues по 3 секциям:
- *      - urgentToday: dueDate=сегодня + state.category != completed/cancelled.
- *      - inProgress: assignee=user + state.category='started'.
- *      - overdue: dueDate < сегодня + state.category != completed/cancelled.
- *   3. Если ничего нет → skip (метрика `empty`).
- *   4. LLM `telegram-digest-formulate` → markdown/HTML.
- *   5. Отправить через ConversationalService.sendNotification(
- *        eventType='telegram.digest', preferredChannelKinds=['telegram_bot']).
- *
- * Idempotency: Redis dedup key
- *   `telegram_digest:${userId}:${tenantId}:${YYYY-MM-DD local}` с TTL ~25h
- *   (чуть больше суток — покрывает edge-cases с TZ-shift / DST).
- */
 @Injectable()
 export class TelegramDigestCron {
   private readonly logger = new Logger(TelegramDigestCron.name);
 
-  /** Максимум пользователей в одной обработке (защита от runaway). */
   static readonly MAX_USERS_PER_RUN = 5_000;
 
-  /** Сколько issues максимум в каждой секции для LLM-промпта. */
   static readonly MAX_PER_SECTION = 12;
 
-  /** Redis key prefix + TTL для idempotency. */
   static readonly DEDUP_KEY_PREFIX = 'telegram_digest';
-  /** ~25 часов — покрывает TZ-shift и DST-переходы. */
   static readonly DEDUP_TTL_SEC = 25 * 3600;
 
-  /** Default локальный час отправки дайджеста (если ENV не задан). */
   static readonly DEFAULT_DIGEST_HOUR_LOCAL = 9;
 
   constructor(
@@ -77,18 +41,11 @@ export class TelegramDigestCron {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Главный cron. Запуск каждый час; внутри — фильтр по локальному часу
-   * каждого user'а (`Person.timezone`).
-   */
   @Cron('0 * * * *')
   async digestTick(): Promise<void> {
     try {
       const stats = await this.run();
-      this.logger.debug(
-        stats,
-        'telegram-digest-cron: цикл завершён',
-      );
+      this.logger.debug(stats, 'telegram-digest-cron: цикл завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -97,10 +54,6 @@ export class TelegramDigestCron {
     }
   }
 
-  /**
-   * Публичный метод для тестов / ручного триггера. Опц. `now` — для unit-тестов
-   * с конкретным временем.
-   */
   async run(now: Date = new Date()): Promise<{
     candidates: number;
     sent: number;
@@ -111,7 +64,6 @@ export class TelegramDigestCron {
   }> {
     const digestHourLocal = this.resolveDigestHourLocal();
 
-    // 1. Берём binding'и в активных Telegram-каналах.
     const bindings = await this.prisma.channelBinding.findMany({
       where: {
         verifiedAt: { not: null },
@@ -131,9 +83,6 @@ export class TelegramDigestCron {
       };
     }
 
-    // 2. Batch-резолв Person.timezone для всех (userId, tenantId) пар.
-    //    Person привязан 1:1 к User в рамках tenant'а (Person.userId).
-    //    Если Person нет — fallback Europe/Moscow в getLocalHour.
     const personRows = await this.prisma.person.findMany({
       where: {
         deletedAt: null,
@@ -147,9 +96,6 @@ export class TelegramDigestCron {
       timezoneByKey.set(`${p.userId}:${p.tenantId}`, p.timezone);
     }
 
-    // β-9: для глобального канала (`Channel.tenantId IS NULL`) tenantId
-    // нужно резолвить через `Membership.findFirst({ userId })` (принцип 4
-    // — один пользователь = одна Org). Делаем batch-резолв заранее.
     const userIdsWithoutTenant = bindings
       .filter((b) => b.channel.tenantId === null)
       .map((b) => b.userId);
@@ -161,7 +107,6 @@ export class TelegramDigestCron {
         select: { userId: true, orgId: true },
       });
       for (const m of memberships) {
-        // Берём первый по joinedAt — игнорируем последующие (один user = одна Org).
         if (!membershipByUser.has(m.userId)) {
           membershipByUser.set(m.userId, m.orgId);
         }
@@ -176,13 +121,9 @@ export class TelegramDigestCron {
 
     for (const binding of bindings) {
       const userId = binding.userId;
-      // β-9: per-tenant канал — `binding.channel.tenantId`; глобальный —
-      // резолвим через membership. Если ничего не нашли — пропускаем
-      // (digest не может идти «в воздух», без Org-контекста).
-      const tenantId =
-        binding.channel.tenantId ?? membershipByUser.get(userId) ?? null;
+      const tenantId = binding.channel.tenantId ?? membershipByUser.get(userId) ?? null;
       if (!tenantId) {
-        skippedHour++; // считаем как тихий skip (без отдельной метрики)
+        skippedHour++;
         continue;
       }
       const tenantTop = tenantTopOf(tenantId);
@@ -190,8 +131,6 @@ export class TelegramDigestCron {
       const localHour = getLocalHour(now, tz);
       const localDate = getLocalDate(now, tz);
 
-      // Час пользователя ≠ настроенный → тихий skip без метрики
-      // (метрика считает только реальные tick'и отправки/dedup/empty/error).
       if (localHour !== digestHourLocal) {
         skippedHour++;
         continue;
@@ -200,7 +139,6 @@ export class TelegramDigestCron {
       const dedupKey = `${TelegramDigestCron.DEDUP_KEY_PREFIX}:${userId}:${tenantId}:${localDate}`;
 
       try {
-        // Dedup: SET NX EX. Если уже выставлено — skip.
         const setResult = await this.redis.client.set(
           dedupKey,
           '1',
@@ -222,9 +160,7 @@ export class TelegramDigestCron {
           userId,
         });
         const total =
-          payload.urgentToday.length +
-          payload.inProgress.length +
-          payload.overdue.length;
+          payload.urgentToday.length + payload.inProgress.length + payload.overdue.length;
         if (total === 0) {
           empty++;
           this.metrics.incTelegramDigestSent({ tenantTop, result: 'empty' });
@@ -242,8 +178,6 @@ export class TelegramDigestCron {
           continue;
         }
 
-        // Отправляем как уведомление system.message — оно умеет
-        // routeиться в Telegram (см. EVENT_TYPE_CHANNEL_POLICY).
         await this.conversational.sendNotification({
           tenantId,
           recipientUserId: userId,
@@ -282,11 +216,6 @@ export class TelegramDigestCron {
     };
   }
 
-  /**
-   * Резолвит локальный час отправки дайджеста из ENV
-   * `TELEGRAM_DIGEST_HOUR_LOCAL`. Невалидное значение / NaN → default 9.
-   * Паттерн совпадает с `GOAL_ALIGNMENT_LOW_ENABLED` (process.env напрямую).
-   */
   private resolveDigestHourLocal(): number {
     const raw = process.env.TELEGRAM_DIGEST_HOUR_LOCAL;
     if (!raw) return TelegramDigestCron.DEFAULT_DIGEST_HOUR_LOCAL;
@@ -301,10 +230,6 @@ export class TelegramDigestCron {
     return parsed;
   }
 
-  /**
-   * Собирает 3 секции issue'ов для пользователя + опц. sprint-блок
-   * (Pulse Wave 5 §5.4).
-   */
   private async collectIssuesPayload(args: {
     tenantId: string;
     userId: string;
@@ -354,15 +279,14 @@ export class TelegramDigestCron {
       }),
     ]);
 
-    // Pulse Wave 5 §5.4 — собрать sprint-блок (best-effort, не ломает
-    // основной поток если что-то упадёт).
     let sprint: TelegramDigestSprintBlock | undefined;
     try {
-      sprint = (await this.collectSprintBlock({
-        tenantId: args.tenantId,
-        userId: args.userId,
-        now,
-      })) ?? undefined;
+      sprint =
+        (await this.collectSprintBlock({
+          tenantId: args.tenantId,
+          userId: args.userId,
+          now,
+        })) ?? undefined;
     } catch (err) {
       this.logger.warn(
         {
@@ -383,30 +307,11 @@ export class TelegramDigestCron {
     };
   }
 
-  /**
-   * Pulse Wave 5 §5.4 — sprint-блок «3 сигнала + 1 победа + 1 действие».
-   *
-   * Алгоритм:
-   *   1. Найти все активные `Cycle` (completedAt IS NULL), на которых у
-   *      user'а есть issue'ы (assignees.userId = userId). Из них взять
-   *      top-1 по количеству issue'ов user'а — это «его» спринт.
-   *   2. Если активных циклов нет → вернуть null (sprint-секции не будет).
-   *   3. Собрать данные cycle:
-   *      - 3 сигнала: SprintHint(status=active, kind ∈ at-risk/no-mentions/
-   *        carry-over/conflicts-goal), top-3 по updatedAt desc. Если меньше 3
-   *        и есть Issue без активности >3 дней — добавляем counter.
-   *      - 1 победа: Issue.completedAt за последние 24ч (assignees=userId).
-   *      - 1 действие: SprintHint(status=active, kind ∈ no_due_date /
-   *        no_assignee / no_description), top-1 по updatedAt desc.
-   */
   private async collectSprintBlock(args: {
     tenantId: string;
     userId: string;
     now: Date;
   }): Promise<TelegramDigestSprintBlock | null> {
-    // 1. Top-1 активный Cycle с максимумом issue'ов user'а.
-    //    Делаем groupBy по cycleId через issue.findMany + reduce — это
-    //    дешевле, чем raw SQL, и устойчиво к нюансам Prisma+postgres.
     const cycleAssignments = await this.prisma.issue.findMany({
       where: {
         tenantId: args.tenantId,
@@ -417,7 +322,7 @@ export class TelegramDigestCron {
         cycle: { completedAt: null },
       },
       select: { cycleId: true },
-      take: 500, // hard cap — обычно у одного user'а ≤десятка issue'ов
+      take: 500,
     });
     if (cycleAssignments.length === 0) return null;
 
@@ -427,94 +332,81 @@ export class TelegramDigestCron {
       countByCycle.set(row.cycleId, (countByCycle.get(row.cycleId) ?? 0) + 1);
     }
     if (countByCycle.size === 0) return null;
-    const topCycleId = [...countByCycle.entries()].sort(
-      (a, b) => b[1] - a[1],
-    )[0]?.[0];
+    const topCycleId = [...countByCycle.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
     if (!topCycleId) return null;
 
-    // 2. Достаём сам Cycle + связанные данные параллельно.
     const threeDaysAgo = new Date(args.now.getTime() - 3 * 24 * 3600 * 1000);
-    const twentyFourHoursAgo = new Date(
-      args.now.getTime() - 24 * 3600 * 1000,
-    );
+    const twentyFourHoursAgo = new Date(args.now.getTime() - 24 * 3600 * 1000);
 
-    const [cycle, signalHints, actionHint, recentWin, staleCount] =
-      await Promise.all([
-        this.prisma.cycle.findUnique({
-          where: { id: topCycleId },
-          select: { id: true, name: true, description: true, completedAt: true },
-        }),
-        this.prisma.sprintHint.findMany({
-          where: {
-            tenantId: args.tenantId,
-            cycleId: topCycleId,
-            status: 'active',
-            kind: {
-              in: [
-                'due_date_at_risk',
-                'no_recent_mentions',
-                'recurring_carry_over',
-                'conflicts_with_goal',
-              ],
-            },
+    const [cycle, signalHints, actionHint, recentWin, staleCount] = await Promise.all([
+      this.prisma.cycle.findUnique({
+        where: { id: topCycleId },
+        select: { id: true, name: true, description: true, completedAt: true },
+      }),
+      this.prisma.sprintHint.findMany({
+        where: {
+          tenantId: args.tenantId,
+          cycleId: topCycleId,
+          status: 'active',
+          kind: {
+            in: [
+              'due_date_at_risk',
+              'no_recent_mentions',
+              'recurring_carry_over',
+              'conflicts_with_goal',
+            ],
           },
-          orderBy: { updatedAt: 'desc' },
-          take: 3,
-          select: { id: true, title: true, kind: true },
-        }),
-        this.prisma.sprintHint.findFirst({
-          where: {
-            tenantId: args.tenantId,
-            cycleId: topCycleId,
-            status: 'active',
-            kind: {
-              in: ['no_due_date', 'no_assignee', 'no_description'],
-            },
+        },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+        select: { id: true, title: true, kind: true },
+      }),
+      this.prisma.sprintHint.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          cycleId: topCycleId,
+          status: 'active',
+          kind: {
+            in: ['no_due_date', 'no_assignee', 'no_description'],
           },
-          orderBy: { updatedAt: 'desc' },
-          select: { id: true, title: true },
-        }),
-        this.prisma.issue.findFirst({
-          where: {
-            tenantId: args.tenantId,
-            deletedAt: null,
-            archivedAt: null,
-            cycleId: topCycleId,
-            assignees: { some: { userId: args.userId } },
-            completedAt: { gte: twentyFourHoursAgo },
-          },
-          orderBy: { completedAt: 'desc' },
-          select: { identifier: true, title: true },
-        }),
-        this.prisma.issue.count({
-          where: {
-            tenantId: args.tenantId,
-            deletedAt: null,
-            archivedAt: null,
-            cycleId: topCycleId,
-            assignees: { some: { userId: args.userId } },
-            updatedAt: { lt: threeDaysAgo },
-            state: { category: { notIn: ['completed', 'cancelled'] } },
-          },
-        }),
-      ]);
+        },
+        orderBy: { updatedAt: 'desc' },
+        select: { id: true, title: true },
+      }),
+      this.prisma.issue.findFirst({
+        where: {
+          tenantId: args.tenantId,
+          deletedAt: null,
+          archivedAt: null,
+          cycleId: topCycleId,
+          assignees: { some: { userId: args.userId } },
+          completedAt: { gte: twentyFourHoursAgo },
+        },
+        orderBy: { completedAt: 'desc' },
+        select: { identifier: true, title: true },
+      }),
+      this.prisma.issue.count({
+        where: {
+          tenantId: args.tenantId,
+          deletedAt: null,
+          archivedAt: null,
+          cycleId: topCycleId,
+          assignees: { some: { userId: args.userId } },
+          updatedAt: { lt: threeDaysAgo },
+          state: { category: { notIn: ['completed', 'cancelled'] } },
+        },
+      }),
+    ]);
 
     if (!cycle) return null;
-    // Защита от race: cycle.completedAt мог проставиться между запросами.
     if (cycle.completedAt !== null) return null;
 
-    // 3. Собираем signals: до 3 хинтов + опц. counter «N задач без
-    //    активности >3 дней» если хинтов меньше 3 и stale > 0.
     const signals: string[] = signalHints.map((h) => h.title);
     if (signals.length < 3 && staleCount > 0) {
-      signals.push(
-        `${staleCount} ${pluralizeIssues(staleCount)} без активности >3 дней`,
-      );
+      signals.push(`${staleCount} ${pluralizeIssues(staleCount)} без активности >3 дней`);
     }
 
-    const winLabel = recentWin
-      ? `${recentWin.identifier} «${recentWin.title}»`
-      : null;
+    const winLabel = recentWin ? `${recentWin.identifier} «${recentWin.title}»` : null;
     const actionLabel = actionHint ? actionHint.title : null;
 
     return {
@@ -526,8 +418,6 @@ export class TelegramDigestCron {
     };
   }
 }
-
-// ─────────────────────────── private helpers ────────────────────────────
 
 function issueSummary(
   issue: Issue & { state: IssueState | null },
@@ -553,10 +443,6 @@ function issueSummary(
   };
 }
 
-/**
- * Pulse Wave 5 §5.4 — pluralize «задача / задачи / задач» по русским правилам.
- * Используется в counter'е stale-задач sprint-блока.
- */
 function pluralizeIssues(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -566,5 +452,4 @@ function pluralizeIssues(n: number): string {
   return 'задач';
 }
 
-// Помечаем typed-config как использованный — оставляем DI для будущих ENV.
 void TypedConfigService;

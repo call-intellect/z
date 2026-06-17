@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, type RoleProfileStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -25,12 +19,6 @@ function readMinBlocks(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MIN_BLOCKS;
 }
 
-/**
- * Сервис RoleProfile.
- *
- * Чтения / агрегаты — полная функциональность. rebuild/build-status — stub'и
- * (реализация в Фазе 0d через RoleProfileAgent + BullMQ).
- */
 @Injectable()
 export class RoleProfilesService {
   private readonly logger = new Logger(RoleProfilesService.name);
@@ -47,9 +35,7 @@ export class RoleProfilesService {
   }): Promise<{ items: RoleProfileListItemDto[]; total: number }> {
     const where: Prisma.RoleProfileWhereInput = {
       tenantId: args.tenantId,
-      ...(args.status === 'all'
-        ? {}
-        : { status: args.status as RoleProfileStatus }),
+      ...(args.status === 'all' ? {} : { status: args.status as RoleProfileStatus }),
     };
     const [rows, total] = await Promise.all([
       this.prisma.roleProfile.findMany({
@@ -75,10 +61,7 @@ export class RoleProfilesService {
     };
   }
 
-  async getByRoleId(args: {
-    tenantId: string;
-    roleId: string;
-  }): Promise<RoleProfileDetailDto> {
+  async getByRoleId(args: { tenantId: string; roleId: string }): Promise<RoleProfileDetailDto> {
     const rp = await this.prisma.roleProfile.findUnique({
       where: { roleId: args.roleId },
       include: {
@@ -136,8 +119,6 @@ export class RoleProfilesService {
       });
     }
 
-    // Фаза 0d: 409 Conflict если уже есть active/queued job для этого roleId
-    // (см. plans/tz/2026-05-21-phase-0d-role-profile-agent.md §8).
     const existing = await this.coreQueue.findActiveRoleProfileJob(args.roleId);
     if (existing) {
       throw new ConflictException({
@@ -151,7 +132,6 @@ export class RoleProfilesService {
       });
     }
 
-    // Enqueue в `core.role-profile` — consumer — RoleProfileWorker (Фаза 0d).
     const { jobId } = await this.coreQueue.enqueueRoleProfile({
       tenantId: args.tenantId,
       roleId: args.roleId,
@@ -188,7 +168,6 @@ export class RoleProfilesService {
       });
     }
 
-    // Фаза 0d: реальный статус через CoreQueueService.findActiveRoleProfileJob.
     const active = await this.coreQueue.findActiveRoleProfileJob(args.roleId);
     if (active) {
       return {
@@ -203,8 +182,6 @@ export class RoleProfilesService {
       ...(rp.lastBuildAt ? { lastBuildAt: rp.lastBuildAt.toISOString() } : {}),
     };
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private toListItem(rp: {
     id: string;

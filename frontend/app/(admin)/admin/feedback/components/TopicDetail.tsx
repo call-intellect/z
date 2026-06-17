@@ -1,33 +1,25 @@
-'use client';
+"use client";
 
-/**
- * TopicDetail — шапка страницы деталей блока: переключатель окна агрегатов,
- * крупные метрики, плашка статуса, кнопки действий (Phase 8 placeholder),
- * чекбокс «Группировать по пользователю».
- *
- * Title + description показывает уже AdminSection шапка снаружи.
- */
-
-import { Archive, Pencil, Shuffle } from 'lucide-react';
+import { Archive, Pencil, Shuffle } from "lucide-react";
 
 import {
   FEEDBACK_TOPIC_STATUS_LABEL,
   FEEDBACK_WINDOW_LABEL,
   type FeedbackTopicDetail as FeedbackTopicDetailModel,
   type FeedbackWindow,
-} from '@/domain/admin-feedback';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/domain/admin-feedback";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-const WINDOWS: FeedbackWindow[] = ['30', '90', 'all'];
+const WINDOWS: FeedbackWindow[] = ["30", "90", "all"];
 
 interface TopicDetailProps {
   topic: FeedbackTopicDetailModel;
@@ -35,7 +27,7 @@ interface TopicDetailProps {
   onWindowChange: (w: FeedbackWindow) => void;
   groupByUser: boolean;
   onGroupByUserChange: (v: boolean) => void;
-  onAction: (action: 'rename' | 'merge' | 'archive') => void;
+  onAction: (action: "rename" | "merge" | "archive") => void;
 }
 
 export function TopicDetail({
@@ -46,7 +38,7 @@ export function TopicDetail({
   onGroupByUserChange,
   onAction,
 }: TopicDetailProps) {
-  const isArchived = topic.status === 'archived';
+  const isArchived = topic.status === "archived";
 
   return (
     <div className="space-y-4">
@@ -54,9 +46,9 @@ export function TopicDetail({
         <Badge
           variant="outline"
           className={
-            topic.status === 'active'
-              ? 'border-chip-success-bg bg-chip-success-bg text-chip-success-fg'
-              : 'border-border-subtle bg-bg-subtle text-fg-secondary'
+            topic.status === "active"
+              ? "border-chip-success-bg bg-chip-success-bg text-chip-success-fg"
+              : "border-border-subtle bg-bg-subtle text-fg-secondary"
           }
         >
           {FEEDBACK_TOPIC_STATUS_LABEL[topic.status]}
@@ -82,24 +74,20 @@ export function TopicDetail({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onAction('rename')}
+            onClick={() => onAction("rename")}
           >
             <Pencil size={14} className="mr-1" /> Переименовать
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onAction('merge')}
-          >
+          <Button variant="outline" size="sm" onClick={() => onAction("merge")}>
             <Shuffle size={14} className="mr-1" /> Объединить с…
           </Button>
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onAction('archive')}
+            onClick={() => onAction("archive")}
           >
             <Archive size={14} className="mr-1" />
-            {isArchived ? 'Восстановить' : 'В архив'}
+            {isArchived ? "Восстановить" : "В архив"}
           </Button>
         </div>
       </div>
@@ -118,30 +106,30 @@ export function TopicDetail({
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-fg-tertiary">
         <span>
-          Создан:{' '}
+          Создан:{" "}
           <span className="text-fg-secondary">
-            {topic.createdAt.toLocaleDateString('ru-RU')}
+            {topic.createdAt.toLocaleDateString("ru-RU")}
           </span>
         </span>
         <span>
-          Последнее item:{' '}
+          Последнее item:{" "}
           <span className="text-fg-secondary">
             {topic.lastItemAt
-              ? topic.lastItemAt.toLocaleDateString('ru-RU')
-              : '—'}
+              ? topic.lastItemAt.toLocaleDateString("ru-RU")
+              : "—"}
           </span>
         </span>
         {topic.archivedAt && (
           <span>
-            Архивирован:{' '}
+            Архивирован:{" "}
             <span className="text-fg-secondary">
-              {topic.archivedAt.toLocaleDateString('ru-RU')}
+              {topic.archivedAt.toLocaleDateString("ru-RU")}
             </span>
           </span>
         )}
         {topic.mergedIntoId && (
           <span>
-            Слит в блок:{' '}
+            Слит в блок:{" "}
             <span className="font-mono text-fg-secondary">
               {topic.mergedIntoId}
             </span>

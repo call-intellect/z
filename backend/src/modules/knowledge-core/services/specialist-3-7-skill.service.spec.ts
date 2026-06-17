@@ -2,18 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Specialist37Service } from './specialist-3-7-skill.service';
 
-/**
- * Ф3(D) clone-quality-improvements (2026-06-08) — unit-тест grounding-гейта
- * `verifyPendingTraits`:
- *   - grounded=true  → skillTrait.update status:'active' (promoted=1);
- *   - grounded=false → черта остаётся pending, update НЕ зовётся (held=1);
- *   - llm.call throws → FAIL-OPEN: update status:'active' (promoted=1).
- *
- * Конструируем сервис напрямую с замоканными зависимостями (паттерн
- * specialist-3-6-ideas.service.spec.ts) — без NestJS Test-модуля. Метод
- * использует только prisma + llm, остальные DI-зависимости не задействованы.
- */
-
 const TRAIT_ID = 'trait-1';
 const PROFILE_ID = 'profile-1';
 const TENANT = 'org-1';
@@ -44,13 +32,12 @@ function pendingTrait(overrides: Record<string, unknown> = {}) {
 function buildService(m: Mocks): Specialist37Service {
   return new Specialist37Service(
     m.prisma as never,
-    // cfg — Б2 verifyPendingTraits читает skill.archiveMonths для archiveCutoff.
     { skill: { archiveMonths: 12 } } as never,
     m.llm as never,
-    {} as never, // embedder
-    {} as never, // metrics
-    {} as never, // probes
-    {} as never, // concepts
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
 }
 
@@ -63,8 +50,16 @@ function makeMocks(): Mocks {
       },
       ideaBlock: {
         findMany: vi.fn().mockResolvedValue([
-          { id: 'b1', criticalQuestion: 'Почему откладываешь оценку?', trustedAnswer: 'Обжигался на оценках без замеров.' },
-          { id: 'b2', criticalQuestion: 'Почему не даёшь срок?', trustedAnswer: 'Надо разобрать контракт сначала.' },
+          {
+            id: 'b1',
+            criticalQuestion: 'Почему откладываешь оценку?',
+            trustedAnswer: 'Обжигался на оценках без замеров.',
+          },
+          {
+            id: 'b2',
+            criticalQuestion: 'Почему не даёшь срок?',
+            trustedAnswer: 'Надо разобрать контракт сначала.',
+          },
         ]),
       },
     },
@@ -80,7 +75,9 @@ describe('Specialist37Service.verifyPendingTraits — grounding-гейт Ф3(D)'
   });
 
   it('grounded=true → промоут в active (promoted=1, held=0)', async () => {
-    m.llm.call.mockResolvedValue({ text: JSON.stringify({ grounded: true, reason: 'цитаты 1 и 2 подтверждают' }) });
+    m.llm.call.mockResolvedValue({
+      text: JSON.stringify({ grounded: true, reason: 'цитаты 1 и 2 подтверждают' }),
+    });
     const svc = buildService(m);
 
     const res = await svc.verifyPendingTraits();
@@ -91,13 +88,14 @@ describe('Specialist37Service.verifyPendingTraits — grounding-гейт Ф3(D)'
       where: { id: TRAIT_ID },
       data: { status: 'active' },
     });
-    // verify-вызов с правильным taskType.
     expect(m.llm.call).toHaveBeenCalledTimes(1);
     expect(m.llm.call.mock.calls[0]![0].taskType).toBe('skill-trait-verify');
   });
 
   it('grounded=false → черта остаётся pending (held=1), update НЕ зовётся', async () => {
-    m.llm.call.mockResolvedValue({ text: JSON.stringify({ grounded: false, reason: 'только уточняющие вопросы' }) });
+    m.llm.call.mockResolvedValue({
+      text: JSON.stringify({ grounded: false, reason: 'только уточняющие вопросы' }),
+    });
     const svc = buildService(m);
 
     const res = await svc.verifyPendingTraits();
@@ -130,12 +128,6 @@ describe('Specialist37Service.verifyPendingTraits — grounding-гейт Ф3(D)'
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф2-B + Ф2-C (2026-06-08) — mergeIntoExisting: confidence из разброса ДАТ,
-// якорь statement+embedding вместе, decay одной ступенью.
-// ───────────────────────────────────────────────────────────────────────────
-
-/** Дата за N дней назад в формате ISO. */
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 }
@@ -156,7 +148,6 @@ function buildMergeService(mm: MergeMocks): {
       sourceBlockIds: string[];
       observationCount: number;
       confidence: 'low' | 'medium' | 'high';
-      // Б3 — lastConfirmedAt проброшен из KNN-кандидата для MAX-защиты от отката.
       lastConfirmedAt?: Date;
     };
     draft: {
@@ -174,9 +165,8 @@ function buildMergeService(mm: MergeMocks): {
     skillTrait: { update: mm.txUpdate },
     $executeRawUnsafe: mm.txExecRaw,
   };
-  // По умолчанию $transaction исполняет callback с txMock.
-  mm.transaction.mockImplementation(
-    async (cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock),
+  mm.transaction.mockImplementation(async (cb: (tx: typeof txMock) => Promise<unknown>) =>
+    cb(txMock),
   );
   const prisma = {
     ideaBlock: { findMany: mm.ideaBlockFindMany },
@@ -184,12 +174,12 @@ function buildMergeService(mm: MergeMocks): {
   };
   const svc = new Specialist37Service(
     prisma as never,
-    {} as never, // cfg
-    {} as never, // llm
-    {} as never, // embedder
-    {} as never, // metrics
-    {} as never, // probes
-    {} as never, // concepts
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
   );
   const mergeIntoExisting = (
     svc as unknown as {
@@ -230,7 +220,12 @@ describe('Specialist37Service.mergeIntoExisting — Ф2-B confidence из ДАТ
 
     await mergeIntoExisting({
       profileId: 'profile-1',
-      existing: { id: 'trait-1', sourceBlockIds: ['b1', 'b2'], observationCount: 2, confidence: 'low' },
+      existing: {
+        id: 'trait-1',
+        sourceBlockIds: ['b1', 'b2'],
+        observationCount: 2,
+        confidence: 'low',
+      },
       draft: DRAFT,
       embedding: null,
     });
@@ -241,10 +236,7 @@ describe('Specialist37Service.mergeIntoExisting — Ф2-B confidence из ДАТ
 
   it('блоки за 1 день → confidence не выше low', async () => {
     const mm = makeMergeMocks();
-    mm.ideaBlockFindMany.mockResolvedValue([
-      { createdAt: daysAgo(0) },
-      { createdAt: daysAgo(0) },
-    ]);
+    mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }, { createdAt: daysAgo(0) }]);
     const { mergeIntoExisting } = buildMergeService(mm);
 
     await mergeIntoExisting({
@@ -325,10 +317,6 @@ describe('Specialist37Service.mergeIntoExisting — Ф2-C якорь statement+e
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф2-C decay — runDecay: одна ступень за проход, порядок medium→low ДО high→medium.
-// ───────────────────────────────────────────────────────────────────────────
-
 describe('Specialist37Service.runDecay — Ф2-C один шаг за проход', () => {
   it('medium→low updateMany вызывается РАНЬШЕ high→medium', async () => {
     const updateMany = vi.fn().mockResolvedValue({ count: 0 });
@@ -336,7 +324,7 @@ describe('Specialist37Service.runDecay — Ф2-C один шаг за прохо
     const cfg = { skill: { decayMonths: 6, archiveMonths: 12 } };
     const svc = new Specialist37Service(
       prisma as never,
-      cfg as never, // cfg
+      cfg as never,
       {} as never,
       {} as never,
       {} as never,
@@ -344,35 +332,23 @@ describe('Specialist37Service.runDecay — Ф2-C один шаг за прохо
       {} as never,
     );
 
-    await (
-      svc as unknown as { runDecay: (id: string) => Promise<void> }
-    ).runDecay('profile-1');
+    await (svc as unknown as { runDecay: (id: string) => Promise<void> }).runDecay('profile-1');
 
-    // 4 вызова: archive(active), archive(pending — Б1), medium→low, high→medium.
     expect(updateMany).toHaveBeenCalledTimes(4);
     const calls = updateMany.mock.calls;
-    // [0] archive active
     expect(calls[0]![0].where.status).toBe('active');
     expect(calls[0]![0].data).toEqual({ status: 'archived' });
-    // [1] archive pending_verification (Б1) — старше archiveCutoff по createdAt.
     expect(calls[1]![0].where.status).toBe('pending_verification');
     expect(calls[1]![0].where.createdAt.lt).toBeInstanceOf(Date);
     expect(calls[1]![0].data).toEqual({ status: 'archived' });
-    // [2] medium→low (раньше high→medium)
     expect(calls[2]![0].where.confidence).toBe('medium');
     expect(calls[2]![0].data).toEqual({ confidence: 'low' });
-    // [3] high→medium (позже)
     expect(calls[3]![0].where.confidence).toBe('high');
     expect(calls[3]![0].data).toEqual({ confidence: 'medium' });
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф4-E — split cluster-floor: профиль-порог и кластер-порог через getDynamic.
-// ───────────────────────────────────────────────────────────────────────────
-
 describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
-  /** Профиль employee с entityId; блоки сделаем подложным detect-путём. */
   function buildRebuildService(opts: {
     blocks: Array<{ blockId: string; quote: string; embedding: number[] | null; createdAt: Date }>;
     getDynamic: ReturnType<typeof vi.fn>;
@@ -411,11 +387,11 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
     const svc = new Specialist37Service(
       prisma as never,
       cfg as never,
-      {} as never, // llm
-      {} as never, // embedder
+      {} as never,
+      {} as never,
       metrics as never,
       probes as never,
-      {} as never, // concepts
+      {} as never,
     );
     const internal = svc as unknown as Record<string, unknown>;
     internal.loadSubjectReasoningBlocks = vi.fn().mockResolvedValue(opts.blocks);
@@ -430,7 +406,6 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
   }
 
   it('6 блоков → 2 кластера по 3 → detect/mergeOrCreate вызваны (cluster-floor 3); оба ключа getDynamic прочитаны', async () => {
-    // Два чётко разделённых кластера по 3 (cosine между кластерами < 0.78).
     const blocks = [
       reasoningBlock('a1', [1, 0, 0]),
       reasoningBlock('a2', [0.99, 0.01, 0]),
@@ -445,8 +420,11 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
       return fallback;
     });
     const detectTrait = vi.fn().mockResolvedValue({
-      category: 'c', statement: 's', confidence: 'medium',
-      sourceBlockIds: [], firstObservedAt: new Date().toISOString(),
+      category: 'c',
+      statement: 's',
+      confidence: 'medium',
+      sourceBlockIds: [],
+      firstObservedAt: new Date().toISOString(),
       lastConfirmedAt: new Date().toISOString(),
     });
     const mergeOrCreate = vi.fn().mockResolvedValue('created');
@@ -454,11 +432,9 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
     const { svc } = buildRebuildService({ blocks, getDynamic, detectTrait, mergeOrCreate });
     await svc.rebuildProfile({ profileId: 'profile-1' });
 
-    // Оба порога прочитаны через getDynamic.
     const keys = getDynamic.mock.calls.map((c) => c[0]);
     expect(keys).toContain('knowledge.skillProfileMinObservations');
     expect(keys).toContain('knowledge.skillClusterMinObservations');
-    // Раньше при floor=5 на кластер было 0 групп; теперь 2 группы по 3 → 2 detect.
     expect(detectTrait).toHaveBeenCalledTimes(2);
     expect(mergeOrCreate).toHaveBeenCalledTimes(2);
   });
@@ -481,12 +457,6 @@ describe('Specialist37Service.rebuildProfile — Ф4-E split-floor', () => {
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Ф5(F) — арбитраж мёртвой зоны merge 0.78–0.85: драфт-близнец в [0.78,0.85)
-// судится арбитром (bucket:'band'), а не форс-new. <0.78 → форс-new. ≥0.85 →
-// bucket:'hard' (как раньше). threshold = traitSimilarityThreshold = 0.85.
-// ───────────────────────────────────────────────────────────────────────────
-
 interface ArbiterMocks {
   embedQuery: ReturnType<typeof vi.fn>;
   queryRawUnsafe: ReturnType<typeof vi.fn>;
@@ -501,7 +471,6 @@ const ARBITER_DRAFT = {
   lastConfirmedAt: new Date().toISOString(),
 };
 
-/** Строит сервис для прямого вызова private mergeOrCreate с замоканным KNN. */
 function buildArbiterService(distance: number): {
   svc: Specialist37Service;
   callMergeArbiterSpy: ReturnType<typeof vi.fn>;
@@ -531,11 +500,11 @@ function buildArbiterService(distance: number): {
   const svc = new Specialist37Service(
     prisma as never,
     cfg as never,
-    {} as never, // llm
+    {} as never,
     embedder as never,
-    {} as never, // metrics
-    {} as never, // probes
-    {} as never, // concepts
+    {} as never,
+    {} as never,
+    {} as never,
   );
   const internal = svc as unknown as Record<string, unknown>;
   const callMergeArbiterSpy = vi
@@ -546,9 +515,9 @@ function buildArbiterService(distance: number): {
   internal.callMergeArbiter = callMergeArbiterSpy;
   internal.createNewTrait = createNewTraitSpy;
   internal.mergeIntoExisting = mergeIntoExistingSpy;
-  const mergeOrCreate = (
-    internal.mergeOrCreate as (a: unknown) => Promise<string>
-  ).bind(svc) as never;
+  const mergeOrCreate = (internal.mergeOrCreate as (a: unknown) => Promise<string>).bind(
+    svc,
+  ) as never;
   return {
     svc,
     callMergeArbiterSpy,
@@ -570,7 +539,6 @@ describe('Specialist37Service.mergeOrCreate — Ф5(F) арбитраж 0.78–0
     const passedCandidates = t.callMergeArbiterSpy.mock.calls[0]![0].candidates;
     expect(passedCandidates).toHaveLength(1);
     expect(passedCandidates[0].bucket).toBe('band');
-    // verdict='new' → создаётся новая (createNewTrait), но ПОСЛЕ арбитража.
     expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
     expect(res).toBe('created');
   });
@@ -608,13 +576,6 @@ describe('Specialist37Service.mergeOrCreate — Ф5(F) арбитраж 0.78–0
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// TZ clone-method Э1.3 — детектор ценностей/мотивации (revealed preferences):
-// второй проход rebuildProfile пишет SkillTrait layer=value|motivation,
-// kill-switch cfg.skill.valueMotivationDetectEnabled, KNN-merge в своём слое.
-// ───────────────────────────────────────────────────────────────────────────
-
-/** Один кластер из 3 reasoning-блоков (cluster-floor 3 проходит). */
 const VM_BLOCKS = [
   {
     blockId: 'b1',
@@ -640,8 +601,7 @@ function vmDraftJson(layer: string, sourceBlockIds: string[]): string {
   return JSON.stringify({
     layer,
     category: 'надёжность выше скорости поставки',
-    statement:
-      'Похоже, при конфликте сроков и надёжности обычно ставит надёжность выше.',
+    statement: 'Похоже, при конфликте сроков и надёжности обычно ставит надёжность выше.',
     confidence: 'medium',
     sourceBlockIds,
     firstObservedAt: new Date().toISOString(),
@@ -669,9 +629,7 @@ interface VmMocks {
 function buildVmRebuildService(opts: {
   flagEnabled: boolean;
   m: VmMocks;
-  /** Подменить основной detectTrait (null → главный проход молчит). */
   detectTrait?: ReturnType<typeof vi.fn>;
-  /** Подменить mergeOrCreate целиком (для теста счётчика LLM-вызовов). */
   mergeOrCreate?: ReturnType<typeof vi.fn>;
 }): { svc: Specialist37Service } {
   const prisma = {
@@ -738,14 +696,10 @@ function buildVmRebuildService(opts: {
 describe('Specialist37Service — Э1.3 детектор ценностей/мотивации (второй проход rebuild)', () => {
   it('флаг ON + LLM отдаёт layer=value → создан trait с layer=value', async () => {
     const m: VmMocks = {
-      llmCall: vi
-        .fn()
-        .mockResolvedValue({ text: vmDraftJson('value', ['b1', 'b2', 'b3']) }),
+      llmCall: vi.fn().mockResolvedValue({ text: vmDraftJson('value', ['b1', 'b2', 'b3']) }),
       skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-vm-1' }),
-      // embedQuery падает → mergeOrCreate идёт по пути createNewTrait без KNN.
       embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
     };
-    // Главный skill-проход молчит — изолируем второй проход.
     const detectTrait = vi.fn().mockResolvedValue(null);
     const { svc } = buildVmRebuildService({ flagEnabled: true, m, detectTrait });
 
@@ -755,18 +709,12 @@ describe('Specialist37Service — Э1.3 детектор ценностей/мо
     expect(m.llmCall.mock.calls[0]![0].taskType).toBe('value-motivation-detect');
     expect(m.skillTraitCreate).toHaveBeenCalledTimes(1);
     expect(m.skillTraitCreate.mock.calls[0]![0].data.layer).toBe('value');
-    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual([
-      'b1',
-      'b2',
-      'b3',
-    ]);
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual(['b1', 'b2', 'b3']);
   });
 
   it('LLM отдаёт layer=motivation → trait пишется с layer=motivation', async () => {
     const m: VmMocks = {
-      llmCall: vi
-        .fn()
-        .mockResolvedValue({ text: vmDraftJson('motivation', ['b1', 'b2']) }),
+      llmCall: vi.fn().mockResolvedValue({ text: vmDraftJson('motivation', ['b1', 'b2']) }),
       skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-vm-2' }),
       embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
     };
@@ -829,7 +777,6 @@ describe('Specialist37Service — Э1.3 детектор ценностей/мо
     const taskTypes = m.llmCall.mock.calls.map((c) => c[0].taskType);
     expect(taskTypes).toEqual(['skill-trait-detect', 'value-motivation-detect']);
     expect(mergeOrCreate).toHaveBeenCalledTimes(2);
-    // Основной проход — без layer (default skill), второй — layer='value'.
     expect(mergeOrCreate.mock.calls[0]![0].layer).toBeUndefined();
     expect(mergeOrCreate.mock.calls[1]![0].layer).toBe('value');
   });
@@ -848,18 +795,16 @@ describe('Specialist37Service.mergeOrCreate — Э1.3 KNN-фильтр по laye
     const svc = new Specialist37Service(
       prisma as never,
       cfg as never,
-      {} as never, // llm
+      {} as never,
       embedder as never,
-      {} as never, // metrics
-      {} as never, // probes
-      {} as never, // concepts
+      {} as never,
+      {} as never,
+      {} as never,
     );
     const internal = svc as unknown as Record<string, unknown>;
     const createNewTraitSpy = vi.fn().mockResolvedValue('created');
     internal.createNewTrait = createNewTraitSpy;
-    const mergeOrCreate = (
-      internal.mergeOrCreate as (a: unknown) => Promise<string>
-    ).bind(svc);
+    const mergeOrCreate = (internal.mergeOrCreate as (a: unknown) => Promise<string>).bind(svc);
     return { queryRawUnsafe, createNewTraitSpy, mergeOrCreate };
   }
 
@@ -898,14 +843,6 @@ describe('Specialist37Service.mergeOrCreate — Э1.3 KNN-фильтр по laye
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// TZ clone-method Э2.1 — детектор конструктивных маркеров процесса:
-// третий проход rebuildProfile пишет SkillTrait layer=process_marker,
-// kill-switch cfg.skill.processMarkerDetectEnabled, код-гард стоп-маркеров
-// оценочных осей («избегает», «не решает сам», …) → null + warn.
-// ───────────────────────────────────────────────────────────────────────────
-
-/** Ответ LLM для process-marker-detect (схема БЕЗ layer — слой ставит сервис). */
 function pmDraftJson(statement: string, sourceBlockIds: string[]): string {
   return JSON.stringify({
     category: 'перепроверяет оценки данными',
@@ -917,16 +854,10 @@ function pmDraftJson(statement: string, sourceBlockIds: string[]): string {
   });
 }
 
-/**
- * Как buildVmRebuildService, но второй проход (value/motivation) ВЫКЛЮЧЕН —
- * изолируем третий (process_marker); его флаг задаётся параметром.
- */
 function buildPmRebuildService(opts: {
   pmFlagEnabled: boolean;
   m: VmMocks;
-  /** Подменить основной detectTrait (null → главный проход молчит). */
   detectTrait?: ReturnType<typeof vi.fn>;
-  /** Подменить mergeOrCreate целиком (для теста счётчика LLM-вызовов). */
   mergeOrCreate?: ReturnType<typeof vi.fn>;
 }): { svc: Specialist37Service } {
   const prisma = {
@@ -1001,10 +932,8 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
         ),
       }),
       skillTraitCreate: vi.fn().mockResolvedValue({ id: 'trait-pm-1' }),
-      // embedQuery падает → mergeOrCreate идёт по пути createNewTrait без KNN.
       embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
     };
-    // Главный skill-проход молчит — изолируем третий проход.
     const detectTrait = vi.fn().mockResolvedValue(null);
     const { svc } = buildPmRebuildService({ pmFlagEnabled: true, m, detectTrait });
 
@@ -1014,20 +943,13 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
     expect(m.llmCall.mock.calls[0]![0].taskType).toBe('process-marker-detect');
     expect(m.skillTraitCreate).toHaveBeenCalledTimes(1);
     expect(m.skillTraitCreate.mock.calls[0]![0].data.layer).toBe('process_marker');
-    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual([
-      'b1',
-      'b2',
-      'b3',
-    ]);
+    expect(m.skillTraitCreate.mock.calls[0]![0].data.sourceBlockIds).toEqual(['b1', 'b2', 'b3']);
   });
 
   it('statement с «избегает решений» → код-гард: trait НЕ создан + logger.warn', async () => {
     const m: VmMocks = {
       llmCall: vi.fn().mockResolvedValue({
-        text: pmDraftJson('Похоже, избегает решений и ждёт указаний сверху.', [
-          'b1',
-          'b2',
-        ]),
+        text: pmDraftJson('Похоже, избегает решений и ждёт указаний сверху.', ['b1', 'b2']),
       }),
       skillTraitCreate: vi.fn(),
       embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
@@ -1035,8 +957,7 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
     const detectTrait = vi.fn().mockResolvedValue(null);
     const { svc } = buildPmRebuildService({ pmFlagEnabled: true, m, detectTrait });
     const warnSpy = vi.spyOn(
-      (svc as unknown as { logger: { warn: (...a: unknown[]) => unknown } })
-        .logger,
+      (svc as unknown as { logger: { warn: (...a: unknown[]) => unknown } }).logger,
       'warn',
     );
 
@@ -1046,9 +967,7 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
     expect(m.skillTraitCreate).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalled();
     const warnMessages = warnSpy.mock.calls.map((c) => String(c[1] ?? c[0]));
-    expect(
-      warnMessages.some((msg) => msg.includes('rejected_guard')),
-    ).toBe(true);
+    expect(warnMessages.some((msg) => msg.includes('rejected_guard'))).toBe(true);
   });
 
   it('флаг OFF → третий LLM-вызов не происходит (process-marker-detect не зовётся)', async () => {
@@ -1062,7 +981,6 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
 
     await svc.rebuildProfile({ profileId: PROFILE_ID });
 
-    // Только основной detect (1 группа); ни одного process-marker-detect.
     expect(m.llmCall).toHaveBeenCalledTimes(1);
     const taskTypes = m.llmCall.mock.calls.map((c) => c[0].taskType);
     expect(taskTypes).toEqual(['skill-trait-detect']);
@@ -1072,10 +990,7 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
   it('LLM отдаёт sourceBlockIds=[] (нет повторяемого приёма) → trait НЕ создаётся', async () => {
     const m: VmMocks = {
       llmCall: vi.fn().mockResolvedValue({
-        text: pmDraftJson(
-          'В цитатах нет повторяемого приёма проработки решений.',
-          [],
-        ),
+        text: pmDraftJson('В цитатах нет повторяемого приёма проработки решений.', []),
       }),
       skillTraitCreate: vi.fn(),
       embedQuery: vi.fn().mockRejectedValue(new Error('embed off')),
@@ -1090,15 +1005,10 @@ describe('Specialist37Service — Э2.1 детектор маркеров про
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Б2 (2026-06-16) — verifyPendingTraits: FIFO orderBy createdAt asc + исключение
-// безнадёжных (createdAt < archiveCutoff). Г3 — предфильтр <2 цитат → held без LLM.
-// ───────────────────────────────────────────────────────────────────────────
-
 function buildVerifyService(m: Mocks, archiveMonths = 12): Specialist37Service {
   return new Specialist37Service(
     m.prisma as never,
-    { skill: { archiveMonths } } as never, // cfg — нужен archiveMonths
+    { skill: { archiveMonths } } as never,
     m.llm as never,
     {} as never,
     {} as never,
@@ -1125,7 +1035,6 @@ describe('Specialist37Service.verifyPendingTraits — Б2 FIFO + исключе�
     expect(q.orderBy).toEqual({ createdAt: 'asc' });
     expect(q.where.status).toBe('pending_verification');
     expect(q.where.createdAt.gte).toBeInstanceOf(Date);
-    // archiveCutoff ≈ 12 мес назад (грубая проверка — раньше now).
     expect(q.where.createdAt.gte.getTime()).toBeLessThan(Date.now());
   });
 });
@@ -1137,7 +1046,6 @@ describe('Specialist37Service.verifyPendingTraits — Г3 предфильтр <
   });
 
   it('<2 цитат → held без вызова LLM (update НЕ зовётся)', async () => {
-    // Только 1 цитата.
     m.prisma.ideaBlock.findMany.mockResolvedValue([
       { id: 'b1', criticalQuestion: 'Почему?', trustedAnswer: 'Потому.' },
     ]);
@@ -1151,9 +1059,7 @@ describe('Specialist37Service.verifyPendingTraits — Г3 предфильтр <
   });
 
   it('0 цитат (пустой sourceBlockIds) → held без LLM', async () => {
-    m.prisma.skillTrait.findMany.mockResolvedValue([
-      pendingTrait({ sourceBlockIds: [] }),
-    ]);
+    m.prisma.skillTrait.findMany.mockResolvedValue([pendingTrait({ sourceBlockIds: [] })]);
     const svc = buildVerifyService(m);
 
     const res = await svc.verifyPendingTraits();
@@ -1175,19 +1081,14 @@ describe('Specialist37Service.verifyPendingTraits — Г3 предфильтр <
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Б3 (2026-06-16) — mergeIntoExisting: lastConfirmedAt = MAX(existing, draft),
-// не откатывается назад при мердже старой группы.
-// ───────────────────────────────────────────────────────────────────────────
-
 describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', () => {
   it('draft.lastConfirmedAt СТАРШЕ existing → берётся existing (дата не откатывается)', async () => {
     const mm = makeMergeMocks();
     mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }]);
     const { mergeIntoExisting } = buildMergeService(mm);
 
-    const existingDate = daysAgo(1); // новее
-    const draftOld = { ...DRAFT, lastConfirmedAt: daysAgo(100).toISOString() }; // старее
+    const existingDate = daysAgo(1);
+    const draftOld = { ...DRAFT, lastConfirmedAt: daysAgo(100).toISOString() };
 
     await mergeIntoExisting({
       profileId: 'profile-1',
@@ -1202,8 +1103,7 @@ describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', ()
       embedding: null,
     });
 
-    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
-      .lastConfirmedAt as Date;
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data.lastConfirmedAt as Date;
     expect(writtenDate.getTime()).toBe(existingDate.getTime());
   });
 
@@ -1212,8 +1112,8 @@ describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', ()
     mm.ideaBlockFindMany.mockResolvedValue([{ createdAt: daysAgo(0) }]);
     const { mergeIntoExisting } = buildMergeService(mm);
 
-    const existingDate = daysAgo(100); // старее
-    const draftNew = { ...DRAFT, lastConfirmedAt: daysAgo(1).toISOString() }; // новее
+    const existingDate = daysAgo(100);
+    const draftNew = { ...DRAFT, lastConfirmedAt: daysAgo(1).toISOString() };
 
     await mergeIntoExisting({
       profileId: 'profile-1',
@@ -1228,9 +1128,7 @@ describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', ()
       embedding: null,
     });
 
-    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
-      .lastConfirmedAt as Date;
-    // Должна быть дата черновика (новее), а не existing.
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data.lastConfirmedAt as Date;
     expect(writtenDate.getTime()).toBeGreaterThan(existingDate.getTime());
   });
 
@@ -1247,21 +1145,15 @@ describe('Specialist37Service.mergeIntoExisting — Б3 lastConfirmedAt MAX', ()
         sourceBlockIds: ['b1'],
         observationCount: 1,
         confidence: 'low',
-        // lastConfirmedAt отсутствует
       },
       draft: { ...DRAFT, lastConfirmedAt: draftDate.toISOString() },
       embedding: null,
     });
 
-    const writtenDate = mm.txUpdate.mock.calls[0]![0].data
-      .lastConfirmedAt as Date;
+    const writtenDate = mm.txUpdate.mock.calls[0]![0].data.lastConfirmedAt as Date;
     expect(writtenDate.getTime()).toBe(draftDate.getTime());
   });
 });
-
-// ───────────────────────────────────────────────────────────────────────────
-// Б4 (2026-06-16) — KNN-кандидаты merge включают pending_verification.
-// ───────────────────────────────────────────────────────────────────────────
 
 describe('Specialist37Service.mergeOrCreate — Б4 KNN включает pending_verification', () => {
   function buildKnnSqlService(): {
@@ -1283,9 +1175,7 @@ describe('Specialist37Service.mergeOrCreate — Б4 KNN включает pending
     );
     const internal = svc as unknown as Record<string, unknown>;
     internal.createNewTrait = vi.fn().mockResolvedValue('created');
-    const mergeOrCreate = (
-      internal.mergeOrCreate as (a: unknown) => Promise<string>
-    ).bind(svc);
+    const mergeOrCreate = (internal.mergeOrCreate as (a: unknown) => Promise<string>).bind(svc);
     return { queryRawUnsafe, mergeOrCreate };
   }
 
@@ -1296,27 +1186,19 @@ describe('Specialist37Service.mergeOrCreate — Б4 KNN включает pending
     const sql = t.queryRawUnsafe.mock.calls[0]![0] as string;
     expect(sql).toContain("'active'");
     expect(sql).toContain("'pending_verification'");
-    // Не должно быть старого жёсткого `"status" = 'active'`.
     expect(sql).not.toMatch(/"status"\s*=\s*'active'/);
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Г2 (2026-06-16) — код-гард: hard-кандидат (cosine ≥ threshold) + verdict=new
-// → форс-merge к топ-hard (не доверяем LLM слепо).
-// ───────────────────────────────────────────────────────────────────────────
-
 describe('Specialist37Service.mergeOrCreate — Г2 форс-merge при hard + verdict=new', () => {
   it('cosine 0.90 (hard) + арбитр вернул new → mergeIntoExisting (НЕ createNewTrait)', async () => {
-    const t = buildArbiterService(0.1); // distance 0.10 → cosine 0.90 ≥ 0.85 → hard
-    // Арбитр по умолчанию возвращает verdict:new — Г2 должен перехватить.
+    const t = buildArbiterService(0.1);
     const res = await t.mergeOrCreate({
       profile: ARBITER_PROFILE,
       draft: ARBITER_DRAFT,
     });
 
     expect(t.callMergeArbiterSpy).toHaveBeenCalledTimes(1);
-    // Г2 форсит merge к топ-hard кандидату.
     expect(t.mergeIntoExistingSpy).toHaveBeenCalledTimes(1);
     expect(t.mergeIntoExistingSpy.mock.calls[0]![0].existing.id).toBe('cand-1');
     expect(t.createNewTraitSpy).not.toHaveBeenCalled();
@@ -1324,28 +1206,21 @@ describe('Specialist37Service.mergeOrCreate — Г2 форс-merge при hard +
   });
 
   it('cosine 0.80 (band, не hard) + verdict=new → createNewTrait (Г2 НЕ срабатывает)', async () => {
-    const t = buildArbiterService(0.2); // distance 0.20 → cosine 0.80 < 0.85 → band
+    const t = buildArbiterService(0.2);
     const res = await t.mergeOrCreate({
       profile: ARBITER_PROFILE,
       draft: ARBITER_DRAFT,
     });
 
-    // band-кандидат не форсится: verdict=new → createNewTrait.
     expect(t.mergeIntoExistingSpy).not.toHaveBeenCalled();
     expect(t.createNewTraitSpy).toHaveBeenCalledTimes(1);
     expect(res).toBe('created');
   });
 });
 
-// ───────────────────────────────────────────────────────────────────────────
-// Г4 (2026-06-16) — detectTrait skill-путь отбрасывает draft с sourceBlockIds=[]
-// (как value-путь и process-путь). «Недостаточно сигнала» не создаётся как черта.
-// ───────────────────────────────────────────────────────────────────────────
-
 describe('Specialist37Service — Г4 detectTrait пустой sourceBlockIds', () => {
   it('skill-detect отдаёт sourceBlockIds=[] → trait НЕ создаётся (mergeOrCreate не зовётся)', async () => {
     const m: VmMocks = {
-      // detect отдаёт пустой sourceBlockIds — раньше это становилось чертой.
       llmCall: vi.fn().mockResolvedValue({
         text: JSON.stringify({
           category: 'недостаточно сигнала',
@@ -1360,7 +1235,6 @@ describe('Specialist37Service — Г4 detectTrait пустой sourceBlockIds', 
       embedQuery: vi.fn(),
     };
     const mergeOrCreate = vi.fn().mockResolvedValue('created');
-    // value/process выключены → изолируем skill-путь.
     const { svc } = buildVmRebuildService({
       flagEnabled: false,
       m,
@@ -1369,8 +1243,6 @@ describe('Specialist37Service — Г4 detectTrait пустой sourceBlockIds', 
 
     await svc.rebuildProfile({ profileId: PROFILE_ID });
 
-    // detect вызван (1 группа), но draft с пустым sourceBlockIds отброшен →
-    // mergeOrCreate НЕ вызван.
     expect(m.llmCall).toHaveBeenCalledTimes(1);
     expect(m.llmCall.mock.calls[0]![0].taskType).toBe('skill-trait-detect');
     expect(mergeOrCreate).not.toHaveBeenCalled();
@@ -1378,7 +1250,7 @@ describe('Specialist37Service — Г4 detectTrait пустой sourceBlockIds', 
 
   it('skill-detect отдаёт непустой sourceBlockIds → trait создаётся (mergeOrCreate зовётся)', async () => {
     const m: VmMocks = {
-      llmCall: vi.fn().mockResolvedValue({ text: skillDraftJson() }), // sourceBlockIds=['b1']
+      llmCall: vi.fn().mockResolvedValue({ text: skillDraftJson() }),
       skillTraitCreate: vi.fn(),
       embedQuery: vi.fn(),
     };

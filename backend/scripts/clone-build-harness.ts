@@ -1,30 +1,3 @@
-/**
- * clone-build-harness — ЖИВОЙ билд «Клона сотрудника» на синтетике (QA-инструмент).
- *
- * Прогоняет полную цепочку формирования клона через РЕАЛЬНЫЙ конвейер:
- *   встреча(reasoning) → block-ingest(role=subject) → 3-7-skill →
- *   SkillProfile → SkillTrait → (persona — отдельным шагом, см. ниже).
- *
- * Вбрасывает несколько reasoning-насыщенных встреч одного сотрудника за РАЗНЫЕ
- * даты, спроектированных так, чтобы блоки сгруппировались в 2–3 черты, и
- * наблюдает, как наполняется профиль навыков. Печатает SkillTrait'ы дословно
- * (category/statement/confidence/observationCount) — это и есть «клон создаётся».
- *
- * Построен на `_lib/combat-harness.ts` (тот же внешний инжектор + поллер +
- * prod-guard + teardown). НЕ поднимает свой Nest-контекст.
- *
- * ВАЖНО: backend С ВОРКЕРАМИ должен быть УЖЕ запущен (`bun run dev` +
- * `bun run worker:dev`), и пороги на стенде снижены (иначе «голод»):
- *   SKILL_MIN_OBSERVATIONS=3 PERSONA_MIN_TRAITS=2 \
- *   bun run dev    (и тем же env — worker:dev)
- *
- * Запуск (из backend/, нужен живой backend+LLM+снижённые пороги):
- *   KEEP_TENANT=1 VERIFY_TIMEOUT_MS=240000 bun run scripts/clone-build-harness.ts
- *   EMPLOYEE_NAME='Сергей' NUM_MEETINGS=6 bun run scripts/clone-build-harness.ts
- *
- * НЕ регистрируется в apply-prod-deploy.ts STEPS — QA-инструмент (как combat-harness).
- */
-
 import {
   type HarnessConfig,
   type HarnessInfra,
@@ -45,16 +18,10 @@ function log(msg: string): void {
   console.log(msg);
 }
 
-// ───────────────────────── reasoning fixtures ──────────────────────
-// Каждый «эпизод» — отдельная встреча за свою дату, где сотрудник РАССУЖДАЕТ
-// (объясняет ПОЧЕМУ), а не просто соглашается. Эпизоды кластера 1 семантически
-// близки (осторожность со сроками) → группируются 3-7 в одну черту; кластера 2 —
-// «данные перед решением». Это даёт ≥2 черты → персона может собраться.
-
 interface Episode {
   daysAgo: number;
   title: string;
-  reasoning: string[]; // реплики сотрудника-субъекта (reasoning)
+  reasoning: string[];
 }
 
 const CLUSTER_1: Episode[] = [
@@ -115,14 +82,6 @@ const CLUSTER_2: Episode[] = [
   },
 ];
 
-// ───────────────────────── meeting injector ────────────────────────
-
-/**
- * Вброс Meeting + Transcript(turns) + RawEvent(meeting) — payload-mirror
- * meeting.adapter.ts ingestMeeting, как в smoke-pipeline-e2e.injectMeetingDirect,
- * но: сотрудник — участник (userId) и спикер reasoning-реплик за конкретную дату.
- * Это даёт block-ingest шанс проставить IdeaBlockEntity{role=subject}=сотрудник.
- */
 async function injectReasoningMeeting(
   infra: HarnessInfra,
   t: SyntheticTenant,
@@ -140,10 +99,14 @@ async function injectReasoningMeeting(
   const endedAt = new Date(Date.now() - ep.daysAgo * 24 * 60 * 60_000);
   const startedAt = new Date(endedAt.getTime() - 20 * 60_000);
 
-  // Реплики: сотрудник-субъект (reasoning) + короткая реплика «менеджера» для реализма.
   const turns: Array<{ speaker: string; text: string; startSec: number; endSec: number }> = [];
   let sec = 0;
-  turns.push({ speaker: 'Менеджер', text: `Обсудим ${ep.title}. ${employeeName}, твоя позиция?`, startSec: sec, endSec: (sec += 6) });
+  turns.push({
+    speaker: 'Менеджер',
+    text: `Обсудим ${ep.title}. ${employeeName}, твоя позиция?`,
+    startSec: sec,
+    endSec: (sec += 6),
+  });
   for (const r of ep.reasoning) {
     turns.push({ speaker: employeeName, text: r, startSec: sec, endSec: (sec += 14) });
   }
@@ -181,7 +144,7 @@ async function injectReasoningMeeting(
     participants: [
       {
         participantId: 'p_emp',
-        userId: t.userId, // сотрудник = владелец синтетического тенанта (Person linked)
+        userId: t.userId,
         displayName: employeeName,
         role: 'host',
         livekitIdentity: `host:${t.userId}`,
@@ -203,26 +166,53 @@ async function injectReasoningMeeting(
   return meetingId;
 }
 
-// ───────────────────────── observation ─────────────────────────────
-
 interface CloneSnapshot {
   reasoningSubjectBlocks: number;
   canonicalReasoningSubject: number;
   skillProfile: { id: string; status: string; buildVersion: number } | null;
-  traits: Array<{ category: string; statement: string; confidence: string; observationCount: number; status: string }>;
-  personas: Array<{ id: string; scope: string; version: number; status: string; builtFromTraitsCount: number }>;
+  traits: Array<{
+    category: string;
+    statement: string;
+    confidence: string;
+    observationCount: number;
+    status: string;
+  }>;
+  personas: Array<{
+    id: string;
+    scope: string;
+    version: number;
+    status: string;
+    builtFromTraitsCount: number;
+  }>;
 }
 
 async function snapshot(infra: HarnessInfra, t: SyntheticTenant): Promise<CloneSnapshot> {
   const { prisma } = infra;
-  // reasoning-блоки с role=subject, привязанные к Person сотрудника.
-  const person = await prisma.person.findFirst({ where: { tenantId: t.orgId, userId: t.userId }, select: { id: true, entityId: true } });
+  const person = await prisma.person.findFirst({
+    where: { tenantId: t.orgId, userId: t.userId },
+    select: { id: true, entityId: true },
+  });
   const entityId = person?.entityId ?? '__none__';
   const reasoningSubjectBlocks = await prisma.ideaBlockEntity.count({
-    where: { entityId, role: 'subject', block: { tenantId: t.orgId, signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never } } },
+    where: {
+      entityId,
+      role: 'subject',
+      block: {
+        tenantId: t.orgId,
+        signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never },
+      },
+    },
   });
   const canonicalReasoningSubject = await prisma.ideaBlockEntity.count({
-    where: { entityId, role: 'subject', block: { tenantId: t.orgId, status: 'canonical', signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never } } },
+    where: {
+      entityId,
+      role: 'subject',
+      block: {
+        tenantId: t.orgId,
+        status: 'canonical',
+        signalType: { in: ['reasoning', 'rationale', 'decision_basis'] as never },
+      },
+    },
   });
   const profile = await prisma.skillProfile.findFirst({
     where: { tenantId: t.orgId, personId: person?.id ?? '__none__' },
@@ -231,7 +221,13 @@ async function snapshot(infra: HarnessInfra, t: SyntheticTenant): Promise<CloneS
   const traits = profile
     ? await prisma.skillTrait.findMany({
         where: { profileId: profile.id },
-        select: { category: true, statement: true, confidence: true, observationCount: true, status: true },
+        select: {
+          category: true,
+          statement: true,
+          confidence: true,
+          observationCount: true,
+          status: true,
+        },
         orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
       })
     : [];
@@ -243,23 +239,35 @@ async function snapshot(infra: HarnessInfra, t: SyntheticTenant): Promise<CloneS
   return {
     reasoningSubjectBlocks,
     canonicalReasoningSubject,
-    skillProfile: profile ? { id: profile.id, status: String(profile.status), buildVersion: profile.buildVersion } : null,
-    traits: traits.map((x) => ({ ...x, confidence: String(x.confidence), status: String(x.status) })),
+    skillProfile: profile
+      ? { id: profile.id, status: String(profile.status), buildVersion: profile.buildVersion }
+      : null,
+    traits: traits.map((x) => ({
+      ...x,
+      confidence: String(x.confidence),
+      status: String(x.status),
+    })),
     personas: personas.map((p) => ({ ...p, scope: String(p.scope), status: String(p.status) })),
   };
 }
 
 function printSnapshot(s: CloneSnapshot): void {
-  log(`  reasoning-subject блоков: ${s.reasoningSubjectBlocks} (canonical: ${s.canonicalReasoningSubject})`);
-  log(`  SkillProfile: ${s.skillProfile ? `id=${s.skillProfile.id.slice(0, 8)} status=${s.skillProfile.status} v=${s.skillProfile.buildVersion}` : '— нет —'}`);
+  log(
+    `  reasoning-subject блоков: ${s.reasoningSubjectBlocks} (canonical: ${s.canonicalReasoningSubject})`,
+  );
+  log(
+    `  SkillProfile: ${s.skillProfile ? `id=${s.skillProfile.id.slice(0, 8)} status=${s.skillProfile.status} v=${s.skillProfile.buildVersion}` : '— нет —'}`,
+  );
   log(`  SkillTrait'ы (${s.traits.length}):`);
   for (const t of s.traits) {
-    log(`    • [${t.confidence}, ${t.observationCount} набл., ${t.status}] «${t.category}»: ${t.statement.slice(0, 160)}`);
+    log(
+      `    • [${t.confidence}, ${t.observationCount} набл., ${t.status}] «${t.category}»: ${t.statement.slice(0, 160)}`,
+    );
   }
-  log(`  ExecutablePersona (${s.personas.length}): ${s.personas.map((p) => `${p.scope} v${p.version}/${p.status} (${p.builtFromTraitsCount} черт)`).join('; ') || '— нет —'}`);
+  log(
+    `  ExecutablePersona (${s.personas.length}): ${s.personas.map((p) => `${p.scope} v${p.version}/${p.status} (${p.builtFromTraitsCount} черт)`).join('; ') || '— нет —'}`,
+  );
 }
-
-// ───────────────────────── main ────────────────────────────────────
 
 async function main(): Promise<void> {
   const cfg: HarnessConfig = readConfig();
@@ -276,18 +284,23 @@ async function main(): Promise<void> {
 
   try {
     tenant = await bootstrapTenant(infra.prisma);
-    // Дать Person сотрудника имя, совпадающее со спикером, и роль employee (bootstrap уже employee).
-    await infra.prisma.person.updateMany({ where: { tenantId: tenant.orgId, userId: tenant.userId }, data: { name: employeeName } });
-    log(`✓ синтетический тенант: Org=${tenant.orgId} Person(employee)=${tenant.personId} tag=${tenant.tag}`);
+    await infra.prisma.person.updateMany({
+      where: { tenantId: tenant.orgId, userId: tenant.userId },
+      data: { name: employeeName },
+    });
+    log(
+      `✓ синтетический тенант: Org=${tenant.orgId} Person(employee)=${tenant.personId} tag=${tenant.tag}`,
+    );
 
     log('— Вброс reasoning-встреч…');
     for (let i = 0; i < toInject.length; i++) {
       const mid = await injectReasoningMeeting(infra, tenant, employeeName, toInject[i], i);
-      log(`  [${i + 1}/${toInject.length}] «${toInject[i].title}» (${toInject[i].daysAgo}д назад) → meeting ${mid.slice(0, 10)}…`);
-      await sleep(400); // лёгкий разнос, чтобы не штормить очередь разом
+      log(
+        `  [${i + 1}/${toInject.length}] «${toInject[i].title}» (${toInject[i].daysAgo}д назад) → meeting ${mid.slice(0, 10)}…`,
+      );
+      await sleep(400);
     }
 
-    // Поллинг: ждём, пока сформируются SkillTrait'ы (или таймаут).
     log(`\n— Поллинг до SkillTrait'ов (timeout=${cfg.verifyTimeoutMs}ms)…`);
     const deadline = Date.now() + cfg.verifyTimeoutMs;
     let last = await snapshot(infra, tenant);
@@ -315,7 +328,8 @@ async function main(): Promise<void> {
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('clone-build-harness FAILED:', err);
-    if (tenant && !cfg.keepTenant) await teardownTenant(infra.prisma, tenant).catch(() => undefined);
+    if (tenant && !cfg.keepTenant)
+      await teardownTenant(infra.prisma, tenant).catch(() => undefined);
     process.exitCode = 1;
   } finally {
     await infra.close();

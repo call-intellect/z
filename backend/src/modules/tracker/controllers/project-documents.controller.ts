@@ -15,10 +15,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -35,21 +32,6 @@ import {
 } from '../dto/project-documents/project-document.dto';
 import { ProjectDocumentsService } from '../services/project-documents.service';
 
-/**
- * REST `/api/v1/projects/:projectId/documents` + `/api/v1/project-documents/...`
- * + `/api/v1/projects/:projectId/linked-cards`.
- *
- * RBAC ResourceType: `project_document`.
- *   - read   ← canRead(user, tenant, 'project_document')
- *   - write  ← canWrite(user, tenant, 'project_document')
- *   - delete ← canDelete(user, tenant, 'project_document')
- *
- * Per-resource ownership (author vs admin) проверяется в
- * `ProjectDocumentsService.requireWritable` — после RBAC прохода в
- * контроллере.
- *
- * ТЗ: plans/tz/2026-05-27-tracker-project-documents.md.
- */
 @ApiTags('tracker / projects / documents')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -61,12 +43,9 @@ export class ProjectDocumentsController {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  // ── list / get / linked-cards ─────────────────────────────────────────
-
   @Get('projects/:projectId/documents')
   @ApiOperation({
-    summary:
-      'Список документов проекта (плоский, pinned сверху, sortOrder ASC)',
+    summary: 'Список документов проекта (плоский, pinned сверху, sortOrder ASC)',
   })
   async list(
     @Param('projectId') projectId: string,
@@ -105,8 +84,6 @@ export class ProjectDocumentsController {
     return this.svc.listLinkedCards(projectId, t);
   }
 
-  // ── create / update / delete / restore / duplicate ────────────────────
-
   @Post('projects/:projectId/documents')
   @RequireSubscription()
   @ApiOperation({ summary: 'Создать документ проекта' })
@@ -125,8 +102,7 @@ export class ProjectDocumentsController {
   @Patch('project-documents/:id')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Обновить документ (title/content/pinned/parentId/sortOrder; auto-save идёт сюда)',
+    summary: 'Обновить документ (title/content/pinned/parentId/sortOrder; auto-save идёт сюда)',
   })
   async update(
     @Param('id') id: string,
@@ -137,7 +113,6 @@ export class ProjectDocumentsController {
   ): Promise<ProjectDocumentResponseDto> {
     const t = this.requireTenant(tenantId);
     await this.requireWrite(user.id, t);
-    // Per-resource ownership: автор ИЛИ admin/owner Org.
     const isAdmin = await this.rbac.check({
       userId: user.id,
       tenantId: t,
@@ -207,8 +182,6 @@ export class ProjectDocumentsController {
     return this.svc.duplicate(id, t, user.id);
   }
 
-  // ── helpers ───────────────────────────────────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -256,13 +229,7 @@ export class ProjectDocumentsController {
       act: 'delete',
     });
     if (okDelete) return;
-    // delete fallback to write — manager open/strict с правом write self+
-    // через `requireWritable` сможет удалить свой документ.
-    const fallback = await this.rbac.canWrite(
-      userId,
-      tenantId,
-      'project_document',
-    );
+    const fallback = await this.rbac.canWrite(userId, tenantId, 'project_document');
     if (!fallback) {
       throw new ForbiddenException({
         ok: false,

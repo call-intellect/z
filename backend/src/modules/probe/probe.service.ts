@@ -16,36 +16,8 @@ import {
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
 import { NUDGE_REASONS, probeWindow } from './probe-reason-policy';
-import type {
-  ProbeSuggestInput,
-  ProbeSuggestPayload,
-  ProbeSuggestResult,
-} from './probe.types';
+import type { ProbeSuggestInput, ProbeSuggestPayload, ProbeSuggestResult } from './probe.types';
 
-/**
- * SBA β-5 — ProbeService (Layer 6 entry-point).
- *
- * Контракт для специалистов Слоя 3:
- *
- *   const res = await probe.suggest({
- *     tenantId, emittedByService: '3-3-decisions',
- *     reason: 'decision.overdue',
- *     payload: { message, suggestedActions, contextCardId },
- *     recipientCandidates: [adminUserId, ownerUserId],
- *     priorityHint: 0.7,
- *   });
- *
- * Внутри:
- *   1. computeContentHash(reason + sorted contextIds).
- *   2. Redis dedup check (TTL = cfg.probe.dedupTtlHours).
- *   3. Rate-limit check: если ВСЕ кандидаты под лимитом — drop.
- *   4. Cold-start: первые N часов после первого probe в Org →
- *      status='routed_to_digest' (L-3: вопросы не теряются — придут
- *      дайджестом после прогрева).
- *   5. priority = compute (severity_weight * freshness=1.0 * (1 + engagement_rate)).
- *   6. Insert ProbeEvent (status='pending'); SET dedup key с TTL.
- *   7. enqueueProbeEvent для dispatcher'а.
- */
 @Injectable()
 export class ProbeService {
   private readonly logger = new Logger(ProbeService.name);
@@ -59,14 +31,12 @@ export class ProbeService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /** Входная точка для специалистов Слоя 3. */
   async suggest(input: ProbeSuggestInput): Promise<ProbeSuggestResult> {
     try {
       if (!input.tenantId || !input.emittedByService || !input.reason) {
         return { dropped: 'dedup' };
       }
       if (input.recipientCandidates.length === 0) {
-        // Никого слать — фактически дедуп (нет получателей = молчим).
         this.metrics.incProbeEvent({
           emittedByService: input.emittedByService,
           reason: input.reason,
@@ -80,9 +50,6 @@ export class ProbeService {
         payload: input.payload,
       });
 
-      // Probe Фаза 5 (R9) — topic cooldown: не повторять ту же тему
-      // (contentHash) сразу после dispatch/игнора. Ключ ставят dispatcher (на
-      // dispatch) и priority-cron (на ignored) на probe.topicCooldownHours.
       try {
         const cooling = await this.redis.client.get(
           probeTopicCooldownRedisKey(input.tenantId, contentHash),
@@ -96,24 +63,13 @@ export class ProbeService {
           });
           return { dropped: 'dedup' };
         }
-      } catch {
-        // Redis down — пропускаем cooldown (не блокируем probe).
-      }
+      } catch {}
 
-      // 1. Redis dedup check
       const dedupKey = `probe:dedup:${input.tenantId}:${contentHash}`;
       const ttlSec = this.cfg.probe.dedupTtlHours * 3600;
       try {
-        // SET key value NX EX ttl — атомарный set-if-not-exists с TTL.
-        const setRes = await this.redis.client.set(
-          dedupKey,
-          '1',
-          'EX',
-          ttlSec,
-          'NX',
-        );
+        const setRes = await this.redis.client.set(dedupKey, '1', 'EX', ttlSec, 'NX');
         if (setRes === null) {
-          // ключ уже был — дубль
           this.metrics.incProbeDedupDropped({ reason: input.reason });
           this.metrics.incProbeEvent({
             emittedByService: input.emittedByService,
@@ -132,20 +88,10 @@ export class ProbeService {
         );
       }
 
-      // 2. Rate-limit per recipient.
-      const availableRecipients = await this.filterByRateLimit(
-        input.recipientCandidates,
-      );
+      const availableRecipients = await this.filterByRateLimit(input.recipientCandidates);
       if (availableRecipients.length === 0) {
-        // Probe Фаза 3 R5: deferrable-probe сверх бюджета НЕ дропаем, а
-        // откладываем в батч-дайджест (status='queued_digest'); ProbeDigestCron
-        // соберёт его и доставит одним дайджестом. immediate-probe при
-        // исчерпанном бюджете сохраняет прежнее поведение (drop) — дайджест
-        // слишком медленный для срочного (R6).
         if (probeWindow(input.reason) === 'deferrable') {
-          const priority = Math.round(
-            this.clamp01(input.priorityHint ?? 0.4) * 100,
-          );
+          const priority = Math.round(this.clamp01(input.priorityHint ?? 0.4) * 100);
           const queued = await this.prisma.probeEvent.create({
             data: {
               tenantId: input.tenantId,
@@ -156,8 +102,6 @@ export class ProbeService {
               contentHash,
               priority,
               status: 'queued_digest',
-              // L-2 (2026-06-12): digest-статусы тоже стареют — без expiresAt
-              // протухшие вопросы жили бы в дайджесте вечно.
               expiresAt: this.computeExpiresAt(),
             },
           });
@@ -166,7 +110,6 @@ export class ProbeService {
             reason: input.reason,
             status: 'queued_digest',
           });
-          // НЕ enqueue dispatcher — дайджест-cron подберёт.
           return { ok: true, probeEventId: queued.id };
         }
         this.metrics.incProbeRateLimitDropped();
@@ -175,7 +118,6 @@ export class ProbeService {
           reason: input.reason,
           status: 'dropped_rate_limit',
         });
-        // Создаём запись со status='dropped_rate_limit' (для audit/admin queue).
         await this.prisma.probeEvent.create({
           data: {
             tenantId: input.tenantId,
@@ -191,10 +133,6 @@ export class ProbeService {
         return { dropped: 'rate_limit' };
       }
 
-      // 3. Cold-start check (per Org). L-3 (2026-06-12): вопросы нового Org
-      // НЕ теряем терминальным dropped_cold_start — откладываем в дайджест
-      // (routed_to_digest): после прогрева ProbeDigestCron доставит их
-      // батчем. Статус dropped_cold_start остаётся в enum (история).
       const coldStart = await this.isColdStart(input.tenantId);
       if (coldStart) {
         this.metrics.incProbeColdStartDropped();
@@ -208,7 +146,6 @@ export class ProbeService {
             contentHash,
             priority: Math.round(this.clamp01(input.priorityHint ?? 0.4) * 100),
             status: 'routed_to_digest',
-            // L-2 — digest-статусы стареют.
             expiresAt: this.computeExpiresAt(),
           },
         });
@@ -223,15 +160,10 @@ export class ProbeService {
         return { ok: true, probeEventId: deferred.id };
       }
 
-      // 4. Compute priority.
       const severityWeight = this.clamp01(input.priorityHint ?? 0.4);
-      // freshness=1.0 для свежего probe (formula см. §6).
       const priority = Math.round(severityWeight * 100);
       const dataClass: DataClass = input.dataClass ?? 'internal';
 
-      // 4a. W2 autonomy (2026-06-12) — гейт ценности. Вопрос с priority ниже
-      // admin-крутилки `probe.minValuePriority` (дефолт 30) не задаётся вовсе:
-      // audit-запись со status='dropped_low_value', без enqueue и без дайджеста.
       let minValuePriority: number;
       try {
         minValuePriority = await this.cfg.getDynamic<number>(
@@ -263,10 +195,6 @@ export class ProbeService {
         return { dropped: 'low_value' };
       }
 
-      // 4b. W2 autonomy (2026-06-12) — NUDGE-реклассификация (§9.2). Напоминание
-      // (Кора знает, что нужно сделать) не пингует сразу, а уходит ежедневным
-      // дайджестом: status='routed_to_digest', БЕЗ enqueue — ProbeDigestCron
-      // подберёт. NUDGE имеет приоритет над окном immediate/deferrable.
       if (NUDGE_REASONS.has(input.reason)) {
         const nudge = await this.prisma.probeEvent.create({
           data: {
@@ -278,7 +206,6 @@ export class ProbeService {
             contentHash,
             priority,
             status: 'routed_to_digest',
-            // L-2 (2026-06-12): digest-статусы стареют наравне с pending.
             expiresAt: this.computeExpiresAt(),
           },
         });
@@ -290,7 +217,6 @@ export class ProbeService {
         return { ok: true, probeEventId: nudge.id };
       }
 
-      // 5. Insert ProbeEvent.
       const expiresAt = this.computeExpiresAt();
       const event = await this.prisma.probeEvent.create({
         data: {
@@ -312,7 +238,6 @@ export class ProbeService {
         status: 'pending',
       });
 
-      // 6. enqueue dispatcher.
       try {
         await this.queue.enqueueProbeEvent({ probeEventId: event.id });
       } catch (err) {
@@ -340,19 +265,9 @@ export class ProbeService {
     }
   }
 
-  /**
-   * Проверка rate-limit per-user. Возвращает кандидатов, у которых ещё
-   * остался запас (часовой ИЛИ суточный — если ОБА превышены, отбрасываем).
-   * Реальный INC при отправке делает dispatcher.
-   */
-  async filterByRateLimit(
-    recipientCandidates: readonly string[],
-  ): Promise<string[]> {
+  async filterByRateLimit(recipientCandidates: readonly string[]): Promise<string[]> {
     const limitHour = this.cfg.probe.rateLimitPerHour;
     const limitDay = this.cfg.probe.rateLimitPerDay;
-    // Probe Фаза 5 (R9) — adaptive fatigue: тем, кто почти не отвечает (низкий
-    // engagement_rate, снимок пишет priority-cron), режем эффективный бюджет.
-    // Простое правило без LLM. Kill-switch probe.adaptiveFatigueEnabled.
     let adaptiveOn: boolean;
     try {
       adaptiveOn = await this.cfg.getDynamic<boolean>(
@@ -378,14 +293,8 @@ export class ProbeService {
         if (adaptiveOn && engagementRaw != null) {
           const eng = Number(engagementRaw);
           if (Number.isFinite(eng) && eng < PROBE_LOW_ENGAGEMENT_THRESHOLD) {
-            effHour = Math.max(
-              1,
-              Math.floor(limitHour * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
-            );
-            effDay = Math.max(
-              1,
-              Math.floor(limitDay * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
-            );
+            effHour = Math.max(1, Math.floor(limitHour * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR));
+            effDay = Math.max(1, Math.floor(limitDay * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR));
           }
         }
         if (
@@ -396,36 +305,27 @@ export class ProbeService {
         }
         available.push(userId);
       } catch {
-        // Redis down — допускаем (graceful degradation).
         available.push(userId);
       }
     }
     return available;
   }
 
-  /**
-   * INC per-user rate-limit counters. Вызывается dispatcher'ом при успешной
-   * отправке probe.
-   */
   async noteSent(userId: string): Promise<void> {
     try {
-      await this.redis.client.multi()
+      await this.redis.client
+        .multi()
         .incr(this.hourKey(userId))
         .expire(this.hourKey(userId), 3600)
         .incr(this.dayKey(userId))
         .expire(this.dayKey(userId), 86400)
         .exec();
-    } catch {
-      // graceful
-    }
+    } catch {}
   }
 
   private async isColdStart(tenantId: string): Promise<boolean> {
     const windowHours = this.cfg.probe.coldStartModeHours;
     if (windowHours <= 0) return false;
-    // Cold-start: если первого probe в Org нет ещё, то это первый — пометим
-    // и вернём false (первый probe можно отправлять). Если первый есть и
-    // прошло < windowHours — true.
     const earliest = await this.prisma.probeEvent.findFirst({
       where: { tenantId },
       orderBy: { createdAt: 'asc' },
@@ -433,19 +333,10 @@ export class ProbeService {
     });
     if (!earliest) return false;
     const elapsedMs = Date.now() - earliest.createdAt.getTime();
-    // W2 autonomy (2026-06-12): включено реальное подавление (был β-5
-    // плейсхолдер `? false : false`). Первые N часов после первого probe в Org
-    // все probe копятся дропом (status='dropped_cold_start') — защита от
-    // probe-шторма на свежем графе. N = PROBE_COLD_START_MODE_HOURS (дефолт 24);
-    // 0 — поведение выключено (ранний return выше).
     return elapsedMs < windowHours * 3600 * 1000;
   }
 
-  /** sha256(reason + sorted JSON of contextIds + payload-summary). */
-  private computeContentHash(args: {
-    reason: string;
-    payload: ProbeSuggestPayload;
-  }): string {
+  private computeContentHash(args: { reason: string; payload: ProbeSuggestPayload }): string {
     const ids: string[] = [];
     if (args.payload.contextBlockId) ids.push(`b:${args.payload.contextBlockId}`);
     if (args.payload.contextCardId) ids.push(`c:${args.payload.contextCardId}`);
@@ -472,18 +363,11 @@ export class ProbeService {
     return Math.max(0, Math.min(1, v));
   }
 
-  /**
-   * L-2 (2026-06-12) — единый расчёт срока жизни probe (как у pending):
-   * now + probe.expiryDays. Используется и для digest-статусов
-   * (queued_digest / routed_to_digest), чтобы протухшие вопросы не жили
-   * в дайджесте вечно (expire делает ProbePriorityCron).
-   */
   private computeExpiresAt(): Date {
     return new Date(Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000);
   }
 
   private payloadToJson(payload: ProbeSuggestPayload): Prisma.InputJsonValue {
-    // Удаляем undefined-поля, чтобы Json не падал на Prisma.
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(payload)) {
       if (v === undefined) continue;

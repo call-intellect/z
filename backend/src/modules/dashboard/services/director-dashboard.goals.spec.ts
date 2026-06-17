@@ -13,16 +13,6 @@ import type { HangingDecisionsService } from './hanging-decisions.service';
 import type { NarrativeCitationsParserService } from './narrative-citations-parser.service';
 import type { SentimentIndexService } from './sentiment-index.service';
 
-/**
- * Goals OKR v2 (Фаза 4) — unit-тесты дашборд-методов целей.
- *
- *   - fetchGoalsTree строит иерархию: родитель с 2 детьми, сирота → корень,
- *     KR progressPercent clamp 0..100.
- *   - fetchGoalsPulse считает по progressStatus.
- *
- * Тестируем приватные методы через bracket-access (private, но детерминированы).
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 function makeService(prismaOver: {
@@ -50,7 +40,6 @@ function makeService(prismaOver: {
   );
 }
 
-// Доступ к приватным методам без any-каста на каждый вызов.
 type Privates = {
   fetchGoalsTree: (tenantId: string) => Promise<unknown[]>;
   fetchGoalsPulse: (tenantId: string) => Promise<{
@@ -75,8 +64,14 @@ describe('DirectorDashboardService — goals (Фаза 4)', () => {
         weight: '1.0',
         parentGoalId: null,
         keyResults: [
-          // current > target → clamp до 100
-          { id: 'kr1', name: 'KR1', unit: '%', startValue: '0', targetValue: '100', currentValue: '150' },
+          {
+            id: 'kr1',
+            name: 'KR1',
+            unit: '%',
+            startValue: '0',
+            targetValue: '100',
+            currentValue: '150',
+          },
         ],
       },
       {
@@ -100,7 +95,6 @@ describe('DirectorDashboardService — goals (Фаза 4)', () => {
         keyResults: [],
       },
       {
-        // родитель НЕ в наборе (например, archived) → сирота становится корнем
         id: 'orphan',
         name: 'Сирота',
         status: 'active',
@@ -119,13 +113,11 @@ describe('DirectorDashboardService — goals (Фаза 4)', () => {
       keyResults: Array<{ progressPercent: number }>;
     }>;
 
-    // Корни: parent + orphan.
     const rootIds = tree.map((n) => n.id).sort();
     expect(rootIds).toEqual(['orphan', 'parent']);
 
     const parent = tree.find((n) => n.id === 'parent')!;
     expect(parent.children.map((c) => c.id).sort()).toEqual(['child1', 'child2']);
-    // KR clamp до 100.
     expect(parent.keyResults[0]!.progressPercent).toBe(100);
 
     const orphan = tree.find((n) => n.id === 'orphan')!;

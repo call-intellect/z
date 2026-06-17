@@ -1,12 +1,6 @@
-/**
- * API-клиент модуля tracker.labels.
- *
- * Контракт: `backend/src/modules/tracker/controllers/labels.controller.ts`.
- */
-
-import { apiClient } from '../api-client';
-import { buildQuery, orgHeaders } from '../admin-helpers';
-import type { LabelApi } from '@/domain/tracker';
+import { apiClient } from "../api-client";
+import { buildQuery, orgHeaders } from "../admin-helpers";
+import type { LabelApi } from "@/domain/tracker";
 
 export interface ListLabelsRequest {
   projectId?: string;
@@ -14,7 +8,6 @@ export interface ListLabelsRequest {
 
 export interface CreateLabelRequest {
   name: string;
-  /** HEX `#RRGGBB`. */
   color: string;
   projectId?: string | null;
 }
@@ -31,7 +24,7 @@ export const labelsApi = {
     }),
 
   create: (orgId: string, body: CreateLabelRequest) =>
-    apiClient.post<LabelApi>('/api/v1/labels', body, {
+    apiClient.post<LabelApi>("/api/v1/labels", body, {
       headers: orgHeaders(orgId),
     }),
 

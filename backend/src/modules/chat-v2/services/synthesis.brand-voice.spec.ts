@@ -2,20 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { SynthesisService } from './synthesis.service';
 
-/**
- * SBA β-7 — интеграционный спек: SynthesisService с BrandVoiceService.
- *
- * Проверяем, что при mode='clone_style' AND scope='org' (без scopeRefId)
- * SynthesisService:
- *   1. дёргает BrandVoiceService.getOrCreate(tenantId).
- *   2. подмешивает извлечённый профиль в systemPromptOverride при вызове
- *      knowledge-core ChatV2Service.ask().
- *   3. если профиль пуст (belowCorpusThreshold=true) — override НЕ задаётся
- *      (null): графовый ответ идёт на единый промпт-ответчик (ТЗ 2026-06-15;
- *      режима «в стиле сотрудника» как текста промпта больше нет).
- *
- * Все зависимости (prisma, chatV2, retrievalCache, clones) мокаются.
- */
 describe('SynthesisService — BrandVoice injection (β-7)', () => {
   function makeChatV2Mock() {
     return {
@@ -81,9 +67,8 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
 
     expect(brandVoice.getOrCreate).toHaveBeenCalledWith('org_1');
     expect(chatV2.ask).toHaveBeenCalledOnce();
-    const passedPrompt: string = (
-      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string }
-    ).systemPromptOverride;
+    const passedPrompt: string = (chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string })
+      .systemPromptOverride;
     expect(passedPrompt).toContain('голос');
     expect(passedPrompt).toContain('Краткость');
     expect(passedPrompt).toContain('данным письмом');
@@ -120,10 +105,8 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
     });
 
     expect(brandVoice.getOrCreate).toHaveBeenCalled();
-    const passedPrompt = (
-      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null }
-    ).systemPromptOverride;
-    // При пустом профиле — override НЕ задаётся: единый промпт-ответчик.
+    const passedPrompt = (chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null })
+      .systemPromptOverride;
     expect(passedPrompt).toBeNull();
   });
 
@@ -136,7 +119,7 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
       chatV2 as never,
       cache as never,
       undefined,
-      undefined, // brandVoice не подключен
+      undefined,
     );
 
     await svc.synthesize({
@@ -150,10 +133,8 @@ describe('SynthesisService — BrandVoice injection (β-7)', () => {
     });
 
     expect(chatV2.ask).toHaveBeenCalled();
-    // brandVoice не подключён → override НЕ задаётся: единый промпт-ответчик.
-    const passedPrompt = (
-      chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null }
-    ).systemPromptOverride;
+    const passedPrompt = (chatV2.ask.mock.calls[0]?.[0] as { systemPromptOverride: string | null })
+      .systemPromptOverride;
     expect(passedPrompt).toBeNull();
   });
 });

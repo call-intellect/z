@@ -1,19 +1,3 @@
-/**
- * Промпт `entity-merge-arbiter` — LLM-арбитр дубликатов сущностей.
- *
- * Используется `EntityMergeService.judgeMerge`: на вход — новая сущность и
- * один кандидат того же type, ближайший по pgvector cosine; на выходе —
- * verdict ∈ {merge, distinct} + canonicalId (для merge).
- *
- * Учитывает metadata (для person — должность/email/телефон; для client —
- * ИНН/домен/город; для project — кодовое имя; для product — артикул/SKU)
- * и контекст недавних блоков (recentMentions) обоих участников.
- *
- * Вынесено из `services/entity-merge.service.ts` в рамках Фазы 8 §10 Find 2
- * (ТЗ 2026-05-25-llm-architecture-changes-from-experiments.md) — для
- * единообразия и admin-редактируемости.
- */
-
 import { z } from 'zod';
 
 import { withAsrNote } from '../../ai/services/prompts/common';
@@ -35,7 +19,8 @@ export const ENTITY_MERGE_ARBITER_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const ENTITY_MERGE_ARBITER_SYSTEM_PROMPT = withAsrNote(`Ты — арбитр дубликатов сущностей в knowledge-core.
+export const ENTITY_MERGE_ARBITER_SYSTEM_PROMPT =
+  withAsrNote(`Ты — арбитр дубликатов сущностей в knowledge-core.
 Получаешь одну «новую» сущность и одного кандидата того же типа (того же tenant'а), ближайшего по эмбеддингу. Реши, один и тот же ли это объект.
 Решаешь: новая сущность — это другое написание / алиас кандидата (verdict="merge"), или это другая сущность (verdict="distinct").
 

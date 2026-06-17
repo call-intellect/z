@@ -11,10 +11,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -33,18 +30,6 @@ import {
   type PendingActionsListResult,
 } from './services/pending-actions.service';
 
-/**
- * REST `/api/v1/pending-actions/*` — единый feed «требует действия»
- * (Action Center B0, 2026-06-02).
- *
- *   GET  /api/v1/pending-actions/count   — бейдж (total + bySource)
- *   GET  /api/v1/pending-actions         — список (urgent-first, limit)
- *   POST /api/v1/pending-actions/snooze  — отложить item на N часов
- *
- * Доступно любому члену Org: выдача ограничена pending'ом пользователя —
- * роль резолвится в сервисе через Membership (owner/admin видят всё по своим
- * источникам, остальные — только адресованное им). Org берётся из `X-Org-Id`.
- */
 @ApiTags('pending-actions')
 @Controller('api/v1/pending-actions')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -81,7 +66,7 @@ export class PendingActionsController {
   }
 
   @Post('snooze')
-  @ApiOperation({ summary: 'Отложить item из feed\'а на N часов (1..720)' })
+  @ApiOperation({ summary: "Отложить item из feed'а на N часов (1..720)" })
   async snooze(
     @Body(new ZodValidationPipe(SnoozePendingActionBodySchema))
     body: SnoozePendingActionBody,
@@ -101,8 +86,7 @@ export class PendingActionsController {
 
   @Post('confirm')
   @ApiOperation({
-    summary:
-      'Сквозной резолв item\'а очереди решений (Ф4): curation/conflict/intake/probe',
+    summary: "Сквозной резолв item'а очереди решений (Ф4): curation/conflict/intake/probe",
   })
   async confirm(
     @Body(new ZodValidationPipe(ConfirmPendingActionBodySchema))

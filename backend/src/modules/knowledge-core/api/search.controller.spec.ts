@@ -1,11 +1,3 @@
-/**
- * Spec для KnowledgeSearchController (Phase F.2).
- *
- * Контроллер делегирует логику в SearchService — здесь проверяем только
- * RBAC + tenant fence + делегирование с правильными параметрами + Zod-400.
- * Полноценный E2E с pgvector + embeddings — отдельная задача (требует ключи
- * embedding-провайдеров; в test-env они отсутствуют).
- */
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -46,17 +38,13 @@ describe('KnowledgeSearchController', () => {
   it('403 forbidden если canRead=false', async () => {
     const { ctrl } = build({ canRead: false });
     const body = SearchRequestSchema.parse({ query: 'x' });
-    await expect(ctrl.search(body, userA, 't-A')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.search(body, userA, 't-A')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required без X-Org-Id', async () => {
     const { ctrl } = build();
     const body = SearchRequestSchema.parse({ query: 'x' });
-    await expect(ctrl.search(body, userA, undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.search(body, userA, undefined)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('Zod-400 на пустой query', () => {

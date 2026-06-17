@@ -1,34 +1,28 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Plus, X } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { departmentsApi } from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { departmentsApi } from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-import { WizardStepNav } from '../WizardStepNav';
+import { WizardStepNav } from "../WizardStepNav";
 
-const NEXT_HREF = '/onboarding/company/step-2';
+const NEXT_HREF = "/onboarding/company/step-2";
 
-/**
- * Шаг 1 — Отделы. Минимум одна непустая строка для перехода далее.
- * Отправка идёт по одному `POST /api/v1/departments` через Promise.all —
- * batch на бэке не обязателен. Дубликаты по имени игнорируем (пусть
- * backend сам решит, обычно — unique constraint, на 409 покажем toast).
- */
 export function Step1Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
-  const [rows, setRows] = useState<string[]>(['']);
+  const [rows, setRows] = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
 
-  const addRow = () => setRows((rs) => [...rs, '']);
+  const addRow = () => setRows((rs) => [...rs, ""]);
   const removeRow = (idx: number) =>
     setRows((rs) => (rs.length <= 1 ? rs : rs.filter((_, i) => i !== idx)));
   const updateRow = (idx: number, value: string) =>
@@ -41,11 +35,10 @@ export function Step1Client() {
     if (!canSubmit || !currentOrgId) return;
     setSubmitting(true);
     try {
-      // Уникализируем по имени (case-insensitive).
       const unique: string[] = [];
       const seen = new Set<string>();
       for (const name of cleaned) {
-        const key = name.toLocaleLowerCase('ru');
+        const key = name.toLocaleLowerCase("ru");
         if (!seen.has(key)) {
           seen.add(key);
           unique.push(name);
@@ -54,11 +47,10 @@ export function Step1Client() {
       await Promise.all(
         unique.map((name) => departmentsApi.create(currentOrgId, { name })),
       );
-      toast.success('Отделы сохранены.');
+      toast.success("Отделы сохранены.");
       router.push(NEXT_HREF);
     } catch (e) {
-      const msg =
-        humanizeApiError(e, 'Не удалось сохранить отделы.');
+      const msg = humanizeApiError(e, "Не удалось сохранить отделы.");
       toast.error(msg);
     } finally {
       setSubmitting(false);

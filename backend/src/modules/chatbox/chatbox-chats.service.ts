@@ -14,15 +14,6 @@ import type {
   MessengerIdentityDto,
 } from './dto/chatbox-chats.dto';
 
-/**
- * Сервис просмотра чатов ChatBox + исходящей отправки ответа менеджера
- * (ТЗ 2026-06-05, Фаза 6). Backend для фронта Фаз 7/8.
- *
- * Чтение — из локальных таблиц (синк Фазы 3 наполняет их). Имена
- * кастомеров/ответственных/клиентов резолвятся батчево (без N+1).
- * Отправка — через ChatBox API; локальная запись пишется ТОЛЬКО после
- * успешного ответа API (никаких «фантомных» сообщений при сетевой ошибке).
- */
 @Injectable()
 export class ChatboxChatsService {
   private readonly logger = new Logger(ChatboxChatsService.name);
@@ -40,15 +31,7 @@ export class ChatboxChatsService {
     private readonly analyzeQueue: ChatboxAnalyzeQueueService,
   ) {}
 
-  /**
-   * Ручной запуск AI-анализа по чату: ставит в очередь все закрытые сессии
-   * этого чата со статусом `pending`. Явное действие владельца — поэтому НЕ
-   * гейтится `analysisEnabled` (тумблер гейтит только авто-крон).
-   */
-  async analyzeChat(
-    tenantId: string,
-    chatDbId: string,
-  ): Promise<{ enqueued: number }> {
+  async analyzeChat(tenantId: string, chatDbId: string): Promise<{ enqueued: number }> {
     const chat = await this.prisma.chatboxChat.findFirst({
       where: { id: chatDbId, tenantId },
       select: { id: true },
@@ -80,8 +63,6 @@ export class ChatboxChatsService {
     return { enqueued };
   }
 
-  // ─────────────────────────── list ─────────────────────────────────
-
   async listChats(
     tenantId: string,
     q: ChatboxChatsListQueryDto,
@@ -90,9 +71,7 @@ export class ChatboxChatsService {
       tenantId,
       ...(q.status ? { status: q.status } : {}),
       ...(q.channelType ? { channelType: q.channelType } : {}),
-      ...(q.customerExternalId
-        ? { customerExternalId: q.customerExternalId }
-        : {}),
+      ...(q.customerExternalId ? { customerExternalId: q.customerExternalId } : {}),
     };
     const take = clamp(
       q.limit ?? ChatboxChatsService.LIST_LIMIT_DEFAULT,
@@ -111,13 +90,8 @@ export class ChatboxChatsService {
       this.prisma.chatboxChat.count({ where }),
     ]);
 
-    // Батч-резолв имён (без N+1): собираем уникальные externalId-ы.
-    const customerIds = uniq(
-      chats.map((c) => c.customerExternalId).filter(isStr),
-    );
-    const memberIds = uniq(
-      chats.map((c) => c.responsibleExternalId).filter(isStr),
-    );
+    const customerIds = uniq(chats.map((c) => c.customerExternalId).filter(isStr));
+    const memberIds = uniq(chats.map((c) => c.responsibleExternalId).filter(isStr));
     const clientIds = uniq(chats.map((c) => c.clientExternalId).filter(isStr));
 
     const [customers, members, clients] = await Promise.all([
@@ -156,9 +130,7 @@ export class ChatboxChatsService {
             name: customerMap.get(c.customerExternalId) ?? null,
           }
         : null,
-      clientName: c.clientExternalId
-        ? (clientMap.get(c.clientExternalId) ?? null)
-        : null,
+      clientName: c.clientExternalId ? (clientMap.get(c.clientExternalId) ?? null) : null,
       responsible: c.responsibleExternalId
         ? {
             externalId: c.responsibleExternalId,
@@ -173,60 +145,56 @@ export class ChatboxChatsService {
     return { items, total };
   }
 
-  // ─────────────────────────── detail ───────────────────────────────
-
   async getChat(tenantId: string, chatDbId: string): Promise<ChatDetailDto> {
     const chat = await this.prisma.chatboxChat.findFirst({
       where: { id: chatDbId, tenantId },
     });
     if (!chat) throw this.chatNotFound();
 
-    const [customer, responsible, sessions, identities, client] =
-      await Promise.all([
-        chat.customerExternalId
-          ? this.prisma.chatboxCustomer.findFirst({
-              where: { tenantId, externalId: chat.customerExternalId },
-              select: { externalId: true, name: true },
-            })
-          : Promise.resolve(null),
-        chat.responsibleExternalId
-          ? this.prisma.chatboxMember.findFirst({
-              where: { tenantId, externalId: chat.responsibleExternalId },
-              select: { externalId: true, name: true, linkedPersonId: true },
-            })
-          : Promise.resolve(null),
-        this.prisma.chatboxChatSession.findMany({
-          where: { tenantId, chatId: chatDbId },
-          orderBy: { seq: 'asc' },
-          select: {
-            id: true,
-            seq: true,
-            startedAt: true,
-            endedAt: true,
-            summary: true,
-            analysisStatus: true,
-            previousSessionId: true,
-          },
-        }),
-        // messengerIdentities: все клиентские identity того же кастомера.
-        chat.customerExternalId
-          ? this.prisma.chatboxChannelClient.findMany({
-              where: { tenantId, customerExternalId: chat.customerExternalId },
-              select: {
-                channelType: true,
-                externalId: true,
-                name: true,
-                avatarUrl: true,
-              },
-            })
-          : Promise.resolve([]),
-        chat.clientExternalId
-          ? this.prisma.chatboxChannelClient.findFirst({
-              where: { tenantId, externalId: chat.clientExternalId },
-              select: { name: true },
-            })
-          : Promise.resolve(null),
-      ]);
+    const [customer, responsible, sessions, identities, client] = await Promise.all([
+      chat.customerExternalId
+        ? this.prisma.chatboxCustomer.findFirst({
+            where: { tenantId, externalId: chat.customerExternalId },
+            select: { externalId: true, name: true },
+          })
+        : Promise.resolve(null),
+      chat.responsibleExternalId
+        ? this.prisma.chatboxMember.findFirst({
+            where: { tenantId, externalId: chat.responsibleExternalId },
+            select: { externalId: true, name: true, linkedPersonId: true },
+          })
+        : Promise.resolve(null),
+      this.prisma.chatboxChatSession.findMany({
+        where: { tenantId, chatId: chatDbId },
+        orderBy: { seq: 'asc' },
+        select: {
+          id: true,
+          seq: true,
+          startedAt: true,
+          endedAt: true,
+          summary: true,
+          analysisStatus: true,
+          previousSessionId: true,
+        },
+      }),
+      chat.customerExternalId
+        ? this.prisma.chatboxChannelClient.findMany({
+            where: { tenantId, customerExternalId: chat.customerExternalId },
+            select: {
+              channelType: true,
+              externalId: true,
+              name: true,
+              avatarUrl: true,
+            },
+          })
+        : Promise.resolve([]),
+      chat.clientExternalId
+        ? this.prisma.chatboxChannelClient.findFirst({
+            where: { tenantId, externalId: chat.clientExternalId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+    ]);
 
     const messengerIdentities: MessengerIdentityDto[] = identities.map((i) => ({
       channelType: i.channelType,
@@ -240,9 +208,7 @@ export class ChatboxChatsService {
       externalId: chat.externalId,
       channelType: chat.channelType,
       status: chat.status,
-      customer: customer
-        ? { externalId: customer.externalId, name: customer.name ?? null }
-        : null,
+      customer: customer ? { externalId: customer.externalId, name: customer.name ?? null } : null,
       clientName: client?.name ?? null,
       responsible: responsible
         ? {
@@ -266,8 +232,6 @@ export class ChatboxChatsService {
       messengerIdentities,
     };
   }
-
-  // ─────────────────────────── messages ─────────────────────────────
 
   async listMessages(
     tenantId: string,
@@ -298,8 +262,6 @@ export class ChatboxChatsService {
       this.prisma.chatboxMessage.count({ where }),
     ]);
 
-    // Резолв отправителей-менеджеров → Person Коры (кликабельный профиль).
-    // CLIENT не резолвим — у клиентов нет профиля-страницы. Батч, без N+1.
     const managerExtIds = [
       ...new Set(
         messages
@@ -318,8 +280,7 @@ export class ChatboxChatsService {
         select: { externalId: true, linkedPersonId: true },
       });
       for (const mem of members) {
-        if (mem.linkedPersonId)
-          personByExtId.set(mem.externalId, mem.linkedPersonId);
+        if (mem.linkedPersonId) personByExtId.set(mem.externalId, mem.linkedPersonId);
       }
     }
 
@@ -345,13 +306,7 @@ export class ChatboxChatsService {
     return { items, total };
   }
 
-  // ─────────────────────────── send ─────────────────────────────────
-
-  async sendMessage(
-    tenantId: string,
-    chatDbId: string,
-    text: string,
-  ): Promise<{ id: string }> {
+  async sendMessage(tenantId: string, chatDbId: string, text: string): Promise<{ id: string }> {
     const chat = await this.prisma.chatboxChat.findFirst({
       where: { id: chatDbId, tenantId },
     });
@@ -368,15 +323,9 @@ export class ChatboxChatsService {
       });
     }
 
-    // Сетевой вызов ПЕРВЫМ. На любую ошибку — НЕ пишем в БД.
     let apiMsg;
     try {
-      apiMsg = await this.client.sendMessage(
-        cfg.token,
-        cfg.workspaceId,
-        chat.externalId,
-        { text },
-      );
+      apiMsg = await this.client.sendMessage(cfg.token, cfg.workspaceId, chat.externalId, { text });
     } catch {
       throw new BadRequestException({
         ok: false,
@@ -387,31 +336,21 @@ export class ChatboxChatsService {
       });
     }
 
-    // ChatBox может вернуть сообщение как есть либо в обёртке {message|data|
-    // result}. Извлекаем id/createdAt/sender best-effort (форма ответа POST
-    // ещё не зафиксирована боевой отправкой). Если id нет — синтетический ключ,
-    // чтобы не падать 500 и показать отправленное сразу (реальное доедет
-    // синком). Лог формы — чтобы зафиксировать реальную форму ответа POST.
     const parsed = extractChatboxOutboundId(apiMsg);
 
     if (parsed.id === null) {
       this.logger.warn(
         {
           keys:
-            apiMsg && typeof apiMsg === 'object'
-              ? Object.keys(apiMsg as object)
-              : typeof apiMsg,
+            apiMsg && typeof apiMsg === 'object' ? Object.keys(apiMsg as object) : typeof apiMsg,
         },
         'chatbox sendMessage: ответ ChatBox без message id — сохраняю по синтетическому ключу',
       );
     }
     const createdAt = parsed.createdAt ? new Date(parsed.createdAt) : new Date();
     const externalId =
-      parsed.id ??
-      `kora-out-${createdAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+      parsed.id ?? `kora-out-${createdAt.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
 
-    // messageCount инкрементим только если сообщение реально новое — иначе при
-    // гонке с синком/вебхуком (upsert пошёл по update) счётчик завышается.
     const existing = await this.prisma.chatboxMessage.findUnique({
       where: { tenantId_externalId: { tenantId, externalId } },
       select: { id: true },
@@ -447,9 +386,7 @@ export class ChatboxChatsService {
     });
 
     const nextLastMessageAt =
-      chat.lastMessageAt && chat.lastMessageAt > createdAt
-        ? chat.lastMessageAt
-        : createdAt;
+      chat.lastMessageAt && chat.lastMessageAt > createdAt ? chat.lastMessageAt : createdAt;
 
     await this.prisma.chatboxChat.update({
       where: { id: chatDbId },
@@ -462,8 +399,6 @@ export class ChatboxChatsService {
     return { id: externalId };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private chatNotFound(): BadRequestException {
     return new BadRequestException({
       ok: false,
@@ -471,8 +406,6 @@ export class ChatboxChatsService {
     });
   }
 }
-
-// ─────────────────────────── pure helpers ───────────────────────────
 
 function isStr(v: string | null | undefined): v is string {
   return typeof v === 'string' && v.length > 0;
@@ -494,7 +427,6 @@ function toNameMap(
   return map;
 }
 
-/** Результат разбора ответа ChatBox на POST-отправку сообщения. */
 export interface ChatboxOutboundParsed {
   id: string | null;
   createdAt: string | null;
@@ -502,7 +434,6 @@ export interface ChatboxOutboundParsed {
   senderName: string | null;
 }
 
-/** id-кандидаты по приоритету (берём первый непустой → String()). */
 const OUTBOUND_ID_KEYS = [
   'id',
   'messageId',
@@ -511,18 +442,13 @@ const OUTBOUND_ID_KEYS = [
   'external_id',
   '_id',
 ] as const;
-/** Кандидаты на дату создания. */
 const OUTBOUND_CREATED_KEYS = ['createdAt', 'created_at', 'timestamp'] as const;
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
 }
 
-/** Первый непустой scalar (строка/число) из record по списку ключей → String(). */
-function firstScalar(
-  rec: Record<string, unknown> | null,
-  keys: readonly string[],
-): string | null {
+function firstScalar(rec: Record<string, unknown> | null, keys: readonly string[]): string | null {
   if (!rec) return null;
   for (const k of keys) {
     const v = rec[k];
@@ -532,20 +458,8 @@ function firstScalar(
   return null;
 }
 
-/**
- * Best-effort извлечение id отправленного сообщения из ответа ChatBox на POST.
- *
- * Форма ответа боевой отправки ещё не зафиксирована, поэтому пробуем id-ключи
- * по приоритету и в самом `raw`, и во вложенных обёртках `message`/`data`/
- * `result`. createdAt и sender — тем же best-effort. Чистая функция (без
- * сети/Prisma) — экспортируется ради юнит-теста.
- *
- * @returns `{ id, createdAt, senderId, senderName }`; любое поле = null, если
- *          его не нашли (вызывающий код подставит синтетический ключ).
- */
 export function extractChatboxOutboundId(raw: unknown): ChatboxOutboundParsed {
   const root = asRecord(raw);
-  // Кандидаты-контейнеры: сам объект + типовые обёртки.
   const containers: Array<Record<string, unknown> | null> = [
     root,
     asRecord(root?.message),

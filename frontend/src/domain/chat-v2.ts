@@ -7,20 +7,8 @@ import type {
   ChatV2MessageRoleApi,
   ChatV2ModeApi,
   ChatV2ScopeApi,
-} from '@/api/chat-v2.api';
-import type {
-  AskCloneResponseApi,
-  CloneCitationApi,
-} from '@/api/clones.api';
-
-/**
- * Domain-модели SBA α-5 — Layer 5 Chat-v2 Omnichannel.
- *
- * Преобразование ApiDto → DomainModel:
- *   - даты приводятся к Date;
- *   - перечисления остаются строковыми, лейблы — через хелперы;
- *   - citations — массив (никогда null в domain).
- */
+} from "@/api/chat-v2.api";
+import type { AskCloneResponseApi, CloneCitationApi } from "@/api/clones.api";
 
 export type ChatV2Scope = ChatV2ScopeApi;
 export type ChatV2Mode = ChatV2ModeApi;
@@ -33,7 +21,6 @@ export interface ChatV2Citation {
   startMs: number;
   endMs: number;
   snippet: string;
-  /** ТЗ-4 Ф11 — если блок из загруженного документа, ссылка на него. */
   documentId?: string;
   documentName?: string;
 }
@@ -69,33 +56,28 @@ export interface ChatV2ConversationWithMessages extends ChatV2Conversation {
 }
 
 const SCOPE_LABEL: Record<ChatV2Scope, string> = {
-  org: 'Вся компания',
-  meeting: 'Встреча',
-  card: 'Карточка',
-  theme: 'Тема',
-  entity: 'Сущность',
-  personal: 'Личный',
-  // Wave 2 polish T6-6b — чат в задаче.
-  issue: 'Задача',
+  org: "Вся компания",
+  meeting: "Встреча",
+  card: "Карточка",
+  theme: "Тема",
+  entity: "Сущность",
+  personal: "Личный",
+  issue: "Задача",
 };
 
 const MODE_LABEL: Record<ChatV2Mode, string> = {
-  factual: 'Факты',
-  synthetic: 'Синтез',
-  clone_style: 'Клон сотрудника',
+  factual: "Факты",
+  synthetic: "Синтез",
+  clone_style: "Клон сотрудника",
 };
 
 const STATUS_LABEL: Record<ChatV2ConversationStatus, string> = {
-  active: 'Активный',
-  archived: 'В архиве',
+  active: "Активный",
+  archived: "В архиве",
 };
 
 export function chatV2ScopeLabel(scope: ChatV2Scope): string {
   return SCOPE_LABEL[scope] ?? scope;
-}
-
-export function chatV2ModeLabel(mode: ChatV2Mode): string {
-  return MODE_LABEL[mode] ?? mode;
 }
 
 export function chatV2ConversationStatusLabel(
@@ -157,35 +139,20 @@ export function toChatV2ConversationWithMessages(
   };
 }
 
-/**
- * #57 — служебные маркеры источников/рассуждений, которые бэкенд НАМЕРЕННО
- * оставляет в тексте ответа ассистента (цитаты парсятся отдельно и показываются
- * блоком «Источники»). Пользователю в самом тексте они не нужны. Покрывает все
- * формы: `[BLOCK:id]`, `[CONTRADICTING BLOCK]`, слитный `[CONTRADICTING BLOCK:id]`,
- * `[REASONING CHAIN FOR BLOCK id]`, `[DECISION:id]`. id-класс — `[a-zA-Z0-9_-]+`.
- * НЕ трогает markdown-ссылки `[текст](url)` и обычный текст в скобках — матчит
- * только конкретные служебные ключевые слова.
- */
 const CONTEXT_MARKER_RE =
   /\[(?:BLOCK:[a-zA-Z0-9_-]+|CONTRADICTING BLOCK(?::[a-zA-Z0-9_-]+)?|REASONING CHAIN FOR BLOCK [a-zA-Z0-9_-]+|DECISION:[a-zA-Z0-9_-]+)\]/g;
 
 export function stripContextMarkers(text: string): string {
   return text
-    .replace(CONTEXT_MARKER_RE, '')
-    // схлопываем пробелы/табы, оставшиеся от вырезанного маркера, НЕ трогая
-    // переводы строк (важно для whitespace-pre-wrap поверхностей).
-    .replace(/[^\S\n]{2,}/g, ' ')
-    // убираем пробел перед знаком препинания, появившийся от выреза.
-    .replace(/[^\S\n]+([.,;:!?])/g, '$1')
-    // убираем хвостовой пробел перед переводом строки (но НЕ ведущий отступ
-    // следующей строки — он может быть значимым для markdown-списков).
-    .replace(/[^\S\n]+\n/g, '\n')
+    .replace(CONTEXT_MARKER_RE, "")
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/[^\S\n]+([.,;:!?])/g, "$1")
+    .replace(/[^\S\n]+\n/g, "\n")
     .trim();
 }
 
-/** Форматирует mm:ss из миллисекунд. */
 export function formatTimestamp(ms: number): string {
-  if (!Number.isFinite(ms) || ms < 0) return '00:00';
+  if (!Number.isFinite(ms) || ms < 0) return "00:00";
   const total = Math.floor(ms / 1000);
   const m = Math.floor(total / 60);
   const s = total % 60;
@@ -193,42 +160,18 @@ export function formatTimestamp(ms: number): string {
   return `${pad(m)}:${pad(s)}`;
 }
 
-// ─────────── ТЗ#5 2026-06-15 — адресат AI-чата кабинета (помощник / клон) ───────────
-
-/**
- * Адресат вопроса в окне `/chat`. Дефолт — общий помощник Коры
- * (`{kind:'assistant'}`), путь которого не меняется. Опционально пользователь
- * выбирает ролевой клон (по должности) — вопрос уходит ему через
- * `clonesApi.askRole`. См. ТЗ `2026-06-15-cabinet-assistant-clone-selector.md`.
- */
 export type AssistantTarget =
-  | { kind: 'assistant' }
-  | { kind: 'clone'; roleId: string; roleName: string };
+  | { kind: "assistant" }
+  | { kind: "clone"; roleId: string; roleName: string };
 
-/**
- * Маппер ответа клона (`AskCloneResponseApi`) в `ChatV2Message`-shape, чтобы
- * встроить ответ клона в общую видимую нить `/chat`.
- *
- * Особенности:
- *   - `refused:true` — это НОРМАЛЬНЫЙ ответ (анти-deepfake), `text` рендерим
- *     как обычное сообщение клона, не как ошибку.
- *   - `CloneCitationApi` несёт `blockId` (а не `meetingId` обязательно) и
- *     опц. `meetingId/meetingTitle/startMs/endMs/snippet`. Маппим доступные
- *     поля: цитаты без meetingId/meetingTitle (только blockId) опускаем, т.к.
- *     `ChatV2Citation` рассчитан на источник-встречу/документ и без них
- *     рендерить нечего.
- *   - `mode` ставим `clone_style` (как и приходит в ответе).
- *   - `createdAt` — момент маппинга (ответ клона синхронный, без серверной даты
- *     в ChatV2-форме).
- */
 export function cloneAnswerToChatV2Message(
   api: AskCloneResponseApi,
 ): ChatV2Message {
   return {
     id: api.messageId,
     conversationId: api.conversationId,
-    role: 'assistant',
-    mode: 'clone_style',
+    role: "assistant",
+    mode: "clone_style",
     text: api.text,
     citations: (api.citations ?? [])
       .map(cloneCitationToChatV2Citation)
@@ -242,19 +185,15 @@ export function cloneAnswerToChatV2Message(
   };
 }
 
-/**
- * Маппер цитаты клона → `ChatV2Citation`. Возвращает `null`, если в цитате нет
- * данных встречи (только `blockId`) — такую нечего показать в нити `/chat`.
- */
 export function cloneCitationToChatV2Citation(
   api: CloneCitationApi,
 ): ChatV2Citation | null {
   if (!api.meetingId && !api.meetingTitle) return null;
   return {
-    meetingId: api.meetingId ?? '',
-    meetingTitle: api.meetingTitle ?? 'Источник',
+    meetingId: api.meetingId ?? "",
+    meetingTitle: api.meetingTitle ?? "Источник",
     startMs: api.startMs ?? 0,
     endMs: api.endMs ?? 0,
-    snippet: api.snippet ?? '',
+    snippet: api.snippet ?? "",
   };
 }

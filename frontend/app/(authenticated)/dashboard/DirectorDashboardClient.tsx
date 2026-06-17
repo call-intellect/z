@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import type { ReactNode } from 'react';
-import useSWR from 'swr';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import useSWR from "swr";
 import {
   AlertCircle,
   AlertTriangle,
@@ -16,38 +16,41 @@ import {
   RefreshCcw,
   Sparkles,
   Target,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { humanizeApiError } from '@/api/api-error';
-import { dashboardApi } from '@/api/dashboard.api';
-import { operationsDailyDigestApi } from '@/api/operations-daily-digest.api';
-import { operationsDashboardApi } from '@/api/operations-dashboard.api';
-import { onboardingApi } from '@/api/onboarding.api';
-import { useAuth } from '@/contexts/auth-context';
-import { useSubscription } from '@/contexts/subscription-context';
-import { useMemberships } from '@/hooks/useMemberships';
+import { humanizeApiError } from "@/api/api-error";
+import { dashboardApi } from "@/api/dashboard.api";
+import { operationsDailyDigestApi } from "@/api/operations-daily-digest.api";
+import { operationsDashboardApi } from "@/api/operations-dashboard.api";
+import { onboardingApi } from "@/api/onboarding.api";
+import { useAuth } from "@/contexts/auth-context";
+import { useSubscription } from "@/contexts/subscription-context";
+import { useMemberships } from "@/hooks/useMemberships";
 import {
   pulsePatternsFromApi,
   type PulsePatternsDomain,
-} from '@/domain/pulse-patterns';
+} from "@/domain/pulse-patterns";
 import {
   fromCheckinDisciplineApi,
   localDateString,
   type CheckinDisciplineDomain,
-} from '@/domain/checkin-discipline';
-import { fromDailyDigestApi, type DailyDigestDomain } from '@/domain/operations-daily-digest';
+} from "@/domain/checkin-discipline";
+import {
+  fromDailyDigestApi,
+  type DailyDigestDomain,
+} from "@/domain/operations-daily-digest";
 import {
   directorDashboardFromApi,
   signalTypeLabel,
   type DirectorDashboardDomain,
   type DirectorDashboardPeriod,
   type DirectorDashboardSignalDomain,
-} from '@/domain/director-dashboard';
-import { Button } from '@/ui/shadcn/button';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { AiNarrativeWithSources } from '@/ui/components/dashboard/AiNarrativeWithSources';
-import { CompassWidget } from '@/ui/components/dashboard/CompassWidget';
-import { MainEmptyState } from '@/ui/components/dashboard/MainEmptyState';
+} from "@/domain/director-dashboard";
+import { Button } from "@/ui/shadcn/button";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { AiNarrativeWithSources } from "@/ui/components/dashboard/AiNarrativeWithSources";
+import { CompassWidget } from "@/ui/components/dashboard/CompassWidget";
+import { MainEmptyState } from "@/ui/components/dashboard/MainEmptyState";
 import {
   CardTitle as ModernCardTitle,
   CHART,
@@ -55,58 +58,25 @@ import {
   GRAD,
   MODERN_PAGE_BG,
   glass,
-} from '@/ui/components/dashboard/modern';
-import { DigitizedSummaryWidget } from './widgets/DigitizedSummaryWidget';
-import { TeamActivityWidget } from './widgets/TeamActivityWidget';
-import { ValueStripWidget } from './widgets/ValueStripWidget';
-import { VerdictBar } from './widgets/VerdictBar';
+} from "@/ui/components/dashboard/modern";
+import { DigitizedSummaryWidget } from "./widgets/DigitizedSummaryWidget";
+import { TeamActivityWidget } from "./widgets/TeamActivityWidget";
+import { ValueStripWidget } from "./widgets/ValueStripWidget";
+import { VerdictBar } from "./widgets/VerdictBar";
 
-/**
- * Экран «Сегодня» (бывшая «Главная»), редизайн Ф1 cabinet-redesign-rhythms.
- *
- * Источник правды раскладки/тона — прототип
- * `plans/analysis/2026-06-13-cabinet-redesign-prototypes/_parts/part-today.html`.
- *
- * Тезис: первый экран отвечает за 30 секунд на 3 вопроса — что случилось /
- * что буксует и требует решения / куда движемся. ≤7 величин на первом экране.
- *
- * Состав (сверху вниз):
- *   1. Строка-вердикт (VerdictBar) — «молчит при норме».
- *   2. Грид: «Что было вчера» (daily-digest.shortSummary) + «Требует вас» (якорь).
- *   3. «Польза за неделю» (valueStrip, 5 stat).
- *   4. Грид: «Вектор к цели» (CompassWidget ← pulse.goalVector) + «Сводка Коры».
- *   5. Грид: «Самое острое» (радар топ-3 ← newSignals, затухание по свежести)
- *      + «Оцифровано» (счётчики regulations/summary, CTA → /regulations).
- *   6. «Лента дня» (свёрнуто, топ-5 ← daily-digest.eventsToday) + плашка
- *      «Вопросов Коры без ответа: N».
- *   7. «Дисциплина чек-инов сегодня» (checkin-discipline, from=to=сегодня).
- *
- * Онбординг (IncompleteSetupBanner) рендерится один раз в DashboardRouter —
- * здесь НЕ дублируем (исчезает после 6/6 сам).
- *
- * Источники данных:
- *   - `GET /dashboard/director?period` → directorDashboardFromApi (requiresAction,
- *     valueStrip, narrativeSummary, newSignals, isEmpty);
- *   - `GET /dashboard/pulse-patterns?period` → pulsePatternsFromApi (goalVector);
- *   - `GET /dashboard/operations/daily-digest?date` → fromDailyDigestApi
- *     (shortSummary, eventsToday, deliveredAt);
- *   - `GET /dashboard/operations/checkin-discipline?from=&to=` →
- *     fromCheckinDisciplineApi (totals.morningMissed/eveningMissed, enabled).
- *
- * Б-6: у каждого виджета три состояния — данные / нет данных (`—` + причина +
- * CTA) / сбой (плашка «чиним», без чисел). Дашборд молчит при норме.
- */
 export function DirectorDashboardClient() {
   const { user, currentOrgId, currentOrgRole } = useAuth();
   const { memberships } = useMemberships();
-  const { status: subscriptionStatus, loading: subscriptionLoading, showPaywallModal } =
-    useSubscription();
-  const [period, setPeriod] = useState<DirectorDashboardPeriod>('week');
+  const {
+    status: subscriptionStatus,
+    loading: subscriptionLoading,
+    showPaywallModal,
+  } = useSubscription();
+  const [period, setPeriod] = useState<DirectorDashboardPeriod>("week");
   const [data, setData] = useState<DirectorDashboardDomain | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Pulse-паттерны — для блока «Вектор к цели». Ошибка не валит основной экран.
   const [pulse, setPulse] = useState<PulsePatternsDomain | null>(null);
   const [pulseLoading, setPulseLoading] = useState(true);
   const [pulseError, setPulseError] = useState<string | null>(null);
@@ -117,10 +87,13 @@ export function DirectorDashboardClient() {
       setLoading(true);
       setError(null);
       try {
-        const res = await dashboardApi.getDirectorView(currentOrgId, nextPeriod);
+        const res = await dashboardApi.getDirectorView(
+          currentOrgId,
+          nextPeriod,
+        );
         setData(directorDashboardFromApi(res));
       } catch (e) {
-        setError(humanizeApiError(e, 'Не удалось загрузить дашборд'));
+        setError(humanizeApiError(e, "Не удалось загрузить дашборд"));
       } finally {
         setLoading(false);
       }
@@ -134,10 +107,15 @@ export function DirectorDashboardClient() {
       setPulseLoading(true);
       setPulseError(null);
       try {
-        const res = await dashboardApi.getPulsePatterns(currentOrgId, nextPeriod);
+        const res = await dashboardApi.getPulsePatterns(
+          currentOrgId,
+          nextPeriod,
+        );
         setPulse(pulsePatternsFromApi(res));
       } catch (e) {
-        setPulseError(humanizeApiError(e, 'Не удалось загрузить вектор движения'));
+        setPulseError(
+          humanizeApiError(e, "Не удалось загрузить вектор движения"),
+        );
       } finally {
         setPulseLoading(false);
       }
@@ -151,13 +129,10 @@ export function DirectorDashboardClient() {
     void loadPulse(period);
   }, [period, load, loadPulse, currentOrgId]);
 
-  // Сегодняшняя дата (МСК-приближение локальной датой; backend сам нормализует).
   const today = useMemo(() => localDateString(), []);
 
-  // «Что было вчера» + «Лента дня» — последний дайджест (latest, чтобы не
-  // упереться в «сегодня ещё не сгенерирован»). null = ещё нет ни одного.
   const digestSwr = useSWR<DailyDigestDomain | null>(
-    currentOrgId ? ['today-daily-digest', currentOrgId] : null,
+    currentOrgId ? ["today-daily-digest", currentOrgId] : null,
     async () => {
       const res = await operationsDailyDigestApi.getLatest();
       return res ? fromDailyDigestApi(res) : null;
@@ -165,9 +140,8 @@ export function DirectorDashboardClient() {
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
-  // Дисциплина чек-инов за сегодня (from=to=сегодня).
   const checkinSwr = useSWR<CheckinDisciplineDomain | null>(
-    currentOrgId ? ['today-checkin-discipline', currentOrgId, today] : null,
+    currentOrgId ? ["today-checkin-discipline", currentOrgId, today] : null,
     async () => {
       const res = await operationsDashboardApi.getCheckinDiscipline(
         currentOrgId!,
@@ -180,22 +154,24 @@ export function DirectorDashboardClient() {
   );
 
   const greetingName = useMemo(() => {
-    return user?.name?.trim() || user?.email?.split('@')[0] || 'друг';
+    return user?.name?.trim() || user?.email?.split("@")[0] || "друг";
   }, [user]);
 
-  const periodLabel = period === 'week' ? 'неделю' : 'месяц';
+  const periodLabel = period === "week" ? "неделю" : "месяц";
 
-  // ─── Матрица empty-state (сохраняем из прежней главной) ──────────────────
   const currentMembership = useMemo(
     () => memberships.find((m) => m.id === currentOrgId) ?? null,
     [memberships, currentOrgId],
   );
-  const isOwnOrg = currentMembership ? !currentMembership.isReferenceDemo : true;
-  const isOwnerOrAdmin = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const isOwnOrg = currentMembership
+    ? !currentMembership.isReferenceDemo
+    : true;
+  const isOwnerOrAdmin =
+    currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const isPageEmpty =
     isOwnOrg &&
-    subscriptionStatus === 'DEMO' &&
+    subscriptionStatus === "DEMO" &&
     isOwnerOrAdmin &&
     !loading &&
     !subscriptionLoading &&
@@ -207,18 +183,14 @@ export function DirectorDashboardClient() {
   );
   const canReturnToDemo = !!referenceMembership;
   const handleReturnToDemo = useCallback(() => {
-    if (typeof window === 'undefined' || !referenceMembership) return;
-    window.localStorage.setItem('z.activeOrgId', referenceMembership.id);
-    window.location.href = '/dashboard';
+    if (typeof window === "undefined" || !referenceMembership) return;
+    window.localStorage.setItem("z.activeOrgId", referenceMembership.id);
+    window.location.href = "/dashboard";
   }, [referenceMembership]);
 
-  // QA B6 (2026-06-15) — прогресс настройки берём с бэка (setup-progress),
-  // который считает вехи по принципу «timestamp ИЛИ факт существования
-  // сущности». Раньше прогресс считался только по Org.*CompletedAt, поэтому
-  // отделы/должности, заведённые вне мастера, давали «0 из 6».
   const setupProgressSwr = useSWR(
     isPageEmpty && isOwnerOrAdmin && currentOrgId
-      ? ['main-setup-progress', currentOrgId]
+      ? ["main-setup-progress", currentOrgId]
       : null,
     () => onboardingApi.getSetupProgress(currentOrgId!),
     { revalidateOnFocus: false, shouldRetryOnError: false },
@@ -232,7 +204,7 @@ export function DirectorDashboardClient() {
 
   if (isPageEmpty) {
     return (
-      <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+      <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
         <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
           <MainEmptyState
             canReturnToDemo={canReturnToDemo}
@@ -244,9 +216,6 @@ export function DirectorDashboardClient() {
     );
   }
 
-  // ─── Вердикт: сбор данных не работает? (Б-6 сбой) ────────────────────────
-  // A11.5 — полный сбой загрузки (error при отсутствии data) ИЛИ частичная
-  // деградация ответа (200 + degraded:true): часть виджетов не собралась.
   const collectorDown = (!!error && data === null) || data?.degraded === true;
   const digest = digestSwr.data ?? null;
   const checkin = checkinSwr.data ?? null;
@@ -254,17 +223,18 @@ export function DirectorDashboardClient() {
   const requiresTotal = data?.requiresAction?.total ?? 0;
   const probeUnanswered = data?.requiresAction?.bySource.probe ?? 0;
 
-  // Топ-3 самых острых сигнала — по свежести (createdAt нет, поэтому по порядку
-  // newSignals: backend отдаёт свежие первыми) + затухание по индексу.
   const sharpSignals = (data?.newSignals ?? []).slice(0, 3);
 
   return (
-    <div style={{ background: MODERN_PAGE_BG, minHeight: '100vh' }}>
+    <div style={{ background: MODERN_PAGE_BG, minHeight: "100vh" }}>
       <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-        {/* Header — приветствие + период + обновить + pill-ссылки. */}
+        {}
         <header className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: CHART.text }}>
+            <h1
+              className="text-2xl font-semibold tracking-tight"
+              style={{ color: CHART.text }}
+            >
               Сегодня — {greetingName}
             </h1>
             <p className="mt-1 text-sm" style={{ color: CHART.dim }}>
@@ -275,7 +245,7 @@ export function DirectorDashboardClient() {
             <Link
               href="/week"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
               aria-label="Открыть Неделю"
             >
               <Calendar size={14} strokeWidth={1.75} className="shrink-0" />
@@ -284,13 +254,17 @@ export function DirectorDashboardClient() {
             <Link
               href="/month"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors"
-              style={{ background: 'var(--surface-inset)', color: CHART.dim }}
+              style={{ background: "var(--surface-inset)", color: CHART.dim }}
               aria-label="Открыть Итоги месяца"
             >
               <Sparkles size={14} strokeWidth={1.75} className="shrink-0" />
               <span>Итоги месяца</span>
             </Link>
-            <PeriodSwitch value={period} onChange={setPeriod} disabled={loading} />
+            <PeriodSwitch
+              value={period}
+              onChange={setPeriod}
+              disabled={loading}
+            />
             <Button
               variant="outline"
               size="sm"
@@ -313,38 +287,45 @@ export function DirectorDashboardClient() {
           </div>
         </header>
 
-        {/* Сбой загрузки основного DTO (помимо вердикта — явная плашка). */}
+        {}
         {error && data === null && (
           <div
             className="mb-6 flex items-center gap-2 rounded-xl p-3 text-sm"
-            style={{ background: 'oklch(0.66 0.22 25 / 0.16)', color: CHART.red }}
+            style={{
+              background: "oklch(0.66 0.22 25 / 0.16)",
+              color: CHART.red,
+            }}
           >
             <AlertCircle size={16} />
             {error}
           </div>
         )}
 
-        {/* ── 1. Строка-вердикт ────────────────────────────────────────── */}
+        {}
         <div className="mb-6">
           <VerdictBar
             requiresCount={requiresTotal}
             down={collectorDown}
             subtitle={
               collectorDown
-                ? 'Показатели ниже могут быть неполными — чиним сбор'
+                ? "Показатели ниже могут быть неполными — чиним сбор"
                 : digest
                   ? `Последний отчёт за ${digest.dateLocal}`
-                  : 'Сбор данных работает'
+                  : "Сбор данных работает"
             }
           />
         </div>
 
-        {/* ── 2. Грид: «Что было вчера» + «Требует вас» (якорь) ────────── */}
+        {}
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
-          {/* Что было вчера — daily-digest.shortSummary. */}
-          <YesterdayCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+          {}
+          <YesterdayCard
+            digest={digest}
+            loading={digestSwr.isLoading}
+            error={!!digestSwr.error}
+          />
 
-          {/* Требует вас — карточка-якорь (амбер-glow). */}
+          {}
           <RequiresAnchorCard
             total={requiresTotal}
             bySource={data?.requiresAction?.bySource ?? null}
@@ -352,7 +333,7 @@ export function DirectorDashboardClient() {
           />
         </div>
 
-        {/* ── 3. Польза за неделю (5 кликабельных stat) ────────────────── */}
+        {}
         <div className="mb-6">
           <ValueStripWidget
             data={
@@ -367,7 +348,7 @@ export function DirectorDashboardClient() {
           />
         </div>
 
-        {/* ── 4. Грид: «Вектор к цели» + «Сводка Коры» (span2) ─────────── */}
+        {}
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-1">
             <CompassWidget
@@ -405,10 +386,10 @@ export function DirectorDashboardClient() {
                   </Link>
                 </>
               ) : (
-                // Б-6: нет данных → причина + CTA.
                 <div className="flex flex-col items-start gap-2">
                   <p className="text-sm" style={{ color: CHART.dim }}>
-                    Сводка Коры появится после первой встречи или анализа знаний.
+                    Сводка Коры появится после первой встречи или анализа
+                    знаний.
                   </p>
                   <Link
                     href="/meetings"
@@ -423,7 +404,7 @@ export function DirectorDashboardClient() {
           </div>
         </div>
 
-        {/* ── 5. Грид: «Самое острое» (радар топ-3) + «Оцифровано» ──────── */}
+        {}
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
           <SharpRadarCard
             signals={sharpSignals}
@@ -432,16 +413,20 @@ export function DirectorDashboardClient() {
           <DigitizedSummaryWidget orgId={currentOrgId} />
         </div>
 
-        {/* ── 6. Активность команды (кто что сделал) + Лента дня + плашка ─ */}
+        {}
         <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
           <TeamActivityWidget orgId={currentOrgId} />
-          <DayFeedCard digest={digest} loading={digestSwr.isLoading} error={!!digestSwr.error} />
+          <DayFeedCard
+            digest={digest}
+            loading={digestSwr.isLoading}
+            error={!!digestSwr.error}
+          />
         </div>
         <div className="mb-6">
           <ProbeUnansweredPill count={probeUnanswered} />
         </div>
 
-        {/* ── 7. Дисциплина чек-инов сегодня ───────────────────────────── */}
+        {}
         <div className="mb-2">
           <CheckinDisciplineTodayPill
             data={checkin}
@@ -453,8 +438,6 @@ export function DirectorDashboardClient() {
     </div>
   );
 }
-
-// ─── Period switch ──────────────────────────────────────────────────────────
 
 function PeriodSwitch({
   value,
@@ -468,17 +451,17 @@ function PeriodSwitch({
   return (
     <div
       className="inline-flex items-center rounded-md p-0.5 text-sm"
-      style={{ background: 'var(--surface-inset)' }}
+      style={{ background: "var(--surface-inset)" }}
     >
-      {(['week', 'month'] as const).map((p) => (
+      {(["week", "month"] as const).map((p) => (
         <button
           key={p}
           type="button"
           disabled={disabled}
           onClick={() => onChange(p)}
           className={cn(
-            'rounded-sm px-3 py-1 transition-colors',
-            disabled && 'opacity-50',
+            "rounded-sm px-3 py-1 transition-colors",
+            disabled && "opacity-50",
           )}
           style={
             value === p
@@ -486,14 +469,12 @@ function PeriodSwitch({
               : { color: CHART.dim }
           }
         >
-          {p === 'week' ? 'Неделя' : 'Месяц'}
+          {p === "week" ? "Неделя" : "Месяц"}
         </button>
       ))}
     </div>
   );
 }
-
-// ─── «Что было вчера» (daily-digest.shortSummary) ────────────────────────────
 
 function YesterdayCard({
   digest,
@@ -513,7 +494,10 @@ function YesterdayCard({
         {digest?.deliveredAt && (
           <span
             className="ml-auto inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px]"
-            style={{ background: 'oklch(0.7 0.16 245 / 0.14)', color: CHART.blue }}
+            style={{
+              background: "oklch(0.7 0.16 245 / 0.14)",
+              color: CHART.blue,
+            }}
           >
             <span
               className="h-1.5 w-1.5 rounded-full"
@@ -532,7 +516,7 @@ function YesterdayCard({
       ) : digest?.shortSummary ? (
         <p
           className="text-sm leading-relaxed"
-          style={{ color: CHART.dim, whiteSpace: 'pre-wrap' }}
+          style={{ color: CHART.dim, whiteSpace: "pre-wrap" }}
         >
           {digest.shortSummary}
         </p>
@@ -547,17 +531,20 @@ function YesterdayCard({
   );
 }
 
-// ─── «Требует вас» — карточка-якорь (амбер-glow) ─────────────────────────────
-
-const REQUIRES_SOURCE_ORDER = ['conflict', 'curation', 'intake', 'probe'] as const;
+const REQUIRES_SOURCE_ORDER = [
+  "conflict",
+  "curation",
+  "intake",
+  "probe",
+] as const;
 const REQUIRES_SOURCE_LABEL: Record<
   (typeof REQUIRES_SOURCE_ORDER)[number],
   string
 > = {
-  conflict: 'конфликт',
-  curation: 'карточка знания',
-  intake: 'задача из встречи',
-  probe: 'вопрос Коры',
+  conflict: "конфликт",
+  curation: "карточка знания",
+  intake: "задача из встречи",
+  probe: "вопрос Коры",
 };
 
 function RequiresAnchorCard({
@@ -582,21 +569,18 @@ function RequiresAnchorCard({
     <div
       className="relative flex h-full flex-col overflow-hidden rounded-[22px] p-5"
       style={{
-        // Акцентная амбер-карточка-якорь «Требует вас»: тема-зависимый
-        // предупреждающий тон (chip-warning flip по теме) поверх стеклянной
-        // поверхности + амбер-рамка из chip-fg — смысл «внимание» сохранён.
         background:
-          'linear-gradient(180deg, var(--chip-warning-bg), transparent), var(--glass-surface)',
-        border: '1px solid var(--chip-warning-fg)',
-        backdropFilter: 'var(--glass-blur)',
-        WebkitBackdropFilter: 'var(--glass-blur)',
-        boxShadow: 'var(--glass-shadow)',
+          "linear-gradient(180deg, var(--chip-warning-bg), transparent), var(--glass-surface)",
+        border: "1px solid var(--chip-warning-fg)",
+        backdropFilter: "var(--glass-blur)",
+        WebkitBackdropFilter: "var(--glass-blur)",
+        boxShadow: "var(--glass-shadow)",
       }}
     >
       <div
         aria-hidden
         className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full blur-3xl"
-        style={{ background: 'oklch(0.84 0.16 80 / 0.4)' }}
+        style={{ background: "oklch(0.84 0.16 80 / 0.4)" }}
       />
       <ModernCardTitle icon={<CheckCircle2 size={16} />} grad={GRAD.amber}>
         Требует вас
@@ -610,7 +594,10 @@ function RequiresAnchorCard({
         <>
           <div
             className="mt-4 text-[44px] font-semibold leading-none tabular-nums"
-            style={{ color: CHART.amber, textShadow: '0 0 24px oklch(0.84 0.16 80 / 0.45)' }}
+            style={{
+              color: CHART.amber,
+              textShadow: "0 0 24px oklch(0.84 0.16 80 / 0.45)",
+            }}
           >
             {total}
           </div>
@@ -623,7 +610,10 @@ function RequiresAnchorCard({
                 <li key={s} className="flex items-center gap-2 text-sm">
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'var(--surface-inset-strong)', color: CHART.dim }}
+                    style={{
+                      background: "var(--surface-inset-strong)",
+                      color: CHART.dim,
+                    }}
                   >
                     {REQUIRES_SOURCE_LABEL[s]}
                   </span>
@@ -637,14 +627,16 @@ function RequiresAnchorCard({
           <Link
             href="/actions"
             className="mt-auto inline-flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-medium transition-transform hover:translate-y-[-1px]"
-            style={{ background: 'var(--surface-inset-strong)', color: CHART.text }}
+            style={{
+              background: "var(--surface-inset-strong)",
+              color: CHART.text,
+            }}
           >
             Открыть очередь
             <ArrowRight size={15} />
           </Link>
         </>
       ) : (
-        // Б-6: N=0 — спокойно, без тревоги (управление-по-исключению).
         <div className="mt-4 flex flex-1 flex-col items-start justify-center gap-1.5">
           <span style={{ color: CHART.mint }}>
             <CheckCircle2 size={28} />
@@ -661,25 +653,22 @@ function RequiresAnchorCard({
   );
 }
 
-// ─── «Самое острое» — радар топ-3 (затухание по свежести) ────────────────────
-
-/** Тон сигнала по типу: риск/боль → красный, возражение/конкурент → амбер, иначе синий. */
 function signalTone(signalType: string): { dot: string; chipBg: string } {
   if (
-    signalType === 'churn_risk' ||
-    signalType === 'risk' ||
-    signalType === 'pain'
+    signalType === "churn_risk" ||
+    signalType === "risk" ||
+    signalType === "pain"
   ) {
-    return { dot: CHART.red, chipBg: 'oklch(0.66 0.22 25 / 0.16)' };
+    return { dot: CHART.red, chipBg: "oklch(0.66 0.22 25 / 0.16)" };
   }
   if (
-    signalType === 'objection' ||
-    signalType === 'competitor_move' ||
-    signalType === 'drift'
+    signalType === "objection" ||
+    signalType === "competitor_move" ||
+    signalType === "drift"
   ) {
-    return { dot: CHART.amber, chipBg: 'oklch(0.84 0.16 80 / 0.14)' };
+    return { dot: CHART.amber, chipBg: "oklch(0.84 0.16 80 / 0.14)" };
   }
-  return { dot: CHART.blue, chipBg: 'oklch(0.7 0.16 245 / 0.14)' };
+  return { dot: CHART.blue, chipBg: "oklch(0.7 0.16 245 / 0.14)" };
 }
 
 function SharpRadarCard({
@@ -714,7 +703,6 @@ function SharpRadarCard({
         <ul className="space-y-1">
           {signals.map((s, i) => {
             const tone = signalTone(s.signalType);
-            // Затухание по свежести: свежие (i=0) ярче, дальше — мягче.
             const opacity = 1 - i * 0.18;
             const href = s.reasonSourceRef?.meetingId
               ? `/meetings/${encodeURIComponent(s.reasonSourceRef.meetingId)}`
@@ -722,7 +710,7 @@ function SharpRadarCard({
                 ? `/decisions/${encodeURIComponent(s.reasonSourceRef.decisionId)}`
                 : s.evidenceMeetingId
                   ? `/meetings/${encodeURIComponent(s.evidenceMeetingId)}`
-                  : '/insights';
+                  : "/insights";
             return (
               <li key={s.id} style={{ opacity }}>
                 <Link
@@ -736,18 +724,24 @@ function SharpRadarCard({
                   >
                     <span
                       className="h-2 w-2 rounded-full"
-                      style={{ background: tone.dot, boxShadow: `0 0 8px ${tone.dot}` }}
+                      style={{
+                        background: tone.dot,
+                        boxShadow: `0 0 8px ${tone.dot}`,
+                      }}
                     />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm" style={{ color: CHART.text }}>
+                    <div
+                      className="truncate text-sm"
+                      style={{ color: CHART.text }}
+                    >
                       {s.name}
                     </div>
                     <div className="text-xs" style={{ color: CHART.faint }}>
                       {signalTypeLabel(s.signalType)}
                       {Number.isFinite(s.confidence) && s.confidence > 0
                         ? ` · уверенность ${Math.round(s.confidence * 100)}%`
-                        : ''}
+                        : ""}
                     </div>
                   </div>
                   <span
@@ -766,12 +760,10 @@ function SharpRadarCard({
   );
 }
 
-// ─── «Лента дня» (свёрнуто, топ-5 eventsToday) ───────────────────────────────
-
 const EVENT_KIND_LABEL: Record<string, string> = {
-  meeting: 'встреча',
-  decision: 'решение',
-  signal: 'сигнал',
+  meeting: "встреча",
+  decision: "решение",
+  signal: "сигнал",
 };
 
 function DayFeedCard({
@@ -785,7 +777,10 @@ function DayFeedCard({
 }) {
   const events = (digest?.eventsToday ?? []).slice(0, 5);
   return (
-    <details className="group overflow-hidden" style={glass({ borderRadius: 22 })}>
+    <details
+      className="group overflow-hidden"
+      style={glass({ borderRadius: 22 })}
+    >
       <summary
         className="flex cursor-pointer list-none items-center justify-between gap-2 p-5 text-sm font-medium"
         style={{ color: CHART.dim }}
@@ -797,7 +792,7 @@ function DayFeedCard({
           >
             <ClipboardCheck size={16} />
           </span>
-          Лента дня{events.length > 0 ? ` · ${events.length}` : ''}
+          Лента дня{events.length > 0 ? ` · ${events.length}` : ""}
         </span>
         <ArrowRight
           size={16}
@@ -819,16 +814,22 @@ function DayFeedCard({
             {events.map((e) => (
               <li key={`${e.kind}:${e.id}`}>
                 <Link
-                  href={e.link || '/meetings'}
+                  href={e.link || "/meetings"}
                   className="flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-[var(--surface-hover)]"
                 >
                   <span
                     className="shrink-0 rounded-full px-2 py-0.5 text-[11px]"
-                    style={{ background: 'var(--surface-inset-strong)', color: CHART.faint }}
+                    style={{
+                      background: "var(--surface-inset-strong)",
+                      color: CHART.faint,
+                    }}
                   >
                     {EVENT_KIND_LABEL[e.kind] ?? e.kind}
                   </span>
-                  <span className="truncate text-sm" style={{ color: CHART.text }}>
+                  <span
+                    className="truncate text-sm"
+                    style={{ color: CHART.text }}
+                  >
                     {e.title}
                   </span>
                 </Link>
@@ -841,8 +842,6 @@ function DayFeedCard({
   );
 }
 
-// ─── Плашка «Вопросов Коры без ответа: N» ────────────────────────────────────
-
 function ProbeUnansweredPill({ count }: { count: number }) {
   return (
     <Link
@@ -850,7 +849,10 @@ function ProbeUnansweredPill({ count }: { count: number }) {
       className="flex h-full flex-col justify-center gap-1.5 rounded-[22px] p-5 transition-transform hover:translate-y-[-1px]"
       style={glass({ borderRadius: 22 })}
     >
-      <div className="flex items-center gap-2 text-xs uppercase tracking-widest" style={{ color: CHART.faint }}>
+      <div
+        className="flex items-center gap-2 text-xs uppercase tracking-widest"
+        style={{ color: CHART.faint }}
+      >
         <MessageCircle size={13} aria-hidden />
         Вопросы Коры
       </div>
@@ -861,13 +863,13 @@ function ProbeUnansweredPill({ count }: { count: number }) {
         {count}
       </div>
       <div className="text-xs" style={{ color: CHART.dim }}>
-        {count > 0 ? 'без ответа — Кора ждёт вашего слова' : 'все вопросы закрыты'}
+        {count > 0
+          ? "без ответа — Кора ждёт вашего слова"
+          : "все вопросы закрыты"}
       </div>
     </Link>
   );
 }
-
-// ─── Плашка «Дисциплина чек-инов сегодня» ────────────────────────────────────
 
 function CheckinDisciplineTodayPill({
   data,
@@ -880,10 +882,7 @@ function CheckinDisciplineTodayPill({
 }) {
   if (error) {
     return (
-      <div
-        className="rounded-[22px] p-4"
-        style={glass({ borderRadius: 22 })}
-      >
+      <div className="rounded-[22px] p-4" style={glass({ borderRadius: 22 })}>
         <FixingNote />
       </div>
     );
@@ -897,14 +896,13 @@ function CheckinDisciplineTodayPill({
       </div>
     );
   }
-  // Б-6: чек-ины выключены → причина + CTA.
   if (!data.enabled) {
     return (
       <div className="rounded-[22px] p-4" style={glass({ borderRadius: 22 })}>
         <div className="flex items-center gap-2.5">
           <span
             className="grid h-8 w-8 place-items-center rounded-xl"
-            style={{ background: 'var(--surface-inset)', color: CHART.faint }}
+            style={{ background: "var(--surface-inset)", color: CHART.faint }}
           >
             <ClipboardCheck size={16} />
           </span>
@@ -913,7 +911,8 @@ function CheckinDisciplineTodayPill({
               Дисциплина чек-инов — нет данных
             </div>
             <div className="text-xs" style={{ color: CHART.faint }}>
-              Чек-ины выключены. Включите их в настройках, чтобы видеть ритм команды.
+              Чек-ины выключены. Включите их в настройках, чтобы видеть ритм
+              команды.
             </div>
           </div>
         </div>
@@ -941,30 +940,41 @@ function CheckinDisciplineTodayPill({
         <div className="text-sm font-medium" style={{ color: CHART.text }}>
           Чек-ины сегодня
         </div>
-        <div className="text-xs" style={{ color: allDone ? CHART.mint : CHART.dim }}>
+        <div
+          className="text-xs"
+          style={{ color: allDone ? CHART.mint : CHART.dim }}
+        >
           {allDone ? (
-            'Все сдали — команда в ритме.'
+            "Все сдали — команда в ритме."
           ) : (
             <>
-              Не сдали: утром{' '}
-              <span className="font-semibold tabular-nums" style={{ color: CHART.amber }}>
+              Не сдали: утром{" "}
+              <span
+                className="font-semibold tabular-nums"
+                style={{ color: CHART.amber }}
+              >
                 {morningMissed}
-              </span>{' '}
-              · вечером{' '}
-              <span className="font-semibold tabular-nums" style={{ color: CHART.amber }}>
+              </span>{" "}
+              · вечером{" "}
+              <span
+                className="font-semibold tabular-nums"
+                style={{ color: CHART.amber }}
+              >
                 {eveningMissed}
-              </span>
-              {' '}— стоит мягко вернуть в ритм.
+              </span>{" "}
+              — стоит мягко вернуть в ритм.
             </>
           )}
         </div>
       </div>
-      <ArrowRight size={15} className="shrink-0" style={{ color: CHART.faint }} />
+      <ArrowRight
+        size={15}
+        className="shrink-0"
+        style={{ color: CHART.faint }}
+      />
     </Link>
   );
 }
-
-// ─── Б-6 helpers ─────────────────────────────────────────────────────────────
 
 function EmptyHint({
   text,
@@ -993,12 +1003,11 @@ function EmptyHint({
   );
 }
 
-/** Плашка «чиним» при сбое виджета — без чисел (Б-6 сбой). */
 function FixingNote() {
   return (
     <div
       className="flex items-center gap-2 rounded-xl p-3 text-sm"
-      style={{ background: 'oklch(0.84 0.16 80 / 0.12)', color: CHART.amber }}
+      style={{ background: "oklch(0.84 0.16 80 / 0.12)", color: CHART.amber }}
     >
       <AlertTriangle size={15} className="shrink-0" />
       <span>Не удалось загрузить — чиним. Загляните чуть позже.</span>

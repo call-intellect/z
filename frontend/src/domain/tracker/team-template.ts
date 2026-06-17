@@ -1,14 +1,3 @@
-/**
- * Доменная модель шаблона команды (TeamTemplate) трекера.
- *
- * Контракт: `backend/src/modules/tracker/controllers/team-templates.controller.ts`.
- * Phase 4 (Sprint 9): добавлена типизация `definition` (roles / states /
- * typicalTasks / regulationStubs / kpiTemplates) — используется wizard
- * «Из шаблона» в `/projects/new` для preview.
- */
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
-
 export interface TeamTemplateListItemApi {
   id: string;
   slug: string;
@@ -25,11 +14,11 @@ export interface ListTeamTemplatesResponseApi {
 }
 
 export type TeamTemplateStateCategoryApi =
-  | 'backlog'
-  | 'unstarted'
-  | 'started'
-  | 'completed'
-  | 'cancelled';
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "cancelled";
 
 export interface TeamTemplateRoleApi {
   key: string;
@@ -49,12 +38,12 @@ export interface TeamTemplateTypicalTaskApi {
   title: string;
   stateKey: string;
   estimatePoints?: number;
-  priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
+  priority?: "urgent" | "high" | "medium" | "low" | "none";
 }
 
 export interface TeamTemplateKpiApi {
   name: string;
-  frequency: 'monthly' | 'weekly' | 'quarterly';
+  frequency: "monthly" | "weekly" | "quarterly";
 }
 
 export interface TeamTemplateDefinitionApi {
@@ -72,11 +61,8 @@ export interface TeamTemplateDetailApi {
   description: string;
   category: string;
   isPublic: boolean;
-  /** На бэке хранится как Prisma JSON; на проде гарантируем shape. */
   definition: TeamTemplateDefinitionApi | unknown;
 }
-
-// ─── Domain ─────────────────────────────────────────────────────────────────
 
 export interface TeamTemplateListItem {
   id: string;
@@ -86,7 +72,6 @@ export interface TeamTemplateListItem {
   category: string;
   isPublic: boolean;
   usageCount: number;
-  /** null = системный (Z), не null = создан конкретной Org. */
   tenantId: string | null;
 }
 
@@ -104,11 +89,8 @@ export interface TeamTemplateDefinition {
 }
 
 export interface TeamTemplateDetail extends TeamTemplateListItem {
-  /** Может быть `null`, если backend вернул некорректный JSON. */
   definition: TeamTemplateDefinition | null;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 export function teamTemplateListItemFromApi(
   api: TeamTemplateListItemApi,
@@ -126,7 +108,7 @@ export function teamTemplateListItemFromApi(
 }
 
 function isDefinition(value: unknown): value is TeamTemplateDefinitionApi {
-  if (typeof value !== 'object' || value === null) return false;
+  if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
     Array.isArray(v.roles) &&
@@ -153,49 +135,42 @@ export function teamTemplateDetailFromApi(
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
-/**
- * Эмодзи-иконка для карточки шаблона по slug. Системных 10 + 5 опциональных
- * — для остальных fallback к 📁.
- */
 export function teamTemplateEmoji(slug: string): string {
   const map: Record<string, string> = {
-    sales: '💼',
-    development: '💻',
-    installation: '🔧',
-    marketing: '📣',
-    management: '🎯',
-    customer_support: '🎧',
-    hr: '👥',
-    finance: '💰',
-    operations: '⚙️',
-    product: '🚀',
-    quality_control: '✅',
-    legal: '⚖️',
-    procurement: '📦',
-    logistics: '🚚',
-    events: '🎤',
+    sales: "💼",
+    development: "💻",
+    installation: "🔧",
+    marketing: "📣",
+    management: "🎯",
+    customer_support: "🎧",
+    hr: "👥",
+    finance: "💰",
+    operations: "⚙️",
+    product: "🚀",
+    quality_control: "✅",
+    legal: "⚖️",
+    procurement: "📦",
+    logistics: "🚚",
+    events: "🎤",
   };
-  return map[slug] ?? '📁';
+  return map[slug] ?? "📁";
 }
 
-/** Человекочитаемая категория для бейджа. */
 export function teamTemplateCategoryLabel(category: string): string {
   const map: Record<string, string> = {
-    commercial: 'Коммерция',
-    engineering: 'Разработка',
-    operations: 'Операции',
-    marketing: 'Маркетинг',
-    management: 'Управление',
-    support: 'Поддержка',
-    people: 'Люди',
-    finance: 'Финансы',
-    product: 'Продукт',
-    quality: 'Качество',
-    legal: 'Юристы',
-    events: 'События',
-    technology: 'Технологии',
+    commercial: "Коммерция",
+    engineering: "Разработка",
+    operations: "Операции",
+    marketing: "Маркетинг",
+    management: "Управление",
+    support: "Поддержка",
+    people: "Люди",
+    finance: "Финансы",
+    product: "Продукт",
+    quality: "Качество",
+    legal: "Юристы",
+    events: "События",
+    technology: "Технологии",
   };
-  return map[category] ?? category.replaceAll('_', ' ');
+  return map[category] ?? category.replaceAll("_", " ");
 }

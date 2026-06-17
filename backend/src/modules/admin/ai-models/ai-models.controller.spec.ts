@@ -1,16 +1,3 @@
-/**
- * Фаза A.4 — controller-level integration тест для AdminAiModelsController.
- *
- * Не поднимает full NestJS-app (Docker выключен, БД недоступна), но создаёт
- * контроллер с мокнутым сервисом и проверяет, что:
- *   - GET /ai-models делегирует list() с фильтрами.
- *   - POST /ai-models/:taskType/switch-primary делегирует switchPrimary() с user.id.
- *   - DELETE /ai-models/:taskType/provider/:providerId делегирует removeProvider().
- *   - GET /ai-models/:taskType/history делегирует history().
- *
- * Покрытие ≥3 эндпоинтов из ТЗ §7.4 — соответствует DoD.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';

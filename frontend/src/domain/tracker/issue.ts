@@ -1,21 +1,8 @@
-/**
- * Доменная модель задачи (Issue) трекера.
- *
- * Контракт: `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`.
- *
- * `state` (со статусом / category) подгружается отдельно через `IssueState`
- * запись — но в Phase 2 у нас MVP-набор статусов из defaultStateId; в карточке
- * достаточно `stateId` + опционально `stateCategory` (передаётся в запросе
- * фильтра). Полный объект `state` будет в Phase 3.
- */
-
 import {
   parseIssuePriority,
   type IssuePriority,
   type IssueStateCategory,
-} from './enums';
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
+} from "./enums";
 
 export interface IssueApi {
   id: string;
@@ -37,10 +24,6 @@ export interface IssueApi {
   completedAt: string | null;
   cycleId: string | null;
   goalId: string | null;
-  /**
-   * Tracker Boards (2026-05-27) — доска задачи. Nullable на схеме (legacy
-   * до backfill), фактически после миграции всегда заполнено.
-   */
   boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
@@ -57,29 +40,12 @@ export interface IssueApi {
   deletedAt: string | null;
   assigneeUserIds: string[];
   labelIds: string[];
-  /**
-   * Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов
-   * задачи, для бейджа «☑ N/M» на канбан-карточке без отдельного запроса.
-   * `checklistTotalCount=0` → бейдж не рендерится.
-   */
   checklistTotalCount: number;
   checklistDoneCount: number;
-  /**
-   * Phase 3 part C — AI-подсказки, приходят только из POST `/issues`
-   * с `inferSuggestions=true`. Остальные эндпоинты поле не возвращают
-   * (поэтому optional). Контракт:
-   *   `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`.
-   */
   aiSuggestions?: IssueAiSuggestionsApi | null;
-  /**
-   * Tracker subtasks UI (2026-05-27) — число прямых детей задачи. Приходит
-   * только в `GET /projects/:projectId/issues?includeChildrenCount=true`.
-   * Используется фронтом для badge «N/M» на канбан-карточке.
-   */
   childrenCount?: number;
 }
 
-/** AI-подсказки для свежесозданной задачи (см. IssueApi.aiSuggestions). */
 export interface IssueAiSuggestionsApi {
   fields: {
     suggestedAssigneeId: string | null;
@@ -94,16 +60,10 @@ export interface IssueAiSuggestionsApi {
   goal: {
     goalId: string;
     confidence: number;
-    source: 'knn' | 'llm';
+    source: "knn" | "llm";
   } | null;
 }
 
-/**
- * Phase 3 — DTO «похожей» задачи из `GET /tracker/issues/:id/similar`.
- * Контракт: `backend/src/modules/tracker/dto/issues/similar-issue.dto.ts`.
- *
- * `similarity` ∈ [0, 1] — это `1 - cosine_distance`. Выше = ближе.
- */
 export interface SimilarIssueApi {
   id: string;
   identifier: string;
@@ -121,12 +81,6 @@ export interface ListIssuesResponseApi {
   limit: number;
 }
 
-/**
- * Ответ `GET /api/v1/me/inbox` — cursor-based пагинация.
- *
- * `nextCursor` — `id` последней задачи в `items`. Для следующей страницы
- * передать как `?cursor=...`. `nextCursor=null` означает последнюю страницу.
- */
 export interface MyInboxResponseApi {
   items: IssueApi[];
   nextCursor: string | null;
@@ -164,7 +118,7 @@ export interface IssueRelationApi {
   relationType: string;
   createdById: string;
   createdAt: string;
-  direction: 'out' | 'in';
+  direction: "out" | "in";
 }
 
 export interface IssueAttachmentApi {
@@ -191,13 +145,10 @@ export interface StartMeetingFromIssueResponseApi {
   token: string;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Issue {
   id: string;
   tenantId: string;
   projectId: string;
-  /** Человеко-читаемый идентификатор `KORA-123`. */
   identifier: string;
   sequenceId: number;
   title: string;
@@ -214,10 +165,6 @@ export interface Issue {
   completedAt: Date | null;
   cycleId: string | null;
   goalId: string | null;
-  /**
-   * Tracker Boards (2026-05-27) — доска задачи. Nullable на схеме (legacy
-   * до backfill), фактически после миграции всегда заполнено.
-   */
   boardId: string | null;
   meetingId: string | null;
   linkedMeetingIds: string[];
@@ -234,29 +181,14 @@ export interface Issue {
   deletedAt: Date | null;
   assigneeUserIds: string[];
   labelIds: string[];
-  /**
-   * Tracker subtasks UI (2026-05-27) — число прямых детей. Заполняется
-   * только когда фронт явно запрашивает `includeChildrenCount=true`.
-   * `null` = поле не запрашивалось / неизвестно.
-   */
   childrenCount: number | null;
-  /** Tracker Checklists (2026-05-27) — денормализованные счётчики чек-листов. */
   checklistTotalCount: number;
   checklistDoneCount: number;
-  // ─ computed ─
-  /** dueDate < today (00:00) и задача не завершена. */
   isOverdue: boolean;
   isCompleted: boolean;
   isArchived: boolean;
 }
 
-/**
- * Tracker subtasks UI (2026-05-27) — упрощённая модель ребёнка задачи
- * из `GET /api/v1/issues/:id/children`. Используется блоком «Подзадачи».
- *
- * Контракт: `backend/src/modules/tracker/dto/issues/issue-response.dto.ts`
- * (IssueChildResponseDto).
- */
 export interface IssueChildApi {
   id: string;
   identifier: string;
@@ -314,7 +246,7 @@ export interface IssueRelation {
   relationType: string;
   createdById: string;
   createdAt: Date;
-  direction: 'out' | 'in';
+  direction: "out" | "in";
 }
 
 export interface IssueAttachment {
@@ -330,10 +262,6 @@ export interface IssueAttachment {
   createdAt: Date;
 }
 
-/**
- * Доменная модель «похожей» задачи (KNN). `completedAt: Date | null` —
- * парсим из строки ApiDto. `similarity` сохраняем как есть.
- */
 export interface SimilarIssue {
   id: string;
   identifier: string;
@@ -344,8 +272,6 @@ export interface SimilarIssue {
   similarity: number;
 }
 
-// ─── Mappers ────────────────────────────────────────────────────────────────
-
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
 
@@ -355,7 +281,10 @@ const parseNumber = (s: string | null | undefined): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-function computeIsOverdue(dueDate: Date | null, completedAt: Date | null): boolean {
+function computeIsOverdue(
+  dueDate: Date | null,
+  completedAt: Date | null,
+): boolean {
   if (!dueDate || completedAt) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -385,7 +314,6 @@ export function issueFromApi(api: IssueApi): Issue {
     completedAt,
     cycleId: api.cycleId,
     goalId: api.goalId,
-    // Tracker Boards (2026-05-27)
     boardId: api.boardId ?? null,
     meetingId: api.meetingId,
     linkedMeetingIds: api.linkedMeetingIds ?? [],
@@ -402,7 +330,8 @@ export function issueFromApi(api: IssueApi): Issue {
     deletedAt: parseDate(api.deletedAt),
     assigneeUserIds: api.assigneeUserIds ?? [],
     labelIds: api.labelIds ?? [],
-    childrenCount: typeof api.childrenCount === 'number' ? api.childrenCount : null,
+    childrenCount:
+      typeof api.childrenCount === "number" ? api.childrenCount : null,
     checklistTotalCount: api.checklistTotalCount ?? 0,
     checklistDoneCount: api.checklistDoneCount ?? 0,
     isOverdue: computeIsOverdue(dueDate, completedAt),
@@ -411,7 +340,6 @@ export function issueFromApi(api: IssueApi): Issue {
   };
 }
 
-/** Маппер `IssueChildApi → IssueChild`. */
 export function issueChildFromApi(api: IssueChildApi): IssueChild {
   const dueDate = parseDate(api.dueDate);
   const completedAt = parseDate(api.completedAt);
@@ -461,21 +389,6 @@ export function issueRelationFromApi(api: IssueRelationApi): IssueRelation {
   };
 }
 
-export function issueAttachmentFromApi(api: IssueAttachmentApi): IssueAttachment {
-  return {
-    id: api.id,
-    issueId: api.issueId,
-    commentId: api.commentId,
-    uploaderId: api.uploaderId,
-    fileName: api.fileName,
-    fileUrl: api.fileUrl,
-    fileSize: api.fileSize,
-    mimeType: api.mimeType,
-    thumbnailUrl: api.thumbnailUrl,
-    createdAt: new Date(api.createdAt),
-  };
-}
-
 export function similarIssueFromApi(api: SimilarIssueApi): SimilarIssue {
   return {
     id: api.id,
@@ -488,44 +401,29 @@ export function similarIssueFromApi(api: SimilarIssueApi): SimilarIssue {
   };
 }
 
-// ─── UI helpers ─────────────────────────────────────────────────────────────
-
-/** Форматирует идентификатор задачи (`KORA-123`). */
-export function formatIdentifier(issue: Pick<Issue, 'identifier'>): string {
-  return issue.identifier;
-}
-
-/** Форматирует similarity (0..1) как «86% похожа». 0.857 → «86% похожа». */
 export function similarityLabel(similarity: number): string {
   const pct = Math.round(Math.max(0, Math.min(1, similarity)) * 100);
   return `${pct}% похожа`;
 }
 
-/**
- * Относительная дата «вчера» / «3 дн. назад» / «12 июн». Используется в
- * карточке похожей задачи, чтобы показать, когда её закрыли.
- */
 export function relativeDateLabel(date: Date | null): string | null {
   if (!date) return null;
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   if (diffDays < 0) {
-    // future — отдаём абсолютную дату; KNN сюда не должна попадать, но
-    // подстраховка от часовых поясов.
-    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
   }
-  if (diffDays === 0) return 'сегодня';
-  if (diffDays === 1) return 'вчера';
+  if (diffDays === 0) return "сегодня";
+  if (diffDays === 1) return "вчера";
   if (diffDays < 7) return `${diffDays} дн. назад`;
   if (diffDays < 30) {
     const weeks = Math.floor(diffDays / 7);
     return `${weeks} нед. назад`;
   }
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }
 
-/** Текст «Просрочена на N дн.» / «Срок: завтра» / «Срок: 12 июн». */
 export function dueDateLabel(dueDate: Date | null): string | null {
   if (!dueDate) return null;
   const today = new Date();
@@ -536,8 +434,8 @@ export function dueDateLabel(dueDate: Date | null): string | null {
     (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
   );
   if (diffDays < 0) return `Просрочена на ${Math.abs(diffDays)} дн.`;
-  if (diffDays === 0) return 'Срок сегодня';
-  if (diffDays === 1) return 'Срок завтра';
+  if (diffDays === 0) return "Срок сегодня";
+  if (diffDays === 1) return "Срок завтра";
   if (diffDays <= 7) return `Через ${diffDays} дн.`;
-  return due.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return due.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }

@@ -9,18 +9,6 @@ import type { PendingActionsService } from '../../pending-actions/services/pendi
 
 import { ExecMorningPushCron } from './exec-morning-push.cron';
 
-/**
- * Unit-тесты `ExecMorningPushCron` (B6/Ф7) — утренний exec web-push.
- *
- * Кейсы:
- *   - утреннее окно + N>0 + killswitch ON + NX взят → enqueuePushSend вызван
- *     (body «Требует тебя сегодня», data.url='/dashboard'), delivered=1;
- *   - N===0 → enqueuePushSend НЕ вызван (skippedEmpty);
- *   - вне утреннего окна → skip (skippedOutsideWindow), enqueue не вызван;
- *   - killswitch OFF → ранний выход в run(), enqueue не вызван;
- *   - NX вернул null (уже отправлено сегодня) → skip (skippedAlreadyDelivered).
- */
-
 interface PrismaMock {
   membership: { findMany: ReturnType<typeof vi.fn> };
   person: { findMany: ReturnType<typeof vi.fn> };
@@ -60,10 +48,6 @@ function makePending(total = 0): PendingActionsService {
   } as unknown as PendingActionsService;
 }
 
-/**
- * Заглушка TypedConfigService: `getDynamic` отдаёт killswitch (по умолчанию ON)
- * и morningHour=9. `killswitch=false` мокается отдельным тестом.
- */
 function makeCfg(killswitch = true, morningHour = 9): TypedConfigService {
   return {
     getDynamic: vi.fn(async (key: string, _env: unknown, fallback: unknown) => {
@@ -111,9 +95,7 @@ function makeCron(
 
 const makeMembershipRow = (userId: string, orgId: string) => ({ userId, orgId });
 
-// 2026-05-24T06:00:00Z = 09:00 Europe/Moscow (утреннее окно, morningHour=9).
 const NOW_AT_MSK_9 = new Date(Date.UTC(2026, 4, 24, 6, 0, 0));
-// 2026-05-24T07:00:00Z = 10:00 Europe/Moscow (вне окна).
 const NOW_AT_MSK_10 = new Date(Date.UTC(2026, 4, 24, 7, 0, 0));
 
 describe('ExecMorningPushCron', () => {
@@ -123,9 +105,7 @@ describe('ExecMorningPushCron', () => {
 
   it('утреннее окно + N>0 + NX взят → enqueuePushSend, delivered=1', async () => {
     const prisma = makePrisma();
-    prisma.membership.findMany.mockResolvedValueOnce([
-      makeMembershipRow('user-1', 'org-1'),
-    ]);
+    prisma.membership.findMany.mockResolvedValueOnce([makeMembershipRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -151,9 +131,7 @@ describe('ExecMorningPushCron', () => {
 
   it('N===0 → enqueuePushSend НЕ вызван (skippedEmpty)', async () => {
     const prisma = makePrisma();
-    prisma.membership.findMany.mockResolvedValueOnce([
-      makeMembershipRow('user-1', 'org-1'),
-    ]);
+    prisma.membership.findMany.mockResolvedValueOnce([makeMembershipRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -169,9 +147,7 @@ describe('ExecMorningPushCron', () => {
 
   it('вне утреннего окна (10:00 MSK) → skippedOutsideWindow, без Redis/getCount/enqueue', async () => {
     const prisma = makePrisma();
-    prisma.membership.findMany.mockResolvedValueOnce([
-      makeMembershipRow('user-1', 'org-1'),
-    ]);
+    prisma.membership.findMany.mockResolvedValueOnce([makeMembershipRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -189,9 +165,7 @@ describe('ExecMorningPushCron', () => {
 
   it('killswitch OFF → ранний выход run(), enqueue не вызван', async () => {
     const prisma = makePrisma();
-    prisma.membership.findMany.mockResolvedValueOnce([
-      makeMembershipRow('user-1', 'org-1'),
-    ]);
+    prisma.membership.findMany.mockResolvedValueOnce([makeMembershipRow('user-1', 'org-1')]);
     const pending = makePending(3);
     const cfg = makeCfg(false);
     const { cron, coreQueue, redis } = makeCron({ prisma, pending, cfg });
@@ -200,15 +174,12 @@ describe('ExecMorningPushCron', () => {
 
     expect(coreQueue.enqueuePushSend).not.toHaveBeenCalled();
     expect(redis.client.set).not.toHaveBeenCalled();
-    // Даже до выборки аудитории не дошли.
     expect(prisma.membership.findMany).not.toHaveBeenCalled();
   });
 
   it('NX вернул null (уже отправлено сегодня) → skippedAlreadyDelivered, без getCount/enqueue', async () => {
     const prisma = makePrisma();
-    prisma.membership.findMany.mockResolvedValueOnce([
-      makeMembershipRow('user-1', 'org-1'),
-    ]);
+    prisma.membership.findMany.mockResolvedValueOnce([makeMembershipRow('user-1', 'org-1')]);
     prisma.person.findMany.mockResolvedValueOnce([
       { userId: 'user-1', tenantId: 'org-1', timezone: 'Europe/Moscow' },
     ]);
@@ -222,7 +193,6 @@ describe('ExecMorningPushCron', () => {
     expect(stats.delivered).toBe(0);
     expect(pending.getCount).not.toHaveBeenCalled();
     expect(coreQueue.enqueuePushSend).not.toHaveBeenCalled();
-    // Ключ идемпотентности содержит tenantId, userId и локальную дату.
     const setCall = vi.mocked(redis.client.set).mock.calls[0];
     expect(setCall?.[0]).toContain('exec-morning-push:org-1:user-1:2026-05-24');
   });

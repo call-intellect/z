@@ -6,17 +6,6 @@ import type { LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { IssueInferFieldsService } from './issue-infer-fields.service';
 
-/**
- * Tracker Phase 3 part C — юнит-тест IssueInferFieldsService.
- *
- * Цели:
- *   - happy path: успешный LLM-ответ → возвращает structured suggestions
- *     и инкрементирует метрику с accepted='false'.
- *   - Issue не найдена → null (без LLM-вызова).
- *   - LLM вернул мусор / non-JSON → null.
- *   - assigneeId не из списка members → null (фильтр ссылочной целостности).
- *   - LLM timeout → null (best-effort, не бросает наружу).
- */
 describe('IssueInferFieldsService.inferFields', () => {
   let prisma: PrismaService;
   let router: LlmRouterService;
@@ -39,7 +28,6 @@ describe('IssueInferFieldsService.inferFields', () => {
     issueAssigneeFindMany = vi.fn();
     userFindMany = vi.fn();
     goalFindMany = vi.fn();
-    // recentIssues + первоначальный issue.findFirst — оба вызывают issue.findFirst/findMany.
     recentIssuesFindMany = vi.fn();
     labelFindMany = vi.fn();
 
@@ -89,9 +77,7 @@ describe('IssueInferFieldsService.inferFields', () => {
       { id: 'u2', name: 'Петров' },
       { id: 'u-owner', name: 'Сидоров' },
     ]);
-    goalFindMany.mockResolvedValue([
-      { id: 'g1', name: 'Релизный пайплайн', description: 'CI/CD' },
-    ]);
+    goalFindMany.mockResolvedValue([{ id: 'g1', name: 'Релизный пайплайн', description: 'CI/CD' }]);
     recentIssuesFindMany.mockResolvedValue([]);
     labelFindMany.mockResolvedValue([{ id: 'l1', name: 'release' }]);
   }
@@ -122,8 +108,6 @@ describe('IssueInferFieldsService.inferFields', () => {
       suggestedAssigneeId: 'u1',
       suggestedDueDate: '2026-06-01',
       suggestedPriority: 'high',
-      // Волна 5 / кластер B — goal-привязка убрана из issue-infer (владелец —
-      // issue-goal-suggest). Даже если LLM вернул goalId, поле теперь всегда null.
       suggestedGoalId: null,
       confidence: 0.85,
       meetsThreshold: true,
@@ -163,7 +147,7 @@ describe('IssueInferFieldsService.inferFields', () => {
     setupHappyContext();
     routerCall.mockResolvedValue({
       text: JSON.stringify({
-        suggestedAssigneeId: 'u-phantom', // не в members
+        suggestedAssigneeId: 'u-phantom',
         suggestedGoalId: 'g1',
         suggestedPriority: 'medium',
         suggestedLabels: [],
@@ -177,7 +161,6 @@ describe('IssueInferFieldsService.inferFields', () => {
     });
     const result = await svc.inferFields({ tenantId: 't1', issueId: 'iss1' });
     expect(result?.suggestedAssigneeId).toBeNull();
-    // Волна 5 / кластер B — goalId больше не извлекается этим агентом → null.
     expect(result?.suggestedGoalId).toBeNull();
     expect(result?.suggestedPriority).toBe('medium');
   });

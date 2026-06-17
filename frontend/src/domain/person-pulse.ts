@@ -1,26 +1,15 @@
-/**
- * DomainModel для `/persons/:id/pulse` — зеркало backend DTO
- * (см. `backend/src/modules/persons/services/person-pulse.service.ts`).
- *
- * Layer: `domain/` (frontend-rules). ApiDto и Domain совпадают по форме,
- * но мы сохраняем разделение для согласованности слоёв — `domain/` —
- * единственное, что компоненты импортируют.
- */
-
-export type PersonPulseSentiment = 'green' | 'yellow' | 'red';
+export type PersonPulseSentiment = "green" | "yellow" | "red";
 
 export type PersonPulseHrSuggestionType =
-  | 'praise'
-  | 'compensation_review'
-  | 'workload_check'
-  | 'development'
-  | 'urgent_talk';
+  | "praise"
+  | "compensation_review"
+  | "workload_check"
+  | "development"
+  | "urgent_talk";
 
 export interface PersonPulseMoodPoint {
-  /** YYYY-MM-DD. */
   date: string;
   sentiment: PersonPulseSentiment | null;
-  /** 0..1 или null до первого прогона Reflection-Quality-Scorer. */
   qualityScore: number | null;
 }
 
@@ -31,26 +20,9 @@ export interface PersonPulseHrSuggestion {
   confidence: number;
 }
 
-/**
- * Pulse Wave 4 §4.5 — один активный risk-flag (Burnout-Risk-Detector cron).
- *
- * `type` — литерал строкой; см. backend `RiskFlag.type` в
- * `burnout-risk-detector.cron.ts`. Frontend рендерит `explanation` как
- * основной текст, baseline/current — как вспомогательный контекст.
- */
-export type PersonPulseRiskFlagType =
-  | 'sentiment_dip'
-  | 'reply_latency_rise'
-  | 'missed_checkins'
-  | 'broken_promises'
-  | 'workload_overload'
-  | 'meeting_noshows'
-  | 'conflict_mentions';
-
-export type PersonPulseRiskFlagSeverity = 'low' | 'medium' | 'high';
+export type PersonPulseRiskFlagSeverity = "low" | "medium" | "high";
 
 export interface PersonPulseRiskFlag {
-  /** Строка — известные значения см. в `PersonPulseRiskFlagType`. */
   type: string;
   severity: PersonPulseRiskFlagSeverity;
   baseline: number;
@@ -62,11 +34,6 @@ export interface PersonPulse {
   personId: string;
   personName: string;
   email: string;
-  /**
-   * User.id, к которому привязан Person (после accept'а приглашения). null
-   * если Person ещё не зарегистрировался. Используется секцией
-   * «Вопросы AI этому человеку» как фильтр ленты ActivityFeed.
-   */
   viewedUserId: string | null;
   departmentName: string | null;
   isHead: boolean;
@@ -83,11 +50,8 @@ export interface PersonPulse {
   promisesKept14d: number;
   promisesBroken14d: number;
   promisesOverdue14d: number;
-  /** Pulse Wave 4 §4.5 — активные risk-флаги. Пустой массив если флагов нет. */
   riskFlags: PersonPulseRiskFlag[];
-  /** ISO. null до первого прогона Burnout-Risk-Detector cron'а. */
   riskFlagsGeneratedAt: string | null;
 }
 
-/** ApiDto и Domain здесь совпадают — backend отдаёт plain JSON в этой же форме. */
 export type PersonPulseApi = PersonPulse;

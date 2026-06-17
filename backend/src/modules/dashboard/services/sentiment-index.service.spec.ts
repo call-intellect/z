@@ -1,20 +1,3 @@
-/**
- * Unit-тесты `SentimentIndexService` (Pulse Wave 1 §1.3).
- *
- * Покрывают:
- *   - пустое окно (totalCheckIns=0) → value=0, trend=flat;
- *   - расчёт value = (greenShare - redShare) * 100, округление;
- *   - trend: up/down/flat по порогу 5 п.п.;
- *   - redShareDelta=null → trend=flat;
- *   - кастомный days пробрасывается в getTeamTemperature;
- *   - sparkline 12 недель: распределение по бакетам, null для пустых;
- *   - cache-hit: ops.getTeamTemperature не дёргается;
- *   - ошибки Redis — graceful fallback;
- *   - чек-ины с sentiment=null не попадают в выборку sparkline (фильтр where).
- *
- * Сервис вызывается через `compute({tenantId, days, now})` чтобы зафиксировать
- * время — это публичный helper, специально оставленный public для тестов.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -36,7 +19,9 @@ interface CheckInRow {
   createdAt: Date;
 }
 
-function buildTemperature(overrides: Partial<OperationsTeamTemperatureDto> = {}): OperationsTeamTemperatureDto {
+function buildTemperature(
+  overrides: Partial<OperationsTeamTemperatureDto> = {},
+): OperationsTeamTemperatureDto {
   return {
     days: 7,
     totalCheckIns: 0,
@@ -49,13 +34,15 @@ function buildTemperature(overrides: Partial<OperationsTeamTemperatureDto> = {})
   };
 }
 
-function buildService(opts: {
-  temperature?: OperationsTeamTemperatureDto;
-  rows?: CheckInRow[];
-  cacheValue?: string | null;
-  cacheGetError?: Error;
-  cacheSetError?: Error;
-} = {}): {
+function buildService(
+  opts: {
+    temperature?: OperationsTeamTemperatureDto;
+    rows?: CheckInRow[];
+    cacheValue?: string | null;
+    cacheGetError?: Error;
+    cacheSetError?: Error;
+  } = {},
+): {
   service: SentimentIndexService;
   prismaFindMany: ReturnType<typeof vi.fn>;
   getTeamTemperature: ReturnType<typeof vi.fn>;
@@ -151,7 +138,6 @@ describe('SentimentIndexService', () => {
         now: NOW,
       });
 
-      // (0.3333 - 0.1111) * 100 = 22.22 → 22
       expect(dto.value).toBe(22);
     });
 
@@ -171,7 +157,6 @@ describe('SentimentIndexService', () => {
         now: NOW,
       });
 
-      // 0.5 - 0 = 0.5 → 50
       expect(dto.value).toBe(50);
     });
   });
@@ -286,12 +271,7 @@ describe('SentimentIndexService', () => {
   describe('sparkline12w', () => {
     it('1 green за 5 дней назад → buckets[11]=100; 1 red за ~3 недели назад → buckets[8]=-100; пустые недели → null', async () => {
       const rows: CheckInRow[] = [
-        // Последняя неделя (-5 дней) → green
         { sentiment: 'green', createdAt: daysFromNow(-5) },
-        // ~3 недели назад (-22 дня) → red
-        // weeksAgo = floor((now - createdAt) / 7days) = floor(22/7) = 3
-        // sparklineStart = now - 12 недель. bucket index = floor((t-start)/week_ms)
-        // start = -84d от now. t = -22d. (t-start)=62d. idx = floor(62/7)=8.
         { sentiment: 'red', createdAt: daysFromNow(-22) },
       ];
 
@@ -335,7 +315,6 @@ describe('SentimentIndexService', () => {
       expect(call.where.sentiment).toEqual({
         in: ['green', 'yellow', 'red'],
       });
-      // sentiment=null отсеется фильтром {in: [...]}: тут проверяем структуру.
     });
   });
 
@@ -414,7 +393,6 @@ describe('SentimentIndexService', () => {
   });
 });
 
-/** Локальный тип чтобы не импортировать DTO из тестируемого файла. */
 interface SentimentIndexDtoForCache {
   value: number;
   trend: 'up' | 'flat' | 'down';

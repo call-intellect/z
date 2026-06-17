@@ -1,5 +1,7 @@
 # AI-директор по ценности (Value Director)
 
+> **Статус: идея, не реализовано** — в коде нет ни модуля, ни модели `AgentBriefing`, ни taskType `value-director` (проверено 2026-06-17). Документ перенесён из `second-brain/01_projects/` в `plans/analysis/`: это план будущей фичи, а не текущее состояние.
+
 > Цифровой сотрудник из «AI-совета директоров», который помогает CEO держать клиентскую ценность в фокусе ежедневно. Работает поверх памяти компании (Z/Кора), применяя методологию из [[../06_marketing/client-value-framework]].
 >
 > **Канонический ID:** `value-director`
@@ -184,6 +186,6 @@ VD-агент — **первый** из линейки агентов-совет
 - [[ai-analysis-by-type]] — другие AI-агенты в системе (отчёты по типам встреч)
 - [[llm-router]] — маршрутизация LLM-вызовов
 - [[ai-workspace]] — общее устройство AI-слоя
-- `plans/tz/2026-05-10-phase-8-director-dashboard.md` — дашборд CEO (куда встраивается виджет агента)
-- `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md` — стратегический согласователь (смежная функция в дашборде)
+- `plans/archive/2026-05-10-phase-8-director-dashboard.md` — дашборд CEO (куда встраивается виджет агента)
+- `plans/archive/2026-05-10-phase-9-goals-strategic-alignment.md` — стратегический согласователь (смежная функция в дашборде)
 - `.claude/skills/z-ai-agent-rules.md` — правила работы с prompt registry и AI-агентами в Z

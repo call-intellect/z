@@ -1,18 +1,4 @@
-/**
- * KC-Temporal W1.2 — unit-тесты FactSupersedeService.
- *
- * Покрытие:
- *   1. skip_not_fact_signal — signalType вне cfg.bitemporal.factSignalTypes.
- *   2. skip_no_candidates — KNN вернул пусто (LLM не вызывается).
- *   3. supersedes happy path — старый блок закрыт + IdeaBlockLink + ConflictItem.
- *   4. race-condition — два параллельных processNewBlock на один блок:
- *      один из них успевает закрыть, второй уходит в skip_race_lost (Redis NX).
- *
- * Все зависимости (PrismaService, RedisService, LlmRouterService,
- * ConflictService, BusinessMetricsService, TypedConfigService) мокаются.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -23,11 +9,7 @@ import type { ConflictService } from '../../curation/services/conflict.service';
 
 import { FactSupersedeService } from './fact-supersede.service';
 
-/**
- * Минимальная фабрика моков. Каждый тест уточняет нужное поведение.
- */
 function makeMocks() {
-  // ── prisma ────────────────────────────────────────────────────────────
   const blockUnique = vi.fn();
   const blockUpdateMany = vi.fn();
   const linkUpsert = vi.fn();
@@ -44,19 +26,15 @@ function makeMocks() {
     $transaction: transaction,
   } as unknown as PrismaService;
 
-  // ── redis ─────────────────────────────────────────────────────────────
-  // ioredis-style `set(key, val, 'EX', sec, 'NX')` → 'OK' если NX сработал.
   const redisSet = vi.fn(async (): Promise<string | null> => 'OK');
   const redisDel = vi.fn(async () => 1);
   const redis = {
     client: { set: redisSet, del: redisDel },
   } as unknown as RedisService;
 
-  // ── llm router ───────────────────────────────────────────────────────
   const llmCall = vi.fn();
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
-  // ── conflict ─────────────────────────────────────────────────────────
   const conflictReport = vi.fn(async (_input: Record<string, unknown>) => ({
     id: 'conflict-1',
   }));
@@ -64,13 +42,11 @@ function makeMocks() {
     report: conflictReport,
   } as unknown as ConflictService;
 
-  // ── metrics ──────────────────────────────────────────────────────────
   const metrics = {
     observeKcFactSupersedeLatencyMs: vi.fn(),
     incKcFactSupersedeVerdict: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  // ── config ────────────────────────────────────────────────────────────
   const cfg = {
     bitemporal: {
       enabled: true,
@@ -130,14 +106,7 @@ describe('FactSupersedeService', () => {
   it('skip_not_fact_signal — signalType не в списке factual', async () => {
     const m = makeMocks();
     m.spies.blockUnique.mockResolvedValueOnce(makeBlock({ signalType: 'pain' }));
-    const svc = new FactSupersedeService(
-      m.prisma,
-      m.redis,
-      m.llm,
-      m.conflicts,
-      m.metrics,
-      m.cfg,
-    );
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
     const r = await svc.processNewBlock('blk-new');
 
@@ -153,22 +122,15 @@ describe('FactSupersedeService', () => {
   it('skip_no_candidates — KNN вернул пусто, LLM не вызывается', async () => {
     const m = makeMocks();
     m.spies.blockUnique.mockResolvedValueOnce(makeBlock());
-    m.spies.queryRawUnsafe.mockResolvedValueOnce([]); // KNN пусто
-    const svc = new FactSupersedeService(
-      m.prisma,
-      m.redis,
-      m.llm,
-      m.conflicts,
-      m.metrics,
-      m.cfg,
-    );
+    m.spies.queryRawUnsafe.mockResolvedValueOnce([]);
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
     const r = await svc.processNewBlock('blk-new');
 
     expect(r).toEqual({ verdict: 'skip_no_candidates', applied: false });
     expect(m.spies.llmCall).not.toHaveBeenCalled();
     expect(m.spies.transaction).not.toHaveBeenCalled();
-    expect(m.spies.redisDel).toHaveBeenCalled(); // lock освобождён
+    expect(m.spies.redisDel).toHaveBeenCalled();
     expect(m.metrics.incKcFactSupersedeVerdict).toHaveBeenCalledWith({
       verdict: 'skip_no_candidates',
     });
@@ -196,17 +158,9 @@ describe('FactSupersedeService', () => {
         confidence: 0.92,
       }),
     });
-    // updateMany закрывает блок → count=1.
     m.spies.blockUpdateMany.mockResolvedValueOnce({ count: 1 });
 
-    const svc = new FactSupersedeService(
-      m.prisma,
-      m.redis,
-      m.llm,
-      m.conflicts,
-      m.metrics,
-      m.cfg,
-    );
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
     const r = await svc.processNewBlock('blk-new');
 
@@ -214,7 +168,6 @@ describe('FactSupersedeService', () => {
     expect(r.targetId).toBe('blk-old');
     expect(r.applied).toBe(true);
 
-    // updateMany получил { id, tenantId, validUntil:null } фильтр.
     expect(m.spies.blockUpdateMany).toHaveBeenCalledTimes(1);
     const updArgs = (m.spies.blockUpdateMany.mock.calls[0] ?? [])[0] as
       | {
@@ -227,7 +180,6 @@ describe('FactSupersedeService', () => {
     expect(updArgs!.where.validUntil).toBeNull();
     expect(updArgs!.data.supersededById).toBe('blk-new');
 
-    // IdeaBlockLink(supersedes) — upsert вызван.
     expect(m.spies.linkUpsert).toHaveBeenCalledTimes(1);
     const linkArgs = (m.spies.linkUpsert.mock.calls[0] ?? [])[0] as
       | {
@@ -243,7 +195,6 @@ describe('FactSupersedeService', () => {
     expect(linkArgs!.create.toBlockId).toBe('blk-old');
     expect(linkArgs!.create.relationType).toBe('supersedes');
 
-    // ConflictService.report с suggestedResolution='evolving'.
     expect(m.spies.conflictReport).toHaveBeenCalledTimes(1);
     const confArgs = (m.spies.conflictReport.mock.calls[0] ?? [])[0] as
       | {
@@ -268,7 +219,6 @@ describe('FactSupersedeService', () => {
 
   it('race-condition — два параллельных вызова: один applied, второй skip_race_lost', async () => {
     const m = makeMocks();
-    // Оба вызова видят блок.
     m.spies.blockUnique.mockResolvedValue(makeBlock());
     m.spies.queryRawUnsafe.mockResolvedValue([
       {
@@ -289,7 +239,6 @@ describe('FactSupersedeService', () => {
         confidence: 0.9,
       }),
     });
-    // Redis SETNX: первый вызов получает 'OK', второй — null (lock занят).
     let setCallNo = 0;
     m.spies.redisSet.mockImplementation(async () => {
       setCallNo++;
@@ -297,31 +246,20 @@ describe('FactSupersedeService', () => {
     });
     m.spies.blockUpdateMany.mockResolvedValue({ count: 1 });
 
-    const svc = new FactSupersedeService(
-      m.prisma,
-      m.redis,
-      m.llm,
-      m.conflicts,
-      m.metrics,
-      m.cfg,
-    );
+    const svc = new FactSupersedeService(m.prisma, m.redis, m.llm, m.conflicts, m.metrics, m.cfg);
 
     const [r1, r2] = await Promise.all([
       svc.processNewBlock('blk-new'),
       svc.processNewBlock('blk-new'),
     ]);
 
-    // Один из двух — applied (тот, кто захватил lock первым).
     const verdicts = [r1.verdict, r2.verdict].sort();
     expect(verdicts).toEqual(['skip_race_lost', 'supersedes']);
     const appliedFlags = [r1.applied, r2.applied].filter(Boolean);
     expect(appliedFlags).toHaveLength(1);
 
-    // LLM был вызван только один раз (второй ушёл в skip до этого).
     expect(m.spies.llmCall).toHaveBeenCalledTimes(1);
-    // blockUpdateMany — один раз.
     expect(m.spies.blockUpdateMany).toHaveBeenCalledTimes(1);
-    // ConflictService.report — один раз.
     expect(m.spies.conflictReport).toHaveBeenCalledTimes(1);
   });
 });

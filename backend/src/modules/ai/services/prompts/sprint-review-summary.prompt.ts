@@ -1,26 +1,4 @@
-/**
- * Sprints (2026-05-27) — финальный отчёт спринта (LLM-таск `sprint-review-summary`).
- *
- * Вызывается из `SprintReviewService.generateReview` при завершении спринта
- * (хук `CyclesService.complete` + endpoint `/cycles/:id/review/regenerate`).
- * См. plans/tz/2026-05-27-sprints.md §2.7.
- *
- * Цель отчёта: дать руководителю спринта компактный итог за 30 секунд:
- *   - нарратив 3-5 предложений (что произошло за спринт);
- *   - сводка план/факт + причины расхождений + переносы + блокеры;
- *   - перечень открытых подсказок помощника (active SprintHint);
- *   - 3-7 кандидатов задач следующего спринта.
- *
- * Источник данных: задачи спринта (выполненные + невыполненные + перенесённые)
- * + блоки встречи sprint_review + активные SprintHint. На входе передаются
- * именно эти три набора.
- */
-
-import {
-  withConfidenceCalibration,
-  withEdgeCasePolicy,
-  withInjectionGuard,
-} from './common';
+import { withConfidenceCalibration, withEdgeCasePolicy, withInjectionGuard } from './common';
 
 export const SPRINT_REVIEW_SUMMARY_SYSTEM_PROMPT = withInjectionGuard(
   withEdgeCasePolicy(
@@ -84,15 +62,11 @@ export const SPRINT_REVIEW_SUMMARY_USER_TEMPLATE = (args: {
   }>;
 }): string => {
   const completedTxt = args.completedIssues.length
-    ? args.completedIssues
-        .map((i) => `  - ${i.identifier} «${i.title}»`)
-        .join('\n')
+    ? args.completedIssues.map((i) => `  - ${i.identifier} «${i.title}»`).join('\n')
     : '  (выполненных задач нет)';
   const notCompletedTxt = args.notCompletedIssues.length
     ? args.notCompletedIssues
-        .map(
-          (i) => `  - ${i.identifier} «${i.title}» (state=${i.state ?? 'нет'})`,
-        )
+        .map((i) => `  - ${i.identifier} «${i.title}» (state=${i.state ?? 'нет'})`)
         .join('\n')
     : '  (невыполненных задач нет)';
   const carriedTxt = args.carriedOverIssueIds.length

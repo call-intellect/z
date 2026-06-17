@@ -1,7 +1,7 @@
 # Технические логи в БД (LoggingModule)
 
 > Статус: **работает** (2026-06-01; расширен 2026-06-03 — процессные контуры + мост Nest Logger + вид «Цепочка»).
-> Планы: [2026-06-01-logging-module.md](../../plans/tz/2026-06-01-logging-module.md), [2026-06-03-logging-pipelines-coverage.md](../../plans/tz/2026-06-03-logging-pipelines-coverage.md).
+> Планы: [2026-06-01-logging-module.md](../../plans/archive/2026-06-01-logging-module.md), [2026-06-03-logging-pipelines-coverage.md](../../plans/archive/2026-06-03-logging-pipelines-coverage.md).
 
 ## Что это
 Централизованное **операционное** логирование приложения в Postgres (модель `SystemLog`),
@@ -65,7 +65,7 @@
 + 34 воркера прочих контуров (knowledge-graph / notifications / integrations / ...) через `PipelineRunner.job`.
 Остальные `this.logger.*` по приложению попадают в БД через мост (без pipeline/traceId, но с module/level/message).
 
-**Сшивка graph-контура (2026-06-03, [план](../../plans/tz/2026-06-03-logging-trace-stitch-graph.md)):**
+**Сшивка graph-контура (2026-06-03, [план](../../plans/archive/2026-06-03-logging-trace-stitch-graph.md)):**
 `deriveTraceFromJob` приоритезирует `data.traceId`; `CoreQueueService.stamp()` авто-вкладывает `ctx.traceId`
 в payload каждого enqueue. Поэтому trace встречи (`analyze.worker` → `ingestMeeting` → `enqueueRawReceived`)
 протекает по всей граф-цепочке (block-ingest → distill → linker → entity-resolver → specialists → rollup) —

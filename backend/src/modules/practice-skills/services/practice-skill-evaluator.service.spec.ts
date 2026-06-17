@@ -1,12 +1,3 @@
-/**
- * Agents v2 Фаза C1 (2026-05-30) — Unit-тесты PracticeSkillEvaluatorService.
- *
- * Сценарии:
- *   1. <evalMinRuns usages → hold (без обновления статуса).
- *   2. composite > baseline + promoteDelta → promote (status=active, trafficShare=1.0).
- *   3. composite < baseline - archiveDelta → archive (archivedReason выставлен).
- *   4. Между порогами → hold (только shadowMetrics обновляется).
- */
 import type { PracticeSkill } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -48,11 +39,13 @@ function makeSkill(): PracticeSkill {
   } as unknown as PracticeSkill;
 }
 
-function makeCfg(opts?: Partial<{
-  evalMinRuns: number;
-  evalPromoteDelta: number;
-  evalArchiveDelta: number;
-}>): TypedConfigService {
+function makeCfg(
+  opts?: Partial<{
+    evalMinRuns: number;
+    evalPromoteDelta: number;
+    evalArchiveDelta: number;
+  }>,
+): TypedConfigService {
   return {
     practiceSkills: {
       enabled: true,
@@ -111,9 +104,6 @@ function makePrisma(args?: {
     skillUsage: {
       findMany: vi
         .fn()
-        // 1st call: usages of this skill
-        // 2nd call (baseline): used conversations of this skill
-        // 3rd call (baseline): other usages in other convs
         .mockResolvedValueOnce(args?.usages ?? [])
         .mockResolvedValueOnce(
           (args?.usages ?? []).map((u) => ({
@@ -141,7 +131,6 @@ function makePrisma(args?: {
   };
 }
 
-/** LLM, который всегда отвечает «нет нарушений» (adversarialOK=1.0). */
 function makeLlmAlwaysOk(): LlmRouterService {
   return {
     call: vi.fn().mockResolvedValue({
@@ -164,7 +153,6 @@ describe('PracticeSkillEvaluatorService', () => {
     const prisma = makePrisma({
       skill,
       usages: [
-        // 5 usages < min=30
         ...Array.from({ length: 5 }, (_, i) => ({
           id: `u-${i}`,
           outcome: 'accepted_as_is',
@@ -187,8 +175,6 @@ describe('PracticeSkillEvaluatorService', () => {
 
   it('2) composite > baseline + promoteDelta → promote', async () => {
     const skill = makeSkill();
-    // 30 usages, все accepted_as_is, editDistance=0 → composite будет высокий
-    // baseline (otherUsages) — пустой → возвращает 0.5
     const usages = Array.from({ length: 30 }, (_, i) => ({
       id: `u-${i}`,
       outcome: 'accepted_as_is',
@@ -199,7 +185,7 @@ describe('PracticeSkillEvaluatorService', () => {
     const prisma = makePrisma({
       skill,
       usages,
-      otherUsages: [], // baseline = 0.5
+      otherUsages: [],
     });
     const metrics = makeMetrics();
     const svc = new PracticeSkillEvaluatorService(
@@ -224,8 +210,6 @@ describe('PracticeSkillEvaluatorService', () => {
 
   it('3) composite < baseline - archiveDelta → archive', async () => {
     const skill = makeSkill();
-    // 30 usages: все rejected (outcome=rejected), editDistance=0.9 → composite низкий
-    // baseline (otherUsages) — все accepted, editDistance=0 → baseline высокий
     const usages = Array.from({ length: 30 }, (_, i) => ({
       id: `u-${i}`,
       outcome: 'rejected',
@@ -261,7 +245,6 @@ describe('PracticeSkillEvaluatorService', () => {
 
   it('4) hold — между порогами, только shadowMetrics обновляется', async () => {
     const skill = makeSkill();
-    // 30 usages, mixed → composite примерно равен baseline.
     const usages = Array.from({ length: 30 }, (_, i) => ({
       id: `u-${i}`,
       outcome: i % 2 === 0 ? 'accepted_as_is' : 'rejected',
@@ -289,9 +272,8 @@ describe('PracticeSkillEvaluatorService', () => {
         }),
       }),
     );
-    // НЕ promotedAt и НЕ archivedAt
-    const updateCall = (prisma.practiceSkill.update as ReturnType<typeof vi.fn>)
-      .mock.calls[0]![0] as { data: Record<string, unknown> };
+    const updateCall = (prisma.practiceSkill.update as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as { data: Record<string, unknown> };
     expect(updateCall.data.status).toBeUndefined();
     expect(updateCall.data.promotedAt).toBeUndefined();
     expect(updateCall.data.archivedAt).toBeUndefined();

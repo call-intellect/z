@@ -1,10 +1,3 @@
-/**
- * SBA α-5 — system prompt для генерации title диалога chat-v2.
- *
- * Используется `ConversationsService.generateTitle` после первого
- * user-сообщения. Цель — короткий заголовок (3-7 слов) для отображения в
- * списке диалогов.
- */
 export const CHAT_V2_CONVERSATION_TITLE_SYSTEM_PROMPT = `Ты — помощник по
 именованию диалогов с AI-чатом компании.
 

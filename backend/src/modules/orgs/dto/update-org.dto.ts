@@ -1,8 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Обновление Org owner'ом: смена названия и/или visibilityMode.
- */
 export const UpdateOrgSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),

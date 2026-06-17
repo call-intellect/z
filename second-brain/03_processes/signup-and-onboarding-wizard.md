@@ -8,8 +8,8 @@ owners_human:
   - продакт онбординга
   - продакт аккаунтов
 related_plans:
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
-  - plans/tz/2026-05-21-phase-0c-onboarding-wizard-frontend.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-21-phase-0c-onboarding-wizard-frontend.md
 related_projects:
   - 01_projects/onboarding-wizard.md
   - 01_projects/accounts.md
@@ -159,7 +159,7 @@ RoleProfile(status='ready')
 
 **Реализовано, но не описано в ТЗ:**
 - **Honeypot `hp_field` и lead-style регистрация** (12-символьный временный пароль по почте вместо «выбора пароля» на форме) — продуктовое решение в коде, в задумке не отражено.
-- **`Subscription(status='DEMO')` создаётся сразу при регистрации Org** — это нужно для `SubscriptionGuard` paywall'а (см. plans/tz/2026-05-28-paywall-no-trial.md).
+- **`Subscription(status='DEMO')` создаётся сразу при регистрации Org** — это нужно для `SubscriptionGuard` paywall'а (см. plans/archive/2026-05-28-paywall-no-trial.md).
 - **`Source(type='meeting', name='Встречи Z')` создаётся в той же транзакции** — нужно для knowledge-core ingest pipeline.
 - **Магик-линк для входа без пароля** (`POST /accounts/magic-link/request|consume`) — Phase β-9, заодно используется для Telegram-бот команды `/login`.
 - **Семя демо-данных «ТехноСтрим»** через `POST /orgs/:orgId/demo-workspace` — опциональный «полный воркспейс» для демонстрации возможностей.

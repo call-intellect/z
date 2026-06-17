@@ -1,6 +1,3 @@
-/**
- * SBA α-10 wave 3 — DomainModel для LlmModel.
- */
 export type AdminLlmModelApi = {
   id: string;
   providerId: string;
@@ -61,13 +58,13 @@ export type CreateLlmModelRequest = {
   displayName: string;
   contextWindow?: number;
   capabilities?: Record<string, unknown>;
-  category?: 'flagship' | 'fast' | 'reasoning' | 'embedding' | 'experimental';
+  category?: "flagship" | "fast" | "reasoning" | "embedding" | "experimental";
   isActive?: boolean;
   notes?: string;
 };
 
 export type UpdateLlmModelRequest = Partial<
-  Omit<CreateLlmModelRequest, 'providerId' | 'modelKey'>
+  Omit<CreateLlmModelRequest, "providerId" | "modelKey">
 >;
 
 export type AdminLlmModelPriceHistoryApi = {

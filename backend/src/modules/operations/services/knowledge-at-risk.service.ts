@@ -12,25 +12,10 @@ import {
   type SeverityLevel,
 } from './knowledge-at-risk.scoring';
 
-/**
- * TZ-1 Фаза 4.C (daily-value-engine) — KnowledgeAtRiskService.
- *
- * Синтез двух сигналов:
- *   - критичный bus-factor: категория знаний держится на одном соло-эксперте
- *     (`KnowledgeRiskSnapshot.riskLevel='critical'`, highConfidenceCount ≤ 1);
- *   - риск ухода носителя: его `Person.riskFlagsJson` / `engagementScore`.
- *
- * computeForTenant строит снимки `KnowledgeAtRiskSnapshot` и возвращает
- * critical/warning записи с менеджером носителя для push (cron). Носителю
- * НИЧЕГО не уходит (этика) — это решается в cron'е (push только руководителю).
- *
- * Без LLM — чистый SQL/TS + чистая `computeCombinedSeverity`.
- */
 @Injectable()
 export class KnowledgeAtRiskService {
   private readonly logger = new Logger(KnowledgeAtRiskService.name);
 
-  /** Окно свежести bus-factor снимков (дней). */
   private static readonly SNAPSHOT_LOOKBACK_DAYS = 30;
 
   constructor(
@@ -39,15 +24,7 @@ export class KnowledgeAtRiskService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  /**
-   * Построить снимки знание-под-риском для Org. Идемпотентно: на каждый прогон
-   * пишем новый снимок per category (история; запросы берут последний). Возвращает
-   * критичные/повышенные записи с резолвом носителя (для push руководителю).
-   */
-  async computeForTenant(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<{
+  async computeForTenant(args: { tenantId: string; now: Date }): Promise<{
     snapshots: number;
     atRisk: Array<{
       categoryName: string;
@@ -55,10 +32,8 @@ export class KnowledgeAtRiskService {
       combinedSeverity: SeverityLevel;
     }>;
   }> {
-    // 1. Свежие critical bus-factor снимки (последний per category).
     const lookback = new Date(
-      args.now.getTime() -
-        KnowledgeAtRiskService.SNAPSHOT_LOOKBACK_DAYS * 86_400_000,
+      args.now.getTime() - KnowledgeAtRiskService.SNAPSHOT_LOOKBACK_DAYS * 86_400_000,
     );
     const rows = await this.prisma.knowledgeRiskSnapshot.findMany({
       where: {
@@ -76,7 +51,6 @@ export class KnowledgeAtRiskService {
       take: 1_000,
     });
 
-    // Последний снимок per category.
     const latestByCategory = new Map<string, (typeof rows)[number]>();
     for (const r of rows) {
       if (!latestByCategory.has(r.categoryName)) {
@@ -87,7 +61,6 @@ export class KnowledgeAtRiskService {
       return { snapshots: 0, atRisk: [] };
     }
 
-    // 2. Резолв соло-эксперта (первый из topExperts) + его риск ухода.
     const atRisk: Array<{
       categoryName: string;
       soleExpertPersonId: string;
@@ -106,10 +79,7 @@ export class KnowledgeAtRiskService {
           personId: soleExpertPersonId,
         });
       }
-      const combinedSeverity = computeCombinedSeverity(
-        busFactor,
-        personRiskLevel,
-      );
+      const combinedSeverity = computeCombinedSeverity(busFactor, personRiskLevel);
 
       await this.prisma.knowledgeAtRiskSnapshot.create({
         data: {
@@ -136,10 +106,6 @@ export class KnowledgeAtRiskService {
     return { snapshots, atRisk };
   }
 
-  /**
-   * Чтение для эндпоинта `GET /dashboard/operations/knowledge-at-risk`.
-   * Последний снимок per category, сортировка critical → warning → ok.
-   */
   async listForTenant(args: { tenantId: string; limit?: number }): Promise<{
     items: Array<{
       categoryName: string;
@@ -163,13 +129,9 @@ export class KnowledgeAtRiskService {
         latestByCategory.set(r.categoryName, r);
       }
     }
-    const severityRank = (s: string): number =>
-      s === 'critical' ? 3 : s === 'warning' ? 2 : 1;
+    const severityRank = (s: string): number => (s === 'critical' ? 3 : s === 'warning' ? 2 : 1);
     const items = Array.from(latestByCategory.values())
-      .sort(
-        (a, b) =>
-          severityRank(b.combinedSeverity) - severityRank(a.combinedSeverity),
-      )
+      .sort((a, b) => severityRank(b.combinedSeverity) - severityRank(a.combinedSeverity))
       .slice(0, Math.min(Math.max(args.limit ?? 50, 1), 200))
       .map((r) => ({
         categoryName: r.categoryName,
@@ -183,9 +145,6 @@ export class KnowledgeAtRiskService {
     return { items };
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
-  /** Риск ухода носителя из riskFlagsJson + engagementScore. */
   private async resolvePersonRisk(args: {
     tenantId: string;
     personId: string;
@@ -196,14 +155,10 @@ export class KnowledgeAtRiskService {
     });
     if (!person) return 'low';
     const flags = this.parseRiskFlags(person.riskFlagsJson);
-    const engagementScore =
-      person.engagementScore !== null
-        ? Number(person.engagementScore)
-        : null;
+    const engagementScore = person.engagementScore !== null ? Number(person.engagementScore) : null;
     return derivePersonRiskLevel({ riskFlags: flags, engagementScore });
   }
 
-  /** Первый personId из `topExpertsJson.experts[]` (соло-эксперт). */
   private firstExpertPersonId(json: Prisma.JsonValue): string | null {
     if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
     const experts = (json as { experts?: unknown }).experts;
@@ -217,10 +172,7 @@ export class KnowledgeAtRiskService {
     return null;
   }
 
-  /** Разбор `Person.riskFlagsJson` → массив `{ severity }`. */
-  private parseRiskFlags(
-    json: Prisma.JsonValue,
-  ): Array<{ severity?: string | null }> {
+  private parseRiskFlags(json: Prisma.JsonValue): Array<{ severity?: string | null }> {
     if (!json || typeof json !== 'object' || Array.isArray(json)) return [];
     const flags = (json as { flags?: unknown }).flags;
     if (!Array.isArray(flags)) return [];

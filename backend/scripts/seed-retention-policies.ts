@@ -1,18 +1,3 @@
-/**
- * Seed для таблицы OrgRetentionPolicy (Фаза 11 knowledge-core).
- *
- * Создаёт политику ретеншена для каждой Org, у которой её ещё нет.
- * Дефолты — в схеме (rawEventDays=2555, archivedBlockDays=365, chatMessageDays=90,
- * auditLogDays=730, archivedBlockAction='archive_then_delete'). Скрипт ничего
- * не перезаписывает — admin мог изменить значения через UI/API, мы их не трогаем.
- *
- * Идемпотентность: per-Org check (`findUnique by tenantId`) перед `create`.
- * Можно запускать сколько угодно раз.
- *
- * Запуск:
- *   bun run scripts/seed-retention-policies.ts
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

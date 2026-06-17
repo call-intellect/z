@@ -1,19 +1,3 @@
-/**
- * DemoCleanupWorker — consumer очереди `onboarding.demo-cleanup`.
- *
- * На каждый job стирает демо-данные «ТехноСтрим» через
- * `OnboardingService.resetDemoWorkspace` (удаляет только `externalSource='demo'`
- * по 35 таблицам в транзакции 30 сек).
- *
- * Concurrency=1 — внутри одной Org гонок быть не должно, а параллелить разные
- * Org через одну очередь смысла нет.
- *
- * `no_demo_to_reset` (cleanup уже отработал / демо не лили) — НЕ ошибка:
- * трактуем как success-skip, чтобы не плодить failed-job'ы при дублях события.
- *
- * Источник: plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md §4.6.
- */
-
 import {
   BadRequestException,
   Inject,
@@ -24,16 +8,12 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { OnboardingService } from '../onboarding.service';
 
-import {
-  DEMO_CLEANUP_QUEUE_NAME,
-  type DemoCleanupJobData,
-} from './demo-cleanup.queue';
+import { DEMO_CLEANUP_QUEUE_NAME, type DemoCleanupJobData } from './demo-cleanup.queue';
 
 @Injectable()
 export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
@@ -92,9 +72,6 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
   private async process(job: Job<DemoCleanupJobData>): Promise<void> {
     const { orgId, actorUserId } = job.data;
 
-    // ТЗ 2026-06-01-demo-shared-org-model §4.8: cleanup разрешён только для
-    // эталонной демо-Org. Без этой проверки случайный enqueue на боевую Org
-    // приведёт к 35-табличному deleteMany по живым данным.
     const org = await this.prisma.org.findUnique({
       where: { id: orgId },
       select: { id: true, isReferenceDemo: true },
@@ -118,11 +95,7 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
         'demo-cleanup: cleanup finished',
       );
     } catch (err) {
-      // no_demo_to_reset — нормальный путь (уже почистили / демо не лили).
-      if (
-        err instanceof BadRequestException &&
-        this.isNoDemoToReset(err)
-      ) {
+      if (err instanceof BadRequestException && this.isNoDemoToReset(err)) {
         this.logger.debug(
           { jobId: job.id, orgId },
           'demo-cleanup: skip — нет демо-данных для удаления',
@@ -133,7 +106,6 @@ export class DemoCleanupWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Достаёт `error.code === 'no_demo_to_reset'` из тела BadRequestException. */
   private isNoDemoToReset(err: BadRequestException): boolean {
     const res = err.getResponse();
     if (res && typeof res === 'object') {

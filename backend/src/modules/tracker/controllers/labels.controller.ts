@@ -16,10 +16,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -36,10 +33,6 @@ import {
 import type { LabelResponseDto } from '../services/labels.service';
 import { LabelsService } from '../services/labels.service';
 
-/**
- * REST `/api/v1/labels` — метки задач. Доступ read — все members; write/delete —
- * RBAC ResourceType='project' (write).
- */
 @ApiTags('tracker / labels')
 @ApiBearerAuth()
 @Controller('api/v1')

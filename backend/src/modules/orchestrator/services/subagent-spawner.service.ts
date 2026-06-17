@@ -21,7 +21,6 @@ export interface SpawnInput {
   tenantId: string;
   userId: string;
   steps: OrchestratorPlanStep[];
-  /** Жёсткий timeout (ms) на ОДИН subagent. */
   timeoutMsPerStep: number;
 }
 
@@ -32,17 +31,6 @@ export interface SpawnedSubagent {
   description: string;
 }
 
-/**
- * SBA δ-1 — SubagentSpawnerService.
- *
- * Запускает subagent'ы параллельно через BullMQ-очередь `orchestrator.subagents`.
- * Создаёт `OrchestratorSubagentJob` строки в БД (status='pending'), enqueue'ит
- * job'ы, и оставляет worker'у задачу маркировать done/failed.
- *
- * Это thin coordinator — реальная работа делается в worker'е (`OrchestratorSubagentWorker`),
- * которая зовёт стратегии через `executeStrategyDirectly()` (для unit-тестов
- * также можно).
- */
 @Injectable()
 export class SubagentSpawnerService {
   private readonly logger = new Logger(SubagentSpawnerService.name);
@@ -69,11 +57,6 @@ export class SubagentSpawnerService {
     ]);
   }
 
-  /**
-   * Создать DB-jobs + enqueue в BullMQ. Возвращает список jobId'ов.
-   * НЕ ждёт завершения — caller (OrchestratorService) поллит DB
-   * с интервалом / await'ит.
-   */
   async spawn(input: SpawnInput): Promise<SpawnedSubagent[]> {
     const created: SpawnedSubagent[] = [];
 
@@ -126,10 +109,6 @@ export class SubagentSpawnerService {
     return created;
   }
 
-  /**
-   * Прямой вызов стратегии (используется в worker'е и в unit-тестах).
-   * Возвращает результат subagent'а; не пишет в БД.
-   */
   async executeStrategyDirectly(args: {
     step: OrchestratorPlanStep;
     tenantId: string;

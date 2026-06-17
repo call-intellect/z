@@ -11,10 +11,6 @@ import { GoalKrProgressCron } from './goal-kr-progress.cron';
 
 type Fn = ReturnType<typeof vi.fn>;
 
-/**
- * Goals OKR v2 (Фаза 3) — тесты cron'а + resilience прохода runForAllOrgs.
- */
-
 describe('GoalKrProgressCron', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -26,9 +22,7 @@ describe('GoalKrProgressCron', () => {
     } as unknown as GoalKrProgressService;
     const cron = new GoalKrProgressCron(svc);
     await expect(cron.runForAllOrgs()).resolves.toBeUndefined();
-    expect(
-      (svc.runForAllOrgs as unknown as Fn),
-    ).toHaveBeenCalledTimes(1);
+    expect(svc.runForAllOrgs as unknown as Fn).toHaveBeenCalledTimes(1);
   });
 
   it('возвращает summary при успехе', async () => {
@@ -44,7 +38,7 @@ describe('GoalKrProgressCron', () => {
     } as unknown as GoalKrProgressService;
     const cron = new GoalKrProgressCron(svc);
     await cron.runForAllOrgs();
-    expect((svc.runForAllOrgs as unknown as Fn)).toHaveBeenCalledTimes(1);
+    expect(svc.runForAllOrgs as unknown as Fn).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -52,12 +46,9 @@ describe('GoalKrProgressService.runForAllOrgs — resilience', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('обходит несколько Org; ошибка одной цели не валит проход', async () => {
-    // 2 Org: t1 (две цели, одна падает), t2 (одна цель).
     const goalFindMany = vi
       .fn()
-      // listOrgsWithActiveGoals (distinct tenantId)
       .mockResolvedValueOnce([{ tenantId: 't1' }, { tenantId: 't2' }])
-      // listActiveGoals('t1')
       .mockResolvedValueOnce([
         {
           id: 'g1',
@@ -74,7 +65,6 @@ describe('GoalKrProgressService.runForAllOrgs — resilience', () => {
           manualOverride: {},
         },
       ])
-      // listActiveGoals('t2')
       .mockResolvedValueOnce([
         {
           id: 'g3',
@@ -85,7 +75,6 @@ describe('GoalKrProgressService.runForAllOrgs — resilience', () => {
         },
       ]);
 
-    // goalKeyResult.findMany: g1 → manual KR (skip), g-bad → бросает, g3 → 0 KR.
     const krFindMany = vi.fn(async (args: { where: { goalId: string } }) => {
       if (args.where.goalId === 'g-bad') {
         throw new Error('умышленно');
@@ -124,8 +113,7 @@ describe('GoalKrProgressService.runForAllOrgs — resilience', () => {
     const summary = await svc.runForAllOrgs();
 
     expect(summary.orgsScanned).toBe(2);
-    expect(summary.failures).toBe(1); // g-bad
-    // g1 → 1 skipped (manual KR); g3 → 0 KR.
+    expect(summary.failures).toBe(1);
     expect(summary.krsSkipped).toBe(1);
     expect(summary.krsUpdated).toBe(0);
   });

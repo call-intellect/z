@@ -4,12 +4,12 @@
 > Тип: UX/локализация, без изменений бизнес-логики
 > Статус: черновик (анализ + план; код не начат)
 > Связанные правила: `feedback_admin_ui_russian_only.md`, `feedback_language_plain_russian.md`
-> Источник копирайта: `delivery/13-glossary.md`, `delivery/ui/copy-strings.ru.md`
+> Источник копирайта: `second-brain/13_glossary/ui-glossary.md`, `second-brain/13_glossary/copy-strings.ru.md`
 
 ## 0. Решения (2026-06-02)
 
 - **Z-Admin — мягкая русификация (П.2 политика B):** переводим переводимое; бренды/протоколы/идентификаторы (S3, LiveKit, BullMQ, LLM, `taskType`) оставляем с русским пояснением в скобках при первом упоминании. Не превращаем в строгую зону A — операторам важна тех. узнаваемость терминов.
-- **Типы встреч («Custdev», «Customer Success») — переводим** по `delivery/13-glossary.md` и каталогу типов встреч.
+- **Типы встреч («Custdev», «Customer Success») — переводим** по `second-brain/13_glossary/ui-glossary.md` и каталогу типов встреч.
 
 ## 1. Цель
 
@@ -63,7 +63,7 @@
 Бренды/протоколы/идентификаторы, которые остаются английскими, но требуют русского пояснения при первом упоминании на странице:
 S3, LiveKit, SFU, Egress, TURN, IMAP, SMTP, OAuth, DLQ, BullMQ, pgvector, RPS, Webhook (→ можно «вебхук»), `taskType`, `effectiveFrom/To`, DeepSeek/OpenAI/Ollama/GigaAM, primary/secondary/tertiary (уже глоссируются как Основной/Запасной/Локальный — закрепить везде).
 
-## 4. Словарь переводов (добавить в `delivery/13-glossary.md`)
+## 4. Словарь переводов (добавить в `second-brain/13_glossary/ui-glossary.md`)
 
 Единый источник правды — глоссарий. Перед правкой кода пополнить таблицу глоссария этими парами, дальше код берёт строки только отсюда.
 
@@ -133,7 +133,7 @@ S3, LiveKit, SFU, Egress, TURN, IMAP, SMTP, OAuth, DLQ, BullMQ, pgvector, RPS, W
 
 > Все изменения — только текстовые строки в UI. Бизнес-логика, API-контракты, имена полей/переменных/маршрутов НЕ трогаем. `data-testid`, ключи, enum-значения с бэка не меняем.
 
-- [ ] **Фаза 0. Глоссарий.** Внести таблицы из §4.1–4.2 в `delivery/13-glossary.md` и нужные строки в `delivery/ui/copy-strings.ru.md`. Это контракт перевода.
+- [ ] **Фаза 0. Глоссарий.** Внести таблицы из §4.1–4.2 в `second-brain/13_glossary/ui-glossary.md` и нужные строки в `second-brain/13_glossary/copy-strings.ru.md`. Это контракт перевода.
 - [ ] **Фаза 1. Зона A (P0, критично).** Перевести все строки из §3.1. Файлы: `SourcesClient.tsx`, `MeetingsAdminSettingsClient.tsx`, `Sidebar.tsx`, `nav-help.ts`, `overview.ts`. Ноль английских слов в видимом тексте.
 - [ ] **Фаза 2. Зона B — сайдбар и заголовки.** `navigation.ts` (метки секций/пунктов), `AdminShell.tsx` («Z-Admin» → «Админ-панель Z», подпись «Глобальная админка super_admin»), `metadata.title` страниц.
 - [ ] **Фаза 3. Зона B — таблицы и формы (P1).** Перевести колонки/метки/кнопки из §3.2 по словарю.
@@ -146,7 +146,7 @@ S3, LiveKit, SFU, Egress, TURN, IMAP, SMTP, OAuth, DLQ, BullMQ, pgvector, RPS, W
 
 ### Зона A
 - [ ] `frontend/app/(authenticated)/company-admin/sources/SourcesClient.tsx` — Bot Token (29, 684), Bot Username (703), API Key (850–851), API Salt (853, 867), Webhook URL (362), Webhook (334), Web-form (119, 315), extensions (880), LLM (1322), Knowledge Core (205, 881), IMAP-хост (1068), TLS / SSL (1092), app password (1108). `chat_id`/`setWebhook`/HTTP-заголовки — оставить как тех. (P2), но обрамить русским пояснением.
-- [ ] `frontend/app/(authenticated)/company-admin/meetings/MeetingsAdminSettingsClient.tsx` — Custdev (26), Customer Success (29) → русские названия типов встреч (сверить с `delivery/13-glossary.md` и каталогом типов встреч).
+- [ ] `frontend/app/(authenticated)/company-admin/meetings/MeetingsAdminSettingsClient.tsx` — Custdev (26), Customer Success (29) → русские названия типов встреч (сверить с `second-brain/13_glossary/ui-glossary.md` и каталогом типов встреч).
 - [ ] `frontend/src/ui/components/app-shell/Sidebar.tsx` — проверить весь видимый текст; «Появится в Фазе γ» уже в глоссарии (ок).
 - [ ] `frontend/src/lib/nav-help.ts` — проверить отсутствие «OKR»/«Entity Browser» без русского эквивалента.
 - [ ] `frontend/src/ui/tour/tours/overview.ts` — проверить пункты тура.
@@ -186,7 +186,7 @@ S3, LiveKit, SFU, Egress, TURN, IMAP, SMTP, OAuth, DLQ, BullMQ, pgvector, RPS, W
 
 - [ ] Зона A: при ручном проходе по всем страницам владельца компании англоязычных слов в видимом тексте нет (кроме брендов с русским пояснением).
 - [ ] Зона B: сайдбар, заголовки страниц, колонки таблиц и метки форм — на русском; бренды/протоколы сопровождены пояснением при первом упоминании.
-- [ ] `delivery/13-glossary.md` пополнен; все новые строки берутся оттуда.
+- [ ] `second-brain/13_glossary/ui-glossary.md` пополнен; все новые строки берутся оттуда.
 - [ ] `bun run typecheck` и `bun run lint` во `frontend/` зелёные.
 - [ ] Линтер русификации (§7) проходит на изменённых файлах.
 - [ ] Бизнес-логика, маршруты, имена полей/enum/`data-testid` не изменены.

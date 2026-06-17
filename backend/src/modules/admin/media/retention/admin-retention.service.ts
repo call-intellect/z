@@ -4,34 +4,8 @@ import { TypedConfigService } from '../../../../common/config/index';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../../settings/admin-settings.service';
 
-import type {
-  RetentionPolicyItemDto,
-  RetentionPreviewDto,
-} from './dto/admin-retention.dto';
+import type { RetentionPolicyItemDto, RetentionPreviewDto } from './dto/admin-retention.dto';
 
-/**
- * Admin-redesign Фаза 7 — `AdminRetentionService`.
- *
- * Управляет глобальной таблицей `RetentionPolicy` — TTL по типу. Это
- * read-write API для UI `/admin/media/retention`:
- *   - `list()` — при пустой таблице синхронизирует с ENV (`*_RETENTION_DAYS`)
- *     через idempotent upsert (один раз при первом GET).
- *   - `update()` — пишет в БД + дублирует значение в `AdminSetting`
- *     (`retention.{type}`, severity='high') с reason. Это распространяет
- *     изменение через Redis pub/sub в воркеры (см. AdminSettingsService).
- *   - `preview()` — оценка сколько записей удалит retention-cron при новом
- *     значении (COUNT + WHERE createdAt < NOW - days INTERVAL).
- *
- * Поддерживаемые типы (id RetentionPolicy):
- *   - `meeting_recording` → модель `Recording` (по `Recording.createdAt`
- *     отсутствует — у Recording нет createdAt, фильтр по `expiresAt`).
- *   - `share_view` → `MeetingShareView.viewedAt`.
- *   - `api_access_log` → `ApiAccessLog.createdAt`.
- *   - `webhook_delivery` → `WebhookDelivery.createdAt`.
- *   - `soft_delete_grace` → notCountable=true (мульти-модельный).
- */
-
-/** Карта известных типов retention → ENV-fallback. */
 const KNOWN_RETENTIONS: Array<{
   type: string;
   envKey: string;
@@ -74,7 +48,6 @@ const KNOWN_RETENTIONS: Array<{
 export class AdminRetentionService {
   private readonly logger = new Logger(AdminRetentionService.name);
 
-  /** Защита от повторной sync-инициализации в гонке нескольких list() запросов. */
   private syncedOnce = false;
 
   constructor(
@@ -84,12 +57,6 @@ export class AdminRetentionService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ─────────────────────────── public api ────────────────────────────────
-
-  /**
-   * Список всех retention-политик. При первом запросе (пустая БД) — sync
-   * с ENV через upsert (idempotent). Сортировка по типу.
-   */
   async list(): Promise<RetentionPolicyItemDto[]> {
     await this.ensureSeed();
 
@@ -106,14 +73,6 @@ export class AdminRetentionService {
     }));
   }
 
-  /**
-   * Обновить retention. Шаги:
-   *   1) UPSERT в `RetentionPolicy` (если записи нет — создаём с ENV-fallback).
-   *   2) Дублируем значение в `AdminSetting retention.{type}` через
-   *      `AdminSettingsService.set` — это пишет в SuperAdminAccessLog и
-   *      рассылает invalidation через Redis pub/sub. severity='high' уже
-   *      зашит на уровне типа политики.
-   */
   async update(args: {
     type: string;
     days: number;
@@ -145,18 +104,12 @@ export class AdminRetentionService {
       },
     });
 
-    // Пробрасываем изменение в AdminSetting → Redis pub/sub → воркеры.
-    // severity='high' прописывается seed-скриптом (см. seed-admin-settings.ts).
-    // Если записи AdminSetting ещё нет — set() создаст с дефолтной severity=low,
-    // что не критично: для retention severity ставится при первом seed-проходе.
     try {
       await this.settings.set(`retention.${args.type}`, args.days, {
         userId: args.userId,
         reason: args.reason,
       });
     } catch (err) {
-      // Не блокируем обновление RetentionPolicy: запись в БД уже произошла,
-      // pub/sub — мягкий шаг. Кэш у воркеров протухнет по TTL (≤30s).
       this.logger.warn(
         {
           err: err instanceof Error ? err.message : String(err),
@@ -166,9 +119,7 @@ export class AdminRetentionService {
       );
     }
 
-    this.logger.log(
-      `admin-retention: ${args.type} → ${args.days} дней (user=${args.userId})`,
-    );
+    this.logger.log(`admin-retention: ${args.type} → ${args.days} дней (user=${args.userId})`);
 
     return {
       type: updated.type,
@@ -179,19 +130,7 @@ export class AdminRetentionService {
     };
   }
 
-  /**
-   * Preview: сколько объектов попадает под удаление при выбранном TTL.
-   *
-   *   Условие: `createdAt < NOW - days * INTERVAL '1 day'`.
-   *   Для каждого типа — своё поле (см. KNOWN_RETENTIONS).
-   *
-   * `soft_delete_grace` — мульти-модельный (Recording.deletedAt, IdeaBlock,
-   * ...), точный COUNT здесь не делаем — возвращаем notCountable=true.
-   */
-  async preview(args: {
-    type: string;
-    days?: number;
-  }): Promise<RetentionPreviewDto> {
+  async preview(args: { type: string; days?: number }): Promise<RetentionPreviewDto> {
     const known = this.findKnown(args.type);
     if (!known) {
       throw new NotFoundException({
@@ -216,12 +155,6 @@ export class AdminRetentionService {
 
     switch (args.type) {
       case 'meeting_recording': {
-        // У Recording нет createdAt — используем expiresAt < NOW (записи,
-        // у которых уже истёк TTL по текущему значению). Это адекватнее, чем
-        // изобретать createdAt — UI получит «сколько объектов сейчас в зоне
-        // удаления при таком TTL» через прокси expiresAt < NOW.
-        // Для preview-расчёта при новом TTL это менее точно, но в рамках
-        // MVP — достаточная оценка.
         affectedCount = await this.prisma.recording.count({
           where: { expiresAt: { lt: cutoff }, deletedAt: null },
         });
@@ -290,17 +223,10 @@ export class AdminRetentionService {
     };
   }
 
-  // ─────────────────────────── private ───────────────────────────────────
-
   private findKnown(type: string) {
     return KNOWN_RETENTIONS.find((k) => k.type === type);
   }
 
-  /**
-   * Один раз за процесс — гарантируем, что все KNOWN_RETENTIONS есть в БД.
-   * Идемпотентный upsert (admin-edited записи не перезаписываем, проверяя
-   * `updatedBy`).
-   */
   private async ensureSeed(): Promise<void> {
     if (this.syncedOnce) return;
     this.syncedOnce = true;
@@ -312,7 +238,6 @@ export class AdminRetentionService {
         });
         if (existing) continue;
 
-        // ENV-fallback. Если ENV не задан — берём defaultDays.
         const envValue = this.readEnv(known.envKey);
         const days = envValue ?? known.defaultDays;
 
@@ -324,13 +249,9 @@ export class AdminRetentionService {
             updatedBy: null,
           },
         });
-        this.logger.log(
-          `admin-retention: ensureSeed создал ${known.type} = ${days} дней`,
-        );
+        this.logger.log(`admin-retention: ensureSeed создал ${known.type} = ${days} дней`);
       }
     } catch (err) {
-      // Мягко: при ошибке БД не блокируем list — следующий вызов попробует
-      // снова (сбрасываем флаг, чтобы не закэшировать неудачный sync).
       this.syncedOnce = false;
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -339,14 +260,7 @@ export class AdminRetentionService {
     }
   }
 
-  /**
-   * Безопасное чтение ENV через TypedConfigService. Возвращает число или
-   * undefined (если ключ невалиден).
-   */
   private readEnv(key: string): number | undefined {
-    // TypedConfigService не выводит универсальный get(string) наружу —
-    // используем raw retention-секцию для известных ключей. Для остальных
-    // — undefined (значит уйдём на defaultDays).
     const retention = this.cfg.retention;
     switch (key) {
       case 'DEFAULT_RETENTION_DAYS':

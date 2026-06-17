@@ -5,16 +5,6 @@ import type { MeetingActionItemsService } from '../meetings/meeting-action-items
 
 import { MeetingsPublicController } from './meetings.public.controller';
 
-/**
- * ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
- * контракт-тест публичного API `GET /api/public/v1/meetings/:id/tasks`.
- *
- * Гарантия безопасности: при флаге OFF (дефолт) форма ответа байт-в-байт
- * совпадает с прежней (полный объект Task). При флаге ON задача берётся из
- * Issue, но отдаётся в ТОМ ЖЕ наборе полей (внешний контракт не ломается).
- */
-
-// Полный набор полей, который внешний API отдавал из `prisma.task.findMany`.
 const TASK_CONTRACT_FIELDS = [
   'id',
   'tenantId',
@@ -120,7 +110,6 @@ describe('MeetingsPublicController GET /meetings/:id/tasks — контракт 
 
     expect(listForMeeting).toHaveBeenCalledTimes(1);
     expect(res.items).toHaveLength(1);
-    // Контракт: тот же набор полей, что и при OFF.
     for (const f of TASK_CONTRACT_FIELDS) {
       expect(Object.prototype.hasOwnProperty.call(res.items[0], f)).toBe(true);
     }
@@ -131,7 +120,6 @@ describe('MeetingsPublicController GET /meetings/:id/tasks — контракт 
       tenantId: 'tenant-1',
       title: 'Issue из встречи',
       assigneeUserId: 'u-issue',
-      // Поля, которых нет у Issue — нейтральные дефолты (контракт сохранён).
       sourceStartMs: null,
       sourceEndMs: null,
       createdManually: false,

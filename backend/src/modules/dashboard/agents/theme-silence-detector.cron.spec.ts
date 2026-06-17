@@ -2,16 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ThemeSilenceDetectorCron } from './theme-silence-detector.cron';
 
-/**
- * Редизайн кабинета Ф8.2 🔴 — unit-тесты ThemeSilenceDetectorCron.
- *
- * Mock Prisma/cfg/metrics, детерминизм времени через аргумент `now`. Покрываем:
- *   1. тема с lastSignalAt 4 недели назад → Insight создан (kind='risk');
- *   2. свежая тема (сигнал на этой неделе) → Insight НЕ создаётся;
- *   3. повтор: silence-Insight уже есть → update, без дубля (surfaced=0);
- *   4. авто-разрешение: тема ожила → старый silence-Insight → mitigated;
- *   5. severity по давности (medium/high/critical).
- */
 describe('ThemeSilenceDetectorCron', () => {
   const now = new Date('2026-06-13T10:00:00.000Z');
 
@@ -27,7 +17,6 @@ describe('ThemeSilenceDetectorCron', () => {
 
   function build(opts: {
     themes?: Array<{ id: string; name: string; lastSignalAt: Date | null }>;
-    /** Существующие активные silence-Insight'ы (causeCategory='ts:<id>'). */
     existingInsights?: Array<{ id: string; causeCategory: string; status: string }>;
     weeks?: number;
   }) {
@@ -42,14 +31,12 @@ describe('ThemeSilenceDetectorCron', () => {
         findMany: vi.fn().mockResolvedValue(opts.themes ?? []),
       },
       insight: {
-        // findFirst — поиск silence-Insight по точному causeCategory.
         findFirst: vi.fn(async (arg: { where: { causeCategory: string } }) => {
           const found = (opts.existingInsights ?? []).find(
             (i) => i.causeCategory === arg.where.causeCategory,
           );
           return found ? { id: found.id, status: found.status } : null;
         }),
-        // findMany — активные silence-Insight'ы (startsWith 'ts:') для авто-резолва.
         findMany: vi.fn(async () =>
           (opts.existingInsights ?? [])
             .filter((i) => i.status === 'active')
@@ -74,8 +61,7 @@ describe('ThemeSilenceDetectorCron', () => {
     return { cron, prisma, metrics, created, updated };
   }
 
-  const weeksAgo = (n: number): Date =>
-    new Date(now.getTime() - n * 7 * 24 * 3_600_000);
+  const weeksAgo = (n: number): Date => new Date(now.getTime() - n * 7 * 24 * 3_600_000);
 
   it('тема молчит 4 недели → Insight создан (kind=risk)', async () => {
     const { cron, metrics, created } = build({
@@ -93,8 +79,6 @@ describe('ThemeSilenceDetectorCron', () => {
   });
 
   it('свежая тема (сигнал на этой неделе) → Insight НЕ создаётся', async () => {
-    // findMany уже отфильтровал бы по cutoff в реальном Prisma; здесь подаём
-    // пустой список «молчащих», что эквивалентно «тема свежая».
     const { cron, created } = build({ themes: [] });
     const res = await cron.runOnce(now);
     expect(res.surfaced).toBe(0);
@@ -104,26 +88,20 @@ describe('ThemeSilenceDetectorCron', () => {
   it('повтор: silence-Insight уже есть → update, без дубля (surfaced=0)', async () => {
     const { cron, created, updated } = build({
       themes: [{ id: 'th1', name: 'Биллинг', lastSignalAt: weeksAgo(5) }],
-      existingInsights: [
-        { id: 'ins-old', causeCategory: 'ts:th1', status: 'active' },
-      ],
+      existingInsights: [{ id: 'ins-old', causeCategory: 'ts:th1', status: 'active' }],
     });
     const res = await cron.runOnce(now);
     expect(res.surfaced).toBe(0);
     expect(created).toHaveLength(0);
-    // Обновили существующий (lastObservedAt/severity/statement).
     const upd = updated.find((u) => u.where.id === 'ins-old');
     expect(upd).toBeDefined();
     expect(upd!.data.status).toBe('active');
   });
 
   it('авто-разрешение: тема ожила → старый silence-Insight → mitigated', async () => {
-    // Тема th1 больше НЕ молчит (нет в themes), но активный silence-Insight есть.
     const { cron, updated } = build({
-      themes: [], // ни одной молчащей темы
-      existingInsights: [
-        { id: 'ins-th1', causeCategory: 'ts:th1', status: 'active' },
-      ],
+      themes: [],
+      existingInsights: [{ id: 'ins-th1', causeCategory: 'ts:th1', status: 'active' }],
     });
     const res = await cron.runOnce(now);
     expect(res.resolved).toBe(1);

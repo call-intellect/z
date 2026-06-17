@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -18,12 +13,6 @@ import type {
 
 import { mergeSourceBlocks } from './responsibility-element.service';
 
-/**
- * SBA α-8 wave 4 — CRUD-сервис RequiredKnowledge.
- *
- * γ-1 SkillProfile сверяется с этим для gap-detection
- * (mandatory знания, которых у сотрудника нет — кандидаты на обучение).
- */
 @Injectable()
 export class RequiredKnowledgeService {
   constructor(
@@ -49,10 +38,7 @@ export class RequiredKnowledgeService {
     return rows.map((r) => this.toDto(r));
   }
 
-  async get(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<RequiredKnowledgeDto> {
+  async get(args: { tenantId: string; id: string }): Promise<RequiredKnowledgeDto> {
     const row = await this.prisma.requiredKnowledge.findUnique({
       where: { id: args.id },
     });
@@ -85,9 +71,7 @@ export class RequiredKnowledgeService {
         expectedLevel: args.body.expectedLevel ?? null,
         sourceBlockIds: args.body.sourceBlockIds ?? [],
         confidence:
-          args.body.confidence !== undefined
-            ? new Prisma.Decimal(args.body.confidence)
-            : null,
+          args.body.confidence !== undefined ? new Prisma.Decimal(args.body.confidence) : null,
       },
     });
     void this.audit.log({
@@ -151,11 +135,7 @@ export class RequiredKnowledgeService {
     return this.toDto(updated);
   }
 
-  async softDelete(args: {
-    tenantId: string;
-    userId: string;
-    id: string;
-  }): Promise<{ ok: true }> {
+  async softDelete(args: { tenantId: string; userId: string; id: string }): Promise<{ ok: true }> {
     const existing = await this.prisma.requiredKnowledge.findUnique({
       where: { id: args.id },
     });
@@ -204,16 +184,10 @@ export class RequiredKnowledgeService {
         where: { id: existing.id },
         data: {
           importance: args.importance,
-          description:
-            args.description !== undefined ? args.description : existing.description,
+          description: args.description !== undefined ? args.description : existing.description,
           expectedLevel:
-            args.expectedLevel !== undefined
-              ? args.expectedLevel
-              : existing.expectedLevel,
-          sourceBlockIds: mergeSourceBlocks(
-            existing.sourceBlockIds,
-            args.sourceBlockIds,
-          ),
+            args.expectedLevel !== undefined ? args.expectedLevel : existing.expectedLevel,
+          sourceBlockIds: mergeSourceBlocks(existing.sourceBlockIds, args.sourceBlockIds),
           confidence:
             args.confidence !== undefined && args.confidence !== null
               ? new Prisma.Decimal(args.confidence)
@@ -240,12 +214,7 @@ export class RequiredKnowledgeService {
     return this.toDto(created);
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },

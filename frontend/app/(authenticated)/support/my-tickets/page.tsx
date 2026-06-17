@@ -1,17 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { MyTicketsClient } from './MyTicketsClient';
+import { MyTicketsClient } from "./MyTicketsClient";
 
 export const metadata: Metadata = {
-  title: 'Мои обращения',
+  title: "Мои обращения",
 };
 
-/**
- * `/support/my-tickets` — список обращений пользователя в службу поддержки
- * (ТЗ 2026-06-09 support-desk Ф1).
- *
- * Серверная обёртка: заголовок + клиентский список (useMyTickets).
- */
 export default function MyTicketsPage() {
   return (
     <main className="mx-auto w-full max-w-3xl px-6 py-8">

@@ -1,74 +1,138 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useEffect } from 'react';
-
-// V2 — «Операционный» вариант: минт-акцент, Manrope, другая структура
+import Link from "next/link";
+import { useEffect } from "react";
 
 const PAIN_ITEMS = [
-  { n: '01', problem: 'Решили на планёрке — забыли через неделю', fix: 'Цель живёт в спринте, Кора возвращает к ней каждую неделю' },
-  { n: '02', problem: 'Задачи зависают, вы узнаёте последним', fix: 'Кора слышит, что застряло, — подсвечивает до того, как сорвётся срок' },
-  { n: '03', problem: 'Статусы зелёные — движения нет', fix: 'Кора видит правду из встреч и чатов, а не из галочек' },
-  { n: '04', problem: 'Клиенту пообещали — не сделали', fix: 'Обещание на встрече = задача на исполнителе' },
-  { n: '05', problem: 'Ключевой человек ушёл — знания с ним', fix: 'Цифровой двойник остаётся, новый входит в курс за минуту' },
-  { n: '06', problem: 'Тонете в операционке, нет времени на стратегию', fix: 'AI-директор берёт рутину — голова освобождается' },
+  {
+    n: "01",
+    problem: "Решили на планёрке — забыли через неделю",
+    fix: "Цель живёт в спринте, Кора возвращает к ней каждую неделю",
+  },
+  {
+    n: "02",
+    problem: "Задачи зависают, вы узнаёте последним",
+    fix: "Кора слышит, что застряло, — подсвечивает до того, как сорвётся срок",
+  },
+  {
+    n: "03",
+    problem: "Статусы зелёные — движения нет",
+    fix: "Кора видит правду из встреч и чатов, а не из галочек",
+  },
+  {
+    n: "04",
+    problem: "Клиенту пообещали — не сделали",
+    fix: "Обещание на встрече = задача на исполнителе",
+  },
+  {
+    n: "05",
+    problem: "Ключевой человек ушёл — знания с ним",
+    fix: "Цифровой двойник остаётся, новый входит в курс за минуту",
+  },
+  {
+    n: "06",
+    problem: "Тонете в операционке, нет времени на стратегию",
+    fix: "AI-директор берёт рутину — голова освобождается",
+  },
 ];
 
 const FEATURES = [
   {
-    tag: 'Встречи',
-    title: 'Видеовстречи с AI-отчётом',
-    text: 'Запись и расшифровка — автоматически. Отчёт под тип встречи готов через минуту после окончания. Гость по ссылке — без регистрации.',
-    detail: ['Один-на-один', 'Разбор сделки', 'Ретроспектива', 'Собеседование'],
+    tag: "Встречи",
+    title: "Видеовстречи с AI-отчётом",
+    text: "Запись и расшифровка — автоматически. Отчёт под тип встречи готов через минуту после окончания. Гость по ссылке — без регистрации.",
+    detail: ["Один-на-один", "Разбор сделки", "Ретроспектива", "Собеседование"],
   },
   {
-    tag: 'Задачи',
-    title: 'Задачи появляются сами',
-    text: 'Кора слышит «Иван, сделай к пятнице» — задача уже на Иване. То же из переписок. Трекер остаётся привычным, только умнее.',
-    detail: ['Доски и статусы', 'Сроки и исполнители', 'Спринты', 'Интеграция с чатами'],
+    tag: "Задачи",
+    title: "Задачи появляются сами",
+    text: "Кора слышит «Иван, сделай к пятнице» — задача уже на Иване. То же из переписок. Трекер остаётся привычным, только умнее.",
+    detail: [
+      "Доски и статусы",
+      "Сроки и исполнители",
+      "Спринты",
+      "Интеграция с чатами",
+    ],
   },
   {
-    tag: 'Спринты',
-    title: 'Недельный ритм с контролем цели',
-    text: 'Ставите цель — идёте спринтами. Кора из реальных встреч видит, движетесь ли вы к цели или только отчитываетесь, что движетесь.',
-    detail: ['Старт спринта', 'Мониторинг хода', 'Разбор результата', 'Перенос незакрытого'],
+    tag: "Спринты",
+    title: "Недельный ритм с контролем цели",
+    text: "Ставите цель — идёте спринтами. Кора из реальных встреч видит, движетесь ли вы к цели или только отчитываетесь, что движетесь.",
+    detail: [
+      "Старт спринта",
+      "Мониторинг хода",
+      "Разбор результата",
+      "Перенос незакрытого",
+    ],
   },
   {
-    tag: 'Память',
-    title: 'Всё, что наработали — остаётся',
-    text: 'Встречи, решения, чаты, отчёты — в одной памяти компании. Уходит человек — знания остаются. Цифровой двойник отвечает как сам человек.',
-    detail: ['Второй мозг компании', 'Цифровые двойники', 'Поиск с источником', 'Telegram-доступ'],
+    tag: "Память",
+    title: "Всё, что наработали — остаётся",
+    text: "Встречи, решения, чаты, отчёты — в одной памяти компании. Уходит человек — знания остаются. Цифровой двойник отвечает как сам человек.",
+    detail: [
+      "Второй мозг компании",
+      "Цифровые двойники",
+      "Поиск с источником",
+      "Telegram-доступ",
+    ],
   },
 ];
 
 export default function LandingV2() {
   useEffect(() => {
-    const id = 'v2-fonts';
+    const id = "v2-fonts";
     if (document.getElementById(id)) return;
-    const link = document.createElement('link');
+    const link = document.createElement("link");
     link.id = id;
-    link.rel = 'stylesheet';
-    link.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap';
+    link.rel = "stylesheet";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap";
     document.head.appendChild(link);
   }, []);
 
   useEffect(() => {
     const io = new IntersectionObserver(
-      (entries) => { entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }); },
-      { rootMargin: '0px 0px -6% 0px', threshold: 0.05 },
+      (entries) => {
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            e.target.classList.add("in");
+            io.unobserve(e.target);
+          }
+        });
+      },
+      { rootMargin: "0px 0px -6% 0px", threshold: 0.05 },
     );
-    document.querySelectorAll('.v2 .reveal').forEach((el) => io.observe(el));
+    document.querySelectorAll(".v2 .reveal").forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, []);
 
   return (
     <div className="v2">
       <V2Styles />
-      <div style={{ background: 'oklch(0.84 0.13 168)', color: '#061008', padding: '8px 24px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textAlign: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
-        ВАРИАНТ 2 — Минт / Manrope &nbsp;·&nbsp; <Link href="/preview/v1" style={{ color: '#061008', textDecoration: 'underline' }}>Посмотреть Вариант 1 →</Link>
+      <div
+        style={{
+          background: "oklch(0.84 0.13 168)",
+          color: "#061008",
+          padding: "8px 24px",
+          fontSize: "12px",
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          textAlign: "center",
+          position: "sticky",
+          top: 0,
+          zIndex: 100,
+        }}
+      >
+        ВАРИАНТ 2 — Минт / Manrope &nbsp;·&nbsp;{" "}
+        <Link
+          href="/preview/v1"
+          style={{ color: "#061008", textDecoration: "underline" }}
+        >
+          Посмотреть Вариант 1 →
+        </Link>
       </div>
 
-      {/* HEADER */}
+      {}
       <header className="v2-header">
         <div className="v2-wrap v2-header-inner">
           <Link href="/" className="v2-brand">
@@ -76,14 +140,18 @@ export default function LandingV2() {
             КОРА
           </Link>
           <nav className="v2-nav">
-            <Link href="/login" className="v2-btn v2-btn-ghost">Войти</Link>
-            <Link href="/signup" className="v2-btn v2-btn-primary">Получить доступ</Link>
+            <Link href="/login" className="v2-btn v2-btn-ghost">
+              Войти
+            </Link>
+            <Link href="/signup" className="v2-btn v2-btn-primary">
+              Получить доступ
+            </Link>
           </nav>
         </div>
       </header>
 
       <main>
-        {/* HERO */}
+        {}
         <section className="v2-hero">
           <div className="v2-wrap v2-hero-inner">
             <div className="v2-hero-text">
@@ -92,58 +160,95 @@ export default function LandingV2() {
                 AI-операционный директор
               </div>
               <h1>
-                Компании растут,<br />
-                когда добивают цели.<br />
-                <span className="v2-mint">Кора следит,</span><br />
+                Компании растут,
+                <br />
+                когда добивают цели.
+                <br />
+                <span className="v2-mint">Кора следит,</span>
+                <br />
                 чтобы точно добивались.
               </h1>
               <p className="v2-hero-sub">
-                Встречи, задачи, спринты и память компании — в одном месте.
-                Кора слышит всё и видит, где компания теряет движение.
+                Встречи, задачи, спринты и память компании — в одном месте. Кора
+                слышит всё и видит, где компания теряет движение.
               </p>
               <div className="v2-hero-ctas">
-                <Link href="/signup" className="v2-btn v2-btn-primary v2-btn-lg">Получить ранний доступ</Link>
-                <Link href="/login" className="v2-btn v2-btn-outline v2-btn-lg">Войти →</Link>
+                <Link
+                  href="/signup"
+                  className="v2-btn v2-btn-primary v2-btn-lg"
+                >
+                  Получить ранний доступ
+                </Link>
+                <Link href="/login" className="v2-btn v2-btn-outline v2-btn-lg">
+                  Войти →
+                </Link>
               </div>
             </div>
             <div className="v2-hero-panel">
               <div className="v2-status-panel">
                 <div className="v2-panel-label">Сейчас в работе</div>
                 <div className="v2-panel-rows">
-                  <div className="v2-panel-row"><span className="v2-dot v2-dot-green" />Спринт 14 — 6 задач активны</div>
-                  <div className="v2-panel-row"><span className="v2-dot v2-dot-amber" />Обещание клиенту — 2 дня до срока</div>
-                  <div className="v2-panel-row"><span className="v2-dot v2-dot-green" />Встреча записана — отчёт готов</div>
-                  <div className="v2-panel-row"><span className="v2-dot v2-dot-muted" />Двойник Марины отвечает на вопросы</div>
+                  <div className="v2-panel-row">
+                    <span className="v2-dot v2-dot-green" />
+                    Спринт 14 — 6 задач активны
+                  </div>
+                  <div className="v2-panel-row">
+                    <span className="v2-dot v2-dot-amber" />
+                    Обещание клиенту — 2 дня до срока
+                  </div>
+                  <div className="v2-panel-row">
+                    <span className="v2-dot v2-dot-green" />
+                    Встреча записана — отчёт готов
+                  </div>
+                  <div className="v2-panel-row">
+                    <span className="v2-dot v2-dot-muted" />
+                    Двойник Марины отвечает на вопросы
+                  </div>
                 </div>
                 <div className="v2-panel-foot">
-                  <span className="v2-live-dot" />Данные из реальных встреч · прямо сейчас
+                  <span className="v2-live-dot" />
+                  Данные из реальных встреч · прямо сейчас
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SOURCES */}
+        {}
         <div className="v2-sources-strip reveal">
           <div className="v2-wrap">
             <span className="v2-sources-label">Откуда Кора видит всё</span>
             <div className="v2-sources-pills">
-              {['Видеовстречи','Планёрки','Вечерние отчёты','Рабочие чаты','Задачи в трекере','Спринты'].map((s) => (
-                <span className="v2-pill" key={s}>{s}</span>
+              {[
+                "Видеовстречи",
+                "Планёрки",
+                "Вечерние отчёты",
+                "Рабочие чаты",
+                "Задачи в трекере",
+                "Спринты",
+              ].map((s) => (
+                <span className="v2-pill" key={s}>
+                  {s}
+                </span>
               ))}
             </div>
           </div>
         </div>
 
-        {/* FEATURES */}
+        {}
         <section className="v2-features">
           <div className="v2-wrap">
             <div className="v2-section-eyebrow reveal">Что внутри</div>
-            <h2 className="v2-section-title reveal">Двенадцать инструментов — один <span className="v2-mint">растущий актив</span>.</h2>
+            <h2 className="v2-section-title reveal">
+              Двенадцать инструментов — один{" "}
+              <span className="v2-mint">растущий актив</span>.
+            </h2>
             <div className="v2-feature-list">
               {FEATURES.map((f, i) => (
                 <div className="v2-feature-row reveal" key={f.tag}>
-                  <div className="v2-feature-num">{String(i + 1).padStart(2, '0')}</div>
+                  <div className="v2-feature-num">
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
                   <div className="v2-feature-main">
                     <div className="v2-feature-tag">{f.tag}</div>
                     <h3 className="v2-feature-title">{f.title}</h3>
@@ -152,7 +257,8 @@ export default function LandingV2() {
                   <div className="v2-feature-details">
                     {f.detail.map((d) => (
                       <div className="v2-feature-detail-item" key={d}>
-                        <span className="v2-check">✓</span>{d}
+                        <span className="v2-check">✓</span>
+                        {d}
                       </div>
                     ))}
                   </div>
@@ -162,12 +268,16 @@ export default function LandingV2() {
           </div>
         </section>
 
-        {/* PAIN */}
+        {}
         <section className="v2-pain">
           <div className="v2-wrap">
             <div className="v2-pain-head">
               <div className="v2-section-eyebrow reveal">Что меняет Кора</div>
-              <h2 className="v2-section-title reveal">Цели ставят все.<br />Добивают — <span className="v2-mint">единицы</span>.</h2>
+              <h2 className="v2-section-title reveal">
+                Цели ставят все.
+                <br />
+                Добивают — <span className="v2-mint">единицы</span>.
+              </h2>
             </div>
             <div className="v2-pain-grid reveal">
               {PAIN_ITEMS.map(({ n, problem, fix }) => (
@@ -182,20 +292,38 @@ export default function LandingV2() {
           </div>
         </section>
 
-        {/* HOW IT WORKS */}
+        {}
         <section className="v2-how">
           <div className="v2-wrap">
             <div className="v2-section-eyebrow reveal">Как это работает</div>
-            <h2 className="v2-section-title reveal">Один недельный цикл,<br />который двигает компанию.</h2>
+            <h2 className="v2-section-title reveal">
+              Один недельный цикл,
+              <br />
+              который двигает компанию.
+            </h2>
             <div className="v2-steps reveal">
               {[
-                ['Ставите цель','Собираете спринт: что делаем на этой неделе и ради чего. Кора фиксирует.'],
-                ['Команда работает','В привычном трекере. Задачи из встреч и чатов появляются сами.'],
-                ['Кора видит правду','Слушает встречи, читает чаты — видит, реально ли вы идёте к цели.'],
-                ['Разбор спринта','Что добили, что застряло, цель на следующий. Всё в память компании.'],
+                [
+                  "Ставите цель",
+                  "Собираете спринт: что делаем на этой неделе и ради чего. Кора фиксирует.",
+                ],
+                [
+                  "Команда работает",
+                  "В привычном трекере. Задачи из встреч и чатов появляются сами.",
+                ],
+                [
+                  "Кора видит правду",
+                  "Слушает встречи, читает чаты — видит, реально ли вы идёте к цели.",
+                ],
+                [
+                  "Разбор спринта",
+                  "Что добили, что застряло, цель на следующий. Всё в память компании.",
+                ],
               ].map(([title, text], i) => (
                 <div className="v2-step" key={title}>
-                  <div className="v2-step-n">{String(i + 1).padStart(2, '0')}</div>
+                  <div className="v2-step-n">
+                    {String(i + 1).padStart(2, "0")}
+                  </div>
                   <div className="v2-step-line" />
                   <h4 className="v2-step-title">{title}</h4>
                   <p className="v2-step-text">{text}</p>
@@ -205,19 +333,34 @@ export default function LandingV2() {
           </div>
         </section>
 
-        {/* MEMORY BLOCK */}
+        {}
         <section className="v2-memory">
           <div className="v2-wrap">
             <div className="v2-memory-inner reveal">
               <div className="v2-memory-text">
                 <div className="v2-section-eyebrow">Память компании</div>
-                <h2 className="v2-memory-title">Уходит человек — память остаётся.</h2>
-                <p className="v2-memory-sub">Встречи, решения, переписки — всё копится в одном месте. С каждым днём память компании знает о вас больше. Это актив, который только растёт.</p>
+                <h2 className="v2-memory-title">
+                  Уходит человек — память остаётся.
+                </h2>
+                <p className="v2-memory-sub">
+                  Встречи, решения, переписки — всё копится в одном месте. С
+                  каждым днём память компании знает о вас больше. Это актив,
+                  который только растёт.
+                </p>
                 <div className="v2-memory-points">
                   {[
-                    ['Знания не уходят с людьми','Увольнение — не катастрофа. Новый видит историю предшественника.'],
-                    ['Цифровые двойники','Спросить эксперта в отпуске или уволенного — ответит так же, как он.'],
-                    ['Поиск с источником','«Что решили по клиенту в марте?» — ответ со ссылкой на встречу.'],
+                    [
+                      "Знания не уходят с людьми",
+                      "Увольнение — не катастрофа. Новый видит историю предшественника.",
+                    ],
+                    [
+                      "Цифровые двойники",
+                      "Спросить эксперта в отпуске или уволенного — ответит так же, как он.",
+                    ],
+                    [
+                      "Поиск с источником",
+                      "«Что решили по клиенту в марте?» — ответ со ссылкой на встречу.",
+                    ],
                   ].map(([title, text]) => (
                     <div className="v2-memory-point" key={title}>
                       <div className="v2-memory-point-title">{title}</div>
@@ -230,50 +373,82 @@ export default function LandingV2() {
                 <div className="v2-memory-graph">
                   <div className="v2-graph-node v2-graph-node-center">
                     <span className="v2-graph-dot" />
-                    <span className="v2-graph-label">Память<br />компании</span>
+                    <span className="v2-graph-label">
+                      Память
+                      <br />
+                      компании
+                    </span>
                   </div>
-                  {['Встречи','Задачи','Чаты','Отчёты','Двойники'].map((label, i) => (
-                    <div className={`v2-graph-satellite v2-sat-${i}`} key={label}>
-                      <span className="v2-graph-sat-dot" />
-                      <span className="v2-graph-sat-label">{label}</span>
-                    </div>
-                  ))}
+                  {["Встречи", "Задачи", "Чаты", "Отчёты", "Двойники"].map(
+                    (label, i) => (
+                      <div
+                        className={`v2-graph-satellite v2-sat-${i}`}
+                        key={label}
+                      >
+                        <span className="v2-graph-sat-dot" />
+                        <span className="v2-graph-sat-label">{label}</span>
+                      </div>
+                    ),
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* TESTIMONIALS */}
+        {}
         <section className="v2-reviews">
           <div className="v2-wrap">
             <div className="v2-section-eyebrow reveal">Отзывы</div>
-            <h2 className="v2-section-title reveal">С этого начинался рост<br />у тех, кто уже внутри.</h2>
+            <h2 className="v2-section-title reveal">
+              С этого начинался рост
+              <br />у тех, кто уже внутри.
+            </h2>
             <div className="v2-reviews-grid reveal">
               <div className="v2-review v2-review-featured">
                 <div className="v2-review-quote">&ldquo;</div>
-                <blockquote>Раньше цели на квартал к середине просто растворялись. Теперь каждую неделю — спринт, и на разборе Кора показывает не галочки в трекере, а что реально обсуждали на встречах. За квартал добили два проекта, которые висели с прошлого года.</blockquote>
-                <div className="v2-review-metric">Выручка <strong>+23%</strong> за квартал</div>
+                <blockquote>
+                  Раньше цели на квартал к середине просто растворялись. Теперь
+                  каждую неделю — спринт, и на разборе Кора показывает не
+                  галочки в трекере, а что реально обсуждали на встречах. За
+                  квартал добили два проекта, которые висели с прошлого года.
+                </blockquote>
+                <div className="v2-review-metric">
+                  Выручка <strong>+23%</strong> за квартал
+                </div>
                 <div className="v2-review-author">
                   <strong>Артём Кравцов</strong>
-                  <span>основатель digital-агентства · 18 человек · Казань</span>
+                  <span>
+                    основатель digital-агентства · 18 человек · Казань
+                  </span>
                 </div>
               </div>
               <div className="v2-review-stack">
                 <div className="v2-review">
                   <div className="v2-review-quote">&ldquo;</div>
-                  <blockquote>Уволился логист, который шесть лет держал всех поставщиков в голове. Новый человек спросил у его цифрового двойника — онбординг вместо полугода занял две недели.</blockquote>
+                  <blockquote>
+                    Уволился логист, который шесть лет держал всех поставщиков в
+                    голове. Новый человек спросил у его цифрового двойника —
+                    онбординг вместо полугода занял две недели.
+                  </blockquote>
                   <div className="v2-review-author">
                     <strong>Марина Соколова</strong>
-                    <span>операционный директор · 40 человек · Екатеринбург</span>
+                    <span>
+                      операционный директор · 40 человек · Екатеринбург
+                    </span>
                   </div>
                 </div>
                 <div className="v2-review">
                   <div className="v2-review-quote">&ldquo;</div>
-                  <blockquote>Кора слышит «сделаем к пятнице» прямо на созвоне и ставит задачу сама. Клиенты больше не ловят нас на «вы же обещали».</blockquote>
+                  <blockquote>
+                    Кора слышит «сделаем к пятнице» прямо на созвоне и ставит
+                    задачу сама. Клиенты больше не ловят нас на «вы же обещали».
+                  </blockquote>
                   <div className="v2-review-author">
                     <strong>Дмитрий Веров</strong>
-                    <span>владелец сети сервисных центров · 25 человек · Новосибирск</span>
+                    <span>
+                      владелец сети сервисных центров · 25 человек · Новосибирск
+                    </span>
                   </div>
                 </div>
               </div>
@@ -281,25 +456,40 @@ export default function LandingV2() {
           </div>
         </section>
 
-        {/* PRIVACY */}
+        {}
         <div className="v2-privacy reveal">
           <div className="v2-wrap v2-privacy-inner">
             <div className="v2-privacy-icon">§</div>
             <div>
               <h3 className="v2-privacy-title">Ваши данные — только ваши.</h3>
-              <p className="v2-privacy-text">Встречи и отчёты хранятся в вашем контуре. Доступ по ролям. Ничего не уходит на сторону и не используется для обучения чужих моделей.</p>
+              <p className="v2-privacy-text">
+                Встречи и отчёты хранятся в вашем контуре. Доступ по ролям.
+                Ничего не уходит на сторону и не используется для обучения чужих
+                моделей.
+              </p>
             </div>
           </div>
         </div>
 
-        {/* FINAL CTA */}
+        {}
         <section className="v2-cta" id="cta">
           <div className="v2-wrap v2-cta-inner">
-            <h2 className="v2-cta-title reveal">Поставьте первую цель<br />уже на <span className="v2-mint">этой неделе</span>.</h2>
-            <p className="v2-cta-sub reveal">Память, которая помнит за всех, и спринты, которые ведут к результату.</p>
+            <h2 className="v2-cta-title reveal">
+              Поставьте первую цель
+              <br />
+              уже на <span className="v2-mint">этой неделе</span>.
+            </h2>
+            <p className="v2-cta-sub reveal">
+              Память, которая помнит за всех, и спринты, которые ведут к
+              результату.
+            </p>
             <div className="v2-cta-btns reveal">
-              <Link href="/signup" className="v2-btn v2-btn-primary v2-btn-xl">Получить ранний доступ</Link>
-              <Link href="/login" className="v2-btn v2-btn-ghost">Войти →</Link>
+              <Link href="/signup" className="v2-btn v2-btn-primary v2-btn-xl">
+                Получить ранний доступ
+              </Link>
+              <Link href="/login" className="v2-btn v2-btn-ghost">
+                Войти →
+              </Link>
             </div>
           </div>
         </section>

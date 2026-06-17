@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { Save } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminGlobalChannelsApi } from '@/api/admin-global-channels.api';
+import { ApiError } from "@/api/api-error";
+import { adminGlobalChannelsApi } from "@/api/admin-global-channels.api";
 import type {
   CreateGlobalChannelRequest,
   GlobalChannelItemDomain,
   UpdateGlobalChannelRequest,
-} from '@/domain/admin-global-channel';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-global-channel";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -19,17 +19,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 type Props = {
   item: GlobalChannelItemDomain | null;
@@ -38,17 +38,6 @@ type Props = {
   onSaved: () => void;
 };
 
-/**
- * Диалог создания / редактирования глобального Channel.
- *
- * Secrets-handling: `secret` — отдельное поле типа `password`. При создании
- * отправляется всегда (если непусто). При редактировании отправляется
- * ТОЛЬКО при непустом значении — если поле осталось пустым, бэкенд НЕ
- * перетирает существующий секрет (мы просто не включаем поле в PATCH-body).
- *
- * Конфиг без секретов редактируется как JSON-строка. При сохранении
- * парсим — если невалидный JSON, не отправляем и показываем ошибку.
- */
 export function ChannelEditDialog({
   item,
   open,
@@ -57,31 +46,28 @@ export function ChannelEditDialog({
 }: Props) {
   const isEdit = item !== null;
 
-  const [kind, setKind] = useState<string>('telegram_bot');
-  const [status, setStatus] = useState<string>('active');
-  const [direction, setDirection] = useState<string>('inbound_outbound');
-  const [configRaw, setConfigRaw] = useState<string>('{}');
-  const [secret, setSecret] = useState<string>('');
+  const [kind, setKind] = useState<string>("telegram_bot");
+  const [status, setStatus] = useState<string>("active");
+  const [direction, setDirection] = useState<string>("inbound_outbound");
+  const [configRaw, setConfigRaw] = useState<string>("{}");
+  const [secret, setSecret] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setSecret('');
+    setSecret("");
     if (item) {
       setKind(item.kind);
       setStatus(item.status);
       setDirection(item.direction);
-      // В превью у нас секреты замаскированы — для редактирования это
-      // ок, оператор будет редактировать конфиг без секретов и при
-      // необходимости обновит secret отдельным полем.
       setConfigRaw(JSON.stringify(item.config, null, 2));
     } else {
-      setKind('telegram_bot');
-      setStatus('active');
-      setDirection('inbound_outbound');
-      setConfigRaw('{}');
+      setKind("telegram_bot");
+      setStatus("active");
+      setDirection("inbound_outbound");
+      setConfigRaw("{}");
     }
   }, [open, item]);
 
@@ -94,12 +80,8 @@ export function ChannelEditDialog({
       const raw = configRaw.trim();
       if (raw.length > 0) {
         const parsed = JSON.parse(raw) as unknown;
-        if (
-          !parsed ||
-          typeof parsed !== 'object' ||
-          Array.isArray(parsed)
-        ) {
-          throw new Error('Config должен быть JSON-объектом, не массивом.');
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Config должен быть JSON-объектом, не массивом.");
         }
         configParsed = parsed as Record<string, unknown>;
       }
@@ -107,7 +89,7 @@ export function ChannelEditDialog({
       const msg =
         e instanceof Error
           ? `Некорректный JSON: ${e.message}`
-          : 'Некорректный JSON';
+          : "Некорректный JSON";
       setError(msg);
       return;
     }
@@ -123,17 +105,16 @@ export function ChannelEditDialog({
         };
         if (secret.trim().length > 0) body.secret = secret;
         await adminGlobalChannelsApi.create(body);
-        toast.success('Канал создан');
+        toast.success("Канал создан");
       } else {
         const body: UpdateGlobalChannelRequest = {
           status,
           direction,
           config: configParsed,
         };
-        // Секрет включаем в PATCH только если поле непусто — иначе НЕ трогаем.
         if (secret.trim().length > 0) body.secret = secret;
         await adminGlobalChannelsApi.update(item!.id, body);
-        toast.success('Канал обновлён');
+        toast.success("Канал обновлён");
       }
       onSaved();
       onOpenChange(false);
@@ -143,7 +124,7 @@ export function ChannelEditDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -162,7 +143,7 @@ export function ChannelEditDialog({
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? 'Редактировать канал' : 'Создать глобальный канал'}
+            {isEdit ? "Редактировать канал" : "Создать глобальный канал"}
           </DialogTitle>
           <DialogDescription>
             На один kind допустима ровно одна глобальная строка. Секреты
@@ -233,14 +214,13 @@ export function ChannelEditDialog({
               onChange={(e) => setSecret(e.target.value)}
               placeholder={
                 isEdit
-                  ? 'Оставьте пустым, чтобы НЕ обновлять'
-                  : 'botToken или пароль'
+                  ? "Оставьте пустым, чтобы НЕ обновлять"
+                  : "botToken или пароль"
               }
             />
             <p className="text-[11px] text-fg-tertiary">
-              В режиме редактирования отправляется только при непустом
-              значении. Существующий секрет не виден — бэкенд не возвращает
-              его в API.
+              В режиме редактирования отправляется только при непустом значении.
+              Существующий секрет не виден — бэкенд не возвращает его в API.
             </p>
           </div>
 
@@ -257,8 +237,8 @@ export function ChannelEditDialog({
             <p className="text-[11px] text-fg-tertiary">
               Ключи `token` / `secret` / `password` маскируются в превью
               автоматически — но в редакторе они приходят со звёздочками. Не
-              храните чувствительные значения в config — для них есть
-              отдельное поле «Секрет».
+              храните чувствительные значения в config — для них есть отдельное
+              поле «Секрет».
             </p>
           </div>
 
@@ -289,7 +269,7 @@ export function ChannelEditDialog({
             onClick={() => void handleSave()}
           >
             <Save size={14} />
-            {saving ? 'Сохраняем…' : isEdit ? 'Сохранить' : 'Создать'}
+            {saving ? "Сохраняем…" : isEdit ? "Сохранить" : "Создать"}
           </Button>
         </DialogFooter>
       </DialogContent>

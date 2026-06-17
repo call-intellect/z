@@ -1,34 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
   ExternalLink,
   Loader2,
   RefreshCw,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { billingApi } from '@/api/billing.api';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { billingApi } from "@/api/billing.api";
+import { Button } from "@/ui/shadcn/button";
 
-/**
- * `/admin/integrations/tochka` — подключение Точка Банка к Z (super_admin).
- *
- * Сценарий:
- *   1. Backend стартует с TOCHKA_MODE=production. Если токенов нет в
- *      BillingProviderConfig — ensureOAuthReady пишет authorize URL в логи.
- *   2. Админ открывает эту страницу → нажимает «Получить URL» →
- *      backend генерирует state, делает client_credentials → consent →
- *      возвращает authorize URL.
- *   3. Админ открывает URL в новом таб'е → авторизуется в кабинете Точки →
- *      Точка редиректит на /internal/billing/tochka/oauth/callback с code+state.
- *   4. Backend обменивает code на access+refresh, сохраняет в BillingProviderConfig.
- *   5. Refresh обновляется автоматически за 5 мин до expiry.
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.3 + §11.4.
- */
 export function TochkaIntegrationClient() {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -44,7 +28,7 @@ export function TochkaIntegrationClient() {
       const res = await billingApi.adminGetTochkaAuthorizeUrl();
       setUrl(res.url);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка получения URL');
+      setError(e instanceof ApiError ? e.message : "Ошибка получения URL");
     } finally {
       setLoading(false);
     }
@@ -57,10 +41,10 @@ export function TochkaIntegrationClient() {
     try {
       await billingApi.adminEnsureTochkaOAuthReady();
       setSuccess(
-        'ensureOAuthReady выполнен. Если токенов не было — authorize URL появится в логах backend.',
+        "ensureOAuthReady выполнен. Если токенов не было — authorize URL появится в логах backend.",
       );
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка');
+      setError(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setEnsureLoading(false);
     }
@@ -69,10 +53,12 @@ export function TochkaIntegrationClient() {
   return (
     <div className="p-6 max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Точка Банк — OAuth подключение</h1>
+        <h1 className="text-2xl font-semibold">
+          Точка Банк — OAuth подключение
+        </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Управление авторизацией Z в кабинете Точки. Токены хранятся в
-          таблице BillingProviderConfig и автоматически рефрешатся.
+          Управление авторизацией Z в кабинете Точки. Токены хранятся в таблице
+          BillingProviderConfig и автоматически рефрешатся.
         </p>
       </div>
 
@@ -81,23 +67,25 @@ export function TochkaIntegrationClient() {
           <h2 className="text-lg font-medium">Шаги подключения</h2>
           <ol className="text-sm space-y-2 mt-3 list-decimal list-inside text-muted-foreground">
             <li>
-              Убедитесь что в <code>.env</code> заданы:{' '}
-              <code>BILLING_PROVIDER=tochka</code>,{' '}
-              <code>FEATURE_BILLING_TOCHKA=true</code>,{' '}
-              <code>TOCHKA_MODE=production</code>,{' '}
-              <code>TOCHKA_CLIENT_ID/SECRET</code>, <code>TOCHKA_REDIRECT_URI</code>.
+              Убедитесь что в <code>.env</code> заданы:{" "}
+              <code>BILLING_PROVIDER=tochka</code>,{" "}
+              <code>FEATURE_BILLING_TOCHKA=true</code>,{" "}
+              <code>TOCHKA_MODE=production</code>,{" "}
+              <code>TOCHKA_CLIENT_ID/SECRET</code>,{" "}
+              <code>TOCHKA_REDIRECT_URI</code>.
             </li>
             <li>
-              Перезапустите backend: <code>docker compose up -d --force-recreate backend</code>
+              Перезапустите backend:{" "}
+              <code>docker compose up -d --force-recreate backend</code>
             </li>
             <li>Нажмите «Получить URL» ниже → откройте URL в браузере.</li>
             <li>
-              Авторизуйтесь в кабинете Точки → Точка вернёт callback на{' '}
+              Авторизуйтесь в кабинете Точки → Точка вернёт callback на{" "}
               <code>/api/v1/internal/billing/tochka/oauth/callback</code> →
               увидите страницу «OAuth подключен».
             </li>
             <li>
-              После этого webhook автоматически зарегистрируется (если{' '}
+              После этого webhook автоматически зарегистрируется (если{" "}
               <code>TOCHKA_WEBHOOK_AUTO_REGISTER=true</code>).
             </li>
           </ol>
@@ -166,10 +154,10 @@ export function TochkaIntegrationClient() {
       </div>
 
       <div className="rounded-lg border bg-card p-6 text-sm text-muted-foreground space-y-2">
-        <h2 className="text-lg font-medium text-foreground">Проверка статуса</h2>
-        <p>
-          Чтобы проверить наличие токенов в БД — выполните в shell прода:
-        </p>
+        <h2 className="text-lg font-medium text-foreground">
+          Проверка статуса
+        </h2>
+        <p>Чтобы проверить наличие токенов в БД — выполните в shell прода:</p>
         <pre className="rounded-md bg-muted p-3 text-xs font-mono overflow-x-auto">
           {`docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \\
   -c "SELECT key FROM billing_provider_config;"`}

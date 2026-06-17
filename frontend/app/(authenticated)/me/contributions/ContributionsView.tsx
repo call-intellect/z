@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { gamificationApi } from '@/api/gamification.api';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { gamificationApi } from "@/api/gamification.api";
 import {
   contributionFromApi,
   formatRuDate,
@@ -14,29 +14,15 @@ import {
   type Contribution,
   type RecognitionEntry,
   type UserBadgeDomain,
-} from '@/domain/contribution';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/domain/contribution";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
-/**
- * T1 (2026-05-23) — общий клиентский компонент для `/me/contributions`
- * и `/persons/[id]/contributions`.
- *
- * Если `personId` передан — режим read-only (профиль сотрудника).
- * Если нет — личный профиль, дополнительно показываем opt-out тоггл.
- *
- * Принципы UI (см. ТЗ §«Что НЕ делаем»):
- *   - НЕ показываем рейтинги.
- *   - НЕ показываем штрафы за прерывание стрика.
- *   - НЕ называем людей «лучшими/худшими».
- */
 export function ContributionsView({
   personId,
   title,
 }: {
-  /** Если undefined — режим `/me`. */
   personId?: string;
-  /** Заголовок страницы. */
   title: string;
 }) {
   const isReadOnly = Boolean(personId);
@@ -46,7 +32,6 @@ export function ContributionsView({
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
 
-  // Opt-out state (только для /me).
   const [publicVisible, setPublicVisible] = useState<boolean | null>(null);
   const [optOutSaving, setOptOutSaving] = useState(false);
   const [optOutMsg, setOptOutMsg] = useState<string | null>(null);
@@ -71,7 +56,7 @@ export function ContributionsView({
           setError(humanizeApiError(err));
           setErrorCode(null);
         } else {
-          setError('Не удалось загрузить профиль вклада');
+          setError("Не удалось загрузить профиль вклада");
           setErrorCode(null);
         }
       })
@@ -82,7 +67,6 @@ export function ContributionsView({
     load();
   }, [load]);
 
-  // Загружаем opt-out только для /me.
   useEffect(() => {
     if (isReadOnly) return;
     let cancelled = false;
@@ -91,9 +75,7 @@ export function ContributionsView({
       .then((dto) => {
         if (!cancelled) setPublicVisible(dto.publicVisible);
       })
-      .catch(() => {
-        // не блокируем основную загрузку — просто не показываем тоггл.
-      });
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -109,12 +91,12 @@ export function ContributionsView({
       setPublicVisible(res.publicVisible);
       setOptOutMsg(
         res.publicVisible
-          ? 'Ваши благодарности видны команде'
-          : 'Ваши благодарности скрыты от команды',
+          ? "Ваши благодарности видны команде"
+          : "Ваши благодарности скрыты от команды",
       );
     } catch (err) {
       setOptOutMsg(
-        err instanceof Error ? err.message : 'Не удалось сохранить настройку',
+        err instanceof Error ? err.message : "Не удалось сохранить настройку",
       );
     } finally {
       setOptOutSaving(false);
@@ -135,7 +117,7 @@ export function ContributionsView({
       <div className="p-6">
         <h1 className="text-2xl font-semibold">{title}</h1>
         <p className="mt-4 text-sm text-danger">{error}</p>
-        {errorCode === 'forbidden' ? (
+        {errorCode === "forbidden" ? (
           <p className="mt-2 text-sm text-fg-secondary">
             У вас нет прав на просмотр профиля этого сотрудника. Доступно только
             руководителям организации.
@@ -175,7 +157,7 @@ export function ContributionsView({
         <SnapshotMetric
           label="Идей доехало до релиза"
           value={snapshot.ideas.shipped}
-          hint={pluralRu(snapshot.ideas.shipped, 'идея', 'идеи', 'идей')}
+          hint={pluralRu(snapshot.ideas.shipped, "идея", "идеи", "идей")}
         />
         <SnapshotMetric
           label="Спасибо за неделю"
@@ -189,7 +171,10 @@ export function ContributionsView({
         />
       </section>
 
-      <IdeasSection inDev={snapshot.ideas.inDevelopment} shipped={snapshot.ideas.shipped} />
+      <IdeasSection
+        inDev={snapshot.ideas.inDevelopment}
+        shipped={snapshot.ideas.shipped}
+      />
 
       <ThanksSection
         week={snapshot.thanksReceivedThisWeek}
@@ -212,9 +197,9 @@ export function ContributionsView({
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-fg-secondary">
-              Если выключить — ваши благодарности и счётчики не попадут в Спотлайт
-              команды и дашборды коллег. Свой профиль вы продолжите видеть как
-              обычно.
+              Если выключить — ваши благодарности и счётчики не попадут в
+              Спотлайт команды и дашборды коллег. Свой профиль вы продолжите
+              видеть как обычно.
             </p>
             <div className="flex items-center gap-3">
               <button
@@ -224,10 +209,10 @@ export function ContributionsView({
                 className="rounded-md border border-border bg-bg-card px-4 py-2 text-sm font-medium text-fg-primary hover:bg-bg-overlay disabled:opacity-50"
               >
                 {publicVisible === null
-                  ? 'Загрузка…'
+                  ? "Загрузка…"
                   : publicVisible
-                    ? 'Скрыть мои благодарности от команды'
-                    : 'Показывать мои благодарности команде'}
+                    ? "Скрыть мои благодарности от команды"
+                    : "Показывать мои благодарности команде"}
               </button>
               {optOutMsg ? (
                 <span className="text-xs text-fg-secondary">{optOutMsg}</span>
@@ -239,8 +224,6 @@ export function ContributionsView({
     </div>
   );
 }
-
-// ─────────────────────────── Subsections ────────────────────────────────────
 
 function SnapshotMetric({
   label,
@@ -277,12 +260,10 @@ function IdeasSection({ inDev, shipped }: { inDev: number; shipped: number }) {
           </p>
         ) : (
           <p className="text-sm text-fg-primary">
-            Сейчас в разработке —{' '}
-            <strong>{ideasInDevLabel(inDev)}</strong>. Доехало до релиза —{' '}
-            <strong>
-              {pluralRu(shipped, 'идея', 'идеи', 'идей')}
-            </strong>
-            . Спасибо за инициативу.
+            Сейчас в разработке — <strong>{ideasInDevLabel(inDev)}</strong>.
+            Доехало до релиза —{" "}
+            <strong>{pluralRu(shipped, "идея", "идеи", "идей")}</strong>.
+            Спасибо за инициативу.
           </p>
         )}
       </CardContent>
@@ -298,7 +279,7 @@ function ThanksSection({ week, total }: { week: number; total: number }) {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-fg-primary">
-          За неделю — <strong>{thanksLabel(week)}</strong>. За всё время —{' '}
+          За неделю — <strong>{thanksLabel(week)}</strong>. За всё время —{" "}
           <strong>{thanksLabel(total)}</strong>.
         </p>
         <p className="mt-2 text-xs text-fg-secondary">
@@ -323,7 +304,7 @@ function StreakSection({
       </CardHeader>
       <CardContent>
         <p className="text-sm text-fg-primary">
-          Сейчас — <strong>{streakLabel(current)}</strong>. Лучший результат —{' '}
+          Сейчас — <strong>{streakLabel(current)}</strong>. Лучший результат —{" "}
           <strong>{streakLabel(longest)}</strong>.
         </p>
         <p className="mt-2 text-xs text-fg-secondary">
@@ -384,7 +365,9 @@ function BadgesSection({ badges }: { badges: UserBadgeDomain[] }) {
               className="flex max-w-xs flex-col gap-1 rounded-md border border-border-subtle bg-bg-overlay p-3"
               title={b.description}
             >
-              <span className="text-sm font-medium text-fg-primary">{b.name}</span>
+              <span className="text-sm font-medium text-fg-primary">
+                {b.name}
+              </span>
               <span className="text-xs text-fg-secondary">{b.description}</span>
               <span className="text-[10px] text-fg-tertiary">
                 Получено {formatRuDate(b.awardedAt)}

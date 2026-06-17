@@ -1,33 +1,23 @@
-'use client';
+"use client";
 
-/**
- * `/admin/platform/security` — параметры безопасности. Фаза 8 редизайна.
- *
- * Поля: argon_memory_kb, argon_iterations, argon_parallelism,
- * session_ttl_seconds, deep_link_ttl_seconds. Каждое поле — `AdminSetting`
- * с severity='high' (reason ≥ 10 символов).
- *
- * Внизу — DangerAction «Ротировать IP salt» (необратимо).
- */
+import { useState } from "react";
+import { History as HistoryIcon, Loader2, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 
-import { useState } from 'react';
-import { History as HistoryIcon, Loader2, ShieldCheck } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminSecurityApi } from '@/api/admin-security.api';
-import { ApiError } from '@/api/api-error';
+import { adminSecurityApi } from "@/api/admin-security.api";
+import { ApiError } from "@/api/api-error";
+import { SECURITY_SETTINGS, type SecuritySpec } from "@/domain/admin-security";
+import { useAdminSettingEditor } from "@/hooks/useAdminSettingEditor";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
 import {
-  SECURITY_SETTINGS,
-  type SecuritySpec,
-} from '@/domain/admin-security';
-import { useAdminSettingEditor } from '@/hooks/useAdminSettingEditor';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminDangerZone, DangerAction } from '@/ui/components/admin/AdminDangerZone';
-import { AdminSettingField } from '@/ui/components/admin/AdminSettingField';
-import { AdminSettingHistoryDrawer } from '@/ui/components/admin/AdminSettingHistoryDrawer';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+  AdminDangerZone,
+  DangerAction,
+} from "@/ui/components/admin/AdminDangerZone";
+import { AdminSettingField } from "@/ui/components/admin/AdminSettingField";
+import { AdminSettingHistoryDrawer } from "@/ui/components/admin/AdminSettingHistoryDrawer";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 const MIN_REASON_LENGTH = 10;
 
@@ -36,15 +26,15 @@ export function SecurityClient() {
 
   const handleRotateIpSalt = async (reason?: string) => {
     try {
-      await adminSecurityApi.rotateIpSalt(reason ?? '');
-      toast.success('IP-salt успешно ротирован');
+      await adminSecurityApi.rotateIpSalt(reason ?? "");
+      toast.success("IP-salt успешно ротирован");
     } catch (e) {
       const msg =
         e instanceof ApiError
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось ротировать IP-salt';
+            : "Не удалось ротировать IP-salt";
       toast.error(msg);
       throw e instanceof Error ? e : new Error(msg);
     }
@@ -54,8 +44,8 @@ export function SecurityClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Платформа' },
-        { label: 'Безопасность' },
+        { label: "Платформа" },
+        { label: "Безопасность" },
       ]}
       title="Безопасность"
       description="Параметры Argon2id, TTL сессий и deep-link. Изменение требует причину (severity='high'). Применяется при следующей валидации session/cookie."
@@ -76,7 +66,11 @@ export function SecurityClient() {
           description="Эти операции необратимы. Изменения применяются немедленно."
         >
           <div className="flex items-start gap-3">
-            <ShieldCheck size={18} className="mt-0.5 text-warning" aria-hidden />
+            <ShieldCheck
+              size={18}
+              className="mt-0.5 text-warning"
+              aria-hidden
+            />
             <div className="min-w-0 flex-1">
               <h4 className="text-sm font-medium text-fg-primary">
                 Ротация IP-salt
@@ -120,9 +114,9 @@ function SecuritySettingRow({
   const editor = useAdminSettingEditor<number>(spec.key, {
     schema: spec.schema,
     defaultValue: spec.defaultValue,
-    requiresReason: 'high',
+    requiresReason: "high",
   });
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
 
   const handleSave = async () => {
@@ -137,14 +131,14 @@ function SecuritySettingRow({
     try {
       await editor.save(trimmed);
       toast.success(`Параметр «${spec.label}» сохранён`);
-      setReason('');
+      setReason("");
     } catch (e) {
       const msg =
         e instanceof ApiError
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось сохранить';
+            : "Не удалось сохранить";
       toast.error(msg);
     }
   };
@@ -186,7 +180,9 @@ function SecuritySettingRow({
         </div>
       ) : null}
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="font-mono text-[10px] text-fg-tertiary">{spec.key}</span>
+        <span className="font-mono text-[10px] text-fg-tertiary">
+          {spec.key}
+        </span>
         <div className="flex items-center gap-1">
           <Button
             size="sm"

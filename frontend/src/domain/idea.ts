@@ -1,13 +1,3 @@
-/**
- * Доменная модель Idea / IdeaCluster (SBA β-5, ТЗ 2026-05-26 §2).
- *
- * Контракт: `backend/src/modules/ideas/dto/ideas.dto.ts`.
- *
- * Слои:
- *   - `Idea*Api` — что приходит с бэка (см. `src/api/ideas.api.ts`).
- *   - `Idea*Domain` — UI-friendly: Date вместо string, готовые лейблы.
- */
-
 import type {
   IdeaClusterApi,
   IdeaDetailApi,
@@ -15,61 +5,56 @@ import type {
   IdeaListItemApi,
   IdeaStatusApi,
   IdeaSupporterApi,
-} from '@/api/ideas.api';
+} from "@/api/ideas.api";
 
 export type IdeaKind = IdeaKindApi;
 export type IdeaStatus = IdeaStatusApi;
 
 export type IdeaChipVariant =
-  | 'success'
-  | 'warning'
-  | 'danger'
-  | 'info'
-  | 'lavender'
-  | 'sand';
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "lavender"
+  | "sand";
 
 export const IDEA_KIND_LABEL: Record<IdeaKind, string> = {
-  internal: 'Внутренняя',
-  client_request: 'Запрос клиента',
+  internal: "Внутренняя",
+  client_request: "Запрос клиента",
 };
 
 export const IDEA_STATUS_LABEL: Record<IdeaStatus, string> = {
-  captured: 'Зафиксирована',
-  in_discussion: 'Обсуждается',
-  accepted: 'Принята',
-  in_progress: 'В работе',
-  shipped: 'Выпущена',
-  rejected: 'Отклонена',
-  archived: 'В архиве',
+  captured: "Зафиксирована",
+  in_discussion: "Обсуждается",
+  accepted: "Принята",
+  in_progress: "В работе",
+  shipped: "Выпущена",
+  rejected: "Отклонена",
+  archived: "В архиве",
 };
 
 export const IDEA_STATUS_CHIP: Record<IdeaStatus, IdeaChipVariant> = {
-  captured: 'sand',
-  in_discussion: 'info',
-  accepted: 'lavender',
-  in_progress: 'warning',
-  shipped: 'success',
-  rejected: 'danger',
-  archived: 'sand',
+  captured: "sand",
+  in_discussion: "info",
+  accepted: "lavender",
+  in_progress: "warning",
+  shipped: "success",
+  rejected: "danger",
+  archived: "sand",
 };
 
-/**
- * Разрешённые переходы статусов (UI-логика — соответствует серверной
- * валидации в IdeasService.changeStatus). Если статус терминальный
- * (`shipped` / `archived`) — пустой массив.
- */
 export const IDEA_STATUS_TRANSITIONS: Record<IdeaStatus, IdeaStatus[]> = {
-  captured: ['in_discussion', 'accepted', 'rejected'],
-  in_discussion: ['accepted', 'rejected'],
-  accepted: ['in_progress', 'rejected'],
-  in_progress: ['shipped', 'rejected'],
+  captured: ["in_discussion", "accepted", "rejected"],
+  in_discussion: ["accepted", "rejected"],
+  accepted: ["in_progress", "rejected"],
+  in_progress: ["shipped", "rejected"],
   shipped: [],
-  rejected: ['archived'],
+  rejected: ["archived"],
   archived: [],
 };
 
 export interface IdeaSupporter {
-  kind: 'person' | 'customer';
+  kind: "person" | "customer";
   entityId: string;
   firstSupportedAt: Date;
   blockId?: string;
@@ -87,7 +72,6 @@ export interface IdeaListItem {
   firstProposedAt: Date;
   lastDiscussedAt: Date;
   createdByUserId: string | null;
-  /** Goals OKR v2 — цель, которую двигает эта гипотеза (null = не привязана). */
   goalId: string | null;
 }
 
@@ -112,8 +96,6 @@ export interface IdeaCluster {
   createdAt: Date;
   updatedAt: Date;
 }
-
-// ─── mappers ────────────────────────────────────────────────────────
 
 export function mapIdeaSupporter(api: IdeaSupporterApi): IdeaSupporter {
   return {
@@ -141,10 +123,6 @@ export function mapIdeaListItem(api: IdeaListItemApi): IdeaListItem {
   };
 }
 
-/**
- * #80 — единая точка построения ссылки на деталь идеи. Используется виджетами
- * дашборда и /me; ведёт на отдельный роут /ideas/[id] (а не на inline master-detail).
- */
 export function ideaHref(id: string): string {
   return `/ideas/${encodeURIComponent(id)}`;
 }

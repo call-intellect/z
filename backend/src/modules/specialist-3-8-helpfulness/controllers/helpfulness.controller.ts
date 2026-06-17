@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -35,23 +32,6 @@ import {
 import { HelpfulnessApiService } from '../services/helpfulness-api.service';
 import { SocialContributionPreferenceService } from '../services/social-contribution-preference.service';
 
-/**
- * SBA Wave 2 — REST API Specialist 3.8 (Helpfulness Agent) — user-facing.
- *
- *   GET    /api/v1/me/social-contribution                        — мой профиль (ВСЁ).
- *   GET    /api/v1/persons/:id/social-contribution               — для руководителя/самого: public-traits.
- *   GET    /api/v1/feed/spotlights                               — публичная лента (status=published).
- *   POST   /api/v1/feed/spotlights/:id/approve                   — одобрение руководителем.
- *   POST   /api/v1/feed/spotlights/:id/hide                      — скрыть.
- *   POST   /api/v1/feed/spotlights/:id/republish                 — пере-опубликовать.
- *   POST   /api/v1/me/social-contribution/traits/:id/mark-as-misleading — пометить как ошибку.
- *
- * RBAC:
- *   - social_contribution_profile / helpfulness_spotlight — `canRead` все
- *     member'ы Org (так же как Idea).
- *   - approve/hide/republish — `canWrite` (owner/admin/руководитель).
- *   - mark-as-misleading — только владелец trait'а (внутри сервиса).
- */
 @ApiTags('helpfulness')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -62,8 +42,6 @@ export class HelpfulnessController {
     @Inject(SocialContributionPreferenceService)
     private readonly optOutPref: SocialContributionPreferenceService,
   ) {}
-
-  // ────────────── Social contribution profile ──────────────
 
   @Get('me/social-contribution')
   @ApiOperation({ summary: 'Мой профиль социального вклада (полная картина)' })
@@ -80,7 +58,7 @@ export class HelpfulnessController {
 
   @Get('persons/:id/social-contribution')
   @ApiOperation({
-    summary: 'Профиль социального вклада человека (только public-trait\'ы)',
+    summary: "Профиль социального вклада человека (только public-trait'ы)",
   })
   async getPersonProfile(
     @Param('id') targetUserId: string,
@@ -91,7 +69,6 @@ export class HelpfulnessController {
     publicTraits: HelpfulnessTraitDto[];
   }> {
     const t = this.requireTenant(tenantId);
-    // Только сам пользователь, admin, или руководитель команды.
     if (user.id !== targetUserId) {
       await this.requireRead(user.id, t);
     }
@@ -100,8 +77,6 @@ export class HelpfulnessController {
       targetUserId,
     });
   }
-
-  // ────────────── Social contribution opt-out (ТЗ-E Ф4) ──────────────
 
   @Get('me/social-contribution/opt-out')
   @ApiOperation({
@@ -129,8 +104,6 @@ export class HelpfulnessController {
     return this.optOutPref.set(t, user.id, body.optedOut);
   }
 
-  // ────────────── Spotlights ──────────────
-
   @Get('feed/spotlights')
   @ApiOperation({ summary: 'Публичная лента «Спасибо команде»' })
   async listSpotlights(
@@ -142,8 +115,6 @@ export class HelpfulnessController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
 
-    // Любой member'у НЕ показываем status=pending/approved/hidden —
-    // только published. Pending — privilege руководителя.
     const effectiveQuery: ListSpotlightsQuery =
       q.status === 'published'
         ? q
@@ -200,8 +171,6 @@ export class HelpfulnessController {
     });
   }
 
-  // ────────────── Mark-as-misleading ──────────────
-
   @Post('me/social-contribution/traits/:id/mark-as-misleading')
   @ApiOperation({ summary: 'Пометить trait как ошибочный (только для своих)' })
   async markAsMisleading(
@@ -217,8 +186,6 @@ export class HelpfulnessController {
     });
   }
 
-  // ────────────── Helpers ──────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -233,11 +200,7 @@ export class HelpfulnessController {
   }
 
   private async requireRead(userId: string, tenantId: string): Promise<void> {
-    const ok = await this.rbac.canRead(
-      userId,
-      tenantId,
-      'social_contribution_profile',
-    );
+    const ok = await this.rbac.canRead(userId, tenantId, 'social_contribution_profile');
     if (!ok) {
       throw new ForbiddenException({
         ok: false,
@@ -250,37 +213,24 @@ export class HelpfulnessController {
   }
 
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
-    const ok = await this.rbac.canWrite(
-      userId,
-      tenantId,
-      'helpfulness_spotlight',
-    );
+    const ok = await this.rbac.canWrite(userId, tenantId, 'helpfulness_spotlight');
     if (!ok) {
       throw new ForbiddenException({
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Только руководитель или admin могут одобрять/скрывать spotlight',
+          message: 'Только руководитель или admin могут одобрять/скрывать spotlight',
         },
       });
     }
   }
 
-  /**
-   * Если member запрашивает status ≠ published — проверяем canWrite (доступ
-   * к pending у руководителя/admin); иначе принудительно ставим published.
-   */
   private async guardSpotlightStatus(args: {
     userId: string;
     tenantId: string;
     q: ListSpotlightsQuery;
   }): Promise<ListSpotlightsQuery> {
-    const canWrite = await this.rbac.canWrite(
-      args.userId,
-      args.tenantId,
-      'helpfulness_spotlight',
-    );
+    const canWrite = await this.rbac.canWrite(args.userId, args.tenantId, 'helpfulness_spotlight');
     if (canWrite) return args.q;
     return { ...args.q, status: 'published' };
   }

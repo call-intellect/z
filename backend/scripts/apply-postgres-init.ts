@@ -1,17 +1,3 @@
-/**
- * Применяет `postgres-init.sql` к БД из `DATABASE_URL`.
- *
- * Зачем отдельный скрипт: `prisma db push` НЕ выполняет произвольный SQL —
- * только синхронизирует schema.prisma. HNSW-индексы на pgvector и tsvector-
- * column для гибридного поиска создаются именно через этот файл.
- *
- * Скрипт идемпотентен — все DDL обёрнуты в `IF NOT EXISTS` / `IF EXISTS`-
- * проверки таблиц. Можно запускать многократно.
- *
- * Запуск (из backend/):
- *   bun run scripts/apply-postgres-init.ts
- */
-
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 

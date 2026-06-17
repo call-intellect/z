@@ -1,23 +1,15 @@
-'use client';
+"use client";
 
-/**
- * useLlmRoutes — SWR-хук для админ-страницы `/admin/llm-routes`.
- *
- * Контракт бэкенда: `GET /api/v1/admin/llm-routes`. Кэш-ключ глобальный
- * (`admin-llm-routes`) — после успешного PUT в `EditRouteDialog` вызываем
- * `mutate()` (либо локальный, либо `mutate('admin-llm-routes')`).
- */
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
-
-import { adminLlmRoutesApi } from '@/api/admin-llm-routes.api';
+import { adminLlmRoutesApi } from "@/api/admin-llm-routes.api";
 import {
   llmRoutesUiListFromApi,
   type LlmRouteUi,
-} from '@/domain/admin-llm-route';
+} from "@/domain/admin-llm-route";
 
-export const ADMIN_LLM_ROUTES_SWR_KEY = 'admin-llm-routes';
+export const ADMIN_LLM_ROUTES_SWR_KEY = "admin-llm-routes";
 
 export interface UseLlmRoutesResult {
   routes: LlmRouteUi[];

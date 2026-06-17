@@ -1,5 +1,7 @@
 # Product
 
+> ⚙️ Этот файл — strategic-контекст для скилла `impeccable` (читается из корня). **Канон позиционирования — [second-brain/06_marketing/positioning.md](second-brain/06_marketing/positioning.md)** + [messaging.md](second-brain/06_marketing/messaging.md); дизайн — [second-brain/02_architecture/design-system.md](second-brain/02_architecture/design-system.md).
+
 ## Register
 
 product

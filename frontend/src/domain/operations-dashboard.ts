@@ -1,13 +1,3 @@
-/**
- * SBA β-8 / β-8.3 — доменная модель COO-дашборда (overview-агрегат).
- *
- * Мапит ApiDto → Domain: даты ISO → Date; insightsByCauseCategory копируем
- * как есть (бэк всегда отдаёт все 8 ключей, см. ТЗ §1.5 Wave 2).
- *
- * Используется в `OperationsDashboardClient.tsx` и виджетах под ним
- * (`CauseCategoryMapWidget`, `MaturityWidget`).
- */
-
 import type {
   InsightCauseCategoryAggregateApi,
   InsightCauseCategoryKey,
@@ -21,7 +11,7 @@ import type {
   OperationsTeamCapacityItemApi,
   OperationsTeamFrictionApi,
   OperationsTeamTemperatureSummaryApi,
-} from '@/api/operations-dashboard.api';
+} from "@/api/operations-dashboard.api";
 
 export type {
   InsightCauseCategoryAggregateApi as InsightCauseCategoryAggregateDomain,
@@ -31,15 +21,12 @@ export type {
 export interface MaturitySnapshotDomainItem {
   slug: string;
   name: string;
-  /** 0..1; гарантированно not-null (фильтр на стороне сервиса). */
   completeness: number;
-  /** Percent 0..100, округлено — для UI. */
   completenessPercent: number;
 }
 
 export interface MaturitySnapshotDomain {
   score: number | null;
-  /** Percent 0..100 или null. */
   scorePercent: number | null;
   lastCalcAt: Date | null;
   stage: string | null;
@@ -51,7 +38,7 @@ export interface OperationsOverviewDomain {
   tenantId: string;
   generatedAt: Date;
   blockersCount: number;
-  blockersBySeverity: Record<'low' | 'medium' | 'high' | 'unknown', number>;
+  blockersBySeverity: Record<"low" | "medium" | "high" | "unknown", number>;
   missedGoalsCount: number;
   cascadeMissedCount: number;
   teamFrictionCount: number;
@@ -62,14 +49,13 @@ export interface OperationsOverviewDomain {
   teamTemperature: OperationsTeamTemperatureSummaryApi;
   insightsByCauseCategory: InsightCauseCategoryAggregateApi;
   maturity: MaturitySnapshotDomain;
-  /** ТЗ-2 Ф2 — закрыто блокеров за 30 дней (default 0 — защита от старого API). */
   blockersResolvedCount: number;
-  /** ТЗ-2 Ф2 — закрыто конфликтов за 30 дней (default 0). */
   frictionsResolvedCount: number;
-  /** ТЗ-2 Ф2 — kill-switch инфо-перекомпоновки (default true). */
   reworkEnabled: boolean;
-  /** Недельный инфлоу за 12 недель (old→new, null=нет данных). */
-  weeklyInflow: { blockers: Array<number | null>; frictions: Array<number | null> };
+  weeklyInflow: {
+    blockers: Array<number | null>;
+    frictions: Array<number | null>;
+  };
 }
 
 function toPercent(v: number | null | undefined): number | null {
@@ -119,7 +105,6 @@ export function fromOperationsOverviewApi(
     teamTemperature: api.teamTemperature,
     insightsByCauseCategory: api.insightsByCauseCategory,
     maturity: fromMaturitySnapshotApi(api.maturity),
-    // Защитные дефолты: старый API мог не отдавать эти поля.
     blockersResolvedCount: api.blockersResolvedCount ?? 0,
     frictionsResolvedCount: api.frictionsResolvedCount ?? 0,
     reworkEnabled: api.reworkEnabled ?? true,
@@ -127,20 +112,15 @@ export function fromOperationsOverviewApi(
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* ТЗ-3 Ф2 — загрузка команд по отделам                               */
-/* ------------------------------------------------------------------ */
+export type TeamCapacityClassification = "overload" | "underload" | "ok";
 
-export type TeamCapacityClassification = 'overload' | 'underload' | 'ok';
-
-/** Русские подписи классификации загрузки отдела. */
 export const TEAM_CAPACITY_CLASSIFICATION_LABEL: Record<
   TeamCapacityClassification,
   string
 > = {
-  overload: 'перегруз',
-  underload: 'недогруз',
-  ok: 'в норме',
+  overload: "перегруз",
+  underload: "недогруз",
+  ok: "в норме",
 };
 
 export interface TeamCapacityItemDomain {
@@ -150,7 +130,6 @@ export interface TeamCapacityItemDomain {
   avgLoadPercent: number;
   maxLoadPercent: number;
   classification: TeamCapacityClassification;
-  /** Готовая русская подпись классификации. */
   classificationLabel: string;
 }
 
@@ -162,7 +141,7 @@ export interface TeamCapacityDomain {
 }
 
 function normalizeClassification(value: string): TeamCapacityClassification {
-  return value === 'overload' || value === 'underload' ? value : 'ok';
+  return value === "overload" || value === "underload" ? value : "ok";
 }
 
 function fromTeamCapacityItemApi(
@@ -191,24 +170,21 @@ export function fromTeamCapacityApi(
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* ТЗ-2 Ф2 — хронические блокеры                                       */
-/* ------------------------------------------------------------------ */
+export type ChronicBlockerStatus = "new" | "recurring" | "resolved";
 
-export type ChronicBlockerStatus = 'new' | 'recurring' | 'resolved';
-
-/** Русские подписи статуса хронического блокера. */
-export const CHRONIC_BLOCKER_STATUS_LABEL: Record<ChronicBlockerStatus, string> = {
-  new: 'новый',
-  recurring: 'повторяется',
-  resolved: 'закрыт',
+export const CHRONIC_BLOCKER_STATUS_LABEL: Record<
+  ChronicBlockerStatus,
+  string
+> = {
+  new: "новый",
+  recurring: "повторяется",
+  resolved: "закрыт",
 };
 
 export interface ChronicBlockerDomain {
   id: string;
   representativeText: string;
   status: ChronicBlockerStatus;
-  /** Готовая русская подпись статуса. */
   statusLabel: string;
   daysOpen: number;
   businessImpactScore: number;
@@ -219,7 +195,7 @@ export interface ChronicBlockerDomain {
 }
 
 function normalizeChronicStatus(value: string): ChronicBlockerStatus {
-  return value === 'recurring' || value === 'resolved' ? value : 'new';
+  return value === "recurring" || value === "resolved" ? value : "new";
 }
 
 function fromChronicBlockerApi(

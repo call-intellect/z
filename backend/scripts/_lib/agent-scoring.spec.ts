@@ -56,7 +56,6 @@ describe('agent-scoring · scoreExtraction', () => {
 
   it('потеря числа (нет keyFact «100») → этот golden НЕ matched, completeness < 1', () => {
     const extracted = [
-      // «стопящих» вместо 100 — конкретика потеряна, keyFact «100» отсутствует.
       'Выйти на стопящих платящих клиентов в месяц',
       'Провести 10 встреч-презентаций в неделю',
       'Сделать 500 холодных рассылок',
@@ -71,11 +70,11 @@ describe('agent-scoring · scoreExtraction', () => {
       'Выйти на 100 платящих клиентов в месяц',
       'Провести 10 встреч-презентаций в неделю',
       'Сделать 500 холодных рассылок',
-      'Купить новый кофейный аппарат в офис', // выдумано, нет в golden
+      'Купить новый кофейный аппарат в офис',
     ];
     const s = scoreExtraction(golden, extracted);
-    expect(s.completeness).toBe(1); // все эталонные найдены
-    expect(s.precision).toBeLessThan(1); // но есть лишняя
+    expect(s.completeness).toBe(1);
+    expect(s.precision).toBeLessThan(1);
     expect(s.spurious).toContain('Купить новый кофейный аппарат в офис');
   });
 });
@@ -103,10 +102,7 @@ describe('agent-scoring · formatDelta', () => {
   });
 
   it('считает Δ метрик по совпадающим variant', () => {
-    const perfect = scoreExtraction(
-      [{ title: 'A', keyFacts: [] }],
-      ['A'],
-    );
+    const perfect = scoreExtraction([{ title: 'A', keyFacts: [] }], ['A']);
     const empty = scoreExtraction([{ title: 'A', keyFacts: [] }], []);
     const prevVariant: VariantScore = {
       variant: 'clean',
@@ -120,10 +116,7 @@ describe('agent-scoring · formatDelta', () => {
       tasks: perfect,
       decisions: perfect,
     };
-    const out = formatDelta(
-      { generatedAt: 'x', variants: [prevVariant] },
-      [currVariant],
-    );
+    const out = formatDelta({ generatedAt: 'x', variants: [prevVariant] }, [currVariant]);
     expect(out).toContain('[clean]');
     expect(out).toContain('Δcompleteness +1.000');
   });

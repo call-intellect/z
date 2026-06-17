@@ -4,8 +4,8 @@ title: Умные таблицы (Smart Tables) — MVP-старт
 status_overall: partial
 last_audited: 2026-06-02
 related_plans:
-  - plans/tz/2026-05-31-smart-tables.md
-  - plans/tz/2026-06-02-smart-tables-auto-creation.md
+  - plans/archive/2026-05-31-smart-tables.md
+  - plans/archive/2026-06-02-smart-tables-auto-creation.md
 related_processes: []
 related_projects:
   - 01_projects/api-layer.md
@@ -17,7 +17,7 @@ related_projects:
 
 ## Зачем
 
-Конкурентный паритет с Teamly Spring 2026 («Умные таблицы» как «российский Notion-database») + 5 наших преимуществ (AI внутри, Excel-импорт со схема-инференсом, связь со графом знаний, bi-directional embed, granular permissions). ТЗ полный: [plans/tz/2026-05-31-smart-tables.md](../../plans/tz/2026-05-31-smart-tables.md).
+Конкурентный паритет с Teamly Spring 2026 («Умные таблицы» как «российский Notion-database») + 5 наших преимуществ (AI внутри, Excel-импорт со схема-инференсом, связь со графом знаний, bi-directional embed, granular permissions). ТЗ полный: [plans/archive/2026-05-31-smart-tables.md](../../plans/archive/2026-05-31-smart-tables.md).
 
 ## Что сделано (Волна 3, MVP-старт 2026-05-31, Фазы 0+1+2+3)
 
@@ -123,7 +123,7 @@ related_projects:
 
 ---
 
-# Smart-tables auto-creation (ТЗ [2026-06-02](../../plans/tz/2026-06-02-smart-tables-auto-creation.md))
+# Smart-tables auto-creation (ТЗ [2026-06-02](../../plans/archive/2026-06-02-smart-tables-auto-creation.md))
 
 Продолжение базового Smart-tables: уход от ручного труда. 6 фаз (0→5) + потоки Eval/Privacy. Принцип — автоматика поверх единого графа знаний; ручным остаётся только свободный текст в карточке строки, override превью схемы и подтверждение спорных правок из встреч.
 
@@ -181,7 +181,7 @@ related_projects:
 
 Пользователь грузит Excel/CSV на `/tables` → инференс схемы → cosine-dedup со схемами существующих таблиц → «слить» или «создать новую» → строки появляются.
 
-- **Парсинг — in-process Node (`exceljs`)** для XLSX/CSV. Решение владельца 2026-06-02: пока остаёмся на Node, Python-микросервис DCS не поднимаем. **Долг:** структурный парсинг по-хорошему должен идти через DCS (Docling) из [document-ingest-universal ТЗ](../../plans/tz/2026-05-31-document-ingest-universal.md) — Д2; PDF/сканы/HTML/PPTX **не поддержаны** (ждут DCS). Это сознательный stopgap, не финальная архитектура.
+- **Парсинг — in-process Node (`exceljs`)** для XLSX/CSV. Решение владельца 2026-06-02: пока остаёмся на Node, Python-микросервис DCS не поднимаем. **Долг:** структурный парсинг по-хорошему должен идти через DCS (Docling) из [document-ingest-universal ТЗ](../../plans/archive/2026-05-31-document-ingest-universal.md) — Д2; PDF/сканы/HTML/PPTX **не поддержаны** (ждут DCS). Это сознательный stopgap, не финальная архитектура.
 - **`TableFileParserService.parseFileToTable`** — первый лист/таблица → `{kind, headers, rows[][]}`, потолок 50k строк, неподдерживаемый формат → `400 unsupported_file_format`.
 - **`TableAgentService.inferSchemaFromTabular`** — переиспользует 3-pass pipeline Фазы 1, вход — headers+первые 20 строк; `alignToHeaders` гарантирует «колонка файла j ↔ property j». **`findSimilarTables`** — cosine (text-embedding-3-small) схемы vs существующих, порог `table.import.dedup_threshold` (0.85). **`linkRowsToEntities`** — матч строк к Entity по canonicalName/aliases (не создаёт новые).
 - **`TableImportService`** — `commitCreate`/`commitMerge` (merge сопоставляет колонки по имени), приведение типов ячеек.
@@ -211,7 +211,7 @@ related_projects:
 
 ## Итог
 
-**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/tz/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
+**Все 6 фаз (0–5) ТЗ [2026-06-02-smart-tables-auto-creation](../../plans/archive/2026-06-02-smart-tables-auto-creation.md) реализованы.** Параллельные потоки: Eval (Фаза 1.5) и Privacy — после основных фаз.
 
 > **Флаг `feature.tables_text_to_schema` — включён дефолтом (ship-on, ТЗ [2026-06-08-enable-shipped-features-by-default](../../plans/tz/2026-06-08-enable-shipped-features-by-default.md), коммит `bb7701dc`).** Раньше был default off «до прохождения Eval»; по правилу Ship-On готовая фича выкатывается включённой (seed-дефолт `true` + патч `patch-enable-shipped-flags.ts`). Eval Text-to-Schema (Фаза 1.5) остаётся инструментом регрессий, а не блокером выката.
 

@@ -14,19 +14,6 @@ import {
   type PendingActionsProviderArgs,
 } from './pending-actions-provider.types';
 
-/**
- * Провайдер «требует проверки» из Слоя 4 (CurationItem, status=pending).
- *
- * Кому показываем:
- *   - кандидату-куратору (user ∈ candidateCuratorIds) либо назначенному
- *     (assignedToUserId = user);
- *   - owner/admin Org — все pending-items (privileged).
- *
- * severity=urgent, если карточка просрочена (expiresAt < now), скоро истечёт
- * (expiresAt < now + cfg.pendingActions.reminderLeadDays) или висит
- * ≥ cfg.pendingActions.urgentAgeDays дней. Оба порога — admin-editable.
- * canQuickConfirm = (level === 'light').
- */
 @Injectable()
 export class CurationPendingProvider implements PendingActionsProvider {
   readonly source = 'curation' as const;
@@ -41,12 +28,8 @@ export class CurationPendingProvider implements PendingActionsProvider {
       tenantId: a.tenantId,
       status: 'pending',
     };
-    // owner/admin видят все pending; остальные — только где они кандидат/назначены.
     if (!isPrivileged(a.role)) {
-      where.OR = [
-        { assignedToUserId: a.userId },
-        { candidateCuratorIds: { has: a.userId } },
-      ];
+      where.OR = [{ assignedToUserId: a.userId }, { candidateCuratorIds: { has: a.userId } }];
     }
     if (a.snoozedResourceIds.size > 0) {
       where.id = { notIn: [...a.snoozedResourceIds] };
@@ -76,23 +59,12 @@ export class CurationPendingProvider implements PendingActionsProvider {
       },
     });
     const now = new Date();
-    const leadWindowMs =
-      this.cfg.pendingActions.reminderLeadDays * 24 * 60 * 60 * 1000;
+    const leadWindowMs = this.cfg.pendingActions.reminderLeadDays * 24 * 60 * 60 * 1000;
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
-      // overdue (просрочена) ИЛИ скоро истечёт (в пределах reminderLeadDays).
       const expiringSoon =
-        i.expiresAt != null &&
-        i.expiresAt.getTime() < now.getTime() + leadWindowMs;
-      // proposedPayload — что специалист предлагает зафиксировать (поля
-      // зависят от типа карточки: name / title / statement / text).
+        i.expiresAt != null && i.expiresAt.getTime() < now.getTime() + leadWindowMs;
       const payload = asObject(i.proposedPayload);
-      // knowledge_profile: knowledge-clone.service кладёт personName (Person.name)
-      // рядом с personId. Используем personName приоритетно — он содержит
-      // полное имя человека, а не логин (personName доступен из payload без доп.
-      // запроса в БД). Для card-rollup-v2 personId/personName в payload нет —
-      // там name = card.name; если card.name = логин, это проблема на стороне
-      // card-rollup-v2.service (вне данной задачи).
       const cardTitle =
         strOrUndef(payload.personName) ??
         strOrUndef(payload.name) ??
@@ -100,27 +72,19 @@ export class CurationPendingProvider implements PendingActionsProvider {
         strOrUndef(payload.statement) ??
         strOrUndef(payload.text) ??
         resourceTypeRu(i.resourceType);
-      const preview =
-        strOrUndef(payload.statement) ?? strOrUndef(payload.text);
+      const preview = strOrUndef(payload.statement) ?? strOrUndef(payload.text);
       const detail: CurationPendingDetail = {
         kind: 'curation',
         cardTitle,
-        // preview не дублируем, если он совпадает с заголовком.
         preview: preview && preview !== cardTitle ? preview : undefined,
       };
-      // resourceId = CurationItem.id — стабильный ключ для snooze/confirm.
-      // Ведём прямо на detail-карточку /curation/[id]; light-карточки
-      // по-прежнему подтверждаются one-tap прямо на /actions без перехода.
       return {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        // Реальная суть: название карточки + тип ресурса.
         title: `Требует проверки: ${cardTitle}`,
         severity:
-          expiringSoon || ageDays >= this.cfg.pendingActions.urgentAgeDays
-            ? 'urgent'
-            : 'normal',
+          expiringSoon || ageDays >= this.cfg.pendingActions.urgentAgeDays ? 'urgent' : 'normal',
         ageDays,
         actionUrl: `/curation/${i.id}`,
         canQuickConfirm: i.level === 'light',
@@ -130,7 +94,6 @@ export class CurationPendingProvider implements PendingActionsProvider {
   }
 }
 
-/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
 function asObject(v: unknown): Record<string, unknown> {
   if (v && typeof v === 'object' && !Array.isArray(v)) {
     return v as Record<string, unknown>;
@@ -138,7 +101,6 @@ function asObject(v: unknown): Record<string, unknown> {
   return {};
 }
 
-/** Непустая строка или undefined (тримит). */
 function strOrUndef(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
 }

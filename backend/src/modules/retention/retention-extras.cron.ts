@@ -5,20 +5,6 @@ import { TypedConfigService } from '../../common/config/index';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { S3Service } from '../recordings/s3.service';
 
-/**
- * Retention для подсобных таблиц ai-workspace.
- *
- * Запускается каждый час:
- *   - WebhookDelivery > webhookDeliveryDays
- *   - Export.expiresAt < now → пометка expired + удаление из S3
- *   - MeetingShareView > shareViewDays
- *   - ApiAccessLog > apiAccessLogDays
- *   - AuditLog > 365 дней (фиксированно — данные observability)
- *   - Meeting.deletedAt < now - softDeleteGraceDays → hard-delete
- *   - User.deletedAt < now - softDeleteGraceDays → hard-delete
- *   - Card.deletedAt < now - softDeleteGraceDays → hard-delete
- *     (FK Meeting.cardId — onDelete: SetNull, привязки встреч обнулятся)
- */
 @Injectable()
 export class RetentionExtrasCron {
   private readonly logger = new Logger(RetentionExtrasCron.name);
@@ -62,8 +48,6 @@ export class RetentionExtrasCron {
       );
     }
   }
-
-  // ─────────────────────────── per-table cleaners ─────────────────────────
 
   private async purgeWebhookDeliveries(): Promise<number> {
     const days = this.cfg.retention.webhookDeliveryDays;
@@ -123,9 +107,7 @@ export class RetentionExtrasCron {
   }
 
   private async purgeAuditLogs(): Promise<number> {
-    const before = new Date(
-      Date.now() - RetentionExtrasCron.AUDIT_LOG_RETENTION_DAYS * 86_400_000,
-    );
+    const before = new Date(Date.now() - RetentionExtrasCron.AUDIT_LOG_RETENTION_DAYS * 86_400_000);
     const r = await this.prisma.auditLog.deleteMany({
       where: { createdAt: { lt: before } },
     });

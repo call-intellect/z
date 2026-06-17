@@ -6,10 +6,6 @@ import type { AdminSettingsService } from '../admin/settings/admin-settings.serv
 import { ChatboxSyncCron } from './chatbox-sync.cron';
 import type { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * Unit-тесты планировщика синка ChatBox: Prisma / Queue / AdminSettings
- * замоканы. Проверяем kill-switch и постановку incremental-job по интеграциям.
- */
 describe('ChatboxSyncCron', () => {
   let prismaMock: {
     chatboxIntegration: { findMany: ReturnType<typeof vi.fn> };
@@ -49,8 +45,6 @@ describe('ChatboxSyncCron', () => {
 
     await cron.runDaily();
 
-    // Расписание упрощено (2026-06-16): syncMode не влияет — берём все
-    // подключённые (status != disconnected), без фильтра по режиму.
     expect(prismaMock.chatboxIntegration.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({

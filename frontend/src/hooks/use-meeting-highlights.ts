@@ -1,22 +1,21 @@
-'use client';
+"use client";
 
-import useSWR from 'swr';
-import { useMemo } from 'react';
-import { highlightsApi } from '@/api/highlights.api';
-import { highlightFromApi, type HighlightDomain } from '@/domain/highlight';
+import useSWR from "swr";
+import { useMemo } from "react";
+import { highlightsApi } from "@/api/highlights.api";
+import { highlightFromApi, type HighlightDomain } from "@/domain/highlight";
 
-const RENDER_PROCESSING = new Set(['queued', 'processing']);
+const RENDER_PROCESSING = new Set(["queued", "processing"]);
 
 export function useMeetingHighlights(meetingId: string | null | undefined) {
   const swr = useSWR(
-    meetingId ? ['highlights', meetingId] : null,
+    meetingId ? ["highlights", meetingId] : null,
     async () => {
-      if (!meetingId) throw new Error('meetingId is required');
+      if (!meetingId) throw new Error("meetingId is required");
       return highlightsApi.listForMeeting(meetingId);
     },
     {
       revalidateOnFocus: false,
-      // если есть рендеры в процессе — обновляем каждые 30 секунд
       refreshInterval: (latest) => {
         if (!latest?.items) return 0;
         const anyRendering = latest.items.some((h) =>

@@ -7,14 +7,10 @@ import {
   zodToSimpleSchema,
 } from './admin-setting-schema-registry';
 
-/**
- * Admin-redesign Фаза 3 — unit-тесты `AdminSettingSchemaRegistry`.
- */
 describe('admin-setting-schema-registry', () => {
   it('getSchemaForKey возвращает z.unknown() для незнакомого ключа', () => {
     expect(hasSchemaForKey('does.not.exist')).toBe(false);
     const s = getSchemaForKey('does.not.exist');
-    // z.unknown() принимает любое значение
     expect(s.safeParse('whatever').success).toBe(true);
     expect(s.safeParse(123).success).toBe(true);
   });
@@ -63,7 +59,6 @@ describe('admin-setting-schema-registry', () => {
     it('integer (.int())', () => {
       const out = zodToSimpleSchema(z.number().int().positive());
       expect(out.type).toBe('integer');
-      // positive → min присутствует, конкретное значение не утверждаем
       expect(typeof out.min).toBe('number');
     });
 

@@ -24,12 +24,6 @@ import {
 } from './dto/template.dto';
 import { TemplatesService } from './templates.service';
 
-/**
- *   `GET    /api/v1/templates`
- *   `POST   /api/v1/templates`
- *   `PATCH  /api/v1/templates/:id`
- *   `DELETE /api/v1/templates/:id`
- */
 @Controller('api/v1/templates')
 @UseGuards(CookieAuthGuard)
 export class TemplatesController {
@@ -65,14 +59,9 @@ export class TemplatesController {
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<void> {
+  async delete(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload): Promise<void> {
     await this.templates.delete(id, user.id);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private mapTemplate(t: {
     id: string;

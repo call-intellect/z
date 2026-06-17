@@ -1,27 +1,9 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
-import {
-  type EmbeddingProvider,
-  LocalEmbeddingNotConfiguredError,
-} from '../embeddings.types';
+import { type EmbeddingProvider, LocalEmbeddingNotConfiguredError } from '../embeddings.types';
 
-/**
- * Локальный embedding-сервис (наш self-hosted endpoint, OpenAI-совместимый).
- * Используется как fallback. Если `EMBEDDING_FALLBACK_LOCAL_URL` не задан —
- * `embed()` бросает `LocalEmbeddingNotConfiguredError`.
- *
- * Запрос: `POST ${url}/embeddings` с body `{ model, input }`.
- * Ответ: OpenAI-совместимый `{ data: [{ embedding: number[] }, ...] }`.
- *
- * Метрика `embedding_tokens_total{provider='local', status='success|failed'}`.
- */
 @Injectable()
 export class LocalEmbeddingService implements EmbeddingProvider {
   readonly name = 'local';
@@ -70,9 +52,7 @@ export class LocalEmbeddingService implements EmbeddingProvider {
         status: 'failed',
         tokens: this.approxTokens(texts),
       });
-      const e = new Error(
-        `LocalEmbedding HTTP ${response.status}: ${errText.slice(0, 500)}`,
-      );
+      const e = new Error(`LocalEmbedding HTTP ${response.status}: ${errText.slice(0, 500)}`);
       Object.assign(e, { status: response.status });
       throw e;
     }
@@ -101,9 +81,7 @@ export class LocalEmbeddingService implements EmbeddingProvider {
     });
 
     const tokens =
-      data.usage?.total_tokens ??
-      data.usage?.prompt_tokens ??
-      this.approxTokens(texts);
+      data.usage?.total_tokens ?? data.usage?.prompt_tokens ?? this.approxTokens(texts);
     this.metrics?.addEmbeddingTokens({
       provider: this.name,
       status: 'success',

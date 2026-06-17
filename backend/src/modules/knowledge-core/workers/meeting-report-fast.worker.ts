@@ -1,33 +1,3 @@
-/**
- * MeetingReportFastWorker (`core.meeting-report-fast`, ТЗ 2026-05-25, Фаза 2).
- *
- * Источник: plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md §4.2.
- *
- * Поток:
- *   1. Достать Meeting + Transcript.turns напрямую (НЕ через block-fetch.service.ts;
- *      работаем на СЫРОМ транскрипте, не на IdeaBlock'ах).
- *   2. Один вызов LlmRouterService.call() с taskType='meeting-report-fast',
- *      `tools=[MEETING_REPORT_FAST_TOOL]` + responseFormat='json_object'
- *      (fallback на случай, если провайдер не вернул tool_calls).
- *   3. Распарсить ответ (сначала toolCalls[0].input, иначе JSON в text).
- *   4. Записать:
- *      - chapters → MeetingChapter с extractorVersion='fast'
- *        (вытесняют только предыдущие fast-главы; legacy / v2 не трогаем).
- *      - tasks → Task с extractorVersion='fast'
- *        (создаём только новые задачи, не перетирая существующие).
- *      - summary_markdown → AiResult.summaryFast (новое поле, см. Фаза 3).
- *      - quality_score — на Фазе 2 просто пишем в лог + summary; писать в
- *        MeetingQualityScore не будем, чтобы не конфликтовать с воркером
- *        ai.quality-score. Это решит Фаза 4 (см. ТЗ §5).
- *   5. Обновить Meeting.reportFastStatus = 'ready' | 'failed' | 'partial'.
- *
- * Concurrency=2 — есть rate-limit на LLM-провайдере.
- *
- * НА ЭТОЙ ФАЗЕ воркер НЕ подписывается автоматически на готовность транскрипта —
- * это сделает Фаза 4 (producer / cron). Сейчас регистрация только в DI:
- * запускается через ручной enqueue или integration-тест.
- */
-
 import {
   Inject,
   Injectable,
@@ -40,7 +10,6 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -48,10 +17,7 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 import { ParticipantContextService } from '../../ai/services/participant-context.service';
 import type { DialogTurn } from '../../ai/services/prompts/common';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import type { AiParticipantContext } from '../../ai/services/prompts/participant-context';
 import {
   buildMeetingReportFastPrompt,
@@ -64,16 +30,12 @@ import {
   type MeetingReportFastOutput,
   type MeetingReportFastTask,
 } from '../../ai/services/prompts/meeting-report-fast.prompt';
-import {
-  CORE_QUEUE_NAMES,
-  type MeetingReportFastJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type MeetingReportFastJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MeetingTaskDedupeService } from '../../meetings/meeting-task-dedupe.service';
 import { MeetingTitleService } from '../services/meeting-title.service';
 import { TaskAssigneeResolverService } from '../services/task-assignee-resolver.service';
 
-/** Максимум ретраев перед поднятием exception (как в meeting-analyze-v2). */
 const MAX_LLM_RETRIES = 2;
 
 @Injectable()
@@ -88,35 +50,20 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(LlmRouterService) private readonly router: LlmRouterService,
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
-    // пост-фактум резолв `assigneeUserId` из `assigneeRaw` по списку участников
-    // встречи (БЕЗ правки LLM-промпта).
     @Inject(ParticipantContextService)
     private readonly participantContext: ParticipantContextService,
     @Inject(TaskAssigneeResolverService)
     private readonly assigneeResolver: TaskAssigneeResolverService,
-    // Ф5 Р2 — семантический дедуп задач встречи (best-effort, за флагом OFF).
-    // Вызывается в конце writeTasks на случай, если fast завершился ПОСЛЕ
-    // structured-пути (иначе остаточные дубли fast-черновиков).
     @Inject(MeetingTaskDedupeService)
     private readonly taskDedupe: MeetingTaskDedupeService,
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
-    // чтение AdminSetting-флага `knowledge.meetingTasksToTrackerOnly`
-    // (gate на создание пользовательского Task для action-items встречи).
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
-    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
-    // best-effort эмит `meeting.report-fast-ready` после готовности отчёта.
-    // @Optional — в старых unit-тестах воркера эмиттер не передаётся (no-op).
     @Optional()
     @Inject(EventEmitter2)
     private readonly events?: EventEmitter2,
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
-    // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи. Best-effort
-    // после готовности транскрипта; @Optional, чтобы старые unit-тесты воркера
-    // (позиционный конструктор без этого аргумента) не падали — там no-op.
     @Optional()
     @Inject(MeetingTitleService)
     private readonly meetingTitle?: MeetingTitleService,
@@ -126,8 +73,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     this.worker = new Worker<MeetingReportFastJobData>(
       CORE_QUEUE_NAMES.MEETING_REPORT_FAST,
       async (job) =>
-        this.pipe.meeting(SystemLogPipeline.AI_ANALYSIS, 'kc.meeting-report-fast', job.data.meetingId, () =>
-          this.process(job),
+        this.pipe.meeting(
+          SystemLogPipeline.AI_ANALYSIS,
+          'kc.meeting-report-fast',
+          job.data.meetingId,
+          () => this.process(job),
         ),
       {
         connection: this.redis.client,
@@ -137,15 +87,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     this.worker.on('failed', (job, err) => {
       this.onJobFailed(job ?? null, err).catch((e) => {
         this.logger.error(
-          `meeting-report-fast onJobFailed: ${
-            e instanceof Error ? e.message : String(e)
-          }`,
+          `meeting-report-fast onJobFailed: ${e instanceof Error ? e.message : String(e)}`,
         );
       });
     });
-    this.logger.debug(
-      `MeetingReportFastWorker запущен (${CORE_QUEUE_NAMES.MEETING_REPORT_FAST})`,
-    );
+    this.logger.debug(`MeetingReportFastWorker запущен (${CORE_QUEUE_NAMES.MEETING_REPORT_FAST})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -155,10 +101,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Главный handler. Экспортирован отдельным методом — удобно дёргать из
-   * integration-тестов и из ручного enqueue без BullMQ.
-   */
   async process(job: Job<MeetingReportFastJobData>): Promise<void> {
     const { meetingId } = job.data;
     const startedAt = Date.now();
@@ -171,34 +113,22 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!meeting) {
-      this.logger.debug(
-        { meetingId },
-        'meeting-report-fast: meeting не найден — skip',
-      );
+      this.logger.debug({ meetingId }, 'meeting-report-fast: meeting не найден — skip');
       return;
     }
     if (meeting.deletedAt) {
-      this.logger.debug(
-        { meetingId },
-        'meeting-report-fast: meeting удалён — skip',
-      );
+      this.logger.debug({ meetingId }, 'meeting-report-fast: meeting удалён — skip');
       return;
     }
     if (!meeting.tenantId) {
-      this.logger.warn(
-        { meetingId },
-        'meeting-report-fast: tenantId=null (legacy) — skip',
-      );
+      this.logger.warn({ meetingId }, 'meeting-report-fast: tenantId=null (legacy) — skip');
       return;
     }
     const tenantId = meeting.tenantId;
 
     const turns = extractTurns(meeting.transcript?.turns);
     if (turns.length === 0) {
-      this.logger.warn(
-        { meetingId, tenantId },
-        'meeting-report-fast: пустой транскрипт — пропуск',
-      );
+      this.logger.warn({ meetingId, tenantId }, 'meeting-report-fast: пустой транскрипт — пропуск');
       await this.prisma.meeting.update({
         where: { id: meetingId },
         data: {
@@ -219,10 +149,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       data: { reportFastStatus: 'processing', reportFastError: null },
     });
 
-    // Редизайн кабинета Ф5а (2026-06-13) — авто-название встречи. Транскрипт
-    // здесь уже готов (turns.length>0). Best-effort + идемпотентно: сервис сам
-    // не трогает осмысленный пользовательский title (placeholder-гейт). Сбой
-    // генерации title НЕ должен валить отчёт — try/catch + @Optional.
     if (this.meetingTitle) {
       try {
         await this.meetingTitle.generateMeetingTitle({ tenantId, meetingId });
@@ -234,35 +160,24 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 4 —
-    // список участников встречи. Используется ДВАЖДЫ: (1) C6/C2 — имена и
-    // дата встречи в промпт (анти-галлюцинация имён, разрешение сроков);
-    // (2) пост-фактум резолв `assigneeUserId` из `assigneeRaw` в writeTasks.
     const participants = await this.participantContext.loadForMeeting(meetingId);
 
-    // ── 1. Промпт ──
     const transcriptText = formatTranscript(turns);
     const built = buildMeetingReportFastPrompt({
       meetingType: meeting.type,
       meetingTitle: meeting.title,
       transcript: transcriptText,
-      // C6 — отображаемые имена участников (как в formatParticipantsForPrompt:
-      // fullName в скобках, если отличается от display name).
       participants: participants.map((p) =>
         p.fullName && p.fullName !== p.displayName
           ? `${p.displayName} (${p.fullName})`
           : p.displayName,
       ),
-      // C2 — дата встречи (YYYY-MM-DD) для разрешения относительных сроков.
       meetingDateIso: meeting.startedAt?.toISOString().slice(0, 10) ?? null,
     });
 
-    // Защита от prompt-injection: оборачиваем user-секцию в маркеры,
-    // system дополняется guard-нотой. См. common.ts §F1.
     const guardedSystem = withInjectionGuard(built.system);
     const guardedUser = wrapUserData(built.user);
 
-    // ── 2. LLM-вызов через router (с ретраями на парсинге) ──
     let parsed: MeetingReportFastOutput | null = null;
     let modelUsed = 'unknown';
     let providerUsed: string | undefined;
@@ -284,8 +199,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         ...(meeting.ownerId ? { userId: meeting.ownerId } : {}),
         maxTokens: MEETING_REPORT_FAST_MAX_TOKENS,
         tools: [MEETING_REPORT_FAST_TOOL],
-        // Fallback на json_object — на случай, если провайдер не вернул tool_calls
-        // (или модель проигнорировала tools). См. probe-deepseek-formats.ts.
         responseFormat: { type: 'json_object' },
         sourceRef: { type: 'meeting', id: meetingId },
         dataClass: 'internal',
@@ -294,12 +207,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       providerUsed = result.providerUsed;
       tierActual = result.tier ?? null;
 
-      // Сначала пытаемся из tool_calls (предпочтительный путь). Если их нет —
-      // парсим JSON из text (fallback через response_format=json_object).
-      const fromTool = pickToolCallInput(
-        result.toolCalls,
-        MEETING_REPORT_FAST_TOOL_NAME,
-      );
+      const fromTool = pickToolCallInput(result.toolCalls, MEETING_REPORT_FAST_TOOL_NAME);
       const rawCandidate = fromTool ?? safeParseJson(result.text);
       if (rawCandidate === null) {
         lastError = 'LLM не вернул ни tool_calls, ни валидный JSON-объект';
@@ -347,14 +255,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         tenant: tenantId,
         status: 'failed',
       });
-      // Throw, чтобы BullMQ зачёл attempt — но фатальный статус мы уже выставили.
       throw new Error(`meeting-report-fast: invalid LLM output — ${errText}`);
     }
 
-    // ── 3. Запись результатов ──
     const failures: string[] = [];
 
-    // 3a. Chapters (пересоздаём только fast-главы; legacy/v2 не трогаем).
     try {
       await this.writeChapters({
         meetingId,
@@ -362,12 +267,9 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         chapters: parsed.chapters,
       });
     } catch (err) {
-      failures.push(
-        `chapters-write: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      failures.push(`chapters-write: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // 3b. Tasks (создаём только новые; дубли по title не плодим).
     try {
       await this.writeTasks({
         meetingId,
@@ -377,12 +279,9 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         participants,
       });
     } catch (err) {
-      failures.push(
-        `tasks-write: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      failures.push(`tasks-write: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // 3c. Summary fast.
     try {
       await this.writeSummary({
         meetingId,
@@ -391,17 +290,9 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         modelUsed,
       });
     } catch (err) {
-      failures.push(
-        `summary-write: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      failures.push(`summary-write: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // 3d. Quality score (целиком, Json). Пишем в Meeting.reportFastQualityScore.
-    // Структура: { overallScore, categories, recommendations[], strengths[] } —
-    // её гарантирует zod-схема `MeetingReportFastQualityScoreSchema` (zod успешно
-    // прошёл выше; здесь дополнительная защита от неожиданных мутаций объекта).
-    // В отличие от других writer'ов, ошибка quality-score-write НЕ валит весь
-    // отчёт: фоновая аналитика по quality_score опциональна, лог warn достаточен.
     try {
       await this.writeQualityScore({
         meetingId,
@@ -418,7 +309,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    // ── 4. Финальный статус ──
     const allFailed = failures.length === 3;
     const someFailed = failures.length > 0 && !allFailed;
     const status: 'ready' | 'partial' | 'failed' = allFailed
@@ -439,10 +329,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     this.metrics?.observeMeetingReportFastDuration?.(durationSec);
     this.metrics?.incMeetingReportFast?.({ tenant: tenantId, status });
 
-    // Фаза 2 «отчёт встречи → граф» (ТЗ 2026-06-11-report-to-graph-phase2.md §4):
-    // эмитим `meeting.report-fast-ready` ТОЛЬКО при ready/partial (на failed
-    // класть в граф нечего). Best-effort try/catch — сбой эмита НЕ откатывает
-    // уже записанный reportFastStatus (паттерн analyze.worker MEETING_AI_READY).
     if (this.events && (status === 'ready' || status === 'partial')) {
       try {
         this.events.emit('meeting.report-fast-ready', {
@@ -477,9 +363,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     if (allFailed) {
-      throw new Error(
-        `meeting-report-fast: все три writer'а упали — ${failures.join('; ')}`,
-      );
+      throw new Error(`meeting-report-fast: все три writer'а упали — ${failures.join('; ')}`);
     }
   }
 
@@ -488,14 +372,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     tenantId: string;
     chapters: MeetingReportFastChapter[];
   }): Promise<void> {
-    // Удаляем только предыдущие fast-главы; legacy / v2 не трогаем.
     await this.prisma.meetingChapter.deleteMany({
       where: { meetingId: args.meetingId, extractorVersion: 'fast' },
     });
     if (args.chapters.length === 0) return;
 
-    // Защищаемся от LLM-ошибок: фильтруем главы, у которых endMs < startMs;
-    // сортируем по startMs (для стабильного order).
     const valid = args.chapters
       .filter((c) => c.endMs >= c.startMs)
       .sort((a, b) => a.startMs - b.startMs);
@@ -510,7 +391,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
         title: c.title.slice(0, 200),
         summary: c.summary.slice(0, 2000),
         order: idx,
-        // На fast-pipeline нет evidenceBlockIds (мы НЕ ходим через блоки) — []
         evidenceBlockIds: [],
         extractorVersion: 'fast',
       })),
@@ -526,13 +406,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   }): Promise<void> {
     if (args.tasks.length === 0) return;
 
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2 —
-    // «единая видимая задача из встречи». Когда AdminSetting
-    // `knowledge.meetingTasksToTrackerOnly` включён, видимая задача — это
-    // tracker Issue (создаётся отдельным трекерным путём), поэтому
-    // пользовательский Task для action-items встречи НЕ создаём (return early).
-    // Дефолт (code-fallback FALSE) — поведение как раньше: создаём Task.
-    // Резюме/саммари отчёта (AiResult) этот gate не затрагивает.
     const trackerOnly = await this.cfg.getDynamic<boolean>(
       'knowledge.meetingTasksToTrackerOnly',
       undefined,
@@ -546,10 +419,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // ТЗ 2026-06-04, Фаза 4 — пост-фактум резолв `assigneeUserId` из
-    // `assigneeRaw` по участникам встречи. LLM `assigneeUserId` не отдаёт
-    // (промпт не трогаем), поэтому стартуем с `assigneeUserId: null`. На выходе
-    // массив того же порядка: validated userId (либо null) + ambiguous-флаг.
     const resolved = this.assigneeResolver.resolve(
       args.tasks.map((t) => ({
         assigneeRaw: t.assigneeRaw ?? null,
@@ -559,14 +428,11 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       args.tenantId,
     );
 
-    // Существующие задачи встречи — отбираем titles, чтобы не плодить дубли.
     const existing = await this.prisma.task.findMany({
       where: { meetingId: args.meetingId },
       select: { title: true },
     });
-    const existingTitles = new Set(
-      existing.map((t) => t.title.trim().toLowerCase()),
-    );
+    const existingTitles = new Set(existing.map((t) => t.title.trim().toLowerCase()));
 
     let created = 0;
     let skipped = 0;
@@ -595,7 +461,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
             sourceQuote: task.sourceQuote ?? null,
             confidence,
             createdManually: false,
-            // На fast-pipeline нет evidenceBlockIds (без block-ingest) — []
             evidenceBlockIds: [],
             extractorVersion: 'fast',
           },
@@ -618,9 +483,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       'meeting-report-fast: tasks-write done',
     );
 
-    // Ф5 Р2 — на случай fast-после-structured: дедуп свежесозданных
-    // fast-черновиков против уже существующих canonical-задач встречи.
-    // Best-effort: сервис сам no-op при флаге OFF; ошибка не валит воркер.
     try {
       await this.taskDedupe.dedupeForMeeting({
         tenantId: args.tenantId,
@@ -637,12 +499,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Пишет markdown summary в AiResult.summaryFast. Атомарный upsert по
-   * уникальному meetingId (S6-01, Р5): убирает TOCTOU-гонку с analyze.worker
-   * (раньше ветвление по snapshot-флагу hasAiResult → при параллельном создании
-   * AiResult падал Unique constraint на create). НЕ перезаписываем `summary`/`summaryV2`.
-   */
   private async writeSummary(args: {
     meetingId: string;
     meetingType: Parameters<PrismaService['aiResult']['create']>[0]['data']['meetingType'];
@@ -662,8 +518,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
       create: {
         meetingId: args.meetingId,
         meetingType: args.meetingType,
-        // `summary` обязательный (String @db.Text) — пустая строка, заполнится
-        // позже analyze.worker'ом (он тоже upsert'ит, не перезатирая summaryFast).
         summary: '',
         modelUsed: args.modelUsed,
         summaryFast: text,
@@ -673,18 +527,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  /**
-   * Сохраняет quality_score в ДВА места одной транзакцией:
-   *   1. Meeting.reportFastQualityScore (Json) — сырой снимок результата
-   *      meeting-report-fast + Meeting.qualityScoreStatus='ready'.
-   *   2. Каноничная таблица MeetingQualityScore (upsert) — её читают
-   *      QualityScoreService.getForMeeting / getOrgDashboard БЕЗ изменений
-   *      (маппинг полей идентичен упразднённому quality-score.worker'у).
-   * Защищается от пустого/неожиданного объекта: если у `qualityScore` нет хотя бы
-   * `overallScore` числом — лог warn и пропуск (не пишем мусор). Структуру
-   * гарантирует zod-схема `MeetingReportFastQualityScoreSchema`, поэтому в
-   * штатном режиме проверка просто проходит насквозь.
-   */
   private async writeQualityScore(args: {
     meetingId: string;
     tenantId: string;
@@ -743,10 +585,7 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async onJobFailed(
-    job: Job<MeetingReportFastJobData> | null,
-    err: Error,
-  ): Promise<void> {
+  private async onJobFailed(job: Job<MeetingReportFastJobData> | null, err: Error): Promise<void> {
     if (!job) return;
     const attemptsLimit = job.opts.attempts ?? 5;
     if (job.attemptsMade < attemptsLimit) return;
@@ -768,12 +607,6 @@ export class MeetingReportFastWorker implements OnModuleInit, OnModuleDestroy {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────────────────
-
-/**
- * Безопасно достаёт `DialogTurn[]` из `Transcript.turns` (Json). Возвращает
- * пустой массив, если поле null / неверной структуры.
- */
 function extractTurns(raw: unknown): DialogTurn[] {
   if (!Array.isArray(raw)) return [];
   const out: DialogTurn[] = [];
@@ -782,8 +615,7 @@ function extractTurns(raw: unknown): DialogTurn[] {
     const turn = t as Record<string, unknown>;
     const speaker = typeof turn['speaker'] === 'string' ? turn['speaker'] : '';
     const text = typeof turn['text'] === 'string' ? turn['text'] : '';
-    const startSec =
-      typeof turn['startSec'] === 'number' ? turn['startSec'] : 0;
+    const startSec = typeof turn['startSec'] === 'number' ? turn['startSec'] : 0;
     const endSec = typeof turn['endSec'] === 'number' ? turn['endSec'] : 0;
     if (text.length === 0) continue;
     out.push({ speaker, text, startSec, endSec });
@@ -791,17 +623,9 @@ function extractTurns(raw: unknown): DialogTurn[] {
   return out;
 }
 
-/**
- * Форматирует диалог в текст вида `[mm:ss-mm:ss] Speaker: text`.
- * Эквивалентен `turnsToText` из `prompts/common.ts`, но не тянет roomChat
- * (для fast-pipeline он не нужен — это компромисс простоты).
- */
 function formatTranscript(turns: DialogTurn[]): string {
   return turns
-    .map(
-      (t) =>
-        `[${fmtTime(t.startSec)}-${fmtTime(t.endSec)}] ${t.speaker}: ${t.text}`,
-    )
+    .map((t) => `[${fmtTime(t.startSec)}-${fmtTime(t.endSec)}] ${t.speaker}: ${t.text}`)
     .join('\n');
 }
 
@@ -823,8 +647,6 @@ function pickToolCallInput(
   if (!toolCalls || toolCalls.length === 0) return null;
   const direct = toolCalls.find((t) => t.name === expectedName);
   if (direct) return direct.input;
-  // Если LLM вернул один tool_use под другим именем — берём первый
-  // (модели иногда «фантазируют» имя tool'а).
   const first = toolCalls[0];
   return first ? first.input : null;
 }
@@ -835,7 +657,6 @@ function safeParseJson(text: string): unknown | null {
   try {
     return JSON.parse(trimmed);
   } catch {
-    // Попробуем вытащить первый JSON-объект из текста.
     const match = trimmed.match(/\{[\s\S]*\}/u);
     if (!match) return null;
     try {
@@ -860,9 +681,6 @@ function clamp01(v: number): number {
   return v;
 }
 
-/**
- * Парсит dueDateIso. Формат: YYYY-MM-DD или ISO datetime. Иначе null.
- */
 function parseDueDateIso(raw: string | null): Date | null {
   if (!raw) return null;
   if (/^\d{4}-\d{2}-\d{2}$/u.test(raw)) {

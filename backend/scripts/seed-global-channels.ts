@@ -1,28 +1,3 @@
-/**
- * β-9 (2026-05-25) — Idempotent seed для ГЛОБАЛЬНЫХ Channel'ов
- * (`tenantId IS NULL`).
- *
- * Сейчас единственный глобальный канал — `telegram_bot` (`@kora_bot`).
- * Скрипт создаёт «пустую» запись (`config={}`, `status='active'`) ровно
- * один раз, если её ещё нет. Токен в неё проложит главный администратор
- * Z через `bun run setup:telegram-bot --token <X> --public-host-url <Y>`
- * (или через будущую страницу `/admin/system/telegram-bot`).
- *
- * Правила `safe-seed-rules`:
- *   - **никаких** UPDATE'ов существующих записей: если канал уже есть —
- *     выходим без изменений (admin мог поменять токен / выключить /
- *     поднять `maxDataClass` — не трогаем).
- *   - запускается из `apply-postgres-init` / при первом деплое; повторный
- *     запуск — no-op.
- *
- * NB: работает напрямую через `createPrismaClient()` (только prisma.channel),
- * НЕ поднимает AppModule — иначе `app.close()` рвал ioredis/BullMQ-коннекты и
- * засыпал лог флудом «Connection is closed» при каждом прогоне агрегатора.
- *
- * Запуск (из backend/):
- *   bun run scripts/seed-global-channels.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const GLOBAL_KINDS = ['telegram_bot'] as const;
@@ -45,7 +20,6 @@ async function main(): Promise<void> {
       skipped++;
       continue;
     }
-    // Пустой config — токен админ проложит отдельно.
     const ch = await prisma.channel.create({
       data: {
         tenantId: null,
@@ -61,9 +35,7 @@ async function main(): Promise<void> {
     );
     created++;
   }
-  console.log(
-    `[seed-global-channels] DONE: created=${created} skipped=${skipped}`,
-  );
+  console.log(`[seed-global-channels] DONE: created=${created} skipped=${skipped}`);
 }
 
 main()

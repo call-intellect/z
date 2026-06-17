@@ -22,26 +22,6 @@ import { ChatService } from './chat.service';
 import { ChatV2AskSchema, type ChatV2AskDto } from './dto/chat-v2.dto';
 import { ChatAskSchema, type ChatAskDto } from './dto/chat.dto';
 
-/**
- * Эндпоинты AI-чата.
- *   POST /api/v1/meetings/:id/chat        — single-meeting (legacy / V2 по флагу)
- *   GET  /api/v1/meetings/:id/chat/history
- *   POST /api/v1/chat                     — cross-meeting (legacy / V2 по флагу)
- *   GET  /api/v1/chat/history             — cross-meeting history
- *   POST /api/v1/cards/:id/chat           — card chat (legacy / V2 по флагу)
- *   GET  /api/v1/cards/:id/chat/history
- *   POST /api/v1/chat/v2                  — unified chat v2 (5 scope: org/meeting/card/theme/entity)
- *
- * Switching legacy↔V2: ENV `CHAT_V2_ENABLED` (см. cfg.knowledgeCore.chatV2Enabled).
- * Когда ON — единые «backwards-compatible» эндпоинты делегируются в `ChatService.askXV2`.
- * Когда OFF — работают legacy `askX`. История чата общая (`MeetingChatMessage`),
- * формат citations совместим.
- *
- * @deprecated SBA α-5 — все новые клиенты должны использовать
- *   `POST /api/v1/chat-v2/messages` (см. `ChatV2Controller`). Этот контроллер
- *   остаётся для обратной совместимости с фронтом /chat и API-клиентами,
- *   которые ещё не мигрировали. План удаления — отдельный sub-TZ в β/γ.
- */
 @ApiTags('chat')
 @Controller('api/v1')
 @UseGuards(CookieAuthGuard)
@@ -75,10 +55,7 @@ export class ChatController {
 
   @Get('meetings/:id/chat/history')
   @ApiOperation({ summary: 'История чата по встрече' })
-  meetingHistory(
-    @Param('id') meetingId: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  meetingHistory(@Param('id') meetingId: string, @CurrentUser() user: CurrentUserPayload) {
     return this.svc.getMeetingHistory(user.id, meetingId).then((items) => ({ items }));
   }
 
@@ -131,20 +108,10 @@ export class ChatController {
 
   @Get('cards/:id/chat/history')
   @ApiOperation({ summary: 'История чата по карточке' })
-  cardHistory(
-    @Param('id') cardId: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  cardHistory(@Param('id') cardId: string, @CurrentUser() user: CurrentUserPayload) {
     return this.svc.getCardHistory(user.id, cardId).then((items) => ({ items }));
   }
 
-  // ─────────────────────────── ChatV2: новый unified endpoint ─────────
-
-  /**
-   * `POST /api/v1/chat/v2` — единый AI-чат поверх IdeaBlock'ов с 5 scope.
-   * Доступен только когда `CHAT_V2_ENABLED=true`. При выключенном флаге —
-   * 503 `chat_v2_disabled`.
-   */
   @Post('chat/v2')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)

@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -46,27 +43,8 @@ import {
 import { type BitrixSyncScope } from './queue/bitrix-sync.queue';
 import { BitrixSyncQueueService } from './queue/bitrix-sync.queue.service';
 
-/** Допустимые scope ручного синка Bitrix24. */
-const BITRIX_SYNC_SCOPES: readonly BitrixSyncScope[] = [
-  'all',
-  'users',
-  'dialogs',
-  'crm',
-];
+const BITRIX_SYNC_SCOPES: readonly BitrixSyncScope[] = ['all', 'users', 'dialogs', 'crm'];
 
-/**
- * REST API Bitrix24-интеграции org.
- * ТЗ: plans/tz/2026-06-09-bitrix24-integration-install.md.
- *
- *   - GET    /api/v1/bitrix/integration               — текущая (read).
- *   - GET    /api/v1/bitrix/integration/authorize-url — URL OAuth-коннекта (manage).
- *   - POST   /api/v1/bitrix/integration/test          — проверка соединения (manage).
- *   - POST   /api/v1/bitrix/integration/claim         — привязать установку из Маркета (manage).
- *   - DELETE /api/v1/bitrix/integration               — отключить (delete).
- *
- * RBAC ресурс — `bitrix`. Фича тарифа — `feature.bitrix`. Формат ошибок
- * `{ ok:false, error:{ code, message } }` — по образцу `chatbox`/`sources`.
- */
 @ApiTags('bitrix')
 @Controller('api/v1/bitrix/integration')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -205,9 +183,7 @@ export class BitrixIntegrationController {
     const t = this.requireTenant(tenantId);
     await this.requireManage(user.id, t);
     await this.requireFeature(t);
-    const scope: BitrixSyncScope = BITRIX_SYNC_SCOPES.includes(
-      scopeRaw as BitrixSyncScope,
-    )
+    const scope: BitrixSyncScope = BITRIX_SYNC_SCOPES.includes(scopeRaw as BitrixSyncScope)
       ? (scopeRaw as BitrixSyncScope)
       : 'all';
     const { jobId } = await this.syncQueue.enqueue(t, scope);
@@ -225,8 +201,6 @@ export class BitrixIntegrationController {
     await this.requireDelete(user.id, t);
     return this.service.remove(t);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -280,8 +254,7 @@ export class BitrixIntegrationController {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Управлять Bitrix24-интеграцией может только владелец или администратор Org',
+          message: 'Управлять Bitrix24-интеграцией может только владелец или администратор Org',
         },
       });
     }

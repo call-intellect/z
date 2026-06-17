@@ -1,25 +1,3 @@
-/**
- * Patch: включить анализ для уже подключённых ChatBox-интеграций
- * (ТЗ 2026-06-10 cabinet §5, решение Р-5).
- *
- * Контекст: исторически `ChatboxIntegration.analysisEnabled` по умолчанию был
- * `false` (молчаливый OFF), поэтому переписка зеркалилась синком, но НЕ
- * анализировалась — чаты не попадали в граф/память. Подключение канала = согласие
- * на анализ (как создание встречи / загрузка аудио), поэтому уже подключённые
- * интеграции включаем. Дальше cron `analyze-sweep` сам подберёт их `pending` +
- * закрытые (`endedAt != null`) сессии и поставит в очередь анализа — отдельный
- * бэкофилл сессий не нужен.
- *
- * Идемпотентно: повторный прогон → 0 (нет интеграций с analysisEnabled=false).
- * Дефолт dry-run; запись — флагом `--apply`.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-enable-chatbox-analysis.ts            # dry-run
- *   docker compose exec backend bun run scripts/patch-enable-chatbox-analysis.ts --apply     # запись
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'patch', skipBootstrap).
- */
-
 import type { PrismaClient } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -59,7 +37,6 @@ export async function patchEnableChatboxAnalysis(
   return { scanned: targets.length, updated: res.count };
 }
 
-// CLI-враппер.
 if (require.main === module) {
   const apply = process.argv.includes('--apply');
   const prisma = createPrismaClient();

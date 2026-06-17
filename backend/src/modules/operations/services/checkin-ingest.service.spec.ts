@@ -10,25 +10,6 @@ import {
   renderCheckinText,
 } from './checkin-ingest.service';
 
-/**
- * Детерминированные unit-тесты CheckinIngestService (ТЗ
- * 2026-06-10-daily-checkin-to-graph-bridge, Фаза 2): Prisma / IngestService
- * полностью замоканы, БД/сети/LLM нет.
- *
- * Проверяем:
- *  - extractCheckinItems: парс Json-массива пунктов, мусор отфильтрован.
- *  - renderCheckinText: структурные секции; пустая структура → rawResponseText.
- *  - checkinOccurredAt: стабильный occurredAt из dateLocal (не completedAt).
- *  - ingestCheckin:
- *      · completedAt=null → null, ingest НЕ вызван (R2);
- *      · завершённый структурный → ingest с daily_checkin / sourceExternalId=
- *        checkInId / sensitive / turns[0].authorPersonId=personId / occurredAt
- *        из dateLocal; БЕЗ sentiment/qualityScore (R3–R8);
- *      · curatorReview (пустая структура, есть rawResponseText) → fullText =
- *        rawResponseText, ingest вызван (R6);
- *      · upsertSource: source отсутствует → create(type='daily_checkin').
- */
-
 function makeService(
   over: {
     prisma?: Partial<Record<string, unknown>>;
@@ -71,9 +52,9 @@ describe('extractCheckinItems', () => {
   it('не-массив / элементы без строкового text / пустые строки → отфильтрованы', () => {
     expect(extractCheckinItems(null)).toEqual([]);
     expect(extractCheckinItems('строка')).toEqual([]);
-    expect(
-      extractCheckinItems([{ text: '' }, { text: '   ' }, { foo: 'bar' }, 42, null]),
-    ).toEqual([]);
+    expect(extractCheckinItems([{ text: '' }, { text: '   ' }, { foo: 'bar' }, 42, null])).toEqual(
+      [],
+    );
   });
 });
 
@@ -92,7 +73,6 @@ describe('renderCheckinText', () => {
     expect(out).toContain('План на день:\n- Подготовить КП');
     expect(out).toContain('Сделано:\n- Отправил КП');
     expect(out).toContain('Блокеры:\n- Нет доступа к CRM (важность: высокая)');
-    // при наличии структуры сырой текст НЕ подмешиваем
     expect(out).not.toContain('сырой текст не нужен');
   });
 
@@ -128,9 +108,7 @@ describe('renderCheckinText', () => {
 describe('checkinOccurredAt', () => {
   it('валидный dateLocal → полдень UTC того дня (стабилен, не зависит от completedAt)', () => {
     const fallback = new Date('2030-01-01T00:00:00.000Z');
-    expect(checkinOccurredAt('2026-06-10', fallback)).toEqual(
-      new Date('2026-06-10T12:00:00.000Z'),
-    );
+    expect(checkinOccurredAt('2026-06-10', fallback)).toEqual(new Date('2026-06-10T12:00:00.000Z'));
   });
 
   it('невалидный dateLocal → fallback (completedAt)', () => {
@@ -201,7 +179,6 @@ describe('CheckinIngestService.ingestCheckin', () => {
         sourceId: 'src1',
         sourceExternalId: 'ci1',
         dataClass: 'sensitive',
-        // стабильный occurredAt из dateLocal, НЕ из мутирующего completedAt
         occurredAt: new Date('2026-06-10T12:00:00.000Z'),
         payload: expect.objectContaining({
           kind: 'daily_checkin',
@@ -219,7 +196,6 @@ describe('CheckinIngestService.ingestCheckin', () => {
         }),
       }),
     );
-    // R5 / Р-B2: оценочный слой COO в payload отсутствует.
     const payload = (ingest.ingest.mock.calls[0]![0] as { payload: any }).payload;
     expect(payload).not.toHaveProperty('sentiment');
     expect(payload).not.toHaveProperty('sentimentRationale');

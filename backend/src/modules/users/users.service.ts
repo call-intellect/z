@@ -5,18 +5,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { UsersRepository } from './users.repository';
 
-/**
- * Бизнес-сервис для работы с пользователями Z.
- *
- * Источники появления `User`:
- *   - **Crossmark API** — `upsertFromCrossmark`. Поле `externalId` обязательно
- *     и уникально на стороне партнёра. По нему мы и находим/создаём.
- *   - В V2 — собственный логин (заведём отдельный метод).
- *
- * Все операции, требующие согласованности «найти-обновить», выполняются
- * в одной транзакции (`prisma.$transaction`), чтобы исключить гонки между
- * параллельными вызовами Crossmark API.
- */
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -26,10 +14,6 @@ export class UsersService {
     @Inject(UsersRepository) private readonly users: UsersRepository,
   ) {}
 
-  /**
-   * Найти пользователя по `externalId` и обновить, если изменились email/name.
-   * Если пользователя нет — создать. Всё в одной транзакции.
-   */
   async upsertFromCrossmark(input: {
     externalId: string;
     email: string;

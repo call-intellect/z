@@ -1,27 +1,7 @@
-/**
- * Seed: 6 ключей billing.* для tier_standard (admin-plans-collapse-to-standard Фаза 1).
- *
- * Идём по правилам `safe-seed-rules`:
- *   - findUnique по key — если запись есть, пропускаем БЕЗ перетирания
- *     (защита админ-правок: super_admin мог уже изменить цену через UI);
- *   - если записи нет — создаём с дефолтом из ТЗ §3.1;
- *   - в конце печатаем сводку «создано: N, пропущено: M».
- *
- * Дефолты передаются жёстко в коде (это «code-fallback» по терминологии
- * AdminSetting). ENV-овых аналогов нет.
- *
- * Запуск (из backend/):
- *   bun run scripts/seed-admin-settings-billing.ts
- *
- * ТЗ: plans/tz/2026-05-31-admin-plans-collapse-to-standard.md §3.1, §4 Фаза 1.
- */
-
 import type { Prisma } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
-
-// ─────────────────────────────── seeds ───────────────────────────────────
 
 type Severity = 'low' | 'medium' | 'high' | 'destructive';
 
@@ -29,7 +9,6 @@ interface BillingSettingSeed {
   key: string;
   value: number;
   description: string;
-  /** Опц. переопределение `SEVERITY` (по умолчанию 'high' для цен). */
   severity?: Severity;
 }
 
@@ -64,10 +43,6 @@ const SEEDS: BillingSettingSeed[] = [
     value: 5,
     description: 'Дополнительный грант встреч за каждое доп. место',
   },
-  // ТЗ-5 Ф6 (meeting-upload-diarization) — месячный лимит ручных загрузок встреч
-  // на Org. Owner-decision крутилка (отдельно от MeetingsBalance/грантов выше).
-  // Читается `MeetingUploadsService.assertQuota` через getDynamic
-  // ('billing.meetingUploadsPerMonth' → ENV BILLING_MEETING_UPLOADS_PER_MONTH → 20).
   {
     key: 'billing.meetingUploadsPerMonth',
     value: 20,
@@ -80,8 +55,6 @@ const CATEGORY = 'billing';
 const SECTION = 'tariff-standard';
 const SEVERITY: Severity = 'high';
 
-// ─────────────────────────────── main ────────────────────────────────────
-
 async function main(): Promise<void> {
   console.log('=== seed-admin-settings-billing START ===');
 
@@ -89,8 +62,6 @@ async function main(): Promise<void> {
   let skipped = 0;
 
   for (const seed of SEEDS) {
-    // Защита админ-правок: если ключ уже существует — не трогаем value,
-    // не трогаем метаданные (super_admin мог настроить через UI).
     const existing = await prisma.adminSetting.findUnique({
       where: { key: seed.key },
       select: { key: true },

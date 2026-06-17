@@ -1,17 +1,10 @@
-'use client';
+"use client";
 
-/**
- * useImports — список импортов организации (Wave 3 / Tracker Phase 5 part 1).
- *
- * Backend контракт: `GET /api/v1/tracker/imports?limit&cursor&source&status`.
- * SWR ключ: `['tracker.imports', orgId, source, status, limit, cursor]`.
- */
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
-
-import { importsApi, type ListImportsRequest } from '@/api/tracker/imports.api';
-import { importLogFromApi, type ImportLog } from '@/domain/tracker';
+import { importsApi, type ListImportsRequest } from "@/api/tracker/imports.api";
+import { importLogFromApi, type ImportLog } from "@/domain/tracker";
 
 export interface UseImportsResult {
   imports: ImportLog[];
@@ -28,7 +21,7 @@ export function useImports(
 ): UseImportsResult {
   const key = orgId
     ? ([
-        'tracker.imports',
+        "tracker.imports",
         orgId,
         req.source ?? null,
         req.status ?? null,
@@ -40,7 +33,7 @@ export function useImports(
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId) throw new Error('orgId required');
+      if (!orgId) throw new Error("orgId required");
       return importsApi.list(orgId, req);
     },
     { revalidateOnFocus: false },
@@ -54,7 +47,7 @@ export function useImports(
   return {
     imports,
     nextCursor: swr.data?.nextCursor ?? null,
-    limit: swr.data?.limit ?? (req.limit ?? 20),
+    limit: swr.data?.limit ?? req.limit ?? 20,
     error: swr.error,
     isLoading: swr.isLoading,
     mutate: () => swr.mutate(),

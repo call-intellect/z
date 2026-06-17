@@ -4,14 +4,14 @@ status: draft
 date: 2026-06-01
 feature: Архитектура демо-кабинета — переход с «копия на каждую Org» на «shared demo Org как наблюдатель»
 supersedes_partial:
-  - plans/tz/2026-05-31-demo-auto-seed-and-cleanup.md   # фундаментально другая модель; авто-сидинг в каждую Org не нужен
-  - plans/tz/2026-05-31-demo-content-expansion-pulse.md # контент остаётся, но сидится один раз в эталонную Org, не для каждого пользователя
+  - plans/archive/2026-05-31-demo-auto-seed-and-cleanup.md   # фундаментально другая модель; авто-сидинг в каждую Org не нужен
+  - plans/archive/2026-05-31-demo-content-expansion-pulse.md # контент остаётся, но сидится один раз в эталонную Org, не для каждого пользователя
 related:
-  - plans/tz/2026-05-28-demo-workspace.md
-  - plans/tz/2026-05-28-demo-cabinet.md
+  - plans/archive/2026-05-28-demo-workspace.md
+  - plans/archive/2026-05-28-demo-cabinet.md
   - plans/analysis/2026-05-28-billing-paywall-demo-cabinet.md
-  - plans/tz/2026-05-29-admin-demo-workspace-creation.md
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-29-admin-demo-workspace-creation.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
 ---
 
 # Анализ: shared demo Org как единственный источник демо-данных

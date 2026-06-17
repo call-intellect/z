@@ -1,11 +1,3 @@
-/**
- * Cross-meeting RAG: получаем top-K релевантных chunks через pgvector,
- * группируем по meetingId, формируем контекст с ссылками на встречи.
- *
- * Сам поиск делается в `ChatService.askCrossMeeting` через
- * `prisma.$queryRaw`. Здесь — только построитель промпта.
- */
-
 import { formatMmSs } from './single-meeting-context';
 
 export interface CrossMeetingChunk {
@@ -40,11 +32,10 @@ const SYSTEM_PROMPT = `Ты — ассистент по архиву видео�
 - Краткость: 2-5 предложений; сложные вопросы — до 8.`;
 
 export function buildCrossMeetingContext(input: CrossMeetingInput): BuiltCrossContext {
-  // Группируем по встрече (max 5 разных).
   const byMeeting = new Map<string, CrossMeetingChunk[]>();
   for (const c of input.chunks) {
     if (!byMeeting.has(c.meetingId)) {
-      if (byMeeting.size >= 5) continue; // максимум 5 встреч в контексте
+      if (byMeeting.size >= 5) continue;
       byMeeting.set(c.meetingId, []);
     }
     byMeeting.get(c.meetingId)!.push(c);
@@ -53,9 +44,7 @@ export function buildCrossMeetingContext(input: CrossMeetingInput): BuiltCrossCo
   const parts: string[] = ['Найденные релевантные фрагменты:', ''];
   for (const [, chunks] of byMeeting) {
     const first = chunks[0]!;
-    const dateLabel = first.meetingDate
-      ? first.meetingDate.toISOString().slice(0, 10)
-      : '—';
+    const dateLabel = first.meetingDate ? first.meetingDate.toISOString().slice(0, 10) : '—';
     parts.push(`### Встреча "${first.meetingTitle}" (${first.meetingType}, ${dateLabel})`);
     for (const c of chunks) {
       parts.push(`[${formatMmSs(c.startMs)}-${formatMmSs(c.endMs)}] ${c.text}`);

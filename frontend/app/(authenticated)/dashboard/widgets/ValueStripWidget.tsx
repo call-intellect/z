@@ -1,39 +1,25 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import Link from 'next/link';
+import type { ReactNode } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   FileCheck2,
   HandshakeIcon,
   ListChecks,
   MessageSquareText,
-} from 'lucide-react';
+} from "lucide-react";
 
-import type { DirectorDashboardValueStripDomain } from '@/domain/director-dashboard';
-import { CHART, GRAD, glass } from '@/ui/components/dashboard/modern';
-
-/**
- * ТЗ-2 Ф1 — «Полоса пользы» (Value Strip): первая строка главной директора.
- *
- * 5 твёрдых счётчиков снятой Корой рутины за период. Это НЕ мягкие оценки и
- * НЕ тренды — только факт «сколько работы Кора сделала». Поэтому здесь нет
- * дельта-плашек и спарклайнов (их нет в данных — фабриковать тренд нельзя).
- * Всё-ноль — валидное состояние («0 за период»), рисуем как есть.
- *
- * Современный визуальный язык: одна стеклянная карточка с 5 ячейками,
- * у каждой — градиентная иконка, крупное число и подпись. Токены из `modern/`.
- */
+import type { DirectorDashboardValueStripDomain } from "@/domain/director-dashboard";
+import { CHART, GRAD, glass } from "@/ui/components/dashboard/modern";
 
 type ValueCell = {
   key: string;
   icon: ReactNode;
   grad: string;
-  /** Тень-свечение под иконкой (тон из палитры графиков). */
   tone: string;
   label: string;
   value: number;
-  /** Маршрут до источника счётчика (вся ячейка кликабельна). */
   href: string;
 };
 
@@ -44,49 +30,49 @@ export function ValueStripWidget({
 }) {
   const cells: ValueCell[] = [
     {
-      key: 'meetings',
+      key: "meetings",
       icon: <FileCheck2 size={18} />,
       grad: GRAD.violet,
       tone: CHART.violet,
-      label: 'Встречи запротоколированы',
+      label: "Встречи запротоколированы",
       value: data.meetingsProtocoled,
-      href: '/meetings',
+      href: "/meetings",
     },
     {
-      key: 'tasks',
+      key: "tasks",
       icon: <ListChecks size={18} />,
       grad: GRAD.blue,
       tone: CHART.blue,
-      label: 'Задачи извлечены',
+      label: "Задачи извлечены",
       value: data.tasksExtracted,
-      href: '/tasks',
+      href: "/tasks",
     },
     {
-      key: 'decisions',
+      key: "decisions",
       icon: <CheckCircle2 size={18} />,
       grad: GRAD.teal,
       tone: CHART.teal,
-      label: 'Решения зафиксированы',
+      label: "Решения зафиксированы",
       value: data.decisionsExtracted,
-      href: '/decisions',
+      href: "/decisions",
     },
     {
-      key: 'answered',
+      key: "answered",
       icon: <MessageSquareText size={18} />,
       grad: GRAD.amber,
       tone: CHART.amber,
-      label: 'Вопросов отвечено памятью',
+      label: "Вопросов отвечено памятью",
       value: data.questionsAnsweredByMemory,
-      href: '/memory',
+      href: "/memory",
     },
     {
-      key: 'commitments',
+      key: "commitments",
       icon: <HandshakeIcon size={18} />,
       grad: GRAD.pink,
       tone: CHART.pink,
-      label: 'Договорённостей удержано',
+      label: "Договорённостей удержано",
       value: data.commitmentsKept,
-      href: '/me/promises',
+      href: "/me/promises",
     },
   ];
 
@@ -105,7 +91,7 @@ export function ValueStripWidget({
             href={cell.href}
             aria-label={`${cell.label}: ${cell.value} — открыть источник`}
             className="block cursor-pointer rounded-2xl p-4 transition-colors hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            style={{ background: 'var(--surface-inset)' }}
+            style={{ background: "var(--surface-inset)" }}
           >
             <div
               className="grid h-9 w-9 place-items-center rounded-xl"

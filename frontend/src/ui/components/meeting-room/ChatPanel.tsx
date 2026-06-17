@@ -1,42 +1,26 @@
-'use client';
+"use client";
 
-/**
- * Правая панель in-meeting чата с persist через backend.
- *
- * - Подгружает историю на mount (`GET /meetings/:id/room-messages`).
- * - Live-сообщения — через LiveKit DataChannel (`useChat()`).
- * - При отправке параллельно: LiveKit `send()` + наш `POST` (идемпотентный
- *   по `clientMessageId`).
- * - Дедуп: `clientMessageId` пробрасывается в `attributes` LiveKit-сообщения.
- *
- * История чата сохраняется в `MeetingRoomMessage` и видна:
- * - опоздавшим участникам (через GET history при join);
- * - на странице результата (6-й таб «Чат»);
- * - на public share-странице (если `allowChat=true`).
- */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChat, useLocalParticipant } from "@livekit/components-react";
+import type { ReceivedChatMessage } from "@livekit/components-core";
+import { nanoid } from "nanoid";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useChat, useLocalParticipant } from '@livekit/components-react';
-import type { ReceivedChatMessage } from '@livekit/components-core';
-import { nanoid } from 'nanoid';
-
-import { roomMessagesApi } from '@/api/room-messages.api';
-import { ApiError } from '@/api/api-error';
+import { roomMessagesApi } from "@/api/room-messages.api";
+import { ApiError } from "@/api/api-error";
 import {
   roomMessageFromApi,
   type RoomMessageDomain,
-} from '@/domain/room-message';
-import { t } from '@/lib/i18n';
-import { toast } from '@/ui/shadcn/toast';
-import { Button } from '@/ui/shadcn/button';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/room-message";
+import { t } from "@/lib/i18n";
+import { toast } from "@/ui/shadcn/toast";
+import { Button } from "@/ui/shadcn/button";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const MAX_CONTENT = 2000;
 const COUNTER_THRESHOLD = 1800;
-const ATTR_CLIENT_MESSAGE_ID = 'clientMessageId';
-/** Топик-fallback: если получатели старой версии не умеют читать `attributes`. */
-const TOPIC_PREFIX = 'chat-';
+const ATTR_CLIENT_MESSAGE_ID = "clientMessageId";
+const TOPIC_PREFIX = "chat-";
 
 type Props = {
   open: boolean;
@@ -45,15 +29,15 @@ type Props = {
 };
 
 function fmtTime(d: Date): string {
-  return d.toLocaleTimeString('ru-RU', {
-    hour: '2-digit',
-    minute: '2-digit',
+  return d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
 
 function extractClientId(msg: ReceivedChatMessage): string | null {
   const attrs = msg.attributes;
-  if (attrs && typeof attrs[ATTR_CLIENT_MESSAGE_ID] === 'string') {
+  if (attrs && typeof attrs[ATTR_CLIENT_MESSAGE_ID] === "string") {
     return attrs[ATTR_CLIENT_MESSAGE_ID];
   }
   return null;
@@ -63,28 +47,21 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
   const { localParticipant } = useLocalParticipant();
   const { send, chatMessages, isSending } = useChat();
 
-  // История с backend (загружается на mount).
   const [historyMessages, setHistoryMessages] = useState<RoomMessageDomain[]>(
     [],
   );
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  /** Время join'а — отделяет историю от live (для divider'а). */
   const joinedAtRef = useRef<Date | null>(null);
 
-  // Live-сообщения (свои optimistic + чужие из DataChannel).
   const [liveMessages, setLiveMessages] = useState<RoomMessageDomain[]>([]);
 
-  // Известные clientMessageId — для дедупа.
   const knownClientIdsRef = useRef<Set<string>>(new Set());
 
-  // Текст в input.
-  const [draft, setDraft] = useState('');
+  const [draft, setDraft] = useState("");
 
-  // Скролл-контейнер.
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
 
-  // 1. Загрузка истории при mount.
   useEffect(() => {
     if (!meetingId) return;
     let cancelled = false;
@@ -93,7 +70,9 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
       .history(meetingId)
       .then((res) => {
         if (cancelled) return;
-        const domain = res.map((m) => roomMessageFromApi(m, { fromHistory: true }));
+        const domain = res.map((m) =>
+          roomMessageFromApi(m, { fromHistory: true }),
+        );
         const ids = knownClientIdsRef.current;
         domain.forEach((m) => ids.add(m.clientMessageId));
         setHistoryMessages(domain);
@@ -101,7 +80,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
       })
       .catch(() => {
         if (cancelled) return;
-        // История не критична — пустой список + флаг.
         setHistoryMessages([]);
         setHistoryLoaded(true);
       });
@@ -110,7 +88,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     };
   }, [meetingId]);
 
-  // 2. Подписка на новые DataChannel-сообщения.
   useEffect(() => {
     if (chatMessages.length === 0) return;
     const localIdentity = localParticipant?.identity;
@@ -118,12 +95,10 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
       const known = knownClientIdsRef.current;
       let next = prev;
       for (const msg of chatMessages) {
-        const fromIdentity = msg.from?.identity ?? '';
-        // Свои сообщения пропускаем — добавляем optimistic в onSend.
+        const fromIdentity = msg.from?.identity ?? "";
         if (localIdentity && fromIdentity === localIdentity) continue;
 
         const clientId = extractClientId(msg);
-        // Если без clientId — синтезируем (legacy-fallback).
         const id = clientId ?? `lk-${msg.id}`;
         if (known.has(id)) continue;
         known.add(id);
@@ -131,7 +106,7 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
         const authorName =
           (msg.from?.name && msg.from.name.trim()) ||
           msg.from?.identity ||
-          'Гость';
+          "Гость";
         const domainMsg: RoomMessageDomain = {
           id,
           meetingId,
@@ -148,7 +123,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     });
   }, [chatMessages, localParticipant, meetingId]);
 
-  // 3. Auto-scroll: вниз только если юзер уже внизу.
   const allMessages = useMemo(
     () => [...historyMessages, ...liveMessages],
     [historyMessages, liveMessages],
@@ -169,7 +143,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     stickToBottomRef.current = dist < 60;
   }, []);
 
-  // 4. Отправка.
   const onSubmit = useCallback(async () => {
     const text = draft.trim();
     if (!text || isSending) return;
@@ -179,11 +152,11 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     }
 
     const clientMessageId = nanoid(20);
-    const localIdentity = localParticipant?.identity ?? '';
+    const localIdentity = localParticipant?.identity ?? "";
     const localName =
       (localParticipant?.name && localParticipant.name.trim()) ||
       localIdentity ||
-      'Я';
+      "Я";
 
     const optimistic: RoomMessageDomain = {
       id: `local-${clientMessageId}`,
@@ -197,22 +170,17 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
 
     knownClientIdsRef.current.add(clientMessageId);
     setLiveMessages((prev) => [...prev, optimistic]);
-    setDraft('');
+    setDraft("");
     stickToBottomRef.current = true;
 
-    // LiveKit live-broadcast (получатели дедупят по `attributes.clientMessageId`).
     const livekitSend = send(text, {
       topic: TOPIC_PREFIX + clientMessageId,
       attributes: { [ATTR_CLIENT_MESSAGE_ID]: clientMessageId },
-    }).catch(() => {
-      // Не критично — остальные участники могут не увидеть, но история сохранится.
-    });
+    }).catch(() => {});
 
-    // Persist.
     const persist = roomMessagesApi
       .send(meetingId, { clientMessageId, content: text })
       .then((apiMsg) => {
-        // Подмена локального id на серверный.
         setLiveMessages((prev) =>
           prev.map((m) =>
             m.clientMessageId === clientMessageId
@@ -225,7 +193,7 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
         const message =
           e instanceof ApiError
             ? e.message
-            : 'Сообщение не сохранено в истории, но участники его получили.';
+            : "Сообщение не сохранено в истории, но участники его получили.";
         toast.error(message);
         setLiveMessages((prev) =>
           prev.map((m) =>
@@ -241,7 +209,7 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         void onSubmit();
       }
@@ -251,7 +219,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
 
   if (!open) return null;
 
-  // Найдём индекс первого live-сообщения для divider'а.
   const liveStartIdx = historyMessages.length;
   const showDivider = historyMessages.length > 0;
 
@@ -262,12 +229,12 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     >
       <header className="flex items-center justify-between border-b border-border-subtle px-4 py-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-primary">
-          {t('room.controls.chat')}
+          {t("room.controls.chat")}
         </h2>
         <button
           type="button"
           onClick={onClose}
-          aria-label={t('common.close')}
+          aria-label={t("common.close")}
           className="grid h-7 w-7 place-items-center rounded text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
         >
           ×
@@ -333,20 +300,16 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
         <div className="flex items-center justify-between gap-2">
           <span
             className={cn(
-              'font-mono text-[10px]',
+              "font-mono text-[10px]",
               draft.length > COUNTER_THRESHOLD
-                ? 'text-warning'
-                : 'text-fg-tertiary',
-              draft.length > COUNTER_THRESHOLD ? 'visible' : 'invisible',
+                ? "text-warning"
+                : "text-fg-tertiary",
+              draft.length > COUNTER_THRESHOLD ? "visible" : "invisible",
             )}
           >
             {draft.length} / {MAX_CONTENT}
           </span>
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!draft.trim() || isSending}
-          >
+          <Button type="submit" size="sm" disabled={!draft.trim() || isSending}>
             Отправить
           </Button>
         </div>
@@ -363,18 +326,18 @@ function ChatBubble({
   isOwn: boolean;
 }) {
   return (
-    <div className={cn('flex flex-col', isOwn ? 'items-end' : 'items-start')}>
+    <div className={cn("flex flex-col", isOwn ? "items-end" : "items-start")}>
       <div
         className={cn(
-          'max-w-[85%] rounded-md px-3 py-2 text-sm leading-snug',
+          "max-w-[85%] rounded-md px-3 py-2 text-sm leading-snug",
           isOwn
-            ? 'bg-accent-muted text-accent-fg'
-            : 'border border-border-subtle bg-bg-overlay text-fg-primary',
+            ? "bg-accent-muted text-accent-fg"
+            : "border border-border-subtle bg-bg-overlay text-fg-primary",
         )}
       >
         <div className="mb-0.5 flex items-baseline gap-2">
           <span className="text-[11px] font-semibold text-fg-secondary">
-            {isOwn ? 'Вы' : message.authorName}
+            {isOwn ? "Вы" : message.authorName}
           </span>
           <span className="font-mono text-[10px] text-fg-tertiary">
             {fmtTime(message.sentAt)}

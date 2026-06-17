@@ -14,10 +14,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AiChatQuotaService } from '../../ai-chat-quota/ai-chat-quota.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { DialogService } from '../../dialog-layer/services/dialog.service';
 import { narrowToChatIntent } from '../../dialog-layer/services/query-classifier.service';
 import {
@@ -54,56 +51,20 @@ import type {
   SkillTraitDto,
 } from '../dto/clones.dto';
 
-/**
- * SBA γ-1 — ClonesService (Clone API).
- *
- * Главные методы:
- *   - askPerson — ответ в стиле конкретного сотрудника.
- *   - askRole   — ответ в стиле роли (агрегат по employee'ям этой роли).
- *
- * Контракт:
- *   - RBAC: owner/admin Org / сам носитель / direct manager.
- *   - Rate limit: единая per-user квота `AiChatQuotaService` (50/20 в день,
- *     общая для Concierge + Clones) — ТЗ 2026-05-31. Старый ключ
- *     `cfg.skill.cloneAskPerUserPerDay` оставлен как code-fallback в env.schema,
- *     но в сервисе больше не читается.
- *   - Retrieval: subject-блоки + knowledgeProfile + relevant decisions.
- *   - LLM call: clone-respond с persona prompt в system.
- *   - Запись в ChatV2Conversation (mode='clone_style').
- */
 @Injectable()
 export class ClonesService {
   private readonly logger = new Logger(ClonesService.name);
 
-  /** Минимум traits в SkillProfile для ответа клона. */
   private static readonly MIN_TRAITS_FOR_ANSWER = 3;
 
-  /**
-   * Фаза 1 clone-reliability-hardening — точная формулировка отказа клона,
-   * когда в его памяти нет достаточного количества рассуждений по теме
-   * вопроса. Совпадает с пунктом 6 промпта `clone-respond.prompt.ts` —
-   * фронту удобно различать «программный отказ» и «модель сказала что-то
-   * похожее». Текст менять только в паре с тестами/документацией.
-   */
   static readonly TOPIC_STARVED_REFUSAL_TEXT =
     'У оригинала недостаточно высказываний по этой теме, чтобы я мог отвечать в его стиле без выдумывания. Спроси напрямую.';
 
-  /**
-   * TZ clone-method Э0.1 — программный отказ ПОСЛЕ LLM: модель ответила, но
-   * не сослалась ни на один блок/решение из subgraph (ungrounded ≈ вероятная
-   * галлюцинация). Текст менять только в паре с тестами/документацией.
-   */
   static readonly UNGROUNDED_REFUSAL_TEXT =
     'По этому вопросу у меня нет наблюдений в памяти роли — отвечать без опоры не буду, чтобы не выдумывать. Спроси носителя напрямую. (ответ — от клона должности)';
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    /**
-     * ТЗ 2026-05-31 — единая per-user квота AI-чата (Concierge + Clones).
-     * Используется в `askPerson` / `askRole` / `askPersonV2` / `askRoleV2`
-     * вместо приватного `assertRateLimit` (удалён). `AiChatQuotaModule`
-     * подключён `@Global`, явный import в `ClonesModule` не требуется.
-     */
     @Inject(AiChatQuotaService)
     private readonly aiChatQuota: AiChatQuotaService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
@@ -115,50 +76,19 @@ export class ClonesService {
     @Inject(ExecutablePersonaVersioningService)
     private readonly personaVersioning: ExecutablePersonaVersioningService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    /**
-     * Ф5 knowledge-access-groups (R8) — резолв групп СПРАШИВАЮЩЕГО для
-     * фильтра контекста клона. `@Optional()` сохраняет совместимость с
-     * unit-тестами, конструирующими ClonesService без этого аргумента
-     * (при отсутствии резолвера фильтр пропускается — поведение = off).
-     * В рантайме сервис всегда доступен из `@Global RbacModule`.
-     */
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
     @Inject(KnowledgeEmbeddingService)
     private readonly embedder: KnowledgeEmbeddingService,
-    /**
-     * ТЗ 2026-05-25 §9.4.3 (clone-respond эволюция, Фаза 7) — dialog-layer
-     * фасад. `@Optional()` — фича работает за флагом `CLONE_V2_ENABLED`;
-     * существующие unit-тесты, мокающие конструктор `ClonesService` без
-     * 11-го аргумента, остаются совместимыми.
-     */
     @Optional()
     @Inject(DialogService)
     private readonly dialog: DialogService | null = null,
-    /**
-     * Agents v2 Фаза C1 (2026-05-30) — PracticeSkill retrieval. `@Optional` —
-     * до включения `PRACTICE_SKILLS_ENABLED` и для unit-тестов, конструирующих
-     * ClonesService без 12-го аргумента. При отсутствии сервиса retrieval
-     * пропускается (skill'ы не подмешиваются в промпт).
-     */
     @Optional()
     @Inject(PracticeSkillRetrievalService)
     private readonly practiceSkills: PracticeSkillRetrievalService | null = null,
   ) {}
 
-  /**
-   * Ответ в стиле конкретного сотрудника.
-   *
-   * ТЗ 2026-05-25 §9 (clone-respond эволюция, Фаза 7) — при включённом
-   * `CLONE_V2_ENABLED` маршрутизация переключается на `askPersonV2`
-   * (dialog-layer + два режима + RBAC через `CloneAccessGrant`).
-   * Legacy-путь сохранён ниже как есть.
-   *
-   * ТЗ 2026-05-31 — rate limit перенесён с приватного `assertRateLimit`
-   * (Redis-only) на `AiChatQuotaService.tryConsume({ tenantId, userId })` —
-   * единую per-user квоту AI-чата (Concierge + Clones).
-   */
   async askPerson(args: {
     tenantId: string;
     requesterUserId: string;
@@ -169,7 +99,6 @@ export class ClonesService {
     if (this.isCloneV2Enabled()) {
       return this.askPersonV2(args);
     }
-    // 1. Проверка RBAC.
     const accessCheck = await this.canAccessPersonClone({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -185,15 +114,11 @@ export class ClonesService {
       });
     }
 
-    // 2. Rate limit.
-    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
-    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
     await this.aiChatQuota.tryConsume({
       tenantId: args.tenantId,
       userId: args.requesterUserId,
     });
 
-    // 3. Найти SkillProfile + active traits.
     const profile = await this.prisma.skillProfile.findUnique({
       where: { personId: args.personId },
       include: {
@@ -227,7 +152,6 @@ export class ClonesService {
       });
     }
 
-    // 4. Найти / собрать active ExecutablePersona.
     let persona = await this.prisma.executablePersona.findFirst({
       where: {
         profileId: profile.id,
@@ -237,7 +161,6 @@ export class ClonesService {
       orderBy: { version: 'desc' },
     });
     if (!persona) {
-      // on-demand build.
       this.logger.debug(
         { profileId: profile.id },
         'clones.askPerson: active Persona не найдена — пытаюсь собрать on-demand',
@@ -257,9 +180,6 @@ export class ClonesService {
       }
     }
 
-    // 5. Retrieval subgraph.
-    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (при off → null,
-    // фильтр не применяется; контекст клона байт-в-байт).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off' && this.accessResolver
@@ -275,11 +195,6 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    // 5.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
-    // Если в reasoning-блоках сотрудника < cloneTopicMinBlocks с
-    // косинусной близостью к вопросу ≥ cloneTopicSimilarityThreshold —
-    // НЕ зовём модель, отдаём готовый отказ. Защита перенесена в код,
-    // чтобы не зависеть от того, послушает ли модель пункт 6 промпта.
     const topicDensity = await this.assertTopicDensity({
       question: args.question,
       reasoningBlocks: subgraph.reasoningBlocks,
@@ -307,13 +222,9 @@ export class ClonesService {
 
       this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
       this.metrics.incCloneAsk({ scope: 'person' });
-      if (
-        profile.person.userId &&
-        profile.person.userId === args.requesterUserId
-      ) {
+      if (profile.person.userId && profile.person.userId === args.requesterUserId) {
         this.metrics.incCloneAskByOwner();
       }
-      // TZ clone-method Э0.1 — журнал запросов (включая отказы).
       await this.logCloneQuery({
         tenantId: args.tenantId,
         cloneScope: 'person',
@@ -330,16 +241,12 @@ export class ClonesService {
         text: refusalText,
         citations: [],
         mode: 'clone_style',
-        isOwner:
-          profile.person.userId !== null &&
-          profile.person.userId === args.requesterUserId,
+        isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
         refused: true,
         refusalReason: 'topic_starved',
       };
     }
 
-    // 6. Agents v2 Фаза C1 — PracticeSkill retrieval (за флагом
-    //    PRACTICE_SKILLS_ENABLED; @Optional сервис безопасно молчит).
     const retrievedSkills = await this.retrievePracticeSkills({
       tenantId: args.tenantId,
       scope: 'person',
@@ -348,10 +255,6 @@ export class ClonesService {
       conversationId: args.conversationId ?? null,
     });
 
-    // 7. LLM clone-respond.
-    // Clones=Roles Фаза 6 — у person-scope askPerson нет «должности», поэтому
-    // roleName = null (промпт подставит дефолт «сотрудника»), bearerName =
-    // имя самого носителя профиля.
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -362,12 +265,8 @@ export class ClonesService {
       practiceSkills: toPromptSkills(retrievedSkills),
     });
 
-    // 8. Распарсить цитаты.
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    // 8.5. TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой
-    //      валидной цитаты-опоры → программный отказ вместо галлюцинации.
-    //      Legacy-путь mode не вычисляет — всегда factual.
     if (this.isUngrounded(citations, 'factual')) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
@@ -378,14 +277,11 @@ export class ClonesService {
         conversationId: args.conversationId,
         persona,
         scopeKind: 'person',
-        isOwner:
-          profile.person.userId !== null &&
-          profile.person.userId === args.requesterUserId,
+        isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
         cloneV2: false,
       });
     }
 
-    // 9. ChatV2Conversation + Message.
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -405,7 +301,6 @@ export class ClonesService {
       },
     });
 
-    // 10. SkillUsage log (Agents v2 Фаза C1).
     await this.recordPracticeSkillUsages({
       tenantId: args.tenantId,
       conversationId,
@@ -413,16 +308,11 @@ export class ClonesService {
       skills: retrievedSkills,
     });
 
-    // 11. Метрики.
     this.metrics.incCloneAsk({ scope: 'person' });
-    if (
-      profile.person.userId &&
-      profile.person.userId === args.requesterUserId
-    ) {
+    if (profile.person.userId && profile.person.userId === args.requesterUserId) {
       this.metrics.incCloneAskByOwner();
     }
 
-    // 12. TZ clone-method Э0.1 — журнал запросов (успешный ответ).
     await this.logCloneQuery({
       tenantId: args.tenantId,
       cloneScope: 'person',
@@ -439,35 +329,21 @@ export class ClonesService {
       text: llmResult.text,
       citations,
       mode: 'clone_style',
-      isOwner:
-        profile.person.userId !== null &&
-        profile.person.userId === args.requesterUserId,
+      isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
     };
   }
 
-  /**
-   * Ответ в стиле роли (агрегат по employee'ям этой роли).
-   *
-   * ТЗ 2026-05-25 §9 (Фаза 7) — при `CLONE_V2_ENABLED` маршрутизация на
-   * `askRoleV2` (dialog-layer + два режима + CloneAccessGrant).
-   *
-   * ТЗ 2026-05-31 — rate limit перенесён с приватного `assertRateLimit`
-   * (Redis-only) на `AiChatQuotaService.tryConsume({ tenantId, userId })` —
-   * единую per-user квоту AI-чата (Concierge + Clones).
-   */
   async askRole(args: {
     tenantId: string;
     requesterUserId: string;
     roleId: string;
     question: string;
     conversationId?: string;
-    /** Раздел 7 (Р4) — конкретная версия клона роли (frozen бывший носитель). */
     roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
     if (this.isCloneV2Enabled()) {
       return this.askRoleV2(args);
     }
-    // 1. RBAC: read на Role + read на ≥ одну skill_profile внутри Org → admin/owner.
     const allowed = await this.rbac.check({
       userId: args.requesterUserId,
       tenantId: args.tenantId,
@@ -485,9 +361,6 @@ export class ClonesService {
       });
     }
 
-    // 2. Rate limit.
-    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
-    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
     await this.aiChatQuota.tryConsume({
       tenantId: args.tenantId,
       userId: args.requesterUserId,
@@ -504,9 +377,6 @@ export class ClonesService {
       });
     }
 
-    // 3. Active role-persona.
-    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
-    // бывший носитель); иначе текущая active + on-demand сборка.
     let persona =
       args.roleVersion != null
         ? await this.prisma.executablePersona.findFirst({
@@ -550,8 +420,6 @@ export class ClonesService {
       });
     }
 
-    // 4. Retrieval — top reasoning от всех employee'ев этой роли.
-    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off' && this.accessResolver
@@ -567,9 +435,6 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    // 4.5. Программный анти-deepfake: плотность рассуждений по теме вопроса.
-    // Для роли «тема» агрегируется — нам важно, чтобы среди reasoning-блоков
-    // любого из сотрудников роли нашлось ≥ cloneTopicMinBlocks по теме.
     const topicDensity = await this.assertTopicDensity({
       question: args.question,
       reasoningBlocks: subgraph.reasoningBlocks,
@@ -599,7 +464,6 @@ export class ClonesService {
 
       this.metrics.incCloneAskRefused({ reason: 'topic_starved' });
       this.metrics.incCloneAsk({ scope: 'role' });
-      // TZ clone-method Э0.1 — журнал запросов (включая отказы).
       await this.logCloneQuery({
         tenantId: args.tenantId,
         cloneScope: 'role',
@@ -622,16 +486,9 @@ export class ClonesService {
       };
     }
 
-    // 5. LLM call.
-    // Clones=Roles Фаза 6 — подставляем roleName из Role.name и bearerName
-    // из текущего носителя `ExecutablePersona.currentBearerPersonId`. Если
-    // bearer не зафиксирован — null (промпт подставит дефолт).
-    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
-    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
     const bearerName: string | null =
       persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
-    // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkills = await this.retrievePracticeSkills({
       tenantId: args.tenantId,
       scope: 'role',
@@ -652,9 +509,6 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    // TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой
-    // валидной цитаты-опоры → программный отказ вместо галлюцинации.
-    // Legacy-путь mode не вычисляет — всегда factual.
     if (this.isUngrounded(citations, 'factual')) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
@@ -700,7 +554,6 @@ export class ClonesService {
 
     this.metrics.incCloneAsk({ scope: 'role' });
 
-    // TZ clone-method Э0.1 — журнал запросов (успешный ответ).
     await this.logCloneQuery({
       tenantId: args.tenantId,
       cloneScope: 'role',
@@ -721,12 +574,6 @@ export class ClonesService {
     };
   }
 
-  /**
-   * Defensive чтение `cfg.cloneV2.enabled` — старые unit-тесты передают мок
-   * cfg, в котором этой группы может не быть. В таком случае считаем V2
-   * отключённым (legacy path), что соответствует defaults в env.schema
-   * (CLONE_V2_ENABLED=false).
-   */
   private isCloneV2Enabled(): boolean {
     try {
       return this.cfg.cloneV2?.enabled === true;
@@ -735,23 +582,6 @@ export class ClonesService {
     }
   }
 
-  // ─────────────────────── Clone V2 (ТЗ 2026-05-25 §9, Фаза 7) ───────────────────────
-
-  /**
-   * ТЗ 2026-05-25 §9 — новый путь `askPerson` под `CLONE_V2_ENABLED`.
-   *
-   * Отличия от legacy:
-   *  - RBAC ТОЛЬКО через `CloneAccessGrant` (галочка админа), legacy-исключения
-   *    отключены (носитель свой клон по умолчанию не видит).
-   *  - Перед LLM запускается полный `DialogService.process()` (5-шаговый
-   *    pipeline с памятью диалога: contextualize → confidence → classify →
-   *    multi-query → cache).
-   *  - intent (`factual` | `exploratory|analytical` → `judgmental`) выбирает
-   *    режим ответа: temperature, порог topic-density, набор правил в промпте,
-   *    политика цитат.
-   *  - При `dialog-classify.intent='clone_roleplay'` режим — factual.
-   *  - При cache-hit dialog-layer'а — возвращаем cachedAnswer без LLM-вызова.
-   */
   private async askPersonV2(args: {
     tenantId: string;
     requesterUserId: string;
@@ -759,7 +589,6 @@ export class ClonesService {
     question: string;
     conversationId?: string;
   }): Promise<AskCloneResponseDto> {
-    // 1. RBAC через RbacService.canAccessPersonClone(cloneV2Enabled=true).
     const accessCheck = await this.rbac.canAccessPersonClone({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -771,21 +600,16 @@ export class ClonesService {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Нет доступа к клону этого сотрудника. Запросите галочку у админа Org.',
+          message: 'Нет доступа к клону этого сотрудника. Запросите галочку у админа Org.',
         },
       });
     }
 
-    // 2. Rate limit (общий с legacy).
-    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
-    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
     await this.aiChatQuota.tryConsume({
       tenantId: args.tenantId,
       userId: args.requesterUserId,
     });
 
-    // 3. SkillProfile + persona (логика идентична legacy — переиспользуем).
     const profile = await this.prisma.skillProfile.findUnique({
       where: { personId: args.personId },
       include: {
@@ -838,7 +662,6 @@ export class ClonesService {
       }
     }
 
-    // 4. dialog-layer.
     const dialog = await this.runDialogLayer({
       tenantId: args.tenantId,
       userId: args.requesterUserId,
@@ -848,11 +671,8 @@ export class ClonesService {
       scopeRefId: profile.id,
     });
 
-    // 5. Mode = factual / judgmental.
     const mode = ClonesService.intentToMode(dialog.intent);
 
-    // 6. Subgraph retrieval (как в legacy).
-    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off' && this.accessResolver
@@ -868,9 +688,6 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    // 7. Topic-density guard. ТЗ 2026-06-08 (Ф6/G.1): анти-дипфейк-гейт един
-    //     для factual и judgmental — judgmental БОЛЬШЕ не понижает порог до
-    //     1 блока. Передаём null → берётся дефолт cfg.skill.cloneTopicMinBlocks.
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
@@ -887,14 +704,10 @@ export class ClonesService {
         persona,
         topicDensity,
         scopeKind: 'person',
-        isOwner:
-          profile.person.userId !== null &&
-          profile.person.userId === args.requesterUserId,
+        isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
       });
     }
 
-    // 8a. Agents v2 Фаза C1 — PracticeSkill retrieval (используем standalone
-    //     question после dialog-layer'а, чтобы embed был чище).
     const retrievedSkillsV2 = await this.retrievePracticeSkills({
       tenantId: args.tenantId,
       scope: 'person',
@@ -903,7 +716,6 @@ export class ClonesService {
       conversationId: args.conversationId ?? null,
     });
 
-    // 8. LLM clone-respond — параметризованный mode.
     const llmResult = await this.callCloneRespond({
       tenantId: args.tenantId,
       persona,
@@ -915,12 +727,8 @@ export class ClonesService {
       practiceSkills: toPromptSkills(retrievedSkillsV2),
     });
 
-    // 9. Парсим цитаты из «черновика». В judgmental — скрываем из текста.
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    // 9.5. TZ clone-method Э0.1 — пост-LLM grounding-гейт (ДО stripCitations):
-    //      ответ без единой валидной цитаты-опоры → программный отказ.
-    //      В judgmental гейт не применяется (SYSTEM запрещает [BLOCK:id] в тексте).
     if (this.isUngrounded(citations, mode)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
@@ -931,19 +739,14 @@ export class ClonesService {
         conversationId: args.conversationId,
         persona,
         scopeKind: 'person',
-        isOwner:
-          profile.person.userId !== null &&
-          profile.person.userId === args.requesterUserId,
+        isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
         cloneV2: true,
       });
     }
 
     const finalText =
-      mode === 'judgmental'
-        ? ClonesService.stripCitationsFromText(llmResult.text)
-        : llmResult.text;
+      mode === 'judgmental' ? ClonesService.stripCitationsFromText(llmResult.text) : llmResult.text;
 
-    // 10. Persist.
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -968,7 +771,6 @@ export class ClonesService {
       },
     });
 
-    // 10a. SkillUsage log.
     await this.recordPracticeSkillUsages({
       tenantId: args.tenantId,
       conversationId,
@@ -976,16 +778,11 @@ export class ClonesService {
       skills: retrievedSkillsV2,
     });
 
-    // 11. Метрики.
     this.metrics.incCloneAsk({ scope: 'person' });
-    if (
-      profile.person.userId &&
-      profile.person.userId === args.requesterUserId
-    ) {
+    if (profile.person.userId && profile.person.userId === args.requesterUserId) {
       this.metrics.incCloneAskByOwner();
     }
 
-    // 12. TZ clone-method Э0.1 — журнал запросов (успешный ответ).
     await this.logCloneQuery({
       tenantId: args.tenantId,
       cloneScope: 'person',
@@ -1002,27 +799,18 @@ export class ClonesService {
       text: finalText,
       citations,
       mode: 'clone_style',
-      isOwner:
-        profile.person.userId !== null &&
-        profile.person.userId === args.requesterUserId,
+      isOwner: profile.person.userId !== null && profile.person.userId === args.requesterUserId,
     };
   }
 
-  /**
-   * ТЗ 2026-05-25 §9 — новый путь `askRole` под `CLONE_V2_ENABLED`.
-   * Структурно идентичен `askPersonV2`, но scope='role' и subgraph — агрегат
-   * по сотрудникам роли.
-   */
   private async askRoleV2(args: {
     tenantId: string;
     requesterUserId: string;
     roleId: string;
     question: string;
     conversationId?: string;
-    /** Раздел 7 (Р4) — конкретная версия клона роли (active или frozen). */
     roleVersion?: number;
   }): Promise<AskCloneResponseDto> {
-    // 1. RBAC через CloneAccessGrant.
     const accessCheck = await this.rbac.canAccessRoleClone({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -1034,13 +822,10 @@ export class ClonesService {
         ok: false,
         error: {
           code: 'forbidden',
-          message:
-            'Нет доступа к клону этой роли. Запросите галочку у админа Org.',
+          message: 'Нет доступа к клону этой роли. Запросите галочку у админа Org.',
         },
       });
     }
-    // ТЗ 2026-05-31 — единая per-user квота AI-чата (`AiChatQuotaService`).
-    // Бросает `QuotaExceededError` (429 + retryAfterSeconds) на превышении.
     await this.aiChatQuota.tryConsume({
       tenantId: args.tenantId,
       userId: args.requesterUserId,
@@ -1057,8 +842,6 @@ export class ClonesService {
       });
     }
 
-    // Раздел 7 (Р4) — если задана конкретная версия, читаем её (active ИЛИ frozen
-    // бывший носитель); иначе текущая active + on-demand сборка.
     let persona =
       args.roleVersion != null
         ? await this.prisma.executablePersona.findFirst({
@@ -1113,7 +896,6 @@ export class ClonesService {
 
     const mode = ClonesService.intentToMode(dialog.intent);
 
-    // Ф5 knowledge-access (R8) — резолв групп СПРАШИВАЮЩЕГО (off → null).
     const enf = this.cfg.knowledgeAccess.enforcement;
     const accessCtx =
       enf !== 'off' && this.accessResolver
@@ -1129,8 +911,6 @@ export class ClonesService {
       enforcement: enf,
     });
 
-    // ТЗ 2026-06-08 (Ф6/G.1): анти-дипфейк-гейт един для factual и judgmental —
-    // judgmental БОЛЬШЕ не понижает порог. null → дефолт cloneTopicMinBlocks.
     const topicDensity = await this.assertTopicDensity({
       question: dialog.standaloneQuestion,
       reasoningBlocks: subgraph.reasoningBlocks,
@@ -1151,12 +931,9 @@ export class ClonesService {
       });
     }
 
-    // Раздел 7 (Р8/И3/И8) — НЕ выводим ФИО носителя. Клон отвечает ОТ ЛИЦА
-    // должности: ярлык = публичное имя клона «Клон <Должность> v<N>», а не ФИО.
     const bearerName: string | null =
       persona.publicName ?? `Клон ${role.name} v${persona.roleVersion ?? 1}`;
 
-    // Agents v2 Фаза C1 — PracticeSkill retrieval (scope='role').
     const retrievedSkillsV2Role = await this.retrievePracticeSkills({
       tenantId: args.tenantId,
       scope: 'role',
@@ -1178,9 +955,6 @@ export class ClonesService {
 
     const citations = this.parseCitations(llmResult.text, subgraph);
 
-    // TZ clone-method Э0.1 — пост-LLM grounding-гейт (ДО stripCitations):
-    // ответ без единой валидной цитаты-опоры → программный отказ.
-    // В judgmental гейт не применяется (SYSTEM запрещает [BLOCK:id] в тексте).
     if (this.isUngrounded(citations, mode)) {
       return this.persistUngroundedRefusal({
         tenantId: args.tenantId,
@@ -1197,9 +971,7 @@ export class ClonesService {
     }
 
     const finalText =
-      mode === 'judgmental'
-        ? ClonesService.stripCitationsFromText(llmResult.text)
-        : llmResult.text;
+      mode === 'judgmental' ? ClonesService.stripCitationsFromText(llmResult.text) : llmResult.text;
 
     const { conversationId, messageId } = await this.persistMessage({
       tenantId: args.tenantId,
@@ -1236,7 +1008,6 @@ export class ClonesService {
 
     this.metrics.incCloneAsk({ scope: 'role' });
 
-    // TZ clone-method Э0.1 — журнал запросов (успешный ответ).
     await this.logCloneQuery({
       tenantId: args.tenantId,
       cloneScope: 'role',
@@ -1257,21 +1028,15 @@ export class ClonesService {
     };
   }
 
-  // ─────────────────────── practice-skills (Agents v2 §C1) ───────────────────────
-
-  /**
-   * Безопасная обёртка над `PracticeSkillRetrievalService.retrieveForCloneRespond`.
-   * Если retrieval-сервис не инжектирован (флаг выключен / unit-тест без него) —
-   * возвращает []. Любая ошибка — поглощается и логируется (Clone API не
-   * должен падать из-за retrieval'а).
-   */
   private async retrievePracticeSkills(args: {
     tenantId: string;
     scope: 'person' | 'role' | 'org';
     scopeRefId: string;
     question: string;
     conversationId: string | null;
-  }): Promise<Array<{ id: string; status: string; trigger: string; steps: unknown; redFlags: unknown }>> {
+  }): Promise<
+    Array<{ id: string; status: string; trigger: string; steps: unknown; redFlags: unknown }>
+  > {
     if (!this.practiceSkills) return [];
     try {
       const skills = await this.practiceSkills.retrieveForCloneRespond(args);
@@ -1285,16 +1050,12 @@ export class ClonesService {
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        'clones.retrievePracticeSkills: retrieval упал — продолжаю без skill\'ов',
+        "clones.retrievePracticeSkills: retrieval упал — продолжаю без skill'ов",
       );
       return [];
     }
   }
 
-  /**
-   * Записывает SkillUsage и обновляет lastUsed. Best-effort, без пробрасывания
-   * ошибок (если запись упала — diagnostic-лог; ответ клона уже сохранён).
-   */
   private async recordPracticeSkillUsages(args: {
     tenantId: string;
     conversationId: string;
@@ -1317,13 +1078,6 @@ export class ClonesService {
     }
   }
 
-  /**
-   * Утилита: запустить dialog-layer (если сервис доступен и фича включена в
-   * конфиге). При `DIALOG_LAYER_ENABLED=false` или отсутствии DialogService
-   * — возвращаем no-op результат (standaloneQuestion = userMessage,
-   * intent='factual', одиночный запрос). Так v2-путь работает даже на
-   * unit-тестах, мокающих ClonesService без DialogService.
-   */
   private async runDialogLayer(input: {
     tenantId: string;
     userId: string;
@@ -1333,11 +1087,7 @@ export class ClonesService {
     scopeRefId: string;
   }): Promise<{
     standaloneQuestion: string;
-    intent:
-      | 'factual'
-      | 'exploratory'
-      | 'analytical'
-      | 'clone_roleplay';
+    intent: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay';
     queries: string[];
     confidence: number;
   }> {
@@ -1360,18 +1110,12 @@ export class ClonesService {
     });
     return {
       standaloneQuestion: r.standaloneQuestion,
-      // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
-      // ChatDialogIntent (4 категории) для clones dialog wrapper. Новые
-      // intent'ы (daily_plan_morning/evening/note) не должны доходить до
-      // clones-flow (bot-adapter перехватывает раньше); helper маппит их в
-      // 'factual' как безопасный дефолт.
       intent: narrowToChatIntent(r.intent),
       queries: r.queries,
       confidence: r.confidence,
     };
   }
 
-  /** ТЗ 2026-05-25 §9.4.5 — маппинг intent → mode (factual/judgmental). */
   private static intentToMode(
     intent: 'factual' | 'exploratory' | 'analytical' | 'clone_roleplay',
   ): 'factual' | 'judgmental' {
@@ -1379,23 +1123,13 @@ export class ClonesService {
     return 'factual';
   }
 
-  /**
-   * ТЗ 2026-05-25 §9.4.5 — убрать `[BLOCK:id]` маркеры из текста ответа в
-   * judgmental-режиме. Сами цитаты остаются в `metadata.citations` (через
-   * `parseCitations` до вызова этого метода).
-   */
   private static stripCitationsFromText(text: string): string {
-    return text.replace(/\[BLOCK:[a-zA-Z0-9_-]+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+    return text
+      .replace(/\[BLOCK:[a-zA-Z0-9_-]+\]/g, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
-  /**
-   * Утилита: единая обработка topic-starved-отказа для обоих v2-путей.
-   * Возвращает готовый `AskCloneResponseDto` с `refused=true`.
-   *
-   * TZ clone-method Э0.1 — добавлен `cloneTargetId` (personId/roleId) для
-   * записи в журнал `CloneQueryLog` (для person-scope `scopeRefId` —
-   * это profile.id, а в журнал нужен personId).
-   */
   private async persistTopicStarvedRefusal(args: {
     tenantId: string;
     requesterUserId: string;
@@ -1457,32 +1191,12 @@ export class ClonesService {
     };
   }
 
-  /**
-   * TZ clone-method Э0.1 — пост-LLM grounding-гейт: ответ без единой валидной
-   * цитаты-опоры ([BLOCK:id]/[DECISION:id] из subgraph) считаем ungrounded и
-   * заменяем программным отказом (анти-галлюцинация). Kill-switch:
-   * cfg.skill.cloneRespondGroundingEnabled.
-   *
-   * Применим ТОЛЬКО к mode='factual': judgmental-SYSTEM прямо запрещает
-   * [BLOCK:id] в тексте ответа (правило 2) — 0 цитат там норма, не пробел;
-   * анти-deepfake в judgmental держится topic-density ДО LLM + правилами
-   * SYSTEM п.4/6.
-   */
-  private isUngrounded(
-    citations: CloneCitationDto[],
-    mode: 'factual' | 'judgmental',
-  ): boolean {
+  private isUngrounded(citations: CloneCitationDto[], mode: 'factual' | 'judgmental'): boolean {
     if (mode === 'judgmental') return false;
     if (!this.cfg.skill.cloneRespondGroundingEnabled) return false;
     return citations.length === 0;
   }
 
-  /**
-   * TZ clone-method Э0.1 — единая обработка ungrounded-отказа для всех
-   * 4 ask-путей (legacy/v2 × person/role). Структура повторяет
-   * `persistTopicStarvedRefusal`: persistMessage с программным отказом +
-   * метрики + журнал CloneQueryLog + готовый DTO с `refused=true`.
-   */
   private async persistUngroundedRefusal(args: {
     tenantId: string;
     requesterUserId: string;
@@ -1493,7 +1207,6 @@ export class ClonesService {
     persona: ExecutablePersona;
     scopeKind: 'person' | 'role';
     isOwner: boolean;
-    /** true — путь askPersonV2/askRoleV2 (для парности с llmMeta v2-путей). */
     cloneV2: boolean;
   }): Promise<AskCloneResponseDto> {
     const refusalText = ClonesService.UNGROUNDED_REFUSAL_TEXT;
@@ -1539,15 +1252,6 @@ export class ClonesService {
     };
   }
 
-  /**
-   * ТЗ 2026-05-25 §9.4.7 (Фаза 7) — «Новый диалог» с клоном.
-   *
-   * Создаёт пустую `ChatV2Conversation` с привязкой к клону
-   * (scope='card', scopeRefId — personId либо roleId — совпадает с
-   * persistMessage()). Доступ проверяется ТОЛЬКО через CloneAccessGrant в
-   * режиме v2; при выключенном V2 — через legacy-RBAC, чтобы UI «список
-   * моих диалогов» работал и до миграции.
-   */
   async createCloneConversation(args: {
     tenantId: string;
     requesterUserId: string;
@@ -1578,17 +1282,7 @@ export class ClonesService {
         },
       });
     }
-    // audit В14 (2026-05-29): после RBAC проверяем, что cloneRefId реально
-    // существует в тенанте и не soft-удалён. Без этой проверки owner мог
-    // создать ChatV2Conversation на несуществующий personId/roleId
-    // (`canAccess.*Clone` для owner'а всегда true) — БД получала висячие
-    // scopeRefId, UI потом ломался с «не нашли клона» уже из контекста
-    // сообщения.
-    await this.assertCloneRefExists(
-      args.tenantId,
-      args.cloneType,
-      args.cloneRefId,
-    );
+    await this.assertCloneRefExists(args.tenantId, args.cloneType, args.cloneRefId);
     const created = await this.prisma.chatV2Conversation.create({
       data: {
         tenantId: args.tenantId,
@@ -1602,11 +1296,6 @@ export class ClonesService {
     return { conversationId: created.id };
   }
 
-  /**
-   * audit В14: дублирует логику `ClonesAdminService.assertCloneRefExists`
-   * чтобы не делать method-injection из admin-сервиса в user-сервис.
-   * Проверяет существование Role/Person в тенанте + не soft-удалён.
-   */
   private async assertCloneRefExists(
     tenantId: string,
     cloneType: 'person' | 'role',
@@ -1637,24 +1326,6 @@ export class ClonesService {
     }
   }
 
-  /**
-   * ТЗ 2026-05-26 §2.7 — `GET /api/v1/clones/conversations`.
-   *
-   * Возвращает список диалогов текущего пользователя с конкретным клоном
-   * (отсортировано по `updatedAt DESC`, cursor-based pagination).
-   *
-   * RBAC: только активный `CloneAccessGrant` (через
-   * `RbacService.canAccessPersonClone/canAccessRoleClone` c
-   * `cloneV2Enabled=true`). Этот эндпоинт показывает историю — не имеет смысла
-   * показывать её тем, у кого нет доступа к самому клону.
-   *
-   * Маппинг к схеме:
-   *   - `cloneType + cloneRefId` → `ChatV2Conversation.scope='card'` +
-   *     `scopeRefId=cloneRefId` (см. `createCloneConversation`).
-   *   - Соответствие cloneType валидируется проверкой существования Role или
-   *     Person в текущем тенанте (404 при отсутствии).
-   *   - У `ChatV2Conversation` нет `deletedAt` — фильтруем `status: 'active'`.
-   */
   async listMyCloneConversations(args: {
     tenantId: string;
     requesterUserId: string;
@@ -1663,8 +1334,6 @@ export class ClonesService {
     limit: number;
     cursor?: string;
   }): Promise<CloneConversationsListResponseDto> {
-    // 1. Существование клона в тенанте (для отдельного 404 — иначе пустой
-    //    список не отличался бы от «клона нет»).
     if (args.cloneType === 'role') {
       const role = await this.prisma.role.findFirst({
         where: { id: args.cloneRefId, tenantId: args.tenantId, deletedAt: null },
@@ -1689,7 +1358,6 @@ export class ClonesService {
       }
     }
 
-    // 2. RBAC: активный грант (или legacy-доступ, если CLONE_V2_ENABLED=false).
     const v2 = this.isCloneV2Enabled();
     const access =
       args.cloneType === 'role'
@@ -1715,8 +1383,6 @@ export class ClonesService {
       });
     }
 
-    // 3. Cursor pagination. take = limit + 1, чтобы определить hasMore без
-    //    дополнительного count-запроса.
     const conversations = await this.prisma.chatV2Conversation.findMany({
       where: {
         tenantId: args.tenantId,
@@ -1727,9 +1393,7 @@ export class ClonesService {
       },
       orderBy: { updatedAt: 'desc' },
       take: args.limit + 1,
-      ...(args.cursor
-        ? { cursor: { id: args.cursor }, skip: 1 }
-        : {}),
+      ...(args.cursor ? { cursor: { id: args.cursor }, skip: 1 } : {}),
       select: {
         id: true,
         title: true,
@@ -1740,9 +1404,7 @@ export class ClonesService {
     });
 
     const hasMore = conversations.length > args.limit;
-    const sliced = hasMore
-      ? conversations.slice(0, args.limit)
-      : conversations;
+    const sliced = hasMore ? conversations.slice(0, args.limit) : conversations;
     const items: CloneConversationListItemDto[] = sliced.map((c) => ({
       id: c.id,
       title: c.title,
@@ -1750,20 +1412,16 @@ export class ClonesService {
       messageCount: c._count.messages,
       createdAt: c.createdAt.toISOString(),
     }));
-    const nextCursor =
-      hasMore && items.length > 0 ? items[items.length - 1]!.id : null;
+    const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]!.id : null;
 
     return { items, nextCursor };
   }
-
-  // ─────────────────────── skill-profile read ───────────────────────
 
   async getPersonSkillProfile(args: {
     tenantId: string;
     requesterUserId: string;
     personId: string;
   }): Promise<SkillProfileDto> {
-    // RBAC: то же что для askPerson (owner/admin/self/direct manager).
     const access = await this.canAccessPersonClone({
       tenantId: args.tenantId,
       requesterUserId: args.requesterUserId,
@@ -1812,8 +1470,7 @@ export class ClonesService {
         buildVersion: 0,
         lastBuildAt: null,
         isEmpty: true,
-        canMarkMisleading:
-          access.relation === 'owner_admin' || access.relation === 'manager',
+        canMarkMisleading: access.relation === 'owner_admin' || access.relation === 'manager',
         isSelf: access.relation === 'self',
         traits: [],
         personaSnapshots: [],
@@ -1841,8 +1498,7 @@ export class ClonesService {
       buildVersion: profile.buildVersion,
       lastBuildAt: profile.lastBuildAt?.toISOString() ?? null,
       isEmpty: profile.traits.length === 0,
-      canMarkMisleading:
-        access.relation === 'owner_admin' || access.relation === 'manager',
+      canMarkMisleading: access.relation === 'owner_admin' || access.relation === 'manager',
       isSelf: access.relation === 'self',
       traits: profile.traits.map((t) => this.serializeTrait(t)),
       personaSnapshots: personaSnapshots.map((p) => ({
@@ -1860,7 +1516,6 @@ export class ClonesService {
     requesterUserId: string;
     roleId: string;
   }): Promise<RoleSkillProfileDto> {
-    // RBAC: read role.
     const allowed = await this.rbac.check({
       userId: args.requesterUserId,
       tenantId: args.tenantId,
@@ -1968,24 +1623,6 @@ export class ClonesService {
     };
   }
 
-  // ─────────────────────── Clones=Roles Ф4 — list & history ───────────────────────
-
-  /**
-   * Clones=Roles Ф4 — список текущих ролевых клонов Org для `/clones`.
-   *
-   * Контракт:
-   *   - RBAC: read `role` (как и `getRoleSkillProfile`). Любой member,
-   *     которому видны роли, видит список их клонов.
-   *   - Возвращает только `ExecutablePersona(scope='role')` — person-scope
-   *     персоны (legacy) скрыты, фронт их больше не показывает.
-   *   - На каждую (role, version) даём максимум одну запись: для status='active'
-   *     это естественно (одна active версия на роль), для других статусов
-   *     группировка делается на DB-уровне через ORDER BY + DISTINCT ON.
-   *     На Ф4 берём только status='active' по умолчанию — поэтому достаточно
-   *     обычного findMany.
-   *   - confidence — эвристика `min(1, builtFromTraitsCount / 10)`.
-   *     Без отдельного поля в БД, согласовано с UI Ф4 (та же формула там).
-   */
   async listClones(args: {
     tenantId: string;
     requesterUserId: string;
@@ -2010,11 +1647,6 @@ export class ClonesService {
 
     const { status, q, confidenceMin, page, pageSize } = args.query;
 
-    // Сначала собираем кандидатов на уровне БД: ExecutablePersona(scope='role')
-    // нужного статуса в этом Org. Фильтр по Role.name (через include) и
-    // confidenceMin делаем in-memory — на текущих объёмах (десятки ролей)
-    // это безопасно. Если ролей в Org станет >>100 — переедет в pgvector-style
-    // raw query, пока избыточно.
     const allCandidates = await this.prisma.executablePersona.findMany({
       where: {
         tenantId: args.tenantId,
@@ -2040,19 +1672,12 @@ export class ClonesService {
       return { items: [], total: 0, page, pageSize };
     }
 
-    // Загружаем Role + Department + bearer Person одним батчем.
     const roleIds = [
-      ...new Set(
-        allCandidates
-          .map((c) => c.scopeRefId)
-          .filter((id): id is string => Boolean(id)),
-      ),
+      ...new Set(allCandidates.map((c) => c.scopeRefId).filter((id): id is string => Boolean(id))),
     ];
     const bearerIds = [
       ...new Set(
-        allCandidates
-          .map((c) => c.currentBearerPersonId)
-          .filter((id): id is string => Boolean(id)),
+        allCandidates.map((c) => c.currentBearerPersonId).filter((id): id is string => Boolean(id)),
       ),
     ];
 
@@ -2078,21 +1703,18 @@ export class ClonesService {
     const roleById = new Map(roles.map((r) => [r.id, r]));
     const bearerById = new Map(bearers.map((p) => [p.id, p]));
 
-    // Сборка DTO + фильтры по Role.name и confidenceMin.
     const qLower = q?.toLowerCase();
     const mapped: CloneListItemDto[] = [];
     for (const c of allCandidates) {
       if (!c.scopeRefId) continue;
       const role = roleById.get(c.scopeRefId);
-      if (!role) continue; // роль удалена / иной tenant — пропускаем
+      if (!role) continue;
       if (qLower && !role.name.toLowerCase().includes(qLower)) continue;
 
       const confidence = Math.min(1, c.builtFromTraitsCount / 10);
       if (confidenceMin !== undefined && confidence < confidenceMin) continue;
 
-      const bearer = c.currentBearerPersonId
-        ? bearerById.get(c.currentBearerPersonId)
-        : undefined;
+      const bearer = c.currentBearerPersonId ? bearerById.get(c.currentBearerPersonId) : undefined;
 
       mapped.push({
         personaId: c.id,
@@ -2102,14 +1724,8 @@ export class ClonesService {
         departmentId: role.department?.id ?? null,
         version: c.roleVersion ?? 1,
         publicName: c.publicName ?? `Клон ${role.name} v${c.roleVersion ?? 1}`,
-        status: c.status as
-          | 'active'
-          | 'superseded'
-          | 'pending_rebuild'
-          | 'frozen',
-        currentBearer: bearer
-          ? { personId: bearer.id, personName: bearer.name }
-          : null,
+        status: c.status as 'active' | 'superseded' | 'pending_rebuild' | 'frozen',
+        currentBearer: bearer ? { personId: bearer.id, personName: bearer.name } : null,
         confidence,
         traitsCount: c.includedTraitIds.length,
         lastBuildAt: c.snapshotAt.toISOString(),
@@ -2123,18 +1739,6 @@ export class ClonesService {
     return { items, total, page, pageSize };
   }
 
-  /**
-   * Clones=Roles Ф4 — история версий клона роли для
-   * `GET /api/v1/clones/:roleId/history`.
-   *
-   * Возвращает все `ExecutablePersona(scope='role', scopeRefId=roleId)`
-   * отсортированные по `roleVersion DESC`. Период каждой версии:
-   *   - validFrom = snapshotAt самой версии;
-   *   - validUntil = snapshotAt предыдущей по времени версии (для архивных)
-   *     или null (для текущей активной).
-   *
-   * RBAC: read `role`.
-   */
   async getCloneHistory(args: {
     tenantId: string;
     requesterUserId: string;
@@ -2192,33 +1796,19 @@ export class ClonesService {
       return { roleId: role.id, roleName: role.name, versions: [] };
     }
 
-    // Раздел 7 (Р7/И3/И8) — историю показываем как «Клон <Должность> v<N>» без
-    // ФИО носителя: личность бывших не раскрываем, версию идентифицирует publicName.
-
-    // Сортируем по snapshotAt ASC для корректного вычисления validUntil:
-    // validUntil[i] = snapshotAt[i+1] (или null для самой свежей).
-    const byTimeAsc = [...personas].sort(
-      (a, b) => a.snapshotAt.getTime() - b.snapshotAt.getTime(),
-    );
+    const byTimeAsc = [...personas].sort((a, b) => a.snapshotAt.getTime() - b.snapshotAt.getTime());
     const validUntilByPersonaId = new Map<string, string | null>();
     for (let i = 0; i < byTimeAsc.length; i += 1) {
       const next = byTimeAsc[i + 1];
-      validUntilByPersonaId.set(
-        byTimeAsc[i]!.id,
-        next ? next.snapshotAt.toISOString() : null,
-      );
+      validUntilByPersonaId.set(byTimeAsc[i]!.id, next ? next.snapshotAt.toISOString() : null);
     }
 
-    // Clones=Roles Ф2 — обновляем gauge «общее число версий клона на роль».
-    // Учитываем все версии (active + superseded + pending_rebuild).
     try {
       this.metrics.setCloneRoleVersionsTotal({
         roleId: args.roleId,
         value: personas.length,
       });
-    } catch {
-      // observability — не критичный путь, игнорируем
-    }
+    } catch {}
 
     const versions: CloneVersionDto[] = personas.map((p) => {
       return {
@@ -2226,12 +1816,7 @@ export class ClonesService {
         roleId: role.id,
         version: p.roleVersion ?? 1,
         publicName: p.publicName ?? `Клон ${role.name} v${p.roleVersion ?? 1}`,
-        status: p.status as
-          | 'active'
-          | 'superseded'
-          | 'pending_rebuild'
-          | 'frozen',
-        // Раздел 7 (И3/И8) — ФИО носителя НЕ выводим; версию идентифицирует publicName.
+        status: p.status as 'active' | 'superseded' | 'pending_rebuild' | 'frozen',
         bearer: null,
         validFrom: p.snapshotAt.toISOString(),
         validUntil: validUntilByPersonaId.get(p.id) ?? null,
@@ -2243,13 +1828,6 @@ export class ClonesService {
     return { roleId: role.id, roleName: role.name, versions };
   }
 
-  /**
-   * Раздел 7 §7.5 — «совет бывших»: один вопрос → ответы ВСЕХ версий клона роли
-   * (текущая active + замороженные бывшие) рядом для сравнения. Переиспользует
-   * askRoleV2 per-версия (те же анти-дипфейк/grounding-гейты, квота). ФИО не
-   * выводим. Best-effort: упавшая версия (квота/недоступна) → entry с error,
-   * остальные отвечают. Cap 8 версий.
-   */
   async askAllFormers(args: {
     tenantId: string;
     requesterUserId: string;
@@ -2325,10 +1903,6 @@ export class ClonesService {
     };
   }
 
-  /**
-   * Помечает SkillTrait как misleading (post-hoc контроль кураторов).
-   * RBAC: owner/admin или direct manager Person'а.
-   */
   async markTraitMisleading(args: {
     tenantId: string;
     requesterUserId: string;
@@ -2363,14 +1937,12 @@ export class ClonesService {
         },
       });
     }
-    // Носитель не может пометить свой trait — это post-hoc контроль manager'а.
     if (access.relation !== 'owner_admin' && access.relation !== 'manager') {
       throw new ForbiddenException({
         ok: false,
         error: {
           code: 'forbidden_self_mark',
-          message:
-            'Пометить черту неверной может только direct manager или admin',
+          message: 'Пометить черту неверной может только direct manager или admin',
         },
       });
     }
@@ -2396,11 +1968,6 @@ export class ClonesService {
     this.metrics.incSkillTraitsMarkedMisleading({ category: trait.category });
   }
 
-  /**
-   * SBA γ-1 доделки — manual snapshot rebuild для ExecutablePersona.
-   * Только owner Person'а или admin/owner Org. Bypass'ит idempotency-замок
-   * (manual всегда работает).
-   */
   async triggerManualPersonaSnapshot(args: {
     tenantId: string;
     requesterUserId: string;
@@ -2429,8 +1996,7 @@ export class ClonesService {
         ok: false,
         error: {
           code: 'forbidden_manual_snapshot',
-          message:
-            'Manual snapshot может запросить только сам носитель или admin/owner Org',
+          message: 'Manual snapshot может запросить только сам носитель или admin/owner Org',
         },
       });
     }
@@ -2467,12 +2033,7 @@ export class ClonesService {
     sourceBlockIds: string[];
     firstObservedAt: Date;
     lastConfirmedAt: Date;
-    status:
-      | 'active'
-      | 'superseded_by'
-      | 'archived'
-      | 'misleading'
-      | 'pending_verification';
+    status: 'active' | 'superseded_by' | 'archived' | 'misleading' | 'pending_verification';
   }): SkillTraitDto {
     return {
       id: t.id,
@@ -2487,20 +2048,11 @@ export class ClonesService {
     };
   }
 
-  // ─────────────────────── RBAC ───────────────────────
-
-  /**
-   * Доступ к клону Person разрешён:
-   *   - owner/admin Org;
-   *   - сам носитель (Person.userId === requesterUserId);
-   *   - direct manager (Membership.role='manager' в той же primaryDepartment).
-   */
   private async canAccessPersonClone(args: {
     tenantId: string;
     requesterUserId: string;
     personId: string;
   }): Promise<{ allowed: boolean; relation: 'owner_admin' | 'self' | 'manager' | 'none' }> {
-    // 1. owner/admin?
     const adminAllowed = await this.rbac.check({
       userId: args.requesterUserId,
       tenantId: args.tenantId,
@@ -2516,7 +2068,6 @@ export class ClonesService {
       }
     }
 
-    // 2. self?
     const target = await this.prisma.person.findUnique({
       where: { id: args.personId },
       select: { id: true, userId: true, primaryDepartmentId: true, tenantId: true },
@@ -2528,7 +2079,6 @@ export class ClonesService {
       return { allowed: true, relation: 'self' };
     }
 
-    // 3. direct manager?
     if (target.primaryDepartmentId) {
       const requesterPerson = await this.prisma.person.findFirst({
         where: {
@@ -2538,9 +2088,7 @@ export class ClonesService {
         },
         select: { id: true, primaryDepartmentId: true },
       });
-      if (
-        requesterPerson?.primaryDepartmentId === target.primaryDepartmentId
-      ) {
+      if (requesterPerson?.primaryDepartmentId === target.primaryDepartmentId) {
         const isManager = await this.prisma.membership.findFirst({
           where: {
             orgId: args.tenantId,
@@ -2556,34 +2104,15 @@ export class ClonesService {
     return { allowed: false, relation: 'none' };
   }
 
-  // ─────────────────────── rate limit ───────────────────────
-  //
-  // ТЗ 2026-05-31 — приватный `assertRateLimit` (Redis-based, ключи
-  // `clone:ask:<userId>:<YYYY-MM-DD>`) удалён. Все 4 точки вызова
-  // (askPerson / askRole / askPersonV2 / askRoleV2) теперь используют
-  // `AiChatQuotaService.tryConsume({ tenantId, userId })` — единую per-user
-  // квоту AI-чата (Concierge + Clones), 50/день для админов, 20/день для
-  // member'ов. Лимит `cfg.skill.cloneAskPerUserPerDay` и ENV
-  // `CLONE_ASK_PER_USER_PER_DAY` оставлены как code-fallback в env.schema
-  // (удаление в отдельной мини-фазе, чтобы не задеть другие места).
-
-  // ─────────────────────── retrieval ───────────────────────
-
   private async loadPersonSubgraph(args: {
     tenantId: string;
     personId: string;
-    /**
-     * Ф5 knowledge-access (R8) — группы СПРАШИВАЮЩЕГО. null → off (фильтр не
-     * применяется, контекст байт-в-байт). При shadow считаем метрику
-     * расхождения; при enforce — отбрасываем недоступные reasoning-блоки.
-     */
     accessCtx?: KnowledgeAccessContext | null;
     enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
     const accessCtx = args.accessCtx ?? null;
     const enforcement = args.enforcement ?? 'off';
-    const accessEnforce =
-      enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
+    const accessEnforce = enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
 
     const person = await this.prisma.person.findUnique({
       where: { id: args.personId },
@@ -2595,22 +2124,17 @@ export class ClonesService {
     });
     if (!person) return emptySubgraph();
 
-    // 1. Subject-reasoning блоки (top 20 свежие).
     const reasoningBlocks: CloneBlock[] = [];
     if (person.entityId) {
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           entityId: person.entityId,
           role: 'subject',
-          // Ф5: при enforce — DB-фильтр доступа спрашивающего по вложенному
-          // block (не тащим недоступные блоки из БД). off/shadow → {}.
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
             signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
-            ...(accessEnforce && accessCtx
-              ? this.accessResolver!.buildAccessWhere(accessCtx)
-              : {}),
+            ...(accessEnforce && accessCtx ? this.accessResolver!.buildAccessWhere(accessCtx) : {}),
           },
         },
         select: { blockId: true },
@@ -2651,24 +2175,10 @@ export class ClonesService {
       }
     }
 
-    // Ф5 knowledge-access (R8) — post-filter поверх reasoningBlocks.
-    // off (accessCtx=null) или bypass → НИ одного нового запроса (байт-в-байт).
-    // shadow → метрика расхождения, выдачу НЕ меняем. enforce → отбрасываем
-    // недоступные (defense-in-depth поверх DB-фильтра в mentions).
-    await this.applyAccessToReasoningBlocks(
-      reasoningBlocks,
-      accessCtx,
-      enforcement,
-    );
+    await this.applyAccessToReasoningBlocks(reasoningBlocks, accessCtx, enforcement);
 
-    // 2. KnowledgeProfile summary.
-    const knowledgeProfileSummary = this.serializeKnowledgeProfile(
-      person.knowledgeProfile,
-    );
+    const knowledgeProfileSummary = this.serializeKnowledgeProfile(person.knowledgeProfile);
 
-    // 3. Top decisions с decidedByPersonIds.includes(personId).
-    // Ф6 (R12) — Decision — проекция; её групповой доступ выводится ON-READ из
-    // sourceBlockIds (наследование строжайшей закрытой группы блоков-источников).
     let decisions = await this.prisma.decision.findMany({
       where: {
         tenantId: args.tenantId,
@@ -2686,8 +2196,6 @@ export class ClonesService {
       take: 10,
     });
 
-    // Ф6 — фильтр проекций (decisions) по доступу СПРАШИВАЮЩЕГО. off/bypass →
-    // байт-в-байт. enforce → отбрасываем недоступные; shadow → только метрика.
     if (
       enforcement !== 'off' &&
       accessCtx &&
@@ -2695,11 +2203,10 @@ export class ClonesService {
       this.accessResolver &&
       decisions.length > 0
     ) {
-      const { accessibleIds, denied } =
-        await this.accessResolver.partitionProjectionsByAccess(
-          accessCtx,
-          decisions.map((d) => ({ id: d.id, sourceBlockIds: d.sourceBlockIds })),
-        );
+      const { accessibleIds, denied } = await this.accessResolver.partitionProjectionsByAccess(
+        accessCtx,
+        decisions.map((d) => ({ id: d.id, sourceBlockIds: d.sourceBlockIds })),
+      );
       if (enforcement === 'enforce') {
         decisions = decisions.filter((d) => accessibleIds.has(d.id));
         this.metrics.incAccessDenied({ surface: 'clone' }, denied);
@@ -2722,18 +2229,13 @@ export class ClonesService {
   private async loadRoleSubgraph(args: {
     tenantId: string;
     roleId: string;
-    /**
-     * Ф5 knowledge-access (R8) — группы СПРАШИВАЮЩЕГО. См. loadPersonSubgraph.
-     */
     accessCtx?: KnowledgeAccessContext | null;
     enforcement?: 'off' | 'shadow' | 'enforce';
   }): Promise<CloneSubgraph> {
     const accessCtx = args.accessCtx ?? null;
     const enforcement = args.enforcement ?? 'off';
-    const accessEnforce =
-      enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
+    const accessEnforce = enforcement === 'enforce' && !!accessCtx && !accessCtx.isBypass;
 
-    // Найти всех employee'ев этой роли.
     const personRoles = await this.prisma.personRole.findMany({
       where: {
         tenantId: args.tenantId,
@@ -2755,9 +2257,7 @@ export class ClonesService {
       },
       select: { id: true, entityId: true },
     });
-    const entityIds = persons
-      .map((p) => p.entityId)
-      .filter((id): id is string => Boolean(id));
+    const entityIds = persons.map((p) => p.entityId).filter((id): id is string => Boolean(id));
 
     const reasoningBlocks: CloneBlock[] = [];
     if (entityIds.length > 0) {
@@ -2765,14 +2265,11 @@ export class ClonesService {
         where: {
           entityId: { in: entityIds },
           role: 'subject',
-          // Ф5: при enforce — DB-фильтр доступа спрашивающего. off/shadow → {}.
           block: {
             tenantId: args.tenantId,
             status: 'canonical',
             signalType: { in: ['reasoning', 'rationale', 'decision_basis'] },
-            ...(accessEnforce && accessCtx
-              ? this.accessResolver!.buildAccessWhere(accessCtx)
-              : {}),
+            ...(accessEnforce && accessCtx ? this.accessResolver!.buildAccessWhere(accessCtx) : {}),
           },
         },
         select: { blockId: true },
@@ -2806,12 +2303,7 @@ export class ClonesService {
       }
     }
 
-    // Ф5 knowledge-access (R8) — post-filter (см. loadPersonSubgraph).
-    await this.applyAccessToReasoningBlocks(
-      reasoningBlocks,
-      accessCtx,
-      enforcement,
-    );
+    await this.applyAccessToReasoningBlocks(reasoningBlocks, accessCtx, enforcement);
 
     return {
       reasoningBlocks,
@@ -2820,19 +2312,6 @@ export class ClonesService {
     };
   }
 
-  /**
-   * Ф5 knowledge-access (R8) — фильтр контекста клона по правам СПРАШИВАЮЩЕГО.
-   * Мутирует `reasoningBlocks` IN-PLACE.
-   *
-   * Гейт-семантика (как chat-v2 выходной шлюз):
-   *   - off (accessCtx=null) ИЛИ bypass → НИ одного запроса, массив не тронут;
-   *   - shadow → считаем `kc_access_shadow_diff_total{surface=clone}`, выдачу НЕ меняем;
-   *   - enforce → отбрасываем недоступные блоки + `kc_access_denied_total{surface=clone}`
-   *     (defense-in-depth поверх DB-фильтра buildAccessWhere в mentions).
-   *
-   * Порядок важен: фильтр вызывается ДО `assertTopicDensity` (density-guard
-   * естественно считает по доступным → корректный `topic_starved` при нехватке).
-   */
   private async applyAccessToReasoningBlocks(
     reasoningBlocks: CloneBlock[],
     accessCtx: KnowledgeAccessContext | null,
@@ -2848,11 +2327,12 @@ export class ClonesService {
       return;
     }
     const ids = reasoningBlocks.map((b) => b.id);
-    const { accessible, denied } =
-      await this.accessResolver.partitionBlockIdsByAccess(accessCtx, ids);
+    const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+      accessCtx,
+      ids,
+    );
     if (enforcement === 'enforce') {
       const allow = new Set(accessible);
-      // Отфильтровать reasoningBlocks IN-PLACE (defense-in-depth поверх DB-фильтра).
       let write = 0;
       for (let read = 0; read < reasoningBlocks.length; read++) {
         if (allow.has(reasoningBlocks[read]!.id)) {
@@ -2862,7 +2342,6 @@ export class ClonesService {
       reasoningBlocks.length = write;
       this.metrics.incAccessDenied({ surface: 'clone' }, denied);
     } else {
-      // shadow — выдачу НЕ меняем, только метрика расхождения.
       this.metrics.incAccessShadowDiff({ surface: 'clone' }, denied);
     }
   }
@@ -2883,32 +2362,9 @@ export class ClonesService {
     return parts.length > 0 ? parts.join('; ') : null;
   }
 
-  // ─────────────────────── topic density (anti-deepfake) ───────────────────────
-
-  /**
-   * Фаза 1 clone-reliability-hardening — программная проверка плотности
-   * рассуждений по теме вопроса.
-   *
-   * Возвращает `{ refused: true }`, если в reasoningBlocks меньше
-   * `cfg.skill.cloneTopicMinBlocks` блоков с косинусной близостью к
-   * embedding'у вопроса ≥ `cfg.skill.cloneTopicSimilarityThreshold`.
-   *
-   * Консервативные edge-кейсы:
-   *   - блок без embedding (старые данные) → НЕ считается «по теме»
-   *     (лучше отказаться, чем сгенерировать дипфейк);
-   *   - embedQuery вернул null/упал → НЕ блокируем пользователя при
-   *     технической проблеме (пропускаем как «достаточная плотность»),
-   *     но логируем warning. Это явное решение «не подменять анти-deepfake
-   *     отказом из-за технической недоступности embedding-сервиса».
-   */
   private async assertTopicDensity(args: {
     question: string;
     reasoningBlocks: ReadonlyArray<{ id: string; text: string }>;
-    /**
-     * ТЗ 2026-05-25 §9.4.6 (Фаза 7) — override порога `cloneTopicMinBlocks`
-     * для judgmental-режима. Если задан — используется вместо
-     * `cfg.skill.cloneTopicMinBlocks`. null → дефолт из config.
-     */
     requiredBlocksOverride?: number | null;
   }): Promise<{
     refused: boolean;
@@ -2918,12 +2374,10 @@ export class ClonesService {
   }> {
     const similarityThreshold = this.cfg.skill.cloneTopicSimilarityThreshold;
     const requiredBlocks =
-      args.requiredBlocksOverride !== undefined &&
-      args.requiredBlocksOverride !== null
+      args.requiredBlocksOverride !== undefined && args.requiredBlocksOverride !== null
         ? args.requiredBlocksOverride
         : this.cfg.skill.cloneTopicMinBlocks;
 
-    // Граница: порог 0 — фича выключена.
     if (requiredBlocks <= 0) {
       return {
         refused: false,
@@ -2933,8 +2387,6 @@ export class ClonesService {
       };
     }
 
-    // Если блоков физически меньше требуемого — можем не ходить за
-    // embedding'ами вообще (всё равно не наберём порог).
     if (args.reasoningBlocks.length < requiredBlocks) {
       return {
         refused: true,
@@ -2971,14 +2423,12 @@ export class ClonesService {
       };
     }
 
-    const blockEmbeddings = await this.loadBlockEmbeddings(
-      args.reasoningBlocks.map((b) => b.id),
-    );
+    const blockEmbeddings = await this.loadBlockEmbeddings(args.reasoningBlocks.map((b) => b.id));
 
     let matched = 0;
     for (const block of args.reasoningBlocks) {
       const vec = blockEmbeddings.get(block.id);
-      if (!vec) continue; // нет embedding'а — консервативно не считаем
+      if (!vec) continue;
       const sim = cosineSim(questionEmbedding, vec);
       if (sim >= similarityThreshold) matched += 1;
     }
@@ -2991,17 +2441,7 @@ export class ClonesService {
     };
   }
 
-  /**
-   * Читает IdeaBlock.embedding через pgvector raw query. Возвращает мапу
-   * blockId → number[]. Блоки без embedding в карту не попадут.
-   *
-   * Логика скопирована из `Specialist37Service.loadEmbeddings` —
-   * специально без вынесения в общий helper, чтобы не цеплять
-   * `Specialist37Service` за этот файл и не плодить циклы зависимостей.
-   */
-  private async loadBlockEmbeddings(
-    blockIds: string[],
-  ): Promise<Map<string, number[]>> {
+  private async loadBlockEmbeddings(blockIds: string[]): Promise<Map<string, number[]>> {
     if (blockIds.length === 0) return new Map();
     try {
       const rows = await this.prisma.$queryRaw<
@@ -3010,7 +2450,6 @@ export class ClonesService {
       const map = new Map<string, number[]>();
       for (const r of rows) {
         if (!r.emb) continue;
-        // pgvector text-формат: '[0.1,0.2,...]'.
         const inner = r.emb.replace(/^\[|\]$/g, '');
         if (!inner) continue;
         const vec = inner.split(',').map((s) => Number(s));
@@ -3028,36 +2467,17 @@ export class ClonesService {
     }
   }
 
-  // ─────────────────────── LLM call ───────────────────────
-
   private async callCloneRespond(args: {
     tenantId: string;
     persona: ExecutablePersona;
     question: string;
     subgraph: CloneSubgraph;
-    /**
-     * Clones=Roles Фаза 6 — название должности и имя текущего носителя.
-     * Подставляются в шаблон `clone-respond.prompt.ts` (placeholders
-     * `{{roleName}}` / `{{bearerName}}`). Если null/undefined — используются
-     * безопасные дефолты внутри `buildCloneRespondSystemPrompt`.
-     */
     roleName: string | null;
     bearerName: string | null;
-    /**
-     * ТЗ 2026-05-25 §9.4.5 (Фаза 7) — режим ответа. Если не задан — factual
-     * (обратная совместимость с legacy-вызовами).
-     */
     mode?: 'factual' | 'judgmental';
-    /**
-     * Agents v2 Фаза C1 — PracticeSkill, найденные retrieval'ом. Если массив
-     * пустой/undefined — секция `<known_procedures>` не добавляется в USER.
-     */
     practiceSkills?: ReadonlyArray<CloneRespondPracticeSkill>;
   }): Promise<LlmCallResult> {
     const mode = args.mode ?? 'factual';
-    // F1 cache-friendly (мастер-промпт-флот 2026-06-10): SYSTEM стабилен по
-    // режиму, переменные данные клона (roleName / bearerName / personaPrompt)
-    // едут в user-сообщении через CLONE_RESPOND_USER_TEMPLATE.
     const systemPrompt = buildCloneRespondSystemPrompt({ mode });
     return this.llm.call({
       taskType: 'clone-respond',
@@ -3080,25 +2500,11 @@ export class ClonesService {
       tenantId: args.tenantId,
       sourceRef: { type: 'executable_persona', id: args.persona.id },
       dataClass: 'internal',
-      // ТЗ 2026-05-25 §9.4.5 — температура зависит от режима (factual=0.2 /
-      // judgmental=0.7). На сегодня `LlmRouterService.call` не принимает
-      // temperature — она задаётся на стороне провайдера/route. Здесь
-      // фиксируем намерение через mode (передан в system prompt), а
-      // запись «mode=…» уходит в `llmMeta` через caller для аудита.
-      // TODO §9.9 — вывести temperature в LlmCallParams отдельной волной.
     });
   }
 
-  private parseCitations(
-    answerText: string,
-    subgraph: CloneSubgraph,
-  ): CloneCitationDto[] {
-    const blockMap = new Map<string, CloneBlock>(
-      subgraph.reasoningBlocks.map((b) => [b.id, b]),
-    );
-    // ТЗ 2026-06-08 (Ф6/G.2): решения (decisions) цитируются как
-    // `[DECISION:id]` наравне с `[BLOCK:id]`. В subgraph.decisions нет
-    // meeting-метаданных, поэтому переносим statement в snippet.
+  private parseCitations(answerText: string, subgraph: CloneSubgraph): CloneCitationDto[] {
+    const blockMap = new Map<string, CloneBlock>(subgraph.reasoningBlocks.map((b) => [b.id, b]));
     const decisionMap = new Map<
       string,
       { id: string; statement: string; rationale: string | null }
@@ -3129,12 +2535,9 @@ export class ClonesService {
     while ((m = decisionRegex.exec(answerText)) !== null) {
       const id = m[1];
       if (!id) continue;
-      if (seen.has(id)) continue; // общий dedup с BLOCK-веткой
+      if (seen.has(id)) continue;
       seen.add(id);
       const d = decisionMap.get(id);
-      // Б20 (Раздел 8) — если решения нет в subgraph, НЕ засчитываем призрачную
-      // цитату: иначе [DECISION:x] обходит post-LLM grounding-гейт (isUngrounded
-      // видит citations.length>0). По аналогии с BLOCK-веткой (`if (!b) continue`).
       if (!d) continue;
       out.push({
         blockId: id,
@@ -3144,8 +2547,6 @@ export class ClonesService {
 
     return out;
   }
-
-  // ─────────────────────── persist message ───────────────────────
 
   private async persistMessage(args: {
     tenantId: string;
@@ -3191,7 +2592,6 @@ export class ClonesService {
       conversationId = created.id;
     }
 
-    // Append user + assistant сообщения.
     await this.prisma.chatV2Message.create({
       data: {
         conversationId,
@@ -3215,14 +2615,6 @@ export class ClonesService {
     return { conversationId, messageId: assistantMessage.id };
   }
 
-  // ─────────────────── clone query log (TZ clone-method Э0.1) ───────────────────
-
-  /**
-   * TZ clone-method Э0.1 — журнал запросов к клону (виден владельцу).
-   * Пишется на КАЖДЫЙ ask всех 4 путей, включая отказы. Текст вопроса —
-   * превью (200) + sha256-hash (полный текст уже лежит в ChatV2Message).
-   * Best-effort: ошибка записи НЕ валит ответ.
-   */
   private async logCloneQuery(args: {
     tenantId: string;
     cloneScope: 'person' | 'role';
@@ -3253,10 +2645,6 @@ export class ClonesService {
     }
   }
 
-  /**
-   * TZ clone-method Э0.1 — журнал запросов к клонам для владельца/админа Org
-   * (`GET /api/v1/clones/query-log`, guard OrgAdminGuard в контроллере).
-   */
   async listQueryLog(args: {
     tenantId: string;
     cloneTargetId?: string;
@@ -3292,8 +2680,6 @@ export class ClonesService {
   }
 }
 
-// ─────────────────────── types ───────────────────────
-
 interface CloneBlock {
   id: string;
   text: string;
@@ -3318,12 +2704,6 @@ function emptySubgraph(): CloneSubgraph {
   };
 }
 
-/**
- * Agents v2 Фаза C1 — нормализует retrieved PracticeSkill из БД-формата
- * (JSON-поля как unknown) в формат `CloneRespondPracticeSkill` для шаблона
- * `clone-respond.prompt.ts`. Безопасно к мусорным JSON: невалидные шаги
- * отбрасываются, нет — секция в промпт не уйдёт.
- */
 function toPromptSkills(
   retrieved: ReadonlyArray<{
     trigger: string;
@@ -3336,28 +2716,17 @@ function toPromptSkills(
   for (const s of retrieved) {
     const stepsArr = Array.isArray(s.steps) ? s.steps : [];
     const steps = stepsArr
-      .filter(
-        (st): st is Record<string, unknown> =>
-          !!st && typeof st === 'object',
-      )
+      .filter((st): st is Record<string, unknown> => !!st && typeof st === 'object')
       .map((st, i) => {
-        const order =
-          typeof st.order === 'number' && Number.isInteger(st.order)
-            ? st.order
-            : i + 1;
+        const order = typeof st.order === 'number' && Number.isInteger(st.order) ? st.order : i + 1;
         const action = typeof st.action === 'string' ? st.action : '';
-        const er =
-          typeof st.emotionalRegister === 'string'
-            ? st.emotionalRegister
-            : null;
+        const er = typeof st.emotionalRegister === 'string' ? st.emotionalRegister : null;
         return { order, action, emotionalRegister: er };
       })
       .filter((st) => st.action.length > 0);
     if (steps.length === 0) continue;
     const flags = Array.isArray(s.redFlags)
-      ? (s.redFlags as unknown[]).filter(
-          (v): v is string => typeof v === 'string',
-        )
+      ? (s.redFlags as unknown[]).filter((v): v is string => typeof v === 'string')
       : [];
     out.push({
       trigger: typeof s.trigger === 'string' ? s.trigger : '',
@@ -3368,11 +2737,6 @@ function toPromptSkills(
   return out;
 }
 
-/**
- * Косинусная близость двух эмбеддингов одинаковой размерности.
- * Возвращает 0 для несовпадающих длин или нулевых векторов
- * (никогда не кидает — это «горячий путь» Clone API).
- */
 function cosineSim(a: number[], b: number[]): number {
   if (a.length === 0 || a.length !== b.length) return 0;
   let dot = 0;

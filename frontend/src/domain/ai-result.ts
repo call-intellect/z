@@ -1,9 +1,3 @@
-/**
- * Доменная модель результата AI-обработки встречи.
- * `structuredData` зависит от `meeting.type`; `tasks` — массив объектов;
- * `customOutputMd` — markdown, рендерится через `react-markdown`.
- */
-
 export type AiTask = {
   title: string;
   assignee?: string | null;
@@ -18,10 +12,6 @@ export type AiResultDomain = {
   tasks: AiTask[] | null;
   modelUsed: string;
   createdAt: Date;
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — приоритетная сводка
-   * (`MeetingReportFastWorker`). Если задано — рендерится как markdown.
-   */
   summaryFast: string | null;
   summaryFastModel: string | null;
   summaryFastGeneratedAt: Date | null;
@@ -44,22 +34,22 @@ function tasksFromApi(raw: unknown): AiTask[] | null {
   if (!Array.isArray(raw)) return null;
   const tasks: AiTask[] = [];
   for (const item of raw) {
-    if (typeof item !== 'object' || item === null) continue;
+    if (typeof item !== "object" || item === null) continue;
     const obj = item as Record<string, unknown>;
-    const title = typeof obj.title === 'string' ? obj.title : null;
+    const title = typeof obj.title === "string" ? obj.title : null;
     if (!title) continue;
     tasks.push({
       title,
       assignee:
-        typeof obj.assignee === 'string'
+        typeof obj.assignee === "string"
           ? obj.assignee
-          : typeof obj.owner === 'string'
+          : typeof obj.owner === "string"
             ? obj.owner
             : null,
       due:
-        typeof obj.due === 'string'
+        typeof obj.due === "string"
           ? obj.due
-          : typeof obj.deadline === 'string'
+          : typeof obj.deadline === "string"
             ? obj.deadline
             : null,
     });
@@ -84,23 +74,13 @@ export function aiResultFromApi(api: AiResultApi): AiResultDomain {
   };
 }
 
-/**
- * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — выбирает приоритетную сводку
- * для пользовательского UI:
- *   1. `summaryFast` — новый объединённый отчёт (`MeetingReportFastWorker`);
- *   2. `summary` — legacy single-step prompt.
- *
- * v2-ветка удалена 2026-06-10 вместе с мёртвым v2-стеком.
- *
- * Возвращает trimmed-строку или `null`, если оба отсутствуют/пустые.
- */
 export function pickPrimarySummary(
-  ai: Pick<AiResultDomain, 'summaryFast' | 'summary'> | null,
-): { markdown: string; source: 'fast' | 'legacy' } | null {
+  ai: Pick<AiResultDomain, "summaryFast" | "summary"> | null,
+): { markdown: string; source: "fast" | "legacy" } | null {
   if (!ai) return null;
   const fast = ai.summaryFast?.trim();
-  if (fast) return { markdown: fast, source: 'fast' };
+  if (fast) return { markdown: fast, source: "fast" };
   const legacy = ai.summary?.trim();
-  if (legacy) return { markdown: legacy, source: 'legacy' };
+  if (legacy) return { markdown: legacy, source: "legacy" };
   return null;
 }

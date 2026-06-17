@@ -1,12 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef } from "react";
 
-/**
- * Обёртка над нативным `<video>` (`HTMLVideoElement`). Заменила Vidstack-хук:
- * Vidstack web-компонент не инициализировался в prod-сборке. Возвращает
- * `playerRef` (биндить в `<video ref={playerRef}>`) + императивные хелперы.
- */
 export function useVideoPlayer() {
   const playerRef = useRef<HTMLVideoElement | null>(null);
 
@@ -33,5 +28,3 @@ export function useVideoPlayer() {
 
   return { playerRef, seekTo, play, pause, togglePlay };
 }
-
-export type VideoPlayerControls = ReturnType<typeof useVideoPlayer>;

@@ -6,8 +6,8 @@ date: 2026-06-05
 owner: Сергей (sergrv80@gmail.com)
 relates_to:
   - plans/analysis/2026-06-05-manual-qa-RESULTS.md
-  - plans/tz/2026-05-28-paywall-no-trial.md
-  - plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md
+  - plans/archive/2026-05-28-paywall-no-trial.md
+  - plans/archive/2026-05-27-billing-tochka-referral-dadata-z.md
 ---
 > Анализ-источник: `plans/analysis/2026-06-05-manual-qa-RESULTS.md` (раздел «КОРНЕВОЙ КЛАСТЕР» + «КОРЕНЬ ПОДТВЕРЖДЁН ПО КОДУ»). Статус согласования: 2026-06-05.
 

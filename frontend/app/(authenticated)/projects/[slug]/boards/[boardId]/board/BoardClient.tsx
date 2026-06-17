@@ -1,17 +1,8 @@
-'use client';
+"use client";
 
-/**
- * BoardClient — клиент-обёртка над `<Board>` для маршрута
- * `/projects/[slug]/boards/[boardId]/board` (Tracker Boards, 2026-05-27).
- *
- * Отличие от legacy `[slug]/board/BoardClient` — принимает явный `boardId`
- * из URL и пробрасывает в `<Board>`. Sidebar со списком досок рендерится
- * на уровне layout (ProjectViewShell), а не здесь.
- */
-
-import { useAuth } from '@/contexts/auth-context';
-import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
-import { Board } from '@/ui/tracker';
+import { useAuth } from "@/contexts/auth-context";
+import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
+import { Board } from "@/ui/tracker";
 
 export function BoardClient({
   slug,

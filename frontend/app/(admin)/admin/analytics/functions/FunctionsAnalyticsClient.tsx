@@ -1,47 +1,42 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState } from 'react';
-import { ArrowRight, FlaskConical } from 'lucide-react';
+import Link from "next/link";
+import { useState } from "react";
+import { ArrowRight, FlaskConical } from "lucide-react";
 
-import { adminUsageApi } from '@/api/admin-usage.api';
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   ADMIN_PERIOD_LABELS,
   adminFunctionsUsageFromApi,
   formatDurationMs,
   formatUsd,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { taskTypeLabel } from '@/domain/admin-experiment';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { AdminCsvDownloadButton } from '@/ui/components/admin/AdminCsvDownloadButton';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-usage";
+import { taskTypeLabel } from "@/domain/admin-experiment";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { AdminCsvDownloadButton } from "@/ui/components/admin/AdminCsvDownloadButton";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
-/**
- * Аналитика по функциям (taskType) LLM. Перенесена с `/admin/usage/functions`,
- * обёрнута в `AdminSection`, добавлен CSV-экспорт. Управление цепочкой
- * провайдеров доступно в детальной карточке (drill-down).
- */
 export function FunctionsAnalyticsClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
 
   const q = useAdminQuery(
     `admin-analytics-functions:${period}`,
@@ -59,8 +54,8 @@ export function FunctionsAnalyticsClient() {
   const csvRows: Array<Record<string, unknown>> = sorted.map((f) => ({
     taskType: f.taskType,
     label: taskTypeLabel(f.taskType),
-    provider: f.currentProvider ?? '',
-    abTest: f.experimentEnabled ? 'да' : 'нет',
+    provider: f.currentProvider ?? "",
+    abTest: f.experimentEnabled ? "да" : "нет",
     totalCalls: f.totalCalls,
     failRatePct: (f.failRate * 100).toFixed(2),
     avgCostUsd: f.avgCostUsd.toFixed(6),
@@ -92,15 +87,15 @@ export function FunctionsAnalyticsClient() {
           <AdminCsvDownloadButton
             rows={csvRows}
             columns={[
-              { key: 'taskType', label: 'taskType' },
-              { key: 'label', label: 'Функция' },
-              { key: 'provider', label: 'Текущая модель' },
-              { key: 'abTest', label: 'A/B' },
-              { key: 'totalCalls', label: 'Вызовов' },
-              { key: 'failRatePct', label: 'Fail rate, %' },
-              { key: 'avgCostUsd', label: 'Avg cost, USD' },
-              { key: 'avgDurationMs', label: 'Avg latency, ms' },
-              { key: 'totalCostUsd', label: 'Total, USD' },
+              { key: "taskType", label: "taskType" },
+              { key: "label", label: "Функция" },
+              { key: "provider", label: "Текущая модель" },
+              { key: "abTest", label: "A/B" },
+              { key: "totalCalls", label: "Вызовов" },
+              { key: "failRatePct", label: "Fail rate, %" },
+              { key: "avgCostUsd", label: "Avg cost, USD" },
+              { key: "avgDurationMs", label: "Avg latency, ms" },
+              { key: "totalCostUsd", label: "Total, USD" },
             ]}
             filename={`admin-functions-${period}.csv`}
           />
@@ -121,7 +116,7 @@ export function FunctionsAnalyticsClient() {
             />
           ) : (
             <>
-              {/* Desktop таблица */}
+              {}
               <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
@@ -170,11 +165,11 @@ export function FunctionsAnalyticsClient() {
                           )}
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {f.totalCalls.toLocaleString('ru-RU')}
+                          {f.totalCalls.toLocaleString("ru-RU")}
                         </td>
                         <td
                           className={`px-3 py-2 text-right tabular-nums ${
-                            f.failRate > 0.05 ? 'text-warning' : ''
+                            f.failRate > 0.05 ? "text-warning" : ""
                           }`}
                         >
                           {(f.failRate * 100).toFixed(1)}%
@@ -203,7 +198,7 @@ export function FunctionsAnalyticsClient() {
                 </table>
               </div>
 
-              {/* Mobile card-view */}
+              {}
               <ul className="space-y-2 md:hidden">
                 {sorted.map((f) => (
                   <li
@@ -227,7 +222,7 @@ export function FunctionsAnalyticsClient() {
                           {formatUsd(f.totalCostUsd)}
                         </div>
                         <div className="text-[11px] tabular-nums text-fg-tertiary">
-                          {f.totalCalls.toLocaleString('ru-RU')} вызовов
+                          {f.totalCalls.toLocaleString("ru-RU")} вызовов
                         </div>
                       </div>
                     </Link>
@@ -237,7 +232,9 @@ export function FunctionsAnalyticsClient() {
                           {f.currentProvider}
                         </span>
                       ) : (
-                        <span className="text-fg-tertiary">модель не задана</span>
+                        <span className="text-fg-tertiary">
+                          модель не задана
+                        </span>
                       )}
                       {f.experimentEnabled && (
                         <span className="inline-flex items-center gap-1 rounded-full bg-accent-muted px-2 py-0.5 text-[10px] text-accent">
@@ -246,8 +243,10 @@ export function FunctionsAnalyticsClient() {
                       )}
                       <span
                         className={cn(
-                          'ml-auto tabular-nums',
-                          f.failRate > 0.05 ? 'text-warning' : 'text-fg-tertiary',
+                          "ml-auto tabular-nums",
+                          f.failRate > 0.05
+                            ? "text-warning"
+                            : "text-fg-tertiary",
                         )}
                       >
                         fail {(f.failRate * 100).toFixed(1)}%

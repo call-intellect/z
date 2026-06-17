@@ -1,44 +1,36 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Edit3, Plus, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { Edit3, Plus, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminMeetingTypesApi } from '@/api/admin-meeting-types.api';
+import { ApiError } from "@/api/api-error";
+import { adminMeetingTypesApi } from "@/api/admin-meeting-types.api";
 import {
   meetingTypeListFromApi,
   type MeetingTypeItemDomain,
-} from '@/domain/admin-meeting-type';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/admin-meeting-type";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { MeetingTypeEditDialog } from './MeetingTypeEditDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { MeetingTypeEditDialog } from "./MeetingTypeEditDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
-/**
- * `/admin/content/meeting-types` — CRUD конфигурации типов встреч (Z-Admin
- * Фаза 5). Каждая запись — это строка в `MeetingTypeConfig`, привязанная
- * к значению Prisma `enum MeetingType`.
- *
- * Бэкенд при пустой БД делает bootstrap-sync из enum, поэтому таблица
- * никогда не бывает пустой при первом открытии.
- */
 export function MeetingTypesClient() {
   const [editing, setEditing] = useState<MeetingTypeItemDomain | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [existingIds, setExistingIds] = useState<string[]>([]);
 
-  const q = useAdminQuery('admin-meeting-types', async () => {
+  const q = useAdminQuery("admin-meeting-types", async () => {
     const res = await adminMeetingTypesApi.list();
     const dom = meetingTypeListFromApi(res);
     setExistingIds(dom.items.map((it) => it.id));
@@ -64,7 +56,7 @@ export function MeetingTypesClient() {
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось обновить статус',
+        e instanceof ApiError ? e.message : "Не удалось обновить статус",
       );
     }
   };
@@ -75,7 +67,7 @@ export function MeetingTypesClient() {
       toast.success(`Тип ${m.id} деактивирован`);
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось удалить");
     }
   };
 
@@ -83,8 +75,8 @@ export function MeetingTypesClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Контент' },
-        { label: 'Типы встреч' },
+        { label: "Контент" },
+        { label: "Типы встреч" },
       ]}
       title="Типы встреч"
       description="Конфигурация 9 типов встреч MVP: отображаемое имя, иконка, описание, привязка к промпту отчёта. id — это значение enum MeetingType."
@@ -173,17 +165,19 @@ function MeetingTypeRow({
       </td>
       <td className="px-3 py-3 font-medium">{item.displayName}</td>
       <td className="px-3 py-3 max-w-[280px] text-xs text-fg-tertiary">
-        {item.description || '—'}
+        {item.description || "—"}
       </td>
       <td className="px-3 py-3 text-xs">
         {item.icon ? (
-          <code className="rounded bg-bg-overlay px-1.5 py-0.5">{item.icon}</code>
+          <code className="rounded bg-bg-overlay px-1.5 py-0.5">
+            {item.icon}
+          </code>
         ) : (
           <span className="text-fg-tertiary">—</span>
         )}
       </td>
       <td className="px-3 py-3 text-xs text-fg-tertiary">
-        {item.reportPromptKey || '—'}
+        {item.reportPromptKey || "—"}
       </td>
       <td className="px-3 py-3 text-center">
         <Switch checked={item.isActive} onCheckedChange={onToggleActive} />

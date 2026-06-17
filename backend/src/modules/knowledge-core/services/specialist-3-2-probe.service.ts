@@ -12,23 +12,6 @@ import type {
   SerializedKnowledgeProfile,
 } from './specialist-3-2-knowledge-clone.service';
 
-/**
- * SBA β-2 — Specialist32ProbeService.
- *
- * Эмиссия probe-events специалиста 3.2 (Knowledge Clone) согласно §6 sub-TZ:
- *   - `knowledge.new_expertise_detected` — в новом профиле появилась новая
- *     категория с confidence='high', которой не было в старом.
- *   - `knowledge.contradiction_detected` — между старым и новым профилем
- *     обнаружено явное противоречие («X не знает Y» vs «X знает Y» в
- *     одной категории).
- *
- * Получатели:
- *   - direct manager Person'а (через `Person.primaryDepartmentId →
- *     Department.headPersonId → Person.userId`);
- *   - fallback: owner/admin Org.
- *
- * Контракт: сервис НЕ должен бросать. Один упавший probe не валит остальные.
- */
 @Injectable()
 export class Specialist32ProbeService {
   private readonly logger = new Logger(Specialist32ProbeService.name);
@@ -43,18 +26,11 @@ export class Specialist32ProbeService {
     private readonly metrics: BusinessMetricsService,
     @Inject(TypedConfigService)
     private readonly cfg: TypedConfigService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
   ) {}
 
-  /**
-   * Главный метод: проверяет два trigger'а (new_expertise_detected /
-   * contradiction_detected) и отправляет нотификации.
-   *
-   * `oldProfile` — то, что было ДО rebuild'а (null, если профиль создан
-   * впервые). `newProfile` — то, что только что записали (или предложили
-   * через CurationItem — но probe одинаков).
-   */
   async checkAndEmitProbes(args: {
     tenantId: string;
     personId: string;
@@ -74,8 +50,6 @@ export class Specialist32ProbeService {
     }
   }
 
-  // ──────────────────────── triggers ────────────────────────
-
   private async checkNewExpertise(args: {
     tenantId: string;
     personId: string;
@@ -84,14 +58,10 @@ export class Specialist32ProbeService {
     newProfile: SerializedKnowledgeProfile;
   }): Promise<void> {
     const oldNames = new Set(
-      (args.oldProfile?.categories ?? []).map((c) =>
-        c.name.trim().toLowerCase(),
-      ),
+      (args.oldProfile?.categories ?? []).map((c) => c.name.trim().toLowerCase()),
     );
     const newHighCategories = args.newProfile.categories.filter(
-      (c) =>
-        c.confidence === 'high' &&
-        !oldNames.has(c.name.trim().toLowerCase()),
+      (c) => c.confidence === 'high' && !oldNames.has(c.name.trim().toLowerCase()),
     );
     if (newHighCategories.length === 0) return;
 
@@ -142,8 +112,6 @@ export class Specialist32ProbeService {
     });
   }
 
-  // ──────────────────────── helpers ────────────────────────
-
   private async emit(args: {
     tenantId: string;
     personId: string;
@@ -153,7 +121,6 @@ export class Specialist32ProbeService {
     suggestedActions?: readonly string[];
   }): Promise<void> {
     const actionUrl = `/persons/${args.personId}?tab=knowledge-profile`;
-    // SBA β-5 — миграция: через ProbeService (дедуп / rate-limit / dispatch).
     if (this.probeService) {
       try {
         await this.probeService.suggest({
@@ -162,9 +129,7 @@ export class Specialist32ProbeService {
           reason: args.reason,
           payload: {
             message: args.message,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.personId,
             contextCardKind: 'knowledge_profile',
             contextCardTitle: args.message.slice(0, 100),
@@ -191,7 +156,6 @@ export class Specialist32ProbeService {
         );
       }
     }
-    // Fallback на legacy sendNotification.
     for (const userId of args.recipients) {
       try {
         await this.conversational.sendNotification({
@@ -203,9 +167,7 @@ export class Specialist32ProbeService {
             reason: args.reason,
             message: args.message,
             personId: args.personId,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             actionUrl,
           },
           dataClass: 'internal',
@@ -228,19 +190,7 @@ export class Specialist32ProbeService {
     }
   }
 
-  /**
-   * Получатели probe-events.
-   *
-   * ТЗ 2026-05-25 «clone-reliability-hardening» Фаза 3 — переадресация:
-   *   1. Сначала ищем главу primary-отдела субъекта (`Department.headPersonId`).
-   *   2. Если глава найден, у него есть `userId` и он не сам субъект — это
-   *      единственный получатель (нельзя слать главе probe про него самого).
-   *   3. Иначе — fallback к owner/admin Org (как было до Фазы 3).
-   */
-  private async findRecipients(
-    tenantId: string,
-    personId: string,
-  ): Promise<string[]> {
+  private async findRecipients(tenantId: string, personId: string): Promise<string[]> {
     return resolveProbeRecipients({
       prisma: this.prisma,
       tenantId,
@@ -274,8 +224,7 @@ function findContradictions(
   const out: ProbeContradiction[] = [];
   for (const newCat of newProfile.categories) {
     const oldCat = oldProfile.categories.find(
-      (c) =>
-        c.name.trim().toLowerCase() === newCat.name.trim().toLowerCase(),
+      (c) => c.name.trim().toLowerCase() === newCat.name.trim().toLowerCase(),
     );
     if (!oldCat) continue;
     for (const oldStmt of oldCat.sampleStatements) {

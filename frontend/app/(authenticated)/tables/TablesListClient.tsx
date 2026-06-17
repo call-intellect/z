@@ -1,37 +1,26 @@
-'use client';
+"use client";
 
-/**
- * `/tables` — индекс Smart Tables.
- *
- * Notion-стиль grid карточек: иконка типа в круге, название, метаданные
- * (тип сущности, описание), относительное время обновления. Sticky-header
- * с CTA «Новая таблица» в правом углу.
- *
- * Создание: prompt(name) → POST /api/v1/tables → router.push.
- * Полноценный диалог с настройкой колонок будет в следующей фазе.
- */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { formatDistanceToNow } from "date-fns";
+import { ru } from "date-fns/locale";
+import { FileSpreadsheet, Plus, Sparkles, Table2 } from "lucide-react";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { formatDistanceToNow } from 'date-fns';
-import { ru } from 'date-fns/locale';
-import { FileSpreadsheet, Plus, Sparkles, Table2 } from 'lucide-react';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { tablesApi } from "@/api/tables.api";
+import type { TableApi } from "@/api/types/tables";
+import { useAuth } from "@/contexts/auth-context";
+import { Button } from "@/ui/shadcn/button";
+import { CONCIERGE_OPEN_EVENT } from "@/ui/concierge/ConciergeFloatingButton";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { tablesApi } from '@/api/tables.api';
-import type { TableApi } from '@/api/types/tables';
-import { useAuth } from '@/contexts/auth-context';
-import { Button } from '@/ui/shadcn/button';
-import { CONCIERGE_OPEN_EVENT } from '@/ui/concierge/ConciergeFloatingButton';
-
-import { ImportFromFileDialog } from './components/ImportFromFileDialog';
+import { ImportFromFileDialog } from "./components/ImportFromFileDialog";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
 export function TablesListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
@@ -63,14 +52,17 @@ function TablesListContent({ orgId }: { orgId: string }) {
     setError(null);
     setForbidden(false);
     try {
-      const dto = await tablesApi.list(orgId, { archived: 'active', limit: 100 });
+      const dto = await tablesApi.list(orgId, {
+        archived: "active",
+        limit: 100,
+      });
       setItems(dto.items);
       setTotal(dto.total);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Ошибка загрузки'));
+        setError(humanizeApiError(e, "Ошибка загрузки"));
       }
     } finally {
       setIsLoading(false);
@@ -82,29 +74,23 @@ function TablesListContent({ orgId }: { orgId: string }) {
   }, [load]);
 
   const onCreate = useCallback(async () => {
-    const name = window.prompt('Название новой таблицы:');
+    const name = window.prompt("Название новой таблицы:");
     if (!name || !name.trim()) return;
     setIsCreating(true);
     try {
       const created = await tablesApi.create(orgId, { name: name.trim() });
       router.push(`/tables/${created.id}`);
     } catch (e) {
-      window.alert(
-        humanizeApiError(e, 'Не удалось создать таблицу'),
-      );
+      window.alert(humanizeApiError(e, "Не удалось создать таблицу"));
     } finally {
       setIsCreating(false);
     }
   }, [orgId, router]);
 
-  // «Спросить Кору» — открываем Concierge с префилл-сообщением. Сам инференс
-  // схемы делает Concierge через свой tool `infer_table_schema`. Гейтинг
-  // (feature.tables_text_to_schema) на backend: если выключено — ассистент
-  // ответит, что функция отключена (фронт не знает этот флаг).
   const onAskConcierge = useCallback(() => {
     window.dispatchEvent(
       new CustomEvent(CONCIERGE_OPEN_EVENT, {
-        detail: { prefill: 'Помогите создать таблицу для ' },
+        detail: { prefill: "Помогите создать таблицу для " },
       }),
     );
   }, []);
@@ -123,16 +109,12 @@ function TablesListContent({ orgId }: { orgId: string }) {
           </h1>
           <p className="mt-1 text-sm text-fg-secondary">
             {total === 0
-              ? 'Создайте первую таблицу для команды'
+              ? "Создайте первую таблицу для команды"
               : `Всего ${total} · показано ${items.length}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            onClick={onAskConcierge}
-            variant="secondary"
-            size="sm"
-          >
+          <Button onClick={onAskConcierge} variant="secondary" size="sm">
             <Sparkles className="h-4 w-4" />
             Спросить Кору
           </Button>
@@ -173,27 +155,24 @@ function TablesListContent({ orgId }: { orgId: string }) {
   );
 }
 
-// ─────────────────────────── TableCard ─────────────────────────────────
-
 function TableCard({ table }: { table: TableApi }) {
   const updated = useMemo(() => new Date(table.updatedAt), [table.updatedAt]);
   const updatedText = useMemo(() => {
     try {
       return formatDistanceToNow(updated, { addSuffix: true, locale: ru });
     } catch {
-      return updated.toLocaleDateString('ru-RU');
+      return updated.toLocaleDateString("ru-RU");
     }
   }, [updated]);
 
-  // Тип привязки в entitySync — мини-чип под названием.
   const entityBadge = useMemo(() => {
     const t = (table.entitySync as { type?: unknown } | null)?.type;
-    if (typeof t !== 'string') return null;
+    if (typeof t !== "string") return null;
     const labels: Record<string, string> = {
-      org: 'Организации',
-      person: 'Люди',
-      meeting: 'Встречи',
-      document: 'Документы',
+      org: "Организации",
+      person: "Люди",
+      meeting: "Встречи",
+      document: "Документы",
     };
     return labels[t] ?? null;
   }, [table.entitySync]);
@@ -239,9 +218,7 @@ function TableCard({ table }: { table: TableApi }) {
           {table.description}
         </p>
       ) : (
-        <p className="text-sm italic text-fg-tertiary">
-          Без описания
-        </p>
+        <p className="text-sm italic text-fg-tertiary">Без описания</p>
       )}
 
       {entityBadge ? (

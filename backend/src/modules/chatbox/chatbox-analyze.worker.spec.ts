@@ -11,11 +11,6 @@ import type { ChatboxIngestService } from './chatbox-ingest.service';
 import type { CrossSourceTaskDedupeService } from './cross-source-task-dedupe.service';
 import type { ChatboxAnalyzeJobData } from './queue/chatbox-analyze.queue';
 
-/**
- * Unit-тесты воркера анализа сессии ChatBox: Prisma / ChatboxIngestService /
- * TaskExtractionService / CrossSourceTaskDedupeService замоканы. Redis не нужен
- * (worker создаётся в onModuleInit, который не вызываем — тестируем process()).
- */
 describe('ChatboxAnalyzeWorker', () => {
   let prismaMock: {
     chatboxChatSession: {
@@ -46,8 +41,6 @@ describe('ChatboxAnalyzeWorker', () => {
       ingestSession: vi.fn(),
     };
 
-    // Базовый воркер БЕЗ task-зависимостей (флаг по умолчанию OFF в этом наборе):
-    // extractTasks() рано вернётся, не задевая существующие тесты статуса.
     worker = new ChatboxAnalyzeWorker(
       {} as unknown as RedisService,
       prismaMock as unknown as PrismaService,
@@ -61,21 +54,18 @@ describe('ChatboxAnalyzeWorker', () => {
 
     await worker.process(job);
 
-    // analyzing
     expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 's1', tenantId: 't1' },
         data: { analysisStatus: 'analyzing' },
       }),
     );
-    // summary persist (tenant-scoped updateMany)
     expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 's1', tenantId: 't1' },
         data: { summary: 's' },
       }),
     );
-    // done + rawEventId + analyzedAt (tenant-scoped updateMany)
     expect(prismaMock.chatboxChatSession.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 's1', tenantId: 't1' },
@@ -110,7 +100,6 @@ describe('ChatboxAnalyzeWorker', () => {
 
     await expect(worker.process(job)).resolves.toBeUndefined();
 
-    // Только analyzing, никаких done/failed update.
     expect(prismaMock.chatboxChatSession.update).not.toHaveBeenCalled();
   });
 
@@ -129,11 +118,6 @@ describe('ChatboxAnalyzeWorker', () => {
   });
 });
 
-/**
- * ТЗ 2026-06-11 chatbox-tasks Ф5 — шаг задач из переписки (extractTasks()).
- * Тестируем напрямую public-метод (process() обёрнут try/catch, поэтому
- * проверять извлечение проще точечно).
- */
 describe('ChatboxAnalyzeWorker.extractTasks', () => {
   function makeCfg(enabled: boolean): TypedConfigService {
     return {
@@ -191,18 +175,27 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
         ),
       },
       chatboxMessage: {
-        findMany: vi.fn(async () =>
-          o.messages ?? [
-            { senderType: 'CLIENT', senderName: 'Клиент', text: 'Хочу скидку', contentType: 'TEXT' },
-            { senderType: 'USER', senderName: 'Менеджер', text: 'Сделаю расчёт', contentType: 'TEXT' },
-          ],
+        findMany: vi.fn(
+          async () =>
+            o.messages ?? [
+              {
+                senderType: 'CLIENT',
+                senderName: 'Клиент',
+                text: 'Хочу скидку',
+                contentType: 'TEXT',
+              },
+              {
+                senderType: 'USER',
+                senderName: 'Менеджер',
+                text: 'Сделаю расчёт',
+                contentType: 'TEXT',
+              },
+            ],
         ),
       },
       chatboxMember: {
         findUnique: vi.fn(async () =>
-          o.member === undefined
-            ? { name: 'Иван Менеджер', linkedPersonId: 'person-1' }
-            : o.member,
+          o.member === undefined ? { name: 'Иван Менеджер', linkedPersonId: 'person-1' } : o.member,
         ),
       },
       person: {
@@ -260,9 +253,7 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
     const prisma = makePrisma({});
     const { worker, extractor, dedupeProcess } = makeWorker(prisma, {
       enabled: true,
-      extracted: [
-        { title: 'Сделать расчёт', sourceQuote: 'Сделаю расчёт', confidence: 0.9 },
-      ],
+      extracted: [{ title: 'Сделать расчёт', sourceQuote: 'Сделаю расчёт', confidence: 0.9 }],
       dedupe: { created: 1, linked: 0 },
     });
 
@@ -275,7 +266,6 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
         meeting: expect.objectContaining({ id: 'chat-1', type: 'chatbox' }),
       }),
     );
-    // candidate с assigneeUserId резолвленного менеджера, ownerUserId=менеджер.
     expect(dedupeProcess).toHaveBeenCalledWith(
       [
         expect.objectContaining({
@@ -323,7 +313,6 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
   });
 
   it('реплики клиента не назначаются: менеджер без Person.userId → assigneeUserId=null', async () => {
-    // member есть, но linkedPersonId=null → нет резолва в User.
     const prisma = makePrisma({ member: { name: 'Аноним-менеджер', linkedPersonId: null } });
     const { worker, dedupeProcess } = makeWorker(prisma, {
       enabled: true,
@@ -335,7 +324,6 @@ describe('ChatboxAnalyzeWorker.extractTasks', () => {
 
     expect(dedupeProcess).toHaveBeenCalledWith(
       [expect.objectContaining({ assigneeUserId: null, assigneeRaw: 'Аноним-менеджер' })],
-      // ownerUserId фолбэчится на владельца Org (нет назначенного User).
       expect.objectContaining({ ownerUserId: 'owner-user' }),
     );
   });

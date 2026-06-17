@@ -9,24 +9,6 @@ import { WeeklyDigestService } from '../services/weekly-digest.service';
 import { getLocalDate, getLocalHour } from '../utils/local-date';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8.1 — OperationsWeeklyDigestCron.
- *
- * Источник: plans/tz/2026-05-24-sba-beta-8-1-coo-dobivka.md §8.
- *
- * Раз в час (`@Cron('0 * * * *')`) обходит все Org'и и проверяет:
- *   - сегодня — день недели = `COO_WEEKLY_DIGEST_LOCAL_DAY` (default 1=пн);
- *   - сейчас — локальный час = `COO_WEEKLY_DIGEST_LOCAL_HOUR` (default 8)
- *     в часовом поясе `Org.timezone` (default 'Europe/Moscow').
- *
- * Если совпало — генерирует `WeeklyOperationsDigest` за прошедшую неделю
- * через `WeeklyDigestService.getOrGenerate` (идемпотентно по
- * `(tenantId, weekStart)`) и отправляет нотификацию
- * `operations.weekly_digest` всем coo/owner Org'а.
- *
- * Master-flag — `COO_WEEKLY_DIGEST_ENABLED`. False → cron срабатывает,
- * но сразу выходит (включение без рестарта).
- */
 @Injectable()
 export class OperationsWeeklyDigestCron {
   private readonly logger = new Logger(OperationsWeeklyDigestCron.name);
@@ -45,18 +27,13 @@ export class OperationsWeeklyDigestCron {
   @Cron('0 * * * *')
   async run(): Promise<void> {
     if (!this.cfg.betaOps.weeklyDigestEnabled) {
-      this.logger.debug(
-        'operations-weekly-digest.cron: COO_WEEKLY_DIGEST_ENABLED=false, skip',
-      );
+      this.logger.debug('operations-weekly-digest.cron: COO_WEEKLY_DIGEST_ENABLED=false, skip');
       return;
     }
     const now = new Date();
     try {
       const stats = await this.runOnce(now);
-      this.logger.debug(
-        stats,
-        'operations-weekly-digest.cron: проход завершён',
-      );
+      this.logger.debug(stats, 'operations-weekly-digest.cron: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -65,9 +42,6 @@ export class OperationsWeeklyDigestCron {
     }
   }
 
-  /**
-   * Выделен для unit-тестов: можно передать произвольный `now`.
-   */
   async runOnce(now: Date): Promise<{
     digestsGenerated: number;
     digestsSkippedAlreadyExists: number;
@@ -101,14 +75,11 @@ export class OperationsWeeklyDigestCron {
       }
 
       const todayLocal = getLocalDate(now, timezone);
-      // weekStart = понедельник прошедшей недели (если сегодня пн, то
-      // -7 дней). weekEnd = воскресенье (weekStart + 6).
       const weekStart = shiftDateLocal(todayLocal, -7);
       const weekEnd = shiftDateLocal(weekStart, 6);
 
       const tenantTop = resolveOperationsTenantTop(org.id);
 
-      // Идемпотентность — проверяем существующий дайджест.
       const existing = await this.digestService.getStored({
         tenantId: org.id,
         weekStart,
@@ -158,10 +129,6 @@ export class OperationsWeeklyDigestCron {
     };
   }
 
-  /**
-   * Отправить нотификацию `operations.weekly_digest` всем coo/owner Org'а.
-   * Возвращает кол-во отправленных нотификаций.
-   */
   private async notifyRecipients(args: {
     tenantId: string;
     digestId: string;
@@ -220,9 +187,6 @@ export class OperationsWeeklyDigestCron {
   }
 }
 
-/**
- * День недели для указанной TZ. 0 = воскресенье, 1 = понедельник, ..., 6 = суббота.
- */
 function getLocalDayOfWeek(now: Date, timezone: string): number {
   try {
     const fmt = new Intl.DateTimeFormat('en-US', {
@@ -245,9 +209,6 @@ function getLocalDayOfWeek(now: Date, timezone: string): number {
   }
 }
 
-/**
- * Сдвиг даты YYYY-MM-DD на N дней (отрицательное = в прошлое).
- */
 function shiftDateLocal(dateLocal: string, days: number): string {
   const d = new Date(`${dateLocal}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);

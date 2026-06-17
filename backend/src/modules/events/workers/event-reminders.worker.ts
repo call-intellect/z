@@ -7,50 +7,19 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { ConversationalService } from '../../conversational/conversational.service';
-import {
-  CORE_QUEUE_NAMES,
-  type EventReminderJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type EventReminderJobData } from '../../core-queue/queues';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import { MailService } from '../../mail/mail.service';
 
-/**
- * Calendar MVP (2026-05-25) — BullMQ-воркер `core.event-reminders`.
- *
- * Поток:
- *   1. По reminderId достаём EventReminder + Event + участников
- *      (с подгрузкой user.email / person.email — нужны для email-канала).
- *   2. Если reminder уже sentAt != null — no-op (идемпотентность).
- *   3. Если reminder.userId != null — отправляем одному получателю;
- *      иначе — всем участникам события.
- *   4. По каналу:
- *      - `telegram` → ConversationalService.sendNotification({
- *          eventType: 'event.reminder' }) — маршрутизатор сам подберёт
- *          telegram_bot/max_bot/in_app. Работает только с User-получателями
- *          (Person без userId пропускается).
- *      - `email` → MailService.sendPlain(...) на User.email или
- *          Person.email напрямую (Calendar MVP Phase P2, 2026-05-25).
- *          Получатели без email пропускаются с warn-логом.
- *      - `push` — TODO (заглушка + лог).
- *   5. После доставки — EventReminder.sentAt = now (один раз для всех каналов).
- *   6. Метрика `calendar_reminders_sent_total{tenant, channel, success}`.
- */
-
-/** Один получатель напоминания — нормализованный для отправки. */
 interface ReminderRecipient {
-  /** User.id, если получатель — пользователь платформы; иначе null. */
   userId: string | null;
-  /** Person.id, если получатель — внешний контакт; иначе null. */
   personId: string | null;
-  /** Имя для логов / тела письма. */
   name: string;
-  /** Email (может отсутствовать у Person). */
   email: string | null;
 }
 
@@ -86,14 +55,9 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.error(
-        { jobId: job?.id, err: err.message },
-        'EventRemindersWorker — job упал',
-      );
+      this.logger.error({ jobId: job?.id, err: err.message }, 'EventRemindersWorker — job упал');
     });
-    this.logger.debug(
-      `EventRemindersWorker запущен (${CORE_QUEUE_NAMES.EVENT_REMINDERS})`,
-    );
+    this.logger.debug(`EventRemindersWorker запущен (${CORE_QUEUE_NAMES.EVENT_REMINDERS})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -127,10 +91,7 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
     if (reminder.sentAt) {
-      this.logger.debug(
-        { reminderId },
-        'reminder уже отправлен (sentAt) — пропуск',
-      );
+      this.logger.debug({ reminderId }, 'reminder уже отправлен (sentAt) — пропуск');
       return;
     }
     if (reminder.event.deletedAt) {
@@ -145,12 +106,8 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Собираем нормализованных получателей. Если reminder.userId задан —
-    // адресный режим (один User); иначе — все участники события
-    // (User + Person для email-канала, только User для telegram).
     const recipients: ReminderRecipient[] = [];
     if (reminder.userId) {
-      // Адресный режим. Подтянем имя/email одним запросом.
       const user = await this.prisma.user.findUnique({
         where: { id: reminder.userId },
         select: { id: true, name: true, email: true },
@@ -183,7 +140,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Дедупликация по (userId|personId).
     const seen = new Set<string>();
     const uniqueRecipients = recipients.filter((r) => {
       const key = r.userId ? `u:${r.userId}` : `p:${r.personId ?? ''}`;
@@ -193,10 +149,7 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
     });
 
     if (uniqueRecipients.length === 0) {
-      this.logger.debug(
-        { reminderId },
-        'нет получателей — помечаем sentAt и выходим',
-      );
+      this.logger.debug({ reminderId }, 'нет получателей — помечаем sentAt и выходим');
       await this.prisma.eventReminder.update({
         where: { id: reminder.id },
         data: { sentAt: new Date() },
@@ -233,7 +186,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /** Триммим email и возвращаем null, если пустая строка. */
   private normalizeEmail(email: string | null | undefined): string | null {
     if (!email) return null;
     const trimmed = email.trim();
@@ -257,7 +209,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
 
     try {
       if (channel === 'telegram') {
-        // Telegram умеет адресовать только User'ов (нет UI у Person без User).
         if (!recipient.userId) {
           this.logger.debug(
             {
@@ -267,7 +218,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
             },
             'telegram-канал не поддерживает Person без User — пропуск',
           );
-          // Не считаем это ошибкой доставки, метрику не инкрементируем.
           return true;
         }
         await this.conversational.sendNotification({
@@ -295,7 +245,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
             },
             'email-канал: у получателя нет email — пропуск',
           );
-          // Не инкрементируем метрику доставки (skip, не send).
           return true;
         }
         const subject = this.buildEmailSubject({
@@ -313,12 +262,9 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
           template: 'event-reminder',
         });
         if (!result.ok) {
-          // MailService уже залогировал — пробрасываем как ошибку,
-          // чтобы BullMQ выполнил retry по стандартной политике.
           throw new Error(result.error ?? 'mail_send_failed');
         }
       } else {
-        // push — TODO: интеграция с PushService.
         this.logger.warn(
           {
             channel,
@@ -328,7 +274,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
           },
           'TODO: доставка через push не реализована',
         );
-        // Не инкрементируем — это TODO, не реальная попытка доставки.
         return true;
       }
       this.metrics.incCalendarReminderSent({
@@ -357,18 +302,11 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // ──────────────────────── email helpers ─────────────────────────
-
-  /** Тема: «Напоминание: {title} через {N мин/часов/завтра}». */
   private buildEmailSubject(args: { eventTitle: string; startAt: Date }): string {
     const relative = this.formatRelative(new Date(), args.startAt);
     return `Напоминание: ${args.eventTitle} ${relative}`;
   }
 
-  /**
-   * Plain-text тело письма-напоминания. HTML не используем — `sendPlain`
-   * шлёт только text/plain; почтовые клиенты сами автолинкуют URL.
-   */
   private buildEmailText(args: {
     recipientName: string;
     event: {
@@ -381,9 +319,7 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
   }): string {
     const { recipientName, event } = args;
     const when = this.formatAbsolute(event.startAt, event.timezone);
-    const where = event.location && event.location.trim() !== ''
-      ? event.location
-      : 'не указано';
+    const where = event.location && event.location.trim() !== '' ? event.location : 'не указано';
     const link = `${this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '')}/events/${event.id}`;
     return [
       `Здравствуйте, ${recipientName}!`,
@@ -398,10 +334,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
     ].join('\n');
   }
 
-  /**
-   * Относительное «через N минут / часов / завтра в HH:MM».
-   * Используется в Subject письма.
-   */
   private formatRelative(now: Date, target: Date): string {
     const diffMs = target.getTime() - now.getTime();
     if (diffMs <= 0) return 'сейчас';
@@ -418,10 +350,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
     return `через ${days} ${this.pluralDays(days)}`;
   }
 
-  /**
-   * Абсолютная дата/время в локальной TZ организатора:
-   * «25 мая 2026, 15:30 (Europe/Moscow)».
-   */
   private formatAbsolute(date: Date, timezone: string): string {
     try {
       const formatter = new Intl.DateTimeFormat('ru-RU', {
@@ -434,7 +362,6 @@ export class EventRemindersWorker implements OnModuleInit, OnModuleDestroy {
       });
       return `${formatter.format(date)} (${timezone})`;
     } catch {
-      // Невалидный timezone (защита от мусора в БД) — фолбэк на ISO.
       return `${date.toISOString()} (UTC)`;
     }
   }

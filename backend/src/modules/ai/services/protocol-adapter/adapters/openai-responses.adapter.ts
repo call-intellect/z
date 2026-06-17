@@ -1,9 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import type {
-  LlmCompleteInput,
-  LlmCompleteOutput,
-} from '../../llm.types';
+import type { LlmCompleteInput, LlmCompleteOutput } from '../../llm.types';
 import { LlmError } from '../../llm.types';
 import { OpenAiProxyService } from '../../openai-proxy.service';
 import type {
@@ -12,14 +9,6 @@ import type {
   ProtocolKind,
 } from '../protocol-adapter.types';
 
-/**
- * SBA α-10 wave 3 — OpenAI Responses API адаптер.
- *
- * Делегирует в существующий OpenAiProxyService (proxy.agent-lia.ru), который
- * реализует Responses API (gpt-5-*, reasoning effort, json_schema strict,
- * tool calls). Сейчас единственный провайдер — 'openai-via-proxy';
- * адаптер позволяет регистрировать дополнительные через registry.
- */
 @Injectable()
 export class OpenAiResponsesProtocolAdapter implements LlmProtocolAdapter {
   readonly protocolKind: ProtocolKind = 'openai-responses';
@@ -40,11 +29,7 @@ export class OpenAiResponsesProtocolAdapter implements LlmProtocolAdapter {
     } catch (err) {
       if (err instanceof LlmError) throw err;
       const message = err instanceof Error ? err.message : String(err);
-      throw new LlmError(
-        `openai-responses ${provider.name}: ${message}`,
-        undefined,
-        err,
-      );
+      throw new LlmError(`openai-responses ${provider.name}: ${message}`, undefined, err);
     }
   }
 }

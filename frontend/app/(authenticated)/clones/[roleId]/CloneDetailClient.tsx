@@ -1,19 +1,4 @@
-'use client';
-
-/**
- * `/clones/[roleId]` — карточка клона должности (ТЗ 2026-05-26 §3.6).
- *
- * Контент:
- *   - Шапка: CloneAvatar 80px + publicName + статус + bearer + confidence + traits.
- *   - Топ-черт (5-7 шт.) с провенансом.
- *   - Сотрудники на роли (read-only).
- *   - Мои диалоги с этим клоном (читается через useCloneConversations).
- *   - CTA «+ Новый диалог» — создаёт conversation и переходит в чат.
- *
- * Если у пользователя нет grant'а — CTA disabled + предложение запросить.
- *
- * Логика чата (Q/A inline) перенесена в /clones/[roleId]/chat/[conversationId].
- */
+"use client";
 
 import {
   ArrowLeft,
@@ -25,29 +10,29 @@ import {
   Sparkles,
   Users,
   UsersRound,
-} from 'lucide-react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import useSWR from 'swr';
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import useSWR from "swr";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { clonesApi } from '@/api/clones.api';
-import { useAuth } from '@/contexts/auth-context';
-import { cloneVersionStatusBadge } from '@/domain/clone';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { clonesApi } from "@/api/clones.api";
+import { useAuth } from "@/contexts/auth-context";
+import { cloneVersionStatusBadge } from "@/domain/clone";
 import {
   useCloneByRoleId,
   useCloneConversations,
   useMyCloneAccess,
-} from '@/hooks/useClones';
-import { CloneAvatar } from '@/ui/clones/CloneAvatar';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/hooks/useClones";
+import { CloneAvatar } from "@/ui/clones/CloneAvatar";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { toast } from "@/ui/shadcn/toast";
 
-import { AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
+import { AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
 
 export function CloneDetailClient({ roleId }: { roleId: string }) {
   const { currentOrgId, isLoading } = useAuth();
@@ -65,17 +50,18 @@ export function CloneDetailClient({ roleId }: { roleId: string }) {
 
 function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   const router = useRouter();
-  const { item, isLoading: cloneLoading, error: cloneError } =
-    useCloneByRoleId(orgId, roleId);
+  const {
+    item,
+    isLoading: cloneLoading,
+    error: cloneError,
+  } = useCloneByRoleId(orgId, roleId);
   const { access } = useMyCloneAccess(orgId);
-  const hasGrant = access?.has('role', roleId) ?? false;
+  const hasGrant = access?.has("role", roleId) ?? false;
 
-  // Role skill profile — для top traits + people.
-  const profileSwr = useSWR(['clones:role-skill-profile', orgId, roleId], () =>
+  const profileSwr = useSWR(["clones:role-skill-profile", orgId, roleId], () =>
     clonesApi.getRoleSkillProfile(orgId, roleId),
   );
 
-  // Мои диалоги с этим клоном (показываем только если hasGrant).
   const conversations = useCloneConversations(orgId, hasGrant ? roleId : null);
 
   const [creating, setCreating] = useState(false);
@@ -94,7 +80,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
       const message =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось создать диалог. Попробуйте ещё раз.';
+          : "Не удалось создать диалог. Попробуйте ещё раз.";
       toast.error(message);
       setCreating(false);
     }
@@ -102,20 +88,20 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
 
   async function handleRequestAccess() {
     try {
-      await clonesApi.requestAccess(orgId, 'role', roleId);
-      toast.success('Запрос отправлен администратору.');
+      await clonesApi.requestAccess(orgId, "role", roleId);
+      toast.success("Запрос отправлен администратору.");
     } catch (err) {
-      const code = err instanceof ApiError ? err.code : '';
+      const code = err instanceof ApiError ? err.code : "";
       if (
-        code === 'not_found' ||
-        code === 'http_404' ||
+        code === "not_found" ||
+        code === "http_404" ||
         /404/.test(String(code))
       ) {
-        toast.message('Функция временно недоступна.', {
-          description: 'Попросите администратора выдать доступ вручную.',
+        toast.message("Функция временно недоступна.", {
+          description: "Попросите администратора выдать доступ вручную.",
         });
       } else {
-        toast.error('Не удалось отправить запрос.');
+        toast.error("Не удалось отправить запрос.");
       }
     }
   }
@@ -124,11 +110,10 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
 
   if (cloneError || profileSwr.error) {
     const err = cloneError ?? profileSwr.error;
-    if (err instanceof ApiError && err.code === 'not_found') {
+    if (err instanceof ApiError && err.code === "not_found") {
       return <NotFound />;
     }
-    const message =
-      humanizeApiError(err, 'Не удалось загрузить клона.');
+    const message = humanizeApiError(err, "Не удалось загрузить клона.");
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8">
         <BackLink />
@@ -156,7 +141,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
     <div className="mx-auto w-full max-w-4xl space-y-4 px-4 py-6 sm:px-6 sm:py-8">
       <BackLink />
 
-      {/* Шапка клона */}
+      {}
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -173,12 +158,12 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
                 </CardTitle>
                 <p className="mt-1 text-sm text-fg-secondary">
                   Должность: {profile.roleName}
-                  {departmentName ? ` · ${departmentName}` : ''}
+                  {departmentName ? ` · ${departmentName}` : ""}
                 </p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {item && item.status !== 'active' ? (
+              {item && item.status !== "active" ? (
                 <Badge variant={cloneVersionStatusBadge(item.status).variant}>
                   {cloneVersionStatusBadge(item.status).label}
                 </Badge>
@@ -198,7 +183,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
             <span>
               {bearerName
                 ? `Сейчас на роли: ${bearerName}`
-                : 'Носитель не назначен'}
+                : "Носитель не назначен"}
             </span>
           </div>
           {confidencePct !== null ? (
@@ -223,13 +208,11 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
               <span>Активных черт: {traitsCount}</span>
             ) : null}
             {lastBuildAt ? (
-              <span>
-                Обновлён: {lastBuildAt.toLocaleDateString('ru-RU')}
-              </span>
+              <span>Обновлён: {lastBuildAt.toLocaleDateString("ru-RU")}</span>
             ) : null}
           </div>
 
-          {/* CTA: + Новый диалог или Запросить доступ */}
+          {}
           <div className="flex flex-wrap gap-2 pt-2">
             {hasGrant ? (
               <Button
@@ -257,9 +240,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
               </Button>
             )}
             <Button asChild variant="outline" size="sm">
-              <Link
-                href={`/roles/${encodeURIComponent(roleId)}/clone/history`}
-              >
+              <Link href={`/roles/${encodeURIComponent(roleId)}/clone/history`}>
                 <History className="mr-2 h-4 w-4" />
                 История версий
               </Link>
@@ -276,7 +257,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
         </CardContent>
       </Card>
 
-      {/* Мои диалоги (только если hasGrant) */}
+      {}
       {hasGrant ? (
         <Card>
           <CardHeader>
@@ -312,7 +293,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
                       className="flex items-center justify-between gap-2 py-2 text-sm hover:text-accent"
                     >
                       <span className="truncate font-medium">
-                        {c.title ?? 'Без названия'}
+                        {c.title ?? "Без названия"}
                       </span>
                       <span className="shrink-0 text-xs text-fg-tertiary">
                         {formatRelativeDate(c.lastMessageAt)}
@@ -326,7 +307,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
         </Card>
       ) : null}
 
-      {/* Топ-черт */}
+      {}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -358,7 +339,7 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
         </CardContent>
       </Card>
 
-      {/* Сотрудники на роли */}
+      {}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -397,8 +378,6 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   );
 }
 
-// ─────────── helpers ───────────
-
 function BackLink() {
   return (
     <Link
@@ -414,9 +393,7 @@ function BackLink() {
 function NotFound() {
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-12 text-center sm:px-6">
-      <p className="text-base text-fg-primary">
-        Клон должности не найден.
-      </p>
+      <p className="text-base text-fg-primary">Клон должности не найден.</p>
       <p className="mt-2 text-sm text-fg-tertiary">
         Возможно, он был удалён или ещё не собран.
       </p>
@@ -440,7 +417,6 @@ function DetailSkeleton() {
   );
 }
 
-/** «сегодня 14:23» / «вчера» / «23 мая» */
 export function formatRelativeDate(d: Date): string {
   const now = new Date();
   const sameDay =
@@ -448,9 +424,9 @@ export function formatRelativeDate(d: Date): string {
     d.getMonth() === now.getMonth() &&
     d.getDate() === now.getDate();
   if (sameDay) {
-    return `сегодня ${d.toLocaleTimeString('ru-RU', {
-      hour: '2-digit',
-      minute: '2-digit',
+    return `сегодня ${d.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
     })}`;
   }
   const yesterday = new Date(now);
@@ -459,7 +435,7 @@ export function formatRelativeDate(d: Date): string {
     d.getFullYear() === yesterday.getFullYear() &&
     d.getMonth() === yesterday.getMonth() &&
     d.getDate() === yesterday.getDate();
-  if (wasYesterday) return 'вчера';
+  if (wasYesterday) return "вчера";
 
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
 }

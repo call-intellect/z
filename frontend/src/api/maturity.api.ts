@@ -1,9 +1,5 @@
-/**
- * SBA α-9 wave 3 — API-клиент для /api/v1/maturity.
- */
-
-import { apiClient } from './api-client';
-import { orgHeaders } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { orgHeaders } from "./admin-helpers";
 
 export interface MaturityOverviewApi {
   companyScore: number | null;
@@ -22,7 +18,7 @@ export interface MaturityOverviewApi {
   }[];
 }
 
-export type MaturityScopeApi = 'role' | 'department' | 'company';
+export type MaturityScopeApi = "role" | "department" | "company";
 
 export interface MaturityScopeDetailApi {
   scope: MaturityScopeApi;
@@ -54,7 +50,7 @@ export interface RebuildMaturityResponseApi {
 
 export const maturityApi = {
   overview: (orgId: string) =>
-    apiClient.get<MaturityOverviewApi>('/api/v1/maturity/overview', {
+    apiClient.get<MaturityOverviewApi>("/api/v1/maturity/overview", {
       headers: orgHeaders(orgId),
     }),
 
@@ -66,7 +62,7 @@ export const maturityApi = {
 
   rebuild: (orgId: string) =>
     apiClient.post<RebuildMaturityResponseApi>(
-      '/api/v1/maturity/rebuild',
+      "/api/v1/maturity/rebuild",
       undefined,
       { headers: orgHeaders(orgId) },
     ),

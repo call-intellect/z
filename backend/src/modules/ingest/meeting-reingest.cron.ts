@@ -7,34 +7,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 import { MeetingIngestAdapter } from './adapters/meeting.adapter';
 
-/**
- * Ф7 МТЗ «разблокировка конвейера» (баг #1/#8) — reingest-fallback.
- *
- * Корень: `ingestMeeting` — ЕДИНСТВЕННЫЙ вход результата встречи в
- * knowledge-core (analyze.worker → MeetingIngestAdapter после ai_ready).
- * Если ingest провалился (source_inactive / quota 429 / транзиентная ошибка),
- * встреча так и остаётся БЕЗ `RawEvent(sourceExternalId=meetingId)` — в граф
- * ничего не уходит. analyze.worker теперь делает провал видимым
- * (failureReason + метрика), но НЕ ретраит ingest сам.
- *
- * Этот cron — recovery-петля: каждые 15 минут ищет встречи с готовым
- * транскриптом (`Transcript.turns != null`), но без `RawEvent(meeting)`, и
- * best-effort переигрывает `ingestMeeting`. Идемпотентность гарантирует
- * `IngestService` (idempotencyKey по sourceExternalId) — повторный заход не
- * плодит RawEvent. Каждая встреча в своём try/catch: одна упавшая не валит
- * остальные. На провале — лог + метрика `meeting_ingest_failed{reason}`.
- *
- * Расписание — литерал `*\/15 * * * *` (как invoice-status-sync.cron). Cron
- * статичен; перерегистрация через SchedulerRegistry — vNext.
- */
 @Injectable()
 export class MeetingReingestCron {
   private readonly logger = new Logger(MeetingReingestCron.name);
   private running = false;
 
-  /** Сколько кандидатов разбираем за один проход (не перегружаем pipeline). */
   private static readonly BATCH_SIZE = 50;
-  /** Окно поиска кандидатов — последние N дней (свежие застрявшие встречи). */
   private static readonly LOOKBACK_DAYS = 7;
 
   constructor(
@@ -46,22 +24,13 @@ export class MeetingReingestCron {
   @Cron('*/15 * * * *', { name: 'meeting-reingest' })
   async sweep(): Promise<void> {
     if (this.running) {
-      // Не запускаем второй экземпляр пока предыдущий не закончил.
       this.logger.debug('meeting-reingest.cron: prev run in progress, skip');
       return;
     }
     this.running = true;
     try {
-      const since = new Date(
-        Date.now() - MeetingReingestCron.LOOKBACK_DAYS * 24 * 3600 * 1000,
-      );
+      const since = new Date(Date.now() - MeetingReingestCron.LOOKBACK_DAYS * 24 * 3600 * 1000);
 
-      // Кандидаты: встречи с готовым транскриптом (turns != null) за окно
-      // LOOKBACK_DAYS. take ограничивает batch. tenantId здесь NOT NULL по
-      // схеме, но фильтр-наличие RawEvent проверяем per-candidate ниже.
-      // JSON-поле IS NOT NULL фильтруем через `not: Prisma.AnyNull` (Prisma 7;
-      // парный к `equals: Prisma.AnyNull` для IS NULL, см. meeting-speaker-
-      // analyzer.worker). status='ai_ready' — после analyze, до ingest.
       const candidates = await this.prisma.meeting.findMany({
         where: {
           createdAt: { gte: since },
@@ -78,9 +47,6 @@ export class MeetingReingestCron {
       let failed = 0;
 
       for (const meeting of candidates) {
-        // «Нет RawEvent(sourceExternalId=meetingId)» — per-candidate findFirst.
-        // sourceType='meeting' сужает до meeting-источника (sourceExternalId =
-        // meetingId именно у meeting-адаптера).
         const existing = await this.prisma.rawEvent.findFirst({
           where: { sourceExternalId: meeting.id, sourceType: 'meeting' },
           select: { id: true },
@@ -135,12 +101,6 @@ export class MeetingReingestCron {
   }
 }
 
-/**
- * Классификация провала reingest для метрики `meeting_ingest_failed{reason}`.
- * Совпадает по reason'ам с analyze.worker (source_inactive / no_merged_transcript
- * / without_tenant / quota_exceeded / other), читая `error.code` из тела
- * NestJS HttpException, QuotaExceededError — по `err.name`, иначе substring.
- */
 function classifyReingestFailure(err: unknown): string {
   const code = extractErrorCode(err);
   switch (code) {
@@ -173,9 +133,7 @@ function extractErrorCode(err: unknown): string | null {
   if (typeof maybeGet === 'function') {
     try {
       candidates.push(maybeGet.call(err));
-    } catch {
-      /* noop */
-    }
+    } catch {}
   }
   candidates.push((err as { response?: unknown }).response);
   for (const body of candidates) {

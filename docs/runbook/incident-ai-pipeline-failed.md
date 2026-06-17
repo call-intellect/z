@@ -11,28 +11,30 @@
 1. Найти причину:
 
    ```bash
-   psql z_main -c "SELECT id, status, failure_reason FROM \"Meeting\" WHERE id='<MEETING_ID>';"
+   docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+     -c "SELECT id, status, failure_reason FROM \"Meeting\" WHERE id='<MEETING_ID>';"
    ```
 
 2. Посмотреть последние записи `AiUsageLog`:
 
    ```bash
-   psql z_main -c \
+   docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c \
      "SELECT agent_type, model, provider, status, error_text, created_at
         FROM ai_usage_log
         WHERE meeting_id='<MEETING_ID>'
         ORDER BY created_at DESC LIMIT 20;"
    ```
 
-3. Логи воркеров:
+3. Логи воркеров (BullMQ-воркеры работают in-process внутри контейнера `backend`):
 
    ```bash
-   journalctl -u z-workers --since '1h ago' | grep -i '<MEETING_ID>'
+   docker compose logs --since 1h backend | grep -i '<MEETING_ID>'
    ```
 
-4. BullMQ failed jobs (Bull-Board UI на порту `:3001/queues`):
-   - Очереди: `transcribe`, `merge`, `analyze`, `notify`.
-   - Внутри failed-job — `failedReason`, последний stacktrace.
+4. BullMQ failed jobs — через admin-инспектор очередей (`GET /api/v1/admin/platform/workers/queues`):
+   - Очереди: `ai.transcribe`, `ai.merge`, `ai.analyze`, `ai.notify`.
+   - Сводка по очереди — counts (waiting/active/failed/delayed/completed/paused).
+   - Детали одной очереди (`GET /api/v1/admin/platform/workers/queues/:name`) — последние 20 failed-job с `failedReason`.
 
 ## Recovery
 

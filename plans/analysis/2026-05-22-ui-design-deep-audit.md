@@ -5,11 +5,11 @@ feature: Глубокий UI/UX design audit — Z-Admin и Org-кабинет
 date: 2026-05-22
 related:
   - plans/analysis/2026-05-21-user-cabinet-design.md (вход — навигация ЛК Фазы 0)
-  - plans/tz/2026-05-21-phase-0-roles-and-onboarding.md (зонтичный ТЗ Фазы 0)
-  - delivery/06-ux-ui.md (целевой UX)
-  - delivery/ui/screens.md (каталог экранов)
-  - delivery/13-glossary.md (глоссарий UI)
-  - delivery/ui/copy-strings.ru.md (копирайт UI)
+  - plans/archive/2026-05-21-phase-0-roles-and-onboarding.md (зонтичный ТЗ Фазы 0)
+  - second-brain/02_architecture/design-system.md (целевой UX)
+  - second-brain/01_projects/frontend-pages.md (каталог экранов)
+  - second-brain/13_glossary/ui-glossary.md (глоссарий UI)
+  - second-brain/13_glossary/copy-strings.ru.md (копирайт UI)
   - second-brain/06_marketing/positioning.md (категория «память компании»)
   - second-brain/06_marketing/messaging.md (tone of voice)
 ---
@@ -66,14 +66,14 @@ related:
 
 ### 0.5. Связь с другими документами
 
-- **[delivery/06-ux-ui.md](../../delivery/06-ux-ui.md)** — целевой UX-док, фиксирует 8 сквозных принципов. **Это «северный полюс»**, аудит к нему приближает, но не обязательно реализует на 100%.
-- **[delivery/ui/screens.md](../../delivery/ui/screens.md)** — целевой каталог из 18 экранов. Из них реализовано 6, в очереди 12 (γ+).
-- **[delivery/13-glossary.md](../../delivery/13-glossary.md)** + **[delivery/ui/copy-strings.ru.md](../../delivery/ui/copy-strings.ru.md)** — глоссарий русских терминов UI и копирайт.
+- **[second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md)** — целевой UX-док, фиксирует 8 сквозных принципов. **Это «северный полюс»**, аудит к нему приближает, но не обязательно реализует на 100%.
+- **[second-brain/01_projects/frontend-pages.md](../../second-brain/01_projects/frontend-pages.md)** — целевой каталог из 18 экранов. Из них реализовано 6, в очереди 12 (γ+).
+- **[second-brain/13_glossary/ui-glossary.md](../../second-brain/13_glossary/ui-glossary.md)** + **[second-brain/13_glossary/copy-strings.ru.md](../../second-brain/13_glossary/copy-strings.ru.md)** — глоссарий русских терминов UI и копирайт.
 - **[plans/analysis/2026-05-21-user-cabinet-design.md](2026-05-21-user-cabinet-design.md)** — вход по навигации ЛК. Этот аудит идёт **поверх** аналитики ЛК.
-- **[plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md)** — зонтичный ТЗ Фазы 0, чей sub-TZ 0c будет писаться на основе и аналитики ЛК, и этого аудита.
+- **[plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md)** — зонтичный ТЗ Фазы 0, чей sub-TZ 0c будет писаться на основе и аналитики ЛК, и этого аудита.
 - **[second-brain/06_marketing/positioning.md](../../second-brain/06_marketing/positioning.md)** + **[messaging.md](../../second-brain/06_marketing/messaging.md)** — категория «память компании», tone of voice, ICP.
 
-**При расхождениях** между этим аудитом и `delivery/06-ux-ui.md` — приоритет у `delivery/06`, кроме случаев когда delivery/06 явно противоречит свежей аналитике ЛК (тогда приоритет у аналитики ЛК + изменения в delivery/06 фиксируются отдельным апдейтом).
+**При расхождениях** между этим аудитом и `second-brain/02_architecture/design-system.md` — приоритет у `delivery/06`, кроме случаев когда delivery/06 явно противоречит свежей аналитике ЛК (тогда приоритет у аналитики ЛК + изменения в delivery/06 фиксируются отдельным апдейтом).
 
 ---
 
@@ -138,14 +138,14 @@ related:
 
 | # | Ограничение | Откуда | UI-следствие |
 |---|---|---|---|
-| C-1 | **Mobile-first ≥360px** | `delivery/06-ux-ui.md` принцип 4 | Все 12 экранов должны быть usable на мобиле; таблицы Mixpanel с 22 колонками — НЕ наш паттерн |
-| C-2 | **WCAG AA** | `delivery/06-ux-ui.md` принцип 5 | Контрасты ≥4.5:1 для текста, ≥3:1 для UI-элементов; клавиатурная навигация; aria-label |
-| C-3 | **Русский UI без англицизмов** | `delivery/06-ux-ui.md` принцип 2; `delivery/13-glossary.md`; feedback memory | Русский в среднем на 15–20% длиннее английского — таблицы должны «дышать»; никаких `Submit`, `Loading`, `AI Chat` |
-| C-4 | **«Память, не контроль»** | `delivery/06-ux-ui.md` раздел 8 | Запрещены лидерборды, push о просрочках, «у вас 3 неотвеченных», очки/значки. Это снимает с нас целый класс паттернов Mixpanel/Amplitude (engagement-нудж) |
+| C-1 | **Mobile-first ≥360px** | `second-brain/02_architecture/design-system.md` принцип 4 | Все 12 экранов должны быть usable на мобиле; таблицы Mixpanel с 22 колонками — НЕ наш паттерн |
+| C-2 | **WCAG AA** | `second-brain/02_architecture/design-system.md` принцип 5 | Контрасты ≥4.5:1 для текста, ≥3:1 для UI-элементов; клавиатурная навигация; aria-label |
+| C-3 | **Русский UI без англицизмов** | `second-brain/02_architecture/design-system.md` принцип 2; `second-brain/13_glossary/ui-glossary.md`; feedback memory | Русский в среднем на 15–20% длиннее английского — таблицы должны «дышать»; никаких `Submit`, `Loading`, `AI Chat` |
+| C-4 | **«Память, не контроль»** | `second-brain/02_architecture/design-system.md` раздел 8 | Запрещены лидерборды, push о просрочках, «у вас 3 неотвеченных», очки/значки. Это снимает с нас целый класс паттернов Mixpanel/Amplitude (engagement-нудж) |
 | C-5 | **Dark-first с mint-акцентом** | `frontend/src/ui/tokens.css` | Mint #5eead4 на тёмном фоне #0a0e14 проверен — 13:1 контраст (AAA). Mint в light-mode #14b8a6 на белом — 2.5:1, **НЕ проходит AA** (см. раздел 4.1) |
-| C-6 | **Streaming везде** | `delivery/06-ux-ui.md` принцип 3 | Любой длительный ответ — частями; нужны skeleton/typing-indicator паттерны как first-class |
-| C-7 | **Внутренняя кухня скрыта** | `delivery/06-ux-ui.md` принцип 6 | Имена агентов, моделей, токенов — только в «Расширенный режим»; основной UI не показывает «вызван Claude Sonnet, 1.2K токенов» |
-| C-8 | **Tone of voice: на «вы», без эмодзи, без восторженности** | `delivery/06-ux-ui.md` принцип 7; `messaging.md` | «Готово» вместо «Успешно создано!»; никаких «Ура, вы молодец!»; конкретность вместо «возможно стоит обратить внимание» |
+| C-6 | **Streaming везде** | `second-brain/02_architecture/design-system.md` принцип 3 | Любой длительный ответ — частями; нужны skeleton/typing-indicator паттерны как first-class |
+| C-7 | **Внутренняя кухня скрыта** | `second-brain/02_architecture/design-system.md` принцип 6 | Имена агентов, моделей, токенов — только в «Расширенный режим»; основной UI не показывает «вызван Claude Sonnet, 1.2K токенов» |
+| C-8 | **Tone of voice: на «вы», без эмодзи, без восторженности** | `second-brain/02_architecture/design-system.md` принцип 7; `messaging.md` | «Готово» вместо «Успешно создано!»; никаких «Ура, вы молодец!»; конкретность вместо «возможно стоит обратить внимание» |
 | C-9 | **One sans-serif шрифт** | Текущий код: Geist Sans + Geist Mono | Несколько шрифтов = ад поддержки; держим один основной + один моноширинный |
 | C-10 | **Категория «память компании»** | `second-brain/06_marketing/positioning.md` | UI читается как «memory layer для AI», не «приложение для встреч». Влияет на иерархию информации на главных экранах |
 
@@ -3634,10 +3634,10 @@ WCAG-обязательное. Сейчас Z частично поддержи�
 
 | Документ | Что обновить |
 |---|---|
-| [delivery/06-ux-ui.md](../../delivery/06-ux-ui.md) | Добавить раздел о design tokens (см. 4.1–4.6); обновить раздел 8 (что запрещено) ссылками на C-1..C-10 |
-| [delivery/ui/copy-strings.ru.md](../../delivery/ui/copy-strings.ru.md) | Добавить строки: «Заполнена на X%», «обновлено N с назад», «Что важно для меня сегодня», «Все [Орг / Сотрудники / Документы] →», «Расход AI» (вместо «Расход LLM») |
-| [delivery/13-glossary.md](../../delivery/13-glossary.md) | Добавить термины: Дашборд / KPI / тариф / лимит / прогноз / событие (в журнале) / алерт / sparkline |
-| [plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | Добавить раздел L «UI/UX из аудита» в матрицу прослеживаемости — со ссылками на P0-* и P1-* действия |
+| [second-brain/02_architecture/design-system.md](../../second-brain/02_architecture/design-system.md) | Добавить раздел о design tokens (см. 4.1–4.6); обновить раздел 8 (что запрещено) ссылками на C-1..C-10 |
+| [second-brain/13_glossary/copy-strings.ru.md](../../second-brain/13_glossary/copy-strings.ru.md) | Добавить строки: «Заполнена на X%», «обновлено N с назад», «Что важно для меня сегодня», «Все [Орг / Сотрудники / Документы] →», «Расход AI» (вместо «Расход LLM») |
+| [second-brain/13_glossary/ui-glossary.md](../../second-brain/13_glossary/ui-glossary.md) | Добавить термины: Дашборд / KPI / тариф / лимит / прогноз / событие (в журнале) / алерт / sparkline |
+| [plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md) | Добавить раздел L «UI/UX из аудита» в матрицу прослеживаемости — со ссылками на P0-* и P1-* действия |
 | [plans/analysis/2026-05-21-user-cabinet-design.md](2026-05-21-user-cabinet-design.md) | Добавить в §10 (глоссарий) русские варианты «KPI», «tariff», «projection» |
 | [second-brain/02_architecture/code-pitfalls.md](../../second-brain/02_architecture/code-pitfalls.md) | Добавить: «mint #14b8a6 не проходит WCAG AA на белом фоне — использовать `--accent-text` для текстовых случаев в light-mode»; «не плодить ad-hoc цвета — всегда через tokens.css» |
 | [second-brain/02_architecture/module-map.md](../../second-brain/02_architecture/module-map.md) | Добавить `frontend/src/ui/states/` и `frontend/src/ui/charts/` когда они появятся |
@@ -3725,7 +3725,7 @@ P1-18..P1-27 (Org-screens) ─────────────→ завис
    - `phase-0-z-admin-improvements.md` (P1.Z-Admin)
    - `phase-0-org-cabinet-improvements.md` (P1.Org)
    - `phase-0-cross-cutting-components.md` (P1.Cross-cutting)
-3. **Параллельно — обновить delivery/06-ux-ui.md, copy-strings.ru.md, code-pitfalls.md** (раздел 10.1).
+3. **Параллельно — обновить second-brain/02_architecture/design-system.md, copy-strings.ru.md, code-pitfalls.md** (раздел 10.1).
 4. **Опционально — Этап 6 аудита**: прототипы 2-3 критичных компонентов через скилл `frontend-design` (`<DataTable>`, `<HeroKPI>`, переосмысленный Director Dashboard).
 5. **Опционально — отдельные аудиты** для `/meetings`, `/chat`, email-шаблонов (раздел 9).
 

@@ -2,10 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { MultiQueryExpansionService } from './multi-query-expansion.service';
 
-/**
- * dialog-layer — unit-тесты MultiQueryExpansionService (ТЗ 2026-06-14: слитый
- * модуль понимания запроса; intent-гейтинг убран, история доходит до промпта).
- */
 describe('MultiQueryExpansionService', () => {
   let llmCallMock: ReturnType<typeof vi.fn>;
   let svc: MultiQueryExpansionService;
@@ -45,7 +41,7 @@ describe('MultiQueryExpansionService', () => {
     });
     expect(llmCallMock).toHaveBeenCalledTimes(1);
     expect(r.expanded).toBe(true);
-    expect(r.queries[0]).toBe('Сколько денег?'); // оригинал первый
+    expect(r.queries[0]).toBe('Сколько денег?');
     expect(r.queries).toEqual(['Сколько денег?', 'q1', 'q2', 'q3']);
   });
 
@@ -69,9 +65,7 @@ describe('MultiQueryExpansionService', () => {
     expect(llmCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         taskType: 'dialog-multi-query',
-        userMessage: expect.stringContaining(
-          'Обсуждали продукт Маяк для логистики.',
-        ),
+        userMessage: expect.stringContaining('Обсуждали продукт Маяк для логистики.'),
       }),
     );
     const callArg = llmCallMock.mock.calls[0]?.[0] as { userMessage: string };
@@ -138,7 +132,6 @@ describe('MultiQueryExpansionService', () => {
       intent: 'exploratory',
       conversationId: null,
     });
-    // оригинал «Расскажи про найм» не должен задвоиться
     expect(r.queries).toEqual([
       'Расскажи про найм',
       'Какова ситуация с подбором?',

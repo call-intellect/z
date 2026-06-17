@@ -1,16 +1,3 @@
-/**
- * Admin-redesign Фаза 6 — unit-тесты `AdminBotsService`.
- *
- * Покрываем главное:
- *   1) getTelegramStatus(): возвращает channelExists=false когда канала нет,
- *      и нормально декриптует token + читает RPS из AdminSetting.
- *   2) setTelegramWebhook(): вызывает `TelegramApiClient.setWebhook` с правильными
- *      аргументами и пишет webhookUrl в Channel.config.
- *   3) deleteTelegramWebhook(): вызывает `TelegramApiClient.deleteWebhook` и
- *      очищает webhookUrl из Channel.config.
- *   4) getEmailInboxStatus(): возвращает ENV-снимок.
- */
-
 import { BadRequestException, NotImplementedException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -33,15 +20,9 @@ function buildService(initial: {
 
   const prisma = {
     channel: {
-      findFirst: vi.fn(
-        async ({ where }: { where: { tenantId: null; kind: string } }) => {
-          return (
-            channels.find(
-              (c) => c.tenantId === where.tenantId && c.kind === where.kind,
-            ) ?? null
-          );
-        },
-      ),
+      findFirst: vi.fn(async ({ where }: { where: { tenantId: null; kind: string } }) => {
+        return channels.find((c) => c.tenantId === where.tenantId && c.kind === where.kind) ?? null;
+      }),
       update: vi.fn(
         async ({
           where,
@@ -118,14 +99,7 @@ function buildService(initial: {
     }),
   } as unknown as ConstructorParameters<typeof AdminBotsService>[5];
 
-  const svc = new AdminBotsService(
-    prisma,
-    crypto,
-    cfg,
-    telegramApi,
-    maxApi,
-    settings,
-  );
+  const svc = new AdminBotsService(prisma, crypto, cfg, telegramApi, maxApi, settings);
 
   return {
     svc,
@@ -174,9 +148,7 @@ describe('AdminBotsService', () => {
       secretToken: 'test-secret',
     });
     expect(result.ok).toBe(true);
-    expect(result.webhookUrl).toBe(
-      'https://example.com/api/v1/webhooks/telegram-bot',
-    );
+    expect(result.webhookUrl).toBe('https://example.com/api/v1/webhooks/telegram-bot');
     expect(channels[0]!.config['webhookUrl']).toBe(
       'https://example.com/api/v1/webhooks/telegram-bot',
     );
@@ -184,9 +156,7 @@ describe('AdminBotsService', () => {
 
   it('setTelegramWebhook: канала нет — 400 channel_not_configured', async () => {
     const { svc } = buildService({});
-    await expect(svc.setTelegramWebhook({})).rejects.toBeInstanceOf(
-      BadRequestException,
-    );
+    await expect(svc.setTelegramWebhook({})).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('deleteTelegramWebhook: вызывает deleteWebhook и убирает webhookUrl', async () => {
@@ -226,8 +196,6 @@ describe('AdminBotsService', () => {
 
   it('testEmailInboxConnection: пока заглушка 501', async () => {
     const { svc } = buildService({});
-    await expect(svc.testEmailInboxConnection()).rejects.toBeInstanceOf(
-      NotImplementedException,
-    );
+    await expect(svc.testEmailInboxConnection()).rejects.toBeInstanceOf(NotImplementedException);
   });
 });

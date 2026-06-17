@@ -16,15 +16,6 @@ import {
   type ChatboxSyncScope,
 } from './chatbox-sync.queue';
 
-/**
- * Producer очереди `chatbox.sync` (ТЗ 2026-06-05, Фаза 3).
- *
- * `enqueue(tenantId, scope)` ставит job синка. `jobId = chatbox-sync-${tenantId}-${scope}`
- * даёт дедупликацию параллельных одинаковых синков (BullMQ не добавит второй job
- * с тем же jobId, пока первый не завершён/не очищен).
- *
- * Worker (`chatbox-sync.worker.ts`) подхватывает и вызывает ChatboxSyncService.
- */
 @Injectable()
 export class ChatboxSyncQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChatboxSyncQueueService.name);
@@ -47,14 +38,6 @@ export class ChatboxSyncQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Поставить job синка. Дедуп по jobId `chatbox-sync-${tenantId}-${scope}`.
-   * `since` (ISO) — бэкафилл чатов не старше даты; добавляется в jobId, чтобы
-   * не схлопнуться с обычным incremental-проходом.
-   *
-   * ВАЖНО: разделитель — `-`, НЕ `:`. BullMQ (5.x) запрещает `:` в custom
-   * jobId («Custom Id cannot contain :») — это разделитель ключей Redis.
-   */
   async enqueue(
     tenantId: string,
     scope: ChatboxSyncScope,

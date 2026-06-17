@@ -2,7 +2,7 @@
 
 > Один документ — источник правды по всем дашбордам Z и их виджетам. Сверяемся
 > с ним на каждой фазе ТЗ
-> [plans/tz/2026-06-01-dashboards-wow-polish.md](../../plans/tz/2026-06-01-dashboards-wow-polish.md).
+> [plans/archive/2026-06-01-dashboards-wow-polish.md](../../plans/archive/2026-06-01-dashboards-wow-polish.md).
 >
 > Дата создания: 2026-06-01. Поддерживать актуальным при добавлении/удалении
 > страниц и виджетов.
@@ -16,9 +16,9 @@
 
 | Дашборд | Маршрут | Главный Client.tsx | В меню? | Категория | Статус |
 |---|---|---|---|---|---|
-| CEO Director (главный дашборд) | `/dashboard` | `frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx` | да (Каждый день → Главная) | CEO | 🟡 |
+| CEO Director (главный дашборд) | `/dashboard` | `frontend/app/(authenticated)/dashboard/DirectorDashboardClient.tsx` | да (Каждый день → Главная) | CEO | ✅ (main-rework выкачен ON: `dashboard.main_rework.enabled`, `ValueStripWidget` + перекомпоновка первого экрана) |
 | Дашборд (старый wrapper) | `/dashboard` (роут) | `frontend/app/(authenticated)/dashboard/DashboardClient.tsx` | через `/dashboard` | CEO | 🟡 |
-| Operations | `/dashboard/operations` | `frontend/app/(authenticated)/dashboard/operations/OperationsDashboardClient.tsx` | да (Управление → Панель операций) | Operations | 🟡 |
+| Operations | `/dashboard/operations` | `frontend/app/(authenticated)/dashboard/operations/OperationsDashboardClient.tsx` | да (Управление → Панель операций) | Operations | ✅ (dashboard-rework выкачен ON: `operations.dashboard_rework.enabled`, capacity по командам + resolved-зеркало) |
 | Ежедневный отчёт | `/dashboard/operations/daily` | `frontend/app/(authenticated)/dashboard/operations/daily/DailyDigestClient.tsx` | да (Управление) | Operations | 🟡 |
 | Недельная сводка | `/dashboard/operations/weekly` | `frontend/app/(authenticated)/dashboard/operations/weekly/WeeklyDigestClient.tsx` | да (Управление) | Operations | 🟡 |
 | Карточка сотрудника — корень | `/persons/[id]` | `frontend/app/(authenticated)/persons/[id]/PersonDetailClient.tsx` | через список `/persons` | Person | ✅ (нав добавлен 2026-06-01) |
@@ -93,7 +93,7 @@
 | **TeamHealthGrid** | TeamHealthGrid.tsx | Команда | 1 | `pulse.teamHealth` | ✅ existing |
 | **BusFactorWidget** | BusFactorWidget.tsx | Команда | 2 | `pulse.busFactor` | ✅ existing |
 | **ActivityFeedWidget** | ActivityFeedWidget.tsx | Команда | 3 | `dashboard.activityFeed` | ✅ existing |
-| **PeopleAtRiskWidget** | PeopleAtRiskWidget.tsx | Команда | 4 | ranked Pulse score per Person — **открытый хвост** (см. §4.4) | 🆕 создаётся в Фазе Б.7 |
+| **PeopleAtRiskWidget** | PeopleAtRiskWidget.tsx | Команда | 4 | `dashboard.peopleAtRisk` (endpoint `/dashboard/people-at-risk`, top-N) | ✅ existing (skeleton/empty/error) |
 | **RecurringTopicsWidget** | RecurringTopicsWidget.tsx | Знания | 1 | `pulse.recurringTopics` | ✅ existing |
 | **BottleneckHeatmapWidget** | BottleneckHeatmapWidget.tsx | Знания | 2 | `pulse.bottleneckHeatmap` | ✅ existing |
 | **ActiveThemesWidget** | inline в DirectorDashboardClient | Знания | 3 | `data?.activeThemes` | ✅ inline |
@@ -119,11 +119,11 @@
 
 ### 4.4. Открытые хвосты по данным
 
-| Хвост | Влияет на | Кто чинит / когда |
+| Хвост | Влияет на | Статус |
 |---|---|---|
-| **Ranked Pulse score per Person** | `PeopleAtRiskWidget` (Фаза Б.7) | Backend endpoint нужен `/dashboard/people-at-risk` (top-N). Пока — виджет рендерит `null` (скрывается); фикс в следующем backend-цикле |
-| **Themes/Insights/Decisions `.recent` (за неделю)** | `WeeklyDigestSection` (Фаза Б.3, таб Обзор) | Используем top-3 из общего списка, отфильтрованного по `createdAt > startOfWeek` |
-| **`chatApi.askCompany()` endpoint** | AssistantSidebar.Спросить (Фаза Б.4) | Если concierge `/concierge/ask` подходит — переиспользуем (с `@PublicDemo()` для demo_observer); иначе UI-заглушка «Скоро» |
+| ~~**Ranked Pulse score per Person**~~ | `PeopleAtRiskWidget` | ✅ закрыт: shipped endpoint `GET /dashboard/people-at-risk` (top-N) + `PeopleAtRiskService`; виджет рендерит реальные данные (skeleton/empty/error) |
+| **Themes/Insights/Decisions `.recent` (за неделю)** | таб Обзор | Используем top-3 из общего списка, отфильтрованного по `createdAt > startOfWeek` |
+| ~~**`chatApi.askCompany()` endpoint**~~ | AssistantSidebar.Спросить | ✅ закрыт: таб «Спросить» рендерит `OrgChatPanel` (LLM-чат с цитатами), `@PublicDemo()` на chat-эндпоинтах для demo_observer |
 
 ### 4.5. Матрица состояний главной (для Шага В.7)
 

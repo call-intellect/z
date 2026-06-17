@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   Building2,
@@ -19,12 +19,12 @@ import {
   Trash2,
   XCircle,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { sourcesApi } from '@/api/sources.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { sourcesApi } from "@/api/sources.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
 import {
   DATA_CLASS_LABELS,
   DATA_CLASS_VALUES,
@@ -42,13 +42,13 @@ import {
   type SourceDomain,
   type SourceTestResultApi,
   type SourceUiType,
-} from '@/domain/source';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
+} from "@/domain/source";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { useConfirmDialog } from "@/ui/components/shared/useConfirmDialog";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -56,19 +56,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const TYPE_ICONS: Record<SourceUiType, LucideIcon> = {
   bot: Send,
@@ -81,14 +81,9 @@ function isUiType(t: string): t is SourceUiType {
   return (SOURCE_UI_TYPES as readonly string[]).includes(t);
 }
 
-/**
- * Источники-интеграции (ТЗ 2026-06-16: интеграция = источник). Управление
- * вынесено на отдельные страницы под `/company-admin/sources/*` — там полный
- * флоу подключения/синхронизации. В списке их «Настроить» ведёт туда же.
- */
 const INTEGRATION_ROUTE_BY_TYPE: Record<string, string> = {
-  chatbox: '/company-admin/sources/chatbox',
-  meeting: '/company-admin/meetings',
+  chatbox: "/company-admin/sources/chatbox",
+  meeting: "/company-admin/meetings",
 };
 
 type IntegrationTile = {
@@ -101,26 +96,25 @@ type IntegrationTile = {
 
 const INTEGRATION_TILES: IntegrationTile[] = [
   {
-    key: 'chatbox',
-    label: 'Чат бокс',
-    description: 'Переписки с клиентами: чаты, клиенты, менеджеры.',
+    key: "chatbox",
+    label: "Чат бокс",
+    description: "Переписки с клиентами: чаты, клиенты, менеджеры.",
     icon: MessagesSquare,
-    route: '/company-admin/sources/chatbox',
+    route: "/company-admin/sources/chatbox",
   },
   {
-    key: 'bitrix',
-    label: 'Bitrix24',
-    description: 'CRM-портал: установка интеграции с нашей стороны.',
+    key: "bitrix",
+    label: "Bitrix24",
+    description: "CRM-портал: установка интеграции с нашей стороны.",
     icon: Building2,
-    route: '/company-admin/sources/bitrix',
+    route: "/company-admin/sources/bitrix",
   },
 ];
 
 export function SourcesClient() {
   const router = useRouter();
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
-  const canManage =
-    currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canManage = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const [items, setItems] = useState<SourceDomain[]>([]);
   const [loading, setLoading] = useState(true);
@@ -138,7 +132,7 @@ export function SourcesClient() {
       const res = await sourcesApi.list(currentOrgId);
       setItems(res.items.map(mapSourceDtoToDomain));
     } catch (e) {
-      setError(humanizeApiError(e, 'Не удалось загрузить'));
+      setError(humanizeApiError(e, "Не удалось загрузить"));
     } finally {
       setLoading(false);
     }
@@ -157,10 +151,12 @@ export function SourcesClient() {
       if (res.ok) {
         toast.success(`Тест «${s.name}» — успешно`);
       } else {
-        toast.error(`Тест не прошёл: ${res.errorMessage ?? 'неизвестная ошибка'}`);
+        toast.error(
+          `Тест не прошёл: ${res.errorMessage ?? "неизвестная ошибка"}`,
+        );
       }
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Тест не прошёл'));
+      toast.error(humanizeApiError(e, "Тест не прошёл"));
     } finally {
       setPendingId(null);
     }
@@ -174,13 +170,13 @@ export function SourcesClient() {
         isActive: !s.isActive,
       });
       setItems((prev) =>
-        prev.map((x) =>
-          x.id === s.id ? mapSourceDtoToDomain(updated) : x,
-        ),
+        prev.map((x) => (x.id === s.id ? mapSourceDtoToDomain(updated) : x)),
       );
-      toast.success(updated.isActive ? 'Источник включён' : 'Источник выключен');
+      toast.success(
+        updated.isActive ? "Источник включён" : "Источник выключен",
+      );
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось обновить'));
+      toast.error(humanizeApiError(e, "Не удалось обновить"));
     } finally {
       setPendingId(null);
     }
@@ -190,19 +186,19 @@ export function SourcesClient() {
     if (!currentOrgId) return;
     const ok = await ask({
       title: `Отключить источник «${s.name}»?`,
-      description: 'Накопленные события останутся, но новые поступать не будут.',
-      confirmLabel: 'Отключить',
+      description:
+        "Накопленные события останутся, но новые поступать не будут.",
+      confirmLabel: "Отключить",
       destructive: true,
     });
     if (!ok) return;
     setPendingId(s.id);
     try {
       await sourcesApi.remove(currentOrgId, s.id);
-      // Soft-delete на бэке = isActive=false. Перезагрузим список.
       await fetchAll();
-      toast.success('Источник отключён');
+      toast.success("Источник отключён");
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось отключить'));
+      toast.error(humanizeApiError(e, "Не удалось отключить"));
     } finally {
       setPendingId(null);
     }
@@ -213,9 +209,9 @@ export function SourcesClient() {
     const ok = await ask({
       title: `Удалить источник «${s.name}»?`,
       description:
-        'Источник и все его собранные события будут удалены безвозвратно. ' +
-        'Знания в графе останутся, но потеряют ссылку на эти события.',
-      confirmLabel: 'Удалить навсегда',
+        "Источник и все его собранные события будут удалены безвозвратно. " +
+        "Знания в графе останутся, но потеряют ссылку на эти события.",
+      confirmLabel: "Удалить навсегда",
       destructive: true,
     });
     if (!ok) return;
@@ -224,17 +220,15 @@ export function SourcesClient() {
       const res = await sourcesApi.purge(currentOrgId, s.id);
       await fetchAll();
       toast.success(
-        `Источник удалён (событий: ${res.deletedRawEvents.toLocaleString('ru-RU')})`,
+        `Источник удалён (событий: ${res.deletedRawEvents.toLocaleString("ru-RU")})`,
       );
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось удалить'));
+      toast.error(humanizeApiError(e, "Не удалось удалить"));
     } finally {
       setPendingId(null);
     }
   };
 
-  // Интеграции-источники (chatbox/meeting) управляются на отдельных страницах —
-  // их «Настроить» ведёт туда; остальные типы — inline-диалог.
   const handleConfigure = (s: SourceDomain) => {
     const route = INTEGRATION_ROUTE_BY_TYPE[s.type];
     if (route) {
@@ -255,7 +249,8 @@ export function SourcesClient() {
   if (!currentOrgId) {
     return (
       <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm text-warning">
-        Эта страница доступна только в рамках организации. Создайте или присоединитесь к организации.
+        Эта страница доступна только в рамках организации. Создайте или
+        присоединитесь к организации.
       </div>
     );
   }
@@ -263,7 +258,8 @@ export function SourcesClient() {
   if (!canManage) {
     return (
       <div className="rounded-md border border-warning/30 bg-warning/10 p-4 text-sm">
-        Управление источниками доступно только владельцу или администратору организации.
+        Управление источниками доступно только владельцу или администратору
+        организации.
       </div>
     );
   }
@@ -351,8 +347,6 @@ export function SourcesClient() {
   );
 }
 
-// ───────────────────────────── Row ─────────────────────────────────
-
 function SourceRow({
   source,
   isPending,
@@ -378,10 +372,10 @@ function SourceRow({
   return (
     <li
       className={cn(
-        'flex flex-col gap-3 rounded-lg border p-3 transition-colors md:flex-row md:items-start',
+        "flex flex-col gap-3 rounded-lg border p-3 transition-colors md:flex-row md:items-start",
         source.isActive
-          ? 'border-border-subtle bg-bg-card'
-          : 'border-border-subtle bg-bg-card/50 opacity-70',
+          ? "border-border-subtle bg-bg-card"
+          : "border-border-subtle bg-bg-card/50 opacity-70",
       )}
     >
       <div className="flex items-start gap-3 md:flex-1 md:min-w-0">
@@ -429,17 +423,12 @@ function SourceRow({
           disabled={isPending}
           aria-label="Активен"
         />
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={onTest}
-          disabled={isPending}
-        >
+        <Button size="sm" variant="ghost" onClick={onTest} disabled={isPending}>
           {isPending ? (
             <Loader2 size={12} className="animate-spin" />
           ) : (
             <CheckCircle2 size={12} />
-          )}{' '}
+          )}{" "}
           Тест
         </Button>
         <Button size="sm" variant="ghost" onClick={onEdit} disabled={isPending}>
@@ -475,8 +464,8 @@ function SourceRow({
 function CopyButton({ text }: { text: string }) {
   const handle = () => {
     void navigator.clipboard.writeText(text).then(
-      () => toast.success('Скопировано'),
-      () => toast.error('Не удалось скопировать'),
+      () => toast.success("Скопировано"),
+      () => toast.error("Не удалось скопировать"),
     );
   };
   return (
@@ -490,8 +479,6 @@ function CopyButton({ text }: { text: string }) {
     </button>
   );
 }
-
-// ───────────────────────────── Create Dialog ─────────────────────────────────
 
 function CreateSourceDialog({
   open,
@@ -518,12 +505,16 @@ function CreateSourceDialog({
         <DialogHeader>
           <DialogTitle>Подключить источник</DialogTitle>
           <DialogDescription>
-            Выберите тип источника. Каждый адаптер обрабатывает свой формат событий.
+            Выберите тип источника. Каждый адаптер обрабатывает свой формат
+            событий.
           </DialogDescription>
         </DialogHeader>
 
         {type === null ? (
-          <TypePicker onPick={(t) => setType(t)} onPickIntegration={onPickIntegration} />
+          <TypePicker
+            onPick={(t) => setType(t)}
+            onPickIntegration={onPickIntegration}
+          />
         ) : (
           <SourceForm
             type={type}
@@ -598,13 +589,11 @@ function TypePicker({
 }
 
 const DESCRIPTION_BY_TYPE: Record<SourceUiType, string> = {
-  bot: 'Сообщения чатов и каналов через Bot API.',
-  phone_call: 'События звонков и записи разговоров.',
-  email: 'Чтение входящих писем по IMAP.',
-  web_form: 'Быстрый ввод заметок со страницы /dump.',
+  bot: "Сообщения чатов и каналов через Bot API.",
+  phone_call: "События звонков и записи разговоров.",
+  email: "Чтение входящих писем по IMAP.",
+  web_form: "Быстрый ввод заметок со страницы /dump.",
 };
-
-// ───────────────────────────── Edit Dialog ─────────────────────────────────
 
 function EditSourceDialog({
   source,
@@ -658,9 +647,7 @@ function EditSourceDialog({
   );
 }
 
-// ───────────────────────────── Form (по типу) ─────────────────────────────────
-
-type FormMode = 'create' | 'edit';
+type FormMode = "create" | "edit";
 
 interface SourceFormProps {
   type: SourceUiType;
@@ -672,13 +659,11 @@ interface SourceFormProps {
 }
 
 function SourceForm(props: SourceFormProps) {
-  if (props.type === 'bot') return <TelegramForm {...props} />;
-  if (props.type === 'phone_call') return <MangoForm {...props} />;
-  if (props.type === 'email') return <ImapForm {...props} />;
+  if (props.type === "bot") return <TelegramForm {...props} />;
+  if (props.type === "phone_call") return <MangoForm {...props} />;
+  if (props.type === "email") return <ImapForm {...props} />;
   return <WebFormForm {...props} />;
 }
-
-// — Telegram
 
 function TelegramForm({
   orgId,
@@ -689,73 +674,76 @@ function TelegramForm({
 }: SourceFormProps) {
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
-  const [name, setName] = useState(existing?.name ?? '');
-  const [botToken, setBotToken] = useState('');
+  const [name, setName] = useState(existing?.name ?? "");
+  const [botToken, setBotToken] = useState("");
   const [botUsername, setBotUsername] = useState(
-    typeof cfg['botUsername'] === 'string' ? (cfg['botUsername'] as string) : '',
+    typeof cfg["botUsername"] === "string"
+      ? (cfg["botUsername"] as string)
+      : "",
   );
   const [allowedChatIdsRaw, setAllowedChatIdsRaw] = useState(
-    Array.isArray(cfg['allowedChatIds'])
-      ? (cfg['allowedChatIds'] as unknown[])
-          .map((x) => String(x))
-          .join('\n')
-      : '',
+    Array.isArray(cfg["allowedChatIds"])
+      ? (cfg["allowedChatIds"] as unknown[]).map((x) => String(x)).join("\n")
+      : "",
   );
   const [includeForwarded, setIncludeForwarded] = useState(
-    typeof cfg['includeForwarded'] === 'boolean'
-      ? (cfg['includeForwarded'] as boolean)
+    typeof cfg["includeForwarded"] === "boolean"
+      ? (cfg["includeForwarded"] as boolean)
       : false,
   );
   const [dataClass, setDataClass] = useState<DataClass>(
-    existing?.dataClass ?? 'internal',
+    existing?.dataClass ?? "internal",
   );
   const [submitting, setSubmitting] = useState(false);
-  const [createdWebhookUrl, setCreatedWebhookUrl] = useState<string | null>(null);
+  const [createdWebhookUrl, setCreatedWebhookUrl] = useState<string | null>(
+    null,
+  );
 
   const computedName = useMemo(() => {
-    if (mode === 'edit') return name;
-    if (botUsername.trim()) return `Telegram: @${botUsername.trim().replace(/^@/, '')}`;
-    return name || 'Telegram';
+    if (mode === "edit") return name;
+    if (botUsername.trim())
+      return `Telegram: @${botUsername.trim().replace(/^@/, "")}`;
+    return name || "Telegram";
   }, [mode, name, botUsername]);
 
-  const isValid = mode === 'edit'
-    ? botUsername.trim().length > 0
-    : botToken.trim().length > 0 && botUsername.trim().length > 0;
+  const isValid =
+    mode === "edit"
+      ? botUsername.trim().length > 0
+      : botToken.trim().length > 0 && botUsername.trim().length > 0;
 
   const handleSubmit = async () => {
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
       const allowedChatIds = parseLinesToNumbers(allowedChatIdsRaw);
-      if (mode === 'create') {
+      if (mode === "create") {
         const config = {
-          subtype: 'telegram' as const,
+          subtype: "telegram" as const,
           botToken: botToken.trim(),
-          botUsername: botUsername.trim().replace(/^@/, ''),
+          botUsername: botUsername.trim().replace(/^@/, ""),
           webhookSecret: generateWebhookSecret(),
           allowedChatIds,
           includeForwarded,
         };
         const created = await sourcesApi.create(orgId, {
-          type: 'bot',
+          type: "bot",
           name: computedName,
           config,
           dataClass,
         });
         setCreatedWebhookUrl(created.webhookUrl ?? null);
-        toast.success('Telegram-бот подключён');
+        toast.success("Telegram-бот подключён");
       } else if (existing) {
         const config: Record<string, unknown> = {
-          subtype: 'telegram',
-          // если поле пустое — присылаем маркер `<encrypted>`, backend сохранит старое
-          botToken: botToken.trim().length > 0 ? botToken.trim() : ENCRYPTED_MARKER,
-          botUsername: botUsername.trim().replace(/^@/, ''),
+          subtype: "telegram",
+          botToken:
+            botToken.trim().length > 0 ? botToken.trim() : ENCRYPTED_MARKER,
+          botUsername: botUsername.trim().replace(/^@/, ""),
           allowedChatIds,
           includeForwarded,
-          // webhookSecret оставляем как есть на бэке — он не пересоздаётся.
           webhookSecret:
-            typeof cfg['webhookSecret'] === 'string'
-              ? (cfg['webhookSecret'] as string)
+            typeof cfg["webhookSecret"] === "string"
+              ? (cfg["webhookSecret"] as string)
               : generateWebhookSecret(),
         };
         await sourcesApi.update(orgId, existing.id, {
@@ -763,11 +751,11 @@ function TelegramForm({
           config,
           dataClass,
         });
-        toast.success('Сохранено');
+        toast.success("Сохранено");
       }
-      if (mode === 'edit') await onDone();
+      if (mode === "edit") await onDone();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSubmitting(false);
     }
@@ -784,7 +772,8 @@ function TelegramForm({
             <code className="mx-1 rounded bg-bg-overlay px-1 py-0.5 font-mono text-[11px]">
               setWebhook
             </code>
-            и секрет <code className="font-mono">X-Telegram-Bot-Api-Secret-Token</code>.
+            и секрет{" "}
+            <code className="font-mono">X-Telegram-Bot-Api-Secret-Token</code>.
           </>
         }
         onClose={() => void onDone()}
@@ -794,7 +783,7 @@ function TelegramForm({
 
   return (
     <div className="space-y-4">
-      {mode === 'edit' && (
+      {mode === "edit" && (
         <Field label="Название">
           <Input
             value={name}
@@ -806,28 +795,23 @@ function TelegramForm({
       )}
 
       <Field
-        label={mode === 'create' ? 'Bot Token' : 'Новый Bot Token'}
+        label={mode === "create" ? "Bot Token" : "Новый Bot Token"}
         hint={
-          mode === 'create'
-            ? 'Получить у @BotFather командой /newbot'
-            : 'Оставьте пустым, чтобы сохранить текущий токен'
+          mode === "create"
+            ? "Получить у @BotFather командой /newbot"
+            : "Оставьте пустым, чтобы сохранить текущий токен"
         }
       >
         <Input
           type="password"
           value={botToken}
           onChange={(e) => setBotToken(e.target.value)}
-          placeholder={
-            mode === 'create' ? '123456:ABC-...' : '••••••••'
-          }
+          placeholder={mode === "create" ? "123456:ABC-..." : "••••••••"}
           autoComplete="off"
         />
       </Field>
 
-      <Field
-        label="Bot Username"
-        hint="Без @, например: my_company_bot"
-      >
+      <Field label="Bot Username" hint="Без @, например: my_company_bot">
         <Input
           value={botUsername}
           onChange={(e) => setBotUsername(e.target.value)}
@@ -842,7 +826,7 @@ function TelegramForm({
         <Textarea
           value={allowedChatIdsRaw}
           onChange={(e) => setAllowedChatIdsRaw(e.target.value)}
-          placeholder={'-1001234567890\n100100100'}
+          placeholder={"-1001234567890\n100100100"}
           className="min-h-[80px] font-mono text-xs"
         />
       </Field>
@@ -862,13 +846,11 @@ function TelegramForm({
         onSubmit={() => void handleSubmit()}
         submitting={submitting}
         canSubmit={isValid}
-        submitLabel={mode === 'create' ? 'Подключить' : 'Сохранить'}
+        submitLabel={mode === "create" ? "Подключить" : "Сохранить"}
       />
     </div>
   );
 }
-
-// — Mango
 
 function MangoForm({
   orgId,
@@ -879,24 +861,24 @@ function MangoForm({
 }: SourceFormProps) {
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
-  const [name, setName] = useState(
-    existing?.name ?? 'Mango: телефония',
-  );
-  const [apiKey, setApiKey] = useState('');
-  const [apiSalt, setApiSalt] = useState('');
+  const [name, setName] = useState(existing?.name ?? "Mango: телефония");
+  const [apiKey, setApiKey] = useState("");
+  const [apiSalt, setApiSalt] = useState("");
   const [extensionsRaw, setExtensionsRaw] = useState(
-    Array.isArray(cfg['extensions'])
-      ? (cfg['extensions'] as unknown[]).map((x) => String(x)).join('\n')
-      : '',
+    Array.isArray(cfg["extensions"])
+      ? (cfg["extensions"] as unknown[]).map((x) => String(x)).join("\n")
+      : "",
   );
   const [dataClass, setDataClass] = useState<DataClass>(
-    existing?.dataClass ?? 'internal',
+    existing?.dataClass ?? "internal",
   );
   const [submitting, setSubmitting] = useState(false);
-  const [createdWebhookUrl, setCreatedWebhookUrl] = useState<string | null>(null);
+  const [createdWebhookUrl, setCreatedWebhookUrl] = useState<string | null>(
+    null,
+  );
 
   const isValid =
-    mode === 'edit'
+    mode === "edit"
       ? extensionsRaw.length > 0
       : apiKey.trim().length >= 20 && apiSalt.trim().length >= 20;
 
@@ -905,12 +887,12 @@ function MangoForm({
     setSubmitting(true);
     try {
       const extensions = parseLinesToList(extensionsRaw);
-      if (mode === 'create') {
+      if (mode === "create") {
         const created = await sourcesApi.create(orgId, {
-          type: 'phone_call',
-          name: name.trim() || 'Mango: телефония',
+          type: "phone_call",
+          name: name.trim() || "Mango: телефония",
           config: {
-            subtype: 'mango',
+            subtype: "mango",
             apiKey: apiKey.trim(),
             apiSalt: apiSalt.trim(),
             extensions,
@@ -918,12 +900,13 @@ function MangoForm({
           dataClass,
         });
         setCreatedWebhookUrl(created.webhookUrl ?? null);
-        toast.success('Подключение создано');
+        toast.success("Подключение создано");
       } else if (existing) {
         const config: Record<string, unknown> = {
-          subtype: 'mango',
+          subtype: "mango",
           apiKey: apiKey.trim().length > 0 ? apiKey.trim() : ENCRYPTED_MARKER,
-          apiSalt: apiSalt.trim().length > 0 ? apiSalt.trim() : ENCRYPTED_MARKER,
+          apiSalt:
+            apiSalt.trim().length > 0 ? apiSalt.trim() : ENCRYPTED_MARKER,
           extensions,
         };
         await sourcesApi.update(orgId, existing.id, {
@@ -931,11 +914,11 @@ function MangoForm({
           config,
           dataClass,
         });
-        toast.success('Сохранено');
+        toast.success("Сохранено");
       }
-      if (mode === 'edit') await onDone();
+      if (mode === "edit") await onDone();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSubmitting(false);
     }
@@ -972,31 +955,31 @@ function MangoForm({
       </Field>
 
       <Field
-        label={mode === 'create' ? 'API Key' : 'Новый API Key'}
+        label={mode === "create" ? "API Key" : "Новый API Key"}
         hint={
-          mode === 'create'
-            ? 'Минимум 20 символов. Из ЛК Mango Office.'
-            : 'Оставьте пустым, чтобы сохранить текущий ключ'
+          mode === "create"
+            ? "Минимум 20 символов. Из ЛК Mango Office."
+            : "Оставьте пустым, чтобы сохранить текущий ключ"
         }
       >
         <Input
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder={mode === 'create' ? 'mango-api-key' : '••••••••'}
+          placeholder={mode === "create" ? "mango-api-key" : "••••••••"}
           autoComplete="off"
         />
       </Field>
 
       <Field
-        label={mode === 'create' ? 'API Salt' : 'Новый API Salt'}
+        label={mode === "create" ? "API Salt" : "Новый API Salt"}
         hint="Минимум 20 символов"
       >
         <Input
           type="password"
           value={apiSalt}
           onChange={(e) => setApiSalt(e.target.value)}
-          placeholder={mode === 'create' ? 'mango-api-salt' : '••••••••'}
+          placeholder={mode === "create" ? "mango-api-salt" : "••••••••"}
           autoComplete="off"
         />
       </Field>
@@ -1008,7 +991,7 @@ function MangoForm({
         <Textarea
           value={extensionsRaw}
           onChange={(e) => setExtensionsRaw(e.target.value)}
-          placeholder={'101\n102'}
+          placeholder={"101\n102"}
           className="min-h-[80px] font-mono text-xs"
         />
       </Field>
@@ -1020,13 +1003,11 @@ function MangoForm({
         onSubmit={() => void handleSubmit()}
         submitting={submitting}
         canSubmit={isValid}
-        submitLabel={mode === 'create' ? 'Подключить' : 'Сохранить'}
+        submitLabel={mode === "create" ? "Подключить" : "Сохранить"}
       />
     </div>
   );
 }
-
-// — IMAP (email)
 
 function ImapForm({
   orgId,
@@ -1037,56 +1018,59 @@ function ImapForm({
 }: SourceFormProps) {
   const cfg = (existing?.config ?? {}) as Record<string, unknown>;
 
-  const [name, setName] = useState(existing?.name ?? '');
+  const [name, setName] = useState(existing?.name ?? "");
   const [host, setHost] = useState(
-    typeof cfg['host'] === 'string' ? (cfg['host'] as string) : '',
+    typeof cfg["host"] === "string" ? (cfg["host"] as string) : "",
   );
   const [port, setPort] = useState<number>(
-    typeof cfg['port'] === 'number' ? (cfg['port'] as number) : 993,
+    typeof cfg["port"] === "number" ? (cfg["port"] as number) : 993,
   );
   const [secure, setSecure] = useState<boolean>(
-    typeof cfg['secure'] === 'boolean' ? (cfg['secure'] as boolean) : true,
+    typeof cfg["secure"] === "boolean" ? (cfg["secure"] as boolean) : true,
   );
   const [user, setUser] = useState(
-    typeof cfg['user'] === 'string' ? (cfg['user'] as string) : '',
+    typeof cfg["user"] === "string" ? (cfg["user"] as string) : "",
   );
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState("");
   const [folder, setFolder] = useState(
-    typeof cfg['folder'] === 'string' ? (cfg['folder'] as string) : 'INBOX',
+    typeof cfg["folder"] === "string" ? (cfg["folder"] as string) : "INBOX",
   );
   const [sinceDate, setSinceDate] = useState(
-    typeof cfg['sinceDate'] === 'string'
-      ? ((cfg['sinceDate'] as string).slice(0, 10))
-      : '',
+    typeof cfg["sinceDate"] === "string"
+      ? (cfg["sinceDate"] as string).slice(0, 10)
+      : "",
   );
   const [sensitiveFoldersRaw, setSensitiveFoldersRaw] = useState(
-    Array.isArray(cfg['sensitiveFolders'])
-      ? (cfg['sensitiveFolders'] as unknown[]).map((x) => String(x)).join('\n')
-      : '',
+    Array.isArray(cfg["sensitiveFolders"])
+      ? (cfg["sensitiveFolders"] as unknown[]).map((x) => String(x)).join("\n")
+      : "",
   );
   const [dataClass, setDataClass] = useState<DataClass>(
-    existing?.dataClass ?? 'internal',
+    existing?.dataClass ?? "internal",
   );
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<SourceTestResultApi | null>(null);
+  const [testResult, setTestResult] = useState<SourceTestResultApi | null>(
+    null,
+  );
 
   const computedName = useMemo(() => {
-    if (mode === 'edit') return name;
-    return user.trim() || name || 'IMAP';
+    if (mode === "edit") return name;
+    return user.trim() || name || "IMAP";
   }, [mode, name, user]);
 
-  const isValid = mode === 'edit'
-    ? host.trim().length > 0 && user.trim().length > 0
-    : host.trim().length > 0 &&
-      user.trim().length > 0 &&
-      password.length > 0 &&
-      port > 0;
+  const isValid =
+    mode === "edit"
+      ? host.trim().length > 0 && user.trim().length > 0
+      : host.trim().length > 0 &&
+        user.trim().length > 0 &&
+        password.length > 0 &&
+        port > 0;
 
   const buildConfig = (): Record<string, unknown> => {
     const sensitiveFolders = parseLinesToList(sensitiveFoldersRaw);
     const cfgOut: Record<string, unknown> = {
-      subtype: 'imap',
+      subtype: "imap",
       host: host.trim(),
       port,
       secure,
@@ -1094,14 +1078,14 @@ function ImapForm({
       passwordEnc:
         password.length > 0
           ? password
-          : (typeof cfg['passwordEnc'] === 'string'
-              ? ENCRYPTED_MARKER
-              : ''),
-      folder: folder.trim() || 'INBOX',
+          : typeof cfg["passwordEnc"] === "string"
+            ? ENCRYPTED_MARKER
+            : "",
+      folder: folder.trim() || "INBOX",
       sensitiveFolders,
     };
     if (sinceDate) {
-      cfgOut['sinceDate'] = new Date(sinceDate + 'T00:00:00Z').toISOString();
+      cfgOut["sinceDate"] = new Date(sinceDate + "T00:00:00Z").toISOString();
     }
     return cfgOut;
   };
@@ -1110,42 +1094,37 @@ function ImapForm({
     if (!isValid || submitting) return;
     setSubmitting(true);
     try {
-      if (mode === 'create') {
+      if (mode === "create") {
         await sourcesApi.create(orgId, {
-          type: 'email',
+          type: "email",
           name: computedName,
-          // На create требуем непустой пароль (валидация выше).
           config: buildConfig(),
           dataClass,
         });
-        toast.success('IMAP-источник подключён');
+        toast.success("IMAP-источник подключён");
       } else if (existing) {
         await sourcesApi.update(orgId, existing.id, {
           name: name.trim() || existing.name,
           config: buildConfig(),
           dataClass,
         });
-        toast.success('Сохранено');
+        toast.success("Сохранено");
       }
       await onDone();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSubmitting(false);
     }
   };
 
-  /**
-   * Test-flow: сохраняем источник как `isActive=false`, делаем `POST /test`,
-   * показываем результат. Если ok — пользователь сам нажмёт Switch на странице.
-   */
   const handleTestConnection = async () => {
     if (!isValid || testing) return;
     setTesting(true);
     setTestResult(null);
     try {
       let sourceId: string;
-      if (mode === 'edit' && existing) {
+      if (mode === "edit" && existing) {
         await sourcesApi.update(orgId, existing.id, {
           config: buildConfig(),
           dataClass,
@@ -1154,7 +1133,7 @@ function ImapForm({
         sourceId = existing.id;
       } else {
         const created = await sourcesApi.create(orgId, {
-          type: 'email',
+          type: "email",
           name: computedName,
           config: buildConfig(),
           dataClass,
@@ -1165,12 +1144,14 @@ function ImapForm({
       const res = await sourcesApi.test(orgId, sourceId);
       setTestResult(res);
       if (res.ok) {
-        toast.success('Подключение успешно');
+        toast.success("Подключение успешно");
       } else {
-        toast.error(`Не удалось подключиться: ${res.errorMessage ?? 'неизвестная ошибка'}`);
+        toast.error(
+          `Не удалось подключиться: ${res.errorMessage ?? "неизвестная ошибка"}`,
+        );
       }
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось проверить'));
+      toast.error(humanizeApiError(e, "Не удалось проверить"));
     } finally {
       setTesting(false);
     }
@@ -1178,7 +1159,7 @@ function ImapForm({
 
   return (
     <div className="space-y-4">
-      {mode === 'edit' && (
+      {mode === "edit" && (
         <Field label="Название">
           <Input
             value={name}
@@ -1227,18 +1208,18 @@ function ImapForm({
       </Field>
 
       <Field
-        label={mode === 'create' ? 'Пароль' : 'Новый пароль'}
+        label={mode === "create" ? "Пароль" : "Новый пароль"}
         hint={
-          mode === 'create'
-            ? 'Будет зашифрован сервером. Для Gmail/Yandex — используйте app password.'
-            : 'Оставьте пустым, чтобы сохранить текущий пароль'
+          mode === "create"
+            ? "Будет зашифрован сервером. Для Gmail/Yandex — используйте app password."
+            : "Оставьте пустым, чтобы сохранить текущий пароль"
         }
       >
         <Input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder={mode === 'create' ? 'app-specific-password' : '••••••••'}
+          placeholder={mode === "create" ? "app-specific-password" : "••••••••"}
           autoComplete="off"
         />
       </Field>
@@ -1267,7 +1248,7 @@ function ImapForm({
         <Textarea
           value={sensitiveFoldersRaw}
           onChange={(e) => setSensitiveFoldersRaw(e.target.value)}
-          placeholder={'Личное\nКонфиденциально'}
+          placeholder={"Личное\nКонфиденциально"}
           className="min-h-[60px] font-mono text-xs"
         />
       </Field>
@@ -1277,19 +1258,15 @@ function ImapForm({
       {testResult && (
         <div
           className={cn(
-            'rounded-md border p-2 text-xs',
+            "rounded-md border p-2 text-xs",
             testResult.ok
-              ? 'border-success/30 bg-success/10 text-success'
-              : 'border-danger/30 bg-danger/10 text-danger',
+              ? "border-success/30 bg-success/10 text-success"
+              : "border-danger/30 bg-danger/10 text-danger",
           )}
         >
           <div className="flex items-center gap-2 font-medium">
-            {testResult.ok ? (
-              <CheckCircle2 size={12} />
-            ) : (
-              <XCircle size={12} />
-            )}
-            {testResult.ok ? 'Подключение успешно' : 'Не удалось подключиться'}
+            {testResult.ok ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+            {testResult.ok ? "Подключение успешно" : "Не удалось подключиться"}
           </div>
           {testResult.errorMessage && (
             <div className="mt-1">{testResult.errorMessage}</div>
@@ -1320,15 +1297,13 @@ function ImapForm({
             disabled={!isValid || submitting || testing}
           >
             {submitting && <Loader2 size={14} className="animate-spin" />}
-            {mode === 'create' ? 'Подключить' : 'Сохранить'}
+            {mode === "create" ? "Подключить" : "Сохранить"}
           </Button>
         </div>
       </DialogFooter>
     </div>
   );
 }
-
-// — Web-form
 
 function WebFormForm({
   orgId,
@@ -1337,36 +1312,34 @@ function WebFormForm({
   onCancel,
   onDone,
 }: SourceFormProps) {
-  const [name, setName] = useState(existing?.name ?? 'Дамп мысли');
+  const [name, setName] = useState(existing?.name ?? "Дамп мысли");
   const [dataClass, setDataClass] = useState<DataClass>(
-    existing?.dataClass ?? 'internal',
+    existing?.dataClass ?? "internal",
   );
-  const [isActive, setIsActive] = useState<boolean>(
-    existing?.isActive ?? true,
-  );
+  const [isActive, setIsActive] = useState<boolean>(existing?.isActive ?? true);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      if (mode === 'create') {
+      if (mode === "create") {
         await sourcesApi.create(orgId, {
-          type: 'web_form',
-          name: name.trim() || 'Дамп мысли',
+          type: "web_form",
+          name: name.trim() || "Дамп мысли",
           dataClass,
         });
-        toast.success('Web-form подключён');
+        toast.success("Web-form подключён");
       } else if (existing) {
         await sourcesApi.update(orgId, existing.id, {
           name: name.trim() || existing.name,
           dataClass,
           isActive,
         });
-        toast.success('Сохранено');
+        toast.success("Сохранено");
       }
       await onDone();
     } catch (e) {
-      toast.error(humanizeApiError(e, 'Не удалось сохранить'));
+      toast.error(humanizeApiError(e, "Не удалось сохранить"));
     } finally {
       setSubmitting(false);
     }
@@ -1376,9 +1349,11 @@ function WebFormForm({
     <div className="space-y-4">
       <div className="rounded-md border border-border-subtle bg-bg-overlay/40 p-3 text-xs text-fg-secondary">
         Web-form — самый простой адаптер. Бэкенд автоматически создаёт его при
-        первом сабмите со страницы{' '}
-        <code className="rounded bg-bg-overlay px-1 py-0.5 font-mono">/dump</code>.
-        Здесь вы можете лишь переименовать его, изменить класс данных или
+        первом сабмите со страницы{" "}
+        <code className="rounded bg-bg-overlay px-1 py-0.5 font-mono">
+          /dump
+        </code>
+        . Здесь вы можете лишь переименовать его, изменить класс данных или
         отключить.
       </div>
 
@@ -1393,7 +1368,7 @@ function WebFormForm({
 
       <DataClassSelect value={dataClass} onChange={setDataClass} />
 
-      {mode === 'edit' && (
+      {mode === "edit" && (
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch
             checked={isActive}
@@ -1408,13 +1383,11 @@ function WebFormForm({
         onSubmit={() => void handleSubmit()}
         submitting={submitting}
         canSubmit
-        submitLabel={mode === 'create' ? 'Подключить' : 'Сохранить'}
+        submitLabel={mode === "create" ? "Подключить" : "Сохранить"}
       />
     </div>
   );
 }
-
-// ───────────────────────────── Shared form bits ─────────────────────────────────
 
 function Field({
   label,
@@ -1499,8 +1472,8 @@ function WebhookCreatedView({
 }) {
   const handleCopy = () => {
     void navigator.clipboard.writeText(url).then(
-      () => toast.success('Скопировано'),
-      () => toast.error('Не удалось скопировать'),
+      () => toast.success("Скопировано"),
+      () => toast.error("Не удалось скопировать"),
     );
   };
   return (

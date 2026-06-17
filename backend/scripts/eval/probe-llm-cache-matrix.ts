@@ -1,37 +1,10 @@
-/**
- * Матричный probe для prompt caching по всем продовым каналам LLM в Z.
- *
- * Запуск (из backend):
- *   bun run scripts/eval/probe-llm-cache-matrix.ts             # все targets
- *   bun run scripts/eval/probe-llm-cache-matrix.ts --targets=deepseek-v4-flash,gpt-5.4-mini
- *
- * Цели — из verified-карты `second-brain/01_projects/llm-providers-verified.md`:
- *   - deepseek-v4-flash         (api.deepseek.com, прямой, OpenAI-compat chat)
- *   - gpt-5.4-mini              (proxy.agent-lia.ru/v1, OpenAI Responses)
- *   - minimax-m2.5              (api.minimax.io/anthropic, Anthropic Messages)
- *   - grsai-gemini-3-pro        (grsaiapi.com или proxy.agent-lia.ru/grsai, SSE)
- *   - kie-claude-opus-4-7       (api.kie.ai/claude, Anthropic-style, дорого)
- *   - kie-gpt-5-4               (api.kie.ai/codex, OpenAI Responses)
- *   - kie-gemini-3-flash        (api.kie.ai/${model}, OpenAI chat-compat)
- *
- * 3 сценария на каждом target (см. описание в probe-deepseek-cache.ts).
- * Дорогие модели — урезанный набор размеров.
- *
- * Бюджет: ≈ $0.30-0.50 (доминирует KIE Claude opus).
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import 'dotenv/config';
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
-const REPORTS_DIR = path.resolve(
-  SCRIPT_DIR,
-  '../../test/eval/cache-experiment/reports',
-);
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
+const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/cache-experiment/reports');
 
-// ─── общий filler ───────────────────────────────────────────────────────────
 const FILLER_PARAGRAPH = `
 Встреча Z — это рабочая сессия команды, где обсуждаются текущие задачи и принимаются решения.
 Каждая встреча имеет тип: продажная, внутренняя планёрка, ретроспектива, интервью, демо, обучение.
@@ -60,10 +33,8 @@ function buildText(targetChars: number): string {
   return parts.join('\n').slice(0, targetChars);
 }
 
-const SYSTEM_PROMPT =
-  'Ты — ассистент. Отвечай ровно одним словом «ок» и ничего больше.';
+const SYSTEM_PROMPT = 'Ты — ассистент. Отвечай ровно одним словом «ок» и ничего больше.';
 
-// ─── типы ───────────────────────────────────────────────────────────────────
 type Protocol =
   | 'deepseek-chat'
   | 'openai-responses'
@@ -79,7 +50,6 @@ interface Target {
   baseURL: string;
   authHeader: string;
   model: string;
-  /** full = до 50k; medium = до 20k; small = до 10k (для дорогих/медленных). */
   sizeBudget: 'full' | 'medium' | 'small';
   notes?: string;
 }
@@ -92,11 +62,8 @@ interface CallResult {
   completionTokens: number;
   cacheHitRatio: number;
   error?: string;
-  /** Сырое usage от провайдера — для диагностики. */
   usageRaw?: Record<string, unknown>;
 }
-
-// ─── протоколы ──────────────────────────────────────────────────────────────
 
 const MAX_TOKENS = 80;
 
@@ -129,19 +96,15 @@ async function postJson(
 async function callDeepseekChat(target: Target, userText: string): Promise<CallResult> {
   const start = Date.now();
   try {
-    const { data } = await postJson(
-      `${target.baseURL}/chat/completions`,
-      target.authHeader,
-      {
-        model: target.model,
-        stream: false,
-        max_tokens: MAX_TOKENS,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: userText },
-        ],
-      },
-    );
+    const { data } = await postJson(`${target.baseURL}/chat/completions`, target.authHeader, {
+      model: target.model,
+      stream: false,
+      max_tokens: MAX_TOKENS,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userText },
+      ],
+    });
     const u = (data['usage'] ?? {}) as Record<string, unknown>;
     const pt = num(u['prompt_tokens']);
     const ct = num(u['completion_tokens']);
@@ -158,7 +121,6 @@ async function callDeepseekChat(target: Target, userText: string): Promise<CallR
 async function callOpenAIResponses(target: Target, userText: string): Promise<CallResult> {
   const start = Date.now();
   try {
-    // gpt-5* (1-я волна) принимают reasoning.effort='minimal'; gpt-5.4*+ — нет.
     const body: Record<string, unknown> = {
       model: target.model,
       stream: false,
@@ -170,11 +132,7 @@ async function callOpenAIResponses(target: Target, userText: string): Promise<Ca
       const isFirstWave = /^gpt-5(-mini|-nano)?$/.test(target.model);
       body['reasoning'] = { effort: isFirstWave ? 'minimal' : 'low' };
     }
-    const { data } = await postJson(
-      `${target.baseURL}/responses`,
-      target.authHeader,
-      body,
-    );
+    const { data } = await postJson(`${target.baseURL}/responses`, target.authHeader, body);
     const u = (data['usage'] ?? {}) as Record<string, unknown>;
     const pt = num(u['input_tokens']);
     const ct = num(u['output_tokens']);
@@ -189,8 +147,6 @@ async function callOpenAIResponses(target: Target, userText: string): Promise<Ca
 async function callAnthropicMessages(target: Target, userText: string): Promise<CallResult> {
   const start = Date.now();
   try {
-    // Anthropic-style: system как массив с cache_control:ephemeral, user — отдельно.
-    // MiniMax поддерживает тот же формат.
     const body = {
       model: target.model,
       max_tokens: MAX_TOKENS,
@@ -226,8 +182,6 @@ async function callAnthropicMessages(target: Target, userText: string): Promise<
     const ct = num(u['output_tokens']);
     const cacheRead = num(u['cache_read_input_tokens']);
     const cacheCreate = num(u['cache_creation_input_tokens']);
-    // Для Anthropic: реальный input включает cache_read + cache_create + input_tokens (uncached).
-    // Hit ratio считаем относительно полного входа.
     const totalInput = pt + cacheRead + cacheCreate;
     return mkOk(totalInput, ct, cacheRead, Date.now() - start, u);
   } catch (e) {
@@ -238,8 +192,6 @@ async function callAnthropicMessages(target: Target, userText: string): Promise<
 async function callKieClaude(target: Target, userText: string): Promise<CallResult> {
   const start = Date.now();
   try {
-    // KIE-Claude — Anthropic-формат через api.kie.ai.
-    // Попробуем по-настоящему: system как блок, user как блок с cache_control.
     const body = {
       model: target.model,
       max_tokens: MAX_TOKENS,
@@ -299,8 +251,6 @@ async function callKieGptResponses(target: Target, userText: string): Promise<Ca
       body,
     );
     const u = (data['usage'] ?? {}) as Record<string, unknown>;
-    // KIE Responses может возвращать usage в OpenAI Responses формате
-    // (input_tokens) ИЛИ в chat-completions формате (prompt_tokens) — пробуем оба.
     const pt = num(u['input_tokens']) || num(u['prompt_tokens']);
     const ct = num(u['output_tokens']) || num(u['completion_tokens']);
     const det = u['input_tokens_details'] as Record<string, unknown> | undefined;
@@ -343,7 +293,6 @@ async function callKieGeminiDirect(target: Target, userText: string): Promise<Ca
     const u = (data['usage'] ?? {}) as Record<string, unknown>;
     const pt = num(u['prompt_tokens']);
     const ct = num(u['completion_tokens']);
-    // Gemini-style cache token поля могут отличаться, пробуем несколько вариантов:
     const cached =
       num(u['cached_tokens']) ||
       num(u['prompt_cache_hit_tokens']) ||
@@ -378,7 +327,6 @@ async function callGrsaiSse(target: Target, userText: string): Promise<CallResul
       const errText = await resp.text().catch(() => '');
       throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 300)}`);
     }
-    // SSE parser — собирает usage из последнего event'а, включая возможные cache-поля.
     const result = await collectSseUsage(resp);
     return mkOk(
       result.promptTokens,
@@ -435,9 +383,7 @@ async function collectSseUsage(resp: Response): Promise<{
               ) ||
               cachedTokens;
           }
-        } catch {
-          // skip
-        }
+        } catch {}
       }
     }
   } finally {
@@ -447,7 +393,6 @@ async function collectSseUsage(resp: Response): Promise<{
   return { promptTokens, completionTokens, cachedTokens, usageRaw };
 }
 
-// ─── диспатчер ──────────────────────────────────────────────────────────────
 async function callOnce(target: Target, userText: string): Promise<CallResult> {
   switch (target.protocol) {
     case 'deepseek-chat':
@@ -467,7 +412,6 @@ async function callOnce(target: Target, userText: string): Promise<CallResult> {
   }
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
 function num(x: unknown): number {
   return typeof x === 'number' && Number.isFinite(x) ? x : 0;
 }
@@ -506,7 +450,6 @@ function pct(x: number): string {
   return (x * 100).toFixed(1).padStart(5) + '%';
 }
 
-// ─── размеры по target ──────────────────────────────────────────────────────
 function getSizes(budget: 'full' | 'medium' | 'small'): number[] {
   switch (budget) {
     case 'full':
@@ -524,7 +467,6 @@ function getS3Sizes(budget: 'full' | 'medium' | 'small'): number[] {
   return budget === 'full' ? [5000, 20000] : [5000];
 }
 
-// ─── сценарии ───────────────────────────────────────────────────────────────
 interface Row {
   target: string;
   scenario: 'S1' | 'S2' | 'S3';
@@ -560,14 +502,9 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
   let calibrated = false;
   const tStart = Date.now();
 
-  // S1: sequential identical
   const sizes = getSizes(target.sizeBudget);
-  console.log(
-    `  S1: sequential identical | размеры: ${sizes.join(', ')}`,
-  );
-  console.log(
-    '  target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | ms_1  | ms_2',
-  );
+  console.log(`  S1: sequential identical | размеры: ${sizes.join(', ')}`);
+  console.log('  target_tok | actual_tok | cached_1 | cached_2 | hit_2 % | ms_1  | ms_2');
   for (const tt of sizes) {
     const text = buildText(Math.round(tt * CHARS_PER_TOKEN));
     const r1 = await callOnce(target, text);
@@ -583,7 +520,6 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
       } as Row);
       continue;
     }
-    // калибровка на первом успешном
     if (!calibrated && r1.promptTokens > 0) {
       CHARS_PER_TOKEN = (text.length / r1.promptTokens) * 1.02;
       calibrated = true;
@@ -616,13 +552,10 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
     }
   }
 
-  // S2: 8 parallel identical
   const s2Size = getParallelSize(target.sizeBudget);
   console.log(`  S2: 8 parallel identical (~${s2Size} токенов)`);
   const s2Text = buildText(Math.round(s2Size * CHARS_PER_TOKEN));
-  const s2Results = await Promise.all(
-    Array.from({ length: 8 }, () => callOnce(target, s2Text)),
-  );
+  const s2Results = await Promise.all(Array.from({ length: 8 }, () => callOnce(target, s2Text)));
   s2Results.forEach((r, i) => {
     rows.push({
       target: target.name,
@@ -635,14 +568,9 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
   });
   const s2Ok = s2Results.filter((r) => r.ok);
   const avgS2Hit =
-    s2Ok.length > 0
-      ? s2Ok.reduce((s, r) => s + r.cacheHitRatio, 0) / s2Ok.length
-      : 0;
-  console.log(
-    `    средний hit ratio: ${pct(avgS2Hit)}  (успешных: ${s2Ok.length}/8)`,
-  );
+    s2Ok.length > 0 ? s2Ok.reduce((s, r) => s + r.cacheHitRatio, 0) / s2Ok.length : 0;
+  console.log(`    средний hit ratio: ${pct(avgS2Hit)}  (успешных: ${s2Ok.length}/8)`);
 
-  // S3: общий префикс + переменный хвост
   const s3Sizes = getS3Sizes(target.sizeBudget);
   console.log(`  S3: общий префикс + 41-симв хвост | размеры: ${s3Sizes.join(', ')}`);
   let s3LastHit = 0;
@@ -678,10 +606,7 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
     }
   }
 
-  // ── сводка ────────────────────────────────────────────────────────────────
-  const s1Ok2 = rows.filter(
-    (r) => r.scenario === 'S1' && r.attemptOrIdx === 2 && !r.error,
-  );
+  const s1Ok2 = rows.filter((r) => r.scenario === 'S1' && r.attemptOrIdx === 2 && !r.error);
   const maxHitS1 = Math.max(0, ...s1Ok2.map((r) => r.cacheHitRatio));
   const maxCachedS1 = Math.max(0, ...s1Ok2.map((r) => r.cachedTokens));
   const totalErrors = rows.filter((r) => r.error).length;
@@ -716,11 +641,9 @@ async function runTarget(target: Target): Promise<{ rows: Row[]; summary: Target
   return { rows, summary };
 }
 
-// ─── targets ────────────────────────────────────────────────────────────────
 function buildTargets(): Target[] {
   const all: Target[] = [];
 
-  // 1. DeepSeek v4-flash (прямой канал)
   if (process.env.DEEPSEEK_API_KEY) {
     all.push({
       name: 'deepseek-v4-flash',
@@ -732,7 +655,6 @@ function buildTargets(): Target[] {
     });
   }
 
-  // 2. gpt-5.4-mini через прокси
   if (process.env.OPENAI_API_KEY) {
     const proxyPrefix = process.env.PROXY_PREFIX ?? 'myFeedproxy3128';
     all.push({
@@ -745,22 +667,26 @@ function buildTargets(): Target[] {
     });
   }
 
-  // 3. MiniMax-M2.5 (Anthropic-формат)
   if (process.env.MINIMAX_API_KEY) {
     all.push({
       name: 'minimax-m2.5',
       protocol: 'anthropic-messages',
-      baseURL: (process.env.MINIMAX_BASE_URL ?? 'https://api.minimax.io/anthropic').replace(/\/+$/, ''),
+      baseURL: (process.env.MINIMAX_BASE_URL ?? 'https://api.minimax.io/anthropic').replace(
+        /\/+$/,
+        '',
+      ),
       authHeader: `Bearer ${process.env.MINIMAX_API_KEY}`,
       model: 'MiniMax-M2.5',
       sizeBudget: 'medium',
     });
   }
 
-  // 4. GRSAI Gemini-3-pro (SSE; direct grsai по нашему ENV)
   if (process.env.GRSAI_API_KEY) {
     const grsaiBase = (process.env.GRSAI_BASE_URL ?? 'https://grsaiapi.com').replace(/\/+$/, '');
-    const proxyBase = (process.env.PROXY_BASE_URL ?? 'https://proxy.agent-lia.ru/v1').replace(/\/+$/, '');
+    const proxyBase = (process.env.PROXY_BASE_URL ?? 'https://proxy.agent-lia.ru/v1').replace(
+      /\/+$/,
+      '',
+    );
     const proxyRoot = proxyBase.replace(/\/v1$/, '');
     const usesProxy =
       grsaiBase === proxyBase || grsaiBase === proxyRoot || grsaiBase.startsWith(proxyRoot);
@@ -784,7 +710,6 @@ function buildTargets(): Target[] {
     });
   }
 
-  // 5. KIE Claude opus-4-7 (Anthropic-формат, ДОРОГО)
   if (process.env.KIE_API_KEY) {
     const kieBase = (process.env.KIE_BASE_URL ?? 'https://api.kie.ai').replace(/\/+$/, '');
     all.push({
@@ -796,7 +721,6 @@ function buildTargets(): Target[] {
       sizeBudget: 'small',
       notes: 'дорогая модель — sizeBudget=small',
     });
-    // 6. KIE GPT-5-4 (через дефис, OpenAI Responses)
     all.push({
       name: 'kie-gpt-5-4',
       protocol: 'kie-gpt-responses',
@@ -805,7 +729,6 @@ function buildTargets(): Target[] {
       model: 'gpt-5-4',
       sizeBudget: 'medium',
     });
-    // 7. KIE Gemini-3-flash (модель в URL, chat-compat)
     all.push({
       name: 'kie-gemini-3-flash',
       protocol: 'kie-gemini-direct',
@@ -819,7 +742,6 @@ function buildTargets(): Target[] {
   return all;
 }
 
-// ─── main ───────────────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   const argTargets = process.argv
     .find((a) => a.startsWith('--targets='))
@@ -828,9 +750,7 @@ async function main(): Promise<void> {
     .map((s) => s.trim());
 
   const allTargets = buildTargets();
-  const targets = argTargets
-    ? allTargets.filter((t) => argTargets.includes(t.name))
-    : allTargets;
+  const targets = argTargets ? allTargets.filter((t) => argTargets.includes(t.name)) : allTargets;
 
   console.log('=== LLM cache matrix probe ===');
   console.log(`  targets: ${targets.map((t) => t.name).join(', ')}`);
@@ -862,7 +782,6 @@ async function main(): Promise<void> {
 
   const totalMs = Date.now() - startedAt;
 
-  // ── итоговая таблица ─────────────────────────────────────────────────────
   console.log('\n═══════════════ ИТОГ ═══════════════');
   console.log(
     'target                        | status  | maxCachedS1 | maxHitS1 | avgHitS2 | hitS3 | notes',
@@ -874,7 +793,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // ── сохранить ────────────────────────────────────────────────────────────
   await fs.mkdir(REPORTS_DIR, { recursive: true });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const outJson = path.join(REPORTS_DIR, `matrix-${ts}.json`);

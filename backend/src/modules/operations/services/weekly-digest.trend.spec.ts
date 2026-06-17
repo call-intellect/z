@@ -2,22 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { mapWeeklyDigestRowsToTrend } from './weekly-digest.service';
 
-/**
- * Ф1b редизайна дашбордов — чистый маппер persisted-снимков weekly-дайджеста
- * в трендовые точки (`mapWeeklyDigestRowsToTrend`).
- *
- * Тестируем БЕЗ моков prisma: на вход — массив строк в порядке DESC по
- * `weekStart`, на выход — массив точек в порядке old→new.
- *
- * Контракт metricsJson (weekly, verified): totalCheckIns / greenShare /
- * redShare / topBlockers[{text,count}] / hangingDecisions[] /
- * goals.{completed,failed}. blockers = sum(topBlockers[].count),
- * hangingDecisions = hangingDecisions.length.
- */
-
 describe('mapWeeklyDigestRowsToTrend', () => {
   it('переворачивает DESC→old→new; blockers=sum(count), hangingDecisions=length', () => {
-    // DESC-порядок: w (новейшая), w-1, w-2.
     const rowsDesc = [
       {
         weekStart: '2026-05-25',
@@ -64,13 +50,8 @@ describe('mapWeeklyDigestRowsToTrend', () => {
     const trend = mapWeeklyDigestRowsToTrend(rowsDesc);
 
     expect(trend).toHaveLength(3);
-    expect(trend.map((p) => p.weekStart)).toEqual([
-      '2026-05-11',
-      '2026-05-18',
-      '2026-05-25',
-    ]);
+    expect(trend.map((p) => p.weekStart)).toEqual(['2026-05-11', '2026-05-18', '2026-05-25']);
 
-    // Старейшая точка (w-2).
     expect(trend[0]).toEqual({
       weekStart: '2026-05-11',
       totalCheckIns: 10,
@@ -78,11 +59,10 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       redShare: 0.5,
       goalsCompleted: 0,
       goalsFailed: 4,
-      blockers: 0, // sum(topBlockers[].count) на пустом массиве
+      blockers: 0,
       hangingDecisions: 0,
     });
 
-    // Новейшая точка (w): blockers = 5 + 2 = 7, hangingDecisions = 3.
     expect(trend[2]).toEqual({
       weekStart: '2026-05-25',
       totalCheckIns: 30,
@@ -94,7 +74,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       hangingDecisions: 3,
     });
 
-    // Средняя точка (w-1).
     expect(trend[1]!.blockers).toBe(4);
     expect(trend[1]!.hangingDecisions).toBe(1);
     expect(trend[1]!.goalsCompleted).toBe(3);
@@ -112,7 +91,6 @@ describe('mapWeeklyDigestRowsToTrend', () => {
     ]);
 
     expect(trend).toHaveLength(2);
-    // После reverse: [ (2026-05-11, null), (2026-05-18, {}) ].
     expect(trend[0]).toEqual({
       weekStart: '2026-05-11',
       totalCheckIns: 0,
@@ -133,11 +111,7 @@ describe('mapWeeklyDigestRowsToTrend', () => {
       {
         weekStart: '2026-05-11',
         metricsJson: {
-          topBlockers: [
-            { text: 'a', count: 3 },
-            { text: 'b' }, // count отсутствует
-            { text: 'c', count: 'xx' }, // не число
-          ],
+          topBlockers: [{ text: 'a', count: 3 }, { text: 'b' }, { text: 'c', count: 'xx' }],
         },
       },
     ]);

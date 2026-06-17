@@ -18,40 +18,18 @@ import type {
   PulsePatternsDto,
 } from '../dto/pulse-patterns.dto';
 
-/**
- * Pulse Wave 6 — единый агрегатор паттернов для главной директора
- * (`GET /api/v1/dashboard/pulse-patterns?period=week|month`).
- *
- * Источники данных — последние snapshot'ы cron'ов Волны 6 + поля Meeting и
- * Decision, проставленные event-driven воркерами. Никаких новых cron'ов и
- * никаких LLM-вызовов внутри сервиса — это чистая агрегация.
- *
- * Период:
- *   - `week` (default) — окна 7 / 30 дней в зависимости от паттерна.
- *   - `month` — окна 30 / 90 дней. Подбирается так, чтобы UI получил
- *     осмысленные данные на каждом из 7 виджетов.
- */
 @Injectable()
 export class PulsePatternsService {
   private readonly logger = new Logger(PulsePatternsService.name);
 
-  /** Топ-N критических категорий для виджета Bus Factor. */
   private static readonly BUS_FACTOR_TOP = 5;
-  /** Топ-N повторяющихся тем для виджета Topic Recurrence. */
   private static readonly RECURRING_TOP = 5;
-  /** Топ-N встреч-болтологии. */
   private static readonly LOW_ROI_TOP = 3;
-  /** Сколько отделов выводим в heatmap. */
   private static readonly BOTTLENECK_DEPT_LIMIT = 6;
-  /** Топ пар в bottleneck-heatmap. */
   private static readonly BOTTLENECK_PAIRS_TOP = 5;
-  /** Топ целей в Goal Vector. */
   private static readonly GOAL_TOP = 5;
-  /** Топ contributors на цель. */
   private static readonly GOAL_CONTRIBUTORS_TOP = 3;
-  /** Топ responders в Knowledge Velocity. */
   private static readonly RESPONDERS_TOP = 5;
-  /** Сколько необратимых решений показываем. */
   private static readonly DECISIONS_TOP = 10;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -62,9 +40,7 @@ export class PulsePatternsService {
   }): Promise<PulsePatternsDto> {
     const periodDays = args.period === 'week' ? 7 : 30;
     const now = new Date();
-    const periodStart = new Date(
-      now.getTime() - periodDays * 24 * 3600 * 1000,
-    );
+    const periodStart = new Date(now.getTime() - periodDays * 24 * 3600 * 1000);
 
     const [
       busFactor,
@@ -97,15 +73,7 @@ export class PulsePatternsService {
     };
   }
 
-  // ─── §6.1 — Bus Factor ────────────────────────────────────────────────────
-
-  private async getBusFactor(
-    tenantId: string,
-    now: Date,
-  ): Promise<PulsePatternBusFactorDto> {
-    // Берём последний snapshot per categoryName: сортируем все snapshot'ы
-    // tenant'а за 30 дней по snapshotAt DESC, потом in-memory оставляем
-    // первый встретившийся per categoryName.
+  private async getBusFactor(tenantId: string, now: Date): Promise<PulsePatternBusFactorDto> {
     const lookbackStart = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
     const snapshots = await this.prisma.knowledgeRiskSnapshot.findMany({
       where: {
@@ -156,7 +124,6 @@ export class PulsePatternsService {
       }
     }
 
-    // Сортируем: меньше всего экспертов — первее.
     criticalRows.sort((a, b) => a.expertsCount - b.expertsCount);
 
     return {
@@ -166,13 +133,10 @@ export class PulsePatternsService {
     };
   }
 
-  // ─── §6.2 — Topic Recurrence ─────────────────────────────────────────────
-
   private async getRecurringTopics(
     tenantId: string,
     now: Date,
   ): Promise<PulsePatternRecurringTopicDto> {
-    // Окно — последние 14 дней snapshot'ов (cron weekly, плюс «свежесть» 7д).
     const since = new Date(now.getTime() - 14 * 24 * 3600 * 1000);
     const topics = await this.prisma.recurringTopic.findMany({
       where: { tenantId, snapshotAt: { gte: since } },
@@ -196,16 +160,11 @@ export class PulsePatternsService {
         meetingCount: t.meetingCount,
         windowDays: Math.max(
           1,
-          Math.round(
-            (t.windowEnd.getTime() - t.windowStart.getTime()) /
-              (24 * 3600 * 1000),
-          ),
+          Math.round((t.windowEnd.getTime() - t.windowStart.getTime()) / (24 * 3600 * 1000)),
         ),
       })),
     };
   }
-
-  // ─── §6.3 — Low-ROI Meetings ─────────────────────────────────────────────
 
   private async getLowRoiMeetings(
     tenantId: string,
@@ -235,9 +194,7 @@ export class PulsePatternsService {
       meetings: meetings.map((m) => ({
         meetingId: m.id,
         title: m.title,
-        durationMinutes: m.durationMs
-          ? Math.max(0, Math.round(m.durationMs / 60_000))
-          : 0,
+        durationMinutes: m.durationMs ? Math.max(0, Math.round(m.durationMs / 60_000)) : 0,
         participantCount: m._count.participants,
         roiScore: m.roiScore ? Number(m.roiScore.toString()) : 0,
         startedAt: (m.startedAt ?? new Date()).toISOString(),
@@ -245,12 +202,7 @@ export class PulsePatternsService {
     };
   }
 
-  // ─── §6.4 — Bottleneck Heatmap ───────────────────────────────────────────
-
-  private async getBottlenecks(
-    tenantId: string,
-    now: Date,
-  ): Promise<PulsePatternBottleneckDto> {
+  private async getBottlenecks(tenantId: string, now: Date): Promise<PulsePatternBottleneckDto> {
     const since = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
 
     const [reports, departments] = await Promise.all([
@@ -281,22 +233,17 @@ export class PulsePatternsService {
     departments.forEach((d, i) => idxById.set(d.id, i));
 
     const size = departments.length;
-    const heatmap: number[][] = Array.from({ length: size }, () =>
-      new Array<number>(size).fill(0),
-    );
+    const heatmap: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
 
     for (const r of reports) {
       const severity = severityToNumber(r.severity);
-      const departmentIdsInScope = r.involvedDepartmentIds.filter((id) =>
-        idxById.has(id),
-      );
+      const departmentIdsInScope = r.involvedDepartmentIds.filter((id) => idxById.has(id));
       if (departmentIdsInScope.length === 0) continue;
       if (departmentIdsInScope.length === 1) {
         const i = idxById.get(departmentIdsInScope[0]!)!;
         heatmap[i]![i] = (heatmap[i]![i] ?? 0) + severity;
         continue;
       }
-      // > 1 — раскладываем по всем парам (без двойного счёта (i,j)+(j,i)).
       for (let a = 0; a < departmentIdsInScope.length; a++) {
         for (let b = a + 1; b < departmentIdsInScope.length; b++) {
           const i = idxById.get(departmentIdsInScope[a]!)!;
@@ -307,7 +254,6 @@ export class PulsePatternsService {
       }
     }
 
-    // Top pairs (без диагонали; учитываем верхний треугольник).
     const pairs: PulsePatternBottleneckTopPairDto[] = [];
     for (let i = 0; i < size; i++) {
       for (let j = i + 1; j < size; j++) {
@@ -330,14 +276,11 @@ export class PulsePatternsService {
     };
   }
 
-  // ─── §6.6 — Goal Vector ──────────────────────────────────────────────────
-
   private async getGoalVector(
     tenantId: string,
     periodDays: number,
     now: Date,
   ): Promise<PulsePatternGoalVectorDto> {
-    // Берём 4 недели для week, 12 недель для month.
     const weeksBack = periodDays === 7 ? 4 : 12;
     const since = new Date(now.getTime() - weeksBack * 7 * 24 * 3600 * 1000);
 
@@ -356,8 +299,6 @@ export class PulsePatternsService {
     const goalIds = grouped.map((g) => g.goalId);
 
     const [primary, goals, contributions] = await Promise.all([
-      // Главная цель ловится глобально по tenant (R4) — даже если она вне
-      // топ-5 активности и потому отсутствует в `grouped`/`goals`.
       this.prisma.goal.findFirst({
         where: { tenantId, isPrimary: true },
         select: { id: true },
@@ -388,9 +329,6 @@ export class PulsePatternsService {
       }),
     ]);
 
-    // Имена/отделы людей — отдельным запросом: у PersonGoalContribution НЕТ
-    // реляции `person` (только скаляр `personId`, см. schema.prisma:7344-7366),
-    // поэтому `select: { person: {...} }` валил весь запрос → 500 (#70).
     const personIds = new Set(contributions.map((c) => c.personId));
     const personMeta = new Map<
       string,
@@ -409,8 +347,6 @@ export class PulsePatternsService {
       }
     }
 
-    // primaryGoalId: явная Goal.isPrimary, иначе fallback B-2 среди
-    // загруженной выборки (max weight → min createdAt).
     let primaryGoalId: string | null;
     if (primary) {
       primaryGoalId = primary.id;
@@ -423,11 +359,8 @@ export class PulsePatternsService {
       primaryGoalId = sortedFallback[0]?.id ?? null;
     }
 
-    const goalMeta = new Map(
-      goals.map((g) => [g.id, { name: g.name, isPrimary: g.isPrimary }]),
-    );
+    const goalMeta = new Map(goals.map((g) => [g.id, { name: g.name, isPrimary: g.isPrimary }]));
 
-    // Агрегация per (goalId, personId): pro/contra/net + отдел человека.
     const sumByGoalPerson = new Map<
       string,
       Map<
@@ -469,7 +402,6 @@ export class PulsePatternsService {
       sumByGoalPerson.set(c.goalId, inner);
     }
 
-    // Имена отделов — одним запросом. Собираем все НЕ-null departmentId.
     const deptIds = new Set<string>();
     for (const inner of sumByGoalPerson.values()) {
       for (const p of inner.values()) {
@@ -478,7 +410,6 @@ export class PulsePatternsService {
     }
     const deptNames = new Map<string, string>();
     if (deptIds.size > 0) {
-      // Department имеет поле tenantId — фильтруем по нему (multi-tenancy).
       const depts = await this.prisma.department.findMany({
         where: { tenantId, id: { in: [...deptIds] } },
         select: { id: true, name: true },
@@ -502,9 +433,7 @@ export class PulsePatternsService {
           }
         >();
 
-      const topContributors: PulsePatternGoalContributorDto[] = [
-        ...personMap.entries(),
-      ]
+      const topContributors: PulsePatternGoalContributorDto[] = [...personMap.entries()]
         .sort((a, b) => Math.abs(b[1].net) - Math.abs(a[1].net))
         .slice(0, PulsePatternsService.GOAL_CONTRIBUTORS_TOP)
         .map(([personId, p]) => {
@@ -519,11 +448,7 @@ export class PulsePatternsService {
           };
         });
 
-      // Разрез по отделам: группируем вклады цели по departmentId.
-      const byDeptAcc = new Map<
-        string,
-        { pro: number; contra: number; net: number }
-      >();
+      const byDeptAcc = new Map<string, { pro: number; contra: number; net: number }>();
       for (const p of personMap.values()) {
         const key = p.departmentId ?? NONE_KEY;
         const acc = byDeptAcc.get(key) ?? { pro: 0, contra: 0, net: 0 };
@@ -532,20 +457,19 @@ export class PulsePatternsService {
         acc.net += p.net;
         byDeptAcc.set(key, acc);
       }
-      const byDepartment: PulsePatternGoalDepartmentDto[] = [
-        ...byDeptAcc.entries(),
-      ].map(([key, acc]) => {
-        const pro = round3(acc.pro);
-        const contra = round3(acc.contra);
-        return {
-          departmentId: key === NONE_KEY ? null : key,
-          departmentName:
-            key === NONE_KEY ? 'Без отдела' : (deptNames.get(key) ?? 'Без отдела'),
-          proScore: pro,
-          contraScore: contra,
-          netScore: round3(pro - contra),
-        };
-      });
+      const byDepartment: PulsePatternGoalDepartmentDto[] = [...byDeptAcc.entries()].map(
+        ([key, acc]) => {
+          const pro = round3(acc.pro);
+          const contra = round3(acc.contra);
+          return {
+            departmentId: key === NONE_KEY ? null : key,
+            departmentName: key === NONE_KEY ? 'Без отдела' : (deptNames.get(key) ?? 'Без отдела'),
+            proScore: pro,
+            contraScore: contra,
+            netScore: round3(pro - contra),
+          };
+        },
+      );
 
       const meta = goalMeta.get(g.goalId);
       const proSum = round3(Number(g._sum.proScore?.toString() ?? '0'));
@@ -565,11 +489,7 @@ export class PulsePatternsService {
     return { goals: goalsOut, primaryGoalId };
   }
 
-  // ─── §6.7 — Knowledge Velocity ───────────────────────────────────────────
-
-  private async getKnowledgeVelocity(
-    tenantId: string,
-  ): Promise<PulsePatternKnowledgeVelocityDto> {
+  private async getKnowledgeVelocity(tenantId: string): Promise<PulsePatternKnowledgeVelocityDto> {
     const snapshot = await this.prisma.knowledgeVelocitySnapshot.findFirst({
       where: { tenantId },
       orderBy: { snapshotAt: 'desc' },
@@ -592,8 +512,7 @@ export class PulsePatternsService {
 
     return {
       medianHours:
-        snapshot.medianHoursToAnswer === null ||
-        snapshot.medianHoursToAnswer === undefined
+        snapshot.medianHoursToAnswer === null || snapshot.medianHoursToAnswer === undefined
           ? null
           : Number(snapshot.medianHoursToAnswer.toString()),
       resolvedGapsCount: snapshot.resolvedGapsCount,
@@ -604,8 +523,6 @@ export class PulsePatternsService {
       ),
     };
   }
-
-  // ─── §6.8 — Irreversible Decisions ───────────────────────────────────────
 
   private async getIrreversibleDecisions(
     tenantId: string,
@@ -646,8 +563,6 @@ export class PulsePatternsService {
   }
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
 function parseTopExperts(json: Prisma.JsonValue): string[] {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return [];
   const experts = (json as { experts?: unknown }).experts;
@@ -665,9 +580,6 @@ function parseTopExperts(json: Prisma.JsonValue): string[] {
 function parseTopResponders(
   json: Prisma.JsonValue,
 ): Array<{ personName: string; resolvedCount: number }> {
-  // KnowledgeVelocitySnapshot.topRespondersJson —
-  // `Array<{personId, name, resolvedCount}>` (см. cron). Иногда обёрнуто в
-  // объект-контейнер — поддержим оба варианта.
   let list: unknown = json;
   if (json && typeof json === 'object' && !Array.isArray(json)) {
     const inner = (json as { responders?: unknown }).responders;
@@ -680,9 +592,7 @@ function parseTopResponders(
     const obj = e as { name?: unknown; resolvedCount?: unknown };
     const name = typeof obj.name === 'string' ? obj.name : null;
     const resolved =
-      typeof obj.resolvedCount === 'number'
-        ? obj.resolvedCount
-        : Number(obj.resolvedCount) || 0;
+      typeof obj.resolvedCount === 'number' ? obj.resolvedCount : Number(obj.resolvedCount) || 0;
     if (name) out.push({ personName: name, resolvedCount: resolved });
   }
   return out;
@@ -692,7 +602,8 @@ function hasNonEmptyAlternatives(json: Prisma.JsonValue | null): boolean {
   if (!json) return false;
   if (Array.isArray(json)) return json.length > 0;
   if (typeof json === 'object') {
-    const arr = (json as { items?: unknown; alternatives?: unknown }).items ??
+    const arr =
+      (json as { items?: unknown; alternatives?: unknown }).items ??
       (json as { alternatives?: unknown }).alternatives;
     if (Array.isArray(arr)) return arr.length > 0;
   }

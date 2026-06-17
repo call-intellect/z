@@ -1,20 +1,3 @@
-/**
- * Seed для таблицы LlmModelPrice.
- *
- * Источник правды (fallback): backend/src/modules/ai/services/model-prices.ts.
- * Этот скрипт переносит все известные модели в БД-таблицу с effectiveFrom=now,
- * effectiveTo=NULL.
- *
- * Идемпотентность: для каждой модели проверяем, есть ли уже запись с
- * (provider, model, effectiveTo IS NULL). Если есть — пропускаем (не дублируем).
- * Чтобы обновить цену — нужно сначала закрыть старую (effectiveTo=now),
- * потом запустить скрипт повторно с новыми ценами в коде. Это намеренно:
- * прайс-карта версионируется, ретроспективные расчёты должны быть точны.
- *
- * Запуск:
- *   bun run scripts/seed-llm-model-prices.ts
- */
-
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -22,10 +5,6 @@ import { MODEL_PRICES } from '../src/modules/ai/services/model-prices';
 
 const prisma = createPrismaClient();
 
-/**
- * Определяем provider по префиксу model name.
- * Согласно ТЗ Фазы 0 ("Шаг 1, пункт 10").
- */
 function detectProvider(model: string): string {
   if (model.startsWith('deepseek-')) return 'deepseek';
   if (model.startsWith('gpt-') || model.startsWith('text-embedding-')) return 'openai';
@@ -51,7 +30,6 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Идемпотентность: ищем активную запись (effectiveTo IS NULL).
     const existing = await prisma.llmModelPrice.findFirst({
       where: { provider, model, effectiveTo: null },
     });
@@ -66,9 +44,7 @@ async function main(): Promise<void> {
         model,
         inputCostPerMillionTokens: new Prisma.Decimal(price.inputPer1M.toFixed(6)),
         outputCostPerMillionTokens: new Prisma.Decimal(price.outputPer1M.toFixed(6)),
-        cachedCostPerMillionTokens: new Prisma.Decimal(
-          (price.cachedPer1M ?? 0).toFixed(6),
-        ),
+        cachedCostPerMillionTokens: new Prisma.Decimal((price.cachedPer1M ?? 0).toFixed(6)),
         currency: 'USD',
       },
     });

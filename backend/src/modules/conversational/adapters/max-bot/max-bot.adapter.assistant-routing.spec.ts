@@ -16,18 +16,6 @@ import type { MaxApiClient } from './max-api-client';
 import { MaxBotChannelAdapter } from './max-bot.adapter';
 import type { MaxUpdate } from './max.types';
 
-/**
- * Unit-тесты Ф5 assistant-channels (2026-06-11) —
- * `MaxBotChannelAdapter.ingestUpdate` за kill-switch'ем
- * `ASSISTANT_CHANNEL_ROUTING_ENABLED`:
- *   - ON: свободный текст → assistant_turn (классификатор НЕ вызывается —
- *     у MAX нет чек-ин ветки, оба исхода всё равно ушли бы помощнику);
- *   - ON: голос → Vox-транскрипт → assistant_turn;
- *   - OFF: прежний узкий роутер бит-в-бит (classify → chat_query).
- *
- * Моки — `vi.fn()` + cast to type, по паттерну telegram-bot.adapter.spec.ts.
- */
-
 function makeChannel(): Channel {
   return {
     id: 'channel-max-1',
@@ -57,10 +45,12 @@ const verifiedBinding = (): ChannelBinding =>
     preferences: {},
   }) as unknown as ChannelBinding;
 
-function makeAdapter(opts: {
-  assistantChannelRoutingEnabled?: boolean;
-  classifyIntent?: 'factual' | 'note';
-} = {}) {
+function makeAdapter(
+  opts: {
+    assistantChannelRoutingEnabled?: boolean;
+    classifyIntent?: 'factual' | 'note';
+  } = {},
+) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
     channelBinding: {
@@ -125,8 +115,7 @@ function makeAdapter(opts: {
       voiceEnabled: true,
       documentEnabled: true,
       intentClassifierEnabled: true,
-      assistantChannelRoutingEnabled:
-        opts.assistantChannelRoutingEnabled ?? false,
+      assistantChannelRoutingEnabled: opts.assistantChannelRoutingEnabled ?? false,
     },
   } as unknown as TypedConfigService;
 
@@ -172,7 +161,6 @@ describe('MaxBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () =>
       text: 'Какой бюджет на Q4?',
       originChannelBindingId: 'binding-max-1',
     });
-    // У MAX нет чек-ин ветки — при ON классификатор не нужен (экономия LLM).
     expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
   });
 
@@ -186,9 +174,7 @@ describe('MaxBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () =>
         recipient: { chat_id: 200 } as never,
         body: {
           text: '',
-          attachments: [
-            { type: 'voice', payload: { url: 'https://max.example/v1.ogg' } },
-          ],
+          attachments: [{ type: 'voice', payload: { url: 'https://max.example/v1.ogg' } }],
         },
       },
     };

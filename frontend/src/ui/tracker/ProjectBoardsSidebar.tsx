@@ -1,41 +1,20 @@
-'use client';
+"use client";
 
-/**
- * ProjectBoardsSidebar — вторичная боковая панель внутри страницы проекта
- * (`/projects/[slug]/boards/[boardId]/*`). Показывает список досок проекта
- * с переключением между ними + inline-форму создания + меню действий.
- *
- * Tracker Boards (2026-05-27). ТЗ: plans/tz/2026-05-27-tracker-boards.md.
- *
- * Что есть в этой версии (MVP ТЗ):
- *   - Список досок с count задач и активной подсветкой.
- *   - Inline-кнопка «+ Доска» (раскрывается в input → Enter создаёт).
- *   - Архив (свёрнут, раскрывается по клику).
- *   - Context menu: Переименовать (inline) / Архив / Удалить (с confirm).
- *
- * Что отложено (ТЗ §"Что НЕ делаем"):
- *   - DnD задач между досками — только через IssueDetail (PATCH boardId).
- *   - DnD досок в боковой панели (sequence-update через @dnd-kit/sortable
- *     — закладка на следующую итерацию, чтобы не раздувать MVP).
- */
+import { useCallback, useState } from "react";
+import Link from "next/link";
+import { toast } from "sonner";
 
-import { useCallback, useState } from 'react';
-import Link from 'next/link';
-import { toast } from 'sonner';
-
-import { boardsApi } from '@/api/tracker/boards.api';
-import { useProjectBoards } from '@/hooks/useProjectBoards';
-import { type Board } from '@/domain/tracker';
-import { cn } from '@/ui/shadcn/lib/utils';
+import { boardsApi } from "@/api/tracker/boards.api";
+import { useProjectBoards } from "@/hooks/useProjectBoards";
+import { type Board } from "@/domain/tracker";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 interface Props {
   orgId: string;
   projectId: string;
   projectSlug: string;
-  /** id текущей выбранной доски (из URL) — для подсветки активной. */
   activeBoardId?: string;
-  /** View текущей страницы (`board`/`list`/`calendar`) — сохраняется при переключении. */
-  view?: 'board' | 'list' | 'calendar';
+  view?: "board" | "list" | "calendar";
 }
 
 export function ProjectBoardsSidebar({
@@ -43,11 +22,15 @@ export function ProjectBoardsSidebar({
   projectId,
   projectSlug,
   activeBoardId,
-  view = 'board',
+  view = "board",
 }: Props) {
-  const { boards, isLoading, error, mutate } = useProjectBoards(orgId, projectId, {
-    includeArchived: true,
-  });
+  const { boards, isLoading, error, mutate } = useProjectBoards(
+    orgId,
+    projectId,
+    {
+      includeArchived: true,
+    },
+  );
   const [showArchived, setShowArchived] = useState(false);
   const [addingMode, setAddingMode] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
@@ -65,7 +48,7 @@ export function ProjectBoardsSidebar({
         setAddingMode(false);
       } catch (err) {
         toast.error(
-          `Не удалось создать доску: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          `Не удалось создать доску: ${err instanceof Error ? err.message : "неизвестная ошибка"}`,
         );
       }
     },
@@ -84,7 +67,7 @@ export function ProjectBoardsSidebar({
         await mutate();
       } catch (err) {
         toast.error(
-          `Не удалось переименовать: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          `Не удалось переименовать: ${err instanceof Error ? err.message : "неизвестная ошибка"}`,
         );
       } finally {
         setRenameId(null);
@@ -104,7 +87,7 @@ export function ProjectBoardsSidebar({
         await mutate();
       } catch (err) {
         toast.error(
-          `Не удалось ${currentlyArchived ? 'разархивировать' : 'архивировать'}: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          `Не удалось ${currentlyArchived ? "разархивировать" : "архивировать"}: ${err instanceof Error ? err.message : "неизвестная ошибка"}`,
         );
       }
     },
@@ -114,7 +97,7 @@ export function ProjectBoardsSidebar({
   const handleDelete = useCallback(
     async (board: Board) => {
       if (board.isDefault) {
-        toast.error('Нельзя удалить основную доску проекта.');
+        toast.error("Нельзя удалить основную доску проекта.");
         return;
       }
       if (
@@ -132,7 +115,7 @@ export function ProjectBoardsSidebar({
         );
       } catch (err) {
         toast.error(
-          `Не удалось удалить: ${err instanceof Error ? err.message : 'неизвестная ошибка'}`,
+          `Не удалось удалить: ${err instanceof Error ? err.message : "неизвестная ошибка"}`,
         );
       }
     },
@@ -234,7 +217,7 @@ export function ProjectBoardsSidebar({
             className="flex items-center gap-1 px-2 py-1 text-xs text-fg-tertiary hover:text-fg-secondary"
             aria-expanded={showArchived}
           >
-            <span aria-hidden>{showArchived ? '▾' : '▸'}</span>
+            <span aria-hidden>{showArchived ? "▾" : "▸"}</span>
             Архив ({archived.length})
           </button>
           {showArchived && (
@@ -271,7 +254,7 @@ function BoardRow({
 }: {
   board: Board;
   projectSlug: string;
-  view: 'board' | 'list' | 'calendar';
+  view: "board" | "list" | "calendar";
   isActive: boolean;
   onRename: () => void;
   onArchive: () => void;
@@ -283,12 +266,12 @@ function BoardRow({
       <Link
         href={href}
         className={cn(
-          'flex flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors',
+          "flex flex-1 items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors",
           isActive
-            ? 'bg-accent/15 text-fg-primary'
-            : 'text-fg-secondary hover:bg-bg-overlay/60 hover:text-fg-primary',
+            ? "bg-accent/15 text-fg-primary"
+            : "text-fg-secondary hover:bg-bg-overlay/60 hover:text-fg-primary",
         )}
-        aria-current={isActive ? 'page' : undefined}
+        aria-current={isActive ? "page" : undefined}
       >
         <span
           className="inline-block h-2 w-2 shrink-0 rounded-full"
@@ -376,7 +359,7 @@ function BoardActionsMenu({
                 setOpen(false);
               }}
             >
-              {isArchived ? 'Снять архив' : 'Архивировать'}
+              {isArchived ? "Снять архив" : "Архивировать"}
             </button>
           )}
           {canDelete && (
@@ -424,14 +407,14 @@ function RenameForm({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => {
-          if (value === initial || value.trim() === '') {
+          if (value === initial || value.trim() === "") {
             onCancel();
           } else {
             onSubmit(value);
           }
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
+          if (e.key === "Escape") {
             e.preventDefault();
             onCancel();
           }

@@ -7,7 +7,7 @@
 | 1 | Single-node LiveKit (нет HA) | RTO ~5 минут через restart; HA — V1.1 |
 | 2 | Single-region (Новосибирск) | Latency для UTC+3 ~50 мс, приемлемо; multi-region — V2 |
 | 3 | Vox/GigaAM ASR — единственный, без fallback | Внешний мониторинг vox.agent-lia.ru; зависает в `transcription_processing` при простое |
-| 4 | Anthropic 403 из РФ-IP | Fallback на MiniMax → OpenAI-via-proxy уже встроен (`LlmFallbackService`) |
+| 4 | LLM main-report — без HA на одном провайдере | Каскад DeepSeek (primary) → MiniMax → OpenAI-via-proxy встроен (`LlmFallbackService`). Anthropic/Claude не используется (решение владельца, см. `second-brain/01_projects/llm-providers-verified.md`) |
 | 5 | Selectel ru-7 — единственная S3-зона | Алерт `recordings_failed_total > 0`; ручной свитч на Yandex через ENV |
 | 6 | LiveKit Egress «потрескивание» (issue #1133) | Фиксированная версия Egress, ручной WER-тест перед апдейтом |
 | 7 | Длинные встречи >1ч × 10 ч-к | Vox+Claude ≤ $0.6, токен-окно 200k. Дробить на чанки в `analyze.worker` — V1.1 |

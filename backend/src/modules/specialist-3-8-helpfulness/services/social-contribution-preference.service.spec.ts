@@ -2,13 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SocialContributionPreferenceService } from './social-contribution-preference.service';
 
-/**
- * ТЗ-E Ф4 — unit-тесты SocialContributionPreferenceService.
- *
- * Мок RedisService: in-memory Map под `.client.get/set`. Проверяем round-trip
- * (set → get) и дефолт (нет записи → optedOut=false, updatedAt=null).
- */
-
 function buildMockRedis(): {
   service: { client: { get: ReturnType<typeof vi.fn>; set: ReturnType<typeof vi.fn> } };
   store: Map<string, string>;
@@ -70,7 +63,6 @@ describe('SocialContributionPreferenceService', () => {
     await svc.set('org1', 'u1', true);
     expect(store.has('helpfulness:optout:org1:u1')).toBe(true);
 
-    // Другой tenant / user — дефолт, не пересекается.
     const other = await svc.get('org2', 'u1');
     expect(other.optedOut).toBe(false);
     const otherUser = await svc.get('org1', 'u2');

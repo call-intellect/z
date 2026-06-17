@@ -1,23 +1,6 @@
-'use client';
+"use client";
 
-/**
- * IntakeClient — расширенная страница триажа входящих задач
- * (Phase 3 frontend Sprint 6, ТЗ Фича 3).
- *
- * Главные отличия от существующего `IntakeBoard` (он используется внутри
- * проекта):
- *   - Глобальный inbox: все pending без фильтра по проекту.
- *   - Карточка показывает source-бейдж с иконкой, rawContent с разворотом,
- *     все suggested* поля как chip'ы и confidence-процент.
- *   - 4 действия: Принять / Отклонить (с reason-диалогом) / Отложить
- *     (с date-picker) / Дубликат (с поиском существующих задач).
- *   - Доступ только для owner / admin — у остальных читать можно, но
- *     кнопки заблокированы.
- *
- * Все строки — только русский (правило admin_ui_russian_only).
- */
-
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -32,16 +15,16 @@ import {
   Target,
   User,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { mutate as globalMutate } from 'swr';
+import { mutate as globalMutate } from "swr";
 
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { useIntake } from '@/hooks/tracker/useIntake';
-import { intakeApi } from '@/api/tracker/intake.api';
-import { humanizeApiError } from '@/api/api-error';
-import { ProjectPickerDialog } from '@/ui/tracker/ProjectPickerDialog';
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { useIntake } from "@/hooks/tracker/useIntake";
+import { intakeApi } from "@/api/tracker/intake.api";
+import { humanizeApiError } from "@/api/api-error";
+import { ProjectPickerDialog } from "@/ui/tracker/ProjectPickerDialog";
 import {
   INTAKE_SOURCE_LABELS,
   INTAKE_STATUS_LABELS,
@@ -52,22 +35,20 @@ import {
   type IntakeSource,
   type IssuePriority,
   type TriageDecision,
-} from '@/domain/tracker';
-import { pluralRu } from '@/domain/contribution';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/tracker";
+import { pluralRu } from "@/domain/contribution";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-// ─── Source-иконки и эмоджи (mobile-friendly) ───────────────────────────────
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 const SOURCE_ICON: Record<IntakeSource, React.ReactNode> = {
   in_app: <PencilLine size={12} aria-hidden />,
@@ -79,41 +60,34 @@ const SOURCE_ICON: Record<IntakeSource, React.ReactNode> = {
   concierge: <MessageCircle size={12} aria-hidden />,
 };
 
-// Эмоджи-префикс по ТЗ. Локализованы в источниках — текст бейджа уже
-// русский (INTAKE_SOURCE_LABELS).
 const SOURCE_EMOJI: Record<IntakeSource, string> = {
-  in_app: '📝',
-  email: '📧',
-  telegram: '📞',
-  checkin: '✅',
-  meeting: '🎤',
-  api: '📥',
-  concierge: '💬',
+  in_app: "📝",
+  email: "📧",
+  telegram: "📞",
+  checkin: "✅",
+  meeting: "🎤",
+  api: "📥",
+  concierge: "💬",
 };
-
-// ─── Главный компонент ─────────────────────────────────────────────────────
 
 export function IntakeClient() {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
-  const canTriage = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canTriage = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const { intake, total, isLoading, error, mutate } = useIntake(currentOrgId, {
-    status: 'pending',
+    status: "pending",
     limit: 100,
   });
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  // ─── Состояния для диалогов «Отклонить» / «Отложить» / «Дубликат» ─────
   const [rejectingItem, setRejectingItem] = useState<Intake | null>(null);
   const [snoozingItem, setSnoozingItem] = useState<Intake | null>(null);
   const [duplicatingItem, setDuplicatingItem] = useState<Intake | null>(null);
-  // Выбор проекта вручную, когда проект для accept не резолвится.
   const [pickingProjectFor, setPickingProjectFor] = useState<Intake | null>(
     null,
   );
 
-  // ─── Триаж (single source of truth для accept без диалога) ────────────
   const triage = async (
     item: Intake,
     body: Parameters<typeof intakeApi.triage>[2],
@@ -124,12 +98,14 @@ export function IntakeClient() {
       await intakeApi.triage(currentOrgId, item.id, body);
       await mutate();
       toast.success(triageSuccessMessage(body.decision));
-      // A7: обновить бейдж «Входящие» (отдельный SWR-ключ счётчика).
       void globalMutate(
-        (key) => Array.isArray(key) && key[0] === 'tracker.intake.count',
+        (key) => Array.isArray(key) && key[0] === "tracker.intake.count",
       );
     } catch (e) {
-      toast.error(`Не удалось выполнить триаж: ${humanizeApiError(e, 'попробуйте ещё раз')}`, { duration: 5000 });
+      toast.error(
+        `Не удалось выполнить триаж: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        { duration: 5000 },
+      );
     } finally {
       setBusyId(null);
     }
@@ -138,14 +114,12 @@ export function IntakeClient() {
   const handleAccept = (item: Intake) => {
     const resolved = resolveAcceptTargetProjectId(item);
     if (resolved) {
-      void triage(item, { decision: 'accept', targetProjectId: resolved });
+      void triage(item, { decision: "accept", targetProjectId: resolved });
     } else {
-      // Проект не определён — спрашиваем у пользователя через пикер.
       setPickingProjectFor(item);
     }
   };
 
-  // ─── Заглушки до загрузки ──────────────────────────────────────────────
   if (authLoading || !currentOrgId) {
     return (
       <PageShell>
@@ -210,7 +184,7 @@ export function IntakeClient() {
         </ul>
       )}
 
-      {/* ─── Диалоги ─────────────────────────────────────────────────── */}
+      {}
       <RejectDialog
         item={rejectingItem}
         onClose={() => setRejectingItem(null)}
@@ -219,7 +193,7 @@ export function IntakeClient() {
           const target = rejectingItem;
           setRejectingItem(null);
           void triage(target, {
-            decision: 'reject',
+            decision: "reject",
             ...(reason ? { reason } : {}),
           });
         }}
@@ -231,7 +205,7 @@ export function IntakeClient() {
           if (!snoozingItem) return;
           const target = snoozingItem;
           setSnoozingItem(null);
-          void triage(target, { decision: 'snooze', snoozedUntil });
+          void triage(target, { decision: "snooze", snoozedUntil });
         }}
       />
       <DuplicateDialog
@@ -241,7 +215,7 @@ export function IntakeClient() {
           if (!duplicatingItem) return;
           const target = duplicatingItem;
           setDuplicatingItem(null);
-          void triage(target, { decision: 'duplicate', duplicateOfIssueId });
+          void triage(target, { decision: "duplicate", duplicateOfIssueId });
         }}
       />
       <ProjectPickerDialog
@@ -253,7 +227,10 @@ export function IntakeClient() {
           if (!pickingProjectFor) return;
           const target = pickingProjectFor;
           setPickingProjectFor(null);
-          void triage(target, { decision: 'accept', targetProjectId: projectId });
+          void triage(target, {
+            decision: "accept",
+            targetProjectId: projectId,
+          });
         }}
       />
     </PageShell>
@@ -262,20 +239,18 @@ export function IntakeClient() {
 
 function triageSuccessMessage(decision: TriageDecision): string {
   switch (decision) {
-    case 'accept':
-      return 'Принято: задача создана.';
-    case 'reject':
-      return 'Входящая отклонена.';
-    case 'snooze':
-      return 'Входящая отложена.';
-    case 'duplicate':
-      return 'Помечено как дубликат.';
+    case "accept":
+      return "Принято: задача создана.";
+    case "reject":
+      return "Входящая отклонена.";
+    case "snooze":
+      return "Входящая отложена.";
+    case "duplicate":
+      return "Помечено как дубликат.";
     default:
-      return 'Готово.';
+      return "Готово.";
   }
 }
-
-// ─── Page shell (контейнер + heading) ───────────────────────────────────────
 
 function PageShell({
   total,
@@ -295,11 +270,12 @@ function PageShell({
             Входящие
           </h1>
           <p className="text-xs text-fg-tertiary">
-            Разбор входящих задач из писем, чатов, встреч и внешних сервисов. Кора
-            заранее заполнила подсказки — ваша задача — подтвердить или поправить.
-            {typeof total === 'number' && total > 0 ? (
+            Разбор входящих задач из писем, чатов, встреч и внешних сервисов.
+            Кора заранее заполнила подсказки — ваша задача — подтвердить или
+            поправить.
+            {typeof total === "number" && total > 0 ? (
               <>
-                {' · '}
+                {" · "}
                 <span className="text-fg-secondary">
                   {total} ожидает триажа
                 </span>
@@ -312,8 +288,6 @@ function PageShell({
     </div>
   );
 }
-
-// ─── Карточка одной входящей ───────────────────────────────────────────────
 
 function IntakeCard({
   item,
@@ -334,7 +308,7 @@ function IntakeCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const title = intakeDisplayTitle(item);
-  const raw = item.rawContent ?? '';
+  const raw = item.rawContent ?? "";
   const RAW_TRUNCATE = 200;
   const showExpand = raw.length > RAW_TRUNCATE;
   const rawDisplay = expanded ? raw : raw.slice(0, RAW_TRUNCATE);
@@ -344,7 +318,6 @@ function IntakeCard({
       ? Math.round(Math.max(0, Math.min(1, item.confidence)) * 100)
       : null;
 
-  // Признаки наличия suggested-полей — рисуем chip только когда есть данные.
   const hasAnySuggestion =
     item.suggestedProjectId !== null ||
     item.suggestedAssigneeId !== null ||
@@ -369,11 +342,11 @@ function IntakeCard({
           </span>
         )}
         <span className="ml-auto text-[11px] text-fg-tertiary">
-          {item.createdAt.toLocaleString('ru-RU', {
-            day: 'numeric',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
+          {item.createdAt.toLocaleString("ru-RU", {
+            day: "numeric",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
           })}
         </span>
       </header>
@@ -383,14 +356,14 @@ function IntakeCard({
         {raw.length > 0 && (
           <div className="mt-1 whitespace-pre-wrap break-words text-sm text-fg-secondary">
             {rawDisplay}
-            {!expanded && showExpand && '… '}
+            {!expanded && showExpand && "… "}
             {showExpand && (
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
                 className="ml-1 text-xs text-accent hover:underline"
               >
-                {expanded ? 'свернуть' : 'развернуть'}
+                {expanded ? "свернуть" : "развернуть"}
               </button>
             )}
           </div>
@@ -401,28 +374,28 @@ function IntakeCard({
         <div className="flex flex-wrap items-center gap-1.5">
           {item.suggestedProjectId && (
             <SuggestionChip>
-              📌 Проект «{item.suggestedProjectName ?? 'без названия'}»
+              📌 Проект «{item.suggestedProjectName ?? "без названия"}»
             </SuggestionChip>
           )}
           {item.suggestedAssigneeId && (
             <SuggestionChip>
               <User size={11} aria-hidden />
-              Исполнитель {item.suggestedAssigneeName ?? 'не определён'}
+              Исполнитель {item.suggestedAssigneeName ?? "не определён"}
             </SuggestionChip>
           )}
           {item.suggestedDueDate && (
             <SuggestionChip>
-              📅 Срок{' '}
-              {item.suggestedDueDate.toLocaleDateString('ru-RU', {
-                day: 'numeric',
-                month: 'short',
+              📅 Срок{" "}
+              {item.suggestedDueDate.toLocaleDateString("ru-RU", {
+                day: "numeric",
+                month: "short",
               })}
             </SuggestionChip>
           )}
           {item.suggestedGoalId && (
             <SuggestionChip>
               <Target size={11} aria-hidden />
-              Цель «{item.suggestedGoalTitle ?? 'без названия'}»
+              Цель «{item.suggestedGoalTitle ?? "без названия"}»
             </SuggestionChip>
           )}
           {item.suggestedPriority && (
@@ -434,13 +407,11 @@ function IntakeCard({
           {item.suggestedLabels && item.suggestedLabels.length > 0 && (
             <SuggestionChip>
               <Tag size={11} aria-hidden />
-              {pluralRu(item.suggestedLabels.length, 'метка', 'метки', 'меток')}
+              {pluralRu(item.suggestedLabels.length, "метка", "метки", "меток")}
             </SuggestionChip>
           )}
           {confidencePct !== null && (
-            <SuggestionChip muted>
-              уверенность {confidencePct}%
-            </SuggestionChip>
+            <SuggestionChip muted>уверенность {confidencePct}%</SuggestionChip>
           )}
         </div>
       )}
@@ -497,18 +468,16 @@ function SuggestionChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]',
+        "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]",
         muted
-          ? 'border-border-subtle bg-bg-overlay text-fg-tertiary'
-          : 'border-accent-border bg-accent-muted text-accent-fg',
+          ? "border-border-subtle bg-bg-overlay text-fg-tertiary"
+          : "border-accent-border bg-accent-muted text-accent-fg",
       )}
     >
       {children}
     </span>
   );
 }
-
-// ─── Reject dialog ──────────────────────────────────────────────────────────
 
 function RejectDialog({
   item,
@@ -519,11 +488,10 @@ function RejectDialog({
   onClose: () => void;
   onSubmit: (reason: string | null) => void;
 }) {
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
 
-  // Reset при открытии/закрытии.
   const open = item !== null;
-  useResetOnOpen(open, () => setReason(''));
+  useResetOnOpen(open, () => setReason(""));
 
   if (!item) return null;
 
@@ -559,8 +527,6 @@ function RejectDialog({
   );
 }
 
-// ─── Snooze dialog (date-picker) ───────────────────────────────────────────
-
 function SnoozeDialog({
   item,
   onClose,
@@ -570,7 +536,6 @@ function SnoozeDialog({
   onClose: () => void;
   onSubmit: (snoozedUntil: string) => void;
 }) {
-  // Default = завтра, 09:00 локально.
   const defaultDate = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
@@ -617,15 +582,9 @@ function SnoozeDialog({
 }
 
 function toLocalInput(d: Date): string {
-  // datetime-local требует формат YYYY-MM-DDTHH:mm без таймзоны.
-  const pad = (n: number) => String(n).padStart(2, '0');
+  const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
-// ─── Duplicate dialog ───────────────────────────────────────────────────────
-// Минимальная версия: пользователь вводит id или identifier существующей
-// задачи. Полноценный поиск с autocomplete — задача отдельного спринта
-// (это требует дополнительного API search /issues).
 
 function DuplicateDialog({
   item,
@@ -636,9 +595,9 @@ function DuplicateDialog({
   onClose: () => void;
   onSubmit: (duplicateOfIssueId: string) => void;
 }) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
   const open = item !== null;
-  useResetOnOpen(open, () => setValue(''));
+  useResetOnOpen(open, () => setValue(""));
 
   if (!item) return null;
 
@@ -652,8 +611,8 @@ function DuplicateDialog({
           <DialogTitle>Пометить как дубликат</DialogTitle>
         </DialogHeader>
         <p className="text-sm text-fg-secondary">
-          Укажи id или идентификатор задачи (например, `KORA-123`), которой
-          эта входящая дублирует. Поиск с подсказками появится в следующем
+          Укажи id или идентификатор задачи (например, `KORA-123`), которой эта
+          входящая дублирует. Поиск с подсказками появится в следующем
           обновлении.
         </p>
         <Input
@@ -678,13 +637,7 @@ function DuplicateDialog({
   );
 }
 
-
-// ─── Local helper: reset state on dialog open ───────────────────────────────
-
 function useResetOnOpen(open: boolean, reset: () => void): void {
-  // Простая реализация без useEffect-зависимостей: ловим переход open
-  // false → true и в этот момент сбрасываем форму. Хук всегда вызывается
-  // в одном и том же порядке, поэтому rules-of-hooks не нарушаются.
   const [wasOpen, setWasOpen] = useState(open);
   if (open !== wasOpen) {
     setWasOpen(open);

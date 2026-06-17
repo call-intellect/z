@@ -1,13 +1,3 @@
-/**
- * Доменная модель Decision (SBA β-3).
- *
- * Контракт: `backend/src/modules/decisions/dto/decisions.dto.ts`.
- *
- * Слои:
- *   - `Decision*Api` — что приходит с бэка (см. `src/api/decisions.api.ts`).
- *   - `Decision*Domain` — UI-friendly: Date вместо string, готовые лейблы.
- */
-
 import type {
   DecisionAlternativeApi,
   DecisionDetailApi,
@@ -17,37 +7,34 @@ import type {
   DecisionSupersedeChainResponseApi,
   DecisionVersionItemApi,
   TrustTierApi,
-} from '@/api/decisions.api';
+} from "@/api/decisions.api";
 
 export type DecisionStatus = DecisionStatusApi;
 export type TrustTier = TrustTierApi;
 
-/** Лейблы статусов на русском (β-3 + legacy для совместимости). */
 export const DECISION_STATUS_LABEL: Record<DecisionStatus, string> = {
-  proposed: 'Предложенное',
-  approved: 'Принятое',
-  rejected: 'Отклонённое',
-  implemented: 'Реализованное',
-  cancelled: 'Отменено',
-  superseded: 'Заменено',
-  // legacy 0a:
-  active: 'Действующее',
-  rolled_back: 'Откатано',
+  proposed: "Предложенное",
+  approved: "Принятое",
+  rejected: "Отклонённое",
+  implemented: "Реализованное",
+  cancelled: "Отменено",
+  superseded: "Заменено",
+  active: "Действующее",
+  rolled_back: "Откатано",
 };
 
-/** Цветовые группы для UI-бейджей (mapping на ui/colors). */
 export const DECISION_STATUS_TONE: Record<
   DecisionStatus,
-  'neutral' | 'success' | 'warning' | 'error' | 'info'
+  "neutral" | "success" | "warning" | "error" | "info"
 > = {
-  proposed: 'info',
-  approved: 'success',
-  rejected: 'error',
-  implemented: 'success',
-  cancelled: 'neutral',
-  superseded: 'neutral',
-  active: 'success',
-  rolled_back: 'warning',
+  proposed: "info",
+  approved: "success",
+  rejected: "error",
+  implemented: "success",
+  cancelled: "neutral",
+  superseded: "neutral",
+  active: "success",
+  rolled_back: "warning",
 };
 
 export interface DecisionAlternative {
@@ -97,13 +84,13 @@ export interface DecisionSupersedeChain {
   descendants: DecisionListItem[];
 }
 
-// ─────────────────────────── mappers ───────────────────────────
-
 function parseDateOrNull(value: string | null): Date | null {
   return value ? new Date(value) : null;
 }
 
-export function mapDecisionListItem(dto: DecisionListItemApi): DecisionListItem {
+export function mapDecisionListItem(
+  dto: DecisionListItemApi,
+): DecisionListItem {
   return {
     id: dto.id,
     statement: dto.statement,
@@ -114,7 +101,7 @@ export function mapDecisionListItem(dto: DecisionListItemApi): DecisionListItem 
     supersedesId: dto.supersedesId,
     affectsEntityIds: dto.affectsEntityIds,
     confidence: dto.confidence,
-    trustTier: dto.trustTier ?? 'human',
+    trustTier: dto.trustTier ?? "human",
     updatedAt: new Date(dto.updatedAt),
     createdAt: new Date(dto.createdAt),
   };
@@ -152,12 +139,6 @@ export function mapDecisionVersionItem(
     createdAt: new Date(dto.createdAt),
     createdByUserId: dto.createdByUserId,
   };
-}
-
-export function mapDecisionHistory(
-  dto: DecisionHistoryResponseApi,
-): DecisionVersionItem[] {
-  return dto.items.map(mapDecisionVersionItem);
 }
 
 export function mapDecisionSupersedeChain(

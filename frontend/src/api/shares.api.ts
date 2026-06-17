@@ -1,13 +1,6 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для модуля shares (приватные share-ссылки на встречи / клипы).
- * Источник правды — backend/src/modules/shares/.
- *
- * Публичные эндпоинты (без auth) — в `public-share.api.ts`.
- */
-
-export type ShareScope = 'meeting' | 'highlight';
+export type ShareScope = "meeting" | "highlight";
 
 export type ShareApi = {
   id: string;
@@ -19,7 +12,6 @@ export type ShareApi = {
   allowTranscript: boolean;
   allowTasks: boolean;
   allowChapters: boolean;
-  /** Разрешить публичный показ in-meeting чата участников. */
   allowChat: boolean;
   expiresAt: string | null;
   viewCount: number;
@@ -33,9 +25,7 @@ export type CreateMeetingShareRequest = {
   allowTranscript: boolean;
   allowTasks: boolean;
   allowChapters: boolean;
-  /** Разрешить публичный показ in-meeting чата участников. Default false. */
   allowChat?: boolean;
-  /** Сколько дней живёт ссылка. Бэк ограничивает множеством {1,7,14}. */
   expirationDays: 1 | 7 | 14;
 };
 
@@ -60,12 +50,17 @@ export const sharesApi = {
       `/api/v1/highlights/${encodeURIComponent(highlightId)}/shares`,
     ),
 
-  createHighlightShare: (highlightId: string, body: CreateHighlightShareRequest) =>
+  createHighlightShare: (
+    highlightId: string,
+    body: CreateHighlightShareRequest,
+  ) =>
     apiClient.post<ShareApi>(
       `/api/v1/highlights/${encodeURIComponent(highlightId)}/shares`,
       body,
     ),
 
   revoke: (shareId: string) =>
-    apiClient.del<{ ok: true }>(`/api/v1/shares/${encodeURIComponent(shareId)}`),
+    apiClient.del<{ ok: true }>(
+      `/api/v1/shares/${encodeURIComponent(shareId)}`,
+    ),
 };

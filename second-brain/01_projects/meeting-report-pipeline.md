@@ -6,7 +6,7 @@ covers: разделение pipeline после встречи на «быст�
 
 # Meeting Report Pipeline
 
-Карта двух независимых AI-цепочек, которые стартуют после готовности транскрипта встречи. Введена ТЗ [`2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md).
+Карта двух независимых AI-цепочек, которые стартуют после готовности транскрипта встречи. Введена ТЗ [`2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md).
 
 ## Зачем разделение
 
@@ -68,7 +68,7 @@ merge.worker (транскрипт готов)
 **LLM routing.** `taskType='meeting-report-fast'` в `seed-llm-task-routes-knowledge-core.ts`:
 - primary: `deepseek/deepseek-v4-pro` (32k output, thinking on, tool_choice='auto');
 - secondary: `openai-via-proxy/gpt-5.4-mini`;
-- tertiary: `ollama/qwen3.5:9b`.
+- tertiary: `kie/gemini-3.1-pro` (нормализация цепочек 2026-06-05, ollama выведен из всех боевых LLM-цепочек).
 
 **Метрики.** `z_meeting_report_fast_total{tenant, status}` (counter) + `z_meeting_report_fast_duration_seconds` (histogram, бакеты 5..600 с).
 
@@ -105,8 +105,8 @@ Legacy v2-агенты (`chapters-v2`, `tasks-v2`, `summary-v2`, `meeting-qualit
 
 ## Связанные документы
 
-- ТЗ-основание: [`plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/tz/2026-05-25-meeting-report-split-from-block-ingest.md).
-- Эксперимент-основание: [`plans/tz/2026-05-25-ai-real-eval-harness.md`](../../plans/tz/2026-05-25-ai-real-eval-harness.md).
+- ТЗ-основание: [`plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md`](../../plans/archive/2026-05-25-meeting-report-split-from-block-ingest.md).
+- Эксперимент-основание: [`plans/archive/2026-05-25-ai-real-eval-harness.md`](../../plans/archive/2026-05-25-ai-real-eval-harness.md).
 - Артефакты эксперимента: [`backend/test/eval/sales-merge-experiment/`](../../backend/test/eval/sales-merge-experiment/).
 - Жёсткая идентификация участников (используется в `Task` обеих цепочек): [`participant-identification.md`](participant-identification.md).
 - Реестр AI-jobs: [`ai-jobs.md`](ai-jobs.md).

@@ -1,21 +1,9 @@
-'use client';
+"use client";
 
-/**
- * GoalPickerDialog — общий диалог выбора цели Org (Goals OKR v2, Фаза 5 «мост к
- * гипотезам»). Переиспользуется в карточке идеи («двигает цель…») и на дашборде
- * спринта («продвигает цель…»).
- *
- * Слой UI: знает только про выбор. Сам запрос на привязку + toast + refresh —
- * на стороне вызывающего компонента (`onPick`).
- *
- * Паттерн повторяет `ReparentGoalDialog` (goals/[id]/GoalDetailClient.tsx):
- * ленивая загрузка активных целей через SWR + Select с sentinel «без цели».
- */
+import { useEffect, useState } from "react";
+import useSWR from "swr";
 
-import { useEffect, useState } from 'react';
-import useSWR from 'swr';
-
-import { goalsApi } from '@/api/goals.api';
+import { goalsApi } from "@/api/goals.api";
 import {
   Dialog,
   DialogContent,
@@ -23,19 +11,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
-/** Sentinel-значение Select для «без цели» (Radix не допускает value=""). */
-const NO_GOAL = '__none__';
+const NO_GOAL = "__none__";
 
 export function GoalPickerDialog({
   open,
@@ -43,14 +30,13 @@ export function GoalPickerDialog({
   orgId,
   currentGoalId,
   onPick,
-  title = 'Привязать к цели',
-  description = 'Выберите цель компании, которую двигает этот элемент.',
+  title = "Привязать к цели",
+  description = "Выберите цель компании, которую двигает этот элемент.",
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   orgId: string;
   currentGoalId: string | null;
-  /** Возвращает выбранную цель (или null — отвязать). Делает запрос + refresh. */
   onPick: (goalId: string | null) => Promise<void> | void;
   title?: string;
   description?: string;
@@ -63,9 +49,9 @@ export function GoalPickerDialog({
   }, [open, currentGoalId]);
 
   const { data: goals, isLoading } = useSWR(
-    open ? (['goals-for-picker', orgId] as const) : null,
+    open ? (["goals-for-picker", orgId] as const) : null,
     async ([, oid]) => {
-      const res = await goalsApi.list(oid, { status: 'active', limit: 200 });
+      const res = await goalsApi.list(oid, { status: "active", limit: 200 });
       return res.items;
     },
   );
@@ -130,7 +116,7 @@ export function GoalPickerDialog({
             disabled={submitting || isLoading}
             onClick={() => void handleSubmit()}
           >
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
+            {submitting ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>

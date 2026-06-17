@@ -1,30 +1,3 @@
-/**
- * SBA α-8 wave 3 — patch-migrate PersonRole → Appointment.
- *
- * Логика (см. plans/tz/2026-05-23-sba-alpha-8-wave3-appointment-kpi.md §6):
- *   1. SELECT все PersonRole WHERE NOT EXISTS Appointment с тем же
- *      (personId, roleId, validFrom) — идемпотентность.
- *   2. Для каждого:
- *      a. Резолв departmentId:
- *         - сначала Person.primaryDepartmentId (snapshot текущий, ок для migration);
- *         - иначе EntityLink (person → department, relationType=member_of, active) на дату validFrom;
- *         - иначе NULL (admin доделает руками).
- *      b. status: 'former' если validTo<now(), 'active' иначе.
- *      c. loadPercent: 100 (нет данных в PersonRole).
- *      d. confidence: 1.0 (manual-equivalent).
- *   3. INSERT Appointment.
- *   4. Log сводку: N migrated, M skipped (already in Appointment), K failed.
- *
- * Запуск:
- *   bun run scripts/patch-migrate-person-role-to-appointment.ts            (dry-run)
- *   bun run scripts/patch-migrate-person-role-to-appointment.ts --apply    (реальная миграция)
- *
- * Идемпотентно: повторный запуск ничего не делает, если данные уже мигрированы.
- * НЕ удаляет PersonRole (отдельный sub-ТЗ через 1 месяц после прод-миграции).
- *
- * @see plans/tz/2026-05-23-sba-alpha-8-wave3-appointment-kpi.md
- */
-
 import { Prisma, PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { tableExists } from './_lib/schema-guards';
@@ -57,13 +30,9 @@ async function main(): Promise<void> {
 
   /* eslint-disable no-console */
   console.log(
-    `=== patch-migrate-person-role-to-appointment START (${
-      APPLY ? 'APPLY' : 'DRY-RUN'
-    }) ===`,
+    `=== patch-migrate-person-role-to-appointment START (${APPLY ? 'APPLY' : 'DRY-RUN'}) ===`,
   );
 
-  // Guard: legacy-модель PersonRole планово удаляется через ~1 месяц после
-  // прод-миграции. Если её таблицы уже нет — prisma.personRole упал бы.
   if (!(await tableExists(prisma, 'PersonRole'))) {
     console.log(
       'Таблица PersonRole удалена — миграция в Appointment завершена ранее, обновление не требуется.',
@@ -102,7 +71,6 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Резолв departmentId.
       let departmentId: string | null = null;
       const person = await prisma.person.findUnique({
         where: { id: pr.personId },
@@ -165,17 +133,14 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(counters, null, 2));
 
   if (counters.totalPersonRoles > 0) {
-    const ratio = (counters.alreadyMigrated + counters.migrated) /
-      counters.totalPersonRoles;
+    const ratio = (counters.alreadyMigrated + counters.migrated) / counters.totalPersonRoles;
     console.log(
       `  progress (already + migrated) / total = ${ratio.toFixed(3)} (1.000 = 100% мигрировано)`,
     );
   }
 
   if (!APPLY) {
-    console.log(
-      '  DRY-RUN: ничего не записано. Перезапустите с --apply для применения.',
-    );
+    console.log('  DRY-RUN: ничего не записано. Перезапустите с --apply для применения.');
   }
   /* eslint-enable no-console */
 

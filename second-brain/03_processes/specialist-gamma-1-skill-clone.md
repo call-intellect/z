@@ -9,12 +9,12 @@ owners_human:
   - инженер knowledge-core
   - инженер clones
 related_plans:
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
-  - plans/tz/2026-05-23-sba-gamma-1-finishing-skilltraitcategory-persona-versioning.md
-  - plans/tz/2026-05-25-clone-reliability-hardening.md
-  - plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md
-  - plans/tz/2026-05-26-clone-access-grant-admin-api.md
-  - plans/tz/2026-05-26-clones-marketplace-frontend.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-23-sba-gamma-1-finishing-skilltraitcategory-persona-versioning.md
+  - plans/archive/2026-05-25-clone-reliability-hardening.md
+  - plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md
+  - plans/archive/2026-05-26-clone-access-grant-admin-api.md
+  - plans/archive/2026-05-26-clones-marketplace-frontend.md
 related_projects:
   - 01_projects/skill-and-clone.md
   - 01_projects/skill-trait-concepts.md

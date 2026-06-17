@@ -1,17 +1,3 @@
-/**
- * Unit-тесты для sync-cache механизма TypedConfigService (Фаза 1
- * env-to-admin-setting-call-sites-migration).
- *
- * Покрываем:
- *   1) hydrateSync + resolveSync — чтение из cacheMap.
- *   2) resolveSync — fallback на ENV.
- *   3) resolveSync — fallback на defaultValue.
- *   4) resolveSync — throws, если все три источника пусты.
- *   5) applySync(key, undefined) — удаление, далее ENV.
- *   6) applySync(key, value) — добавление/перезапись.
- *   7) hydrateSync идемпотентен — повторный вызов заменяет содержимое.
- */
-
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,7 +7,6 @@ function buildService(envMap: Record<string, unknown> = {}): TypedConfigService 
   const raw = {
     get: vi.fn((key: string) => envMap[key]),
   } as unknown as ConfigService;
-  // ModuleRef не нужен для sync-cache тестов.
   return new TypedConfigService(raw, null);
 }
 
@@ -48,14 +33,11 @@ describe('TypedConfigService — sync admin-setting cache', () => {
 
   it('resolveSync throws, только если envFallbackKey не передан и default отсутствует', () => {
     const cfg = buildService();
-    // Без envFallbackKey и без default → throws.
-    expect(() => cfg.resolveSync<number>('limits.maxX')).toThrow(
-      /не найден ни в cache, ни в ENV/,
-    );
+    expect(() => cfg.resolveSync<number>('limits.maxX')).toThrow(/не найден ни в cache, ни в ENV/);
   });
 
   it('resolveSync возвращает undefined, если envFallbackKey передан, но ни ENV-значения, ни default нет (Фаза 4 — optional ENV)', () => {
-    const cfg = buildService(); // ENV пуст
+    const cfg = buildService();
     const value = cfg.resolveSync<string | undefined>(
       'embeddings.fallbackLocalUrl',
       'EMBEDDING_FALLBACK_LOCAL_URL',
@@ -73,10 +55,8 @@ describe('TypedConfigService — sync admin-setting cache', () => {
 
   it('applySync(key, newValue) добавляет/перезаписывает ключ; resolveSync возвращает новое значение', () => {
     const cfg = buildService({ MAX_X: 5 });
-    // Добавление.
     cfg.applySync('limits.maxX', 100);
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 1)).toBe(100);
-    // Перезапись.
     cfg.applySync('limits.maxX', 200);
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 1)).toBe(200);
   });
@@ -89,10 +69,8 @@ describe('TypedConfigService — sync admin-setting cache', () => {
     ]);
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 0)).toBe(1);
 
-    // Повторный hydrate с другим набором — старый ключ должен исчезнуть.
     cfg.hydrateSync([['limits.maxY', 'second']]);
     expect(cfg.resolveSync<string>('limits.maxY', 'MAX_Y', 'd')).toBe('second');
-    // limits.maxX больше нет в cache — должен упасть на ENV/default.
     expect(cfg.resolveSync<number>('limits.maxX', 'MAX_X', 77)).toBe(77);
   });
 });
@@ -106,7 +84,6 @@ describe('workspace getter — sync resolve через AdminSetting + ENV', () =
     cfg.hydrateSync([['limits.maxChatRequestsPerDay', 999]]);
 
     expect(cfg.workspace.maxChatRequestsPerDay).toBe(999);
-    // На MAX_CHAT_REQUESTS_PER_DAY обращений быть не должно — cache hit.
     const envCalls = envGet.mock.calls.map(([key]) => key);
     expect(envCalls).not.toContain('MAX_CHAT_REQUESTS_PER_DAY');
   });
@@ -151,7 +128,6 @@ describe('retention / argon / auth-TTL — sync resolve', () => {
   });
 
   it('auth TTL не трогает прочие поля: sessionSecret по-прежнему читается через ENV (this.get)', () => {
-    // cacheMap пустой — никаких security.sessionTtlSeconds в нём нет.
     const cfg = buildService({
       JWT_SESSION_SECRET: 'env-session-secret',
       JWT_DEEP_LINK_SECRET: 'env-deep-link-secret',
@@ -163,7 +139,6 @@ describe('retention / argon / auth-TTL — sync resolve', () => {
     expect(cfg.auth.sessionSecret).toBe('env-session-secret');
     expect(cfg.auth.deepLinkSecret).toBe('env-deep-link-secret');
     expect(cfg.auth.publicFrontendUrl).toBe('https://app.example.com');
-    // TTL'ы тоже работают через resolveSync → ENV-fallback.
     expect(cfg.auth.sessionTtlSeconds).toBe(3_600);
     expect(cfg.auth.deepLinkTtlSeconds).toBe(600);
   });
@@ -172,7 +147,6 @@ describe('retention / argon / auth-TTL — sync resolve', () => {
 describe('embeddings + aiFeatures — sync resolve (Фаза 4)', () => {
   it('embeddings cacheMap override: hydrateSync задаёт dimensions → cfg.ai.embeddings.dimensions отдаёт его', () => {
     const cfg = buildService({
-      // ENV-fallback для остальных полей геттера, чтобы они не упали на throws.
       EMBEDDING_PROVIDER: 'openai-via-proxy',
       EMBEDDING_MODEL: 'text-embedding-3-small',
       OPENAI_PROXY_API_KEY: 'k',
@@ -192,8 +166,6 @@ describe('embeddings + aiFeatures — sync resolve (Фаза 4)', () => {
   });
 
   it('embeddings.fallbackLocalUrl: optional ENV — cacheMap пустой, ENV undefined → undefined без throws', () => {
-    // ENV не задаёт EMBEDDING_FALLBACK_LOCAL_URL (он optional в schema).
-    // Остальные обязательные ENV даём, чтобы остальной геттер не упал.
     const cfg = buildService({
       EMBEDDING_PROVIDER: 'openai-via-proxy',
       EMBEDDING_MODEL: 'text-embedding-3-small',
@@ -269,11 +241,9 @@ describe('Фаза 5 — crossmark/webhook/share/emailFetch/idle/quotas', () => 
 
 describe('Фаза 6 — пороги графа knowledge-core живые (resolveSync, не this.get)', () => {
   it('linkerMinBlocks — крутилка ЖИВАЯ: applySync override побеждает ENV-дефолт', () => {
-    // ENV задаёт «старое большое» значение; крутилка должна его перебить.
     const cfg = buildService({ LINKER_MIN_BLOCKS: 50 });
-    expect(cfg.knowledgeCore.linkerMinBlocks).toBe(50); // ENV fallback
+    expect(cfg.knowledgeCore.linkerMinBlocks).toBe(50);
     cfg.applySync('knowledge.linkerMinBlocks', 3);
-    // Если бы геттер читал через this.get('LINKER_MIN_BLOCKS'), вернулось бы 50.
     expect(cfg.knowledgeCore.linkerMinBlocks).toBe(3);
   });
 
@@ -284,14 +254,14 @@ describe('Фаза 6 — пороги графа knowledge-core живые (reso
 
   it('linkMinConfidence — крутилка ЖИВАЯ: hydrateSync override побеждает ENV-дефолт', () => {
     const cfg = buildService({ LINK_MIN_CONFIDENCE: 0.75 });
-    expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.75); // ENV fallback
+    expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.75);
     cfg.hydrateSync([['knowledge.linkMinConfidence', 0.5]]);
     expect(cfg.knowledgeCore.linkMinConfidence).toBe(0.5);
   });
 
   it('tracker.autoAcceptConfidenceThreshold — code-default 0.75 + ЖИВАЯ крутилка (hydrateSync побеждает)', () => {
     const cfg = buildService();
-    expect(cfg.tracker.autoAcceptConfidenceThreshold).toBe(0.75); // code-default
+    expect(cfg.tracker.autoAcceptConfidenceThreshold).toBe(0.75);
     cfg.hydrateSync([['tracker.autoAcceptConfidenceThreshold', 0.6]]);
     expect(cfg.tracker.autoAcceptConfidenceThreshold).toBe(0.6);
   });
@@ -304,13 +274,9 @@ describe('Фаза 6 — пороги графа knowledge-core живые (reso
   });
 
   it('v2AgentsEnabled — master-флаг через ENV, НЕ admin-крутилка: applySync его НЕ меняет', () => {
-    // Намеренно: v2AgentsEnabled читается через this.get(ENV), а не resolveSync.
-    // seed выставляет knowledge.v2AgentsEnabled=true, ENV-дефолт=false; если бы
-    // getter читал AdminSetting первым — v2-агенты включились бы на засеянном
-    // проде (текущее поведение OFF). Включение v2 — отдельное осознанное решение.
     const cfg = buildService({ KNOWLEDGE_CORE_V2_AGENTS_ENABLED: false });
-    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false); // ENV
+    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false);
     cfg.applySync('knowledge.v2AgentsEnabled', true);
-    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false); // applySync НЕ перебивает ENV
+    expect(cfg.knowledgeCore.v2AgentsEnabled).toBe(false);
   });
 });

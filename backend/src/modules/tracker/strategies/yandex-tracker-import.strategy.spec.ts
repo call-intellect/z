@@ -8,18 +8,6 @@ import type { TrackerEventsService } from '../services/tracker-events.service';
 
 import { YandexTrackerImportStrategy } from './yandex-tracker-import.strategy';
 
-/**
- * Unit-тесты `YandexTrackerImportStrategy.run` на mock fetch (vi.fn) +
- * mock Prisma:
- *
- *   1) Happy-path: 2 queue, 3 issue (по 1 в первой, 2 во второй),
- *      по 1 комментарию у первой задачи + 1 attachment.
- *   2) Идемпотентность: для existing issue (по externalId) — skip.
- *   3) Rate-limit retry: первый ответ 429 → потом 200.
- */
-
-// ── Fake API responses ────────────────────────────────────────────────────
-
 const QUEUE_A = {
   id: 'q-a',
   key: 'PROJA',
@@ -87,8 +75,6 @@ const ATTACHMENT_A1 = {
   content: { url: 'https://api.tracker.yandex.net/v2/attachments/att-1/content' },
 };
 
-// ── Fetch mock builder ────────────────────────────────────────────────────
-
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -97,12 +83,7 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   });
 }
 
-
-// ── Prisma mock ───────────────────────────────────────────────────────────
-
-function buildPrismaMock(opts?: {
-  existingIssueIdByExternalId?: Record<string, string>;
-}): {
+function buildPrismaMock(opts?: { existingIssueIdByExternalId?: Record<string, string> }): {
   prisma: PrismaService;
   calls: Record<string, ReturnType<typeof vi.fn>>;
 } {
@@ -112,32 +93,26 @@ function buildPrismaMock(opts?: {
     return { id: `iss-${issueSeq}`, ...data };
   });
   const existingMap = opts?.existingIssueIdByExternalId ?? {};
-  const issueFindFirst = vi.fn(
-    async ({ where }: { where: Record<string, unknown> }) => {
-      const ext = where.externalId as string | undefined;
-      if (ext && ext in existingMap) return { id: existingMap[ext] };
-      return null;
-    },
-  );
+  const issueFindFirst = vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+    const ext = where.externalId as string | undefined;
+    if (ext && ext in existingMap) return { id: existingMap[ext] };
+    return null;
+  });
   const issueAggregate = vi.fn(async () => ({ _max: { sequenceId: 0 } }));
   const issueUpdate = vi.fn(async () => undefined);
   let projectSeq = 0;
-  const projectCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => {
-      projectSeq += 1;
-      return { id: `proj-${projectSeq}`, identifier: data.identifier ?? 'PROJ' };
-    },
-  );
+  const projectCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    projectSeq += 1;
+    return { id: `proj-${projectSeq}`, identifier: data.identifier ?? 'PROJ' };
+  });
   const projectFindFirst = vi.fn(async () => null);
   const projectUpdate = vi.fn(async () => undefined);
   const projectMemberCreate = vi.fn(async () => undefined);
   let stateSeq = 0;
-  const issueStateCreate = vi.fn(
-    async ({ data }: { data: Record<string, unknown> }) => {
-      stateSeq += 1;
-      return { id: `state-${stateSeq}`, ...data };
-    },
-  );
+  const issueStateCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+    stateSeq += 1;
+    return { id: `state-${stateSeq}`, ...data };
+  });
   let labelSeq = 0;
   const labelCreate = vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
     labelSeq += 1;
@@ -251,39 +226,29 @@ function buildServices(prisma: PrismaService): {
   return { prisma, s3, events, metrics };
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
-
 describe('YandexTrackerImportStrategy.run', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('happy path: 2 queue, 3 issue, 1 комментарий, 1 attachment', async () => {
-    // Issues search: каждый POST на /_search возвращает свои items
-    // в зависимости от тела (queue filter).
     (globalThis as unknown as { fetch: typeof fetch }).fetch = vi.fn(
       async (input: string | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
         const method = (init?.method ?? 'GET').toUpperCase();
 
-        if (url.includes('/queues/q-a') && method === 'GET')
-          return jsonResponse(QUEUE_A);
-        if (url.includes('/queues/q-b') && method === 'GET')
-          return jsonResponse(QUEUE_B);
+        if (url.includes('/queues/q-a') && method === 'GET') return jsonResponse(QUEUE_A);
+        if (url.includes('/queues/q-b') && method === 'GET') return jsonResponse(QUEUE_B);
         if (url.includes('/issues/_search') && method === 'POST') {
-          // Чередуем по queue из body.
           const body = init?.body ? JSON.parse(init.body as string) : {};
           if (body?.filter?.queue === 'q-a') return jsonResponse([ISSUE_A1]);
-          if (body?.filter?.queue === 'q-b')
-            return jsonResponse([ISSUE_B1, ISSUE_B2]);
+          if (body?.filter?.queue === 'q-b') return jsonResponse([ISSUE_B1, ISSUE_B2]);
           return jsonResponse([]);
         }
-        if (url.includes('/issues/PROJA-1/comments'))
-          return jsonResponse([COMMENT_A1]);
+        if (url.includes('/issues/PROJA-1/comments')) return jsonResponse([COMMENT_A1]);
         if (url.includes('/issues/PROJB-1/comments')) return jsonResponse([]);
         if (url.includes('/issues/PROJB-2/comments')) return jsonResponse([]);
-        if (url.includes('/issues/PROJA-1/attachments'))
-          return jsonResponse([ATTACHMENT_A1]);
+        if (url.includes('/issues/PROJA-1/attachments')) return jsonResponse([ATTACHMENT_A1]);
         if (url.includes('/attachments')) return jsonResponse([]);
         if (url.includes('/links')) return new Response('not found', { status: 404 });
         if (url.includes('/attachments/att-1/content'))
@@ -303,7 +268,6 @@ describe('YandexTrackerImportStrategy.run', () => {
         selectedQueueIds: ['q-a', 'q-b'],
         userMappings: {
           'bob@example.com': 'user-bob-id',
-          // alice не маплена → unmatched.
         },
       },
       services,
@@ -314,22 +278,15 @@ describe('YandexTrackerImportStrategy.run', () => {
     expect(result.totalIssues).toBe(3);
     expect(result.totalComments).toBe(1);
     expect(result.totalAttachments).toBe(1);
-    // alice (assignee A1) и + потенциально комментатор — bob маплен, alice — нет.
     expect(result.unmatchedEmails).toContain('alice@example.com');
 
-    // Issue созданы 3 раза.
     expect(calls.issueCreate).toHaveBeenCalledTimes(3);
-    // 2 project'а.
     expect(calls.projectCreate).toHaveBeenCalledTimes(2);
-    // States: 3 (queue A) + 2 (queue B) = 5.
     expect(calls.issueStateCreate).toHaveBeenCalledTimes(5);
-    // Comment + attachment.
     expect(calls.issueCommentCreate).toHaveBeenCalledTimes(1);
     expect(calls.issueAttachmentCreate).toHaveBeenCalledTimes(1);
-    // Tag 'lead' создан как label.
     expect(calls.labelCreate).toHaveBeenCalledTimes(1);
-    // S3 put — 1 раз (один attachment).
-    expect((services.s3.putObject as ReturnType<typeof vi.fn>)).toHaveBeenCalledTimes(1);
+    expect(services.s3.putObject as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
   });
 
   it('идемпотентность: existing issue по externalId — skip', async () => {
@@ -337,10 +294,8 @@ describe('YandexTrackerImportStrategy.run', () => {
       async (input: string | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
         const method = (init?.method ?? 'GET').toUpperCase();
-        if (url.includes('/queues/q-a') && method === 'GET')
-          return jsonResponse(QUEUE_A);
-        if (url.includes('/issues/_search') && method === 'POST')
-          return jsonResponse([ISSUE_A1]);
+        if (url.includes('/queues/q-a') && method === 'GET') return jsonResponse(QUEUE_A);
+        if (url.includes('/issues/_search') && method === 'POST') return jsonResponse([ISSUE_A1]);
         if (url.includes('/comments')) return jsonResponse([]);
         if (url.includes('/attachments')) return jsonResponse([]);
         if (url.includes('/links')) return new Response('not found', { status: 404 });
@@ -365,13 +320,11 @@ describe('YandexTrackerImportStrategy.run', () => {
       onProgress: vi.fn(async () => undefined),
     });
 
-    // Project создаётся всегда (один queue), но Issue — skip.
     expect(result.totalProjects).toBe(1);
     expect(result.totalIssues).toBe(0);
     expect(result.totalComments).toBe(0);
     expect(result.totalAttachments).toBe(0);
     expect(calls.issueCreate).toHaveBeenCalledTimes(0);
-    // findFirst был вызван (idempotency-check).
     expect(calls.issueFindFirst).toHaveBeenCalled();
   });
 
@@ -381,12 +334,10 @@ describe('YandexTrackerImportStrategy.run', () => {
       async (input: string | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString();
         const method = (init?.method ?? 'GET').toUpperCase();
-        if (url.includes('/queues/q-a') && method === 'GET')
-          return jsonResponse(QUEUE_A);
+        if (url.includes('/queues/q-a') && method === 'GET') return jsonResponse(QUEUE_A);
         if (url.includes('/issues/_search') && method === 'POST') {
           searchCalls += 1;
           if (searchCalls === 1) {
-            // Первый раз — 429 с Retry-After=0 (чтобы тест прошёл мгновенно).
             return new Response('rate limited', {
               status: 429,
               headers: { 'retry-after': '0' },
@@ -401,7 +352,6 @@ describe('YandexTrackerImportStrategy.run', () => {
       },
     ) as unknown as typeof fetch;
 
-    // setTimeout — мокируем чтобы backoff не ждал реально.
     const origSetTimeout = globalThis.setTimeout;
     (globalThis as unknown as { setTimeout: typeof setTimeout }).setTimeout = ((
       cb: () => void,
@@ -426,9 +376,7 @@ describe('YandexTrackerImportStrategy.run', () => {
         onProgress: vi.fn(async () => undefined),
       });
 
-      // После retry — Issue всё-таки импортировался.
       expect(result.totalIssues).toBe(1);
-      // searchCalls == 2 (первый 429, второй 200).
       expect(searchCalls).toBe(2);
     } finally {
       globalThis.setTimeout = origSetTimeout;

@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Brain,
   Building2,
@@ -25,54 +25,35 @@ import {
   Square,
   UserRound,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { searchApi, type SearchResponse } from '@/api/search.api';
-import { conciergeApi } from '@/api/concierge.api';
-import { chatV2Api, type ChatV2AskResponseApi } from '@/api/chat-v2.api';
-import { voiceApi } from '@/api/voice.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { toast } from 'sonner';
-import { useAuth } from '@/contexts/auth-context';
+import { searchApi, type SearchResponse } from "@/api/search.api";
+import { conciergeApi } from "@/api/concierge.api";
+import { chatV2Api, type ChatV2AskResponseApi } from "@/api/chat-v2.api";
+import { voiceApi } from "@/api/voice.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/auth-context";
 import {
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/ui/shadcn/command';
-import { Command as CommandPrimitive } from 'cmdk';
-import { Dialog, DialogContent } from '@/ui/shadcn/dialog';
-import { Sheet, SheetContent } from '@/ui/shadcn/sheet';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { useCommandPalette } from './CommandPaletteProvider';
+} from "@/ui/shadcn/command";
+import { Command as CommandPrimitive } from "cmdk";
+import { Dialog, DialogContent } from "@/ui/shadcn/dialog";
+import { Sheet, SheetContent } from "@/ui/shadcn/sheet";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { useCommandPalette } from "./CommandPaletteProvider";
 import {
   loadPinned,
   loadRecent,
   pushRecent,
   togglePinned,
   type PaletteRecentItem,
-} from './recent-storage';
+} from "./recent-storage";
 
-/**
- * Глобальная командная палитра. Хоткей: ⌘K (mac) / Ctrl+K (win/linux).
- * Открытие/закрытие — через `useCommandPalette()` (Wave 2 B2 Provider).
- *
- * Режимы:
- *   - **Поиск (default)** — ввод → debounce 200мс → search.api по
- *     карточкам/встречам/задачам/ролям/отделам/людям/документам.
- *   - **Команда Concierge** — ввод начинается с `>` → запрос идёт в
- *     `conciergeApi.askOnce` (SBA γ-2). Результат — toast с возможным
- *     undo (action-toast). Параллельный γ-2 проект — не дублируем UX.
- *   - **AI помощник (Wave 2 B2)** — ввод начинается с `?` ИЛИ пользователь
- *     выбрал пункт «Спросить AI» в пустом списке → запрос идёт в
- *     `chatV2Api.ask({ scope:'org', mode:'synthetic' })`. Ответ
- *     показывается inline в палитре с цитатами и кнопкой «Открыть полный
- *     чат» (deep-link на `/chat-v2?conversationId=...`).
- *
- * Mobile (≤md): рендерится как bottom-sheet (Radix Sheet side="bottom"),
- * а не центрированный диалог. На md+ — обычный CommandDialog.
- */
 export function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
@@ -87,7 +68,7 @@ export function CommandPalette() {
     consumeInitial,
   } = useCommandPalette();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [commandBusy, setCommandBusy] = useState(false);
@@ -98,51 +79,45 @@ export function CommandPalette() {
     null,
   );
   const [isMobile, setIsMobile] = useState(false);
-  // Recent / Pinned (Wave 2 finishing task 4).
   const [recent, setRecent] = useState<PaletteRecentItem[]>([]);
   const [pinned, setPinned] = useState<PaletteRecentItem[]>([]);
-  // Голосовой ввод (Wave 2 finishing task 3) — MediaRecorder + voiceApi.transcribe.
   const [voiceState, setVoiceState] = useState<
-    'idle' | 'recording' | 'transcribing'
-  >('idle');
+    "idle" | "recording" | "transcribing"
+  >("idle");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceChunksRef = useRef<BlobPart[]>([]);
   const voiceStreamRef = useRef<MediaStream | null>(null);
 
   const trimmed = query.trim();
-  const isCommandMode = trimmed.startsWith('>');
-  const isAiMode = trimmed.startsWith('?');
+  const isCommandMode = trimmed.startsWith(">");
+  const isAiMode = trimmed.startsWith("?");
   const isSearchMode = !isCommandMode && !isAiMode && trimmed.length > 0;
   const isIdle = trimmed.length === 0;
 
-  // Mobile-detect (Tailwind `md` = 768px). Без сторонних хуков, чтобы не
-  // тянуть зависимости — слушаем matchMedia.
   useEffect(() => {
-    if (typeof window === 'undefined' || !('matchMedia' in window)) return;
-    const mq = window.matchMedia('(max-width: 767px)');
+    if (typeof window === "undefined" || !("matchMedia" in window)) return;
+    const mq = window.matchMedia("(max-width: 767px)");
     const apply = (): void => setIsMobile(mq.matches);
     apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
-  // Применяем initialQuery/initialMode из Provider'а при открытии.
   useEffect(() => {
     if (!isOpen) return;
     if (initialQuery !== null) {
-      const prefix = initialMode === 'ai' ? '? ' : '';
+      const prefix = initialMode === "ai" ? "? " : "";
       setQuery(prefix + initialQuery);
       consumeInitial();
-    } else if (initialMode === 'ai' && trimmed.length === 0) {
-      setQuery('? ');
+    } else if (initialMode === "ai" && trimmed.length === 0) {
+      setQuery("? ");
       consumeInitial();
     }
   }, [isOpen, initialQuery, initialMode, consumeInitial, trimmed.length]);
 
-  // Сбрасываем стейт при закрытии.
   useEffect(() => {
     if (!isOpen) {
-      setQuery('');
+      setQuery("");
       setResults(null);
       setAiAnswer(null);
       setAiError(null);
@@ -150,7 +125,6 @@ export function CommandPalette() {
     }
   }, [isOpen]);
 
-  // Debounce-поиск (только в Search-режиме).
   useEffect(() => {
     if (!isSearchMode) {
       setResults(null);
@@ -162,14 +136,14 @@ export function CommandPalette() {
     const t = window.setTimeout(() => {
       searchApi
         .query(trimmed, [
-          'cards',
-          'meetings',
-          'tasks',
-          'roles',
-          'departments',
-          'persons',
-          'documents',
-          'role-profiles',
+          "cards",
+          "meetings",
+          "tasks",
+          "roles",
+          "departments",
+          "persons",
+          "documents",
+          "role-profiles",
         ])
         .then((res) => {
           if (cancelled) return;
@@ -189,28 +163,22 @@ export function CommandPalette() {
     };
   }, [trimmed, isSearchMode]);
 
-  // Перезагружаем Recent / Pinned при каждом открытии палитры — другая
-  // вкладка / другая сессия могла поменять localStorage.
   useEffect(() => {
     if (!isOpen) return;
     setRecent(loadRecent());
     setPinned(loadPinned());
   }, [isOpen]);
 
-  // Cleanup для микрофона на размонтирование и закрытие палитры.
   useEffect(() => {
-    if (!isOpen && voiceState !== 'idle') {
-      // Аккуратно прерываем запись если палитра закрылась во время её ведения.
+    if (!isOpen && voiceState !== "idle") {
       try {
         mediaRecorderRef.current?.stop();
-      } catch {
-        // ignore
-      }
+      } catch {}
       stopAllTracks(voiceStreamRef.current);
       voiceStreamRef.current = null;
       mediaRecorderRef.current = null;
       voiceChunksRef.current = [];
-      setVoiceState('idle');
+      setVoiceState("idle");
     }
   }, [isOpen, voiceState]);
 
@@ -222,11 +190,14 @@ export function CommandPalette() {
 
   const startVoice = useCallback(async () => {
     if (!currentOrgId) {
-      toast.error('Нет активной организации');
+      toast.error("Нет активной организации");
       return;
     }
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      toast.error('Браузер не поддерживает запись микрофона');
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      toast.error("Браузер не поддерживает запись микрофона");
       return;
     }
     try {
@@ -242,14 +213,14 @@ export function CommandPalette() {
         if (ev.data && ev.data.size > 0) voiceChunksRef.current.push(ev.data);
       };
       recorder.start();
-      setVoiceState('recording');
+      setVoiceState("recording");
     } catch (err) {
       const message =
-        err instanceof Error && err.name === 'NotAllowedError'
-          ? 'Доступ к микрофону запрещён в настройках браузера'
+        err instanceof Error && err.name === "NotAllowedError"
+          ? "Доступ к микрофону запрещён в настройках браузера"
           : err instanceof Error
             ? err.message
-            : 'Не удалось включить микрофон';
+            : "Не удалось включить микрофон";
       toast.error(message);
     }
   }, [currentOrgId]);
@@ -257,8 +228,8 @@ export function CommandPalette() {
   const stopVoice = useCallback(async () => {
     if (!currentOrgId) return;
     const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state === 'inactive') return;
-    setVoiceState('transcribing');
+    if (!recorder || recorder.state === "inactive") return;
+    setVoiceState("transcribing");
     await new Promise<void>((resolve) => {
       recorder.onstop = () => resolve();
       try {
@@ -271,40 +242,37 @@ export function CommandPalette() {
     voiceStreamRef.current = null;
     mediaRecorderRef.current = null;
 
-    const blobMime = recorder.mimeType || 'audio/webm';
+    const blobMime = recorder.mimeType || "audio/webm";
     const blob = new Blob(voiceChunksRef.current, { type: blobMime });
     voiceChunksRef.current = [];
     if (blob.size === 0) {
-      setVoiceState('idle');
-      toast.error('Пустая запись — попробуйте ещё раз');
+      setVoiceState("idle");
+      toast.error("Пустая запись — попробуйте ещё раз");
       return;
     }
     try {
-      const ext = blobMime.includes('ogg') ? 'ogg' : 'webm';
+      const ext = blobMime.includes("ogg") ? "ogg" : "webm";
       const res = await voiceApi.transcribe({
         orgId: currentOrgId,
         audio: blob,
         filename: `voice.${ext}`,
       });
       const transcript = res.text.trim();
-      setVoiceState('idle');
+      setVoiceState("idle");
       if (!transcript) {
-        toast.error('Не удалось распознать — попробуйте чуть громче');
+        toast.error("Не удалось распознать — попробуйте чуть громче");
         return;
       }
-      // Дописываем к существующему запросу — пользователь мог начать печатать.
       setQuery((prev) => (prev ? `${prev} ${transcript}` : transcript));
     } catch (err) {
-      setVoiceState('idle');
-      const message =
-        humanizeApiError(err, 'Не удалось распознать голос');
+      setVoiceState("idle");
+      const message = humanizeApiError(err, "Не удалось распознать голос");
       toast.error(message);
     }
   }, [currentOrgId]);
 
-  /** Записать факт использования команды в Recent (max 10, дедуп). */
   const trackRecent = useCallback(
-    (item: Omit<PaletteRecentItem, 'lastUsedAt'>) => {
+    (item: Omit<PaletteRecentItem, "lastUsedAt">) => {
       pushRecent(item);
       setRecent(loadRecent());
     },
@@ -312,10 +280,10 @@ export function CommandPalette() {
   );
 
   const handlePinToggle = useCallback(
-    (item: Omit<PaletteRecentItem, 'lastUsedAt'>) => {
+    (item: Omit<PaletteRecentItem, "lastUsedAt">) => {
       const { pinned: nowPinned } = togglePinned(item);
       setPinned(loadPinned());
-      toast.success(nowPinned ? 'Закреплено' : 'Откреплено');
+      toast.success(nowPinned ? "Закреплено" : "Откреплено");
     },
     [],
   );
@@ -325,7 +293,6 @@ export function CommandPalette() {
     router.push(href);
   }
 
-  /** Запустить ранее сохранённую запись из Recent / Pinned. */
   function runRecentItem(item: PaletteRecentItem): void {
     trackRecent({
       id: item.id,
@@ -333,16 +300,15 @@ export function CommandPalette() {
       subtitle: item.subtitle,
       action: item.action,
     });
-    if (item.action.kind === 'navigate') {
+    if (item.action.kind === "navigate") {
       go(item.action.value);
     } else {
       setQuery(item.action.value);
     }
   }
 
-  /** SBA γ-2 — Concierge tool calls (action-режим, `>` префикс). */
   async function runCommand(): Promise<void> {
-    const text = trimmed.replace(/^>+\s*/, '');
+    const text = trimmed.replace(/^>+\s*/, "");
     if (!text || commandBusy) return;
     setCommandBusy(true);
     try {
@@ -351,9 +317,11 @@ export function CommandPalette() {
         pageContext: { clientPath: pathname ?? undefined },
       });
       if (res.quotaExceeded) {
-        toast.error(res.quotaExceeded === 'daily'
-              ? 'Дневная квота Concierge исчерпана'
-              : 'Месячная квота Concierge исчерпана');
+        toast.error(
+          res.quotaExceeded === "daily"
+            ? "Дневная квота Concierge исчерпана"
+            : "Месячная квота Concierge исчерпана",
+        );
       } else if (res.error) {
         toast.error(res.error.message);
       } else {
@@ -363,35 +331,33 @@ export function CommandPalette() {
         for (const tc of res.toolCalls) {
           if (tc.undoLogId) {
             const logId = tc.undoLogId;
-            toast.success(`Готово: ${tc.toolName}`, { action: {
-                label: 'Отменить',
+            toast.success(`Готово: ${tc.toolName}`, {
+              action: {
+                label: "Отменить",
                 onClick: async () => {
                   try {
                     await conciergeApi.undo(logId);
-                    toast.success('Отменено');
+                    toast.success("Отменено");
                   } catch {
-                    toast.error('Не удалось отменить');
+                    toast.error("Не удалось отменить");
                   }
                 },
-              } });
+              },
+            });
           }
         }
       }
       close();
-      setQuery('');
+      setQuery("");
     } catch {
-      toast.error('Concierge недоступен');
+      toast.error("Concierge недоступен");
     } finally {
       setCommandBusy(false);
     }
   }
 
-  /**
-   * Wave 2 B2 — Q&A через chat-v2 (`?` префикс или кнопка «Спросить AI»).
-   * Ответ остаётся внутри палитры — не закрываем и не делаем toast.
-   */
   async function runAiAsk(rawQuestion?: string): Promise<void> {
-    const text = (rawQuestion ?? trimmed.replace(/^\?+\s*/, '')).trim();
+    const text = (rawQuestion ?? trimmed.replace(/^\?+\s*/, "")).trim();
     if (!text || aiBusy) return;
     setAiBusy(true);
     setAiError(null);
@@ -400,15 +366,15 @@ export function CommandPalette() {
     try {
       const res = await chatV2Api.ask({
         question: text,
-        scope: 'org',
-        mode: 'synthetic',
+        scope: "org",
+        mode: "synthetic",
       });
       setAiAnswer(res);
     } catch (err) {
       const message =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось получить ответ от Коры';
+          : "Не удалось получить ответ от Коры";
       setAiError(message);
     } finally {
       setAiBusy(false);
@@ -448,8 +414,6 @@ export function CommandPalette() {
 
   const body = (
     <CommandPrimitive
-      // Отключаем встроенную cmdk-фильтрацию: у нас собственный search.api
-      // и список целиком формируется снаружи.
       shouldFilter={false}
       className="flex h-full w-full flex-col overflow-hidden rounded-md bg-bg-card text-fg-primary [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-fg-tertiary [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-4 [&_[cmdk-input-wrapper]_svg]:w-4 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-4 [&_[cmdk-item]_svg]:w-4"
     >
@@ -459,36 +423,36 @@ export function CommandPalette() {
           value={query}
           onValueChange={setQuery}
         />
-        {/* Голосовой ввод — Wave 2 finishing task 3. Иконка справа в инпуте;
-            не блокирует клавиатурный ввод. */}
+        {}
         <button
           type="button"
           onClick={() =>
-            voiceState === 'recording' ? void stopVoice() : void startVoice()
+            voiceState === "recording" ? void stopVoice() : void startVoice()
           }
-          disabled={voiceState === 'transcribing' || !currentOrgId}
+          disabled={voiceState === "transcribing" || !currentOrgId}
           className={cn(
-            'absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary disabled:opacity-50',
-            voiceState === 'recording' && 'bg-danger/15 text-danger hover:bg-danger/20',
+            "absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-7 w-7 items-center justify-center rounded-md text-fg-tertiary transition-colors hover:bg-bg-overlay hover:text-fg-primary disabled:opacity-50",
+            voiceState === "recording" &&
+              "bg-danger/15 text-danger hover:bg-danger/20",
           )}
           aria-label={
-            voiceState === 'recording'
-              ? 'Остановить запись'
-              : voiceState === 'transcribing'
-                ? 'Распознаю…'
-                : 'Голосовой ввод'
+            voiceState === "recording"
+              ? "Остановить запись"
+              : voiceState === "transcribing"
+                ? "Распознаю…"
+                : "Голосовой ввод"
           }
           title={
-            voiceState === 'recording'
-              ? 'Остановить запись'
-              : voiceState === 'transcribing'
-                ? 'Распознаю…'
-                : 'Голосовой ввод'
+            voiceState === "recording"
+              ? "Остановить запись"
+              : voiceState === "transcribing"
+                ? "Распознаю…"
+                : "Голосовой ввод"
           }
         >
-          {voiceState === 'transcribing' ? (
+          {voiceState === "transcribing" ? (
             <Loader2 size={14} className="animate-spin" />
-          ) : voiceState === 'recording' ? (
+          ) : voiceState === "recording" ? (
             <Square size={14} />
           ) : (
             <Mic size={14} />
@@ -496,8 +460,7 @@ export function CommandPalette() {
         </button>
       </div>
       <CommandList className="max-h-[60vh] md:max-h-[420px]">
-        {/* idle: «Закреплено» (если есть) → «Недавнее» (если есть) →
-            «Перейти к» + подсказки. Wave 2 finishing task 4. */}
+        {}
         {isIdle && (
           <>
             {pinned.length > 0 && (
@@ -511,7 +474,7 @@ export function CommandPalette() {
                     <ResultRow
                       icon={Pin}
                       title={item.label}
-                      subtitle={item.subtitle ?? 'Закреплённая команда'}
+                      subtitle={item.subtitle ?? "Закреплённая команда"}
                       rightSlot={
                         <button
                           type="button"
@@ -544,7 +507,7 @@ export function CommandPalette() {
                       <ResultRow
                         icon={Clock}
                         title={item.label}
-                        subtitle={item.subtitle ?? 'Использовано недавно'}
+                        subtitle={item.subtitle ?? "Использовано недавно"}
                         rightSlot={
                           <button
                             type="button"
@@ -554,9 +517,9 @@ export function CommandPalette() {
                             }}
                             className="rounded p-1 text-fg-tertiary hover:bg-bg-overlay hover:text-fg-primary"
                             aria-label={
-                              isItemPinned ? 'Открепить' : 'Закрепить'
+                              isItemPinned ? "Открепить" : "Закрепить"
                             }
-                            title={isItemPinned ? 'Открепить' : 'Закрепить'}
+                            title={isItemPinned ? "Открепить" : "Закрепить"}
                           >
                             {isItemPinned ? (
                               <PinOff size={12} />
@@ -581,7 +544,7 @@ export function CommandPalette() {
                       id: `nav:${nav.href}`,
                       label: nav.label,
                       subtitle: nav.subtitle,
-                      action: { kind: 'navigate', value: nav.href },
+                      action: { kind: "navigate", value: nav.href },
                     });
                     go(nav.href);
                   }}
@@ -599,12 +562,12 @@ export function CommandPalette() {
                 value="ai-open-prompt"
                 onSelect={() => {
                   trackRecent({
-                    id: 'mode:ai',
-                    label: 'Спросить Кору…',
-                    subtitle: 'Q&A по памяти компании',
-                    action: { kind: 'set-query', value: '? ' },
+                    id: "mode:ai",
+                    label: "Спросить Кору…",
+                    subtitle: "Q&A по памяти компании",
+                    action: { kind: "set-query", value: "? " },
                   });
-                  setQuery('? ');
+                  setQuery("? ");
                 }}
               >
                 <ResultRow
@@ -617,12 +580,12 @@ export function CommandPalette() {
                 value="concierge-open-prompt"
                 onSelect={() => {
                   trackRecent({
-                    id: 'mode:concierge',
-                    label: 'Дать команду Concierge…',
-                    subtitle: 'Действие',
-                    action: { kind: 'set-query', value: '> ' },
+                    id: "mode:concierge",
+                    label: "Дать команду Concierge…",
+                    subtitle: "Действие",
+                    action: { kind: "set-query", value: "> " },
                   });
-                  setQuery('> ');
+                  setQuery("> ");
                 }}
               >
                 <ResultRow
@@ -633,20 +596,20 @@ export function CommandPalette() {
               </CommandItem>
             </CommandGroup>
             <div className="px-4 py-3 text-center text-xs text-fg-tertiary">
-              Подсказка:{' '}
+              Подсказка:{" "}
               <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">
                 ⌘K
-              </kbd>{' '}
-              /{' '}
+              </kbd>{" "}
+              /{" "}
               <kbd className="rounded border border-border-subtle bg-bg-overlay px-1">
                 Ctrl+K
-              </kbd>{' '}
+              </kbd>{" "}
               открывает палитру в любой момент.
             </div>
           </>
         )}
 
-        {/* AI режим */}
+        {}
         {isAiMode && (
           <CommandGroup heading="Помощник компании">
             <CommandItem
@@ -656,11 +619,11 @@ export function CommandPalette() {
             >
               <ResultRow
                 icon={aiBusy ? Loader2 : Sparkles}
-                iconClassName={aiBusy ? 'animate-spin' : undefined}
+                iconClassName={aiBusy ? "animate-spin" : undefined}
                 title={
                   aiBusy
-                    ? 'Кора ищет ответ…'
-                    : `Спросить Кору: «${trimmed.replace(/^\?+\s*/, '')}»`
+                    ? "Кора ищет ответ…"
+                    : `Спросить Кору: «${trimmed.replace(/^\?+\s*/, "")}»`
                 }
                 subtitle="Enter — отправить (chat-v2 · org · synthetic)"
               />
@@ -668,7 +631,7 @@ export function CommandPalette() {
           </CommandGroup>
         )}
 
-        {/* Command (Concierge) режим */}
+        {}
         {isCommandMode && (
           <CommandGroup heading="Concierge — действие">
             <CommandItem
@@ -678,11 +641,11 @@ export function CommandPalette() {
             >
               <ResultRow
                 icon={commandBusy ? Loader2 : MessageCircle}
-                iconClassName={commandBusy ? 'animate-spin' : undefined}
+                iconClassName={commandBusy ? "animate-spin" : undefined}
                 title={
                   commandBusy
-                    ? 'Concierge выполняет…'
-                    : `Спросить Concierge: «${trimmed.replace(/^>+\s*/, '')}»`
+                    ? "Concierge выполняет…"
+                    : `Спросить Concierge: «${trimmed.replace(/^>+\s*/, "")}»`
                 }
                 subtitle="Enter — отправить"
               />
@@ -690,7 +653,7 @@ export function CommandPalette() {
           </CommandGroup>
         )}
 
-        {/* AI ответ inline */}
+        {}
         {(aiAnswer || aiError) && (
           <CommandGroup heading="Ответ Коры">
             <div className="px-3 py-3">
@@ -704,7 +667,9 @@ export function CommandPalette() {
                   <div className="mb-2">{aiError}</div>
                   <button
                     type="button"
-                    onClick={() => void runAiAsk(lastAskedQuestion ?? undefined)}
+                    onClick={() =>
+                      void runAiAsk(lastAskedQuestion ?? undefined)
+                    }
                     className="rounded border border-danger/40 px-2 py-1 text-xs hover:bg-danger/20"
                   >
                     Повторить
@@ -787,10 +752,10 @@ export function CommandPalette() {
         )}
         {empty && <CommandEmpty>Ничего не найдено</CommandEmpty>}
 
-        {/* Search-результаты — рендерятся только в search-режиме */}
+        {}
         {isSearchMode && (
           <>
-            {/* Подсказка: «Спросить AI про <query>» — параллельно поиску */}
+            {}
             <CommandGroup heading="Помощник">
               <CommandItem
                 value={`ai-ask-fallback-${trimmed}`}
@@ -799,7 +764,7 @@ export function CommandPalette() {
               >
                 <ResultRow
                   icon={aiBusy ? Loader2 : Sparkles}
-                  iconClassName={aiBusy ? 'animate-spin' : undefined}
+                  iconClassName={aiBusy ? "animate-spin" : undefined}
                   title={`Спросить Кору: «${trimmed}»`}
                   subtitle="Ответ из второго мозга компании"
                 />
@@ -871,7 +836,7 @@ export function CommandPalette() {
                     <ResultRow
                       icon={IdCard}
                       title={r.name}
-                      subtitle={r.departmentName ?? 'Без отдела'}
+                      subtitle={r.departmentName ?? "Без отдела"}
                     />
                   </CommandItem>
                 ))}
@@ -883,9 +848,13 @@ export function CommandPalette() {
                   <CommandItem
                     key={`dept-${d.id}`}
                     value={`dept-${d.id}-${d.name}`}
-                    onSelect={() => go('/structure?tab=departments')}
+                    onSelect={() => go("/structure?tab=departments")}
                   >
-                    <ResultRow icon={Building2} title={d.name} subtitle="Отдел" />
+                    <ResultRow
+                      icon={Building2}
+                      title={d.name}
+                      subtitle="Отдел"
+                    />
                   </CommandItem>
                 ))}
               </CommandGroup>
@@ -896,12 +865,12 @@ export function CommandPalette() {
                   <CommandItem
                     key={`person-${p.id}`}
                     value={`person-${p.id}-${p.fullName}`}
-                    onSelect={() => go('/structure?tab=persons')}
+                    onSelect={() => go("/structure?tab=persons")}
                   >
                     <ResultRow
                       icon={UserRound}
                       title={p.fullName}
-                      subtitle={p.roleName ?? 'Без должности'}
+                      subtitle={p.roleName ?? "Без должности"}
                     />
                   </CommandItem>
                 ))}
@@ -913,12 +882,14 @@ export function CommandPalette() {
                   <CommandItem
                     key={`doc-${d.id}`}
                     value={`doc-${d.id}-${d.name}`}
-                    onSelect={() => go(`/documents/${encodeURIComponent(d.id)}`)}
+                    onSelect={() =>
+                      go(`/documents/${encodeURIComponent(d.id)}`)
+                    }
                   >
                     <ResultRow
                       icon={FileText}
                       title={d.name}
-                      subtitle={d.kind ?? 'документ'}
+                      subtitle={d.kind ?? "документ"}
                     />
                   </CommandItem>
                 ))}
@@ -930,7 +901,9 @@ export function CommandPalette() {
                   <CommandItem
                     key={`rp-${rp.roleId}`}
                     value={`rp-${rp.roleId}-${rp.roleName}`}
-                    onSelect={() => go(`/roles/${encodeURIComponent(rp.roleId)}`)}
+                    onSelect={() =>
+                      go(`/roles/${encodeURIComponent(rp.roleId)}`)
+                    }
                   >
                     <ResultRow
                       icon={Sparkles}
@@ -953,10 +926,7 @@ export function CommandPalette() {
         <SheetContent
           side="bottom"
           className={cn(
-            // Сбрасываем дефолтный padding (Sheet — `p-6`), чтобы Command
-            // занимал всю ширину. Высота — до 85vh, чтобы оставить hint
-            // на закрытие свайпом/тапом по overlay.
-            'h-[85vh] max-h-[85vh] rounded-t-xl border-t border-border-subtle p-0',
+            "h-[85vh] max-h-[85vh] rounded-t-xl border-t border-border-subtle p-0",
           )}
         >
           {body}
@@ -983,51 +953,51 @@ type QuickNavItem = {
 
 const QUICK_NAV_ITEMS: QuickNavItem[] = [
   {
-    href: '/dashboard',
-    label: 'Главная',
-    subtitle: 'Дашборд компании',
+    href: "/dashboard",
+    label: "Главная",
+    subtitle: "Дашборд компании",
     icon: Home,
   },
   {
-    href: '/me',
-    label: 'Мой день',
-    subtitle: 'Личный инбокс и задачи',
+    href: "/me",
+    label: "Мой день",
+    subtitle: "Личный инбокс и задачи",
     icon: Inbox,
   },
   {
-    href: '/projects',
-    label: 'Проекты',
-    subtitle: 'Все проекты трекера',
+    href: "/projects",
+    label: "Проекты",
+    subtitle: "Все проекты трекера",
     icon: FolderKanban,
   },
   {
-    href: '/memory',
-    label: 'Память',
-    subtitle: 'Спросить, Лента Коры и реестры',
+    href: "/memory",
+    label: "Память",
+    subtitle: "Спросить, Лента Коры и реестры",
     icon: Network,
   },
   {
-    href: '/meetings',
-    label: 'Встречи',
-    subtitle: 'Календарь и история встреч',
+    href: "/meetings",
+    label: "Встречи",
+    subtitle: "Календарь и история встреч",
     icon: Calendar,
   },
   {
-    href: '/dump',
-    label: 'Дамп',
-    subtitle: 'Быстрая запись мысли',
+    href: "/dump",
+    label: "Дамп",
+    subtitle: "Быстрая запись мысли",
     icon: Brain,
   },
   {
-    href: '/chat-v2',
-    label: 'Помощник компании',
-    subtitle: 'Полноценный диалог с памятью компании',
+    href: "/chat-v2",
+    label: "Помощник компании",
+    subtitle: "Полноценный диалог с памятью компании",
     icon: Sparkles,
   },
   {
-    href: '/settings',
-    label: 'Настройки',
-    subtitle: 'Профиль, интеграции, тариф',
+    href: "/settings",
+    label: "Настройки",
+    subtitle: "Профиль, интеграции, тариф",
     icon: Settings,
   },
 ];
@@ -1047,7 +1017,7 @@ function ResultRow({
 }) {
   return (
     <div className="flex w-full items-center gap-2.5">
-      <Icon size={14} className={cn('text-fg-tertiary', iconClassName)} />
+      <Icon size={14} className={cn("text-fg-tertiary", iconClassName)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{title}</span>
         <span className="truncate text-xs text-fg-tertiary">{subtitle}</span>
@@ -1063,43 +1033,37 @@ function ResultRow({
 
 function formatDate(iso: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'short',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "short",
     }).format(new Date(iso));
   } catch {
     return iso;
   }
 }
 
-// ─────────────────────── voice helpers (Wave 2 finishing) ────────────────
-
 function stopAllTracks(stream: MediaStream | null): void {
   if (!stream) return;
   for (const track of stream.getTracks()) {
     try {
       track.stop();
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 }
 
 function pickSupportedMimeType(): string | null {
-  if (typeof MediaRecorder === 'undefined') return null;
+  if (typeof MediaRecorder === "undefined") return null;
   const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/ogg',
-    'audio/mp4',
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
   ];
   for (const t of candidates) {
     try {
       if (MediaRecorder.isTypeSupported(t)) return t;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
   return null;
 }

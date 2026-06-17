@@ -4,23 +4,6 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { TypedConfigService } from '../../common/config/index';
 
-/**
- * AES-256-GCM envelope encryption для секретов at-rest.
- *
- * Формат хранения:  `<iv-base64>.<ciphertext-base64>.<tag-base64>`
- *   - iv: 12 байт (рекомендация GCM).
- *   - tag: 16 байт.
- *   - ключ: из ENV `WEBHOOK_SECRETS_ENCRYPTION_KEY` (32 байта, base64).
- *
- * Используется:
- *   - `WebhookSubscription.secretEncrypted` — HMAC secret подписи.
- *   - `IntegrationDestination.config` — telegram bot token, generic webhook URL secret.
- *
- * Безопасность:
- *   - GCM — AEAD: шифр + аутентификация в одном проходе. Tamper detection.
- *   - IV случайный на каждый encrypt → одинаковые plaintext дают разные шифры.
- *   - Никаких IV-derive из plaintext (GCM nonce-misuse — критическая уязвимость).
- */
 export class EncryptionTamperError extends Error {
   constructor() {
     super('Encryption tamper detected (auth tag mismatch)');
@@ -76,7 +59,6 @@ export class EncryptionService {
       const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
       return pt.toString('utf8');
     } catch {
-      // GCM auth-tag mismatch → final() throws.
       throw new EncryptionTamperError();
     }
   }

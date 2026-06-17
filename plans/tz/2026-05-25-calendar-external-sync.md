@@ -4,7 +4,7 @@
 **Статус:** черновик, ждёт scope-решения от пользователя
 **Срок:** 17-22 дня на полный F1-F4; первая итерация 5-7 дней (только F1)
 **Owner:** Sergey
-**Базовый план:** [plans/tz/2026-05-25-calendar-mvp.md](2026-05-25-calendar-mvp.md) (Фаза 3 «внешний синк», теперь раскрыта детально)
+**Базовый план:** [plans/archive/2026-05-25-calendar-mvp.md](2026-05-25-calendar-mvp.md) (Фаза 3 «внешний синк», теперь раскрыта детально)
 **Research:** background-агент 2026-05-25 (~5000 слов) — изучены Я.Календарь, Mail.ru, VK WorkSpace, MyOffice, R7, Google, MS Outlook, iCloud, Я.Трекер, Битрикс24, Pyrus, Kaiten, ПланФикс, WEEEK, YouGile, Shtab, CommuniGate.
 
 ## Контекст и цели

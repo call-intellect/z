@@ -7,16 +7,7 @@ import type { IngestService } from '../ingest/ingest.service';
 import { BitrixIngestService } from './bitrix-ingest.service';
 import { CRM_BACKFILL_DAYS } from './bitrix-sync.service';
 
-/**
- * Unit-тесты посуточного CRM-дайджеста (Ф4b): курсор/окно/пропуск пустых дней.
- * Prisma/Ingest замоканы; «сегодня» не контролируем — курсор ставим далеко в
- * прошлом, поэтому проход всегда упирается в кап MAX_DIGEST_DAYS_PER_RUN
- * (= CRM_BACKFILL_DAYS) и результат детерминирован.
- */
-function makeService(opts: {
-  lastCrmDigestAt: Date | null;
-  hasContactChanges?: boolean;
-}): {
+function makeService(opts: { lastCrmDigestAt: Date | null; hasContactChanges?: boolean }): {
   service: BitrixIngestService;
   ingest: { ingest: ReturnType<typeof vi.fn> };
   updateMany: ReturnType<typeof vi.fn>;
@@ -25,14 +16,10 @@ function makeService(opts: {
   const emptyList = vi.fn().mockResolvedValue([]);
   const contactList = vi
     .fn()
-    .mockResolvedValue(
-      opts.hasContactChanges ? [{ name: 'Иван', email: 'i@x.ru' }] : [],
-    );
+    .mockResolvedValue(opts.hasContactChanges ? [{ name: 'Иван', email: 'i@x.ru' }] : []);
   const prisma = {
     bitrixIntegration: {
-      findFirst: vi
-        .fn()
-        .mockResolvedValue({ lastCrmDigestAt: opts.lastCrmDigestAt }),
+      findFirst: vi.fn().mockResolvedValue({ lastCrmDigestAt: opts.lastCrmDigestAt }),
       updateMany,
     },
     bitrixContact: { findMany: contactList },
@@ -55,7 +42,7 @@ function makeService(opts: {
   return { service, ingest, updateMany };
 }
 
-const farPast = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000); // 60 дней назад
+const farPast = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
 
 describe('BitrixIngestService.ingestCrmDigests', () => {
   it('нет изменений → RawEvent не создаётся, курсор всё равно двигается на кап дней', async () => {
@@ -99,7 +86,6 @@ describe('BitrixIngestService.ingestCrmDigests', () => {
 
   it('интеграции нет → no-op', async () => {
     const { service } = makeService({ lastCrmDigestAt: null });
-    // переопределяем findFirst → null
     (
       service as unknown as {
         prisma: { bitrixIntegration: { findFirst: ReturnType<typeof vi.fn> } };

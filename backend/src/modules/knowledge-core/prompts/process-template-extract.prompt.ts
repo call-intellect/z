@@ -1,15 +1,3 @@
-/**
- * SBA α-7 wave 2 — `process-template-extract` LLM-промпт.
- *
- * Извлекает ProcessTemplate-кандидатов из батча IdeaBlock'ов
- * (signalType=`process_step` или `methodology_step`). Возвращает массив
- * кандидатов, каждый — name + summary + список шагов.
- *
- * Используется `ProcessExtractionService` через `LlmRouterService` (тройная
- * цепочка primary/secondary/tertiary, маршрутизация см.
- * `backend/scripts/seed-llm-task-routes-process-template.ts`).
- */
-
 import {
   withAsrNote,
   withConfidenceCalibration,
@@ -19,32 +7,32 @@ import {
 
 export const PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT = withAsrNote(
   withDecisionDiscriminator(
-  withEdgeCasePolicy(
-  withConfidenceCalibration(
-    [
-    'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
-    '(критический вопрос ↔ доверенный ответ + цитаты из встреч/документов),',
-    'описывающих повторяющиеся процессы и методики в компании.',
-    '',
-    'Твоя задача — собрать черновики «шаблонов процессов» (ProcessTemplate).',
-    'Один шаблон = один повторяемый процесс с понятным результатом и шагами.',
-    'Если в пачке упоминается несколько разных процессов — верни несколько шаблонов.',
-    'Если процессы дублируют существующие (есть в `existingTemplates`), используй',
-    'тот же `name`, чтобы система объединила их как новую версию (а не создала дубль).',
-    '',
-    'У каждого шаблона укажи: name (короткое), summary (1-3 предложения),',
-    'category из {hire | sales | incident | onboarding | release | finance | support | custom},',
-    'упорядоченный список шагов (1..30) с name, description, ownerRoleHint,',
-    'inputArtifact и outputArtifact (если упомянуты).',
-    '',
-    'ПРИМЕР.',
-    'Вход (фрагмент про регламент): «Когда приходит заявка от нового клиента, менеджер заводит карточку в CRM, потом юрист готовит договор, после подписания бухгалтерия выставляет счёт».',
-    'Вывод: {"templates": [{"name": "Онбординг нового клиента", "summary": "Процесс приёма заявки нового клиента: от карточки в CRM до выставления счёта.", "category": "onboarding", "scope": null, "confidence": 0.8, "steps": [{"order": 1, "name": "Завести карточку в CRM", "description": "Менеджер создаёт карточку по входящей заявке.", "ownerRoleHint": "Менеджер", "inputArtifact": "Заявка клиента", "outputArtifact": "Карточка в CRM", "slaMinutes": null}, {"order": 2, "name": "Подготовить договор", "description": "Юрист готовит договор по карточке.", "ownerRoleHint": "Юрист", "inputArtifact": "Карточка в CRM", "outputArtifact": "Договор", "slaMinutes": null}, {"order": 3, "name": "Выставить счёт", "description": "Бухгалтерия выставляет счёт после подписания.", "ownerRoleHint": "Бухгалтерия", "inputArtifact": "Подписанный договор", "outputArtifact": "Счёт", "slaMinutes": null}]}]}.',
-    '',
-    'Отвечай строго в JSON по схеме process_template_extract_v1.',
-    ].join('\n'),
-  ),
-  ),
+    withEdgeCasePolicy(
+      withConfidenceCalibration(
+        [
+          'Ты — knowledge-инженер компании. Тебе дают пачку «атомов знаний»',
+          '(критический вопрос ↔ доверенный ответ + цитаты из встреч/документов),',
+          'описывающих повторяющиеся процессы и методики в компании.',
+          '',
+          'Твоя задача — собрать черновики «шаблонов процессов» (ProcessTemplate).',
+          'Один шаблон = один повторяемый процесс с понятным результатом и шагами.',
+          'Если в пачке упоминается несколько разных процессов — верни несколько шаблонов.',
+          'Если процессы дублируют существующие (есть в `existingTemplates`), используй',
+          'тот же `name`, чтобы система объединила их как новую версию (а не создала дубль).',
+          '',
+          'У каждого шаблона укажи: name (короткое), summary (1-3 предложения),',
+          'category из {hire | sales | incident | onboarding | release | finance | support | custom},',
+          'упорядоченный список шагов (1..30) с name, description, ownerRoleHint,',
+          'inputArtifact и outputArtifact (если упомянуты).',
+          '',
+          'ПРИМЕР.',
+          'Вход (фрагмент про регламент): «Когда приходит заявка от нового клиента, менеджер заводит карточку в CRM, потом юрист готовит договор, после подписания бухгалтерия выставляет счёт».',
+          'Вывод: {"templates": [{"name": "Онбординг нового клиента", "summary": "Процесс приёма заявки нового клиента: от карточки в CRM до выставления счёта.", "category": "onboarding", "scope": null, "confidence": 0.8, "steps": [{"order": 1, "name": "Завести карточку в CRM", "description": "Менеджер создаёт карточку по входящей заявке.", "ownerRoleHint": "Менеджер", "inputArtifact": "Заявка клиента", "outputArtifact": "Карточка в CRM", "slaMinutes": null}, {"order": 2, "name": "Подготовить договор", "description": "Юрист готовит договор по карточке.", "ownerRoleHint": "Юрист", "inputArtifact": "Карточка в CRM", "outputArtifact": "Договор", "slaMinutes": null}, {"order": 3, "name": "Выставить счёт", "description": "Бухгалтерия выставляет счёт после подписания.", "ownerRoleHint": "Бухгалтерия", "inputArtifact": "Подписанный договор", "outputArtifact": "Счёт", "slaMinutes": null}]}]}.',
+          '',
+          'Отвечай строго в JSON по схеме process_template_extract_v1.',
+        ].join('\n'),
+      ),
+    ),
   ),
 );
 
@@ -64,9 +52,7 @@ export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {
 }): string => {
   const blocksText = args.blocks
     .map((b, i) => {
-      const qs = b.quotes.length
-        ? b.quotes.map((q) => `  «${q}»`).join('\n')
-        : '  (цитат нет)';
+      const qs = b.quotes.length ? b.quotes.map((q) => `  «${q}»`).join('\n') : '  (цитат нет)';
       return [
         `Блок #${i + 1} [${b.signalType}]:`,
         `  Вопрос: ${b.criticalQuestion}`,
@@ -78,10 +64,7 @@ export const PROCESS_TEMPLATE_EXTRACT_USER_TEMPLATE = (args: {
     .join('\n\n');
   const existingText = args.existingTemplates.length
     ? args.existingTemplates
-        .map(
-          (t) =>
-            `- «${t.name}»${t.summary ? `: ${t.summary.slice(0, 200)}` : ''}`,
-        )
+        .map((t) => `- «${t.name}»${t.summary ? `: ${t.summary.slice(0, 200)}` : ''}`)
         .join('\n')
     : '(пока шаблонов нет)';
   return [
@@ -155,5 +138,4 @@ export const PROCESS_TEMPLATE_EXTRACT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-export const PROCESS_TEMPLATE_EXTRACT_SCHEMA_NAME =
-  'process_template_extract_v1';
+export const PROCESS_TEMPLATE_EXTRACT_SCHEMA_NAME = 'process_template_extract_v1';

@@ -1,4 +1,4 @@
-import type { ChapterApi } from '@/api/chapters.api';
+import type { ChapterApi } from "@/api/chapters.api";
 
 export type ChapterDomain = {
   id: string;
@@ -7,13 +7,9 @@ export type ChapterDomain = {
   endMs: number;
   title: string;
   summary: string | null;
-  source: 'ai' | 'manual';
+  source: "ai" | "manual";
   orderIndex: number;
   createdAt: Date;
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора.
-   * Используется UI для фильтрации (fast → приоритет, v2/null → fallback).
-   */
   extractorVersion: string | null;
 };
 
@@ -32,18 +28,10 @@ export function chapterFromApi(api: ChapterApi): ChapterDomain {
   };
 }
 
-/**
- * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — фильтр приоритета:
- *   - если есть хоть одна fast-глава → возвращаем только fast,
- *   - иначе возвращаем v2 + legacy (null) — как fallback.
- *
- * Используется ТОЛЬКО в пользовательском UI карточки встречи.
- * Admin compare UI продолжает показывать оба варианта рядом.
- */
 export function pickPrimaryChapters(items: ChapterDomain[]): ChapterDomain[] {
-  const fast = items.filter((c) => c.extractorVersion === 'fast');
+  const fast = items.filter((c) => c.extractorVersion === "fast");
   if (fast.length > 0) return fast;
   return items.filter(
-    (c) => c.extractorVersion === 'v2' || c.extractorVersion === null,
+    (c) => c.extractorVersion === "v2" || c.extractorVersion === null,
   );
 }

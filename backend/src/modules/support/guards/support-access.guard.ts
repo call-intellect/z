@@ -9,17 +9,6 @@ import type { Request } from 'express';
 
 import { SupportAccessService } from '../services/support-access.service';
 
-/**
- * SupportAccessGuard — пускает в деск поддержки ТОЛЬКО членов группы-контура
- * вендор-Org (Р-7). Подключается ПОСЛЕ CookieAuthGuard.
- *
- * Алгоритм:
- *   1. Нет `req.user` → 403 `no_user` (CookieAuthGuard выше обязателен).
- *   2. `SupportAccessService.isAgent(user.id)` === false → 403 `SUPPORT_NOT_AGENT`.
- *   3. Иначе кладёт `req.tenantId = vendorOrgId`, чтобы desk-контроллеры
- *      работали в scope вендор-Org (NOT TenantGuard — деск всегда вендор-Org,
- *      не «текущая Org» сотрудника).
- */
 @Injectable()
 export class SupportAccessGuard implements CanActivate {
   constructor(
@@ -51,8 +40,6 @@ export class SupportAccessGuard implements CanActivate {
       });
     }
 
-    // Деск всегда работает в scope вендор-Org. Сотрудник прошёл isAgent →
-    // vendorOrgId гарантированно существует (иначе isAgent вернул бы false).
     const vendorOrgId = await this.access.getVendorOrgId();
     if (vendorOrgId) {
       req.tenantId = vendorOrgId;

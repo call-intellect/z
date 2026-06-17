@@ -8,19 +8,6 @@ import {
   type CommitmentForCascade,
 } from './promise-cascade.scoring';
 
-/**
- * TZ-1 Фаза 3.C (daily-value-engine) — PromiseCascadeService.
- *
- * Поверх данных обещаний (IdeaBlock signalType='commitment') находит
- * КРИТИЧЕСКИЙ каскад: просроченное обещание (по `commitmentAuthorPersonId`),
- * у которого есть исходящая зависимость — оно держит чужую работу (задачу/цель
- * адресата). БЕЗ LLM — чистый SQL/граф.
- *
- * «Исходящая зависимость» резолвится как: у адресата (`commitmentRecipient
- * PersonId`) есть активная цель (Goal.ownerPersonId) ИЛИ назначенная задача
- * (IssueAssignee по Person.userId) — т.е. невыполненное обещание реально
- * держит работу коллеги.
- */
 @Injectable()
 export class PromiseCascadeService {
   private readonly logger = new Logger(PromiseCascadeService.name);
@@ -30,14 +17,7 @@ export class PromiseCascadeService {
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Найти критические каскады обещаний Org на момент `now`. Каждый элемент —
-   * автор + адресат + текст обещания + что именно держится (цель/задача).
-   */
-  async findCascadesForTenant(args: {
-    tenantId: string;
-    now: Date;
-  }): Promise<
+  async findCascadesForTenant(args: { tenantId: string; now: Date }): Promise<
     Array<{
       commitmentId: string;
       text: string;
@@ -49,12 +29,8 @@ export class PromiseCascadeService {
       blockedIssueTitle: string | null;
     }>
   > {
-    const since = new Date(
-      args.now.getTime() -
-        PromiseCascadeService.WINDOW_DAYS * 24 * 3_600_000,
-    );
+    const since = new Date(args.now.getTime() - PromiseCascadeService.WINDOW_DAYS * 24 * 3_600_000);
 
-    // 1. Висящие обещания за окно (open|asked) с автором.
     const commitments = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
@@ -78,7 +54,6 @@ export class PromiseCascadeService {
     });
     if (commitments.length === 0) return [];
 
-    // 2. Для каждого резолвим исходящую зависимость (что держит адресат).
     const out: Array<{
       commitmentId: string;
       text: string;
@@ -90,15 +65,10 @@ export class PromiseCascadeService {
       blockedIssueTitle: string | null;
     }> = [];
 
-    // Сначала отсекаем непросроченные (двойная защита; where уже фильтрует).
     const overdue = commitments.filter((c) =>
-      isCommitmentOverdue(
-        { dueDate: c.commitmentDueDate, status: c.commitmentStatus },
-        args.now,
-      ),
+      isCommitmentOverdue({ dueDate: c.commitmentDueDate, status: c.commitmentStatus }, args.now),
     );
 
-    // Резолв зависимостей + сборка CommitmentForCascade.
     const enriched: Array<{
       cascade: CommitmentForCascade;
       raw: (typeof overdue)[number];
@@ -112,7 +82,6 @@ export class PromiseCascadeService {
       let blockedIssueTitle: string | null = null;
 
       if (recipientPersonId) {
-        // Цель адресата (активная).
         const goal = await this.prisma.goal.findFirst({
           where: {
             tenantId: args.tenantId,
@@ -124,7 +93,6 @@ export class PromiseCascadeService {
         });
         if (goal) blockedGoalName = goal.name;
 
-        // Назначенная задача адресата (через userId).
         if (!blockedGoalName && c.commitmentRecipient?.userId) {
           const assignee = await this.prisma.issueAssignee.findFirst({
             where: {
@@ -148,8 +116,7 @@ export class PromiseCascadeService {
           recipientPersonId,
           dueDate: c.commitmentDueDate,
           status: c.commitmentStatus,
-          hasOutgoingDependency:
-            blockedGoalName !== null || blockedIssueTitle !== null,
+          hasOutgoingDependency: blockedGoalName !== null || blockedIssueTitle !== null,
         },
         raw: c,
         blockedGoalName,
@@ -157,7 +124,6 @@ export class PromiseCascadeService {
       });
     }
 
-    // 3. Чистая фильтрация критических каскадов.
     const criticalIds = new Set(
       selectCascadeCritical(
         enriched.map((e) => e.cascade),

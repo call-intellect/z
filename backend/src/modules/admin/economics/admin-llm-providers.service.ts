@@ -4,24 +4,8 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProviderInfoResolver } from '../../ai/services/protocol-adapter/provider-info.resolver';
 
-import type {
-  CreateLlmProviderDto,
-  UpdateLlmProviderDto,
-} from './dto/admin-llm-providers.dto';
+import type { CreateLlmProviderDto, UpdateLlmProviderDto } from './dto/admin-llm-providers.dto';
 
-/**
- * SBA α-10 wave 3 — AdminLlmProvidersService.
- *
- * CRUD реестра LlmProvider + инвалидация ProviderInfoResolver cache при
- * любом изменении. Соблюдает safe-seed-rules: при наличии записи (по name)
- * `create` бросает Conflict (вместо «тихого» обновления — это намеренно,
- * чтобы случайный POST не перезатёр настройки).
- *
- * apiKey хранится зашифрованным (apiKeyEncrypted). На wave 3 шифрование пока
- * происходит на уровне внутреннего crypto-сервиса (когда у нас будет
- * полноценный CryptoService для LLM-ключей — `common/crypto`). В этой версии
- * пишем raw — `apiKeyEncrypted=apiKey` с TODO-маркером.
- */
 @Injectable()
 export class AdminLlmProvidersService {
   constructor(

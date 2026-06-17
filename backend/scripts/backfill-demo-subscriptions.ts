@@ -1,25 +1,3 @@
-/**
- * Backfill для ТЗ paywall-no-trial Фаза 5.1.
- *
- * Задача: для каждого `Org` без записи `Subscription` создать
- * Subscription { status: 'DEMO' }. Это закрывает grandfather-сценарий:
- * Org'и, которые были созданы до внедрения paywall (когда OrgsService
- * ещё не вызывал ensureDemo), всё равно получают paywall-блокировку
- * мутаций — без падения SubscriptionGuard на NULL-подписке.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-demo-subscriptions.ts
- *
- * Идемпотентен: повторный запуск пропускает Org'и, у которых уже есть
- * Subscription (любого статуса — ACTIVE/DEMO/SUSPENDED/...).
- *
- * См. правила safe-seed-rules: используем findFirst+create вместо upsert
- * (потому что у Subscription нет составного unique key с status), не
- * перезаписываем существующие записи.
- *
- * Источник: plans/tz/2026-05-28-paywall-no-trial.md §6.1.
- */
-
 import { SubscriptionEventType } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -47,9 +25,7 @@ async function main(): Promise<Result> {
     errors: 0,
   };
 
-  console.log(
-    `[backfill-demo-subscriptions] Найдено ${orgs.length} активных Org`,
-  );
+  console.log(`[backfill-demo-subscriptions] Найдено ${orgs.length} активных Org`);
 
   for (const org of orgs) {
     try {
@@ -72,15 +48,11 @@ async function main(): Promise<Result> {
         },
       });
       result.created += 1;
-      console.log(
-        `  ✓ ${org.name} (${org.id}) — создана DEMO-подписка ${created.id}`,
-      );
+      console.log(`  ✓ ${org.name} (${org.id}) — создана DEMO-подписка ${created.id}`);
     } catch (err) {
       result.errors += 1;
       console.error(
-        `  ✗ ${org.name} (${org.id}) — ошибка: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `  ✗ ${org.name} (${org.id}) — ошибка: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -94,9 +66,6 @@ async function main(): Promise<Result> {
 main()
   .then(async (res) => {
     await prisma.$disconnect();
-    // Per-org ошибки (транзиентные) не должны валить весь apply-prod-deploy.
-    // Падаем только если сбой системный: были Org для обработки, но НИ одной
-    // не удалось создать/пропустить — значит проблема не в отдельной строке.
     if (res.errors > 0 && res.created === 0 && res.skipped === 0) {
       console.error(
         `[backfill-demo-subscriptions] системный сбой: все ${res.errors} Org упали, ни одной подписки не создано`,

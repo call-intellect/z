@@ -1,16 +1,5 @@
-/**
- * DTO для /api/v1/meetings/:id/reports (Фаза E §7).
- *
- * Источник правды — `plans/tz/2026-05-21-phase-E-multi-report-per-meeting.md`.
- *
- * Слой ApiDto (по `frontend-rules`): сюда же фронт импортирует типы запроса/ответа
- * через api-client.
- */
-
 import { ApiProperty } from '@nestjs/swagger';
 import { z } from 'zod';
-
-// ────────────────────────── enums ──────────────────────────
 
 export const MEETING_REPORT_STATUSES = [
   'pending',
@@ -24,12 +13,6 @@ export type MeetingReportStatusDto = (typeof MEETING_REPORT_STATUSES)[number];
 export const REPORT_KINDS = ['primary', 'additional'] as const;
 export type ReportKindDto = (typeof REPORT_KINDS)[number];
 
-// ────────────────────────── DTO list-item ──────────────────────────
-
-/**
- * Унифицированный элемент списка отчётов: primary (синтетически из AiResult)
- * и additional (из MeetingReport). ТЗ E §6.
- */
 export interface ReportListItemDto {
   kind: ReportKindDto;
   id: string;
@@ -45,13 +28,10 @@ export interface ReportListItemDto {
   errorMessage: string | null;
 }
 
-/** Полный отчёт (для GET /:reportId — с output). */
 export interface ReportDetailDto extends ReportListItemDto {
   output: unknown | null;
   promptTemplateVersionId: string | null;
 }
-
-// ────────────────────────── Body schemas ──────────────────────────
 
 export const CreateReportSchema = z.object({
   templateId: z.string().min(1, 'templateId обязателен'),
@@ -62,8 +42,6 @@ export const RegenerateReportSchema = z.object({
   useVersionId: z.string().min(1).optional(),
 });
 export type RegenerateReportBody = z.infer<typeof RegenerateReportSchema>;
-
-// ────────────────────────── Swagger DTO ──────────────────────────
 
 export class ReportListItemSwagger implements ReportListItemDto {
   @ApiProperty({ enum: REPORT_KINDS }) kind!: ReportKindDto;

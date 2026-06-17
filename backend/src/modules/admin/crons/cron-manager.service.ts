@@ -17,33 +17,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * Admin-redesign Фаза 0 — `CronManagerService`.
- *
- * Управление расписанием всех cron'ов из админки:
- *   - на старте сканирует @Cron-методы (через DiscoveryService) и
- *     запоминает их как `Map<name, () => Promise<unknown>>`;
- *   - читает таблицу `CronSchedule` и для каждой ВКЛЮЧЕННОЙ записи с
- *     отличающимся `expression` — пересоздаёт CronJob через SchedulerRegistry
- *     (delete + addCronJob). Для `enabled=false` — удаляет cron, чтобы не
- *     дёргать;
- *   - `updateSchedule(name, ...)` — UPDATE строки + пересоздание CronJob +
- *     Redis-publish для других процессов (HTTP/worker);
- *   - `triggerNow(name, userId)` — мгновенно дёргает оригинальный handler,
- *     запись в `CronRunHistory(status: running → success/failed)`.
- *
- * Имена крон-джобов:
- *   - SchedulerRegistry хранит cron'ы по имени, которое задано в декораторе
- *     `@Cron(..., { name })`. Если name не задан — Nest генерирует
- *     `Controller@method`. Здесь мы используем то же имя, что у джоба
- *     зарегистрировано в SchedulerRegistry, и считаем что
- *     `CronSchedule.name` совпадает.
- *
- * Безопасность degradation:
- *   - если БД упала или таблица пуста — bootstrap не ломается, остаются
- *     `@Cron(...)`-дефолты, WARN в логе.
- */
-
 const CHANNEL = 'cron.schedule.updated';
 
 type Handler = () => Promise<unknown> | unknown;
@@ -55,12 +28,9 @@ interface CronHandlerEntry {
 }
 
 @Injectable()
-export class CronManagerService
-  implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy
-{
+export class CronManagerService implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(CronManagerService.name);
 
-  /** Реестр всех @Cron-обработчиков, найденных через DiscoveryService. */
   private readonly handlers = new Map<string, CronHandlerEntry>();
 
   private subscriber: Redis | null = null;
@@ -76,23 +46,12 @@ export class CronManagerService
     private readonly scheduler: SchedulerRegistry,
   ) {}
 
-  // ──────────────────────────── lifecycle ──────────────────────────────
-
   async onModuleInit(): Promise<void> {
-    // collectHandlers + subscribeInvalidations не трогают SchedulerRegistry,
-    // поэтому безопасны на этом этапе. Сами override'ы из БД накатываем в
-    // onApplicationBootstrap — иначе ScheduleModule (его SchedulerOrchestrator)
-    // позже попытается зарегистрировать @Cron под тем же именем и упадёт с
-    // DUPLICATE_SCHEDULER, потому что мы уже положили туда свой CronJob.
     this.collectHandlers();
     await this.subscribeInvalidations();
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    // На этом этапе SchedulerOrchestrator уже смонтировал @Cron-джобы (он
-    // тоже implements OnApplicationBootstrap, а зависимости от него гарантируют
-    // более ранний хук). Теперь deleteCronJob фактически удалит дефолтный
-    // cron, и addCronJob чисто положит override.
     await this.applyOverridesFromDb();
   }
 
@@ -101,18 +60,11 @@ export class CronManagerService
     try {
       await this.subscriber.quit();
     } catch {
-      // ignore
     } finally {
       this.subscriber = null;
     }
   }
 
-  // ──────────────────────────── public api ─────────────────────────────
-
-  /**
-   * Список всех зарегистрированных в SchedulerRegistry cron'ов с их текущими
-   * выражениями и последним запуском из БД.
-   */
   async list(): Promise<
     Array<{
       name: string;
@@ -137,7 +89,6 @@ export class CronManagerService
     });
     const rowsByName = new Map(rows.map((r) => [r.name, r] as const));
 
-    // Последний запуск по каждому cronName.
     const lastRuns = new Map<
       string,
       {
@@ -167,13 +118,7 @@ export class CronManagerService
       }
     }
 
-    // Объединяем зарегистрированные handler'ы + БД-записи. Имена из обоих
-    // источников — чтобы UI видел и «новые» @Cron, ещё не описанные в БД,
-    // и «осиротевшие» БД-записи без handler'а в коде.
-    const allNames = new Set<string>([
-      ...this.handlers.keys(),
-      ...rows.map((r) => r.name),
-    ]);
+    const allNames = new Set<string>([...this.handlers.keys(), ...rows.map((r) => r.name)]);
 
     const result = [];
     for (const name of allNames) {
@@ -182,8 +127,7 @@ export class CronManagerService
       result.push({
         name,
         expression: row?.expression ?? handler?.defaultExpression ?? '',
-        defaultExpression:
-          row?.defaultExpression ?? handler?.defaultExpression ?? '',
+        defaultExpression: row?.defaultExpression ?? handler?.defaultExpression ?? '',
         enabled: row?.enabled ?? true,
         description: row?.description ?? null,
         lastRunAt: row?.lastRunAt ?? null,
@@ -195,14 +139,6 @@ export class CronManagerService
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /**
-   * Обновить расписание/состояние cron'а из админки. Шаги:
-   *   1) upsert CronSchedule (создаём строку, если её нет — с
-   *      `defaultExpression` из реестра handler'ов);
-   *   2) SuperAdminAccessLog;
-   *   3) пересоздать CronJob в SchedulerRegistry;
-   *   4) publish `cron.schedule.updated` для других процессов.
-   */
   async updateSchedule(
     name: string,
     patch: { expression?: string; enabled?: boolean },
@@ -221,10 +157,8 @@ export class CronManagerService
       });
     }
 
-    const defaultExpression =
-      existing?.defaultExpression ?? entry?.defaultExpression ?? '';
-    const nextExpression =
-      patch.expression ?? existing?.expression ?? defaultExpression;
+    const defaultExpression = existing?.defaultExpression ?? entry?.defaultExpression ?? '';
+    const nextExpression = patch.expression ?? existing?.expression ?? defaultExpression;
     const nextEnabled = patch.enabled ?? existing?.enabled ?? true;
 
     await this.prisma.$transaction(async (tx) => {
@@ -264,12 +198,6 @@ export class CronManagerService
     await this.publishInvalidate(name);
   }
 
-  /**
-   * Расширенный list для UI Фазы 8: каждая запись + последние 10
-   * CronRunHistory одним батч-join. Делаем один общий запрос histories
-   * с `take` на одну запись через окно: грузим до N * крон записей и
-   * группируем in-memory (PostgreSQL без window-функций в Prisma).
-   */
   async listWithHistory(): Promise<
     Array<{
       name: string;
@@ -305,14 +233,9 @@ export class CronManagerService
       }>
     >();
 
-    const allNames = new Set<string>([
-      ...this.handlers.keys(),
-      ...rows.map((r) => r.name),
-    ]);
+    const allNames = new Set<string>([...this.handlers.keys(), ...rows.map((r) => r.name)]);
 
     if (allNames.size > 0) {
-      // Берём «достаточно» истории, чтобы по 10 на крон сошлось. Окно
-      // (N кронов × 10) + запас 20% от среднего рассеяния.
       const cap = Math.max(50, allNames.size * 12);
       const histories = await this.prisma.cronRunHistory.findMany({
         where: { cronName: { in: Array.from(allNames) } },
@@ -340,8 +263,7 @@ export class CronManagerService
       result.push({
         name,
         expression: row?.expression ?? handler?.defaultExpression ?? '',
-        defaultExpression:
-          row?.defaultExpression ?? handler?.defaultExpression ?? '',
+        defaultExpression: row?.defaultExpression ?? handler?.defaultExpression ?? '',
         enabled: row?.enabled ?? true,
         description: row?.description ?? null,
         lastRunAt: row?.lastRunAt ?? null,
@@ -353,10 +275,6 @@ export class CronManagerService
     return result.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /**
-   * История запусков одного cron'а — последние N записей (по умолчанию 20,
-   * максимум 500).
-   */
   async getHistory(
     name: string,
     limit = 20,
@@ -386,10 +304,6 @@ export class CronManagerService
     }));
   }
 
-  /**
-   * Запустить cron вручную. Запись в `CronRunHistory(status='running' →
-   * 'success'/'failed')` + audit.
-   */
   async triggerNow(
     name: string,
     userId: string,
@@ -463,12 +377,6 @@ export class CronManagerService
     }
   }
 
-  // ─────────────────────────── internals ───────────────────────────────
-
-  /**
-   * Сканируем все провайдеры приложения и собираем `@Cron`-методы.
-   * Для каждого сохраняем `(name, defaultExpression, () => instance[method]())`.
-   */
   private collectHandlers(): void {
     const providers = this.discovery.getProviders();
     for (const wrapper of providers) {
@@ -477,28 +385,20 @@ export class CronManagerService
       const proto = Object.getPrototypeOf(instance);
       if (!proto) continue;
 
-      // Совместимость с разными версиями MetadataScanner.
       const methodNames = this.getMethodNames(proto);
       for (const methodName of methodNames) {
         const method = (instance as Record<string, unknown>)[methodName];
         if (typeof method !== 'function') continue;
 
-        // SchedulerRegistry хранит cron'ы под ключом, который ставит
-        // ScheduleModule. Мы не пытаемся переиграть ScheduleModule —
-        // он сам зарегистрирует cron'ы по умолчанию (через @Cron).
-        // Здесь мы только формируем mapping `name → handler`, чтобы знать
-        // как дёргать вручную и какие cron'ы вообще существуют.
-        const cronOptions = this.reflector.get<
-          { name?: string; cronTime?: string } | undefined
-        >('SCHEDULE_CRON_OPTIONS', method) ?? undefined;
-        const cronTime = this.reflector.get<string | undefined>(
-          'SCHEDULE_CRON_TIME',
-          method,
-        );
+        const cronOptions =
+          this.reflector.get<{ name?: string; cronTime?: string } | undefined>(
+            'SCHEDULE_CRON_OPTIONS',
+            method,
+          ) ?? undefined;
+        const cronTime = this.reflector.get<string | undefined>('SCHEDULE_CRON_TIME', method);
         if (!cronOptions && !cronTime) continue;
 
-        const defaultExpression =
-          (cronOptions?.cronTime as string | undefined) ?? cronTime ?? '';
+        const defaultExpression = (cronOptions?.cronTime as string | undefined) ?? cronTime ?? '';
         const explicitName = cronOptions?.name;
         const fallbackName = `${proto.constructor?.name ?? 'Unknown'}.${methodName}`;
         const name = explicitName && explicitName.length > 0 ? explicitName : fallbackName;
@@ -516,8 +416,6 @@ export class CronManagerService
 
   private getMethodNames(proto: object): string[] {
     try {
-      // В новых версиях @nestjs/core MetadataScanner экспортирует
-      // getAllMethodNames; для старых — fallback на собственный обход.
       const fn = (
         this.scanner as unknown as {
           getAllMethodNames?: (p: object) => string[];
@@ -526,9 +424,7 @@ export class CronManagerService
       if (typeof fn === 'function') {
         return fn.call(this.scanner, proto);
       }
-    } catch {
-      // ignore — fallback ниже.
-    }
+    } catch {}
     const out: string[] = [];
     let cur: object | null = proto;
     while (cur && cur !== Object.prototype) {
@@ -541,14 +437,6 @@ export class CronManagerService
     return out;
   }
 
-  /**
-   * Применить БД-override к SchedulerRegistry. Шаги:
-   *   - для каждой строки CronSchedule с enabled=true и expression != defaultExpression:
-   *     deleteCronJob(name) → addCronJob(name, new CronJob(...)).
-   *   - для enabled=false: deleteCronJob(name) (если есть).
-   *
-   * При сбое подключения к БД — просто warn'им и оставляем дефолтные @Cron'ы.
-   */
   private async applyOverridesFromDb(): Promise<void> {
     let rows: Array<{
       name: string;
@@ -585,30 +473,15 @@ export class CronManagerService
     }
   }
 
-  /**
-   * Перевесить SchedulerRegistry для конкретного cron'а:
-   *   - enabled=false → удаляем (если был).
-   *   - enabled=true → удаляем + добавляем заново с новым выражением,
-   *     чтобы любой override (даже совпадающий с дефолтом) был чистым.
-   */
-  private applyToScheduler(
-    name: string,
-    expression: string,
-    enabled: boolean,
-  ): void {
+  private applyToScheduler(name: string, expression: string, enabled: boolean): void {
     const handler = this.handlers.get(name);
     if (!handler) {
-      // Осиротевшая БД-запись — handler'а в коде нет. Тишина.
       return;
     }
 
-    // Безопасное удаление: SchedulerRegistry.deleteCronJob бросает если cron
-    // не зарегистрирован.
     try {
       this.scheduler.deleteCronJob(name);
-    } catch {
-      // ignore — возможно ScheduleModule зарегистрировал его под другим именем.
-    }
+    } catch {}
 
     if (!enabled) {
       return;
@@ -622,12 +495,12 @@ export class CronManagerService
       null,
       true,
     );
-    this.scheduler.addCronJob(name, job as unknown as Parameters<
-      SchedulerRegistry['addCronJob']
-    >[1]);
+    this.scheduler.addCronJob(
+      name,
+      job as unknown as Parameters<SchedulerRegistry['addCronJob']>[1],
+    );
   }
 
-  /** Обёртка для scheduled-вызовов — пишет CronRunHistory и lastRun*. */
   private async runWrapped(name: string, handler: Handler): Promise<void> {
     const run = await this.prisma.cronRunHistory
       .create({
@@ -680,10 +553,7 @@ export class CronManagerService
         maxRetriesPerRequest: null,
       });
       this.subscriber.on('error', (err: Error) => {
-        this.logger.warn(
-          { err: err.message },
-          'CronManager subscriber: ошибка соединения',
-        );
+        this.logger.warn({ err: err.message }, 'CronManager subscriber: ошибка соединения');
       });
       await this.subscriber.connect();
       await this.subscriber.subscribe(CHANNEL);
@@ -727,15 +597,7 @@ export class CronManagerService
     }
   }
 
-  // ─────────────────────────── for tests ───────────────────────────────
-
-  /** Только для unit-тестов: ручная регистрация handler-mapping'а. */
-  registerHandlerForTest(
-    name: string,
-    handler: Handler,
-    defaultExpression: string,
-  ): void {
+  registerHandlerForTest(name: string, handler: Handler, defaultExpression: string): void {
     this.handlers.set(name, { name, defaultExpression, handler });
   }
 }
-

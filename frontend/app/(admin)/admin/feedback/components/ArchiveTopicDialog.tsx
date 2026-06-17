@@ -1,24 +1,12 @@
-'use client';
+"use client";
 
-/**
- * ArchiveTopicDialog — confirm-диалог архивации/восстановления смыслового блока.
- *
- * mode='archive'   — POST /admin/feedback/topics/:id/archive
- * mode='unarchive' — POST /admin/feedback/topics/:id/unarchive
- *
- * Архивация исключает блок из дашборда (если не «показывать архивные»), но не
- * удаляет items. Можно восстановить из архива позже.
- *
- * Фаза 8 ТЗ user-feedback-with-ai-clustering.
- */
+import { useEffect, useState } from "react";
+import { Archive, ArchiveRestore } from "lucide-react";
+import { toast } from "sonner";
 
-import { useEffect, useState } from 'react';
-import { Archive, ArchiveRestore } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { ApiError } from '@/api/api-error';
-import { adminFeedbackApi } from '@/api/admin-feedback.api';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminFeedbackApi } from "@/api/admin-feedback.api";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -26,9 +14,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
-export type ArchiveTopicDialogMode = 'archive' | 'unarchive';
+export type ArchiveTopicDialogMode = "archive" | "unarchive";
 
 interface ArchiveTopicDialogProps {
   open: boolean;
@@ -55,13 +43,13 @@ export function ArchiveTopicDialog({
     setError(null);
   }, [open]);
 
-  const isArchive = mode === 'archive';
-  const title = isArchive ? 'Архивировать блок?' : 'Восстановить блок?';
+  const isArchive = mode === "archive";
+  const title = isArchive ? "Архивировать блок?" : "Восстановить блок?";
   const description = isArchive
     ? `Блок «${topicTitle}» будет скрыт из активного списка дашборда. Items сохранятся, восстановить можно позже.`
     : `Блок «${topicTitle}» вернётся в активный список дашборда и снова будет участвовать в метриках за выбранное окно.`;
-  const confirmLabel = isArchive ? 'Архивировать' : 'Восстановить';
-  const pendingLabel = isArchive ? 'Архивируем…' : 'Восстанавливаем…';
+  const confirmLabel = isArchive ? "Архивировать" : "Восстановить";
+  const pendingLabel = isArchive ? "Архивируем…" : "Восстанавливаем…";
 
   async function handleConfirm() {
     if (saving) return;
@@ -73,7 +61,7 @@ export function ArchiveTopicDialog({
       } else {
         await adminFeedbackApi.unarchiveTopic(topicId);
       }
-      toast.success('Готово');
+      toast.success("Готово");
       onSaved();
       onOpenChange(false);
     } catch (e) {
@@ -83,8 +71,8 @@ export function ArchiveTopicDialog({
           : e instanceof Error
             ? e.message
             : isArchive
-              ? 'Не удалось архивировать блок'
-              : 'Не удалось восстановить блок';
+              ? "Не удалось архивировать блок"
+              : "Не удалось восстановить блок";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -128,7 +116,7 @@ export function ArchiveTopicDialog({
           <Button
             type="button"
             size="sm"
-            variant={isArchive ? 'destructive' : 'default'}
+            variant={isArchive ? "destructive" : "default"}
             disabled={saving}
             onClick={() => void handleConfirm()}
           >

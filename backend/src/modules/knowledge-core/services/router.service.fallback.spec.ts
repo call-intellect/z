@@ -2,13 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { RouterService } from './router.service';
 
-/**
- * SBA α-3 wave 3 — RouterService.fallbackToLlm tests.
- *
- * Тестируем pure-логику helper'ов и env-флага. Полноценный сценарий с моком
- * LlmRouterService + Redis — в integration-test (TODO до тестового стенда).
- */
-
 describe('RouterService — LLM-fallback env-флаг', () => {
   it('ROUTER_LLM_FALLBACK_ENABLED=undefined → false (prod safe default)', () => {
     delete process.env['ROUTER_LLM_FALLBACK_ENABLED'];
@@ -75,16 +68,12 @@ describe('RouterService — SPECIALIST + PRIORITY contract', () => {
   });
 });
 
-// ─────────────────────── helpers ────────────────────────────────────
-
-/** Имитация private isLlmFallbackEnabled — проверка контракта. */
 function isLlmFallbackEnabledMimic(): boolean {
   const raw = process.env['ROUTER_LLM_FALLBACK_ENABLED'];
   if (raw == null || raw === '') return false;
   return raw === 'true' || raw === '1';
 }
 
-/** Имитация private getRouterFallbackTtlSeconds. */
 function ttlMimic(): number {
   const raw = process.env['ROUTER_FALLBACK_CACHE_TTL_SECONDS'];
   if (raw == null || raw === '') return 86400;

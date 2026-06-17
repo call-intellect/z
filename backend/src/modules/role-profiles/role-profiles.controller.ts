@@ -14,10 +14,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -33,16 +30,6 @@ import {
 } from './dto/role-profiles.dto';
 import { RoleProfilesService } from './services/role-profiles.service';
 
-/**
- * REST API карт должностей (RoleProfile) — Фаза 0a.
- *
- *   GET  /api/v1/role-profiles?status=&limit=        — список (read, все members).
- *   GET  /api/v1/role-profiles/:roleId               — деталка (read).
- *   POST /api/v1/role-profiles/:roleId/rebuild       — заказать пересборку (owner/admin, STUB до Фазы 0d).
- *   GET  /api/v1/role-profiles/:roleId/build-status  — статус сборки (STUB до Фазы 0d).
- *
- * RBAC ресурс — `role-profile`.
- */
 @ApiTags('role-profiles')
 @Controller('api/v1/role-profiles')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -101,8 +88,6 @@ export class RoleProfilesController {
     await this.requireRead(user.id, t);
     return this.svc.buildStatus({ tenantId: t, roleId });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

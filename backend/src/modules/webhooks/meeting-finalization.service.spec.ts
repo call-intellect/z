@@ -7,21 +7,14 @@ import type { MeetingsService } from '../meetings/meetings.service';
 
 import { MeetingFinalizationService } from './meeting-finalization.service';
 
-/**
- * Юнит-тесты вынесенной промоут-логики (ТЗ-2 Фаза 2).
- * Проверяем что поведение совпадает с прежним inline-кодом handler'а:
- *   - promoteMeetingToReady(id, false)               → no-op;
- *   - promoteMeetingToReady(id, true) при completed  → 2 transitionStatus +
- *                                                       enqueueTranscribe;
- *   - enqueueFaststartIfNeeded — порог по размеру + флаг.
- */
-
-function makeService(opts: {
-  meetingStatus?: string | null;
-  faststartEnabled?: boolean;
-  withAiQueue?: boolean;
-  withCfg?: boolean;
-} = {}): {
+function makeService(
+  opts: {
+    meetingStatus?: string | null;
+    faststartEnabled?: boolean;
+    withAiQueue?: boolean;
+    withCfg?: boolean;
+  } = {},
+): {
   service: MeetingFinalizationService;
   prisma: any;
   meetings: any;
@@ -34,15 +27,10 @@ function makeService(opts: {
     withCfg = true,
   } = opts;
 
-  // findUnique: первый зов возвращает исходный статус, дальнейшие — текущий.
-  // После перехода в recording_processing handler/service перечитывает статус —
-  // имитируем «уже recording_processing» через вызов-счётчик.
   let calls = 0;
   const meetingFindUnique = vi.fn(async () => {
     if (meetingStatus === null) return null;
     calls += 1;
-    // Первый findUnique — исходный статус; второй (перечтение) —
-    // recording_processing (если стартовали с completed).
     if (calls === 1) return { status: meetingStatus };
     return { status: 'recording_processing' };
   });
@@ -113,7 +101,7 @@ describe('MeetingFinalizationService', () => {
 
   it('enqueueFaststartIfNeeded(id, малый размер < порог) → НЕ вызван', async () => {
     const { service, aiQueue } = makeService({ faststartEnabled: true });
-    await service.enqueueFaststartIfNeeded('m-1', 1_000_000); // 1 МБ < 50 МиБ
+    await service.enqueueFaststartIfNeeded('m-1', 1_000_000);
 
     expect((aiQueue as any).enqueueRecordingFaststart).not.toHaveBeenCalled();
   });

@@ -1,12 +1,3 @@
-/**
- * Гипотеза 1, Variant Б — LLM-агрегация: даём сырые чек-ины + контекст,
- * LLM сам агрегирует и пишет markdown.
- *
- * Сравниваем с Variant A: даст ли это больше глубины (паттерны, которые
- * код-агрегатор теряет), сколько стоит, как медленнее?
- *
- * Запуск: cd backend && bun run scripts/eval/run-weekly-digest-b.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -17,10 +8,22 @@ const PRICE_CACHED_IN = 0.003625 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
-const CHECKINS_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/checkins-week.json');
-const CONTEXT_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/fixtures/week-context.json');
-const REPORT_JSON = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.json');
-const REPORT_MD = path.resolve(SCRIPT_DIR, '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.md');
+const CHECKINS_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/checkins-week.json',
+);
+const CONTEXT_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/fixtures/week-context.json',
+);
+const REPORT_JSON = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.json',
+);
+const REPORT_MD = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/operations-experiment/reports/variant-b-weekly-digest.md',
+);
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error('✗ DEEPSEEK_API_KEY не задан');
@@ -31,7 +34,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── system-промпт (новый: LLM делает агрегацию + markdown) ───────────────────
 const SYSTEM_PROMPT = [
   'Ты — аналитик операционного директора. У тебя СЫРЫЕ данные недели команды разработки:',
   '  - все вечерние чек-ины сотрудников (текст + автор + дата + тональность от классификатора);',
@@ -60,7 +62,6 @@ const SYSTEM_PROMPT = [
   '  - Длина — 250-600 слов.',
 ].join('\n');
 
-// ── сериализация сырых данных ────────────────────────────────────────────────
 interface CheckIn {
   id: string;
   personName: string;
@@ -174,7 +175,6 @@ function pct(v: number): string {
   return `${Math.round(v * 100)}%`;
 }
 
-// ── основной прогон ─────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   console.log('=== Variant Б — weekly-digest: LLM делает агрегацию + markdown ===');
   const checkinsRaw = JSON.parse(await fs.readFile(CHECKINS_PATH, 'utf-8'));
@@ -190,8 +190,12 @@ async function main(): Promise<void> {
     previousWeek: contextRaw.previousWeekStats,
   });
 
-  console.log(`  чек-инов: ${checkinsRaw.checkins.length}, инсайтов: ${contextRaw.rawInsights.length}, целей: ${contextRaw.rawGoals.length}`);
-  console.log(`  вход (user-msg): ${userMessage.length} знаков (≈${Math.round(userMessage.length / 4)} токенов)`);
+  console.log(
+    `  чек-инов: ${checkinsRaw.checkins.length}, инсайтов: ${contextRaw.rawInsights.length}, целей: ${contextRaw.rawGoals.length}`,
+  );
+  console.log(
+    `  вход (user-msg): ${userMessage.length} знаков (≈${Math.round(userMessage.length / 4)} токенов)`,
+  );
   console.log('  → запрос…');
 
   const start = Date.now();

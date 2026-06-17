@@ -14,19 +14,13 @@ import {
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { RbacService } from '../rbac/rbac.service';
 
-import {
-  UpdateCompanyRoleSchema,
-  type UpdateCompanyRoleBody,
-} from './dto/update-company-role.dto';
+import { UpdateCompanyRoleSchema, type UpdateCompanyRoleBody } from './dto/update-company-role.dto';
 import { WelcomePatchSchema, type WelcomePatchBody } from './dto/welcome-patch.dto';
 import { OnboardingService, type SetupProgressDto } from './onboarding.service';
 
@@ -135,7 +129,6 @@ export class OnboardingController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<{ ok: true; deletedByTable: Record<string, number> }> {
     await this.requireOwnerOrAdmin(user.id, orgId);
-    // audit Б3: actorUserId передаём в сервис, чтобы попасть в audit-log/Logger.
     return this.svc.resetDemoWorkspace({
       orgId: tenantId ?? orgId,
       actorUserId: user.id,

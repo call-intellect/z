@@ -10,34 +10,12 @@ import { ProbeService } from '../../probe/probe.service';
 
 import { OwnerResolverService } from './owner-resolver.service';
 
-/**
- * SBA β-6 — Specialist39ExperimentProbeService.
- *
- * Эмиссия probe-events Experiment Tracker'а согласно §2 sub-TZ. 3 trigger'а:
- *
- *   1. `experiment.no_owner` — эксперимент без `ownerEntityId` старше 24h →
- *      owner/admin Org с предложением назначить ответственного.
- *      (cron-trigger из `experiment-status-resolver.cron`)
- *   2. `experiment.running_too_long` — `status='running'` И
- *      `now - startedAt > EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS` (default 30)
- *      И `currentResult IS NULL` → owner/admin + ownerPerson.
- *      (cron-trigger)
- *   3. `experiment.result_without_lesson` — у эксперимента есть `currentResult`,
- *      но `lessonsJson` пустой/null → admin/owner.
- *      (синхронный trigger из `experiment-detector.worker` после persist'а)
- *
- * Контракт §5: НЕ бросает. Один упавший probe не валит остальные. Каждый
- * успешный probe инкрементит
- * `core_specialist_probe_events_total{type='experiment', reason='...'}`.
- */
 @Injectable()
 export class Specialist39ExperimentProbeService {
   private readonly logger = new Logger(Specialist39ExperimentProbeService.name);
 
   static readonly SPECIALIST_NAME = '3-9-experiments';
-  /** Защита от взрывного fan-out'а в cron'е. */
   private static readonly CRON_BATCH_LIMIT = 100;
-  /** Через сколько часов эксперимент без owner становится «бесхозным». */
   private static readonly NO_OWNER_AGE_HOURS = 24;
 
   constructor(
@@ -50,8 +28,6 @@ export class Specialist39ExperimentProbeService {
     @Optional()
     @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    // W2 autonomy (2026-06-12) — «лестница владельца» + лента «что сделала
-    // Кора». Optional: без них работает прежнее поведение (probe).
     @Optional()
     @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
@@ -60,13 +36,6 @@ export class Specialist39ExperimentProbeService {
     private readonly activityFeed?: ActivityFeedService,
   ) {}
 
-  // ─────────────────────── public sync triggers ──────────────────────
-
-  /**
-   * Trigger 3 — `experiment.result_without_lesson`. Вызывается из
-   * `experiment-detector.worker` сразу после persist'а Experiment'а с
-   * `currentResult != null` и пустым `lessonsJson`.
-   */
   async emitResultWithoutLesson(exp: Experiment): Promise<void> {
     try {
       if (!exp.currentResult) return;
@@ -96,17 +65,9 @@ export class Specialist39ExperimentProbeService {
     }
   }
 
-  // ─────────────────────── cron-triggers ─────────────────────────────
-
-  /**
-   * Trigger 1 — `experiment.no_owner`. Запускается из
-   * `experiment-status-resolver.cron`. Эксперименты без `ownerEntityId`
-   * старше NO_OWNER_AGE_HOURS → пинаем admin'а назначить ответственного.
-   */
   async checkNoOwnerForOrg(tenantId: string): Promise<number> {
     const cutoff = new Date(
-      Date.now() -
-        Specialist39ExperimentProbeService.NO_OWNER_AGE_HOURS * 3600 * 1000,
+      Date.now() - Specialist39ExperimentProbeService.NO_OWNER_AGE_HOURS * 3600 * 1000,
     );
     const experiments = await this.prisma.experiment.findMany({
       where: {
@@ -123,15 +84,8 @@ export class Specialist39ExperimentProbeService {
         const recipients = await this.findOrgAdminsUserIds(exp.tenantId);
         if (recipients.length === 0) continue;
         const name = exp.name.slice(0, 80);
-        // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe:
-        // subject-Person'ы эксперимента как пул кандидатов. Единственный
-        // кандидат → Кора назначает сама (Experiment.ownerEntityId), probe
-        // не шлём; несколько → вопрос-выбор с именами; никого → как раньше.
         const ladder = await this.tryResolveOwner(exp);
-        // M-3: already_assigned — владельца назначили параллельно, probe
-        // не нужен (тихий skip).
-        if (ladder.outcome === 'auto' || ladder.outcome === 'already_assigned')
-          continue;
+        if (ladder.outcome === 'auto' || ladder.outcome === 'already_assigned') continue;
         const message =
           ladder.outcome === 'ambiguous'
             ? `Эксперимент «${name}» уже больше суток без ответственного. Кого назначить ответственным: ${ladder.candidateNames.join(' или ')}?`
@@ -153,16 +107,6 @@ export class Specialist39ExperimentProbeService {
     return emitted;
   }
 
-  /**
-   * W2 autonomy — лестница владельца для `experiment.no_owner`.
-   *
-   * Прямое поле владельца — `Experiment.ownerEntityId` (Person.entityId, не
-   * userId): авто-назначение возможно только когда у resolved-Person есть
-   * entityId, иначе падаем в обычный probe. Кандидаты — subject-Person'ы
-   * (`personSubjectIds`): люди, упомянутые в блоках эксперимента. admin'ов в
-   * пул НЕ кладём — иначе в Org с одним admin'ом все бесхозные эксперименты
-   * молча падали бы на него.
-   */
   private async tryResolveOwner(
     exp: Experiment,
   ): Promise<
@@ -197,9 +141,6 @@ export class Specialist39ExperimentProbeService {
       if (resolution.kind === 'resolved') {
         const person = subjects.find((p) => p.userId === resolution.userId);
         if (person?.entityId) {
-          // M-3 (2026-06-12) — optimistic-условие «поле всё ещё пусто»:
-          // ownerEntityId: null в where защищает от гонки с параллельным
-          // назначением (человек/другой воркер успел раньше).
           const updated = await this.prisma.experiment.updateMany({
             where: { id: exp.id, tenantId: exp.tenantId, ownerEntityId: null },
             data: { ownerEntityId: person.entityId },
@@ -212,15 +153,11 @@ export class Specialist39ExperimentProbeService {
             await this.publishAutoAssignFeed(exp, person.name);
             return { outcome: 'auto' };
           }
-          // count=0 при optimistic-условии: владельца уже назначили
-          // параллельно — тихий skip (ни ленты, ни probe).
           this.logger.log(
             `owner-resolver: владелец эксперимента уже назначен параллельно — пропускаю (experimentId=${exp.id})`,
           );
           return { outcome: 'already_assigned' };
         }
-        // entityId у Person нет — поле владельца не мапится однозначно →
-        // НЕ автоназначаем, обычный probe.
         this.metrics.incOwnerResolution({ outcome: 'none' });
         return { outcome: 'none' };
       }
@@ -243,11 +180,7 @@ export class Specialist39ExperimentProbeService {
     }
   }
 
-  /** Запись в ленту «что сделала Кора» — best-effort. */
-  private async publishAutoAssignFeed(
-    exp: Experiment,
-    personName: string,
-  ): Promise<void> {
+  private async publishAutoAssignFeed(exp: Experiment, personName: string): Promise<void> {
     if (!this.activityFeed) return;
     try {
       await this.activityFeed.publish({
@@ -274,17 +207,9 @@ export class Specialist39ExperimentProbeService {
     }
   }
 
-  /**
-   * Trigger 2 — `experiment.running_too_long`. Запускается из
-   * `experiment-status-resolver.cron`. running-эксперименты старше N дней
-   * (env `EXPERIMENT_RUNNING_PROBE_THRESHOLD_DAYS`, default 30) без
-   * `currentResult` → пинаем owner+admin.
-   */
   async checkRunningTooLongForOrg(tenantId: string): Promise<number> {
     const thresholdDays = this.cfg.experiments.runningProbeThresholdDays;
-    const cutoff = new Date(
-      Date.now() - thresholdDays * 24 * 3600 * 1000,
-    );
+    const cutoff = new Date(Date.now() - thresholdDays * 24 * 3600 * 1000);
     const experiments = await this.prisma.experiment.findMany({
       where: {
         tenantId,
@@ -325,8 +250,6 @@ export class Specialist39ExperimentProbeService {
     return emitted;
   }
 
-  // ─────────────────────── recipients resolution ──────────────────────
-
   private async findOrgAdminsUserIds(tenantId: string): Promise<string[]> {
     const memberships = await this.prisma.membership.findMany({
       where: {
@@ -339,10 +262,6 @@ export class Specialist39ExperimentProbeService {
     return memberships.map((m) => m.userId);
   }
 
-  /**
-   * Список получателей с owner-Person (если есть). Используется для
-   * `running_too_long`, чтобы пнуть в первую очередь самого ответственного.
-   */
   private async findRecipientsWithOwner(args: {
     tenantId: string;
     ownerEntityId: string | null;
@@ -368,8 +287,6 @@ export class Specialist39ExperimentProbeService {
     }
   }
 
-  // ─────────────────────── emit ──────────────────────────────────────
-
   private async emit(args: {
     tenantId: string;
     experimentId: string;
@@ -388,9 +305,7 @@ export class Specialist39ExperimentProbeService {
           reason: args.reason,
           payload: {
             message: args.message,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.experimentId,
             contextCardKind: 'experiment',
             contextCardTitle: args.message.slice(0, 100),
@@ -417,7 +332,6 @@ export class Specialist39ExperimentProbeService {
         );
       }
     }
-    // Fallback: прямой ConversationalService.sendNotification (best-effort).
     for (const userId of args.recipients) {
       try {
         await this.conversational.sendNotification({
@@ -425,14 +339,11 @@ export class Specialist39ExperimentProbeService {
           recipientUserId: userId,
           eventType: 'specialist.probe',
           payload: {
-            specialistName:
-              Specialist39ExperimentProbeService.SPECIALIST_NAME,
+            specialistName: Specialist39ExperimentProbeService.SPECIALIST_NAME,
             reason: args.reason,
             message: args.message,
             cardId: args.experimentId,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             actionUrl,
           },
           dataClass: 'internal',

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,8 +8,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
 
 type Props = {
   open: boolean;
@@ -22,18 +22,13 @@ type Props = {
   onConfirm: () => Promise<void> | void;
 };
 
-/**
- * ConfirmDialog — async-friendly замена нативному confirm().
- * Кнопка «Подтвердить» уходит в pending пока onConfirm выполняется;
- * закрывается автоматически по успеху.
- */
 export function ConfirmDialog({
   open,
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Подтвердить',
-  cancelLabel = 'Отмена',
+  confirmLabel = "Подтвердить",
+  cancelLabel = "Отмена",
   destructive = false,
   onConfirm,
 }: Props) {
@@ -74,12 +69,12 @@ export function ConfirmDialog({
             {cancelLabel}
           </Button>
           <Button
-            variant={destructive ? 'destructive' : 'default'}
+            variant={destructive ? "destructive" : "default"}
             size="sm"
             onClick={handleConfirm}
             disabled={pending}
           >
-            {pending ? 'Подождите…' : confirmLabel}
+            {pending ? "Подождите…" : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

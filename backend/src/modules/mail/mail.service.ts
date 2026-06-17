@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import Handlebars from 'handlebars';
 import nodemailer, { type Transporter } from 'nodemailer';
 
@@ -18,25 +13,6 @@ import {
   PASSWORD_RESET_TEMPLATE,
   REGISTER_TEMP_PASSWORD_TEMPLATE,
 } from './mail.templates';
-
-/**
- * MailService — единая точка отправки писем для standalone-онбординга
- * и восстановления пароля.
- *
- * Дизайн:
- *   - Транспорт строим один раз в `onModuleInit` из `cfg.mail`.
- *   - Шаблоны (Handlebars, .hbs) грузим единожды при старте — не читаем
- *     файл на каждый запрос.
- *   - В `MAIL_DRY_RUN=true` или `NODE_ENV=test` реальный SMTP не дёргаем,
- *     рендеренное письмо пишем в лог Pino. Это нужно для unit-/e2e-тестов
- *     и для прогона ENV без SMTP-секретов.
- *   - Логируем только адрес получателя и имя шаблона. Никогда не светим
- *     temp-пароль или reset-токен в логи (даже в DEBUG).
- *
- * Используемые письма:
- *   - `register-temp-password.hbs` — выдача temp-пароля при lead-регистрации.
- *   - `password-reset.hbs` — ссылка на сброс пароля.
- */
 
 interface SendResult {
   ok: boolean;
@@ -55,7 +31,6 @@ interface CompiledTemplates {
     resetUrl: string;
     expiresInMinutes: number;
   }>;
-  // β-9 (2026-05-25)
   inviteGithubStyle: HandlebarsTemplateDelegate<{
     name: string;
     inviterName: string;
@@ -79,7 +54,6 @@ interface CompiledTemplates {
     orgName: string;
     teamPageUrl: string;
   }>;
-  // β-10 (2026-05-27)
   inviteWithCredentials: HandlebarsTemplateDelegate<{
     name: string;
     inviterName: string;
@@ -91,7 +65,6 @@ interface CompiledTemplates {
     telegramDeepLink: string;
     ttlDays: number;
   }>;
-  // ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
   meetingInvite: HandlebarsTemplateDelegate<{
     hostName: string;
     meetingTitle: string;
@@ -124,9 +97,7 @@ export class MailService implements OnModuleInit {
     }
 
     const auth =
-      mail.username && mail.password
-        ? { user: mail.username, pass: mail.password }
-        : undefined;
+      mail.username && mail.password ? { user: mail.username, pass: mail.password } : undefined;
 
     this.transporter = nodemailer.createTransport({
       host: mail.host,
@@ -140,10 +111,6 @@ export class MailService implements OnModuleInit {
     );
   }
 
-  /**
-   * Письмо с временным паролем при lead-style регистрации.
-   * Тема: «Доступ в Кору».
-   */
   async sendTempPassword(input: {
     to: string;
     name: string;
@@ -164,10 +131,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * Универсальная отправка plain-text письма.
-   * Используется в `EmailSender` (destinations) и `ExportNotifier`.
-   */
   async sendPlain(input: {
     to: string;
     subject: string;
@@ -182,10 +145,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * Письмо со ссылкой на сброс пароля.
-   * Тема: «Сброс пароля Кора».
-   */
   async sendPasswordReset(input: {
     to: string;
     name: string;
@@ -205,10 +164,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * β-9 (2026-05-25) — GitHub-style приглашение сотрудника.
-   * Тема: «{{inviterName}} приглашает вас в {{orgName}}».
-   */
   async sendInviteGithubStyle(input: {
     to: string;
     name: string;
@@ -234,10 +189,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * β-9 (2026-05-25) — напоминание сотруднику об ожидающем приглашении.
-   * Отправляется кроном `org-invitation-reminders` на 7-й день.
-   */
   async sendInviteReminder(input: {
     to: string;
     name: string;
@@ -263,10 +214,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * β-10 (2026-05-27) — приглашение с явными реквизитами (логин + одноразовый пароль).
-   * Заменяет `sendInviteGithubStyle` для email-инвайтов.
-   */
   async sendInviteWithCredentials(input: {
     to: string;
     name: string;
@@ -288,13 +235,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
-   * Отправляется из `MeetingsService.createForUser` приглашённым с каналом
-   * доставки `email` (в т.ч. внешним адресам без User — `sendNotification`
-   * умеет только зарегистрированных). Тема: «{{hostName}} приглашает вас
-   * на встречу».
-   */
   async sendMeetingInvite(input: {
     to: string;
     hostName: string;
@@ -306,9 +246,7 @@ export class MailService implements OnModuleInit {
       hostName: input.hostName,
       meetingTitle: input.meetingTitle,
       joinUrl: input.joinUrl,
-      ...(input.telegramDeepLink
-        ? { telegramDeepLink: input.telegramDeepLink }
-        : {}),
+      ...(input.telegramDeepLink ? { telegramDeepLink: input.telegramDeepLink } : {}),
     });
     return this.send({
       to: input.to,
@@ -318,10 +256,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  /**
-   * β-9 (2026-05-25) — уведомление директора, что приглашение истекло.
-   * Отправляется кроном `org-invitation-reminders` на 14-й день.
-   */
   async sendInviteDirectorTimeout(input: {
     to: string;
     directorName: string;
@@ -345,8 +279,6 @@ export class MailService implements OnModuleInit {
     });
   }
 
-  // ─────────────────────────── internals ──────────────────────────
-
   private async send(opts: {
     to: string;
     subject: string;
@@ -357,10 +289,6 @@ export class MailService implements OnModuleInit {
     const from = `"${this.cfg.mail.fromName}" <${this.cfg.mail.from}>`;
 
     if (this.dryRun) {
-      // В dry-run пишем рендеренное письмо в лог. Это нужно для проверки
-      // содержимого в e2e и при первичной настройке. На проде включаем
-      // только при отладке, потому что здесь light-secret (temp-пароль)
-      // попадает в лог. Это компромисс ради тестируемости.
       this.logger.log(
         { to, template, subject },
         `[DRY-RUN] письмо не отправлено, шаблон отрендерен:\n${text}`,
@@ -369,8 +297,6 @@ export class MailService implements OnModuleInit {
     }
 
     if (!this.transporter) {
-      // Не должно случиться — onModuleInit гарантирует наличие транспорта,
-      // но защищаем явно.
       const err = 'mail_transport_not_initialized';
       this.logger.error({ to, template }, err);
       return { ok: false, error: err };
@@ -383,10 +309,7 @@ export class MailService implements OnModuleInit {
         subject,
         text,
       });
-      this.logger.log(
-        { to, template, messageId: result.messageId },
-        'mail: отправлено',
-      );
+      this.logger.log({ to, template, messageId: result.messageId }, 'mail: отправлено');
       return { ok: true };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -408,7 +331,6 @@ export class MailService implements OnModuleInit {
         resetUrl: string;
         expiresInMinutes: number;
       }>(PASSWORD_RESET_TEMPLATE, { noEscape: true }),
-      // β-9 (2026-05-25)
       inviteGithubStyle: Handlebars.compile<{
         name: string;
         inviterName: string;
@@ -432,7 +354,6 @@ export class MailService implements OnModuleInit {
         orgName: string;
         teamPageUrl: string;
       }>(INVITE_DIRECTOR_TIMEOUT_TEMPLATE, { noEscape: true }),
-      // β-10 (2026-05-27)
       inviteWithCredentials: Handlebars.compile<{
         name: string;
         inviterName: string;
@@ -444,7 +365,6 @@ export class MailService implements OnModuleInit {
         telegramDeepLink: string;
         ttlDays: number;
       }>(INVITE_WITH_CREDENTIALS_TEMPLATE, { noEscape: true }),
-      // ТЗ 2026-06-04 (meeting-identity) Фаза 3.2 — приглашение на встречу.
       meetingInvite: Handlebars.compile<{
         hostName: string;
         meetingTitle: string;

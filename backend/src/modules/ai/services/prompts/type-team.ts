@@ -35,8 +35,6 @@ export const SCHEMA = z
   })
   .strict();
 
-export type TeamReport = z.infer<typeof SCHEMA>;
-
 const SYSTEM = `Ты — деловой ассистент. Это командная встреча.
 Извлеки структурированный отчёт. Все поля — на русском, без оценочных суждений.
 - "discussed": темы, которые обсуждались (список коротких пунктов).
@@ -109,13 +107,5 @@ export const TOOL = buildExtractTool(
     ideas: fieldStringArray,
     data_quality: fieldNullableString,
   },
-  [
-    'discussed',
-    'decisions',
-    'tasks',
-    'blockers',
-    'next_step',
-    'ideas',
-    'data_quality',
-  ],
+  ['discussed', 'decisions', 'tasks', 'blockers', 'next_step', 'ideas', 'data_quality'],
 );

@@ -2,13 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { IdeasService } from './ideas.service';
 
-/**
- * TZ-1 Фаза 4.A (daily-value-engine) — unit-тест IdeasService.getTop.
- *
- * Проверяем, что getTop ре-ранкит выборку (свежая идея с целью обгоняет старую
- * тяжёлую без цели), отдаёт ≤ limit и инкрементит метрику. Mock Prisma/cfg/
- * metrics; accessResolver=null (гейт off). Без сети/времени-зависимостей.
- */
 describe('IdeasService.getTop', () => {
   function buildIdea(over: Partial<Record<string, unknown>>) {
     return {
@@ -46,13 +39,10 @@ describe('IdeasService.getTop', () => {
       },
     };
     const cfg = {
-      // getDynamic возвращает дефолт (3-й аргумент) для всех ключей.
       getDynamic: vi.fn(async (_k: string, _e: string, def: unknown) => def),
       knowledgeAccess: { enforcement: 'off' },
     };
     const metrics = { incIdeasTopServed: vi.fn() };
-    // Позиционная конструкция: prisma, specialist36, audit, accessResolver,
-    // cfg, metrics. specialist36/audit не используются в getTop → заглушки.
     const svc = new IdeasService(
       prisma as never,
       {} as never,
@@ -77,7 +67,6 @@ describe('IdeasService.getTop', () => {
       goalId: 'g-1',
       lastDiscussedAt: new Date('2026-06-08T00:00:00.000Z'),
     });
-    // Prisma отдаёт по weight desc (old-heavy первым), getTop должен переставить.
     const { svc, metrics } = build([oldHeavy, freshGoal]);
     const res = await svc.getTop({
       tenantId: 't1',
@@ -89,9 +78,7 @@ describe('IdeasService.getTop', () => {
   });
 
   it('отдаёт не более limit', async () => {
-    const ideas = Array.from({ length: 9 }, (_v, i) =>
-      buildIdea({ id: `i-${i}`, weight: 9 - i }),
-    );
+    const ideas = Array.from({ length: 9 }, (_v, i) => buildIdea({ id: `i-${i}`, weight: 9 - i }));
     const { svc } = build(ideas);
     const res = await svc.getTop({ tenantId: 't1', query: { limit: 3 } });
     expect(res.items).toHaveLength(3);

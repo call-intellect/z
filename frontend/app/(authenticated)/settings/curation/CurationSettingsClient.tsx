@@ -1,26 +1,20 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { curationApi } from '@/api/curation.api';
-import { useAuth } from '@/contexts/auth-context';
-import {
-  mapCurationSettings,
-  type CurationSettings,
-} from '@/domain/curation';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { curationApi } from "@/api/curation.api";
+import { useAuth } from "@/contexts/auth-context";
+import { mapCurationSettings, type CurationSettings } from "@/domain/curation";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/settings/curation` — настройки Слоя 4 (SBA α-4).
- */
 export function CurationSettingsClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
@@ -42,10 +36,9 @@ function SettingsContent() {
   const [error, setError] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
-  // form-state
   const [autoThreshold, setAutoThreshold] = useState(0.85);
   const [deepReviewThreshold, setDeepReviewThreshold] = useState(0.6);
-  const [criticalTypesInput, setCriticalTypesInput] = useState('');
+  const [criticalTypesInput, setCriticalTypesInput] = useState("");
   const [itemExpiryDays, setItemExpiryDays] = useState(30);
 
   const [submitting, setSubmitting] = useState(false);
@@ -62,13 +55,13 @@ function SettingsContent() {
       setSettings(mapped);
       setAutoThreshold(mapped.autoThreshold);
       setDeepReviewThreshold(mapped.deepReviewThreshold);
-      setCriticalTypesInput(mapped.criticalTypes.join(', '));
+      setCriticalTypesInput(mapped.criticalTypes.join(", "));
       setItemExpiryDays(mapped.itemExpiryDays);
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
+      if (e instanceof ApiError && e.code === "forbidden") {
         setForbidden(true);
       } else {
-        setError(humanizeApiError(e, 'Не удалось загрузить настройки'));
+        setError(humanizeApiError(e, "Не удалось загрузить настройки"));
       }
     } finally {
       setIsLoading(false);
@@ -85,7 +78,7 @@ function SettingsContent() {
     setSaved(false);
     try {
       const criticalTypes = criticalTypesInput
-        .split(',')
+        .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
       const updated = await curationApi.updateSettings({
@@ -97,9 +90,7 @@ function SettingsContent() {
       setSettings(mapCurationSettings(updated));
       setSaved(true);
     } catch (e) {
-      setSaveError(
-        humanizeApiError(e, 'Не удалось сохранить настройки'),
-      );
+      setSaveError(humanizeApiError(e, "Не удалось сохранить настройки"));
     } finally {
       setSubmitting(false);
     }
@@ -145,7 +136,8 @@ function SettingsContent() {
             Критические типы карточек (через запятую)
           </label>
           <p className="mb-1 text-xs text-fg-tertiary">
-            Эти типы всегда уходят на подробную проверку, независимо от уверенности.
+            Эти типы всегда уходят на подробную проверку, независимо от
+            уверенности.
           </p>
           <Input
             value={criticalTypesInput}
@@ -169,13 +161,11 @@ function SettingsContent() {
         </div>
 
         {saveError && <p className="text-sm text-danger">{saveError}</p>}
-        {saved && (
-          <p className="text-sm text-success">Настройки сохранены.</p>
-        )}
+        {saved && <p className="text-sm text-success">Настройки сохранены.</p>}
 
         <div className="flex justify-end">
           <Button onClick={submit} disabled={submitting}>
-            {submitting ? 'Сохраняем…' : 'Сохранить настройки'}
+            {submitting ? "Сохраняем…" : "Сохранить настройки"}
           </Button>
         </div>
       </section>
@@ -197,7 +187,8 @@ function ThresholdSlider({
   return (
     <div>
       <label className="mb-1 block text-sm font-medium">
-        {label}: <span className="tabular-nums">{(value * 100).toFixed(0)}%</span>
+        {label}:{" "}
+        <span className="tabular-nums">{(value * 100).toFixed(0)}%</span>
       </label>
       {description && (
         <p className="mb-1 text-xs text-fg-tertiary">{description}</p>

@@ -1,14 +1,3 @@
-/**
- * Admin-redesign Фаза 5 — unit-тесты `EmailTemplatesAdminService`.
- *
- * Покрываем:
- *   1) list(): на пустой БД bootstrap-sync из static-констант.
- *   2) getDetail(): возвращает шаблон + preview с placeholder-подстановкой.
- *   3) update(): валидный Handlebars сохраняется, невалидный → 400.
- *   4) testSend(): успешный send, rate-limit 5/мин блокирует 6-й запрос.
- *   5) renderOrNull(): из БД, иначе static fallback, иначе null.
- */
-
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -35,8 +24,7 @@ function buildPrisma(state: { rows: TplRow[] }): PrismaService {
   });
   const findMany = vi.fn(async () => {
     return [...state.rows].sort(
-      (a, b) =>
-        a.category.localeCompare(b.category) || a.key.localeCompare(b.key),
+      (a, b) => a.category.localeCompare(b.category) || a.key.localeCompare(b.key),
     );
   });
   const create = vi.fn(async ({ data }: { data: Partial<TplRow> & { key: string } }) => {
@@ -54,13 +42,7 @@ function buildPrisma(state: { rows: TplRow[] }): PrismaService {
     return row;
   });
   const update = vi.fn(
-    async ({
-      where,
-      data,
-    }: {
-      where: { key: string };
-      data: Partial<TplRow>;
-    }) => {
+    async ({ where, data }: { where: { key: string }; data: Partial<TplRow> }) => {
       const r = state.rows.find((x) => x.key === where.key);
       if (!r) throw new Error('not found');
       Object.assign(r, data, { updatedAt: new Date() });
@@ -83,8 +65,7 @@ function buildPrisma(state: { rows: TplRow[] }): PrismaService {
           subject: createData.subject ?? '',
           body: createData.body ?? '',
           htmlBody: createData.htmlBody ?? null,
-          variables:
-            (createData.variables as Record<string, string> | undefined) ?? {},
+          variables: (createData.variables as Record<string, string> | undefined) ?? {},
           category: createData.category ?? 'transactional',
           updatedBy: createData.updatedBy ?? null,
           updatedAt: new Date(),
@@ -127,7 +108,6 @@ describe('EmailTemplatesAdminService', () => {
     const { mail } = buildMail();
     const svc = new EmailTemplatesAdminService(buildPrisma(state), mail);
     const res = await svc.list();
-    // Минимум 5 статических шаблонов: register/reset/invite-github/reminder/timeout.
     expect(res.items.length).toBeGreaterThanOrEqual(5);
     const keys = res.items.map((i) => i.key);
     expect(keys).toContain('register-temp-password');
@@ -158,21 +138,16 @@ describe('EmailTemplatesAdminService', () => {
     const { mail } = buildMail();
     const svc = new EmailTemplatesAdminService(buildPrisma(state), mail);
 
-    const upd = await svc.update(
-      'demo',
-      { body: 'Hello {{name}}, code is {{code}}' },
-      'user-1',
-    );
+    const upd = await svc.update('demo', { body: 'Hello {{name}}, code is {{code}}' }, 'user-1');
     expect(upd.body).toContain('{{code}}');
 
-    await expect(
-      svc.update('demo', { body: 'Hello {{name' }, 'user-1'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.update('demo', { body: 'Hello {{name' }, 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
-    // Update несуществующего — 404.
-    await expect(
-      svc.update('missing', { body: 'x' }, 'user-1'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.update('missing', { body: 'x' }, 'user-1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('testSend(): успешный send + rate-limit блокирует 6-й запрос', async () => {
@@ -186,11 +161,10 @@ describe('EmailTemplatesAdminService', () => {
     }
     expect(sendPlain).toHaveBeenCalledTimes(5);
 
-    await expect(
-      svc.testSend('demo', 'to@example.com', 'user-1'),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(svc.testSend('demo', 'to@example.com', 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
 
-    // Тот же шаблон с другим user-id — отдельная корзина.
     const other = await svc.testSend('demo', 'to@example.com', 'user-2');
     expect(other.ok).toBe(true);
   });

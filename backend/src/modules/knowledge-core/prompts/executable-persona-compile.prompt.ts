@@ -1,25 +1,3 @@
-/**
- * SBA γ-1 — Specialist 3.7 (ExecutablePersona).
- *
- * LLM-промпт `executable-persona-compile` — собирает текстовый persona prompt
- * («Думай как X. Тебя характеризует …») из слоёв рабочего метода
- * (SkillTrait по layer'ам + RolePrinciple + PracticeSkill).
- * Используется ClonesService как persona-prompt для clone-respond.
- *
- * v2 (TZ clone-method ИНТ.1, 2026-06-12) — секционная сборка из ВСЕХ слоёв
- * метода. v1-константы оставлены ниже для rollback-сравнения.
- *
- * Контракт v2:
- *   - Длина результата 300–1200 слов.
- *   - Структура: до 5 секций (пустая во входе — опускается целиком).
- *   - Каждая строка — поведенческое ПРАВИЛО ПРОЦЕССА, не ярлык.
- *   - Формулировки — от первого лица («я обычно …»/«мне важно …»).
- *   - НЕ выдумывать слои/черты, которых нет в input'е.
- */
-
-/**
- * @deprecated TZ clone-method ИНТ.1 — заменён v2, оставлен для rollback-сравнения.
- */
 export const EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT = [
   'Ты — knowledge-инженер. Тебе дают набор наблюдённых черт рабочего поведения сотрудника. Собери из них persona-prompt от первого лица — короткое описание подхода, которое можно подмешать в system-prompt LLM для имитации стиля размышления этого сотрудника.',
   '',
@@ -39,9 +17,6 @@ export const EXECUTABLE_PERSONA_COMPILE_SYSTEM_PROMPT = [
   '  не расширяй до 5.',
 ].join('\n');
 
-/**
- * @deprecated TZ clone-method ИНТ.1 — заменён v2, оставлен для rollback-сравнения.
- */
 export const EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE = (args: {
   personName: string;
   personRole: string | null;
@@ -72,25 +47,6 @@ export const EXECUTABLE_PERSONA_COMPILE_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-/**
- * Формат — plain text (НЕ JSON). LlmRouterService.call без responseFormat.
- *
- * @deprecated TZ clone-method ИНТ.1 — заменён v2, оставлен для rollback-сравнения.
- */
-export const EXECUTABLE_PERSONA_COMPILE_PROMPT_NAME = 'executable_persona_compile_v1';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// v2 — TZ clone-method ИНТ.1 (2026-06-12), закрывает R9.
-// Секционная сборка persona-prompt из ВСЕХ слоёв метода:
-//   1) черты подхода (SkillTrait layer='skill'),
-//   2) ценности + мотивация (layer='value' / 'motivation'),
-//   3) принципы решений роли (RolePrinciple),
-//   4) типовые процедуры (PracticeSkill: триггер → шаги → чего не делать),
-//   5) маркеры процесса (layer='process_marker').
-// При пустых новых слоях выход эквивалентен v1-поведению (только черты).
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Вход-черта (SkillTrait любого layer'а) для user-шаблона v2. */
 export type PersonaCompileTraitInput = {
   category: string;
   statement: string;
@@ -98,7 +54,6 @@ export type PersonaCompileTraitInput = {
   observationCount: number;
 };
 
-/** Вход-принцип роли (RolePrinciple) для user-шаблона v2. */
 export type PersonaCompilePrincipleInput = {
   situation: string;
   statement: string;
@@ -106,17 +61,12 @@ export type PersonaCompilePrincipleInput = {
   confidence: string;
 };
 
-/** Вход-процедура (PracticeSkill, уже распарсенные steps/redFlags) для user-шаблона v2. */
 export type PersonaCompilePracticeSkillInput = {
   trigger: string;
   steps: ReadonlyArray<{ order: number; action: string }>;
   redFlags: ReadonlyArray<string>;
 };
 
-/**
- * v2 SYSTEM — стабильный (cache-friendly: не подмешивать переменные данные,
- * правка ломает prompt-кэш провайдеров). Все переменные данные — в user.
- */
 export const EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT = [
   'Ты — knowledge-инженер. Тебе дают наблюдённые слои рабочего метода сотрудника или роли: черты подхода, ценности из проявленных выборов, мотивацию, принципы решений роли, типовые процедуры и маркеры процесса. Собери из них persona-prompt от первого лица — описание рабочего метода, которое можно подмешать в prompt LLM для имитации стиля размышления этого сотрудника или роли. Этот текст и ЕСТЬ клон должности: его подмешивают в ответ клона, и от его лица клон отвечает реальным коллегам. Поэтому каждая строка должна быть проверяемым ходом процесса из входных слоёв, а не красивым самоописанием — иначе клон будет звучать убедительно, но врать о методе роли.',
   '',
@@ -149,11 +99,6 @@ export const EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT = [
   'ПЕРЕД ВЫДАЧЕЙ проверь: каждая строка — наблюдаемый ход процесса с якорем (а не ярлык характера); использованы только слои из входа (ничего не выдумано); пустые секции опущены без заголовков; всё от первого лица; 300–1200 слов. Если строку нельзя переписать как ход действий — выброси её.',
 ].join('\n');
 
-/**
- * v2 USER — рендер блоков слоёв. КРИТИЧНО: пустой блок НЕ рендерится вовсе
- * (ни заголовка, ни «(нет)») — так LLM по SYSTEM-правилу опускает секцию.
- * Переменные данные — в конце сообщения (cache-friendly).
- */
 export const EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE = (args: {
   personName: string;
   personRole: string | null;
@@ -175,10 +120,7 @@ export const EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE = (args: {
 
   if (args.traits.length > 0) {
     blocks.push(
-      [
-        `Черты подхода (${args.traits.length}):`,
-        ...args.traits.map(traitLine),
-      ].join('\n'),
+      [`Черты подхода (${args.traits.length}):`, ...args.traits.map(traitLine)].join('\n'),
     );
   }
 
@@ -193,10 +135,9 @@ export const EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE = (args: {
 
   if (args.motivations.length > 0) {
     blocks.push(
-      [
-        `Мотивация в работе (${args.motivations.length}):`,
-        ...args.motivations.map(traitLine),
-      ].join('\n'),
+      [`Мотивация в работе (${args.motivations.length}):`, ...args.motivations.map(traitLine)].join(
+        '\n',
+      ),
     );
   }
 
@@ -244,14 +185,8 @@ export const EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE = (args: {
   for (const block of blocks) {
     parts.push('', block);
   }
-  parts.push(
-    '',
-    'Собери persona-prompt от первого лица по правилам. Верни только обычный текст.',
-  );
+  parts.push('', 'Собери persona-prompt от первого лица по правилам. Верни только обычный текст.');
   return parts.join('\n');
 };
 
-/**
- * Формат — plain text (НЕ JSON). LlmRouterService.call без responseFormat.
- */
 export const EXECUTABLE_PERSONA_COMPILE_V2_PROMPT_NAME = 'executable_persona_compile_v2';

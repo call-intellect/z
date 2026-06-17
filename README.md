@@ -50,8 +50,7 @@ docker compose -f docker-compose.dev.yml up -d
 ### 2. Конфиг
 
 ```bash
-cp backend/.env.example  backend/.env       # заполни (см. backend/src/common/config/env.schema.ts)
-cp frontend/.env.example frontend/.env.local
+cp .env.example .env       # ЕДИНЫЙ корневой .env на backend и frontend (NEXT_PUBLIC_* тоже здесь); см. backend/src/common/config/env.schema.ts. Никаких .env.local / backend/.env.
 ```
 
 ### 3. Backend (HTTP API :3000 + воркеры in-process)
@@ -59,7 +58,7 @@ cp frontend/.env.example frontend/.env.local
 ```bash
 cd backend
 bun install
-bun run prisma:push        # накатить схему
+bun run prisma:migrate     # накатить схему (версионируемые миграции; db push — только для черновых локальных проб)
 bun run prisma:generate
 bun run apply-postgres-init # pgvector-индексы (HNSW/GIN)
 bun run dev                 # :3000, Swagger /api/docs
@@ -121,7 +120,7 @@ docker compose up -d --build
 Что делает `backend`:
 1. Собирает образ `z-backend:latest` (multi-stage, Bun).
 2. Поднимает `postgres` (pgvector) + `redis`.
-3. One-shot `migrate`: `prisma db push` + pgvector-индексы.
+3. One-shot `migrate`: `prisma migrate deploy` (применяет версионируемые миграции) + pgvector-индексы.
 4. Стартует `backend` (HTTP + воркеры BullMQ in-process).
 
 Проверка:
@@ -139,7 +138,7 @@ docker compose run --rm backend bun prisma/seed.ts
 
 Обновление:
 ```bash
-git pull && docker compose up -d --build backend   # migrate прогонит db push заново
+git pull && docker compose up -d --build backend   # migrate-контейнер прогонит prisma migrate deploy
 ```
 
 ### 2. Порты — через `.env`
@@ -212,7 +211,7 @@ nginx для signaling: `deploy/nginx/z-livekit.conf` (wss://media.example.com �
 ## Структура репозитория
 
 ```
-backend/              NestJS API + воркеры (~45 модулей, knowledge-core — ядро)
+backend/              NestJS API + воркеры in-process (~100 модулей, knowledge-core — ядро)
 frontend/             Next.js (App Router): ApiDto → DomainModel → UiModel
 infra/livekit/        медиа-стек (LiveKit + Egress) + dev-скрипт
 infra/                Prometheus / Grafana / loadtest / backup-скрипты

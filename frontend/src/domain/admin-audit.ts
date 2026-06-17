@@ -1,13 +1,3 @@
-/**
- * Доменная модель журнала super_admin (admin-redesign Фаза 1).
- *
- * Контракт: backend `AdminAuditController` (планируется как часть Фазы 1).
- * Источник записей — модель `SuperAdminAccessLog`. Cursor-based pagination
- * через opaque base64-cursor `{ createdAt, id }`.
- */
-
-// ─── API DTO ────────────────────────────────────────────────────────────────
-
 export type AdminAuditEntryApi = {
   id: string;
   createdAt: string;
@@ -37,9 +27,7 @@ export type AdminAuditAdminsListApi = {
   items: AdminAuditAdminApi[];
 };
 
-// ─── Domain model ───────────────────────────────────────────────────────────
-
-export type AdminAuditEntryDomain = Omit<AdminAuditEntryApi, 'createdAt'> & {
+export type AdminAuditEntryDomain = Omit<AdminAuditEntryApi, "createdAt"> & {
   createdAt: Date;
 };
 
@@ -48,18 +36,13 @@ export type AdminAuditListDomain = {
   nextCursor: string | null;
 };
 
-export type AdminAuditAdminDomain = Omit<
-  AdminAuditAdminApi,
-  'lastActionAt'
-> & {
+export type AdminAuditAdminDomain = Omit<AdminAuditAdminApi, "lastActionAt"> & {
   lastActionAt: Date | null;
 };
 
 export type AdminAuditAdminsListDomain = {
   items: AdminAuditAdminDomain[];
 };
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 export function adminAuditEntryFromApi(
   api: AdminAuditEntryApi,

@@ -1,62 +1,57 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.3 — `/admin/prompts/experiments` список A/B-экспериментов на промптах.
- *
- * Источник: ТЗ A §8.1.
- * Все строки на русском (memory `feedback_admin_ui_russian_only`).
- */
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   type ExperimentStatusApi,
   type PromptExperimentApi,
   adminPromptExperimentsApi,
-} from '@/api/admin-prompt-experiments.api';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-prompt-experiments.api";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 const STATUS_LABELS: Record<ExperimentStatusApi, string> = {
-  draft: 'Черновик',
-  running: 'Запущен',
-  stopped: 'Остановлен',
-  completed: 'Завершён',
+  draft: "Черновик",
+  running: "Запущен",
+  stopped: "Остановлен",
+  completed: "Завершён",
 };
 
 const STATUS_BADGE_CLASS: Record<ExperimentStatusApi, string> = {
-  draft: 'bg-bg-subtle text-fg-secondary',
-  running: 'bg-chip-success-bg text-chip-success-fg',
-  stopped: 'bg-chip-warning-bg text-chip-warning-fg',
-  completed: 'bg-bg-subtle text-fg-secondary',
+  draft: "bg-bg-subtle text-fg-secondary",
+  running: "bg-chip-success-bg text-chip-success-fg",
+  stopped: "bg-chip-warning-bg text-chip-warning-fg",
+  completed: "bg-bg-subtle text-fg-secondary",
 };
 
 export function PromptExperimentsListClient() {
   const [items, setItems] = useState<PromptExperimentApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | ExperimentStatusApi>('all');
+  const [statusFilter, setStatusFilter] = useState<"all" | ExperimentStatusApi>(
+    "all",
+  );
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const res = await adminPromptExperimentsApi.list(
-        statusFilter !== 'all' ? { status: statusFilter } : undefined,
+        statusFilter !== "all" ? { status: statusFilter } : undefined,
       );
       setItems(res.items);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось загрузить эксперименты';
+        e instanceof ApiError ? e.message : "Не удалось загрузить эксперименты";
       setError(msg);
     } finally {
       setLoading(false);
@@ -86,7 +81,9 @@ export function PromptExperimentsListClient() {
       <div className="mb-4 flex items-center gap-3">
         <Select
           value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as 'all' | ExperimentStatusApi)}
+          onValueChange={(v) =>
+            setStatusFilter(v as "all" | ExperimentStatusApi)
+          }
         >
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Статус" />
@@ -104,7 +101,12 @@ export function PromptExperimentsListClient() {
       {error ? (
         <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
           {error}
-          <Button variant="outline" size="sm" className="ml-3" onClick={() => void fetchData()}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-3"
+            onClick={() => void fetchData()}
+          >
             Повторить
           </Button>
         </div>
@@ -114,8 +116,8 @@ export function PromptExperimentsListClient() {
         <div className="text-sm text-fg-secondary">Загрузка эксперементов…</div>
       ) : items.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-6 text-center text-sm text-fg-secondary">
-          Пока нет ни одного эксперимента. Создайте первый, чтобы сравнить
-          две версии шаблона.
+          Пока нет ни одного эксперимента. Создайте первый, чтобы сравнить две
+          версии шаблона.
         </div>
       ) : (
         <ul className="space-y-3">
@@ -138,17 +140,23 @@ export function PromptExperimentsListClient() {
                     </Badge>
                   </div>
                   <div className="mt-1 text-xs text-fg-secondary">
-                    Доля трафика на группу B: {e.splitPercent}% ·{' '}
-                    {e.orgId ? `Org ${e.orgId.slice(0, 8)}` : 'Глобальный'}
+                    Доля трафика на группу B: {e.splitPercent}% ·{" "}
+                    {e.orgId ? `Org ${e.orgId.slice(0, 8)}` : "Глобальный"}
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1 text-xs text-fg-secondary">
-                  <div>Создан: {new Date(e.createdAt).toLocaleString('ru-RU')}</div>
+                  <div>
+                    Создан: {new Date(e.createdAt).toLocaleString("ru-RU")}
+                  </div>
                   {e.startedAt ? (
-                    <div>Запущен: {new Date(e.startedAt).toLocaleString('ru-RU')}</div>
+                    <div>
+                      Запущен: {new Date(e.startedAt).toLocaleString("ru-RU")}
+                    </div>
                   ) : null}
                   {e.endsAt ? (
-                    <div>Окончание: {new Date(e.endsAt).toLocaleString('ru-RU')}</div>
+                    <div>
+                      Окончание: {new Date(e.endsAt).toLocaleString("ru-RU")}
+                    </div>
                   ) : null}
                 </div>
               </div>

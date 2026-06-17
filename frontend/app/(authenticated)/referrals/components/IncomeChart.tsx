@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { TrendingUp } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { TrendingUp } from "lucide-react";
+import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -10,42 +10,25 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
-} from 'recharts';
+} from "recharts";
 
-import {
-  monthLabel,
-  type MonthlyPointDomain,
-} from '@/domain/referral';
+import { monthLabel, type MonthlyPointDomain } from "@/domain/referral";
 import {
   CardTitle,
   CHART,
   ChartTip,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
 interface Props {
   points: MonthlyPointDomain[];
 }
 
-type Mode = 'monthly' | 'cumulative';
+type Mode = "monthly" | "cumulative";
 
-/**
- * IncomeChart — доход партнёра за 12 месяцев (ТЗ §8.1 C), редизайн B7 (modern).
- *
- * Стеклянная карточка с крупным hero-числом «заработано всего» + дельта
- * (последний месяц к предыдущему) и переключателем режима:
- *   - «по месяцам»  → столбцы (BarChart) с градиентом cyan→violet;
- *   - «накопительно» → нарастающая area-кривая.
- *
- * 12 точек гарантированно приходят с backend (`getIncomeChart`),
- * включая месяцы с нулями — это сразу нормализованный для recharts
- * datapoint. `incomeRub` — уже в рублях.
- *
- * Проп-контракт `{ points }` НЕ меняется — только внутренний рендер.
- */
 export function IncomeChart({ points }: Props) {
-  const [mode, setMode] = useState<Mode>('monthly');
+  const [mode, setMode] = useState<Mode>("monthly");
 
   const monthly = useMemo(
     () =>
@@ -66,9 +49,8 @@ export function IncomeChart({ points }: Props) {
     });
   }, [monthly]);
 
-  const data = mode === 'monthly' ? monthly : cumulative;
+  const data = mode === "monthly" ? monthly : cumulative;
 
-  // Hero: всего заработано + дельта последнего месяца к предыдущему.
   const totalEarned = useMemo(
     () => monthly.reduce((sum, p) => sum + p.income, 0),
     [monthly],
@@ -77,13 +59,16 @@ export function IncomeChart({ points }: Props) {
   const prev = monthly.at(-2)?.income ?? 0;
   const delta = last - prev;
 
-  const fmt = (v: number) => `${v.toLocaleString('ru-RU')} ₽`;
+  const fmt = (v: number) => `${v.toLocaleString("ru-RU")} ₽`;
 
   return (
     <GlassCard>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <CardTitle icon={<TrendingUp className="h-4 w-4" />} grad={GRAD.violet}>
+          <CardTitle
+            icon={<TrendingUp className="h-4 w-4" />}
+            grad={GRAD.violet}
+          >
             Доход за 12 месяцев
           </CardTitle>
           <div className="mt-2 flex items-end gap-3">
@@ -96,38 +81,38 @@ export function IncomeChart({ points }: Props) {
                 style={{
                   color:
                     delta > 0
-                      ? 'var(--chip-success-fg)'
-                      : 'var(--chip-danger-fg)',
+                      ? "var(--chip-success-fg)"
+                      : "var(--chip-danger-fg)",
                 }}
               >
-                {delta > 0 ? '+' : '−'}
-                {Math.abs(delta).toLocaleString('ru-RU')} ₽ за месяц
+                {delta > 0 ? "+" : "−"}
+                {Math.abs(delta).toLocaleString("ru-RU")} ₽ за месяц
               </span>
             )}
           </div>
           <p className="mt-1 text-xs text-fg-tertiary">
-            {mode === 'monthly'
-              ? 'Сколько заработал в каждом месяце.'
-              : 'Накопленный доход нарастающим итогом.'}
+            {mode === "monthly"
+              ? "Сколько заработал в каждом месяце."
+              : "Накопленный доход нарастающим итогом."}
           </p>
         </div>
 
-        {/* Переключатель режима — парные токены и градиент активной вкладки. */}
+        {}
         <div
           className="flex shrink-0 rounded-xl p-1"
-          style={{ background: 'var(--surface-inset)' }}
+          style={{ background: "var(--surface-inset)" }}
           role="tablist"
           aria-label="Режим графика дохода"
         >
           <ModeTab
-            active={mode === 'monthly'}
-            onClick={() => setMode('monthly')}
+            active={mode === "monthly"}
+            onClick={() => setMode("monthly")}
           >
             По месяцам
           </ModeTab>
           <ModeTab
-            active={mode === 'cumulative'}
-            onClick={() => setMode('cumulative')}
+            active={mode === "cumulative"}
+            onClick={() => setMode("cumulative")}
           >
             Накопительно
           </ModeTab>
@@ -136,12 +121,25 @@ export function IncomeChart({ points }: Props) {
 
       <div className="mt-4 h-[280px] w-full">
         <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-          {mode === 'monthly' ? (
-            <BarChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+          {mode === "monthly" ? (
+            <BarChart
+              data={data}
+              margin={{ top: 10, right: 8, bottom: 0, left: -8 }}
+            >
               <defs>
-                <linearGradient id="referral-income-bar" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient
+                  id="referral-income-bar"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
                   <stop offset="0%" stopColor={CHART.cyan} />
-                  <stop offset="100%" stopColor={CHART.violet} stopOpacity={0.7} />
+                  <stop
+                    offset="100%"
+                    stopColor={CHART.violet}
+                    stopOpacity={0.7}
+                  />
                 </linearGradient>
               </defs>
               <XAxis
@@ -152,7 +150,7 @@ export function IncomeChart({ points }: Props) {
               />
               <Tooltip
                 content={<ChartTip />}
-                cursor={{ fill: 'var(--surface-inset)' }}
+                cursor={{ fill: "var(--surface-inset)" }}
               />
               <Bar
                 dataKey="income"
@@ -163,11 +161,28 @@ export function IncomeChart({ points }: Props) {
               />
             </BarChart>
           ) : (
-            <AreaChart data={data} margin={{ top: 10, right: 8, bottom: 0, left: -8 }}>
+            <AreaChart
+              data={data}
+              margin={{ top: 10, right: 8, bottom: 0, left: -8 }}
+            >
               <defs>
-                <linearGradient id="referral-income-area" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={CHART.violet} stopOpacity={0.45} />
-                  <stop offset="100%" stopColor={CHART.violet} stopOpacity={0} />
+                <linearGradient
+                  id="referral-income-area"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    stopColor={CHART.violet}
+                    stopOpacity={0.45}
+                  />
+                  <stop
+                    offset="100%"
+                    stopColor={CHART.violet}
+                    stopOpacity={0}
+                  />
                 </linearGradient>
               </defs>
               <XAxis
@@ -178,7 +193,7 @@ export function IncomeChart({ points }: Props) {
               />
               <Tooltip
                 content={<ChartTip />}
-                cursor={{ stroke: 'var(--border-strong)' }}
+                cursor={{ stroke: "var(--border-strong)" }}
               />
               <Area
                 type="monotone"
@@ -197,7 +212,6 @@ export function IncomeChart({ points }: Props) {
   );
 }
 
-/** Таб переключателя режима графика — активный на градиентной подложке. */
 function ModeTab({
   active,
   onClick,
@@ -216,8 +230,8 @@ function ModeTab({
       className="rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
       style={
         active
-          ? { background: GRAD.violet, color: 'oklch(0.99 0.005 280)' }
-          : { color: 'var(--text-secondary)' }
+          ? { background: GRAD.violet, color: "oklch(0.99 0.005 280)" }
+          : { color: "var(--text-secondary)" }
       }
     >
       {children}

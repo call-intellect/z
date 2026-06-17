@@ -1,25 +1,3 @@
-/**
- * Фаза A.2 — AdminPromptTemplatesService.
- *
- * CRUD и version-management для PromptTemplate / PromptTemplateVersion /
- * PromptTemplateSection. Источник: ТЗ A §7.1.
- *
- * Бизнес-правила:
- *   - Системные шаблоны (scope=system) — только super_admin может создавать,
- *     править и удалять. Org-Admin может только скопировать в свой Org.
- *   - Org-шаблоны (scope=org) — orgId обязателен; key уникален в рамках Org.
- *   - При сохранении новой версии: создаётся новая PromptTemplateVersion
- *     с versionNumber = max(versionNumber)+1. activeVersionId не меняется,
- *     пока не вызвали activate-version.
- *   - Валидация суммы maxTokens на сохранении ≤ 16000 (ТЗ §15).
- *   - soft-delete: status → archived, deletedAt → now(). Системные защищены
- *     от полного удаления; Org-шаблоны можно удалить полностью.
- *
- * RBAC: контроллер делает базовый super_admin-чек через SuperAdminGuard.
- * Owner/admin Org проверяется в А.3 (там же entitlement-гейт). В А.2
- * Org-операции доступны super_admin'у (как и системные).
- */
-
 import {
   BadRequestException,
   ForbiddenException,
@@ -50,19 +28,12 @@ import type {
   UpdatePromptTemplateDto,
 } from './dto/prompt-templates.dto';
 
-/** Лимит суммы maxTokens всех секций одной версии (ТЗ §15). */
 export const SECTIONS_MAX_TOKENS_SUM = 16000;
 export const SECTIONS_MAX_COUNT = 30;
 
-/**
- * Фаза A.3 — RBAC-контекст вызывающего пользователя. Передаётся в методы
- * мутации. Для super_admin'а — bypass всех проверок. Для owner/admin —
- * проверяется, что шаблон принадлежит одной из его Org.
- */
 export interface PromptTemplateRbacContext {
   userId: string;
   isSuperAdmin: boolean;
-  /** Org, в которых пользователь owner/admin. */
   ownedOrgIds: string[];
 }
 
@@ -77,14 +48,10 @@ export class AdminPromptTemplatesService {
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    // Optional ради лёгких unit-тестов сервиса (entitlement-проверка может быть
-    // замокана пустыми возвратами).
     @Optional()
     @Inject(EntitlementService)
     private readonly entitlements?: EntitlementService,
   ) {}
-
-  // ─── list & detail ─────────────────────────────────────────────────
 
   async list(
     filters: ListPromptTemplatesQueryDto,
@@ -108,22 +75,17 @@ export class AdminPromptTemplatesService {
           }
         : {}),
     };
-    // Фаза A.3 — RBAC-фильтрация: не-super_admin видит только system + свои Org.
     if (rbac && !rbac.isSuperAdmin) {
       where.OR = [
         ...(where.OR ?? []),
         { scope: 'system' },
         { scope: 'org', orgId: { in: rbac.ownedOrgIds } },
       ];
-      // Если поиск задан, OR конфликтует. В таком случае объединяем через AND.
       if (filters.search) {
-        const searchOr = where.OR.slice(0, 1); // первый — поиск
+        const searchOr = where.OR.slice(0, 1);
         const accessOr = where.OR.slice(1);
         delete where.OR;
-        where.AND = [
-          { OR: searchOr },
-          { OR: accessOr },
-        ];
+        where.AND = [{ OR: searchOr }, { OR: accessOr }];
       }
     }
     const items = await this.prisma.promptTemplate.findMany({
@@ -183,8 +145,6 @@ export class AdminPromptTemplatesService {
     return v;
   }
 
-  // ─── create / update / delete ──────────────────────────────────────
-
   async create(
     dto: CreatePromptTemplateDto,
     userId: string,
@@ -198,7 +158,6 @@ export class AdminPromptTemplatesService {
     }
     const orgId = dto.scope === 'org' ? dto.orgId! : null;
 
-    // ── Фаза A.3 — RBAC + entitlement-гейт ────────────────────────────
     if (rbac && !rbac.isSuperAdmin) {
       if (dto.scope === 'system') {
         throw new ForbiddenException({
@@ -217,7 +176,6 @@ export class AdminPromptTemplatesService {
       await this.assertOrgCanCreateTemplate(orgId);
     }
 
-    // Уникальность (orgId, key) — проверим явно ради читаемой ошибки.
     const dup = await this.prisma.promptTemplate.findFirst({
       where: { orgId, key: dto.key, deletedAt: null },
     });
@@ -228,8 +186,7 @@ export class AdminPromptTemplatesService {
       });
     }
 
-    const hasInitialVersion =
-      dto.systemPrompt !== undefined && dto.sections !== undefined;
+    const hasInitialVersion = dto.systemPrompt !== undefined && dto.sections !== undefined;
     if (hasInitialVersion) {
       this.assertSectionsValid(dto.sections!);
     }
@@ -255,7 +212,10 @@ export class AdminPromptTemplatesService {
             templateId: tpl.id,
             versionNumber: 1,
             systemPrompt: dto.systemPrompt!,
-            outputSchema: (dto.outputSchema ?? { type: 'object', properties: {} }) as Prisma.InputJsonValue,
+            outputSchema: (dto.outputSchema ?? {
+              type: 'object',
+              properties: {},
+            }) as Prisma.InputJsonValue,
             toolName: dto.toolName ?? null,
             createdById: userId,
           },
@@ -274,7 +234,6 @@ export class AdminPromptTemplatesService {
             })),
           });
         }
-        // Не активируем по умолчанию — шаблон остаётся draft до явного activate.
       }
       return tpl;
     });
@@ -330,8 +289,6 @@ export class AdminPromptTemplatesService {
     return { ok: true };
   }
 
-  // ─── version create / activate ─────────────────────────────────────
-
   async createVersion(
     templateId: string,
     dto: CreatePromptVersionDto,
@@ -357,7 +314,10 @@ export class AdminPromptTemplatesService {
           templateId: tpl.id,
           versionNumber: nextNumber,
           systemPrompt: dto.systemPrompt,
-          outputSchema: (dto.outputSchema ?? { type: 'object', properties: {} }) as Prisma.InputJsonValue,
+          outputSchema: (dto.outputSchema ?? {
+            type: 'object',
+            properties: {},
+          }) as Prisma.InputJsonValue,
           toolName: dto.toolName ?? null,
           createdById: userId,
           notes: dto.notes ?? null,
@@ -426,8 +386,6 @@ export class AdminPromptTemplatesService {
     return { ok: true };
   }
 
-  // ─── copy-to-org ───────────────────────────────────────────────────
-
   async copyToOrg(
     templateId: string,
     dto: CopyToOrgDto,
@@ -435,7 +393,6 @@ export class AdminPromptTemplatesService {
     rbac?: PromptTemplateRbacContext,
   ): Promise<TemplateWithRelations> {
     const src = await this.detail(templateId);
-    // Фаза A.3 — не-super_admin может копировать только в свою Org + entitlement.
     if (rbac && !rbac.isSuperAdmin) {
       if (!rbac.ownedOrgIds.includes(dto.orgId)) {
         throw new ForbiddenException({
@@ -464,7 +421,6 @@ export class AdminPromptTemplatesService {
     const newKey = dto.key ?? `${src.key}-copy`;
     const newName = dto.name ?? `${src.name} (копия)`;
 
-    // Уникальность (orgId, key) — проверим явно.
     const dup = await this.prisma.promptTemplate.findFirst({
       where: { orgId: dto.orgId, key: newKey, deletedAt: null },
     });
@@ -524,18 +480,6 @@ export class AdminPromptTemplatesService {
     return this.detail(created.id);
   }
 
-  // ─── helpers ──────────────────────────────────────────────────────
-
-  /**
-   * Фаза A.3 — проверка, что вызывающий пользователь имеет право мутировать
-   * данный шаблон.
-   *
-   *   - super_admin → всегда true.
-   *   - не-super_admin → только если scope='org' и orgId в ownedOrgIds.
-   *   - системные шаблоны (scope='system') — нельзя мутировать не-super_admin'ом.
-   *
-   * Если `rbac` не передан (вызов из тестов/старого кода) — пропускаем проверку.
-   */
   assertCanMutate(
     tpl: { scope: string; orgId: string | null },
     rbac?: PromptTemplateRbacContext,
@@ -557,20 +501,9 @@ export class AdminPromptTemplatesService {
     });
   }
 
-  /**
-   * Фаза A.3 — entitlement-гейт на создание Org-шаблона.
-   *
-   * Проверяет:
-   *   1) `feature.custom_prompt_templates` включена для Org.
-   *   2) Лимит `prompt_templates_per_org` не превышен (текущее число
-   *      Org-шаблонов с deletedAt=null < лимит).
-   */
   private async assertOrgCanCreateTemplate(orgId: string): Promise<void> {
     if (!this.entitlements) return;
-    const hasFeature = await this.entitlements.hasFeature(
-      orgId,
-      'feature.custom_prompt_templates',
-    );
+    const hasFeature = await this.entitlements.hasFeature(orgId, 'feature.custom_prompt_templates');
     if (!hasFeature) {
       throw new ForbiddenException({
         ok: false,
@@ -606,11 +539,6 @@ export class AdminPromptTemplatesService {
     }
   }
 
-  /**
-   * Валидация секций: лимит количества и суммарных maxTokens (ТЗ §15).
-   * Уникальность order/key проверяет БД (unique-constraints), здесь —
-   * раннее обнаружение дублей.
-   */
   private assertSectionsValid(sections: SectionInputDto[]): void {
     if (sections.length > SECTIONS_MAX_COUNT) {
       throw new BadRequestException({
@@ -618,10 +546,7 @@ export class AdminPromptTemplatesService {
         error: { code: 'too_many_sections', max: SECTIONS_MAX_COUNT, got: sections.length },
       });
     }
-    const sumMaxTokens = sections.reduce(
-      (acc, s) => acc + (s.maxTokens ?? 0),
-      0,
-    );
+    const sumMaxTokens = sections.reduce((acc, s) => acc + (s.maxTokens ?? 0), 0);
     if (sumMaxTokens > SECTIONS_MAX_TOKENS_SUM) {
       throw new BadRequestException({
         ok: false,

@@ -22,10 +22,7 @@ import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 
 import { CapabilitiesService } from './capabilities.service';
-import {
-  UpsertCapabilitySchema,
-  type UpsertCapabilityDto,
-} from './dto/capability-override.dto';
+import { UpsertCapabilitySchema, type UpsertCapabilityDto } from './dto/capability-override.dto';
 import { CreateOrgSchema, type CreateOrgDto } from './dto/create-org.dto';
 import { InviteMemberSchema, type InviteMemberDto } from './dto/invite-member.dto';
 import type { TeamRosterItem } from './dto/team-roster.dto';
@@ -34,20 +31,9 @@ import { UpdateOrgSchema, type UpdateOrgDto } from './dto/update-org.dto';
 import { OrgInvitationsService } from './org-invitations.service';
 import { OrgsService } from './orgs.service';
 
-/**
- * Фаза D — PATCH /api/v1/orgs/:id/settings/transcript-cleaning.
- * Тело — { auto: boolean }. Только owner/admin (проверка в сервисе).
- */
 const PatchTranscriptCleaningSchema = z.object({ auto: z.boolean() });
 type PatchTranscriptCleaningDto = z.infer<typeof PatchTranscriptCleaningSchema>;
 
-/**
- * Org / Membership / Invitation API.
- *
- * Все эндпоинты требуют CookieAuthGuard. Org-scoped (по :id) сами проверяют
- * членство через RbacService — отдельный TenantGuard здесь не нужен, потому
- * что тут URL уже эксплицитно содержит orgId как путь.
- */
 @ApiExcludeController()
 @Controller('api/v1/orgs')
 @UseGuards(CookieAuthGuard)
@@ -82,10 +68,7 @@ export class OrgsController {
   }
 
   @Get(':id')
-  async byId(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  async byId(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     const org = await this.orgs.getById(id, user.id);
     return { org };
   }
@@ -101,11 +84,6 @@ export class OrgsController {
     return { org };
   }
 
-  /**
-   * Фаза D (sub-TZ §8.3) — настройка автозапуска очистки транскрипта.
-   * При auto=true новые встречи получают cleaning автоматически после ai.merge.
-   * При auto=false — только по ручному `POST .../transcript/clean`.
-   */
   @Patch(':id/settings/transcript-cleaning')
   @RequireSubscription()
   async setTranscriptCleaningAuto(
@@ -122,10 +100,7 @@ export class OrgsController {
   }
 
   @Get(':id/members')
-  async listMembers(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  async listMembers(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     const members = await this.orgs.listMembers(id, user.id);
     return { members };
   }
@@ -163,8 +138,6 @@ export class OrgsController {
     return { ok: true };
   }
 
-  // ─────────────────────────── invitations ──────────────────────────
-
   @Post(':id/invitations')
   @RequireSubscription()
   @HttpCode(HttpStatus.CREATED)
@@ -185,10 +158,7 @@ export class OrgsController {
   }
 
   @Get(':id/invitations')
-  async listInvitations(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  async listInvitations(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     const invitations = await this.invitations.listForOrg(id, user.id);
     return { invitations };
   }
@@ -205,10 +175,6 @@ export class OrgsController {
     return { ok: true };
   }
 
-  /**
-   * β-9 (2026-05-25) — перевыпуск приглашения: новый linkCode + magicToken,
-   * повторная отправка письма (если email указан). Доступ — owner/admin.
-   */
   @Post(':id/invitations/:invitationId/resend')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -217,19 +183,10 @@ export class OrgsController {
     @Param('invitationId') invitationId: string,
     @CurrentUser() user: CurrentUserPayload,
   ) {
-    const invitation = await this.invitations.resendInvitation(
-      id,
-      invitationId,
-      user.id,
-    );
+    const invitation = await this.invitations.resendInvitation(id, invitationId, user.id);
     return { invitation };
   }
 
-  /**
-   * β-9 (2026-05-25) — сброс привязки Telegram-бота сотрудника директором
-   * (на случай смены телефона/потери доступа). Удаляет все ChannelBinding
-   * пользователя для kind='telegram_bot'. Доступ — owner/admin.
-   */
   @Delete(':id/members/:userId/telegram-binding')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -245,8 +202,6 @@ export class OrgsController {
     });
     return { ok: true, removed: result.removed };
   }
-
-  // ──────────────── ТЗ «Команда + доступы» Фаза 5 — capabilities ────────────────
 
   @Get(':id/members/:userId/capabilities')
   async listCapabilities(
@@ -284,32 +239,21 @@ export class OrgsController {
   }
 
   @Get(':id/effective-access')
-  async effectiveAccess(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  async effectiveAccess(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload) {
     const overrides = await this.capabilities.getEffectiveOverrides(user.id, id);
     return { overrides };
   }
 }
 
-/**
- * Отдельный контроллер для accept-эндпоинта по token'у — без orgId в URL.
- */
 @ApiExcludeController()
 @Controller('api/v1/orgs/invitations')
 @UseGuards(CookieAuthGuard)
 export class OrgInvitationsAcceptController {
-  constructor(
-    @Inject(OrgInvitationsService) private readonly invitations: OrgInvitationsService,
-  ) {}
+  constructor(@Inject(OrgInvitationsService) private readonly invitations: OrgInvitationsService) {}
 
   @Post(':token/accept')
   @HttpCode(HttpStatus.OK)
-  async accept(
-    @Param('token') token: string,
-    @CurrentUser() user: CurrentUserPayload,
-  ) {
+  async accept(@Param('token') token: string, @CurrentUser() user: CurrentUserPayload) {
     const result = await this.invitations.acceptInvitation(token, user.id);
     return result;
   }

@@ -1,23 +1,7 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { MeetingType, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../../common/prisma/prisma.service';
-
-/**
- * Admin-redesign Фаза 5 — `MeetingTypesAdminService`.
- *
- * CRUD конфигурации типов встреч (`MeetingTypeConfig`). При первом GET, если
- * таблица пуста — выполняем bootstrap-sync из enum `MeetingType` (без
- * перезаписи admin-edited данных — таблица была пуста, защищать нечего).
- *
- * Audit пишется на уровне контроллера через `SuperAdminAuditInterceptor`.
- */
 
 export interface MeetingTypeItem {
   id: string;
@@ -35,7 +19,6 @@ export interface MeetingTypeItem {
 export class MeetingTypesAdminService {
   private readonly logger = new Logger(MeetingTypesAdminService.name);
 
-  /** Защищает sync от параллельных гонок (одновременные GET на пустой БД). */
   private syncing: Promise<void> | null = null;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -80,9 +63,7 @@ export class MeetingTypesAdminService {
         displayName: input.displayName,
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.icon !== undefined ? { icon: input.icon } : {}),
-        ...(input.reportPromptKey !== undefined
-          ? { reportPromptKey: input.reportPromptKey }
-          : {}),
+        ...(input.reportPromptKey !== undefined ? { reportPromptKey: input.reportPromptKey } : {}),
         ...(input.sortOrder !== undefined ? { sortOrder: input.sortOrder } : {}),
         updatedBy: userId,
       },
@@ -125,7 +106,6 @@ export class MeetingTypesAdminService {
     return this.toItem(updated);
   }
 
-  /** Soft-delete: `isActive=false`. Жёстко не удаляем — id используется в FSM встреч. */
   async softDelete(id: string, userId: string | null): Promise<{ ok: true }> {
     const exists = await this.prisma.meetingTypeConfig.findUnique({ where: { id } });
     if (!exists) {
@@ -144,13 +124,6 @@ export class MeetingTypesAdminService {
     return { ok: true };
   }
 
-  // ─────────────────────────── private ─────────────────────────────────
-
-  /**
-   * Bootstrap-sync из enum MeetingType. Запускаем под guard'ом
-   * `this.syncing`, чтобы при одновременных GET не плодить дубли (id —
-   * PK, БД дубль не примет, но падать на race-условии тоже не хочется).
-   */
   private async ensureBootstrap(): Promise<void> {
     if (this.syncing) {
       await this.syncing;
@@ -163,7 +136,6 @@ export class MeetingTypesAdminService {
       );
       let order = 0;
       for (const id of values) {
-        // upsert безопасен — никаких admin-edited данных нет (count === 0).
         await this.prisma.meetingTypeConfig.upsert({
           where: { id },
           create: {
@@ -171,8 +143,6 @@ export class MeetingTypesAdminService {
             displayName: id,
             isActive: true,
             sortOrder: order++,
-            // Ф8 knowledge-access — дефолт закрытости по типу: найм (interview)
-            // → «личный сейф» (personal); остальные типы открыты (null).
             defaultClosedGroupKind: id === 'interview' ? 'personal' : null,
           },
           update: {},

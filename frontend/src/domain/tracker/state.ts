@@ -1,22 +1,4 @@
-/**
- * Доменная модель статуса задачи (`IssueState`) — колонка канбана.
- *
- * Контракт: `backend/src/modules/tracker/dto/states/state-response.dto.ts`.
- *
- * State принадлежит проекту, имеет категорию (backlog / unstarted / started /
- * completed / cancelled) и порядок в колонке. Фронт использует state для:
- *   - рендера колонок board;
- *   - фильтра «Статус» в списках задач;
- *   - drag-and-drop переходов (на drop вызывается `PATCH /api/v1/issues/:id/transitions`
- *     с `stateId` целевой колонки).
- */
-
-import {
-  parseIssueStateCategory,
-  type IssueStateCategory,
-} from './enums';
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
+import { parseIssueStateCategory, type IssueStateCategory } from "./enums";
 
 export interface TrackerStateApi {
   id: string;
@@ -24,7 +6,6 @@ export interface TrackerStateApi {
   projectId: string;
   name: string;
   color: string;
-  /** backlog | unstarted | started | completed | cancelled. */
   category: string;
   sequence: number;
   isDefault: boolean;
@@ -34,8 +15,6 @@ export interface ListStatesResponseApi {
   items: TrackerStateApi[];
   total: number;
 }
-
-// ─── Domain ─────────────────────────────────────────────────────────────────
 
 export interface TrackerState {
   id: string;
@@ -47,8 +26,6 @@ export interface TrackerState {
   sequence: number;
   isDefault: boolean;
 }
-
-// ─── Mappers ────────────────────────────────────────────────────────────────
 
 export function trackerStateFromApi(api: TrackerStateApi): TrackerState {
   return {
@@ -63,13 +40,6 @@ export function trackerStateFromApi(api: TrackerStateApi): TrackerState {
   };
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/**
- * Сортировка states для отображения колонок board:
- * сначала по category (фиксированный порядок), потом по sequence внутри
- * категории, потом по имени для стабильности.
- */
 const CATEGORY_ORDER: Record<IssueStateCategory, number> = {
   backlog: 0,
   unstarted: 1,
@@ -78,10 +48,13 @@ const CATEGORY_ORDER: Record<IssueStateCategory, number> = {
   cancelled: 4,
 };
 
-export function compareStatesForBoard(a: TrackerState, b: TrackerState): number {
+export function compareStatesForBoard(
+  a: TrackerState,
+  b: TrackerState,
+): number {
   const byCategory = CATEGORY_ORDER[a.category] - CATEGORY_ORDER[b.category];
   if (byCategory !== 0) return byCategory;
   const bySequence = a.sequence - b.sequence;
   if (bySequence !== 0) return bySequence;
-  return a.name.localeCompare(b.name, 'ru');
+  return a.name.localeCompare(b.name, "ru");
 }

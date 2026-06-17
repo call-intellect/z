@@ -16,19 +16,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
-import {
-  CreateIssueSchema,
-  type CreateIssueDto,
-} from '../dto/issues/create-issue.dto';
+import { CreateIssueSchema, type CreateIssueDto } from '../dto/issues/create-issue.dto';
 import type {
   IssueActivityDto,
   IssueChildrenResponseDto,
@@ -52,34 +46,16 @@ import {
   type StartMeetingFromIssueDto,
   type StartMeetingFromIssueResponseDto,
 } from '../dto/issues/start-meeting.dto';
-import {
-  MoveIssueSchema,
-  type MoveIssueDto,
-} from '../dto/issues/move-issue.dto';
+import { MoveIssueSchema, type MoveIssueDto } from '../dto/issues/move-issue.dto';
 import {
   TransitionIssueStateSchema,
   type TransitionIssueStateDto,
 } from '../dto/issues/transition-state.dto';
-import {
-  UpdateIssueSchema,
-  type UpdateIssueDto,
-} from '../dto/issues/update-issue.dto';
+import { UpdateIssueSchema, type UpdateIssueDto } from '../dto/issues/update-issue.dto';
 import { IssueMeetingsService } from '../services/issue-meetings.service';
 import { IssuesService } from '../services/issues.service';
 import { SimilarIssuesService } from '../services/similar-issues.service';
 
-/**
- * REST `/api/v1/projects/:projectId/issues` + `/api/v1/issues/:id` —
- * задачи трекера. RBAC ResourceType='issue'.
- *
- * Sprint 2 (закрыто):
- *   - POST /issues/:id/relations + DELETE → `RelationsController`.
- *   - POST /issues/:id/attachments + GET/DELETE → `AttachmentsController`.
- *   - POST /issues/:id/start-meeting → ниже (вызывает `IssueMeetingsService`).
- *
- * TODO Sprint 3:
- *   - Idempotency-Key middleware на POST /issues.
- */
 @ApiTags('tracker / issues')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -93,8 +69,6 @@ export class IssuesController {
     private readonly similar: SimilarIssuesService,
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
-
-  // ── list / create / detail / patch / delete ──
 
   @Get('projects/:projectId/issues')
   @ApiOperation({ summary: 'Список задач проекта' })
@@ -192,8 +166,6 @@ export class IssuesController {
     await this.svc.softDelete(id, t, user.id);
   }
 
-  // ── state transitions ──
-
   @Post('issues/:id/transitions')
   @RequireSubscription()
   @ApiOperation({ summary: 'Сменить статус задачи (status_changed)' })
@@ -208,8 +180,6 @@ export class IssuesController {
     await this.requireWrite(user.id, t);
     return this.svc.transitionState(id, body, t, user.id);
   }
-
-  // ── move to another project ──
 
   @Post('issues/:id/move')
   @RequireSubscription()
@@ -229,8 +199,6 @@ export class IssuesController {
     await this.requireWrite(user.id, t);
     return this.svc.moveToProject(id, body.targetProjectId, t, user.id);
   }
-
-  // ── assignees ──
 
   @Post('issues/:id/assignees')
   @RequireSubscription()
@@ -261,8 +229,6 @@ export class IssuesController {
     await this.svc.removeAssignee(id, assigneeUserId, t, user.id);
   }
 
-  // ── labels ──
-
   @Post('issues/:id/labels')
   @RequireSubscription()
   @ApiOperation({ summary: 'Добавить метку' })
@@ -292,8 +258,6 @@ export class IssuesController {
     await this.svc.removeLabel(id, labelId, t, user.id);
   }
 
-  // ── subscribe ──
-
   @Post('issues/:id/subscribe')
   @RequireSubscription()
   @ApiOperation({ summary: 'Подписаться на задачу' })
@@ -320,8 +284,6 @@ export class IssuesController {
     await this.requireRead(user.id, t);
     await this.svc.unsubscribe(id, user.id, t);
   }
-
-  // ── goal link ──
 
   @Post('issues/:id/link-goal')
   @RequireSubscription()
@@ -350,8 +312,6 @@ export class IssuesController {
     return this.svc.unlinkGoal(id, t, user.id);
   }
 
-  // ── start meeting from issue ──
-
   @Post('issues/:id/start-meeting')
   @RequireSubscription()
   @ApiOperation({
@@ -375,8 +335,6 @@ export class IssuesController {
       inviteUserIds: body.inviteUserIds,
     });
   }
-
-  // ── activity / versions ──
 
   @Get('issues/:id/activity')
   @ApiOperation({ summary: 'Лента активности задачи' })
@@ -402,8 +360,6 @@ export class IssuesController {
     return this.svc.getVersions(id, t);
   }
 
-  // ── Phase 3 (2026-05-24) — KNN similar issues ──
-
   @Get('tracker/issues/:id/similar')
   @ApiOperation({
     summary:
@@ -418,13 +374,9 @@ export class IssuesController {
   ): Promise<SimilarIssueDto[]> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    // Сначала проверим, что исходная задача существует и доступна в этом
-    // tenant'е (защита от cross-tenant probe через KNN).
     await this.svc.requireIssue(id, t);
     return this.similar.findSimilar({ tenantId: t, issueId: id });
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -462,7 +414,7 @@ export class IssuesController {
       tenantId,
       obj: 'issue',
       act: 'delete',
-      resourceOwnerId: userId, // позволяет manager:self удалять свои
+      resourceOwnerId: userId,
     });
     if (!ok) {
       throw new ForbiddenException({

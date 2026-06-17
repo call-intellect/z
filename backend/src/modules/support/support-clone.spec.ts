@@ -2,16 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SupportCloneService } from './services/support-clone.service';
 
-/**
- * support-desk Ф3 — unit-тесты SupportCloneService.generateDraft:
- *   - конвейер retrieval(контур) → блоки → LLM-черновик → calibrate → critic →
- *     IssueComment(authorType='clone', draftState='pending') с непустыми
- *     cloneConfidence/groundednessScore и сохранённой цитатой [BLOCK:id];
- *   - R-INV-1: fetchCandidates вызывается С contourGroupId (изоляция контура).
- *
- * Все зависимости замоканы (prisma / access / retrieval / llm / critic /
- * calibration).
- */
 describe('SupportCloneService.generateDraft', () => {
   const VENDOR = 'vendor-org-1';
   const GROUP = 'grp-support';
@@ -69,9 +59,7 @@ describe('SupportCloneService.generateDraft', () => {
       getSupportGroupId: vi.fn(async () => GROUP),
     };
     retrievalStub = {
-      fetchCandidates: vi.fn(async () => [
-        { blockId: 'b1', score: 0.9, fromGraph: false },
-      ]),
+      fetchCandidates: vi.fn(async () => [{ blockId: 'b1', score: 0.9, fromGraph: false }]),
     };
     llmStub = {
       call: vi.fn(async () => ({
@@ -119,10 +107,8 @@ describe('SupportCloneService.generateDraft', () => {
     const createArg = prismaStub.issueComment.create.mock.calls[0]?.[0] as {
       data: Record<string, unknown>;
     };
-    // Непустые decimal-поля (строки .toFixed(3)).
     expect(createArg.data.cloneConfidence).toBe('0.800');
     expect(createArg.data.groundednessScore).toBe('0.900');
-    // Цитата на блок контура сохранена в теле.
     expect(String(createArg.data.content)).toContain('[BLOCK:b1]');
   });
 

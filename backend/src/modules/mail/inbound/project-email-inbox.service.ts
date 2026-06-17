@@ -1,19 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * DTO ответа API: per-project email-inbox + последние логи.
- */
 export interface ProjectEmailInboxDto {
   projectId: string;
   enabled: boolean;
@@ -33,21 +24,6 @@ export interface MailInboundLogDto {
   createdAt: string;
 }
 
-/**
- * ProjectEmailInboxService (Tracker Phase 4, T5).
- *
- * Управление per-project email-inbox:
- *  - `get(projectId)` — текущий alias + recent логи.
- *  - `enable(projectId)` — генерирует alias (если нет), включает.
- *  - `regenerate(projectId)` — генерирует новый alias (старый забывается).
- *  - `disable(projectId)` — снимает флаг (alias сохраняется на случай возврата).
- *
- * Alias-формат: `project-${nanoid(10)}` — глобально уникален (БД-constraint
- * `@@unique` на `Project.emailInboxAlias` исключает коллизии).
- *
- * Tenant ownership проверяется caller'ом (контроллер через RBAC + lookup
- * проекта). Здесь — только бизнес-логика.
- */
 @Injectable()
 export class ProjectEmailInboxService {
   private readonly logger = new Logger(ProjectEmailInboxService.name);
@@ -67,27 +43,18 @@ export class ProjectEmailInboxService {
     return this.toResponse(project, logs);
   }
 
-  async enable(
-    projectId: string,
-    tenantId: string,
-  ): Promise<ProjectEmailInboxDto> {
+  async enable(projectId: string, tenantId: string): Promise<ProjectEmailInboxDto> {
     const project = await this.requireProject(projectId, tenantId);
     const alias = project.emailInboxAlias ?? (await this.allocateUniqueAlias());
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: { emailInboxAlias: alias, emailInboxEnabled: true },
     });
-    this.logger.log(
-      { projectId, alias, tenantId },
-      'project-email-inbox: включён',
-    );
+    this.logger.log({ projectId, alias, tenantId }, 'project-email-inbox: включён');
     return this.toResponse(updated, []);
   }
 
-  async disable(
-    projectId: string,
-    tenantId: string,
-  ): Promise<ProjectEmailInboxDto> {
+  async disable(projectId: string, tenantId: string): Promise<ProjectEmailInboxDto> {
     const project = await this.requireProject(projectId, tenantId);
     const updated = await this.prisma.project.update({
       where: { id: projectId },
@@ -100,30 +67,16 @@ export class ProjectEmailInboxService {
     return this.toResponse(updated, []);
   }
 
-  /**
-   * Регенерация alias. Старый alias освобождается (уходит в null), что:
-   *  - сразу же делает входящие на старый адрес → bounced (alias_not_found);
-   *  - освобождает alias для других проектов (теоретически — но коллизия
-   *    маловероятна, alias генерируется случайно из 10 символов).
-   */
-  async regenerate(
-    projectId: string,
-    tenantId: string,
-  ): Promise<ProjectEmailInboxDto> {
+  async regenerate(projectId: string, tenantId: string): Promise<ProjectEmailInboxDto> {
     await this.requireProject(projectId, tenantId);
     const newAlias = await this.allocateUniqueAlias();
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data: { emailInboxAlias: newAlias, emailInboxEnabled: true },
     });
-    this.logger.log(
-      { projectId, newAlias, tenantId },
-      'project-email-inbox: alias регенерирован',
-    );
+    this.logger.log({ projectId, newAlias, tenantId }, 'project-email-inbox: alias регенерирован');
     return this.toResponse(updated, []);
   }
-
-  // ── internal ──
 
   private async requireProject(projectId: string, tenantId: string) {
     const p = await this.prisma.project.findFirst({
@@ -138,10 +91,6 @@ export class ProjectEmailInboxService {
     return p;
   }
 
-  /**
-   * Генерирует уникальный alias `project-XXXXXXXXXX` (10 hex-chars).
-   * Retry до 5 раз на коллизию (вероятность ничтожна, но safety-net).
-   */
   private async allocateUniqueAlias(): Promise<string> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const alias = `project-${randomBytes(5).toString('hex')}`;
@@ -178,9 +127,7 @@ export class ProjectEmailInboxService {
     }>,
   ): ProjectEmailInboxDto {
     const domain = this.cfg.mailInbox.domain;
-    const fullAddress = project.emailInboxAlias
-      ? `${project.emailInboxAlias}@${domain}`
-      : null;
+    const fullAddress = project.emailInboxAlias ? `${project.emailInboxAlias}@${domain}` : null;
     return {
       projectId: project.id,
       enabled: project.emailInboxEnabled,

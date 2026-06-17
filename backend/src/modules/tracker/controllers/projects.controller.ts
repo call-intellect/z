@@ -16,10 +16,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -29,10 +26,7 @@ import {
   CreateFromTemplateSchema,
   type CreateFromTemplateDto,
 } from '../dto/projects/create-from-template.dto';
-import {
-  CreateProjectSchema,
-  type CreateProjectDto,
-} from '../dto/projects/create-project.dto';
+import { CreateProjectSchema, type CreateProjectDto } from '../dto/projects/create-project.dto';
 import {
   AddProjectMemberSchema,
   type AddProjectMemberDto,
@@ -44,24 +38,13 @@ import type {
   ProjectMemberDto,
   ProjectResponseDto,
 } from '../dto/projects/project-response.dto';
-import {
-  UpdateProjectSchema,
-  type UpdateProjectDto,
-} from '../dto/projects/update-project.dto';
+import { UpdateProjectSchema, type UpdateProjectDto } from '../dto/projects/update-project.dto';
 import {
   ProjectsFromTemplateService,
   type CreateFromTemplateResult,
 } from '../services/projects-from-template.service';
 import { ProjectsService } from '../services/projects.service';
 
-/**
- * REST `/api/v1/projects` — проекты трекера (Phase 1 трекера, Sprint 1).
- * Все эндпоинты под TenantGuard + RBAC ResourceType='project'.
- *
- * TODO Sprint 2: подключить IdempotencyService на POST (как только унифицируем
- * общий для всего трекера; сейчас единственный idempotency-механизм —
- * Crossmark-specific, не подходит).
- */
 @ApiTags('tracker / projects')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -244,8 +227,6 @@ export class ProjectsController {
     await this.requireWrite(user.id, t);
     await this.svc.removeMember(id, memberUserId, t);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

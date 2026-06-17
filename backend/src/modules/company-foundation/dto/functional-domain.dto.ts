@@ -1,14 +1,5 @@
 import { z } from 'zod';
 
-/**
- * SBA α-9 wave 3 — DTO для /api/v1/domains.
- *
- * FunctionalDomain — функциональная область (Маркетинг, Продажи, …) с деревом
- * `parentDomainId`. Используется как ось FUNCTIONAL и для MaturityScorer.
- */
-
-// ─────────────────────────── helpers ─────────────────────────────────
-
 const SlugSchema = z
   .string()
   .trim()
@@ -16,26 +7,15 @@ const SlugSchema = z
   .max(80, 'Slug не длиннее 80 символов')
   .regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/, 'Только латиница, цифры, дефис');
 
-const NameSchema = z
-  .string()
-  .trim()
-  .min(1, 'Название обязательно')
-  .max(200);
-
-// ─────────────────────────── query ──────────────────────────────────
+const NameSchema = z.string().trim().min(1, 'Название обязательно').max(200);
 
 export const ListDomainsQuerySchema = z.object({
-  /** При true — возвращаем плоский список + nested `children` для каждого корня. */
   includeChildren: z.coerce.boolean().optional().default(true),
-  /** Только системные / только пользовательские. */
   onlySystem: z.coerce.boolean().optional(),
-  /** Включать ли архивные (deletedAt IS NOT NULL). */
   includeDeleted: z.coerce.boolean().optional().default(false),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 export type ListDomainsQuery = z.infer<typeof ListDomainsQuerySchema>;
-
-// ─────────────────────────── create / update ─────────────────────────
 
 export const CreateDomainSchema = z.object({
   name: NameSchema,
@@ -55,20 +35,15 @@ export const UpdateDomainSchema = z
     parentDomainId: z.string().min(1).nullable().optional(),
     order: z.coerce.number().int().min(0).max(9999).optional(),
   })
-  .refine(
-    (data) => Object.values(data).some((v) => v !== undefined),
-    { message: 'Хотя бы одно поле должно быть указано' },
-  );
+  .refine((data) => Object.values(data).some((v) => v !== undefined), {
+    message: 'Хотя бы одно поле должно быть указано',
+  });
 export type UpdateDomainDto = z.infer<typeof UpdateDomainSchema>;
-
-// ─────────────────────────── seed-template ────────────────────────────
 
 export const SeedTemplateSchema = z.object({
   industry: z.enum(['saas', 'developer', 'retail', 'manufacturing', 'b2b_services']),
 });
 export type SeedTemplateDto = z.infer<typeof SeedTemplateSchema>;
-
-// ─────────────────────────── response DTO ────────────────────────────
 
 export interface FunctionalDomainDto {
   id: string;
@@ -85,9 +60,7 @@ export interface FunctionalDomainDto {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
-  /** Заполняется только при `includeChildren=true`. */
   children?: FunctionalDomainDto[];
-  /** Кол-во связанных отделов (через DepartmentDomainLink). */
   linkedDepartmentsCount?: number;
 }
 

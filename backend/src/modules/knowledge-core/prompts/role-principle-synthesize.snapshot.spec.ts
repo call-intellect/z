@@ -1,17 +1,3 @@
-/**
- * Snapshot-тест сборки промта `role-principle-synthesize.prompt.ts`
- * (TZ clone-method Э1.2 — Reflection-слой принципов роли).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot фиксирует:
- *   - текст `ROLE_PRINCIPLE_SYNTHESIZE_SYSTEM_PROMPT` (constant — guard от
- *     случайных правок жёстких правил: запрет диагностической лексики и
- *     инвариант «правило ПРОЦЕССА, не черта» должны быть стабильны, плюс
- *     SYSTEM cache-friendly — правка ломает prompt-кэш);
- *   - сборку `ROLE_PRINCIPLE_SYNTHESIZE_USER_TEMPLATE` для типичного входа
- *     (2 группы цитат).
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -27,9 +13,7 @@ describe('role-principle-synthesize — snapshot сборки промта', () 
 
   it('system содержит запрет негативно-диагностической лексики (греп «избегает»)', () => {
     expect(ROLE_PRINCIPLE_SYNTHESIZE_SYSTEM_PROMPT).toContain('избегает');
-    expect(ROLE_PRINCIPLE_SYNTHESIZE_SYSTEM_PROMPT).toContain(
-      'ЖЁСТКИЙ ЗАПРЕТ',
-    );
+    expect(ROLE_PRINCIPLE_SYNTHESIZE_SYSTEM_PROMPT).toContain('ЖЁСТКИЙ ЗАПРЕТ');
   });
 
   it('system фиксирует инвариант «правило ПРОЦЕССА, не черта человека»', () => {
@@ -94,8 +78,7 @@ describe('role-principle-synthesize — snapshot сборки промта', () 
             },
             {
               blockId: 'b4',
-              quote:
-                'Сначала пилот на 5% трафика, потом раскатка — так мы ловим сюрпризы дёшево.',
+              quote: 'Сначала пилот на 5% трафика, потом раскатка — так мы ловим сюрпризы дёшево.',
               observedAt: '2026-05-18T11:00:00.000Z',
             },
           ],

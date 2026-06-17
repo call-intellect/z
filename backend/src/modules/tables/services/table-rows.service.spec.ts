@@ -12,16 +12,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { TableRowsService } from './table-rows.service';
 
-/**
- * Unit-тесты `TableRowsService`.
- *
- * Покрытие:
- *  1. create — лимит строк превышен → 400.
- *  2. create — value ячейки больше cap → 400 с конкретным propertyId.
- *  3. create — успешно: order auto, cells/entityId записываются.
- *  4. list — фильтрация archived='active'.
- *  5. hardDelete активной → 403.
- */
 describe('TableRowsService', () => {
   const TENANT = 'org-1';
   const USER = 'user-1';
@@ -88,7 +78,6 @@ describe('TableRowsService', () => {
         maxTablesPerOrg: 5,
         maxPropsPerTable: 10,
         maxRowsPerTable: 3,
-        // Маленький cap, чтобы тест на cell_too_large был детерминированный.
         maxCellSizeBytes: 50,
       },
     } as unknown as TypedConfigService;
@@ -98,7 +87,7 @@ describe('TableRowsService', () => {
 
   it('create — лимит строк превышен → BadRequestException', async () => {
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
-    rowCount.mockResolvedValueOnce(3); // === cap
+    rowCount.mockResolvedValueOnce(3);
 
     await expect(
       svc.create({
@@ -115,7 +104,6 @@ describe('TableRowsService', () => {
     tableFindUnique.mockResolvedValueOnce({ tenantId: TENANT, deletedAt: null });
     rowCount.mockResolvedValueOnce(0);
 
-    // 60 байт > 50 байт лимита.
     const longValue = 'x'.repeat(60);
     try {
       await svc.create({
@@ -176,22 +164,21 @@ describe('TableRowsService', () => {
 
   it('hardDelete активной → ForbiddenException', async () => {
     rowFindUnique.mockResolvedValueOnce(rowEntity({ archivedAt: null }));
-    await expect(
-      svc.hardDelete({ tenantId: TENANT, rowId: 'r-1' }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.hardDelete({ tenantId: TENANT, rowId: 'r-1' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(rowDelete).not.toHaveBeenCalled();
   });
 
   it('findById — чужая Org → NotFoundException', async () => {
     rowFindUnique.mockResolvedValueOnce(rowEntity({ tenantId: 'other-org' }));
-    await expect(
-      svc.findById({ tenantId: TENANT, rowId: 'r-1' }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.findById({ tenantId: TENANT, rowId: 'r-1' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('update — PATCH read-only entity-ячейки → 422 table_cell_readonly', async () => {
     rowFindUnique.mockResolvedValueOnce(rowEntity());
-    // колонка p-name read-only (source='entity')
     propertyFindMany.mockResolvedValueOnce([
       {
         id: 'p-name',
@@ -219,10 +206,7 @@ describe('TableRowsService', () => {
 
   it('update — PATCH ручной ячейки → проходит', async () => {
     rowFindUnique.mockResolvedValueOnce(rowEntity());
-    // колонка p-stage ручная (config пустой)
-    propertyFindMany.mockResolvedValueOnce([
-      { id: 'p-stage', name: 'Стадия', config: {} },
-    ]);
+    propertyFindMany.mockResolvedValueOnce([{ id: 'p-stage', name: 'Стадия', config: {} }]);
     rowUpdate.mockResolvedValueOnce(rowEntity({ cells: { 'p-stage': 'opt-2' } }));
 
     const out = await svc.update({

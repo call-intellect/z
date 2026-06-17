@@ -29,25 +29,8 @@ import {
 import { CommitmentsService } from '../services/commitments.service';
 import { WeeklyPerPersonService } from '../services/weekly-per-person.service';
 
-/**
- * ТЗ-2 Ф4 (daily-value-dashboards) — `GET /api/v1/me/weekly-per-person`.
- *
- * Self-view недельного план-факта: ЛЮБОЙ авторизованный пользователь с
- * Person-записью видит ТОЛЬКО свою строку + среднюю надёжность команды
- * (для стрелки «я vs команда»). RBAC operations-dashboard НЕ требуется —
- * это персональные данные самого пользователя.
- *
- * Auth: CookieAuthGuard + TenantGuard. Graceful 200:
- *   - флаг `operations.per_person_self_view.enabled` OFF → пустой self DTO;
- *   - нет Person-записи → пустой self DTO.
- *
- * Self-person резолвится сервером из cookie-сессии (как `/me/daily-brief`),
- * query НЕ задаёт чужой personId. БЕЗ финансовых данных.
- */
-
 const SELF_LIMIT = 1000;
 
-/** Минимальная query-схема self-view: только понедельник недели. */
 const MyWeeklyPerPersonQuerySchema = z.object({
   weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_week_start'),
 });
@@ -80,7 +63,6 @@ export class MyWeeklyPerPersonController {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
 
-    // Флаг (kill-switch, дефолт ON). OFF → пустой self DTO (graceful).
     const enabled = await this.cfg.getDynamic<boolean>(
       'operations.per_person_self_view.enabled',
       'OPERATIONS_PER_PERSON_SELF_VIEW_ENABLED',
@@ -95,9 +77,6 @@ export class MyWeeklyPerPersonController {
       return this.empty(q.weekStart);
     }
 
-    // Считаем полный недельный агрегат и достаём из него свою строку + среднее
-    // команды. limit большой, offset 0 — нужны ВСЕ строки для среднего и поиска
-    // своей. sort не важен для self-view.
     const dto = await this.svc.compute(
       {
         tenantId: tenantId!,
@@ -124,11 +103,6 @@ export class MyWeeklyPerPersonController {
     };
   }
 
-  /**
-   * ТЗ редизайн Ф8.5 — self drill-down: построчный план-факт по СВОЕМУ
-   * профилю за неделю. `:personId` обязан совпадать с собственным Person
-   * (иначе 403 forbidden_person) — RBAC operations-dashboard не требуется.
-   */
   @Get('weekly-per-person/:personId/items')
   @ApiOperation({
     summary: 'Мой построчный план-факт за неделю (self drill-down)',
@@ -160,26 +134,18 @@ export class MyWeeklyPerPersonController {
     );
   }
 
-  // ── helpers ──
-
-  /** Среднее non-null reliabilityPercent по строкам (округление до целого). */
   private averageReliability(
     rows: ReadonlyArray<{ reliabilityPercent: number | null }>,
   ): number | null {
-    const values = rows
-      .map((r) => r.reliabilityPercent)
-      .filter((v): v is number => v !== null);
+    const values = rows.map((r) => r.reliabilityPercent).filter((v): v is number => v !== null);
     if (values.length === 0) return null;
     const sum = values.reduce((acc, v) => acc + v, 0);
     return Math.round(sum / values.length);
   }
 
   private empty(weekStart: string): MyWeeklyPerPersonDto {
-    // weekEnd = воскресенье той же недели (понедельник + 6 дней).
     const weekStartDate = new Date(`${weekStart}T00:00:00.000Z`);
-    const weekEndDate = new Date(
-      weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000,
-    );
+    const weekEndDate = new Date(weekStartDate.getTime() + 6 * 24 * 60 * 60 * 1000);
     const y = weekEndDate.getUTCFullYear();
     const m = String(weekEndDate.getUTCMonth() + 1).padStart(2, '0');
     const d = String(weekEndDate.getUTCDate()).padStart(2, '0');
@@ -191,11 +157,7 @@ export class MyWeeklyPerPersonController {
     };
   }
 
-  /** Резолв self-person (graceful: null если Person нет — не 403). */
-  private async resolveSelfPersonId(
-    tenantId: string,
-    userId: string,
-  ): Promise<string | null> {
+  private async resolveSelfPersonId(tenantId: string, userId: string): Promise<string | null> {
     try {
       const person = await this.commitments.resolveSelfPerson({
         tenantId,

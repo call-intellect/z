@@ -1,9 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO для Org-Admin knowledge-core debug (Фаза 7 шаг 7).
- */
-
 export const SetWorkersSchema = z
   .record(z.string(), z.boolean())
   .refine((m) => Object.keys(m).length > 0, {
@@ -13,7 +9,6 @@ export type SetWorkersDto = z.infer<typeof SetWorkersSchema>;
 
 export const RecentAuditQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
-  /** CSV-список типов сущностей: `block,entity,theme`. Парсится в контроллере. */
   entityTypes: z.string().optional(),
 });
 export type RecentAuditQuery = z.infer<typeof RecentAuditQuerySchema>;
@@ -59,8 +54,7 @@ export const PatchEntitySchema = z
     canonicalName: z.string().min(1).max(200).optional(),
     addAlias: z.string().min(1).max(200).optional(),
   })
-  .refine(
-    (v) => v.canonicalName !== undefined || v.addAlias !== undefined,
-    { message: 'нужно передать хотя бы canonicalName или addAlias' },
-  );
+  .refine((v) => v.canonicalName !== undefined || v.addAlias !== undefined, {
+    message: 'нужно передать хотя бы canonicalName или addAlias',
+  });
 export type PatchEntityDto = z.infer<typeof PatchEntitySchema>;

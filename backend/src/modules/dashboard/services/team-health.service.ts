@@ -7,27 +7,15 @@ import { OperationsDashboardService } from '../../operations/services/operations
 import { CommitmentReliabilityService } from './commitment-reliability.service';
 import { HangingDecisionsService } from './hanging-decisions.service';
 
-/**
- * Health tone — цвет UI-чипа. `neutral` используется когда отдел ниже cohort
- * или метрика не применима в v1.
- */
 export type HealthTone = 'success' | 'warning' | 'danger' | 'neutral';
 
-/**
- * Один атрибут здоровья команды (sentiment / promises / conflicts / decisions).
- */
 export interface TeamHealthAttrDto {
-  /** Текущее значение (число — % или индекс или счётчик). */
   value: number;
-  /** Цвет UI-чипа. */
   tone: HealthTone;
-  /** Тренд (для sentiment и promises). Не возвращается для decisions/conflicts. */
   trend?: 'up' | 'flat' | 'down';
-  /** Дельта к предыдущему окну (для promises). */
   delta?: number | null;
 }
 
-/** ТЗ coo-orphan-agents Ф6 — факторы вовлечённости (LLM, ежедневно). */
 export type TeamHealthFactorLevel = 'low' | 'medium' | 'high';
 
 export interface TeamHealthSummaryDto {
@@ -39,60 +27,31 @@ export interface TeamHealthSummaryDto {
     role_clarity: TeamHealthFactorLevel;
   };
   summary: string;
-  /** ISO-строка момента расчёта (показываем, чтобы не путать с live-метриками). */
   generatedAt: string;
 }
 
-/** Строка таблицы здоровья команды — один отдел. */
 export interface TeamHealthRowDto {
   departmentId: string;
   departmentName: string;
   size: number;
-  /** true — отдел меньше cohort threshold (3 чел.), показываем заглушку. */
   belowCohort: boolean;
-  /** Индекс настроения, -100..+100. */
   sentiment: TeamHealthAttrDto;
-  /** Надёжность обещаний, 0..100 %. */
   promises: TeamHealthAttrDto;
-  /** Число пар-конфликтов внутри отдела. */
   conflicts: TeamHealthAttrDto;
-  /** Число висящих решений, атрибутированных отделу (ТЗ Ф2). */
   decisions: TeamHealthAttrDto;
-  /** Факторы вовлечённости из ежедневного LLM-расчёта. null — ещё не посчитан. */
   healthSummary?: TeamHealthSummaryDto | null;
 }
 
 export interface TeamHealthDto {
   teams: TeamHealthRowDto[];
-  /** Общее число отделов в tenant (для UI «X из Y отделов выше cohort»). */
   totalDepartments: number;
 }
 
-/**
- * TeamHealthService — Pulse Wave 1 §1.6 «Team Health Grid».
- *
- * Возвращает таблицу здоровья команд (по отделам) для главного дашборда
- * директора: per-dept агрегаты по 4 метрикам (sentiment / promises /
- * conflicts / decisions).
- *
- * Принципы (§1.2):
- *   - cohort ≥ 3 человека — иначе показываем `belowCohort: true` и не
- *     считаем индексы (анти-доксинг + статистика);
- *   - переиспользуем готовые сервисы:
- *       * `OperationsDashboardService.getTeamTemperature` — sentiment per-person,
- *       * `CommitmentReliabilityService.getReliability({scope:'team'})` — promises,
- *       * `EntityLink.relationType='conflicted_with'` — conflicts.
- *
- * Кэш — Redis с TTL 5 минут (`team_health:<tenantId>`). На ошибки Redis
- * сервис не падает.
- */
 @Injectable()
 export class TeamHealthService {
   private readonly logger = new Logger(TeamHealthService.name);
 
-  /** Min cohort size для агрегатов (анти-доксинг + статистика). ТЗ §1.2 принцип 6. */
   private static readonly MIN_COHORT_SIZE = 3;
-  /** Порог дельты (доля 0..1), при превышении считается трендом 'up'/'down'. */
   private static readonly TREND_THRESHOLD = 0.05;
   private static readonly CACHE_TTL_SEC = 300;
 
@@ -132,15 +91,11 @@ export class TeamHealthService {
       orderBy: { name: 'asc' },
     });
 
-    // Загружаем sentiment per-person (за 7 дней) одной выборкой.
     const temperature = await this.ops.getTeamTemperature({
       tenantId: args.tenantId,
       days: 7,
     });
-    const sentimentByPerson = new Map<
-      string,
-      { green: number; red: number; total: number }
-    >();
+    const sentimentByPerson = new Map<string, { green: number; red: number; total: number }>();
     for (const p of temperature.byPerson) {
       sentimentByPerson.set(p.personId, {
         green: p.green,
@@ -149,7 +104,6 @@ export class TeamHealthService {
       });
     }
 
-    // Загружаем EntityLink conflict (одной выборкой за tenant).
     const conflictLinks = await this.prisma.entityLink.findMany({
       where: {
         tenantId: args.tenantId,
@@ -160,21 +114,13 @@ export class TeamHealthService {
       select: { fromEntityId: true, toEntityId: true },
     });
 
-    // Висящие решения с авторами — ОДНА выборка за tenant (запрет N+1).
-    // Раскладка по отделам in-memory ниже (как conflictLinks). Правило
-    // атрибуции (ТЗ Ф2): решение «висит» для отдела, если хотя бы один автор из
-    // decidedByPersonIds — из этого отдела (primaryDepartmentId == dept.id).
-    // Overlap допускается: одно решение может попасть в 2 отдела.
     const hangingDecisions = await this.hanging.listHangingWithAuthors({
       tenantId: args.tenantId,
     });
-    // Обратная карта personId → departmentId (по primaryDepartment relation).
     const personToDept = new Map<string, string>();
     for (const dept of departments) {
       for (const p of dept.persons) personToDept.set(p.id, dept.id);
     }
-    // Раскладка: для каждого решения — множество отделов-владельцев (dedup,
-    // одно решение считается отделу не более одного раза).
     const decisionsByDept = new Map<string, number>();
     for (const d of hangingDecisions) {
       const depts = new Set<string>();
@@ -199,15 +145,11 @@ export class TeamHealthService {
 
       const personIds = new Set(dept.persons.map((p) => p.id));
       const entityIds = new Set(
-        dept.persons
-          .map((p) => p.entityId)
-          .filter((id): id is string => !!id),
+        dept.persons.map((p) => p.entityId).filter((id): id is string => !!id),
       );
 
-      // Sentiment: агрегат по persons отдела.
       const sentiment = this.computeSentiment(personIds, sentimentByPerson);
 
-      // Promises: переиспользуем CommitmentReliabilityService с scope='team'.
       const promisesRes = await this.commits.getReliability({
         tenantId: args.tenantId,
         scope: 'team',
@@ -222,7 +164,6 @@ export class TeamHealthService {
         }),
       };
 
-      // Conflicts: счётчик пар где хотя бы одна из сторон — entity-id отдела.
       const conflictsInDept = conflictLinks.filter(
         (l) =>
           (l.fromEntityId && entityIds.has(l.fromEntityId)) ||
@@ -233,7 +174,6 @@ export class TeamHealthService {
         tone: this.toneConflicts(conflictsInDept),
       };
 
-      // Decisions: висящие решения, атрибутированные отделу (ТЗ Ф2).
       const decisionsCount = decisionsByDept.get(dept.id) ?? 0;
       const decisions: TeamHealthAttrDto = {
         value: decisionsCount,
@@ -273,8 +213,6 @@ export class TeamHealthService {
 
     return result;
   }
-
-  // ─────────────────────────── private ────────────────────────────
 
   private computeSentiment(
     personIds: Set<string>,
@@ -330,7 +268,6 @@ export class TeamHealthService {
     return 'flat';
   }
 
-  /** Защитный парс healthSummaryJson (Json нетипизирован). null при любом несоответствии. */
   private parseHealthSummary(json: unknown): TeamHealthSummaryDto | null {
     if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
     const obj = json as Record<string, unknown>;
@@ -340,8 +277,11 @@ export class TeamHealthService {
     if (typeof summary !== 'string') return null;
     const f = factors as Record<string, unknown>;
     const keys = [
-      'manager_support', 'workload_fairness', 'communication',
-      'time_pressure', 'role_clarity',
+      'manager_support',
+      'workload_fairness',
+      'communication',
+      'time_pressure',
+      'role_clarity',
     ] as const;
     const isLevel = (v: unknown): v is TeamHealthFactorLevel =>
       v === 'low' || v === 'medium' || v === 'high';
@@ -357,11 +297,7 @@ export class TeamHealthService {
     };
   }
 
-  private belowCohortRow(
-    id: string,
-    name: string,
-    size: number,
-  ): TeamHealthRowDto {
+  private belowCohortRow(id: string, name: string, size: number): TeamHealthRowDto {
     const neutral: TeamHealthAttrDto = { value: 0, tone: 'neutral' };
     return {
       departmentId: id,

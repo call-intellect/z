@@ -1,21 +1,8 @@
-/**
- * Доменная модель для главной админки Z — глобальный Telegram-бот (β-9 Phase 4).
- *
- * Контракт backend: `AdminTelegramBotService` (см.
- * `backend/src/modules/admin/system/telegram-bot/admin-telegram-bot.dto.ts`).
- *
- * Layer split: ApiDto — то, что приходит по проводу;
- * DomainModel — типобезопасные значения с распарсенными датами и
- * сценарными полями для UI.
- */
-
-// ────────────────────────── ApiDto ──────────────────────────
-
 export type TelegramBotStatusApi =
-  | 'active'
-  | 'disabled'
-  | 'broken'
-  | 'global_disabled';
+  | "active"
+  | "disabled"
+  | "broken"
+  | "global_disabled";
 
 export type TelegramBotTemplatesApi = {
   welcome: string;
@@ -24,15 +11,6 @@ export type TelegramBotTemplatesApi = {
   orgFrozen: string;
 };
 
-/**
- * Транспорт Telegram через прокси telegram.crossmark.ru (ТЗ
- * plans/tz/2026-05-26-telegram-via-crossmark-proxy.md).
- *   - enabled — backend-флаг TELEGRAM_PROXY_ENABLED;
- *   - apiBase — текущий URL прокси (для подсказки в UI);
- *   - healthy — последний результат health-cron'а (null = нет данных);
- *   - botId / registeredAt — текущая регистрация в прокси;
- *   - lastSyncError — последняя ошибка upsertBot.
- */
 export type TelegramBotProxyStatusApi = {
   enabled: boolean;
   apiBase: string;
@@ -57,7 +35,6 @@ export type TelegramBotSettingsApiDto = {
   updatedAt: string;
 };
 
-/** Результат POST /admin/system/telegram-bot/ping. */
 export type TelegramBotProxyPingApiDto = {
   ok: boolean;
   status: number;
@@ -66,11 +43,11 @@ export type TelegramBotProxyPingApiDto = {
 };
 
 export type TelegramBotBindingStatusApi =
-  | 'linked'
-  | 'pending'
-  | 'no_membership'
-  | 'bot_blocked'
-  | 'inactive';
+  | "linked"
+  | "pending"
+  | "no_membership"
+  | "bot_blocked"
+  | "inactive";
 
 export type TelegramBotBindingApiDto = {
   id: string;
@@ -93,25 +70,14 @@ export type TelegramBotBindingsPageApiDto = {
   pageSize: number;
 };
 
-// ────────────────────────── DomainModel ──────────────────────────
-
 export type TelegramBotProxyStatusDomain = {
   enabled: boolean;
   apiBase: string;
-  /** null — health-cron ещё не отрабатывал, UI рисует серым. */
   healthy: boolean | null;
   botId: string | null;
   registeredAt: Date | null;
   lastSyncError: string | null;
-  /**
-   * Удобный сводный флаг: `'green' | 'yellow' | 'red' | 'gray'` для
-   * вывода индикатора в UI.
-   *   green   = enabled + healthy=true + botId есть;
-   *   yellow  = enabled + healthy=true + botId нет (ещё не регистрировались);
-   *   red     = enabled + healthy=false (или lastSyncError не пуст);
-   *   gray    = !enabled или healthy=null.
-   */
-  trafficLight: 'green' | 'yellow' | 'red' | 'gray';
+  trafficLight: "green" | "yellow" | "red" | "gray";
 };
 
 export type TelegramBotDomain = {
@@ -123,9 +89,7 @@ export type TelegramBotDomain = {
   webhookSecretIsSet: boolean;
   botUsername: string | null;
   status: TelegramBotStatusApi;
-  /** Удобный флаг для UI: «всё ли работает у бота». */
   isLive: boolean;
-  /** Удобный флаг для UI: «бот выключен главным админом». */
   isGloballyDisabled: boolean;
   brokenReason: string | null;
   templates: TelegramBotTemplatesApi;
@@ -141,7 +105,6 @@ export type TelegramBotBindingDomain = {
   userEmail: string | null;
   userName: string | null;
   status: TelegramBotBindingStatusApi;
-  /** Локализованная подпись статуса для UI. */
   statusLabel: string;
   linkedAt: Date | null;
   lastInboundAt: Date | null;
@@ -157,21 +120,21 @@ export type TelegramBotBindingsPageDomain = {
   hasMore: boolean;
 };
 
-// ────────────────────────── Mappers ──────────────────────────
-
-function proxyFromApi(api: TelegramBotProxyStatusApi): TelegramBotProxyStatusDomain {
+function proxyFromApi(
+  api: TelegramBotProxyStatusApi,
+): TelegramBotProxyStatusDomain {
   const registeredAt = api.registeredAt ? new Date(api.registeredAt) : null;
-  let trafficLight: TelegramBotProxyStatusDomain['trafficLight'];
+  let trafficLight: TelegramBotProxyStatusDomain["trafficLight"];
   if (!api.enabled) {
-    trafficLight = 'gray';
+    trafficLight = "gray";
   } else if (api.healthy === null) {
-    trafficLight = 'gray';
+    trafficLight = "gray";
   } else if (!api.healthy || api.lastSyncError) {
-    trafficLight = 'red';
+    trafficLight = "red";
   } else if (!api.botId) {
-    trafficLight = 'yellow';
+    trafficLight = "yellow";
   } else {
-    trafficLight = 'green';
+    trafficLight = "green";
   }
   return {
     enabled: api.enabled,
@@ -198,10 +161,10 @@ export function telegramBotFromApi(
     status: api.status,
     isLive:
       api.channelExists &&
-      api.status === 'active' &&
+      api.status === "active" &&
       api.tokenIsSet &&
       api.webhookSecretIsSet,
-    isGloballyDisabled: api.status === 'global_disabled',
+    isGloballyDisabled: api.status === "global_disabled",
     brokenReason: api.brokenReason,
     templates: api.templates,
     proxy: proxyFromApi(api.proxy),
@@ -210,11 +173,11 @@ export function telegramBotFromApi(
 }
 
 const BINDING_STATUS_LABEL: Record<TelegramBotBindingStatusApi, string> = {
-  linked: 'Привязан, активен',
-  pending: 'Ожидает подтверждения',
-  no_membership: 'Без компании',
-  bot_blocked: 'Бот заблокирован сотрудником',
-  inactive: 'Неактивен (более 30 дней)',
+  linked: "Привязан, активен",
+  pending: "Ожидает подтверждения",
+  no_membership: "Без компании",
+  bot_blocked: "Бот заблокирован сотрудником",
+  inactive: "Неактивен (более 30 дней)",
 };
 
 export function telegramBotBindingFromApi(

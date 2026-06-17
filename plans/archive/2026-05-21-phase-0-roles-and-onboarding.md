@@ -75,7 +75,7 @@ related:
 - Мастер знакомства на frontend (5 шагов) + дашборд компании + страницы списков сущностей группы А.
 - `RoleProfileAgent` MVP — BullMQ-воркер, генерирует `RoleProfile` по cron + on-demand.
 - Расширение RBAC: новые `ResourceType` для всех новых сущностей (включая слоты).
-- Расширение глоссария UI (`delivery/13-glossary.md`, `delivery/ui/copy-strings.ru.md`) русскими названиями новых сущностей группы А (термины для группы Б — добавятся в γ, когда появится UI).
+- Расширение глоссария UI (`second-brain/13_glossary/ui-glossary.md`, `second-brain/13_glossary/copy-strings.ru.md`) русскими названиями новых сущностей группы А (термины для группы Б — добавятся в γ, когда появится UI).
 - **Расширение `BlockExtractionService`** на распознавание всех новых типов из группы Б (возможно — разбивка на несколько extraction-проходов, см. открытый вопрос §6).
 - **Расширение `EntityResolutionService`** на дедуп новых типов из группы Б (доменные правила: одно название процесса / регламента / решения в рамках Org = одна сущность).
 
@@ -262,7 +262,7 @@ related:
 | 33 | CSV-импорт сотрудников — опционально, после ручного ввода. Решить в открытом вопросе перед 0c | онтология §6.1 шаг 3 | 0c | [ ] |
 | 34 | Дашборд компании после wizard'а: карточки должностей с пометкой «карта пустая, ждёт данных» пока `RoleProfileAgent` не наполнил | онтология §6.1 шаг 5 | 0c | [ ] |
 | 35 | Все строки UI на русском без английских слов; глоссарий пополнен (см. строку 36) | feedback_admin_ui_russian_only.md, §8 итерация 11 | 0c | [ ] |
-| 36 | Расширение `delivery/13-glossary.md` и `delivery/ui/copy-strings.ru.md` новыми терминами: Должность, Отдел, Должностная инструкция, Навык, Документ, Карта должности, Сотрудник на должности, Знакомство с компанией (мастер) | онтология §8 итерация 11 | 0c | [ ] |
+| 36 | Расширение `second-brain/13_glossary/ui-glossary.md` и `second-brain/13_glossary/copy-strings.ru.md` новыми терминами: Должность, Отдел, Должностная инструкция, Навык, Документ, Карта должности, Сотрудник на должности, Знакомство с компанией (мастер) | онтология §8 итерация 11 | 0c | [ ] |
 
 ### G. RoleProfileAgent
 
@@ -407,7 +407,7 @@ related:
 - [ ] Обновлены: [second-brain/01_projects/roles-and-permissions.md](../../second-brain/01_projects/roles-and-permissions.md) (или новый файл `roles-and-onboarding.md`), [second-brain/02_architecture/data-model.md](../../second-brain/02_architecture/data-model.md), [second-brain/02_architecture/module-map.md](../../second-brain/02_architecture/module-map.md).
 - [ ] Созданы: `second-brain/01_projects/document-ingest.md`, `second-brain/01_projects/role-profile-agent.md`, `second-brain/01_projects/onboarding-wizard.md`, `second-brain/01_projects/company-framework-slots.md` (документация по слотам Б — Mission/Vision/Strategy/Process/Regulation/Policy/Tool/Metric/Decision, как они наполняются, как extraction работает).
 - [ ] Обновлён `second-brain/02_architecture/code-pitfalls.md`: запись «Cypher только через `GraphService`».
-- [ ] Обновлён `delivery/13-glossary.md` + `delivery/ui/copy-strings.ru.md` новыми терминами группы А (термины группы Б добавятся в Фазе γ).
+- [ ] Обновлён `second-brain/13_glossary/ui-glossary.md` + `second-brain/13_glossary/copy-strings.ru.md` новыми терминами группы А (термины группы Б добавятся в Фазе γ).
 - [ ] Запись рефлексии в `second-brain/05_история/2026-MM-DD-фаза-0-итог.md`.
 
 ---

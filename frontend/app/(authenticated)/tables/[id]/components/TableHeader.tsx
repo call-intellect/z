@@ -1,24 +1,15 @@
-'use client';
+"use client";
 
-import { Bell, Plus, Table2 } from 'lucide-react';
+import { Bell, Plus, Table2 } from "lucide-react";
 
-import type { TableDomain } from '@/domain/table';
-import { Button } from '@/ui/shadcn/button';
+import type { TableDomain } from "@/domain/table";
+import { Button } from "@/ui/shadcn/button";
 
-import { AddColumnButton } from './AddColumnButton';
-import { SemanticFilterBar } from './SemanticFilterBar';
-import { ViewSelector } from './ViewSelector';
-import type { TablePropType } from '@/domain/table';
+import { AddColumnButton } from "./AddColumnButton";
+import { SemanticFilterBar } from "./SemanticFilterBar";
+import { ViewSelector } from "./ViewSelector";
+import type { TablePropType } from "@/domain/table";
 
-/**
- * Шапка страницы таблицы — название + иконка в круге + кнопки действий.
- *
- * Без новой функциональности: только полировка стиля (парные токены, hover,
- * иконка таблицы в круге как на индексной странице).
- *
- * Поиск/фильтры/sort'ы — отдельный `ViewSelector` ниже (он управляет saved
- * views и draftConfig).
- */
 export function TableHeader({
   table,
   onAddRow,
@@ -31,9 +22,7 @@ export function TableHeader({
   onAddRow: () => Promise<void> | void;
   onAddColumn: (type: TablePropType, name: string) => Promise<void> | void;
   isMutating: boolean;
-  /** Кол-во правок ячеек, ожидающих подтверждения (Фаза 3). */
   pendingCount: number;
-  /** Открыть панель очереди подтверждений. */
   onOpenPending: () => void;
 }) {
   return (

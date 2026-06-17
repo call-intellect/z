@@ -1,10 +1,3 @@
-/**
- * G.2 KC-Temporal (2026-05-25) — DomainModel для матрицы переходов signalType.
- *
- * Источник данных: `backend/src/modules/admin/signal-type-monitor/
- * signal-type-monitor.controller.ts`.
- */
-
 export type AdminSignalTypeMonitorItemApi = {
   tenantId: string;
   tenantName: string | null;

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import { EmptyState } from './EmptyState';
-import { ErrorState } from './ErrorState';
+import type { ReactNode } from "react";
+import { EmptyState } from "./EmptyState";
+import { ErrorState } from "./ErrorState";
 
 type Props = {
   isLoading: boolean;
@@ -15,12 +15,6 @@ type Props = {
   children: ReactNode;
 };
 
-/**
- * QueryGate — единый сценарий для SWR-страниц:
- * loading → skeleton, error → ErrorState, isEmpty → EmptyState, иначе content.
- *
- * Поддерживает кастомные slot'ы (skeleton/empty/errorView) и дефолты.
- */
 export function QueryGate({
   isLoading,
   error,
@@ -50,9 +44,9 @@ export function QueryGate({
     const message =
       error instanceof Error
         ? error.message
-        : typeof error === 'string'
+        : typeof error === "string"
           ? error
-          : 'Не удалось загрузить данные';
+          : "Не удалось загрузить данные";
     return <ErrorState message={message} onRetry={onRetry} />;
   }
 

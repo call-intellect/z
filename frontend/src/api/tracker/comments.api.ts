@@ -1,12 +1,6 @@
-/**
- * API-клиент модуля tracker.comments.
- *
- * Контракт: `backend/src/modules/tracker/controllers/comments.controller.ts`.
- */
-
-import { apiClient } from '../api-client';
-import { orgHeaders } from '../admin-helpers';
-import type { CommentApi, CommentAccess } from '@/domain/tracker';
+import { apiClient } from "../api-client";
+import { orgHeaders } from "../admin-helpers";
+import type { CommentApi, CommentAccess } from "@/domain/tracker";
 
 export interface CreateCommentRequest {
   content: string;

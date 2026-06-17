@@ -1,11 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import useSWR, { mutate } from 'swr';
-import { Loader2, Link as LinkIcon, Trash2, ExternalLink, RotateCw, Settings2 } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import useSWR, { mutate } from "swr";
+import {
+  Loader2,
+  Link as LinkIcon,
+  Trash2,
+  ExternalLink,
+  RotateCw,
+  Settings2,
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   generateLinkCode,
   listMyChannels,
@@ -13,19 +20,19 @@ import {
   updateBindingMaxDataClass,
   type ChannelEntryApi,
   type LinkCodeKindApi,
-} from '@/api/conversational.api';
+} from "@/api/conversational.api";
 import {
   buildTelegramDeepLink,
   resetTelegramBinding,
-} from '@/api/me-channels.api';
-import { mapChannelEntry } from '@/domain/conversational';
-import { mapTelegramChannelEntry } from '@/domain/me-channels';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/api/me-channels.api";
+import { mapChannelEntry } from "@/domain/conversational";
+import { mapTelegramChannelEntry } from "@/domain/me-channels";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/ui/components/shared/ConfirmDialog";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Dialog,
   DialogContent,
@@ -33,30 +40,20 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/ui/shadcn/dialog";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * `/me/channels` — настройка каналов общения с Корой.
- *
- * β-9 / Phase 6 (2026-05-25): для Telegram-канала отдельный рендер с
- * понятными статусами «Привязан»/«Не привязан»/«Бот заблокирован» и
- * двухшаговой перепривязкой (Отвязать → Привязать заново). Кнопка
- * «Открыть @kora_bot» строит deep-link с одноразовым кодом.
- *
- * Для остальных каналов (in_app, max_bot, email_*) сохранён legacy-рендер
- * из α-1.
- */
 export function ChannelsClient() {
   const { currentOrgId, currentOrgRole, isLoading } = useAuth();
-  const swrKey = currentOrgId ? ['my-channels', currentOrgId] : null;
-  const { data, error, isLoading: loadingList } = useSWR(
-    swrKey,
-    async () => {
-      const res = await listMyChannels(currentOrgId!);
-      return res.items;
-    },
-  );
+  const swrKey = currentOrgId ? ["my-channels", currentOrgId] : null;
+  const {
+    data,
+    error,
+    isLoading: loadingList,
+  } = useSWR(swrKey, async () => {
+    const res = await listMyChannels(currentOrgId!);
+    return res.items;
+  });
 
   const [code, setCode] = useState<{
     kind: LinkCodeKindApi;
@@ -87,14 +84,16 @@ export function ChannelsClient() {
     try {
       const result = await generateLinkCode(kind);
       const botUsername =
-        kind === 'telegram_bot'
-          ? (entries.find((e) => e.channel.kind === 'telegram_bot')?.channel
+        kind === "telegram_bot"
+          ? (entries.find((e) => e.channel.kind === "telegram_bot")?.channel
               .botUsername ?? null)
           : null;
       setCode({ kind, ...result, requestedAt: Date.now(), botUsername });
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось сгенерировать код: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+        toast.error(
+          `Не удалось сгенерировать код: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
       }
     } finally {
       setLinkBusy(null);
@@ -113,7 +112,9 @@ export function ChannelsClient() {
       await mutate(swrKey);
     } catch (e) {
       if (e instanceof ApiError) {
-        toast.error(`Не удалось отвязать: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+        toast.error(
+          `Не удалось отвязать: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+        );
       }
       throw e;
     } finally {
@@ -155,18 +156,18 @@ export function ChannelsClient() {
 
       <ul className="space-y-3">
         {entries.map((entry) => {
-          if (entry.channel.kind === 'telegram_bot') {
+          if (entry.channel.kind === "telegram_bot") {
             return (
               <li key={entry.channel.id}>
                 <TelegramCard
                   entry={entry}
-                  onLink={() => handleGenerateCode('telegram_bot')}
+                  onLink={() => handleGenerateCode("telegram_bot")}
                   onUnlink={handleUnlink}
                   onChanged={() => mutate(swrKey)}
-                  linkBusy={linkBusy === 'telegram_bot'}
+                  linkBusy={linkBusy === "telegram_bot"}
                   unlinkBusy={unlinkBusy}
                   isOrgAdmin={
-                    currentOrgRole === 'owner' || currentOrgRole === 'admin'
+                    currentOrgRole === "owner" || currentOrgRole === "admin"
                   }
                 />
               </li>
@@ -179,34 +180,40 @@ export function ChannelsClient() {
                 <CardHeader className="pb-2">
                   <CardTitle className="flex items-center gap-2 text-base">
                     {ch.label}
-                    <Badge variant={ch.status === 'active' ? 'default' : 'secondary'}>
-                      {ch.status === 'active'
-                        ? 'Активен'
-                        : ch.status === 'disabled'
-                          ? 'Выключен'
-                          : 'Сломан'}
+                    <Badge
+                      variant={ch.status === "active" ? "default" : "secondary"}
+                    >
+                      {ch.status === "active"
+                        ? "Активен"
+                        : ch.status === "disabled"
+                          ? "Выключен"
+                          : "Сломан"}
                     </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="text-muted-foreground">
-                    Класс данных (канал): до уровня <strong>{ch.maxDataClass}</strong> ·
-                    направление: {ch.direction === 'bidirectional' ? 'двустороннее' : ch.direction}
+                    Класс данных (канал): до уровня{" "}
+                    <strong>{ch.maxDataClass}</strong> · направление:{" "}
+                    {ch.direction === "bidirectional"
+                      ? "двустороннее"
+                      : ch.direction}
                   </div>
-                  {ch.binding && ch.kind !== 'in_app' && (
+                  {ch.binding && ch.kind !== "in_app" && (
                     <details className="rounded-md border bg-muted/30 p-3 text-sm">
                       <summary className="cursor-pointer select-none font-medium text-muted-foreground">
                         Дополнительно: какие данные можно слать в этот канал
                       </summary>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Обычно менять не нужно — по умолчанию приходят рабочие данные.
+                        Обычно менять не нужно — по умолчанию приходят рабочие
+                        данные.
                       </p>
                       <div className="mt-2">
                         <MaxDataClassRadio
                           bindingId={ch.binding.id}
                           current={
-                            ch.binding.maxDataClass === 'private'
-                              ? 'sensitive'
+                            ch.binding.maxDataClass === "private"
+                              ? "sensitive"
                               : ch.binding.maxDataClass
                           }
                           onChanged={() => mutate(swrKey)}
@@ -214,17 +221,21 @@ export function ChannelsClient() {
                       </div>
                     </details>
                   )}
-                  {ch.kind === 'in_app' ? (
+                  {ch.kind === "in_app" ? (
                     <div className="text-xs text-muted-foreground">
                       Работает автоматически — отдельной настройки не требует.
                     </div>
                   ) : ch.binding ? (
                     <div className="flex items-center justify-between">
                       <div>
-                        Привязан: <code className="font-mono">{ch.binding.externalId}</code>
+                        Привязан:{" "}
+                        <code className="font-mono">
+                          {ch.binding.externalId}
+                        </code>
                         {ch.binding.verifiedAt && (
                           <span className="ml-2 text-xs text-muted-foreground">
-                            подтверждено {ch.binding.verifiedAt.toLocaleString('ru-RU')}
+                            подтверждено{" "}
+                            {ch.binding.verifiedAt.toLocaleString("ru-RU")}
                           </span>
                         )}
                       </div>
@@ -245,13 +256,15 @@ export function ChannelsClient() {
                   ) : (
                     <div className="flex items-center justify-between">
                       <div className="text-xs text-muted-foreground">
-                        Не привязан. Сгенерируйте код и отправьте боту командой{' '}
+                        Не привязан. Сгенерируйте код и отправьте боту командой{" "}
                         <code className="font-mono">/link &lt;код&gt;</code>.
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleGenerateCode(ch.kind as LinkCodeKindApi)}
+                        onClick={() =>
+                          handleGenerateCode(ch.kind as LinkCodeKindApi)
+                        }
                         disabled={linkBusy === ch.kind}
                       >
                         {linkBusy === ch.kind ? (
@@ -270,7 +283,7 @@ export function ChannelsClient() {
         })}
       </ul>
 
-      {code && code.kind !== 'telegram_bot' && (
+      {code && code.kind !== "telegram_bot" && (
         <Card className="border-primary">
           <CardHeader>
             <CardTitle className="text-base">Код для привязки</CardTitle>
@@ -281,21 +294,20 @@ export function ChannelsClient() {
             </p>
             <p className="font-mono text-2xl tracking-widest">{code.code}</p>
             <p className="text-xs text-muted-foreground">
-              Код действителен {Math.round(code.ttlSec / 60)} мин. Отправьте боту{' '}
-              <code className="font-mono">/link {code.code}</code>.
+              Код действителен {Math.round(code.ttlSec / 60)} мин. Отправьте
+              боту <code className="font-mono">/link {code.code}</code>.
             </p>
           </CardContent>
         </Card>
       )}
 
-      {/* Telegram link dialog (β-9 Phase 6) — выносим в модал, чтобы не
-          мешать списку. */}
+      {}
       <TelegramLinkDialog
-        open={!!code && code.kind === 'telegram_bot'}
+        open={!!code && code.kind === "telegram_bot"}
         onOpenChange={(o) => {
           if (!o) setCode(null);
         }}
-        code={code && code.kind === 'telegram_bot' ? code : null}
+        code={code && code.kind === "telegram_bot" ? code : null}
       />
 
       <ConfirmDialog
@@ -312,8 +324,6 @@ export function ChannelsClient() {
     </section>
   );
 }
-
-// ─────────────────────────── TelegramCard ─────────────────────────────
 
 function TelegramCard({
   entry,
@@ -337,38 +347,40 @@ function TelegramCard({
 
   if (!view) return null;
 
-  const notConfigured = view.status === 'channel_not_configured';
+  const notConfigured = view.status === "channel_not_configured";
 
-  const statusVariant: 'default' | 'secondary' | 'warning' | 'danger' =
-    view.status === 'linked'
-      ? 'default'
-      : view.status === 'bot_blocked'
-        ? 'warning'
-        : view.status === 'channel_disabled'
-          ? 'danger'
-          : view.status === 'channel_not_configured'
-            ? 'secondary'
-            : 'secondary';
+  const statusVariant: "default" | "secondary" | "warning" | "danger" =
+    view.status === "linked"
+      ? "default"
+      : view.status === "bot_blocked"
+        ? "warning"
+        : view.status === "channel_disabled"
+          ? "danger"
+          : view.status === "channel_not_configured"
+            ? "secondary"
+            : "secondary";
 
   async function handleReset() {
     setResetBusy(true);
     try {
       await resetTelegramBinding();
-      toast.success('Привязка Telegram сброшена. Привяжите заново.');
+      toast.success("Привязка Telegram сброшена. Привяжите заново.");
       await onChanged();
     } catch (e) {
       if (e instanceof ApiError) {
         if (
-          e.code === 'not_implemented' ||
-          e.code === 'not_found' ||
-          e.message.toLowerCase().includes('not found') ||
-          e.message.toLowerCase().includes('cannot post')
+          e.code === "not_implemented" ||
+          e.code === "not_found" ||
+          e.message.toLowerCase().includes("not found") ||
+          e.message.toLowerCase().includes("cannot post")
         ) {
           toast.error(
-            'Перепривязка пока не реализована на сервере. Попросите руководителя сбросить вас через карточку сотрудника.',
+            "Перепривязка пока не реализована на сервере. Попросите руководителя сбросить вас через карточку сотрудника.",
           );
         } else {
-          toast.error(`Не удалось сбросить: ${humanizeApiError(e, 'попробуйте ещё раз')}`);
+          toast.error(
+            `Не удалось сбросить: ${humanizeApiError(e, "попробуйте ещё раз")}`,
+          );
         }
       }
     } finally {
@@ -392,7 +404,12 @@ function TelegramCard({
               станет доступно, когда будет задан бот.
             </p>
             {isOrgAdmin && (
-              <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0">
+              <Button
+                asChild
+                variant="link"
+                size="sm"
+                className="mt-1 h-auto p-0"
+              >
                 <Link href="/admin/content/global-channels">
                   Настроить бота
                 </Link>
@@ -401,16 +418,16 @@ function TelegramCard({
           </div>
         )}
 
-        {!notConfigured && view.status === 'channel_disabled' && (
+        {!notConfigured && view.status === "channel_disabled" && (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs">
-            Глобальный канал Telegram временно выключен главным
-            администратором Коры. Сообщения через Telegram не приходят и не
-            отправляются. Уведомления продолжают копиться в «Личном
-            кабинете» и (если есть) на почте.
+            Глобальный канал Telegram временно выключен главным администратором
+            Коры. Сообщения через Telegram не приходят и не отправляются.
+            Уведомления продолжают копиться в «Личном кабинете» и (если есть) на
+            почте.
           </div>
         )}
 
-        {view.status === 'bot_blocked' && (
+        {view.status === "bot_blocked" && (
           <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs">
             Похоже, бот заблокирован у вас в Telegram. Уведомления туда не
             доходят — они копятся во «Входящих» в личном кабинете. Чтобы
@@ -427,8 +444,7 @@ function TelegramCard({
               <code className="font-mono">{view.binding.externalId}</code>
               {view.binding.verifiedAt && (
                 <span className="text-xs text-muted-foreground">
-                  подтверждено{' '}
-                  {view.binding.verifiedAt.toLocaleString('ru-RU')}
+                  подтверждено {view.binding.verifiedAt.toLocaleString("ru-RU")}
                 </span>
               )}
             </div>
@@ -500,32 +516,22 @@ function TelegramCard({
   );
 }
 
-// ─────────────────────────── TelegramLinkDialog ────────────────────────
-
-// ─────────────────────── MaxDataClassRadio (W4.3) ─────────────────────
-
-/**
- * W4.3 — radio выбора потолка чувствительности для привязки канала.
- * `private` через UI недоступен (см. §W4.3 ТЗ).
- *
- * Подписи на русском, без англицизмов — см. правило `feedback_admin_ui_russian_only`.
- */
 function MaxDataClassRadio({
   bindingId,
   current,
   onChanged,
 }: {
   bindingId: string;
-  current: 'public' | 'internal' | 'sensitive';
+  current: "public" | "internal" | "sensitive";
   onChanged: () => Promise<unknown>;
 }) {
   const [busy, setBusy] = useState(false);
-  const [value, setValue] = useState<'public' | 'internal' | 'sensitive'>(
+  const [value, setValue] = useState<"public" | "internal" | "sensitive">(
     current,
   );
 
   async function handleChange(
-    next: 'public' | 'internal' | 'sensitive',
+    next: "public" | "internal" | "sensitive",
   ): Promise<void> {
     if (next === value || busy) return;
     setBusy(true);
@@ -533,12 +539,11 @@ function MaxDataClassRadio({
     setValue(next);
     try {
       await updateBindingMaxDataClass(bindingId, next);
-      toast.success('Чувствительность канала обновлена');
+      toast.success("Чувствительность канала обновлена");
       await onChanged();
     } catch (e) {
       setValue(prev);
-      const msg =
-        humanizeApiError(e, 'Не удалось обновить');
+      const msg = humanizeApiError(e, "Не удалось обновить");
       toast.error(msg);
     } finally {
       setBusy(false);
@@ -547,15 +552,17 @@ function MaxDataClassRadio({
 
   return (
     <div className="rounded-md border bg-muted/30 p-3 text-sm">
-      <div className="mb-2 font-medium">Какие сообщения может получать канал</div>
+      <div className="mb-2 font-medium">
+        Какие сообщения может получать канал
+      </div>
       <div className="space-y-1">
         <label className="flex cursor-pointer items-start gap-2">
           <input
             type="radio"
             name={`mdc-${bindingId}`}
             value="public"
-            checked={value === 'public'}
-            onChange={() => handleChange('public')}
+            checked={value === "public"}
+            onChange={() => handleChange("public")}
             disabled={busy}
             className="mt-1"
           />
@@ -571,8 +578,8 @@ function MaxDataClassRadio({
             type="radio"
             name={`mdc-${bindingId}`}
             value="internal"
-            checked={value === 'internal'}
-            onChange={() => handleChange('internal')}
+            checked={value === "internal"}
+            onChange={() => handleChange("internal")}
             disabled={busy}
             className="mt-1"
           />
@@ -588,8 +595,8 @@ function MaxDataClassRadio({
             type="radio"
             name={`mdc-${bindingId}`}
             value="sensitive"
-            checked={value === 'sensitive'}
-            onChange={() => handleChange('sensitive')}
+            checked={value === "sensitive"}
+            onChange={() => handleChange("sensitive")}
             disabled={busy}
             className="mt-1"
           />
@@ -633,9 +640,9 @@ function TelegramLinkDialog({
   async function copyCode() {
     try {
       await navigator.clipboard.writeText(code!.code);
-      toast.success('Код скопирован.');
+      toast.success("Код скопирован.");
     } catch {
-      toast.error('Не удалось скопировать. Скопируйте вручную.');
+      toast.error("Не удалось скопировать. Скопируйте вручную.");
     }
   }
 
@@ -645,8 +652,8 @@ function TelegramLinkDialog({
         <DialogHeader>
           <DialogTitle>Привязать Telegram</DialogTitle>
           <DialogDescription>
-            Откройте бота и отправьте ему этот код. Или нажмите «Открыть
-            бота» — Telegram сам передаст код.
+            Откройте бота и отправьте ему этот код. Или нажмите «Открыть бота» —
+            Telegram сам передаст код.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">

@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { CloneAccessGrant, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -20,26 +14,6 @@ import type {
   UpdateAccessGrantDto,
 } from '../dto/clone-access-grant.dto';
 
-/**
- * ТЗ 2026-05-26 (clone-access-grant-admin-api) — admin CRUD для
- * `CloneAccessGrant` + user-эндпоинт `/me/clone-access`.
- *
- * Контракт см. §2–§5 ТЗ. Главное:
- *   - createAccessGrant: валидация member-of-org + cloneRef + идемпотентность
- *     (active grant → возврат существующего без notification; revoked → re-grant
- *     с физическим удалением старой revoked-записи); создание + notification
- *     внутри транзакции.
- *   - revokeAccessGrant: soft-revoke (выставление revokedAt / revokedBy),
- *     idempotent: повторный revoke → 400 already_revoked.
- *   - extendAccessGrant: обновление expiresAt; 400 cannot_update_revoked.
- *   - listAccessGrants: batch-enrichment (cloneLabel, userName, userEmail).
- *   - listAccessGrantsByClone: список грантов на конкретного клона (для
- *     страницы «Управление доступом»).
- *   - getMyCloneAccess: только id-ы активных грантов текущего user'а (без
- *     enrichment — фронт сам мапит).
- *
- * Все тексты ошибок — на русском.
- */
 @Injectable()
 export class ClonesAdminService {
   private readonly logger = new Logger(ClonesAdminService.name);
@@ -50,8 +24,6 @@ export class ClonesAdminService {
     private readonly conversational: ConversationalService,
   ) {}
 
-  // ─────────────────────────── CREATE ───────────────────────────
-
   async createAccessGrant(args: {
     tenantId: string;
     actorUserId: string;
@@ -59,7 +31,6 @@ export class ClonesAdminService {
   }): Promise<AccessGrantDto> {
     const { tenantId, actorUserId, dto } = args;
 
-    // 1. Получатель — member текущего тенанта?
     const member = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, userId: dto.grantedToUserId },
       select: { id: true },
@@ -69,16 +40,13 @@ export class ClonesAdminService {
         ok: false,
         error: {
           code: 'user_not_in_org',
-          message:
-            'Нельзя выдать грант пользователю, не состоящему в организации',
+          message: 'Нельзя выдать грант пользователю, не состоящему в организации',
         },
       });
     }
 
-    // 2. cloneRefId существует в этом тенанте?
     await this.assertCloneRefExists(tenantId, dto.cloneType, dto.cloneRefId);
 
-    // 3. Идемпотентность.
     const existing = await this.prisma.cloneAccessGrant.findUnique({
       where: {
         tenantId_grantedToUserId_cloneType_cloneRefId: {
@@ -91,8 +59,6 @@ export class ClonesAdminService {
     });
 
     if (existing && existing.revokedAt === null) {
-      // Активный грант уже есть — возвращаем его, без повторного INSERT
-      // и без повторной нотификации (см. §3.2).
       this.logger.log(
         {
           tenantId,
@@ -105,21 +71,11 @@ export class ClonesAdminService {
       return this.enrichOne(existing);
     }
 
-    // 4. Транзакция: create новый grant либо re-grant поверх revoked.
-    // audit В15 (2026-05-29): при re-grant используем UPDATE по существующей
-    // строке (revokedAt=null, revokedById=null, grantedById=новый actor,
-    // expiresAt=новое значение, grantedAt=now) вместо DELETE+CREATE.
-    // Прежняя схема создавала новый id, audit-trail revocation'а терялся
-    // безвозвратно — в БД нельзя было реконструировать кто и когда отозвал
-    // доступ перед re-grant. UPDATE сохраняет grantId стабильным,
-    // а revokedAt/revokedById в истории CloneAccessAudit (через триггер /
-    // вручную писаный лог) остаются как факт.
     const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
     const grantedAtIso = new Date().toISOString();
 
     const created = await this.prisma.$transaction(async (tx) => {
       if (existing && existing.revokedAt !== null) {
-        // re-grant: воскрешаем запись без потери id и истории.
         return tx.cloneAccessGrant.update({
           where: { id: existing.id },
           data: {
@@ -144,10 +100,6 @@ export class ClonesAdminService {
       });
     });
 
-    // 5. Notification — вне транзакции, но всё равно с try/catch, чтобы упавший
-    //    канал не откатывал уже созданный грант (см. §11 Q1 — атомарность важна,
-    //    но grant важнее notification: пользователь получит доступ даже если
-    //    нотификация не дойдёт).
     try {
       const [cloneLabel, grantedByUser] = await Promise.all([
         this.resolveCloneLabel(tenantId, dto.cloneType, dto.cloneRefId),
@@ -169,9 +121,7 @@ export class ClonesAdminService {
             grantedByUserId: actorUserId,
             grantedByName: grantedByUser?.name ?? '',
             grantedAt: grantedAtIso,
-            expiresAt: created.expiresAt
-              ? created.expiresAt.toISOString()
-              : null,
+            expiresAt: created.expiresAt ? created.expiresAt.toISOString() : null,
           },
         },
         dataClass: 'internal',
@@ -191,24 +141,6 @@ export class ClonesAdminService {
     return this.enrichOne(created);
   }
 
-  /**
-   * audit В17 (2026-05-29) — member запрашивает доступ к клону.
-   *
-   * Сценарий: на маркетплейсе клонов member видит карточку, к которой у него
-   * нет grant'а, и нажимает «Запросить доступ». Мы:
-   *   1. Проверяем cloneRef существует в тенанте + не soft-удалён.
-   *   2. Проверяем что у requester'а нет уже активного гранта (тогда запрос
-   *      не имеет смысла) — возвращаем `ok:false, reason:'already_granted'`.
-   *   3. Идемпотентно отсылаем notification всем admin/owner Org с
-   *      eventType='clone.access_requested'. Дедуп — на уровне канала:
-   *      если member нажал кнопку 5 раз за 10 секунд, повторное in-app
-   *      сообщение каналу заглушится (см. NotificationDedupService).
-   *
-   * Эндпоинт намеренно лёгкий: НЕ создаёт CloneAccessRequest-сущность
-   * (отдельная очередь запросов появится с UI «Запросы на доступ» —
-   * см. plan С25 во второй фазе фикса аудита). Сейчас это сигнал
-   * для admin'ов через ту же conversational notification систему.
-   */
   async requestAccess(args: {
     tenantId: string;
     requesterUserId: string;
@@ -217,10 +149,8 @@ export class ClonesAdminService {
   }): Promise<{ ok: true } | { ok: false; reason: string }> {
     const { tenantId, requesterUserId, cloneType, cloneRefId } = args;
 
-    // 1. Существование cloneRef.
     await this.assertCloneRefExists(tenantId, cloneType, cloneRefId);
 
-    // 2. У requester'а уже активный grant?
     const existing = await this.prisma.cloneAccessGrant.findUnique({
       where: {
         tenantId_grantedToUserId_cloneType_cloneRefId: {
@@ -235,7 +165,6 @@ export class ClonesAdminService {
       return { ok: false, reason: 'already_granted' };
     }
 
-    // 3. Найти admin/owner получателей.
     const adminMemberships = await this.prisma.membership.findMany({
       where: { orgId: tenantId, role: { in: ['owner', 'admin'] } },
       select: { userId: true },
@@ -248,8 +177,6 @@ export class ClonesAdminService {
       return { ok: false, reason: 'no_admins' };
     }
 
-    // 4. Параллельные notification'ы (best-effort: фейл одного канала не
-    // блокирует остальных).
     const [cloneLabel, requester] = await Promise.all([
       this.resolveCloneLabel(tenantId, cloneType, cloneRefId),
       this.prisma.user.findUnique({
@@ -284,8 +211,6 @@ export class ClonesAdminService {
     return { ok: true };
   }
 
-  // ─────────────────────────── REVOKE ───────────────────────────
-
   async revokeAccessGrant(args: {
     tenantId: string;
     actorUserId: string;
@@ -316,8 +241,6 @@ export class ClonesAdminService {
     });
     return this.enrichOne(updated);
   }
-
-  // ─────────────────────────── EXTEND ───────────────────────────
 
   async extendAccessGrant(args: {
     tenantId: string;
@@ -351,8 +274,6 @@ export class ClonesAdminService {
     return this.enrichOne(updated);
   }
 
-  // ─────────────────────────── LIST (admin) ───────────────────────────
-
   async listAccessGrants(args: {
     tenantId: string;
     query: AccessGrantListQueryDto;
@@ -369,11 +290,7 @@ export class ClonesAdminService {
     if (query.isActive === true) {
       Object.assign(where, RbacService.buildActiveGrantWhere(now));
     } else if (query.isActive === false) {
-      // revoked OR expired
-      where.OR = [
-        { revokedAt: { not: null } },
-        { expiresAt: { lte: now } },
-      ];
+      where.OR = [{ revokedAt: { not: null } }, { expiresAt: { lte: now } }];
     }
 
     const [total, rows] = await Promise.all([
@@ -396,8 +313,6 @@ export class ClonesAdminService {
     };
   }
 
-  // ─────────────────────────── LIST per-clone ───────────────────────────
-
   async listAccessGrantsByClone(args: {
     tenantId: string;
     cloneType: 'person' | 'role';
@@ -407,8 +322,6 @@ export class ClonesAdminService {
     const { tenantId, cloneType, cloneRefId, includeInactive } = args;
     const now = new Date();
 
-    // Сначала проверим, что cloneRefId существует в этом тенанте (404 иначе —
-    // см. §3.3 ТЗ, чтобы admin не «прозванивал» чужие id).
     await this.assertCloneRefExists(tenantId, cloneType, cloneRefId);
 
     const where: Prisma.CloneAccessGrantWhereInput = {
@@ -433,8 +346,6 @@ export class ClonesAdminService {
       pageSize: items.length,
     };
   }
-
-  // ─────────────────────────── /me/clone-access ───────────────────────────
 
   async getMyCloneAccess(args: {
     tenantId: string;
@@ -462,14 +373,6 @@ export class ClonesAdminService {
     };
   }
 
-  // ─────────────────────────── helpers ───────────────────────────
-
-  /**
-   * Бросает 404, если cloneRefId не существует в этом тенанте (см. §3.2 шаг 2).
-   * Для cloneType='role' — проверяем `Role.deletedAt IS NULL`.
-   * Для cloneType='person' — проверяем `Person.deletedAt IS NULL` (если поле
-   * есть; в текущей схеме у Person нет deletedAt — фильтр по tenantId).
-   */
   private async assertCloneRefExists(
     tenantId: string,
     cloneType: 'person' | 'role',
@@ -488,7 +391,6 @@ export class ClonesAdminService {
       }
       return;
     }
-    // cloneType === 'person'
     const person = await this.prisma.person.findFirst({
       where: { id: cloneRefId, tenantId, deletedAt: null },
       select: { id: true },
@@ -501,12 +403,6 @@ export class ClonesAdminService {
     }
   }
 
-  /**
-   * Резолвит человекочитаемое имя клона:
-   *   - role: ExecutablePersona.publicName активной role-persona; fallback Role.name.
-   *   - person: Person.name.
-   * null — если клон не найден (для notification cloneLabel будет fallback'нут на id).
-   */
   private async resolveCloneLabel(
     tenantId: string,
     cloneType: 'person' | 'role',
@@ -539,16 +435,11 @@ export class ClonesAdminService {
   private async enrichOne(grant: CloneAccessGrant): Promise<AccessGrantDto> {
     const [list] = await this.enrichMany(grant.tenantId, [grant]);
     if (!list) {
-      // Невозможно — enrichMany всегда возвращает по одной записи на вход.
       throw new Error('enrichOne: пустой enrichMany результат');
     }
     return list;
   }
 
-  /**
-   * Batch-enrichment: один запрос на cloneLabel'ы (person + role + persona) и
-   * один на user-имена. Избегаем N+1.
-   */
   private async enrichMany(
     tenantId: string,
     grants: CloneAccessGrant[],
@@ -591,25 +482,19 @@ export class ClonesAdminService {
             },
             select: { scopeRefId: true, publicName: true },
           })
-        : Promise.resolve(
-            [] as Array<{ scopeRefId: string | null; publicName: string | null }>,
-          ),
+        : Promise.resolve([] as Array<{ scopeRefId: string | null; publicName: string | null }>),
       userIds.size > 0
         ? this.prisma.user.findMany({
             where: { id: { in: Array.from(userIds) } },
             select: { id: true, name: true, email: true },
           })
-        : Promise.resolve(
-            [] as Array<{ id: string; name: string; email: string }>,
-          ),
+        : Promise.resolve([] as Array<{ id: string; name: string; email: string }>),
     ]);
 
     const personById = new Map(persons.map((p) => [p.id, p]));
     const roleById = new Map(roles.map((r) => [r.id, r]));
     const personaByRoleId = new Map(
-      rolePersonas
-        .filter((p) => p.scopeRefId !== null)
-        .map((p) => [p.scopeRefId as string, p]),
+      rolePersonas.filter((p) => p.scopeRefId !== null).map((p) => [p.scopeRefId as string, p]),
     );
     const userById = new Map(users.map((u) => [u.id, u]));
 

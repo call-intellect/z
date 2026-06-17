@@ -3,10 +3,10 @@ type: analysis
 status: backlog
 feature: AI-COO — реестр технического долга и отложенных направлений
 date: 2026-05-25
-parent: plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md
+parent: plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md
 related:
   - plans/analysis/2026-05-23-ai-coo-readiness-analysis.md
-  - plans/tz/2026-05-22-final-roadmap.md
+  - plans/archive/2026-05-22-final-roadmap.md
 ---
 
 # AI-COO — реестр технического долга

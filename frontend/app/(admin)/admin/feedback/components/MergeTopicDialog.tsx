@@ -1,27 +1,14 @@
-'use client';
+"use client";
 
-/**
- * MergeTopicDialog — диалог объединения смыслового блока с другим (target).
- *
- * Источник target — `GET /admin/feedback/topics?window=all&pageSize=200&includeArchived=false`,
- * фильтруем сам source и любые статусы кроме ACTIVE. Дополнительно фильтруем
- * MERGED по статусу (на бэке `includeArchived=false` исключает и архив, и merged).
- *
- * Действие необратимо: на бэке source помечается MERGED, items переезжают
- * через FeedbackItem.feedbackTopicId.
- *
- * Фаза 8 ТЗ user-feedback-with-ai-clustering.
- */
+import { useEffect, useMemo, useState } from "react";
+import { Shuffle } from "lucide-react";
+import { toast } from "sonner";
+import useSWR from "swr";
 
-import { useEffect, useMemo, useState } from 'react';
-import { Shuffle } from 'lucide-react';
-import { toast } from 'sonner';
-import useSWR from 'swr';
-
-import { ApiError } from '@/api/api-error';
-import { adminFeedbackApi } from '@/api/admin-feedback.api';
-import { toFeedbackTopicsList } from '@/domain/admin-feedback';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminFeedbackApi } from "@/api/admin-feedback.api";
+import { toFeedbackTopicsList } from "@/domain/admin-feedback";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -29,9 +16,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 interface MergeTopicDialogProps {
   open: boolean;
@@ -50,27 +37,27 @@ export function MergeTopicDialog({
   sourceItemsCount,
   onSaved,
 }: MergeTopicDialogProps) {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [targetId, setTargetId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setSearch('');
+    setSearch("");
     setTargetId(null);
     setError(null);
   }, [open]);
 
   const swr = useSWR(
-    open ? ['admin-feedback-merge-targets', sourceId] : null,
+    open ? ["admin-feedback-merge-targets", sourceId] : null,
     async () =>
       adminFeedbackApi.listTopics({
-        window: 'all',
+        window: "all",
         includeArchived: false,
         pageSize: 200,
         page: 1,
-        sort: 'recent',
+        sort: "recent",
       }),
     { revalidateOnFocus: false },
   );
@@ -78,9 +65,7 @@ export function MergeTopicDialog({
   const candidates = useMemo(() => {
     if (!swr.data) return [];
     const list = toFeedbackTopicsList(swr.data).items;
-    return list.filter(
-      (t) => t.id !== sourceId && t.status === 'active',
-    );
+    return list.filter((t) => t.id !== sourceId && t.status === "active");
   }, [swr.data, sourceId]);
 
   const filtered = useMemo(() => {
@@ -103,9 +88,7 @@ export function MergeTopicDialog({
       const result = await adminFeedbackApi.mergeTopics(sourceId, {
         targetId,
       });
-      toast.success(
-        `Готово: перенесено items — ${result.movedItems}`,
-      );
+      toast.success(`Готово: перенесено items — ${result.movedItems}`);
       onSaved();
       onOpenChange(false);
     } catch (e) {
@@ -114,7 +97,7 @@ export function MergeTopicDialog({
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось объединить блоки';
+            : "Не удалось объединить блоки";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -170,8 +153,8 @@ export function MergeTopicDialog({
             {!swr.isLoading && !swr.error && filtered.length === 0 && (
               <div className="p-3 text-xs text-fg-tertiary">
                 {candidates.length === 0
-                  ? 'Нет других активных блоков — объединять не с чем.'
-                  : 'Ничего не найдено по этому запросу.'}
+                  ? "Нет других активных блоков — объединять не с чем."
+                  : "Ничего не найдено по этому запросу."}
               </div>
             )}
             {!swr.isLoading &&
@@ -187,7 +170,7 @@ export function MergeTopicDialog({
                     onClick={() => setTargetId(t.id)}
                     disabled={saving}
                     className={`flex w-full items-start gap-3 border-b border-border-subtle px-3 py-2 text-left text-sm last:border-b-0 hover:bg-bg-subtle ${
-                      selected ? 'bg-bg-subtle' : ''
+                      selected ? "bg-bg-subtle" : ""
                     }`}
                   >
                     <div className="flex-1 min-w-0">
@@ -209,10 +192,10 @@ export function MergeTopicDialog({
 
           {target && (
             <p className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-fg-secondary">
-              <strong className="text-fg-primary">{sourceItemsCount}</strong>{' '}
+              <strong className="text-fg-primary">{sourceItemsCount}</strong>{" "}
               items будут перенесены в «
-              <strong className="text-fg-primary">{target.title}</strong>».
-              Этот блок будет помечен как объединённый. Действие необратимо.
+              <strong className="text-fg-primary">{target.title}</strong>». Этот
+              блок будет помечен как объединённый. Действие необратимо.
             </p>
           )}
 
@@ -244,7 +227,7 @@ export function MergeTopicDialog({
             onClick={() => void handleMerge()}
           >
             <Shuffle size={14} />
-            {saving ? 'Объединяем…' : 'Объединить'}
+            {saving ? "Объединяем…" : "Объединить"}
           </Button>
         </DialogFooter>
       </DialogContent>

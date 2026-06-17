@@ -1,19 +1,3 @@
-/**
- * Разовый smoke-зонд Vox-диаризации (ТЗ 2026-06-08 meeting-upload, Фаза 0).
- *
- * НЕ часть приложения. Цель — увидеть РЕАЛЬНЫЙ ответ Vox в режиме диаризации
- * (разделение одного аудиопотока по говорящим) до написания парсера:
- *   - под каким ключом приходят сегменты со спикерами;
- *   - формат метки `speaker`;
- *   - единицы таймингов `start`/`end` (секунды или миллисекунды);
- *   - поведение numSpeakers / speakerMode.
- *
- * Запуск (токен и URL берутся из корневого .env, как у diag.ts):
- *   bun run --env-file=c:/work/z/.env c:/work/z/backend/scripts/smoke-vox-diarization.ts <audioPath> [numSpeakers]
- *
- * Пример:
- *   bun run --env-file=c:/work/z/.env c:/work/z/backend/scripts/smoke-vox-diarization.ts c:/work/z/5c3c05f254337db7bd13efc9359817e7.mp3
- */
 import { readFileSync, statSync } from 'node:fs';
 import { basename, extname } from 'node:path';
 
@@ -51,7 +35,9 @@ function asRecord(v: unknown): Record<string, unknown> | null {
   if (typeof v === 'string' && v.trim().startsWith('{')) {
     try {
       const p = JSON.parse(v);
-      return p && typeof p === 'object' && !Array.isArray(p) ? (p as Record<string, unknown>) : null;
+      return p && typeof p === 'object' && !Array.isArray(p)
+        ? (p as Record<string, unknown>)
+        : null;
     } catch {
       return null;
     }
@@ -66,7 +52,6 @@ async function main(): Promise<void> {
     `Файл: ${basename(filePath)} (${sizeMb} МБ, ${contentType}) · модель=${VOX_MODEL} · punct=${VOX_PUNCT} · numSpeakers=${numSpeakers ?? 'auto'} · diarizationEnabled=true`,
   );
 
-  // ── submit ──
   const form = new FormData();
   form.append('file', new Blob([new Uint8Array(buf)], { type: contentType }), basename(filePath));
   form.append('model', VOX_MODEL);
@@ -91,13 +76,15 @@ async function main(): Promise<void> {
   }
   console.log(`taskId=${taskId} — ждём результат…`);
 
-  // ── poll ──
   let raw: Record<string, unknown> | undefined;
   for (let i = 0; i < 180; i++) {
     await new Promise((r) => setTimeout(r, 3000));
-    const r = await fetch(`${VOX_API_URL}/api/v1/transcription/task/${encodeURIComponent(taskId)}`, {
-      headers: { Authorization: `Bearer ${VOX_API_TOKEN}` },
-    });
+    const r = await fetch(
+      `${VOX_API_URL}/api/v1/transcription/task/${encodeURIComponent(taskId)}`,
+      {
+        headers: { Authorization: `Bearer ${VOX_API_TOKEN}` },
+      },
+    );
     if (!r.ok) {
       process.stdout.write(`\r poll ${r.status} (попытка ${i + 1})        `);
       continue;
@@ -118,11 +105,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // ── разбор ──
   console.log('\n──────── ВЕРХНИЙ УРОВЕНЬ ────────');
   console.log('ключи:', Object.keys(raw));
   console.log('durationSeconds:', raw.durationSeconds ?? raw.duration_seconds ?? '?');
-  console.log('transcriptText (первые 160):', String(raw.transcriptText ?? raw.text ?? '').slice(0, 160));
+  console.log(
+    'transcriptText (первые 160):',
+    String(raw.transcriptText ?? raw.text ?? '').slice(0, 160),
+  );
 
   const er = asRecord(raw.extendedResult);
   console.log('\n──────── extendedResult ────────');
@@ -136,9 +125,7 @@ async function main(): Promise<void> {
     console.log('первый сегмент (сырой):', JSON.stringify(segsRaw[0]));
     const speakers = [...new Set(segsRaw.map((s) => (s as Record<string, unknown>).speaker))];
     console.log('различных спикеров:', JSON.stringify(speakers));
-    const maxEnd = Math.max(
-      ...segsRaw.map((s) => Number((s as Record<string, unknown>).end) || 0),
-    );
+    const maxEnd = Math.max(...segsRaw.map((s) => Number((s as Record<string, unknown>).end) || 0));
     const dur = Number(raw.durationSeconds ?? er?.durationSeconds ?? 0);
     console.log(
       `макс end=${maxEnd} · durationSeconds=${dur} → единицы похожи на ${
@@ -156,7 +143,9 @@ async function main(): Promise<void> {
   }
 
   console.log('\nдиаризация-мета:', JSON.stringify(er?.diarization ?? null));
-  console.log('\nГОТОВО. Зафиксировать в ТЗ: формат speaker, единицы start/end, поведение numSpeakers.');
+  console.log(
+    '\nГОТОВО. Зафиксировать в ТЗ: формат speaker, единицы start/end, поведение numSpeakers.',
+  );
 }
 
 main().catch((e) => {

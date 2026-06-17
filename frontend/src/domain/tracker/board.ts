@@ -1,12 +1,3 @@
-/**
- * Tracker Boards (2026-05-27) — доменная модель доски проекта.
- *
- * Контракт: `backend/src/modules/tracker/dto/boards/board-response.dto.ts`.
- * Слой: ApiDto (зеркало backend) → Board (Date-объекты + helpers).
- */
-
-// ─── ApiDto (зеркало backend) ────────────────────────────────────────────
-
 export interface BoardApi {
   id: string;
   tenantId: string;
@@ -29,8 +20,6 @@ export interface ListBoardsResponseApi {
   total: number;
 }
 
-// ─── Domain ──────────────────────────────────────────────────────────────
-
 export interface Board {
   id: string;
   tenantId: string;
@@ -47,8 +36,6 @@ export interface Board {
   deletedAt: Date | null;
   issuesCount: number | null;
 }
-
-// ─── Mappers ─────────────────────────────────────────────────────────────
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
@@ -70,14 +57,4 @@ export function boardFromApi(api: BoardApi): Board {
     deletedAt: parseDate(api.deletedAt),
     issuesCount: api.issuesCount ?? null,
   };
-}
-
-// ─── UI helpers ──────────────────────────────────────────────────────────
-
-/**
- * Доска в архиве? Имя — `isBoardArchived`, чтобы не коллидировать с
- * `isArchived` из `./project` (у Project такая же утилита).
- */
-export function isBoardArchived(b: Board): boolean {
-  return b.archivedAt !== null;
 }

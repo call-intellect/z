@@ -2,18 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TemporalConflictService } from './temporal-conflict.service';
 
-/**
- * Agents v2 Фаза A1 (2026-05-30) — unit-тесты TemporalConflictService.
- * См. plans/tz/2026-05-29-agents-v2-umbrella.md §A1.
- *
- * Покрываем 3 сценария:
- *   1. Insert link без conflict (нет existing open того же source+target+
- *      противоречащего relationType) → ничего не invalidate.
- *   2. Insert link с conflict (existing open develops vs новый contradicts) →
- *      existing закрывается validUntil=NOW, метрика дёрнута.
- *   3. Insert link с conflict, но existing уже closed (validUntil не null) →
- *      не трогаем.
- */
 describe('TemporalConflictService', () => {
   let prismaStub: {
     ideaBlockLink: {
@@ -52,7 +40,6 @@ describe('TemporalConflictService', () => {
 
   it('сценарий 1: новый contradicts-link без existing develops → 0 invalidated', async () => {
     prismaStub.ideaBlockLink.findMany.mockResolvedValueOnce([]);
-    // ensureValidFrom — обновим если null.
     prismaStub.ideaBlockLink.updateMany.mockResolvedValue({ count: 0 });
 
     const result = await svc.onNewBlockLink({
@@ -68,7 +55,6 @@ describe('TemporalConflictService', () => {
 
     expect(result.invalidated).toBe(0);
     expect(metricsStub.incTemporalEdgesInvalidated).not.toHaveBeenCalled();
-    // findMany был вызван с фильтром по противоречащим типам.
     expect(prismaStub.ideaBlockLink.findMany).toHaveBeenCalledTimes(1);
     const findCall = prismaStub.ideaBlockLink.findMany.mock.calls[0]?.[0];
     expect(findCall.where.relationType).toEqual({ in: ['develops'] });
@@ -80,10 +66,9 @@ describe('TemporalConflictService', () => {
     prismaStub.ideaBlockLink.findMany.mockResolvedValueOnce([
       { id: 'old-1', relationType: 'develops' },
     ]);
-    // updateMany закрыл 1 запись.
     prismaStub.ideaBlockLink.updateMany
-      .mockResolvedValueOnce({ count: 1 }) // закрытие old
-      .mockResolvedValueOnce({ count: 0 }); // ensureValidFrom — уже задан
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
 
     const result = await svc.onNewBlockLink({
       id: 'new-link',
@@ -101,7 +86,6 @@ describe('TemporalConflictService', () => {
     expect(metricsStub.incTemporalEdgesInvalidated).toHaveBeenCalledWith({
       relationType: 'develops',
     });
-    // Первый updateMany — закрытие old-1.
     const closeCall = prismaStub.ideaBlockLink.updateMany.mock.calls[0]?.[0];
     expect(closeCall.where).toMatchObject({
       id: 'old-1',
@@ -111,8 +95,6 @@ describe('TemporalConflictService', () => {
   });
 
   it('сценарий 3: existing уже closed (validUntil не null) → не трогаем', async () => {
-    // findMany возвращает [] потому что мы фильтруем по validUntil=null —
-    // closed-записи туда не попадают. Это и есть гарантия идемпотентности.
     prismaStub.ideaBlockLink.findMany.mockResolvedValueOnce([]);
     prismaStub.ideaBlockLink.updateMany.mockResolvedValue({ count: 0 });
 

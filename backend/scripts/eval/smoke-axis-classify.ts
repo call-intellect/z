@@ -1,9 +1,3 @@
-/**
- * Smoke-тест агента `axis-classify` на DeepSeek-V4-Pro.
- * См. backend/src/modules/knowledge-core/prompts/axis-classify.prompt.ts.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-axis-classify.ts
- */
 import {
   client,
   computeCost,
@@ -31,7 +25,6 @@ interface Fixture {
   domainWhitelist: Array<{ slug: string; name: string }>;
 }
 
-// DeepSeek-Pro thinking НЕ поддерживает json_schema strict — используем tools+auto.
 const TOOL = {
   type: 'function' as const,
   function: {
@@ -124,7 +117,7 @@ async function main(): Promise<void> {
     const call = msg?.tool_calls?.[0];
     if (call) {
       modelResponse = shortResponse(call.function.arguments);
-      JSON.parse(call.function.arguments); // проверка валидности
+      JSON.parse(call.function.arguments);
       ranSuccessfully = true;
     } else {
       modelResponse = shortResponse(msg?.content ?? '');

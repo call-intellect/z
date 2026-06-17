@@ -1,36 +1,27 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 
-import { ApiError } from '@/api/api-error';
-import { adminEconomicsApi } from '@/api/admin-economics.api';
+import { ApiError } from "@/api/api-error";
+import { adminEconomicsApi } from "@/api/admin-economics.api";
 import type {
   AdminEconomicsOrgApi,
   UpdateOrgBudgetRequest,
-} from '@/domain/admin-economics';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/admin-economics";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../../AdminStateViews';
-import { useAdminQuery } from '../../../useAdminQuery';
+} from "../../../AdminStateViews";
+import { useAdminQuery } from "../../../useAdminQuery";
 
-/**
- * SBA α-10 wave 3 — /admin/economics/orgs/[id].
- */
 export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
-
   const q = useAdminQuery(
     `admin-economics-org:${tenantId}`,
     () => adminEconomicsApi.org(tenantId, { days: 30 }),
@@ -42,11 +33,11 @@ export function OrgEconomicsDetailClient({ tenantId }: { tenantId: string }) {
   const onSaveBudget = async (body: UpdateOrgBudgetRequest) => {
     try {
       await adminEconomicsApi.setBudget(tenantId, body);
-      toast.success('Бюджет сохранён');
+      toast.success("Бюджет сохранён");
       setEditing(false);
       q.refetch();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
     }
   };
 
@@ -95,10 +86,22 @@ function OrgDetail({
   return (
     <>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Stat title="За 30 дней, ₽" value={data.costRubLast30d.toLocaleString('ru-RU')} />
-        <Stat title="Этот месяц, ₽" value={Math.round(data.costRubMonthToDate).toLocaleString('ru-RU')} />
-        <Stat title="Вызовов 30d" value={data.callsCountLast30d.toLocaleString('ru-RU')} />
-        <Stat title="Средний ₽/user" value={Math.round(data.avgCostPerUserRub).toLocaleString('ru-RU')} />
+        <Stat
+          title="За 30 дней, ₽"
+          value={data.costRubLast30d.toLocaleString("ru-RU")}
+        />
+        <Stat
+          title="Этот месяц, ₽"
+          value={Math.round(data.costRubMonthToDate).toLocaleString("ru-RU")}
+        />
+        <Stat
+          title="Вызовов 30d"
+          value={data.callsCountLast30d.toLocaleString("ru-RU")}
+        />
+        <Stat
+          title="Средний ₽/user"
+          value={Math.round(data.avgCostPerUserRub).toLocaleString("ru-RU")}
+        />
       </div>
 
       <Card>
@@ -107,7 +110,7 @@ function OrgDetail({
             <CardTitle>Бюджет</CardTitle>
             {!editing && (
               <Button size="sm" variant="outline" onClick={onEdit}>
-                {data.budget ? 'Изменить' : 'Установить'}
+                {data.budget ? "Изменить" : "Установить"}
               </Button>
             )}
           </div>
@@ -143,10 +146,10 @@ function OrgDetail({
                 <tr key={t.taskType} className="border-t border-border-subtle">
                   <td className="px-3 py-2 font-mono text-xs">{t.taskType}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {Math.round(t.costRub).toLocaleString('ru-RU')}
+                    {Math.round(t.costRub).toLocaleString("ru-RU")}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {t.calls.toLocaleString('ru-RU')}
+                    {t.calls.toLocaleString("ru-RU")}
                   </td>
                 </tr>
               ))}
@@ -176,10 +179,11 @@ function BudgetView({ data }: { data: AdminEconomicsOrgApi }) {
   return (
     <div className="space-y-2 text-sm">
       <div>
-        Лимит: <strong>{b.monthlyCapRub?.toLocaleString('ru-RU') ?? '—'} ₽/мес</strong>{' '}
+        Лимит:{" "}
+        <strong>{b.monthlyCapRub?.toLocaleString("ru-RU") ?? "—"} ₽/мес</strong>{" "}
         ({b.capKind})
       </div>
-      <div>Пороги алертов: {b.alertThresholds.join('%, ')}%</div>
+      <div>Пороги алертов: {b.alertThresholds.join("%, ")}%</div>
       {b.utilizationPercent != null && (
         <div>
           Использовано: <strong>{b.utilizationPercent.toFixed(1)}%</strong>
@@ -187,7 +191,7 @@ function BudgetView({ data }: { data: AdminEconomicsOrgApi }) {
       )}
       {b.lastAlertAt && (
         <div className="text-xs text-fg-tertiary">
-          Последний алерт: {new Date(b.lastAlertAt).toLocaleString('ru-RU')}{' '}
+          Последний алерт: {new Date(b.lastAlertAt).toLocaleString("ru-RU")}{" "}
           (порог {b.lastAlertThreshold}%)
         </div>
       )}
@@ -205,19 +209,19 @@ function BudgetForm({
   onCancel: () => void;
 }) {
   const [monthlyCap, setMonthlyCap] = useState(
-    data.budget?.monthlyCapRub != null ? String(data.budget.monthlyCapRub) : '',
+    data.budget?.monthlyCapRub != null ? String(data.budget.monthlyCapRub) : "",
   );
-  const [capKind, setCapKind] = useState<'soft' | 'hard'>(
-    (data.budget?.capKind as 'soft' | 'hard') ?? 'soft',
+  const [capKind, setCapKind] = useState<"soft" | "hard">(
+    (data.budget?.capKind as "soft" | "hard") ?? "soft",
   );
   const [thresholdsStr, setThresholdsStr] = useState(
-    (data.budget?.alertThresholds ?? [80, 100]).join(','),
+    (data.budget?.alertThresholds ?? [80, 100]).join(","),
   );
 
   const handleSubmit = () => {
-    const numCap = monthlyCap.trim() === '' ? null : Number(monthlyCap);
+    const numCap = monthlyCap.trim() === "" ? null : Number(monthlyCap);
     const thresholds = thresholdsStr
-      .split(',')
+      .split(",")
       .map((s) => Number(s.trim()))
       .filter((n) => Number.isFinite(n) && n > 0);
     void onSave({
@@ -230,7 +234,9 @@ function BudgetForm({
   return (
     <div className="space-y-3">
       <div>
-        <Label className="text-xs">Месячный лимит, ₽ (пусто = без лимита)</Label>
+        <Label className="text-xs">
+          Месячный лимит, ₽ (пусто = без лимита)
+        </Label>
         <Input
           value={monthlyCap}
           onChange={(e) => setMonthlyCap(e.target.value)}
@@ -241,7 +247,7 @@ function BudgetForm({
         <Label className="text-xs">Тип лимита</Label>
         <select
           value={capKind}
-          onChange={(e) => setCapKind(e.target.value as 'soft' | 'hard')}
+          onChange={(e) => setCapKind(e.target.value as "soft" | "hard")}
           className="block w-full rounded border border-border-subtle bg-bg-card px-2 py-1 text-sm"
         >
           <option value="soft">soft (только alert)</option>

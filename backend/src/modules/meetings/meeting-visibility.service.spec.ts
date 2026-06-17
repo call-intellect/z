@@ -1,19 +1,10 @@
-/**
- * ТЗ 2026-06-10 meeting-visibility (Ф2) — юнит-тесты MeetingVisibilityService.
- *
- * Покрываем чистый предикат canView (таблица сценариев) и buildListWhere.
- * prisma/resolver для этих чистых методов не нужны — передаём заглушки.
- */
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/index';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
-import {
-  MeetingVisibilityService,
-  type MeetingVisibilityCtx,
-} from './meeting-visibility.service';
+import { MeetingVisibilityService, type MeetingVisibilityCtx } from './meeting-visibility.service';
 import type { KnowledgeAccessResolver } from '../rbac/knowledge-access-resolver.service';
 
 const prismaStub = {} as unknown as PrismaService;
@@ -94,7 +85,7 @@ describe('MeetingVisibilityService.canView', () => {
       svc.canView({
         meeting: meeting('custom', [{ granteeType: 'person', granteeId: 'p-1' }]),
         userId: 'random-u',
-        ctx: NON_BYPASS, // personId='p-1'
+        ctx: NON_BYPASS,
         isParticipant: false,
       }),
     ).toBe(true);
@@ -143,7 +134,6 @@ describe('MeetingVisibilityService.canView', () => {
         isParticipant: true,
       }),
     ).toBe(false);
-    // тот же off-сервис: owner всё ещё видит
     expect(
       off.canView({
         meeting: meeting('participants'),
@@ -163,9 +153,9 @@ describe('MeetingVisibilityService.buildListWhere', () => {
     expect(Array.isArray(where.OR)).toBe(true);
     const or = where.OR as Array<Record<string, unknown>>;
     expect(or).toContainEqual({ ownerId: 'u-1' });
-    const participantsBranch = or.find(
-      (b) => 'participants' in b,
-    ) as { participants?: { some?: { userId?: string } } } | undefined;
+    const participantsBranch = or.find((b) => 'participants' in b) as
+      | { participants?: { some?: { userId?: string } } }
+      | undefined;
     expect(participantsBranch?.participants?.some?.userId).toBe('u-1');
   });
 
@@ -183,11 +173,7 @@ describe('MeetingVisibilityService.buildListWhere', () => {
 describe('MeetingVisibilityService.getVisibility', () => {
   function buildWithPrisma(prisma: unknown): MeetingVisibilityService {
     const cfg = { meetingVisibilityEnabled: true } as unknown as TypedConfigService;
-    return new MeetingVisibilityService(
-      prisma as PrismaService,
-      resolverStub,
-      cfg,
-    );
+    return new MeetingVisibilityService(prisma as PrismaService, resolverStub, cfg);
   }
 
   it('возвращает scope из meeting + гранты с человекочитаемыми именами', async () => {
@@ -218,11 +204,7 @@ describe('MeetingVisibilityService.getVisibility', () => {
 describe('MeetingVisibilityService.setVisibility', () => {
   function buildWithPrisma(prisma: unknown): MeetingVisibilityService {
     const cfg = { meetingVisibilityEnabled: true } as unknown as TypedConfigService;
-    return new MeetingVisibilityService(
-      prisma as PrismaService,
-      resolverStub,
-      cfg,
-    );
+    return new MeetingVisibilityService(prisma as PrismaService, resolverStub, cfg);
   }
 
   function makeTxMock() {
@@ -235,7 +217,7 @@ describe('MeetingVisibilityService.setVisibility', () => {
     };
   }
 
-  it("custom без grants → BadRequestException(grants_required_for_custom), $transaction не вызван", async () => {
+  it('custom без grants → BadRequestException(grants_required_for_custom), $transaction не вызван', async () => {
     const $transaction = vi.fn();
     const svc = buildWithPrisma({ $transaction });
     await expect(
@@ -246,7 +228,7 @@ describe('MeetingVisibilityService.setVisibility', () => {
     expect($transaction).not.toHaveBeenCalled();
   });
 
-  it("custom с невалидным grantee → BadRequestException(invalid_grantee)", async () => {
+  it('custom с невалидным grantee → BadRequestException(invalid_grantee)', async () => {
     const $transaction = vi.fn();
     const prisma = {
       person: { findMany: vi.fn().mockResolvedValue([]) },
@@ -309,10 +291,8 @@ describe('MeetingVisibilityService.setVisibility', () => {
 
   it('BadRequestException действительно от @nestjs/common', async () => {
     const svc = buildWithPrisma({ $transaction: vi.fn() });
-    await svc
-      .setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', { scope: 'custom' })
-      .catch((e) => {
-        expect(e).toBeInstanceOf(BadRequestException);
-      });
+    await svc.setVisibility({ id: 'm1', tenantId: 't1' }, 'u1', { scope: 'custom' }).catch((e) => {
+      expect(e).toBeInstanceOf(BadRequestException);
+    });
   });
 });

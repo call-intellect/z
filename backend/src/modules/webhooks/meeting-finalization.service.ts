@@ -5,21 +5,6 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AiQueueService } from '../ai/ai-queue.service';
 import { MeetingsService } from '../meetings/meetings.service';
 
-/**
- * Финализация встречи после завершения записи (egress_ended).
- *
- * Выносит из `LivekitEventsHandler` промоут-логику, чтобы её мог звать и вебхук,
- * и крон-реконсайл (отдельная фаза). Поведение идентично прежнему inline-коду в
- * handler'е — это чистый вынос без изменения семантики.
- *
- *   promoteMeetingToReady    — FSM `completed → recording_processing →
- *                              recording_ready` + enqueueTranscribe.
- *   enqueueFaststartIfNeeded — faststart-постобработка composite MP4 за флагом
- *                              `RECORDING_FASTSTART_ENABLED` + порог по размеру.
- *
- * `AiQueueService` и `TypedConfigService` — `@Optional()`: в юнит-тестах их может
- * не быть (тогда faststart не ставится, а transcribe просто логирует warn).
- */
 @Injectable()
 export class MeetingFinalizationService {
   private readonly logger = new Logger(MeetingFinalizationService.name);
@@ -35,11 +20,6 @@ export class MeetingFinalizationService {
     private readonly cfg: TypedConfigService | null = null,
   ) {}
 
-  /**
-   * После egress_ended: если recording.status стал `ready` — переводим встречу
-   * `completed → recording_processing → recording_ready`. Делаем оба перехода
-   * одним вызовом, потому что FSM их связывает.
-   */
   async promoteMeetingToReady(meetingId: string, allReady: boolean): Promise<void> {
     if (!allReady) return;
     const meeting = await this.prisma.meeting.findUnique({
@@ -49,7 +29,6 @@ export class MeetingFinalizationService {
     if (!meeting) return;
 
     try {
-      // completed → recording_processing → recording_ready (если ещё в completed).
       if (meeting.status === 'completed') {
         await this.meetings.transitionStatus(meetingId, 'recording_processing', {
           reason: 'livekit:egress_ended',
@@ -65,7 +44,6 @@ export class MeetingFinalizationService {
         });
       }
 
-      // Фаза 5: ставим BullMQ job на транскрибацию.
       if (this.aiQueue) {
         try {
           await this.aiQueue.enqueueTranscribe(meetingId);
@@ -93,17 +71,7 @@ export class MeetingFinalizationService {
     }
   }
 
-  /**
-   * Фаза 3 (recording-reliability): faststart-постобработка composite MP4, чтобы
-   * браузер играл видео прогрессивно. За флагом RECORDING_FASTSTART_ENABLED
-   * (дефолт on) + порог по размеру (мелкие файлы не ремуксим). Non-fatal — не
-   * блокирует FSM-переход в ready. Размер неизвестен (`null`) → ставим (воркер
-   * перепроверит по bytesTotal).
-   */
-  async enqueueFaststartIfNeeded(
-    meetingId: string,
-    compositeBytes: number | null,
-  ): Promise<void> {
+  async enqueueFaststartIfNeeded(meetingId: string, compositeBytes: number | null): Promise<void> {
     const faststartMinBytes = this.cfg?.recording.faststartMinBytes ?? 0;
     if (
       this.cfg?.recording.faststartEnabled &&

@@ -1,30 +1,3 @@
-/**
- * Глобальный дефолт primary = `deepseek/deepseek-v4-pro` для ВСЕХ ИИ-агентов
- * (всех `LlmTaskType` из `ALL_LLM_TASK_TYPES`).
- *
- * Зачем: владелец проекта установил единый дефолт по умолчанию. Любой
- * отдельный taskType можно переключить из админки `/admin/ai-models/[taskType]`
- * на любую другую модель в любой момент — этот seed просто ставит стартовую
- * точку.
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - `editedByAdmin=true` — никогда не перезаписываем (админ поменял руками).
- *   - Без флага `--update-existing` — пропускаем существующие записи.
- *   - С флагом `--update-existing` — обновляем `model` на `deepseek-v4-pro` и
- *     `priority=0`, но НЕ трогаем `editedByAdmin`.
- *   - secondary/tertiary НЕ ТРОГАЕМ — оставляем как есть в существующих
- *     seed-скриптах (этот скрипт отвечает только за primary).
- *
- * Безопасность по dataClass: для taskType, где `dataClass = 'sensitive'`/
- * `'private'`, DeepSeek будет автоматически пропущен `LlmRouter`'ом
- * (capability='internal'). Для них secondary/tertiary из существующих seed
- * остаются актуальными.
- *
- * Запуск:
- *   bun run scripts/seed-llm-default-primary-deepseek-pro.ts
- *   bun run scripts/seed-llm-default-primary-deepseek-pro.ts --update-existing
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -48,7 +21,6 @@ async function applyForTaskType(
   updateExisting: boolean,
   stats: SeedStats,
 ): Promise<void> {
-  // 1. Существующая primary-запись именно для (deepseek, deepseek-v4-pro)?
   const exactMatch = await prisma.llmTaskRoute.findFirst({
     where: {
       taskType,
@@ -62,9 +34,7 @@ async function applyForTaskType(
     if (exactMatch.editedByAdmin) {
       stats.protectedByAdmin++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${taskType}/primary/deepseek (admin владеет)`,
-      );
+      console.log(`[skip:edited-by-admin] ${taskType}/primary/deepseek (admin владеет)`);
       return;
     }
     if (
@@ -93,11 +63,6 @@ async function applyForTaskType(
     return;
   }
 
-  // 2. Есть ли primary от ДРУГОГО провайдера? Если да — это конфликт.
-  //    В одном tier'е может быть несколько записей с разным providerName
-  //    (constraint @@unique([taskType, tenantId, tier, providerName])).
-  //    Безопаснее НЕ вытеснять чужого primary автоматически: понизим его до
-  //    priority=1 в том же tier — пользователь дальше переключит в админке.
   const otherPrimary = await prisma.llmTaskRoute.findFirst({
     where: { taskType, tenantId: null, tier: 'primary' },
   });
@@ -110,8 +75,6 @@ async function applyForTaskType(
     return;
   }
 
-  // 3. Вставляем primary с DeepSeek-V4-Pro. priority=0 если в tier'е пусто,
-  //    иначе следующий свободный.
   const existingPrimaryCount = await prisma.llmTaskRoute.count({
     where: { taskType, tenantId: null, tier: 'primary' },
   });

@@ -1,21 +1,3 @@
-/**
- * Фаза A.3 — AiResultFeedbackService.
- *
- * Хранит и считает фидбек пользователей (👍/👎) на AI-отчёт встречи.
- * Источник: ТЗ A §7.3.
- *
- * Связь: `AiResultFeedback (aiResultId, userId)` UNIQUE — один пользователь
- * может оставить только одну реакцию на один отчёт. Повторный POST с
- * другим `reaction` — апдейт.
- *
- * RBAC при создании: пользователь должен иметь доступ к встрече (быть host'ом,
- * либо participant'ом с поданной cookie). Проверка делегируется контроллеру
- * через MeetingsService.assertCanReadMeeting (см. ниже).
- *
- * Метрика: `z_prompt_template_feedback_total{reaction}` инкрементируется
- * на каждый create + update (обновление = новая реакция = новое событие).
- */
-
 import {
   BadRequestException,
   Inject,
@@ -46,16 +28,11 @@ export class AiResultFeedbackService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Upsert feedback по (aiResultId, userId). Если реакция меняется — обновляем,
-   * метрика инкрементируется по новой реакции.
-   */
   async upsert(args: {
     meetingId: string;
     userId: string;
     dto: CreateFeedbackDto;
   }): Promise<AiResultFeedback> {
-    // Найдём AiResult по meetingId.
     const aiResult = await this.prisma.aiResult.findUnique({
       where: { meetingId: args.meetingId },
       select: { id: true },
@@ -96,14 +73,7 @@ export class AiResultFeedbackService {
     return upserted;
   }
 
-  /**
-   * Get own feedback (для UI — какая реакция уже стоит у текущего пользователя).
-   * Возвращает null если пользователь ещё не оставлял реакцию.
-   */
-  async getOwn(args: {
-    meetingId: string;
-    userId: string;
-  }): Promise<AiResultFeedback | null> {
+  async getOwn(args: { meetingId: string; userId: string }): Promise<AiResultFeedback | null> {
     const aiResult = await this.prisma.aiResult.findUnique({
       where: { meetingId: args.meetingId },
       select: { id: true },
@@ -116,9 +86,6 @@ export class AiResultFeedbackService {
     });
   }
 
-  /**
-   * Удалить собственный фидбек (если передумал ставить). Идемпотентно.
-   */
   async deleteOwn(args: { meetingId: string; userId: string }): Promise<{ ok: true }> {
     const aiResult = await this.prisma.aiResult.findUnique({
       where: { meetingId: args.meetingId },
@@ -136,8 +103,6 @@ export class AiResultFeedbackService {
     return { ok: true };
   }
 
-  // ─── admin list ─────────────────────────────────────────────────────
-
   async adminList(
     filters: ListFeedbackQueryDto,
     rbac: { isSuperAdmin: boolean; ownedOrgIds: string[] },
@@ -149,11 +114,9 @@ export class AiResultFeedbackService {
       });
     }
 
-    // 1) Найдём подходящие aiResult'ы.
     const aiResultWhere: Record<string, unknown> = {};
     if (filters.versionId) aiResultWhere['promptTemplateVersionId'] = filters.versionId;
     if (filters.templateId) {
-      // Найдём id всех версий этого шаблона.
       const versions = await this.prisma.promptTemplateVersion.findMany({
         where: { templateId: filters.templateId },
         select: { id: true },
@@ -161,12 +124,10 @@ export class AiResultFeedbackService {
       aiResultWhere['promptTemplateVersionId'] = { in: versions.map((v) => v.id) };
     }
 
-    // RBAC фильтр на уровне Org (через Meeting.tenantId; для не-super_admin).
     if (!rbac.isSuperAdmin) {
       aiResultWhere['meeting'] = { tenantId: { in: rbac.ownedOrgIds } };
     }
 
-    // 2) AiResultFeedback фильтр.
     const where: Prisma.AiResultFeedbackWhereInput = {
       ...(filters.reaction ? { reaction: filters.reaction } : {}),
       ...(filters.from || filters.to

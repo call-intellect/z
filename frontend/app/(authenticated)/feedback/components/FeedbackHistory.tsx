@@ -1,33 +1,19 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import useSWR from 'swr';
+import { useMemo, useState } from "react";
+import useSWR from "swr";
 
-import { ApiError } from '@/api/api-error';
-import { feedbackApi } from '@/api/feedback.api';
+import { ApiError } from "@/api/api-error";
+import { feedbackApi } from "@/api/feedback.api";
 import {
   toFeedbackMessagesList,
   type FeedbackMessage,
   type FeedbackStatus,
-} from '@/domain/feedback';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/feedback";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * FeedbackHistory — таблица истории моих обращений.
- *
- * Колонки: «Дата», «Текст», «Статус».
- *   - Текст обрезается до 200 символов с кнопкой «развернуть».
- *   - Статус — серая плашка «получено» (Phase 1 продукта). Поле в
- *     DomainModel оставлено расширяемым для будущих статусов
- *     «учтено / в работе / отклонено» (Phase 2 ТЗ).
- *
- * Пагинация: 20 элементов на страницу, prev/next.
- *
- * Источник: ТЗ user-feedback-with-ai-clustering, секция «Frontend —
- * пользовательский / FeedbackHistory.tsx».
- */
 const PAGE_SIZE = 20;
 const TEXT_PREVIEW_LIMIT = 200;
 
@@ -35,7 +21,7 @@ export function FeedbackHistory() {
   const [page, setPage] = useState(1);
 
   const { data, error, isLoading } = useSWR(
-    ['feedback-history', page, PAGE_SIZE],
+    ["feedback-history", page, PAGE_SIZE],
     () =>
       feedbackApi
         .listMine({ page, pageSize: PAGE_SIZE })
@@ -117,7 +103,7 @@ function HistoryRow({ item }: { item: FeedbackMessage }) {
             onClick={() => setExpanded((v) => !v)}
             className="mt-1 text-xs text-accent hover:underline"
           >
-            {expanded ? 'свернуть' : 'развернуть'}
+            {expanded ? "свернуть" : "развернуть"}
           </button>
         )}
       </td>
@@ -129,9 +115,7 @@ function HistoryRow({ item }: { item: FeedbackMessage }) {
 }
 
 function StatusBadge({ status }: { status: FeedbackStatus }) {
-  // Сейчас единственный статус — 'received'. В Phase 2 ТЗ здесь
-  // появятся «учтено / в работе / отклонено».
-  if (status === 'received') {
+  if (status === "received") {
     return <Badge variant="secondary">получено</Badge>;
   }
   return <Badge variant="secondary">{status}</Badge>;
@@ -149,9 +133,7 @@ function Pagination({
   onChange: (p: number) => void;
 }) {
   if (totalPages <= 1) {
-    return (
-      <p className="mt-3 text-xs text-fg-tertiary">Всего: {total}.</p>
-    );
+    return <p className="mt-3 text-xs text-fg-tertiary">Всего: {total}.</p>;
   }
   return (
     <div className="mt-3 flex items-center justify-between text-xs text-fg-tertiary">
@@ -194,7 +176,7 @@ function ErrorView({ error }: { error: unknown }) {
   const message =
     error instanceof ApiError
       ? error.message
-      : 'Не удалось загрузить историю обращений.';
+      : "Не удалось загрузить историю обращений.";
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}
@@ -213,8 +195,7 @@ function HistorySkeleton() {
 }
 
 function formatDate(d: Date): string {
-  // ДД.MM.ГГГГ ЧЧ:ММ — формат указан в ТЗ.
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}`

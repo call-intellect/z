@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -133,8 +130,6 @@ export class JobDescriptionsController {
     return this.svc.softDelete({ tenantId: t, userId: user.id, id });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -152,7 +147,10 @@ export class JobDescriptionsController {
 
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'job-description');
-    if (!ok) throw this.forbidden('Изменять должностные инструкции может только владелец/администратор Org');
+    if (!ok)
+      throw this.forbidden(
+        'Изменять должностные инструкции может только владелец/администратор Org',
+      );
   }
 
   private async requireDelete(userId: string, tenantId: string): Promise<void> {
@@ -162,7 +160,10 @@ export class JobDescriptionsController {
       obj: 'job-description',
       act: 'delete',
     });
-    if (!ok) throw this.forbidden('Удалять должностные инструкции может только владелец/администратор Org');
+    if (!ok)
+      throw this.forbidden(
+        'Удалять должностные инструкции может только владелец/администратор Org',
+      );
   }
 
   private forbidden(message: string): ForbiddenException {

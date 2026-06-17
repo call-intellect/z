@@ -1,19 +1,10 @@
-'use client';
+"use client";
 
-/**
- * useProjectBySlug — найти проект по slug через прямой серверный запрос.
- *
- * Использует `GET /api/v1/projects/by-slug/:slug` (добавлен 2026-05-28).
- * Ранее фильтровал список клиентски (limit 100) — это ломалось при
- * > 100 проектах и при SWR-кэше, который не успевал обновиться после
- * создания нового проекта (router.push → stale cache → проект не найден).
- */
+import { useMemo } from "react";
+import useSWR from "swr";
 
-import { useMemo } from 'react';
-import useSWR from 'swr';
-
-import { projectsApi } from '@/api/tracker/projects.api';
-import { projectFromApi, type Project } from '@/domain/tracker';
+import { projectsApi } from "@/api/tracker/projects.api";
+import { projectFromApi, type Project } from "@/domain/tracker";
 
 export function useProjectBySlug(
   orgId: string | null | undefined,
@@ -23,24 +14,22 @@ export function useProjectBySlug(
   error: unknown;
   isLoading: boolean;
 } {
-  const key =
-    orgId && slug ? ['tracker.project.by-slug', orgId, slug] : null;
+  const key = orgId && slug ? ["tracker.project.by-slug", orgId, slug] : null;
 
   const swr = useSWR(
     key,
     async () => {
-      if (!orgId || !slug) throw new Error('orgId/slug required');
+      if (!orgId || !slug) throw new Error("orgId/slug required");
       return projectsApi.getBySlug(orgId, slug);
     },
     {
       revalidateOnFocus: false,
-      // 404 = проект не существует, не ретраить.
       shouldRetryOnError: (err: unknown) => {
         if (
           err &&
-          typeof err === 'object' &&
-          'code' in err &&
-          (err as { code: string }).code === 'project_not_found'
+          typeof err === "object" &&
+          "code" in err &&
+          (err as { code: string }).code === "project_not_found"
         ) {
           return false;
         }

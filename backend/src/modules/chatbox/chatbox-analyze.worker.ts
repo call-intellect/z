@@ -20,31 +20,8 @@ import {
   type CrossSourceTaskCandidate,
   CrossSourceTaskDedupeService,
 } from './cross-source-task-dedupe.service';
-import {
-  CHATBOX_ANALYZE_QUEUE,
-  type ChatboxAnalyzeJobData,
-} from './queue/chatbox-analyze.queue';
+import { CHATBOX_ANALYZE_QUEUE, type ChatboxAnalyzeJobData } from './queue/chatbox-analyze.queue';
 
-/**
- * Worker очереди `chatbox.analyze` (ТЗ 2026-06-05, Фаза 5).
- *
- * Один job → анализ одной закрытой сессии чата:
- *   1. `analysisStatus='analyzing'`.
- *   2. best-effort LLM-summary (ChatboxIngestService.generateSummary) →
- *      persist в `summary` (если не null).
- *   3. мост в knowledge-core (ChatboxIngestService.ingestSession). Если null
- *      (сессия ещё открыта / отсутствует) — оставляем `pending`, вернёмся позже.
- *   4. при успехе моста → `analysisStatus='done'`, `analyzedAt`, `rawEventId`.
- *   4b. ТЗ 2026-06-11 chatbox-tasks Ф5 — задачи из переписки: тем же
- *       разборщиком, что и встреча (`TaskExtractionService`), с единым
- *       межисточниковым дедупом (`CrossSourceTaskDedupeService`, Ф6). За
- *       kill-switch `chatbox.taskExtraction.enabled` (ON). Best-effort —
- *       ошибка извлечения задач НЕ роняет анализ (сессия уже 'done').
- *   5. при ошибке → `analysisStatus='failed'` + rethrow (BullMQ сделает retry
- *      по attempts из CHATBOX_ANALYZE_JOB_OPTIONS).
- *
- * Регистрируется в WorkersModule (in-process, как остальные воркеры).
- */
 @Injectable()
 export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChatboxAnalyzeWorker.name);
@@ -55,19 +32,15 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ChatboxIngestService)
     private readonly ingest: ChatboxIngestService,
-    // Ф5 — извлечение задач из переписки (тот же разборщик, что и у встречи).
     @Optional()
     @Inject(TaskExtractionService)
     private readonly taskExtractor?: TaskExtractionService,
-    // Ф6 — единый межисточниковый дедуп задач (link vs create).
     @Optional()
     @Inject(CrossSourceTaskDedupeService)
     private readonly taskDedupe?: CrossSourceTaskDedupeService,
-    // Kill-switch chatbox.taskExtraction.enabled (Ship-On, default ON).
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
-    // Метрики анализа (Ф3). @Optional — тесты без метрик-сервиса не падают.
     @Optional()
     @Inject(BusinessMetricsService)
     private readonly metrics?: BusinessMetricsService,
@@ -83,10 +56,7 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       },
     );
     this.worker.on('failed', (job, err) => {
-      this.logger.warn(
-        { jobId: job?.id, err: err.message },
-        'ChatboxAnalyzeWorker: job failed',
-      );
+      this.logger.warn({ jobId: job?.id, err: err.message }, 'ChatboxAnalyzeWorker: job failed');
     });
     this.logger.log(`ChatboxAnalyzeWorker запущен (${CHATBOX_ANALYZE_QUEUE})`);
   }
@@ -98,7 +68,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для тестирования. */
   async process(job: Job<ChatboxAnalyzeJobData>): Promise<void> {
     const { tenantId, sessionId } = job.data;
     this.logger.debug(
@@ -106,13 +75,11 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
 
     try {
-      // 1. Помечаем сессию «в анализе» (tenant-scoped updateMany).
       await this.prisma.chatboxChatSession.updateMany({
         where: { id: sessionId, tenantId },
         data: { analysisStatus: 'analyzing' },
       });
 
-      // 2. Best-effort LLM-summary — persist только при наличии.
       const summary = await this.ingest.generateSummary(tenantId, sessionId);
       if (summary !== null) {
         await this.prisma.chatboxChatSession.updateMany({
@@ -121,8 +88,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         });
       }
 
-      // 3. Мост в knowledge-core. null → сессия ещё открыта/отсутствует:
-      //    оставляем pending (sweeper-cron вернётся позже).
       const res = await this.ingest.ingestSession(tenantId, sessionId);
       if (res === null) {
         this.logger.debug(
@@ -131,7 +96,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      // 4. Успех — фиксируем результат.
       await this.prisma.chatboxChatSession.updateMany({
         where: { id: sessionId, tenantId },
         data: {
@@ -140,14 +104,9 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
           rawEventId: res.rawEventId,
         },
       });
-      // Метрика анализа (Ф3): сессия успешно доведена до 'done'.
       this.metrics?.incChatboxAnalyze({ status: 'success' });
-      this.logger.debug(
-        `ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`,
-      );
+      this.logger.debug(`ChatboxAnalyze готово: session=${sessionId} rawEventId=${res.rawEventId}`);
 
-      // 4b. Ф5 — задачи из переписки (best-effort). Ошибка извлечения задач НЕ
-      //     должна валить анализ (сессия уже 'done', память/граф записаны).
       try {
         await this.extractTasks(tenantId, sessionId);
       } catch (taskErr) {
@@ -161,14 +120,12 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
         );
       }
     } catch (err) {
-      // 5. Помечаем failed (best-effort) и пробрасываем для retry BullMQ.
       await this.prisma.chatboxChatSession
         .updateMany({
           where: { id: sessionId, tenantId },
           data: { analysisStatus: 'failed' },
         })
         .catch(() => undefined);
-      // Метрика анализа (Ф3): сессия упала в 'failed'.
       this.metrics?.incChatboxAnalyze({ status: 'failed' });
       this.logger.error(
         {
@@ -182,34 +139,12 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Ф5 — извлечение задач из закрытой сессии чата тем же разборщиком, что и
-   * встреча (`TaskExtractionService`), запись через единый межисточниковый
-   * дедуп (`CrossSourceTaskDedupeService`, Ф6).
-   *
-   * Шаги:
-   *   1. kill-switch `chatbox.taskExtraction.enabled` (default ON) + наличие
-   *      зависимостей (taskExtractor/taskDedupe). OFF → no-op.
-   *   2. Идемпотентность: если по сессии уже есть `Task.sourceChatSessionId` ИЛИ
-   *      `TaskSource(chatbox, sourceRefId=sessionId)` — повторный анализ задачи
-   *      не плодит.
-   *   3. Построить `dialog: DialogTurn[]` из сообщений (клиент/менеджер — как в
-   *      chatbox-ingest), вызвать `extractTasks` с источником
-   *      `{ id: chatId, type:'chatbox', title }`.
-   *   4. Резолв ответственного: chat.responsibleExternalId → ChatboxMember
-   *      .linkedPersonId → Person.userId (best-effort; клиент НЕ ответственный).
-   *   5. Записать кандидатов через дедуп-сервис.
-   *
-   * Public для unit-тестирования.
-   */
   async extractTasks(tenantId: string, sessionId: string): Promise<void> {
-    // 1. Kill-switch + зависимости.
     const enabled = this.cfg?.aiFeatures.chatboxTaskExtractionEnabled ?? false;
     if (!enabled || !this.taskExtractor || !this.taskDedupe) {
       return;
     }
 
-    // 2. Идемпотентность по сессии.
     const [existingByTask, existingBySource] = await Promise.all([
       this.prisma.task.findFirst({
         where: { tenantId, sourceChatSessionId: sessionId },
@@ -227,7 +162,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Сессия + чат (для chatId/responsibleExternalId/тема).
     const session = await this.prisma.chatboxChatSession.findFirst({
       where: { id: sessionId, tenantId },
       select: { id: true, chatId: true },
@@ -256,17 +190,12 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     });
     if (messages.length === 0) return;
 
-    // 3. Построение dialog (зеркалит chatbox-ingest transcript.turns):
-    //    клиент → «Клиент [имя]», иначе «Менеджер [имя]». Синтетические
-    //    таймкоды (1 сообщение = 1 секунда). Не-TEXT/пустые → [contentType].
     const dialog: DialogTurn[] = messages.map((m, i) => {
       const isClient = m.senderType === 'CLIENT';
       const role = isClient ? 'Клиент' : 'Менеджер';
       const name = m.senderName ? ` [${m.senderName}]` : '';
       const body =
-        m.contentType !== 'TEXT' || !m.text || m.text.trim() === ''
-          ? `[${m.contentType}]`
-          : m.text;
+        m.contentType !== 'TEXT' || !m.text || m.text.trim() === '' ? `[${m.contentType}]` : m.text;
       return {
         speaker: `${role}${name}`,
         text: body,
@@ -276,9 +205,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       };
     });
 
-    // 4. Резолв ответственного менеджера → Person.userId. Клиент НИКОГДА не
-    //    ответственный (не сотрудник). Best-effort: userId=null → задача без
-    //    assigneeUserId, assigneeRaw хранит имя.
     let assigneeUserId: string | null = null;
     let assigneeRaw: string | null = null;
     if (chat?.responsibleExternalId) {
@@ -302,7 +228,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Тема для meeting-дескриптора: имя клиента (если резолвится) либо чат.
     let customerName: string | null = null;
     if (chat?.customerExternalId) {
       const customer = await this.prisma.chatboxCustomer.findUnique({
@@ -320,8 +245,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       ? `Переписка с клиентом: ${customerName}`
       : `Переписка ${chat?.externalId ?? session.chatId}`;
 
-    // Владелец-fallback задачи (Task.userId — NOT NULL). Назначенный менеджер,
-    // иначе — владелец Org (Membership role=owner).
     const ownerUserId = await this.resolveOwnerUserId(tenantId, assigneeUserId);
     if (!ownerUserId) {
       this.logger.warn(
@@ -330,8 +253,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Вызов разборщика. meetingId — placeholder (chatId): на запись задач он НЕ
-    // переносится (meetingId=null для chatbox-задач).
     const extracted = await this.taskExtractor.extractTasks({
       meetingId: session.chatId,
       tenantId,
@@ -339,13 +260,10 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
       dialog,
     });
     if (extracted.length === 0) {
-      this.logger.debug(
-        `ChatboxAnalyze: разборщик не нашёл задач в session=${sessionId}`,
-      );
+      this.logger.debug(`ChatboxAnalyze: разборщик не нашёл задач в session=${sessionId}`);
       return;
     }
 
-    // 5. Кандидаты → единый межисточниковый дедуп (link vs create).
     const candidates: CrossSourceTaskCandidate[] = extracted.map((t) => ({
       title: t.title,
       description: t.description ?? null,
@@ -366,12 +284,6 @@ export class ChatboxAnalyzeWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  /**
-   * Владелец-fallback для `Task.userId` (NOT NULL). Сначала — назначенный
-   * менеджер (если резолвлен в User), иначе — владелец Org (Membership
-   * role='owner'). Возвращает null, если не нашли никого (тогда задачи не
-   * пишем — без userId Task невалиден).
-   */
   private async resolveOwnerUserId(
     tenantId: string,
     assigneeUserId: string | null,

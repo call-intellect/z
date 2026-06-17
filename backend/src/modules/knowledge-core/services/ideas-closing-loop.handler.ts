@@ -5,14 +5,8 @@ import { Prisma } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ConversationalService } from '../../conversational/conversational.service';
 import { CoreQueueService } from '../../core-queue/core-queue.service';
 import {
@@ -36,18 +30,6 @@ interface IdeaSupporter {
   entityId: string;
 }
 
-/**
- * SBA β-5 — IdeasClosingLoopHandler.
- *
- * Слушает `idea.status_changed` (эмитит Specialist36Service.changeStatus).
- * Для каждого supporter'а:
- *   - kind='person' → User.id через Person.userId → sendNotification
- *     (eventType='idea.status_changed').
- *   - kind='customer' → admin/owner Org как fallback (см. sub-ТЗ §14.2).
- *
- * LLM `idea-status-summarize` формирует {title, body}; fallback — статический
- * текст «Статус идеи изменён».
- */
 @Injectable()
 export class IdeasClosingLoopHandler {
   private readonly logger = new Logger(IdeasClosingLoopHandler.name);
@@ -62,18 +44,11 @@ export class IdeasClosingLoopHandler {
     @Optional()
     @Inject(TypedConfigService)
     private readonly cfg?: TypedConfigService,
-    /**
-     * TZ-1 Ф4.A — recognition при `shipped`. @Optional: spec-и конструируют
-     * handler позиционно без очереди → reuse безопасно деградирует.
-     */
     @Optional()
     @Inject(CoreQueueService)
     private readonly coreQueue?: CoreQueueService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -91,7 +66,6 @@ export class IdeasClosingLoopHandler {
       if (!idea) return;
       const supporters = this.parseSupporters(idea.supporters);
 
-      // LLM summarize (best-effort, fallback на статический текст).
       const summary = await this.summarize({
         statement: idea.statement,
         oldStatus: event.oldStatus,
@@ -115,8 +89,6 @@ export class IdeasClosingLoopHandler {
           });
           if (person?.userId) recipients.add(person.userId);
         } else {
-          // customer — fallback на admin Org (Customer.responsibleUserId
-          // отсутствует в Z; см. §14.2).
           const admins = await this.prisma.membership.findMany({
             where: {
               orgId: event.tenantId,
@@ -129,7 +101,6 @@ export class IdeasClosingLoopHandler {
         }
       }
 
-      // Также — сам автор должен узнать (если есть createdByUserId).
       if (idea.createdByUserId) recipients.add(idea.createdByUserId);
 
       for (const userId of recipients) {
@@ -154,7 +125,6 @@ export class IdeasClosingLoopHandler {
           this.metrics.incIdeaStatusChangeNotification({
             newStatus: event.newStatus,
           });
-          // TZ-1 Ф4.A — отдельный счётчик «уведомление о смене статуса доставлено».
           this.metrics.incIdeaStatusChangedNotified();
         } catch (err) {
           this.logger.warn(
@@ -168,9 +138,6 @@ export class IdeasClosingLoopHandler {
         }
       }
 
-      // TZ-1 Ф4.A — на `shipped` → recognition автору идеи (reuse существующего
-      // механизма `core.recognition-formulate`, type='idea_shipped' — его уже
-      // агрегирует whoShined в COO-дайджесте). jobId идемпотентен по (idea, user).
       if (event.newStatus === 'shipped' && idea.createdByUserId && this.coreQueue) {
         try {
           await this.coreQueue.enqueueRecognitionFormulate({
@@ -219,7 +186,6 @@ export class IdeasClosingLoopHandler {
       title: `Статус идеи: ${args.newStatus}`,
       body: `Идея «${args.statement.slice(0, 200)}» переведена в статус ${args.newStatus}.${args.reason ? ` Причина: ${args.reason}.` : ''}`,
     };
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (statement идеи + reason) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = IDEA_STATUS_SUMMARIZE_USER_TEMPLATE({
       ideaStatement: args.statement,
@@ -270,8 +236,7 @@ export class IdeasClosingLoopHandler {
       }
       const s = item as Record<string, Prisma.JsonValue>;
       const kindRaw = typeof s.kind === 'string' ? s.kind : 'person';
-      const kind: IdeaSupporter['kind'] =
-        kindRaw === 'customer' ? 'customer' : 'person';
+      const kind: IdeaSupporter['kind'] = kindRaw === 'customer' ? 'customer' : 'person';
       const entityId = typeof s.entityId === 'string' ? s.entityId : '';
       if (entityId.length === 0) continue;
       result.push({ kind, entityId });

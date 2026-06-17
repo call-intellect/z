@@ -1,12 +1,3 @@
-/**
- * Smoke-тест taskType=probe-formulate.
- * Источник промпта: backend/src/modules/knowledge-core/prompts/probe-formulate.prompt.ts
- *
- * Выход — JSON {question, options[]}. На DeepSeek-Pro используем `tools` +
- * `tool_choice: 'auto'`, чтобы не падать на 400 от json_schema strict.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-probe-formulate.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -22,9 +13,7 @@ const MODEL = 'deepseek-v4-pro';
 const PRICE_IN = 0.435 / 1_000_000;
 const PRICE_OUT = 0.87 / 1_000_000;
 
-const SCRIPT_DIR = path
-  .dirname(new URL(import.meta.url).pathname)
-  .replace(/^\/([A-Za-z]):/, '$1:');
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const FIXTURE_PATH = path.resolve(
   SCRIPT_DIR,
   `../../test/eval/smoke-all-agents/fixtures/${TASK_TYPE}.json`,

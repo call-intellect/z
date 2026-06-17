@@ -1,19 +1,3 @@
-/**
- * Patch — гарантирует наличие глобального LlmTaskRoute для taskType=`goal-alignment`
- * (Фаза 9 шаг 4 knowledge-core).
- *
- * Идемпотентен:
- *   - если запись уже есть (например, посеяна seed'ом или admin-edited через
- *     UI) — НЕ перезаписывает её (skill `safe-seed-rules`);
- *   - если записи нет — создаёт с провайдерами `[anthropic, deepseek, openai-via-proxy]`
- *     и `isActive=true`.
- *
- * Запуск:
- *   bun run scripts/patch-goal-alignment-route.ts
- *
- * Безопасно повторно — каждый прогон либо `[skipped]`, либо `[created]`.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

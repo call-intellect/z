@@ -1,14 +1,3 @@
-/**
- * Admin-redesign Фаза 2 — unit-тесты `ConciergeAnalyticsService`.
- *
- * Покрываем:
- *   1) getOverview() — totals + no-answer-rate + activeUsers за период.
- *   2) getOverview() — noAnswerRate=null при отсутствии assistant-сообщений.
- *   3) getTopQueries() — нормализует content + считает частоты.
- *   4) getNoAnswerList() — находит assistant-сообщения с маркерами + ищет предыдущий user-вопрос.
- *   5) isAvailable()=false → пустые ответы при отсутствии моделей.
- */
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -41,17 +30,19 @@ function buildPrismaMock(opts: {
   const conciergeMessage = opts.noMessageModel
     ? undefined
     : {
-        count: vi.fn().mockImplementation(
-          ({ where }: { where: { role: string; createdAt: { gte: Date; lt: Date } } }) => {
-            const filtered = messages.filter(
-              (m) =>
-                m.role === where.role &&
-                m.createdAt >= where.createdAt.gte &&
-                m.createdAt < where.createdAt.lt,
-            );
-            return Promise.resolve(filtered.length);
-          },
-        ),
+        count: vi
+          .fn()
+          .mockImplementation(
+            ({ where }: { where: { role: string; createdAt: { gte: Date; lt: Date } } }) => {
+              const filtered = messages.filter(
+                (m) =>
+                  m.role === where.role &&
+                  m.createdAt >= where.createdAt.gte &&
+                  m.createdAt < where.createdAt.lt,
+              );
+              return Promise.resolve(filtered.length);
+            },
+          ),
         findMany: vi.fn().mockImplementation(
           (args: {
             where: {
@@ -70,9 +61,7 @@ function buildPrismaMock(opts: {
                 m.createdAt < args.where.createdAt.lt,
             );
             if (args.where.conversationId) {
-              filtered = filtered.filter(
-                (m) => m.conversationId === args.where.conversationId,
-              );
+              filtered = filtered.filter((m) => m.conversationId === args.where.conversationId);
             }
             if (args.orderBy?.createdAt === 'desc') {
               filtered = [...filtered].sort(
@@ -109,33 +98,29 @@ function buildPrismaMock(opts: {
   const conciergeConversation = opts.noMessageModel
     ? undefined
     : {
-        groupBy: vi.fn().mockImplementation(
-          ({ where }: { where: { lastMessageAt: { gte: Date; lt: Date } } }) => {
-            const filtered = conversations.filter(
-              (c) =>
-                c.lastMessageAt !== null &&
-                c.lastMessageAt >= where.lastMessageAt.gte &&
-                c.lastMessageAt < where.lastMessageAt.lt,
-            );
-            const unique = Array.from(new Set(filtered.map((c) => c.userId)));
-            return Promise.resolve(unique.map((userId) => ({ userId })));
-          },
-        ),
-        findMany: vi.fn().mockImplementation(
-          ({ where }: { where: { id: { in: string[] } } }) => {
-            return Promise.resolve(
-              conversations.filter((c) => where.id.in.includes(c.id)),
-            );
-          },
-        ),
+        groupBy: vi
+          .fn()
+          .mockImplementation(
+            ({ where }: { where: { lastMessageAt: { gte: Date; lt: Date } } }) => {
+              const filtered = conversations.filter(
+                (c) =>
+                  c.lastMessageAt !== null &&
+                  c.lastMessageAt >= where.lastMessageAt.gte &&
+                  c.lastMessageAt < where.lastMessageAt.lt,
+              );
+              const unique = Array.from(new Set(filtered.map((c) => c.userId)));
+              return Promise.resolve(unique.map((userId) => ({ userId })));
+            },
+          ),
+        findMany: vi.fn().mockImplementation(({ where }: { where: { id: { in: string[] } } }) => {
+          return Promise.resolve(conversations.filter((c) => where.id.in.includes(c.id)));
+        }),
       };
 
   const user = {
-    findMany: vi.fn().mockImplementation(
-      ({ where }: { where: { id: { in: string[] } } }) => {
-        return Promise.resolve(users.filter((u) => where.id.in.includes(u.id)));
-      },
-    ),
+    findMany: vi.fn().mockImplementation(({ where }: { where: { id: { in: string[] } } }) => {
+      return Promise.resolve(users.filter((u) => where.id.in.includes(u.id)));
+    }),
   };
 
   const base: Record<string, unknown> = { user };
@@ -145,10 +130,6 @@ function buildPrismaMock(opts: {
 }
 
 describe('ConciergeAnalyticsService', () => {
-  // Сервис вызывает `new Date()` для расчёта периода (`periodRange`). Чтобы
-  // тест не зависел от реального текущего времени (через несколько дней
-  // SIX_DAYS_AGO уходит из окна week → totalQuestions=2 вместо 3), фиксируем
-  // системные часы через `vi.useFakeTimers` на стабильный NOW.
   const NOW = new Date('2026-05-25T12:00:00Z');
   const DAY_AGO = new Date(NOW.getTime() - 1 * 24 * 60 * 60 * 1000);
   const SIX_DAYS_AGO = new Date(NOW.getTime() - 6 * 24 * 60 * 60 * 1000);
@@ -181,13 +162,41 @@ describe('ConciergeAnalyticsService', () => {
   it('getOverview() считает totals и no-answer-rate (эвристика по маркерам)', async () => {
     const prisma = buildPrismaMock({
       messages: [
-        // 3 user-вопроса
-        { id: 'u1', conversationId: 'c1', content: 'Как создать встречу?', createdAt: DAY_AGO, role: 'user' },
-        { id: 'u2', conversationId: 'c1', content: 'А отчёт где?', createdAt: DAY_AGO, role: 'user' },
-        { id: 'u3', conversationId: 'c2', content: 'Сколько участников?', createdAt: SIX_DAYS_AGO, role: 'user' },
-        // 2 assistant-ответа, один с маркером no-answer
-        { id: 'a1', conversationId: 'c1', content: 'Перейдите в раздел встречи и нажмите...', createdAt: DAY_AGO, role: 'assistant' },
-        { id: 'a2', conversationId: 'c1', content: 'К сожалению, я не нашёл информации.', createdAt: DAY_AGO, role: 'assistant' },
+        {
+          id: 'u1',
+          conversationId: 'c1',
+          content: 'Как создать встречу?',
+          createdAt: DAY_AGO,
+          role: 'user',
+        },
+        {
+          id: 'u2',
+          conversationId: 'c1',
+          content: 'А отчёт где?',
+          createdAt: DAY_AGO,
+          role: 'user',
+        },
+        {
+          id: 'u3',
+          conversationId: 'c2',
+          content: 'Сколько участников?',
+          createdAt: SIX_DAYS_AGO,
+          role: 'user',
+        },
+        {
+          id: 'a1',
+          conversationId: 'c1',
+          content: 'Перейдите в раздел встречи и нажмите...',
+          createdAt: DAY_AGO,
+          role: 'assistant',
+        },
+        {
+          id: 'a2',
+          conversationId: 'c1',
+          content: 'К сожалению, я не нашёл информации.',
+          createdAt: DAY_AGO,
+          role: 'assistant',
+        },
       ],
       conversations: [
         { id: 'c1', tenantId: 't1', userId: 'user1', lastMessageAt: DAY_AGO },
@@ -199,7 +208,6 @@ describe('ConciergeAnalyticsService', () => {
     const overview = await svc.getOverview('week');
     expect(overview.totalQuestions).toBe(3);
     expect(overview.activeUsers).toBe(2);
-    // Один no-answer из двух — rate = 0.5.
     expect(overview.noAnswerRate).toBe(0.5);
     expect(overview.notes.noAnswerRateIsHeuristic).toBe(true);
   });
@@ -209,9 +217,7 @@ describe('ConciergeAnalyticsService', () => {
       messages: [
         { id: 'u1', conversationId: 'c1', content: 'Привет', createdAt: DAY_AGO, role: 'user' },
       ],
-      conversations: [
-        { id: 'c1', tenantId: 't1', userId: 'user1', lastMessageAt: DAY_AGO },
-      ],
+      conversations: [{ id: 'c1', tenantId: 't1', userId: 'user1', lastMessageAt: DAY_AGO }],
     });
     const svc = new ConciergeAnalyticsService(prisma);
     const overview = await svc.getOverview('week');
@@ -222,17 +228,28 @@ describe('ConciergeAnalyticsService', () => {
   it('getTopQueries() нормализует content (lowercase + trim) и считает частоты', async () => {
     const prisma = buildPrismaMock({
       messages: [
-        { id: 'u1', conversationId: 'c1', content: 'Как создать встречу?', createdAt: DAY_AGO, role: 'user' },
-        { id: 'u2', conversationId: 'c2', content: '  как создать ВСТРЕЧУ?  ', createdAt: DAY_AGO, role: 'user' },
+        {
+          id: 'u1',
+          conversationId: 'c1',
+          content: 'Как создать встречу?',
+          createdAt: DAY_AGO,
+          role: 'user',
+        },
+        {
+          id: 'u2',
+          conversationId: 'c2',
+          content: '  как создать ВСТРЕЧУ?  ',
+          createdAt: DAY_AGO,
+          role: 'user',
+        },
         { id: 'u3', conversationId: 'c3', content: 'Где отчёт?', createdAt: DAY_AGO, role: 'user' },
-        { id: 'u4', conversationId: 'c4', content: 'ab', createdAt: DAY_AGO, role: 'user' }, // отсекается, < 3 символов
+        { id: 'u4', conversationId: 'c4', content: 'ab', createdAt: DAY_AGO, role: 'user' },
       ],
     });
     const svc = new ConciergeAnalyticsService(prisma);
 
     const top = await svc.getTopQueries('week', 10);
     expect(top.length).toBe(2);
-    // Первый — самый частый.
     expect(top[0]).toEqual({ query: 'как создать встречу?', count: 2 });
     expect(top[1]).toEqual({ query: 'где отчёт?', count: 1 });
   });
@@ -249,12 +266,27 @@ describe('ConciergeAnalyticsService', () => {
     const QUESTION_TIME = new Date(ANSWER_TIME.getTime() - 60_000);
     const prisma = buildPrismaMock({
       messages: [
-        // Предшествующий user-вопрос (раньше по времени)
-        { id: 'u1', conversationId: 'c1', content: 'Где найти регламент?', createdAt: QUESTION_TIME, role: 'user' },
-        // assistant с маркером
-        { id: 'a1', conversationId: 'c1', content: 'К сожалению, я не нашёл такого регламента.', createdAt: ANSWER_TIME, role: 'assistant' },
-        // assistant БЕЗ маркера — игнорируется
-        { id: 'a2', conversationId: 'c2', content: 'Вот регламент: ...', createdAt: ANSWER_TIME, role: 'assistant' },
+        {
+          id: 'u1',
+          conversationId: 'c1',
+          content: 'Где найти регламент?',
+          createdAt: QUESTION_TIME,
+          role: 'user',
+        },
+        {
+          id: 'a1',
+          conversationId: 'c1',
+          content: 'К сожалению, я не нашёл такого регламента.',
+          createdAt: ANSWER_TIME,
+          role: 'assistant',
+        },
+        {
+          id: 'a2',
+          conversationId: 'c2',
+          content: 'Вот регламент: ...',
+          createdAt: ANSWER_TIME,
+          role: 'assistant',
+        },
       ],
       conversations: [
         { id: 'c1', tenantId: 't1', userId: 'user1', lastMessageAt: ANSWER_TIME },

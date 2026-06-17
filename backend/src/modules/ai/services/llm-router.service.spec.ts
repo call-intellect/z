@@ -50,15 +50,17 @@ function build(opts: BuildOpts) {
     })),
   );
   const findFirst = vi.fn(async () => null);
-  const create = vi.fn(async (args: { data: { taskType: string; providers: string[]; isActive: boolean } }) => ({
-    id: 'r-new',
-    taskType: args.data.taskType,
-    providers: args.data.providers,
-    isActive: args.data.isActive,
-    tenantId: null,
-    experiment: null,
-    updatedAt: new Date(),
-  }));
+  const create = vi.fn(
+    async (args: { data: { taskType: string; providers: string[]; isActive: boolean } }) => ({
+      id: 'r-new',
+      taskType: args.data.taskType,
+      providers: args.data.providers,
+      isActive: args.data.isActive,
+      tenantId: null,
+      experiment: null,
+      updatedAt: new Date(),
+    }),
+  );
   const update = vi.fn();
   const priceFindFirst = vi.fn(async () => null);
   const prisma = {
@@ -153,7 +155,9 @@ describe('LlmRouterService', () => {
       throw new Error('boom-minimax');
     });
     const ctx = build({
-      routes: [{ taskType: 'chapters', providers: ['minimax', 'openai-via-proxy'], isActive: true }],
+      routes: [
+        { taskType: 'chapters', providers: ['minimax', 'openai-via-proxy'], isActive: true },
+      ],
       minimax: failingMinimax,
     });
     await ctx.router.refreshCache();
@@ -188,7 +192,6 @@ describe('LlmRouterService', () => {
     await expect(
       ctx.router.call({ ...baseParams, taskType: 'chapters' as LlmTaskType }),
     ).rejects.toBeInstanceOf(LlmRouterAllProvidersFailedError);
-    // Последний — minimax (fallback chain).
     const failedCall = ctx.incLlmRouterDispatch.mock.calls.find(
       (c) => (c[0] as { status: string }).status === 'failed',
     );
@@ -197,30 +200,27 @@ describe('LlmRouterService', () => {
 
   it('validate=false для primary → переключение на secondary (ТЗ-3 Ф2)', async () => {
     const ctx = build({
-      routes: [{ taskType: 'chapters', providers: ['minimax', 'openai-via-proxy'], isActive: true }],
+      routes: [
+        { taskType: 'chapters', providers: ['minimax', 'openai-via-proxy'], isActive: true },
+      ],
     });
     await ctx.router.refreshCache();
 
     const out = await ctx.router.call({
       ...baseParams,
       taskType: 'chapters' as LlmTaskType,
-      // primary minimax вернёт 'text-minimax' (не пройдёт), secondary openai
-      // вернёт 'text-openai-via-proxy' (пройдёт).
       validate: (text) => text === 'text-openai-via-proxy',
     });
 
-    // primary вызван, но его ответ отбракован → secondary вызван и победил.
     expect(ctx.minimax.complete).toHaveBeenCalledOnce();
     expect(ctx.openai.complete).toHaveBeenCalledOnce();
     expect(out.modelUsed).toBe('openai-via-proxy:gpt-5-mini');
-    // primary получил status=invalid_output (не success).
     expect(ctx.incLlmRouterDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'minimax', status: 'invalid_output' }),
     );
     expect(ctx.incLlmRouterDispatch).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'openai-via-proxy', status: 'success' }),
     );
-    // success-usage записан только для secondary (одна успешная запись).
     expect(ctx.usageRecord).toHaveBeenCalledOnce();
     expect(ctx.usageRecord).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'openai-via-proxy', success: true }),
@@ -237,19 +237,16 @@ describe('LlmRouterService', () => {
       ctx.router.call({
         ...baseParams,
         taskType: 'chapters' as LlmTaskType,
-        // ни один ответ провайдера не проходит валидацию.
         validate: () => false,
       }),
     ).rejects.toBeInstanceOf(LlmRouterAllProvidersFailedError);
 
-    // оба провайдера вызваны и оба получили invalid_output.
     expect(ctx.anthropic.complete).toHaveBeenCalledOnce();
     expect(ctx.minimax.complete).toHaveBeenCalledOnce();
     const invalidCalls = ctx.incLlmRouterDispatch.mock.calls.filter(
       (c) => (c[0] as { status: string }).status === 'invalid_output',
     );
     expect(invalidCalls).toHaveLength(2);
-    // ни одного success.
     const successCalls = ctx.incLlmRouterDispatch.mock.calls.filter(
       (c) => (c[0] as { status: string }).status === 'success',
     );
@@ -312,7 +309,6 @@ describe('LlmRouterService', () => {
     });
     expect(ctx.findFirst).toHaveBeenCalledOnce();
     expect(ctx.create).toHaveBeenCalledOnce();
-    // refreshCache был дёрнут setRoute'ом — findMany вызван дважды (init + после setRoute).
     expect(ctx.findMany).toHaveBeenCalledTimes(2);
   });
 

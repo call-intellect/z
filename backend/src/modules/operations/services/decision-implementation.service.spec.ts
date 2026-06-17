@@ -2,15 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { DecisionImplementationService } from './decision-implementation.service';
 
-/**
- * TZ-1 Фаза 3.B (daily-value-engine) — unit-тесты DecisionImplementationService.
- *
- * Mock Prisma/cfg/metrics, без сети/времени. Покрываем:
- *   1. computeForTenant — детекция stalled + апдейт статуса + метрика на переход.
- *   2. getDecisionThroughput — корректный % (count в паре с doneWithOutcomes).
- *   3. идемпотентность — повторный прогон не инкрементит decision_stalled (нет
- *      перехода).
- */
 describe('DecisionImplementationService', () => {
   const now = new Date('2026-06-08T10:00:00.000Z');
 
@@ -36,27 +27,21 @@ describe('DecisionImplementationService', () => {
       implementationStatus: string | null;
     }>;
     counts?: { total: number; done: number };
-    /** Редизайн Ф8.1 — связанные задачи по decisionId (для auto-implement). */
-    taskLinksByDecision?: Record<
-      string,
-      Array<{ issue: { completedAt: Date | null } | null }>
-    >;
+    taskLinksByDecision?: Record<string, Array<{ issue: { completedAt: Date | null } | null }>>;
   }) {
     const updates: Array<{ where: unknown; data: unknown }> = [];
     let countCall = 0;
     const prisma = {
       decision: {
-        // Default-статус 'approved' — большинство фикстур старого spec без status.
-        findMany: vi.fn().mockResolvedValue(
-          (opts.decisions ?? []).map((d) => ({ status: 'approved', ...d })),
-        ),
+        findMany: vi
+          .fn()
+          .mockResolvedValue((opts.decisions ?? []).map((d) => ({ status: 'approved', ...d }))),
         update: vi.fn(async (arg: { where: unknown; data: unknown }) => {
           updates.push(arg);
           return { id: 'd1' };
         }),
         count: vi.fn(async () => {
-          // 1-й вызов — total, 2-й — doneWithOutcomes (порядок в Promise.all).
-          const v = countCall === 0 ? opts.counts?.total ?? 0 : opts.counts?.done ?? 0;
+          const v = countCall === 0 ? (opts.counts?.total ?? 0) : (opts.counts?.done ?? 0);
           countCall++;
           return v;
         }),
@@ -88,11 +73,11 @@ describe('DecisionImplementationService', () => {
           statement: 'Перейти на новый CRM',
           text: null,
           decidedByPersonIds: ['p1'],
-          decidedAt: new Date('2026-05-01T00:00:00Z'), // > 21 дней назад
+          decidedAt: new Date('2026-05-01T00:00:00Z'),
           createdAt: new Date('2026-05-01T00:00:00Z'),
           linkedTaskCount: 0,
           actualOutcomes: null,
-          implementationStatus: null, // ранее не stalled → переход
+          implementationStatus: null,
         },
       ],
       counts: { total: 1, done: 0 },
@@ -116,7 +101,7 @@ describe('DecisionImplementationService', () => {
           createdAt: new Date('2026-05-01T00:00:00Z'),
           linkedTaskCount: 0,
           actualOutcomes: null,
-          implementationStatus: 'stalled', // уже было stalled
+          implementationStatus: 'stalled',
         },
       ],
       counts: { total: 1, done: 0 },
@@ -169,7 +154,6 @@ describe('DecisionImplementationService', () => {
       const res = await svc.computeForTenant({ tenantId: 't1', now });
       expect(res.autoImplemented).toBe(1);
       expect(metrics.incDecisionAutoImplemented).toHaveBeenCalledTimes(1);
-      // Один из update'ов должен ставить status='implemented'.
       const statusUpdate = updates.find(
         (u) => (u.data as { status?: string }).status === 'implemented',
       );
@@ -188,7 +172,7 @@ describe('DecisionImplementationService', () => {
             decidedAt: new Date('2026-06-01T00:00:00Z'),
             createdAt: new Date('2026-06-01T00:00:00Z'),
             linkedTaskCount: 2,
-            actualOutcomes: null, // нет outcomes, но задачи закрыты
+            actualOutcomes: null,
             implementationStatus: 'in_progress',
           },
         ],
@@ -224,7 +208,7 @@ describe('DecisionImplementationService', () => {
         taskLinksByDecision: {
           d1: [
             { issue: { completedAt: new Date('2026-06-05T00:00:00Z') } },
-            { issue: { completedAt: null } }, // одна не закрыта
+            { issue: { completedAt: null } },
           ],
         },
         counts: { total: 1, done: 0 },
@@ -310,7 +294,6 @@ describe('DecisionImplementationService', () => {
     it('маппит статус→% и сортирует done→in_progress→stalled→not_started', async () => {
       const { svc } = build({
         decisions: [
-          // stalled: старое, без задач/outcomes, implementationStatus=null.
           {
             id: 'd-stalled',
             statement: 'Сменить CRM',
@@ -322,7 +305,6 @@ describe('DecisionImplementationService', () => {
             actualOutcomes: null,
             implementationStatus: null,
           },
-          // done: есть outcomes.
           {
             id: 'd-done',
             statement: 'Запустить лендинг',
@@ -334,7 +316,6 @@ describe('DecisionImplementationService', () => {
             actualOutcomes: 'Запущено',
             implementationStatus: 'done',
           },
-          // in_progress: есть задачи, нет outcomes.
           {
             id: 'd-prog',
             statement: 'Нанять маркетолога',

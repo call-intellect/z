@@ -1,29 +1,3 @@
-/**
- * Goals OKR v2 (2026-06-02, plans/tz/2026-06-02-goals-okr-v2.md §3) — Seed
- * маршрутов LLM для 3 новых taskType'ов Specialist 3-14 «Goals»:
- *   - goal-extract          — из IdeaBlock (commitment/plan_item) → черновик
- *     Goal (outcome + горизонт + опц. измеримый KR). Может вернуть isGoal=false.
- *     Capable модель + JSON Schema strict.
- *   - goal-hierarchy-link   — арбитр {duplicate|child_of|standalone} по KNN
- *     top-5 существующим целям. Дешёвый арбитр.
- *   - goals-pulse-summarize — связный текст еженедельного пульса целей (Фаза 4),
- *     как operations-daily-digest.
- *
- * Цепочки (ТЗ §3, НЕ anthropic — memory `project_z_infra_and_ai`):
- *   goal-extract:           deepseek/deepseek-v4-pro   → openai-via-proxy/gpt-5.4-mini → ollama/qwen3.5:9b
- *   goal-hierarchy-link:    deepseek/deepseek-v4-flash → openai-via-proxy/gpt-5.4-mini → ollama/qwen3.5:9b
- *   goals-pulse-summarize:  deepseek/deepseek-v4-flash → openai-via-proxy/gpt-5.4-mini → ollama/qwen3.5:9b
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-goals.ts
- *   bun run scripts/seed-llm-task-routes-goals.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются.
- *   - Без флага — пропускаем существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive (НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -117,17 +91,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -152,18 +122,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-goals START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-goals START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

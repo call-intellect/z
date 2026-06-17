@@ -1,30 +1,3 @@
-/**
- * Backfill default board (Tracker Boards, 2026-05-27).
- *
- * Контекст:
- *   ТЗ `plans/tz/2026-05-27-tracker-boards.md` вводит модель `Board` —
- *   несколько досок внутри проекта, у каждой задачи есть `boardId`.
- *   Существующие проекты до раскатки этого ТЗ не имели досок;
- *   все Issue имеют `boardId IS NULL`.
- *
- *   Этот скрипт:
- *     1. Для каждого живого `Project` без default-доски создаёт
- *        `Board { isDefault: true, name: 'Доска', sequence: 0 }`.
- *     2. Все `Issue` этого проекта с `boardId IS NULL` обновляет на
- *        ID созданной default-доски.
- *
- * Идемпотентность:
- *   - Если у проекта уже есть `isDefault=true` доска — пропускаем создание.
- *   - Issue без boardId всё равно обновляются на найденный/созданный default
- *     (чтобы можно было повторять скрипт после частичного отката).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-default-board.ts
- *   docker compose exec backend bun run scripts/backfill-default-board.ts --dry-run
- *
- * Регистрация: backend/scripts/apply-prod-deploy.ts (phase: 'backfill').
- */
-
 import { Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -56,7 +29,6 @@ async function main(args: { dryRun: boolean }): Promise<void> {
       `=== backfill-default-board START (dryRun=${args.dryRun}, batch=${BATCH_SIZE}) ===`,
     );
 
-    // Курсорная пагинация по живым проектам.
     let cursorId: string | undefined = undefined;
     // eslint-disable-next-line no-constant-condition
     while (true) {
@@ -72,7 +44,6 @@ async function main(args: { dryRun: boolean }): Promise<void> {
       for (const project of batch) {
         stats.projectsScanned++;
 
-        // 1) Проверка существования default-доски.
         const existing = await prisma.board.findFirst({
           where: {
             projectId: project.id,
@@ -92,8 +63,6 @@ async function main(args: { dryRun: boolean }): Promise<void> {
             console.log(
               `[DRY-RUN] would create default board for project ${project.identifier} (${project.id})`,
             );
-            // Под dry-run мы не можем привязывать issues к ID, которого нет.
-            // Пропускаем, не учитываем потенциальные issues.
             continue;
           }
           try {
@@ -111,11 +80,7 @@ async function main(args: { dryRun: boolean }): Promise<void> {
             defaultBoardId = created.id;
             stats.defaultBoardsCreated++;
           } catch (e) {
-            if (
-              e instanceof Prisma.PrismaClientKnownRequestError &&
-              e.code === 'P2002'
-            ) {
-              // Race: другой процесс уже создал — подхватим существующую.
+            if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
               const fallback = await prisma.board.findFirst({
                 where: {
                   projectId: project.id,
@@ -139,7 +104,6 @@ async function main(args: { dryRun: boolean }): Promise<void> {
           }
         }
 
-        // 2) Backfill всех issues без boardId.
         if (args.dryRun) {
           const countWithoutBoard = await prisma.issue.count({
             where: {

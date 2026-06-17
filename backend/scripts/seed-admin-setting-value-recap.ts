@@ -1,27 +1,3 @@
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — Seed AdminSetting для месячной витрины
- * value-recap + оценки ответов AI-чата.
- *
- * Регистрирует ключи динамической конфигурации:
- *   - `operations.value_recap.enabled` (boolean, default true) — kill-switch
- *     месячной витрины (cron 1-го числа → build + push владельцу/COO). ON.
- *   - `chat_v2.feedback.enabled` (boolean, default true) — kill-switch оценки
- *     ответов AI-чата (палец вверх/вниз). ON.
- *   - `chat_v2.feedback.min_rated` (int, default 10) — минимум оценок, ниже
- *     которого helped-rate скрывается («мало данных»).
- *   - `chat_v2.feedback.retry_dedup_seconds` (int, default 30) — окно дедупа
- *     повторных вопросов (ретраев) в метрике чата.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-value-recap.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -107,7 +83,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

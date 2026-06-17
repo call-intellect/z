@@ -7,23 +7,6 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { CurrencyRateService } from './currency-rate.service';
 
-/**
- * SBA α-10 wave 3 — DailyCostAggregatorCron.
- *
- * Раз в день в 01:00 UTC агрегирует AiUsageLog за вчера в AiCostDaily.
- * Идемпотентен: jobId pattern `cost-aggregate_${date}` — пересчёт того же
- * дня перезаписывает строки (upsert по unique [tenant, date, taskType,
- * provider, model]).
- *
- * Cost considerations:
- *   - Одна реплика БД, агрегация одного дня обычно <1 минуты на типовом
- *     volume (~100k вызовов).
- *   - costUsd / costRub берутся из snapshot полей AiUsageLog (если есть) или
- *     пересчитываются через текущий CurrencyRate (для backward-compat с
- *     vintage записями без snapshot'а).
- *
- * См. ТЗ §8.
- */
 @Injectable()
 export class DailyCostAggregatorCron {
   private readonly logger = new Logger(DailyCostAggregatorCron.name);
@@ -55,10 +38,6 @@ export class DailyCostAggregatorCron {
     }
   }
 
-  /**
-   * Public — для manual trigger из admin (POST /admin/unit-economics/aggregate).
-   * date в UTC, агрегация ровно одного дня [00:00, 24:00) UTC.
-   */
   async runForDate(date: Date): Promise<{
     date: string;
     rowsAggregated: number;
@@ -70,9 +49,6 @@ export class DailyCostAggregatorCron {
     const dayEnd = new Date(dayStart.getTime() + 24 * 3600 * 1000);
     const fxRate = await this.fx.getCurrentUsdRubRate();
 
-    // Группировка через raw SQL — Prisma.groupBy не позволяет суммировать
-    // одновременно по нескольким Decimal-полям + считать count в одной
-    // выборке с фильтром по date range достаточно эффективно.
     type Row = {
       tenant_id: string;
       task_type: string | null;
@@ -112,7 +88,6 @@ export class DailyCostAggregatorCron {
       const costUsd = Number.parseFloat(r.cost_usd_sum ?? '0') || 0;
       let costRub = Number.parseFloat(r.cost_rub_sum ?? '0') || 0;
       if (costRub === 0 && costUsd > 0) {
-        // У части vintage-записей costRub=null/0 — досчитываем через текущий курс.
         costRub = costUsd * fxRate;
       }
       try {
@@ -176,12 +151,6 @@ export class DailyCostAggregatorCron {
 
   private yesterdayUtcDate(): Date {
     const now = new Date();
-    return new Date(
-      Date.UTC(
-        now.getUTCFullYear(),
-        now.getUTCMonth(),
-        now.getUTCDate() - 1,
-      ),
-    );
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 1));
   }
 }

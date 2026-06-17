@@ -1,25 +1,3 @@
-/**
- * patch-create-dev-audit-user.ts — одноразовый dev-скрипт для аудита трекера.
- *
- * Создаёт (идемпотентно) тестового админа Z с заранее известным паролем
- * для прохождения UI/API-аудита модуля трекера. **Только для dev-среды.**
- *
- * Делает:
- *   1) upsert User (signupSource='standalone', argon2id хеш пароля,
- *      isSuperAdmin=true, mustChangePassword=false, consent*=true);
- *   2) если у юзера нет owned Org — создаёт `Audit Org` + Membership(owner) +
- *      дефолтный Source('Встречи Z') + Subscription (status=DEMO, как в
- *      OrgsService.createForOwner / SubscriptionService.ensureDemo).
- *
- * Не регистрируется в `apply-prod-deploy.ts` — в прод не идёт.
- *
- * Запуск (из `backend/`):
- *   bun run scripts/patch-create-dev-audit-user.ts
- *
- * В конце пишет в stdout:
- *   READY: email=... password=... orgId=... userId=...
- */
-
 import { randomBytes } from 'node:crypto';
 
 import argon2 from 'argon2';
@@ -31,7 +9,6 @@ const PASSWORD = 'AuditDev2026!';
 const USER_NAME = 'Audit Dev';
 const ORG_NAME = 'Audit Org';
 
-// OWASP 2024 defaults — совпадают с PasswordService (memoryKb/iter/parallelism).
 const ARGON_OPTS = {
   type: argon2.argon2id,
   memoryCost: 19_456,
@@ -96,7 +73,6 @@ async function main(): Promise<void> {
     });
     console.log('[audit-dev] user upserted', { id: user.id, email: user.email });
 
-    // Org — создаём только если у юзера ещё нет owned Org (идемпотентность).
     let orgId: string;
     const existingOrg = await prisma.org.findFirst({
       where: { ownerId: user.id, deletedAt: null },
@@ -126,8 +102,6 @@ async function main(): Promise<void> {
             invitedBy: null,
           },
         });
-        // knowledge-core Фаза 1 — дефолтный Source для встреч
-        // (как в OrgsService.createForOwner).
         await tx.source.create({
           data: {
             tenantId: o.id,
@@ -137,8 +111,6 @@ async function main(): Promise<void> {
             isActive: true,
           },
         });
-        // ensureDemo() — Subscription со статусом по умолчанию (DEMO),
-        // чтобы SubscriptionGuard не блокировал dev-логин.
         const sub = await tx.subscription.create({
           data: { tenantId: o.id },
         });
@@ -155,8 +127,6 @@ async function main(): Promise<void> {
       console.log('[audit-dev] org created', { id: orgId, slug });
     }
 
-    // Подстраховка: если membership как-то отсутствует (юзер был, Org был —
-    // но кто-то снёс membership), создаём owner-membership.
     const membership = await prisma.membership.findUnique({
       where: { orgId_userId: { orgId, userId: user.id } },
     });
@@ -173,9 +143,7 @@ async function main(): Promise<void> {
       console.log('[audit-dev] membership upgraded to owner');
     }
 
-    console.log(
-      `READY: email=${EMAIL} password=${PASSWORD} orgId=${orgId} userId=${user.id}`,
-    );
+    console.log(`READY: email=${EMAIL} password=${PASSWORD} orgId=${orgId} userId=${user.id}`);
   } finally {
     await prisma.$disconnect();
   }

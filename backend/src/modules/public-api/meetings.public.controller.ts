@@ -19,15 +19,6 @@ import { MeetingActionItemsService } from '../meetings/meeting-action-items.serv
 
 import { ApiAccessLogInterceptor } from './api-access-log.interceptor';
 
-/**
- * Public REST API: meetings & связанные сущности.
- *
- * Все эндпоинты:
- *   - под `/api/public/v1`
- *   - защищены `BearerAuthGuard`
- *   - `read` scope обязателен (по дефолту в guard)
- *   - данные возвращаются для `userId` владельца ключа
- */
 @ApiTags('public-meetings')
 @ApiBearerAuth()
 @Controller('api/public/v1')
@@ -78,10 +69,7 @@ export class MeetingsPublicController {
   @Get('meetings/:id')
   @RequireScope('read')
   @ApiOperation({ summary: 'Детали встречи' })
-  async get(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ) {
+  async get(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     const meeting = await this.prisma.meeting.findFirst({
       where: { id, ownerId: userId, deletedAt: null },
       include: { aiResult: true },
@@ -92,9 +80,6 @@ export class MeetingsPublicController {
         error: { code: 'meeting_not_found', message: 'Meeting not found' },
       });
     }
-    // Р6: внешний контракт отдаёт каноническую сводку (summaryFast ?? summary).
-    // После отключения legacy summary-агента поле summary в БД может быть пустым
-    // — подменяем его на канон, чтобы клиенты не получали ''.
     if (meeting.aiResult) {
       meeting.aiResult.summary = pickPrimarySummary(meeting.aiResult);
     }
@@ -104,16 +89,7 @@ export class MeetingsPublicController {
   @Get('meetings/:id/tasks')
   @RequireScope('read')
   @ApiOperation({ summary: 'Задачи встречи' })
-  async tasks(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ) {
-    // ТЗ 2026-06-04 meeting-identity-and-clones-attribution, Фаза 5.2.
-    // Внешний JSON-контракт ДОЛЖЕН остаться байт-в-байт прежним. При дефолте
-    // (флаг `knowledge.meetingTasksToTrackerOnly` = false, code-fallback) читаем
-    // Task напрямую — полный объект Prisma, форма ответа не меняется. При
-    // включённом флаге видимая задача = tracker Issue: берём её через единый
-    // helper и маппим в ТОТ ЖЕ набор полей, что отдавал Task.
+  async tasks(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     const tenantId = await this.assertOwned(id, userId);
     const trackerOnly = await this.actionItems.isTrackerOnly();
     if (!trackerOnly) {
@@ -123,7 +99,6 @@ export class MeetingsPublicController {
       });
       return { items };
     }
-    // Issue-ветка (флаг ON). tenantId встречи гарантирован assertOwned.
     const normalized = await this.actionItems.listForMeeting({
       meetingId: id,
       tenantId: tenantId ?? '',
@@ -156,10 +131,7 @@ export class MeetingsPublicController {
   @Get('meetings/:id/chapters')
   @RequireScope('read')
   @ApiOperation({ summary: 'Главы встречи' })
-  async chapters(
-    @CurrentApiUserId() userId: string,
-    @Param('id') id: string,
-  ) {
+  async chapters(@CurrentApiUserId() userId: string, @Param('id') id: string) {
     await this.assertOwned(id, userId);
     const items = await this.prisma.meetingChapter.findMany({
       where: { meetingId: id },
@@ -168,14 +140,7 @@ export class MeetingsPublicController {
     return { items };
   }
 
-  /**
-   * Проверяет владение встречей; возвращает её `tenantId` (нужен для
-   * tenant-scope при чтении Issue в Ф5.2). Бросает 404, если не владелец.
-   */
-  private async assertOwned(
-    meetingId: string,
-    userId: string,
-  ): Promise<string | null> {
+  private async assertOwned(meetingId: string, userId: string): Promise<string | null> {
     const m = await this.prisma.meeting.findFirst({
       where: { id: meetingId, ownerId: userId, deletedAt: null },
       select: { id: true, tenantId: true },

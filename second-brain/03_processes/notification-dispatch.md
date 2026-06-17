@@ -7,8 +7,8 @@ last_audited: 2026-05-29
 owners_human:
   - продакт conversational-каналов
 related_plans:
-  - plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md
-  - plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md
+  - plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md
+  - plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md
 related_projects:
   - 01_projects/conversational-channels.md
 ---
@@ -184,5 +184,5 @@ Notification.create
 |---|---|---|
 | 2026-05-29 | Карточка создана. Зафиксированы расхождения по `UserChannelPreference` и `NotificationDispatcher`. | этот документ |
 | 2026-05-26 | TelegramApiClient через прокси `telegram.crossmark.ru` | TelegramApiClient.resolveApiBase |
-| ~2026-05-23 | β-1 zero-button — slash-команды удалены, document/voice inbound через DocumentsService/VoxService | plans/tz/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md |
-| ~2026-05-21 | SBA α-1 — модуль создан (in_app + email_smtp); β-1 добавил telegram/max | plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md |
+| ~2026-05-23 | β-1 zero-button — slash-команды удалены, document/voice inbound через DocumentsService/VoxService | plans/archive/2026-05-23-sba-beta-1-telegram-max-zero-button-ripout.md |
+| ~2026-05-21 | SBA α-1 — модуль создан (in_app + email_smtp); β-1 добавил telegram/max | plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md |

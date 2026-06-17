@@ -1,16 +1,12 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Plus, FolderKanban } from 'lucide-react';
-import { Button } from '@/ui/shadcn/button';
-import { useAuth } from '@/contexts/auth-context';
-import { useProjects } from '@/hooks/tracker/useProjects';
-import { projectShortLabel } from '@/domain/tracker';
+import Link from "next/link";
+import { Plus, FolderKanban } from "lucide-react";
+import { Button } from "@/ui/shadcn/button";
+import { useAuth } from "@/contexts/auth-context";
+import { useProjects } from "@/hooks/tracker/useProjects";
+import { projectShortLabel } from "@/domain/tracker";
 
-/**
- * `/projects` — список проектов трекера организации.
- * Источник: GET /api/v1/projects (через `useProjects`).
- */
 export function ProjectsListClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   const { projects, isLoading, error } = useProjects(currentOrgId);

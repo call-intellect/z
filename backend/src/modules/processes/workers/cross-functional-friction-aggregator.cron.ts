@@ -5,37 +5,9 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { resolveProcessTenantTop } from '../services/tenant-top';
 
-/**
- * SBA γ-3 — CrossFunctionalFrictionAggregatorCron.
- *
- * Раз в сутки в 05:00 UTC (`@Cron('0 5 * * *')`):
- *   1. Берёт canonical `IdeaBlock`'и с `signalType='process_friction'`,
- *      созданные за последние 24 часа.
- *   2. Берёт `ProcessHandoff` с `knownFrictionCount > 0` (sla-violations).
- *   3. Для каждого активного cross-functional ProcessTemplate Org группирует
- *      friction-сигналы и создаёт `CrossFunctionalFrictionReport` (если не
- *      существует одного с этим первым sourceBlockId — см. риск §17 sub-ТЗ).
- *   4. Обновляет gauge'и Prometheus:
- *      - `cross_functional_processes_total{tenant_top}`
- *      - `cross_functional_friction_active_total{tenant_top, severity}`
- *
- * Идемпотентно: дубликаты не создаются (проверка по первому sourceBlockId
- * в already-active записях). Не бросает наружу.
- *
- * NB: severity вычисляется простым правилом по количеству source-блоков:
- *   - >= 5 блоков → 'high';
- *   - 2..4 → 'medium';
- *   - 1     → 'low'.
- * LLM-вызов `cross-functional-friction-summary` в этой итерации НЕ делаем
- * (он отдельный taskType, см. seed-llm-task-routes-cross-functional.ts —
- * на следующей итерации к этому cron'у можно подвесить description-обогащение
- * через LlmRouterService).
- */
 @Injectable()
 export class CrossFunctionalFrictionAggregatorCron {
-  private readonly logger = new Logger(
-    CrossFunctionalFrictionAggregatorCron.name,
-  );
+  private readonly logger = new Logger(CrossFunctionalFrictionAggregatorCron.name);
   private static readonly LOOKBACK_HOURS = 24;
   private static readonly MAX_TEMPLATES_PER_TENANT = 200;
 
@@ -49,10 +21,7 @@ export class CrossFunctionalFrictionAggregatorCron {
   async sweep(): Promise<void> {
     try {
       const stats = await this.runOnce();
-      this.logger.debug(
-        stats,
-        'cross-functional-friction-aggregator: проход завершён',
-      );
+      this.logger.debug(stats, 'cross-functional-friction-aggregator: проход завершён');
     } catch (err) {
       this.logger.error(
         { err: err instanceof Error ? err.message : String(err) },
@@ -93,22 +62,16 @@ export class CrossFunctionalFrictionAggregatorCron {
           sourceBlockIds: true,
           currentVersionId: true,
         },
-        take:
-          CrossFunctionalFrictionAggregatorCron.MAX_TEMPLATES_PER_TENANT,
+        take: CrossFunctionalFrictionAggregatorCron.MAX_TEMPLATES_PER_TENANT,
       });
 
-      // Метрика: total cross-functional Org.
       this.metrics.setCrossFunctionalProcessesTotal({
         tenantTop,
         value: templates.length,
       });
 
-      // 1. Свежие friction-блоки Org (last LOOKBACK_HOURS).
       const since = new Date(
-        Date.now() -
-          CrossFunctionalFrictionAggregatorCron.LOOKBACK_HOURS *
-            3600 *
-            1000,
+        Date.now() - CrossFunctionalFrictionAggregatorCron.LOOKBACK_HOURS * 3600 * 1000,
       );
       const frictionBlocks = await this.prisma.ideaBlock.findMany({
         where: {
@@ -121,7 +84,6 @@ export class CrossFunctionalFrictionAggregatorCron {
         take: 1_000,
       });
 
-      // 2. SLA-violating handoffs: knownFrictionCount > 0 + linked to one of templates.
       const handoffs =
         templates.length === 0
           ? []
@@ -145,9 +107,6 @@ export class CrossFunctionalFrictionAggregatorCron {
               },
             });
 
-      // 3. Группируем по template. Простая эвристика: каждый friction-блок
-      // ассоциируется со всеми cross-functional template'ами Org, у которых
-      // он встречается в sourceBlockIds.
       const blockToTemplates = new Map<string, string[]>();
       for (const tpl of templates) {
         for (const blockId of tpl.sourceBlockIds ?? []) {
@@ -158,7 +117,6 @@ export class CrossFunctionalFrictionAggregatorCron {
         }
       }
 
-      // По каждому template — все блоки и handoffs, доступные для него.
       const departmentIdsCache = await this.loadDepartmentIdsForRoles({
         tenantId,
         roleIds: handoffs.flatMap((h) =>
@@ -167,22 +125,16 @@ export class CrossFunctionalFrictionAggregatorCron {
       });
 
       for (const tpl of templates) {
-        const ownBlocks = frictionBlocks.filter((b) =>
-          (tpl.sourceBlockIds ?? []).includes(b.id),
-        );
+        const ownBlocks = frictionBlocks.filter((b) => (tpl.sourceBlockIds ?? []).includes(b.id));
         const ownHandoffs = handoffs.filter(
-          (h) =>
-            h.fromTemplateId === tpl.id || h.toTemplateId === tpl.id,
+          (h) => h.fromTemplateId === tpl.id || h.toTemplateId === tpl.id,
         );
         if (ownBlocks.length === 0 && ownHandoffs.length === 0) continue;
 
         const severity = this.computeSeverity({
           blocksCount: ownBlocks.length,
           handoffsCount: ownHandoffs.length,
-          slaViolations: ownHandoffs.reduce(
-            (a, h) => a + (h.knownFrictionCount ?? 0),
-            0,
-          ),
+          slaViolations: ownHandoffs.reduce((a, h) => a + (h.knownFrictionCount ?? 0), 0),
         });
         const description = this.buildDescription({
           templateName: tpl.name,
@@ -193,18 +145,12 @@ export class CrossFunctionalFrictionAggregatorCron {
         const involvedDepartmentIds = Array.from(
           new Set(
             ownHandoffs
-              .flatMap((h) =>
-                [h.fromRoleId, h.toRoleId].filter(
-                  (x): x is string => !!x,
-                ),
-              )
+              .flatMap((h) => [h.fromRoleId, h.toRoleId].filter((x): x is string => !!x))
               .map((rid) => departmentIdsCache.get(rid))
               .filter((x): x is string => !!x),
           ),
         );
 
-        // Дедуп: если уже есть активный (resolvedAt=null) отчёт с тем же
-        // первым sourceBlockId — пропускаем (см. риск §17 sub-ТЗ).
         const firstBlockId = sourceBlockIds[0];
         if (firstBlockId) {
           const dup = await this.prisma.crossFunctionalFrictionReport.findFirst({
@@ -236,7 +182,6 @@ export class CrossFunctionalFrictionAggregatorCron {
         reportsCreated++;
       }
 
-      // Метрика: активные friction Org by severity.
       const grouped = await this.prisma.crossFunctionalFrictionReport.groupBy({
         by: ['severity'],
         where: { tenantId, resolvedAt: null },
@@ -262,8 +207,6 @@ export class CrossFunctionalFrictionAggregatorCron {
     };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private computeSeverity(args: {
     blocksCount: number;
     handoffsCount: number;
@@ -287,9 +230,7 @@ export class CrossFunctionalFrictionAggregatorCron {
     const lines: string[] = [];
     lines.push(`Шаблон процесса «${args.templateName}»:`);
     if (args.blocks.length > 0) {
-      lines.push(
-        `— зафиксировано ${args.blocks.length} сигналов process_friction.`,
-      );
+      lines.push(`— зафиксировано ${args.blocks.length} сигналов process_friction.`);
       const sample = args.blocks
         .slice(0, 3)
         .map((b) => `• ${b.name}`)
@@ -297,10 +238,7 @@ export class CrossFunctionalFrictionAggregatorCron {
       if (sample) lines.push(sample);
     }
     if (args.handoffs.length > 0) {
-      const totalSla = args.handoffs.reduce(
-        (a, h) => a + (h.knownFrictionCount ?? 0),
-        0,
-      );
+      const totalSla = args.handoffs.reduce((a, h) => a + (h.knownFrictionCount ?? 0), 0);
       lines.push(
         `— ${args.handoffs.length} handoff'ов с зафиксированными нарушениями (всего ${totalSla} конфликтов).`,
       );

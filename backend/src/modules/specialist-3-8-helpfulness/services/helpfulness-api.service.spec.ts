@@ -5,13 +5,6 @@ import type { RecognitionService } from '../../recognition/services/recognition.
 
 import { HelpfulnessApiService } from './helpfulness-api.service';
 
-/**
- * SBA Wave 2 — unit-тесты для HelpfulnessApiService (mark-as-misleading +
- * approve/hide spotlight + privacy filtering).
- *
- * Используем минимальные in-memory моки PrismaService / BusinessMetricsService.
- */
-
 interface TraitRecord {
   id: string;
   tenantId: string;
@@ -38,13 +31,8 @@ interface SpotlightRecord {
   traitIds?: string[];
 }
 
-function buildMockPrisma(initial: {
-  traits?: TraitRecord[];
-  spotlights?: SpotlightRecord[];
-}): any {
-  const traits = new Map<string, TraitRecord>(
-    (initial.traits ?? []).map((t) => [t.id, { ...t }]),
-  );
+function buildMockPrisma(initial: { traits?: TraitRecord[]; spotlights?: SpotlightRecord[] }): any {
+  const traits = new Map<string, TraitRecord>((initial.traits ?? []).map((t) => [t.id, { ...t }]));
   const spotlights = new Map<string, SpotlightRecord>(
     (initial.spotlights ?? []).map((s) => [s.id, { ...s }]),
   );
@@ -67,22 +55,14 @@ function buildMockPrisma(initial: {
       ),
     },
     helpfulnessSpotlight: {
-      findFirst: vi.fn(
-        async ({ where }: { where: { id: string; tenantId: string } }) => {
-          const s = spotlights.get(where.id);
-          if (!s) return null;
-          if (s.tenantId !== where.tenantId) return null;
-          return s;
-        },
-      ),
+      findFirst: vi.fn(async ({ where }: { where: { id: string; tenantId: string } }) => {
+        const s = spotlights.get(where.id);
+        if (!s) return null;
+        if (s.tenantId !== where.tenantId) return null;
+        return s;
+      }),
       update: vi.fn(
-        async ({
-          where,
-          data,
-        }: {
-          where: { id: string };
-          data: Partial<SpotlightRecord>;
-        }) => {
+        async ({ where, data }: { where: { id: string }; data: Partial<SpotlightRecord> }) => {
           const s = spotlights.get(where.id);
           if (!s) throw new Error('not found');
           Object.assign(s, data);
@@ -96,10 +76,7 @@ function buildMockPrisma(initial: {
         ...data,
       })),
     },
-    $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
-      // Передаём те же mocks в качестве tx (не строго правильно, но достаточно).
-      cb(mockPrisma),
-    ),
+    $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
   };
 }
 
@@ -208,9 +185,9 @@ describe('HelpfulnessApiService — hide / republish / approve invariants', () =
   it('hideSpotlight: бросает NotFoundException, если не найден', async () => {
     mockPrisma = buildMockPrisma({});
     const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
-    await expect(
-      svc.hideSpotlight({ tenantId: 'org1', spotlightId: 'missing' }),
-    ).rejects.toThrow(NotFoundException);
+    await expect(svc.hideSpotlight({ tenantId: 'org1', spotlightId: 'missing' })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it('republishSpotlight: бросает ForbiddenException если status ≠ hidden', async () => {
@@ -380,11 +357,6 @@ describe('HelpfulnessApiService — approveSpotlight → Recognition bridge', ()
       approvedByUserId: 'admin1',
     });
     expect(recognition.enqueueFormulate).toHaveBeenCalledTimes(1);
-    // Повторный approve — status уже 'published', FSM-guard кидает Forbidden,
-    // bridge не вызывается → суммарно один enqueue. На уровне BullMQ jobId
-    // = `recognition_thanks_helpfulness_s1_ai` (Wave 2 спецификация
-    // CoreQueueService.enqueueRecognitionFormulate) — даже если по какой-то
-    // причине approve пройдёт дважды, очередь дедуплицирует.
     await expect(
       svc.approveSpotlight({
         tenantId: 'org1',
@@ -397,11 +369,7 @@ describe('HelpfulnessApiService — approveSpotlight → Recognition bridge', ()
 
   it('graceful: если RecognitionService недоступен (null) — publish успешен без падений', async () => {
     mockPrisma = buildMockPrisma({ spotlights: [pendingSpotlight()] });
-    const svc = new HelpfulnessApiService(
-      mockPrisma as any,
-      mockMetrics as any,
-      // recognition не передан — @Optional fallback на null
-    );
+    const svc = new HelpfulnessApiService(mockPrisma as any, mockMetrics as any);
     const res = await svc.approveSpotlight({
       tenantId: 'org1',
       spotlightId: 's1',

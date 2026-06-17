@@ -1,13 +1,3 @@
-/**
- * Доменная модель ProcessTemplate (SBA α-7 wave 2).
- *
- * Контракт: `backend/src/modules/processes/dto/processes.dto.ts`.
- *
- * Слои:
- *   - `*Api` — что приходит с бэка (см. `src/api/processes.api.ts`).
- *   - `*Domain` — UI-friendly: Date вместо string, готовые лейблы.
- */
-
 import type {
   DecisionPointApi,
   ListProcessTemplatesResponseApi,
@@ -19,7 +9,7 @@ import type {
   ProcessTemplateStatusApi,
   ProcessTemplateVersionApi,
   ProcessTemplateVersionSourceApi,
-} from '@/api/processes.api';
+} from "@/api/processes.api";
 
 export type ProcessTemplateStatus = ProcessTemplateStatusApi;
 export type ProcessTemplateVersionSource = ProcessTemplateVersionSourceApi;
@@ -29,26 +19,26 @@ export const PROCESS_TEMPLATE_STATUS_LABEL: Record<
   ProcessTemplateStatus,
   string
 > = {
-  active: 'Действует',
-  deprecated: 'Устарел',
-  archived: 'В архиве',
+  active: "Действует",
+  deprecated: "Устарел",
+  archived: "В архиве",
 };
 
 export const PROCESS_TEMPLATE_VERSION_SOURCE_LABEL: Record<
   ProcessTemplateVersionSource,
   string
 > = {
-  manual: 'Вручную',
-  agent: 'AI-агент',
-  imported: 'Импорт',
+  manual: "Вручную",
+  agent: "AI-агент",
+  imported: "Импорт",
 };
 
 export const PROCESS_HANDOFF_KIND_LABEL: Record<ProcessHandoffKind, string> = {
-  document: 'Документ',
-  data: 'Данные',
-  decision: 'Решение',
-  physical: 'Физический',
-  notification: 'Уведомление',
+  document: "Документ",
+  data: "Данные",
+  decision: "Решение",
+  physical: "Физический",
+  notification: "Уведомление",
 };
 
 export interface ProcessTemplateListItem {
@@ -119,8 +109,6 @@ export interface ProcessTemplateDetail extends ProcessTemplateListItem {
   handoffsTo: ProcessHandoffDomain[];
 }
 
-// ─── mappers ────────────────────────────────────────────────────────
-
 export function mapProcessTemplateListItem(
   api: ProcessTemplateListItemApi,
 ): ProcessTemplateListItem {
@@ -180,9 +168,7 @@ export function mapProcessHandoff(
   };
 }
 
-export function mapProcessTemplatesList(
-  api: ListProcessTemplatesResponseApi,
-): {
+export function mapProcessTemplatesList(api: ListProcessTemplatesResponseApi): {
   items: ProcessTemplateListItem[];
   total: number;
   page: number;

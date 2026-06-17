@@ -9,11 +9,6 @@ import type { JwtService } from '../auth/services/jwt.service';
 import type { BitrixApiClient } from './bitrix-api.client';
 import { BitrixIntegrationService } from './bitrix-integration.service';
 
-/**
- * Unit-тест тумблера анализа BitrixIntegrationService.setAnalysisEnabled
- * (ТЗ 2026-06-17, Ф6). Использует только prisma.bitrixIntegration.updateMany —
- * остальные зависимости не задействованы.
- */
 function makeService(updateManyResult: { count: number }): {
   service: BitrixIntegrationService;
   updateMany: ReturnType<typeof vi.fn>;
@@ -43,8 +38,6 @@ describe('BitrixIntegrationService.setAnalysisEnabled', () => {
 
   it('нет интеграции (count=0) → NotFoundException', async () => {
     const { service } = makeService({ count: 0 });
-    await expect(service.setAnalysisEnabled('t1', true)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(service.setAnalysisEnabled('t1', true)).rejects.toBeInstanceOf(NotFoundException);
   });
 });

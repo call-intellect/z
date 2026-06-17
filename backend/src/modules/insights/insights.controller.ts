@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -44,25 +41,6 @@ import {
 } from './dto/insights.dto';
 import { InsightsService } from './services/insights.service';
 
-/**
- * REST API радара сигналов (SBA β-4).
- *
- *   GET  /api/v1/insights                  — список (фильтры / пагинация).
- *   GET  /api/v1/insights/chart?days=30    — данные для stacked-bar виджета.
- *   GET  /api/v1/insights/top?limit=5      — топ-N для Director Dashboard.
- *   GET  /api/v1/insights/:id              — детали Insight.
- *   POST /api/v1/insights/:id/status       — изменить статус (+ CardVersion).
- *   POST /api/v1/insights/:id/mitigation   — обновить план реагирования.
- *   POST /api/v1/insights/:id/severity     — изменить остроту.
- *
- * RBAC:
- *   - `insight` ResourceType.
- *   - Read: все member'ы Org (insight — shared knowledge).
- *   - Write: owner/admin (+ manager open для mitigation).
- *
- * Multi-tenancy: TenantGuard.
- * Все user-facing строки на русском.
- */
 @ApiTags('insights')
 @Controller('api/v1/insights')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -89,8 +67,7 @@ export class InsightsController {
 
   @Get('chart')
   @ApiOperation({
-    summary:
-      'Данные графика динамики сигналов (stacked bar по kind за rolling N дней)',
+    summary: 'Данные графика динамики сигналов (stacked bar по kind за rolling N дней)',
   })
   async chart(
     @Query(new ZodValidationPipe(ChartInsightsQuerySchema))
@@ -192,8 +169,6 @@ export class InsightsController {
       reviewerUserId: user.id,
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

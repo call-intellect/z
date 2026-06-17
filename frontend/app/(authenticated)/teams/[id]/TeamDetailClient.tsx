@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,54 +11,40 @@ import {
   RefreshCcw,
   Target,
   Users,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { dashboardApi } from '@/api/dashboard.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { dashboardApi } from "@/api/dashboard.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   teamDetailFromApi,
   type TeamDetailDomain,
   type TeamDetailMemberDomain,
   type TeamDetailThemeDomain,
   type TeamMemberSentimentApi,
-} from '@/domain/team-detail';
-import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
-import { KpiHero } from '@/ui/components/shared/KpiHero';
-import { Button } from '@/ui/shadcn/button';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/team-detail";
+import { ActivityFeedWidget } from "@/ui/components/dashboard/ActivityFeedWidget";
+import { KpiHero } from "@/ui/components/shared/KpiHero";
+import { Button } from "@/ui/shadcn/button";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * /teams/[id] — детальная страница команды (Pulse Wave 2 §2.5).
- *
- * Источник: `GET /api/v1/dashboard/teams/:id` (TeamDetailService).
- *
- * Секции:
- *   1. Header — название, миссия, руководитель, размер.
- *   2. Два KPI-hero (sentiment 7d + trend, commitment 14d + delta).
- *   3. Состав команды — список Person с per-person sentiment-чипом.
- *   4. Цели команды — v1 пусто (TODO Wave 6.5 Promise Network).
- *   5. Топ-темы — links на `/themes/[id]`.
- *   6. ActivityFeedWidget(probe_question, scope='team') — внизу.
- *
- * Цвета — только парные семантические токены (`bg-chip-*` + `text-chip-*-fg`),
- * никаких жёстких hex / slate-классов (см. `feedback_paired_color_tokens.md`).
- */
-
-const SENTIMENT_CHIP_LABEL: Record<Exclude<TeamMemberSentimentApi, null>, string> = {
-  green: 'хорошо',
-  yellow: 'смешанно',
-  red: 'тяжело',
+const SENTIMENT_CHIP_LABEL: Record<
+  Exclude<TeamMemberSentimentApi, null>,
+  string
+> = {
+  green: "хорошо",
+  yellow: "смешанно",
+  red: "тяжело",
 };
 
 const SENTIMENT_CHIP_CLASS: Record<
   Exclude<TeamMemberSentimentApi, null>,
   string
 > = {
-  green: 'bg-chip-success-bg text-chip-success-fg',
-  yellow: 'bg-chip-warning-bg text-chip-warning-fg',
-  red: 'bg-chip-danger-bg text-chip-danger-fg',
+  green: "bg-chip-success-bg text-chip-success-fg",
+  yellow: "bg-chip-warning-bg text-chip-warning-fg",
+  red: "bg-chip-danger-bg text-chip-danger-fg",
 };
 
 export function TeamDetailClient({ departmentId }: { departmentId: string }) {
@@ -81,8 +67,8 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         setError({ code: e.code, message: humanizeApiError(e) });
       } else {
         setError({
-          code: 'unknown',
-          message: 'Не удалось загрузить команду',
+          code: "unknown",
+          message: "Не удалось загрузить команду",
         });
       }
     } finally {
@@ -115,19 +101,18 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
           href="/teams"
           className="inline-flex items-center gap-1 text-sm text-fg-secondary hover:text-accent"
         >
-          <ArrowLeft size={14} />
-          К списку команд
+          <ArrowLeft size={14} />К списку команд
         </Link>
         <div className="mt-6 rounded-xl bg-chip-danger-bg p-6 text-chip-danger-fg shadow-card-soft">
           <p className="text-base font-medium">
-            {error.code === 'department_not_found'
-              ? 'Команда не найдена'
+            {error.code === "department_not_found"
+              ? "Команда не найдена"
               : error.message}
           </p>
           <p className="mt-2 text-sm opacity-80">
-            {error.code === 'department_not_found'
-              ? 'Возможно, отдел был удалён или у вас нет к нему доступа.'
-              : 'Попробуйте обновить страницу.'}
+            {error.code === "department_not_found"
+              ? "Возможно, отдел был удалён или у вас нет к нему доступа."
+              : "Попробуйте обновить страницу."}
           </p>
         </div>
       </div>
@@ -138,7 +123,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 md:py-8">
-      {/* Top nav back */}
+      {}
       <Link
         href="/teams"
         className="mb-4 inline-flex items-center gap-1 text-sm text-fg-secondary hover:text-accent"
@@ -146,7 +131,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         <ArrowLeft size={14} />К списку команд
       </Link>
 
-      {/* Header */}
+      {}
       <header className="mb-8 rounded-2xl bg-bg-card p-6 shadow-card-soft md:p-8">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0 flex-1">
@@ -162,8 +147,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
             <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-fg-tertiary">
               <span className="inline-flex items-center gap-1 rounded-full bg-bg-overlay px-2.5 py-1">
                 <Users size={12} />
-                {data.totalMembers}{' '}
-                {pluralizePeople(data.totalMembers)}
+                {data.totalMembers} {pluralizePeople(data.totalMembers)}
               </span>
               {data.headPersonName && data.headPersonId && (
                 <Link
@@ -192,7 +176,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         </div>
       </header>
 
-      {/* KPI hero */}
+      {}
       <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2">
         <KpiHero
           label="Настроение команды · 7 дней"
@@ -213,7 +197,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         />
       </section>
 
-      {/* Состав */}
+      {}
       <section className="mb-8">
         <SectionTitle icon={<Users size={16} />}>
           Состав команды ({data.members.length})
@@ -231,7 +215,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         )}
       </section>
 
-      {/* Цели */}
+      {}
       <section className="mb-8">
         <SectionTitle icon={<Target size={16} />}>
           Цели команды ({data.goals.length})
@@ -269,7 +253,7 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         )}
       </section>
 
-      {/* Темы */}
+      {}
       <section className="mb-8">
         <SectionTitle icon={<Hash size={16} />}>
           О чём команда говорит ({data.topThemes.length})
@@ -285,10 +269,10 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
         )}
       </section>
 
-      {/* Вопросы AI команде */}
+      {}
       <section className="mb-2">
         <ActivityFeedWidget
-          feedTypes={['probe_question']}
+          feedTypes={["probe_question"]}
           scope="team"
           scopeId={departmentId}
           pageSize={10}
@@ -300,8 +284,6 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
     </div>
   );
 }
-
-// ───────────────────────── parts ─────────────────────────
 
 function SectionTitle({
   icon,
@@ -377,7 +359,7 @@ function SentimentChip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium',
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
         SENTIMENT_CHIP_CLASS[sentiment],
       )}
       title={`${count} чек-ин(ов) за 30 дней`}
@@ -396,7 +378,9 @@ function ThemeChip({ theme }: { theme: TeamDetailThemeDomain }) {
       >
         <Hash size={12} className="text-fg-tertiary" />
         {theme.themeName}
-        <span className="ml-1 text-xs text-fg-tertiary">{theme.blocksCount}</span>
+        <span className="ml-1 text-xs text-fg-tertiary">
+          {theme.blocksCount}
+        </span>
       </Link>
     </li>
   );
@@ -407,11 +391,11 @@ function Avatar({ name }: { name: string }) {
     .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? '')
-    .join('');
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
   return (
     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-overlay text-xs font-medium text-fg-secondary">
-      {initials || '·'}
+      {initials || "·"}
     </div>
   );
 }
@@ -424,8 +408,8 @@ function formatSigned(v: number): string {
 function pluralizePeople(n: number): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'участник';
+  if (mod10 === 1 && mod100 !== 11) return "участник";
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
-    return 'участника';
-  return 'участников';
+    return "участника";
+  return "участников";
 }

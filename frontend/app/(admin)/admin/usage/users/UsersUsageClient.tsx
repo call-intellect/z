@@ -1,40 +1,40 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Download, Search } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import { Download, Search } from "lucide-react";
 
-import { adminUsageApi } from '@/api/admin-usage.api';
+import { adminUsageApi } from "@/api/admin-usage.api";
 import {
   ADMIN_PERIOD_LABELS,
   adminUsersUsageFromApi,
   formatUsd,
   type AdminPeriod,
-} from '@/domain/admin-usage';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
+} from "@/domain/admin-usage";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
+} from "@/ui/shadcn/select";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-const PERIODS: AdminPeriod[] = ['day', 'week', 'month'];
+const PERIODS: AdminPeriod[] = ["day", "week", "month"];
 
 export function UsersUsageClient() {
-  const [period, setPeriod] = useState<AdminPeriod>('week');
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
+  const [period, setPeriod] = useState<AdminPeriod>("week");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
 
   const q = useAdminQuery(
     `admin-users:${period}:${search}`,
@@ -76,7 +76,7 @@ export function UsersUsageClient() {
           </Select>
           <Button asChild variant="outline" size="sm">
             <a
-              href={adminUsageApi.exportCsvUrl({ period, kind: 'users' })}
+              href={adminUsageApi.exportCsvUrl({ period, kind: "users" })}
               target="_blank"
               rel="noreferrer"
             >
@@ -119,7 +119,7 @@ export function UsersUsageClient() {
           />
         ) : (
           <>
-            {/* Desktop: таблица. */}
+            {}
             <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
               <table className="w-full text-sm">
                 <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
@@ -138,18 +138,22 @@ export function UsersUsageClient() {
                       className="border-t border-border-subtle hover:bg-bg-overlay"
                     >
                       <td className="px-3 py-2">
-                        <div className="font-medium">{u.userName || '—'}</div>
-                        <div className="text-xs text-fg-tertiary">{u.userEmail}</div>
+                        <div className="font-medium">{u.userName || "—"}</div>
+                        <div className="text-xs text-fg-tertiary">
+                          {u.userEmail}
+                        </div>
                       </td>
                       <td className="px-3 py-2">
                         {u.tenantName ? (
-                          <span className="text-fg-secondary">{u.tenantName}</span>
+                          <span className="text-fg-secondary">
+                            {u.tenantName}
+                          </span>
                         ) : (
                           <span className="text-fg-tertiary">—</span>
                         )}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {u.totalCalls.toLocaleString('ru-RU')}
+                        {u.totalCalls.toLocaleString("ru-RU")}
                       </td>
                       <td className="px-3 py-2 text-right font-medium tabular-nums">
                         {formatUsd(u.totalCostUsd)}
@@ -173,7 +177,7 @@ export function UsersUsageClient() {
               </table>
             </div>
 
-            {/* Mobile: card-view fallback. */}
+            {}
             <ul className="space-y-2 md:hidden">
               {q.data.items.map((u) => (
                 <li
@@ -183,7 +187,7 @@ export function UsersUsageClient() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="truncate font-medium text-fg-primary">
-                        {u.userName || '—'}
+                        {u.userName || "—"}
                       </div>
                       <div className="truncate text-xs text-fg-tertiary">
                         {u.userEmail}
@@ -199,7 +203,7 @@ export function UsersUsageClient() {
                         {formatUsd(u.totalCostUsd)}
                       </div>
                       <div className="text-[11px] tabular-nums text-fg-tertiary">
-                        {u.totalCalls.toLocaleString('ru-RU')} вызовов
+                        {u.totalCalls.toLocaleString("ru-RU")} вызовов
                       </div>
                     </div>
                   </div>
@@ -223,8 +227,11 @@ export function UsersUsageClient() {
         ))}
 
       <p className="text-xs text-fg-tertiary">
-        Drill-down на конкретный вызов — раздел{' '}
-        <Link href="/admin/usage/functions" className="text-accent hover:underline">
+        Drill-down на конкретный вызов — раздел{" "}
+        <Link
+          href="/admin/usage/functions"
+          className="text-accent hover:underline"
+        >
           Функции LLM
         </Link>
         .

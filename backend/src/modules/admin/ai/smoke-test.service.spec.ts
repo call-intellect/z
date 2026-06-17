@@ -6,18 +6,6 @@ import type { ProviderSmokeTestCron } from '../economics/provider-smoke-test.cro
 
 import { AdminSmokeTestService } from './smoke-test.service';
 
-/**
- * Admin-redesign Фаза 3 — unit-тесты `AdminSmokeTestService`.
- *
- * Покрываем:
- *   1) runForProvider() success → status='ok', latencyMs из durationSeconds.
- *   2) runForProvider() fail → status='fail', error прокинут.
- *   3) runForProvider() 404 если провайдер не найден / deletedAt.
- *   4) runForAllActive() параллельный прогон + порядок.
- *   5) runForAllActive() corner case — нет активных провайдеров.
- *   6) Promise.allSettled: один testProvider бросил → не валит весь batch.
- *   7) getHistory() ring-buffer / порядок (новые первыми).
- */
 describe('AdminSmokeTestService', () => {
   const findUnique = vi.fn();
   const findMany = vi.fn();
@@ -83,18 +71,14 @@ describe('AdminSmokeTestService', () => {
     });
 
     const svc = new AdminSmokeTestService(prisma, cron);
-    await expect(svc.runForProvider('ghost', null)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.runForProvider('ghost', null)).rejects.toBeInstanceOf(NotFoundException);
     expect(testProvider).not.toHaveBeenCalled();
   });
 
   it('runForProvider: 404, если провайдер не найден', async () => {
     findUnique.mockResolvedValueOnce(null);
     const svc = new AdminSmokeTestService(prisma, cron);
-    await expect(svc.runForProvider('nope', null)).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(svc.runForProvider('nope', null)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('runForAllActive: параллельно вызывает testProvider для каждого активного провайдера', async () => {
@@ -106,7 +90,12 @@ describe('AdminSmokeTestService', () => {
     testProvider
       .mockResolvedValueOnce({ provider: 'anthropic', success: true, durationSeconds: 0.1 })
       .mockResolvedValueOnce({ provider: 'deepseek', success: true, durationSeconds: 0.2 })
-      .mockResolvedValueOnce({ provider: 'ollama', success: false, durationSeconds: 0.3, error: 'timeout' });
+      .mockResolvedValueOnce({
+        provider: 'ollama',
+        success: false,
+        durationSeconds: 0.3,
+        error: 'timeout',
+      });
 
     const svc = new AdminSmokeTestService(prisma, cron);
     const res = await svc.runForAllActive('user-1');
@@ -160,7 +149,6 @@ describe('AdminSmokeTestService', () => {
 
     const h = svc.getHistory(2);
     expect(h).toHaveLength(2);
-    // ring-buffer вернул нам последние 2, в порядке от новых к старым
     expect(h.every((r) => r.provider === 'deepseek')).toBe(true);
   });
 });

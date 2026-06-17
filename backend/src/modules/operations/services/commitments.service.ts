@@ -24,32 +24,13 @@ import {
   isCompleteCommitment,
 } from '../utils/commitment-completeness';
 
-/**
- * SBA β-8.2 — CommitmentsService.
- *
- * Чтения и мутации над IdeaBlock-обещаниями.
- *
- * ВАЖНО: «Мои обещания» строго изолированы между сотрудниками:
- *   - listMine читает только блоки, в которых текущий Person (по userId)
- *     упомянут как subject или mentioned-employee.
- *   - markMine разрешён только если текущий Person — автор блока.
- *
- * Изоляция реализована через JOIN IdeaBlock → IdeaBlockEntity → Entity
- * (type='person') → Person с фильтром `tenantId + userId=currentUserId`.
- */
 @Injectable()
 export class CommitmentsService {
   private readonly logger = new Logger(CommitmentsService.name);
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Найти Person текущего user'а в Org. Если нет — 403 (как DailyCheckIn).
-   */
-  async resolveSelfPerson(args: {
-    tenantId: string;
-    userId: string;
-  }): Promise<{ id: string }> {
+  async resolveSelfPerson(args: { tenantId: string; userId: string }): Promise<{ id: string }> {
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -63,31 +44,13 @@ export class CommitmentsService {
         ok: false,
         error: {
           code: 'no_person',
-          message:
-            'У пользователя нет Person-записи в этой Org — обещания недоступны',
+          message: 'У пользователя нет Person-записи в этой Org — обещания недоступны',
         },
       });
     }
     return person;
   }
 
-  /**
-   * Личный список моих обещаний (`GET /me/promises`).
-   *
-   * Фильтр по статусу:
-   *   - `open` — `commitmentStatus='open'`.
-   *   - `asked` — `commitmentStatus='asked'`.
-   *   - `all` — любой статус (без терминальных по умолчанию? — отдаём все).
-   *
-   * Через JOIN IdeaBlockEntity → Entity → Person, чтобы фильтр шёл по
-   * `Person.userId = currentUserId`.
-   *
-   * ТЗ редизайн Ф7б (Б-3) — выдача РАЗДЕЛЕНА предикатом полноты:
-   *   - `items` — ПОЛНЫЕ обещания (есть автор + либо адресат, либо срок).
-   *     Только они учитываются в надёжности и показываются как «обещание».
-   *   - `openQuestions` — неполные блоки-обещания (нет автора, либо нет ни
-   *     адресата, ни срока). Адресату НЕ показываются как «его обещание».
-   */
   async listMine(args: {
     tenantId: string;
     selfPersonId: string;
@@ -99,16 +62,12 @@ export class CommitmentsService {
     } else if (args.query.status === 'asked') {
       statusFilter.commitmentStatus = 'asked';
     }
-    // 'all' — без фильтра.
 
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId: args.tenantId,
         signalType: 'commitment',
         ...statusFilter,
-        // Ключевой фильтр изоляции: блок упоминает Person текущего user'а
-        // как subject (автор обещания) или mentioned employee. Без этого
-        // условия сотрудник видел бы все обещания Org.
         entities: {
           some: {
             entity: {
@@ -126,16 +85,8 @@ export class CommitmentsService {
       select: this.commitmentSelect(),
     });
 
-    // ТЗ-E — заголовки встреч-источников ОДНИМ батчем (без N+1). Собираем
-    // уникальные meetingId из evidence, тянем title с фильтром по tenantId.
-    const meetingTitles = await this.resolveMeetingTitles(
-      args.tenantId,
-      blocks,
-    );
+    const meetingTitles = await this.resolveMeetingTitles(args.tenantId, blocks);
 
-    // ТЗ редизайн Ф7б (Б-3) — split по предикату полноты. Полные обещания —
-    // в items; неполные блоки-обещания — в openQuestions («открытые вопросы»),
-    // адресату НЕ показываются как «его обещание».
     const items: CommitmentDto[] = [];
     const openQuestions: OpenQuestionDto[] = [];
     for (const b of blocks) {
@@ -149,7 +100,6 @@ export class CommitmentsService {
     return { items, openQuestions };
   }
 
-  /** ТЗ редизайн Ф7б (Б-3) — неполный блок-обещание → DTO «открытого вопроса». */
   private toOpenQuestion(
     block: {
       id: string;
@@ -168,19 +118,12 @@ export class CommitmentsService {
       id: block.id,
       text: block.criticalQuestion,
       sourceMeetingId,
-      sourceMeetingTitle: sourceMeetingId
-        ? meetingTitles.get(sourceMeetingId) ?? null
-        : null,
-      // reason всегда не-null здесь: блок прошёл ветку !isCompleteCommitment.
+      sourceMeetingTitle: sourceMeetingId ? (meetingTitles.get(sourceMeetingId) ?? null) : null,
       reason: incompleteCommitmentReasonText(reason ?? 'no_recipient_and_due'),
       createdAt: block.createdAt.toISOString(),
     };
   }
 
-  /**
-   * ТЗ-E — батч-резолв `Meeting.title` по evidence блоков (без N+1).
-   * Возвращает Map<meetingId, title>; встречи чужого tenant'а отфильтрованы.
-   */
   private async resolveMeetingTitles(
     tenantId: string,
     blocks: Array<{
@@ -189,9 +132,7 @@ export class CommitmentsService {
   ): Promise<Map<string, string>> {
     const ids = Array.from(
       new Set(
-        blocks
-          .map((b) => this.extractSourceMeetingId(b))
-          .filter((id): id is string => id !== null),
+        blocks.map((b) => this.extractSourceMeetingId(b)).filter((id): id is string => id !== null),
       ),
     );
     if (ids.length === 0) return new Map();
@@ -202,12 +143,6 @@ export class CommitmentsService {
     return new Map(meetings.map((m) => [m.id, m.title]));
   }
 
-  /**
-   * Ручное закрытие обещания (`POST /me/promises/:blockId/mark`).
-   * Разрешено только если запрашивающий Person — автор обещания (subject)
-   * либо просто упомянут как mentioned-employee.
-   * Note: ставим в trustedAnswer как дополнительную строку «<status>: <note>».
-   */
   async markMine(args: {
     tenantId: string;
     selfPersonId: string;
@@ -255,19 +190,6 @@ export class CommitmentsService {
     return this.toDto(updated, null);
   }
 
-  /**
-   * ТЗ-E — перенос срока обещания (`PATCH /me/promises/:blockId/reschedule`).
-   * Меняет только `commitmentDueDate`, статус возвращает в `open` (НЕ
-   * терминальный). Разрешён тем же self-фильтром, что `markMine`.
-   *
-   * Ограничения:
-   *   - новый срок не может быть в прошлом (`due_date_in_past`);
-   *   - перенести можно только незакрытое обещание — статус ∈
-   *     {open, asked, null} (`commitment_terminal` иначе).
-   *
-   * Заметка дописывается в `trustedAnswer` строкой
-   * `[reschedule → <ISO>] <note?>` (как markMine дописывает `[status]`).
-   */
   async rescheduleMine(args: {
     tenantId: string;
     selfPersonId: string;
@@ -312,12 +234,7 @@ export class CommitmentsService {
       });
     }
 
-    const terminal: ReadonlyArray<string> = [
-      'fulfilled',
-      'missed',
-      'cancelled',
-      'superseded',
-    ];
+    const terminal: ReadonlyArray<string> = ['fulfilled', 'missed', 'cancelled', 'superseded'];
     if (block.commitmentStatus && terminal.includes(block.commitmentStatus)) {
       throw new BadRequestException({
         ok: false,
@@ -343,11 +260,6 @@ export class CommitmentsService {
     return this.toDto(updated, null);
   }
 
-  /**
-   * Список обещаний по команде для COO-панели (`GET /dashboard/operations/open-commitments`).
-   * Фильтр: signalType='commitment', commitmentStatus ∈ ('open','asked'),
-   * createdAt > now - days.
-   */
   async listOpenForTenant(args: {
     tenantId: string;
     days: number;
@@ -379,15 +291,7 @@ export class CommitmentsService {
     };
   }
 
-  /**
-   * Обещания конкретного человека (`GET /personal-relations/commitments?personId=`).
-   * Включает исходящие (автор) и входящие (адресат).
-   */
-  async listForPerson(args: {
-    tenantId: string;
-    personId: string;
-    limit: number;
-  }): Promise<{
+  async listForPerson(args: { tenantId: string; personId: string; limit: number }): Promise<{
     outgoing: CommitmentDto[];
     incoming: CommitmentDto[];
   }> {
@@ -427,8 +331,6 @@ export class CommitmentsService {
     };
   }
 
-  // ── helpers ──────────────────────────────────────────────────────
-
   private commitmentSelect(opts?: { withAuthor?: boolean }) {
     const withAuthor = opts?.withAuthor ?? false;
     return {
@@ -439,8 +341,6 @@ export class CommitmentsService {
       commitmentStatus: true,
       commitmentDueDate: true,
       commitmentRecipientPersonId: true,
-      // ТЗ редизайн Ф7б (Б-3) — нужен для предиката полноты (split на полные
-      // обещания vs «открытые вопросы»). Детерминированный автор обещания.
       commitmentAuthorPersonId: true,
       commitmentAskedAt: true,
       commitmentEscalatedAt: true,
@@ -448,9 +348,6 @@ export class CommitmentsService {
       commitmentRecipient: {
         select: { id: true, name: true },
       },
-      // ТЗ-E — источник обещания: первое evidence из встречи. Через
-      // RawEvent.sourceExternalId получаем Meeting.id (для всех 4 эндпоинтов
-      // дёшево: take=1). Заголовок встречи дорезолвивается батчем в listMine.
       evidence: {
         where: { sourceType: 'meeting' as const },
         orderBy: { sourceTimestamp: 'asc' as const },
@@ -480,18 +377,16 @@ export class CommitmentsService {
     };
   }
 
-  /** Из IdeaBlockEntity[] выбираем «лучшего» автора (subject > mentioned). */
-  private extractAuthor(
-    block: { entities?: unknown },
-  ): { personId: string; name: string } | null {
-    const list = (block.entities as
-      | Array<{
-          role?: string | null;
-          entity?: {
-            persons?: Array<{ id: string; name: string }>;
-          } | null;
-        }>
-      | undefined) ?? [];
+  private extractAuthor(block: { entities?: unknown }): { personId: string; name: string } | null {
+    const list =
+      (block.entities as
+        | Array<{
+            role?: string | null;
+            entity?: {
+              persons?: Array<{ id: string; name: string }>;
+            } | null;
+          }>
+        | undefined) ?? [];
     if (list.length === 0) return null;
     const subjects = list.filter((l) => l.role === 'subject');
     const pool = subjects.length > 0 ? subjects : list;
@@ -502,7 +397,6 @@ export class CommitmentsService {
     return null;
   }
 
-  /** ТЗ-E — id встречи-источника из первого meeting-evidence блока. */
   private extractSourceMeetingId(block: {
     evidence?: Array<{ rawEvent: { sourceExternalId: string | null } }> | null;
   }): string | null {
@@ -533,24 +427,16 @@ export class CommitmentsService {
       tenantId: block.tenantId,
       text: block.criticalQuestion,
       status: (block.commitmentStatus as CommitmentStatus | null) ?? null,
-      dueDate: block.commitmentDueDate
-        ? block.commitmentDueDate.toISOString()
-        : null,
+      dueDate: block.commitmentDueDate ? block.commitmentDueDate.toISOString() : null,
       recipientPersonId: block.commitmentRecipientPersonId,
       recipientPersonName: block.commitmentRecipient?.name ?? null,
       authorPersonId: author?.personId ?? null,
       authorPersonName: author?.name ?? null,
       sourceMeetingId,
       sourceMeetingTitle:
-        sourceMeetingId && meetingTitles
-          ? meetingTitles.get(sourceMeetingId) ?? null
-          : null,
-      askedAt: block.commitmentAskedAt
-        ? block.commitmentAskedAt.toISOString()
-        : null,
-      escalatedAt: block.commitmentEscalatedAt
-        ? block.commitmentEscalatedAt.toISOString()
-        : null,
+        sourceMeetingId && meetingTitles ? (meetingTitles.get(sourceMeetingId) ?? null) : null,
+      askedAt: block.commitmentAskedAt ? block.commitmentAskedAt.toISOString() : null,
+      escalatedAt: block.commitmentEscalatedAt ? block.commitmentEscalatedAt.toISOString() : null,
       createdAt: block.createdAt.toISOString(),
     };
   }

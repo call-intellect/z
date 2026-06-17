@@ -1,53 +1,47 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Plus, X } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   departmentsApi,
   rolesDomainApi,
   type DepartmentApi,
-} from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { toast } from 'sonner';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { toast } from "sonner";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/ui/shadcn/select";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { WizardStepNav } from '../WizardStepNav';
+import { WizardStepNav } from "../WizardStepNav";
 
 interface RoleDraft {
   name: string;
   departmentId: string | null;
 }
 
-const PREV_HREF = '/onboarding/company/step-1';
-const NEXT_HREF = '/onboarding/company/step-3';
-/** «Без отдела» в select — Radix не любит value=''. */
-const NO_DEPARTMENT_VALUE = '__none__';
+const PREV_HREF = "/onboarding/company/step-1";
+const NEXT_HREF = "/onboarding/company/step-3";
+const NO_DEPARTMENT_VALUE = "__none__";
 
-/**
- * Шаг 2 — Должности. Каждая строка: название + select отдела (из step-1).
- * Если в step-1 ничего не создалось (API не готов или owner проскипал) —
- * показываем баннер «Сначала создайте отделы» и кнопку «Назад».
- */
 export function Step2Client() {
   const router = useRouter();
   const { currentOrgId } = useAuth();
   const [departments, setDepartments] = useState<DepartmentApi[] | null>(null);
   const [departmentsError, setDepartmentsError] = useState<string | null>(null);
   const [rows, setRows] = useState<RoleDraft[]>([
-    { name: '', departmentId: null },
+    { name: "", departmentId: null },
   ]);
   const [submitting, setSubmitting] = useState(false);
 
@@ -59,7 +53,6 @@ export function Step2Client() {
       .then((res) => {
         if (cancelled) return;
         setDepartments(res.items);
-        // Если есть только один отдел — подставим его по умолчанию.
         if (res.items.length === 1) {
           setRows((rs) =>
             rs.map((r) => ({
@@ -71,8 +64,7 @@ export function Step2Client() {
       })
       .catch((e) => {
         if (cancelled) return;
-        const msg =
-          humanizeApiError(e, 'Не удалось загрузить отделы.');
+        const msg = humanizeApiError(e, "Не удалось загрузить отделы.");
         setDepartmentsError(msg);
         setDepartments([]);
       });
@@ -85,11 +77,9 @@ export function Step2Client() {
     setRows((rs) => [
       ...rs,
       {
-        name: '',
+        name: "",
         departmentId:
-          departments && departments.length === 1
-            ? departments[0]!.id
-            : null,
+          departments && departments.length === 1 ? departments[0]!.id : null,
       },
     ]);
   const removeRow = (idx: number) =>
@@ -97,9 +87,7 @@ export function Step2Client() {
   const updateName = (idx: number, name: string) =>
     setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, name } : r)));
   const updateDept = (idx: number, departmentId: string | null) =>
-    setRows((rs) =>
-      rs.map((r, i) => (i === idx ? { ...r, departmentId } : r)),
-    );
+    setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, departmentId } : r)));
 
   const cleaned = rows
     .map((r) => ({ ...r, name: r.name.trim() }))
@@ -118,11 +106,10 @@ export function Step2Client() {
           }),
         ),
       );
-      toast.success('Должности сохранены.');
+      toast.success("Должности сохранены.");
       router.push(NEXT_HREF);
     } catch (e) {
-      const msg =
-        humanizeApiError(e, 'Не удалось сохранить должности.');
+      const msg = humanizeApiError(e, "Не удалось сохранить должности.");
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -146,8 +133,8 @@ export function Step2Client() {
           Сначала добавьте отделы
         </h1>
         <p className="text-sm text-fg-secondary">
-          Должности привязываются к отделам. Вернитесь на шаг 1 и создайте
-          хотя бы один отдел.
+          Должности привязываются к отделам. Вернитесь на шаг 1 и создайте хотя
+          бы один отдел.
         </p>
         {departmentsError && (
           <p className="text-sm text-danger">{departmentsError}</p>
@@ -170,7 +157,10 @@ export function Step2Client() {
       <div className="mt-6 space-y-2">
         <Label>Должности</Label>
         {rows.map((row, idx) => (
-          <div key={idx} className="grid grid-cols-1 gap-2 md:grid-cols-[1fr,1fr,auto]">
+          <div
+            key={idx}
+            className="grid grid-cols-1 gap-2 md:grid-cols-[1fr,1fr,auto]"
+          >
             <Input
               value={row.name}
               onChange={(e) => updateName(idx, e.target.value)}

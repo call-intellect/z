@@ -20,7 +20,6 @@ export class SlackWebhookSender implements DestinationSender {
 
   async send(destination: IntegrationDestination, message: SenderMessage): Promise<void> {
     const cfg = destination.config as unknown as SlackConfig & { url_encrypted?: string };
-    // URL мог быть зашифрован при записи (см. DestinationsService).
     const url = cfg.url_encrypted ? this.encryption.decrypt(cfg.url_encrypted) : cfg.url;
     if (!url) {
       throw new Error('slack sender: пустой url');

@@ -19,10 +19,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -44,27 +41,9 @@ import {
   type UpdatePersonDto,
 } from './dto/persons.dto';
 import { KnowledgeAccessLoggerInterceptor } from './interceptors/knowledge-access-logger.interceptor';
-import {
-  PersonPulseService,
-  type PersonPulseDto,
-} from './services/person-pulse.service';
+import { PersonPulseService, type PersonPulseDto } from './services/person-pulse.service';
 import { PersonsService } from './services/persons.service';
 
-/**
- * REST API сотрудников (Person) — Фаза 0a, группа А.
- *
- *   GET    /api/v1/persons?q=&departmentId=&roleId=&invitationStatus=
- *   GET    /api/v1/persons/:id
- *   POST   /api/v1/persons
- *   POST   /api/v1/persons/batch
- *   PATCH  /api/v1/persons/:id
- *   DELETE /api/v1/persons/:id
- *
- * RBAC ресурс — `person`. owner/admin — read/write/delete. manager — read.
- *
- * Не путать с `/api/v1/knowledge/entities?type=person` — то knowledge-core,
- * этот модуль — ЛК Org (структура компании клиента).
- */
 @ApiTags('persons')
 @Controller('api/v1/persons')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -109,14 +88,6 @@ export class PersonsController {
     return this.persons.get({ tenantId: t, id });
   }
 
-  /**
-   * Pulse Wave 3 §3.4 + §3.6 + §3.8 — карточка сотрудника
-   * `GET /api/v1/persons/:id/pulse`.
-   *
-   * RBAC: owner/admin/coo (через `RbacService.loadContext`) ИЛИ сам сотрудник
-   * (Person.userId === currentUser.id). Manager пока не имеет доступа —
-   * вернётся в следующих фазах после уточнения политики.
-   */
   @Get(':id/pulse')
   @ApiOperation({ summary: 'Pulse-карточка сотрудника (engagement / mood / promises / HR)' })
   async pulse(
@@ -129,8 +100,6 @@ export class PersonsController {
     if (!allowed) {
       throw this.forbidden('Нет доступа к карточке сотрудника');
     }
-    // ТЗ-E Фаза 2: self-режим — карточку открыл сам сотрудник. В этом случае
-    // служебная аналитика руководителя (HR-резюме) не отдаётся (см. getPulse).
     const isSelf = await this.isSelfPerson(user.id, t, id);
     return this.personPulseSvc.getPulse({
       tenantId: t,
@@ -169,8 +138,7 @@ export class PersonsController {
   @Post('quick-create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary:
-      'Быстро создать внешний контакт (Calendar MVP) — минимально name+email?+phone?',
+    summary: 'Быстро создать внешний контакт (Calendar MVP) — минимально name+email?+phone?',
     description:
       'Используется ParticipantPicker в EventForm. Дубль-защита по (tenantId, email): если контакт с этим email уже существует, возвращается существующий. Без email — поиск по точному совпадению name среди контактов без email.',
   })
@@ -180,14 +148,9 @@ export class PersonsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<QuickCreatePersonResponseDto> {
     const t = this.requireTenant(tenantId);
-    // RBAC: write по event_card (раз создаём при создании события). Если нет
-    // прав на события — запрещаем; managers без write по event_card не должны
-    // плодить контакты.
     const ok = await this.rbac.canWrite(user.id, t, 'event_card');
     if (!ok) {
-      throw this.forbidden(
-        'Недостаточно прав для создания контактов из календаря',
-      );
+      throw this.forbidden('Недостаточно прав для создания контактов из календаря');
     }
     return this.persons.quickCreate({ tenantId: t, userId: user.id, body });
   }
@@ -216,8 +179,6 @@ export class PersonsController {
     await this.requireDelete(user.id, t);
     return this.persons.softDelete({ tenantId: t, userId: user.id, id });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -249,20 +210,7 @@ export class PersonsController {
     if (!ok) throw this.forbidden('Удалять сотрудников может только владелец/администратор Org');
   }
 
-  /**
-   * Pulse §3.4 + Wave 4 §4.7 RBAC: разрешено привилегированным ролям
-   * (owner/admin/coo) ВСЕГДА; hr_partner — только при
-   * `Person.analyticsOptIn=true`; самому сотруднику — всегда. `super_admin`
-   * — bypass (через `RbacService.loadContext`).
-   *
-   * Делегируем в `RbacService.canViewEmployeeFullCard` — единое место правил
-   * (см. ТЗ Pulse Wave 4 §4.7).
-   */
-  private async canViewPulse(
-    userId: string,
-    tenantId: string,
-    personId: string,
-  ): Promise<boolean> {
+  private async canViewPulse(userId: string, tenantId: string, personId: string): Promise<boolean> {
     return this.rbac.canViewEmployeeFullCard({
       viewerUserId: userId,
       employeePersonId: personId,
@@ -270,16 +218,7 @@ export class PersonsController {
     });
   }
 
-  /**
-   * ТЗ-E Фаза 2 (self-режим): true если эту карточку открыл сам сотрудник —
-   * `Person.userId === currentUser.id`. Используется только для выбора
-   * self-варианта Pulse-DTO (без HR-резюме); RBAC выше уже разрешил доступ.
-   */
-  private async isSelfPerson(
-    userId: string,
-    tenantId: string,
-    personId: string,
-  ): Promise<boolean> {
+  private async isSelfPerson(userId: string, tenantId: string, personId: string): Promise<boolean> {
     const person = await this.prisma.person.findFirst({
       where: { id: personId, tenantId },
       select: { userId: true },

@@ -14,32 +14,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * Admin-redesign Фаза 0 — `AdminSettingsService`.
- *
- * Источник «живых» настроек платформы (без перерестарта). Используется через
- * `TypedConfigService.getDynamic(key, envFallbackKey?, default?)` для чтения и
- * через `AdminSettingsController` для записи из админки.
- *
- * Архитектура:
- *   - in-memory LRU-кэш (max 1000 ключей, TTL 30s). Самописный — без зависимости
- *     `lru-cache`.
- *   - pub/sub Redis канал `admin:setting:invalidate` — отдельный subscriber
- *     client (ioredis в subscriber-режиме не умеет команды publish, поэтому
- *     publish'им через основной клиент `RedisService.client`).
- *   - при `set()` — UPDATE/UPSERT в БД (одной транзакцией с записью истории и
- *     SuperAdminAccessLog), затем publish'им invalidation.
- *
- * Optimistic concurrency:
- *   - `set()` принимает опциональный `expectedUpdatedAt: Date`. Если задан и
- *     в БД отличается — throw `ConflictException`.
- *
- * Безопасность:
- *   - Сам сервис guard'ами не защищён — это делает контроллер. Сервис вызывается
- *     также из seed-скриптов (там SuperAdminAccessLog не нужен, поэтому при
- *     `userId === null` мы запись в access-log не делаем).
- */
-
 const CHANNEL = 'admin:setting:invalidate';
 const CACHE_MAX = 1000;
 const CACHE_TTL_MS = 30_000;
@@ -47,16 +21,9 @@ const CACHE_TTL_MS = 30_000;
 type CacheEntry = { value: unknown; storedAt: number };
 
 interface SetOptions {
-  /** ID super_admin'а или null/undefined для серверных/seed-операций. */
   userId?: string | null;
-  /** Причина изменения (для high/destructive — обязательна). */
   reason?: string | null;
-  /** Optimistic concurrency. Если задан — сравниваем с текущим. */
   expectedUpdatedAt?: Date;
-  /**
-   * Если true — не пишем SuperAdminAccessLog (для bootstrap/seed-сценариев,
-   * где actor — система, а не super_admin).
-   */
   skipAuditLog?: boolean;
 }
 
@@ -64,14 +31,8 @@ interface SetOptions {
 export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AdminSettingsService.name);
 
-  /**
-   * LRU-кэш: вставка обновляет «свежесть» (delete + set ставит ключ в конец).
-   * При превышении CACHE_MAX — вытесняем самый старый (Map iteration order =
-   * insertion order).
-   */
   private readonly cache = new Map<string, CacheEntry>();
 
-  /** Отдельный subscriber client (не используется для publish). */
   private subscriber: Redis | null = null;
 
   constructor(
@@ -80,8 +41,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ──────────────────────────── lifecycle ──────────────────────────────
-
   async onModuleInit(): Promise<void> {
     try {
       this.subscriber = new IORedis(this.cfg.redis.url, {
@@ -89,10 +48,7 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
         maxRetriesPerRequest: null,
       });
       this.subscriber.on('error', (err: Error) => {
-        this.logger.warn(
-          { err: err.message },
-          'AdminSettings subscriber: ошибка соединения',
-        );
+        this.logger.warn({ err: err.message }, 'AdminSettings subscriber: ошибка соединения');
       });
       await this.subscriber.connect();
       await this.subscriber.subscribe(CHANNEL);
@@ -102,10 +58,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
           const data = JSON.parse(payload) as { key?: unknown; value?: unknown };
           if (typeof data.key === 'string' && data.key.length > 0) {
             this.cache.delete(data.key);
-            // value может быть undefined в payload'ах от старых процессов до
-            // обновления — в этом случае applySync(key, undefined) выкинет
-            // ключ из cacheMap, и следующий resolveSync пересчитается через
-            // ENV. Безопасный fallback.
             this.cfg.applySync(data.key, data.value);
           }
         } catch (err) {
@@ -117,8 +69,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
       });
       this.logger.log('AdminSettings: подписка на admin:setting:invalidate');
     } catch (err) {
-      // Pub/sub fallback: продолжаем работать без cross-process invalidation.
-      // В этом режиме кэш чистится только в текущем процессе по set()/TTL.
       this.subscriber = null;
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -132,18 +82,11 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     try {
       await this.subscriber.quit();
     } catch {
-      // ignore
     } finally {
       this.subscriber = null;
     }
   }
 
-  // ─────────────────────────────── api ─────────────────────────────────
-
-  /**
-   * Прочитать одно значение. При отсутствии записи — возвращает
-   * `defaultValue` (если задан) или `undefined`. Кэшируется на 30 секунд.
-   */
   async get<T>(key: string, defaultValue?: T): Promise<T | undefined> {
     const cached = this.readCache(key);
     if (cached !== undefined) return cached as T;
@@ -159,10 +102,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     return row.value as T;
   }
 
-  /**
-   * Прочитать несколько значений батчем. Возвращает мапу `{ key: value }`.
-   * Отсутствующие ключи в результат не попадают.
-   */
   async getMany(keys: string[]): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = {};
     const missing: string[] = [];
@@ -187,17 +126,7 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     return out;
   }
 
-  /**
-   * Записать значение. Шаги:
-   *   1) optimistic concurrency check (если задан `expectedUpdatedAt`).
-   *   2) транзакция: UPSERT + AdminSettingHistory + (опц.) SuperAdminAccessLog.
-   *   3) drop из локального кэша + publish invalidation в другие процессы.
-   */
-  async set(
-    key: string,
-    value: unknown,
-    options: SetOptions = {},
-  ): Promise<void> {
+  async set(key: string, value: unknown, options: SetOptions = {}): Promise<void> {
     const existing = await this.prisma.adminSetting.findUnique({
       where: { key },
       select: { value: true, updatedAt: true },
@@ -211,8 +140,7 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
           ok: false,
           error: {
             code: 'admin_setting_conflict',
-            message:
-              'Настройка была изменена параллельно. Перечитайте и повторите запрос.',
+            message: 'Настройка была изменена параллельно. Перечитайте и повторите запрос.',
           },
         });
       }
@@ -234,8 +162,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
           },
         });
       } else {
-        // Bootstrap-сценарий: запись могла отсутствовать (seed ещё не прошёл).
-        // category/section дефолтим — реальный seed их перезапишет.
         await tx.adminSetting.create({
           data: {
             key,
@@ -278,10 +204,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     await this.publishInvalidate(key, value);
   }
 
-  /**
-   * Перечисление настроек с фильтрами по category/section. Возвращает
-   * полный объект записи (для UI).
-   */
   async list(filters: { category?: string; section?: string }): Promise<
     Array<{
       key: string;
@@ -319,9 +241,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
-  /**
-   * Карточка одной настройки. Бросает `NotFoundException`, если ключа нет.
-   */
   async getDetail(key: string): Promise<{
     key: string;
     value: unknown;
@@ -355,10 +274,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  /**
-   * История изменений ключа, упорядочена по `changedAt DESC`. По умолчанию
-   * 50 записей.
-   */
   async getHistory(
     key: string,
     limit = 50,
@@ -389,8 +304,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
-  // ─────────────────────────── private ─────────────────────────────────
-
   private readCache(key: string): unknown | undefined {
     const entry = this.cache.get(key);
     if (!entry) return undefined;
@@ -399,7 +312,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
       this.cache.delete(key);
       return undefined;
     }
-    // LRU touch: переместить в конец.
     this.cache.delete(key);
     this.cache.set(key, entry);
     return entry.value;
@@ -410,7 +322,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
       this.cache.delete(key);
     }
     this.cache.set(key, { value, storedAt: Date.now() });
-    // Eviction по размеру.
     while (this.cache.size > CACHE_MAX) {
       const oldest = this.cache.keys().next().value;
       if (typeof oldest !== 'string') break;
@@ -423,8 +334,6 @@ export class AdminSettingsService implements OnModuleInit, OnModuleDestroy {
       const payload = JSON.stringify({ key, value });
       await this.redis.client.publish(CHANNEL, payload);
     } catch (err) {
-      // Pub/sub publish сбой — не блокируем set(), кэш в других процессах
-      // протухнет через 30s по TTL.
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err), key },
         'AdminSettings: pub/sub publish сбой (мягкий)',

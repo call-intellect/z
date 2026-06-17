@@ -1,17 +1,3 @@
-/**
- * Spec для TelegramWebhooksController.
- *
- * Покрытие:
- *   - β-9 (новый путь) `POST /api/v1/webhooks/telegram-bot` без `:tenantId`
- *     лукапит глобальный канал и не передаёт tenantId в adapter.ingestUpdate.
- *   - β-9 (legacy `:tenantId`) — если глобальный канал существует, использует
- *     его, пишет warn про deprecation; иначе fallback на per-tenant.
- *   - 404 если глобального канала нет (новый путь).
- *   - 403 invalid_webhook_secret / webhook_secret_unreadable.
- *   - 200 без 5xx если adapter.ingestUpdate бросает.
- *   - 200 если ingestUpdate вернул null.
- *   - 200 если dispatchInbound бросает.
- */
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,21 +11,18 @@ import { TelegramWebhooksController } from './telegram-webhooks.controller';
 
 const SECRET = 'webhook-secret-42';
 
-function build(opts: {
-  /** Какой канал вернёт `findFirst({ tenantId: null })`. По умолчанию — глобальный активный. */
-  globalChannel?: { id: string; status: string } | null;
-  /** Какой канал вернёт `findUnique({ tenantId_kind })` для legacy пути. По умолчанию — null. */
-  perTenantChannel?: { id: string; status: string } | null;
-  readSecret?: string | null;
-  adapterIngestReturns?: 'inbound' | 'null' | 'throw';
-  dispatchThrows?: boolean;
-} = {}) {
-  const globalChannel = opts.globalChannel === undefined
-    ? { id: 'global-1', status: 'active' }
-    : opts.globalChannel;
-  const perTenantChannel = opts.perTenantChannel === undefined
-    ? null
-    : opts.perTenantChannel;
+function build(
+  opts: {
+    globalChannel?: { id: string; status: string } | null;
+    perTenantChannel?: { id: string; status: string } | null;
+    readSecret?: string | null;
+    adapterIngestReturns?: 'inbound' | 'null' | 'throw';
+    dispatchThrows?: boolean;
+  } = {},
+) {
+  const globalChannel =
+    opts.globalChannel === undefined ? { id: 'global-1', status: 'active' } : opts.globalChannel;
+  const perTenantChannel = opts.perTenantChannel === undefined ? null : opts.perTenantChannel;
 
   const prisma = {
     channel: {
@@ -74,9 +57,6 @@ function build(opts: {
     incTelegramBotGlobalWebhookReceived: vi.fn(),
   } as unknown as BusinessMetricsService;
 
-  // Minimal Redis stub. duplicate() возвращает subscriber-объект с no-op
-  // методами; в unit'ах pub/sub-инвалидация не интегрируется, тестируется
-  // отдельно в Фазе 4.
   const subscriber = {
     subscribe: vi.fn(async () => undefined),
     on: vi.fn(),
@@ -86,13 +66,7 @@ function build(opts: {
     client: { duplicate: vi.fn(() => subscriber) },
   } as unknown as RedisService;
 
-  const ctrl = new TelegramWebhooksController(
-    prisma,
-    adapter,
-    conversational,
-    metrics,
-    redis,
-  );
+  const ctrl = new TelegramWebhooksController(prisma, adapter, conversational, metrics, redis);
   return { ctrl, prisma, adapter, conversational, metrics, redis, subscriber };
 }
 
@@ -115,9 +89,7 @@ describe('TelegramWebhooksController — β-9 глобальный путь', ()
     const res = await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(res).toEqual({ ok: true });
     expect(adapter.ingestUpdate).toHaveBeenCalledOnce();
-    expect(
-      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
-    ).toBeUndefined();
+    expect(vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId).toBeUndefined();
     expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
     expect(metrics.incTelegramBotGlobalWebhookReceived).toHaveBeenCalledWith({
       type: 'message',
@@ -126,18 +98,18 @@ describe('TelegramWebhooksController — β-9 глобальный путь', ()
 
   it('404 если глобального канала нет', async () => {
     const { ctrl } = build({ globalChannel: null });
-    await expect(
-      ctrl.receiveGlobal(validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receiveGlobal(validBody as never, SECRET)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('404 если глобальный канал в статусе global_disabled (или paused)', async () => {
     const { ctrl } = build({
       globalChannel: { id: 'g', status: 'global_disabled' },
     });
-    await expect(
-      ctrl.receiveGlobal(validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receiveGlobal(validBody as never, SECRET)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 
   it('403 если secret не совпадает', async () => {
@@ -149,9 +121,9 @@ describe('TelegramWebhooksController — β-9 глобальный путь', ()
 
   it('403 если secret не читается', async () => {
     const { ctrl } = build({ readSecret: null });
-    await expect(
-      ctrl.receiveGlobal(validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(ctrl.receiveGlobal(validBody as never, SECRET)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('200 если adapter.ingestUpdate бросает (Telegram не должен ретраить)', async () => {
@@ -182,9 +154,7 @@ describe('TelegramWebhooksController — proxy путь /s/:secret', () => {
     const { ctrl, adapter, conversational } = build();
     const res = await ctrl.receiveViaProxy(SECRET, validBody as never);
     expect(res).toEqual({ ok: true });
-    expect(
-      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
-    ).toBeUndefined();
+    expect(vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId).toBeUndefined();
     expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
   });
 
@@ -197,9 +167,9 @@ describe('TelegramWebhooksController — proxy путь /s/:secret', () => {
 
   it('404 если глобального канала нет', async () => {
     const { ctrl } = build({ globalChannel: null });
-    await expect(
-      ctrl.receiveViaProxy(SECRET, validBody as never),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receiveViaProxy(SECRET, validBody as never)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });
 
@@ -210,10 +180,7 @@ describe('TelegramWebhooksController — legacy :tenantId путь', () => {
     const { ctrl, adapter } = build();
     const res = await ctrl.receive('tenant-x', validBody as never, SECRET);
     expect(res).toEqual({ ok: true });
-    // tenantId не пробрасывается в адаптер — резолв через Membership.
-    expect(
-      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
-    ).toBeUndefined();
+    expect(vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId).toBeUndefined();
   });
 
   it('если глобального нет — fallback на per-tenant Channel', async () => {
@@ -223,17 +190,14 @@ describe('TelegramWebhooksController — legacy :tenantId путь', () => {
     });
     const res = await ctrl.receive('tenant-1', validBody as never, SECRET);
     expect(res).toEqual({ ok: true });
-    // tenantId передаётся в адаптер (legacy режим).
-    expect(
-      vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId,
-    ).toBe('tenant-1');
+    expect(vi.mocked(adapter.ingestUpdate).mock.calls[0]![0].tenantId).toBe('tenant-1');
   });
 
   it('404 если ни глобального, ни per-tenant нет', async () => {
     const { ctrl } = build({ globalChannel: null, perTenantChannel: null });
-    await expect(
-      ctrl.receive('tenant-x', validBody as never, SECRET),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(ctrl.receive('tenant-x', validBody as never, SECRET)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });
 
@@ -252,17 +216,14 @@ describe('TelegramWebhooksController — pub/sub invalidation (2026-05-26 Phase 
   it('после события pub/sub кэш сбрасывается и при следующем webhook делается новый findFirst', async () => {
     const { ctrl, prisma, subscriber } = build();
     await ctrl.onModuleInit();
-    // Первый запрос — кэш промахивается, findFirst вызывается.
     await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
-    // Второй запрос — кэш hit, findFirst НЕ дёргается.
     await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
-    // Эмулируем pub/sub-сообщение → сбрасывает кэш.
-    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[1] as (channel: string) => void;
+    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as (
+      channel: string,
+    ) => void;
     handler('conversational:channel:updated:telegram_bot');
-    // Третий запрос — снова промах, findFirst дёргается.
     await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(prisma.channel.findFirst).toHaveBeenCalledTimes(2);
   });
@@ -272,11 +233,11 @@ describe('TelegramWebhooksController — pub/sub invalidation (2026-05-26 Phase 
     await ctrl.onModuleInit();
     await ctrl.receiveGlobal(validBody as never, SECRET);
     expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
-    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[1] as (channel: string) => void;
+    const handler = (subscriber.on as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as (
+      channel: string,
+    ) => void;
     handler('some:other:topic');
     await ctrl.receiveGlobal(validBody as never, SECRET);
-    // Только один findFirst — кэш не сбросился.
     expect(prisma.channel.findFirst).toHaveBeenCalledTimes(1);
   });
 

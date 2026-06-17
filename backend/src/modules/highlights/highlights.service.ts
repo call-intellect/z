@@ -16,15 +16,6 @@ import type { CreateHighlightDto } from './dto/create-highlight.dto';
 import type { UpdateHighlightDto } from './dto/update-highlight.dto';
 import { HighlightsRepository } from './highlights.repository';
 
-/**
- * Сервис «золотых моментов» (highlights → MP4-клипы).
- *
- * Бизнес-валидация в `create`:
- *   - `endMs > startMs` (Zod уже проверил, оставляем как safety net);
- *   - `endMs - startMs <= cfg.workspace.clipMaxDurationSeconds * 1000`;
- *   - `endMs <= meeting.durationMs` (если durationMs задан);
- *   - не превышен лимит `cfg.workspace.maxHighlightsPerMeeting`.
- */
 @Injectable()
 export class HighlightsService {
   private readonly logger = new Logger(HighlightsService.name);
@@ -90,11 +81,7 @@ export class HighlightsService {
     });
   }
 
-  async update(
-    id: string,
-    userId: string,
-    dto: UpdateHighlightDto,
-  ): Promise<MeetingHighlight> {
+  async update(id: string, userId: string, dto: UpdateHighlightDto): Promise<MeetingHighlight> {
     const highlight = await this.repo.findById(id);
     if (!highlight) throw new NotFoundException('highlight_not_found');
     await this.assertMeetingOwner(highlight.meetingId, userId);
@@ -124,17 +111,12 @@ export class HighlightsService {
     return this.clipRender.startRender(highlight, userId);
   }
 
-  async getDownloadUrl(
-    id: string,
-    userId: string,
-  ): Promise<{ url: string; expiresAt: string }> {
+  async getDownloadUrl(id: string, userId: string): Promise<{ url: string; expiresAt: string }> {
     const highlight = await this.repo.findById(id);
     if (!highlight) throw new NotFoundException('highlight_not_found');
     await this.assertMeetingOwner(highlight.meetingId, userId);
     return this.clipRender.getDownloadUrl(highlight);
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────────
 
   private async assertMeetingOwner(
     meetingId: string,

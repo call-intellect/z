@@ -7,41 +7,11 @@ import { AdminSettingsService } from '../settings/admin-settings.service';
 
 import type { PlanSnapshot } from './dto/plan-snapshot.dto';
 
-/**
- * Admin-redesign Фаза 4 (collapse-to-standard, ТЗ 2026-05-31) —
- * `AdminPlansService`.
- *
- * После Фазы 4 от прежнего CRUD остался **один** метод
- * `getCurrentSnapshot()`, который собирает снимок единого тарифа
- * `tier_standard` из:
- *   - 6 ключей `billing.*` в `AdminSetting` (источник цены, редактируется
- *     super_admin через UI);
- *   - статического `TIER_CONFIG['tier_standard']` (features/quotas — это
- *     решение архитектора, не цена, меняется релизом);
- *   - двух COUNT'ов по `OrgEntitlement` (orgs на стандарте + Org,
- *     оставшиеся на legacy-tiers).
- *
- * CRUD-методы (`list/create/update/softDelete/hardDelete/getUsage`) удалены:
- * тарифы больше не редактируются в БД (модель `Plan` остаётся LEGACY до
- * отдельного ТЗ удаления), а цена — выехала в AdminSetting.
- */
-
-/** Локализованное имя единого тарифа. В коде, не в AdminSetting. */
 const TIER_STANDARD_DISPLAY_NAME = 'Стандартный';
-/** Локализованное описание единого тарифа. */
 const TIER_STANDARD_DESCRIPTION = 'Единый тариф Z. Все фичи Z.';
 
-/**
- * Legacy-тиры (`tier_basic` / `tier_pro` / `tier_enterprise`) — те, что в
- * `tier-config.ts` помечены как нерушительная совместимость. Используются для
- * COUNT'а «сколько Org ещё не переехало на `tier_standard`».
- *
- * Источник: `backend/src/modules/entitlements/tier-config.ts` §«Целевой тариф
- * (ТЗ 2026-05-27)» + комментарии к `TierKey`.
- */
 const LEGACY_TIERS = ['tier_basic', 'tier_pro', 'tier_enterprise'] as const;
 
-/** Code-fallback значения — должны совпадать с `SeatService.DEFAULT_*`. */
 const DEFAULT_BASE_MONTHLY_KOPECKS = 6_000_000;
 const DEFAULT_PER_EXTRA_SEAT_KOPECKS = 100_000;
 const DEFAULT_YEARLY_DISCOUNT_RATE = 0.8;
@@ -49,11 +19,6 @@ const DEFAULT_BASE_SEATS_INCLUDED = 31;
 const DEFAULT_BASE_MEETINGS_GRANT = 150;
 const DEFAULT_PER_EXTRA_SEAT_MEETINGS_GRANT = 5;
 
-/**
- * Безопасное чтение `number` из `AdminSettingsService.getMany()` ответа:
- *   - если значения нет → fallback;
- *   - если значение не number → warn + fallback (защищаемся от мусора в БД).
- */
 function readNumberSetting(
   bag: Record<string, unknown>,
   key: string,
@@ -79,17 +44,6 @@ export class AdminPlansService {
     @Inject(SeatService) private readonly seat: SeatService,
   ) {}
 
-  /**
-   * Снимок текущего состояния единого тарифа `tier_standard`.
-   *
-   * Источник цены — `AdminSetting` (6 ключей `billing.*`, см. §3.1 ТЗ).
-   * Source `features`/`quotas` — статический `TIER_CONFIG['tier_standard']`.
-   *
-   * `base.monthlyPriceKopecks` берётся не напрямую из `AdminSetting`, а через
-   * `SeatService.calculatePricing('monthly', 0)` — чтобы UI и расчёт цены
-   * подписки использовали один источник правды и любые будущие коррекции
-   * формулы (round/cap) применились автоматически.
-   */
   async getCurrentSnapshot(): Promise<PlanSnapshot> {
     const settings = await this.adminSettings.getMany([
       'billing.baseMonthlyKopecks',
@@ -148,9 +102,7 @@ export class AdminPlansService {
     const tier = TIER_CONFIG['tier_standard'];
 
     const discountPercent = Math.round((1 - yearlyDiscountRate) * 100);
-    const monthlyEquivalentKopecks = Math.round(
-      baseMonthlyKopecks * yearlyDiscountRate,
-    );
+    const monthlyEquivalentKopecks = Math.round(baseMonthlyKopecks * yearlyDiscountRate);
     const fullYearKopecks = monthlyEquivalentKopecks * 12;
 
     return {
@@ -158,9 +110,6 @@ export class AdminPlansService {
       displayName: TIER_STANDARD_DISPLAY_NAME,
       description: TIER_STANDARD_DESCRIPTION,
       base: {
-        // pricing.monthlyKopecks === baseMonthlyKopecks при seatsExtra=0,
-        // но дёргаем SeatService, чтобы snapshot ↔ расчёт цены подписки
-        // были консистентны.
         monthlyPriceRub: Math.round(pricing.monthlyKopecks / 100),
         monthlyPriceKopecks: pricing.monthlyKopecks,
         seatsIncluded: baseSeatsIncluded,

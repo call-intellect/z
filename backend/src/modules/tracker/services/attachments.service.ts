@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { nanoid } from 'nanoid';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -13,11 +7,6 @@ import { S3Service } from '../../recordings/s3.service';
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 
-/**
- * Тип файла, который multer кладёт в req. Объявлен локально (а не через
- * `Express.Multer.File`), чтобы DTO-сервис не тянул `@types/express` в
- * compile-time, если кто-то расщепит модуль. Идентично `documents.controller`.
- */
 export interface UploadedAttachmentInput {
   originalName: string;
   mimeType: string;
@@ -25,16 +14,8 @@ export interface UploadedAttachmentInput {
   buffer: Buffer;
 }
 
-/**
- * Лимит размера одного файла приложения к задаче — 25 MB. Sharp / video не
- * обрабатываем; крупные видео идут в `documents` или Recording (это другой flow).
- */
 const MAX_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024;
 
-/**
- * Допустимые MIME-типы — общий «офисный» набор + изображения. Запрещаем
- * исполняемые. Для расширения списка — добавить enum здесь (без миграций).
- */
 const ALLOWED_MIME_PREFIXES = [
   'image/',
   'application/pdf',
@@ -61,20 +42,6 @@ export interface AttachmentResponseDto {
   createdAt: string;
 }
 
-/**
- * AttachmentsService — загрузка/чтение/удаление приложений к задачам.
- *
- *   - `upload`         — multipart → S3 + IssueAttachment.
- *   - `getPresigned`   — короткоживущий signed URL для скачивания.
- *   - `delete`         — удаляет запись + объект в S3.
- *
- * S3-ключ: `issues/{issueId}/attachments/{nanoid}-{safeFilename}`. nanoid в
- * префиксе — анти-коллизия одинаковых имён. Имя файла санитизируется: оставляем
- * только `[A-Za-z0-9._-]`, остальное → `_`, чтобы не ломать ни URL ни S3.
- *
- * Thumbnail — НЕ генерируем (sharp в проекте не установлен). Если потребуется —
- * подключить позже отдельным воркером `attachment-thumbnail` (BullMQ).
- */
 @Injectable()
 export class AttachmentsService {
   private readonly logger = new Logger(AttachmentsService.name);
@@ -87,11 +54,6 @@ export class AttachmentsService {
     private readonly activity: ActivityRecorderService,
   ) {}
 
-  /**
-   * Загрузить файл к задаче. Сначала кладём в S3, потом — запись в БД
-   * (если БД упадёт — в S3 останется orphan-объект, на retention-cron'е
-   * выметается; это лучше, чем INSERT успешен, а Body не сохранён).
-   */
   async upload(args: {
     tenantId: string;
     issueId: string;
@@ -122,16 +84,12 @@ export class AttachmentsService {
     const safeName = this.sanitizeFileName(file.originalName);
     const objectKey = `issues/${issueId}/attachments/${nanoid()}-${safeName}`;
 
-    // 1. S3 PUT — даже если потом INSERT упадёт, orphan не критичен.
     await this.s3.putObject({
       key: objectKey,
       body: file.buffer,
       contentType: file.mimeType,
     });
 
-    // 2. INSERT в БД. fileUrl храним как s3 key (без host) — presigned URL
-    //    выдаём через `getPresigned()`. На случай миграции bucket'а это
-    //    минимизирует переписывание данных.
     const created = await this.prisma.issueAttachment.create({
       data: {
         issueId,
@@ -144,7 +102,6 @@ export class AttachmentsService {
       },
     });
 
-    // 3. IssueActivity verb='attached'.
     await this.activity.record({
       tenantId,
       issueId,
@@ -161,10 +118,6 @@ export class AttachmentsService {
     return this.toResponseDto(created);
   }
 
-  /**
-   * Получить presigned URL для скачивания. TTL — по `cfg.s3.presignedTtlSeconds`.
-   * Возвращает сам объект + URL (а не редирект): фронт сам решит, как открывать.
-   */
   async getPresigned(
     attachmentId: string,
     tenantId: string,
@@ -178,22 +131,13 @@ export class AttachmentsService {
     };
   }
 
-  /**
-   * Удалить приложение: запись из БД + объект из S3 (best-effort).
-   * IssueActivity verb='detached'.
-   */
-  async delete(
-    attachmentId: string,
-    tenantId: string,
-    userId: string,
-  ): Promise<{ ok: true }> {
+  async delete(attachmentId: string, tenantId: string, userId: string): Promise<{ ok: true }> {
     const att = await this.requireAttachment(attachmentId, tenantId);
     await this.prisma.issueAttachment.delete({ where: { id: att.id } });
 
     try {
       await this.s3.delete([att.fileUrl]);
     } catch (err) {
-      // Не валим запрос — БД-запись уже удалена. Retention-cron подберёт.
       this.logger.warn(
         `S3 delete для ${att.fileUrl} не удался: ${
           err instanceof Error ? err.message : String(err)
@@ -216,7 +160,6 @@ export class AttachmentsService {
     return { ok: true };
   }
 
-  /** Найти приложение + проверить tenant через issue. */
   private async requireAttachment(
     attachmentId: string,
     tenantId: string,
@@ -244,7 +187,6 @@ export class AttachmentsService {
         },
       });
     }
-    // Проверка tenant — через issue ownership.
     await this.issues.requireIssue(att.issueId, tenantId);
     return att;
   }
@@ -281,7 +223,6 @@ export class AttachmentsService {
   private sanitizeFileName(name: string): string {
     const trimmed = name.trim().replace(/\s+/g, '_');
     const safe = trimmed.replace(/[^A-Za-z0-9._-]/g, '_');
-    // Защита от слишком длинных имён (S3 key limit 1024, но S3 префикс уже занят).
     return safe.length > 200 ? safe.slice(safe.length - 200) : safe;
   }
 

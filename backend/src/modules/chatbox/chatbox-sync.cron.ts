@@ -6,16 +6,6 @@ import { AdminSettingsService } from '../admin/settings/admin-settings.service';
 
 import { ChatboxSyncQueueService } from './queue/chatbox-sync.queue.service';
 
-/**
- * Cron-планировщик инкрементального синка ChatBox (ТЗ 2026-06-05, Фаза 4;
- * упрощено 2026-06-16 — выбор периода убран).
- *
- * Синк фиксирован: **раз в сутки в 00:00** для ВСЕХ подключённых интеграций
- * (поле `syncMode` больше не влияет на расписание — пользователь его не
- * выбирает). Ставит `incremental`-job через ChatboxSyncQueueService; дедуп по
- * jobId схлопнёт дубликаты. Kill-switch `chatbox.enabled` (admin settings)
- * глушит проход. Тело обёрнуто в try/catch — cron не должен падать.
- */
 @Injectable()
 export class ChatboxSyncCron {
   private readonly logger = new Logger(ChatboxSyncCron.name);
@@ -31,8 +21,7 @@ export class ChatboxSyncCron {
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async runDaily(): Promise<void> {
     try {
-      const enabled =
-        (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;
+      const enabled = (await this.adminSettings.get<boolean>('chatbox.enabled', true)) ?? true;
       if (!enabled) {
         this.logger.debug('sync-cron: chatbox.enabled=false — пропуск');
         return;

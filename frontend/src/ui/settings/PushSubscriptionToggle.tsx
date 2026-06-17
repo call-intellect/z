@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { Bell, BellOff, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { Bell, BellOff, Loader2 } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   getExistingSubscription,
   getPermission,
@@ -12,38 +12,26 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
   type PushPermission,
-} from '@/lib/pwa/push';
-import { Button } from '@/ui/shadcn/button';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/lib/pwa/push";
+import { Button } from "@/ui/shadcn/button";
+import { toast } from "@/ui/shadcn/toast";
 
-type Status = 'loading' | 'idle' | 'busy';
+type Status = "loading" | "idle" | "busy";
 
-/**
- * UI для подписки на web-push уведомления.
- *
- * Состояния:
- *  - unsupported     : браузер не поддерживает PushManager → disabled + объяснение
- *  - vapid-missing   : не сконфигурирован VAPID public key → disabled + TODO
- *  - default         : кнопка «Включить push»
- *  - granted+sub     : кнопка «Отключить push» + статус «Включены»
- *  - denied          : disabled + инструкция как разрешить в настройках браузера
- *  - busy            : спиннер
- */
 export function PushSubscriptionToggle() {
-  const [status, setStatus] = useState<Status>('loading');
-  const [permission, setPermission] = useState<PushPermission>('default');
+  const [status, setStatus] = useState<Status>("loading");
+  const [permission, setPermission] = useState<PushPermission>("default");
   const [hasSubscription, setHasSubscription] = useState(false);
   const supported = isPushSupported();
   const vapidKey = getVapidPublicKey();
 
-  // Первичная синхронизация состояния
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!supported) {
         if (!cancelled) {
-          setPermission('unsupported');
-          setStatus('idle');
+          setPermission("unsupported");
+          setStatus("idle");
         }
         return;
       }
@@ -52,7 +40,7 @@ export function PushSubscriptionToggle() {
       if (cancelled) return;
       setPermission(perm);
       setHasSubscription(Boolean(sub));
-      setStatus('idle');
+      setStatus("idle");
     })();
     return () => {
       cancelled = true;
@@ -60,47 +48,46 @@ export function PushSubscriptionToggle() {
   }, [supported]);
 
   const onSubscribe = useCallback(async () => {
-    setStatus('busy');
+    setStatus("busy");
     try {
       await subscribeToPush();
       setPermission(getPermission());
       setHasSubscription(true);
-      toast.success('Push-уведомления включены');
+      toast.success("Push-уведомления включены");
     } catch (err) {
       const message =
         err instanceof ApiError
           ? err.message
           : err instanceof Error
             ? err.message
-            : 'Не удалось включить уведомления';
+            : "Не удалось включить уведомления";
       toast.error(message);
     } finally {
-      setStatus('idle');
+      setStatus("idle");
     }
   }, []);
 
   const onUnsubscribe = useCallback(async () => {
-    setStatus('busy');
+    setStatus("busy");
     try {
       const ok = await unsubscribeFromPush();
       if (ok) {
         setHasSubscription(false);
-        toast.success('Push-уведомления отключены');
+        toast.success("Push-уведомления отключены");
       } else {
-        toast.message('Активной подписки не было');
+        toast.message("Активной подписки не было");
         setHasSubscription(false);
       }
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Не удалось отключить уведомления';
+        err instanceof Error ? err.message : "Не удалось отключить уведомления";
       toast.error(message);
     } finally {
-      setStatus('idle');
+      setStatus("idle");
     }
   }, []);
 
-  // Не поддерживается браузером
-  if (permission === 'unsupported') {
+  if (permission === "unsupported") {
     return (
       <ToggleShell
         title="Push-уведомления"
@@ -114,7 +101,6 @@ export function PushSubscriptionToggle() {
     );
   }
 
-  // VAPID не настроен → graceful disable
   if (!vapidKey) {
     return (
       <ToggleShell
@@ -129,8 +115,7 @@ export function PushSubscriptionToggle() {
     );
   }
 
-  // Запрещено в браузере
-  if (permission === 'denied') {
+  if (permission === "denied") {
     return (
       <ToggleShell
         title="Push-уведомления"
@@ -144,9 +129,9 @@ export function PushSubscriptionToggle() {
     );
   }
 
-  const isBusy = status === 'busy' || status === 'loading';
+  const isBusy = status === "busy" || status === "loading";
 
-  if (hasSubscription && permission === 'granted') {
+  if (hasSubscription && permission === "granted") {
     return (
       <ToggleShell
         title="Push-уведомления"
@@ -159,7 +144,11 @@ export function PushSubscriptionToggle() {
             onClick={() => void onUnsubscribe()}
             disabled={isBusy}
           >
-            {isBusy ? <Loader2 size={14} className="animate-spin" /> : <BellOff size={14} />}
+            {isBusy ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <BellOff size={14} />
+            )}
             Отключить
           </Button>
         }
@@ -178,7 +167,11 @@ export function PushSubscriptionToggle() {
           onClick={() => void onSubscribe()}
           disabled={isBusy}
         >
-          {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Bell size={14} />}
+          {isBusy ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Bell size={14} />
+          )}
           Включить push
         </Button>
       }

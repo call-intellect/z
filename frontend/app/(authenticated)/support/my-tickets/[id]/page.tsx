@@ -1,16 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { MyTicketDetailClient } from './MyTicketDetailClient';
+import { MyTicketDetailClient } from "./MyTicketDetailClient";
 
 export const metadata: Metadata = {
-  title: 'Обращение',
+  title: "Обращение",
 };
 
-/**
- * `/support/my-tickets/[id]` — детали обращения клиента: тема, статус, лента
- * видимых сообщений, ответ, CSAT-оценка после закрытия (ТЗ 2026-06-09
- * support-desk Ф1).
- */
 export default async function MyTicketDetailPage({
   params,
 }: {

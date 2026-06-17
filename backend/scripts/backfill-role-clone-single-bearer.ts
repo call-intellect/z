@@ -1,32 +1,3 @@
-/**
- * Раздел 7 (2026-06-16) «один человек = один клон должности» — one-off backfill.
- * Источник: plans/tz/2026-06-16-clone-agents-prompt-revision.md §7.6.
- *
- * Приводит существующие клоны ролей к новой модели:
- *   A. ДЕДУП active-дублей (последствие гонки Б13): на роль оставляем одну
- *      active (свежайшую по roleVersion/snapshotAt), остальные → `frozen`.
- *      Нужно, чтобы встал partial-unique индекс executable_personas_one_active_per_role.
- *   B. ЧИТАЕМОСТЬ бывших (Р3/Р5): существующие scope='role' `superseded` → `frozen`
- *      (снимки бывших носителей доступны для вопросов навсегда). Легаси-стабы
- *      `pending_rebuild` → `superseded` (они промежуточные, не показываем).
- *   C. ПЕРЕСБОРКА агрегатов в single-bearer (Р1/Р2): старые агрегатные клоны роли
- *      (собранные dedupe по нескольким людям) у которых `currentBearerPersonId IS NULL`
- *      (старый buildForRole его не проставлял — Б12) пересобираем через
- *      ExecutablePersonaBuildService.buildForRole — он заморозит агрегат и создаст
- *      новую active из профиля ЕДИНСТВЕННОГО текущего носителя.
- *
- * **Idempotent.** A: повторно нет >1 active. B: повторно нет superseded/pending.
- * C: пересобираем только active с currentBearerPersonId=null — после пересборки
- * новая active несёт bearer → следующий прогон её пропускает. Нет носителя/мало
- * traits → buildForRole вернёт null, агрегат остаётся (cron доберёт).
- *
- * Запуск:
- *   bun run scripts/backfill-role-clone-single-bearer.ts --dry-run
- *   bun run scripts/backfill-role-clone-single-bearer.ts
- *   bun run scripts/backfill-role-clone-single-bearer.ts --tenant=<orgId>
- *   bun run scripts/backfill-role-clone-single-bearer.ts --skip-rebuild  (только A+B, без LLM)
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -66,7 +37,6 @@ async function main(opts: Options): Promise<void> {
     ...(opts.tenantId ? { tenantId: opts.tenantId } : {}),
   };
 
-  // Лёгкий pre-check ДО подъёма AppModule: есть ли вообще role-клоны.
   const preCheck = createPrismaClient();
   try {
     const total = await preCheck.executablePersona.count({ where: baseWhere });
@@ -86,13 +56,12 @@ async function main(opts: Options): Promise<void> {
     const prisma = app.get(PrismaService);
     const builder = app.get(ExecutablePersonaBuildService);
 
-    // ── A. Дедуп active-дублей на роль (оставить свежайшую, остальные → frozen).
     const activeRows = await prisma.executablePersona.findMany({
       where: { ...baseWhere, status: 'active' },
       select: { id: true, scopeRefId: true, roleVersion: true, snapshotAt: true },
       orderBy: [{ roleVersion: 'desc' }, { snapshotAt: 'desc' }],
     });
-    const byRole = new Map<string, string>(); // scopeRefId → id «победителя» (первый по orderBy)
+    const byRole = new Map<string, string>();
     const dupIds: string[] = [];
     for (const r of activeRows) {
       const key = r.scopeRefId ?? '';
@@ -112,7 +81,6 @@ async function main(opts: Options): Promise<void> {
       console.log('A. дублей active нет.');
     }
 
-    // ── B. superseded → frozen (читаемость бывших); pending_rebuild → superseded.
     if (!opts.dryRun) {
       const supRes = await prisma.executablePersona.updateMany({
         where: { ...baseWhere, status: 'superseded' },
@@ -122,7 +90,9 @@ async function main(opts: Options): Promise<void> {
         where: { ...baseWhere, status: 'pending_rebuild' },
         data: { status: 'superseded' },
       });
-      console.log(`B. superseded→frozen: ${supRes.count}; pending_rebuild→superseded: ${pendRes.count}`);
+      console.log(
+        `B. superseded→frozen: ${supRes.count}; pending_rebuild→superseded: ${pendRes.count}`,
+      );
     } else {
       const supCnt = await prisma.executablePersona.count({
         where: { ...baseWhere, status: 'superseded' },
@@ -133,7 +103,6 @@ async function main(opts: Options): Promise<void> {
       console.log(`B. (dry) superseded→frozen: ${supCnt}; pending_rebuild→superseded: ${pendCnt}`);
     }
 
-    // ── C. Пересборка агрегатов single-bearer'ом (active с currentBearerPersonId=null).
     if (opts.skipRebuild) {
       console.log('C. пропущено (--skip-rebuild): single-bearer пересоберёт weekly cron.');
     } else {
@@ -171,7 +140,9 @@ async function main(opts: Options): Promise<void> {
           );
         }
       }
-      console.log(`C. DONE: rebuilt=${rebuilt}, skipped=${skipped} (skipped — нет носителя/мало traits, cron доберёт)`);
+      console.log(
+        `C. DONE: rebuilt=${rebuilt}, skipped=${skipped} (skipped — нет носителя/мало traits, cron доберёт)`,
+      );
     }
 
     console.log('=== backfill-role-clone-single-bearer DONE ===');

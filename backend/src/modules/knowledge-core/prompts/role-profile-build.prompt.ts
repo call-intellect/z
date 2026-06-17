@@ -1,43 +1,6 @@
-/**
- * Промпт `role-profile-build-v2` (SBA α-8 wave 4) — сборка карты должности
- * (RoleProfile.summaryCache) из observed-данных графа.
- *
- * Расширение wave 4: вместо 5 полей старой схемы — 9 нормализованных слотов
- * Role Map. Поле `summaryCache` остаётся как «быстрый» JSON-кеш для UI;
- * канонические данные wave-2 моделей живут в нормализованных таблицах
- * (ResponsibilityElement / AuthorityBoundary / RequiredKnowledge /
- * DecisionPolicy / Interaction). Старые поля (responsibilities/skills/...)
- * сохраняются для backward-compat существующего UI до миграции на Role Map view.
- *
- * Источник — plans/tz/2026-05-21-phase-0d-role-profile-agent.md §6.1 +
- * plans/tz/2026-05-23-sba-alpha-8-wave4-role-map-worker-rest-ui.md §3.3.
- *
- * Регистрируется в `LlmRouterService` через `taskType='role-profile-build'`.
- */
-
 import { z } from 'zod';
 
-/**
- * Zod-схема для парсинга ответа LLM. Используется в
- * `RoleProfileService.build` для validate + сохранения в
- * `RoleProfile.summaryCache`.
- *
- * 9 слотов Role Map (см. ТЗ wave 4 §3.3):
- *   1. responsibilities — за что отвечает
- *   2. authority — границы полномочий
- *   3. knowledge — требуемые знания
- *   4. decisions — политики принятия решений
- *   5. interactions — типовые взаимодействия
- *   6. metrics — KPI и наблюдаемые показатели
- *   7. ownership — обязательства / ownership scope
- *   8. kpi_links — на какие метрики компании влияет
- *   9. style_profile — стиль / completeness self-rating
- *
- * Backward-compat: оставлены старые `skills[]`, `decision_patterns[]`,
- * `common_pitfalls[]` — их использует existing UI (frontend RoleProfileSection).
- */
 export const RoleProfileSchema = z.object({
-  // 1. Обязанности (полный аналог wave 2 ResponsibilityElement.kind=outcome|function|activity).
   responsibilities: z
     .array(
       z.object({
@@ -48,35 +11,25 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 2. Границы полномочий (wave 2 AuthorityBoundary).
   authority: z
     .array(
       z.object({
-        kind: z
-          .enum(['allowed', 'requires_approval', 'forbidden'])
-          .default('allowed'),
+        kind: z.enum(['allowed', 'requires_approval', 'forbidden']).default('allowed'),
         scope: z.string().min(1),
         evidence: z.array(z.string()).default([]),
       }),
     )
     .default([]),
-  // 3. Требуемые знания (wave 2 RequiredKnowledge).
   knowledge: z
     .array(
       z.object({
         topic: z.string().min(1),
-        importance: z
-          .enum(['mandatory', 'preferred', 'nice_to_have'])
-          .default('preferred'),
-        expectedLevel: z
-          .enum(['beginner', 'intermediate', 'expert'])
-          .nullable()
-          .default(null),
+        importance: z.enum(['mandatory', 'preferred', 'nice_to_have']).default('preferred'),
+        expectedLevel: z.enum(['beginner', 'intermediate', 'expert']).nullable().default(null),
         evidence: z.array(z.string()).default([]),
       }),
     )
     .default([]),
-  // 4. Политики принятия решений (wave 2 DecisionPolicy).
   decisions: z
     .array(
       z.object({
@@ -87,7 +40,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 5. Взаимодействия (wave 2 Interaction).
   interactions: z
     .array(
       z.object({
@@ -98,7 +50,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 6. KPI / наблюдаемые показатели (Metric).
   metrics: z
     .array(
       z.object({
@@ -109,7 +60,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 7. Ownership scope (что в зоне ответственности с точки зрения compliance / ресурсов).
   ownership: z
     .array(
       z.object({
@@ -118,7 +68,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 8. KPI links — на какие метрики компании влияет роль (free-text для MVP).
   kpi_links: z
     .array(
       z.object({
@@ -127,12 +76,8 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  // 9. Style profile + completeness self-rating (1-3 предложения + self-rating 0..1).
   style_profile: z.string().default(''),
-  /** 0..1 — само-оценка LLM "насколько данных хватило". */
   completeness_self_rating: z.coerce.number().min(0).max(1).default(0),
-  // ── Backward-compat (existing UI) ─────────────────────────────────
-  /** @deprecated wave 4 — используем `knowledge[]`. */
   skills: z
     .array(
       z.object({
@@ -142,7 +87,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  /** @deprecated wave 4 — используем `decisions[]`. */
   decision_patterns: z
     .array(
       z.object({
@@ -151,7 +95,6 @@ export const RoleProfileSchema = z.object({
       }),
     )
     .default([]),
-  /** @deprecated wave 4 — UI продолжает рендерить как «типичные грабли». */
   common_pitfalls: z
     .array(
       z.object({
@@ -164,12 +107,6 @@ export const RoleProfileSchema = z.object({
 
 export type RoleProfileSummary = z.infer<typeof RoleProfileSchema>;
 
-/**
- * Strict JSON Schema для `responseFormat: 'json_schema' strict`.
- * Совпадает с zod-схемой выше — синхронизировать при изменениях.
- *
- * 9 нормализованных слотов wave 4 + 3 deprecated поля для backward-compat UI.
- */
 export const ROLE_PROFILE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -414,9 +351,7 @@ export function buildRoleProfilePrompt(ctx: RoleContextForPrompt): {
         `- id=${b.id} [${b.signalType}] ${b.text} (${b.sourceMeetingTitle ?? b.sourceDocumentName ?? 'источник неизвестен'}, ${b.createdAt})`,
     )
     .join('\n');
-  const themes = ctx.themes
-    .map((t) => `- ${t.name}: ${t.description}`)
-    .join('\n');
+  const themes = ctx.themes.map((t) => `- ${t.name}: ${t.description}`).join('\n');
   const processes = ctx.processes
     .map((p) => `- ${p.name}${p.description ? `: ${p.description}` : ''}`)
     .join('\n');
@@ -433,9 +368,7 @@ export function buildRoleProfilePrompt(ctx: RoleContextForPrompt): {
     ctx.role.departmentName ? `Отдел: ${ctx.role.departmentName}` : '',
     '',
     'ДЕКЛАРАЦИЯ (должностная инструкция):',
-    ctx.jobDescriptionMd
-      ? ctx.jobDescriptionMd
-      : '— должностная инструкция не загружена',
+    ctx.jobDescriptionMd ? ctx.jobDescriptionMd : '— должностная инструкция не загружена',
     '',
     'СОТРУДНИКИ НА ДОЛЖНОСТИ:',
     persons || '— нет назначенных сотрудников',

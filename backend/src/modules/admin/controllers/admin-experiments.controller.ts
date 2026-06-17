@@ -25,14 +25,6 @@ import {
 import { AdminExperimentsService } from '../services/admin-experiments.service';
 import { SuperAdminAuditInterceptor } from '../super-admin.audit.interceptor';
 
-/**
- * Z-Admin A/B-эксперименты (Фаза 7 шаг 5).
- *
- *   POST /api/v1/admin/experiments              — стартовать эксперимент.
- *   GET  /api/v1/admin/experiments/:taskType    — статус (counts A/B + recentCalls).
- *   POST /api/v1/admin/experiments/:taskType/finish?winner=A|B — завершить.
- *   DELETE /api/v1/admin/experiments/:taskType  — отменить (без миграции).
- */
 @ApiExcludeController()
 @Controller('api/v1/admin/experiments')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -44,9 +36,7 @@ export class AdminExperimentsController {
   ) {}
 
   @Post()
-  async start(
-    @Body(new ZodValidationPipe(StartExperimentSchema)) dto: StartExperimentDto,
-  ) {
+  async start(@Body(new ZodValidationPipe(StartExperimentSchema)) dto: StartExperimentDto) {
     try {
       return await this.svc.startExperiment({
         taskType: dto.taskType,

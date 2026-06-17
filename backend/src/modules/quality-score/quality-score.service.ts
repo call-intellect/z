@@ -1,18 +1,3 @@
-/**
- * QualityScoreService (Фаза C §7).
- *
- * Источник: plans/tz/2026-05-21-phase-C-meeting-quality-score.md §7.
- *
- * Методы:
- *   - getForMeeting — отдать MeetingQualityScore. Доступ: host или Org-Admin.
- *   - regenerate   — перезапустить ЕДИНЫЙ воркер `meeting-report-fast`
- *                     (он считает качество встречи). Rate-limit 3/час
- *                     per meeting (Redis counter).
- *   - getOrgSettings — текущие `qualityScoreDisabledForTypes` Org.
- *   - updateOrgSettings — patch + audit-friendly возврат.
- *   - getOrgDashboard — агрегат по Org для дашборда («Качество встреч»).
- */
-
 import {
   ForbiddenException,
   HttpException,
@@ -55,13 +40,6 @@ export class QualityScoreService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Получить quality-score встречи. Доступ:
-   *   - host (`Meeting.ownerId === userId`)
-   *   - Org-Admin (owner / admin Org-membership)
-   * Остальные → 403 (sub-TZ §7.2). Гости не имеют userId → отрезаются
-   * `CookieAuthGuard`.
-   */
   async getForMeeting(meetingId: string, userId: string): Promise<QualityScoreResponse> {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrAdmin(meeting, userId);
@@ -97,9 +75,7 @@ export class QualityScoreService {
       })
       .filter((r) => r.text.length > 0);
 
-    const strengthsRaw = Array.isArray(score.strengths)
-      ? (score.strengths as unknown[])
-      : [];
+    const strengthsRaw = Array.isArray(score.strengths) ? (score.strengths as unknown[]) : [];
     const strengths = strengthsRaw.filter((s): s is string => typeof s === 'string');
 
     const degradedMode = recommendations.some((r) => r.degradedMode === true);
@@ -123,14 +99,10 @@ export class QualityScoreService {
     };
   }
 
-  /**
-   * Перезапустить расчёт quality-score. Rate-limit 3/час per meeting (sub-TZ §7.1).
-   */
   async regenerate(meetingId: string, userId: string): Promise<{ meetingId: string }> {
     const meeting = await this.findMeetingOr404(meetingId);
     await this.ensureHostOrAdmin(meeting, userId);
 
-    // Rate-limit на meetingId (3 в час).
     const key = `qs:regen:${meetingId}`;
     const client = this.redis.client;
     const current = await client.incr(key);
@@ -150,9 +122,6 @@ export class QualityScoreService {
       );
     }
 
-    // Качество встречи теперь считает ЕДИНЫЙ воркер meeting-report-fast.
-    // reason=`regen-<ts>` варьирует jobId, чтобы дедуп removeOnComplete не съел
-    // повторную постановку.
     await this.coreQueue.enqueueMeetingReportFast(meetingId, {
       reason: `regen-${Date.now()}`,
     });
@@ -191,10 +160,6 @@ export class QualityScoreService {
     return { disabledForTypes: updated.qualityScoreDisabledForTypes };
   }
 
-  /**
-   * Org-агрегат для дашборда. sub-TZ §7.1: `GET /org/dashboard/quality-score`.
-   * trend — по дням внутри окна (UTC).
-   */
   async getOrgDashboard(
     tenantId: string,
     userId: string,
@@ -234,10 +199,7 @@ export class QualityScoreService {
       };
     }
 
-    const averageScore = roundN(
-      rows.reduce((a, r) => a + r.overallScore, 0) / rows.length,
-      1,
-    );
+    const averageScore = roundN(rows.reduce((a, r) => a + r.overallScore, 0) / rows.length, 1);
     this.metrics?.setQualityScoreAvg(tenantId, averageScore);
 
     const byTypeMap = new Map<MeetingType, { sum: number; count: number }>();
@@ -249,7 +211,7 @@ export class QualityScoreService {
       cur.count += 1;
       byTypeMap.set(t, cur);
 
-      const day = r.meeting.createdAt.toISOString().slice(0, 10); // YYYY-MM-DD UTC
+      const day = r.meeting.createdAt.toISOString().slice(0, 10);
       const cur2 = trendMap.get(day) ?? { sum: 0, count: 0 };
       cur2.sum += r.overallScore;
       cur2.count += 1;
@@ -274,8 +236,6 @@ export class QualityScoreService {
       trend,
     };
   }
-
-  // ───────────────────────── private ─────────────────────────
 
   private async findMeetingOr404(meetingId: string): Promise<Meeting> {
     const meeting = await this.prisma.meeting.findUnique({

@@ -1,6 +1,5 @@
 import type { JobsOptions } from 'bullmq';
 
-/** Имя очереди синка Bitrix24 (отдельный домен, без `ai.`-префикса). */
 export const BITRIX_SYNC_QUEUE = 'bitrix.sync';
 
 export type BitrixSyncScope = 'all' | 'users' | 'dialogs' | 'crm';

@@ -1,17 +1,3 @@
-/**
- * navigation.ts — единый источник правды по структуре сайдбара Z-Admin.
- *
- * Используется в:
- *   - `AdminShell.tsx` (двухуровневый сайдбар с collapsible-категориями)
- *   - `AdminCommandPalette.tsx` (Cmd+K-палитра, секция «Разделы»)
- *
- * Соответствует ТЗ редизайна (2026-05-25): 8 категорий, ~36 разделов.
- * Часть разделов помечена `isComingSoon: true` — каркас под будущие фазы
- * (Фаза 2+). Существующие URL-ы из старого сайдбара сохранены, чтобы не
- * сломать текущую работу — миграция URL под `/admin/analytics/*` и т.п.
- * пройдёт в следующих фазах.
- */
-
 import {
   Activity,
   AlertTriangle,
@@ -60,22 +46,13 @@ import {
   Wallet,
   Wrench,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-/**
- * Один раздел внутри категории.
- *
- * - `href` — URL. Старые (существующие) разделы оставляем как есть.
- * - `matchPrefix` — для активного состояния (если sub-страница).
- * - `isComingSoon` — раздел ещё не реализован, рендерим в сайдбаре с бейджем.
- *   Cmd+K такие пропускает (нет смысла «переходить в пустоту»).
- */
 export type AdminNavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   matchPrefix?: string;
-  /** Раздел запланирован, но пока не реализован. */
   isComingSoon?: boolean;
 };
 
@@ -87,382 +64,359 @@ export type AdminNavSection = {
 };
 
 export const ADMIN_NAV_SECTIONS: AdminNavSection[] = [
-  // ─────────────────────────────────── 1. Пульс компании
   {
-    key: 'pulse',
-    label: 'Пульс',
+    key: "pulse",
+    label: "Пульс",
     icon: Gauge,
     items: [
-      { href: '/admin', label: 'Дашборд', icon: Gauge },
+      { href: "/admin", label: "Дашборд", icon: Gauge },
       {
-        href: '/admin/health',
-        label: 'Здоровье системы',
+        href: "/admin/health",
+        label: "Здоровье системы",
         icon: Activity,
-        matchPrefix: '/admin/health',
+        matchPrefix: "/admin/health",
       },
       {
-        href: '/admin/incidents',
-        label: 'Инциденты',
+        href: "/admin/incidents",
+        label: "Инциденты",
         icon: Siren,
-        matchPrefix: '/admin/incidents',
+        matchPrefix: "/admin/incidents",
       },
       {
-        href: '/admin/audit',
-        label: 'Журнал super_admin',
+        href: "/admin/audit",
+        label: "Журнал super_admin",
         icon: ClipboardList,
-        matchPrefix: '/admin/audit',
+        matchPrefix: "/admin/audit",
       },
       {
-        href: '/admin/logs',
-        label: 'Технические логи',
+        href: "/admin/logs",
+        label: "Технические логи",
         icon: FileText,
-        matchPrefix: '/admin/logs',
+        matchPrefix: "/admin/logs",
       },
     ],
   },
 
-  // ─────────────────────────────────── 2. Аналитика (read-only)
   {
-    key: 'analytics',
-    label: 'Аналитика',
+    key: "analytics",
+    label: "Аналитика",
     icon: BarChart3,
     items: [
-      // Фаза 2 редизайна: все маршруты переехали под /admin/analytics/*.
-      // Старые `/admin/usage/*` и `/admin/economics` редиректят сюда.
       {
-        href: '/admin/analytics/orgs',
-        label: 'Org и пользователи',
+        href: "/admin/analytics/orgs",
+        label: "Org и пользователи",
         icon: Users,
-        matchPrefix: '/admin/analytics/orgs',
+        matchPrefix: "/admin/analytics/orgs",
       },
       {
-        href: '/admin/analytics/functions',
-        label: 'Функции LLM',
+        href: "/admin/analytics/functions",
+        label: "Функции LLM",
         icon: ListTree,
-        matchPrefix: '/admin/analytics/functions',
+        matchPrefix: "/admin/analytics/functions",
       },
       {
-        href: '/admin/analytics/economics',
-        label: 'Юнит-экономика',
+        href: "/admin/analytics/economics",
+        label: "Юнит-экономика",
         icon: TrendingUp,
-        matchPrefix: '/admin/analytics/economics',
+        matchPrefix: "/admin/analytics/economics",
       },
       {
-        href: '/admin/analytics/meetings',
-        label: 'Встречи',
+        href: "/admin/analytics/meetings",
+        label: "Встречи",
         icon: Calendar,
-        matchPrefix: '/admin/analytics/meetings',
+        matchPrefix: "/admin/analytics/meetings",
       },
       {
-        href: '/admin/analytics/knowledge',
-        label: 'Knowledge-Core',
+        href: "/admin/analytics/knowledge",
+        label: "Knowledge-Core",
         icon: Network,
-        matchPrefix: '/admin/analytics/knowledge',
+        matchPrefix: "/admin/analytics/knowledge",
       },
       {
-        href: '/admin/analytics/concierge',
-        label: 'Concierge и AI-чат',
+        href: "/admin/analytics/concierge",
+        label: "Concierge и AI-чат",
         icon: Telescope,
-        matchPrefix: '/admin/analytics/concierge',
+        matchPrefix: "/admin/analytics/concierge",
       },
       {
-        href: '/admin/org/economics',
-        label: 'Экономика моей Org',
+        href: "/admin/org/economics",
+        label: "Экономика моей Org",
         icon: LineChart,
       },
     ],
   },
 
-  // ─────────────────────────────────── 3. AI и модели
   {
-    key: 'ai',
-    label: 'AI и модели',
+    key: "ai",
+    label: "AI и модели",
     icon: Sparkles,
     items: [
       {
-        href: '/admin/ai/routing',
-        label: 'Роутинг моделей',
+        href: "/admin/ai/routing",
+        label: "Роутинг моделей",
         icon: Sparkles,
-        matchPrefix: '/admin/ai/routing',
+        matchPrefix: "/admin/ai/routing",
       },
       {
-        href: '/admin/llm-routes',
-        label: 'Управление роутами LLM',
+        href: "/admin/llm-routes",
+        label: "Управление роутами LLM",
         icon: Network,
-        matchPrefix: '/admin/llm-routes',
+        matchPrefix: "/admin/llm-routes",
       },
       {
-        href: '/admin/ai/catalog',
-        label: 'Каталог LLM',
+        href: "/admin/ai/catalog",
+        label: "Каталог LLM",
         icon: CircleDollarSign,
-        matchPrefix: '/admin/ai/catalog',
+        matchPrefix: "/admin/ai/catalog",
       },
       {
-        href: '/admin/ai/prompts',
-        label: 'Промпты',
+        href: "/admin/ai/prompts",
+        label: "Промпты",
         icon: MessagesSquare,
-        matchPrefix: '/admin/ai/prompts',
+        matchPrefix: "/admin/ai/prompts",
       },
       {
-        href: '/admin/experiments',
-        label: 'A/B-эксперименты',
+        href: "/admin/experiments",
+        label: "A/B-эксперименты",
         icon: FlaskConical,
-        matchPrefix: '/admin/experiments',
+        matchPrefix: "/admin/experiments",
       },
       {
-        href: '/admin/ai/knowledge-core',
-        label: 'Knowledge-Core настройки',
+        href: "/admin/ai/knowledge-core",
+        label: "Knowledge-Core настройки",
         icon: Brain,
-        matchPrefix: '/admin/ai/knowledge-core',
+        matchPrefix: "/admin/ai/knowledge-core",
       },
       {
-        href: '/admin/ai/embeddings',
-        label: 'Эмбеддинги',
+        href: "/admin/ai/embeddings",
+        label: "Эмбеддинги",
         icon: DatabaseZap,
-        matchPrefix: '/admin/ai/embeddings',
+        matchPrefix: "/admin/ai/embeddings",
       },
       {
-        href: '/admin/skill-trait-concepts',
-        label: 'Смысловые блоки навыка',
+        href: "/admin/skill-trait-concepts",
+        label: "Смысловые блоки навыка",
         icon: Brain,
-        matchPrefix: '/admin/skill-trait-concepts',
+        matchPrefix: "/admin/skill-trait-concepts",
       },
-      // ТЗ 2026-05-26 clones-marketplace-frontend (волна 3B) — admin CRUD
-      // по `CloneAccessGrant`: владелец/админ Org выдаёт и отзывает доступы
-      // сотрудников к ролевым клонам.
       {
-        href: '/admin/clones',
-        label: 'Доступы к клонам',
+        href: "/admin/clones",
+        label: "Доступы к клонам",
         icon: ShieldCheck,
-        matchPrefix: '/admin/clones',
+        matchPrefix: "/admin/clones",
       },
-      // W2.3 KC-Temporal (2026-05-25) — preference-dataset для retraining'а
-      // few-shot'ов специалистов LLM.
       {
-        href: '/admin/ai/preference-dataset',
-        label: 'Preference dataset',
+        href: "/admin/ai/preference-dataset",
+        label: "Preference dataset",
         icon: Inbox,
-        matchPrefix: '/admin/ai/preference-dataset',
+        matchPrefix: "/admin/ai/preference-dataset",
       },
-      // G.2 KC-Temporal (2026-05-25) — мониторинг distribution + матрицы
-      // переходов signalType (дрейф классификатора).
       {
-        href: '/admin/ai/signal-type-monitor',
-        label: 'Мониторинг signalType',
+        href: "/admin/ai/signal-type-monitor",
+        label: "Мониторинг signalType",
         icon: LineChart,
-        matchPrefix: '/admin/ai/signal-type-monitor',
+        matchPrefix: "/admin/ai/signal-type-monitor",
       },
     ],
   },
 
-  // ─────────────────────────────────── 4. Тенанты (Org)
   {
-    key: 'tenants',
-    label: 'Тенанты',
+    key: "tenants",
+    label: "Тенанты",
     icon: Building2,
     items: [
       {
-        href: '/admin/orgs',
-        label: 'Список Org',
+        href: "/admin/orgs",
+        label: "Список Org",
         icon: Building2,
-        matchPrefix: '/admin/orgs',
+        matchPrefix: "/admin/orgs",
       },
       {
-        href: '/admin/orgs/plans',
-        label: 'Тарифы (планы)',
+        href: "/admin/orgs/plans",
+        label: "Тарифы (планы)",
         icon: CreditCard,
-        matchPrefix: '/admin/orgs/plans',
+        matchPrefix: "/admin/orgs/plans",
       },
       {
-        href: '/admin/orgs/entitlements',
-        label: 'Entitlements (overrides)',
+        href: "/admin/orgs/entitlements",
+        label: "Entitlements (overrides)",
         icon: ToggleLeft,
-        matchPrefix: '/admin/orgs/entitlements',
+        matchPrefix: "/admin/orgs/entitlements",
       },
       {
-        href: '/admin/billing-overview',
-        label: 'Биллинг — обзор',
+        href: "/admin/billing-overview",
+        label: "Биллинг — обзор",
         icon: Wallet,
-        matchPrefix: '/admin/billing-overview',
+        matchPrefix: "/admin/billing-overview",
       },
       {
-        href: '/admin/demo',
-        label: 'Демо-кабинеты',
+        href: "/admin/demo",
+        label: "Демо-кабинеты",
         icon: Sparkles,
-        matchPrefix: '/admin/demo',
+        matchPrefix: "/admin/demo",
       },
     ],
   },
 
-  // ─────────────────────────────────── 5. Контент продукта
   {
-    key: 'content',
-    label: 'Контент',
+    key: "content",
+    label: "Контент",
     icon: LayoutGrid,
     items: [
       {
-        href: '/admin/content/meeting-types',
-        label: 'Типы встреч',
+        href: "/admin/content/meeting-types",
+        label: "Типы встреч",
         icon: Calendar,
-        matchPrefix: '/admin/content/meeting-types',
+        matchPrefix: "/admin/content/meeting-types",
       },
       {
-        href: '/admin/content/emails',
-        label: 'Email-шаблоны',
+        href: "/admin/content/emails",
+        label: "Email-шаблоны",
         icon: Mail,
-        matchPrefix: '/admin/content/emails',
+        matchPrefix: "/admin/content/emails",
       },
       {
-        href: '/admin/content/system-messages',
-        label: 'Системные сообщения',
+        href: "/admin/content/system-messages",
+        label: "Системные сообщения",
         icon: Megaphone,
-        matchPrefix: '/admin/content/system-messages',
+        matchPrefix: "/admin/content/system-messages",
       },
       {
-        href: '/admin/content/global-channels',
-        label: 'Глобальные каналы',
+        href: "/admin/content/global-channels",
+        label: "Глобальные каналы",
         icon: FolderTree,
-        matchPrefix: '/admin/content/global-channels',
+        matchPrefix: "/admin/content/global-channels",
       },
       {
-        href: '/admin/content/copy',
-        label: 'Глоссарий и UI-строки',
+        href: "/admin/content/copy",
+        label: "Глоссарий и UI-строки",
         icon: Languages,
-        matchPrefix: '/admin/content/copy',
+        matchPrefix: "/admin/content/copy",
       },
     ],
   },
 
-  // ─────────────────────────────────── 6. Каналы и интеграции
   {
-    key: 'integrations',
-    label: 'Каналы и интеграции',
+    key: "integrations",
+    label: "Каналы и интеграции",
     icon: Plug,
     items: [
       {
-        href: '/admin/integrations/bots',
-        label: 'Conversational боты',
+        href: "/admin/integrations/bots",
+        label: "Conversational боты",
         icon: MessagesSquare,
-        matchPrefix: '/admin/integrations/bots',
+        matchPrefix: "/admin/integrations/bots",
       },
       {
-        href: '/admin/system/telegram-bot',
-        label: 'Telegram-бот',
+        href: "/admin/system/telegram-bot",
+        label: "Telegram-бот",
         icon: Send,
-        matchPrefix: '/admin/system/telegram-bot',
+        matchPrefix: "/admin/system/telegram-bot",
       },
       {
-        href: '/admin/integrations/webhooks',
-        label: 'Webhook subscriptions',
+        href: "/admin/integrations/webhooks",
+        label: "Webhook subscriptions",
         icon: Plug,
-        matchPrefix: '/admin/integrations/webhooks',
+        matchPrefix: "/admin/integrations/webhooks",
       },
       {
-        href: '/admin/integrations/keys',
-        label: 'Integration keys',
+        href: "/admin/integrations/keys",
+        label: "Integration keys",
         icon: KeyRound,
-        matchPrefix: '/admin/integration-keys',
+        matchPrefix: "/admin/integration-keys",
       },
       {
-        href: '/admin/integrations/livekit',
-        label: 'LiveKit',
+        href: "/admin/integrations/livekit",
+        label: "LiveKit",
         icon: Video,
-        matchPrefix: '/admin/integrations/livekit',
+        matchPrefix: "/admin/integrations/livekit",
       },
     ],
   },
 
-  // ─────────────────────────────────── 7. Записи и медиа
   {
-    key: 'media',
-    label: 'Записи и медиа',
+    key: "media",
+    label: "Записи и медиа",
     icon: Video,
     items: [
-      // Фаза 7: все разделы переехали под /admin/media/*. Старые URL
-      // (/admin/meetings, /admin/recordings/expiring) делают 308 redirect.
       {
-        href: '/admin/media/meetings',
-        label: 'Все встречи',
+        href: "/admin/media/meetings",
+        label: "Все встречи",
         icon: Video,
-        matchPrefix: '/admin/media/meetings',
+        matchPrefix: "/admin/media/meetings",
       },
       {
-        href: '/admin/media/expiring',
-        label: 'Истекающие записи',
+        href: "/admin/media/expiring",
+        label: "Истекающие записи",
         icon: PlayCircle,
-        matchPrefix: '/admin/media/expiring',
+        matchPrefix: "/admin/media/expiring",
       },
       {
-        href: '/admin/media/retention',
-        label: 'Сроки хранения',
+        href: "/admin/media/retention",
+        label: "Сроки хранения",
         icon: Clock,
-        matchPrefix: '/admin/media/retention',
+        matchPrefix: "/admin/media/retention",
       },
       {
-        href: '/admin/media/storage',
-        label: 'S3 хранилище',
+        href: "/admin/media/storage",
+        label: "S3 хранилище",
         icon: HardDrive,
-        matchPrefix: '/admin/media/storage',
+        matchPrefix: "/admin/media/storage",
       },
     ],
   },
 
-  // ─────────────────────────────────── 8. Платформа
   {
-    key: 'platform',
-    label: 'Платформа',
+    key: "platform",
+    label: "Платформа",
     icon: Server,
     items: [
       {
-        href: '/admin/platform/crons',
-        label: 'Кроны',
+        href: "/admin/platform/crons",
+        label: "Кроны",
         icon: Repeat,
-        matchPrefix: '/admin/platform/crons',
+        matchPrefix: "/admin/platform/crons",
       },
       {
-        href: '/admin/platform/workers',
-        label: 'Воркеры BullMQ',
+        href: "/admin/platform/workers",
+        label: "Воркеры BullMQ",
         icon: Boxes,
-        matchPrefix: '/admin/platform/workers',
+        matchPrefix: "/admin/platform/workers",
       },
       {
-        href: '/admin/platform/limits',
-        label: 'Лимиты и квоты',
+        href: "/admin/platform/limits",
+        label: "Лимиты и квоты",
         icon: Tag,
-        matchPrefix: '/admin/platform/limits',
+        matchPrefix: "/admin/platform/limits",
       },
       {
-        href: '/admin/platform/flags',
-        label: 'Feature flags',
+        href: "/admin/platform/flags",
+        label: "Feature flags",
         icon: ToggleLeft,
-        matchPrefix: '/admin/platform/flags',
+        matchPrefix: "/admin/platform/flags",
       },
       {
-        href: '/admin/platform/security',
-        label: 'Безопасность',
+        href: "/admin/platform/security",
+        label: "Безопасность",
         icon: Lock,
-        matchPrefix: '/admin/platform/security',
+        matchPrefix: "/admin/platform/security",
       },
       {
-        href: '/admin/feedback',
-        label: 'Обратная связь',
+        href: "/admin/feedback",
+        label: "Обратная связь",
         icon: MessageCircle,
-        matchPrefix: '/admin/feedback',
+        matchPrefix: "/admin/feedback",
       },
       {
-        href: '/admin/platform/maintenance',
-        label: 'Бэкапы и обслуживание',
+        href: "/admin/platform/maintenance",
+        label: "Бэкапы и обслуживание",
         icon: Wrench,
-        matchPrefix: '/admin/platform/maintenance',
+        matchPrefix: "/admin/platform/maintenance",
       },
     ],
   },
 ];
 
-/**
- * Заранее посчитанный плоский список «реальных» (не coming-soon) разделов.
- * Используется в Cmd+K-палитре для быстрого поиска.
- */
 export const ADMIN_NAV_FLAT: Array<AdminNavItem & { sectionLabel: string }> =
   ADMIN_NAV_SECTIONS.flatMap((section) =>
     section.items
@@ -470,19 +424,12 @@ export const ADMIN_NAV_FLAT: Array<AdminNavItem & { sectionLabel: string }> =
       .map((it) => ({ ...it, sectionLabel: section.label })),
   );
 
-/** Полный список (включая coming-soon) — для подсказок в Cmd+K. */
-export const ADMIN_NAV_FLAT_ALL: Array<AdminNavItem & { sectionLabel: string }> =
-  ADMIN_NAV_SECTIONS.flatMap((section) =>
-    section.items.map((it) => ({ ...it, sectionLabel: section.label })),
-  );
-
-/** Определить активную категорию по текущему pathname. */
 export function findActiveSectionKey(pathname: string): string | null {
   for (const section of ADMIN_NAV_SECTIONS) {
     for (const item of section.items) {
       const prefix = item.matchPrefix ?? item.href;
-      if (item.href === '/admin') {
-        if (pathname === '/admin') return section.key;
+      if (item.href === "/admin") {
+        if (pathname === "/admin") return section.key;
         continue;
       }
       if (pathname === item.href || pathname.startsWith(`${prefix}/`)) {
@@ -493,15 +440,11 @@ export function findActiveSectionKey(pathname: string): string | null {
   return null;
 }
 
-/** Проверка активности отдельного пункта. */
 export function isAdminNavItemActive(
   item: AdminNavItem,
   pathname: string,
 ): boolean {
-  if (item.href === '/admin') return pathname === '/admin';
+  if (item.href === "/admin") return pathname === "/admin";
   const prefix = item.matchPrefix ?? item.href;
   return pathname === item.href || pathname.startsWith(`${prefix}/`);
 }
-
-/** Полный список «реальных» (не coming-soon) URL-ов для быстрой проверки. */
-export const ADMIN_NAV_REAL_HREFS: string[] = ADMIN_NAV_FLAT.map((it) => it.href);

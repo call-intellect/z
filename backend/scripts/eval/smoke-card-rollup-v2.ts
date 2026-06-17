@@ -1,11 +1,3 @@
-/**
- * Smoke-тест агента `card-rollup-v2` (kind=client) на DeepSeek-V4-Pro.
- * См. backend/src/modules/knowledge-core/prompts/card-rollup-v2.prompts.ts.
- *
- * Выход — свободный markdown-текст (3-6 абзацев), без структуры → не нужны tools.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-card-rollup-v2.ts
- */
 import {
   client,
   computeCost,
@@ -52,7 +44,7 @@ async function main(): Promise<void> {
     '',
     `Топ-темы по этой карточке: ${f.topThemes.join('; ')}.`,
     '',
-    'IdeaBlock\'и:',
+    "IdeaBlock'и:",
     blocksText,
     '',
     'Дай связный обзор по правилам системного промпта.',

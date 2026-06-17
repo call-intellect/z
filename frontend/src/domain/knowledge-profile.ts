@@ -1,40 +1,20 @@
-/**
- * SBA β-2 — доменная модель «Профиля знаний» (Knowledge Clone).
- *
- * Контракт: `backend/src/modules/knowledge-clone/dto/knowledge-clone.dto.ts`.
- *
- * Слои:
- *   - `KnowledgeProfile*Api` — что приходит с бэка (см. `src/api/knowledge-clone.api.ts`).
- *   - `KnowledgeProfile*Domain` — UI-friendly: Date вместо string + готовый
- *     русский лейбл confidence.
- */
-
 import type {
   KnowledgeProfileApi,
   KnowledgeProfileCategoryApi,
   KnowledgeProfileConfidenceApi,
   KnowledgeProfileHighlightApi,
   KnowledgeProfileSampleStatementApi,
-} from '@/api/knowledge-clone.api';
+} from "@/api/knowledge-clone.api";
 
 export type KnowledgeProfileConfidence = KnowledgeProfileConfidenceApi;
-
-export const KNOWLEDGE_PROFILE_CONFIDENCE_LABEL: Record<
-  KnowledgeProfileConfidence,
-  string
-> = {
-  low: 'Низкая уверенность',
-  medium: 'Средняя уверенность',
-  high: 'Высокая уверенность',
-};
 
 export const KNOWLEDGE_PROFILE_CONFIDENCE_SHORT: Record<
   KnowledgeProfileConfidence,
   string
 > = {
-  low: 'низкая',
-  medium: 'средняя',
-  high: 'высокая',
+  low: "низкая",
+  medium: "средняя",
+  high: "высокая",
 };
 
 export interface KnowledgeProfileSampleStatement {

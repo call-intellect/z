@@ -12,18 +12,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -39,17 +31,6 @@ import {
 } from '../dto/tables.dto';
 import { TableEnrichService } from '../services/table-enrich.service';
 
-/**
- * Smart Tables — Event-to-Cells (Фаза 3): очередь подтверждений + провенанс.
- *
- *   GET  /api/v1/tables/pending-patches?tableId=          — список pending
- *   POST /api/v1/tables/pending-patches/:id/decide        — approve/reject
- *   POST /api/v1/tables/cell-provenance/:id/undo          — откат правки
- *   GET  /api/v1/tables/rows/:rowId/provenance            — провенансы строки
- *
- * RBAC: ресурс `table`. read — все member'ы Org; decide/undo требуют write.
- * Multi-tenancy: `TenantGuard` обязателен.
- */
 @ApiTags('tables')
 @ApiBearerAuth()
 @Controller('api/v1/tables')
@@ -144,8 +125,6 @@ export class PendingPatchesController {
       })),
     };
   }
-
-  // ─────────────────────────── helpers ────────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

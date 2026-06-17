@@ -6,10 +6,6 @@ import {
   isDecisionStalled,
 } from './decision-implementation.scoring';
 
-/**
- * TZ-1 Фаза 3.B (daily-value-engine) — unit-тесты чистой логики контролёра
- * внедрения решений. Без БД/времени/сети.
- */
 describe('decision-implementation.scoring', () => {
   describe('isDecisionStalled', () => {
     it('0 задач + нет outcomes + старше N дней → stalled', () => {
@@ -113,26 +109,30 @@ describe('decision-implementation.scoring', () => {
 
   describe('computeDecisionThroughput', () => {
     it('% доведённых = done/total × 100', () => {
-      expect(computeDecisionThroughput({ total: 10, doneWithOutcomes: 4 })).toEqual(
-        { total: 10, doneWithOutcomes: 4, throughputPercent: 40 },
-      );
+      expect(computeDecisionThroughput({ total: 10, doneWithOutcomes: 4 })).toEqual({
+        total: 10,
+        doneWithOutcomes: 4,
+        throughputPercent: 40,
+      });
     });
     it('total=0 → 0% (без деления на ноль)', () => {
-      expect(computeDecisionThroughput({ total: 0, doneWithOutcomes: 0 })).toEqual(
-        { total: 0, doneWithOutcomes: 0, throughputPercent: 0 },
-      );
+      expect(computeDecisionThroughput({ total: 0, doneWithOutcomes: 0 })).toEqual({
+        total: 0,
+        doneWithOutcomes: 0,
+        throughputPercent: 0,
+      });
     });
     it('done не может превысить total (clamp)', () => {
-      expect(
-        computeDecisionThroughput({ total: 3, doneWithOutcomes: 5 }),
-      ).toEqual({ total: 3, doneWithOutcomes: 3, throughputPercent: 100 });
+      expect(computeDecisionThroughput({ total: 3, doneWithOutcomes: 5 })).toEqual({
+        total: 3,
+        doneWithOutcomes: 3,
+        throughputPercent: 100,
+      });
     });
     it('округление до 1 знака', () => {
-      // 1/3 = 33.33% → 33.3
-      expect(
-        computeDecisionThroughput({ total: 3, doneWithOutcomes: 1 })
-          .throughputPercent,
-      ).toBe(33.3);
+      expect(computeDecisionThroughput({ total: 3, doneWithOutcomes: 1 }).throughputPercent).toBe(
+        33.3,
+      );
     });
     it('мусорные значения → 0', () => {
       expect(

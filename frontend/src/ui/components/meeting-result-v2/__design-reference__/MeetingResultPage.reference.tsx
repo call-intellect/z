@@ -1,13 +1,7 @@
-'use client';
+"use client";
 
-/**
- * Design reference. NOT production code, NOT wired to API.
- * Calibration target for the AI Meeting Workspace visual language.
- * See: plans/analysis/2026-05-09-ai-meeting-workspace-design.md
- */
-
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   ArrowUpRight,
   Check,
@@ -29,154 +23,298 @@ import {
   StickyNote,
   Volume2,
   X,
-} from 'lucide-react';
+} from "lucide-react";
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Design tokens (see design-document)
-// ────────────────────────────────────────────────────────────────────────────────
 const T = {
-  bgBase: '#0A0E14',
-  bgElevated: '#11161E',
-  bgCard: '#161D26',
-  bgOverlay: '#1B232E',
-  borderSubtle: 'rgba(255,255,255,0.06)',
-  border: 'rgba(255,255,255,0.10)',
-  borderStrong: 'rgba(255,255,255,0.18)',
-  textPrimary: '#E8EAED',
-  textSecondary: '#A0A6B0',
-  textTertiary: '#6B7280',
-  accent: '#5EEAD4',
-  accentHover: '#7CF2DD',
-  accentMuted: 'rgba(94,234,212,0.12)',
-  accentMutedStrong: 'rgba(94,234,212,0.20)',
-  accentBorder: 'rgba(94,234,212,0.28)',
-  accentGlow: '0 0 32px rgba(94,234,212,0.35)',
-  success: '#4ADE80',
-  warning: '#FBBF24',
-  danger: '#F87171',
+  bgBase: "#0A0E14",
+  bgElevated: "#11161E",
+  bgCard: "#161D26",
+  bgOverlay: "#1B232E",
+  borderSubtle: "rgba(255,255,255,0.06)",
+  border: "rgba(255,255,255,0.10)",
+  borderStrong: "rgba(255,255,255,0.18)",
+  textPrimary: "#E8EAED",
+  textSecondary: "#A0A6B0",
+  textTertiary: "#6B7280",
+  accent: "#5EEAD4",
+  accentHover: "#7CF2DD",
+  accentMuted: "rgba(94,234,212,0.12)",
+  accentMutedStrong: "rgba(94,234,212,0.20)",
+  accentBorder: "rgba(94,234,212,0.28)",
+  accentGlow: "0 0 32px rgba(94,234,212,0.35)",
+  success: "#4ADE80",
+  warning: "#FBBF24",
+  danger: "#F87171",
   fontSans:
     '"Geist", "Geist Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
   fontMono:
     '"Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace',
 };
 
-const SPRING = { type: 'spring', stiffness: 300, damping: 30 } as const;
-const SPRING_BOUNCY = { type: 'spring', stiffness: 400, damping: 22 } as const;
+const SPRING = { type: "spring", stiffness: 300, damping: 30 } as const;
+const SPRING_BOUNCY = { type: "spring", stiffness: 400, damping: 22 } as const;
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Mock domain data — реалистичный 2-часовой sales-звонок с Acme Corp
-// ────────────────────────────────────────────────────────────────────────────────
 const MEETING = {
-  id: 'mtg_01HXY7K9ZQ4M',
-  title: 'Демо для Acme Corp · стратегический звонок',
-  type: 'Sales',
-  date: '8 мая 2026 · 14:00',
-  durationMs: 7_338_000, // 2:02:18
+  id: "mtg_01HXY7K9ZQ4M",
+  title: "Демо для Acme Corp · стратегический звонок",
+  type: "Sales",
+  date: "8 мая 2026 · 14:00",
+  durationMs: 7_338_000,
   recapVersion: 2,
 };
 
 const PARTICIPANTS = [
-  { id: 'u1', name: 'Сергей Мазуренко', role: 'Z · Founder', initials: 'СМ', speakingMs: 2_840_000, isHost: true },
-  { id: 'u2', name: 'Иван Колесников', role: 'Acme · CTO', initials: 'ИК', speakingMs: 2_310_000, isHost: false },
-  { id: 'u3', name: 'Анна Лесникова', role: 'Acme · Head of RevOps', initials: 'АЛ', speakingMs: 1_580_000, isHost: false },
-  { id: 'u4', name: 'Виктор Громов', role: 'Acme · Data Lead', initials: 'ВГ', speakingMs: 608_000, isHost: false },
+  {
+    id: "u1",
+    name: "Сергей Мазуренко",
+    role: "Z · Founder",
+    initials: "СМ",
+    speakingMs: 2_840_000,
+    isHost: true,
+  },
+  {
+    id: "u2",
+    name: "Иван Колесников",
+    role: "Acme · CTO",
+    initials: "ИК",
+    speakingMs: 2_310_000,
+    isHost: false,
+  },
+  {
+    id: "u3",
+    name: "Анна Лесникова",
+    role: "Acme · Head of RevOps",
+    initials: "АЛ",
+    speakingMs: 1_580_000,
+    isHost: false,
+  },
+  {
+    id: "u4",
+    name: "Виктор Громов",
+    role: "Acme · Data Lead",
+    initials: "ВГ",
+    speakingMs: 608_000,
+    isHost: false,
+  },
 ];
 
 const CHAPTERS = [
-  { id: 'c1', startMs: 0, endMs: 720_000, title: 'Знакомство и разогрев', summary: 'Обмен контекстом — кто что делает, кто решает.' },
-  { id: 'c2', startMs: 720_000, endMs: 2_580_000, title: 'Демо платформы', summary: 'Прошли по live-сценарию: запись, AI-отчёт, шеринг по ссылке.' },
-  { id: 'c3', startMs: 2_580_000, endMs: 4_920_000, title: 'Возражения по интеграции', summary: 'Сомнения по совместимости с HubSpot и Clay; вопрос про SOC2.' },
-  { id: 'c4', startMs: 4_920_000, endMs: 6_360_000, title: 'Бюджет и сроки', summary: 'Acme озвучили диапазон 350–500к/мес, готовы к 90-дневному пилоту.' },
-  { id: 'c5', startMs: 6_360_000, endMs: 7_338_000, title: 'Next steps', summary: 'Договорились о trial-доступе и следующей встрече через неделю.' },
+  {
+    id: "c1",
+    startMs: 0,
+    endMs: 720_000,
+    title: "Знакомство и разогрев",
+    summary: "Обмен контекстом — кто что делает, кто решает.",
+  },
+  {
+    id: "c2",
+    startMs: 720_000,
+    endMs: 2_580_000,
+    title: "Демо платформы",
+    summary: "Прошли по live-сценарию: запись, AI-отчёт, шеринг по ссылке.",
+  },
+  {
+    id: "c3",
+    startMs: 2_580_000,
+    endMs: 4_920_000,
+    title: "Возражения по интеграции",
+    summary: "Сомнения по совместимости с HubSpot и Clay; вопрос про SOC2.",
+  },
+  {
+    id: "c4",
+    startMs: 4_920_000,
+    endMs: 6_360_000,
+    title: "Бюджет и сроки",
+    summary:
+      "Acme озвучили диапазон 350–500к/мес, готовы к 90-дневному пилоту.",
+  },
+  {
+    id: "c5",
+    startMs: 6_360_000,
+    endMs: 7_338_000,
+    title: "Next steps",
+    summary: "Договорились о trial-доступе и следующей встрече через неделю.",
+  },
 ];
 
 const HIGHLIGHTS = [
-  { id: 'h1', startMs: 4_982_000, label: 'Бюджет 500к' },
-  { id: 'h2', startMs: 752_000, label: 'HubSpot integration' },
-  { id: 'h3', startMs: 6_490_000, label: 'Trial доступ' },
-  { id: 'h4', startMs: 3_120_000, label: 'SOC2 требование' },
+  { id: "h1", startMs: 4_982_000, label: "Бюджет 500к" },
+  { id: "h2", startMs: 752_000, label: "HubSpot integration" },
+  { id: "h3", startMs: 6_490_000, label: "Trial доступ" },
+  { id: "h4", startMs: 3_120_000, label: "SOC2 требование" },
 ];
 
 const TRANSCRIPT = [
-  { id: 'tr1', startMs: 740_000, speakerId: 'u1', text: 'Хорошо, давайте я покажу как у нас устроен AI-отчёт под sales-звонки.' },
-  { id: 'tr2', startMs: 752_000, speakerId: 'u2', text: 'Главный вопрос — как это соединяется с нашим HubSpot. У нас там вся история клиентов.' },
-  { id: 'tr3', startMs: 768_000, speakerId: 'u1', text: 'У нас есть outgoing webhooks и REST API. Можно через Zapier на старте, потом — нативный коннектор.' },
-  { id: 'tr4', startMs: 784_000, speakerId: 'u3', text: 'Покажете прямо сейчас, как это будет выглядеть на нашем pipeline?' },
-  { id: 'tr5', startMs: 3_118_000, speakerId: 'u2', text: 'У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.' },
-  { id: 'tr6', startMs: 4_982_000, speakerId: 'u2', text: 'Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.' },
-  { id: 'tr7', startMs: 5_005_000, speakerId: 'u1', text: 'Спасибо за прямоту. Давайте определим метрики ROI и состав пилотного пакета.' },
-  { id: 'tr8', startMs: 6_482_000, speakerId: 'u3', text: 'Заводите trial-доступ на 14 дней — соберём команду и пройдём сценарий.' },
+  {
+    id: "tr1",
+    startMs: 740_000,
+    speakerId: "u1",
+    text: "Хорошо, давайте я покажу как у нас устроен AI-отчёт под sales-звонки.",
+  },
+  {
+    id: "tr2",
+    startMs: 752_000,
+    speakerId: "u2",
+    text: "Главный вопрос — как это соединяется с нашим HubSpot. У нас там вся история клиентов.",
+  },
+  {
+    id: "tr3",
+    startMs: 768_000,
+    speakerId: "u1",
+    text: "У нас есть outgoing webhooks и REST API. Можно через Zapier на старте, потом — нативный коннектор.",
+  },
+  {
+    id: "tr4",
+    startMs: 784_000,
+    speakerId: "u3",
+    text: "Покажете прямо сейчас, как это будет выглядеть на нашем pipeline?",
+  },
+  {
+    id: "tr5",
+    startMs: 3_118_000,
+    speakerId: "u2",
+    text: "У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.",
+  },
+  {
+    id: "tr6",
+    startMs: 4_982_000,
+    speakerId: "u2",
+    text: "Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.",
+  },
+  {
+    id: "tr7",
+    startMs: 5_005_000,
+    speakerId: "u1",
+    text: "Спасибо за прямоту. Давайте определим метрики ROI и состав пилотного пакета.",
+  },
+  {
+    id: "tr8",
+    startMs: 6_482_000,
+    speakerId: "u3",
+    text: "Заводите trial-доступ на 14 дней — соберём команду и пройдём сценарий.",
+  },
 ];
 
 const TASKS = [
-  { id: 't1', title: 'Прислать пример webhook-payload для HubSpot-интеграции', assignee: 'Сергей', dueDate: '10 мая', confidence: 0.95, sourceQuote: 'У нас есть outgoing webhooks и REST API. Можно через Zapier на старте, потом — нативный коннектор.', sourceMs: 768_000, status: 'open' as const },
-  { id: 't2', title: 'Подготовить пилотный SOW с 90-дневным окном измерения ROI', assignee: 'Сергей', dueDate: '13 мая', confidence: 0.88, sourceQuote: 'Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.', sourceMs: 4_982_000, status: 'open' as const },
-  { id: 't3', title: 'Свести требования по compliance и подготовить SOC2-statement', assignee: 'Анна (Acme)', dueDate: '15 мая', confidence: 0.72, sourceQuote: 'У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.', sourceMs: 3_118_000, status: 'in_progress' as const },
-  { id: 't4', title: 'Trial-доступ для команды Acme на 14 дней', assignee: 'Сергей', dueDate: '9 мая', confidence: 0.99, sourceQuote: 'Заводите trial-доступ на 14 дней — соберём команду и пройдём сценарий.', sourceMs: 6_482_000, status: 'done' as const },
+  {
+    id: "t1",
+    title: "Прислать пример webhook-payload для HubSpot-интеграции",
+    assignee: "Сергей",
+    dueDate: "10 мая",
+    confidence: 0.95,
+    sourceQuote:
+      "У нас есть outgoing webhooks и REST API. Можно через Zapier на старте, потом — нативный коннектор.",
+    sourceMs: 768_000,
+    status: "open" as const,
+  },
+  {
+    id: "t2",
+    title: "Подготовить пилотный SOW с 90-дневным окном измерения ROI",
+    assignee: "Сергей",
+    dueDate: "13 мая",
+    confidence: 0.88,
+    sourceQuote:
+      "Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.",
+    sourceMs: 4_982_000,
+    status: "open" as const,
+  },
+  {
+    id: "t3",
+    title: "Свести требования по compliance и подготовить SOC2-statement",
+    assignee: "Анна (Acme)",
+    dueDate: "15 мая",
+    confidence: 0.72,
+    sourceQuote:
+      "У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.",
+    sourceMs: 3_118_000,
+    status: "in_progress" as const,
+  },
+  {
+    id: "t4",
+    title: "Trial-доступ для команды Acme на 14 дней",
+    assignee: "Сергей",
+    dueDate: "9 мая",
+    confidence: 0.99,
+    sourceQuote:
+      "Заводите trial-доступ на 14 дней — соберём команду и пройдём сценарий.",
+    sourceMs: 6_482_000,
+    status: "done" as const,
+  },
 ];
 
 type AiCitationData = { startMs: number; speakerId: string; text: string };
 type AiMessage =
-  | { id: string; role: 'user'; content: string }
-  | { id: string; role: 'assistant'; content: string; citations: AiCitationData[] };
+  | { id: string; role: "user"; content: string }
+  | {
+      id: string;
+      role: "assistant";
+      content: string;
+      citations: AiCitationData[];
+    };
 
 const INITIAL_CHAT: AiMessage[] = [
-  { id: 'm1', role: 'user', content: 'Какие были главные возражения клиента?' },
+  { id: "m1", role: "user", content: "Какие были главные возражения клиента?" },
   {
-    id: 'm2',
-    role: 'assistant',
+    id: "m2",
+    role: "assistant",
     content:
-      'У Acme два основных возражения. Первое — техническое: совместимость с их HubSpot и Clay-стеком; они опасаются, что AI-отчёт не попадёт в sales pipeline автоматически. Второе — compliance: SOC2 Type 2 и DPA как блокирующие условия до подписания.',
+      "У Acme два основных возражения. Первое — техническое: совместимость с их HubSpot и Clay-стеком; они опасаются, что AI-отчёт не попадёт в sales pipeline автоматически. Второе — compliance: SOC2 Type 2 и DPA как блокирующие условия до подписания.",
     citations: [
-      { startMs: 752_000, speakerId: 'u2', text: 'Главный вопрос — как это соединяется с нашим HubSpot. У нас там вся история клиентов.' },
-      { startMs: 3_118_000, speakerId: 'u2', text: 'У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.' },
+      {
+        startMs: 752_000,
+        speakerId: "u2",
+        text: "Главный вопрос — как это соединяется с нашим HubSpot. У нас там вся история клиентов.",
+      },
+      {
+        startMs: 3_118_000,
+        speakerId: "u2",
+        text: "У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.",
+      },
     ],
   },
-  { id: 'm3', role: 'user', content: 'Что Acme сказали по бюджету?' },
+  { id: "m3", role: "user", content: "Что Acme сказали по бюджету?" },
   {
-    id: 'm4',
-    role: 'assistant',
+    id: "m4",
+    role: "assistant",
     content:
-      'Озвучили потолок 500 000 в месяц при условии измеримого ROI в течение трёх месяцев. Готовы запустить 90-дневный пилот.',
+      "Озвучили потолок 500 000 в месяц при условии измеримого ROI в течение трёх месяцев. Готовы запустить 90-дневный пилот.",
     citations: [
-      { startMs: 4_982_000, speakerId: 'u2', text: 'Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.' },
+      {
+        startMs: 4_982_000,
+        speakerId: "u2",
+        text: "Мы готовы рассмотреть бюджет до 500 тысяч в месяц, если увидим ROI за 3 месяца.",
+      },
     ],
   },
 ];
 
 const SUGGESTED_PROMPTS = [
-  'Что мы решили по срокам?',
-  'Какие риски обсудили?',
-  'Сделай follow-up письмо',
-  'Кто принимает решение со стороны Acme?',
+  "Что мы решили по срокам?",
+  "Какие риски обсудили?",
+  "Сделай follow-up письмо",
+  "Кто принимает решение со стороны Acme?",
 ];
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ────────────────────────────────────────────────────────────────────────────────
 const fmtTime = (ms: number) => {
   const s = Math.floor(ms / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return h > 0
-    ? `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`
-    : `${m}:${sec.toString().padStart(2, '0')}`;
+    ? `${h}:${m.toString().padStart(2, "0")}:${sec.toString().padStart(2, "0")}`
+    : `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
 const fmtPct = (n: number) => `${Math.round(n * 100)}%`;
 
 const speakerById = (id: string) => PARTICIPANTS.find((p) => p.id === id);
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Main component
-// ────────────────────────────────────────────────────────────────────────────────
 export function MeetingResultPage() {
   const [currentMs, setCurrentMs] = useState(2_982_000);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabKey>('overview');
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [chatOpen, setChatOpen] = useState(true);
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState("");
   const [chatHistory, setChatHistory] = useState<AiMessage[]>(INITIAL_CHAT);
   const [thinking, setThinking] = useState(false);
   const [pulseAt, setPulseAt] = useState<number | null>(null);
@@ -184,7 +322,9 @@ export function MeetingResultPage() {
   const [title, setTitle] = useState(MEETING.title);
 
   const currentChapter = useMemo(
-    () => CHAPTERS.find((c) => currentMs >= c.startMs && currentMs < c.endMs) ?? CHAPTERS[0],
+    () =>
+      CHAPTERS.find((c) => currentMs >= c.startMs && currentMs < c.endMs) ??
+      CHAPTERS[0],
     [currentMs],
   );
 
@@ -196,20 +336,28 @@ export function MeetingResultPage() {
 
   const sendChat = () => {
     if (!chatInput.trim()) return;
-    const userMsg: AiMessage = { id: `m${Date.now()}`, role: 'user', content: chatInput };
+    const userMsg: AiMessage = {
+      id: `m${Date.now()}`,
+      role: "user",
+      content: chatInput,
+    };
     setChatHistory((h) => [...h, userMsg]);
-    setChatInput('');
+    setChatInput("");
     setThinking(true);
     setTimeout(() => {
       setChatHistory((h) => [
         ...h,
         {
           id: `m${Date.now() + 1}`,
-          role: 'assistant',
+          role: "assistant",
           content:
-            'Демо-ответ для эталона. В production-коде здесь придёт ответ от LlmRouter с цитатами из транскрипта.',
+            "Демо-ответ для эталона. В production-коде здесь придёт ответ от LlmRouter с цитатами из транскрипта.",
           citations: [
-            { startMs: 5_005_000, speakerId: 'u1', text: 'Спасибо за прямоту. Давайте определим метрики ROI и состав пилотного пакета.' },
+            {
+              startMs: 5_005_000,
+              speakerId: "u1",
+              text: "Спасибо за прямоту. Давайте определим метрики ROI и состав пилотного пакета.",
+            },
           ],
         },
       ]);
@@ -223,9 +371,9 @@ export function MeetingResultPage() {
         background: T.bgBase,
         color: T.textPrimary,
         fontFamily: T.fontSans,
-        minHeight: '100vh',
-        WebkitFontSmoothing: 'antialiased',
-        MozOsxFontSmoothing: 'grayscale',
+        minHeight: "100vh",
+        WebkitFontSmoothing: "antialiased",
+        MozOsxFontSmoothing: "grayscale",
       }}
     >
       <BackgroundDecor />
@@ -240,13 +388,16 @@ export function MeetingResultPage() {
 
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: chatOpen ? '280px minmax(0, 1fr) 380px' : '280px minmax(0, 1fr) 56px',
+          display: "grid",
+          gridTemplateColumns: chatOpen
+            ? "280px minmax(0, 1fr) 380px"
+            : "280px minmax(0, 1fr) 56px",
           gap: 24,
           maxWidth: 1440,
-          margin: '0 auto',
-          padding: '24px 32px 64px',
-          transition: 'grid-template-columns 280ms cubic-bezier(0.16, 1, 0.3, 1)',
+          margin: "0 auto",
+          padding: "24px 32px 64px",
+          transition:
+            "grid-template-columns 280ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <LeftColumn
@@ -281,28 +432,22 @@ export function MeetingResultPage() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Background decor — едва заметный radial gradient для глубины
-// ────────────────────────────────────────────────────────────────────────────────
 function BackgroundDecor() {
   return (
     <div
       aria-hidden
       style={{
-        position: 'fixed',
+        position: "fixed",
         inset: 0,
-        pointerEvents: 'none',
+        pointerEvents: "none",
         background:
-          'radial-gradient(ellipse 80% 60% at 50% -10%, rgba(94,234,212,0.06), transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(94,234,212,0.03), transparent 60%)',
+          "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(94,234,212,0.06), transparent 60%), radial-gradient(ellipse 50% 40% at 100% 100%, rgba(94,234,212,0.03), transparent 60%)",
         zIndex: 0,
       }}
     />
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Header
-// ────────────────────────────────────────────────────────────────────────────────
 function Header({
   title,
   onTitle,
@@ -321,25 +466,33 @@ function Header({
   return (
     <header
       style={{
-        position: 'sticky',
+        position: "sticky",
         top: 0,
         zIndex: 50,
         height: 72,
-        display: 'flex',
-        alignItems: 'center',
+        display: "flex",
+        alignItems: "center",
         gap: 24,
-        padding: '0 32px',
-        background: 'rgba(17,22,30,0.72)',
-        backdropFilter: 'blur(12px) saturate(1.4)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.4)',
+        padding: "0 32px",
+        background: "rgba(17,22,30,0.72)",
+        backdropFilter: "blur(12px) saturate(1.4)",
+        WebkitBackdropFilter: "blur(12px) saturate(1.4)",
         borderBottom: `1px solid ${T.borderSubtle}`,
       }}
     >
       <Logo />
 
-      <Breadcrumbs items={['Встречи', 'Sales · Acme Corp']} />
+      <Breadcrumbs items={["Встречи", "Sales · Acme Corp"]} />
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minWidth: 0,
+        }}
+      >
         {editing ? (
           <input
             autoFocus
@@ -347,7 +500,7 @@ function Header({
             onChange={(e) => onTitle(e.target.value)}
             onBlur={() => setEditing(false)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === 'Escape') setEditing(false);
+              if (e.key === "Enter" || e.key === "Escape") setEditing(false);
             }}
             style={{
               flex: 1,
@@ -355,13 +508,13 @@ function Header({
               fontFamily: T.fontSans,
               fontSize: 20,
               fontWeight: 600,
-              letterSpacing: '-0.01em',
+              letterSpacing: "-0.01em",
               color: T.textPrimary,
               background: T.bgOverlay,
               border: `1px solid ${T.accentBorder}`,
               borderRadius: 8,
-              padding: '6px 12px',
-              outline: 'none',
+              padding: "6px 12px",
+              outline: "none",
             }}
           />
         ) : (
@@ -370,19 +523,19 @@ function Header({
             style={{
               flex: 1,
               minWidth: 0,
-              textAlign: 'left',
+              textAlign: "left",
               fontFamily: T.fontSans,
               fontSize: 20,
               fontWeight: 600,
-              letterSpacing: '-0.01em',
+              letterSpacing: "-0.01em",
               color: T.textPrimary,
-              background: 'transparent',
-              border: 'none',
-              padding: '6px 0',
-              cursor: 'text',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              background: "transparent",
+              border: "none",
+              padding: "6px 0",
+              cursor: "text",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
             {title}
@@ -390,19 +543,36 @@ function Header({
         )}
 
         <Badge tone="mint">Sales</Badge>
-        <span style={{ fontFamily: T.fontMono, fontSize: 13, color: T.textSecondary }}>
+        <span
+          style={{
+            fontFamily: T.fontMono,
+            fontSize: 13,
+            color: T.textSecondary,
+          }}
+        >
           {fmtTime(MEETING.durationMs)}
         </span>
         <span style={{ fontSize: 13, color: T.textTertiary }}>·</span>
-        <span style={{ fontSize: 13, color: T.textSecondary }}>{MEETING.date}</span>
+        <span style={{ fontSize: 13, color: T.textSecondary }}>
+          {MEETING.date}
+        </span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ButtonOutline icon={<Share2 size={14} strokeWidth={1.75} />}>Поделиться</ButtonOutline>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <ButtonOutline icon={<Share2 size={14} strokeWidth={1.75} />}>
+          Поделиться
+        </ButtonOutline>
         <ButtonGhost square aria-label="Меню">
           <MoreHorizontal size={18} strokeWidth={1.75} />
         </ButtonGhost>
-        <div style={{ width: 1, height: 24, background: T.borderSubtle, margin: '0 4px' }} />
+        <div
+          style={{
+            width: 1,
+            height: 24,
+            background: T.borderSubtle,
+            margin: "0 4px",
+          }}
+        />
         <ButtonGhost square onClick={onChatToggle} aria-label="AI-помощник">
           <Sparkles
             size={18}
@@ -418,7 +588,9 @@ function Header({
 
 function Logo() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginRight: 8 }}>
+    <div
+      style={{ display: "flex", alignItems: "center", gap: 8, marginRight: 8 }}
+    >
       <div
         style={{
           width: 28,
@@ -426,12 +598,12 @@ function Logo() {
           borderRadius: 8,
           background: T.accent,
           color: T.bgBase,
-          display: 'grid',
-          placeItems: 'center',
+          display: "grid",
+          placeItems: "center",
           fontFamily: T.fontMono,
           fontSize: 16,
           fontWeight: 700,
-          letterSpacing: '-0.04em',
+          letterSpacing: "-0.04em",
           boxShadow: T.accentGlow,
         }}
       >
@@ -443,9 +615,9 @@ function Logo() {
 
 function Breadcrumbs({ items }: { items: string[] }) {
   return (
-    <nav style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+    <nav style={{ display: "flex", alignItems: "center", gap: 6 }}>
       {items.map((item, i) => (
-        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span
             style={{
               fontSize: 13,
@@ -455,7 +627,11 @@ function Breadcrumbs({ items }: { items: string[] }) {
             {item}
           </span>
           {i < items.length - 1 && (
-            <ChevronRight size={12} strokeWidth={1.75} style={{ color: T.textTertiary }} />
+            <ChevronRight
+              size={12}
+              strokeWidth={1.75}
+              style={{ color: T.textTertiary }}
+            />
           )}
         </span>
       ))}
@@ -463,33 +639,33 @@ function Breadcrumbs({ items }: { items: string[] }) {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Left column
-// ────────────────────────────────────────────────────────────────────────────────
 function LeftColumn({
   currentChapter,
   activeTab,
   onSeek,
 }: {
-  currentChapter: typeof CHAPTERS[number];
+  currentChapter: (typeof CHAPTERS)[number];
   activeTab: TabKey;
   onSeek: (ms: number) => void;
 }) {
   return (
     <aside
       style={{
-        position: 'sticky',
+        position: "sticky",
         top: 96,
-        alignSelf: 'start',
-        height: 'calc(100vh - 120px)',
-        overflowY: 'auto',
-        display: 'flex',
-        flexDirection: 'column',
+        alignSelf: "start",
+        height: "calc(100vh - 120px)",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
         gap: 32,
         paddingRight: 8,
       }}
     >
-      <SmartChaptersTimeline currentChapterId={currentChapter.id} onJump={onSeek} />
+      <SmartChaptersTimeline
+        currentChapterId={currentChapter.id}
+        onJump={onSeek}
+      />
       <TocPanel activeTab={activeTab} />
       <ParticipantsList />
     </aside>
@@ -505,10 +681,10 @@ function SmartChaptersTimeline({
 }) {
   return (
     <Section title="Главы">
-      <div style={{ position: 'relative', paddingLeft: 16 }}>
+      <div style={{ position: "relative", paddingLeft: 16 }}>
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             left: 4,
             top: 6,
             bottom: 6,
@@ -523,44 +699,48 @@ function SmartChaptersTimeline({
               key={c.id}
               onClick={() => onJump(c.startMs)}
               style={{
-                display: 'block',
-                width: '100%',
-                position: 'relative',
-                textAlign: 'left',
-                padding: '8px 0 12px 16px',
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
+                display: "block",
+                width: "100%",
+                position: "relative",
+                textAlign: "left",
+                padding: "8px 0 12px 16px",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
               }}
               className="chapter-item"
             >
               <span
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   left: -1.5,
                   top: 12,
                   width: 7,
                   height: 7,
                   borderRadius: 999,
                   background: isCurrent ? T.accent : T.borderStrong,
-                  boxShadow: isCurrent ? T.accentGlow : 'none',
+                  boxShadow: isCurrent ? T.accentGlow : "none",
                 }}
               />
               {isCurrent && (
                 <motion.span
                   aria-hidden
                   style={{
-                    position: 'absolute',
+                    position: "absolute",
                     left: -7.5,
                     top: 6,
                     width: 19,
                     height: 19,
                     borderRadius: 999,
                     border: `1px solid ${T.accent}`,
-                    pointerEvents: 'none',
+                    pointerEvents: "none",
                   }}
                   animate={{ opacity: [0.6, 0, 0.6], scale: [0.8, 1.2, 0.8] }}
-                  transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+                  transition={{
+                    duration: 2.4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
                 />
               )}
               <div
@@ -569,7 +749,7 @@ function SmartChaptersTimeline({
                   fontWeight: isCurrent ? 500 : 400,
                   color: isCurrent ? T.textPrimary : T.textSecondary,
                   lineHeight: 1.35,
-                  letterSpacing: '-0.005em',
+                  letterSpacing: "-0.005em",
                 }}
               >
                 {c.title}
@@ -594,23 +774,23 @@ function SmartChaptersTimeline({
 
 function TocPanel({ activeTab }: { activeTab: TabKey }) {
   const items: { key: TabKey; label: string }[] = [
-    { key: 'overview', label: 'Обзор' },
-    { key: 'chapters', label: 'Главы' },
-    { key: 'transcript', label: 'Транскрипт' },
-    { key: 'tasks', label: 'Задачи' },
-    { key: 'notes', label: 'Заметки' },
+    { key: "overview", label: "Обзор" },
+    { key: "chapters", label: "Главы" },
+    { key: "transcript", label: "Транскрипт" },
+    { key: "tasks", label: "Задачи" },
+    { key: "notes", label: "Заметки" },
   ];
   return (
     <Section title="Разделы">
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: "flex", flexDirection: "column" }}>
         {items.map((it) => {
           const active = it.key === activeTab;
           return (
             <div
               key={it.key}
               style={{
-                position: 'relative',
-                padding: '8px 0 8px 12px',
+                position: "relative",
+                padding: "8px 0 8px 12px",
                 fontSize: 13,
                 color: active ? T.textPrimary : T.textSecondary,
                 fontWeight: active ? 500 : 400,
@@ -619,7 +799,7 @@ function TocPanel({ activeTab }: { activeTab: TabKey }) {
               {active && (
                 <span
                   style={{
-                    position: 'absolute',
+                    position: "absolute",
                     left: 0,
                     top: 8,
                     bottom: 8,
@@ -642,26 +822,37 @@ function ParticipantsList() {
   const total = PARTICIPANTS.reduce((s, p) => s + p.speakingMs, 0);
   return (
     <Section title="Участники">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {PARTICIPANTS.map((p) => (
-          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div
+            key={p.id}
+            style={{ display: "flex", alignItems: "center", gap: 10 }}
+          >
             <Avatar initials={p.initials} size={28} accent={p.isHost} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
                   fontSize: 13,
                   color: T.textPrimary,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {p.name}
               </div>
-              <div style={{ fontSize: 11, color: T.textTertiary }}>{p.role}</div>
+              <div style={{ fontSize: 11, color: T.textTertiary }}>
+                {p.role}
+              </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontFamily: T.fontMono, fontSize: 11, color: T.textSecondary }}>
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  fontFamily: T.fontMono,
+                  fontSize: 11,
+                  color: T.textSecondary,
+                }}
+              >
                 {fmtPct(p.speakingMs / total)}
               </div>
               <div
@@ -671,12 +862,12 @@ function ParticipantsList() {
                   height: 2,
                   background: T.borderSubtle,
                   borderRadius: 2,
-                  overflow: 'hidden',
+                  overflow: "hidden",
                 }}
               >
                 <div
                   style={{
-                    height: '100%',
+                    height: "100%",
                     width: fmtPct(p.speakingMs / total),
                     background: p.isHost ? T.accent : T.textTertiary,
                   }}
@@ -690,7 +881,13 @@ function ParticipantsList() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div>
       <div
@@ -698,8 +895,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
           fontSize: 11,
           fontWeight: 500,
           color: T.textTertiary,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
           marginBottom: 12,
         }}
       >
@@ -710,10 +907,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Center column
-// ────────────────────────────────────────────────────────────────────────────────
-type TabKey = 'overview' | 'chapters' | 'transcript' | 'tasks' | 'notes';
+type TabKey = "overview" | "chapters" | "transcript" | "tasks" | "notes";
 
 function CenterColumn({
   currentMs,
@@ -733,7 +927,9 @@ function CenterColumn({
   pulseAt: number | null;
 }) {
   return (
-    <main style={{ display: 'flex', flexDirection: 'column', gap: 24, minWidth: 0 }}>
+    <main
+      style={{ display: "flex", flexDirection: "column", gap: 24, minWidth: 0 }}
+    >
       <MeetingVideoPlayer
         currentMs={currentMs}
         isPlaying={isPlaying}
@@ -751,13 +947,13 @@ function CenterColumn({
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
           >
-            {activeTab === 'overview' && <OverviewTab />}
-            {activeTab === 'chapters' && <ChaptersTab onSeek={onSeek} />}
-            {activeTab === 'transcript' && (
+            {activeTab === "overview" && <OverviewTab />}
+            {activeTab === "chapters" && <ChaptersTab onSeek={onSeek} />}
+            {activeTab === "transcript" && (
               <TranscriptTab currentMs={currentMs} onSeek={onSeek} />
             )}
-            {activeTab === 'tasks' && <TasksTab onSeek={onSeek} />}
-            {activeTab === 'notes' && <NotesTab />}
+            {activeTab === "tasks" && <TasksTab onSeek={onSeek} />}
+            {activeTab === "notes" && <NotesTab />}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -765,7 +961,6 @@ function CenterColumn({
   );
 }
 
-// ── Video player (Vidstack-style mock) ──────────────────────────────────────
 function MeetingVideoPlayer({
   currentMs,
   isPlaying,
@@ -784,31 +979,31 @@ function MeetingVideoPlayer({
   return (
     <div
       style={{
-        position: 'relative',
+        position: "relative",
         background: T.bgCard,
         border: `1px solid ${T.borderSubtle}`,
         borderRadius: 24,
-        overflow: 'hidden',
+        overflow: "hidden",
       }}
     >
-      {/* Stage */}
+      {}
       <div
         style={{
-          aspectRatio: '16 / 9',
+          aspectRatio: "16 / 9",
           background:
-            'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(94,234,212,0.04), transparent 70%), linear-gradient(135deg, #0E141C 0%, #0A0E14 100%)',
-          display: 'grid',
-          placeItems: 'center',
-          position: 'relative',
+            "radial-gradient(ellipse 60% 50% at 50% 50%, rgba(94,234,212,0.04), transparent 70%), linear-gradient(135deg, #0E141C 0%, #0A0E14 100%)",
+          display: "grid",
+          placeItems: "center",
+          position: "relative",
         }}
       >
-        {/* Speaker grid mock */}
+        {}
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: 24,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
             gap: 12,
             opacity: 0.6,
           }}
@@ -820,22 +1015,22 @@ function MeetingVideoPlayer({
                 background: T.bgElevated,
                 border: `1px solid ${T.borderSubtle}`,
                 borderRadius: 12,
-                display: 'grid',
-                placeItems: 'center',
-                position: 'relative',
+                display: "grid",
+                placeItems: "center",
+                position: "relative",
               }}
             >
               <Avatar initials={p.initials} size={56} accent={p.isHost} />
               <div
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   bottom: 8,
                   left: 8,
                   fontFamily: T.fontMono,
                   fontSize: 11,
                   color: T.textSecondary,
-                  background: 'rgba(10,14,20,0.7)',
-                  padding: '2px 6px',
+                  background: "rgba(10,14,20,0.7)",
+                  padding: "2px 6px",
                   borderRadius: 4,
                 }}
               >
@@ -844,23 +1039,23 @@ function MeetingVideoPlayer({
             </div>
           ))}
         </div>
-        {/* Big play */}
+        {}
         <button
           onClick={onPlayToggle}
-          aria-label={isPlaying ? 'Пауза' : 'Воспроизведение'}
+          aria-label={isPlaying ? "Пауза" : "Воспроизведение"}
           style={{
-            position: 'relative',
+            position: "relative",
             width: 72,
             height: 72,
             borderRadius: 999,
-            background: 'rgba(10,14,20,0.6)',
+            background: "rgba(10,14,20,0.6)",
             border: `1px solid ${T.accentBorder}`,
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
+            backdropFilter: "blur(8px)",
+            WebkitBackdropFilter: "blur(8px)",
             color: T.accent,
-            display: 'grid',
-            placeItems: 'center',
-            cursor: 'pointer',
+            display: "grid",
+            placeItems: "center",
+            cursor: "pointer",
             boxShadow: T.accentGlow,
           }}
         >
@@ -872,10 +1067,10 @@ function MeetingVideoPlayer({
         </button>
       </div>
 
-      {/* Controls bar */}
+      {}
       <div
         style={{
-          padding: '16px 20px 18px',
+          padding: "16px 20px 18px",
           borderTop: `1px solid ${T.borderSubtle}`,
           background: T.bgElevated,
         }}
@@ -888,18 +1083,30 @@ function MeetingVideoPlayer({
         <div
           style={{
             marginTop: 12,
-            display: 'flex',
-            alignItems: 'center',
+            display: "flex",
+            alignItems: "center",
             gap: 8,
             color: T.textSecondary,
           }}
         >
           <ButtonGhost square onClick={onPlayToggle}>
-            {isPlaying ? <Pause size={16} strokeWidth={1.75} /> : <Play size={16} strokeWidth={1.75} />}
+            {isPlaying ? (
+              <Pause size={16} strokeWidth={1.75} />
+            ) : (
+              <Play size={16} strokeWidth={1.75} />
+            )}
           </ButtonGhost>
-          <span style={{ fontFamily: T.fontMono, fontSize: 12, color: T.textSecondary }}>
-            {fmtTime(currentMs)}{' '}
-            <span style={{ color: T.textTertiary }}>/ {fmtTime(MEETING.durationMs)}</span>
+          <span
+            style={{
+              fontFamily: T.fontMono,
+              fontSize: 12,
+              color: T.textSecondary,
+            }}
+          >
+            {fmtTime(currentMs)}{" "}
+            <span style={{ color: T.textTertiary }}>
+              / {fmtTime(MEETING.durationMs)}
+            </span>
           </span>
           <div style={{ flex: 1 }} />
           <SpeedSelector />
@@ -942,37 +1149,37 @@ function Scrubber({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        position: 'relative',
+        position: "relative",
         height: 18,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
       }}
     >
-      {/* Track */}
+      {}
       <div
         style={{
-          position: 'relative',
+          position: "relative",
           height: hovered ? 4 : 2,
-          width: '100%',
+          width: "100%",
           background: T.borderSubtle,
           borderRadius: 4,
-          transition: 'height 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+          transition: "height 160ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
-        {/* Progress */}
+        {}
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             inset: 0,
             width: `${ratio * 100}%`,
             background: T.accent,
             borderRadius: 4,
-            boxShadow: hovered ? T.accentGlow : 'none',
-            transition: 'box-shadow 160ms',
+            boxShadow: hovered ? T.accentGlow : "none",
+            transition: "box-shadow 160ms",
           }}
         />
-        {/* Chapter pills */}
+        {}
         {CHAPTERS.slice(1).map((c) => {
           const left = (c.startMs / MEETING.durationMs) * 100;
           return (
@@ -980,19 +1187,19 @@ function Scrubber({
               key={c.id}
               title={c.title}
               style={{
-                position: 'absolute',
+                position: "absolute",
                 left: `${left}%`,
                 top: -2,
                 height: hovered ? 8 : 6,
                 width: 2,
                 background: T.accentMutedStrong,
                 borderRadius: 2,
-                transition: 'all 160ms',
+                transition: "all 160ms",
               }}
             />
           );
         })}
-        {/* Highlight dots */}
+        {}
         {HIGHLIGHTS.map((h) => {
           const left = (h.startMs / MEETING.durationMs) * 100;
           return (
@@ -1000,7 +1207,7 @@ function Scrubber({
               key={h.id}
               title={h.label}
               style={{
-                position: 'absolute',
+                position: "absolute",
                 left: `${left}%`,
                 top: -3,
                 width: 8,
@@ -1013,16 +1220,16 @@ function Scrubber({
             />
           );
         })}
-        {/* Pulse on seek */}
+        {}
         <AnimatePresence>
           {pulseAt != null && (
             <motion.div
               key={pulseAt}
               initial={{ opacity: 0.6, scale: 1 }}
               animate={{ opacity: 0, scale: 4 }}
-              transition={{ duration: 0.6, ease: 'easeOut' }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
               style={{
-                position: 'absolute',
+                position: "absolute",
                 left: `${pulseAt * 100}%`,
                 top: -4,
                 width: 10,
@@ -1030,23 +1237,23 @@ function Scrubber({
                 marginLeft: -5,
                 borderRadius: 999,
                 border: `2px solid ${T.accent}`,
-                pointerEvents: 'none',
+                pointerEvents: "none",
               }}
             />
           )}
         </AnimatePresence>
-        {/* Thumb */}
+        {}
         <div
           style={{
-            position: 'absolute',
+            position: "absolute",
             left: `${ratio * 100}%`,
-            top: '50%',
+            top: "50%",
             width: hovered ? 12 : 10,
             height: hovered ? 12 : 10,
-            transform: 'translate(-50%, -50%)',
+            transform: "translate(-50%, -50%)",
             borderRadius: 999,
             background: T.accent,
-            transition: 'all 160ms cubic-bezier(0.16, 1, 0.3, 1)',
+            transition: "all 160ms cubic-bezier(0.16, 1, 0.3, 1)",
             boxShadow: T.accentGlow,
           }}
         />
@@ -1056,22 +1263,22 @@ function Scrubber({
 }
 
 function SpeedSelector() {
-  const [speed, setSpeed] = useState('1x');
-  const options = ['1x', '1.25x', '1.5x', '2x'];
+  const [speed, setSpeed] = useState("1x");
+  const options = ["1x", "1.25x", "1.5x", "2x"];
   const [open, setOpen] = useState(false);
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: "relative" }}>
       <button
         onClick={() => setOpen((v) => !v)}
         style={{
           fontFamily: T.fontMono,
           fontSize: 12,
           color: T.textSecondary,
-          background: 'transparent',
+          background: "transparent",
           border: `1px solid ${T.borderSubtle}`,
           borderRadius: 6,
-          padding: '4px 10px',
-          cursor: 'pointer',
+          padding: "4px 10px",
+          cursor: "pointer",
         }}
       >
         {speed}
@@ -1084,8 +1291,8 @@ function SpeedSelector() {
             exit={{ opacity: 0, y: -4, scale: 0.96 }}
             transition={SPRING}
             style={{
-              position: 'absolute',
-              bottom: 'calc(100% + 6px)',
+              position: "absolute",
+              bottom: "calc(100% + 6px)",
               right: 0,
               background: T.bgCard,
               border: `1px solid ${T.border}`,
@@ -1103,17 +1310,17 @@ function SpeedSelector() {
                   setOpen(false);
                 }}
                 style={{
-                  display: 'block',
-                  width: '100%',
-                  textAlign: 'left',
-                  padding: '6px 10px',
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "6px 10px",
                   fontSize: 12,
                   fontFamily: T.fontMono,
                   color: opt === speed ? T.accent : T.textSecondary,
-                  background: 'transparent',
-                  border: 'none',
+                  background: "transparent",
+                  border: "none",
                   borderRadius: 4,
-                  cursor: 'pointer',
+                  cursor: "pointer",
                 }}
               >
                 {opt}
@@ -1126,19 +1333,51 @@ function SpeedSelector() {
   );
 }
 
-// ── Tabs ────────────────────────────────────────────────────────────────────
-function MeetingTabs({ active, onChange }: { active: TabKey; onChange: (t: TabKey) => void }) {
-  const tabs: { key: TabKey; label: string; icon: React.ReactNode; count?: number }[] = [
-    { key: 'overview', label: 'Обзор', icon: <FileText size={14} strokeWidth={1.75} /> },
-    { key: 'chapters', label: 'Главы', icon: <Circle size={14} strokeWidth={1.75} />, count: CHAPTERS.length },
-    { key: 'transcript', label: 'Транскрипт', icon: <MessageSquareText size={14} strokeWidth={1.75} /> },
-    { key: 'tasks', label: 'Задачи', icon: <ListChecks size={14} strokeWidth={1.75} />, count: TASKS.length },
-    { key: 'notes', label: 'Заметки', icon: <StickyNote size={14} strokeWidth={1.75} /> },
+function MeetingTabs({
+  active,
+  onChange,
+}: {
+  active: TabKey;
+  onChange: (t: TabKey) => void;
+}) {
+  const tabs: {
+    key: TabKey;
+    label: string;
+    icon: React.ReactNode;
+    count?: number;
+  }[] = [
+    {
+      key: "overview",
+      label: "Обзор",
+      icon: <FileText size={14} strokeWidth={1.75} />,
+    },
+    {
+      key: "chapters",
+      label: "Главы",
+      icon: <Circle size={14} strokeWidth={1.75} />,
+      count: CHAPTERS.length,
+    },
+    {
+      key: "transcript",
+      label: "Транскрипт",
+      icon: <MessageSquareText size={14} strokeWidth={1.75} />,
+    },
+    {
+      key: "tasks",
+      label: "Задачи",
+      icon: <ListChecks size={14} strokeWidth={1.75} />,
+      count: TASKS.length,
+    },
+    {
+      key: "notes",
+      label: "Заметки",
+      icon: <StickyNote size={14} strokeWidth={1.75} />,
+    },
   ];
   return (
     <div
       style={{
-        display: 'flex',
+        display: "flex",
         gap: 4,
         borderBottom: `1px solid ${T.borderSubtle}`,
         paddingBottom: 1,
@@ -1151,27 +1390,29 @@ function MeetingTabs({ active, onChange }: { active: TabKey; onChange: (t: TabKe
             key={t.key}
             onClick={() => onChange(t.key)}
             style={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
+              position: "relative",
+              display: "flex",
+              alignItems: "center",
               gap: 8,
-              padding: '12px 14px',
+              padding: "12px 14px",
               fontSize: 14,
               fontWeight: 500,
               color: isActive ? T.textPrimary : T.textSecondary,
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
+              background: "transparent",
+              border: "none",
+              cursor: "pointer",
             }}
           >
-            <span style={{ color: isActive ? T.accent : T.textTertiary }}>{t.icon}</span>
+            <span style={{ color: isActive ? T.accent : T.textTertiary }}>
+              {t.icon}
+            </span>
             {t.label}
-            {typeof t.count === 'number' && (
+            {typeof t.count === "number" && (
               <span
                 style={{
                   fontFamily: T.fontMono,
                   fontSize: 11,
-                  padding: '1px 6px',
+                  padding: "1px 6px",
                   borderRadius: 999,
                   background: isActive ? T.accentMuted : T.bgOverlay,
                   color: isActive ? T.accent : T.textTertiary,
@@ -1184,7 +1425,7 @@ function MeetingTabs({ active, onChange }: { active: TabKey; onChange: (t: TabKe
               <motion.span
                 layoutId="tab-indicator"
                 style={{
-                  position: 'absolute',
+                  position: "absolute",
                   left: 0,
                   right: 0,
                   bottom: -1,
@@ -1202,10 +1443,9 @@ function MeetingTabs({ active, onChange }: { active: TabKey; onChange: (t: TabKe
   );
 }
 
-// ── Tab content: Overview ──────────────────────────────────────────────────
 function OverviewTab() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <StatsRow />
       <Card>
         <CardHeader title="Краткое содержание" />
@@ -1215,28 +1455,47 @@ function OverviewTab() {
             fontSize: 15,
             lineHeight: 1.6,
             color: T.textPrimary,
-            letterSpacing: '-0.005em',
+            letterSpacing: "-0.005em",
           }}
         >
-          Acme Corp заинтересованы в платформе Z для автоматизации sales-разборов и подготовки
-          follow-up писем. Главный технический вопрос — интеграция с HubSpot и Clay; компромисс
-          через webhook + Zapier на пилот. Compliance-блокер: SOC2 Type 2 и DPA. Бюджетный потолок —
-          500 000 ₽/мес при ROI за 3 месяца. Договорились о trial-доступе на 14 дней и
-          последующем 90-дневном пилоте.
+          Acme Corp заинтересованы в платформе Z для автоматизации
+          sales-разборов и подготовки follow-up писем. Главный технический
+          вопрос — интеграция с HubSpot и Clay; компромисс через webhook +
+          Zapier на пилот. Compliance-блокер: SOC2 Type 2 и DPA. Бюджетный
+          потолок — 500 000 ₽/мес при ROI за 3 месяца. Договорились о
+          trial-доступе на 14 дней и последующем 90-дневном пилоте.
         </p>
       </Card>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }}>
-        <ReportCard label="Боль клиента" value="Sales-разборы делаются вручную, занимают 4-6 часов на rep в неделю. Качество follow-up непостоянное." />
-        <ReportCard label="Бюджет" value="350–500 000 ₽/мес. Принимается решением CTO + Head of RevOps." />
-        <ReportCard label="ЛПР" value="Иван Колесников (CTO). Анна Лесникова (Head of RevOps) — co-decision-maker по revenue-фичам." />
-        <ReportCard label="Срочность" value="Q2 2026 — закрыть sales-tooling-проект. Конкуренты на review: Gong, Avoma, Otter Business." />
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(2, 1fr)",
+          gap: 16,
+        }}
+      >
+        <ReportCard
+          label="Боль клиента"
+          value="Sales-разборы делаются вручную, занимают 4-6 часов на rep в неделю. Качество follow-up непостоянное."
+        />
+        <ReportCard
+          label="Бюджет"
+          value="350–500 000 ₽/мес. Принимается решением CTO + Head of RevOps."
+        />
+        <ReportCard
+          label="ЛПР"
+          value="Иван Колесников (CTO). Анна Лесникова (Head of RevOps) — co-decision-maker по revenue-фичам."
+        />
+        <ReportCard
+          label="Срочность"
+          value="Q2 2026 — закрыть sales-tooling-проект. Конкуренты на review: Gong, Avoma, Otter Business."
+        />
       </div>
 
       <ReportCard
         label="Возражения"
         value={
-          'Совместимость с HubSpot и Clay — нужна стабильная синхронизация. SOC2 Type 2 обязателен. Опасения по data-residency для записей звонков.'
+          "Совместимость с HubSpot и Clay — нужна стабильная синхронизация. SOC2 Type 2 обязателен. Опасения по data-residency для записей звонков."
         }
       />
 
@@ -1247,32 +1506,35 @@ function OverviewTab() {
 
 function StatsRow() {
   const items = [
-    { label: 'Главы', value: CHAPTERS.length },
-    { label: 'Задачи', value: TASKS.length },
-    { label: 'Клипы', value: HIGHLIGHTS.length },
-    { label: 'Длительность', value: fmtTime(MEETING.durationMs) },
-    { label: 'Версия отчёта', value: `v${MEETING.recapVersion}` },
+    { label: "Главы", value: CHAPTERS.length },
+    { label: "Задачи", value: TASKS.length },
+    { label: "Клипы", value: HIGHLIGHTS.length },
+    { label: "Длительность", value: fmtTime(MEETING.durationMs) },
+    { label: "Версия отчёта", value: `v${MEETING.recapVersion}` },
   ];
   return (
     <div
       style={{
-        display: 'grid',
+        display: "grid",
         gridTemplateColumns: `repeat(${items.length}, 1fr)`,
         gap: 1,
         background: T.borderSubtle,
         borderRadius: 12,
-        overflow: 'hidden',
+        overflow: "hidden",
         border: `1px solid ${T.borderSubtle}`,
       }}
     >
       {items.map((it) => (
-        <div key={it.label} style={{ padding: '14px 18px', background: T.bgCard }}>
+        <div
+          key={it.label}
+          style={{ padding: "14px 18px", background: T.bgCard }}
+        >
           <div
             style={{
               fontSize: 11,
               color: T.textTertiary,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
             }}
           >
             {it.label}
@@ -1283,8 +1545,11 @@ function StatsRow() {
               fontSize: 18,
               fontWeight: 600,
               color: T.textPrimary,
-              fontVariantNumeric: 'tabular-nums',
-              fontFamily: typeof it.value === 'string' && it.value.includes(':') ? T.fontMono : T.fontSans,
+              fontVariantNumeric: "tabular-nums",
+              fontFamily:
+                typeof it.value === "string" && it.value.includes(":")
+                  ? T.fontMono
+                  : T.fontSans,
             }}
           >
             {it.value}
@@ -1302,14 +1567,16 @@ function ReportCard({ label, value }: { label: string; value: string }) {
         style={{
           fontSize: 11,
           color: T.textTertiary,
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
           marginBottom: 8,
         }}
       >
         {label}
       </div>
-      <div style={{ fontSize: 14, color: T.textPrimary, lineHeight: 1.55 }}>{value}</div>
+      <div style={{ fontSize: 14, color: T.textPrimary, lineHeight: 1.55 }}>
+        {value}
+      </div>
     </Card>
   );
 }
@@ -1333,13 +1600,19 @@ function FollowUpCard() {
         title="Follow-up письмо"
         accessory={
           <ButtonOutline
-            icon={copied ? <Check size={14} strokeWidth={1.75} /> : <Copy size={14} strokeWidth={1.75} />}
+            icon={
+              copied ? (
+                <Check size={14} strokeWidth={1.75} />
+              ) : (
+                <Copy size={14} strokeWidth={1.75} />
+              )
+            }
             onClick={() => {
               setCopied(true);
               setTimeout(() => setCopied(false), 1600);
             }}
           >
-            {copied ? 'Скопировано' : 'Скопировать'}
+            {copied ? "Скопировано" : "Скопировать"}
           </ButtonOutline>
         }
       />
@@ -1354,8 +1627,8 @@ function FollowUpCard() {
           fontSize: 12.5,
           lineHeight: 1.6,
           color: T.textPrimary,
-          whiteSpace: 'pre-wrap',
-          overflow: 'auto',
+          whiteSpace: "pre-wrap",
+          overflow: "auto",
         }}
       >
         {text}
@@ -1364,11 +1637,10 @@ function FollowUpCard() {
   );
 }
 
-// ── Tab content: Chapters (DR2 hierarchical) ────────────────────────────────
 function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
-  const [openId, setOpenId] = useState<string | null>('c3');
+  const [openId, setOpenId] = useState<string | null>("c3");
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {CHAPTERS.map((c) => {
         const open = openId === c.id;
         return (
@@ -1376,15 +1648,15 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
             <button
               onClick={() => setOpenId(open ? null : c.id)}
               style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
                 gap: 16,
-                background: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
                 padding: 0,
-                textAlign: 'left',
+                textAlign: "left",
               }}
             >
               <div
@@ -1404,12 +1676,14 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
                     fontSize: 15,
                     fontWeight: 500,
                     color: T.textPrimary,
-                    letterSpacing: '-0.005em',
+                    letterSpacing: "-0.005em",
                   }}
                 >
                   {c.title}
                 </div>
-                <div style={{ marginTop: 4, fontSize: 13, color: T.textSecondary }}>
+                <div
+                  style={{ marginTop: 4, fontSize: 13, color: T.textSecondary }}
+                >
                   {c.summary}
                 </div>
               </div>
@@ -1428,18 +1702,18 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
               {open && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
+                  animate={{ height: "auto", opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-                  style={{ overflow: 'hidden' }}
+                  style={{ overflow: "hidden" }}
                 >
                   <div
                     style={{
                       marginTop: 16,
                       paddingTop: 16,
                       borderTop: `1px solid ${T.borderSubtle}`,
-                      display: 'flex',
-                      flexDirection: 'column',
+                      display: "flex",
+                      flexDirection: "column",
                       gap: 12,
                     }}
                   >
@@ -1447,22 +1721,22 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
                       style={{
                         margin: 0,
                         padding: 0,
-                        listStyle: 'none',
-                        display: 'flex',
-                        flexDirection: 'column',
+                        listStyle: "none",
+                        display: "flex",
+                        flexDirection: "column",
                         gap: 8,
                       }}
                     >
                       {[
-                        'HubSpot и Clay — must-have для интеграции.',
-                        'Webhook + Zapier как mvp-вариант принят.',
-                        'SOC2 Type 2 — блокирующее условие.',
+                        "HubSpot и Clay — must-have для интеграции.",
+                        "Webhook + Zapier как mvp-вариант принят.",
+                        "SOC2 Type 2 — блокирующее условие.",
                       ].map((item, i) => (
                         <li
                           key={i}
                           style={{
-                            display: 'flex',
-                            alignItems: 'flex-start',
+                            display: "flex",
+                            alignItems: "flex-start",
                             gap: 10,
                             fontSize: 13.5,
                             color: T.textPrimary,
@@ -1479,8 +1753,8 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
                     <AiCitation
                       data={{
                         startMs: 3_118_000,
-                        speakerId: 'u2',
-                        text: 'У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.',
+                        speakerId: "u2",
+                        text: "У нас compliance-отдел потребует SOC2 Type 2 и DPA до подписания контракта.",
                       }}
                       onJump={() => onSeek(3_118_000)}
                     />
@@ -1495,7 +1769,6 @@ function ChaptersTab({ onSeek }: { onSeek: (ms: number) => void }) {
   );
 }
 
-// ── Tab content: Transcript ─────────────────────────────────────────────────
 function TranscriptTab({
   currentMs,
   onSeek,
@@ -1507,23 +1780,23 @@ function TranscriptTab({
     <Card noPadding>
       <div
         style={{
-          padding: '16px 20px',
+          padding: "16px 20px",
           borderBottom: `1px solid ${T.borderSubtle}`,
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 12,
         }}
       >
         <div
           style={{
             flex: 1,
-            display: 'flex',
-            alignItems: 'center',
+            display: "flex",
+            alignItems: "center",
             gap: 8,
             background: T.bgBase,
             border: `1px solid ${T.borderSubtle}`,
             borderRadius: 8,
-            padding: '6px 12px',
+            padding: "6px 12px",
           }}
         >
           <span
@@ -1531,7 +1804,7 @@ function TranscriptTab({
               fontFamily: T.fontMono,
               fontSize: 11,
               color: T.textTertiary,
-              padding: '2px 6px',
+              padding: "2px 6px",
               border: `1px solid ${T.borderSubtle}`,
               borderRadius: 4,
             }}
@@ -1542,41 +1815,57 @@ function TranscriptTab({
             placeholder="Поиск в транскрипте"
             style={{
               flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
+              background: "transparent",
+              border: "none",
+              outline: "none",
               color: T.textPrimary,
               fontSize: 13,
               fontFamily: T.fontSans,
             }}
           />
         </div>
-        <span style={{ fontSize: 12, color: T.textTertiary }}>{TRANSCRIPT.length} реплик</span>
+        <span style={{ fontSize: 12, color: T.textTertiary }}>
+          {TRANSCRIPT.length} реплик
+        </span>
       </div>
-      <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+      <div style={{ maxHeight: 520, overflowY: "auto" }}>
         {TRANSCRIPT.map((u) => {
           const speaker = speakerById(u.speakerId);
-          const isActive = currentMs >= u.startMs && currentMs < u.startMs + 30_000;
+          const isActive =
+            currentMs >= u.startMs && currentMs < u.startMs + 30_000;
           return (
             <button
               key={u.id}
               onClick={() => onSeek(u.startMs)}
               style={{
-                width: '100%',
-                display: 'flex',
+                width: "100%",
+                display: "flex",
                 gap: 12,
-                padding: '14px 20px',
-                background: isActive ? T.bgOverlay : 'transparent',
-                border: 'none',
-                borderLeft: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background 160ms',
+                padding: "14px 20px",
+                background: isActive ? T.bgOverlay : "transparent",
+                border: "none",
+                borderLeft: isActive
+                  ? `2px solid ${T.accent}`
+                  : "2px solid transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "background 160ms",
               }}
             >
-              <Avatar initials={speaker?.initials ?? '??'} size={32} accent={speaker?.isHost} />
+              <Avatar
+                initials={speaker?.initials ?? "??"}
+                size={32}
+                accent={speaker?.isHost}
+              />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: 8,
+                    marginBottom: 4,
+                  }}
+                >
                   <span
                     style={{
                       fontSize: 13,
@@ -1614,25 +1903,24 @@ function TranscriptTab({
   );
 }
 
-// ── Tab content: Tasks ──────────────────────────────────────────────────────
 function TasksTab({ onSeek }: { onSeek: (ms: number) => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {TASKS.map((t) => (
         <TaskRow key={t.id} task={t} onSeek={onSeek} />
       ))}
       <button
         style={{
-          padding: '14px 16px',
-          background: 'transparent',
+          padding: "14px 16px",
+          background: "transparent",
           border: `1px dashed ${T.border}`,
           borderRadius: 12,
           color: T.textSecondary,
           fontSize: 13,
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 8,
-          cursor: 'pointer',
+          cursor: "pointer",
           fontFamily: T.fontSans,
         }}
       >
@@ -1643,9 +1931,15 @@ function TasksTab({ onSeek }: { onSeek: (ms: number) => void }) {
   );
 }
 
-function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: number) => void }) {
-  const [open, setOpen] = useState(task.id === 't2');
-  const [done, setDone] = useState(task.status === 'done');
+function TaskRow({
+  task,
+  onSeek,
+}: {
+  task: (typeof TASKS)[number];
+  onSeek: (ms: number) => void;
+}) {
+  const [open, setOpen] = useState(task.id === "t2");
+  const [done, setDone] = useState(task.status === "done");
   return (
     <div
       style={{
@@ -1657,11 +1951,11 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
       <div
         onClick={() => setOpen((v) => !v)}
         style={{
-          display: 'flex',
-          alignItems: 'flex-start',
+          display: "flex",
+          alignItems: "flex-start",
           gap: 14,
           padding: 16,
-          cursor: 'pointer',
+          cursor: "pointer",
         }}
       >
         <button
@@ -1675,14 +1969,14 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
             height: 18,
             borderRadius: 999,
             border: `1.5px solid ${done ? T.accent : T.borderStrong}`,
-            background: done ? T.accent : 'transparent',
+            background: done ? T.accent : "transparent",
             color: T.bgBase,
-            display: 'grid',
-            placeItems: 'center',
-            cursor: 'pointer',
+            display: "grid",
+            placeItems: "center",
+            cursor: "pointer",
             flexShrink: 0,
             marginTop: 2,
-            transition: 'all 200ms',
+            transition: "all 200ms",
           }}
         >
           {done && <Check size={11} strokeWidth={3} />}
@@ -1693,27 +1987,45 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
               fontSize: 14,
               fontWeight: 500,
               color: done ? T.textTertiary : T.textPrimary,
-              textDecoration: done ? 'line-through' : 'none',
-              letterSpacing: '-0.005em',
+              textDecoration: done ? "line-through" : "none",
+              letterSpacing: "-0.005em",
               lineHeight: 1.45,
             }}
           >
             {task.title}
           </div>
-          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
             <Chip>
-              <span style={{ fontFamily: T.fontMono, fontSize: 11, color: T.textSecondary }}>
+              <span
+                style={{
+                  fontFamily: T.fontMono,
+                  fontSize: 11,
+                  color: T.textSecondary,
+                }}
+              >
                 {task.assignee}
               </span>
             </Chip>
             <Chip>
-              <span style={{ fontSize: 11, color: T.textSecondary }}>{task.dueDate}</span>
+              <span style={{ fontSize: 11, color: T.textSecondary }}>
+                {task.dueDate}
+              </span>
             </Chip>
             <Chip>
-              <span style={{ fontSize: 11, color: T.textTertiary }}>уверенность</span>
+              <span style={{ fontSize: 11, color: T.textTertiary }}>
+                уверенность
+              </span>
               <ConfidenceDots value={task.confidence} />
             </Chip>
-            {task.status === 'in_progress' && (
+            {task.status === "in_progress" && (
               <Chip tone="warning">
                 <span style={{ fontSize: 11, color: T.warning }}>в работе</span>
               </Chip>
@@ -1728,16 +2040,16 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
         {open && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
+            animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-            style={{ overflow: 'hidden' }}
+            style={{ overflow: "hidden" }}
           >
             <div
               style={{
-                padding: '0 16px 16px 48px',
-                display: 'flex',
-                flexDirection: 'column',
+                padding: "0 16px 16px 48px",
+                display: "flex",
+                flexDirection: "column",
                 gap: 12,
               }}
             >
@@ -1749,8 +2061,10 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
                 }}
                 onJump={() => onSeek(task.sourceMs)}
               />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <ButtonOutline icon={<ArrowUpRight size={14} strokeWidth={1.75} />}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <ButtonOutline
+                  icon={<ArrowUpRight size={14} strokeWidth={1.75} />}
+                >
                   Отправить в...
                 </ButtonOutline>
               </div>
@@ -1765,7 +2079,7 @@ function TaskRow({ task, onSeek }: { task: typeof TASKS[number]; onSeek: (ms: nu
 function ConfidenceDots({ value }: { value: number }) {
   const filled = value >= 0.7 ? 3 : value >= 0.4 ? 2 : 1;
   return (
-    <span style={{ display: 'inline-flex', gap: 3 }}>
+    <span style={{ display: "inline-flex", gap: 3 }}>
       {[0, 1, 2].map((i) => (
         <span
           key={i}
@@ -1773,7 +2087,7 @@ function ConfidenceDots({ value }: { value: number }) {
             width: 5,
             height: 5,
             borderRadius: 999,
-            background: i < filled ? T.accent : 'transparent',
+            background: i < filled ? T.accent : "transparent",
             border: `1px solid ${i < filled ? T.accent : T.borderStrong}`,
           }}
         />
@@ -1782,28 +2096,29 @@ function ConfidenceDots({ value }: { value: number }) {
   );
 }
 
-// ── Tab content: Notes ─────────────────────────────────────────────────────
 function NotesTab() {
   const [text, setText] = useState(
-    'Acme — серьёзный кандидат. Главный риск: SOC2 пакет. Виктор может ускорить compliance-pack из своего опыта.\n\nЧто проверить до пилотa:\n— что наш HubSpot-коннектор покрывает Custom Objects;\n— что Clay не блокирует наши IP в их sandbox.',
+    "Acme — серьёзный кандидат. Главный риск: SOC2 пакет. Виктор может ускорить compliance-pack из своего опыта.\n\nЧто проверить до пилотa:\n— что наш HubSpot-коннектор покрывает Custom Objects;\n— что Clay не блокирует наши IP в их sandbox.",
   );
-  const [savedAt, setSavedAt] = useState('сейчас');
+  const [savedAt, setSavedAt] = useState("сейчас");
   return (
     <Card>
       <CardHeader
         title="Заметки хоста"
         accessory={
-          <span style={{ fontSize: 11, color: T.textTertiary }}>сохранено · {savedAt}</span>
+          <span style={{ fontSize: 11, color: T.textTertiary }}>
+            сохранено · {savedAt}
+          </span>
         }
       />
       <textarea
         value={text}
         onChange={(e) => {
           setText(e.target.value);
-          setSavedAt('сейчас');
+          setSavedAt("сейчас");
         }}
         style={{
-          width: '100%',
+          width: "100%",
           minHeight: 220,
           background: T.bgBase,
           border: `1px solid ${T.borderSubtle}`,
@@ -1813,17 +2128,14 @@ function NotesTab() {
           fontSize: 14,
           color: T.textPrimary,
           lineHeight: 1.6,
-          resize: 'vertical',
-          outline: 'none',
+          resize: "vertical",
+          outline: "none",
         }}
       />
     </Card>
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Right column — AI chat
-// ────────────────────────────────────────────────────────────────────────────────
 function RightColumn({
   open,
   onOpen,
@@ -1847,7 +2159,10 @@ function RightColumn({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [history.length, thinking]);
 
   if (!open) {
@@ -1856,19 +2171,19 @@ function RightColumn({
         onClick={onOpen}
         aria-label="AI-помощник"
         style={{
-          position: 'sticky',
+          position: "sticky",
           top: 96,
-          alignSelf: 'start',
+          alignSelf: "start",
           width: 56,
           height: 56,
           borderRadius: 14,
           border: `1px solid ${T.accentBorder}`,
           background: T.accentMuted,
           color: T.accent,
-          display: 'grid',
-          placeItems: 'center',
-          cursor: 'pointer',
-          backdropFilter: 'blur(8px)',
+          display: "grid",
+          placeItems: "center",
+          cursor: "pointer",
+          backdropFilter: "blur(8px)",
         }}
       >
         <Sparkles size={20} strokeWidth={1.75} />
@@ -1879,23 +2194,23 @@ function RightColumn({
   return (
     <aside
       style={{
-        position: 'sticky',
+        position: "sticky",
         top: 96,
-        alignSelf: 'start',
-        height: 'calc(100vh - 120px)',
-        display: 'flex',
-        flexDirection: 'column',
+        alignSelf: "start",
+        height: "calc(100vh - 120px)",
+        display: "flex",
+        flexDirection: "column",
         background: T.bgCard,
         border: `1px solid ${T.borderSubtle}`,
         borderRadius: 16,
-        overflow: 'hidden',
+        overflow: "hidden",
       }}
     >
       <div
         style={{
-          padding: '14px 16px',
-          display: 'flex',
-          alignItems: 'center',
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
           gap: 10,
           borderBottom: `1px solid ${T.borderSubtle}`,
         }}
@@ -1907,15 +2222,19 @@ function RightColumn({
             borderRadius: 8,
             background: T.accentMuted,
             color: T.accent,
-            display: 'grid',
-            placeItems: 'center',
+            display: "grid",
+            placeItems: "center",
           }}
         >
           <Sparkles size={14} strokeWidth={1.75} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: T.textPrimary }}>AI-помощник</div>
-          <div style={{ fontSize: 11, color: T.textTertiary }}>контекст · эта встреча</div>
+          <div style={{ fontSize: 13, fontWeight: 500, color: T.textPrimary }}>
+            AI-помощник
+          </div>
+          <div style={{ fontSize: 11, color: T.textTertiary }}>
+            контекст · эта встреча
+          </div>
         </div>
         <ButtonGhost square onClick={onClose} aria-label="Закрыть">
           <X size={16} strokeWidth={1.75} />
@@ -1926,10 +2245,10 @@ function RightColumn({
         ref={scrollRef}
         style={{
           flex: 1,
-          overflowY: 'auto',
-          padding: '20px 16px',
-          display: 'flex',
-          flexDirection: 'column',
+          overflowY: "auto",
+          padding: "20px 16px",
+          display: "flex",
+          flexDirection: "column",
           gap: 16,
         }}
       >
@@ -1939,21 +2258,33 @@ function RightColumn({
         <AnimatePresence>{thinking && <AiTypingDots />}</AnimatePresence>
       </div>
 
-      <div style={{ padding: '12px 12px 14px', borderTop: `1px solid ${T.borderSubtle}` }}>
+      <div
+        style={{
+          padding: "12px 12px 14px",
+          borderTop: `1px solid ${T.borderSubtle}`,
+        }}
+      >
         {history.length === 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 10,
+            }}
+          >
             {SUGGESTED_PROMPTS.map((p) => (
               <button
                 key={p}
                 onClick={() => onInput(p)}
                 style={{
                   fontSize: 12,
-                  padding: '6px 10px',
+                  padding: "6px 10px",
                   borderRadius: 999,
                   background: T.bgOverlay,
                   border: `1px solid ${T.borderSubtle}`,
                   color: T.textSecondary,
-                  cursor: 'pointer',
+                  cursor: "pointer",
                   fontFamily: T.fontSans,
                 }}
               >
@@ -1964,8 +2295,8 @@ function RightColumn({
         )}
         <div
           style={{
-            display: 'flex',
-            alignItems: 'flex-end',
+            display: "flex",
+            alignItems: "flex-end",
             gap: 8,
             background: T.bgOverlay,
             border: `1px solid ${T.borderSubtle}`,
@@ -1977,7 +2308,7 @@ function RightColumn({
             value={input}
             onChange={(e) => onInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 onSend();
               }
@@ -1986,15 +2317,15 @@ function RightColumn({
             rows={1}
             style={{
               flex: 1,
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
+              background: "transparent",
+              border: "none",
+              outline: "none",
               color: T.textPrimary,
               fontSize: 13,
               fontFamily: T.fontSans,
               lineHeight: 1.5,
-              padding: '6px 8px',
-              resize: 'none',
+              padding: "6px 8px",
+              resize: "none",
               maxHeight: 120,
             }}
           />
@@ -2008,12 +2339,12 @@ function RightColumn({
               borderRadius: 999,
               background: input.trim() ? T.accent : T.bgCard,
               color: input.trim() ? T.bgBase : T.textTertiary,
-              border: 'none',
-              display: 'grid',
-              placeItems: 'center',
-              cursor: input.trim() ? 'pointer' : 'default',
-              transition: 'all 160ms',
-              boxShadow: input.trim() ? T.accentGlow : 'none',
+              border: "none",
+              display: "grid",
+              placeItems: "center",
+              cursor: input.trim() ? "pointer" : "default",
+              transition: "all 160ms",
+              boxShadow: input.trim() ? T.accentGlow : "none",
             }}
           >
             <Send size={14} strokeWidth={2} style={{ marginLeft: -1 }} />
@@ -2024,8 +2355,8 @@ function RightColumn({
             marginTop: 8,
             fontSize: 10,
             color: T.textTertiary,
-            display: 'flex',
-            justifyContent: 'space-between',
+            display: "flex",
+            justifyContent: "space-between",
           }}
         >
           <span>Enter — отправить · Shift+Enter — новая строка</span>
@@ -2036,23 +2367,29 @@ function RightColumn({
   );
 }
 
-function ChatMessage({ msg, onSeek }: { msg: AiMessage; onSeek: (ms: number) => void }) {
-  if (msg.role === 'user') {
+function ChatMessage({
+  msg,
+  onSeek,
+}: {
+  msg: AiMessage;
+  onSeek: (ms: number) => void;
+}) {
+  if (msg.role === "user") {
     return (
       <motion.div
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        style={{ display: 'flex', justifyContent: 'flex-end' }}
+        style={{ display: "flex", justifyContent: "flex-end" }}
       >
         <div
           style={{
-            maxWidth: '85%',
+            maxWidth: "85%",
             background: T.bgOverlay,
             color: T.textPrimary,
             borderRadius: 14,
             borderTopRightRadius: 4,
-            padding: '10px 14px',
+            padding: "10px 14px",
             fontSize: 13.5,
             lineHeight: 1.5,
             border: `1px solid ${T.borderSubtle}`,
@@ -2068,9 +2405,9 @@ function ChatMessage({ msg, onSeek }: { msg: AiMessage; onSeek: (ms: number) => 
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24 }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+      style={{ display: "flex", flexDirection: "column", gap: 10 }}
     >
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <div
           style={{
             width: 22,
@@ -2078,8 +2415,8 @@ function ChatMessage({ msg, onSeek }: { msg: AiMessage; onSeek: (ms: number) => 
             borderRadius: 6,
             background: T.accentMuted,
             color: T.accent,
-            display: 'grid',
-            placeItems: 'center',
+            display: "grid",
+            placeItems: "center",
             flexShrink: 0,
           }}
         >
@@ -2097,13 +2434,16 @@ function ChatMessage({ msg, onSeek }: { msg: AiMessage; onSeek: (ms: number) => 
         </div>
       </div>
       {msg.citations && msg.citations.length > 0 && (
-        <div style={{ marginLeft: 32, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div
+          style={{
+            marginLeft: 32,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}
+        >
           {msg.citations.map((c, i) => (
-            <AiCitation
-              key={i}
-              data={c}
-              onJump={() => onSeek(c.startMs)}
-            />
+            <AiCitation key={i} data={c} onJump={() => onSeek(c.startMs)} />
           ))}
         </div>
       )}
@@ -2111,10 +2451,13 @@ function ChatMessage({ msg, onSeek }: { msg: AiMessage; onSeek: (ms: number) => 
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// AI Citation — главный визуальный паттерн идентичности (glass-card)
-// ────────────────────────────────────────────────────────────────────────────────
-function AiCitation({ data, onJump }: { data: AiCitationData; onJump: () => void }) {
+function AiCitation({
+  data,
+  onJump,
+}: {
+  data: AiCitationData;
+  onJump: () => void;
+}) {
   const speaker = speakerById(data.speakerId);
   return (
     <motion.button
@@ -2122,31 +2465,31 @@ function AiCitation({ data, onJump }: { data: AiCitationData; onJump: () => void
       whileHover={{ scale: 1.015 }}
       transition={SPRING}
       style={{
-        textAlign: 'left',
-        width: '100%',
+        textAlign: "left",
+        width: "100%",
         background: T.accentMuted,
-        backdropFilter: 'blur(12px) saturate(1.4)',
-        WebkitBackdropFilter: 'blur(12px) saturate(1.4)',
+        backdropFilter: "blur(12px) saturate(1.4)",
+        WebkitBackdropFilter: "blur(12px) saturate(1.4)",
         border: `1px solid ${T.accentBorder}`,
         borderRadius: 12,
         padding: 14,
-        cursor: 'pointer',
-        boxShadow: 'none',
-        position: 'relative',
-        overflow: 'hidden',
+        cursor: "pointer",
+        boxShadow: "none",
+        position: "relative",
+        overflow: "hidden",
       }}
       className="ai-citation"
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.boxShadow = T.accentGlow;
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.boxShadow = 'none';
+        (e.currentTarget as HTMLElement).style.boxShadow = "none";
       }}
     >
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 8,
           marginBottom: 8,
           fontFamily: T.fontMono,
@@ -2156,14 +2499,16 @@ function AiCitation({ data, onJump }: { data: AiCitationData; onJump: () => void
       >
         <span>{fmtTime(data.startMs)}</span>
         <span style={{ color: T.accentBorder }}>·</span>
-        <span style={{ color: T.textSecondary }}>{speaker?.name ?? data.speakerId}</span>
+        <span style={{ color: T.textSecondary }}>
+          {speaker?.name ?? data.speakerId}
+        </span>
       </div>
       <div
         style={{
           fontSize: 13,
           lineHeight: 1.55,
           color: T.textPrimary,
-          fontStyle: 'italic',
+          fontStyle: "italic",
         }}
       >
         «{data.text}»
@@ -2171,8 +2516,8 @@ function AiCitation({ data, onJump }: { data: AiCitationData; onJump: () => void
       <div
         style={{
           marginTop: 10,
-          display: 'flex',
-          alignItems: 'center',
+          display: "flex",
+          alignItems: "center",
           gap: 6,
           fontSize: 11,
           fontWeight: 500,
@@ -2192,9 +2537,9 @@ function AiTypingDots() {
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0 }}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 32 }}
+      style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: 32 }}
     >
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: "flex", gap: 4 }}>
         {[0, 1, 2].map((i) => (
           <motion.span
             key={i}
@@ -2203,14 +2548,14 @@ function AiTypingDots() {
               height: 6,
               borderRadius: 999,
               background: T.accent,
-              display: 'inline-block',
+              display: "inline-block",
             }}
             animate={{ y: [0, -4, 0] }}
             transition={{
               duration: 0.6,
               repeat: Infinity,
               delay: i * 0.12,
-              ease: 'easeInOut',
+              ease: "easeInOut",
             }}
           />
         ))}
@@ -2220,9 +2565,6 @@ function AiTypingDots() {
   );
 }
 
-// ────────────────────────────────────────────────────────────────────────────────
-// Primitives
-// ────────────────────────────────────────────────────────────────────────────────
 function Card({
   children,
   noPadding,
@@ -2239,7 +2581,9 @@ function Card({
         border: `1px solid ${T.borderSubtle}`,
         borderRadius: 14,
         padding: noPadding ? 0 : 20,
-        transition: interactive ? 'border-color 160ms, background 160ms' : undefined,
+        transition: interactive
+          ? "border-color 160ms, background 160ms"
+          : undefined,
       }}
     >
       {children}
@@ -2247,13 +2591,19 @@ function Card({
   );
 }
 
-function CardHeader({ title, accessory }: { title: string; accessory?: React.ReactNode }) {
+function CardHeader({
+  title,
+  accessory,
+}: {
+  title: string;
+  accessory?: React.ReactNode;
+}) {
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
         marginBottom: 14,
       }}
     >
@@ -2263,7 +2613,7 @@ function CardHeader({ title, accessory }: { title: string; accessory?: React.Rea
           fontSize: 14,
           fontWeight: 600,
           color: T.textPrimary,
-          letterSpacing: '-0.005em',
+          letterSpacing: "-0.005em",
         }}
       >
         {title}
@@ -2286,10 +2636,10 @@ function ButtonOutline({
     <button
       onClick={onClick}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
+        display: "inline-flex",
+        alignItems: "center",
         gap: 8,
-        padding: '6px 12px',
+        padding: "6px 12px",
         background: T.accentMuted,
         color: T.accent,
         border: `1px solid ${T.accentBorder}`,
@@ -2297,8 +2647,8 @@ function ButtonOutline({
         fontSize: 13,
         fontWeight: 500,
         fontFamily: T.fontSans,
-        cursor: 'pointer',
-        transition: 'background 160ms',
+        cursor: "pointer",
+        transition: "background 160ms",
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLElement).style.background = T.accentMutedStrong;
@@ -2324,20 +2674,20 @@ function ButtonGhost({
       onClick={onClick}
       {...rest}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
         gap: 6,
         width: square ? 32 : undefined,
         height: 32,
-        padding: square ? 0 : '0 10px',
-        background: 'transparent',
+        padding: square ? 0 : "0 10px",
+        background: "transparent",
         color: T.textSecondary,
-        border: 'none',
+        border: "none",
         borderRadius: 8,
         fontSize: 13,
-        cursor: 'pointer',
-        transition: 'background 120ms, color 120ms',
+        cursor: "pointer",
+        transition: "background 120ms, color 120ms",
         fontFamily: T.fontSans,
       }}
       onMouseEnter={(e) => {
@@ -2345,7 +2695,7 @@ function ButtonGhost({
         (e.currentTarget as HTMLElement).style.color = T.textPrimary;
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLElement).style.background = 'transparent';
+        (e.currentTarget as HTMLElement).style.background = "transparent";
         (e.currentTarget as HTMLElement).style.color = T.textSecondary;
       }}
     >
@@ -2354,18 +2704,24 @@ function ButtonGhost({
   );
 }
 
-function Badge({ children, tone }: { children: React.ReactNode; tone?: 'mint' }) {
-  const isMint = tone === 'mint';
+function Badge({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone?: "mint";
+}) {
+  const isMint = tone === "mint";
   return (
     <span
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        padding: '2px 8px',
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "2px 8px",
         borderRadius: 999,
         fontSize: 11,
         fontWeight: 500,
-        letterSpacing: '0.02em',
+        letterSpacing: "0.02em",
         background: isMint ? T.accentMuted : T.bgOverlay,
         color: isMint ? T.accent : T.textSecondary,
         border: `1px solid ${isMint ? T.accentBorder : T.borderSubtle}`,
@@ -2376,17 +2732,23 @@ function Badge({ children, tone }: { children: React.ReactNode; tone?: 'mint' })
   );
 }
 
-function Chip({ children, tone }: { children: React.ReactNode; tone?: 'warning' }) {
+function Chip({
+  children,
+  tone,
+}: {
+  children: React.ReactNode;
+  tone?: "warning";
+}) {
   return (
     <span
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
+        display: "inline-flex",
+        alignItems: "center",
         gap: 6,
-        padding: '3px 8px',
+        padding: "3px 8px",
         borderRadius: 6,
         background: T.bgBase,
-        border: `1px solid ${tone === 'warning' ? 'rgba(251,191,36,0.28)' : T.borderSubtle}`,
+        border: `1px solid ${tone === "warning" ? "rgba(251,191,36,0.28)" : T.borderSubtle}`,
       }}
     >
       {children}
@@ -2411,11 +2773,11 @@ function Avatar({
         borderRadius: 999,
         background: accent ? T.accentMuted : T.bgOverlay,
         color: accent ? T.accent : T.textSecondary,
-        display: 'grid',
-        placeItems: 'center',
+        display: "grid",
+        placeItems: "center",
         fontSize: Math.max(11, size * 0.36),
         fontWeight: 500,
-        letterSpacing: '0.02em',
+        letterSpacing: "0.02em",
         border: `1px solid ${accent ? T.accentBorder : T.borderSubtle}`,
         flexShrink: 0,
       }}

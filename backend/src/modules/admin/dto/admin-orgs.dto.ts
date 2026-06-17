@@ -15,22 +15,14 @@ export const ListOrgsQuerySchema = z
       .transform((v) => (typeof v === 'boolean' ? v : v === 'true' || v === '1'))
       .default(false),
   })
-  .refine(
-    (v) =>
-      v.period !== 'custom' || (v.from !== undefined && v.to !== undefined),
-    { message: 'period=custom требует from и to' },
-  );
+  .refine((v) => v.period !== 'custom' || (v.from !== undefined && v.to !== undefined), {
+    message: 'period=custom требует from и to',
+  });
 export type ListOrgsQuery = z.infer<typeof ListOrgsQuerySchema>;
 
 export const UpdateOrgSchema = z
   .object({
-    /**
-     * @deprecated После collapse-to-standard `Org.tier` ни на что не влияет
-     * (биллинг/фичи идут от Subscription + OrgEntitlement). Поле оставлено
-     * опциональным только для обратной совместимости и больше не используется UI.
-     */
     tier: z.enum(['basic', 'pro', 'enterprise']).optional(),
-    /** true = freeze (Org.deletedAt = now), false = unfreeze (Org.deletedAt = null). */
     freeze: z.boolean().optional(),
   })
   .refine((v) => v.freeze !== undefined, {

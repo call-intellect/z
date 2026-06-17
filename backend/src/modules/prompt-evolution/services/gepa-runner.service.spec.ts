@@ -1,16 +1,3 @@
-/**
- * Agents v2 Фаза C2 — Unit-тесты `GepaRunnerService`.
- *
- * С 2026-06 GEPA крутится в отдельном контейнере z-gepa, backend ходит туда по
- * HTTP. Поэтому мокируем глобальный `fetch` (раньше — `child_process.spawn`).
- * Сценарии:
- *   1. Successful run → возвращает Pareto frontier.
- *   2. Сервис недоступен (fetch failed) → пустой массив, статус 'skipped_no_python'.
- *   3. Timeout (AbortController) → пустой массив, статус 'timeout'.
- *   4. Сервис вернул error JSON → пустой массив, статус 'failed'.
- *   5. Пустой feedback → пустой массив, fetch не вызывался.
- *   6. Feedback без editedOutput → пустой dataset → статус 'failed'.
- */
 import type { PromptFeedback } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +6,6 @@ import type { BusinessMetricsService } from '../../../common/metrics/business-me
 
 import { GepaRunnerService } from './gepa-runner.service';
 
-// ── fetch mock ──
 const fetchMock = vi.fn();
 
 function fb(i: number): PromptFeedback {
@@ -67,7 +53,6 @@ function makeMetrics() {
   } as unknown as BusinessMetricsService;
 }
 
-/** Имитация Response с заданным JSON-телом. */
 function jsonResponse(body: unknown, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -116,7 +101,6 @@ describe('GepaRunnerService', () => {
     expect(result.candidates[0]!.metrics).toEqual({ accuracy: 0.91, cost: 0.05 });
     expect(result.costUsd).toBe(12.5);
 
-    // POST на {serviceUrl}/optimize с JSON-payload.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('http://gepa:8000/optimize');
@@ -154,7 +138,6 @@ describe('GepaRunnerService', () => {
   });
 
   it('3) timeout (AbortController) → status=timeout', async () => {
-    // fetch зависает и отклоняется AbortError по signal'у — как в реальности.
     fetchMock.mockImplementationOnce(
       (_url: string, init: { signal: AbortSignal }) =>
         new Promise((_resolve, reject) => {
@@ -164,7 +147,7 @@ describe('GepaRunnerService', () => {
         }),
     );
 
-    const cfg = makeCfg(50); // 50ms timeout
+    const cfg = makeCfg(50);
     const metrics = makeMetrics();
     const svc = new GepaRunnerService(cfg as TypedConfigService, metrics);
 

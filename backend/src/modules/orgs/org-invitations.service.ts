@@ -20,29 +20,6 @@ import { ConversationalLinkCodeService } from '../conversational/link-code.servi
 import { MailService } from '../mail/mail.service';
 import { RbacService } from '../rbac/rbac.service';
 
-/**
- * Сервис приглашений в Org.
- *
- * β-9 (2026-05-25) — GitHub-style flow:
- *   - email теперь опционален; если не задан, директор копирует
- *     `manualShareUrl` + `linkCode` руками.
- *   - Создание (createInvitation) — только owner/admin. Генерится
- *     одноразовый `linkCode` (через `ConversationalLinkCodeService`,
- *     длинный TTL = `invites.ttlDays * 86400`) для прямой привязки
- *     Telegram-бота из письма + `magicTokenHash` (sha256 от случайного
- *     nanoid(40)) для одноразового входа без пароля.
- *   - Принятие (acceptViaMagicLink) — без auth: проверяем magicToken,
- *     создаём/находим User, добавляем Membership, открываем сессию.
- *   - Принятие (acceptInvitation) — старый путь по token, для уже
- *     авторизованных пользователей (backward-compat).
- *   - Перевыпуск (resend) — новый `linkCode` + `magicTokenHash`, повторное
- *     письмо.
- *   - Валидация «один user = одна Org» — при создании Membership.
- *
- * См. plans/tz/2026-05-25-telegram-bot-global-and-invites.md §7 и §11,
- * second-brain/01_projects/conversational-channels.md §«Продуктовые
- * принципы каналов» (принципы 2, 3, 4).
- */
 
 const INVITATION_TOKEN_LEN = 40;
 const MAGIC_TOKEN_LEN = 40;
@@ -51,7 +28,6 @@ export interface OrgInvitationDomain {
   id: string;
   orgId: string;
   orgName: string;
-  /** β-9: nullable — может не быть электронной почты у линейного персонала. */
   email: string | null;
   role: MembershipRole;
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
@@ -61,12 +37,6 @@ export interface OrgInvitationDomain {
   acceptedAt: string | null;
 }
 
-/**
- * Результат `createInvitation` / `resendInvitation` — кроме domain-полей,
- * возвращает «горячие» поля для UI директора: deep-link бота, magic-link
- * URL (для копирования вручную при отсутствии электронной почты) и
- * QR-код (data-url base64 PNG, либо null если генерация невозможна).
- */
 export interface OrgInvitationCreateResult extends OrgInvitationDomain {
   linkCode: string;
   magicLinkUrl: string;
@@ -75,9 +45,6 @@ export interface OrgInvitationCreateResult extends OrgInvitationDomain {
   qrCodeDataUrl: string | null;
 }
 
-/**
- * Результат `acceptViaMagicLink` — открытая сессия для нового User'а.
- */
 export interface AcceptViaMagicLinkResult {
   orgId: string;
   userId: string;
@@ -103,17 +70,9 @@ export class OrgInvitationsService {
   async createInvitation(input: {
     orgId: string;
     actorUserId: string;
-    /** β-9: опционально. Если пусто — письмо не шлём, возвращаем `manualShareUrl`. */
     email?: string | null;
-    /** Имя сотрудника — для шаблона письма и Person. Если не передано — берём localpart email'а. */
     name?: string | null;
     role: MembershipRole;
-    /**
-     * ТЗ «Команда + доступы» Фаза 0.1: бизнес-Person, для которого создаётся
-     * приглашение. Если задан — email/имя берём из карточки (когда не переданы
-     * явно), сохраняем personId в OrgInvitation (для accept-линковки) и
-     * дедупим повторные приглашения этому же сотруднику.
-     */
     personId?: string | null;
   }): Promise<OrgInvitationCreateResult> {
     const ctx = await this.rbac.loadContext(input.actorUserId, input.orgId);
@@ -127,9 +86,6 @@ export class OrgInvitationsService {
       });
     }
 
-    // ТЗ «Команда + доступы» Фаза 0.1: приглашение по бизнес-Person. Если
-    // personId задан — валидируем карточку, берём из неё email/имя (когда не
-    // переданы явно) и дедупим повторные приглашения этому сотруднику.
     let resolvedPerson: { email: string | null; name: string } | null = null;
     if (input.personId) {
       const person = await this.prisma.person.findUnique({
@@ -183,7 +139,6 @@ export class OrgInvitationsService {
         (normalizedEmail ? normalizedEmail.split('@')[0] : null) ||
         'Сотрудник').slice(0, 120);
 
-    // Проверим — нет ли уже pending инвайта на этот email в эту Org.
     if (normalizedEmail) {
       const existing = await this.prisma.orgInvitation.findFirst({
         where: { orgId: input.orgId, email: normalizedEmail, status: 'pending' },
@@ -197,7 +152,6 @@ export class OrgInvitationsService {
           },
         });
       }
-      // Проверим — может, уже member.
       const userByEmail = await this.prisma.user.findFirst({
         where: { email: normalizedEmail, deletedAt: null },
       });
@@ -224,19 +178,11 @@ export class OrgInvitationsService {
     const magicTokenHash = sha256Hex(magicToken);
     const expiresAt = new Date(Date.now() + ttlSec * 1000);
 
-    // β-10: одноразовый пароль для credentials-onboarding. Генерируем только
-    // для email-инвайтов — линейный персонал без почты получает только magic-link.
-    // ВАЖНО (audit Б1): храним argon2id-hash (а не sha256), потому что
-    // accounts.login → PasswordService.verify(argon2). sha256-хекс
-    // argon2.verify не принимает, вход по credentials из письма не работает.
     const tempPassword = normalizedEmail ? generateInviteTempPassword() : null;
     const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
 
-    // β-9: linkCode для прямой привязки Telegram — кладём в Redis с тем же TTL
-    // через ConversationalLinkCodeService.generateInviteCode (отдельный namespace
-    // `conv:invite:telegram_bot:<code>`).
     const linkCodeOwner =
-      input.actorUserId; /* пользователь, чей invite — для аудита; реальный приглашаемый user'а пока нет */
+      input.actorUserId;
     const { code: linkCode } = await this.linkCodes.generateInviteCode({
       userId: linkCodeOwner,
       ttlSec,
@@ -259,7 +205,6 @@ export class OrgInvitationsService {
       include: { org: { select: { name: true } }, inviter: { select: { name: true } } },
     });
 
-    // Side-effect онбординг v2: первое приглашение → teamInvitedAt
     void this.prisma.org.updateMany({
       where: { id: input.orgId, teamInvitedAt: null },
       data: { teamInvitedAt: new Date() },
@@ -267,12 +212,10 @@ export class OrgInvitationsService {
 
     const magicLinkUrl = this.buildMagicLinkUrl(magicToken);
     const telegramDeepLink = this.buildTelegramDeepLink(linkCode);
-    const manualShareUrl = magicLinkUrl; // одна ссылка, директор её и копирует
+    const manualShareUrl = magicLinkUrl;
     const qrCodeDataUrl = await this.tryBuildQrCode(magicLinkUrl);
 
-    // Письмо — только если есть email.
     if (normalizedEmail && tempPassword) {
-      // β-10: credentials-onboarding — письмо с логином и одноразовым паролем.
       const sendResult = await this.mail.sendInviteWithCredentials({
         to: normalizedEmail,
         name: displayName,
@@ -310,10 +253,6 @@ export class OrgInvitationsService {
     };
   }
 
-  /**
-   * β-9 — перевыпуск приглашения: новый `linkCode` + `magicTokenHash`,
-   * старый `linkCode` теряет TTL и письмо отправляется заново.
-   */
   async resendInvitation(
     orgId: string,
     invitationId: string,
@@ -359,8 +298,6 @@ export class OrgInvitationsService {
       ttlSec,
     });
 
-    // β-10: регенерируем tempPassword вместе с magicToken для email-инвайтов.
-    // ВАЖНО (audit Б1): argon2id, не sha256 — иначе accounts.login не примет пароль.
     const resendEmail = invite.email;
     const tempPassword = resendEmail ? generateInviteTempPassword() : null;
     const tempPasswordHash = tempPassword ? await this.hashPasswordArgon2(tempPassword) : null;
@@ -389,7 +326,6 @@ export class OrgInvitationsService {
       : 'Сотрудник';
 
     if (updated.email && tempPassword) {
-      // β-10: credentials-onboarding — письмо с новым одноразовым паролем.
       const sendResult = await this.mail.sendInviteWithCredentials({
         to: updated.email,
         name: displayName,
@@ -420,12 +356,6 @@ export class OrgInvitationsService {
     };
   }
 
-  /**
-   * Старый путь: принять приглашение уже авторизованным пользователем.
-   * Используется когда пользователь вошёл в кабинет и кликнул accept-кнопку.
-   *
-   * β-9: добавлена валидация «один user = одна Org».
-   */
   async acceptInvitation(token: string, userId: string): Promise<{
     orgId: string;
     membership: { role: MembershipRole; joinedAt: string };
@@ -461,7 +391,6 @@ export class OrgInvitationsService {
       });
     }
 
-    // Если уже member — просто помечаем accepted (идемпотентно).
     const existingMembership = await this.prisma.membership.findUnique({
       where: { orgId_userId: { orgId: invite.orgId, userId } },
     });
@@ -484,7 +413,6 @@ export class OrgInvitationsService {
       };
     }
 
-    // β-9: валидация «один user = одна Org».
     await this.assertNoOtherActiveMembership({
       userId,
       targetOrgId: invite.orgId,
@@ -514,21 +442,6 @@ export class OrgInvitationsService {
     };
   }
 
-  /**
-   * β-9 — принять приглашение по magic-link (один клик из письма).
-   *
-   * Алгоритм:
-   *   1. Найти OrgInvitation по sha256(magicToken).
-   *   2. Проверить, что не использован и не протух.
-   *   3. Найти или создать User (по email если есть — upsert; иначе
-   *      создаём без email).
-   *   4. Валидировать «один user = одна Org» — если у user'а уже есть
-   *      другой активный Membership → ConflictException.
-   *   5. В транзакции: создать Membership, прожечь magicTokenUsedAt,
-   *      статус accepted.
-   *   6. Открыть сессию — НЕ здесь (контроллер вызывает SessionService).
-   *      Возвращаем userId/orgId и пусть caller выдаст cookie.
-   */
   async acceptViaMagicLink(input: {
     magicToken: string;
     issueSession: (args: {
@@ -536,11 +449,6 @@ export class OrgInvitationsService {
       email: string;
       role: 'user' | 'admin';
     }) => Promise<{ token: string }>;
-    /**
-     * β-10: `passwordHash` — sha256(tempPassword) из OrgInvitation (если есть).
-     * Callback должен использовать его вместо генерации нового пароля,
-     * чтобы пользователь смог войти с паролем из письма.
-     */
     upsertUserByEmail: (args: {
       email: string;
       name: string;
@@ -593,19 +501,14 @@ export class OrgInvitationsService {
       });
     }
 
-    // Найти или создать User. Если у приглашения есть email — upsert по нему;
-    // иначе создаём «безпочтовый» аккаунт.
     const displayName = invite.email
       ? (invite.email.split('@')[0] ?? 'Сотрудник')
       : 'Сотрудник';
-    // β-10: передаём tempPasswordHash из приглашения, чтобы пользователь
-    // смог войти с паролем из письма (mustChangePassword=true в callback'е).
     const passwordHash = invite.tempPasswordHash ?? undefined;
     const user = invite.email
       ? await input.upsertUserByEmail({ email: invite.email, name: displayName, passwordHash })
       : await input.createUserWithoutEmail({ name: displayName, passwordHash });
 
-    // β-9 — валидация «один user = одна Org».
     await this.assertNoOtherActiveMembership({
       userId: user.id,
       targetOrgId: invite.orgId,
@@ -685,13 +588,6 @@ export class OrgInvitationsService {
     });
   }
 
-  /**
-   * β-9 — сброс привязки Telegram для сотрудника (директор за него,
-   * например при смене телефона). Удаляет все `ChannelBinding`-и
-   * сотрудника в данной Org для глобального Telegram-канала.
-   *
-   * Используется эндпоинтом `DELETE /api/v1/orgs/:orgId/members/:userId/telegram-binding`.
-   */
   async resetMemberTelegramBinding(input: {
     orgId: string;
     targetUserId: string;
@@ -707,7 +603,6 @@ export class OrgInvitationsService {
         },
       });
     }
-    // Проверим, что target — действительно член этой Org.
     const targetMembership = await this.prisma.membership.findUnique({
       where: { orgId_userId: { orgId: input.orgId, userId: input.targetUserId } },
     });
@@ -718,8 +613,6 @@ export class OrgInvitationsService {
       });
     }
 
-    // Удаляем все привязки Telegram (kind='telegram_bot') этого user'а.
-    // Глобальный канал и per-tenant каналы — лучше захватить оба варианта.
     const deleted = await this.prisma.channelBinding.deleteMany({
       where: {
         userId: input.targetUserId,
@@ -733,18 +626,7 @@ export class OrgInvitationsService {
     return { removed: deleted.count };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
 
-  /**
-   * β-9 — «Один user = одна Org» валидация. Проверяет, что у пользователя
-   * нет другого активного `Membership` в Org, отличной от целевой.
-   * При наличии — `ConflictException` с понятным русским сообщением.
-   *
-   * Реализуется на уровне сервиса (не БД), потому что Membership остаётся
-   * many-to-many для будущей гибкости. См. ТЗ §3 решение 13 и
-   * second-brain/01_projects/conversational-channels.md §«Продуктовые
-   * принципы каналов» (принцип 4).
-   */
   private async assertNoOtherActiveMembership(input: {
     userId: string;
     targetOrgId: string;
@@ -770,10 +652,6 @@ export class OrgInvitationsService {
     }
   }
 
-  /**
-   * Общая логика accept: обновить статус OrgInvitation + создать Membership.
-   * Используется acceptInvitation (старый путь) и acceptViaMagicLink (β-9).
-   */
   private async acceptInsideTransaction(args: {
     tx: Prisma.TransactionClient;
     invitationId: string;
@@ -792,7 +670,6 @@ export class OrgInvitationsService {
       },
     });
 
-    // Линковка Person ↔ User (Фаза 0a §10).
     let personIdForMembership: string | null = null;
     if (args.personId) {
       const person = await args.tx.person.findUnique({
@@ -831,9 +708,6 @@ export class OrgInvitationsService {
 
   private buildMagicLinkUrl(magicToken: string): string {
     const base = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
-    // β-9: путь `/invite/<token>` — публичный (без auth), под существующий
-    // frontend route `app/invite/[token]/page.tsx`. НЕ путать с авторизованным
-    // `/invitations/[token]` для legacy-flow (там нужен уже залогиненный юзер).
     return `${base}/invite/${magicToken}`;
   }
 
@@ -847,24 +721,10 @@ export class OrgInvitationsService {
     return `https://t.me/${username}?start=${linkCode}`;
   }
 
-  /**
-   * QR-код для magicLinkUrl. На β-9 — fallback no-op (возвращаем null),
-   * библиотека генерации QR не в зависимостях бэка (директор пользуется
-   * текстовой ссылкой `manualShareUrl`). Frontend (Wave 3) построит QR
-   * через клиентскую библиотеку. Если в `backend/package.json` появится
-   * `qrcode` — можно подключить здесь без изменения сигнатуры.
-   */
   private async tryBuildQrCode(_url: string): Promise<string | null> {
     return null;
   }
 
-  /**
-   * Argon2id для одноразового пароля. Параметры из `cfg.argon`
-   * (синхронно дублирует поведение PasswordService.hash — мы не можем
-   * импортировать PasswordService из AccountsModule, поскольку
-   * AccountsModule сам импортирует OrgsModule, и получится cycle).
-   * См. audit Б1.
-   */
   private async hashPasswordArgon2(plain: string): Promise<string> {
     return argon2.hash(plain, {
       type: argon2.argon2id,
@@ -890,17 +750,10 @@ export class OrgInvitationsService {
   }
 }
 
-/** Утилита: sha256 hex, как в `AccountsService.hashToken`. */
 function sha256Hex(raw: string): string {
   return createHash('sha256').update(raw).digest('hex');
 }
 
-/**
- * β-10 / audit Б1 (2026-05-29): одноразовый пароль для credentials-onboarding.
- * 15 байт → 20 base64url-символов = 120 бит энтропии (NIST SP 800-63B
- * compliant, ↑ с 72 бит в исходной β-10 реализации). Вынесено сюда чтобы
- * избежать циклической зависимости AccountsService↔OrgInvitationsService.
- */
 function generateInviteTempPassword(): string {
   return randomBytes(15).toString('base64url');
 }

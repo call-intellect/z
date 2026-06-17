@@ -6,10 +6,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { ConflictService } from '../../curation/services/conflict.service';
 import {
   FACT_SUPERSEDE_DETECT_JSON_SCHEMA,
@@ -21,43 +18,10 @@ import {
   type FactSupersedeVerdict,
 } from '../prompts/fact-supersede-detect.prompt';
 
-/**
- * KC-Temporal W1.2 (2026-05-25) — `FactSupersedeService`.
- *
- * Запускается после `block-distill.markCanonical(block)` (через
- * `block-distill.worker.ts`) при `cfg.bitemporal.enabled &&
- * cfg.bitemporal.supersedeEnabled`. Логика (см. ТЗ §W1.2):
- *
- *   1. Загрузить block. Если `signalType ∉ factSignalTypes` — skip.
- *   2. Redis lock SETNX `fact-supersede:${blockId}` TTL=30s (race-condition
- *      на параллельных воркерах). fail-open при ошибке Redis.
- *   3. KNN top-K cosine по `IdeaBlock.embedding`, фильтр:
- *      same tenant + same signalType + `validUntil IS NULL` + `id ≠ self`.
- *      Threshold `cfg.bitemporal.factSupersedeCosineThreshold`.
- *   4. Если кандидатов 0 → skip.
- *   5. LLM `fact-supersede-detect` через `LlmRouterService`.
- *   6. Применение:
- *      - `unrelated` / `extends` → no-op (verdict логируется).
- *      - `contradicts` → `IdeaBlockLink(relationType='contradicts')`
- *        (status='active'), no closing.
- *      - `supersedes` → транзакция: `old.validUntil=now`, `supersededAt=now`,
- *        `supersededById=new.id` + `IdeaBlockLink(supersedes)` + `ConflictService.report`
- *        (`suggestedResolution='evolving'`).
- *
- * Все вызовы — best-effort: при ошибках LLM/БД/Redis сервис возвращает
- * `applied=false` и не роняет воркер (caller-ы тоже оборачивают в try/catch).
- *
- * Метрики:
- *   - `kc_fact_supersede_verdicts_total{verdict}` — verdict ∈ unrelated |
- *     extends | contradicts | supersedes | skip_no_candidates |
- *     skip_not_fact_signal | skip_race_lost | skip_llm_error.
- *   - `kc_fact_supersede_latency_ms` — длительность processNewBlock в мс.
- */
 @Injectable()
 export class FactSupersedeService {
   private readonly logger = new Logger(FactSupersedeService.name);
 
-  /** Redis-lock TTL — защита от вечного lock'а при падении процесса. */
   private static readonly LOCK_TTL_SECONDS = 30;
 
   constructor(
@@ -72,18 +36,6 @@ export class FactSupersedeService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  // ───────────────────────── публичный API ──────────────────────────────
-  /**
-   * Обработать canonical-блок: поискать KNN-кандидатов того же signalType,
-   * прогнать LLM-арбитра и применить verdict. Идемпотентно (повторный вызов
-   * на supersedes-уже-закрытом блоке вернёт `applied=false`).
-   *
-   * Возвращает структурированный результат для логов/тестов:
-   *   - `verdict` — финальный verdict (LLM-вердикт или skip-причина).
-   *   - `targetId` — id кандидата, если verdict указал на него.
-   *   - `applied` — действительно ли мы что-то записали в БД
-   *     (true только для contradicts/supersedes).
-   */
   async processNewBlock(blockId: string): Promise<{
     verdict:
       | FactSupersedeVerdict
@@ -113,11 +65,9 @@ export class FactSupersedeService {
     applied: boolean;
   }> {
     const factSignalTypes = this.cfg?.bitemporal.factSignalTypes ?? [];
-    const cosineThreshold =
-      this.cfg?.bitemporal.factSupersedeCosineThreshold ?? 0.85;
+    const cosineThreshold = this.cfg?.bitemporal.factSupersedeCosineThreshold ?? 0.85;
     const topK = this.cfg?.bitemporal.factSupersedeKnnTopK ?? 5;
 
-    // 1. Загрузка блока.
     const block = await this.prisma.ideaBlock.findUnique({
       where: { id: blockId },
       include: {
@@ -128,13 +78,8 @@ export class FactSupersedeService {
       this.logger.debug({ blockId }, 'fact-supersede: блок не найден — skip');
       return { verdict: 'skip_no_candidates', applied: false };
     }
-    // Если блок уже закрыт (supersededById!=null или validUntil!=null) —
-    // не имеет смысла применять supersede заново.
     if (block.validUntil !== null || block.supersededById !== null) {
-      this.logger.debug(
-        { blockId },
-        'fact-supersede: блок уже закрыт — skip',
-      );
+      this.logger.debug({ blockId }, 'fact-supersede: блок уже закрыт — skip');
       return { verdict: 'skip_no_candidates', applied: false };
     }
     if (!factSignalTypes.includes(block.signalType)) {
@@ -142,20 +87,15 @@ export class FactSupersedeService {
       return { verdict: 'skip_not_fact_signal', applied: false };
     }
 
-    // 2. Redis-lock: не запускаем второй параллельный processNewBlock'.
     const lockKey = `fact-supersede:${blockId}`;
     const lockClaimed = await this.tryAcquireLock(lockKey);
     if (!lockClaimed) {
       this.metrics.incKcFactSupersedeVerdict({ verdict: 'skip_race_lost' });
-      this.logger.debug(
-        { blockId },
-        'fact-supersede: lock уже занят другим воркером — skip',
-      );
+      this.logger.debug({ blockId }, 'fact-supersede: lock уже занят другим воркером — skip');
       return { verdict: 'skip_race_lost', applied: false };
     }
 
     try {
-      // 3. KNN top-K по embedding'у (cosine similarity).
       const candidates = await this.knnCandidates({
         tenantId: block.tenantId,
         blockId: block.id,
@@ -168,7 +108,6 @@ export class FactSupersedeService {
         return { verdict: 'skip_no_candidates', applied: false };
       }
 
-      // 4. LLM-арбитр.
       let verdict: FactSupersedeDetectResponse;
       try {
         verdict = await this.callLlm({
@@ -190,9 +129,7 @@ export class FactSupersedeService {
 
       this.metrics.incKcFactSupersedeVerdict({ verdict: verdict.verdict });
 
-      // 5. Применение verdict.
       const targetBlockId = verdict.targetBlockId ?? undefined;
-      // Защита от галлюцинации: targetBlockId должен принадлежать candidates.
       if (
         verdict.verdict !== 'unrelated' &&
         targetBlockId &&
@@ -240,7 +177,6 @@ export class FactSupersedeService {
         };
       }
 
-      // verdict === 'supersedes'
       const applied = await this.applySupersedes({
         tenantId: block.tenantId,
         newBlockId: block.id,
@@ -258,7 +194,6 @@ export class FactSupersedeService {
     }
   }
 
-  // ─────────────────────────── KNN ──────────────────────────────────────
   private async knnCandidates(args: {
     tenantId: string;
     blockId: string;
@@ -266,10 +201,6 @@ export class FactSupersedeService {
     topK: number;
     threshold: number;
   }): Promise<FactSupersedeDetectCandidate[]> {
-    // Cosine distance pgvector `<=>` ([0; 2], 0 = идентичные).
-    // similarity = 1 - distance (для нормированных embedding'ов [0; 1]).
-    // Фильтр: same tenant + same signalType + validUntil IS NULL + id != self.
-    // Берём только embedding-наполненные блоки.
     interface Row {
       id: string;
       name: string;
@@ -321,7 +252,6 @@ export class FactSupersedeService {
     return out;
   }
 
-  // ─────────────────────────── LLM ──────────────────────────────────────
   private async callLlm(args: {
     tenantId: string;
     newBlock: IdeaBlock & { evidence?: { quote: string }[] };
@@ -329,9 +259,7 @@ export class FactSupersedeService {
   }): Promise<FactSupersedeDetectResponse> {
     const guardOn = this.isPromptInjectionGuardEnabled();
     const evidenceQuote =
-      args.newBlock.evidence && args.newBlock.evidence[0]
-        ? args.newBlock.evidence[0].quote
-        : null;
+      args.newBlock.evidence && args.newBlock.evidence[0] ? args.newBlock.evidence[0].quote : null;
     const userPrompt = FACT_SUPERSEDE_DETECT_USER_TEMPLATE({
       newBlock: {
         id: args.newBlock.id,
@@ -339,9 +267,7 @@ export class FactSupersedeService {
         criticalQuestion: args.newBlock.criticalQuestion,
         trustedAnswer: args.newBlock.trustedAnswer,
         signalType: args.newBlock.signalType,
-        validFrom: args.newBlock.validFrom
-          ? args.newBlock.validFrom.toISOString()
-          : null,
+        validFrom: args.newBlock.validFrom ? args.newBlock.validFrom.toISOString() : null,
         evidenceQuote,
       },
       candidates: args.candidates,
@@ -369,9 +295,7 @@ export class FactSupersedeService {
       !parsed ||
       typeof parsed !== 'object' ||
       parsed.verdict === undefined ||
-      !['unrelated', 'extends', 'contradicts', 'supersedes'].includes(
-        parsed.verdict as string,
-      ) ||
+      !['unrelated', 'extends', 'contradicts', 'supersedes'].includes(parsed.verdict as string) ||
       typeof parsed.reason !== 'string' ||
       typeof parsed.confidence !== 'number'
     ) {
@@ -379,14 +303,12 @@ export class FactSupersedeService {
     }
     return {
       verdict: parsed.verdict as FactSupersedeVerdict,
-      targetBlockId:
-        typeof parsed.targetBlockId === 'string' ? parsed.targetBlockId : null,
+      targetBlockId: typeof parsed.targetBlockId === 'string' ? parsed.targetBlockId : null,
       reason: parsed.reason,
       confidence: parsed.confidence,
     };
   }
 
-  // ─────────────────────────── apply: contradicts ───────────────────────
   private async applyContradicts(args: {
     tenantId: string;
     newBlockId: string;
@@ -433,14 +355,6 @@ export class FactSupersedeService {
     }
   }
 
-  // ─────────────────────────── apply: supersedes ────────────────────────
-  /**
-   * Закрыть старый блок (validUntil=now + supersedeById) + завести supersede-link
-   * + report ConflictItem(`suggestedResolution='evolving'`).
-   *
-   * Транзакционно. Возвращает `true`, если фактически закрыли блок;
-   * `false`, если блок уже закрыт другим процессом (race).
-   */
   private async applySupersedes(args: {
     tenantId: string;
     newBlockId: string;
@@ -452,7 +366,6 @@ export class FactSupersedeService {
     let applied = false;
     try {
       await this.prisma.$transaction(async (tx) => {
-        // Защита от race: только если old.validUntil ещё NULL.
         const updated = await tx.ideaBlock.updateMany({
           where: {
             id: args.targetBlockId,
@@ -466,7 +379,6 @@ export class FactSupersedeService {
           },
         });
         if (updated.count === 0) {
-          // Уже кто-то закрыл — выходим из транзакции без записи link/conflict.
           return;
         }
 
@@ -510,8 +422,6 @@ export class FactSupersedeService {
         return false;
       }
 
-      // ConflictItem — вне транзакции (он сам идемпотентный + поднимает
-      // нотификации, не хотим держать tx открытой).
       await this.reportEvolvingConflict({
         tenantId: args.tenantId,
         existingId: args.targetBlockId,
@@ -571,8 +481,6 @@ export class FactSupersedeService {
     }
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────────
-
   private async tryAcquireLock(lockKey: string): Promise<boolean> {
     try {
       const r = await this.redis.client.set(
@@ -584,7 +492,6 @@ export class FactSupersedeService {
       );
       return r === 'OK';
     } catch (err) {
-      // fail-open: если Redis недоступен — пускаем без lock'а.
       this.logger.debug(
         {
           lockKey,
@@ -599,9 +506,7 @@ export class FactSupersedeService {
   private async releaseLock(lockKey: string): Promise<void> {
     try {
       await this.redis.client.del(lockKey);
-    } catch {
-      // молча: lock сам истечёт через TTL.
-    }
+    } catch {}
   }
 
   private isPromptInjectionGuardEnabled(): boolean {
@@ -612,7 +517,6 @@ export class FactSupersedeService {
     }
   }
 
-  /** Confidence приходит из LLM как float [0..1]; нормализуем для @db.Decimal(4,3). */
   private clampConfidence(v: number): string {
     if (!Number.isFinite(v)) return '0.500';
     if (v < 0) return '0.000';

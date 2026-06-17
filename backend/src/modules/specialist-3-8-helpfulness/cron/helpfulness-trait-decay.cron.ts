@@ -5,26 +5,6 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
-/**
- * SBA Wave 2 — HelpfulnessTraitDecayCron.
- *
- * Каждый день в 06:00 UTC помечает trait'ы, у которых не было новых
- * наблюдений > 30 дней (`lastObservedAt < now-30d` AND `status='active'`):
- *
- *   - status = 'decayed'
- *   - decayedAt = now
- *
- * Decayed trait'ы НЕ удаляются (история сохраняется), но исключаются из:
- *   - SocialContributionProfileCron (агрегация по status='active')
- *   - HelpfulnessSpotlightCron (агрегация по status='active')
- *   - публичных API эндпоинтов
- *
- * Идемпотентно: повторный прогон ничего не делает (decayed уже выставлены).
- *
- * NB: порог 30 дней — берём sub-ТЗ §«Жизненный цикл» вариант (vs 90 дней в
- * sub-ТЗ §«Cron»). 30 даёт более актуальный профиль для weekly spotlight.
- * При необходимости — вынести в env позже.
- */
 @Injectable()
 export class HelpfulnessTraitDecayCron {
   private readonly logger = new Logger(HelpfulnessTraitDecayCron.name);
@@ -50,7 +30,6 @@ export class HelpfulnessTraitDecayCron {
     }
   }
 
-  /** Public — для ручного запуска / тестов. */
   async runOnce(): Promise<{ decayedCount: number }> {
     const now = new Date();
     const threshold = new Date(

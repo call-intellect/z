@@ -1,17 +1,8 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 
-/**
- * Заголовок карточки: квадратная градиентная иконка + текст заголовка.
- * Разметка 1-в-1 из витрины редизайна.
- *
- * Иконка лежит на насыщенном градиенте (`grad`) в ОБЕИХ темах, поэтому её цвет —
- * постоянный почти-белый (НЕ `--text-primary`: иначе в светлой теме была бы
- * тёмная иконка на ярком фоне — низкий контраст). Текст заголовка наследует
- * `--text-primary` (адаптируется к теме).
- */
-const ICON_ON_GRADIENT = 'oklch(0.99 0.005 280)';
+const ICON_ON_GRADIENT = "oklch(0.99 0.005 280)";
 export function CardTitle({
   icon,
   grad,

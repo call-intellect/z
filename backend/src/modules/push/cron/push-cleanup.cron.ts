@@ -4,20 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { TypedConfigService } from '../../../common/config/typed-config.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * PushCleanupCron — ежесуточная очистка протухших push-подписок.
- *
- * Запускается в 03:00 UTC (период низкой нагрузки). Удаляет записи
- * `PushSubscription`, у которых:
- *   - `failureCount >= cfg.push.maxFailures` (порог из ENV `PUSH_MAX_FAILURES`),
- *     ИЛИ
- *   - `expiresAt < now()` (если push-сервис когда-либо вернул TTL).
- *
- * Сценарий «авторитетной чистки»: основной путь удаления — `WebPushSender.markFailure`
- * прямо в момент 410/404. Cron — страховка для подписок, на которые мы
- * давно не пытались отправлять (например, user не активен в lеnte, или
- * сразу подписка вернула TTL).
- */
 @Injectable()
 export class PushCleanupCron {
   private readonly logger = new Logger(PushCleanupCron.name);
@@ -39,22 +25,16 @@ export class PushCleanupCron {
     }
   }
 
-  /** Публичный метод — удобно вызывать из тестов. */
   async run(): Promise<{ deleted: number }> {
     const max = this.cfg.push.maxFailures;
     const now = new Date();
     const res = await this.prisma.pushSubscription.deleteMany({
       where: {
-        OR: [
-          { failureCount: { gte: max } },
-          { expiresAt: { lt: now } },
-        ],
+        OR: [{ failureCount: { gte: max } }, { expiresAt: { lt: now } }],
       },
     });
     if (res.count > 0) {
-      this.logger.debug(
-        `push-cleanup: удалено подписок ${res.count} (max-failures=${max})`,
-      );
+      this.logger.debug(`push-cleanup: удалено подписок ${res.count} (max-failures=${max})`);
     }
     return { deleted: res.count };
   }

@@ -1,20 +1,8 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Patch,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
 
@@ -34,12 +22,6 @@ import { LogService, type LogQueryFilters } from './log.service';
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * LoggingModule — REST для админки (только SUPER_ADMIN).
- *
- * `:id` объявлен ПОСЛЕ `aggregates`/`settings`, иначе перехватит их.
- * PATCH settings и cleanup сами пишут security-лог факта изменения.
- */
 @ApiTags('platform-logs')
 @Controller('api/v1/platform/logs')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -52,9 +34,7 @@ export class SystemLogsController {
 
   @Get()
   @ApiOperation({ summary: 'Список технических логов: фильтры + пагинация.' })
-  async list(
-    @Query(new ZodValidationPipe(SystemLogQuerySchema)) q: SystemLogQueryDto,
-  ) {
+  async list(@Query(new ZodValidationPipe(SystemLogQuerySchema)) q: SystemLogQueryDto) {
     const filters: LogQueryFilters = {
       limit: q.limit,
       offset: q.offset,
@@ -80,9 +60,7 @@ export class SystemLogsController {
 
   @Get('aggregates')
   @ApiOperation({ summary: 'Агрегаты логов за период (по умолчанию 7 дней).' })
-  async aggregates(
-    @Query(new ZodValidationPipe(AggregatesQuerySchema)) q: AggregatesQueryDto,
-  ) {
+  async aggregates(@Query(new ZodValidationPipe(AggregatesQuerySchema)) q: AggregatesQueryDto) {
     const to = q.dateTo ?? new Date();
     const from = q.dateFrom ?? new Date(to.getTime() - WEEK_MS);
     return this.logs.aggregates(from, to);

@@ -1,9 +1,3 @@
-/**
- * Action constants для AuditLog.
- *
- * ВНИМАНИЕ: значения — стабильный контракт. Не переименовывать без миграции
- * существующих записей и обновления админ-фильтров.
- */
 export const AUDIT = {
   USER_DELETE: 'user.delete',
   USER_RESTORE: 'user.restore',
@@ -40,7 +34,6 @@ export const AUDIT = {
   MEETING_LINK_TO_CARD: 'meeting.link_to_card',
   MEETING_UNLINK_FROM_CARD: 'meeting.unlink_from_card',
 
-  // ── knowledge-core Фаза 10: источники + ingest ──
   SOURCE_CREATED: 'source.created',
   SOURCE_UPDATED: 'source.updated',
   SOURCE_DELETED: 'source.deleted',
@@ -48,7 +41,6 @@ export const AUDIT = {
   DUMP_CREATED: 'dump.created',
   INGEST_API_KEY_USED: 'ingest_api_key.used',
 
-  // ── knowledge-core Фаза 11: blocks / entities / themes / retention / security ──
   BLOCK_CREATED: 'block.created',
   BLOCK_MERGED: 'block.merged',
   BLOCK_ARCHIVED: 'block.archived',
@@ -69,12 +61,9 @@ export const AUDIT = {
   RETENTION_POLICY_UPDATED: 'retention_policy.updated',
   DATA_CLASS_VIOLATION: 'data_class.violation',
 
-  // ── knowledge-core Фаза 12: entitlements / billing ──
   TIER_CHANGED: 'tier.changed',
   ENTITLEMENT_OVERRIDE_SET: 'entitlement.override_set',
 } as const;
-
-export type AuditAction = (typeof AUDIT)[keyof typeof AUDIT];
 
 export interface AuditLogInput {
   userId?: string | null;

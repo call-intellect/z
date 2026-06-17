@@ -4,7 +4,7 @@ status: blocked-on-owner
 feature: probe-auto-drafts
 date: 2026-06-12
 relates_to:
-  - plans/tz/2026-06-11-autonomy-remove-manual-confirmations.md
+  - plans/archive/2026-06-11-autonomy-remove-manual-confirmations.md
 ---
 
 # ТЗ-заглушка · W2-Ф2.4 — авто-черновики HYBRID и AUTO для skill/knowledge probe

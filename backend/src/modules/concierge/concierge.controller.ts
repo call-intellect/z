@@ -20,10 +20,7 @@ import { TypedConfigService } from '../../common/config/index';
 import { PublicDemo } from '../../common/guards/public-demo.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -42,20 +39,6 @@ import { ConciergeQuotaService } from './services/concierge-quota.service';
 import { ConciergeUndoLogService } from './services/concierge-undo-log.service';
 import { ConciergeService } from './services/concierge.service';
 
-/**
- * SBA γ-2 — REST API Concierge Agent.
- *
- *   POST   /api/v1/concierge/messages          — SSE stream
- *   POST   /api/v1/concierge/messages/once     — polling fallback (single JSON)
- *   GET    /api/v1/concierge/conversations     — список диалогов
- *   GET    /api/v1/concierge/conversations/:id — детальный диалог
- *   POST   /api/v1/concierge/undo/:logId       — откат tool call
- *   GET    /api/v1/concierge/quota             — квоты пользователя
- *
- * RBAC: используем resource 'chat_v2_conversation' для read/write
- * conversation, а tool execution внутри ToolRouter проверяет permissions
- * именно на вызываемых ресурсах (concierge НЕ bypassит).
- */
 @ApiTags('concierge')
 @Controller('api/v1/concierge')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -70,8 +53,6 @@ export class ConciergeController {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(PrismaService) private readonly prisma: PrismaService,
   ) {}
-
-  // ────────────────────── messages: SSE stream ──────────────────────
 
   @Post('messages')
   @RequireSubscription()
@@ -97,9 +78,7 @@ export class ConciergeController {
     const heartbeat = setInterval(() => {
       try {
         res.write(`: heartbeat\n\n`);
-      } catch {
-        /* socket dead */
-      }
+      } catch {}
     }, this.cfg.concierge.sseHeartbeatSeconds * 1000);
 
     const baseUrl = this.deriveBaseUrl(req);
@@ -122,9 +101,7 @@ export class ConciergeController {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       res.write(`event: error\n`);
-      res.write(
-        `data: ${JSON.stringify({ type: 'error', code: 'stream_failure', message })}\n\n`,
-      );
+      res.write(`data: ${JSON.stringify({ type: 'error', code: 'stream_failure', message })}\n\n`);
     } finally {
       clearInterval(heartbeat);
       if (!res.writableEnded) {
@@ -132,8 +109,6 @@ export class ConciergeController {
       }
     }
   }
-
-  // ────────────────────── polling fallback ──────────────────────────
 
   @Post('messages/once')
   @RequireSubscription()
@@ -152,11 +127,6 @@ export class ConciergeController {
     conversationId: string;
     messageId: string | null;
     text: string;
-    /**
-     * ТЗ 2026-06-14 — цитаты chat-v2 при терминальном (passthrough)
-     * `ask_chat_v2`: на чистом вопросе к памяти ответ отдаётся напрямую с
-     * источниками. Отсутствует, когда turn не был чистым вопросом к памяти.
-     */
     citations?: unknown[];
     toolCalls: Array<{
       toolName: string;
@@ -184,7 +154,6 @@ export class ConciergeController {
     }> = [];
     let quotaExceeded: 'user_daily' | 'daily' | 'monthly' | undefined;
     let error: { code: string; message: string } | undefined;
-    // ТЗ 2026-06-14 — цитаты ask_chat_v2 passthrough (приходят в событии message).
     let citations: unknown[] | undefined;
 
     for await (const event of this.concierge.process({
@@ -238,8 +207,6 @@ export class ConciergeController {
       ...(error ? { error } : {}),
     };
   }
-
-  // ────────────────────── conversations ─────────────────────────────
 
   @Get('conversations')
   @ApiOperation({ summary: 'Список диалогов пользователя' })
@@ -334,8 +301,6 @@ export class ConciergeController {
     };
   }
 
-  // ────────────────────── undo ──────────────────────────────────────
-
   @Post('undo/:logId')
   @RequireSubscription()
   @HttpCode(HttpStatus.OK)
@@ -361,8 +326,6 @@ export class ConciergeController {
     });
   }
 
-  // ────────────────────── quota ─────────────────────────────────────
-
   @Get('quota')
   @ApiOperation({ summary: 'Текущая квота / использование Concierge' })
   async getQuota(
@@ -379,8 +342,6 @@ export class ConciergeController {
     return this.quota.getUsage(t);
   }
 
-  // ────────────────────── helpers ───────────────────────────────────
-
   private requireTenant(t: string | undefined): string {
     if (!t) {
       throw new ForbiddenException({
@@ -395,9 +356,6 @@ export class ConciergeController {
   }
 
   private async requireUse(userId: string, tenantId: string): Promise<void> {
-    // RBAC: concierge.use — для всех members; маппим на 'chat_v2_conversation/write self'
-    // как наиболее близкий существующий ресурс (members могут вести свои диалоги).
-    // Отдельный ResourceType 'concierge' добавлен в policy.csv ниже.
     const ok = await this.rbac.check({
       userId,
       tenantId,
@@ -417,11 +375,6 @@ export class ConciergeController {
     }
   }
 
-  /**
-   * Базовый URL backend'а для internal loopback ToolRouter'а. Берём
-   * `req.protocol + req.headers.host` — в проде это backend-LB; в dev —
-   * `http://localhost:3000`.
-   */
   private deriveBaseUrl(req: Request): string {
     const proto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'http';
     const host = req.headers.host ?? 'localhost:3000';

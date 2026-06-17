@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { MeetingHighlight } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
@@ -14,16 +8,6 @@ import { S3Service } from '../recordings/s3.service';
 
 import { HighlightsRepository } from './highlights.repository';
 
-/**
- * Обёртка над `AiQueueService.enqueueClipRender` с idempotency и квотой.
- *
- *   - Если `renderStatus IN (queued, processing)` → 409 `render_in_progress`.
- *   - Если `ready` → возвращаем presigned URL уже отрендеренного MP4.
- *   - Иначе:
- *     1. checkAndIncrement квоты `MAX_RENDER_JOBS_PER_HOUR` (через QuotaService);
- *     2. ставим status=queued;
- *     3. enqueue в `clip.render`.
- */
 @Injectable()
 export class ClipRenderService {
   private readonly logger = new Logger(ClipRenderService.name);
@@ -61,8 +45,6 @@ export class ClipRenderService {
       };
     }
 
-    // Реальный QuotaService сам бросит QuotaExceededError (HttpException 429)
-    // при превышении — AllExceptionsFilter сериализует тело и Retry-After.
     await this.quota.checkAndIncrement({
       userId,
       quotaName: 'render_jobs_per_hour',
@@ -74,9 +56,7 @@ export class ClipRenderService {
       renderError: null,
     });
     await this.queue.enqueueClipRender(highlight.id);
-    this.logger.log(
-      `clip.render enqueued highlight=${highlight.id} user=${userId}`,
-    );
+    this.logger.log(`clip.render enqueued highlight=${highlight.id} user=${userId}`);
     return { status: 'queued', renderStatus: 'queued' };
   }
 

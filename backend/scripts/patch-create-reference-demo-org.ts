@@ -1,26 +1,3 @@
-/**
- * patch-create-reference-demo-org.ts
- *
- * Создаёт **одну** эталонную демо-Org «Демо: ТехноСтрим» (isReferenceDemo=true)
- * + системного владельца + Subscription{status=ACTIVE, paymentMode='reference'}.
- * Заливает её через демо-сидеры (23 модуля демо-данных) — те же, что вызывает
- * `seed-demo-workspace.ts` под капотом.
- *
- * После запуска печатает в stdout:
- *   ZDEMO_ORG_ID=<cuid>
- * Эту строку нужно положить в .env (или ENV docker-compose), затем
- * перезапустить backend, чтобы AccountsService.register начал создавать
- * Membership(demo_observer) для новых пользователей.
- *
- * Идемпотентность: повторный запуск находит существующую Org с
- * isReferenceDemo=true и просто печатает её id (не создаёт дубль).
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-create-reference-demo-org.ts
- *
- * Источник: ТЗ plans/tz/2026-06-01-demo-shared-org-model.md §6.1.
- */
-
 import { runAllSeedSteps } from '../src/modules/onboarding/demo-data';
 import { markAllDemoEntitiesForTenant } from '../src/modules/onboarding/demo-data/mark-demo';
 import {
@@ -40,7 +17,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== patch-create-reference-demo-org START ===');
 
-  // 1. Идемпотентность — есть ли уже эталон?
   const existing = await prisma.org.findFirst({
     where: { isReferenceDemo: true, deletedAt: null },
     select: { id: true, name: true, demoWorkspaceSeededAt: true },
@@ -55,7 +31,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // 2. Создаём системного владельца (или находим — идемпотентно по email).
   let owner = await prisma.user.findFirst({
     where: { email: SYSTEM_OWNER_EMAIL },
     select: { id: true },
@@ -79,10 +54,8 @@ async function main(): Promise<void> {
     console.log(`[reuse] System owner: id=${owner.id}, email=${SYSTEM_OWNER_EMAIL}`);
   }
 
-  // 3. Создаём Org + Membership(owner) + Subscription{ACTIVE, reference}.
   const ownerId = owner.id;
   const orgId = await prisma.$transaction(async (tx) => {
-    // Уникальный slug — генерируем простой "demo-technostream-<n>" пока не свободен.
     let slug = 'demo-technostream';
     for (let attempt = 0; attempt < 100; attempt++) {
       const exists = await tx.org.findUnique({ where: { slug }, select: { id: true } });
@@ -133,9 +106,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log(`[create] Эталонная Org создана: id=${orgId}, name="${DEMO_ORG_NAME}"`);
 
-  // 4. Заливаем демо-данные через единый рантайм (23 модуля). См.
-  //    `backend/src/modules/onboarding/demo-data/index.ts` (DEMO_SEED_STEPS) —
-  //    единый источник правды для HTTP/CLI/patch.
   const ids: IdMap = createEmptyIdMap();
   const ctx: SeedContext = { prisma, tenantId: orgId, ownerUserId: ownerId };
 
@@ -144,9 +114,6 @@ async function main(): Promise<void> {
     console.log(`── [${i + 1}/${total}] ${step.label} (${step.key})`);
   });
 
-  // ТЗ 2026-05-29 audit Б3: помечаем externalSource='demo' у всех сущностей
-  // эталона — резервный путь для resetDemoWorkspace, если эталон когда-то
-  // понадобится сбросить через --force-update.
   const marked = await markAllDemoEntitiesForTenant(prisma, orgId);
   // eslint-disable-next-line no-console
   console.log(`── externalSource='demo' проставлен: updated=${marked.updated}`);

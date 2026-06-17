@@ -1,34 +1,27 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { ArrowRight, FlaskConical } from 'lucide-react';
+import Link from "next/link";
+import { ArrowRight, FlaskConical } from "lucide-react";
 
-import { adminFunctionsApi } from '@/api/admin-experiments.api';
-import { adminFunctionListFromApi, taskTypeLabel } from '@/domain/admin-experiment';
+import { adminFunctionsApi } from "@/api/admin-experiments.api";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
-import { Button } from '@/ui/shadcn/button';
+  adminFunctionListFromApi,
+  taskTypeLabel,
+} from "@/domain/admin-experiment";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Button } from "@/ui/shadcn/button";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+} from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
-/**
- * Список функций с активными A/B-экспериментами + ссылка на запуск нового.
- * Для запуска нового — переход на `/admin/usage/functions/[taskType]` (там
- * ExperimentStartDialog).
- */
 export function ExperimentsListClient() {
   const q = useAdminQuery(
-    'admin-experiments-list',
+    "admin-experiments-list",
     async () => {
       const res = await adminFunctionsApi.list();
       return adminFunctionListFromApi(res);
@@ -52,9 +45,7 @@ export function ExperimentsListClient() {
         <AdminError message={q.error} onRetry={q.refetch} />
       )}
 
-      {!q.isLoading && q.data && (
-        <ActiveExperimentsList items={q.data.items} />
-      )}
+      {!q.isLoading && q.data && <ActiveExperimentsList items={q.data.items} />}
     </div>
   );
 }
@@ -62,7 +53,7 @@ export function ExperimentsListClient() {
 function ActiveExperimentsList({
   items,
 }: {
-  items: ReturnType<typeof adminFunctionListFromApi>['items'];
+  items: ReturnType<typeof adminFunctionListFromApi>["items"];
 }) {
   const active = items.filter((it) => it.experimentEnabled);
 

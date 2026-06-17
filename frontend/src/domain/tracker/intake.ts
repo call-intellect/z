@@ -1,17 +1,9 @@
-/**
- * Доменная модель intake-карточки (входящая задача перед триажем).
- *
- * Контракт: `backend/src/modules/tracker/services/intake.service.ts`.
- */
-
 import {
   parseIssuePriority,
   type IntakeSource,
   type IntakeStatus,
   type IssuePriority,
-} from './enums';
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
+} from "./enums";
 
 export interface IntakeApi {
   id: string;
@@ -51,8 +43,6 @@ export interface ListIntakeResponseApi {
   limit: number;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Intake {
   id: string;
   tenantId: string;
@@ -84,34 +74,32 @@ export interface Intake {
   updatedAt: Date;
 }
 
-// ─── Mappers ────────────────────────────────────────────────────────────────
-
 const KNOWN_STATUSES = new Set<IntakeStatus>([
-  'pending',
-  'snoozed',
-  'accepted',
-  'rejected',
-  'duplicate',
+  "pending",
+  "snoozed",
+  "accepted",
+  "rejected",
+  "duplicate",
 ]);
 
 const KNOWN_SOURCES = new Set<IntakeSource>([
-  'in_app',
-  'email',
-  'telegram',
-  'checkin',
-  'meeting',
-  'api',
-  'concierge',
+  "in_app",
+  "email",
+  "telegram",
+  "checkin",
+  "meeting",
+  "api",
+  "concierge",
 ]);
 
 const parseDate = (s: string | null | undefined): Date | null =>
   s ? new Date(s) : null;
 
 const parseStatus = (raw: string): IntakeStatus =>
-  KNOWN_STATUSES.has(raw as IntakeStatus) ? (raw as IntakeStatus) : 'pending';
+  KNOWN_STATUSES.has(raw as IntakeStatus) ? (raw as IntakeStatus) : "pending";
 
 const parseSource = (raw: string): IntakeSource =>
-  KNOWN_SOURCES.has(raw as IntakeSource) ? (raw as IntakeSource) : 'in_app';
+  KNOWN_SOURCES.has(raw as IntakeSource) ? (raw as IntakeSource) : "in_app";
 
 const parseNumber = (s: string | null | undefined): number | null => {
   if (s === null || s === undefined) return null;
@@ -154,19 +142,11 @@ export function intakeFromApi(api: IntakeApi): Intake {
   };
 }
 
-// ─── Accept resolver ────────────────────────────────────────────────────────
-
-/**
- * Резолвит проект для accept входящей: явный projectId → suggested → null.
- * null означает «проект не определён, нужен ручной выбор» (открыть пикер).
- */
 export function resolveAcceptTargetProjectId(
-  item: Pick<Intake, 'projectId' | 'suggestedProjectId'>,
+  item: Pick<Intake, "projectId" | "suggestedProjectId">,
 ): string | null {
   return item.projectId ?? item.suggestedProjectId ?? null;
 }
-
-// ─── UI helpers ─────────────────────────────────────────────────────────────
 
 export function intakeDisplayTitle(intake: Intake): string {
   if (intake.extractedTitle && intake.extractedTitle.trim().length > 0) {

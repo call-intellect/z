@@ -2,28 +2,10 @@ import type { Entity, IdeaBlock } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
-import type {
-  LlmCallParams,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import type { LlmCallParams, LlmRouterService } from '../../ai/services/llm-router.service';
 
 import { EntityGraphService } from './entity-graph.service';
 
-/**
- * ТЗ-3 Фаза 1 (устойчивый парсинг JSON в entity-graph): арбитр графа сущностей
- * не должен молча терять связь на невалидном/обёрнутом JSON — lenient-парсер
- * (tryParseJson) + retry (2 попытки, зеркало block-linker) + метрики
- * молчаливой деградации.
- *
- * Покрываем:
- *   1. Валидный JSON-вердикт (конкретный relationType) → корректный verdict.
- *   2. Fenced ```json{...}``` валидный → парсится через tryParseJson (НЕ none).
- *   3. Оба ответа — мусор → 2 попытки → fallback {relationType:null} +
- *      incKcEntityGraphFallbackNone({reason:'exhausted'}) +
- *      incKcEntityGraphInvalidJson({reason:'parse'}) ×2.
- *   4. llm.call бросает оба раза → fallback none +
- *      incKcEntityGraphInvalidJson({reason:'llm_error'}) ×2 + fallback-метрика.
- */
 describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый парсинг)', () => {
   let metrics: {
     incKcEntityGraphInvalidJson: ReturnType<typeof vi.fn>;
@@ -37,9 +19,7 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
     };
   });
 
-  function makeRouterReturning(
-    responses: Array<{ text: string } | Error>,
-  ): LlmRouterService {
+  function makeRouterReturning(responses: Array<{ text: string } | Error>): LlmRouterService {
     let i = 0;
     return {
       call: vi.fn(async (_params: LlmCallParams) => {
@@ -86,17 +66,12 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
     recentBlocks: [makeBlock('blk1')],
   };
 
-  function makeService(
-    router: LlmRouterService,
-    withMetrics = false,
-  ): EntityGraphService {
+  function makeService(router: LlmRouterService, withMetrics = false): EntityGraphService {
     return new EntityGraphService(
-      {} as never, // prisma — не нужен для judgeRelation
+      {} as never,
       router,
-      undefined, // cfg
-      (withMetrics
-        ? (metrics as unknown as BusinessMetricsService)
-        : undefined) as never,
+      undefined,
+      (withMetrics ? (metrics as unknown as BusinessMetricsService) : undefined) as never,
     );
   }
 
@@ -175,10 +150,7 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
   });
 
   it('llm.call бросает оба раза → fallback none + метрики llm_error', async () => {
-    const router = makeRouterReturning([
-      new Error('boom-1'),
-      new Error('boom-2'),
-    ]);
+    const router = makeRouterReturning([new Error('boom-1'), new Error('boom-2')]);
     const svc = makeService(router, true);
     const verdict = await svc.judgeRelation(judgeArgs);
 
@@ -210,7 +182,6 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
     const svc = makeService(router, true);
     const verdict = await svc.judgeRelation(judgeArgs);
 
-    // Связь НЕ потеряна — ретрай восстановил.
     expect(verdict.relationType).toBe('part_of');
     expect(verdict.confidence).toBe(0.77);
     expect(router.call).toHaveBeenCalledTimes(2);
@@ -218,7 +189,6 @@ describe('EntityGraphService.judgeRelation (ТЗ-3 Ф1 — устойчивый 
       expect.objectContaining({ reason: 'parse' }),
     );
     expect(metrics.incKcEntityGraphInvalidJson).toHaveBeenCalledTimes(1);
-    // Терминального fallback НЕ было.
     expect(metrics.incKcEntityGraphFallbackNone).not.toHaveBeenCalled();
   });
 });

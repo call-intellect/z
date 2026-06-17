@@ -1,30 +1,27 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import useSWR from 'swr';
-import { Users } from 'lucide-react';
+import { useState } from "react";
+import Link from "next/link";
+import useSWR from "swr";
+import { Users } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   departmentsApi,
   rolesDomainApi,
   type DepartmentApi,
   type RoleDomainApi,
-} from '@/api/structure.api';
-import { useAuth } from '@/contexts/auth-context';
-import { getRoleTemplates } from '@/lib/role-templates';
-import { EmptyState } from '@/ui/components/shared/EmptyState';
-import { QueryGate } from '@/ui/components/shared/QueryGate';
-import { Badge } from '@/ui/shadcn/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/api/structure.api";
+import { useAuth } from "@/contexts/auth-context";
+import { getRoleTemplates } from "@/lib/role-templates";
+import { EmptyState } from "@/ui/components/shared/EmptyState";
+import { QueryGate } from "@/ui/components/shared/QueryGate";
+import { Badge } from "@/ui/shadcn/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-import { AdminEmpty, AdminForbidden } from '@app/(admin)/admin/AdminStateViews';
+import { AdminEmpty, AdminForbidden } from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/roles` — список карточек должностей. Каждая ведёт в `/roles/:id`.
- */
 export function RolesListClient() {
   const { currentOrgId, isLoading } = useAuth();
 
@@ -42,27 +39,25 @@ export function RolesListClient() {
 
 function Content({ orgId }: { orgId: string }) {
   const { data, error, isLoading, mutate } = useSWR(
-    ['roles-list', orgId],
+    ["roles-list", orgId],
     () => rolesDomainApi.list(orgId),
     { revalidateOnFocus: false },
   );
 
   const { data: depsData } = useSWR(
-    ['departments', orgId],
+    ["departments", orgId],
     () => departmentsApi.list(orgId),
     { revalidateOnFocus: false },
   );
   const departments = depsData?.items ?? [];
 
-  // Спец-случай: 404 API ещё нет / 403 forbidden — сохраняем семантику
-  // AdminEmpty/AdminForbidden, остальные ошибки — общий ErrorState внутри QueryGate.
   const errorView =
-    error instanceof ApiError && error.code === 'http_404' ? (
+    error instanceof ApiError && error.code === "http_404" ? (
       <AdminEmpty
         title="Раздел в разработке"
         description="API должностей ещё не подключён."
       />
-    ) : error instanceof ApiError && error.code === 'forbidden' ? (
+    ) : error instanceof ApiError && error.code === "forbidden" ? (
       <AdminForbidden />
     ) : undefined;
 
@@ -130,7 +125,7 @@ function RoleCard({ role }: { role: RoleDomainApi }) {
         </CardHeader>
         <CardContent className="space-y-2">
           <p className="text-xs text-fg-tertiary">
-            {role.departmentName ?? 'Без отдела'}
+            {role.departmentName ?? "Без отдела"}
           </p>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1 text-sm text-fg-secondary">
@@ -148,24 +143,22 @@ function RoleCard({ role }: { role: RoleDomainApi }) {
 function ProfileStatusBadge({
   status,
 }: {
-  status?: RoleDomainApi['profileStatus'];
+  status?: RoleDomainApi["profileStatus"];
 }) {
   switch (status) {
-    case 'ready':
+    case "ready":
       return <Badge>Карта готова</Badge>;
-    case 'forming':
+    case "forming":
       return <Badge variant="secondary">Формируется</Badge>;
-    case 'stale':
+    case "stale":
       return <Badge variant="secondary">Требует обновления</Badge>;
-    case 'error':
+    case "error":
       return <Badge variant="outline">Ошибка</Badge>;
-    case 'absent':
+    case "absent":
     default:
       return <Badge variant="outline">Карты ещё нет</Badge>;
   }
 }
-
-// ─── RoleSuggestionsPanel ────────────────────────────────────────────────────
 
 function RoleSuggestionsPanel({
   orgId,
@@ -183,10 +176,12 @@ function RoleSuggestionsPanel({
   const handleAdd = async (deptId: string, roleName: string) => {
     setAdding(roleName + deptId);
     try {
-      await rolesDomainApi.create(orgId, { name: roleName, departmentId: deptId });
+      await rolesDomainApi.create(orgId, {
+        name: roleName,
+        departmentId: deptId,
+      });
       onRoleAdded();
     } catch {
-      // silent
     } finally {
       setAdding(null);
     }
@@ -205,7 +200,9 @@ function RoleSuggestionsPanel({
               key={dept.id}
               className="rounded-xl border border-border-default bg-bg-subtle p-4"
             >
-              <p className="text-sm font-medium text-fg-primary mb-2">{dept.name}</p>
+              <p className="text-sm font-medium text-fg-primary mb-2">
+                {dept.name}
+              </p>
               <div className="flex flex-wrap gap-2">
                 {suggestions.map((roleName) => (
                   <button
@@ -214,7 +211,7 @@ function RoleSuggestionsPanel({
                     disabled={adding === roleName + dept.id}
                     className="rounded-md border border-border-default bg-bg-base px-3 py-1 text-xs text-fg-secondary hover:bg-bg-muted transition-colors disabled:opacity-50"
                   >
-                    {adding === roleName + dept.id ? '...' : `+ ${roleName}`}
+                    {adding === roleName + dept.id ? "..." : `+ ${roleName}`}
                   </button>
                 ))}
               </div>

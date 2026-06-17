@@ -4,21 +4,7 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
 import type { LlmCallResult, LlmRouterService } from './llm-router.service';
-import {
-  type DebateVerdict,
-  MultiAgentDebateService,
-} from './multi-agent-debate.service';
-
-/**
- * Unit-тесты MultiAgentDebateService.
- *
- * 4 сценария (см. plans/tz/2026-05-29-agents-v2-umbrella.md §A2):
- *   1. Unanimous (3-0) — все 3 голоса согласны.
- *   2. Majority (2-1) — мажоритарное голосование.
- *   3. Split (1-1-1) — все разные verdict'ы.
- *   4. Cost cap exceeded — суммарная стоимость превысила cap.
- * Плюс: cost budget test — нормальный debate-run < $0.01 (3 calls).
- */
+import { type DebateVerdict, MultiAgentDebateService } from './multi-agent-debate.service';
 
 interface VoteMock {
   verdict: string;
@@ -30,10 +16,10 @@ interface VoteMock {
   outputTokens?: number;
 }
 
-function buildLlmRouter(
-  /** Голоса в порядке вызовов критик → supporter → neutral. */
-  votes: Array<VoteMock | Error>,
-): { router: LlmRouterService; calls: Array<{ taskType: string }> } {
+function buildLlmRouter(votes: Array<VoteMock | Error>): {
+  router: LlmRouterService;
+  calls: Array<{ taskType: string }>;
+} {
   const calls: Array<{ taskType: string }> = [];
   let i = 0;
   const call = vi.fn(async (params: { taskType: string }): Promise<LlmCallResult> => {
@@ -72,13 +58,15 @@ function buildMetrics() {
   };
 }
 
-function buildCfg(overrides?: Partial<{
-  enabled: boolean;
-  defaultN: number;
-  defaultRounds: number;
-  round2Enabled: boolean;
-  costCapUsdPerRun: number;
-}>): TypedConfigService {
+function buildCfg(
+  overrides?: Partial<{
+    enabled: boolean;
+    defaultN: number;
+    defaultRounds: number;
+    round2Enabled: boolean;
+    costCapUsdPerRun: number;
+  }>,
+): TypedConfigService {
   const debate = {
     enabled: true,
     defaultN: 3,
@@ -159,9 +147,6 @@ describe('MultiAgentDebateService.judge', () => {
       decision: 'new',
       consensusType: 'majority',
     });
-    // Provider disagreement: критик (deepseek, new) vs supporter (openai, merge),
-    // и supporter (openai, merge) vs neutral (deepseek, new). Пары
-    // (deepseek, openai-via-proxy) попадут дважды.
     expect(metrics.incDebateProviderDisagreement).toHaveBeenCalled();
   });
 
@@ -186,14 +171,10 @@ describe('MultiAgentDebateService.judge', () => {
       decision: 'split_uncertain',
       consensusType: 'split',
     });
-    // round 2 НЕ должен сработать (флаг disabled по дефолту).
     expect(metrics.incDebateRound2Triggered).not.toHaveBeenCalled();
   });
 
   it('сценарий 4: cost cap exceeded → fallbackUsed=cost_cap, метрика fallback дёрнута', async () => {
-    // Каждый голос: input=500_000, output=100_000 → ~ $0.5 на голос
-    // deepseek-v4-pro: $1.74/M input + $3.48/M output → 500_000*1.74/1M + 100_000*3.48/1M = 0.87 + 0.348 = $1.218
-    // То есть один вызов уже > $1 → суммарный > $0.05 cap.
     const heavyTokens = { inputTokens: 500_000, outputTokens: 100_000 };
     const { router } = buildLlmRouter([
       { verdict: 'supersedes', provider: 'deepseek', model: 'deepseek-v4-pro', ...heavyTokens },
@@ -208,7 +189,6 @@ describe('MultiAgentDebateService.judge', () => {
     const verdict = await service.judge(baseRequest);
 
     expect(verdict.fallbackUsed).toBe('cost_cap');
-    // Даже при cost cap — votes собраны (3 ответа), decision = majority unanimous supersedes.
     expect(verdict.votes).toHaveLength(3);
     expect(verdict.totalCostUsd).toBeGreaterThan(0.05);
     expect(metrics.incDebateFallbackToSingle).toHaveBeenCalledWith({
@@ -217,11 +197,6 @@ describe('MultiAgentDebateService.judge', () => {
   });
 
   it('cost budget: один обычный debate-run < $0.01 (3 calls × ~$0.003)', async () => {
-    // input=1000, output=300 на голос — реалистично для supersede-detect.
-    // deepseek-v4-pro: 1000*1.74/1M + 300*3.48/1M = 0.00174 + 0.001044 = $0.0028
-    // gpt-5.4: 1000*2/1M + 300*10/1M = 0.002 + 0.003 = $0.005
-    // deepseek-v4-flash: 1000*0.14/1M + 300*0.28/1M = 0.00014 + 0.000084 = $0.00022
-    // Итого: ~$0.008 — в пределах $0.01.
     const standardTokens = { inputTokens: 1000, outputTokens: 300 };
     const { router } = buildLlmRouter([
       { verdict: 'merge', provider: 'deepseek', model: 'deepseek-v4-pro', ...standardTokens },
@@ -240,7 +215,7 @@ describe('MultiAgentDebateService.judge', () => {
     expect(verdict.decision).toBe('merge');
   });
 
-  it('A1: taskFamily=curation-verify резолвит curation stance-taskType\'ы', async () => {
+  it("A1: taskFamily=curation-verify резолвит curation stance-taskType'ы", async () => {
     const { router, calls } = buildLlmRouter([
       { verdict: 'accept', provider: 'deepseek', model: 'deepseek-v4-flash' },
       { verdict: 'accept', provider: 'openai-via-proxy', model: 'gpt-5.4-mini' },
@@ -266,7 +241,7 @@ describe('MultiAgentDebateService.judge', () => {
     ]);
   });
 
-  it('A1: без taskFamily → старые decision-supersede stance-taskType\'ы (обратная совместимость)', async () => {
+  it("A1: без taskFamily → старые decision-supersede stance-taskType'ы (обратная совместимость)", async () => {
     const { router, calls } = buildLlmRouter([
       { verdict: 'new', provider: 'deepseek', model: 'deepseek-v4-pro' },
       { verdict: 'new', provider: 'openai-via-proxy', model: 'gpt-5.4' },

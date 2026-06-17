@@ -1,9 +1,3 @@
-/**
- * Доменная модель прайс-карты LLM (Z-Admin Фаза 7).
- *
- * Контракт: backend `AdminPricesService.listPrices`.
- */
-
 export type AdminPriceApi = {
   id: string;
   provider: string;

@@ -37,20 +37,9 @@ import {
 import { DirectorDashboardService } from './services/director-dashboard.service';
 import { PeopleAtRiskService } from './services/people-at-risk.service';
 import { PulsePatternsService } from './services/pulse-patterns.service';
-import {
-  TeamDetailService,
-  type TeamDetailDto,
-} from './services/team-detail.service';
-import {
-  TeamHealthService,
-  type TeamHealthDto,
-} from './services/team-health.service';
+import { TeamDetailService, type TeamDetailDto } from './services/team-detail.service';
+import { TeamHealthService, type TeamHealthDto } from './services/team-health.service';
 
-/**
- * GET /api/v1/dashboard/director?period=week|month — главная директорская
- * страница. Доступ: owner / admin Org или super_admin (см.
- * `RbacService.canViewDirectorDashboard`). manager → 403 forbidden_role.
- */
 @ApiExcludeController()
 @Controller('api/v1/dashboard')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -103,14 +92,6 @@ export class DirectorDashboardController {
     return this.svc.getDirectorView({ tenantId, period: q.period, userId });
   }
 
-  /**
-   * Pulse Wave 1 §1.6 — Team Health Grid.
-   *
-   * Возвращает таблицу здоровья всех отделов tenant'а (4 метрики: sentiment,
-   * promises, conflicts, decisions). Отделы с <3 чел. помечены `belowCohort`.
-   *
-   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
-   */
   @Get('team-health')
   async teamHealth(
     @CurrentOrg() tenantId: string | undefined,
@@ -142,15 +123,6 @@ export class DirectorDashboardController {
     return this.teamHealthSvc.getHealth({ tenantId });
   }
 
-  /**
-   * Pulse Wave 2 §2.5 — детальная страница команды `/teams/[id]`.
-   *
-   * Возвращает агрегат по одному отделу: шапку, состав с per-person sentiment,
-   * health-метрики (sentiment 7d + commitment reliability), цели и топ-темы.
-   *
-   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
-   * 404 если отдел не найден в tenant.
-   */
   @Get('teams/:id')
   async teamDetail(
     @CurrentOrg() tenantId: string | undefined,
@@ -183,20 +155,6 @@ export class DirectorDashboardController {
     return this.teamDetailSvc.getDetail({ tenantId, departmentId: id });
   }
 
-  /**
-   * Pulse Wave 6 — единый агрегатор паттернов для главной директора.
-   *
-   * Возвращает 7 виджетов одним ответом:
-   *   - Bus Factor (§6.1)        — критические knowledge-зоны.
-   *   - Topic Recurrence (§6.2)  — что обсуждаем по кругу.
-   *   - Low-ROI meetings (§6.3)  — топ-3 встречи-болтологии.
-   *   - Bottleneck heatmap (§6.4) — матрица отделов × отделов.
-   *   - Goal Vector (§6.6)       — вклад персон в активные цели.
-   *   - Knowledge Velocity (§6.7) — медиана часов от вопроса до ответа.
-   *   - Irreversible decisions (§6.8) — type-1 решения без альтернатив.
-   *
-   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
-   */
   @Get('pulse-patterns')
   async pulsePatterns(
     @CurrentOrg() tenantId: string | undefined,
@@ -233,15 +191,6 @@ export class DirectorDashboardController {
     });
   }
 
-  /**
-   * ТЗ-G Фаза 1 — «Сотрудники под риском» (топ-N) для главной директора.
-   *
-   * Серверное ранжирование по `pulseScore` (engagementScore − штрафы за
-   * просрочки обещаний и «красное» настроение). Возвращает только сотрудников
-   * под порогом риска, отсортированных по возрастанию pulseScore.
-   *
-   * Доступ — те же owner/admin/super_admin (`canViewDirectorDashboard`).
-   */
   @Get('people-at-risk')
   async peopleAtRisk(
     @CurrentOrg() tenantId: string | undefined,

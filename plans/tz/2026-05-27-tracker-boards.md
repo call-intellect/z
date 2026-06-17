@@ -3,7 +3,7 @@ type: tz
 status: draft
 feature: Несколько досок внутри проекта (модель Board + UI переключения)
 date: 2026-05-27
-parent: plans/tz/2026-05-27-tracker-parity-with-competitors.md
+parent: plans/archive/2026-05-27-tracker-parity-with-competitors.md
 related:
   - plans/archive/2026-05-23-tracker-phase-1-models-api.md
   - plans/archive/2026-05-23-tracker-phase-2-frontend-mobile-first.md

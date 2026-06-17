@@ -5,44 +5,12 @@ import { nanoid } from 'nanoid';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { ImportErrorEntry } from '../dto/imports/import-log-response.dto';
 
-import type {
-  ImportResult,
-  ImportStrategy,
-  ImportStrategyArgs,
-} from './import-strategy.interface';
+import type { ImportResult, ImportStrategy, ImportStrategyArgs } from './import-strategy.interface';
 
-/**
- * Wave 3 / Tracker Phase 5 part 1 (2026-05-24) — импорт из Trello JSON-export.
- *
- * Поддерживаемые поля из Trello JSON:
- *   boards[], lists[], cards[], members[], labels[], actions[] (для комментариев).
- *
- * Что мапим (из TZ):
- *   Board   → Project          (identifier = uppercase prefix 3-5 chars)
- *   List    → IssueState       (category heuristic по позиции)
- *   Card    → Issue             (externalSource='trello', externalId=card.id)
- *   member  → IssueAssignee    (через userMappings[email] → ourUserId)
- *   label   → Label / IssueLabel
- *   comment → IssueComment
- *   attach. → IssueAttachment  (best-effort: try fetch URL → S3, на err — лог+skip)
- *
- * Идемпотентность: Issue с (tenantId, externalSource='trello', externalId=card.id)
- * уже существует → skip card целиком (комментарии/attachments тоже не дублируются,
- * потому что мы скипаем создание самой задачи).
- *
- * НЕ обрабатываются (в первом релизе):
- *   - card.idChecklists (нет нативной модели подзадач-чек-листов).
- *   - card.shortLink (есть в IssueLink — но не в этом релизе).
- *   - вложенные subboards.
- */
 @Injectable()
 export class TrelloImportStrategy implements ImportStrategy {
   private readonly logger = new Logger(TrelloImportStrategy.name);
 
-  /**
-   * Throttle на эмиссию WS-progress'а: ~раз в 5 секунд по ТЗ.
-   * Воркер всё равно эмитит финальное событие отдельно.
-   */
   private static readonly PROGRESS_BATCH_SIZE = 50;
 
   async run(args: ImportStrategyArgs): Promise<ImportResult> {
@@ -53,10 +21,7 @@ export class TrelloImportStrategy implements ImportStrategy {
 
     const jsonContent = (params.jsonContent ?? {}) as TrelloExport;
     const selectedBoardIds = (params.selectedBoardIds ?? []) as string[];
-    const userMappings = (params.userMappings ?? {}) as Record<
-      string,
-      string | null
-    >;
+    const userMappings = (params.userMappings ?? {}) as Record<string, string | null>;
 
     const errors: ImportErrorEntry[] = [];
     const result: ImportResult = {
@@ -68,7 +33,6 @@ export class TrelloImportStrategy implements ImportStrategy {
       errors,
     };
 
-    // Парсинг + базовая валидация.
     const allBoards = Array.isArray(jsonContent.boards) ? jsonContent.boards : [];
     const boards = allBoards.filter((b) => selectedBoardIds.includes(b.id));
     if (boards.length === 0) {
@@ -77,20 +41,15 @@ export class TrelloImportStrategy implements ImportStrategy {
       );
     }
 
-    // Подсчёт общего объёма (для onProgress total).
     const allCards = Array.isArray(jsonContent.cards) ? jsonContent.cards : [];
     const totalCards = boards.reduce(
-      (sum, b) =>
-        sum + allCards.filter((c) => c.idBoard === b.id && !c.closed).length,
+      (sum, b) => sum + allCards.filter((c) => c.idBoard === b.id && !c.closed).length,
       0,
     );
 
-    // Карта email-mapping → unmatched.
     const matchedEmails = new Set<string>();
     const unmatchedEmails = new Set<string>();
-    const allMembers = Array.isArray(jsonContent.members)
-      ? jsonContent.members
-      : [];
+    const allMembers = Array.isArray(jsonContent.members) ? jsonContent.members : [];
     for (const m of allMembers) {
       const email = (m.email ?? '').toLowerCase().trim();
       if (!email) continue;
@@ -114,7 +73,6 @@ export class TrelloImportStrategy implements ImportStrategy {
         });
         result.totalProjects += 1;
 
-        // Lists → IssueState.
         const lists = (jsonContent.lists ?? [])
           .filter((l) => l.idBoard === board.id && !l.closed)
           .sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0));
@@ -125,10 +83,7 @@ export class TrelloImportStrategy implements ImportStrategy {
           services,
         });
 
-        // Labels (board labels).
-        const trelloLabels = (jsonContent.labels ?? []).filter(
-          (l) => l.idBoard === board.id,
-        );
+        const trelloLabels = (jsonContent.labels ?? []).filter((l) => l.idBoard === board.id);
         const labelIdByTrelloId = await this.createLabelsForBoard({
           tenantId,
           projectId: project.id,
@@ -137,7 +92,6 @@ export class TrelloImportStrategy implements ImportStrategy {
           errors,
         });
 
-        // Members → memberByTrelloId (для маппинга card.idMembers).
         const memberByTrelloId = new Map<string, string | null>();
         for (const m of allMembers) {
           const email = (m.email ?? '').toLowerCase().trim();
@@ -146,16 +100,11 @@ export class TrelloImportStrategy implements ImportStrategy {
             continue;
           }
           const mapped = userMappings[email];
-          // mapped === undefined → unmatched; mapped === null → намеренный skip; иначе ourUserId.
           memberByTrelloId.set(m.id, mapped ?? null);
         }
 
-        // Cards → Issues.
-        const boardCards = allCards.filter(
-          (c) => c.idBoard === board.id && !c.closed,
-        );
+        const boardCards = allCards.filter((c) => c.idBoard === board.id && !c.closed);
         for (const card of boardCards) {
-          // Проверка cancellation между батчами (помечено в БД из import.service.cancel).
           if (processedItems % TrelloImportStrategy.PROGRESS_BATCH_SIZE === 0) {
             const wasCancelled = await this.isCancelled({
               importLogId: importLog.id,
@@ -193,11 +142,8 @@ export class TrelloImportStrategy implements ImportStrategy {
 
             result.totalIssues += 1;
 
-            // Комментарии (actions type='commentCard').
             const cardActions = (jsonContent.actions ?? []).filter(
-              (a) =>
-                a.type === 'commentCard' &&
-                a.data?.card?.id === card.id,
+              (a) => a.type === 'commentCard' && a.data?.card?.id === card.id,
             );
             for (const action of cardActions) {
               try {
@@ -219,10 +165,7 @@ export class TrelloImportStrategy implements ImportStrategy {
               }
             }
 
-            // Attachments (best-effort).
-            const attachments = Array.isArray(card.attachments)
-              ? card.attachments
-              : [];
+            const attachments = Array.isArray(card.attachments) ? card.attachments : [];
             for (const att of attachments) {
               try {
                 const ok = await this.createAttachmentFromTrelloAttachment({
@@ -279,7 +222,6 @@ export class TrelloImportStrategy implements ImportStrategy {
       }
     }
 
-    // Финальный progress + persist processedItems / unmatched.
     await services.prisma.importLog
       .update({
         where: { id: importLog.id },
@@ -297,8 +239,6 @@ export class TrelloImportStrategy implements ImportStrategy {
     return result;
   }
 
-  // ────────────────────────── helpers ──────────────────────────────────
-
   private async isCancelled(args: {
     importLogId: string;
     services: ImportStrategyArgs['services'];
@@ -310,10 +250,6 @@ export class TrelloImportStrategy implements ImportStrategy {
     return row?.status === 'cancelled';
   }
 
-  /**
-   * Создаёт Project из Trello board. Identifier — 3-5 char uppercase prefix
-   * из имени board'а. На коллизию slug добавляем суффикс nanoid(4).
-   */
   private async upsertProject(args: {
     tenantId: string;
     board: TrelloBoard;
@@ -322,15 +258,11 @@ export class TrelloImportStrategy implements ImportStrategy {
   }): Promise<{ id: string; identifier: string }> {
     const { tenantId, board, userId, services } = args;
 
-    // Сначала проверим, не импортировали ли мы этот board ранее (для
-    // повторного запуска импорта на тот же ImportLog не делаем; идемпотентность
-    // — на уровне Issue, не Project. Но дубли проектов всё равно избегаем).
     const slugBase = slugify(board.name) || 'imported';
     const identifierBase = makeIdentifier(board.name);
 
     let slug = slugBase;
     let identifier = identifierBase;
-    // Анти-коллизия slug/identifier per tenant.
     for (let attempt = 0; attempt < 5; attempt++) {
       const existing = await services.prisma.project.findFirst({
         where: {
@@ -340,7 +272,6 @@ export class TrelloImportStrategy implements ImportStrategy {
         select: { id: true, identifier: true, slug: true },
       });
       if (!existing) break;
-      // Suffix чтобы избежать коллизии.
       const suffix = nanoid(4).toLowerCase();
       slug = `${slugBase}-${suffix}`;
       identifier = `${identifierBase.slice(0, 3)}${suffix.slice(0, 2).toUpperCase()}`;
@@ -359,8 +290,6 @@ export class TrelloImportStrategy implements ImportStrategy {
       },
       select: { id: true, identifier: true },
     });
-    // Project creator → admin (role=20). NB: legacy projects.service делает
-    // тот же шаг внутри transaction; здесь обходимся отдельным insert'ом.
     await services.prisma.projectMember
       .create({
         data: { projectId: created.id, userId, role: 20 },
@@ -369,13 +298,6 @@ export class TrelloImportStrategy implements ImportStrategy {
     return created;
   }
 
-  /**
-   * Создаёт IssueState из lists Trello board'а. Эвристика категории:
-   *   - первый list (pos asc) → 'unstarted'
-   *   - последний list → 'completed'
-   *   - всё между → 'started'
-   *   - если list ровно 1 → 'unstarted'
-   */
   private async createStatesForLists(args: {
     tenantId: string;
     projectId: string;
@@ -391,17 +313,9 @@ export class TrelloImportStrategy implements ImportStrategy {
     for (let i = 0; i < lists.length; i++) {
       const list = lists[i]!;
       const category: 'unstarted' | 'started' | 'completed' =
-        i === 0
-          ? 'unstarted'
-          : i === lastIdx && lists.length > 1
-            ? 'completed'
-            : 'started';
+        i === 0 ? 'unstarted' : i === lastIdx && lists.length > 1 ? 'completed' : 'started';
       const color =
-        category === 'completed'
-          ? '#10B981'
-          : category === 'started'
-            ? '#3B82F6'
-            : '#94A3B8';
+        category === 'completed' ? '#10B981' : category === 'started' ? '#3B82F6' : '#94A3B8';
       const isDefault = i === 0;
       const created = await services.prisma.issueState.create({
         data: {
@@ -452,11 +366,7 @@ export class TrelloImportStrategy implements ImportStrategy {
         });
         map.set(tl.id, created.id);
       } catch (err) {
-        // P2002 на (tenantId, projectId, name) — допустим, метка уже есть.
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === 'P2002'
-        ) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           const existing = await services.prisma.label.findFirst({
             where: { tenantId, projectId, name: name.slice(0, 50) },
             select: { id: true },
@@ -475,10 +385,6 @@ export class TrelloImportStrategy implements ImportStrategy {
     return map;
   }
 
-  /**
-   * Создаёт Issue (если ещё не существует с этим externalId).
-   * Возвращает `skipped: true` если есть идемпотентный hit.
-   */
   private async createIssueFromCard(args: {
     tenantId: string;
     projectId: string;
@@ -502,8 +408,6 @@ export class TrelloImportStrategy implements ImportStrategy {
       services,
     } = args;
 
-    // Идемпотентность: skip если Issue с (tenantId, externalSource='trello',
-    // externalId=card.id) уже есть.
     const existing = await services.prisma.issue.findFirst({
       where: {
         tenantId,
@@ -550,7 +454,6 @@ export class TrelloImportStrategy implements ImportStrategy {
         select: { id: true },
       });
 
-      // Assignees.
       const idMembers = Array.isArray(card.idMembers) ? card.idMembers : [];
       const assigneeUserIds = new Set<string>();
       for (const memberTrelloId of idMembers) {
@@ -567,7 +470,6 @@ export class TrelloImportStrategy implements ImportStrategy {
           skipDuplicates: true,
         });
       }
-      // Labels.
       const idLabels = Array.isArray(card.idLabels) ? card.idLabels : [];
       const labelIds: string[] = [];
       for (const trelloLabelId of idLabels) {
@@ -595,8 +497,7 @@ export class TrelloImportStrategy implements ImportStrategy {
     const text = action.data?.text ?? '';
     if (!text.trim()) return;
     const authorId =
-      (action.idMemberCreator && memberByTrelloId.get(action.idMemberCreator)) ||
-      defaultUserId;
+      (action.idMemberCreator && memberByTrelloId.get(action.idMemberCreator)) || defaultUserId;
     await services.prisma.issueComment.create({
       data: {
         issueId,
@@ -605,18 +506,11 @@ export class TrelloImportStrategy implements ImportStrategy {
         contentHtml: null,
         contentStripped: text.slice(0, 50_000),
         access: 'internal',
-        createdAt: action.date ? safeParseDate(action.date) ?? new Date() : new Date(),
+        createdAt: action.date ? (safeParseDate(action.date) ?? new Date()) : new Date(),
       },
     });
   }
 
-  /**
-   * Best-effort: пытается скачать URL из Trello attachment и положить в S3.
-   * На любой fail (network / non-2xx / size limit) — возвращает false без
-   * выброса (caller просто инкрементирует errors).
-   *
-   * Размер ограничен MAX_DOWNLOAD_BYTES — 25 МБ (как в attachments.service).
-   */
   private async createAttachmentFromTrelloAttachment(args: {
     issueId: string;
     attachment: TrelloAttachment;
@@ -702,8 +596,6 @@ export class TrelloImportStrategy implements ImportStrategy {
   }
 }
 
-// ───────────────────────── helpers (pure) ─────────────────────────────
-
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -715,7 +607,6 @@ function slugify(s: string): string {
 }
 
 function makeIdentifier(name: string): string {
-  // 3-5 uppercase chars из латиницы; на кириллице → транслит первые буквы слов.
   const ascii = name
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
@@ -737,7 +628,6 @@ function makeIdentifier(name: string): string {
 }
 
 function trelloColorToHex(color: string | null): string {
-  // Trello use: yellow|red|green|blue|purple|orange|black|sky|lime|pink|null.
   const map: Record<string, string> = {
     yellow: '#F2D600',
     red: '#EB5A46',
@@ -758,8 +648,6 @@ function safeParseDate(s: string): Date | null {
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-
-// ───────────────────────── Trello JSON types (минимум, what we use) ───
 
 interface TrelloExport {
   boards?: TrelloBoard[];

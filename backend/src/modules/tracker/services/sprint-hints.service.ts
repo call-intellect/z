@@ -1,11 +1,5 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-} from '@nestjs/common';
-import type { Prisma, SprintHint, SprintHintStatus } from '@prisma/client';
+import { Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import type { Prisma, SprintHint } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
@@ -20,16 +14,6 @@ import type {
 import { SprintAnalystService } from './sprint-analyst.service';
 import { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Sprints (2026-05-27) — управление `SprintHint`'ами.
- *
- * Создаются воркером `3-13-sprint-helper` (см. Волну 3). Пользователь может:
- *   - получить список по cycleId (с фильтром по статусу),
- *   - закрыть подсказку (dismiss) — статус='dismissed',
- *   - пометить выполненной (resolve) — статус='resolved'.
- *
- * При любой мутации — инвалидация dashboard-кэша через SprintAnalystService.
- */
 @Injectable()
 export class SprintHintsService {
   private readonly logger = new Logger(SprintHintsService.name);
@@ -75,7 +59,6 @@ export class SprintHintsService {
   }): Promise<SprintHintResponseDto> {
     const existing = await this.requireHint(args.hintId, args.tenantId);
     if (existing.status !== 'active') {
-      // идемпотентно
       return this.toResponse(existing);
     }
     const updated = await this.prisma.sprintHint.update({
@@ -91,8 +74,6 @@ export class SprintHintsService {
       kind: updated.kind,
     });
     void this.analyst.invalidateDashboardCache(existing.cycleId);
-    // Sprints (2026-05-28) — live-обновление: фронт /sprints + /sprints/:id
-    // должны переехать счётчики hints. projectId дотягиваем через Cycle.
     await this.emitSprintHintEvent('dismissed', {
       tenantId: args.tenantId,
       cycleId: existing.cycleId,
@@ -127,12 +108,6 @@ export class SprintHintsService {
     return this.toResponse(updated);
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────
-
-  /**
-   * Sprints (2026-05-28) — публикация sprint_hint.* в WS. Подгружает projectId
-   * через Cycle, так как сам SprintHint его не хранит. best-effort.
-   */
   private async emitSprintHintEvent(
     kind: 'dismissed' | 'resolved' | 'updated',
     args: { tenantId: string; cycleId: string; hintId: string },
@@ -190,11 +165,4 @@ export class SprintHintsService {
       updatedAt: h.updatedAt.toISOString(),
     };
   }
-}
-
-/** Helper: только для unit-тестов / других сервисов — мапер enum'а. */
-export function sprintHintStatusFromPrisma(
-  v: SprintHintStatus,
-): SprintHintStatusDto {
-  return v as SprintHintStatusDto;
 }

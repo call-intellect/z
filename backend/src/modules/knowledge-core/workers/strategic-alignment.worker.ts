@@ -9,20 +9,13 @@ import {
 import { Prisma } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { AuditLogService } from '../../audit/audit-log.service';
-import {
-  CORE_QUEUE_NAMES,
-  type StrategicAlignmentJobData,
-} from '../../core-queue/queues';
+import { CORE_QUEUE_NAMES, type StrategicAlignmentJobData } from '../../core-queue/queues';
 import { WorkerOrgGate } from '../../core-queue/worker-org-gate';
 import { PipelineRunner, SystemLogPipeline } from '../../logging/log-pipeline';
 import {
@@ -41,27 +34,6 @@ const PREV_SNAPSHOT_MAX_HOURS = 50;
 const ALERT_DELTA_THRESHOLD = -15;
 const ALERT_SCORE_THRESHOLD = 60;
 
-/**
- * StrategicAlignmentWorker (Фаза 9 knowledge-core).
- *
- * Consumer очереди `core.strategic-alignment`. На каждый job
- * `{ tenantId, goalId, manual?, windowDays? }`:
- *   1. WorkerOrgGate.checkOrThrow(tenantId, 'strategic-alignment').
- *   2. Загрузить Goal + GoalTheme[] + связанные Theme[]. Если Goal удалён/
- *      архивирован/status!='active' — skip.
- *   3. Если связанных тем нет — AuditLog `goal.alignment.skipped` (нет данных),
- *      обновить `cachedAlignment*` НЕ пытаемся (оставляем как есть, чтобы UI
- *      показывал «Подключите хотя бы одну тему»).
- *   4. Выбрать canonical-блоки за окно (`Org.strategicAlignmentWindowDays` или
- *      переданное `windowDays`). LIMIT 200.
- *   5. LLM-вызов через LlmRouter (`taskType='goal-alignment'`). На фейл —
- *      AuditLog `goal.alignment.failed` (snapshot НЕ создаём, BullMQ ретраит).
- *   6. Прошлый snapshot (24-50h назад) → delta. alertPending по правилу.
- *   7. Транзакция: GoalAlignmentSnapshot.create + Goal.update(cache fields).
- *   8. AuditLog `goal.alignment.computed`.
- *
- * Concurrency = 2.
- */
 @Injectable()
 export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(StrategicAlignmentWorker.name);
@@ -81,9 +53,6 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -115,9 +84,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
         'strategic-alignment: job failed',
       );
     });
-    this.logger.debug(
-      `StrategicAlignmentWorker запущен (${CORE_QUEUE_NAMES.STRATEGIC_ALIGNMENT})`,
-    );
+    this.logger.debug(`StrategicAlignmentWorker запущен (${CORE_QUEUE_NAMES.STRATEGIC_ALIGNMENT})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -126,8 +93,6 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       this.worker = null;
     }
   }
-
-  // ─────────────────────────── core ────────────────────────────────────────
 
   private async process(job: Job<StrategicAlignmentJobData>): Promise<void> {
     const { tenantId, goalId, manual, windowDays: windowOverride } = job.data;
@@ -175,15 +140,9 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const windowDays = clamp(
-      windowOverride ?? org.strategicAlignmentWindowDays,
-      7,
-      90,
-    );
+    const windowDays = clamp(windowOverride ?? org.strategicAlignmentWindowDays, 7, 90);
 
-    const activeThemeLinks = goal.themes.filter(
-      (gt) => gt.theme.status === 'active',
-    );
+    const activeThemeLinks = goal.themes.filter((gt) => gt.theme.status === 'active');
     const themesCount = activeThemeLinks.length;
 
     if (themesCount === 0) {
@@ -204,14 +163,12 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       since,
     });
 
-    const themesPayload: GoalAlignmentThemeInput[] = activeThemeLinks.map(
-      (gt) => ({
-        id: gt.theme.id,
-        name: gt.theme.name,
-        weight: decimalToNumber(gt.theme.weight),
-        dynamic: gt.theme.dynamic,
-      }),
-    );
+    const themesPayload: GoalAlignmentThemeInput[] = activeThemeLinks.map((gt) => ({
+      id: gt.theme.id,
+      name: gt.theme.name,
+      weight: decimalToNumber(gt.theme.weight),
+      dynamic: gt.theme.dynamic,
+    }));
     const blocksPayload: GoalAlignmentBlockInput[] = blocks.map((b) => ({
       signalType: b.signalType,
       criticalQuestion: b.criticalQuestion,
@@ -219,9 +176,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     }));
 
     const daysUntilTarget = goal.targetDate
-      ? Math.ceil(
-          (goal.targetDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
-        )
+      ? Math.ceil((goal.targetDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
       : null;
 
     const { systemPrompt, userMessage } = buildGoalAlignmentMessages({
@@ -233,11 +188,14 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
       blocks: blocksPayload,
     });
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (goal + темы + блоки) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const guardedSystem = guardOn ? withInjectionGuard(systemPrompt) : systemPrompt;
     const guardedUser = guardOn ? wrapUserData(userMessage) : userMessage;
-    let parsed: { score: number; explanation: string; signals: { pro: string[]; contra: string[] } };
+    let parsed: {
+      score: number;
+      explanation: string;
+      signals: { pro: string[]; contra: string[] };
+    };
     try {
       const result = await this.llm.call({
         taskType: GOAL_ALIGNMENT_TASK_TYPE,
@@ -251,9 +209,6 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
           schema: GOAL_ALIGNMENT_JSON_SCHEMA,
           strict: true,
         },
-        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — 1200 → 2000. Primary
-        // `deepseek-v4-pro` с thinking; короткий JSON {score, explanation,
-        // signals} + thinking-токены не помещаются в 1200.
         maxTokens: 2_000,
       });
       parsed = parseLlmResponse(result.text);
@@ -272,16 +227,11 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
           error: message.slice(0, 500),
         },
       });
-      throw err; // BullMQ ретраит через стандартные attempts
+      throw err;
     }
 
-    // Прошлый snapshot для delta (20-50h назад).
-    const prevFrom = new Date(
-      Date.now() - PREV_SNAPSHOT_MAX_HOURS * 60 * 60 * 1000,
-    );
-    const prevTo = new Date(
-      Date.now() - PREV_SNAPSHOT_MIN_HOURS * 60 * 60 * 1000,
-    );
+    const prevFrom = new Date(Date.now() - PREV_SNAPSHOT_MAX_HOURS * 60 * 60 * 1000);
+    const prevTo = new Date(Date.now() - PREV_SNAPSHOT_MIN_HOURS * 60 * 60 * 1000);
     const prev = await this.prisma.goalAlignmentSnapshot.findFirst({
       where: {
         goalId,
@@ -293,9 +243,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
 
     const delta = prev ? parsed.score - prev.score : null;
     const alertPending =
-      delta !== null &&
-      delta <= ALERT_DELTA_THRESHOLD &&
-      parsed.score <= ALERT_SCORE_THRESHOLD;
+      delta !== null && delta <= ALERT_DELTA_THRESHOLD && parsed.score <= ALERT_SCORE_THRESHOLD;
 
     const snapshot = await this.prisma.$transaction(async (tx) => {
       const created = await tx.goalAlignmentSnapshot.create({
@@ -356,8 +304,6 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  // ─────────────────────────── data fetch ──────────────────────────────────
-
   private async fetchBlocksForThemes(args: {
     tenantId: string;
     themeIds: string[];
@@ -377,10 +323,7 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
         createdAt: { gte: args.since },
         themes: { some: { themeId: { in: args.themeIds } } },
       },
-      orderBy: [
-        { confidence: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ confidence: 'desc' }, { createdAt: 'desc' }],
       take: MAX_BLOCKS,
       select: {
         signalType: true,
@@ -391,8 +334,6 @@ export class StrategicAlignmentWorker implements OnModuleInit, OnModuleDestroy {
     return rows;
   }
 }
-
-// ─────────────────────────── helpers ──────────────────────────────────────
 
 function clamp(n: number, min: number, max: number): number {
   if (Number.isNaN(n)) return min;
@@ -410,9 +351,7 @@ function decimalToNumber(v: unknown): number {
   if (typeof obj.toNumber === 'function') {
     try {
       return obj.toNumber();
-    } catch {
-      // fallthrough
-    }
+    } catch {}
   }
   if (typeof obj.toString === 'function') {
     const n = Number.parseFloat(obj.toString());
@@ -431,9 +370,7 @@ function parseLlmResponse(raw: string): {
   const jsonStart = trimmed.indexOf('{');
   const jsonEnd = trimmed.lastIndexOf('}');
   const candidate =
-    jsonStart >= 0 && jsonEnd > jsonStart
-      ? trimmed.slice(jsonStart, jsonEnd + 1)
-      : trimmed;
+    jsonStart >= 0 && jsonEnd > jsonStart ? trimmed.slice(jsonStart, jsonEnd + 1) : trimmed;
   let parsedRaw: unknown;
   try {
     parsedRaw = JSON.parse(candidate);
@@ -446,7 +383,10 @@ function parseLlmResponse(raw: string): {
   const validated = GoalAlignmentResponseSchema.safeParse(parsedRaw);
   if (!validated.success) {
     throw new Error(
-      `LLM JSON не прошёл схему: ${validated.error.issues.slice(0, 3).map((i) => i.message).join('; ')}`,
+      `LLM JSON не прошёл схему: ${validated.error.issues
+        .slice(0, 3)
+        .map((i) => i.message)
+        .join('; ')}`,
     );
   }
   return validated.data;

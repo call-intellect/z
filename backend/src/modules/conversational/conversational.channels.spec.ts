@@ -1,12 +1,3 @@
-/**
- * ТЗ 2026-06-05 telegram-channel-reachability-and-channels-ux-fix, Ф1 (Б1/Б1b/Б2).
- *
- * Покрывает:
- *  - listMyChannels: глобальные бот-каналы (tenantId=NULL, kind in telegram_bot/max_bot)
- *    видны на личной странице; per-tenant каналы тоже; глобальный SMTP НЕ просачивается.
- *  - resolveBindings: тот же OR в пути доставки (verified bindings к глобальному каналу).
- *  - Контроллер: для бот-каналов отдаёт configured/botUsername, но НЕ botToken (нет утечки).
- */
 import type { Channel, ChannelBinding } from '@prisma/client';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -47,7 +38,6 @@ function build(): Mocked {
   return { svc, prisma };
 }
 
-/** Удобный конструктор Channel с минимально нужными полями. */
 function channel(partial: Partial<Channel>): Channel {
   return {
     id: 'ch',
@@ -82,10 +72,8 @@ describe('ConversationalService.listMyChannels (Ф1 Б1)', () => {
 
     const res = await m.svc.listMyChannels({ userId: USER, tenantId: TENANT });
 
-    // (а) возвращает ОБА канала
     expect(res.map((r) => r.channel.id).sort()).toEqual(['in', 'tg']);
 
-    // where содержит OR: per-tenant ИЛИ глобальный бот
     expect(m.prisma.channel.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -107,13 +95,9 @@ describe('ConversationalService.resolveBindings (Ф1 Б1b — путь дост�
   });
 
   it('verified bindings фильтруются по тому же OR (глобальный бот доставляется)', async () => {
-    // resolveBindings приватный — дёргаем через индексный доступ.
     await (
       m.svc as unknown as {
-        resolveBindings: (a: {
-          tenantId: string;
-          userId: string;
-        }) => Promise<unknown>;
+        resolveBindings: (a: { tenantId: string; userId: string }) => Promise<unknown>;
       }
     ).resolveBindings({ tenantId: TENANT, userId: USER });
 
@@ -141,10 +125,7 @@ describe('ConversationalController.listChannels mapping (Ф1 Б2)', () => {
       listMyChannels: vi.fn().mockResolvedValue(items),
     };
     const ingest = {};
-    const ctrl = new ConversationalController(
-      svc as unknown as never,
-      ingest as unknown as never,
-    );
+    const ctrl = new ConversationalController(svc as unknown as never, ingest as unknown as never);
     return ctrl;
   }
 
@@ -157,15 +138,11 @@ describe('ConversationalController.listChannels mapping (Ф1 Б2)', () => {
     });
     const ctrl = buildController([{ channel: tg, binding: null }]);
 
-    const out = await ctrl.listChannels(
-      { id: USER } as never,
-      TENANT,
-    );
+    const out = await ctrl.listChannels({ id: USER } as never, TENANT);
     const ch = out.items[0]!.channel as Record<string, unknown>;
 
     expect(ch.configured).toBe(true);
     expect(ch.botUsername).toBe('kora_bot');
-    // негатив: токен наружу не отдаётся ни под каким ключом.
     expect(ch).not.toHaveProperty('botToken');
     expect(ch).not.toHaveProperty('config');
     expect(JSON.stringify(out)).not.toContain('enc-secret');

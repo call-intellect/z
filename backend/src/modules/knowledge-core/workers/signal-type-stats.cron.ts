@@ -6,24 +6,6 @@ import { Gauge, register } from 'prom-client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { AdminSettingsService } from '../../admin/settings/admin-settings.service';
 
-/**
- * G.2 KC-Temporal (2026-05-25) — SignalTypeStatsCron.
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md §G.2.
- *
- * Для каждой Org за последние 30 дней:
- *   1) Берёт canonical IdeaBlock'и, группирует по `rawEventId`.
- *   2) Сортирует внутри каждого rawEvent по `createdAt`.
- *   3) Подсчитывает переходы `(signalType_i, signalType_{i+1})` → матрица NxN.
- *   4) Сохраняет матрицу в AdminSetting под ключом
- *      `signal_type_transition_matrix:<orgId>`.
- *   5) Эмитит gauge `kc_signal_type_distribution{signal_type, org_id}` —
- *      распределение signalType за последние 7д (для мониторинга drift'а).
- *
- * Алёрт о дрейфе σ-порога — в /admin/llm/signal-type-monitor (вне scope этой
- * фазы). Здесь только подготовка данных + сохранение.
- */
-
 const WINDOW_30D = 30;
 const WINDOW_7D = 7;
 const METRIC_DISTRIBUTION = 'kc_signal_type_distribution';
@@ -53,9 +35,6 @@ export class SignalTypeStatsCron {
     }
   }
 
-  /**
-   * Чистая логика прохода — вынесена для unit-теста.
-   */
   async runOnce(): Promise<{ scannedOrgs: number; mutationMatrixWrites: number }> {
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -83,10 +62,6 @@ export class SignalTypeStatsCron {
     return { scannedOrgs: orgs.length, mutationMatrixWrites: writes };
   }
 
-  /**
-   * Вычисление матрицы переходов и распределения для одной Org.
-   * Экспортирована для тестирования группировки.
-   */
   async processOrg(
     tenantId: string,
     window30: Date,
@@ -96,7 +71,6 @@ export class SignalTypeStatsCron {
     distribution7d: Record<string, number>;
     blocks: number;
   }> {
-    // 1. Все canonical блоки последних 30 дней по этой Org.
     const blocks = await this.prisma.ideaBlock.findMany({
       where: {
         tenantId,
@@ -124,8 +98,6 @@ export class SignalTypeStatsCron {
       return { matrix: {}, distribution7d: {}, blocks: 0 };
     }
 
-    // 2. Группировка по rawEventId. Блок без evidence игнорируем —
-    // он не из «потока» событий, переход неинформативен.
     const byRaw = new Map<string, Array<{ signalType: SignalType; createdAt: Date }>>();
     for (const b of blocks) {
       const rawId = b.evidence[0]?.rawEventId;
@@ -135,7 +107,6 @@ export class SignalTypeStatsCron {
       byRaw.set(rawId, arr);
     }
 
-    // 3. Подсчёт переходов внутри каждого rawEvent.
     const matrix: Record<string, Record<string, number>> = {};
     for (const list of byRaw.values()) {
       if (list.length < 2) continue;
@@ -148,7 +119,6 @@ export class SignalTypeStatsCron {
       }
     }
 
-    // 4. Распределение за 7 дней.
     const distribution7d: Record<string, number> = {};
     for (const b of blocks) {
       if (b.createdAt < window7) continue;
@@ -156,7 +126,6 @@ export class SignalTypeStatsCron {
       distribution7d[k] = (distribution7d[k] ?? 0) + 1;
     }
 
-    // 5. Persist.
     await this.settings.set(
       `signal_type_transition_matrix:${tenantId}`,
       {
@@ -167,7 +136,6 @@ export class SignalTypeStatsCron {
       { reason: 'signal-type-stats cron' },
     );
 
-    // 6. Gauge.
     for (const [k, v] of Object.entries(distribution7d)) {
       this.distributionGauge.set({ signal_type: k, org_id: tenantId }, v);
     }

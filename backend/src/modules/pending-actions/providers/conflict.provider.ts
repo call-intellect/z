@@ -14,16 +14,6 @@ import {
   type PendingActionsProviderArgs,
 } from './pending-actions-provider.types';
 
-/**
- * Провайдер «открытый конфликт карточек» (ConflictItem, status=open).
- *
- * Кому показываем: только owner/admin Org (резолюция конфликта — их
- * прерогатива). Член без привилегий видит 0.
- *
- * severity=urgent, если конфликт висит ≥ cfg.pendingActions.urgentAgeDays
- * дней (порог — admin-editable крутилка). canQuickConfirm=false
- * (резолюция требует выбора стратегии — не «один клик»).
- */
 @Injectable()
 export class ConflictPendingProvider implements PendingActionsProvider {
   readonly source = 'conflict' as const;
@@ -33,9 +23,7 @@ export class ConflictPendingProvider implements PendingActionsProvider {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  private buildWhere(
-    a: PendingActionsProviderArgs,
-  ): Prisma.ConflictItemWhereInput {
+  private buildWhere(a: PendingActionsProviderArgs): Prisma.ConflictItemWhereInput {
     const where: Prisma.ConflictItemWhereInput = {
       tenantId: a.tenantId,
       status: 'open',
@@ -70,8 +58,6 @@ export class ConflictPendingProvider implements PendingActionsProvider {
     const now = new Date();
     return items.map((i) => {
       const ageDays = ageDaysFrom(i.createdAt, now);
-      // evidence-структура зависит от детектора (block-linker / fact-supersede
-      // / decisions / specialists) — извлекаем суть и обе версии защитно.
       const ev = asObject(i.evidence);
       const meta = asObject(i.evolvingMeta);
       const summary =
@@ -79,10 +65,8 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         strOrUndef(ev.reason) ??
         strOrUndef(ev.supersedeReason) ??
         `Конфликт карточек: ${resourceTypeRu(i.resourceType)}`;
-      const oldText =
-        strOrUndef(ev.oldStatement) ?? strOrUndef(ev.existingText) ?? '';
-      const newText =
-        strOrUndef(ev.newStatement) ?? strOrUndef(ev.newText) ?? '';
+      const oldText = strOrUndef(ev.oldStatement) ?? strOrUndef(ev.existingText) ?? '';
+      const newText = strOrUndef(ev.newStatement) ?? strOrUndef(ev.newText) ?? '';
       const detail: ConflictPendingDetail = {
         kind: 'conflict',
         summary,
@@ -99,14 +83,9 @@ export class ConflictPendingProvider implements PendingActionsProvider {
         source: this.source,
         resourceType: i.resourceType,
         resourceId: i.id,
-        // Реальная суть конфликта вместо чистого шаблона.
         title: summary,
-        severity:
-          ageDays >= this.cfg.pendingActions.urgentAgeDays
-            ? 'urgent'
-            : 'normal',
+        severity: ageDays >= this.cfg.pendingActions.urgentAgeDays ? 'urgent' : 'normal',
         ageDays,
-        // Ведём прямо на detail-страницу конфликта /curation/conflicts/[id].
         actionUrl: `/curation/conflicts/${i.id}`,
         canQuickConfirm: false,
         detail,
@@ -115,7 +94,6 @@ export class ConflictPendingProvider implements PendingActionsProvider {
   }
 }
 
-/** Безопасно приводит Prisma.JsonValue к объекту (иначе пустой объект). */
 function asObject(v: unknown): Record<string, unknown> {
   if (v && typeof v === 'object' && !Array.isArray(v)) {
     return v as Record<string, unknown>;
@@ -123,7 +101,6 @@ function asObject(v: unknown): Record<string, unknown> {
   return {};
 }
 
-/** Непустая строка или undefined. */
 function strOrUndef(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim().length > 0 ? v : undefined;
 }

@@ -159,7 +159,7 @@ Gauges обновляются `CoreMetricsSnapshotCron @Cron('*/5 * * * *')` —
 - Self-service GDPR-style export всех данных пользователя.
 - Подпись audit-цепочки (hash chain).
 - Сертификация ИСПДн — операционный процесс, не кодовая фаза.
-- Grafana dashboard `Knowledge Core` — JSON-заготовка не сделана (см. `plans/2026-05-10-phase-11-execution.md` шаг 14).
+- Grafana dashboard `Knowledge Core` — JSON-заготовка не сделана (см. `plans/archive/2026-05-10-phase-11-execution.md` шаг 14).
 
 ## Связанные документы
 

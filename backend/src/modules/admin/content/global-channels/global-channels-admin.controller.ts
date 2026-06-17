@@ -30,12 +30,6 @@ import {
 } from './dto/global-channels-admin.dto';
 import { GlobalChannelsAdminService } from './global-channels-admin.service';
 
-/**
- * Admin-redesign Фаза 5 — `GlobalChannelsAdminController`.
- *
- * CRUD глобальных каналов (`Channel` с tenantId IS NULL). Секреты
- * шифруются через `CryptoService` и никогда не возвращаются в ответе.
- */
 @ApiTags('admin-content-global-channels')
 @Controller('api/v1/admin/content/global-channels')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -77,8 +71,7 @@ export class GlobalChannelsAdminController {
 
   @Patch(':id')
   @ApiOperation({
-    summary:
-      'Partial-update глобального канала. Секреты шифруются через CryptoService.',
+    summary: 'Partial-update глобального канала. Секреты шифруются через CryptoService.',
   })
   update(
     @Param('id') id: string,
@@ -94,10 +87,7 @@ export class GlobalChannelsAdminController {
     summary:
       'Soft-delete: status=global_disabled. Записи не удаляем — ChannelBinding остаются валидными.',
   })
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload | null | undefined,
-  ) {
+  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload | null | undefined) {
     this.assertUser(user);
     return this.svc.softDelete(id, user.id);
   }

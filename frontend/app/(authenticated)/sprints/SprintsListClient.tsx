@@ -1,23 +1,8 @@
-'use client';
+"use client";
 
-/**
- * `/sprints` — master-detail список спринтов (ТЗ 2026-05-28).
- *
- * Layout:
- *   - desktop (md+):   grid `[420px,1fr]` — слева список, справа preview;
- *   - mobile:          список 100%, при клике на карточку — Sheet с preview.
- *
- * URL-параметры синхронизируются:
- *   ?status=&scope=&q=&sort=&sortDir=&page=&selected=
- *
- * Live: подписка через `useTrackerWebSocket` на события `cycle.*` и
- * `sprint_hint.*` → SWR mutate, чтобы счётчики и прогресс обновлялись без
- * F5. Поиск дебаунсится 300мс.
- */
-
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
@@ -28,45 +13,39 @@ import {
   Search,
   Trash2,
   Video,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Progress } from '@/ui/shadcn/progress';
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-} from '@/ui/shadcn/sheet';
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Progress } from "@/ui/shadcn/progress";
+import { Sheet, SheetContent, SheetTitle } from "@/ui/shadcn/sheet";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Tabs, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/select";
+import { Tabs, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { useAuth } from '@/contexts/auth-context';
-import { useSprints } from '@/hooks/useSprints';
-import { useTrackerWebSocket } from '@/hooks/tracker/useTrackerWebSocket';
-import { SprintCreateWizard } from '@/ui/tracker/SprintCreateWizard';
-import { SprintPreviewCard } from '@/ui/tracker/SprintPreviewCard';
+import { useAuth } from "@/contexts/auth-context";
+import { useSprints } from "@/hooks/useSprints";
+import { useTrackerWebSocket } from "@/hooks/tracker/useTrackerWebSocket";
+import { SprintCreateWizard } from "@/ui/tracker/SprintCreateWizard";
+import { SprintPreviewCard } from "@/ui/tracker/SprintPreviewCard";
 import {
   formatSprintDateRange,
   getScopeKindLabel,
   getStatusLabel,
   type DomainSprintListItem,
-} from '@/domain/sprint';
+} from "@/domain/sprint";
 import type {
   SprintSortByApi,
   SprintSortDirApi,
   SprintStatusFilterApi,
-} from '@/api/sprints.api';
-import type { SprintScopeKindApi } from '@/domain/sprint';
-
-// ─── URL state ──────────────────────────────────────────────────────────────
+} from "@/api/sprints.api";
+import type { SprintScopeKindApi } from "@/domain/sprint";
 
 interface FiltersState {
   status: SprintStatusFilterApi;
@@ -79,64 +58,71 @@ interface FiltersState {
 }
 
 const DEFAULT_FILTERS: FiltersState = {
-  status: 'active',
+  status: "active",
   scope: null,
-  q: '',
-  sortBy: 'startDate',
-  sortDir: 'desc',
+  q: "",
+  sortBy: "startDate",
+  sortDir: "desc",
   page: 1,
   selected: null,
 };
 
 function parseFilters(sp: URLSearchParams): FiltersState {
-  const status = (sp.get('status') ?? DEFAULT_FILTERS.status) as
+  const status = (sp.get("status") ?? DEFAULT_FILTERS.status) as
     | SprintStatusFilterApi
     | string;
-  const scope = sp.get('scope') as SprintScopeKindApi | null;
-  const sortBy = (sp.get('sort') ?? DEFAULT_FILTERS.sortBy) as SprintSortByApi;
-  const sortDir = (sp.get('sortDir') ?? DEFAULT_FILTERS.sortDir) as
+  const scope = sp.get("scope") as SprintScopeKindApi | null;
+  const sortBy = (sp.get("sort") ?? DEFAULT_FILTERS.sortBy) as SprintSortByApi;
+  const sortDir = (sp.get("sortDir") ?? DEFAULT_FILTERS.sortDir) as
     | SprintSortDirApi
     | string;
-  const pageNum = Number(sp.get('page') ?? '1');
+  const pageNum = Number(sp.get("page") ?? "1");
   return {
-    status: (['active', 'completed', 'upcoming', 'all'] as const).includes(
+    status: (["active", "completed", "upcoming", "all"] as const).includes(
       status as SprintStatusFilterApi,
     )
       ? (status as SprintStatusFilterApi)
       : DEFAULT_FILTERS.status,
-    scope: scope &&
-      (['org', 'customer', 'vendor', 'person', 'department', 'project'] as const).includes(
-        scope,
-      )
-      ? scope
-      : null,
-    q: sp.get('q') ?? '',
-    sortBy: (['startDate', 'progress', 'hints'] as const).includes(sortBy)
+    scope:
+      scope &&
+      (
+        [
+          "org",
+          "customer",
+          "vendor",
+          "person",
+          "department",
+          "project",
+        ] as const
+      ).includes(scope)
+        ? scope
+        : null,
+    q: sp.get("q") ?? "",
+    sortBy: (["startDate", "progress", "hints"] as const).includes(sortBy)
       ? sortBy
       : DEFAULT_FILTERS.sortBy,
-    sortDir: (['asc', 'desc'] as const).includes(sortDir as SprintSortDirApi)
+    sortDir: (["asc", "desc"] as const).includes(sortDir as SprintSortDirApi)
       ? (sortDir as SprintSortDirApi)
       : DEFAULT_FILTERS.sortDir,
     page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1,
-    selected: sp.get('selected'),
+    selected: sp.get("selected"),
   };
 }
 
 function buildSearch(filters: FiltersState): string {
   const p = new URLSearchParams();
-  if (filters.status !== DEFAULT_FILTERS.status) p.set('status', filters.status);
-  if (filters.scope) p.set('scope', filters.scope);
-  if (filters.q) p.set('q', filters.q);
-  if (filters.sortBy !== DEFAULT_FILTERS.sortBy) p.set('sort', filters.sortBy);
+  if (filters.status !== DEFAULT_FILTERS.status)
+    p.set("status", filters.status);
+  if (filters.scope) p.set("scope", filters.scope);
+  if (filters.q) p.set("q", filters.q);
+  if (filters.sortBy !== DEFAULT_FILTERS.sortBy) p.set("sort", filters.sortBy);
   if (filters.sortDir !== DEFAULT_FILTERS.sortDir)
-    p.set('sortDir', filters.sortDir);
-  if (filters.page !== 1) p.set('page', String(filters.page));
-  if (filters.selected) p.set('selected', filters.selected);
+    p.set("sortDir", filters.sortDir);
+  if (filters.page !== 1) p.set("page", String(filters.page));
+  if (filters.selected) p.set("selected", filters.selected);
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
-
-// ─── Хук debounce ────────────────────────────────────────────────────────────
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {
   const [debounced, setDebounced] = useState(value);
@@ -147,18 +133,16 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-// ─── Главный компонент ──────────────────────────────────────────────────────
-
 const SCOPE_FILTER_CHIPS: Array<{
   value: SprintScopeKindApi;
   label: string;
 }> = [
-  { value: 'org', label: 'Компания' },
-  { value: 'department', label: 'Отдел' },
-  { value: 'customer', label: 'Клиент' },
-  { value: 'vendor', label: 'Поставщик' },
-  { value: 'person', label: 'Сотрудник' },
-  { value: 'project', label: 'Проект' },
+  { value: "org", label: "Компания" },
+  { value: "department", label: "Отдел" },
+  { value: "customer", label: "Клиент" },
+  { value: "vendor", label: "Поставщик" },
+  { value: "person", label: "Сотрудник" },
+  { value: "project", label: "Проект" },
 ];
 
 export function SprintsListClient() {
@@ -169,34 +153,27 @@ export function SprintsListClient() {
 
   const [wizardOpen, setWizardOpen] = useState(false);
 
-  // Мобильный ли вьюпорт. ВАЖНО: превью-Sheet (с затемняющим оверлеем) должен
-  // открываться ТОЛЬКО на мобильном. На desktop превью живёт в правой колонке;
-  // если бы Sheet открывался и на desktop, его полноэкранный оверлей
-  // (bg-black/60 backdrop-blur) затемнял бы весь экран («мутный экран»).
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const mq = window.matchMedia('(max-width: 767px)');
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
     const apply = () => setIsMobile(mq.matches);
     apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
-  // Состояние из URL
   const filters = useMemo(
-    () => parseFilters(new URLSearchParams(searchParams?.toString() ?? '')),
+    () => parseFilters(new URLSearchParams(searchParams?.toString() ?? "")),
     [searchParams],
   );
 
-  // Локальный input для поиска (мгновенный, дебаунсим перед URL)
   const [searchInput, setSearchInput] = useState(filters.q);
   useEffect(() => {
     setSearchInput(filters.q);
   }, [filters.q]);
   const debouncedSearch = useDebouncedValue(searchInput, 300);
 
-  // Если поиск поменялся — пишем в URL (и сбрасываем page).
   useEffect(() => {
     if (debouncedSearch === filters.q) return;
     const next: FiltersState = {
@@ -216,7 +193,6 @@ export function SprintsListClient() {
     [filters, pathname, router],
   );
 
-  // ── Запрос данных ──
   const { sprints, total, totalPages, isLoading, mutate } = useSprints(
     currentOrgId,
     {
@@ -230,7 +206,6 @@ export function SprintsListClient() {
     },
   );
 
-  // ── Live-обновления через WebSocket ──
   const { client: wsClient } = useTrackerWebSocket(currentOrgId, true);
   useEffect(() => {
     if (!wsClient) return;
@@ -238,32 +213,29 @@ export function SprintsListClient() {
     const refresh = () => {
       void mutate();
     };
-    unsubs.push(wsClient.on('cycle.created', refresh));
-    unsubs.push(wsClient.on('cycle.updated', refresh));
-    unsubs.push(wsClient.on('cycle.progress_updated', refresh));
-    unsubs.push(wsClient.on('cycle.completed', refresh));
-    unsubs.push(wsClient.on('sprint_hint.created', refresh));
-    unsubs.push(wsClient.on('sprint_hint.updated', refresh));
-    unsubs.push(wsClient.on('sprint_hint.dismissed', refresh));
-    unsubs.push(wsClient.on('sprint_hint.resolved', refresh));
+    unsubs.push(wsClient.on("cycle.created", refresh));
+    unsubs.push(wsClient.on("cycle.updated", refresh));
+    unsubs.push(wsClient.on("cycle.progress_updated", refresh));
+    unsubs.push(wsClient.on("cycle.completed", refresh));
+    unsubs.push(wsClient.on("sprint_hint.created", refresh));
+    unsubs.push(wsClient.on("sprint_hint.updated", refresh));
+    unsubs.push(wsClient.on("sprint_hint.dismissed", refresh));
+    unsubs.push(wsClient.on("sprint_hint.resolved", refresh));
     return () => {
       for (const u of unsubs) u();
     };
   }, [wsClient, mutate]);
 
-  // ── Текущий выбранный спринт ──
   const selectedSprint = useMemo(() => {
     if (!filters.selected) return null;
     return sprints.find((s) => s.id === filters.selected) ?? null;
   }, [sprints, filters.selected]);
 
-  // Авто-выбор первого спринта на desktop, если selected пуст
   useEffect(() => {
     if (filters.selected) return;
     if (sprints.length === 0) return;
-    // Только на desktop (lg breakpoint) — на mobile preview открывается явно.
-    if (typeof window === 'undefined') return;
-    if (!window.matchMedia('(min-width: 768px)').matches) return;
+    if (typeof window === "undefined") return;
+    if (!window.matchMedia("(min-width: 768px)").matches) return;
     updateFilters({ selected: sprints[0]?.id ?? null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sprints]);
@@ -277,9 +249,9 @@ export function SprintsListClient() {
         onClose={() => setWizardOpen(false)}
       />
 
-      {/* Layout: список + preview */}
+      {}
       <div className="grid h-full w-full grid-cols-1 md:grid-cols-[420px,1fr]">
-        {/* ── Левая колонка: список ── */}
+        {}
         <div className="flex h-full flex-col border-b border-border-subtle md:border-b-0 md:border-r">
           <ListHeader
             filters={filters}
@@ -314,13 +286,10 @@ export function SprintsListClient() {
           />
         </div>
 
-        {/* ── Правая колонка: preview (desktop only) ── */}
+        {}
         <div className="hidden h-full md:block">
           {selectedSprint && currentOrgId ? (
-            <SprintPreviewCard
-              orgId={currentOrgId}
-              sprint={selectedSprint}
-            />
+            <SprintPreviewCard orgId={currentOrgId} sprint={selectedSprint} />
           ) : (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm text-fg-tertiary">
               Выберите спринт слева, чтобы открыть превью.
@@ -329,18 +298,14 @@ export function SprintsListClient() {
         </div>
       </div>
 
-      {/* Mobile sheet с preview — только на мобильном вьюпорте (на desktop
-          превью в правой колонке; иначе оверлей Sheet затемнит весь экран). */}
+      {}
       <Sheet
         open={isMobile && Boolean(selectedSprint)}
         onOpenChange={(o) => {
           if (!o) updateFilters({ selected: null });
         }}
       >
-        <SheetContent
-          side="right"
-          className="w-full max-w-md p-0 md:hidden"
-        >
+        <SheetContent side="right" className="w-full max-w-md p-0 md:hidden">
           <SheetTitle className="sr-only">Превью спринта</SheetTitle>
           {selectedSprint && currentOrgId ? (
             <SprintPreviewCard
@@ -354,8 +319,6 @@ export function SprintsListClient() {
     </div>
   );
 }
-
-// ─── Header ────────────────────────────────────────────────────────────────
 
 interface ListHeaderProps {
   filters: FiltersState;
@@ -376,7 +339,7 @@ function ListHeader({
 }: ListHeaderProps) {
   return (
     <div className="flex flex-col gap-3 border-b border-border-subtle bg-bg-base p-4">
-      {/* Title + create */}
+      {}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-fg-primary">Спринты</h1>
@@ -390,7 +353,7 @@ function ListHeader({
         </Button>
       </div>
 
-      {/* Tabs */}
+      {}
       <Tabs
         value={filters.status}
         onValueChange={(v) =>
@@ -408,7 +371,7 @@ function ListHeader({
         </TabsList>
       </Tabs>
 
-      {/* Search */}
+      {}
       <div className="relative">
         <Search
           size={14}
@@ -423,7 +386,7 @@ function ListHeader({
         />
       </div>
 
-      {/* Scope-chips */}
+      {}
       <div className="flex flex-wrap gap-1.5">
         {SCOPE_FILTER_CHIPS.map((chip) => {
           const isActive = filters.scope === chip.value;
@@ -439,11 +402,11 @@ function ListHeader({
                 })
               }
               className={cn(
-                'rounded-full border px-2.5 py-0.5 text-xs transition-colors',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                "rounded-full border px-2.5 py-0.5 text-xs transition-colors",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 isActive
-                  ? 'border-accent bg-accent text-accent-fg'
-                  : 'border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay',
+                  ? "border-accent bg-accent text-accent-fg"
+                  : "border-border-subtle bg-bg-elevated text-fg-secondary hover:bg-bg-overlay",
               )}
             >
               {chip.label}
@@ -452,7 +415,7 @@ function ListHeader({
         })}
       </div>
 
-      {/* Sort select */}
+      {}
       <div className="flex items-center gap-2">
         <span className="text-xs text-fg-tertiary">Сортировка:</span>
         <Select
@@ -488,8 +451,6 @@ function ListHeader({
     </div>
   );
 }
-
-// ─── List body ─────────────────────────────────────────────────────────────
 
 function ListBody({
   sprints,
@@ -543,14 +504,14 @@ function SprintCard({
         onClick={onClick}
         aria-pressed={isActive}
         className={cn(
-          'flex w-full flex-col gap-2 rounded-md border px-3 py-2.5 text-left transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+          "flex w-full flex-col gap-2 rounded-md border px-3 py-2.5 text-left transition-colors",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
           isActive
-            ? 'border-accent bg-bg-elevated'
-            : 'border-border-subtle bg-bg-base hover:bg-bg-elevated',
+            ? "border-accent bg-bg-elevated"
+            : "border-border-subtle bg-bg-base hover:bg-bg-elevated",
         )}
       >
-        {/* row 1: identifier + name */}
+        {}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="text-[11px] uppercase tracking-wide text-fg-tertiary">
@@ -560,7 +521,7 @@ function SprintCard({
               {sprint.name}
             </div>
           </div>
-          {sprint.status === 'active' ? (
+          {sprint.status === "active" ? (
             <span
               aria-label="Активный спринт"
               className="mt-1 inline-block h-2 w-2 shrink-0 animate-pulse-mint rounded-full bg-accent"
@@ -568,7 +529,7 @@ function SprintCard({
           ) : null}
         </div>
 
-        {/* row 2: scope-badge */}
+        {}
         <div className="flex flex-wrap items-center gap-1.5">
           <ScopeBadge sprint={sprint} />
           {sprint.scope.isDeleted ? (
@@ -581,7 +542,7 @@ function SprintCard({
           </span>
         </div>
 
-        {/* row 3: progress */}
+        {}
         <div className="flex items-center gap-2">
           <Progress value={percent} className="h-1" />
           <span className="shrink-0 text-[11px] font-medium text-fg-tertiary">
@@ -589,7 +550,7 @@ function SprintCard({
           </span>
         </div>
 
-        {/* row 4: counters */}
+        {}
         <div className="flex items-center gap-3 text-[11px] text-fg-tertiary">
           <span className="inline-flex items-center gap-1">
             <ListTodo size={11} />
@@ -597,8 +558,8 @@ function SprintCard({
           </span>
           <span
             className={cn(
-              'inline-flex items-center gap-1',
-              sprint.criticalHintsCount > 0 && 'text-chip-danger-fg',
+              "inline-flex items-center gap-1",
+              sprint.criticalHintsCount > 0 && "text-chip-danger-fg",
             )}
           >
             <Lightbulb size={11} />
@@ -621,28 +582,28 @@ function ScopeBadge({ sprint }: { sprint: DomainSprintListItem }) {
   const kind = sprint.scope.kind;
   const label =
     sprint.scope.label ||
-    (kind === 'org' ? 'Компания' : getScopeKindLabel(kind));
+    (kind === "org" ? "Компания" : getScopeKindLabel(kind));
   const classes = (() => {
     switch (kind) {
-      case 'org':
-        return 'bg-chip-sand-bg text-chip-sand-fg';
-      case 'customer':
-        return 'bg-chip-success-bg text-chip-success-fg';
-      case 'vendor':
-        return 'bg-chip-lavender-bg text-chip-lavender-fg';
-      case 'person':
-        return 'bg-chip-warning-bg text-chip-warning-fg';
-      case 'department':
-        return 'bg-chip-info-bg text-chip-info-fg';
-      case 'project':
+      case "org":
+        return "bg-chip-sand-bg text-chip-sand-fg";
+      case "customer":
+        return "bg-chip-success-bg text-chip-success-fg";
+      case "vendor":
+        return "bg-chip-lavender-bg text-chip-lavender-fg";
+      case "person":
+        return "bg-chip-warning-bg text-chip-warning-fg";
+      case "department":
+        return "bg-chip-info-bg text-chip-info-fg";
+      case "project":
       default:
-        return 'bg-accent text-accent-fg';
+        return "bg-accent text-accent-fg";
     }
   })();
   return (
     <span
       className={cn(
-        'inline-flex max-w-[180px] truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium',
+        "inline-flex max-w-[180px] truncate rounded-md px-1.5 py-0.5 text-[10px] font-medium",
         classes,
       )}
       title={label}
@@ -651,8 +612,6 @@ function ScopeBadge({ sprint }: { sprint: DomainSprintListItem }) {
     </span>
   );
 }
-
-// ─── Footer pagination ─────────────────────────────────────────────────────
 
 function ListFooter({
   page,
@@ -695,8 +654,6 @@ function ListFooter({
     </div>
   );
 }
-
-// ─── Empty state ───────────────────────────────────────────────────────────
 
 function EmptyState({ onCreateClick }: { onCreateClick: () => void }) {
   return (

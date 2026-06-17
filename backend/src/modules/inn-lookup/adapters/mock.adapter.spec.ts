@@ -1,14 +1,3 @@
-/**
- * Unit-тесты MockAdapter.
- *
- * Покрытие:
- *   - Сбер (7707083893) → legal_entity
- *   - АО Точка (9721194461) → legal_entity с bankBik
- *   - ИП-фикстура (500100732259) → individual_entrepreneur
- *   - Несуществующий ИНН → null
- *   - Trim'ит входной ИНН
- */
-
 import { describe, expect, it } from 'vitest';
 
 import { MockAdapter } from './mock.adapter';
@@ -48,7 +37,7 @@ describe('MockAdapter', () => {
     expect(await adapter.lookup('123456789012')).toBeNull();
   });
 
-  it('trim\'ит входной ИНН', async () => {
+  it("trim'ит входной ИНН", async () => {
     const result = await adapter.lookup('  7707083893  ');
     expect(result).not.toBeNull();
     expect(result?.inn).toBe('7707083893');

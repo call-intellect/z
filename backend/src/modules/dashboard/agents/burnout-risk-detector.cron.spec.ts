@@ -1,10 +1,3 @@
-/**
- * Unit-тесты чистых probe-детекторов `BurnoutRiskDetectorCron`
- * (ТЗ-1 Ф3.D.3 — reply_latency_rise / workload_overload / meeting_noshows).
- *
- * Покрывают границы порогов каждого детектора. Сами cron-проходы (БД) не
- * тестируем здесь — детекция вынесена в чистые функции для тестируемости.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -19,7 +12,6 @@ describe('detectReplyLatencyRise (ТЗ-1 Ф3.D.3)', () => {
     expect(detectReplyLatencyRise(1000, -5, 2)).toBe(false);
   });
   it('recent >= baseline*factor → true (на границе)', () => {
-    // baseline 1ч, factor 2 → порог 2ч.
     expect(detectReplyLatencyRise(7_200_000, 3_600_000, 2)).toBe(true);
     expect(detectReplyLatencyRise(10_000_000, 3_600_000, 2)).toBe(true);
   });

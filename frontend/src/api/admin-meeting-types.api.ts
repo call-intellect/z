@@ -1,26 +1,18 @@
-/**
- * API-клиент для `/admin/content/meeting-types` — Z-Admin Фаза 5.
- *
- * Контракт сервера: `backend/src/modules/admin/content/meeting-types/
- * meeting-types-admin.controller.ts` (префикс
- * `/api/v1/admin/content/meeting-types`).
- */
-
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 import type {
   CreateMeetingTypeRequest,
   MeetingTypeItemApi,
   MeetingTypeListApi,
   UpdateMeetingTypeRequest,
-} from '@/domain/admin-meeting-type';
+} from "@/domain/admin-meeting-type";
 
 export const adminMeetingTypesApi = {
   list: () =>
-    apiClient.get<MeetingTypeListApi>('/api/v1/admin/content/meeting-types'),
+    apiClient.get<MeetingTypeListApi>("/api/v1/admin/content/meeting-types"),
 
   create: (body: CreateMeetingTypeRequest) =>
     apiClient.post<MeetingTypeItemApi>(
-      '/api/v1/admin/content/meeting-types',
+      "/api/v1/admin/content/meeting-types",
       body,
     ),
 
@@ -30,7 +22,6 @@ export const adminMeetingTypesApi = {
       body,
     ),
 
-  /** Soft-delete: бэкенд выставит isActive=false. */
   remove: (id: string) =>
     apiClient.del<{ ok: true }>(
       `/api/v1/admin/content/meeting-types/${encodeURIComponent(id)}`,

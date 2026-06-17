@@ -1,22 +1,5 @@
-/**
- * Support API — встроенная служба поддержки (ТЗ 2026-06-09 support-desk Ф1).
- *
- * Две стороны:
- *   - Клиент (`/api/v1/support/*`) — создать обращение, читать свои тикеты,
- *     дописать сообщение, оценить. Видит только access='external'.
- *   - Деск (`/api/v1/support/desk/*`) — сторона сотрудника поддержки
- *     (SupportAccessGuard на бэке): очередь, ответ, заметка, назначение,
- *     смена статуса. Видит все сообщения (internal+external).
- *   - Статус (`/api/v1/support/me`) — флаги для UI (виджет/сайдбар).
- *
- * Здесь только тонкие обёртки над единым `apiClient`. Контракты — см.
- * backend/src/modules/support/controllers/*.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
-
-// ─────────────────────────── ApiDto: клиент ───────────────────────────
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 
 export interface SupportStatusApi {
   deskEnabled: boolean;
@@ -72,8 +55,6 @@ export interface RateTicketBody {
   score: number;
   comment?: string;
 }
-
-// ─────────────────────────── ApiDto: деск ───────────────────────────
 
 export interface DeskTicketListItemApi {
   ticketId: string;
@@ -136,8 +117,7 @@ export interface DeskMetaApi {
   agents: DeskMetaAgentApi[];
 }
 
-/** Допустимые view очереди деска (контракт backend DeskListQuerySchema). */
-export type DeskView = 'all' | 'unassigned' | 'mine' | 'closed' | 'spam';
+export type DeskView = "all" | "unassigned" | "mine" | "closed" | "spam";
 
 export interface DeskReplyBody {
   message: string;
@@ -156,18 +136,14 @@ export interface DeskTransitionBody {
   stateId: string;
 }
 
-// ─────────────────────────── вызовы ───────────────────────────
-
 export const supportApi = {
-  // — статус —
-  getStatus: () => apiClient.get<SupportStatusApi>('/api/v1/support/me'),
+  getStatus: () => apiClient.get<SupportStatusApi>("/api/v1/support/me"),
 
-  // — клиент —
   submitTicket: (body: SubmitTicketBody) =>
-    apiClient.post<SupportTicketCreatedApi>('/api/v1/support/tickets', body),
+    apiClient.post<SupportTicketCreatedApi>("/api/v1/support/tickets", body),
 
   listMyTickets: () =>
-    apiClient.get<MyTicketsListApi>('/api/v1/support/my-tickets'),
+    apiClient.get<MyTicketsListApi>("/api/v1/support/my-tickets"),
 
   getMyTicket: (id: string) =>
     apiClient.get<MyTicketDetailApi>(
@@ -186,7 +162,6 @@ export const supportApi = {
       body,
     ),
 
-  // — деск —
   listDeskTickets: (params: { view?: DeskView; cursor?: string } = {}) => {
     const qs = buildQuery({ view: params.view, cursor: params.cursor });
     return apiClient.get<DeskTicketsListApi>(
@@ -199,7 +174,7 @@ export const supportApi = {
       `/api/v1/support/desk/tickets/${encodeURIComponent(id)}`,
     ),
 
-  getDeskMeta: () => apiClient.get<DeskMetaApi>('/api/v1/support/desk/meta'),
+  getDeskMeta: () => apiClient.get<DeskMetaApi>("/api/v1/support/desk/meta"),
 
   deskReply: (id: string, body: DeskReplyBody) =>
     apiClient.post<{ ok: true; commentId: string }>(

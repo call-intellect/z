@@ -33,25 +33,10 @@ import {
   type CustomerRiskWeights,
 } from './customer-risk.scoring';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — CustomerRiskRadarService.
- *
- * Дневной агент группирует IdeaBlock'и signalType ∈ {churn_risk, objection,
- * pain, feature_request} по Entity{type=customer} (через IdeaBlockEntity),
- * накапливает за окно (AdminSetting `customer_risk.window_days`, default 14),
- * ранжирует по взвешенному риску, резолвит ответственного менеджера и
- * upsert'ит дневной снимок `CustomerRiskSnapshot` (идемпотентно по
- * (tenantId, customerEntityId, dateLocal)).
- *
- * Веса/пороги/окно — AdminSetting через `getDynamic`, не код. Агрегация —
- * чистый SQL/TS. LLM — ТОЛЬКО на финальную формулировку подсказки (с
- * детерминированным fallback). Без ₽-оценок (Р6).
- */
 @Injectable()
 export class CustomerRiskRadarService {
   private readonly logger = new Logger(CustomerRiskRadarService.name);
 
-  /** Сколько блоков-источников хранить для drill-down. */
   private static readonly MAX_TOP_BLOCKS = 20;
 
   constructor(
@@ -62,18 +47,9 @@ export class CustomerRiskRadarService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
   ) {}
 
-  // ──────────────────────────── compute (cron) ────────────────────────
-
-  /**
-   * Построить снимки риска по всем клиентам Org за `dateLocal`. Идемпотентно —
-   * upsert по (tenantId, customerEntityId, dateLocal).
-   *
-   * @returns снимки (Prisma-rows) + счётчики critical/warning.
-   */
   async computeForTenant(args: {
     tenantId: string;
     dateLocal: string;
-    /** Окно накопления; если не задано — берётся из AdminSetting. */
     windowDays?: number;
   }): Promise<{
     snapshots: Array<{
@@ -86,16 +62,13 @@ export class CustomerRiskRadarService {
     criticalCount: number;
     warningCount: number;
   }> {
-    const windowDays =
-      args.windowDays ?? (await this.resolveWindowDays());
+    const windowDays = args.windowDays ?? (await this.resolveWindowDays());
     const weights = await this.resolveWeights();
     const thresholds = await this.resolveThresholds();
     const tenantTop = resolveOperationsTenantTop(args.tenantId);
 
     const since = this.windowStart(args.dateLocal, windowDays);
 
-    // 1. Все блоки нужных signalType за окно, с привязкой к Entity{type=customer}
-    //    (роль mentioned/subject). Берём через IdeaBlockEntity → Entity.
     const blockEntities = await this.prisma.ideaBlockEntity.findMany({
       where: {
         role: { in: ['mentioned', 'subject'] },
@@ -122,7 +95,6 @@ export class CustomerRiskRadarService {
       take: 20_000,
     });
 
-    // 2. Группируем по customerEntityId.
     interface Agg {
       customerEntityId: string;
       customerName: string;
@@ -157,7 +129,6 @@ export class CustomerRiskRadarService {
       });
     }
 
-    // 3. Для каждого клиента — score / level / responsible / upsert.
     const outSnapshots: Array<{
       id: string;
       customerEntityId: string;
@@ -172,7 +143,6 @@ export class CustomerRiskRadarService {
       const riskScore = computeRiskScore(agg.counts, weights);
       const riskLevel = classifyRisk(riskScore, thresholds);
 
-      // Топ-20 блоков, свежие первыми.
       const topBlocks = [...agg.blocks]
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
         .slice(0, CustomerRiskRadarService.MAX_TOP_BLOCKS)
@@ -211,7 +181,6 @@ export class CustomerRiskRadarService {
             topBlockIdsJson: topBlocks as unknown as Prisma.InputJsonValue,
             responsiblePersonId,
             snapshotAt: new Date(),
-            // deliveredManagerAt НЕ сбрасываем — push идемпотентен по дню.
           },
           select: { id: true },
         });
@@ -253,10 +222,6 @@ export class CustomerRiskRadarService {
     return { snapshots: outSnapshots, criticalCount, warningCount };
   }
 
-  /**
-   * Дельта суммарного числа сигналов и score к вчерашнему снимку клиента.
-   * Используется для «приток/отток» в endpoint'ах и в подсказке.
-   */
   async computeDelta(args: {
     tenantId: string;
     customerEntityId: string;
@@ -289,10 +254,6 @@ export class CustomerRiskRadarService {
     };
   }
 
-  /**
-   * Человекочитаемая подсказка по снимку (LLM `customer-risk-digest`). При сбое
-   * LLM — детерминированный fallback. Без ₽-оценок.
-   */
   async buildHint(args: {
     tenantId: string;
     customerName: string;
@@ -332,7 +293,6 @@ export class CustomerRiskRadarService {
     }
   }
 
-  /** Пометить, что push менеджеру по снимку отправлен. */
   async markManagerDelivered(snapshotId: string): Promise<void> {
     await this.prisma.customerRiskSnapshot.update({
       where: { id: snapshotId },
@@ -340,13 +300,6 @@ export class CustomerRiskRadarService {
     });
   }
 
-  // ──────────────────────────── read (endpoints) ──────────────────────
-
-  /**
-   * COO-список снимков риска за последний доступный день (с drill-down +
-   * дельтой + подсказкой). Подсказка строится детерминированно (без LLM) при
-   * чтении, чтобы endpoint был быстрым; LLM-формулировка живёт в push/дайджесте.
-   */
   async listForTenant(args: {
     tenantId: string;
     query: CustomerRiskQuery;
@@ -378,10 +331,6 @@ export class CustomerRiskRadarService {
     return { items, criticalCount, warningCount };
   }
 
-  /**
-   * Self-scope для менеджера: клиенты, где `responsiblePersonId = selfPersonId`.
-   * НЕ светит чужих клиентов.
-   */
   async listForResponsible(args: {
     tenantId: string;
     selfPersonId: string;
@@ -415,14 +364,7 @@ export class CustomerRiskRadarService {
     return { items, criticalCount, warningCount };
   }
 
-  /**
-   * Топ-N снимков по riskScore за последний день — для секции «Клиенты под
-   * риском» в COO-дайджесте. Возвращает компактную проекцию.
-   */
-  async topForDigest(args: {
-    tenantId: string;
-    limit: number;
-  }): Promise<
+  async topForDigest(args: { tenantId: string; limit: number }): Promise<
     Array<{
       customerName: string;
       riskLevel: CustomerRiskLevel;
@@ -447,8 +389,6 @@ export class CustomerRiskRadarService {
     }));
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
   private async toDto(row: {
     id: string;
     tenantId: string;
@@ -469,10 +409,7 @@ export class CustomerRiskRadarService {
     const riskLevel = row.riskLevel as CustomerRiskLevel;
     const customerName = row.customerEntity?.canonicalName ?? 'Клиент';
 
-    const topBlocks = await this.resolveTopBlocks(
-      row.tenantId,
-      row.topBlockIdsJson,
-    );
+    const topBlocks = await this.resolveTopBlocks(row.tenantId, row.topBlockIdsJson);
 
     const delta = await this.computeDelta({
       tenantId: row.tenantId,
@@ -509,15 +446,12 @@ export class CustomerRiskRadarService {
     };
   }
 
-  /** Резолв блоков-источников (excerpt) по их id для drill-down. */
   private async resolveTopBlocks(
     tenantId: string,
     topBlockIdsJson: Prisma.JsonValue,
   ): Promise<CustomerRiskTopBlockDto[]> {
     const ids = Array.isArray(topBlockIdsJson)
-      ? (topBlockIdsJson as unknown[]).filter(
-          (v): v is string => typeof v === 'string',
-        )
+      ? (topBlockIdsJson as unknown[]).filter((v): v is string => typeof v === 'string')
       : [];
     if (ids.length === 0) return [];
     const blocks = await this.prisma.ideaBlock.findMany({
@@ -537,17 +471,10 @@ export class CustomerRiskRadarService {
     }));
   }
 
-  /**
-   * Резолв ответственного менеджера по клиенту: через Project, чья карточка
-   * клиента (`customerCardId` → `Card.entityId`) указывает на этого клиента →
-   * `Project.ownerId (User)` → Person. Fallback: владелец карточки клиента.
-   * Если ничего не резолвится — NULL (не выдумываем).
-   */
   private async resolveResponsiblePerson(args: {
     tenantId: string;
     customerEntityId: string;
   }): Promise<string | null> {
-    // 1. Карточки клиента (Card.entityId == customerEntityId).
     const cards = await this.prisma.card.findMany({
       where: {
         tenantId: args.tenantId,
@@ -560,7 +487,6 @@ export class CustomerRiskRadarService {
     if (cards.length === 0) return null;
 
     const cardIds = cards.map((c) => c.id);
-    // 2. Проект, привязанный к карточке клиента → его владелец (User).
     const project = await this.prisma.project.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -578,7 +504,6 @@ export class CustomerRiskRadarService {
     }
     if (candidateUserIds.length === 0) return null;
 
-    // 3. Резолвим первого подходящего User → Person той же Org.
     const person = await this.prisma.person.findFirst({
       where: {
         tenantId: args.tenantId,
@@ -640,13 +565,11 @@ export class CustomerRiskRadarService {
     return { critical, warning };
   }
 
-  /** Начало окна: `dateLocal` минус (windowDays-1) дней, 00:00 UTC. */
   private windowStart(dateLocal: string, windowDays: number): Date {
     const start = new Date(`${this.shiftDate(dateLocal, -(windowDays - 1))}T00:00:00.000Z`);
     return start;
   }
 
-  /** Сдвиг YYYY-MM-DD на N дней (через UTC-арифметику). */
   private shiftDate(dateLocal: string, days: number): string {
     const d = new Date(`${dateLocal}T00:00:00.000Z`);
     d.setUTCDate(d.getUTCDate() + days);
@@ -657,7 +580,6 @@ export class CustomerRiskRadarService {
   }
 }
 
-/** Парсинг signalCounts JSON в типизированный объект (защита от мусора). */
 export function parseSignalCounts(raw: Prisma.JsonValue): CustomerRiskSignalCounts {
   const out = emptySignalCounts();
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {

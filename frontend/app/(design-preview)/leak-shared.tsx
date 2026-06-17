@@ -1,15 +1,11 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
+import Link from "next/link";
 
-/**
- * Переключатель между preview-вариантами секции «дырки в выручке».
- * Используется в `/leak-v1` и `/leak-v2`.
- */
-export function PreviewSwitcher({ current }: { current: 'v1' | 'v2' }) {
-  const items: Array<{ key: 'v1' | 'v2'; href: string; label: string }> = [
-    { key: 'v1', href: '/leak-v1', label: 'V1 · Манифест' },
-    { key: 'v2', href: '/leak-v2', label: 'V2 · Дырки и заплатки' },
+export function PreviewSwitcher({ current }: { current: "v1" | "v2" }) {
+  const items: Array<{ key: "v1" | "v2"; href: string; label: string }> = [
+    { key: "v1", href: "/leak-v1", label: "V1 · Манифест" },
+    { key: "v2", href: "/leak-v2", label: "V2 · Дырки и заплатки" },
   ];
 
   return (
@@ -29,13 +25,13 @@ export function PreviewSwitcher({ current }: { current: 'v1' | 'v2' }) {
           <Link
             key={it.key}
             href={it.href}
-            aria-current={it.key === current ? 'page' : undefined}
+            aria-current={it.key === current ? "page" : undefined}
             className={[
-              'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
               it.key === current
-                ? 'border-accent-border bg-accent-muted text-accent-fg'
-                : 'border-border-subtle text-fg-secondary hover:border-accent-border hover:text-accent',
-            ].join(' ')}
+                ? "border-accent-border bg-accent-muted text-accent-fg"
+                : "border-border-subtle text-fg-secondary hover:border-accent-border hover:text-accent",
+            ].join(" ")}
           >
             {it.label}
           </Link>

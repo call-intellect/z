@@ -1,13 +1,5 @@
 import { z } from 'zod';
 
-/**
- * DTO модуля Experiments (SBA β-6). REST API `/api/v1/experiments` —
- * институциональная память «что попробовали и что вышло».
- *
- * Под капотом — Prisma-модели `Experiment` + `ExperimentVersion` (β-6 §5).
- * Все user-facing строки на русском.
- */
-
 export const ExperimentStatusSchema = z.enum([
   'hypothesis',
   'running',
@@ -17,16 +9,8 @@ export const ExperimentStatusSchema = z.enum([
 ]);
 export type ExperimentStatusDto = z.infer<typeof ExperimentStatusSchema>;
 
-export const ExperimentLessonTypeSchema = z.enum([
-  'what_worked',
-  'what_failed',
-  'next_time',
-]);
-export type ExperimentLessonTypeDto = z.infer<
-  typeof ExperimentLessonTypeSchema
->;
-
-// ─────────────────────── Query / Filters ─────────────────────────────
+export const ExperimentLessonTypeSchema = z.enum(['what_worked', 'what_failed', 'next_time']);
+export type ExperimentLessonTypeDto = z.infer<typeof ExperimentLessonTypeSchema>;
 
 export const ListExperimentsQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
@@ -36,8 +20,6 @@ export const ListExperimentsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type ListExperimentsQuery = z.infer<typeof ListExperimentsQuerySchema>;
-
-// ─────────────────────── Bodies ──────────────────────────────────────
 
 export const CreateExperimentBodySchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -70,11 +52,7 @@ export const TransitionExperimentBodySchema = z.object({
   to: z.enum(['running', 'completed', 'dropped', 'paused']),
   reason: z.string().trim().min(1).max(2_000).optional(),
 });
-export type TransitionExperimentBody = z.infer<
-  typeof TransitionExperimentBodySchema
->;
-
-// ─────────────────────── Response DTOs ───────────────────────────────
+export type TransitionExperimentBody = z.infer<typeof TransitionExperimentBodySchema>;
 
 export interface ExperimentLessonDto {
   text: string;

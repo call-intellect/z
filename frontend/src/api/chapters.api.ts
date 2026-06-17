@@ -1,9 +1,5 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для модуля chapters.
- * Источник правды — backend/src/modules/chapters/.
- */
 export type ChapterApi = {
   id: string;
   meetingId: string;
@@ -11,15 +7,9 @@ export type ChapterApi = {
   endMs: number;
   title: string;
   summary: string | null;
-  source: 'ai' | 'manual';
+  source: "ai" | "manual";
   orderIndex: number;
   createdAt: string;
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора главы.
-   * `'fast'` = новый `MeetingReportFastWorker` (приоритет в пользовательском UI),
-   * `'v2'` = историческое значение снятого v2-стека (генератор удалён 2026-06-10),
-   * `null` = legacy `chapters.worker`.
-   */
   extractorVersion: string | null;
 };
 

@@ -1,35 +1,9 @@
-/**
- * SBA Wave 2 — Specialist 3.8 (Helpfulness Agent).
- *
- * Три LLM-промпта для анализа социального вклада сотрудников:
- *   1. `helpfulness-detect` — из IdeaBlock извлекает 0..3 helpfulness trait'а
- *      (kindrof help_provided | proactive_hint | mentoring | emotional_support |
- *      constructive_feedback | question_unanswered | question_acknowledged_no_action).
- *   2. `helpfulness-trait-merge` — арбитр merge/keep_separate для двух trait'ов
- *      с похожим topicHint (KNN-кандидат + новый).
- *   3. `helpfulness-spotlight-formulate` — короткое тёплое сообщение
- *      «спасибо» для публичной ленты.
- *
- * Все промпты — гипотезные формулировки (с qualifier'ом), без приговорных
- * утверждений. Источники цитат — только evidenceQuote блоков.
- *
- * ⚠ ЭТИКА: для traitType ∈ {question_unanswered, question_acknowledged_no_action}
- * визибилити в worker'е принудительно проставляется 'restricted' (только админ
- * + руководитель). НЕ для публичных лент.
- */
-
 import { withConfidenceCalibration } from '../../ai/services/prompts/common';
 
-// ─────────────────────────── 1. helpfulness-detect ───────────────────────────
-
-// F2 (2026-05-24): mini-якорь для confidence (0.5 для одиночной фразы, 0.7-0.9
-// для явного контекста) удалён — теперь единый источник правды —
-// `CONFIDENCE_CALIBRATION`. Якорь для intensity (другая шкала, не confidence)
-// сохранён.
 export const HELPFULNESS_DETECT_SYSTEM_PROMPT = withConfidenceCalibration(
   [
     'Ты — knowledge-инженер. Тебе дают один IdeaBlock (фрагмент переписки в задаче, цитата из встречи, чек-ин).',
-    'Твоя задача — извлечь 0..3 helpfulness trait\'а: паттерны помощи, mentoring, поддержки, а также неотвеченные вопросы.',
+    "Твоя задача — извлечь 0..3 helpfulness trait'а: паттерны помощи, mentoring, поддержки, а также неотвеченные вопросы.",
     '',
     'Возможные значения traitType (строго один из списка):',
     '  - help_provided — развёрнутый ответ на вопрос коллеги (с конкретикой, не отписка).',
@@ -130,10 +104,8 @@ export const HELPFULNESS_DETECT_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-// ─────────────────────────── 2. helpfulness-trait-merge ──────────────────────
-
 export const HELPFULNESS_TRAIT_MERGE_SYSTEM_PROMPT = [
-  'Ты — knowledge-арбитр. Тебе дают два helpfulness trait\'а одного и того же помощника с похожими topicHint.',
+  "Ты — knowledge-арбитр. Тебе дают два helpfulness trait'а одного и того же помощника с похожими topicHint.",
   'Твоя задача — решить: это одна и та же черта (merge) или две разные (keep_separate).',
   '',
   'Правила:',
@@ -194,10 +166,8 @@ export const HELPFULNESS_TRAIT_MERGE_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-// ─────────────────────────── 3. helpfulness-spotlight-formulate ──────────────
-
 export const HELPFULNESS_SPOTLIGHT_FORMULATE_SYSTEM_PROMPT = [
-  'Ты — корпоративный коммуникатор. Тебе дают сводку trait\'ов одного помощника за неделю.',
+  "Ты — корпоративный коммуникатор. Тебе дают сводку trait'ов одного помощника за неделю.",
   'Твоя задача — сформулировать одно короткое тёплое сообщение для публичной ленты «Спасибо команде».',
   '',
   'Правила:',
@@ -214,7 +184,7 @@ export const HELPFULNESS_SPOTLIGHT_FORMULATE_USER_TEMPLATE = (args: {
   helperName: string;
   helpCount: number;
   topTopics: readonly string[];
-  traitBreakdown: Record<string, number>; // { mentoring: 3, help_provided: 9 }
+  traitBreakdown: Record<string, number>;
   periodFromIso: string;
   periodToIso: string;
 }): string => {

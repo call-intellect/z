@@ -8,7 +8,7 @@ relates_to:
   - plans/analysis/2026-06-10-chatbox-svmazur-analysis.md
   - plans/tz/2026-06-10-query-understanding-tier0-tier1.md
   - plans/tz/2026-06-10-cabinet-fixes-master.md
-  - plans/tz/2026-05-29-telegram-self-initiated-checkins.md
+  - plans/archive/2026-05-29-telegram-self-initiated-checkins.md
   - plans/tz/2026-06-05-chatbox-integration.md
 ---
 

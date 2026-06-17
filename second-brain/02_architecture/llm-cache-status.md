@@ -31,7 +31,7 @@ verified_at: 2026-05-25
 ## Главные выводы
 
 1. **Все 4 production-канала через `LlmRouter` поддерживают кэш на 95-99%:** `deepseek`, `openai-via-proxy` (любая gpt-5*), `minimax`. Это покрывает 100% LLM-вызовов в Z.
-2. **KIE и GRSAI кэш НЕ пробрасывают** — это согласуется с тем, что они и так не подключены к `LlmRouter` (см. ТЗ [`2026-05-24-kie-grsai-llm-router-integration.md`](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md)). При интеграции их в роутер — **в расчётах экономики кэш не учитывать**.
+2. **KIE и GRSAI кэш НЕ пробрасывают** — это согласуется с тем, что они и так не подключены к `LlmRouter` (см. ТЗ [`2026-05-24-kie-grsai-llm-router-integration.md`](../../plans/archive/2026-05-24-kie-grsai-llm-router-integration.md)). При интеграции их в роутер — **в расчётах экономики кэш не учитывать**.
 3. **`gpt-5.4-mini` порог попадания в кэш — ~2048 токенов** (vs ~1024 у `gpt-5-mini`). В проде это не проблема (типичные промпты >2k), но в малых классификаторах (`gpt-5.4-nano` для `theme-classify`, `entity-resolver`) кэша может не быть.
 4. **`MiniMax` кэширует только с явным `cache_control: 'ephemeral'`.** В коде это сейчас выставляется **только на system**, не на user — см. [`llm-router.service.ts:1149`](../../backend/src/modules/ai/services/llm-router.service.ts#L1149). На больших user-промптах (транскрипт встречи) кэш упускается.
 
@@ -79,7 +79,7 @@ verified_at: 2026-05-25
 1. **§3 Б+ (объединённый вызов)** и **§1 meeting-report-fast** — кэш не нужен, нечего кэшировать (один вызов).
 2. **§5 cache-prefix-everywhere** — применяем там, где есть цепочки ≥2 вызовов на одних данных. Гарантия экономии: **90-99%** на DeepSeek и OpenAI-via-proxy.
 3. **MiniMax — расширить `cache_control: 'ephemeral'` также на user-сообщение** (сейчас только на system). Мини-ТЗ: [`plans/tz/2026-05-25-minimax-cache-control-on-user.md`](../../plans/tz/2026-05-25-minimax-cache-control-on-user.md).
-4. **KIE/GRSAI** — в расчётах экономики Кора `cache hit` для них = 0. При подключении в `LlmRouter` (ТЗ [`2026-05-24-kie-grsai-llm-router-integration.md`](../../plans/tz/2026-05-24-kie-grsai-llm-router-integration.md)) — не закладывать скидку.
+4. **KIE/GRSAI** — в расчётах экономики Кора `cache hit` для них = 0. При подключении в `LlmRouter` (ТЗ [`2026-05-24-kie-grsai-llm-router-integration.md`](../../plans/archive/2026-05-24-kie-grsai-llm-router-integration.md)) — не закладывать скидку.
 
 ## Как переверифицировать
 
@@ -95,7 +95,7 @@ cd backend && bun scripts/eval/probe-llm-cache-matrix.ts --targets=deepseek-v4-f
 - [llm-providers-verified.md](../01_projects/llm-providers-verified.md) — какие каналы вообще работают.
 - [llm-router.md](../01_projects/llm-router.md) — реализация маршрутизации.
 - [code-pitfalls.md](code-pitfalls.md) — раздел «LLM prompt caching».
-- [§5 копилки ТЗ](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — архитектурный how-to применения cache-prefix.
-- [cache-prefix-everywhere.md](../../plans/tz/2026-05-25-llm-cache-prefix-everywhere.md) — основное ТЗ исполнителю.
+- [§5 копилки ТЗ](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) — архитектурный how-to применения cache-prefix.
+- [cache-prefix-everywhere.md](../../plans/archive/2026-05-25-llm-cache-prefix-everywhere.md) — основное ТЗ исполнителю.
 
 [[../index|← index]]

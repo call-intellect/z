@@ -347,7 +347,7 @@ PATCH /api/v1/org/settings/transcript-cleaning
 
 ### 9.4. Локализация
 
-Добавить в `delivery/ui/copy-strings.ru.md`:
+Добавить в `second-brain/13_glossary/copy-strings.ru.md`:
 - «Очистить от слов-паразитов»
 - «Очищенный транскрипт» / «Оригинал»
 - «Удалено слов-паразитов» / «Повторов» / «Незавершённых фраз»

@@ -6,15 +6,6 @@ import type { TrackerGateway } from '../gateways/tracker.gateway';
 import type { CommentResponseDto } from './comments.service';
 import { TrackerEventsService } from './tracker-events.service';
 
-/**
- * Юнит-тесты публикатора WebSocket-событий. Проверяем, что:
- *   1. issue.created → emit в tenant + project rooms.
- *   2. issue.updated → emit в tenant + project + issue.
- *   3. issue.deleted → emit во все три комнаты.
- *   4. comment.* → emit в tenant + issue.
- *   5. Любая ошибка в gateway.emit — НЕ пробрасывается (фоновая публикация
- *      не должна валить бизнес-транзакцию).
- */
 describe('TrackerEventsService', () => {
   let emitToRooms: ReturnType<typeof vi.fn>;
   let gateway: TrackerGateway;
@@ -52,7 +43,6 @@ describe('TrackerEventsService', () => {
       completedAt: null,
       cycleId: null,
       goalId: null,
-      // Tracker Boards (2026-05-27)
       boardId: null,
       meetingId: null,
       linkedMeetingIds: [],
@@ -132,8 +122,6 @@ describe('TrackerEventsService', () => {
     emitToRooms.mockImplementation(() => {
       throw new Error('socket boom');
     });
-    expect(() =>
-      svc.publishIssueCreated(makeIssue(), 't1'),
-    ).not.toThrow();
+    expect(() => svc.publishIssueCreated(makeIssue(), 't1')).not.toThrow();
   });
 });

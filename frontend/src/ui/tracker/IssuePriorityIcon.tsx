@@ -1,13 +1,8 @@
-'use client';
+"use client";
 
-/**
- * Иконка приоритета задачи. Цвет подсказывает уровень: urgent — danger,
- * high — warning, medium/low — нейтральные.
- */
-
-import { AlertCircle, ArrowUp, Minus, ArrowDown, Circle } from 'lucide-react';
-import { cn } from '@/ui/shadcn/lib/utils';
-import { ISSUE_PRIORITY_LABELS, type IssuePriority } from '@/domain/tracker';
+import { AlertCircle, ArrowUp, Minus, ArrowDown, Circle } from "lucide-react";
+import { cn } from "@/ui/shadcn/lib/utils";
+import { ISSUE_PRIORITY_LABELS, type IssuePriority } from "@/domain/tracker";
 
 const ICON_BY_PRIORITY = {
   urgent: AlertCircle,
@@ -18,11 +13,11 @@ const ICON_BY_PRIORITY = {
 } as const;
 
 const COLOR_BY_PRIORITY: Record<IssuePriority, string> = {
-  urgent: 'text-danger',
-  high: 'text-warning',
-  medium: 'text-fg-secondary',
-  low: 'text-fg-tertiary',
-  none: 'text-fg-tertiary/60',
+  urgent: "text-danger",
+  high: "text-warning",
+  medium: "text-fg-secondary",
+  low: "text-fg-tertiary",
+  none: "text-fg-tertiary/60",
 };
 
 export function IssuePriorityIcon({
@@ -38,7 +33,7 @@ export function IssuePriorityIcon({
   return (
     <Icon
       size={size}
-      className={cn('shrink-0', COLOR_BY_PRIORITY[priority], className)}
+      className={cn("shrink-0", COLOR_BY_PRIORITY[priority], className)}
       aria-label={`Приоритет: ${ISSUE_PRIORITY_LABELS[priority]}`}
     />
   );

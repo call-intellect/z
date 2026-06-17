@@ -30,14 +30,8 @@ import type {
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
 const TEAM_FRICTION_RELATION_TYPES: EntityLinkType[] = ['conflicted_with'];
-// Severity buckets для cardinality-safe Gauge.
 type Severity = 'low' | 'medium' | 'high' | 'unknown';
 
-/**
- * SBA β-8.3 Wave 2 (Фаза 2) — полный whitelist `Insight.causeCategory`.
- * Используется и в БД-фильтре (на случай странных значений), и для
- * гарантии «все 8 ключей в ответе» (UI ожидает фиксированную раскладку).
- */
 const INSIGHT_CAUSE_CATEGORIES: readonly OperationsInsightCauseCategory[] = [
   'process_gap',
   'tooling',
@@ -62,11 +56,9 @@ function makeEmptyInsightCauseAggregate(): InsightCauseCategoryAggregateDto {
   };
 }
 
-// Ф1 редизайн — недельный инфлоу для hero-графика и спарклайнов KPI.
 const WEEKLY_INFLOW_WEEKS = 12;
 const WEEKLY_INFLOW_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Раскладывает createdAt по 12 недельным bucket'ам (old→new). 0 событий в неделе → null. */
 export function bucketizeWeeklyInflow(
   createdAts: Date[],
   now: Date,
@@ -86,23 +78,6 @@ export function bucketizeWeeklyInflow(
   return counts.map((c) => (c === 0 ? null : c));
 }
 
-/**
- * SBA β-8 — OperationsDashboardService.
- *
- * Агрегирует «пульс операций» для COO:
- *   - активные блокеры (DailyCheckIn.blockersJson + IdeaBlock signalType=blocker)
- *   - missed goals (status='abandoned' + cascadeMissed=true)
- *   - team friction count (EntityLink.relationType='conflicted_with')
- *   - capacity (Appointment.loadPercent сумма)
- *
- * Redis-кэш 5 минут (TTL из `cfg.betaOps.operationsDashboardCacheTtlSeconds`).
- * Ключ — `ops_dashboard:<tenantId>:<view>`. На любой error кэша — fallback на
- * direct DB (best-effort).
- *
- * Метрики (set в `recalcMetricsSnapshot`):
- *   - operations_blockers_total{severity}
- *   - team_frictions_total
- */
 @Injectable()
 export class OperationsDashboardService {
   private readonly logger = new Logger(OperationsDashboardService.name);
@@ -117,15 +92,11 @@ export class OperationsDashboardService {
     private readonly redis?: RedisService,
   ) {}
 
-  /**
-   * `GET /api/v1/dashboard/operations/overview` — pulse-агрегат.
-   */
   async getOverview(args: { tenantId: string }): Promise<OperationsDashboardOverviewDto> {
     const cacheKey = `ops_dashboard:${args.tenantId}:overview`;
     const cached = await this.cacheGet<OperationsDashboardOverviewDto>(cacheKey);
     if (cached) return cached;
 
-    // ТЗ-2 Ф2 — «зеркало закрытого» за последние 30 дней.
     const now = new Date();
     const since30 = new Date(now.getTime() - 30 * 24 * 3_600_000);
 
@@ -146,13 +117,9 @@ export class OperationsDashboardService {
       this.fetchGoalsAgg(args.tenantId),
       this.fetchTeamFrictions(args.tenantId, 100),
       this.fetchCapacity(args.tenantId),
-      // SBA β-8.1 — Температура команды за 7 дней.
       this.fetchTeamTemperature(args.tenantId, 7),
-      // SBA β-8.3 Wave 2 (Фаза 2) — карта причин за 7 дней (severity ≥ medium).
       this.fetchInsightsByCauseCategory(args.tenantId, 7),
-      // SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании.
       this.fetchMaturitySnapshot(args.tenantId),
-      // ТЗ-2 Ф2 — блокеры (BlockerSynthesis), переведённые в resolved за 30 дней.
       this.prisma.blockerSynthesis.count({
         where: {
           tenantId: args.tenantId,
@@ -160,7 +127,6 @@ export class OperationsDashboardService {
           updatedAt: { gte: since30 },
         },
       }),
-      // ТЗ-2 Ф2 — конфликты (EntityLink conflicted_with), уведённые в archived за 30 дней.
       this.prisma.entityLink.count({
         where: {
           tenantId: args.tenantId,
@@ -169,13 +135,7 @@ export class OperationsDashboardService {
           updatedAt: { gte: since30 },
         },
       }),
-      // ТЗ-2 Ф2 — kill-switch новой раскладки COO (ON по умолчанию).
-      this.cfg.getDynamic<boolean>(
-        'operations.dashboard_rework.enabled',
-        undefined,
-        true,
-      ),
-      // Ф1 редизайн — недельный инфлоу (12 недель) для hero-графика + спарклайнов KPI.
+      this.cfg.getDynamic<boolean>('operations.dashboard_rework.enabled', undefined, true),
       this.buildWeeklyInflow(args.tenantId, now),
     ]);
 
@@ -231,7 +191,6 @@ export class OperationsDashboardService {
       tenantTop: resolveOperationsTenantTop(args.tenantId),
       value: temperature.redShare,
     });
-    // ТЗ-2 Ф2 — «зеркало закрытого»: сколько блокеров закрыто за 30 дней.
     this.metrics.setCooBlockersResolved({
       tenantTop: resolveOperationsTenantTop(args.tenantId),
       count: blockersResolvedCount,
@@ -239,9 +198,6 @@ export class OperationsDashboardService {
     return dto;
   }
 
-  /**
-   * SBA β-8.1 — `GET /team-temperature?days=7`. Полный разрез по людям.
-   */
   async getTeamTemperature(args: {
     tenantId: string;
     days: number;
@@ -249,7 +205,6 @@ export class OperationsDashboardService {
     return this.fetchTeamTemperature(args.tenantId, args.days);
   }
 
-  /** `GET /api/v1/dashboard/operations/blockers`. */
   async getBlockers(args: {
     tenantId: string;
     limit?: number;
@@ -259,7 +214,6 @@ export class OperationsDashboardService {
     return { items, total: items.length };
   }
 
-  /** `GET /api/v1/dashboard/operations/team-frictions`. */
   async getTeamFrictions(args: {
     tenantId: string;
     limit?: number;
@@ -269,25 +223,10 @@ export class OperationsDashboardService {
     return { items, total: items.length };
   }
 
-  /** `GET /api/v1/dashboard/operations/capacity`. */
-  async getCapacity(args: {
-    tenantId: string;
-  }): Promise<OperationsDashboardCapacityListDto> {
+  async getCapacity(args: { tenantId: string }): Promise<OperationsDashboardCapacityListDto> {
     return this.fetchCapacity(args.tenantId);
   }
 
-  /**
-   * Pulse Wave 2.3 — `GET /api/v1/dashboard/operations/missing-checkins`.
-   *
-   * Кто из сотрудников ещё не отчитался за указанный день. Берём всех
-   * `Person.relationship='employee'` (не удалённых) и сверяем с
-   * `DailyCheckIn.dateLocal`. По `Person.timezone` фильтр не делаем — это
-   * быстрая «горячая» сводка для COO; погрешность ±1 день не критична,
-   * `date` контролирует контроллер (МСК по умолчанию).
-   *
-   * Использует `dateLocal` строкой (формат `YYYY-MM-DD`) — индекс
-   * `(tenantId, kind, dateLocal)` покрывает запрос без сканирования.
-   */
   async getMissingCheckIns(args: {
     tenantId: string;
     date: string;
@@ -326,26 +265,6 @@ export class OperationsDashboardService {
     };
   }
 
-  /**
-   * ТЗ Ф8.7 (cabinet-redesign-rhythms) — `GET /api/v1/dashboard/operations/checkin-discipline`.
-   *
-   * Дисциплина чек-инов за окно [from, to] (включительно). Источник —
-   * `DailyCheckIn`: cron создаёт строку-плейсхолдер только когда сотруднику
-   * ушло приглашение, поэтому «ожидаемых» = все строки данного kind за период.
-   *   - expected  = число строк (kind, в окне);
-   *   - completed = строки с `completedAt != null` (сотрудник ответил);
-   *   - missed    = expected − completed (cron поставил, человек не ответил).
-   *
-   * Считаем двумя `groupBy` по (personId, kind): один — все строки в окне
-   * (expected), второй — только `completedAt != null` (completed). По
-   * `dateLocal` (строка YYYY-MM-DD) фильтр покрыт индексом
-   * `(tenantId, kind, dateLocal)`. personName резолвим отдельным `findMany`
-   * (у groupBy нет relation).
-   *
-   * Флаг `DAILY_CHECKIN_ENABLED` (kill-switch cron'а) выключен → отдаём
-   * `enabled:false` и нулевые totals/byPerson; фронт показывает Б-6 «нет
-   * данных» с причиной «чек-ины выключены».
-   */
   async getCheckinDiscipline(args: {
     tenantId: string;
     from: string;
@@ -380,7 +299,6 @@ export class OperationsDashboardService {
       }),
     ]);
 
-    // Аккумулятор per-person: expected/completed по утру и вечеру.
     type Acc = {
       morningExpected: number;
       morningCompleted: number;
@@ -415,7 +333,6 @@ export class OperationsDashboardService {
       else if (g.kind === 'evening') acc.eveningCompleted += n;
     }
 
-    // Имена людей — отдельным запросом (у groupBy нет relation).
     const personIds = [...byPersonAcc.keys()];
     const nameById = new Map<string, string>();
     if (personIds.length > 0) {
@@ -458,7 +375,6 @@ export class OperationsDashboardService {
       totals.morningExpected + totals.eveningExpected,
     );
 
-    // Детерминированный порядок: по убыванию суммарного expected, затем имя.
     byPerson.sort((a, b) => {
       const expA = a.morningExpected + a.eveningExpected;
       const expB = b.morningExpected + b.eveningExpected;
@@ -475,19 +391,6 @@ export class OperationsDashboardService {
     };
   }
 
-  /**
-   * Pulse Wave 2.3 — `GET /api/v1/dashboard/operations/stale-issues`.
-   *
-   * «Зависшие» задачи: либо нет активности > N дней (`updatedAt`), либо
-   * `dueDate < now` без `completedAt`. Один SELECT с `OR`-условием —
-   * `(tenantId, dueDate)` + `(tenantId, stateId, deletedAt)` индексы.
-   *
-   * Поле `lastActivity` в Issue не добавляем (см. ТЗ §2.3, минимальное
-   * безопасное изменение); ориентируемся на `updatedAt @updatedAt`,
-   * который Prisma обновляет на любую правку строки.
-   *
-   * `assigneeUserIds` подтягиваем через relation `IssueAssignee`.
-   */
   async getStaleIssues(args: {
     tenantId: string;
     staleDays?: number;
@@ -496,9 +399,7 @@ export class OperationsDashboardService {
     const staleDays = Math.max(1, args.staleDays ?? 5);
     const limit = Math.min(Math.max(1, args.limit ?? 20), 100);
     const now = new Date();
-    const staleThreshold = new Date(
-      now.getTime() - staleDays * 24 * 60 * 60 * 1000,
-    );
+    const staleThreshold = new Date(now.getTime() - staleDays * 24 * 60 * 60 * 1000);
 
     const issues = await this.prisma.issue.findMany({
       where: {
@@ -506,10 +407,7 @@ export class OperationsDashboardService {
         deletedAt: null,
         archivedAt: null,
         completedAt: null,
-        OR: [
-          { updatedAt: { lt: staleThreshold } },
-          { dueDate: { lt: now } },
-        ],
+        OR: [{ updatedAt: { lt: staleThreshold } }, { dueDate: { lt: now } }],
       },
       select: {
         id: true,
@@ -529,9 +427,7 @@ export class OperationsDashboardService {
         issueId: i.id,
         title: i.title,
         identifier: i.identifier,
-        daysSinceActivity: Math.floor(
-          (now.getTime() - i.updatedAt.getTime()) / dayMs,
-        ),
+        daysSinceActivity: Math.floor((now.getTime() - i.updatedAt.getTime()) / dayMs),
         daysOverdue:
           i.dueDate && i.dueDate.getTime() < now.getTime()
             ? Math.floor((now.getTime() - i.dueDate.getTime()) / dayMs)
@@ -541,16 +437,10 @@ export class OperationsDashboardService {
     };
   }
 
-  /**
-   * Инвалидация кэша. Зовётся из CheckinResponseHandler, GoalCascadeService
-   * после значимых апдейтов. Best-effort: ошибки кеша только в debug.
-   */
   async invalidateCache(tenantId: string): Promise<void> {
     if (!this.redis) return;
     try {
-      await Promise.all([
-        this.redis.client.del(`ops_dashboard:${tenantId}:overview`),
-      ]);
+      await Promise.all([this.redis.client.del(`ops_dashboard:${tenantId}:overview`)]);
     } catch (err) {
       this.logger.debug(
         { tenantId, err: err instanceof Error ? err.message : String(err) },
@@ -559,13 +449,10 @@ export class OperationsDashboardService {
     }
   }
 
-  // ─────────────────────────── fetchers ─────────────────────────────
-
   private async fetchBlockers(
     tenantId: string,
     limit: number,
   ): Promise<OperationsDashboardBlockerDto[]> {
-    // Источник 1 — DailyCheckIn.blockersJson за последние 7 дней.
     const since = new Date();
     since.setUTCDate(since.getUTCDate() - 7);
     const checkIns = await this.prisma.dailyCheckIn.findMany({
@@ -662,7 +549,6 @@ export class OperationsDashboardService {
     });
     if (links.length === 0) return [];
 
-    // Подтягиваем Person names через Entity → Person.
     const entityIds = new Set<string>();
     for (const l of links) {
       entityIds.add(l.fromEntityId);
@@ -697,12 +583,6 @@ export class OperationsDashboardService {
     });
   }
 
-  /**
-   * SBA β-8.1 — агрегат настроений за окно `days`. Возвращает доли
-   * green/yellow/red + дельту redShare к предыдущему такому же окну.
-   * Используется и в overview (summary), и в `/team-temperature` (полный
-   * разрез по людям).
-   */
   private async fetchTeamTemperature(
     tenantId: string,
     days: number,
@@ -710,7 +590,6 @@ export class OperationsDashboardService {
     const sinceCurrent = isoDateDaysAgo(days);
     const sincePrev = isoDateDaysAgo(days * 2);
 
-    // Берём чек-ины за два окна одним запросом — фильтр по dateLocal (строка).
     const rows = await this.prisma.dailyCheckIn.findMany({
       where: {
         tenantId,
@@ -731,10 +610,7 @@ export class OperationsDashboardService {
     let prevG = 0;
     let prevY = 0;
     let prevR = 0;
-    const byPersonMap = new Map<
-      string,
-      OperationsTeamTemperaturePersonDto
-    >();
+    const byPersonMap = new Map<string, OperationsTeamTemperaturePersonDto>();
 
     for (const row of rows) {
       const isCurrent = row.dateLocal >= sinceCurrent;
@@ -775,8 +651,7 @@ export class OperationsDashboardService {
     const greenShare = currTotal > 0 ? currG / currTotal : 0;
     const yellowShare = currTotal > 0 ? currY / currTotal : 0;
     const redShare = currTotal > 0 ? currR / currTotal : 0;
-    const redShareDelta =
-      prevTotal > 0 ? redShare - prevR / prevTotal : null;
+    const redShareDelta = prevTotal > 0 ? redShare - prevR / prevTotal : null;
 
     const byPerson = Array.from(byPersonMap.values()).sort(
       (a, b) => b.red - a.red || b.total - a.total,
@@ -793,22 +668,6 @@ export class OperationsDashboardService {
     };
   }
 
-  /**
-   * SBA β-8.3 Wave 2 (Фаза 2) — агрегат insights по `causeCategory` за
-   * последние `days` дней.
-   *
-   * Фильтры:
-   *   - severity ∈ medium|high (буквально из ТЗ Wave 2);
-   *   - status ≠ 'archived' (висящие insights);
-   *   - firstObservedAt ≥ now − days — «появился за последние N дней»
-   *     (lastObservedAt дал бы «упоминался», а нам нужно «новых причин
-   *     столько-то» для виджета «Карта причин недели»).
-   *
-   * Возвращает все 8 ключей всегда (для предсказуемой раскладки UI).
-   * Записи с `causeCategory=NULL` → bucket `'unknown'`.
-   *
-   * @param days окно агрегации, дефолт 7 (см. ТЗ §2.1).
-   */
   private async fetchInsightsByCauseCategory(
     tenantId: string,
     days = 7,
@@ -829,9 +688,6 @@ export class OperationsDashboardService {
     const out = makeEmptyInsightCauseAggregate();
     const whitelist = new Set<string>(INSIGHT_CAUSE_CATEGORIES);
     for (const row of grouped) {
-      // NULL и значения вне whitelist'а → bucket 'unknown' (защита от старых
-      // данных, где LLM могла записать что-то нестандартное; и от reality
-      // schema.prisma — causeCategory это String, не enum).
       const cause: OperationsInsightCauseCategory =
         row.causeCategory && whitelist.has(row.causeCategory)
           ? (row.causeCategory as OperationsInsightCauseCategory)
@@ -841,21 +697,7 @@ export class OperationsDashboardService {
     return out;
   }
 
-  /**
-   * SBA β-8.3 Wave 2 (Фаза 3) — снапшот зрелости компании.
-   *
-   * Источник `score/lastCalcAt/stage` — `CompanyProfile` (1:1 на tenant,
-   * пересчитывается `MaturityScorerCron` каждое утро в 05:00 UTC).
-   *
-   * `weakestDomains`/`topDomains` — топ-3 `FunctionalDomain` по
-   * `completeness` ASC и DESC соответственно. Берём только домены с
-   * `completeness IS NOT NULL` и `deletedAt IS NULL`. При пересечении
-   * (доменов меньше 6) — массивы могут пересекаться по элементам, что ОК
-   * для UI и явно отражает реальность: топ и weakest совпадают.
-   */
-  private async fetchMaturitySnapshot(
-    tenantId: string,
-  ): Promise<MaturitySnapshotDto> {
+  private async fetchMaturitySnapshot(tenantId: string): Promise<MaturitySnapshotDto> {
     const [profile, domains] = await Promise.all([
       this.prisma.companyProfile.findUnique({
         where: { tenantId },
@@ -879,50 +721,33 @@ export class OperationsDashboardService {
       .map((d) => ({
         slug: d.slug,
         name: d.name,
-        completeness:
-          d.completeness === null ? null : Number(d.completeness.toString()),
+        completeness: d.completeness === null ? null : Number(d.completeness.toString()),
       }))
       .filter(
         (d): d is { slug: string; name: string; completeness: number } =>
           d.completeness !== null && Number.isFinite(d.completeness),
       );
 
-    const byAsc = [...normalized].sort(
-      (a, b) => a.completeness - b.completeness,
-    );
-    const byDesc = [...normalized].sort(
-      (a, b) => b.completeness - a.completeness,
-    );
+    const byAsc = [...normalized].sort((a, b) => a.completeness - b.completeness);
+    const byDesc = [...normalized].sort((a, b) => b.completeness - a.completeness);
 
     return {
       score:
         profile?.maturityScore !== null && profile?.maturityScore !== undefined
           ? Number(profile.maturityScore.toString())
           : null,
-      lastCalcAt: profile?.lastMaturityCalcAt
-        ? profile.lastMaturityCalcAt.toISOString()
-        : null,
+      lastCalcAt: profile?.lastMaturityCalcAt ? profile.lastMaturityCalcAt.toISOString() : null,
       stage: profile?.stage ?? null,
       weakestDomains: byAsc.slice(0, 3),
       topDomains: byDesc.slice(0, 3),
     };
   }
 
-  /**
-   * Ф1 редизайн — недельный инфлоу за 12 недель (old→new) для hero-графика
-   * и спарклайнов KPI. Источник РЕАЛЬНЫЙ:
-   *   - blockers — `BlockerSynthesis.createdAt`;
-   *   - frictions — `EntityLink(relationType='conflicted_with').createdAt`.
-   * Раскладка по неделям через чистую `bucketizeWeeklyInflow`; пустая
-   * неделя → null (конвенция как sparkline12w).
-   */
   private async buildWeeklyInflow(
     tenantId: string,
     now: Date,
   ): Promise<{ blockers: Array<number | null>; frictions: Array<number | null> }> {
-    const start = new Date(
-      now.getTime() - WEEKLY_INFLOW_WEEKS * WEEKLY_INFLOW_WEEK_MS,
-    );
+    const start = new Date(now.getTime() - WEEKLY_INFLOW_WEEKS * WEEKLY_INFLOW_WEEK_MS);
     const [blockerRows, frictionRows] = await Promise.all([
       this.prisma.blockerSynthesis.findMany({
         where: { tenantId, createdAt: { gte: start, lt: now } },
@@ -949,9 +774,7 @@ export class OperationsDashboardService {
     };
   }
 
-  private async fetchCapacity(
-    tenantId: string,
-  ): Promise<OperationsDashboardCapacityListDto> {
+  private async fetchCapacity(tenantId: string): Promise<OperationsDashboardCapacityListDto> {
     const appts = await this.prisma.appointment.findMany({
       where: {
         tenantId,
@@ -982,22 +805,16 @@ export class OperationsDashboardService {
       }
     }
 
-    const items = Array.from(byPerson.values()).sort(
-      (a, b) => b.loadPercent - a.loadPercent,
-    );
+    const items = Array.from(byPerson.values()).sort((a, b) => b.loadPercent - a.loadPercent);
 
     const overloadedCount = items.filter((it) => it.loadPercent > 100).length;
     const avgLoadPercent =
       items.length === 0
         ? 0
-        : Math.round(
-            items.reduce((acc, it) => acc + it.loadPercent, 0) / items.length,
-          );
+        : Math.round(items.reduce((acc, it) => acc + it.loadPercent, 0) / items.length);
 
     return { items, avgLoadPercent, overloadedCount };
   }
-
-  // ─────────────────────── metrics + cache ──────────────────────────
 
   private publishMetricsSnapshot(
     tenantId: string,
@@ -1018,8 +835,6 @@ export class OperationsDashboardService {
       tenantTop,
       value: frictionCount,
     });
-    // SBA β-8.3 Wave 2 (Фаза 2) — обновляем все 8 значений (включая 0),
-    // чтобы Grafana всегда видела полную раскладку категорий.
     for (const cause of INSIGHT_CAUSE_CATEGORIES) {
       this.metrics.setCooInsightsByCause({
         tenantTop,
@@ -1027,9 +842,6 @@ export class OperationsDashboardService {
         value: insightsByCauseCategory[cause] ?? 0,
       });
     }
-    // SBA β-8.3 Wave 2 (Фаза 3) — `maturityScore=null` означает, что
-    // MaturityScorerCron ещё не отрабатывал для этого tenant'а; не публикуем
-    // нули, чтобы не зашумлять метрику.
     if (maturity.score !== null) {
       this.metrics.setCooCompanyMaturityScore({
         tenantTop,
@@ -1072,14 +884,6 @@ function normalizeSeverity(value: string | undefined): Severity {
   return 'unknown';
 }
 
-/**
- * SBA β-8.1 — вернуть YYYY-MM-DD (UTC), N дней назад от сегодня. Используется
- * для фильтра DailyCheckIn.dateLocal в `fetchTeamTemperature`.
- *
- * NB: используем UTC-дату как нижнюю границу — это даёт небольшую погрешность
- * на сменах суток в разных таймзонах (±1 день), но не критично для
- * 7/14/30-дневных окон агрегата.
- */
 function isoDateDaysAgo(days: number): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - days);
@@ -1089,7 +893,6 @@ function isoDateDaysAgo(days: number): string {
   return `${y}-${m}-${dd}`;
 }
 
-/** ТЗ Ф8.7 — пустые totals дисциплины чек-инов (флаг OFF / нет данных). */
 function emptyDisciplineTotals(): CheckinDisciplineTotalsDto {
   return {
     morningExpected: 0,
@@ -1102,14 +905,7 @@ function emptyDisciplineTotals(): CheckinDisciplineTotalsDto {
   };
 }
 
-/**
- * ТЗ Ф8.7 — доля сданных чек-инов (0..1), округлённая до 3 знаков.
- * `null`, если ожидаемых не было (деления на 0 нет).
- */
-function computeCompletionRate(
-  completed: number,
-  expected: number,
-): number | null {
+function computeCompletionRate(completed: number, expected: number): number | null {
   if (expected <= 0) return null;
   return Math.round((completed / expected) * 1000) / 1000;
 }

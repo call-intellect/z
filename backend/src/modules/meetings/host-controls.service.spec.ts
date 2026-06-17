@@ -10,10 +10,6 @@ import type { LivekitService } from '../livekit/livekit.service';
 
 import { HostControlsService } from './host-controls.service';
 
-/**
- * Юнит-тесты HostControlsService на mock-prisma и mock-livekit.
- */
-
 interface MeetingMock {
   id: string;
   ownerId: string;
@@ -60,8 +56,6 @@ describe('HostControlsService', () => {
     vi.clearAllMocks();
   });
 
-  // ────────────────────────── mute ──────────────────────────────────
-
   it('mute своего участника как host — ok', async () => {
     const { svc, livekit, prisma } = makeService(
       { id: 'm-1', ownerId: 'u-host', status: 'active' },
@@ -70,11 +64,7 @@ describe('HostControlsService', () => {
 
     await svc.muteParticipant('m-1', 'p-1', 'u-host');
 
-    expect((livekit as any).muteParticipant).toHaveBeenCalledWith(
-      { id: 'm-1' },
-      'guest:x',
-      true,
-    );
+    expect((livekit as any).muteParticipant).toHaveBeenCalledWith({ id: 'm-1' }, 'guest:x', true);
     expect((prisma as any).meetingEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -91,9 +81,7 @@ describe('HostControlsService', () => {
       { id: 'p-1', meetingId: 'm-1', livekitIdentity: 'guest:x' },
     );
 
-    await expect(svc.muteParticipant('m-1', 'p-1', 'u-other')).rejects.toThrow(
-      NotAuthorizedError,
-    );
+    await expect(svc.muteParticipant('m-1', 'p-1', 'u-other')).rejects.toThrow(NotAuthorizedError);
     expect((livekit as any).muteParticipant).not.toHaveBeenCalled();
   });
 
@@ -111,12 +99,8 @@ describe('HostControlsService', () => {
 
   it('mute несуществующей встречи — MeetingNotFoundError', async () => {
     const { svc } = makeService(null);
-    await expect(svc.muteParticipant('m-1', 'p-1', 'u-host')).rejects.toThrow(
-      MeetingNotFoundError,
-    );
+    await expect(svc.muteParticipant('m-1', 'p-1', 'u-host')).rejects.toThrow(MeetingNotFoundError);
   });
-
-  // ────────────────────────── unmute ──────────────────────────────────
 
   it('unmute дёргает livekit.muteParticipant с false', async () => {
     const { svc, livekit } = makeService(
@@ -126,14 +110,8 @@ describe('HostControlsService', () => {
 
     await svc.unmuteParticipant('m-1', 'p-1', 'u-host');
 
-    expect((livekit as any).muteParticipant).toHaveBeenCalledWith(
-      { id: 'm-1' },
-      'guest:x',
-      false,
-    );
+    expect((livekit as any).muteParticipant).toHaveBeenCalledWith({ id: 'm-1' }, 'guest:x', false);
   });
-
-  // ────────────────────────── kick ──────────────────────────────────
 
   it('kick участника — ok', async () => {
     const { svc, livekit } = makeService(
@@ -143,13 +121,8 @@ describe('HostControlsService', () => {
 
     await svc.kickParticipant('m-1', 'p-1', 'u-host');
 
-    expect((livekit as any).removeParticipant).toHaveBeenCalledWith(
-      { id: 'm-1' },
-      'guest:x',
-    );
+    expect((livekit as any).removeParticipant).toHaveBeenCalledWith({ id: 'm-1' }, 'guest:x');
   });
-
-  // ────────────────────────── lower-hand ───────────────────────────
 
   it('lowerHand: ставит атрибуты hand_raised=false', async () => {
     const { svc, livekit } = makeService(
@@ -166,8 +139,6 @@ describe('HostControlsService', () => {
     );
   });
 
-  // ────────────────────────── finish ──────────────────────────────────
-
   it('finish: удаляет room', async () => {
     const { svc, livekit } = makeService({ id: 'm-1', ownerId: 'u-host', status: 'active' });
     await svc.finish('m-1', 'u-host');
@@ -182,7 +153,9 @@ describe('HostControlsService', () => {
 
   it('finish уже завершённой (completed) — no-op 200, без deleteRoom/update', async () => {
     const { svc, livekit, prisma } = makeService({
-      id: 'm-1', ownerId: 'u-host', status: 'completed',
+      id: 'm-1',
+      ownerId: 'u-host',
+      status: 'completed',
     });
     const r = await svc.finish('m-1', 'u-host');
     expect(r.status).toBe('completed');
@@ -192,7 +165,10 @@ describe('HostControlsService', () => {
 
   it('finish из scheduled → failed(ended_before_start), 200, deleteRoom best-effort + update', async () => {
     const { svc, livekit, prisma } = makeService({
-      id: 'm-1', ownerId: 'u-host', status: 'scheduled', failureReason: null,
+      id: 'm-1',
+      ownerId: 'u-host',
+      status: 'scheduled',
+      failureReason: null,
     });
     const r = await svc.finish('m-1', 'u-host');
     expect(r).toEqual({ status: 'failed', failureReason: 'ended_before_start' });
@@ -207,7 +183,10 @@ describe('HostControlsService', () => {
 
   it('finish из scheduled когда deleteRoom бросает — всё равно failed (best-effort)', async () => {
     const { svc, livekit, prisma } = makeService({
-      id: 'm-1', ownerId: 'u-host', status: 'scheduled', failureReason: null,
+      id: 'm-1',
+      ownerId: 'u-host',
+      status: 'scheduled',
+      failureReason: null,
     });
     (livekit as any).deleteRoom.mockRejectedValueOnce(new Error('room not found'));
     const r = await svc.finish('m-1', 'u-host');

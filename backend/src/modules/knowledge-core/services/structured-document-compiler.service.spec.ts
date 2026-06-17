@@ -1,14 +1,3 @@
-/**
- * Unit-тесты для `StructuredDocumentCompilerService` (Волна 6 A7).
- *
- * LlmRouterService мокаем; проверяем:
- *   - СОЗДАНИЕ (пустой existingContentMd → собирает документ из материала);
- *   - ДОПОЛНЕНИЕ (есть existingContentMd → промпт-вход содержит старое тело,
- *     результат собирается, ничего не теряя);
- *   - best-effort fallback при ошибке LLM (возврат existingContentMd, ok=false);
- *   - kill-switch docCompilerEnabled=false → isEnabled()=false.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -34,10 +23,7 @@ function makeLlmMock(toolInput: unknown) {
   };
 }
 
-function makeCfgMock(opts: {
-  docCompilerEnabled?: boolean;
-  injectionGuard?: boolean;
-}) {
+function makeCfgMock(opts: { docCompilerEnabled?: boolean; injectionGuard?: boolean }) {
   return {
     aiFeatures: {
       docCompilerEnabled: opts.docCompilerEnabled ?? true,
@@ -79,20 +65,17 @@ describe('StructuredDocumentCompilerService.compile', () => {
     const callArg = llm.call.mock.calls[0]![0];
     expect(callArg.taskType).toBe(COMPILE_ORG_DOCUMENT_TASK_TYPE);
     expect(callArg.tools).toHaveLength(1);
-    // СОЗДАНИЕ: режим виден в user.
     expect(callArg.userMessage).toContain('mode: СОЗДАНИЕ');
     expect(res.ok).toBe(true);
     expect(res.contentMd).toContain('Назначение');
     expect(res.changeReason).toContain('первичная сборка');
-    // Для не-process типов steps игнорируются → [].
     expect(res.steps).toEqual([]);
   });
 
   it('ДОПОЛНЕНИЕ: existingContentMd попадает в промпт-вход и документ дополняется', async () => {
     const existing = '## Назначение\nСтарый текст инструкции.\n[требует уточнения: срок]';
     const llm = makeLlmMock({
-      contentMd:
-        '## Назначение\nСтарый текст инструкции.\n## Срок\n3 рабочих дня.',
+      contentMd: '## Назначение\nСтарый текст инструкции.\n## Срок\n3 рабочих дня.',
       steps: [],
       changeReason: 'дополнено сроком из материала',
       signals: [],
@@ -118,11 +101,9 @@ describe('StructuredDocumentCompilerService.compile', () => {
 
     expect(llm.call).toHaveBeenCalledTimes(1);
     const callArg = llm.call.mock.calls[0]![0];
-    // КЛЮЧЕВОЕ: existingContentMd передан в промпт-вход (режим ДОПОЛНЕНИЕ).
     expect(callArg.userMessage).toContain('mode: ДОПОЛНЕНИЕ');
     expect(callArg.userMessage).toContain('Старый текст инструкции');
     expect(res.ok).toBe(true);
-    // Не теряет старое: старый раздел сохранён, новый добавлен.
     expect(res.contentMd).toContain('Старый текст инструкции');
     expect(res.contentMd).toContain('3 рабочих дня');
     expect(res.changeReason).toBe('дополнено сроком из материала');

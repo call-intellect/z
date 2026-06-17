@@ -4,21 +4,6 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { LlmRouterService } from '../../ai/services/llm-router.service';
 
-/**
- * SBA γ-2 — сжимает long ConciergeConversation в `.summary` строку.
- *
- * Каждые 30 минут проходит по conversation'ам, у которых:
- *   - lastMessageAt > 1 час назад (диалог «уснул»),
- *   - messages.count > 20,
- *   - summary == NULL.
- *
- * Запускает 1 LLM-вызов (taskType='concierge-respond' — переиспользуем,
- * чтобы не плодить routes) с системным promptом «сожми диалог в 2-3
- * предложения». Сохраняет в `summary`.
- *
- * Используется ConciergeService на следующей итерации диалога — вместо
- * полной истории подмешивает summary + последние K сообщений.
- */
 @Injectable()
 export class ConciergeConversationSummarizerCron {
   private readonly logger = new Logger(ConciergeConversationSummarizerCron.name);
@@ -51,12 +36,7 @@ export class ConciergeConversationSummarizerCron {
         });
         if (msgs.length < 20) continue;
 
-        const flat = msgs
-          .map(
-            (m) =>
-              `[${m.role}] ${m.content.slice(0, 400)}`,
-          )
-          .join('\n');
+        const flat = msgs.map((m) => `[${m.role}] ${m.content.slice(0, 400)}`).join('\n');
 
         try {
           const out = await this.llm.call({
@@ -83,14 +63,10 @@ export class ConciergeConversationSummarizerCron {
         }
       }
     } catch (err) {
-      this.logger.error(
-        `cron failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.error(`cron failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     if (processed > 0 || errors > 0) {
-      this.logger.debug(
-        `concierge-summarizer: processed=${processed} errors=${errors}`,
-      );
+      this.logger.debug(`concierge-summarizer: processed=${processed} errors=${errors}`);
     }
   }
 }

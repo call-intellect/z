@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleInit,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import type {
   Channel,
   ChannelBinding,
@@ -18,20 +13,6 @@ import { MailService } from '../../mail/mail.service';
 import { ChannelRegistry } from '../channel-registry';
 import type { IChannel } from '../types/channel.types';
 
-/**
- * Email-адаптер на нашем общем SMTP (`MailService`). Outbound-only в α-1:
- * inbound reply-парсинг реализуется как `email_imap` в β-1 (см. ТЗ §14).
- *
- * Текст письма формируем простой и читаемый: заголовок + тело payload'а
- * + deep-link на страницу `/me/notifications/:id` (там пользователь
- * увидит inline-кнопки и сможет ответить). HTML-шаблоны можно добавить
- * позже (handlebars-инфра уже есть в `MailService`); для α-1 хватает
- * plain-text — это и проще для антиспам-фильтров.
- *
- * `maxDataClass=internal` — за пределы периметра не отправляем
- * `sensitive`/`private`. Per-`Channel.maxDataClass` может быть ещё
- * строже (например, `public` для рассылок в публичный список).
- */
 @Injectable()
 export class EmailSmtpChannelAdapter implements IChannel, OnModuleInit {
   private readonly logger = new Logger(EmailSmtpChannelAdapter.name);
@@ -73,17 +54,12 @@ export class EmailSmtpChannelAdapter implements IChannel, OnModuleInit {
     });
 
     if (!result.ok) {
-      // Бросаем — воркер запишет errorReason и оценит retry.
       throw new Error(`smtp_failed: ${result.error ?? 'unknown'}`);
     }
 
     return { externalMessageId: null };
   }
 
-  /**
-   * Тема письма по eventType. Локализована на русском (см. правило
-   * `feedback_admin_ui_russian_only` в memory).
-   */
   private subjectFor(notification: Notification): string {
     switch (notification.eventType) {
       case 'probe.question':
@@ -97,11 +73,6 @@ export class EmailSmtpChannelAdapter implements IChannel, OnModuleInit {
     }
   }
 
-  /**
-   * Plain-text рендер. HTML появится позже — пока ради простоты и
-   * deliverability используем text. Линк ведёт в ЛК, где пользователь
-   * видит все детали и кнопки.
-   */
   private renderPlainText(notification: Notification): string {
     const frontend = this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '');
     const deepLink = `${frontend}/me/notifications/${notification.id}`;

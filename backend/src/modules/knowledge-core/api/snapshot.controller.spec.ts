@@ -1,9 +1,3 @@
-/**
- * KC-Temporal W1.3 (2026-05-25) — unit-spec для `KnowledgeSnapshotController`.
- *
- * Контроллер делегирует логику в `SnapshotService` — здесь проверяем только
- * RBAC + tenant-fence + парсинг Zod query (включая CSV signalTypes).
- */
 import { ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -69,17 +63,13 @@ describe('KnowledgeSnapshotController', () => {
   it('403 forbidden если canRead=false', async () => {
     const { ctrl } = build({ canRead: false });
     const query = SnapshotQueryRawSchema.parse({ at: AT });
-    await expect(ctrl.snapshot(query, userA, 't-A')).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.snapshot(query, userA, 't-A')).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('403 tenant_required без X-Org-Id', async () => {
     const { ctrl } = build();
     const query = SnapshotQueryRawSchema.parse({ at: AT });
-    await expect(ctrl.snapshot(query, userA, undefined)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
+    await expect(ctrl.snapshot(query, userA, undefined)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('Zod-400 на отсутствующий at', () => {

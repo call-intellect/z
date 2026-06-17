@@ -12,20 +12,6 @@ import {
   buildCardRollupUserMessage,
 } from './prompts/card-rollup';
 
-/**
- * Бизнес-сервис генерации rollup-саммари по карточке.
- *
- * Дёргается из `card-rollup.worker` (после ai_ready встречи в карточке)
- * или вручную из endpoint'а на странице карточки.
- *
- * Алгоритм:
- *   1. Загрузить карточку (если deletedAt — выходим).
- *   2. Загрузить до 20 последних встреч карточки с `aiResult.summary`.
- *   3. Пропустить встречи без summary (ai ещё не отработал) — иначе модель
- *      получит «пустое саммари» и галюцинирует.
- *   4. Если живых встреч 0 — пишем `summaryCache=null` (нечего показывать).
- *   5. Иначе — LLM-вызов и запись в `Card.summaryCache` + `summaryUpdatedAt`.
- */
 @Injectable()
 export class CardRollupService {
   private readonly logger = new Logger(CardRollupService.name);
@@ -63,22 +49,17 @@ export class CardRollupService {
       orderBy: { createdAt: 'desc' },
       take: CARD_ROLLUP_MAX_RECENT_MEETINGS,
       include: {
-        // Р6: каноническая сводка = summaryFast ?? summary — тянем оба поля,
-        // иначе pickPrimarySummary молча упадёт на legacy.
         aiResult: {
           select: { summaryFast: true, summary: true },
         },
       },
     });
 
-    // Берём только встречи с непустой канонической сводкой, переворачиваем —
-    // от старых к новым.
     const eligible = meetings
       .filter((m) => (m.aiResult ? pickPrimarySummary(m.aiResult).length > 0 : false))
       .reverse();
 
     if (eligible.length === 0) {
-      // Снимаем устаревший кэш — лучше пусто, чем «не про эту карточку».
       await this.prisma.card.update({
         where: { id: cardId },
         data: { summaryCache: null, summaryUpdatedAt: new Date() },

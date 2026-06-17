@@ -4,26 +4,18 @@ import type { TypedConfigService } from '../../common/config/index';
 
 import { ChatboxApiClient, ChatboxApiError } from './chatbox-api.client';
 
-/**
- * Детерминированные unit-тесты ChatboxApiClient: глобальный `fetch` замокан,
- * сети нет. Проверяем построение URL/query/заголовков и маппинг ошибок в
- * ChatboxApiError (status/transient).
- */
-
 const TOKEN = 'tok_abc123';
 
 const cfgStub = {
   chatbox: { apiBaseUrl: 'https://example.test' },
 } as unknown as TypedConfigService;
 
-/** Удобный доступ к URL/init последнего вызова fetch под strict-TS. */
 function lastFetchCall(): { url: string; init: RequestInit } {
   const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
   const call = fetchMock.mock.calls.at(-1) as [string, RequestInit];
   return { url: call[0], init: call[1] };
 }
 
-/** Успешный JSON-ответ fetch. */
 function okJson(payload: unknown): Response {
   return {
     ok: true,
@@ -52,9 +44,7 @@ describe('ChatboxApiClient', () => {
       workspaces: [{ id: 'w1', name: 'A', role: 'USER' }],
       total: 1,
     };
-    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-      okJson(payload),
-    );
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(okJson(payload));
 
     const res = await client.listWorkspaces(TOKEN, { limit: 3, search: 'x' });
 
@@ -96,9 +86,7 @@ describe('ChatboxApiClient', () => {
       status: 401,
       transient: false,
     });
-    await expect(client.listWorkspaces(TOKEN)).rejects.toBeInstanceOf(
-      ChatboxApiError,
-    );
+    await expect(client.listWorkspaces(TOKEN)).rejects.toBeInstanceOf(ChatboxApiError);
   });
 
   it('503 → ChatboxApiError, transient=true', async () => {
@@ -116,9 +104,7 @@ describe('ChatboxApiClient', () => {
   });
 
   it('сетевая ошибка → ChatboxApiError, status=0, transient=true', async () => {
-    (fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('ECONNREFUSED'),
-    );
+    (fetch as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('ECONNREFUSED'));
 
     const err = await client.listWorkspaces(TOKEN).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ChatboxApiError);

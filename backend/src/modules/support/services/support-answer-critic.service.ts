@@ -8,7 +8,6 @@ import {
   buildSupportAnswerCriticUserPrompt,
 } from '../prompts/support-answer-critic.prompt';
 
-/** Вердикт critic'а — что делать с ответом клона (R-INV-5). */
 export type SupportCriticVerdict = 'answer' | 'clarify' | 'escalate';
 
 export interface SupportCriticContourBlockInput {
@@ -23,19 +22,6 @@ export interface SupportCriticResult {
   unsupported: string[];
 }
 
-/**
- * SupportAnswerCriticService — critic обоснованности ответа клона поддержки
- * (TZ 2026-06-09 support-desk Ф3, R-INV-5, taskType `support-answer-critic`).
- *
- * Анти-галлюцинация: дешёвый judge извлекает фактические утверждения из ответа
- * клона и проверяет, подтверждается ли каждое блоками ЗАКРЫТОГО контура.
- * groundedness = supportedClaims/totalClaims. Ниже порога
- * `support_critic_min_groundedness` (AdminSetting) → вердикт НЕ `answer`.
- *
- * Все ветки fail-safe в сторону человека: при ошибке LLM / непарсимом JSON
- * возвращаем `{ groundedness: 0, verdict: 'escalate' }` — отдаём специалисту,
- * не пускаем сомнительный ответ.
- */
 @Injectable()
 export class SupportAnswerCriticService {
   private readonly logger = new Logger(SupportAnswerCriticService.name);
@@ -94,8 +80,6 @@ export class SupportAnswerCriticService {
       const { groundedness, unsupported } = parsed;
       let verdict = parsed.verdict;
 
-      // DEFENSIVE: groundedness ниже порога, но модель сказала `answer` —
-      // понижаем до `clarify` (уточнить детали), не пускаем слабо обоснованный.
       if (groundedness < threshold && verdict === 'answer') {
         verdict = 'clarify';
       }
@@ -114,18 +98,12 @@ export class SupportAnswerCriticService {
   }
 }
 
-// ─────────────────────────── helpers ───────────────────────────
-
 interface ParsedCritic {
   groundedness: number;
   verdict: SupportCriticVerdict;
   unsupported: string[];
 }
 
-/**
- * Парсит вывод critic'а. Возвращает null при невалидном JSON/полях.
- * groundedness clamp [0,1]; verdict — только из enum (иначе escalate).
- */
 function parseCriticJson(text: string): ParsedCritic | null {
   try {
     const cleaned = stripCodeFence(text).trim();
@@ -151,7 +129,6 @@ function parseCriticJson(text: string): ParsedCritic | null {
 
 function mapVerdict(raw: unknown): SupportCriticVerdict {
   if (raw === 'answer' || raw === 'clarify' || raw === 'escalate') return raw;
-  // Неизвестное значение — самый консервативный вердикт.
   return 'escalate';
 }
 

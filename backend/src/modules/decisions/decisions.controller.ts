@@ -13,10 +13,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -46,26 +43,6 @@ import {
 } from './dto/decisions.dto';
 import { DecisionsService } from './services/decisions.service';
 
-/**
- * REST API реестра решений (SBA β-3).
- *
- *   GET  /api/v1/decisions                  — список с фильтрами / пагинацией.
- *   GET  /api/v1/decisions/:id              — детали Decision.
- *   GET  /api/v1/decisions/:id/history      — CardVersion timeline.
- *   GET  /api/v1/decisions/:id/supersede-chain — родители + потомки.
- *   POST /api/v1/decisions                  — manual create (owner/admin).
- *   POST /api/v1/decisions/:id/supersede    — заменить новой версией.
- *   POST /api/v1/decisions/:id/status       — изменить статус (+ CardVersion).
- *   POST /api/v1/decisions/:id/outcomes     — записать фактический результат.
- *
- * RBAC:
- *   - `decision` ResourceType.
- *   - Read: все member'ы Org (decision — shared knowledge).
- *   - Write: owner/admin (manual create, supersede, status, outcomes).
- *
- * Multi-tenancy: TenantGuard.
- * Все user-facing строки на русском.
- */
 @ApiTags('decisions')
 @Controller('api/v1/decisions')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -195,8 +172,7 @@ export class DecisionsController {
   @Post(':id/outcomes')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Записать фактический результат реализованного решения (owner / admin или автор)',
+    summary: 'Записать фактический результат реализованного решения (owner / admin или автор)',
   })
   async setOutcomes(
     @Param('id') id: string,
@@ -239,8 +215,7 @@ export class DecisionsController {
   @Post(':id/correct')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Исправить решение (owner/admin — сразу; иначе — предложение в очередь курации)',
+    summary: 'Исправить решение (owner/admin — сразу; иначе — предложение в очередь курации)',
   })
   async correct(
     @Param('id') id: string,
@@ -261,8 +236,6 @@ export class DecisionsController {
       canApplyDirectly,
     });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

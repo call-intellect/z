@@ -12,22 +12,6 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * CoreMetricsSnapshotCron (Фаза 11 knowledge-core).
- *
- * Раз в 5 минут snapshot'ит per-tenant счётчики knowledge-core в gauge'и
- * `core_blocks_total` / `core_entities_total` / `core_links_total` /
- * `core_raw_events_total`. Реализован через Prisma `groupBy`, без сырого
- * SQL — на масштабе 100k блоков по сотне Org это дёшево.
- *
- * NB: gauge.set перезаписывает значение (а не накапливает) — комбинация
- * (tenant, status), которая больше не встречается в выборке, остаётся
- * с устаревшим значением до следующего рестарта процесса. Чтобы избежать
- * этого, на каждом проходе мы предварительно собираем все актуальные
- * (tenant, status) из БД и не пытаемся «обнулять» отсутствующие — это
- * допустимый компромисс для MVP (графики Grafana покажут «срез последний раз»;
- * при появлении новых статусов gauge будет обновлён).
- */
 @Injectable()
 export class CoreMetricsSnapshotCron {
   private readonly logger = new Logger(CoreMetricsSnapshotCron.name);
@@ -47,11 +31,6 @@ export class CoreMetricsSnapshotCron {
         this.snapshotEntities(),
         this.snapshotLinks(),
         this.snapshotRawEvents(),
-        // KC-Temporal W1.1 — открытые факты по signal_type (validUntil IS NULL).
-        // Снапшотим всегда (gauge не зависит от ENV — он показывает реальное
-        // состояние БД). ENV-флаг лишь управляет тем, ставится ли validUntil
-        // в принципе; при выключенном bitemporal-режиме gauge будет показывать
-        // общее число canonical-блоков по signal_type — это тоже полезно.
         this.snapshotKcFactsOpen(),
       ]);
     } catch (err) {
@@ -119,12 +98,6 @@ export class CoreMetricsSnapshotCron {
     }
   }
 
-  /**
-   * KC-Temporal W1.1 — снапшот «открытых» (validUntil IS NULL) канонических
-   * IdeaBlock'ов по `signal_type`. Используется TZ-фильтрация: только
-   * factual типы (из `BITEMPORAL_FACT_SIGNAL_TYPES`). Прочие signal-типы
-   * supersede-арбитр не закрывает, поэтому метрика по ним бессмысленна.
-   */
   private async snapshotKcFactsOpen(): Promise<void> {
     const factTypes = this.cfg.bitemporal.factSignalTypes;
     if (!factTypes || factTypes.length === 0) return;

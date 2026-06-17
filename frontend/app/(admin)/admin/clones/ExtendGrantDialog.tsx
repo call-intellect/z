@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminClonesApi } from '@/api/admin-clones.api';
-import type { AccessGrant } from '@/domain/admin-clone-access-grant';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminClonesApi } from "@/api/admin-clones.api";
+import type { AccessGrant } from "@/domain/admin-clone-access-grant";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -15,22 +15,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Продление гранта / снятие срока.
- *
- * Backend PATCH принимает `expiresAt: ISO | null`. null означает «бессрочно».
- * UI:
- *   - datetime-local для нового срока;
- *   - чекбокс «Сделать бессрочным» = отправить null;
- *   - предзаполняем поле текущим `expiresAt` (если был).
- */
 function toLocalInputValue(date: Date): string {
-  // datetime-local требует формат `YYYY-MM-DDTHH:mm` в локальной зоне без TZ.
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
     `T${pad(date.getHours())}:${pad(date.getMinutes())}`
@@ -48,11 +38,9 @@ export function ExtendGrantDialog({
   onClose: () => void;
   onUpdated: () => void;
 }) {
-  const [makeUnlimited, setMakeUnlimited] = useState(
-    grant.expiresAt === null,
-  );
+  const [makeUnlimited, setMakeUnlimited] = useState(grant.expiresAt === null);
   const [expiresAtInput, setExpiresAtInput] = useState<string>(
-    grant.expiresAt ? toLocalInputValue(grant.expiresAt) : '',
+    grant.expiresAt ? toLocalInputValue(grant.expiresAt) : "",
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -65,16 +53,16 @@ export function ExtendGrantDialog({
       payload = { expiresAt: null };
     } else {
       if (!expiresAtInput.trim()) {
-        setError('Укажите новый срок или включите «Бессрочно»');
+        setError("Укажите новый срок или включите «Бессрочно»");
         return;
       }
       const parsed = new Date(expiresAtInput);
       if (Number.isNaN(parsed.getTime())) {
-        setError('Неверный формат даты');
+        setError("Неверный формат даты");
         return;
       }
       if (parsed.getTime() <= Date.now()) {
-        setError('Дата истечения должна быть в будущем');
+        setError("Дата истечения должна быть в будущем");
         return;
       }
       payload = { expiresAt: parsed.toISOString() };
@@ -84,12 +72,12 @@ export function ExtendGrantDialog({
     try {
       await adminClonesApi.extendAccessGrant(orgId, grant.id, payload);
       toast.success(
-        makeUnlimited ? 'Грант стал бессрочным' : 'Срок гранта обновлён',
+        makeUnlimited ? "Грант стал бессрочным" : "Срок гранта обновлён",
       );
       onUpdated();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось обновить срок';
+        e instanceof ApiError ? e.message : "Не удалось обновить срок";
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -105,16 +93,16 @@ export function ExtendGrantDialog({
         <DialogHeader>
           <DialogTitle>Изменить срок гранта</DialogTitle>
           <DialogDescription>
-            Грант для{' '}
+            Грант для{" "}
             <strong className="text-fg-primary">
               {grant.grantedTo.userName}
-            </strong>
-            {' '}на клон{' '}
+            </strong>{" "}
+            на клон{" "}
             <strong className="text-fg-primary">{grant.cloneLabel}</strong>.
-            Текущий срок:{' '}
+            Текущий срок:{" "}
             {grant.expiresAt
-              ? grant.expiresAt.toLocaleString('ru-RU')
-              : 'бессрочно'}
+              ? grant.expiresAt.toLocaleString("ru-RU")
+              : "бессрочно"}
             .
           </DialogDescription>
         </DialogHeader>
@@ -167,7 +155,7 @@ export function ExtendGrantDialog({
                 <Loader2 size={14} className="mr-1 animate-spin" /> Сохраняем…
               </>
             ) : (
-              'Сохранить'
+              "Сохранить"
             )}
           </Button>
         </DialogFooter>

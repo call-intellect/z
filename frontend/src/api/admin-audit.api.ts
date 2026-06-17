@@ -1,25 +1,17 @@
-/**
- * API-клиент журнала super_admin (admin-redesign Фаза 1).
- *
- * Контракт: backend `AdminAuditController` под префиксом `/api/v1/admin/audit`.
- * Защита — `SuperAdminGuard`. Cursor-based pagination через opaque base64
- * cursor; UI хранит его как непрозрачную строку.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 import type {
   AdminAuditAdminsListApi,
   AdminAuditListApi,
-} from '@/domain/admin-audit';
+} from "@/domain/admin-audit";
 
 export type ListAuditRequest = {
   adminUserId?: string;
   tenantId?: string;
   route?: string;
-  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
-  from?: string; // ISO date
-  to?: string; // ISO date
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
+  from?: string;
+  to?: string;
   cursor?: string;
   limit?: number;
 };
@@ -31,5 +23,5 @@ export const adminAuditApi = {
     ),
 
   listAdmins: () =>
-    apiClient.get<AdminAuditAdminsListApi>('/api/v1/admin/audit/admins'),
+    apiClient.get<AdminAuditAdminsListApi>("/api/v1/admin/audit/admins"),
 };

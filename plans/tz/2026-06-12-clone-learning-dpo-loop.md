@@ -5,7 +5,7 @@ feature: clone-learning-dpo-loop
 date: 2026-06-12
 owner: Сергей (владелец продукта Кора)
 relates_to:
-  - plans/tz/2026-06-11-clone-persona-method-layer.md
+  - plans/archive/2026-06-11-clone-persona-method-layer.md
   - plans/analysis/2026-06-11-clone-depth-and-persona-method.md
 ---
 

@@ -9,21 +9,6 @@ import {
   type PersonaTriggerReason,
 } from './executable-persona-build.service';
 
-/**
- * SBA γ-1 доделки — ExecutablePersonaVersioningService.
- *
- * Один публичный метод `triggerRebuild` — обёртка над
- * `ExecutablePersonaBuildService.buildForProfile`, добавляющая:
- *   - Idempotency-замок через Redis SETNX TTL `minRebuildIntervalMinutes`
- *     (по умолчанию 60 мин) — защита от шквала событий по одной persona.
- *   - Подсчёт `EligibleResult` (нужен ли rebuild вообще: threshold/critical/manual).
- *   - Передача `triggerReason` + `triggerEventAt` в builder.
- *
- * Источники вызовов:
- *   - `ExecutablePersonaTriggerWatcherCron` (каждые 15 минут).
- *   - Admin endpoint `/api/v1/clones/persons/:personId/persona/snapshot`.
- *   - Future: real-time webhook на mark_as_misleading (severity=critical).
- */
 @Injectable()
 export class ExecutablePersonaVersioningService {
   private readonly logger = new Logger(ExecutablePersonaVersioningService.name);
@@ -36,29 +21,18 @@ export class ExecutablePersonaVersioningService {
     private readonly builder: ExecutablePersonaBuildService,
   ) {}
 
-  /**
-   * Триггерить rebuild persona для profileId.
-   * Возвращает `{ built: true, personaId }` если новый snapshot создан,
-   * `{ built: false, reason }` если skip.
-   */
   async triggerRebuild(args: {
     profileId: string;
     reason: PersonaTriggerReason;
     triggerEventAt?: Date | null;
-    /** Если true — игнорировать idempotency-замок (для manual). */
     bypassLock?: boolean;
   }): Promise<
     | { built: true; personaId: string }
     | {
         built: false;
-        reason:
-          | 'locked'
-          | 'profile_not_found'
-          | 'insufficient_traits'
-          | 'builder_returned_null';
+        reason: 'locked' | 'profile_not_found' | 'insufficient_traits' | 'builder_returned_null';
       }
   > {
-    // 1. Idempotency-замок (если не manual).
     if (!args.bypassLock) {
       const acquired = await this.acquireLock(args.profileId);
       if (!acquired) {
@@ -70,7 +44,6 @@ export class ExecutablePersonaVersioningService {
       }
     }
 
-    // 2. Pre-check: профиль существует, traits ≥ minTraits.
     const profile = await this.prisma.skillProfile.findUnique({
       where: { id: args.profileId },
       select: {
@@ -86,7 +59,6 @@ export class ExecutablePersonaVersioningService {
       return { built: false, reason: 'insufficient_traits' };
     }
 
-    // 3. Запуск builder'а.
     const newPersona = await this.builder.buildForProfile({
       profileId: args.profileId,
       triggerReason: args.reason,
@@ -98,11 +70,6 @@ export class ExecutablePersonaVersioningService {
     return { built: true, personaId: newPersona.id };
   }
 
-  /**
-   * Acquire Redis SETNX lock per profileId. TTL — minRebuildIntervalMinutes
-   * (по умолчанию 60 мин). Возвращает true если замок взят, false если уже
-   * занят.
-   */
   private async acquireLock(profileId: string): Promise<boolean> {
     const key = `persona:rebuild:${profileId}`;
     const ttlSec = Math.max(60, this.cfg.persona.minRebuildIntervalMinutes * 60);

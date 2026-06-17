@@ -1,34 +1,3 @@
-/**
- * β-9 (2026-05-25) — Откат миграции Telegram-каналов из глобального в per-tenant.
- *
- * Парный rollback-скрипт к `migrate-telegram-channels-to-global.ts`. Использовать
- * если после deploy β-9 что-то пошло не так и надо вернуть прежнее поведение
- * «один бот на одну Org».
- *
- * Логика:
- *   1. Найти глобальный telegram_bot канал (tenantId IS NULL).
- *   2. Прочитать config.legacyTenantId — это исходный tenantId, который был у этого
- *      Channel'а до forward-миграции.
- *   3. Если legacyTenantId отсутствует — глобальный канал создан с нуля
- *      (case A в forward), откатывать нечего: просто удалить запись.
- *   4. Если legacyTenantId есть — UPDATE channels SET tenantId=<legacyTenantId>,
- *      очистить временные поля в config.
- *   5. Найти каналы с brokenReason='migrated-to-global' и вернуть им
- *      status='active'. ChannelBinding'и, которые forward-скрипт перенёс на
- *      глобальный, оставить как есть — в обратную сторону мы их не различим
- *      (нет map'а). На практике после rollback при следующем forward'е они
- *      снова попадут на глобальный.
- *
- * Внимание. Скрипт НЕ восстанавливает идеальное состояние «как было». Он
- * возвращает структуру каналов, но привязки сотрудников остаются прицепленными
- * к одному «победившему» каналу. Это сознательный выбор — точечный rollback
- * для аварийной ситуации, не полный backup.
- *
- * Запуск (из backend/):
- *   bun run scripts/migrate-telegram-channels-back.ts --dry-run
- *   bun run scripts/migrate-telegram-channels-back.ts
- */
-
 import { NestFactory } from '@nestjs/core';
 
 import { AppModule } from '../src/app.module';
@@ -66,12 +35,11 @@ async function main(args: RunArgs): Promise<void> {
 
     if (!legacyTenantId) {
       log('legacyTenantId отсутствует — канал создан с нуля (case A в forward).');
-      log('Удаляем глобальный канал. Бот после rollback работать перестанет — задеплойте старый код или восстановите per-tenant.');
+      log(
+        'Удаляем глобальный канал. Бот после rollback работать перестанет — задеплойте старый код или восстановите per-tenant.',
+      );
       if (!args.dryRun) {
-        await prisma.$transaction([
-          // Привязки удалятся каскадом по `onDelete: Cascade` от Channel.
-          prisma.channel.delete({ where: { id: global.id } }),
-        ]);
+        await prisma.$transaction([prisma.channel.delete({ where: { id: global.id } })]);
       }
     } else {
       log(`Восстанавливаем tenantId=${legacyTenantId} на глобальном канале.`);
@@ -85,13 +53,11 @@ async function main(args: RunArgs): Promise<void> {
           data: {
             tenantId: legacyTenantId,
             config: clean,
-            // status оставляем как есть — если был global_disabled, переключим на active вручную.
           },
         });
       }
     }
 
-    // Восстановить broken-каналы.
     const broken = await prisma.channel.findMany({
       where: { kind: KIND, brokenReason: BROKEN_REASON },
     });

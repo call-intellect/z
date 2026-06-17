@@ -12,24 +12,6 @@ import { type Observable, tap } from 'rxjs';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-/**
- * SuperAdminAuditInterceptor (Z-Admin Фаза 7).
- *
- * Пишет запись в `SuperAdminAccessLog` для каждого drill-down действия
- * super_admin'а. Используется для compliance: super_admin технически видит
- * чужие данные, и каждое такое чтение/запись должно быть зафиксировано.
- *
- * Поведение:
- *   - fire-and-forget: ошибки записи не блокируют ответ;
- *   - sanitized body: чувствительные поля маскируются (`SENSITIVE_FIELDS`);
- *   - `accessedTenantId` берётся из заголовка `X-Org-Id` (если есть) или
- *     из query.tenantId / params.orgId / body.tenantId. NULL = глобальный
- *     уровень (нет конкретной Org).
- *
- * Подключение: `@UseInterceptors(SuperAdminAuditInterceptor)` на контроллере
- * под `SuperAdminGuard` — пишем для всех методов (GET тоже — это требование
- * compliance, не аудит изменений).
- */
 const SENSITIVE_FIELDS = new Set([
   'key',
   'password',
@@ -110,9 +92,7 @@ export class SuperAdminAuditInterceptor implements NestInterceptor {
         const route = request.originalUrl.split('?')[0] ?? request.originalUrl;
         const params: Record<string, unknown> = {
           query: maskPayload(request.query) ?? {},
-          ...(request.method !== 'GET'
-            ? { body: maskPayload(request.body) ?? {} }
-            : {}),
+          ...(request.method !== 'GET' ? { body: maskPayload(request.body) ?? {} } : {}),
         };
 
         const data: Prisma.SuperAdminAccessLogUncheckedCreateInput = {
@@ -126,18 +106,16 @@ export class SuperAdminAuditInterceptor implements NestInterceptor {
           data.params = paramsJson;
         }
 
-        void this.prisma.superAdminAccessLog
-          .create({ data })
-          .catch((err) => {
-            this.logger.warn(
-              {
-                err: err instanceof Error ? err.message : String(err),
-                actorId,
-                route,
-              },
-              'SuperAdminAuditInterceptor: запись лога не удалась',
-            );
-          });
+        void this.prisma.superAdminAccessLog.create({ data }).catch((err) => {
+          this.logger.warn(
+            {
+              err: err instanceof Error ? err.message : String(err),
+              actorId,
+              route,
+            },
+            'SuperAdminAuditInterceptor: запись лога не удалась',
+          );
+        });
       }),
     );
   }

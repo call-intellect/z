@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import { type Job, Worker } from 'bullmq';
 
-
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { RedisService } from '../../common/redis/redis.service';
@@ -18,31 +17,11 @@ import { SsrfGuardService } from '../security/ssrf-guard.service';
 
 import { SubscriptionsRepository } from './subscriptions.repository';
 import { WebhookDispatcherService } from './webhook-dispatcher.service';
-import {
-  WEBHOOK_DELIVERY_QUEUE,
-  type WebhookDeliveryJobData,
-} from './webhook-queue';
+import { WEBHOOK_DELIVERY_QUEUE, type WebhookDeliveryJobData } from './webhook-queue';
 import { WebhookSigningService } from './webhook-signing.service';
 
-/**
- * Worker очереди `webhook.delivery`.
- *
- * Алгоритм для одного job:
- *   1. Загрузить `WebhookDelivery + Subscription`.
- *   2. SSRF-гвард на URL (защита от DNS-rebinding между create и delivery).
- *   3. decrypt(secret), посчитать `X-Z-Signature` через `WebhookSigningService`.
- *   4. POST с timeout = `cfg.webhooksOut.deliveryTimeoutMs`.
- *   5. На 2xx — status='delivered', метрика {status:'delivered'},
- *      `Subscription.lastDeliveryAt = now`.
- *   6. На non-2xx или сетевую ошибку:
- *      - attempts++,
- *      - если attempts < `maxAttempts`: status='retrying',
- *        nextAttemptAt = now + 2^attempts s (cap 1ч), enqueue retry с delay,
- *      - иначе: status='failed', метрика {status:'failed'},
- *        если 5+ failed подряд — `Subscription.status='failing'`.
- */
 const MAX_RESPONSE_BODY_BYTES = 1024;
-const RETRY_BACKOFF_CAP_MS = 60 * 60 * 1000; // 1 час
+const RETRY_BACKOFF_CAP_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
@@ -93,13 +72,10 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Public для тестирования. */
   async process(job: Job<WebhookDeliveryJobData>): Promise<void> {
     const delivery = await this.repo.findDelivery(job.data.deliveryId);
     if (!delivery) {
-      this.logger.warn(
-        `delivery=${job.data.deliveryId} не найден (возможно, удалён retention)`,
-      );
+      this.logger.warn(`delivery=${job.data.deliveryId} не найден (возможно, удалён retention)`);
       return;
     }
     if (delivery.status === 'delivered' || delivery.status === 'failed') {
@@ -114,7 +90,6 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // SSRF-проверка перед каждым fetch (защита от DNS-rebinding).
     try {
       await this.ssrf.assertSafeOutboundUrl(subscription.url);
     } catch (err) {
@@ -174,7 +149,6 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
         signal: ac.signal,
       });
       httpStatus = res.status;
-      // Ограничиваем размер тела ответа.
       const text = await res.text().catch(() => '');
       respText = text.slice(0, MAX_RESPONSE_BODY_BYTES);
     } catch (err) {
@@ -197,7 +171,6 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Неуспех — оцениваем retry.
     const newAttempts = delivery.attempts + 1;
     const maxAttempts = this.cfg.webhooksOut.maxAttempts;
     const responseSummary = networkError
@@ -222,7 +195,6 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    // Финальный fail.
     await this.repo.updateDelivery(delivery.id, {
       status: 'failed',
       attempts: { increment: 1 },
@@ -231,7 +203,6 @@ export class WebhookDeliveryWorker implements OnModuleInit, OnModuleDestroy {
     });
     this.metrics?.incWebhookDelivery({ event: delivery.event, status: 'failed' });
 
-    // Авто-переход подписки в failing на 5+ failed подряд.
     const failedCount = await this.repo.countConsecutiveFailed(subscription.id);
     if (failedCount >= 5 && subscription.status === 'active') {
       await this.repo.updateStatus(subscription.id, { status: 'failing' });

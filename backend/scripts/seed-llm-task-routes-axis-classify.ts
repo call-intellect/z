@@ -1,29 +1,3 @@
-/**
- * SBA α-3 wave 3 — Seed LLM-маршрутов для AxisClassifier + LLM-fallback Router.
- *
- * Регистрирует 2 LlmTaskType с тройной цепочкой primary/secondary/tertiary:
- *
- *   - `axis-classify` — классификация IdeaBlock по 4 осям (who/functional/
- *     contextual/temporal). Дёшево и часто — primary Ollama qwen3.5:9b
- *     (локальная, бесплатно), fallback на DeepSeek + OpenAI proxy.
- *
- *   - `router-fallback` — fallback роутер: для unmatched signalType определяем
- *     специалистов через LLM (≤2% потока). Тот же провайдер-профиль.
- *
- * Источник цепочки: docs/reference/llm-models-playbook.md §2.x (дешёвая
- * частая задача) + verified-карта second-brain/01_projects/llm-providers-verified.md
- * (smoke 2026-05-21).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-axis-classify.ts
- *   bun run scripts/seed-llm-task-routes-axis-classify.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - `editedByAdmin=true` → НЕ перезаписываем (даже с `--update-existing`).
- *   - Без флага — пропускаем все существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -41,11 +15,6 @@ interface TaskRouteSeed {
   chain: TierEntry[];
 }
 
-/**
- * Цепочка одинакова для обеих задач: дешёвая, частая, нечувствительная к
- * данным (max dataClass=internal). primary — Ollama (бесплатная), secondary
- * — DeepSeek-flash, tertiary — gpt-4o-mini (через прокси).
- */
 const COMMON_CHAIN: TierEntry[] = [
   { tier: 'primary', providerName: 'ollama', model: 'qwen3.5:9b' },
   { tier: 'secondary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
@@ -55,14 +24,12 @@ const COMMON_CHAIN: TierEntry[] = [
 const SEEDS: TaskRouteSeed[] = [
   {
     taskType: 'axis-classify',
-    playbookSection:
-      '§2.x (дешёвая частая классификация) + α-3 wave 3 sub-TZ §9',
+    playbookSection: '§2.x (дешёвая частая классификация) + α-3 wave 3 sub-TZ §9',
     chain: COMMON_CHAIN,
   },
   {
     taskType: 'router-fallback',
-    playbookSection:
-      '§2.x (дешёвая частая классификация) + α-3 wave 3 sub-TZ §9',
+    playbookSection: '§2.x (дешёвая частая классификация) + α-3 wave 3 sub-TZ §9',
     chain: COMMON_CHAIN,
   },
 ];
@@ -107,17 +74,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -142,9 +105,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

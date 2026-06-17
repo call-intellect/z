@@ -2,16 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { PortfolioHealthService } from './portfolio-health.service';
 
-/**
- * ТЗ-2 Ф6.A (daily-value-dashboards) — unit-тесты PortfolioHealthService.compute.
- *
- * Mock Prisma/cfg/metrics. Покрываем:
- *   1. compute считает byStatus/byPriority/rows + интегральный балл;
- *   2. deltaVsPrevWeek из предыдущего снимка (findFirst);
- *   3. baseline (нет прошлого снимка) → delta=null;
- *   4. нет целей → score 0, пустые rows, byPriority со всеми нулями;
- *   5. upsert вызывается, метрики score+snapshot эмитятся.
- */
 describe('PortfolioHealthService', () => {
   const dateLocal = '2026-06-08';
 
@@ -26,9 +16,8 @@ describe('PortfolioHealthService', () => {
       'portfolio.health.weight_dropped': 0,
     };
     return {
-      getDynamic: vi.fn(
-        async (key: string, _env: string, def: unknown) =>
-          key in map ? map[key] : def,
+      getDynamic: vi.fn(async (key: string, _env: string, def: unknown) =>
+        key in map ? map[key] : def,
       ),
     };
   }
@@ -62,11 +51,7 @@ describe('PortfolioHealthService', () => {
       incPortfolioPrioritySet: vi.fn(),
     };
     const cfg = buildCfg();
-    const svc = new PortfolioHealthService(
-      prisma as never,
-      cfg as never,
-      metrics as never,
-    );
+    const svc = new PortfolioHealthService(prisma as never, cfg as never, metrics as never);
     return { svc, prisma, metrics, upsertCalls };
   }
 
@@ -107,9 +92,8 @@ describe('PortfolioHealthService', () => {
 
     const dto = await svc.compute({ tenantId: 't1', dateLocal });
 
-    // (100 + 80 + 40 + 0) / 4 = 55
     expect(dto.healthScore).toBe(55);
-    expect(dto.scale.level).toBe('warning'); // 55 ∈ [40,60)
+    expect(dto.scale.level).toBe('warning');
     expect(dto.scale.healthy).toBe(60);
     expect(dto.scale.warning).toBe(40);
 
@@ -119,7 +103,6 @@ describe('PortfolioHealthService', () => {
     expect(dto.byStatus.stalled).toBe(1);
     expect(dto.byStatus.dropped).toBe(0);
 
-    // MoSCoW: must = 2 (1 achieved → 50%), should = 1, none = 1.
     expect(dto.byPriority.must.count).toBe(2);
     expect(dto.byPriority.must.achievedCount).toBe(1);
     expect(dto.byPriority.must.achievedPercent).toBe(50);
@@ -127,13 +110,11 @@ describe('PortfolioHealthService', () => {
     expect(dto.byPriority.should.achievedPercent).toBe(0);
     expect(dto.byPriority.none.count).toBe(1);
 
-    // rows: провенанс — первый sourceBlockId или null.
     expect(dto.rows).toHaveLength(4);
     expect(dto.rows[0]?.reason).toEqual({ sourceBlockId: 'blk-1' });
     expect(dto.rows[1]?.reason).toBeNull();
     expect(dto.rows[3]?.priority).toBeNull();
 
-    // delta: 55 - 40 = 15.
     expect(dto.deltaVsPrevWeek).toBe(15);
 
     expect(prisma.portfolioHealthSnapshot.upsert).toHaveBeenCalledTimes(1);
@@ -171,7 +152,6 @@ describe('PortfolioHealthService', () => {
     expect(dto.rows).toEqual([]);
     expect(dto.byPriority.must.count).toBe(0);
     expect(dto.byPriority.none.count).toBe(0);
-    // upsert всё равно записывает «нулевой» снимок дня.
     expect(prisma.portfolioHealthSnapshot.upsert).toHaveBeenCalledTimes(1);
   });
 });

@@ -25,15 +25,6 @@ import {
 } from '../dto/proactive-notification.dto';
 import { ProactiveNotificationsService } from '../services/proactive-notifications.service';
 
-/**
- * SBA δ-2 — `/api/v1/me/proactive-notifications`.
- *
- *   GET  /                 — список своих ProactiveNotification.
- *                            Query: includeDismissed=true|false, limit.
- *   POST /:id/dismiss      — отметить как «не показывать». Idempotent.
- *
- * Auth: CookieAuthGuard + TenantGuard. Self-only — фильтр по userId.
- */
 @ApiTags('me-proactive-notifications')
 @Controller('api/v1/me/proactive-notifications')
 @UseGuards(CookieAuthGuard, TenantGuard)

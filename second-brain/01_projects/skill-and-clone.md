@@ -109,7 +109,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 2. **ExecutablePersona — раз в неделю (cron) + on-demand rebuild** через ClonesService при отсутствии active snapshot.
 3. **Manager visibility — direct manager** (1 уровень).
 4. **«Попробовать своего клона» для пустых профилей <3 traits** — disabled с tooltip.
-5. **Rate limit Clone API (актуальное, ТЗ 2026-05-31)** — единая per-user дневная квота `ai_chat_messages_per_day` через `AiChatQuotaService` (модуль `ai-chat-quota`, глобальный): Concierge + клоны считаются ОДНИМ счётчиком на пользователя. Лимит по роли в Org: admin (owner/admin/coo) → `AI_CHAT_DAILY_LIMIT_ADMIN=50`, остальные → `AI_CHAT_DAILY_LIMIT_MEMBER=20`. UI читает через `GET /api/v1/me/ai-chat/quota`. Старый ENV `CLONE_ASK_PER_USER_PER_DAY=20` и Redis-ключ `clone:ask:*` — **deprecated** (оставлены как code-fallback для безопасного rollback, в следующем выкате удалим). См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/tz/2026-05-31-ai-chat-quota-unified-per-user.md).
+5. **Rate limit Clone API (актуальное, ТЗ 2026-05-31)** — единая per-user дневная квота `ai_chat_messages_per_day` через `AiChatQuotaService` (модуль `ai-chat-quota`, глобальный): Concierge + клоны считаются ОДНИМ счётчиком на пользователя. Лимит по роли в Org: admin (owner/admin/coo) → `AI_CHAT_DAILY_LIMIT_ADMIN=50`, остальные → `AI_CHAT_DAILY_LIMIT_MEMBER=20`. UI читает через `GET /api/v1/me/ai-chat/quota`. Старый ENV `CLONE_ASK_PER_USER_PER_DAY=20` и Redis-ключ `clone:ask:*` — **deprecated** (оставлены как code-fallback для безопасного rollback, в следующем выкате удалим). См. ТЗ [`2026-05-31-ai-chat-quota-unified-per-user`](../../plans/archive/2026-05-31-ai-chat-quota-unified-per-user.md).
 
 ## Чувствительность
 
@@ -117,7 +117,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 
 ## Доработки 2026-05-25 — clone-reliability-hardening
 
-ТЗ: [`plans/tz/2026-05-25-clone-reliability-hardening.md`](../../plans/tz/2026-05-25-clone-reliability-hardening.md). Закрыто 7 фаз из 8 (см. рефлексию [`05_история/2026-05-25-clone-reliability-hardening-wave.md`](../05_история/2026-05-25-clone-reliability-hardening-wave.md)).
+ТЗ: [`plans/archive/2026-05-25-clone-reliability-hardening.md`](../../plans/archive/2026-05-25-clone-reliability-hardening.md). Закрыто 7 фаз из 8 (см. рефлексию [`05_история/2026-05-25-clone-reliability-hardening-wave.md`](../05_история/2026-05-25-clone-reliability-hardening-wave.md)).
 
 ### Что изменилось в γ-1 после доработок
 
@@ -142,7 +142,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 
 ## Доработки 2026-05-26 — clone-respond v2 (Фаза 7 §9)
 
-**Источник:** [`plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/tz/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9. Раскатана в рамках общей миграции LLM на DeepSeek V4 Pro.
+**Источник:** [`plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md`](../../plans/archive/2026-05-25-llm-architecture-changes-from-experiments.md) — Фаза 7 §9. Раскатана в рамках общей миграции LLM на DeepSeek V4 Pro.
 
 Цель — поднять качество диалога с клоном на уровень chat-v2 (multi-query expansion + temporal filter + history) без потери антифальшивки и сохранить дешёвую one-shot ветку для quick-look сценариев.
 
@@ -167,8 +167,8 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 ## Доработки 2026-05-26 — CloneAccessGrant admin CRUD + frontend marketplace
 
 **Источники:**
-- [`plans/tz/2026-05-26-clone-access-grant-admin-api.md`](../../plans/tz/2026-05-26-clone-access-grant-admin-api.md) — admin CRUD + патч-миграция + фикс RBAC (Задачи 1/2/4 копилки follow-up).
-- [`plans/tz/2026-05-26-clones-marketplace-frontend.md`](../../plans/tz/2026-05-26-clones-marketplace-frontend.md) — frontend маркетплейс + admin-страница.
+- [`plans/archive/2026-05-26-clone-access-grant-admin-api.md`](../../plans/archive/2026-05-26-clone-access-grant-admin-api.md) — admin CRUD + патч-миграция + фикс RBAC (Задачи 1/2/4 копилки follow-up).
+- [`plans/archive/2026-05-26-clones-marketplace-frontend.md`](../../plans/archive/2026-05-26-clones-marketplace-frontend.md) — frontend маркетплейс + admin-страница.
 
 Коммиты: `fc3d6fe` (rbac+schema), `c96505a` (admin/user API), `87fef5d` (patch-скрипт), `578a777` (user UI), `eab4d8f` (admin UI).
 
@@ -221,7 +221,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 
 ## Доработки 2026-06-12 — слой метода клона (clone-persona-method-layer)
 
-**Источник:** ТЗ [`plans/tz/2026-06-11-clone-persona-method-layer.md`](../../plans/tz/2026-06-11-clone-persona-method-layer.md) (8 фаз, ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726`). Цель — достроить клону роли **наблюдаемый МЕТОД работы** (а не психотип): ценности из проявленного поведения, принципы решений (Reflection-слой), методология «ситуация→ход» (RPD — Recognition-Primed Decision, распознавание ситуации по образцу) и разовое CDM-интервью носителя (Critical Decision Method — ретроспективный разбор решений). Схема — [[../02_architecture/data-model]] §«Слой метода клона»; taskType — [[ai-jobs]]; cron'ы — [[workers-queues]]; флаги — [`docs/operations/feature-flags.md`](../../docs/operations/feature-flags.md).
+**Источник:** ТЗ [`plans/archive/2026-06-11-clone-persona-method-layer.md`](../../plans/archive/2026-06-11-clone-persona-method-layer.md) (8 фаз, ветка `feature/clone-persona-method-layer`, коммиты `6e8b470f..41289726`). Цель — достроить клону роли **наблюдаемый МЕТОД работы** (а не психотип): ценности из проявленного поведения, принципы решений (Reflection-слой), методология «ситуация→ход» (RPD — Recognition-Primed Decision, распознавание ситуации по образцу) и разовое CDM-интервью носителя (Critical Decision Method — ретроспективный разбор решений). Схема — [[../02_architecture/data-model]] §«Слой метода клона»; taskType — [[ai-jobs]]; cron'ы — [[workers-queues]]; флаги — [`docs/operations/feature-flags.md`](../../docs/operations/feature-flags.md).
 
 ### Таблица слоёв
 
@@ -243,7 +243,7 @@ Skill traits **НЕ проходят** через `CurationService.triage` pre-a
 1. **Правила процесса, не ярлыки** (Personality Illusion): каждый слой компилируется в persona как поведенческое правило с якорем-наблюдением («обычно перед рекомендацией я перечисляю варианты и критерий»), никогда как ярлык («ты рациональный»). Психотип/MBTI/DISC/OCEAN — анти-scope.
 2. **Ценности — только из trade-off**: value/motivation-черта извлекается исключительно из решающих моментов, где роль явно выбрала одно в ущерб другому (revealed preference), не из деклараций.
 3. **Только конструктивные маркеры процесса**: оценочно-диагностические оси («избегает решений», «не решает сам», «нерешителен») запрещены промптом И код-гардом стоп-маркеров.
-4. **CDM-вопросы — не наводящие**: свободный ответ текстом/голосом, без inline-кнопок ([[../../plans/tz/2026-06-11-clone-persona-method-layer.md|ТЗ]] Б5, feedback_probe_no_buttons); probe-dispatcher отдаёт вопрос как есть.
+4. **CDM-вопросы — не наводящие**: свободный ответ текстом/голосом, без inline-кнопок ([[../../plans/archive/2026-06-11-clone-persona-method-layer.md|ТЗ]] Б5, feedback_probe_no_buttons); probe-dispatcher отдаёт вопрос как есть.
 5. **Валидация — по поведению, не по самоотчёту**: LLM-судья сравнивает поведенческий ход ответа с реальным кейсом; без human-approval-гейта (только kill-switch), R10.
 6. **Grounding обязателен**: принципы роли несут `sourceBlockIds` (≥2, подмножество входных); клон без опоры честно отказывается (`refusalReason='ungrounded'` в `CloneQueryLog`) вместо выдумки.
 

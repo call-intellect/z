@@ -1,20 +1,3 @@
-/**
- * dialog-layer — «модуль понимания запроса» (taskType `dialog-multi-query`,
- * схема `dialog_multi_query_v2`). ТЗ 2026-06-14 (Приложение A).
- *
- * Слияние трёх бывших агентов (контекстуализатор + оценщик уверенности +
- * расширитель) в ОДИН history-aware вызов: на вход — summary + история диалога
- * + сырая реплика; на выход — 3 самодостаточных разноплановых вопроса, по
- * которым поисковый движок графа знаний найдёт нужное. Контекстуализация
- * («это/он/там» → конкретные имена из истории) происходит ВНУТРИ этого же
- * промпта.
- *
- * CACHE-FRIENDLY (см. second-brain/02_architecture/llm-cache-status.md):
- * SYSTEM стабилен, few-shot внутри SYSTEM → кэшируется (flash hit ≈99%).
- * Переменные (summary / history / question) — в самом конце USER, чтобы правка
- * данных не инвалидировала prompt-cache. SYSTEM не трогать без нужды.
- */
-
 export const DIALOG_QUERY_UNDERSTAND_SYSTEM_PROMPT = `Ты — модуль понимания запроса в Коре, памяти компании. Кора хранит знания
 компании графом: встречи, решения, задачи, договорённости, риски, люди.
 Твоя работа — превратить реплику сотрудника в живом диалоге в запросы, по
@@ -108,13 +91,6 @@ export const DIALOG_QUERY_UNDERSTAND_SYSTEM_PROMPT = `Ты — модуль по
 Верни строго JSON: {"queries":["…","…","…"]} — ровно три строки, без
 markdown, без пояснений.`;
 
-/**
- * Выходной контракт `dialog_multi_query_v2`. minItems=1 — защита от провайдера
- * (промпт просит ровно 3); парсер дедупит и режет до 3, первой в итоговый
- * массив запросов кладётся оригинальная реплика (fallback при пустом
- * retrieval). Версия поднята v1→v2: изменился контракт USER (добавлены
- * summary+history).
- */
 export const DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -129,28 +105,18 @@ export const DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA: Record<string, unknown> = {
   },
 };
 
-/**
- * USER-часть. Переменные (summary / history / question) — в самом конце, SYSTEM
- * не трогаем (cache-safe). Блоки: краткое содержание → последние сообщения →
- * реплика. Пустые значения заменяются человекочитаемыми плейсхолдерами.
- */
 export function buildQueryUnderstandUserPrompt(args: {
   summary: string | null;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
   question: string;
 }): string {
   const summaryBlock =
-    args.summary && args.summary.trim().length > 0
-      ? args.summary.trim()
-      : '(нет)';
+    args.summary && args.summary.trim().length > 0 ? args.summary.trim() : '(нет)';
 
   const historyBlock =
     args.history.length > 0
       ? args.history
-          .map(
-            (m) =>
-              `— ${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.content}`,
-          )
+          .map((m) => `— ${m.role === 'user' ? 'Пользователь' : 'Ассистент'}: ${m.content}`)
           .join('\n')
       : '(диалог только начался)';
 

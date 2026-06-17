@@ -30,12 +30,6 @@ import {
 } from './dto/meeting-types-admin.dto';
 import { MeetingTypesAdminService } from './meeting-types-admin.service';
 
-/**
- * Admin-redesign Фаза 5 — `MeetingTypesAdminController`.
- *
- * CRUD конфигов типов встреч под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`. Все мутации логируются в SuperAdminAccessLog.
- */
 @ApiTags('admin-content-meeting-types')
 @Controller('api/v1/admin/content/meeting-types')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -78,10 +72,7 @@ export class MeetingTypesAdminController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Soft-delete MeetingTypeConfig (isActive=false).' })
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: CurrentUserPayload | null | undefined,
-  ) {
+  remove(@Param('id') id: string, @CurrentUser() user: CurrentUserPayload | null | undefined) {
     this.assertUser(user);
     return this.svc.softDelete(id, user.id);
   }

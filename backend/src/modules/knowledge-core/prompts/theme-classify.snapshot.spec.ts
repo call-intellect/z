@@ -1,13 +1,3 @@
-/**
- * Snapshot-тест промта `theme-classify.prompt.ts`.
- *
- * Фиксирует:
- *   - текст `THEME_CLASSIFY_SYSTEM_PROMPT`;
- *   - JSON-схему `THEME_CLASSIFY_JSON_SCHEMA`;
- *   - набор `THEME_BRANCH_VALUES` (12 веток компании).
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import {

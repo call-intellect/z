@@ -1,22 +1,3 @@
-/**
- * Golden-прогон для агента `skill-trait-detect`.
- *
- * Сравниваем gpt-5.4 (текущий primary) vs deepseek-v4-pro (кандидат).
- * Запускаем дважды с разной env-переменной MODEL.
- *
- * Использование:
- *   cd backend
- *   # текущий primary
- *   SKILL_TRAIT_DETECT_GOLDEN_MODEL=gpt-5.4 bun run scripts/eval/run-skill-trait-detect-golden.ts
- *   # кандидат
- *   SKILL_TRAIT_DETECT_GOLDEN_MODEL=deepseek-v4-pro bun run scripts/eval/run-skill-trait-detect-golden.ts
- *
- * Решение по итогам:
- *   - DeepSeek-Pro passed >= gpt-5.4 passed (допуск −5%) → переключаем.
- *   - Иначе оставляем gpt-5.4 для skill-trait-detect, остальные 3 цепочки
- *     (skill-trait-merge, executable-persona-compile, clone-respond) можно
- *     переключать сразу (они менее чувствительны).
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -36,7 +17,6 @@ const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/(
 const FIXTURES_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/skill-trait-detect-golden/fixtures');
 const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/skill-trait-detect-golden/reports');
 
-// ── фикстура (структура повторяет spec-файл) ────────────────────────────────
 interface FixtureQuote {
   blockId: string;
   quote: string;
@@ -68,7 +48,6 @@ interface LlmResponse {
   sourceBlockIds: string[];
 }
 
-// ── invariants (копия из spec-файла, см. checkInvariants) ───────────────────
 function checkInvariants(
   fixture: FixtureData,
   resp: LlmResponse,
@@ -100,12 +79,21 @@ function checkInvariants(
     }
   }
   if (exp.statementContainsQualifier === true) {
-    const qualifiers = ['похож', 'склон', 'в большинстве случаев', 'часто', 'как правило', 'обычно'];
+    const qualifiers = [
+      'похож',
+      'склон',
+      'в большинстве случаев',
+      'часто',
+      'как правило',
+      'обычно',
+    ];
     const has = qualifiers.some((q) => resp.statement.toLowerCase().includes(q));
     if (!has) failures.push(`No qualifier in statement: "${resp.statement}"`);
   }
   if (exp.expectedConfidence && exp.expectedConfidence !== resp.confidence) {
-    failures.push(`Confidence mismatch: expected ${exp.expectedConfidence}, got ${resp.confidence}`);
+    failures.push(
+      `Confidence mismatch: expected ${exp.expectedConfidence}, got ${resp.confidence}`,
+    );
   }
   const inputIds = new Set(fixture.quotes.map((q) => q.blockId));
   for (const id of resp.sourceBlockIds) {
@@ -120,7 +108,6 @@ function checkInvariants(
   return { pass: failures.length === 0, failures };
 }
 
-// ── клиент ──────────────────────────────────────────────────────────────────
 let client: OpenAI;
 let priceIn = 0;
 let priceCachedIn = 0;
@@ -135,7 +122,6 @@ if (IS_OPENAI) {
     process.exit(1);
   }
   client = new OpenAI({ apiKey: `${prefix}:${apiKey}`, baseURL: baseUrl });
-  // gpt-5.4 на 2026-05-25.
   priceIn = 2 / 1_000_000;
   priceCachedIn = 0.2 / 1_000_000;
   priceOut = 10 / 1_000_000;
@@ -149,13 +135,11 @@ if (IS_OPENAI) {
     apiKey,
     baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
   });
-  // DeepSeek-V4-Pro со скидкой 75%.
   priceIn = 0.435 / 1_000_000;
   priceCachedIn = 0.003625 / 1_000_000;
   priceOut = 0.87 / 1_000_000;
 }
 
-// ── LLM-вызов ───────────────────────────────────────────────────────────────
 async function callLlm(fixture: FixtureData): Promise<{
   response: LlmResponse | null;
   tokensIn: number;
@@ -173,7 +157,6 @@ async function callLlm(fixture: FixtureData): Promise<{
 
   try {
     if (IS_OPENAI) {
-      // OpenAI Responses API + json_schema strict (как в OpenAiProxyService).
       const resp = (await (
         client as unknown as {
           responses: {
@@ -221,7 +204,6 @@ async function callLlm(fixture: FixtureData): Promise<{
         error: parsed ? undefined : `Невалидный JSON: ${(resp.output_text ?? '').slice(0, 150)}`,
       };
     } else {
-      // DeepSeek chat.completions + tools+auto (Pro не поддерживает strict).
       const tool = {
         type: 'function' as const,
         function: {
@@ -234,14 +216,20 @@ async function callLlm(fixture: FixtureData): Promise<{
         model: MODEL,
         messages: [
           { role: 'system', content: SKILL_TRAIT_DETECT_SYSTEM_PROMPT },
-          { role: 'user', content: `${userPrompt}\n\nВерни результат через инструмент submit_skill_trait.` },
+          {
+            role: 'user',
+            content: `${userPrompt}\n\nВерни результат через инструмент submit_skill_trait.`,
+          },
         ],
         max_tokens: 4000,
         tools: [tool],
         tool_choice: 'auto',
       } as Parameters<typeof client.chat.completions.create>[0])) as unknown as {
         choices: Array<{
-          message?: { tool_calls?: Array<{ function: { arguments: string } }>; content?: string | null };
+          message?: {
+            tool_calls?: Array<{ function: { arguments: string } }>;
+            content?: string | null;
+          };
         }>;
         usage?: {
           prompt_tokens?: number;
@@ -258,7 +246,8 @@ async function callLlm(fixture: FixtureData): Promise<{
         error = 'модель не позвала tool';
       } else {
         parsed = parseLlmJson(call.function.arguments);
-        if (!parsed) error = `Невалидный JSON в tool args: ${call.function.arguments.slice(0, 150)}`;
+        if (!parsed)
+          error = `Невалидный JSON в tool args: ${call.function.arguments.slice(0, 150)}`;
       }
       const cached =
         resp.usage?.prompt_cache_hit_tokens ??
@@ -307,7 +296,6 @@ function parseLlmJson(text: string): LlmResponse | null {
   }
 }
 
-// ── main ────────────────────────────────────────────────────────────────────
 interface RunResult {
   fixtureName: string;
   fixtureId: string;
@@ -325,7 +313,9 @@ interface RunResult {
 
 async function main(): Promise<void> {
   console.log(`=== Golden-прогон skill-trait-detect ===`);
-  console.log(`  модель: ${MODEL} (${IS_OPENAI ? 'OpenAI Responses через прокси' : 'DeepSeek chat.completions'})`);
+  console.log(
+    `  модель: ${MODEL} (${IS_OPENAI ? 'OpenAI Responses через прокси' : 'DeepSeek chat.completions'})`,
+  );
 
   const files = (await fs.readdir(FIXTURES_DIR)).filter((f) => f.endsWith('.json')).sort();
   console.log(`  фикстур: ${files.length}\n`);
@@ -370,7 +360,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // Сводка
   const passed = results.filter((r) => r.pass).length;
   const failed = results.filter((r) => !r.pass).length;
   const validResults = results.filter((r) => r.category === 'valid');
@@ -390,7 +379,9 @@ async function main(): Promise<void> {
   console.log(`    valid:  ${validPassed}/${validResults.length}`);
   console.log(`    reject: ${rejectPassed}/${rejectResults.length}`);
   console.log(`  Упали:  ${failed}`);
-  console.log(`  Токены: вход=${totalIn} (кэш=${totalCached}, ${(cacheHitRatio * 100).toFixed(0)}%) выход=${totalOut}`);
+  console.log(
+    `  Токены: вход=${totalIn} (кэш=${totalCached}, ${(cacheHitRatio * 100).toFixed(0)}%) выход=${totalOut}`,
+  );
   console.log(`  Стоимость суммарно: $${totalCost.toFixed(4)}`);
   console.log(`  Общее время: ${(totalMs / 1000).toFixed(1)} с`);
 
@@ -409,10 +400,7 @@ async function main(): Promise<void> {
   }
 
   await fs.mkdir(REPORTS_DIR, { recursive: true });
-  const reportPath = path.join(
-    REPORTS_DIR,
-    `golden-${MODEL.replace(/[^a-z0-9.-]/gi, '_')}.json`,
-  );
+  const reportPath = path.join(REPORTS_DIR, `golden-${MODEL.replace(/[^a-z0-9.-]/gi, '_')}.json`);
   await fs.writeFile(
     reportPath,
     JSON.stringify(

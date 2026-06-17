@@ -8,17 +8,6 @@ import type { ConversationalService } from '../../conversational/conversational.
 import { CurationService } from './curation.service';
 import type { CuratorRoutingService } from './curator-routing.service';
 
-/**
- * Unit-тесты Action Center E1 «поправить карточку знаний» (2026-06-04) —
- * CurationService.submitProposal.
- *
- * Покрытие:
- *   - создаётся CurationItem(level='light', status='pending') с
- *     triageReason.via='user_correction' и прокинутым proposedPayload;
- *   - candidateCuratorIds берётся из routing.resolveCurators;
- *   - ошибка routing → candidates=[] (best-effort, item всё равно создаётся).
- */
-
 function buildMetrics(): BusinessMetricsService {
   return {
     incCurationItem: vi.fn(),
@@ -40,16 +29,7 @@ function makeService(args: {
     resolveCurators: args.resolveCurators,
   } as unknown as CuratorRoutingService;
 
-  return new CurationService(
-    prisma,
-    cfg,
-    metrics,
-    conversational,
-    routing,
-    null, // skillCategories
-    null, // events
-    null, // debate
-  );
+  return new CurationService(prisma, cfg, metrics, conversational, routing, null, null, null);
 }
 
 describe('CurationService.submitProposal — E1', () => {
@@ -57,12 +37,10 @@ describe('CurationService.submitProposal — E1', () => {
   let resolveCurators: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    create = vi
-      .fn()
-      .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
-        id: 'ci-1',
-        ...data,
-      }));
+    create = vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+      id: 'ci-1',
+      ...data,
+    }));
     resolveCurators = vi.fn().mockResolvedValue(['curator-1']);
   });
 

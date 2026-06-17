@@ -14,10 +14,7 @@ import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { RequireEntitlement } from '../../entitlements/require-entitlement.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -38,20 +35,6 @@ import {
 
 const MAX_NODES = 100;
 
-/**
- * `GET /api/v1/knowledge/graph/neighbors?nodeType=block|entity&id=...&depth=1..3`
- *
- * BFS-обход графа на N шагов от стартового узла. Используется UI визуализации
- * (Фаза 3 vNext) и админ-инспекцией.
- *
- * Правила обхода:
- *   - block-node: соседи через IdeaBlockLink (any direction). На втором шаге
- *     может перейти к entity-node через IdeaBlockEntity (упоминание).
- *   - entity-node: соседи через EntityLink (any direction). На втором шаге
- *     может перейти к block-node через IdeaBlockEntity.
- *
- * Лимит — 100 nodes. При превышении — обрезаем и `truncated=true`.
- */
 @ApiTags('knowledge-core')
 @Controller('api/v1/knowledge/graph')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -60,9 +43,6 @@ export class KnowledgeGraphController {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(RbacService) private readonly rbac: RbacService,
-    // Ф4 (knowledge-access) — гейт доступа в BFS-графе. RbacModule/Metrics/Config
-    // @Global. @Optional, чтобы legacy-тесты, создающие контроллер позиционно
-    // (без этих сервисов), не падали — при null гейт не активируется (=off).
     @Optional()
     @Inject(KnowledgeAccessResolver)
     private readonly accessResolver: KnowledgeAccessResolver | null = null,
@@ -105,7 +85,6 @@ export class KnowledgeGraphController {
       });
     }
 
-    // Ф4 (knowledge-access) — режим гейта. off / нет сервисов → ctx=null.
     let enf: 'off' | 'shadow' | 'enforce' = 'off';
     let accessCtx: KnowledgeAccessContext | null = null;
     if (this.cfg && this.accessResolver) {
@@ -127,15 +106,11 @@ export class KnowledgeGraphController {
     });
   }
 
-  // ─────────────────────────── BFS-обход ───────────────────────────────────
-
   private async bfs(args: {
     tenantId: string;
     root: GraphNodeDto;
     depth: number;
-    /** Ф4 (knowledge-access) — режим гейта. */
     enf: 'off' | 'shadow' | 'enforce';
-    /** Ф4 (knowledge-access) — контекст групп пользователя (null при off / нет userId). */
     accessCtx: KnowledgeAccessContext | null;
   }): Promise<GraphNeighborsResultDto> {
     const { tenantId, root, depth, enf, accessCtx } = args;
@@ -181,20 +156,12 @@ export class KnowledgeGraphController {
 
     let nodes = Array.from(nodesById.values());
 
-    // Ф4 (knowledge-access) — block-узлы несут контент знания; фильтруем по
-    // группам ТОЛЬКО block-узлы (entity-узлы не гейтятся). enforce — исключаем
-    // недоступные block-узлы из nodes (рёбра к ним отпадут на фильтре ниже,
-    // ловящем отсутствующий конец) + incAccessDenied. shadow — только метрика,
-    // выдачу не меняем. bypass — видит всё.
     if (this.accessResolver && this.metrics && accessCtx && !accessCtx.isBypass) {
-      const blockNodeIds = nodes
-        .filter((n) => n.type === 'block')
-        .map((n) => n.id);
-      const { accessible, denied } =
-        await this.accessResolver.partitionBlockIdsByAccess(
-          accessCtx,
-          blockNodeIds,
-        );
+      const blockNodeIds = nodes.filter((n) => n.type === 'block').map((n) => n.id);
+      const { accessible, denied } = await this.accessResolver.partitionBlockIdsByAccess(
+        accessCtx,
+        blockNodeIds,
+      );
       if (enf === 'enforce') {
         const allow = new Set(accessible);
         nodes = nodes.filter((n) => n.type !== 'block' || allow.has(n.id));
@@ -204,15 +171,9 @@ export class KnowledgeGraphController {
       }
     }
 
-    // Отфильтровываем edges, у которых хотя бы один конец отсутствует
-    // (могло случиться при truncated ИЛИ при гейте доступа выше).
     const edges = Array.from(edgesByKey.values()).filter((e) => {
-      const fromExists = nodes.some(
-        (n) => n.id === e.from || this.nodeKey(n) === e.from,
-      );
-      const toExists = nodes.some(
-        (n) => n.id === e.to || this.nodeKey(n) === e.to,
-      );
+      const fromExists = nodes.some((n) => n.id === e.from || this.nodeKey(n) === e.from);
+      const toExists = nodes.some((n) => n.id === e.to || this.nodeKey(n) === e.to);
       return fromExists && toExists;
     });
 
@@ -224,11 +185,6 @@ export class KnowledgeGraphController {
     };
   }
 
-  /**
-   * Расширение block-узла. Уровень `level` — глубина (1=прямые соседи).
-   *   - Идём по IdeaBlockLink (any direction) — другие блоки.
-   *   - Параллельно — через IdeaBlockEntity (entities, на которые ссылается блок).
-   */
   private async expandBlock(
     node: GraphNodeDto,
     level: number,
@@ -301,11 +257,6 @@ export class KnowledgeGraphController {
     return result;
   }
 
-  /**
-   * Расширение entity-узла.
-   *   - Идём по EntityLink (any direction) — другие сущности.
-   *   - Параллельно — через IdeaBlockEntity (блоки, упоминающие сущность).
-   */
   private async expandEntity(
     node: GraphNodeDto,
     level: number,
@@ -316,9 +267,6 @@ export class KnowledgeGraphController {
       edges: [],
     };
 
-    // С Фазы 0 EntityLink — полиморфная модель без FK на Entity. Фильтруем
-    // только Entity↔Entity связи; узлы Фазы 0 (Role/Person/Process/...)
-    // на этом графе не возвращаем — он работает только внутри knowledge-core.
     const [entityLinksFrom, entityLinksTo, blockMentions] = await Promise.all([
       this.prisma.entityLink.findMany({
         where: {
@@ -341,7 +289,7 @@ export class KnowledgeGraphController {
       this.prisma.ideaBlockEntity.findMany({
         where: { entityId: node.id, block: { status: 'canonical', tenantId } },
         include: { block: true },
-        take: 20, // ограничиваем — у популярной сущности могут быть сотни блоков
+        take: 20,
       }),
     ]);
 
@@ -431,7 +379,6 @@ export class KnowledgeGraphController {
     return { id: e.id, type: 'entity', label: e.canonicalName, depth: 0 };
   }
 
-  /** Уникальный ключ узла — type:id (id и блока, и сущности — cuid; коллизий нет). */
   private nodeKey(n: GraphNodeDto): string {
     return `${n.type}:${n.id}`;
   }

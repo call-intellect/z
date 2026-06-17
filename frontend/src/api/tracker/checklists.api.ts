@@ -1,12 +1,6 @@
-/**
- * API-клиент модуля tracker.checklists (2026-05-27).
- *
- * Контракт: `backend/src/modules/tracker/controllers/checklists.controller.ts`.
- */
-
-import { apiClient } from '../api-client';
-import { orgHeaders } from '../admin-helpers';
-import type { ChecklistApi, ChecklistItemApi } from '@/domain/tracker';
+import { apiClient } from "../api-client";
+import { orgHeaders } from "../admin-helpers";
+import type { ChecklistApi, ChecklistItemApi } from "@/domain/tracker";
 
 export interface CreateChecklistRequest {
   title?: string;

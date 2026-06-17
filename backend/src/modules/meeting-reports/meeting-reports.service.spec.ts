@@ -1,19 +1,4 @@
-/**
- * Unit-тесты MeetingReportsService (Фаза E §7).
- *
- * Покрываем:
- *   - create:
- *       - Free-тариф (нет фичи) → ForbiddenException с code='entitlement_required'.
- *       - Pro-тариф, 5 живых отчётов, лимит 5 → ForbiddenException с code='multi_reports_limit_exceeded'.
- *       - Existing pending → ConflictException 409 (partial-unique guard).
- *       - Happy path → enqueueCustomReport вызван + статус='pending'.
- */
-
-import {
-  ConflictException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
@@ -68,13 +53,14 @@ function buildHarness(opts: BuildHarnessOpts = {}): {
       update: vi.fn(),
     },
     promptTemplate: {
-      findFirst: vi.fn(async () =>
-        opts.template ?? {
-          id: 'tpl-1',
-          name: 'Sales Coach',
-          activeVersionId: 'ver-1',
-          activeVersion: { id: 'ver-1' },
-        },
+      findFirst: vi.fn(
+        async () =>
+          opts.template ?? {
+            id: 'tpl-1',
+            name: 'Sales Coach',
+            activeVersionId: 'ver-1',
+            activeVersion: { id: 'ver-1' },
+          },
       ),
       findMany: vi.fn(async () => []),
     },
@@ -115,13 +101,7 @@ function buildHarness(opts: BuildHarnessOpts = {}): {
     incMeetingReportCreated: metricsCreated,
   } as unknown as BusinessMetricsService;
 
-  const svc = new MeetingReportsService(
-    prisma,
-    redis,
-    queue,
-    entitlements,
-    metrics,
-  );
+  const svc = new MeetingReportsService(prisma, redis, queue, entitlements, metrics);
 
   return { svc, enqueue, reportCreate, metricsCreated };
 }
@@ -195,8 +175,8 @@ describe('MeetingReportsService.get', () => {
 
   it('get неизвестного reportId → NotFoundException', async () => {
     const h = buildHarness({ aiResult: null });
-    await expect(
-      h.svc.get('meet-1', 'unknown-id', 'user-host'),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    await expect(h.svc.get('meet-1', 'unknown-id', 'user-host')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

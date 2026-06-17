@@ -1,37 +1,28 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { useState, type FormEvent } from 'react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { useAuth } from '@/contexts/auth-context';
-import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
-import { Button } from '@/ui/shadcn/button';
-import { Checkbox } from '@/ui/shadcn/checkbox';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { useAuth } from "@/contexts/auth-context";
+import { AuthShell } from "@/ui/components/auth-shell/AuthShell";
+import { Button } from "@/ui/shadcn/button";
+import { Checkbox } from "@/ui/shadcn/checkbox";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Lead-style регистрация: имя + email + телефон → бэкенд шлёт временный пароль письмом.
- *
- * UX:
- *   - Honeypot-поле `hp_field` — невидимое, для отсева ботов.
- *   - Скрытое поле `ref` — отслеживание реферральных ссылок из URL.
- *   - Два чекбокса согласия: обработка ПД (обязательный) и маркетинг (опциональный).
- *   - На success — заменяем форму на success-state (без редиректа).
- */
 export function SignupForm() {
   const { register } = useAuth();
   const searchParams = useSearchParams();
-  const refParam = searchParams?.get('ref') || '';
+  const refParam = searchParams?.get("ref") || "";
 
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [honeypot, setHoneypot] = useState('');
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [honeypot, setHoneypot] = useState("");
   const [consentDataProcessing, setConsentDataProcessing] = useState(false);
   const [consentMarketing, setConsentMarketing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -41,7 +32,7 @@ export function SignupForm() {
     e.preventDefault();
     if (submitting) return;
     if (!consentDataProcessing) {
-      toast.error('Подтвердите согласие с обработкой персональных данных.');
+      toast.error("Подтвердите согласие с обработкой персональных данных.");
       return;
     }
 
@@ -60,20 +51,20 @@ export function SignupForm() {
       setSubmittedEmail(email.trim());
       if (!result.emailSent) {
         toast.warning(
-          'Запрос принят, но письмо не отправлено. Свяжитесь с поддержкой.',
+          "Запрос принят, но письмо не отправлено. Свяжитесь с поддержкой.",
         );
       }
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'email_disposable') {
+        if (err.code === "email_disposable") {
           toast.error(
-            'Этот почтовый сервис не поддерживается. Используйте основной email.',
+            "Этот почтовый сервис не поддерживается. Используйте основной email.",
           );
         } else {
           toast.error(humanizeApiError(err));
         }
       } else {
-        toast.error('Не удалось отправить запрос. Попробуйте ещё раз.');
+        toast.error("Не удалось отправить запрос. Попробуйте ещё раз.");
       }
     } finally {
       setSubmitting(false);
@@ -112,7 +103,7 @@ export function SignupForm() {
       subtitle="Оставьте имя и email — пришлём пароль на почту."
       footer={
         <>
-          Уже есть аккаунт?{' '}
+          Уже есть аккаунт?{" "}
           <Link
             href="/login"
             className="text-accent underline-offset-4 hover:underline"
@@ -163,7 +154,9 @@ export function SignupForm() {
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="signup-company">Название компании (опционально)</Label>
+          <Label htmlFor="signup-company">
+            Название компании (опционально)
+          </Label>
           <Input
             id="signup-company"
             type="text"
@@ -174,16 +167,16 @@ export function SignupForm() {
           />
         </div>
 
-        {/* Honeypot — спрятан от пользователя, виден только ботам. */}
-        {/* Скрытое поле ref — отслеживание реферральных ссылок. */}
+        {}
+        {}
         <div
           aria-hidden
           style={{
-            position: 'absolute',
-            left: '-9999px',
-            width: '1px',
-            height: '1px',
-            overflow: 'hidden',
+            position: "absolute",
+            left: "-9999px",
+            width: "1px",
+            height: "1px",
+            overflow: "hidden",
           }}
         >
           <label htmlFor="hp_field">Не заполняйте это поле</label>
@@ -217,12 +210,20 @@ export function SignupForm() {
               htmlFor="signup-consent-data"
               className="text-xs font-normal leading-snug text-fg-secondary"
             >
-              Согласен с{' '}
-              <Link href="/terms" target="_blank" className="text-accent hover:underline">
+              Согласен с{" "}
+              <Link
+                href="/terms"
+                target="_blank"
+                className="text-accent hover:underline"
+              >
                 обработкой персональных данных
-              </Link>
-              {' '}и{' '}
-              <Link href="/privacy" target="_blank" className="text-accent hover:underline">
+              </Link>{" "}
+              и{" "}
+              <Link
+                href="/privacy"
+                target="_blank"
+                className="text-accent hover:underline"
+              >
                 политикой конфиденциальности
               </Link>
             </Label>
@@ -239,7 +240,8 @@ export function SignupForm() {
               htmlFor="signup-consent-marketing"
               className="text-xs font-normal leading-snug text-fg-secondary"
             >
-              Согласен получать письма о новостях, обновлениях и специальных предложениях
+              Согласен получать письма о новостях, обновлениях и специальных
+              предложениях
             </Label>
           </div>
         </div>
@@ -250,7 +252,7 @@ export function SignupForm() {
           size="lg"
           disabled={submitting}
         >
-          {submitting ? 'Отправляем…' : 'Получить пароль на почту'}
+          {submitting ? "Отправляем…" : "Получить пароль на почту"}
         </Button>
       </form>
     </AuthShell>

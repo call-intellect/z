@@ -2,18 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { GoalTaskLinkerService } from './goal-task-linker.service';
 
-/**
- * Agent-chain overhaul Фаза 4.1 — unit-тесты GoalTaskLinkerService.
- *
- * Мокаем Prisma / LlmRouter / Metrics / TypedConfig. Покрываем:
- *   (1) флаг OFF → no-op (БЕЗ запросов / LLM);
- *   (2) source!=='ai' → no-op;
- *   (3) ungoaled issue + арбитр develops:true conf>=0.6 → updateMany с goalId
- *       (where goalId:null);
- *   (4) арбитр develops:false → update НЕ зван;
- *   (5) нет кандидатов → LLM НЕ зван.
- */
-
 const TENANT = 'org-1';
 const GOAL_ID = 'goal-1';
 
@@ -35,9 +23,10 @@ interface Mocks {
   metrics: { incGoalTaskLink: ReturnType<typeof vi.fn> };
 }
 
-function buildService(
-  cfgOverrides: Partial<Mocks['cfg']['goals']> = {},
-): { svc: GoalTaskLinkerService; m: Mocks } {
+function buildService(cfgOverrides: Partial<Mocks['cfg']['goals']> = {}): {
+  svc: GoalTaskLinkerService;
+  m: Mocks;
+} {
   const m: Mocks = {
     prisma: {
       goal: { findUnique: vi.fn() },
@@ -65,7 +54,6 @@ function buildService(
   return { svc, m };
 }
 
-/** Готовит цель→встречу→1 ungoaled-задачу для happy-path. */
 function primeChain(m: Mocks, taskId = 'task-1'): void {
   m.prisma.goal.findUnique.mockResolvedValue({
     tenantId: TENANT,
@@ -73,12 +61,8 @@ function primeChain(m: Mocks, taskId = 'task-1'): void {
     sourceBlockIds: ['b1', 'b2'],
     name: 'Увеличить выручку на 20% за квартал',
   });
-  m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([
-    { rawEventId: 're1' },
-  ]);
-  m.prisma.rawEvent.findMany.mockResolvedValue([
-    { sourceExternalId: 'meeting-1' },
-  ]);
+  m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([{ rawEventId: 're1' }]);
+  m.prisma.rawEvent.findMany.mockResolvedValue([{ sourceExternalId: 'meeting-1' }]);
   m.prisma.issue.findMany.mockResolvedValue([
     { id: taskId, title: 'Запустить рекламную кампанию' },
   ]);
@@ -195,13 +179,9 @@ describe('GoalTaskLinkerService.linkGoalTasks', () => {
       sourceBlockIds: ['b1'],
       name: 'Цель без задач',
     });
-    m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([
-      { rawEventId: 're1' },
-    ]);
-    m.prisma.rawEvent.findMany.mockResolvedValue([
-      { sourceExternalId: 'meeting-1' },
-    ]);
-    m.prisma.issue.findMany.mockResolvedValue([]); // нет ungoaled-задач
+    m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([{ rawEventId: 're1' }]);
+    m.prisma.rawEvent.findMany.mockResolvedValue([{ sourceExternalId: 'meeting-1' }]);
+    m.prisma.issue.findMany.mockResolvedValue([]);
 
     const res = await svc.linkGoalTasks(TENANT, GOAL_ID);
 
@@ -232,7 +212,7 @@ describe('GoalTaskLinkerService.linkGoalTasks', () => {
       sourceBlockIds: ['b1'],
       name: 'Цель без встреч',
     });
-    m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([]); // нет evidence
+    m.prisma.ideaBlockEvidence.findMany.mockResolvedValue([]);
 
     const res = await svc.linkGoalTasks(TENANT, GOAL_ID);
 
@@ -248,7 +228,7 @@ describe('GoalTaskLinkerService.linkGoalTasks', () => {
     const res = await svc.linkGoalTasks(TENANT, GOAL_ID);
 
     expect(res.linked).toBe(0);
-    expect(m.llm.call).toHaveBeenCalledTimes(2); // retry×2
+    expect(m.llm.call).toHaveBeenCalledTimes(2);
     expect(m.prisma.issue.updateMany).not.toHaveBeenCalled();
     expect(m.metrics.incGoalTaskLink).toHaveBeenCalledWith({
       result: 'fallback',

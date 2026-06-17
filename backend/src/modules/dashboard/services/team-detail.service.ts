@@ -1,38 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
 
 import { CommitmentReliabilityService } from './commitment-reliability.service';
 
-/**
- * TeamDetailService (Pulse Wave 2 §2.5) — детальная страница `/teams/[id]`.
- *
- * Собирает в одном эндпоинте всё нужное для премиального экрана команды:
- *   - шапка отдела (имя, миссия, руководитель, размер),
- *   - состав с per-person sentiment-чипом (последний за 30 дней),
- *   - агрегатные health-метрики (sentiment 7d + trend, commitment reliability),
- *   - цели команды (по Goal.ownerPersonId),
- *   - топ-темы команды (через IdeaBlockEntity → Entity{type=person} → Person).
- *
- * Принципы:
- *   - Переиспользуем `CommitmentReliabilityService` для обещаний (scope='team').
- *   - Sentiment per-person и aggregate считаем прямо здесь одной выборкой
- *     `DailyCheckIn` за 30 дней (та же логика, что в SentimentIndexService).
- *   - Кэш Redis TTL 5 минут (`team_detail:<tenantId>:<departmentId>`).
- *     На ошибки Redis не падаем.
- *
- * Заметки:
- *   - Цели команды: связь `Goal.ownerPersonId → Person` (ТЗ coo-orphan-agents
- *     Ф2). Берём активные не-архивные цели ответственных из отдела; иначе
- *     секция показывается пустым состоянием.
- *   - «Конфликты внутри команды» и «Активность» опущены (v1 §2.5).
- */
 export interface TeamDetailMemberDto {
   personId: string;
   personName: string;
@@ -65,13 +37,9 @@ export interface TeamDetailDto {
   totalMembers: number;
   members: TeamDetailMemberDto[];
 
-  /** -100..+100, окно 7 дней (как KPI Hero на главной). */
   sentimentIndex: number;
-  /** up / flat / down — окно [-14d..-7d] vs [-7d..now]. */
   sentimentTrend: 'up' | 'flat' | 'down';
-  /** 0..100. */
   commitmentReliabilityPercent: number;
-  /** Дельта к предыдущему окну 14d. null если в прошлом окне знаменатель=0. */
   commitmentDelta14d: number | null;
 
   goals: TeamDetailGoalDto[];
@@ -82,7 +50,6 @@ export interface TeamDetailDto {
 export class TeamDetailService {
   private readonly logger = new Logger(TeamDetailService.name);
   private static readonly CACHE_TTL_SEC = 300;
-  /** Порог в индекс-пунктах для трендов sentiment. */
   private static readonly TREND_THRESHOLD = 5;
 
   constructor(
@@ -92,10 +59,7 @@ export class TeamDetailService {
     private readonly commits: CommitmentReliabilityService,
   ) {}
 
-  async getDetail(args: {
-    tenantId: string;
-    departmentId: string;
-  }): Promise<TeamDetailDto> {
+  async getDetail(args: { tenantId: string; departmentId: string }): Promise<TeamDetailDto> {
     const cacheKey = `team_detail:${args.tenantId}:${args.departmentId}`;
     try {
       const cached = await this.redis.client.get(cacheKey);
@@ -136,9 +100,7 @@ export class TeamDetailService {
     }
 
     const personIds = dept.persons.map((p) => p.id);
-    const entityIds = dept.persons
-      .map((p) => p.entityId)
-      .filter((id): id is string => !!id);
+    const entityIds = dept.persons.map((p) => p.entityId).filter((id): id is string => !!id);
     const headPerson = dept.persons.find((p) => p.id === dept.headPersonId);
 
     const now = new Date();
@@ -149,7 +111,6 @@ export class TeamDetailService {
     const since7d = new Date(now);
     since7d.setUTCDate(since7d.getUTCDate() - 7);
 
-    // Sentiment per-person за 30 дней одной выборкой.
     const checkIns =
       personIds.length === 0
         ? []
@@ -167,15 +128,11 @@ export class TeamDetailService {
             },
           });
 
-    // Сортируем по дате убывания — чтобы взять «последний» sentiment per-person.
     const sortedCheckIns = [...checkIns].sort(
       (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
     );
 
-    const personSentiment = new Map<
-      string,
-      { last: string | null; count: number }
-    >();
+    const personSentiment = new Map<string, { last: string | null; count: number }>();
     for (const p of dept.persons) {
       personSentiment.set(p.id, { last: null, count: 0 });
     }
@@ -201,18 +158,13 @@ export class TeamDetailService {
       };
     });
 
-    // Sentiment index — окно 7 дней (как KPI Hero на главной).
     const recent = checkIns.filter((c) => c.createdAt >= since7d);
     const greens7 = recent.filter((c) => c.sentiment === 'green').length;
     const reds7 = recent.filter((c) => c.sentiment === 'red').length;
     const total7 = recent.length;
-    const sentimentIndex =
-      total7 > 0 ? Math.round(((greens7 - reds7) / total7) * 100) : 0;
+    const sentimentIndex = total7 > 0 ? Math.round(((greens7 - reds7) / total7) * 100) : 0;
 
-    // Trend — индекс [-14d..-7d] vs [-7d..now].
-    const prev = checkIns.filter(
-      (c) => c.createdAt >= since14d && c.createdAt < since7d,
-    );
+    const prev = checkIns.filter((c) => c.createdAt >= since14d && c.createdAt < since7d);
     const prevGreens = prev.filter((c) => c.sentiment === 'green').length;
     const prevReds = prev.filter((c) => c.sentiment === 'red').length;
     const prevTotal = prev.length;
@@ -221,20 +173,15 @@ export class TeamDetailService {
       const prevIdx = Math.round(((prevGreens - prevReds) / prevTotal) * 100);
       const delta = sentimentIndex - prevIdx;
       if (delta > TeamDetailService.TREND_THRESHOLD) sentimentTrend = 'up';
-      else if (delta < -TeamDetailService.TREND_THRESHOLD)
-        sentimentTrend = 'down';
+      else if (delta < -TeamDetailService.TREND_THRESHOLD) sentimentTrend = 'down';
     }
 
-    // Commitment reliability — через готовый сервис.
     const commitRes = await this.commits.getReliability({
       tenantId: args.tenantId,
       scope: 'team',
       scopeId: args.departmentId,
     });
 
-    // Цели команды (ТЗ coo-orphan-agents Ф2). TODO Wave 6.5 закрыт: связь
-    // `Goal.ownerPersonId → Person` ЕСТЬ в схеме. Берём активные (promotionState
-    // 'active'), не-архивные цели, чей ответственный — из этого отдела.
     const goalRows =
       personIds.length === 0
         ? []
@@ -261,8 +208,6 @@ export class TeamDetailService {
       ownerPersonName: g.ownerPerson?.name ?? null,
     }));
 
-    // Top темы команды: через IdeaBlockEntity → Entity{type=person} →
-    // Entity.id ∈ entityIds. Берём блоки за 30 дней, агрегируем по их темам.
     const topThemes: TeamDetailThemeDto[] = [];
     if (entityIds.length > 0) {
       const blocks = await this.prisma.ideaBlock.findMany({

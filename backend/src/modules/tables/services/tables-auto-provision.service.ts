@@ -7,30 +7,12 @@ import {
   type SystemTableTemplate,
 } from '../templates/system-tables.catalog';
 
-/**
- * Авто-провижининг системных Smart-таблиц при создании Org (Smart-tables Фаза 0).
- *
- * Создаёт 10 ПУСТЫХ (без строк) системных таблиц по каталогу
- * `SYSTEM_TABLES_CATALOG`. Вызывается из `OrgsService.createForOwner` в той же
- * транзакции, что и создание Org/Membership/Source.
- *
- * Идемпотентность: для каждого шаблона перед созданием делаем
- * `findFirst({ tenantId, systemKey })`. Повторный вызов на той же Org ничего
- * не создаёт (используется и backfill-скриптом для существующих Org).
- */
 @Injectable()
 export class TablesAutoProvisionService {
   private readonly logger = new Logger(TablesAutoProvisionService.name);
 
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /**
-   * Создать недостающие системные таблицы для Org.
-   *
-   * @returns счётчики `created` / `skipped` (skipped = уже существовали).
-   */
   async provisionDefaults(
     tenantId: string,
     ownerId: string,
@@ -69,10 +51,7 @@ export class TablesAutoProvisionService {
       created++;
     }
 
-    this.logger.log(
-      { tenantId, created, skipped },
-      'tables.autoProvision: системные таблицы',
-    );
+    this.logger.log({ tenantId, created, skipped }, 'tables.autoProvision: системные таблицы');
     return { created, skipped };
   }
 

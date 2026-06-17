@@ -1,17 +1,3 @@
-/**
- * Wave 3 / Tracker Phase 4 — данные для 10 системных + 5 опциональных
- * шаблонов команд (TeamTemplate).
- *
- * Используется:
- *   - `backend/scripts/seed-team-templates.ts` — standalone seed.
- *   - `ProjectsFromTemplateService.createFromTemplate()` — загружает шаблон
- *     по slug (сначала per-tenant, потом fallback к системному tenantId=null).
- *
- * Все имена/описания/ответственности — на русском (см. skill
- * `feedback_admin_ui_russian_only`). Английские слова допустимы только как
- * технические маркеры (slug, category, stateKey категории).
- */
-
 export type TeamTemplateStateCategory =
   | 'backlog'
   | 'unstarted'
@@ -20,18 +6,13 @@ export type TeamTemplateStateCategory =
   | 'cancelled';
 
 export interface TeamTemplateRole {
-  /** Машинный ключ (`sales_manager`, `tech_lead`). */
   key: string;
-  /** Человекочитаемое имя роли на русском. */
   name: string;
-  /** 2-3+ пункта ответственностей. */
   responsibilities: string[];
 }
 
 export interface TeamTemplateState {
-  /** Машинный ключ (`backlog`, `in_progress`, `done`). Используется для связки с typicalTasks.stateKey. */
   key: string;
-  /** Человекочитаемое имя статуса на русском (попадёт в IssueState.name). */
   name: string;
   category: TeamTemplateStateCategory;
   color: string;
@@ -40,7 +21,6 @@ export interface TeamTemplateState {
 
 export interface TeamTemplateTypicalTask {
   title: string;
-  /** Ссылка на State.key из states[] — куда положить пример. */
   stateKey: string;
   estimatePoints?: number;
   priority?: 'urgent' | 'high' | 'medium' | 'low' | 'none';
@@ -55,7 +35,6 @@ export interface TeamTemplateDefinition {
   roles: TeamTemplateRole[];
   states: TeamTemplateState[];
   typicalTasks: TeamTemplateTypicalTask[];
-  /** Названия регламентов-заглушек, которые будут созданы как Regulation status=active. */
   regulationStubs: string[];
   kpiTemplates: TeamTemplateKpiTemplate[];
 }
@@ -69,8 +48,6 @@ export interface TeamTemplateSeedEntry {
   definition: TeamTemplateDefinition;
 }
 
-// ─────────────────────────── общие пресеты ─────────────────────────────────
-
 const STATES_DEFAULT_5: TeamTemplateState[] = [
   { key: 'backlog', name: 'Бэклог', category: 'backlog', color: '#94A3B8', sequence: 1 },
   { key: 'in_progress', name: 'В работе', category: 'started', color: '#3B82F6', sequence: 2 },
@@ -78,8 +55,6 @@ const STATES_DEFAULT_5: TeamTemplateState[] = [
   { key: 'done', name: 'Готово', category: 'completed', color: '#10B981', sequence: 4 },
   { key: 'cancelled', name: 'Не дошёл', category: 'cancelled', color: '#EF4444', sequence: 5 },
 ];
-
-// ───────────────────────── 10 системных шаблонов ───────────────────────────
 
 const SALES: TeamTemplateSeedEntry = {
   slug: 'sales',
@@ -129,16 +104,43 @@ const SALES: TeamTemplateSeedEntry = {
     ],
     states: [
       { key: 'backlog', name: 'Новый лид', category: 'backlog', color: '#94A3B8', sequence: 1 },
-      { key: 'qualified', name: 'Квалифицирован', category: 'unstarted', color: '#6366F1', sequence: 2 },
+      {
+        key: 'qualified',
+        name: 'Квалифицирован',
+        category: 'unstarted',
+        color: '#6366F1',
+        sequence: 2,
+      },
       { key: 'in_progress', name: 'В работе', category: 'started', color: '#3B82F6', sequence: 3 },
-      { key: 'review', name: 'Согласование договора', category: 'started', color: '#F59E0B', sequence: 4 },
+      {
+        key: 'review',
+        name: 'Согласование договора',
+        category: 'started',
+        color: '#F59E0B',
+        sequence: 4,
+      },
       { key: 'done', name: 'Сделка', category: 'completed', color: '#10B981', sequence: 5 },
       { key: 'cancelled', name: 'Не дошёл', category: 'cancelled', color: '#EF4444', sequence: 6 },
     ],
     typicalTasks: [
-      { title: 'Связаться с новым лидом и квалифицировать', stateKey: 'backlog', estimatePoints: 1, priority: 'high' },
-      { title: 'Подготовить коммерческое предложение', stateKey: 'in_progress', estimatePoints: 3, priority: 'medium' },
-      { title: 'Согласовать договор с юристом', stateKey: 'review', estimatePoints: 2, priority: 'medium' },
+      {
+        title: 'Связаться с новым лидом и квалифицировать',
+        stateKey: 'backlog',
+        estimatePoints: 1,
+        priority: 'high',
+      },
+      {
+        title: 'Подготовить коммерческое предложение',
+        stateKey: 'in_progress',
+        estimatePoints: 3,
+        priority: 'medium',
+      },
+      {
+        title: 'Согласовать договор с юристом',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Скрипт первого звонка с клиентом',
@@ -208,9 +210,24 @@ const DEVELOPMENT: TeamTemplateSeedEntry = {
       { key: 'cancelled', name: 'Отменено', category: 'cancelled', color: '#EF4444', sequence: 6 },
     ],
     typicalTasks: [
-      { title: 'Декомпозировать новую фичу на задачи', stateKey: 'backlog', estimatePoints: 2, priority: 'medium' },
-      { title: 'Реализовать API-эндпоинт по спецификации', stateKey: 'in_progress', estimatePoints: 5, priority: 'high' },
-      { title: 'Подготовить релизные заметки', stateKey: 'review', estimatePoints: 1, priority: 'low' },
+      {
+        title: 'Декомпозировать новую фичу на задачи',
+        stateKey: 'backlog',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
+      {
+        title: 'Реализовать API-эндпоинт по спецификации',
+        stateKey: 'in_progress',
+        estimatePoints: 5,
+        priority: 'high',
+      },
+      {
+        title: 'Подготовить релизные заметки',
+        stateKey: 'review',
+        estimatePoints: 1,
+        priority: 'low',
+      },
     ],
     regulationStubs: [
       'Правила код-ревью и merge в основную ветку',
@@ -272,17 +289,50 @@ const INSTALLATION: TeamTemplateSeedEntry = {
       },
     ],
     states: [
-      { key: 'backlog', name: 'Заявка принята', category: 'backlog', color: '#94A3B8', sequence: 1 },
-      { key: 'scheduled', name: 'Запланирована', category: 'unstarted', color: '#6366F1', sequence: 2 },
+      {
+        key: 'backlog',
+        name: 'Заявка принята',
+        category: 'backlog',
+        color: '#94A3B8',
+        sequence: 1,
+      },
+      {
+        key: 'scheduled',
+        name: 'Запланирована',
+        category: 'unstarted',
+        color: '#6366F1',
+        sequence: 2,
+      },
       { key: 'in_progress', name: 'На выезде', category: 'started', color: '#3B82F6', sequence: 3 },
-      { key: 'review', name: 'Согласование акта', category: 'started', color: '#F59E0B', sequence: 4 },
+      {
+        key: 'review',
+        name: 'Согласование акта',
+        category: 'started',
+        color: '#F59E0B',
+        sequence: 4,
+      },
       { key: 'done', name: 'Закрыта', category: 'completed', color: '#10B981', sequence: 5 },
       { key: 'cancelled', name: 'Отменена', category: 'cancelled', color: '#EF4444', sequence: 6 },
     ],
     typicalTasks: [
-      { title: 'Согласовать время монтажа с клиентом', stateKey: 'backlog', estimatePoints: 1, priority: 'medium' },
-      { title: 'Подготовить комплект оборудования к выезду', stateKey: 'scheduled', estimatePoints: 2, priority: 'high' },
-      { title: 'Оформить акт выполненных работ и собрать подпись клиента', stateKey: 'review', estimatePoints: 1, priority: 'medium' },
+      {
+        title: 'Согласовать время монтажа с клиентом',
+        stateKey: 'backlog',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
+      {
+        title: 'Подготовить комплект оборудования к выезду',
+        stateKey: 'scheduled',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Оформить акт выполненных работ и собрать подпись клиента',
+        stateKey: 'review',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Регламент аварийного выезда: целевые SLA по типам неисправностей',
@@ -345,9 +395,24 @@ const MARKETING: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Спланировать кампанию на квартал', stateKey: 'backlog', estimatePoints: 3, priority: 'high' },
-      { title: 'Подготовить лендинг и креативы к запуску', stateKey: 'in_progress', estimatePoints: 5, priority: 'high' },
-      { title: 'Согласовать тексты с продуктом', stateKey: 'review', estimatePoints: 1, priority: 'medium' },
+      {
+        title: 'Спланировать кампанию на квартал',
+        stateKey: 'backlog',
+        estimatePoints: 3,
+        priority: 'high',
+      },
+      {
+        title: 'Подготовить лендинг и креативы к запуску',
+        stateKey: 'in_progress',
+        estimatePoints: 5,
+        priority: 'high',
+      },
+      {
+        title: 'Согласовать тексты с продуктом',
+        stateKey: 'review',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Регламент запуска маркетинговой кампании',
@@ -412,13 +477,34 @@ const MANAGEMENT: TeamTemplateSeedEntry = {
       { key: 'backlog', name: 'Инициатива', category: 'backlog', color: '#94A3B8', sequence: 1 },
       { key: 'in_progress', name: 'В работе', category: 'started', color: '#3B82F6', sequence: 2 },
       { key: 'review', name: 'На правлении', category: 'started', color: '#F59E0B', sequence: 3 },
-      { key: 'done', name: 'Решение принято', category: 'completed', color: '#10B981', sequence: 4 },
+      {
+        key: 'done',
+        name: 'Решение принято',
+        category: 'completed',
+        color: '#10B981',
+        sequence: 4,
+      },
       { key: 'cancelled', name: 'Отклонено', category: 'cancelled', color: '#EF4444', sequence: 5 },
     ],
     typicalTasks: [
-      { title: 'Подготовить квартальный обзор для правления', stateKey: 'in_progress', estimatePoints: 3, priority: 'high' },
-      { title: 'Согласовать ключевые цели на квартал', stateKey: 'review', estimatePoints: 2, priority: 'high' },
-      { title: 'Зафиксировать решение и назначить ответственного', stateKey: 'done', estimatePoints: 1, priority: 'medium' },
+      {
+        title: 'Подготовить квартальный обзор для правления',
+        stateKey: 'in_progress',
+        estimatePoints: 3,
+        priority: 'high',
+      },
+      {
+        title: 'Согласовать ключевые цели на квартал',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Зафиксировать решение и назначить ответственного',
+        stateKey: 'done',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Регламент стратегических встреч и протоколов',
@@ -435,8 +521,7 @@ const MANAGEMENT: TeamTemplateSeedEntry = {
 const CUSTOMER_SUPPORT: TeamTemplateSeedEntry = {
   slug: 'customer_support',
   name: 'Команда поддержки клиентов',
-  description:
-    'Первая и вторая линия поддержки: обращения, инциденты, обратная связь, удержание.',
+  description: 'Первая и вторая линия поддержки: обращения, инциденты, обратная связь, удержание.',
   category: 'operations',
   isPublic: true,
   definition: {
@@ -479,16 +564,49 @@ const CUSTOMER_SUPPORT: TeamTemplateSeedEntry = {
       },
     ],
     states: [
-      { key: 'backlog', name: 'Новое обращение', category: 'backlog', color: '#94A3B8', sequence: 1 },
+      {
+        key: 'backlog',
+        name: 'Новое обращение',
+        category: 'backlog',
+        color: '#94A3B8',
+        sequence: 1,
+      },
       { key: 'in_progress', name: 'В работе', category: 'started', color: '#3B82F6', sequence: 2 },
-      { key: 'review', name: 'Ожидает клиента', category: 'started', color: '#F59E0B', sequence: 3 },
+      {
+        key: 'review',
+        name: 'Ожидает клиента',
+        category: 'started',
+        color: '#F59E0B',
+        sequence: 3,
+      },
       { key: 'done', name: 'Решено', category: 'completed', color: '#10B981', sequence: 4 },
-      { key: 'cancelled', name: 'Закрыто без решения', category: 'cancelled', color: '#EF4444', sequence: 5 },
+      {
+        key: 'cancelled',
+        name: 'Закрыто без решения',
+        category: 'cancelled',
+        color: '#EF4444',
+        sequence: 5,
+      },
     ],
     typicalTasks: [
-      { title: 'Ответить клиенту по первому обращению', stateKey: 'backlog', estimatePoints: 1, priority: 'high' },
-      { title: 'Эскалировать инцидент на вторую линию', stateKey: 'in_progress', estimatePoints: 2, priority: 'high' },
-      { title: 'Закрыть обращение и спросить оценку', stateKey: 'review', estimatePoints: 1, priority: 'medium' },
+      {
+        title: 'Ответить клиенту по первому обращению',
+        stateKey: 'backlog',
+        estimatePoints: 1,
+        priority: 'high',
+      },
+      {
+        title: 'Эскалировать инцидент на вторую линию',
+        stateKey: 'in_progress',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Закрыть обращение и спросить оценку',
+        stateKey: 'review',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'SLA по типам обращений',
@@ -550,16 +668,43 @@ const HR: TeamTemplateSeedEntry = {
       },
     ],
     states: [
-      { key: 'backlog', name: 'Заявка на найм', category: 'backlog', color: '#94A3B8', sequence: 1 },
+      {
+        key: 'backlog',
+        name: 'Заявка на найм',
+        category: 'backlog',
+        color: '#94A3B8',
+        sequence: 1,
+      },
       { key: 'in_progress', name: 'Подбор', category: 'started', color: '#3B82F6', sequence: 2 },
-      { key: 'review', name: 'Согласование оффера', category: 'started', color: '#F59E0B', sequence: 3 },
+      {
+        key: 'review',
+        name: 'Согласование оффера',
+        category: 'started',
+        color: '#F59E0B',
+        sequence: 3,
+      },
       { key: 'done', name: 'Нанят', category: 'completed', color: '#10B981', sequence: 4 },
       { key: 'cancelled', name: 'Отменено', category: 'cancelled', color: '#EF4444', sequence: 5 },
     ],
     typicalTasks: [
-      { title: 'Согласовать профиль кандидата с нанимающим менеджером', stateKey: 'backlog', estimatePoints: 1, priority: 'medium' },
-      { title: 'Провести первичные интервью пятёрки финалистов', stateKey: 'in_progress', estimatePoints: 5, priority: 'high' },
-      { title: 'Подготовить и согласовать оффер', stateKey: 'review', estimatePoints: 2, priority: 'high' },
+      {
+        title: 'Согласовать профиль кандидата с нанимающим менеджером',
+        stateKey: 'backlog',
+        estimatePoints: 1,
+        priority: 'medium',
+      },
+      {
+        title: 'Провести первичные интервью пятёрки финалистов',
+        stateKey: 'in_progress',
+        estimatePoints: 5,
+        priority: 'high',
+      },
+      {
+        title: 'Подготовить и согласовать оффер',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'high',
+      },
     ],
     regulationStubs: [
       'Регламент найма и испытательного срока',
@@ -622,9 +767,24 @@ const FINANCE: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Подготовить управленческую отчётность за месяц', stateKey: 'in_progress', estimatePoints: 5, priority: 'high' },
-      { title: 'Согласовать заявки на оплату на неделю', stateKey: 'review', estimatePoints: 2, priority: 'high' },
-      { title: 'Закрыть период и сверить остатки', stateKey: 'review', estimatePoints: 3, priority: 'medium' },
+      {
+        title: 'Подготовить управленческую отчётность за месяц',
+        stateKey: 'in_progress',
+        estimatePoints: 5,
+        priority: 'high',
+      },
+      {
+        title: 'Согласовать заявки на оплату на неделю',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Закрыть период и сверить остатки',
+        stateKey: 'review',
+        estimatePoints: 3,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Регламент согласования платежей',
@@ -687,9 +847,24 @@ const OPERATIONS: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Регулярно собрать статусы со всех подразделений', stateKey: 'in_progress', estimatePoints: 2, priority: 'medium' },
-      { title: 'Согласовать обновление регламента процесса', stateKey: 'review', estimatePoints: 3, priority: 'medium' },
-      { title: 'Подготовить разбор операционного инцидента', stateKey: 'in_progress', estimatePoints: 3, priority: 'high' },
+      {
+        title: 'Регулярно собрать статусы со всех подразделений',
+        stateKey: 'in_progress',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
+      {
+        title: 'Согласовать обновление регламента процесса',
+        stateKey: 'review',
+        estimatePoints: 3,
+        priority: 'medium',
+      },
+      {
+        title: 'Подготовить разбор операционного инцидента',
+        stateKey: 'in_progress',
+        estimatePoints: 3,
+        priority: 'high',
+      },
     ],
     regulationStubs: [
       'Карта ключевых операционных процессов',
@@ -751,15 +926,36 @@ const PRODUCT: TeamTemplateSeedEntry = {
     ],
     states: [
       { key: 'backlog', name: 'Гипотеза', category: 'backlog', color: '#94A3B8', sequence: 1 },
-      { key: 'in_progress', name: 'Исследование', category: 'started', color: '#3B82F6', sequence: 2 },
+      {
+        key: 'in_progress',
+        name: 'Исследование',
+        category: 'started',
+        color: '#3B82F6',
+        sequence: 2,
+      },
       { key: 'review', name: 'Согласование', category: 'started', color: '#F59E0B', sequence: 3 },
       { key: 'done', name: 'Релиз', category: 'completed', color: '#10B981', sequence: 4 },
       { key: 'cancelled', name: 'Отклонена', category: 'cancelled', color: '#EF4444', sequence: 5 },
     ],
     typicalTasks: [
-      { title: 'Подготовить гипотезу и план проверки', stateKey: 'backlog', estimatePoints: 2, priority: 'medium' },
-      { title: 'Согласовать релиз с маркетингом и поддержкой', stateKey: 'review', estimatePoints: 2, priority: 'high' },
-      { title: 'Замерить метрики после релиза', stateKey: 'done', estimatePoints: 2, priority: 'medium' },
+      {
+        title: 'Подготовить гипотезу и план проверки',
+        stateKey: 'backlog',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
+      {
+        title: 'Согласовать релиз с маркетингом и поддержкой',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Замерить метрики после релиза',
+        stateKey: 'done',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
     ],
     regulationStubs: [
       'Регламент проверки продуктовых гипотез',
@@ -773,8 +969,6 @@ const PRODUCT: TeamTemplateSeedEntry = {
     ],
   },
 };
-
-// ───────────────────────── 5 опциональных шаблонов ─────────────────────────
 
 const QUALITY_CONTROL: TeamTemplateSeedEntry = {
   slug: 'quality_control',
@@ -815,14 +1009,26 @@ const QUALITY_CONTROL: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Провести входной контроль партии', stateKey: 'in_progress', estimatePoints: 2, priority: 'high' },
-      { title: 'Оформить рекламацию поставщику', stateKey: 'review', estimatePoints: 2, priority: 'medium' },
-      { title: 'Подготовить отчёт по браку за месяц', stateKey: 'in_progress', estimatePoints: 3, priority: 'medium' },
+      {
+        title: 'Провести входной контроль партии',
+        stateKey: 'in_progress',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Оформить рекламацию поставщику',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
+      {
+        title: 'Подготовить отчёт по браку за месяц',
+        stateKey: 'in_progress',
+        estimatePoints: 3,
+        priority: 'medium',
+      },
     ],
-    regulationStubs: [
-      'Методики контроля по типам продукции',
-      'Регламент работы с рекламациями',
-    ],
+    regulationStubs: ['Методики контроля по типам продукции', 'Регламент работы с рекламациями'],
     kpiTemplates: [
       { name: 'Процент брака', frequency: 'monthly' },
       { name: 'Среднее время закрытия рекламации', frequency: 'monthly' },
@@ -833,8 +1039,7 @@ const QUALITY_CONTROL: TeamTemplateSeedEntry = {
 const LEGAL: TeamTemplateSeedEntry = {
   slug: 'legal',
   name: 'Юридическая команда',
-  description:
-    'Договоры, претензии, корпоративная поддержка. Сопровождение сделок и переговоров.',
+  description: 'Договоры, претензии, корпоративная поддержка. Сопровождение сделок и переговоров.',
   category: 'management',
   isPublic: false,
   definition: {
@@ -869,16 +1074,21 @@ const LEGAL: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Согласовать договор с контрагентом', stateKey: 'in_progress', estimatePoints: 3, priority: 'high' },
-      { title: 'Подготовить ответ на претензию', stateKey: 'review', estimatePoints: 2, priority: 'high' },
+      {
+        title: 'Согласовать договор с контрагентом',
+        stateKey: 'in_progress',
+        estimatePoints: 3,
+        priority: 'high',
+      },
+      {
+        title: 'Подготовить ответ на претензию',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'high',
+      },
     ],
-    regulationStubs: [
-      'Регламент согласования договоров',
-      'Политика работы с претензиями',
-    ],
-    kpiTemplates: [
-      { name: 'Среднее время согласования договора', frequency: 'monthly' },
-    ],
+    regulationStubs: ['Регламент согласования договоров', 'Политика работы с претензиями'],
+    kpiTemplates: [{ name: 'Среднее время согласования договора', frequency: 'monthly' }],
   },
 };
 
@@ -921,13 +1131,20 @@ const PROCUREMENT: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Провести тендер по позиции', stateKey: 'in_progress', estimatePoints: 5, priority: 'high' },
-      { title: 'Согласовать договор поставки', stateKey: 'review', estimatePoints: 2, priority: 'medium' },
+      {
+        title: 'Провести тендер по позиции',
+        stateKey: 'in_progress',
+        estimatePoints: 5,
+        priority: 'high',
+      },
+      {
+        title: 'Согласовать договор поставки',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
     ],
-    regulationStubs: [
-      'Регламент проведения тендеров',
-      'Политика работы с поставщиками',
-    ],
+    regulationStubs: ['Регламент проведения тендеров', 'Политика работы с поставщиками'],
     kpiTemplates: [
       { name: 'Доля закупок через тендер', frequency: 'monthly' },
       { name: 'Экономия по итогам тендеров', frequency: 'quarterly' },
@@ -938,8 +1155,7 @@ const PROCUREMENT: TeamTemplateSeedEntry = {
 const LOGISTICS: TeamTemplateSeedEntry = {
   slug: 'logistics',
   name: 'Команда логистики',
-  description:
-    'Транспорт, склад, маршруты, доставка клиентам. Координация поставок и хранения.',
+  description: 'Транспорт, склад, маршруты, доставка клиентам. Координация поставок и хранения.',
   category: 'operations',
   isPublic: false,
   definition: {
@@ -974,13 +1190,20 @@ const LOGISTICS: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Спланировать маршрут на неделю', stateKey: 'in_progress', estimatePoints: 2, priority: 'medium' },
-      { title: 'Согласовать тариф с перевозчиком', stateKey: 'review', estimatePoints: 2, priority: 'medium' },
+      {
+        title: 'Спланировать маршрут на неделю',
+        stateKey: 'in_progress',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
+      {
+        title: 'Согласовать тариф с перевозчиком',
+        stateKey: 'review',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
     ],
-    regulationStubs: [
-      'Регламент приёмки и отгрузки',
-      'Правила работы с перевозчиками',
-    ],
+    regulationStubs: ['Регламент приёмки и отгрузки', 'Правила работы с перевозчиками'],
     kpiTemplates: [
       { name: 'Доля доставок в срок', frequency: 'weekly' },
       { name: 'Стоимость доставки на заказ', frequency: 'monthly' },
@@ -1027,14 +1250,26 @@ const EVENTS: TeamTemplateSeedEntry = {
     ],
     states: STATES_DEFAULT_5,
     typicalTasks: [
-      { title: 'Запустить регистрацию участников', stateKey: 'in_progress', estimatePoints: 2, priority: 'high' },
-      { title: 'Согласовать программу с спикерами', stateKey: 'review', estimatePoints: 3, priority: 'high' },
-      { title: 'Провести разбор мероприятия и собрать обратную связь', stateKey: 'done', estimatePoints: 2, priority: 'medium' },
+      {
+        title: 'Запустить регистрацию участников',
+        stateKey: 'in_progress',
+        estimatePoints: 2,
+        priority: 'high',
+      },
+      {
+        title: 'Согласовать программу с спикерами',
+        stateKey: 'review',
+        estimatePoints: 3,
+        priority: 'high',
+      },
+      {
+        title: 'Провести разбор мероприятия и собрать обратную связь',
+        stateKey: 'done',
+        estimatePoints: 2,
+        priority: 'medium',
+      },
     ],
-    regulationStubs: [
-      'Регламент подготовки мероприятия',
-      'Чек-лист пост-мортема',
-    ],
+    regulationStubs: ['Регламент подготовки мероприятия', 'Чек-лист пост-мортема'],
     kpiTemplates: [
       { name: 'Доля участников, пришедших на мероприятие', frequency: 'monthly' },
       { name: 'NPS мероприятия', frequency: 'monthly' },
@@ -1042,7 +1277,6 @@ const EVENTS: TeamTemplateSeedEntry = {
   },
 };
 
-/** 10 системных шаблонов (isPublic=true). */
 export const SYSTEM_TEAM_TEMPLATES: readonly TeamTemplateSeedEntry[] = [
   SALES,
   DEVELOPMENT,
@@ -1056,7 +1290,6 @@ export const SYSTEM_TEAM_TEMPLATES: readonly TeamTemplateSeedEntry[] = [
   PRODUCT,
 ];
 
-/** 5 опциональных шаблонов (isPublic=false). */
 export const OPTIONAL_TEAM_TEMPLATES: readonly TeamTemplateSeedEntry[] = [
   QUALITY_CONTROL,
   LEGAL,
@@ -1065,7 +1298,6 @@ export const OPTIONAL_TEAM_TEMPLATES: readonly TeamTemplateSeedEntry[] = [
   EVENTS,
 ];
 
-/** Все 15 шаблонов в одном массиве. */
 export const ALL_TEAM_TEMPLATES: readonly TeamTemplateSeedEntry[] = [
   ...SYSTEM_TEAM_TEMPLATES,
   ...OPTIONAL_TEAM_TEMPLATES,

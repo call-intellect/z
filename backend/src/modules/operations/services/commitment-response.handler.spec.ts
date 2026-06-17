@@ -3,18 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { CommitmentResponseHandler } from './commitment-response.handler';
 
-/**
- * SBA β-8.2 — CommitmentResponseHandler unit-тесты.
- *
- * Покрываем:
- *   1. Игнор события не-`probe.question`.
- *   2. Игнор reason ≠ 'commitment.followup'.
- *   3. Игнор уже терминальных блоков (fulfilled/missed/cancelled/superseded).
- *   4. При status='fulfilled' создаёт commitment_status блок + resolves
- *      ребро + обновляет исходный.
- *   5. При status='missed' + blockerText создаёт дополнительный blocker блок.
- *   6. LLM упал → инкремент метрики, без апдейтов.
- */
 describe('CommitmentResponseHandler', () => {
   function build(overrides: {
     notif?: { payload: Record<string, unknown> } | null;
@@ -55,20 +43,18 @@ describe('CommitmentResponseHandler', () => {
     };
     const prisma = {
       notification: {
-        findUnique: vi
-          .fn()
-          .mockResolvedValue(
-            overrides.notif === undefined
-              ? {
-                  payload: {
-                    reason: 'commitment.followup',
-                    contextBlockId: 'orig-1',
-                  },
-                  recipientUserId: 'u1',
-                  tenantId: 't1',
-                }
-              : overrides.notif,
-          ),
+        findUnique: vi.fn().mockResolvedValue(
+          overrides.notif === undefined
+            ? {
+                payload: {
+                  reason: 'commitment.followup',
+                  contextBlockId: 'orig-1',
+                },
+                recipientUserId: 'u1',
+                tenantId: 't1',
+              }
+            : overrides.notif,
+        ),
       },
       ideaBlock: {
         findUnique: vi.fn().mockResolvedValue(
@@ -109,11 +95,7 @@ describe('CommitmentResponseHandler', () => {
       incCommitmentsMissed: vi.fn(),
       incCommitmentsExtractFailed: vi.fn(),
     };
-    const handler = new CommitmentResponseHandler(
-      prisma as never,
-      llm as never,
-      metrics as never,
-    );
+    const handler = new CommitmentResponseHandler(prisma as never, llm as never, metrics as never);
     return { handler, prisma, llm, metrics, txCalls, txMock };
   }
 
@@ -182,7 +164,6 @@ describe('CommitmentResponseHandler', () => {
       eventType: 'probe.question',
       payload: { text: 'сделано' },
     });
-    // 1 create (commitment_status), 1 link, 1 update.
     expect(txCalls.ideaBlockCreates).toBe(1);
     expect(txCalls.ideaBlockLinkCreates).toBe(1);
     expect(txCalls.ideaBlockUpdates).toBe(1);
@@ -204,7 +185,6 @@ describe('CommitmentResponseHandler', () => {
       eventType: 'probe.question',
       payload: { text: 'не сделал, жду подрядчика' },
     });
-    // 2 create (commitment_status + blocker), 1 link, 1 update.
     expect(txCalls.ideaBlockCreates).toBe(2);
     expect(txCalls.ideaBlockLinkCreates).toBe(1);
     expect(txCalls.ideaBlockUpdates).toBe(1);
@@ -241,7 +221,6 @@ describe('CommitmentResponseHandler', () => {
       eventType: 'probe.question',
       payload: { text: 'сделано' },
     });
-    // Несмотря на P2002 на линке — статус обновлён.
     expect(txCalls.ideaBlockCreates).toBe(1);
     expect(txCalls.ideaBlockUpdates).toBe(1);
   });

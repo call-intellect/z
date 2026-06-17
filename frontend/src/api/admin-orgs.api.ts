@@ -1,13 +1,7 @@
-/**
- * API-клиент для управления Org (Z-Admin Фаза 7 + Фаза 4 редизайна).
- *
- * Контракт: `backend/src/modules/admin/controllers/admin-orgs.controller.ts`.
- */
-
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
-import type { AdminOrgListApi, UpdateOrgRequest } from '@/domain/admin-org';
-import type { AdminPeriod } from '@/domain/admin-usage';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
+import type { AdminOrgListApi, UpdateOrgRequest } from "@/domain/admin-org";
+import type { AdminPeriod } from "@/domain/admin-usage";
 
 export type ListOrgsRequest = {
   period?: AdminPeriod;
@@ -19,13 +13,11 @@ export type ListOrgsRequest = {
   includeDeleted?: boolean;
 };
 
-/** Admin-redesign Фаза 4 — глобальная карточка `/admin/orgs/[id]`. */
-
 export type OrgOverviewApi = {
   id: string;
   name: string;
   slug: string;
-  tier: 'basic' | 'pro' | 'enterprise';
+  tier: "basic" | "pro" | "enterprise";
   createdAt: string;
   ownerEmail: string | null;
   membersCount: number;

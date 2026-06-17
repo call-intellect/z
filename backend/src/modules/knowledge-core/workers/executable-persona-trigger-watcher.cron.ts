@@ -6,39 +6,11 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ExecutablePersonaVersioningService } from '../services/executable-persona-versioning.service';
 
-/**
- * SBA γ-1 доделки + Фаза 5 «clone reliability hardening» —
- * ExecutablePersonaTriggerWatcherCron.
- *
- * Раз в 2 часа (`0 *\/2 * * *`) проходит по active SkillProfile'ям Org и
- * проверяет триггеры для внеочередного rebuild'а ExecutablePersona:
- *
- *   1. **critical** — если с момента `lastSnapshotAt` появился SkillTrait с
- *      `status='misleading'` И `misleadingFlaggedAt > lastSnapshotAt` И
- *      severity='critical' (severity хранится в `misleadingReason`
- *      JSON-сериализованным префиксом `[severity=critical]`).
- *   2. **trait_delta** — если за последние 24 часа (`createdAt > now-24h`)
- *      появилось ≥ `cfg.skill.personaRebuildTraitDeltaThreshold` (default 2)
- *      новых или замещённых active SkillTrait. Это пересечение с
- *      `createdAt > lastSnapshotAt` — учитываются только traits, которые
- *      ещё не вошли в активный snapshot.
- *   3. **max_age** — если возраст активного snapshot ≥
- *      `cfg.skill.personaRebuildMaxAgeHours` (default 48) — rebuild
- *      ставится даже без новых черт.
- *
- * Запуск rebuild'а — через `ExecutablePersonaVersioningService.triggerRebuild`,
- * который применяет Redis-SETNX замок per profile, чтобы не дёргать одну
- * persona несколько раз. Метрики: `persona_rebuild_triggered_total{reason}`
- * (counter, reason ∈ `trait_delta` | `max_age`).
- *
- * Cron disabled-by-tunable: если cfg.persona.scheduledRebuildEnabled = false,
- * этот cron всё равно работает — он про trigger-based, а не про weekly snapshot.
- */
 @Injectable()
 export class ExecutablePersonaTriggerWatcherCron {
   private readonly logger = new Logger(ExecutablePersonaTriggerWatcherCron.name);
   private static readonly MAX_PROFILES_PER_SWEEP = 500;
-  private static readonly TRAIT_DELTA_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
+  private static readonly TRAIT_DELTA_WINDOW_MS = 24 * 60 * 60 * 1000;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
@@ -59,10 +31,7 @@ export class ExecutablePersonaTriggerWatcherCron {
         summary.triggeredCritical > 0 ||
         summary.skippedLocked > 0
       ) {
-        this.logger.debug(
-          summary,
-          'executable-persona-trigger-watcher: проход завершён',
-        );
+        this.logger.debug(summary, 'executable-persona-trigger-watcher: проход завершён');
       } else {
         this.logger.debug(
           summary,
@@ -77,7 +46,6 @@ export class ExecutablePersonaTriggerWatcherCron {
     }
   }
 
-  /** Public — для возможного админ-эндпоинта / ручного запуска. */
   async runOnce(): Promise<{
     profilesScanned: number;
     triggeredTraitDelta: number;
@@ -101,9 +69,6 @@ export class ExecutablePersonaTriggerWatcherCron {
     let skippedNoNewActivity = 0;
     let profilesScanned = 0;
 
-    // Б14: тот же orderBy «самые несвежие первыми» (lastBuildAt asc nulls first)
-    //      + курсор по всему хвосту, чтобы staleness-проверка доходила до всех
-    //      профилей, а не только до первых MAX по scan-order.
     let profileCursor: string | undefined;
     for (;;) {
       const profiles = await this.prisma.skillProfile.findMany({
@@ -118,19 +83,16 @@ export class ExecutablePersonaTriggerWatcherCron {
 
       for (const profile of profiles) {
         try {
-          // Найти последний snapshot (active или superseded — нужен max version).
           const latest = await this.prisma.executablePersona.findFirst({
             where: { profileId: profile.id, scope: 'person' },
             orderBy: { snapshotAt: 'desc' },
             select: { snapshotAt: true },
           });
           if (!latest) {
-            // Ещё не было ни одного snapshot — weekly cron его создаст, не дёргаем сейчас.
             skippedNoSnapshotYet++;
             continue;
           }
 
-          // 1. Critical: ищем mark_as_misleading 'critical' с момента last snapshot.
           const criticalMisleading = await this.prisma.skillTrait.findFirst({
             where: {
               profileId: profile.id,
@@ -155,8 +117,6 @@ export class ExecutablePersonaTriggerWatcherCron {
             continue;
           }
 
-          // 2. trait_delta: ≥ threshold новых active traits за последние 24 часа,
-          //    которые ещё не вошли в активный snapshot.
           const traitDeltaCutoff =
             windowStart > latest.snapshotAt ? windowStart : latest.snapshotAt;
           const newTraitsCount = await this.prisma.skillTrait.count({
@@ -190,7 +150,6 @@ export class ExecutablePersonaTriggerWatcherCron {
             continue;
           }
 
-          // 3. max_age: возраст активного snapshot превысил порог.
           const ageMs = now - latest.snapshotAt.getTime();
           if (ageMs >= maxAgeMs) {
             const result = await this.versioning.triggerRebuild({

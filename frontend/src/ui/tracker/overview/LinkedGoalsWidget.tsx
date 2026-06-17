@@ -1,19 +1,13 @@
-'use client';
+"use client";
 
-/**
- * Tracker Project Overview — связанные цели проекта.
- *
- * Уникальные goalId из задач проекта → список Goal с cachedAlignment.
- */
-
-import type { OverviewLinkedGoalApi } from '@/domain/tracker/overview';
+import type { OverviewLinkedGoalApi } from "@/domain/tracker/overview";
 
 const GOAL_STATUS_LABEL: Record<string, string> = {
-  active: 'В работе',
-  achieved: 'Достигнута',
-  abandoned: 'Отменена',
-  cancelled: 'Отменена',
-  paused: 'Приостановлена',
+  active: "В работе",
+  achieved: "Достигнута",
+  abandoned: "Отменена",
+  cancelled: "Отменена",
+  paused: "Приостановлена",
 };
 
 export function LinkedGoalsWidget({

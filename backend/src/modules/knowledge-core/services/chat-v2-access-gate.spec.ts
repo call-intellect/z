@@ -1,15 +1,3 @@
-/**
- * Ф4 knowledge-access — фокус-тесты выходного шлюза chat-v2
- * (приватный `loadContextBlocks`). Проверяем гейт-семантику:
- *   - off (accessCtx=null) → partition НЕ вызывается, выдача = все blockIds.
- *   - enforce → недоступные отфильтрованы + incAccessDenied.
- *   - shadow → выдача НЕ меняется + incAccessShadowDiff.
- *
- * Прямой вызов приватного метода через any-cast — изолируем шлюз от
- * retrieval/LLM. prisma.ideaBlock.findMany возвращает блоки по effectiveIds;
- * evidence/rawEvent/meeting findMany — пустые (primaryMeetingEvidence=null,
- * для гейт-логики не важно).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -47,9 +35,7 @@ function buildService(opts: {
     meeting: { findMany: vi.fn(async () => []) },
   } as unknown as PrismaService;
 
-  const partitionSpy = vi.fn(
-    async () => opts.partition ?? { accessible: [], denied: 0 },
-  );
+  const partitionSpy = vi.fn(async () => opts.partition ?? { accessible: [], denied: 0 });
   const accessResolver = {
     partitionBlockIdsByAccess: partitionSpy,
   } as unknown as KnowledgeAccessResolver;
@@ -63,9 +49,9 @@ function buildService(opts: {
 
   const service = new ChatV2Service(
     prisma,
-    {} as never, // cfg — не используется в loadContextBlocks
-    {} as never, // llm
-    {} as never, // retrieval
+    {} as never,
+    {} as never,
+    {} as never,
     metrics,
     accessResolver,
   );
@@ -81,9 +67,9 @@ type LoadContextBlocks = (
 ) => Promise<Array<{ id: string }>>;
 
 function loadCtx(service: ChatV2Service): LoadContextBlocks {
-  // Приватный метод — вызываем через any-cast (привязка к инстансу).
-  return (service as unknown as { loadContextBlocks: LoadContextBlocks })
-    .loadContextBlocks.bind(service);
+  return (service as unknown as { loadContextBlocks: LoadContextBlocks }).loadContextBlocks.bind(
+    service,
+  );
 }
 
 const ALL_IDS = ['b1', 'b2', 'b3'];
@@ -99,7 +85,6 @@ describe('ChatV2Service.loadContextBlocks — Ф4 гейт доступа', () =
     const out = await loadCtx(service)('t-1', ALL_IDS, null, 'off', 'chat');
     expect(partitionSpy).not.toHaveBeenCalled();
     expect(out.map((b) => b.id).sort()).toEqual(['b1', 'b2', 'b3']);
-    // findMany получил все blockIds (байт-в-байт).
     expect(blockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: { in: ALL_IDS } }),
@@ -108,8 +93,6 @@ describe('ChatV2Service.loadContextBlocks — Ф4 гейт доступа', () =
   });
 
   it('bypass-ctx → partition НЕ влияет (resolver сам вернёт все), выдача = все', async () => {
-    // bypass: partition вернёт все accessible, но мы проверяем что enforce
-    // всё равно вызывает partition (он внутри сам шорткатит bypass).
     const ctx: KnowledgeAccessContext = {
       deptGroupIds: [],
       closedGroupIds: [],
@@ -117,7 +100,6 @@ describe('ChatV2Service.loadContextBlocks — Ф4 гейт доступа', () =
     };
     const { service, partitionSpy } = buildService({ blockRows: ROWS });
     const out = await loadCtx(service)('t-1', ALL_IDS, ctx, 'enforce', 'chat');
-    // isBypass → метод не зовёт partition (ранний выход по ctx.isBypass).
     expect(partitionSpy).not.toHaveBeenCalled();
     expect(out.map((b) => b.id).sort()).toEqual(['b1', 'b2', 'b3']);
   });
@@ -129,12 +111,11 @@ describe('ChatV2Service.loadContextBlocks — Ф4 гейт доступа', () =
       isBypass: false,
     };
     const { service, partitionSpy, incDenied, incShadow, blockFindMany } = buildService({
-      blockRows: ROWS.filter((r) => r.id !== 'b2'), // b2 отфильтрован шлюзом
+      blockRows: ROWS.filter((r) => r.id !== 'b2'),
       partition: { accessible: ['b1', 'b3'], denied: 1 },
     });
     const out = await loadCtx(service)('t-1', ALL_IDS, ctx, 'enforce', 'chat');
     expect(partitionSpy).toHaveBeenCalledWith(ctx, ALL_IDS);
-    // findMany получил только accessible.
     expect(blockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: { in: ['b1', 'b3'] } }),
@@ -152,12 +133,11 @@ describe('ChatV2Service.loadContextBlocks — Ф4 гейт доступа', () =
       isBypass: false,
     };
     const { service, partitionSpy, incDenied, incShadow, blockFindMany } = buildService({
-      blockRows: ROWS, // выдача неизменна
+      blockRows: ROWS,
       partition: { accessible: ['b1', 'b3'], denied: 1 },
     });
     const out = await loadCtx(service)('t-1', ALL_IDS, ctx, 'shadow', 'chat');
     expect(partitionSpy).toHaveBeenCalledWith(ctx, ALL_IDS);
-    // findMany получил ВСЕ blockIds — выдача байт-в-байт.
     expect(blockFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: { in: ALL_IDS } }),

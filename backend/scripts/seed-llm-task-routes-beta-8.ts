@@ -1,24 +1,3 @@
-/**
- * SBA β-8 — Seed маршрутов LLM для DailyCheckIn + OperationsDashboard.
- *
- *   - checkin-parse — парсинг сырого ответа сотрудника (морнинг/ивнинг) в
- *     структурированный { plans, dones, blockers } + confidence.
- *     Чувствителен к точности (от confidence зависит curatorReview). Primary
- *     = deepseek-chat (компромисс цена/качество), secondary = gpt-4o-mini,
- *     tertiary = ollama qwen3.5:9b.
- *   - operations-summary — narrative summary для COO дашборда (необязательное
- *     поле viewа). Тот же провайдерский профиль.
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-beta-8.ts
- *   bun run scripts/seed-llm-task-routes-beta-8.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - editedByAdmin=true → НЕ перезаписываем.
- *   - Без --update-existing — пропускаем существующие записи.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -99,17 +78,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -134,18 +109,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-beta-8 START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-beta-8 START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

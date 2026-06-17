@@ -1,24 +1,3 @@
-/**
- * Patch (SBA α-3) — переименование Entity.type='client' → 'customer'.
- *
- * Postgres не поддерживает `DROP/RENAME VALUE` для enum'а напрямую, поэтому
- * в schema.prisma мы оставили оба значения (`client` deprecated + `customer`).
- * Этот скрипт переписывает существующие Entity, сохраняя id (никаких каскадных
- * изменений в IdeaBlockEntity / EntityLink / Card.entityId — все references
- * по id остаются валидны).
- *
- * Запуск:
- *   bun run scripts/patch-rename-client-to-customer.ts          — реальное обновление
- *   bun run scripts/patch-rename-client-to-customer.ts --dry-run — только подсчёт
- *
- * Идемпотентно: повторный запуск увидит `count=0` (все client уже converted).
- *
- * После применения в проде:
- *   1. Убедиться, что в БД 0 строк с type='client': `SELECT COUNT(*) FROM "Entity" WHERE type='client';`.
- *   2. В будущей фазе удалить значение `client` из enum'а (через миграцию
- *      с full rebuild enum). На α-3 НЕ удаляем — оставляем deprecated.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 import { enumHasValue } from './_lib/schema-guards';
@@ -29,13 +8,8 @@ async function main(): Promise<void> {
   const prisma = createPrismaClient();
   try {
     /* eslint-disable no-console */
-    console.log(
-      `=== patch-rename-client-to-customer START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`,
-    );
+    console.log(`=== patch-rename-client-to-customer START (${DRY_RUN ? 'DRY-RUN' : 'REAL'}) ===`);
 
-    // Guard: если значение 'client' уже удалено из enum EntityType (cleanup-
-    // миграция прошла в прошлый выкат) — raw-cast 'client'::"EntityType" ниже
-    // упал бы ошибкой Postgres. Выходим чисто.
     if (!(await enumHasValue(prisma, 'EntityType', 'client'))) {
       console.log(
         "enum-значение 'client' уже удалено из EntityType — миграция применена ранее, обновление не требуется.",
@@ -43,7 +17,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Подсчитаем кандидатов до изменения.
     const beforeRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
       SELECT COUNT(*)::bigint AS count FROM "Entity" WHERE type = 'client'::"EntityType"
     `;
@@ -60,8 +33,6 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Выполняем raw UPDATE: Prisma client сам не умеет менять enum-значение
-    // на новое в одной транзакции — proще $executeRawUnsafe.
     const result = await prisma.$executeRawUnsafe(
       `UPDATE "Entity" SET type = 'customer'::"EntityType" WHERE type = 'client'::"EntityType"`,
     );
@@ -74,9 +45,7 @@ async function main(): Promise<void> {
     const after = Number(afterRows[0]?.count ?? 0n);
     console.log(`Осталось с type='client': ${after}`);
     if (after !== 0) {
-      console.warn(
-        '!!! После UPDATE остались строки type=client — нужно расследовать.',
-      );
+      console.warn('!!! После UPDATE остались строки type=client — нужно расследовать.');
     }
     console.log('=== patch-rename-client-to-customer DONE ===');
     /* eslint-enable no-console */

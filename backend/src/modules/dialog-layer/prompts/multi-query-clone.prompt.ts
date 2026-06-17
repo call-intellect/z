@@ -1,23 +1,3 @@
-/**
- * ТЗ 2026-05-25 §9.4.4 (clone-respond эволюция, Фаза 7) — system prompt
- * для multi-query расширения в режиме `clone`.
- *
- * В отличие от общего `dialog-multi-query` (3 синонимические переформулировки
- * одного и того же вопроса), для клона важен retrieval по аналогии —
- * чтобы клон мог опереться на похожий опыт, даже если терминология вопроса
- * не совпадает с тем, что хранится в reasoning-блоках.
- *
- * Возвращает 3 формулировки:
- *  1. Оригинальный вопрос (как есть — для точного матча по теме).
- *  2. Похожие ситуации с другими объектами / в других контекстах
- *     (поиск ситуационных аналогов).
- *  3. Общие принципы / эвристики решения этого класса задач
- *     (поиск принципов, по которым носитель обычно действует).
- *
- * taskType — `dialog-multi-query-clone` (отдельный маршрут, см.
- * scripts/seed-llm-task-routes-clone-v2.ts; primary — deepseek-v4-pro).
- */
-
 export const DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT = `Ты — помощник по
 расширению поиска для «клона должности». На входе один вопрос; на выходе
 3 формулировки того же запроса, нацеленные на retrieval разных типов
@@ -45,11 +25,6 @@ export const DIALOG_MULTI_QUERY_CLONE_SYSTEM_PROMPT = `Ты — помощник
 {"queries": ["<точная>", "<аналог-ситуация>", "<общий принцип>"]}
 без markdown-блоков, без префиксов.`;
 
-/**
- * JSON Schema strict для DeepSeek/OpenAI. Совпадает по форме с
- * `DIALOG_QUERY_UNDERSTAND_JSON_SCHEMA` в query-understand.prompt.ts (тот же
- * wrapper `{ queries: string[] }`), но используется отдельным route'ом.
- */
 export const DIALOG_MULTI_QUERY_CLONE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -64,8 +39,6 @@ export const DIALOG_MULTI_QUERY_CLONE_JSON_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-export function buildMultiQueryCloneUserPrompt(args: {
-  question: string;
-}): string {
+export function buildMultiQueryCloneUserPrompt(args: { question: string }): string {
   return `Вопрос к клону: ${args.question}\n\n3 формулировки (точная / аналог-ситуация / общий принцип):`;
 }

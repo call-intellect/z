@@ -8,23 +8,6 @@ import { RedisService } from '../../../common/redis/redis.service';
 import { FunctionalDomainService } from '../services/functional-domain.service';
 import { tenantTopLabel } from '../utils/tenant-top';
 
-/**
- * SBA α-9 wave 3 — DomainExpanderCron.
- *
- * Раз в сутки (04:00 UTC) на каждый tenant с заметным потоком IdeaBlock-сигналов
- * запускает дедупликацию unmatched функциональных тем (signalType='functional_topic'
- * или близкие — пока эвристически берём блоки с непустым `themes` и без
- * `entityId`-привязки к существующему домену).
- *
- * Anti-spam (sub-TZ §3.3 + §17):
- *   - не более `domainExpanderMaxNewPerRun` новых доменов за один проход (default 5);
- *   - кластер должен быть из ≥ `domainExpanderMinClusterSize` (default 10) блоков;
- *   - Redis SETNX на cluster-hash (TTL 24h) — дедуп между запусками.
- *
- * NB: на момент wave 3 «настоящий» LLM-вызов делается опционально (см. ENV
- * `DOMAIN_EXPANDER_ENABLED`). Если LLM не сконфигурирован — крон только
- * логирует «кандидатов», не создавая домены. Это снижает риск spam'а на старте.
- */
 @Injectable()
 export class DomainExpanderCron {
   private readonly logger = new Logger(DomainExpanderCron.name);
@@ -64,34 +47,14 @@ export class DomainExpanderCron {
     }
   }
 
-  /**
-   * Per-tenant обход. Возвращает кол-во созданных доменов.
-   *
-   * Алгоритм MVP (heuristic, без LLM):
-   *   1. Берём IdeaBlock с `themes` массивом ≥ 1, созданные за неделю,
-   *      без связки с уже существующим Domain.
-   *   2. Группируем по нормализованному theme-string.
-   *   3. Фильтруем кластеры размером ≥ minClusterSize.
-   *   4. Для каждого кластера: считаем cluster-hash (sha1 от sortедых theme-id),
-   *      если Redis SETNX срабатывает — создаём FunctionalDomain (с
-   *      `isSystem=false`, `confidence`).
-   *   5. Останавливаемся после maxNewPerRun.
-   */
   private async runForTenant(tenantId: string): Promise<number> {
     const minSize = this.cfg.companyFoundation.domainExpanderMinClusterSize;
     const maxNew = this.cfg.companyFoundation.domainExpanderMaxNewPerRun;
     const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    // ── MVP-эвристика: groupBy tag в IdeaBlock'ах за неделю.
-    // ВАЖНО: таблица Postgres — "IdeaBlock" (Prisma без @@map, PascalCase,
-    // колонки camelCase в кавычках). Группируем по массиву `tags` (String[]);
-    // `themes` у IdeaBlock — реляция (ThemeIdeaBlock[]), не колонка. Активные
-    // блоки = mergedIntoId IS NULL (soft-delete поля deletedAt в модели нет).
     let rows: { theme: string; count: number }[];
     try {
-      const raw = await this.prisma.$queryRaw<
-        { theme: string; count: bigint }[]
-      >`
+      const raw = await this.prisma.$queryRaw<{ theme: string; count: bigint }[]>`
         SELECT unnest(tags) AS theme, COUNT(*) AS count
         FROM "IdeaBlock"
         WHERE "tenantId" = ${tenantId}
@@ -105,7 +68,6 @@ export class DomainExpanderCron {
       `;
       rows = raw.map((r) => ({ theme: r.theme, count: Number(r.count) }));
     } catch (err) {
-      // Не должно падать после фикса имён; на всякий случай — graceful skip.
       this.logger.debug(
         {
           tenantId,
@@ -117,7 +79,6 @@ export class DomainExpanderCron {
     }
     if (rows.length === 0) return 0;
 
-    // Уже существующие slug'и.
     const existing = await this.prisma.functionalDomain.findMany({
       where: { tenantId, deletedAt: null },
       select: { slug: true, name: true },
@@ -138,13 +99,7 @@ export class DomainExpanderCron {
       const ttlSeconds = 24 * 60 * 60;
       let claimed: boolean;
       try {
-        const r = await this.redis.client.set(
-          dedupKey,
-          '1',
-          'EX',
-          ttlSeconds,
-          'NX',
-        );
+        const r = await this.redis.client.set(dedupKey, '1', 'EX', ttlSeconds, 'NX');
         claimed = r === 'OK';
       } catch (err) {
         this.logger.debug(
@@ -188,10 +143,7 @@ export class DomainExpanderCron {
     if (created > 0) {
       const tenantTop = await tenantTopLabel(this.prisma, tenantId);
       this.metrics.incDomainExpanderCreated({ tenantTop, count: created });
-      this.logger.debug(
-        { tenantId, created },
-        'domain-expander.cron: созданы новые домены',
-      );
+      this.logger.debug({ tenantId, created }, 'domain-expander.cron: созданы новые домены');
     }
     return created;
   }
@@ -210,8 +162,37 @@ export class DomainExpanderCron {
 }
 
 const RU_LAT: Record<string, string> = {
-  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
-  и: 'i', й: 'i', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
-  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh',
-  щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  а: 'a',
+  б: 'b',
+  в: 'v',
+  г: 'g',
+  д: 'd',
+  е: 'e',
+  ё: 'e',
+  ж: 'zh',
+  з: 'z',
+  и: 'i',
+  й: 'i',
+  к: 'k',
+  л: 'l',
+  м: 'm',
+  н: 'n',
+  о: 'o',
+  п: 'p',
+  р: 'r',
+  с: 's',
+  т: 't',
+  у: 'u',
+  ф: 'f',
+  х: 'h',
+  ц: 'ts',
+  ч: 'ch',
+  ш: 'sh',
+  щ: 'sch',
+  ъ: '',
+  ы: 'y',
+  ь: '',
+  э: 'e',
+  ю: 'yu',
+  я: 'ya',
 };

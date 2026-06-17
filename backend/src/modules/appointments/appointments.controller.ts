@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -38,18 +35,6 @@ import {
 } from './dto/appointments.dto';
 import { AppointmentsService } from './services/appointments.service';
 
-/**
- * SBA α-8 wave 3 — REST API назначений (Appointment).
- *
- *   GET    /api/v1/appointments?personId=&roleId=&departmentId=&status=&activeOnly=
- *   GET    /api/v1/appointments/:id
- *   POST   /api/v1/appointments
- *   PATCH  /api/v1/appointments/:id
- *   DELETE /api/v1/appointments/:id           (soft archive)
- *   GET    /api/v1/appointments/persons/:personId/timeline
- *
- * RBAC ресурс — `appointment`. owner/admin — read/write/delete. manager — read.
- */
 @ApiTags('appointments')
 @Controller('api/v1/appointments')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -89,8 +74,7 @@ export class AppointmentsController {
 
   @Get('entities/:entityId/timeline')
   @ApiOperation({
-    summary:
-      'Timeline по Entity{type=person}.id (резолв Person через Person.entityId)',
+    summary: 'Timeline по Entity{type=person}.id (резолв Person через Person.entityId)',
   })
   async entityTimeline(
     @Param('entityId') entityId: string,
@@ -163,8 +147,6 @@ export class AppointmentsController {
     });
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -185,9 +167,7 @@ export class AppointmentsController {
   private async requireWrite(userId: string, tenantId: string): Promise<void> {
     const ok = await this.rbac.canWrite(userId, tenantId, 'appointment');
     if (!ok) {
-      throw this.forbidden(
-        'Изменять назначения может только владелец/администратор Org',
-      );
+      throw this.forbidden('Изменять назначения может только владелец/администратор Org');
     }
   }
 
@@ -199,9 +179,7 @@ export class AppointmentsController {
       act: 'delete',
     });
     if (!ok) {
-      throw this.forbidden(
-        'Архивировать назначения может только владелец/администратор Org',
-      );
+      throw this.forbidden('Архивировать назначения может только владелец/администратор Org');
     }
   }
 

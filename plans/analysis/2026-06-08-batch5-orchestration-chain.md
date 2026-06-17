@@ -7,8 +7,8 @@ related:
   - plans/tz/2026-06-08-agents-daily-value-engine.md
   - plans/tz/2026-06-08-dashboards-info-rework.md
   - plans/tz/2026-06-08-dashboards-redesign-modern-visual-language.md
-  - plans/tz/2026-06-08-manual-document-upload-and-import-tz.md
-  - plans/tz/2026-06-08-meeting-upload-diarized-speaker-mapping.md
+  - plans/archive/2026-06-08-manual-document-upload-and-import-tz.md
+  - plans/archive/2026-06-08-meeting-upload-diarized-speaker-mapping.md
 ---
 
 # Батч из 5 ТЗ — единая цепочка реализации (оркестрация)

@@ -1,10 +1,3 @@
-/**
- * Smoke-тест агента `reframing` на DeepSeek-V4-Pro.
- * Промпт встроен в backend/src/modules/knowledge-core/workers/reframing.cron.ts
- * (константа REFRAMING_SYSTEM_PROMPT).
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-reframing.ts
- */
 import {
   client,
   computeCost,
@@ -19,7 +12,6 @@ import {
 
 const TASK_TYPE = 'reframing';
 
-// Дубль системного промпта из reframing.cron.ts (build-блок).
 const REFRAMING_SYSTEM_PROMPT = `Ты — аналитик, переосмысливающий граф знания компании.
 На вход — список IdeaBlock'ов за последнюю неделю (имя + критический вопрос + доверенный ответ).
 
@@ -43,7 +35,6 @@ interface Fixture {
   }>;
 }
 
-// DeepSeek-Pro thinking не поддерживает json_schema strict — используем tools+auto.
 const TOOL = {
   type: 'function' as const,
   function: {

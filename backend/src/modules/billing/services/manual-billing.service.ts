@@ -1,39 +1,6 @@
-/**
- * ManualBillingService — admin-операции с подпиской.
- *
- * Главные сценарии (ТЗ §11.4 + §14 Фаза 4):
- *   - activate({paymentMode: 'paid' | 'bonus'}) — включить ACTIVE-подписку
- *     с обязательным `reason`. Создаёт Invoice + грант MeetingsBalance.
- *   - adjustSeats({newSeatsExtra, reason}) — изменить число доп. мест.
- *     Pro-rata доплата создаётся как Invoice (paid в случае увеличения;
- *     при уменьшении — без Invoice, баланс встреч НЕ уменьшается).
- *   - forceStatus({newStatus, reason}) — обход FSM (super_admin only).
- *
- * Бизнес-правила:
- *   - paymentMode='paid'   → Invoice.status='paid', эмитит `invoice.paid`
- *     (триггер реф-комиссии 20 000 ₽, Фаза 6).
- *   - paymentMode='bonus' → Invoice.status='bonus', эмитит `invoice.bonus`
- *     (НЕ триггерит реф-комиссию).
- *   - При активации: грант встреч = calculateMeetingsGrant(seatsExtra).
- *   - Все операции пишут в `AdminAuditLog` (через PrismaService напрямую —
- *     `AdminAuditLogService` в Z не существует как отдельный сервис).
- *
- * Источник: plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §7.1 + §11.4.
- */
-
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  Logger,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import type {
-  BillingPeriod,
-  Subscription,
-  SubscriptionStatus,
-} from '@prisma/client';
+import type { BillingPeriod, Subscription, SubscriptionStatus } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { MeetingsBalanceService } from '../../meetings-balance/meetings-balance.service';
@@ -43,18 +10,11 @@ import {
   SubscriptionEventType,
   type InvoiceItem,
 } from '../billing.types';
-import {
-  BillingEvent,
-  type SubscriptionActivatedPayload,
-} from '../events/billing.events';
+import { BillingEvent, type SubscriptionActivatedPayload } from '../events/billing.events';
 
 import { BillingEventService } from './billing-event.service';
 import { InvoiceService } from './invoice.service';
-import {
-  SeatService,
-  YEARLY_MONTHS,
-  type SubscriptionPricing,
-} from './seat.service';
+import { SeatService, YEARLY_MONTHS, type SubscriptionPricing } from './seat.service';
 import { SubscriptionService } from './subscription.service';
 
 export interface AdminActivateInput {
@@ -63,13 +23,9 @@ export interface AdminActivateInput {
   seatsBase?: number;
   seatsExtra: number;
   startedAt: Date;
-  // 2026-06-01 — `reference` (эталонная демо-Org) активируется CLI-скриптом
-  // `patch-create-reference-demo-org.ts` напрямую через Prisma, минуя
-  // manual-billing/admin-billing. Поэтому admin-activate допускает только paid|bonus.
   paymentMode: 'paid' | 'bonus';
   reason: string;
   byUserId: string;
-  /** Внешний референс (номер платёжки клиента). Опционален. */
   externalRef?: string | null;
 }
 
@@ -78,8 +34,6 @@ export interface AdminAdjustSeatsInput {
   newSeatsExtra: number;
   reason: string;
   byUserId: string;
-  /** Сколько дней/месяцев осталось до конца текущего периода — для pro-rata.
-   * Передаётся вызывающей стороной (в e2e/тесте — вычислимо из subscription). */
   daysLeftInMonthlyPeriod?: number;
   monthsLeftInYearlyPeriod?: number;
 }
@@ -106,27 +60,16 @@ export class ManualBillingService {
     private readonly meetingsBalance: MeetingsBalanceService,
   ) {}
 
-  /**
-   * Включить ACTIVE-подписку (paid или bonus). Создаёт Invoice сразу в
-   * статусе paid/bonus + грантует встречи + пишет AdminAuditLog.
-   *
-   * Идемпотентность: если подписка уже ACTIVE с тем же режимом и текущий
-   * период покрывает заданный — отказ через ConflictException (admin должен
-   * сначала отменить).
-   */
   async activate(input: AdminActivateInput): Promise<{
     subscription: Subscription;
     invoiceId: string;
     grantedMeetings: number;
   }> {
     if (input.reason.trim().length < 3) {
-      throw new BadRequestException(
-        'reason обязателен (≥3 символа) для admin-активации',
-      );
+      throw new BadRequestException('reason обязателен (≥3 символа) для admin-активации');
     }
     this.validateSeats(input.seatsExtra);
 
-    // Подписка должна существовать (создана при регистрации Org). Если нет — создаём.
     let subscription = await this.subscriptions.getByTenant(input.tenantId);
     subscription ??= await this.subscriptions.ensureDemo(input.tenantId);
 
@@ -136,7 +79,6 @@ export class ManualBillingService {
       );
     }
 
-    // Расчёт периода и суммы.
     const periodEnd = this.calculatePeriodEnd(input.startedAt, input.billingPeriod);
     const pricing = await this.seats.calculatePricing(
       input.billingPeriod === 'monthly' ? 'monthly' : 'yearly',
@@ -145,8 +87,6 @@ export class ManualBillingService {
     const items = this.buildItems(input.seatsExtra, input.billingPeriod, pricing);
     const monthlyPriceKopecks = pricing.monthlyKopecks;
 
-    // Транзакция: Invoice (сразу paid/bonus) + Subscription update +
-    // SubscriptionEvent. После tx: грант MeetingsBalance + emit.
     const grantAmount = await this.seats.calculateMeetingsGrant(input.seatsExtra);
 
     const txResult = await this.prisma.$transaction(async (tx) => {
@@ -161,8 +101,6 @@ export class ManualBillingService {
         tx,
       });
 
-      // Если paymentMode='paid', сразу маркируем как paid (invoice.create
-      // ставит status=draft по умолчанию).
       const markedInvoice =
         input.paymentMode === 'paid'
           ? await this.invoices.markPaid(
@@ -203,17 +141,15 @@ export class ManualBillingService {
             input.paymentMode === 'paid'
               ? subscription!.totalPaidKopecks + markedInvoice.totalKopecks
               : subscription!.totalPaidKopecks,
-          autoRenew: false, // ручная активация — без автопродления
+          autoRenew: false,
           renewalMethod: null,
-          // providerName: manual — null, потому что provider не задействован.
           providerName: null,
           providerSubscriptionId: null,
         },
-        force: subscription!.status === 'DEMO' ? false : false, // FSM сам разрешит
+        force: subscription!.status === 'DEMO' ? false : false,
         tx,
       });
 
-      // BillingEventLog для аудита.
       await this.eventLog.log({
         eventType:
           input.paymentMode === 'paid'
@@ -234,7 +170,6 @@ export class ManualBillingService {
         tx,
       });
 
-      // AdminAuditLog (общий для всего Z админ-аудита).
       await tx.adminAuditLog.create({
         data: {
           actorId: input.byUserId,
@@ -254,7 +189,6 @@ export class ManualBillingService {
       return { subscription: updatedSub, invoiceId: markedInvoice.id };
     });
 
-    // Side-effects ПОСЛЕ транзакции.
     await this.meetingsBalance.grant(input.tenantId, grantAmount);
 
     const activatedPayload: SubscriptionActivatedPayload = {
@@ -285,11 +219,6 @@ export class ManualBillingService {
     };
   }
 
-  /**
-   * Изменить число доп. мест. При увеличении — pro-rata доплата (Invoice
-   * paid сразу) + грант доп. встреч. При уменьшении — обновляем счётчик,
-   * без счёта и без отъёма баланса.
-   */
   async adjustSeats(input: AdminAdjustSeatsInput): Promise<{
     subscription: Subscription;
     invoiceId: string | null;
@@ -312,7 +241,6 @@ export class ManualBillingService {
       return { subscription: sub, invoiceId: null, grantedMeetings: 0 };
     }
 
-    // Уменьшение — без счёта.
     if (diff < 0) {
       const updated = await this.subscriptions.setSeatsExtra({
         tenantId: input.tenantId,
@@ -330,7 +258,6 @@ export class ManualBillingService {
       return { subscription: updated, invoiceId: null, grantedMeetings: 0 };
     }
 
-    // Увеличение — pro-rata доплата.
     const prorata =
       sub.billingPeriod === 'yearly'
         ? await this.seats.calculateAddSeatsYearlyProrata({
@@ -346,7 +273,7 @@ export class ManualBillingService {
       {
         kind: InvoiceItemKind.SEATS_PRORATA,
         qty: diff,
-        unitKopecks: 100_000, // PER_EXTRA_SEAT_KOPECKS
+        unitKopecks: 100_000,
         totalKopecks: prorata,
         note: `Pro-rata доплата за +${diff} мест (${sub.billingPeriod ?? 'period'})`,
       },
@@ -407,22 +334,13 @@ export class ManualBillingService {
       return { subscription: updatedSub, invoiceId: paidInvoice.id };
     });
 
-    // Грант доп. встреч за добавленные места.
-    // Источник правды — AdminSetting `billing.perExtraSeatMeetingsGrant` через
-    // MeetingsBalanceService (см. ТЗ 2026-05-31 §3.1). Code-fallback внутри
-    // сервиса = 5 встреч/место.
-    const perExtraSeatMeetingsGrant =
-      await this.meetingsBalance.getPerExtraSeatMeetingsGrant();
+    const perExtraSeatMeetingsGrant = await this.meetingsBalance.getPerExtraSeatMeetingsGrant();
     const grantAmount = diff * perExtraSeatMeetingsGrant;
     await this.meetingsBalance.grant(input.tenantId, grantAmount);
 
     return { ...txResult, grantedMeetings: grantAmount };
   }
 
-  /**
-   * Force-status — обход FSM. Только для super_admin (проверка guard'ом).
-   * Записывается eventType='status_forced' с обязательным reason.
-   */
   async forceStatus(input: AdminForceStatusInput): Promise<Subscription> {
     if (input.reason.trim().length < 3) {
       throw new BadRequestException('reason обязателен (≥3 символа)');
@@ -459,8 +377,6 @@ export class ManualBillingService {
     });
     return updated;
   }
-
-  // ──────────────────────── private ────────────────────────
 
   private buildItems(
     seatsExtra: number,

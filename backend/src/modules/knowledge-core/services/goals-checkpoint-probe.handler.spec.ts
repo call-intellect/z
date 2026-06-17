@@ -6,18 +6,6 @@ import type { ProbeService } from '../../probe/probe.service';
 
 import { GoalsCheckpointProbeHandler } from './goals-checkpoint-probe.handler';
 
-/**
- * Goals OKR v2 (Фаза 5) — unit-тесты GoalsCheckpointProbeHandler.
- *
- *   - newStatus='shipped' + Idea.goalId → probe.suggest вызван
- *     (reason='goal.kr_checkpoint_suggested', emittedByService='3-14-goals');
- *   - newStatus!='shipped' → НЕ вызван;
- *   - Idea.goalId=null → НЕ вызван;
- *   - goal не найден → НЕ вызван.
- *
- * Никогда НЕ авто-пишем KR — только предложение (probe).
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 interface PrismaStub {

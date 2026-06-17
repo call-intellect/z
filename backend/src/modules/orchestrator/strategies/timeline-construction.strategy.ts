@@ -4,11 +4,6 @@ import type { OrchestratorPlanStep } from '../orchestrator.types';
 
 import { BaseRetrievalStrategy } from './base-retrieval-strategy';
 
-/**
- * SBA δ-1 — стратегия `timeline_construction`.
- *
- * Цель: построить хронологию событий по теме (с датами и ссылками).
- */
 @Injectable()
 export class TimelineConstructionStrategy extends BaseRetrievalStrategy {
   readonly agentType = 'timeline_construction' as const;

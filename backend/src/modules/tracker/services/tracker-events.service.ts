@@ -50,25 +50,11 @@ import { TrackerGateway } from '../gateways/tracker.gateway';
 
 import type { CommentResponseDto } from './comments.service';
 
-/**
- * TrackerEventsService — единая точка публикации live-событий трекера в
- * WebSocket. Все методы — fire-and-forget, не бросают исключений из бизнес-
- * транзакций (errors логируются, но не пропагируются).
- *
- * Контракт rooms (`tracker.gateway.ts`):
- *   - tenant:<tenantId>  — главная подписка любого клиента tenant'а
- *   - project:<projectId> — для досок проекта
- *   - issue:<issueId>     — для open-карточки задачи
- *
- * Каждое событие летит в `tenant:` + один-два узких room'а.
- */
 @Injectable()
 export class TrackerEventsService {
   private readonly logger = new Logger(TrackerEventsService.name);
 
   constructor(@Inject(TrackerGateway) private readonly gateway: TrackerGateway) {}
-
-  // ── issues ────────────────────────────────────────────────────────────
 
   publishIssueCreated(issue: IssueResponseDto, tenantId: string): void {
     const event: IssueCreatedEvent = {
@@ -84,11 +70,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishIssueUpdated(
-    issue: IssueResponseDto,
-    tenantId: string,
-    changedFields: string[],
-  ): void {
+  publishIssueUpdated(issue: IssueResponseDto, tenantId: string, changedFields: string[]): void {
     const event: IssueUpdatedEvent = {
       type: 'issue.updated',
       tenantId,
@@ -104,11 +86,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishIssueDeleted(
-    issueId: string,
-    tenantId: string,
-    projectId: string,
-  ): void {
+  publishIssueDeleted(issueId: string, tenantId: string, projectId: string): void {
     const event: IssueDeletedEvent = {
       type: 'issue.deleted',
       tenantId,
@@ -122,8 +100,6 @@ export class TrackerEventsService {
       this.gateway.issueRoom(issueId),
     ]);
   }
-
-  // ── comments ──────────────────────────────────────────────────────────
 
   publishCommentCreated(comment: CommentResponseDto, tenantId: string): void {
     const event: CommentCreatedEvent = {
@@ -153,11 +129,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishCommentDeleted(
-    commentId: string,
-    tenantId: string,
-    issueId: string,
-  ): void {
+  publishCommentDeleted(commentId: string, tenantId: string, issueId: string): void {
     const event: CommentDeletedEvent = {
       type: 'comment.deleted',
       tenantId,
@@ -165,13 +137,8 @@ export class TrackerEventsService {
       commentId,
       timestamp: new Date().toISOString(),
     };
-    this.safeEmit(event, [
-      this.gateway.tenantRoom(tenantId),
-      this.gateway.issueRoom(issueId),
-    ]);
+    this.safeEmit(event, [this.gateway.tenantRoom(tenantId), this.gateway.issueRoom(issueId)]);
   }
-
-  // ── cycles ────────────────────────────────────────────────────────────
 
   publishCycleCreated(cycle: CycleResponseDto, tenantId: string): void {
     const event: CycleCreatedEvent = {
@@ -223,8 +190,6 @@ export class TrackerEventsService {
     ]);
   }
 
-  // ── intake ────────────────────────────────────────────────────────────
-
   publishIntakeNewItem(intakeId: string, tenantId: string): void {
     const event: IntakeNewItemEvent = {
       type: 'intake.new_item',
@@ -252,8 +217,6 @@ export class TrackerEventsService {
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
   }
 
-  // ── activity feed (general) ───────────────────────────────────────────
-
   publishActivity(args: {
     tenantId: string;
     activityId: string;
@@ -274,12 +237,6 @@ export class TrackerEventsService {
     ]);
   }
 
-  // ── imports (Tracker Phase 5 part 1, 2026-05-24) ──────────────────────
-
-  /**
-   * `import.progress` — прогресс импорта. Эмитим ~раз в 5 секунд из
-   * ImportTrackerWorker (точечно, после батчей по 50 items).
-   */
   publishImportProgress(args: {
     tenantId: string;
     importLogId: string;
@@ -299,7 +256,6 @@ export class TrackerEventsService {
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
   }
 
-  /** `import.completed` — финальное событие успешного завершения импорта. */
   publishImportCompleted(args: {
     tenantId: string;
     importLogId: string;
@@ -315,12 +271,7 @@ export class TrackerEventsService {
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
   }
 
-  /** `import.failed` — финальное событие неуспешного завершения импорта. */
-  publishImportFailed(args: {
-    tenantId: string;
-    importLogId: string;
-    error: string;
-  }): void {
+  publishImportFailed(args: { tenantId: string; importLogId: string; error: string }): void {
     const event: ImportFailedEvent = {
       type: 'import.failed',
       tenantId: args.tenantId,
@@ -330,8 +281,6 @@ export class TrackerEventsService {
     };
     this.safeEmit(event, [this.gateway.tenantRoom(args.tenantId)]);
   }
-
-  // ── boards (Tracker Boards, 2026-05-27) ───────────────────────────────
 
   publishBoardCreated(board: BoardResponseDto, tenantId: string): void {
     const event: BoardCreatedEvent = {
@@ -347,11 +296,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishBoardUpdated(
-    board: BoardResponseDto,
-    tenantId: string,
-    changedFields: string[],
-  ): void {
+  publishBoardUpdated(board: BoardResponseDto, tenantId: string, changedFields: string[]): void {
     const event: BoardUpdatedEvent = {
       type: 'board.updated',
       tenantId,
@@ -388,11 +333,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishBoardReordered(args: {
-    tenantId: string;
-    projectId: string;
-    boardIds: string[];
-  }): void {
+  publishBoardReordered(args: { tenantId: string; projectId: string; boardIds: string[] }): void {
     const event: BoardReorderedEvent = {
       type: 'board.reordered',
       tenantId: args.tenantId,
@@ -406,10 +347,6 @@ export class TrackerEventsService {
     ]);
   }
 
-  /**
-   * Tracker Boards (2026-05-27) — PATCH /issues/:id поменял `boardId`.
-   * Эмитим узко (`tenant:` + `project:` + `issue:`).
-   */
   publishIssueMovedToBoard(args: {
     tenantId: string;
     projectId: string;
@@ -433,12 +370,6 @@ export class TrackerEventsService {
     ]);
   }
 
-  /**
-   * Перенос задачи в другой проект (POST /issues/:id/move). Эмитим в
-   * tenant: + issue: + оба project:-room'а (исходный и целевой), чтобы клиенты
-   * обоих проектов обновили списки. ТЗ
-   * `plans/tz/2026-06-15-issue-move-to-project.md`.
-   */
   publishIssueMovedToProject(args: {
     tenantId: string;
     issueId: string;
@@ -465,12 +396,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  // ── checklists (2026-05-27) ───────────────────────────────────────────
-
-  publishChecklistCreated(
-    checklist: ChecklistResponseDto,
-    tenantId: string,
-  ): void {
+  publishChecklistCreated(checklist: ChecklistResponseDto, tenantId: string): void {
     const event: ChecklistCreatedEvent = {
       type: 'checklist.created',
       tenantId,
@@ -484,10 +410,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishChecklistUpdated(
-    checklist: ChecklistResponseDto,
-    tenantId: string,
-  ): void {
+  publishChecklistUpdated(checklist: ChecklistResponseDto, tenantId: string): void {
     const event: ChecklistUpdatedEvent = {
       type: 'checklist.updated',
       tenantId,
@@ -501,11 +424,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  publishChecklistDeleted(args: {
-    tenantId: string;
-    issueId: string;
-    checklistId: string;
-  }): void {
+  publishChecklistDeleted(args: { tenantId: string; issueId: string; checklistId: string }): void {
     const event: ChecklistDeletedEvent = {
       type: 'checklist.deleted',
       tenantId: args.tenantId,
@@ -602,12 +521,7 @@ export class TrackerEventsService {
     ]);
   }
 
-  // ── project documents (2026-05-27) ────────────────────────────────────
-
-  publishProjectDocumentCreated(
-    document: ProjectDocumentSummaryDto,
-    tenantId: string,
-  ): void {
+  publishProjectDocumentCreated(document: ProjectDocumentSummaryDto, tenantId: string): void {
     const event: ProjectDocumentCreatedEvent = {
       type: 'project_document.created',
       tenantId,
@@ -657,8 +571,6 @@ export class TrackerEventsService {
       this.gateway.projectRoom(args.projectId),
     ]);
   }
-
-  // ── sprint hints (2026-05-28) ─────────────────────────────────────────
 
   publishSprintHintCreated(args: {
     tenantId: string;
@@ -744,16 +656,8 @@ export class TrackerEventsService {
     ]);
   }
 
-  // ── internal ──────────────────────────────────────────────────────────
-
-  /**
-   * Emit event без выбрасывания исключений. Любая ошибка → лог, бизнес-
-   * транзакция не страдает (UI просто не получит live-обновление,
-   * фронт всё равно повторно загрузит данные).
-   */
   private safeEmit(event: TrackerWsEvent, rooms: string[]): void {
     try {
-      // Имя event'а = тип (для on('issue.created', …) клиента).
       this.gateway.emitToRooms(rooms, event.type, event);
     } catch (e) {
       this.logger.warn(

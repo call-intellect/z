@@ -1,33 +1,8 @@
-/**
- * CRIT-3 (см. plans/analysis/2026-05-22-code-reality-deltas.md §CRIT-3).
- *
- * Гейт-скрипт для перевода `Meeting.tenantId` из NULLABLE в NOT NULL.
- * Запускается ПЕРЕД деплоем новой схемы (где `tenantId String` без `?`).
- *
- * Логика:
- *   1. Прогоняет backfill повторно (для подстраховки — основной backfill
- *      сделан в `backfill-orgs-fase0.ts`). Идемпотентен.
- *   2. Проверяет: 0 строк `Meeting.tenantId IS NULL` → можно делать
- *      `bun run prisma:push` с новой NOT NULL-схемой.
- *   3. Если остались NULL-строки — печатает их id+ownerId+title и
- *      завершается с exit code 1 (миграция блокируется до ручного решения).
- *
- * Запуск (на проде, до prisma:push):
- *   cd backend && bun run scripts/tighten-meeting-tenant-not-null.ts
- *
- * Идемпотентен — повторный запуск безопасен.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
 
-/**
- * На уже-мигрированном проде `Meeting.tenantId` стал NOT NULL и
- * типизированный `where: { tenantId: null }` падает в Prisma 7 валидацией.
- * Проверяем nullability колонки напрямую, чтобы выйти чисто ДО таких запросов.
- */
 async function isColumnNullable(table: string, column: string): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ is_nullable: string }>>`
     SELECT is_nullable FROM information_schema.columns
@@ -37,7 +12,6 @@ async function isColumnNullable(table: string, column: string): Promise<boolean>
 }
 
 async function backfillStep(): Promise<number> {
-  // Берём всех активных юзеров с их personal Org.
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
     select: { id: true, ownedOrgs: { select: { id: true } } },
@@ -71,9 +45,6 @@ async function main(): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('=== tighten-meeting-tenant-not-null START ===');
 
-  // Если колонка уже NOT NULL — гейт пройден в прошлый выкат, миграция
-  // не требуется. Выходим с кодом 0 (не запуская where:{tenantId:null},
-  // который упал бы валидацией Prisma 7).
   if (!(await isColumnNullable('Meeting', 'tenantId'))) {
     // eslint-disable-next-line no-console
     console.log('OK: Meeting.tenantId уже NOT NULL — миграция не требуется, пропускаем.');
@@ -94,9 +65,7 @@ async function main(): Promise<void> {
   }
 
   // eslint-disable-next-line no-console
-  console.error(
-    `FAIL: остались ${orphans.length} строк Meeting.tenantId IS NULL.`,
-  );
+  console.error(`FAIL: остались ${orphans.length} строк Meeting.tenantId IS NULL.`);
   for (const m of orphans) {
     // eslint-disable-next-line no-console
     console.error(

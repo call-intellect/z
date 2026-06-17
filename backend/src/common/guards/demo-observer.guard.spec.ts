@@ -24,8 +24,6 @@ function makeContext(
   metaOverride: boolean | undefined,
   ctxType = 'http',
 ): { ctx: ExecutionContext; reflector: Reflector; req: Record<string, unknown> } {
-  // По умолчанию мутирующий POST с нейтральным путём — основные кейсы про
-  // блокировку демо-наблюдателя.
   const req: Record<string, unknown> = {
     method: 'POST',
     path: '/api/v1/projects',
@@ -45,10 +43,7 @@ function makeContext(
   return { ctx, reflector, req };
 }
 
-function makeRbac(
-  rbacCtx: RbacCtxStub | null,
-  canMutateResult?: boolean,
-): RbacService {
+function makeRbac(rbacCtx: RbacCtxStub | null, canMutateResult?: boolean): RbacService {
   const fullCtx = rbacCtx
     ? {
         role: rbacCtx.role,
@@ -60,11 +55,7 @@ function makeRbac(
 
   return {
     loadContext: vi.fn(async () => fullCtx),
-    // По умолчанию: canMutate=true для всех ролей кроме demo_observer.
-    canMutate: vi.fn(
-      (role: string) =>
-        canMutateResult ?? (role !== 'demo_observer'),
-    ),
+    canMutate: vi.fn((role: string) => canMutateResult ?? role !== 'demo_observer'),
   } as unknown as RbacService;
 }
 
@@ -100,37 +91,20 @@ describe('DemoObserverGuard', () => {
 
   describe('роль demo_observer', () => {
     it('блокирует POST для demo_observer', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('возвращает code=demo_observer_readonly в теле ошибки', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       try {
         await guard.canActivate(ctx);
         expect.fail('должен был бросить ForbiddenException');
       } catch (err) {
         expect(err).toBeInstanceOf(ForbiddenException);
-        const body = (err as ForbiddenException).getResponse() as Record<
-          string,
-          unknown
-        >;
+        const body = (err as ForbiddenException).getResponse() as Record<string, unknown>;
         expect(body.ok).toBe(false);
         const error = body.error as Record<string, unknown>;
         expect(error.code).toBe('demo_observer_readonly');
@@ -148,9 +122,7 @@ describe('DemoObserverGuard', () => {
       );
       try {
         await guard.canActivate(ctx);
-      } catch {
-        // ожидаемо
-      }
+      } catch {}
       expect(req.rbacContext).toEqual({
         role: 'demo_observer',
         visibility: 'restricted',
@@ -161,38 +133,20 @@ describe('DemoObserverGuard', () => {
 
   describe('другие роли', () => {
     it('пропускает POST для owner', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'owner' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'owner' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает POST для admin', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'admin' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'admin' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает POST для member', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'member' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'member' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });
@@ -209,7 +163,7 @@ describe('DemoObserverGuard', () => {
       const rbac = makeRbac({ role: 'demo_observer' });
       const guard = new DemoObserverGuard(reflector, rbac);
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
-      expect((rbac.loadContext as any)).not.toHaveBeenCalled();
+      expect(rbac.loadContext as any).not.toHaveBeenCalled();
     });
 
     it('пропускает по rbacCtx.isSuperAdmin=true (lookup в БД)', async () => {
@@ -236,10 +190,7 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -253,10 +204,7 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -270,10 +218,7 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -287,10 +232,7 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -304,10 +246,7 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -321,39 +260,22 @@ describe('DemoObserverGuard', () => {
         },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });
 
   describe('@PublicDemo() декоратор', () => {
     it('пропускает write-эндпоинт при метаданных public_demo=true', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        true, // metaOverride
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, true);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('НЕ пропускает при метаданных public_demo=false', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        false,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, false);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
@@ -364,22 +286,13 @@ describe('DemoObserverGuard', () => {
         undefined,
         'ws',
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает без user (не аутентифицирован)', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: null },
-        undefined,
-      );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: null }, undefined);
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -388,18 +301,12 @@ describe('DemoObserverGuard', () => {
         { tenantId: undefined, user: { id: 'u-1' } },
         undefined,
       );
-      const guard = new DemoObserverGuard(
-        reflector,
-        makeRbac({ role: 'demo_observer' }),
-      );
+      const guard = new DemoObserverGuard(reflector, makeRbac({ role: 'demo_observer' }));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает без membership (rbacCtx=null)', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'u-1' } },
-        undefined,
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'u-1' } }, undefined);
       const guard = new DemoObserverGuard(reflector, makeRbac(null));
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });

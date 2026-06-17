@@ -1,24 +1,3 @@
-/**
- * audit Б7 (2026-05-29) — удалить дубли в BillingEventLog по
- * (providerName, externalEventId) ДО добавления @@unique в schema.prisma.
- * Иначе `prisma db push` упадёт.
- *
- * Логика:
- *   1. Группируем по (providerName, externalEventId), где externalEventId
- *      NOT NULL.
- *   2. В каждой группе оставляем самую раннюю (по createdAt) запись;
- *      остальные DELETE.
- *
- * Идемпотентен (после прогона групп нет → SELECT возвращает 0).
- * `--dry-run` — печатает что бы удалил, не пишет.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/patch-dedupe-billing-event-log.ts
- *   docker compose exec backend bun run scripts/patch-dedupe-billing-event-log.ts --dry-run
- *
- * Зарегистрирован в `apply-prod-deploy.ts` STEPS (phase: 'patch', skipBootstrap: true).
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const prisma = createPrismaClient();
@@ -53,9 +32,7 @@ async function main(): Promise<void> {
     HAVING COUNT(*) > 1
   `;
 
-  console.log(
-    `[audit Б7 dedupe-billing-event-log] дубль-групп найдено: ${groups.length}`,
-  );
+  console.log(`[audit Б7 dedupe-billing-event-log] дубль-групп найдено: ${groups.length}`);
 
   let totalToDelete = 0;
   for (const g of groups) {

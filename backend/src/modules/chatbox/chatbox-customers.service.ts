@@ -3,23 +3,8 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PersonsService } from '../persons/services/persons.service';
 
-import type {
-  ChatboxCustomerDto,
-  ChatboxLinkedPersonDto,
-} from './dto/chatbox-customers.dto';
+import type { ChatboxCustomerDto, ChatboxLinkedPersonDto } from './dto/chatbox-customers.dto';
 
-/**
- * ChatboxCustomersService — список клиентов ChatBox (`ChatboxCustomer`) с
- * резолвом связанной Person и ручной маппинг клиент → Person Коры
- * (ТЗ 2026-06-11 chatbox-memory-finishing, Ф1). Клон `ChatboxMembersService`.
- *
- * Выбор сущности: первичный контакт-клиент — `ChatboxCustomer` (унифицированный
- * контакт ChatBox, агрегирующий каналы; `ChatboxChannelClient` — это его
- * per-канальные представления). Связку ведём на унифицированном `ChatboxCustomer`.
- *
- * Автосвязка по email/имени живёт в ChatboxSyncService.autoLinkCustomers; здесь —
- * только чтение и ручное управление связкой (linkMode='manual'|'none').
- */
 @Injectable()
 export class ChatboxCustomersService {
   constructor(
@@ -27,12 +12,6 @@ export class ChatboxCustomersService {
     @Inject(PersonsService) private readonly persons: PersonsService,
   ) {}
 
-  /**
-   * Создать сотрудника (Person) на основе клиента ChatBox и привязать к нему.
-   * Дедуп: если в org уже есть Person с таким email — связываем существующего
-   * (нового не плодим). Иначе создаём «голую» карточку (name + email) и
-   * связываем. linkMode становится 'manual'.
-   */
   async createPersonAndLink(
     tenantId: string,
     userId: string,
@@ -63,7 +42,6 @@ export class ChatboxCustomersService {
 
     const email = customer.email?.trim() || null;
 
-    // Дедуп по email: уже есть живой Person с таким адресом → связываем его.
     let personId: string | null = null;
     if (email) {
       const existing = await this.prisma.person.findFirst({
@@ -73,7 +51,6 @@ export class ChatboxCustomersService {
       personId = existing?.id ?? null;
     }
 
-    // Иначе создаём новую карточку через штатный PersonsService.
     if (!personId) {
       const name = customer.name?.trim() || email || 'Без имени';
       const created = await this.persons.create({
@@ -84,11 +61,9 @@ export class ChatboxCustomersService {
       personId = created.id;
     }
 
-    // Переиспользуем linkCustomer — он ставит linkedPersonId + linkMode='manual'.
     return this.linkCustomer(tenantId, customerId, personId);
   }
 
-  /** Список клиентов org с резолвом связанной Person (батч, без N+1). */
   async listCustomers(tenantId: string): Promise<ChatboxCustomerDto[]> {
     const customers = await this.prisma.chatboxCustomer.findMany({
       where: { tenantId },
@@ -116,17 +91,10 @@ export class ChatboxCustomersService {
       phone: c.phone,
       name: c.name,
       linkMode: c.linkMode,
-      linkedPerson: c.linkedPersonId
-        ? (personMap.get(c.linkedPersonId) ?? null)
-        : null,
+      linkedPerson: c.linkedPersonId ? (personMap.get(c.linkedPersonId) ?? null) : null,
     }));
   }
 
-  /**
-   * Ручная привязка клиента к Person (`personId`) или снятие связи (`null`).
-   *   - personId задан → linkMode='manual', linkedPersonId=personId.
-   *   - personId=null  → linkMode='none', linkedPersonId=null.
-   */
   async linkCustomer(
     tenantId: string,
     customerId: string,
@@ -176,9 +144,7 @@ export class ChatboxCustomersService {
       },
     });
 
-    const personMap = await this.resolvePersons(tenantId, [
-      updated.linkedPersonId,
-    ]);
+    const personMap = await this.resolvePersons(tenantId, [updated.linkedPersonId]);
 
     return {
       id: updated.id,
@@ -187,13 +153,10 @@ export class ChatboxCustomersService {
       phone: updated.phone,
       name: updated.name,
       linkMode: updated.linkMode,
-      linkedPerson: updated.linkedPersonId
-        ? (personMap.get(updated.linkedPersonId) ?? null)
-        : null,
+      linkedPerson: updated.linkedPersonId ? (personMap.get(updated.linkedPersonId) ?? null) : null,
     };
   }
 
-  /** Батч-резолв Person по id-шкам → карта id → {id,name}. */
   private async resolvePersons(
     tenantId: string,
     ids: (string | null)[],
@@ -206,8 +169,6 @@ export class ChatboxCustomersService {
       where: { tenantId, id: { in: personIds } },
       select: { id: true, name: true },
     });
-    return new Map(
-      persons.map((p) => [p.id, { id: p.id, name: p.name }]),
-    );
+    return new Map(persons.map((p) => [p.id, { id: p.id, name: p.name }]));
   }
 }

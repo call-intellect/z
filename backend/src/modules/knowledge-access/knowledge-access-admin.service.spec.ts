@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
@@ -57,10 +54,7 @@ function build() {
     invalidateAll: vi.fn(),
   } as unknown as KnowledgeAccessResolver;
 
-  const svc = new KnowledgeAccessAdminService(
-    prisma as unknown as PrismaService,
-    accessResolver,
-  );
+  const svc = new KnowledgeAccessAdminService(prisma as unknown as PrismaService, accessResolver);
   return { svc, prisma, accessResolver };
 }
 
@@ -125,7 +119,7 @@ describe('KnowledgeAccessAdminService', () => {
 
     it('visible-группа не отдел/не из Org → BadRequest', async () => {
       h.prisma.knowledgeGroup.findFirst.mockResolvedValue({ id: 'sales', kind: 'department' });
-      h.prisma.knowledgeGroup.findMany.mockResolvedValue([{ id: 'logistics' }]); // нашли 1 из 2
+      h.prisma.knowledgeGroup.findMany.mockResolvedValue([{ id: 'logistics' }]);
       await expect(
         h.svc.setMatrix(TENANT, 'sales', ['logistics', 'foreign']),
       ).rejects.toBeInstanceOf(BadRequestException);

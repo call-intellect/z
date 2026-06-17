@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  type LoggingRuntimeSettings,
-  normalizeLoggingSettings,
-} from './log.constants';
+import { type LoggingRuntimeSettings, normalizeLoggingSettings } from './log.constants';
 
 const BASE: LoggingRuntimeSettings = {
   dbLoggingEnabled: true,
@@ -33,10 +30,10 @@ describe('normalizeLoggingSettings', () => {
       { batchSize: 999999, flushIntervalMs: 1, retentionDays: -5, maxBufferSize: 10 },
       BASE,
     );
-    expect(out.batchSize).toBe(1000); // max
-    expect(out.flushIntervalMs).toBe(500); // min
-    expect(out.retentionDays).toBe(1); // min
-    expect(out.maxBufferSize).toBe(100); // min
+    expect(out.batchSize).toBe(1000);
+    expect(out.flushIntervalMs).toBe(500);
+    expect(out.retentionDays).toBe(1);
+    expect(out.maxBufferSize).toBe(100);
   });
 
   it('игнорирует невалидный minLevel, принимает валидный', () => {
@@ -45,9 +42,12 @@ describe('normalizeLoggingSettings', () => {
   });
 
   it('boolean: принимает только настоящие boolean', () => {
-    expect(normalizeLoggingSettings({ dbLoggingEnabled: false }, BASE).dbLoggingEnabled).toBe(false);
-    // строка 'false' — не boolean → fallback на base (true)
-    expect(normalizeLoggingSettings({ dbLoggingEnabled: 'false' }, BASE).dbLoggingEnabled).toBe(true);
+    expect(normalizeLoggingSettings({ dbLoggingEnabled: false }, BASE).dbLoggingEnabled).toBe(
+      false,
+    );
+    expect(normalizeLoggingSettings({ dbLoggingEnabled: 'false' }, BASE).dbLoggingEnabled).toBe(
+      true,
+    );
   });
 
   it('enabledCategories: фильтрует мусор, дедуп, лимит 20', () => {

@@ -22,15 +22,6 @@ import type { CreateCardDto } from './dto/create-card.dto';
 import type { ListCardsQuery } from './dto/list-cards.dto';
 import type { UpdateCardDto } from './dto/update-card.dto';
 
-/**
- * Бизнес-сервис карточек. Все операции защищены ownership-проверкой:
- * `card.ownerId === currentUser.id`. Для скрытия информации NotFound
- * используется и при «нет такой карточки», и при «не ваша».
- *
- * AI-rollup после link/unlink ставится через `AiQueueService` (глобальный модуль).
- * Если по каким-то причинам недоступен (тесты, изолированный модуль) — тихо
- * пропускается через `@Optional()`.
- */
 @Injectable()
 export class CardsService {
   private readonly logger = new Logger(CardsService.name);
@@ -66,10 +57,7 @@ export class CardsService {
       );
   }
 
-  list(
-    userId: string,
-    query: ListCardsQuery,
-  ): Promise<{ items: Card[]; total: number }> {
+  list(userId: string, query: ListCardsQuery): Promise<{ items: Card[]; total: number }> {
     return this.repo.list({
       ownerId: userId,
       page: query.page,
@@ -94,8 +82,6 @@ export class CardsService {
   }
 
   async create(userId: string, dto: CreateCardDto): Promise<Card> {
-    // Лимит на пользователя — простая верхняя граница (без скользящего окна).
-    // Дёшево и понятно: «у вас уже 500 карточек, удалите неактуальные».
     const max = this.cfg.workspace.maxCardsPerUser;
     const existingCount = await this.repo.countActive(userId);
     if (existingCount >= max) {
@@ -108,8 +94,6 @@ export class CardsService {
       });
     }
 
-    // Дедуп по имени — уникальный индекс [ownerId, name] вернёт P2002, но мы
-    // даём более понятную ошибку.
     const existing = await this.repo.findByName(userId, dto.name.trim());
     if (existing) {
       throw new ConflictException({
@@ -135,11 +119,7 @@ export class CardsService {
         ...(dto.contactPhone !== undefined ? { contactPhone: dto.contactPhone } : {}),
       });
     } catch (err) {
-      // На случай гонки между findByName и create.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -189,10 +169,7 @@ export class CardsService {
     try {
       updated = await this.repo.update(id, data);
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -237,8 +214,6 @@ export class CardsService {
   }
 
   async restore(id: string, userId: string): Promise<Card> {
-    // restore работает с softDeleted (deletedAt != null), поэтому getById с фильтром
-    // deletedAt: null здесь не подходит — получаем напрямую.
     const card = await this.repo.findById(id);
     if (!card || card.ownerId !== userId) {
       throw new NotFoundException({
@@ -247,7 +222,6 @@ export class CardsService {
       });
     }
     if (card.deletedAt === null) {
-      // Уже не удалена — идемпотентно возвращаем как есть.
       return card;
     }
     const restored = await this.repo.restore(id);
@@ -261,15 +235,6 @@ export class CardsService {
     return restored;
   }
 
-  /**
-   * Привязать встречу к карточке. Транзакция с `SELECT ... FOR UPDATE` на
-   * Meeting — защита от race-condition при двух одновременных привязках.
-   *
-   *   - Проверяет владение и карточкой, и встречей у текущего юзера.
-   *   - Если у встречи уже есть `cardId == this.id` — идемпотентный success.
-   *   - Если у встречи `cardId !== null && != this.id` — 409.
-   *   - После update'а — пересчёт счётчиков карточки и enqueue card-rollup.
-   */
   async linkMeeting(
     cardId: string,
     meetingId: string,
@@ -282,8 +247,6 @@ export class CardsService {
     let previousCardId: string | null = null;
 
     await this.prisma.$transaction(async (tx) => {
-      // FOR UPDATE — лочим строку встречи на время транзакции, чтобы конкурентный
-      // link не «обогнал» нас.
       const rows = await tx.$queryRaw<
         Array<{ id: string; ownerId: string; cardId: string | null; deletedAt: Date | null }>
       >(Prisma.sql`
@@ -308,8 +271,7 @@ export class CardsService {
           ok: false,
           error: {
             code: 'meeting_already_linked',
-            message:
-              'Встреча уже прикреплена к другой карточке. Сначала отвяжите её.',
+            message: 'Встреча уже прикреплена к другой карточке. Сначала отвяжите её.',
           },
         });
       }
@@ -326,7 +288,6 @@ export class CardsService {
 
     await this.repo.recountMeetings(cardId);
     if (previousCardId) {
-      // Не должно происходить (выше выбросили 409), но на всякий — пересчёт прежней.
       await this.repo.recountMeetings(previousCardId).catch(() => undefined);
     }
 
@@ -352,18 +313,11 @@ export class CardsService {
         );
     }
 
-    this.logger.debug(
-      { cardId, meetingId, userId, addedBy },
-      'meeting linked to card',
-    );
+    this.logger.debug({ cardId, meetingId, userId, addedBy }, 'meeting linked to card');
     return { ok: true };
   }
 
-  async unlinkMeeting(
-    cardId: string,
-    meetingId: string,
-    userId: string,
-  ): Promise<{ ok: true }> {
+  async unlinkMeeting(cardId: string, meetingId: string, userId: string): Promise<{ ok: true }> {
     const card = await this.getById(cardId, userId);
 
     let wasLinked = false;
@@ -384,7 +338,6 @@ export class CardsService {
         });
       }
       if (meeting.cardId !== cardId) {
-        // Идемпотентность: «отвязать то, что не привязано» — ОК.
         return;
       }
       wasLinked = true;
@@ -420,14 +373,9 @@ export class CardsService {
         );
     }
 
-    this.logger.debug(
-      { cardId, meetingId, userId },
-      'meeting unlinked from card',
-    );
+    this.logger.debug({ cardId, meetingId, userId }, 'meeting unlinked from card');
     return { ok: true };
   }
-
-  // ─────────────────────────── helpers для других модулей ─────────────────
 
   listRecent(userId: string, limit = 5): Promise<Card[]> {
     return this.repo.listRecent(userId, limit);

@@ -1,27 +1,3 @@
-/**
- * TZ-1 Фаза 2 (daily-value-engine) — Seed AdminSetting для движка рядового
- * «Твой день» + помощник «кто знает X».
- *
- * Регистрирует ключи динамической конфигурации:
- *   - `operations.personal_daily_brief.enabled` (boolean, default true) —
- *     kill-switch дневного брифа. ON (Ship-On).
- *   - `operations.personal_daily_brief.morning_hour` (int, default 9) — локальный
- *     час утреннего окна (по Person.timezone), когда строится/шлётся бриф.
- *   - `operations.knows_who.enabled` (boolean, default true) — kill-switch
- *     помощника «кто знает X». ON (Ship-On).
- *   - `knows_who.min_confidence` (number, default 0.5) — порог cosine similarity
- *     для зачёта носителя знания.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-personal-brief.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -107,7 +83,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

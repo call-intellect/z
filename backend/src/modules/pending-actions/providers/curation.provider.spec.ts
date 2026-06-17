@@ -5,11 +5,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { CurationPendingProvider } from './curation.provider';
 
-/**
- * Заглушка TypedConfigService: геттер `pendingActions` отдаёт дефолты
- * (urgentAgeDays=5, reminderLeadDays=3). `overrides` меняет крутилки в
- * отдельном тесте.
- */
 function makeCfg(
   overrides: Partial<{ urgentAgeDays: number; reminderLeadDays: number }> = {},
 ): TypedConfigService {
@@ -25,17 +20,6 @@ function makeCfg(
   } as unknown as TypedConfigService;
 }
 
-/**
- * Unit-тесты CurationPendingProvider (Action Center B0).
- *
- * Покрытие:
- *   - candidate (член без привилегий) видит свои pending → OR-фильтр;
- *   - owner — все pending (без OR);
- *   - посторонний (member, не candidate) → 0;
- *   - snoozed исключается (notIn);
- *   - severity urgent по просроченному expiresAt и по ageDays >= 5;
- *   - canQuickConfirm = (level === 'light').
- */
 describe('CurationPendingProvider (B0)', () => {
   let prisma: PrismaService;
   let provider: CurationPendingProvider;
@@ -160,7 +144,7 @@ describe('CurationPendingProvider (B0)', () => {
       resourceType: 'process',
       resourceId: 'proc-7',
       level: 'deep',
-      expiresAt: null, // нет expiry → severity определяется только возрастом
+      expiresAt: null,
       createdAt: sevenDaysOld,
     };
     findManyMock.mockResolvedValue([row]);
@@ -172,20 +156,17 @@ describe('CurationPendingProvider (B0)', () => {
       snoozedResourceIds: new Set<string>(),
     };
 
-    // При urgentAgeDays=10 — 7 < 10 → normal.
     const raised = new CurationPendingProvider(prisma, makeCfg({ urgentAgeDays: 10 }));
     const raisedItems = await raised.listForUser(args);
     expect(raisedItems[0]!.ageDays).toBeGreaterThanOrEqual(7);
     expect(raisedItems[0]!.severity).toBe('normal');
 
-    // Контроль: при дефолте 5 — 7 >= 5 → urgent.
     const defaultProvider = new CurationPendingProvider(prisma, makeCfg());
     const defaultItems = await defaultProvider.listForUser(args);
     expect(defaultItems[0]!.severity).toBe('urgent');
   });
 
   it('list (B5): expiresAt в пределах LEAD_DAYS → urgent (скоро истечёт)', async () => {
-    // expiresAt через 2 дня (< LEAD_DAYS=3), карточка свежая → urgent.
     const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
     findManyMock.mockResolvedValue([
       {
@@ -208,7 +189,6 @@ describe('CurationPendingProvider (B0)', () => {
   });
 
   it('list (B5): expiresAt дальше LEAD_DAYS и ageDays<5 → normal', async () => {
-    // expiresAt через 10 дней (> LEAD_DAYS), свежая (ageDays=0) → normal.
     const far = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     findManyMock.mockResolvedValue([
       {
@@ -250,8 +230,6 @@ describe('CurationPendingProvider (B0)', () => {
     });
     expect(items[0]!.severity).toBe('normal');
   });
-
-  // ──────────────── Ф4 — реальная суть в title + detail ────────────────
 
   it('Ф4: title содержит название карточки из proposedPayload; detail.kind=curation', async () => {
     findManyMock.mockResolvedValue([

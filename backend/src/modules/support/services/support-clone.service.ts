@@ -20,13 +20,10 @@ import {
 import { SupportAccessService } from './support-access.service';
 import { SupportAnswerCriticService } from './support-answer-critic.service';
 
-/** Цитата на блок контура. Зеркало clones.service. */
 const BLOCK_CITATION_REGEX = /\[BLOCK:([a-zA-Z0-9_-]+)\]/g;
 
-/** Сколько блоков контура показываем клону (retrieval limit). */
 const CONTOUR_RETRIEVAL_LIMIT = 8;
 
-/** Сколько принятых пар подаём few-shot. */
 const FEW_SHOT_LIMIT = 3;
 
 interface ContourBlock {
@@ -35,19 +32,6 @@ interface ContourBlock {
   trustedAnswer: string | null;
 }
 
-/**
- * SupportCloneService — генератор ЧЕРНОВИКА ответа клоном техподдержки
- * (TZ 2026-06-09 support-desk Ф3, taskType `support-clone-draft`).
- *
- * Конвейер: вопрос клиента → retrieval по ЗАКРЫТОМУ контуру (R-INV-1:
- * `contourGroupId` изолирует пул до блоков поддержки) → few-shot принятых
- * пар → LLM-черновик с цитатами `[BLOCK:id]` → calibrate confidence →
- * critic обоснованности (R-INV-5) → IssueComment(authorType='clone',
- * draftState='pending'). Человек правит/отправляет — клон НИКОГДА не шлёт сам.
- *
- * Всё в scope вендор-Org. Любой сбой LLM/retrieval → ServiceUnavailable
- * («клон не смог»), а не 500: сотрудник отвечает вручную (fail-open к человеку).
- */
 @Injectable()
 export class SupportCloneService {
   private readonly logger = new Logger(SupportCloneService.name);
@@ -65,10 +49,7 @@ export class SupportCloneService {
     private readonly calibration: ConfidenceCalibrationService,
   ) {}
 
-  async generateDraft(
-    ticketId: string,
-    agentUserId: string,
-  ): Promise<{ draftCommentId: string }> {
+  async generateDraft(ticketId: string, agentUserId: string): Promise<{ draftCommentId: string }> {
     const vendorOrgId = await this.access.getVendorOrgId();
     if (!vendorOrgId) {
       throw new BadRequestException({
@@ -90,7 +71,6 @@ export class SupportCloneService {
       });
     }
 
-    // Тикет (support-issue в вендор-Org).
     const issue = await this.prisma.issue.findFirst({
       where: {
         id: ticketId,
@@ -107,8 +87,6 @@ export class SupportCloneService {
       });
     }
 
-    // Вопрос = последнее сообщение клиента (external, не от клона); fallback —
-    // заголовок тикета.
     const lastExternal = await this.prisma.issueComment.findFirst({
       where: {
         issueId: issue.id,
@@ -120,12 +98,9 @@ export class SupportCloneService {
       select: { content: true, contentStripped: true },
     });
     const question =
-      lastExternal?.contentStripped?.trim() ||
-      lastExternal?.content?.trim() ||
-      issue.title;
+      lastExternal?.contentStripped?.trim() || lastExternal?.content?.trim() || issue.title;
 
     try {
-      // 1) Retrieval по ЗАКРЫТОМУ контуру (R-INV-1: contourGroupId изолирует пул).
       const ranked = await this.retrieval.fetchCandidates({
         tenantId: vendorOrgId,
         scope: 'org',
@@ -137,7 +112,6 @@ export class SupportCloneService {
       });
       const blockIds = ranked.map((r) => r.blockId);
 
-      // 2) Контент блоков контура.
       const contourBlocks: ContourBlock[] =
         blockIds.length > 0
           ? await this.prisma.ideaBlock.findMany({
@@ -151,10 +125,8 @@ export class SupportCloneService {
             })
           : [];
 
-      // 3) Few-shot: топ-N принятых/исправленных пар (вопрос = заголовок тикета).
       const fewShot = await this.loadFewShot(vendorOrgId);
 
-      // 4) LLM-черновик (strict JSON {answer, confidence}).
       const llmResult = await this.llm.call({
         taskType: 'support-clone-draft',
         tenantId: vendorOrgId,
@@ -197,13 +169,11 @@ export class SupportCloneService {
       const { answer } = parsed;
       const rawConfidence = clamp01(parsed.confidence);
 
-      // 5) Калибровка confidence (сервис @Global, всегда инжектируем).
       const cloneConfidence = await this.calibration.calibrate(
         rawConfidence,
         'support-clone-draft',
       );
 
-      // 6) Critic обоснованности (R-INV-5).
       const crit = await this.critic.check({
         tenantId: vendorOrgId,
         userId: agentUserId,
@@ -211,23 +181,18 @@ export class SupportCloneService {
         contourBlocks,
       });
 
-      // 7) Тело черновика: при не-`answer` вердикте — русская пометка сверху.
       let draftContent = answer;
       if (crit.verdict !== 'answer') {
         const recommendation =
-          crit.verdict === 'escalate'
-            ? 'эскалировать специалисту'
-            : 'уточнить детали у клиента';
+          crit.verdict === 'escalate' ? 'эскалировать специалисту' : 'уточнить детали у клиента';
         const note = `⚠ Клон не уверен (обоснованность ${(crit.groundedness * 100).toFixed(0)}%). Рекомендация: ${recommendation}.\n\n`;
         draftContent = note + answer;
       }
 
-      // Хотя бы одна цитата `[BLOCK:id]`; иначе флажок (не блокируем).
       if (!hasBlockCitation(answer)) {
         draftContent = `${draftContent}\n\n(без ссылок на базу — проверьте обоснованность)`;
       }
 
-      // 8) Черновик как IssueComment(authorType='clone', draftState='pending').
       const comment = await this.prisma.issueComment.create({
         data: {
           issueId: issue.id,
@@ -245,8 +210,6 @@ export class SupportCloneService {
 
       return { draftCommentId: comment.id };
     } catch (err) {
-      // Уже сформированный domain-ответ (Bad/NotFound/ServiceUnavailable) —
-      // прокидываем как есть.
       if (
         err instanceof ServiceUnavailableException ||
         err instanceof BadRequestException ||
@@ -271,14 +234,7 @@ export class SupportCloneService {
     }
   }
 
-  /**
-   * Топ-N принятых/исправленных черновиков как few-shot. Вопрос берём из
-   * заголовка соответствующего тикета (Issue.title). Если заголовок не
-   * подтянулся — пара всё равно полезна как пример тона/структуры ответа.
-   */
-  private async loadFewShot(
-    vendorOrgId: string,
-  ): Promise<{ question: string; answer: string }[]> {
+  private async loadFewShot(vendorOrgId: string): Promise<{ question: string; answer: string }[]> {
     const outcomes = await this.prisma.supportDraftOutcome.findMany({
       where: {
         tenantId: vendorOrgId,
@@ -306,8 +262,6 @@ export class SupportCloneService {
       }));
   }
 }
-
-// ─────────────────────────── helpers ───────────────────────────
 
 interface ParsedDraft {
   answer: string;

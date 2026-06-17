@@ -1,15 +1,3 @@
-/**
- * Ф4 (knowledge-access) — unit-тесты гейта доступа в `SearchService`.
- *
- * Проверяем, что SQL-предикат доступа (`IdeaBlockAccess`) попадает в собранный
- * запрос ТОЛЬКО при `enforcement='enforce'` и непустом ctx (не bypass):
- *   - off            → SQL без `IdeaBlockAccess`, resolver НЕ вызывается;
- *   - enforce        → SQL содержит `IdeaBlockAccess`;
- *   - enforce+bypass → SQL без `IdeaBlockAccess` (видит всё);
- *   - shadow         → SQL без предиката, считается метрика denied.
- *
- * Мокаем prisma.$queryRawUnsafe, перехватываем строку SQL.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/index';
@@ -23,9 +11,7 @@ import type { KnowledgeEmbeddingService } from '../services/embedding.service';
 
 import { SearchService } from './search.service';
 
-function makeCfg(
-  enforcement: 'off' | 'shadow' | 'enforce' = 'off',
-): TypedConfigService {
+function makeCfg(enforcement: 'off' | 'shadow' | 'enforce' = 'off'): TypedConfigService {
   return {
     knowledgeAccess: { enforcement },
     knowledgeCore: { searchCosineWeight: 0.7, searchBm25Weight: 0.3 },
@@ -52,13 +38,10 @@ function makeResolver(overrides: Partial<KnowledgeAccessResolver> = {}): {
       isBypass: false,
     }),
   );
-  // Реалистичный фрагмент — содержит таблицу IdeaBlockAccess.
-  const predicateSpy = vi.fn(
-    (_ctx: unknown, pushParam: (v: unknown) => string) => {
-      const p = pushParam(['g-dept']);
-      return ` AND NOT EXISTS (SELECT 1 FROM "IdeaBlockAccess" a WHERE a."blockId" = b.id AND a."groupId" = ANY(${p}::text[]))`;
-    },
-  );
+  const predicateSpy = vi.fn((_ctx: unknown, pushParam: (v: unknown) => string) => {
+    const p = pushParam(['g-dept']);
+    return ` AND NOT EXISTS (SELECT 1 FROM "IdeaBlockAccess" a WHERE a."blockId" = b.id AND a."groupId" = ANY(${p}::text[]))`;
+  });
   const partitionSpy = vi.fn(async (_ctx: unknown, ids: string[]) => ({
     accessible: ids,
     denied: 0,
@@ -84,10 +67,6 @@ function makeMetrics(): {
   return { metrics, shadowSpy };
 }
 
-/**
- * Fake prisma: $queryRawUnsafe перехватывает SQL в `captured.sql` и возвращает
- * один блок-строку. evidence/entity findMany — пустые.
- */
 function buildFakePrisma(captured: { sql: string | null }): PrismaService {
   return {
     $queryRawUnsafe: vi.fn(async (sql: string) => {
@@ -144,7 +123,6 @@ describe('SearchService — Ф4 гейт доступа (knowledge-access)', () 
     expect(resolveSpy).toHaveBeenCalledWith({ tenantId: 't-A', userId: 'u-1' });
     expect(predicateSpy).toHaveBeenCalled();
     expect(captured.sql).toContain('IdeaBlockAccess');
-    // Предикат обёрнут как одно условие join(' AND '): `(1=1 AND NOT EXISTS...`.
     expect(captured.sql).toContain('(1=1');
   });
 

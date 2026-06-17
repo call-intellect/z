@@ -1,17 +1,3 @@
-/**
- * Admin-redesign Фаза 0 — unit-тесты `AdminSettingsService`.
- *
- * Покрываем:
- *   1) get(): чтение из БД + кеширование (повторный get не бьёт БД).
- *   2) set(): UPSERT, AdminSettingHistory, SuperAdminAccessLog, drop из кеша.
- *   3) set() optimistic concurrency: бросает ConflictException при
- *      несовпадении `expectedUpdatedAt`.
- *   4) getMany(): батч-чтение + смешанный кеш/БД.
- *   5) getHistory(): возвращает упорядоченную историю.
- *   6) pub/sub invalidate: после redis-message `{ key }` запись пропадает
- *      из локального кеша.
- */
-
 import { ConflictException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,11 +5,6 @@ import type { TypedConfigService } from '../../../common/config/index';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../common/redis/redis.service';
 
-/**
- * Мок ioredis: ловит обработчик 'message', чтобы в тесте эмулировать
- * приход pub/sub payload'а и проверить, что AdminSettingsService.subscriber
- * вызывает cfg.applySync(key, value).
- */
 const mockHandlers: Array<(channel: string, payload: string) => void> = [];
 vi.mock('ioredis', () => {
   class FakeRedis {
@@ -105,22 +86,18 @@ function buildService(): {
   };
 
   const adminSetting = {
-    findUnique: vi.fn(async (args: { where: { key: string } }) =>
-      rowFromStore(args.where.key),
-    ),
-    findMany: vi.fn(
-      async (args?: { where?: { key?: { in?: string[] } } }) => {
-        const keys = args?.where?.key?.in;
-        const out: AdminSettingRow[] = [];
-        for (const [key] of store.settings.entries()) {
-          if (!keys || keys.includes(key)) {
-            const row = rowFromStore(key);
-            if (row) out.push(row);
-          }
+    findUnique: vi.fn(async (args: { where: { key: string } }) => rowFromStore(args.where.key)),
+    findMany: vi.fn(async (args?: { where?: { key?: { in?: string[] } } }) => {
+      const keys = args?.where?.key?.in;
+      const out: AdminSettingRow[] = [];
+      for (const [key] of store.settings.entries()) {
+        if (!keys || keys.includes(key)) {
+          const row = rowFromStore(key);
+          if (row) out.push(row);
         }
-        return out;
-      },
-    ),
+      }
+      return out;
+    }),
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
       const key = args.data.key as string;
       store.settings.set(key, {
@@ -130,18 +107,16 @@ function buildService(): {
       });
       return rowFromStore(key);
     }),
-    update: vi.fn(
-      async (args: { where: { key: string }; data: Record<string, unknown> }) => {
-        const cur = store.settings.get(args.where.key);
-        if (!cur) throw new Error('not found');
-        store.settings.set(args.where.key, {
-          value: args.data.value ?? cur.value,
-          updatedAt: new Date(cur.updatedAt.getTime() + 1),
-          updatedBy: (args.data.updatedBy as string | null) ?? cur.updatedBy,
-        });
-        return rowFromStore(args.where.key);
-      },
-    ),
+    update: vi.fn(async (args: { where: { key: string }; data: Record<string, unknown> }) => {
+      const cur = store.settings.get(args.where.key);
+      if (!cur) throw new Error('not found');
+      store.settings.set(args.where.key, {
+        value: args.data.value ?? cur.value,
+        updatedAt: new Date(cur.updatedAt.getTime() + 1),
+        updatedBy: (args.data.updatedBy as string | null) ?? cur.updatedBy,
+      });
+      return rowFromStore(args.where.key);
+    }),
   };
 
   const adminSettingHistory = {
@@ -156,16 +131,14 @@ function buildService(): {
       });
       return null;
     }),
-    findMany: vi.fn(
-      async (args: { where: { key: string }; orderBy: unknown; take: number }) => {
-        const items = store.history.filter((h) => h.key === args.where.key);
-        return items
-          .slice()
-          .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
-          .slice(0, args.take)
-          .map((h, i) => ({ id: `h-${i}`, ...h }));
-      },
-    ),
+    findMany: vi.fn(async (args: { where: { key: string }; orderBy: unknown; take: number }) => {
+      const items = store.history.filter((h) => h.key === args.where.key);
+      return items
+        .slice()
+        .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
+        .slice(0, args.take)
+        .map((h, i) => ({ id: `h-${i}`, ...h }));
+    }),
   };
 
   const superAdminAccessLog = {
@@ -214,7 +187,6 @@ describe('AdminSettingsService', () => {
     const v1 = await svc.get<number>('limits.foo');
     expect(v1).toBe(5);
 
-    // Удаляем из «БД» — кеш должен сохранить значение.
     store.settings.delete('limits.foo');
     const v2 = await svc.get<number>('limits.foo');
     expect(v2).toBe(5);
@@ -255,7 +227,6 @@ describe('AdminSettingsService', () => {
     const m1 = await svc.getMany(['a', 'b', 'missing']);
     expect(m1).toEqual({ a: 1, b: 2 });
 
-    // Повторный вызов — из кеша.
     store.settings.clear();
     const m2 = await svc.getMany(['a', 'b']);
     expect(m2).toEqual({ a: 1, b: 2 });
@@ -266,8 +237,6 @@ describe('AdminSettingsService', () => {
     await svc.set('limits.bar', 1, { userId: 'u1' });
     await svc.set('limits.bar', 2, { userId: 'u2' });
     await svc.set('limits.bar', 3, { userId: 'u3' });
-    // Гарантируем монотонно растущий changedAt в моке, чтобы сортировка по
-    // descending была детерминированной даже при одинаковом тике Date.now().
     for (let i = 0; i < store.history.length; i++) {
       const entry = store.history[i];
       if (entry) entry.changedAt = new Date(2020, 0, 1, 0, 0, i);
@@ -301,8 +270,6 @@ describe('AdminSettingsService', () => {
     const { svc, store } = buildService();
     await svc.set('limits.bar', { a: 1, b: 'x' }, { userId: 'u' });
     expect(store.publishes.length).toBe(1);
-    // Формат store.publishes: `${channel}:${payload}`. channel сам содержит
-    // двоеточия (`admin:setting:invalidate`) — режем по полному префиксу.
     const raw = store.publishes[0] ?? '';
     const channelPrefix = 'admin:setting:invalidate:';
     expect(raw.startsWith(channelPrefix)).toBe(true);

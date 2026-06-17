@@ -31,31 +31,8 @@ import { CoreQueueService } from '../core-queue/core-queue.service';
 import { DumpService } from '../ingest/adapters/web-form/dump.service';
 import { S3Service } from '../recordings/s3.service';
 
-/**
- * Фаза C1 «метка доверия»: критические сущности группы Б (process / decision /
- * regulation / policy) несут `currentVersion.trustTier` для провенанса документа.
- * metric / tool — без версионирования (currentVersion нет), их не расширяем.
- */
 type WithTrustTier<T> = T & { currentVersion: { trustTier: TrustTier } | null };
 
-/**
- * `DocumentsService` (Фаза 0b knowledge-core).
- *
- *   - `upload(...)` — основной путь для бинарных документов (PDF/DOCX/MD).
- *     ≤ inlineThreshold (по умолчанию 10 MiB) — `inlineContent` в БД;
- *     иначе — S3 (`documents/<tenantId>/<documentId>.bin`). После create —
- *     публикует `core.document-uploaded`.
- *
- *   - `createTextDump(...)` — короткий путь для дампов из формы `/dump`.
- *     Делегирует в `DumpService.createTextDocumentAndPublish` (он же
- *     создаёт Document {kind:'text', status:'parsed'} и публикует
- *     `core.dump-created`).
- *
- *   - `get(...)`, `list(...)`, `softDelete(...)` — обычный CRUD под tenantId.
- *
- * RBAC controller'а проверяется через `RbacService.canRead/canWrite('document')`
- * (policy.csv пополнен). Здесь — только tenantId-scope.
- */
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -68,21 +45,7 @@ export class DocumentsService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ─────────────────────────── upload (multipart) ───────────────────────
 
-  /**
-   * ТЗ-4 Ф3 — multipart-загрузка одного или нескольких файлов c атрибуцией и
-   * дедупликацией по `contentHash` (sha256 буфера на момент загрузки).
-   *
-   * Алгоритм:
-   *   1. Лимиты (Ф6, из AdminSetting): кол-во ≤ `maxFilesPerUpload`; per-file
-   *      `kind ∈ acceptedFormats`, размер ≤ `maxSizeMb`, не пустой.
-   *   2. Атрибуция: Role/Theme/Project должны принадлежать tenantId.
-   *   3. Per-file: `contentHash = sha256(buffer)`. Если Document с тем же
-   *      `{tenantId, contentHash, deletedAt:null}` уже есть — НЕ создаём дубль,
-   *      возвращаем `{ id, status, name, deduped:true }`.
-   *      Иначе — создаём (inline/S3) + enqueue ingest, `deduped:false`.
-   */
   async uploadMany(args: {
     tenantId: string;
     uploaderPersonId: string;
@@ -121,7 +84,6 @@ export class DocumentsService {
       });
     }
 
-    // 1. Лимиты Ф6 — «живые» крутилки из AdminSetting (ENV-fallback → default).
     const limits = await this.cfg.documentLimits();
     if (files.length > limits.maxFilesPerUpload) {
       throw new BadRequestException({
@@ -134,8 +96,6 @@ export class DocumentsService {
     }
     const accepted = new Set(limits.acceptedFormats.map((f) => f.toLowerCase()));
 
-    // 2. Per-file pre-validation (формат + размер + не пустой) ДО любых
-    //    записей в БД/S3 — чтобы частично корректный батч не оставлял мусор.
     const prepared = files.map((file) => {
       const kind = detectKind(file.mimeType, file.originalName);
       const ext = formatToken(kind, file.originalName);
@@ -169,7 +129,6 @@ export class DocumentsService {
       return { file, kind };
     });
 
-    // 3. Атрибуция: Role/Theme/Project должны принадлежать tenantId.
     await this.assertAttributionBelongsToTenant({
       tenantId,
       attachedRoleId,
@@ -177,7 +136,6 @@ export class DocumentsService {
       attachedProjectId,
     });
 
-    // 4. Per-file: dedup по contentHash → create + enqueue.
     const items: Array<{
       id: string;
       status: DocumentStatus;
@@ -201,18 +159,6 @@ export class DocumentsService {
     return { items };
   }
 
-  /**
-   * Создаёт ОДИН `Document` из подготовленного буфера: dedup по `contentHash`,
-   * выбор inline/S3-хранилища, persist, enqueue `core.document-uploaded`.
-   *
-   * Извлечено из `uploadMany`, чтобы переиспользовать в ТЗ-4 Ф7 (массовый
-   * импорт ZIP — `DocumentImportService`): тот сам прогоняет формат/размер per-
-   * entry и зовёт `createOne` с `importBatchId`. Никакой pre-validation тут нет
-   * — caller обязан её выполнить (`uploadMany`/`DocumentImportService`).
-   *
-   * `kind` опционален — если не передан, выводится из mime/имени (как в
-   * `uploadMany`). Возвращает `{ id, status, name, deduped }`.
-   */
   async createOne(args: {
     tenantId: string;
     uploaderPersonId: string;
@@ -260,7 +206,6 @@ export class DocumentsService {
       return { id: existing.id, status: existing.status, name, deduped: true };
     }
 
-    // inline vs S3 storage.
     const useS3 = file.size > this.cfg.document.inlineThresholdBytes;
     let s3Key: string | null = null;
     if (useS3) {
@@ -273,7 +218,6 @@ export class DocumentsService {
       s3Key = objectKey;
     }
 
-    // Prisma 7 для `Bytes` ожидает `Uint8Array<ArrayBuffer>` — копируем.
     const inlineBytes = useS3 ? null : Uint8Array.from(file.buffer);
     const doc = await this.prisma.document.create({
       data: {
@@ -317,10 +261,6 @@ export class DocumentsService {
     return { id: doc.id, status: doc.status, name, deduped: false };
   }
 
-  /**
-   * Backward-compat обёртка над `uploadMany` для одиночного файла. Сохраняет
-   * прежний контракт `{ id, status }` (использовался до ТЗ-4 Ф3).
-   */
   async upload(args: {
     tenantId: string;
     uploaderPersonId: string;
@@ -340,7 +280,6 @@ export class DocumentsService {
     });
     const first = items[0];
     if (!first) {
-      // Недостижимо: при непустом files[] uploadMany возвращает ≥1 item.
       throw new BadRequestException({
         ok: false,
         error: { code: 'file_required', message: 'Файл обязателен' },
@@ -349,11 +288,6 @@ export class DocumentsService {
     return { id: first.id, status: first.status };
   }
 
-  /**
-   * Проверяет, что заданные привязки документа принадлежат tenantId.
-   * Зеркалит существующую role-проверку и расширяет на Theme/Project (ТЗ-4 Ф3).
-   * На несоответствие — machine-coded 404.
-   */
   private async assertAttributionBelongsToTenant(args: {
     tenantId: string;
     attachedRoleId?: string;
@@ -401,7 +335,6 @@ export class DocumentsService {
     }
   }
 
-  // ─────────────────────────── createTextDump (для /dumps) ──────────────
 
   async createTextDump(args: {
     tenantId: string;
@@ -418,7 +351,6 @@ export class DocumentsService {
     return { id: documentId, status: 'queued' };
   }
 
-  // ─────────────────────────── get / list / delete ──────────────────────
 
   async get(args: {
     tenantId: string;
@@ -426,7 +358,6 @@ export class DocumentsService {
   }): Promise<Document> {
     const doc = await this.prisma.document.findUnique({
       where: { id: args.documentId },
-      // D10 — имена загрузчика/роли для DocumentDto (uploaderName/attachedRoleName).
       include: {
         uploader: { select: { name: true } },
         attachedRole: { select: { name: true } },
@@ -464,7 +395,6 @@ export class DocumentsService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.document.findMany({
         where,
-        // D10 — имена загрузчика/роли для DocumentDto (uploaderName/attachedRoleName).
         include: {
           uploader: { select: { name: true } },
           attachedRole: { select: { name: true } },
@@ -478,21 +408,6 @@ export class DocumentsService {
     return { items, total };
   }
 
-  /**
-   * Получить provenance группы Б + IdeaBlock'и для документа (Фаза 0b §10).
-   *
-   * Алгоритм:
-   *   1. Находим все RawEvent'ы для этого документа (по
-   *      `sourceExternalId='doc:<id>'`).
-   *   2. Через них — все IdeaBlockEvidence → IdeaBlock'и.
-   *   3. Из IdeaBlock'ов: Decision-сущности (по `sourceIdeaBlockId`).
-   *   4. Из EntityLink с `toEntityId=documentId, toType='document',
-   *      relationType='derived_from'` (или `produces` от Process) — берём
-   *      Process/Regulation/Policy/Metric/Tool.
-   *
-   * RBAC и доступ к самому документу проверяются в контроллере; этот метод
-   * получает уже валидный documentId.
-   */
   async getDetail(args: {
     tenantId: string;
     documentId: string;
@@ -514,7 +429,6 @@ export class DocumentsService {
       documentId: args.documentId,
     });
 
-    // 1. Ищем IdeaBlock'и через RawEvent → IdeaBlockEvidence.
     const evidence = await this.prisma.ideaBlockEvidence.findMany({
       where: {
         rawEvent: {
@@ -539,7 +453,6 @@ export class DocumentsService {
           })
         : [];
 
-    // Если admin/owner не запросил — не делаем тяжёлых запросов на group-Б.
     const empty: {
       processes: WithTrustTier<Process>[];
       decisions: WithTrustTier<Decision>[];
@@ -559,7 +472,6 @@ export class DocumentsService {
       return { document, ideaBlocks, extracted: empty };
     }
 
-    // 2. Decision через sourceIdeaBlockId.
     const decisions =
       blockIds.length > 0
         ? await this.prisma.decision.findMany({
@@ -572,9 +484,6 @@ export class DocumentsService {
           })
         : [];
 
-    // 3. Group Б через EntityLink. derived_from → Document.
-    //    fromType ∈ {process, regulation, policy, metric, tool}, toType=document,
-    //    toEntityId = documentId.
     const links = await this.prisma.entityLink.findMany({
       where: {
         tenantId: args.tenantId,
@@ -597,8 +506,6 @@ export class DocumentsService {
       tool: [] as string[],
     };
     for (const l of links) {
-      // fromType nullable в EntityLink (legacy = 'entity'); пропускаем легаси
-      // и любые не-group-Б рёбра, которые не должны попадать в provenance документа.
       if (l.fromType !== null && l.fromType in byType) {
         byType[l.fromType as keyof typeof byType].push(l.fromEntityId);
       }
@@ -671,12 +578,7 @@ export class DocumentsService {
     };
   }
 
-  // ─────────────────────────── import status (Волна 2 B1) ───────────────
 
-  /**
-   * Статус batch-импорта для UI прогресса (`GET /documents/imports/:id`).
-   * tenant-scope: чужой Org → 404 (не раскрываем существование).
-   */
   async getImportStatus(args: {
     tenantId: string;
     importId: string;
@@ -693,24 +595,7 @@ export class DocumentsService {
     return row;
   }
 
-  // ─────────────────────────── attribution accept (Волна 2 B2) ──────────
 
-  /**
-   * ТЗ-4 Волна 2 (B2) — выставляет смысловую атрибуцию документа человеком и
-   * очищает подсказки классификатора (accepted). Затем проецирует привязку в
-   * граф для уже существующих блоков документа (зеркалит Ф4
-   * `applyDocumentAttribution` из block-ingest.worker).
-   *
-   * Идемпотентно:
-   *   - `document.update` повторяемо;
-   *   - проекция: `ideaBlock.updateMany` (roleId/roleRelevant) и
-   *     `themeIdeaBlock.createMany({ skipDuplicates })` (PK [themeId, blockId]).
-   *
-   * Контракт полей:
-   *   - значение `undefined` (поле не передано) — НЕ трогаем колонку;
-   *   - значение `null` — явно снимаем привязку;
-   *   - Theme/Project проверяются на принадлежность tenantId (как при загрузке).
-   */
   async setAttribution(args: {
     tenantId: string;
     documentId: string;
@@ -720,18 +605,14 @@ export class DocumentsService {
   }): Promise<Document> {
     const { tenantId, documentId } = args;
 
-    // Доступ + tenant-scope: 404/403 при чужом/удалённом документе.
     const doc = await this.get({ tenantId, documentId });
 
-    // Theme/Project, если задаются ненулевыми — должны принадлежать tenantId.
     await this.assertAttributionBelongsToTenant({
       tenantId,
       attachedThemeId: args.attachedThemeId ?? undefined,
       attachedProjectId: args.attachedProjectId ?? undefined,
     });
 
-    // 1. Устанавливаем колонки. Только переданные поля; подсказки снимаем всегда
-    //    (атрибуция подтверждена/перебита человеком — accepted).
     const data: Prisma.DocumentUpdateInput = {
       suggestedDocType: null,
       suggestedThemeId: null,
@@ -753,7 +634,6 @@ export class DocumentsService {
       data,
     });
 
-    // 2. Проекция в граф для уже извлечённых блоков документа.
     await this.projectAttributionToBlocks({
       tenantId,
       documentId,
@@ -774,16 +654,6 @@ export class DocumentsService {
     return updated;
   }
 
-  /**
-   * Зеркало Ф4 `applyDocumentAttribution` (block-ingest.worker), но для уже
-   * созданных блоков: находит IdeaBlock'и документа через `IdeaBlockEvidence`
-   * (rawEvent.sourceExternalId='doc:<id>') и применяет:
-   *   - `attachedRoleId` → блокам `roleId + roleRelevant=true` (updateMany);
-   *   - `attachedThemeId` → ThemeIdeaBlock (weight 0.8, skipDuplicates).
-   *
-   * Идемпотентно. Если блоков нет (документ ещё не разобран) — no-op; привязка
-   * применится при ingest через сам `applyDocumentAttribution`.
-   */
   private async projectAttributionToBlocks(args: {
     tenantId: string;
     documentId: string;
@@ -826,16 +696,7 @@ export class DocumentsService {
   }
 }
 
-// ─────────────────────────── helpers ─────────────────────────────────────
 
-/**
- * Определяет `DocumentKind` по MIME и расширению. ТЗ §4.1 + ТЗ-4 Ф2
- * (xlsx/csv/pptx/html/rtf/odt). При неуверенности (octet-stream) — пробуем по
- * расширению, иначе `other` (адаптер откажет с `failed`).
- *
- * Порядок важен: специфичные форматы (csv/markdown) проверяем ДО общего
- * `text/*`, иначе `text/csv`/`text/markdown` упадут в ветку `text`.
- */
 export function detectKind(mimeType: string, fileName: string): DocumentKind {
   const mime = mimeType.toLowerCase();
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
@@ -893,25 +754,14 @@ export function detectKind(mimeType: string, fileName: string): DocumentKind {
   return 'other';
 }
 
-/**
- * Нормализованный токен формата для сверки с `documents.acceptedFormats`
- * (ТЗ-4 Ф6). Берёт расширение файла как основной источник (именно расширения
- * перечислены в белом списке: `pdf,docx,xlsx,…,md,txt`), а если расширения
- * нет — маппит из распознанного `DocumentKind`.
- *
- * Маппинг учитывает расхождение enum'а и белого списка:
- *   DocumentKind `markdown` → токен `md`; `text` → `txt`.
- */
 export function formatToken(kind: DocumentKind, fileName: string): string {
   const ext = (fileName.split('.').pop() ?? '').toLowerCase();
   if (ext && ext !== fileName.toLowerCase()) {
-    // Канонизируем синонимы расширений к токенам белого списка.
     if (ext === 'markdown') return 'md';
     if (ext === 'htm') return 'html';
     if (ext === 'xls') return 'xlsx';
     return ext;
   }
-  // Нет расширения — выводим из kind.
   switch (kind) {
     case 'markdown':
       return 'md';

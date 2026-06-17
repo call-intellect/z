@@ -1,29 +1,3 @@
-/**
- * SBA β-7 — Seed маршрутов LLM для taskType `brand-voice-extract`
- * (Specialist 3.10 BrandVoice Curator).
- *
- *   - brand-voice-extract — daily-cron сборка BrandVoiceProfile из
- *     brand_corpus документов + brand_principle блоков. Нужна высокая
- *     точность (стиль бренда — критичный контент), поэтому primary = gpt-4o.
- *
- * Цепочка:
- *   primary:   openai-via-proxy / gpt-4o          (высокая точность извлечения)
- *   secondary: deepseek         / deepseek-chat   (backup, экономичная)
- *   tertiary:  ollama           / qwen3.5:9b      (offline fallback)
- *
- * maxDataClass: 'internal' (стандарт для β-2/3/4/5; brand corpus — internal,
- * не PII).
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-brand-voice.ts
- *   bun run scripts/seed-llm-task-routes-brand-voice.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с editedByAdmin=true НЕ перезаписываются.
- *   - Без флага --update-existing — пропускаем существующие.
- *   - С --update-existing — обновляем model/priority/isActive.
- */
-
 import { PrismaClient, type LlmRouteTier } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 
@@ -106,17 +80,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -141,18 +111,14 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 
 async function main(): Promise<void> {
   const updateExisting = process.argv.includes('--update-existing');
   // eslint-disable-next-line no-console
-  console.log(
-    `=== seed-llm-task-routes-brand-voice START (updateExisting=${updateExisting}) ===`,
-  );
+  console.log(`=== seed-llm-task-routes-brand-voice START (updateExisting=${updateExisting}) ===`);
   // eslint-disable-next-line no-console
   console.log(`TaskTypes: ${SEEDS.map((s) => s.taskType).join(', ')}`);
 

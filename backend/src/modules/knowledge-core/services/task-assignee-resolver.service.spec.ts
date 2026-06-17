@@ -68,14 +68,14 @@ describe('TaskAssigneeResolverService.resolve', () => {
       [
         {
           assigneeRaw: 'Чужой',
-          assigneeUserId: 'user_evil', // не в participants
+          assigneeUserId: 'user_evil',
         },
       ],
       [HOST_ANNA],
       'tenant-1',
     );
     expect(result[0]?.assigneeUserId).toBeNull();
-    expect(result[0]?.ambiguous).toBe(false); // не совпало с никем, не «спорно»
+    expect(result[0]?.ambiguous).toBe(false);
     expect(incAmbiguous).toHaveBeenCalledWith({
       tenant: 'tenant-1',
       reason: 'llm_hallucination',
@@ -83,8 +83,6 @@ describe('TaskAssigneeResolverService.resolve', () => {
   });
 
   it('ветка 2 fallback — галлюцинация userId, но raw матчится → userId восстановлен', () => {
-    // LLM вернул левый userId, но raw совпадает с реальным участником —
-    // резолвер сбрасывает галлюцинацию и матчит по имени.
     const { service, incAmbiguous } = makeResolver();
     const result = service.resolve(
       [{ assigneeRaw: 'Анна', assigneeUserId: 'user_evil' }],
@@ -101,7 +99,7 @@ describe('TaskAssigneeResolverService.resolve', () => {
   it('ветка 3 — только assigneeRaw, точный матч по displayName', () => {
     const { service, incAmbiguous } = makeResolver();
     const result = service.resolve(
-      [{ assigneeRaw: 'анна', assigneeUserId: null }], // регистрозависимо? нет
+      [{ assigneeRaw: 'анна', assigneeUserId: null }],
       [HOST_ANNA],
       'tenant-1',
     );
@@ -165,7 +163,6 @@ describe('TaskAssigneeResolverService.resolve', () => {
     );
     expect(result[0]?.assigneeUserId).toBeNull();
     expect(result[1]?.assigneeUserId).toBeNull();
-    // user_evil — это галлюцинация, должна записаться
     expect(incAmbiguous).toHaveBeenCalledWith({
       tenant: 'tenant-1',
       reason: 'llm_hallucination',

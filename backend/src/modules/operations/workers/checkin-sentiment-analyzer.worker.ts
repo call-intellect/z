@@ -13,19 +13,6 @@ import {
 } from '../prompts/checkin-sentiment.prompt';
 import { resolveOperationsTenantTop } from '../utils/tenant-top';
 
-/**
- * SBA β-8.1 — CheckinSentimentAnalyzerWorker.
- *
- * Слушает событие `checkin.created`, эмиттированное `CheckinResponseHandler`
- * после успешного upsert'а DailyCheckIn. Делает один вызов модели через
- * `LlmRouterService` (`taskType='checkin-sentiment'`), парсит JSON-ответ
- * `{sentiment, rationale}` и обновляет запись DailyCheckIn.
- *
- * Best-effort: любая ошибка LLM или невалидный ответ → `sentiment=null`,
- * `coo_sentiment_failed_total++`. Чек-ин остаётся валидным.
- *
- * Master-flag — `COO_SENTIMENT_ENABLED`. False → handler выходит сразу.
- */
 @Injectable()
 export class CheckinSentimentAnalyzerWorker {
   private readonly logger = new Logger(CheckinSentimentAnalyzerWorker.name);
@@ -49,8 +36,6 @@ export class CheckinSentimentAnalyzerWorker {
   }): Promise<void> {
     if (!this.cfg.betaOps.sentimentEnabled) return;
     if (!event.rawText || event.rawText.trim().length === 0) return;
-    // Анализируем только вечерние чек-ины — у утренних нет «настроения дня»,
-    // а только план задач (см. ТЗ §3 — обоснование «вечернего ответа»).
     if (event.kind !== 'evening') return;
 
     const tenantTop = resolveOperationsTenantTop(event.tenantId);
@@ -66,9 +51,6 @@ export class CheckinSentimentAnalyzerWorker {
             rawText: event.rawText,
           }),
           responseFormat: { type: 'json_object' },
-          // ТЗ 2026-05-25 LLM-architecture §6.6 — поднято 300 → 1500.
-          // На DeepSeek-Pro с thinking при 300 — 56% ответов пустые
-          // (thinking-токены съедают весь лимит). 1500 — безопасный минимум.
           maxTokens: 1_500,
           sourceRef: { type: 'checkin', id: event.checkInId },
         }),
@@ -117,10 +99,6 @@ export class CheckinSentimentAnalyzerWorker {
     }
   }
 
-  /**
-   * Безопасный парсер ответа модели. Если JSON некорректен — возвращает null.
-   * Подстраховка от моделей, которые возвращают текст вокруг JSON.
-   */
   private parseSentimentResponse(text: string): {
     sentiment: CheckinSentiment;
     rationale: string;
@@ -140,15 +118,10 @@ export class CheckinSentimentAnalyzerWorker {
     if (!parsed || typeof parsed !== 'object') return null;
     const obj = parsed as Record<string, unknown>;
     const sentimentRaw = obj.sentiment;
-    if (
-      sentimentRaw !== 'green' &&
-      sentimentRaw !== 'yellow' &&
-      sentimentRaw !== 'red'
-    ) {
+    if (sentimentRaw !== 'green' && sentimentRaw !== 'yellow' && sentimentRaw !== 'red') {
       return null;
     }
-    const rationaleRaw =
-      typeof obj.rationale === 'string' ? obj.rationale.slice(0, 1_000) : '';
+    const rationaleRaw = typeof obj.rationale === 'string' ? obj.rationale.slice(0, 1_000) : '';
     return {
       sentiment: sentimentRaw,
       rationale: rationaleRaw,

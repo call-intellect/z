@@ -19,24 +19,6 @@ import type {
 import { ProjectsService } from './projects.service';
 import { TrackerEmitterService } from './tracker-emitter.service';
 
-/**
- * Tracker Project Overview (2026-05-27) — агрегат данных для стартовой
- * страницы проекта `/projects/[slug]/overview`.
- *
- * Контракт: plans/tz/2026-05-27-tracker-project-overview.md §"Часть 1".
- *
- * Кэш:
- *   - ключ: `project:overview:{projectId}`
- *   - TTL: 30 секунд (горячая страница, агрегаты «дешёвые», но 7 виджетов
- *     в одном запросе оправдывают короткий кэш для повторных просмотров).
- *   - инвалидация: на `tracker.event_occurred` (issue.created/status_changed/...)
- *     + явный вызов `invalidate(projectId)`.
- *
- * Устойчивость к ProjectDocument: модель может ещё не существовать в схеме
- * (соседний агент Волны 2 параллельно над ней работает). OverviewService
- * проверяет `'projectDocument' in prisma` и при отсутствии возвращает
- * `recentDocuments: []` (виджет на фронте рендерит «Документов пока нет»).
- */
 @Injectable()
 export class OverviewService {
   private readonly logger = new Logger(OverviewService.name);
@@ -47,39 +29,24 @@ export class OverviewService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(ProjectsService) private readonly projects: ProjectsService,
-    // Redis-кэш — Optional: unit-тесты сервиса без Redis не падают.
     @Optional()
     @Inject(RedisService)
     private readonly redis?: RedisService,
   ) {}
 
-  /**
-   * Главный метод. Сначала Redis (если есть), затем DB.
-   * Read-only — никаких мутаций, безопасно для горячей страницы.
-   */
-  async getOverview(args: {
-    projectId: string;
-    tenantId: string;
-  }): Promise<OverviewResponseDto> {
-    // 1. Проверка существования + tenant-ownership — кидает 404 если чужой.
+  async getOverview(args: { projectId: string; tenantId: string }): Promise<OverviewResponseDto> {
     await this.projects.requireProject(args.projectId, args.tenantId);
 
-    // 2. Кэш-hit.
     const cached = await this.tryReadCache(args.projectId);
     if (cached) return cached;
 
-    // 3. Сборка из DB.
     const fresh = await this.assemble(args.projectId, args.tenantId);
 
-    // 4. Кэш-write (best-effort).
     await this.tryWriteCache(args.projectId, fresh);
 
     return fresh;
   }
 
-  /**
-   * Явная инвалидация кэша. Используется тестами и админскими сценариями.
-   */
   async invalidate(projectId: string): Promise<void> {
     if (!this.redis) return;
     try {
@@ -92,37 +59,14 @@ export class OverviewService {
     }
   }
 
-  // ── event listener ────────────────────────────────────────────────
-
-  /**
-   * Подписка на шину tracker'а. После каждой значимой мутации Issue —
-   * инвалидируем кэш конкретного проекта.
-   *
-   * NB: `project_document.*` события пока нет (соседний агент пишет
-   * ProjectDocument); когда появятся — добавить @OnEvent отдельно.
-   * Cycle progress пересчитывается раз в N минут cron'ом и сам отдельно
-   * эмитит `cycle.updated` через WebSocket (не EventEmitter), поэтому
-   * следующий запрос overview перечитает свежий progressSnapshot после
-   * истечения TTL=30s — этого достаточно для UX.
-   */
   @OnEvent(TrackerEmitterService.EVENT_NAME)
-  async onTrackerEvent(payload: {
-    type: string;
-    issue?: { projectId: string };
-  }): Promise<void> {
+  async onTrackerEvent(payload: { type: string; issue?: { projectId: string } }): Promise<void> {
     const projectId = payload?.issue?.projectId;
     if (!projectId) return;
     await this.invalidate(projectId);
   }
 
-  // ── assemble ──────────────────────────────────────────────────────
-
-  private async assemble(
-    projectId: string,
-    tenantId: string,
-  ): Promise<OverviewResponseDto> {
-    // Не делаем большую транзакцию — read-only, агрегаты независимые.
-    // Параллельные fetch'и — быстрее.
+  private async assemble(projectId: string, tenantId: string): Promise<OverviewResponseDto> {
     const [
       project,
       members,
@@ -155,10 +99,7 @@ export class OverviewService {
     };
   }
 
-  private async fetchProject(
-    projectId: string,
-    tenantId: string,
-  ): Promise<OverviewProjectMiniDto> {
+  private async fetchProject(projectId: string, tenantId: string): Promise<OverviewProjectMiniDto> {
     const p = await this.prisma.project.findFirstOrThrow({
       where: { id: projectId, tenantId, deletedAt: null },
       select: {
@@ -209,14 +150,10 @@ export class OverviewService {
     });
   }
 
-  private async fetchMetrics(
-    projectId: string,
-    tenantId: string,
-  ): Promise<OverviewMetricsDto> {
+  private async fetchMetrics(projectId: string, tenantId: string): Promise<OverviewMetricsDto> {
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Все агрегаты — одним батчем (параллельно).
     const [total, inProgress, overdue, completedLast7d] = await Promise.all([
       this.prisma.issue.count({
         where: { tenantId, projectId, deletedAt: null },
@@ -263,8 +200,6 @@ export class OverviewService {
     projectId: string,
     tenantId: string,
   ): Promise<OverviewStateBucketDto[]> {
-    // Группируем через JOIN: issue + state.category.
-    // Prisma `groupBy` не поддерживает related-field — делаем raw select.
     const rows = await this.prisma.issue.findMany({
       where: { tenantId, projectId, deletedAt: null },
       select: { state: { select: { category: true } } },
@@ -280,7 +215,7 @@ export class OverviewService {
     for (const r of rows) {
       const cat = r.state?.category as OverviewStateCategory | undefined;
       if (cat && cat in buckets) buckets[cat] += 1;
-      else buckets.backlog += 1; // null state → bucket backlog
+      else buckets.backlog += 1;
     }
     return (Object.keys(buckets) as OverviewStateCategory[]).map((k) => ({
       category: k,
@@ -288,9 +223,7 @@ export class OverviewService {
     }));
   }
 
-  private async fetchActiveCycle(
-    projectId: string,
-  ): Promise<OverviewActiveCycleDto | null> {
+  private async fetchActiveCycle(projectId: string): Promise<OverviewActiveCycleDto | null> {
     const now = new Date();
     const cycle = await this.prisma.cycle.findFirst({
       where: {
@@ -308,9 +241,6 @@ export class OverviewService {
       startDate: cycle.startDate.toISOString(),
       endDate: cycle.endDate.toISOString(),
       progressSnapshot: (cycle.progressSnapshot ?? null) as unknown,
-      // alignmentScore — best-effort. Если SBA strategic-alignment не выводит
-      // score per Cycle, оставим null. (Реальная связь — GoalAlignmentSnapshot,
-      // не на Cycle; не делаем в этом ТЗ.)
       alignmentScore: null,
     };
   }
@@ -319,7 +249,6 @@ export class OverviewService {
     projectId: string,
     tenantId: string,
   ): Promise<OverviewActivityItemDto[]> {
-    // 10 свежих IssueActivity по задачам проекта.
     const acts = await this.prisma.issueActivity.findMany({
       where: { tenantId, issue: { projectId } },
       orderBy: { epoch: 'desc' },
@@ -355,16 +284,13 @@ export class OverviewService {
     projectId: string,
     tenantId: string,
   ): Promise<OverviewLinkedGoalDto[]> {
-    // distinct goalId из задач проекта → загружаем Goal.
     const issueGoals = await this.prisma.issue.findMany({
       where: { tenantId, projectId, deletedAt: null, goalId: { not: null } },
       select: { goalId: true },
       distinct: ['goalId'],
       take: 30,
     });
-    const goalIds = issueGoals
-      .map((i) => i.goalId)
-      .filter((g): g is string => Boolean(g));
+    const goalIds = issueGoals.map((i) => i.goalId).filter((g): g is string => Boolean(g));
     if (goalIds.length === 0) return [];
     const goals = await this.prisma.goal.findMany({
       where: { id: { in: goalIds }, tenantId, archivedAt: null },
@@ -386,24 +312,18 @@ export class OverviewService {
     }));
   }
 
-  /**
-   * Best-effort документы. Модель `ProjectDocument` может ещё не быть в схеме
-   * (соседний агент Волны 2). Проверяем наличие через runtime-проверку,
-   * чтобы overview не падал.
-   */
   private async fetchRecentDocuments(
     projectId: string,
     tenantId: string,
   ): Promise<OverviewProjectDocumentMiniDto[]> {
     if (!this.hasProjectDocument()) return [];
     try {
-      // Делегат может быть назван в нескольких стилях — пробуем стандартный.
       const delegate = (
         this.prisma as unknown as {
           projectDocument?: {
-            findMany: (args: unknown) => Promise<
-              Array<{ id: string; title: string; updatedAt: Date }>
-            >;
+            findMany: (
+              args: unknown,
+            ) => Promise<Array<{ id: string; title: string; updatedAt: Date }>>;
           };
         }
       ).projectDocument;
@@ -435,16 +355,10 @@ export class OverviewService {
     return 'projectDocument' in this.prisma;
   }
 
-  // ── cache ─────────────────────────────────────────────────────────
-
-  private async tryReadCache(
-    projectId: string,
-  ): Promise<OverviewResponseDto | null> {
+  private async tryReadCache(projectId: string): Promise<OverviewResponseDto | null> {
     if (!this.redis) return null;
     try {
-      const raw = await this.redis.client.get(
-        `${OverviewService.CACHE_PREFIX}${projectId}`,
-      );
+      const raw = await this.redis.client.get(`${OverviewService.CACHE_PREFIX}${projectId}`);
       if (!raw) return null;
       return JSON.parse(raw) as OverviewResponseDto;
     } catch (err) {
@@ -456,10 +370,7 @@ export class OverviewService {
     }
   }
 
-  private async tryWriteCache(
-    projectId: string,
-    value: OverviewResponseDto,
-  ): Promise<void> {
+  private async tryWriteCache(projectId: string, value: OverviewResponseDto): Promise<void> {
     if (!this.redis) return;
     try {
       await this.redis.client.set(

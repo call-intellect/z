@@ -25,20 +25,6 @@ import {
   type ConciergeTopQueriesQueryDto,
 } from './dto/concierge-analytics.dto';
 
-/**
- * Admin-redesign Фаза 2 — `ConciergeAnalyticsController`.
- *
- * Read-only GET-эндпоинты для UI Z-Admin раздела «Аналитика → Concierge».
- * Метрики по SBA γ-2 Concierge Agent: всего вопросов, no-answer-rate
- * (эвристика), активные пользователи, топ-запросы, no-answer-list.
- *
- * Если модель `ConciergeMessage` / `ConciergeConversation` отсутствует в
- * Prisma client'е — все эндпоинты возвращают 501 Not Implemented со
- * стандартным JSON-телом (см. ТЗ §2: «fallback при отсутствии модели чата»).
- *
- * Все эндпоинты под `CookieAuthGuard + SuperAdminGuard` и
- * `SuperAdminAuditInterceptor`.
- */
 @ApiTags('admin-analytics-concierge')
 @Controller('api/v1/admin/analytics/concierge')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -49,7 +35,6 @@ export class ConciergeAnalyticsController {
     private readonly svc: ConciergeAnalyticsService,
   ) {}
 
-  /** Общая проверка наличия chat-модели. Кидает 501, если её нет. */
   private assertAvailable(): void {
     if (!this.svc.isAvailable()) {
       throw new HttpException(

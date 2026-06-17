@@ -1,33 +1,4 @@
-/**
- * Sprints (2026-05-27) — Specialist 3-13 «Помощник по спринтам».
- *
- * LLM-промпт `sprint-helper-suggest`. Воркер 3-13-sprint-helper вызывает
- * его раз в 4 часа на каждый активный спринт + по событию завершения
- * встречи sprint_review (см. plans/tz/2026-05-27-sprints.md §2.4).
- *
- * Входные данные (user message):
- *   - спринт: название, scope (компания / отдел / клиент / поставщик / сотрудник / проект),
- *     даты, прогресс N/M;
- *   - список задач спринта: identifier, title, assigneeUserIds, dueDate,
- *     stateCategory, boardName, checklistTotalCount/DoneCount, childrenCount;
- *   - последние блоки графа знаний из встреч спринта (linkedMeetings) и из
- *     задач (Issue.sourceBlockIds): name + criticalQuestion + trustedAnswer + tags;
- *   - история уже выданных подсказок (kind + title + status + createdAt) —
- *     ТОЛЬКО за последние 7 дней, для дедупликации.
- *
- * Выход (JSON Schema strict): массив подсказок `{kind, severity, title, body,
- * affectedIssueIds[], confidence}`. Пустой массив — норма.
- *
- * Главный принцип помощника: НИКОГДА не двигает задачи сам, только показывает,
- * читает, подсказывает. Тон — спокойный коллега, который читает спринт за тебя
- * и обращает внимание на проблемы. Не алармист, не ментор, не «АЛЕРТ».
- */
-
-import {
-  withConfidenceCalibration,
-  withEdgeCasePolicy,
-  withInjectionGuard,
-} from './common';
+import { withConfidenceCalibration, withEdgeCasePolicy, withInjectionGuard } from './common';
 
 export const SPRINT_HELPER_SUGGEST_SYSTEM_PROMPT = withInjectionGuard(
   withEdgeCasePolicy(

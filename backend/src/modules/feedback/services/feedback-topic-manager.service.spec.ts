@@ -1,18 +1,3 @@
-/**
- * Unit-тесты для FeedbackTopicManagerService (admin часть feedback).
- *
- * Покрытие:
- *   - rename: успех, 404, MERGED → 400, ACTIVE/ARCHIVED → OK
- *   - merge: транзакция, source→MERGED, mergedIntoId выставляется,
- *            source==target → 400, MERGED target → 400, MERGED source → 400
- *   - archive: ACTIVE → ARCHIVED + archivedAt; не из ACTIVE → 400
- *   - unarchive: ARCHIVED → ACTIVE + archivedAt=null; не из ARCHIVED → 400
- *   - listTopics: процент, сортировки, фильтр includeArchived, q
- *   - getItemMessage: 404, mismatch topicId, success
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
- */
-
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { FeedbackTopicStatus } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,8 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { FeedbackTopicManagerService } from './feedback-topic-manager.service';
-
-// ──────────────────────────── prisma stub ────────────────────────────
 
 interface PrismaCalls {
   topicFindUnique: ReturnType<typeof vi.fn>;
@@ -41,17 +24,19 @@ interface PrismaStub {
   calls: PrismaCalls;
 }
 
-function makePrisma(options: {
-  topicFindUnique?: (args: unknown) => unknown;
-  topicFindMany?: (args: unknown) => unknown[];
-  topicUpdate?: (args: unknown) => unknown;
-  itemGroupBy?: (args: unknown) => unknown[];
-  itemCount?: (args: unknown) => number;
-  itemFindMany?: (args: unknown) => unknown[];
-  itemFindUnique?: (args: unknown) => unknown;
-  itemUpdateMany?: (args: unknown) => { count: number };
-  queryRawUnsafe?: (sql: string, ...params: unknown[]) => unknown[];
-} = {}): PrismaStub {
+function makePrisma(
+  options: {
+    topicFindUnique?: (args: unknown) => unknown;
+    topicFindMany?: (args: unknown) => unknown[];
+    topicUpdate?: (args: unknown) => unknown;
+    itemGroupBy?: (args: unknown) => unknown[];
+    itemCount?: (args: unknown) => number;
+    itemFindMany?: (args: unknown) => unknown[];
+    itemFindUnique?: (args: unknown) => unknown;
+    itemUpdateMany?: (args: unknown) => { count: number };
+    queryRawUnsafe?: (sql: string, ...params: unknown[]) => unknown[];
+  } = {},
+): PrismaStub {
   const topicFindUnique = vi.fn(async (args: unknown) =>
     options.topicFindUnique ? options.topicFindUnique(args) : null,
   );
@@ -90,11 +75,7 @@ function makePrisma(options: {
   };
 
   const transaction = vi.fn(
-    async (
-      arg:
-        | Promise<unknown>[]
-        | ((tx: typeof txClient) => Promise<unknown>),
-    ) => {
+    async (arg: Promise<unknown>[] | ((tx: typeof txClient) => Promise<unknown>)) => {
       if (typeof arg === 'function') {
         return arg(txClient);
       }
@@ -145,14 +126,11 @@ describe('FeedbackTopicManagerService', () => {
     vi.useRealTimers();
   });
 
-  // ──────────────────────────── rename ────────────────────────────
-
   describe('rename', () => {
     it('обновляет title+description и возвращает обновлённую запись', async () => {
       const now = new Date(Date.UTC(2026, 4, 25, 12, 0, 0));
       const stub = makePrisma({
         topicFindUnique: (args: unknown) => {
-          // первый вызов — status check, второй вызов из getTopic
           const a = args as { select?: Record<string, unknown> };
           if (a.select && 'status' in a.select && Object.keys(a.select).length === 1) {
             return { status: FeedbackTopicStatus.ACTIVE };
@@ -191,9 +169,9 @@ describe('FeedbackTopicManagerService', () => {
     it('404 если блока нет', async () => {
       const stub = makePrisma({ topicFindUnique: () => null });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.rename('missing', { title: 'a', description: 'b' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.rename('missing', { title: 'a', description: 'b' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('400 если блок в MERGED', async () => {
@@ -201,9 +179,9 @@ describe('FeedbackTopicManagerService', () => {
         topicFindUnique: () => ({ status: FeedbackTopicStatus.MERGED }),
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.rename('t-1', { title: 'x', description: 'y' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.rename('t-1', { title: 'x', description: 'y' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(stub.calls.topicUpdate).not.toHaveBeenCalled();
     });
 
@@ -235,8 +213,6 @@ describe('FeedbackTopicManagerService', () => {
       expect(stub.calls.topicUpdate).toHaveBeenCalled();
     });
   });
-
-  // ──────────────────────────── merge ────────────────────────────
 
   describe('merge', () => {
     it('переносит items + помечает source MERGED + возвращает счётчик', async () => {
@@ -271,9 +247,9 @@ describe('FeedbackTopicManagerService', () => {
     it('400 если source==target', async () => {
       const stub = makePrisma();
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.merge('same', { targetId: 'same' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.merge('same', { targetId: 'same' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
       expect(stub.calls.transaction).not.toHaveBeenCalled();
     });
 
@@ -286,9 +262,9 @@ describe('FeedbackTopicManagerService', () => {
         },
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.merge('missing', { targetId: 't-2' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.merge('missing', { targetId: 't-2' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('404 если target не найден', async () => {
@@ -300,9 +276,9 @@ describe('FeedbackTopicManagerService', () => {
         },
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.merge('s-1', { targetId: 'missing' }),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.merge('s-1', { targetId: 'missing' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('400 если source уже MERGED', async () => {
@@ -315,9 +291,9 @@ describe('FeedbackTopicManagerService', () => {
         },
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.merge('s-1', { targetId: 't-2' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.merge('s-1', { targetId: 't-2' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
 
     it('400 если target в MERGED', async () => {
@@ -330,13 +306,11 @@ describe('FeedbackTopicManagerService', () => {
         },
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.merge('s-1', { targetId: 't-2' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(svc.merge('s-1', { targetId: 't-2' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
     });
   });
-
-  // ──────────────────────────── archive/unarchive ────────────────────────────
 
   describe('archive', () => {
     it('из ACTIVE → ARCHIVED + archivedAt', async () => {
@@ -379,9 +353,7 @@ describe('FeedbackTopicManagerService', () => {
         topicFindUnique: () => ({ status: FeedbackTopicStatus.ARCHIVED }),
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.archive('t-1')).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(svc.archive('t-1')).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('400 если MERGED', async () => {
@@ -389,17 +361,13 @@ describe('FeedbackTopicManagerService', () => {
         topicFindUnique: () => ({ status: FeedbackTopicStatus.MERGED }),
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.archive('t-1')).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(svc.archive('t-1')).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('404 если блока нет', async () => {
       const stub = makePrisma({ topicFindUnique: () => null });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.archive('missing')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(svc.archive('missing')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -444,13 +412,9 @@ describe('FeedbackTopicManagerService', () => {
         topicFindUnique: () => ({ status: FeedbackTopicStatus.ACTIVE }),
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.unarchive('t-1')).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(svc.unarchive('t-1')).rejects.toBeInstanceOf(BadRequestException);
     });
   });
-
-  // ──────────────────────────── listTopics ────────────────────────────
 
   describe('listTopics', () => {
     it('считает percent правильно: 25% от total=4', async () => {
@@ -465,18 +429,12 @@ describe('FeedbackTopicManagerService', () => {
             createdAt: now,
           },
         ],
-        // groupBy возвращает itemsCount=1, lastItemAt=now
-        itemGroupBy: () => [
-          { topicId: 't-1', _count: { _all: 1 }, _max: { createdAt: now } },
-        ],
-        // count items в окне = 4 — знаменатель
+        itemGroupBy: () => [{ topicId: 't-1', _count: { _all: 1 }, _max: { createdAt: now } }],
         itemCount: () => 4,
-        // unique users по topicId t-1 = 1
         queryRawUnsafe: (sql: string) => {
           if (sql.includes('GROUP BY')) {
             return [{ topic_id: 't-1', users_count: 1 }];
           }
-          // total users в окне
           return [{ users_count: 2 }];
         },
       });
@@ -541,7 +499,7 @@ describe('FeedbackTopicManagerService', () => {
         pageSize: 20,
         includeArchived: false,
       });
-      const call = (stub.calls.topicFindMany.mock.calls[0]![0]) as {
+      const call = stub.calls.topicFindMany.mock.calls[0]![0] as {
         where: { status: { in: FeedbackTopicStatus[] } };
       };
       expect(call.where.status.in).toEqual([FeedbackTopicStatus.ACTIVE]);
@@ -561,7 +519,7 @@ describe('FeedbackTopicManagerService', () => {
         pageSize: 20,
         includeArchived: true,
       });
-      const call = (stub.calls.topicFindMany.mock.calls[0]![0]) as {
+      const call = stub.calls.topicFindMany.mock.calls[0]![0] as {
         where: { status: { in: FeedbackTopicStatus[] } };
       };
       expect(call.where.status.in).toEqual([
@@ -585,7 +543,7 @@ describe('FeedbackTopicManagerService', () => {
         includeArchived: false,
         q: 'отчёт',
       });
-      const call = (stub.calls.topicFindMany.mock.calls[0]![0]) as {
+      const call = stub.calls.topicFindMany.mock.calls[0]![0] as {
         where: { OR: Array<{ title?: unknown; description?: unknown }> };
       };
       expect(call.where.OR).toBeDefined();
@@ -612,8 +570,7 @@ describe('FeedbackTopicManagerService', () => {
         pageSize: 20,
         includeArchived: false,
       });
-      // itemCount вызывался с where БЕЗ createdAt
-      const call = (stub.calls.itemCount.mock.calls[0]![0]) as {
+      const call = stub.calls.itemCount.mock.calls[0]![0] as {
         where: Record<string, unknown>;
       };
       expect(call.where.createdAt).toBeUndefined();
@@ -661,7 +618,7 @@ describe('FeedbackTopicManagerService', () => {
         pageSize: 20,
         includeArchived: false,
       });
-      expect(result.items[0]!.id).toBe('t-2'); // больше users
+      expect(result.items[0]!.id).toBe('t-2');
       expect(result.items[1]!.id).toBe('t-1');
     });
 
@@ -705,15 +662,11 @@ describe('FeedbackTopicManagerService', () => {
     });
   });
 
-  // ──────────────────────────── getItemMessage ────────────────────────────
-
   describe('getItemMessage', () => {
     it('404 если item не найден', async () => {
       const stub = makePrisma({ itemFindUnique: () => null });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.getItemMessage('t-1', 'missing'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getItemMessage('t-1', 'missing')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('404 если item принадлежит другому topic', async () => {
@@ -732,9 +685,7 @@ describe('FeedbackTopicManagerService', () => {
         }),
       });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(
-        svc.getItemMessage('t-1', 'i-1'),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getItemMessage('t-1', 'i-1')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('возвращает поля message + user + org', async () => {
@@ -767,15 +718,11 @@ describe('FeedbackTopicManagerService', () => {
     });
   });
 
-  // ──────────────────────────── getTopic ────────────────────────────
-
   describe('getTopic', () => {
     it('404 если блок не найден', async () => {
       const stub = makePrisma({ topicFindUnique: () => null });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.getTopic('missing', '30')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(svc.getTopic('missing', '30')).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('возвращает агрегаты по выбранному окну', async () => {
@@ -791,9 +738,7 @@ describe('FeedbackTopicManagerService', () => {
           updatedAt: now,
           mergedIntoId: null,
         }),
-        itemGroupBy: () => [
-          { topicId: 't-1', _count: { _all: 3 }, _max: { createdAt: now } },
-        ],
+        itemGroupBy: () => [{ topicId: 't-1', _count: { _all: 3 }, _max: { createdAt: now } }],
         itemCount: () => 10,
         queryRawUnsafe: () => [{ topic_id: 't-1', users_count: 2 }],
       });
@@ -801,20 +746,16 @@ describe('FeedbackTopicManagerService', () => {
       const result = await svc.getTopic('t-1', '30');
       expect(result.itemsCount).toBe(3);
       expect(result.uniqueUsersCount).toBe(2);
-      expect(result.percentOfWindow).toBe(30.0); // 3/10 = 30%
+      expect(result.percentOfWindow).toBe(30.0);
       expect(result.lastItemAt).toBe(now.toISOString());
     });
   });
-
-  // ──────────────────────────── listItems ────────────────────────────
 
   describe('listItems', () => {
     it('404 если блока нет', async () => {
       const stub = makePrisma({ topicFindUnique: () => null });
       const svc = new FeedbackTopicManagerService(stub.prisma);
-      await expect(svc.listItems('missing', 1, 50)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(svc.listItems('missing', 1, 50)).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('возвращает items с user/org, сортировка desc, фильтр discarded=false', async () => {
@@ -850,8 +791,7 @@ describe('FeedbackTopicManagerService', () => {
         user: { id: 'u-1', email: 'a@b', name: 'Alice' },
         org: { id: 'o-1', name: 'Org' },
       });
-      // Проверим параметры findMany
-      const findManyCall = (stub.calls.itemFindMany.mock.calls[0]![0]) as {
+      const findManyCall = stub.calls.itemFindMany.mock.calls[0]![0] as {
         where: { topicId: string; discarded: boolean };
         orderBy: { createdAt: string };
         skip: number;

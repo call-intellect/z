@@ -1,28 +1,3 @@
-/**
- * Unit-тесты DepartmentsService.mergeDepartments (редизайн кабинета Ф7а).
- *
- * Покрытие:
- *   - перенос всех 10 FK/ссылок source→target вызван с правильными where/data
- *     (Role / Appointment / Project / Person.primaryDepartment / дочерние
- *     Department / DepartmentDomainLink / Metric.attachedToDepartment /
- *     Interaction.counterpartDepartment / OrgUnit.parentDepartment /
- *     Department.entityId);
- *   - DepartmentDomainLink: дубль (target уже покрывает domain) → delete,
- *     иначе → update на target;
- *   - Department.entityId: перенос с обходом UNIQUE (обнулить source → присвоить
- *     target) только если у target пусто; не трогаем, если у target уже есть;
- *   - регресс A2: после merge для всех перенесённых FK вызван updateMany
- *     source→target (0 висячих ссылок на удалённый отдел);
- *   - source soft-deleted (deletedAt выставлен);
- *   - запрет self-merge (source===target) → BadRequest;
- *   - запрет цикла (target — потомок source) → BadRequest;
- *   - повторный merge уже удалённого source → BadRequest (не 500).
- *
- * Все зависимости мокаются: Prisma (department/role/appointment/project/person/
- * departmentDomainLink/metric/interaction/orgUnit + $transaction прокидывает тот
- * же tx), AuditLogService.
- */
-
 import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -51,11 +26,6 @@ function makeAudit(): AuditLogService {
   return { log: vi.fn(async () => undefined) } as unknown as AuditLogService;
 }
 
-/**
- * Prisma-мок для merge. Хранит счётчики updateMany и поведение
- * departmentDomainLink (update/delete). `$transaction(cb)` вызывает cb с тем же
- * мок-объектом (tx === prisma).
- */
 function makePrisma(opts: {
   departments: DeptSeed[];
   domainLinks?: { source: DomainLinkSeed[]; target: DomainLinkSeed[] };
@@ -123,7 +93,6 @@ function makePrisma(opts: {
         calls.childUpdateMany.push(arg);
         return { count: 2 };
       }),
-      // groupBy для countAttachments (вызывается в конце merge)
       groupBy: vi.fn(async () => []),
       count: vi.fn(async () => 0),
     },
@@ -215,7 +184,6 @@ describe('DepartmentsService.mergeDepartments', () => {
       byUserId: 'u1',
     });
 
-    // Каждый FK перенесён с where source → data target.
     expect(calls.roleUpdateMany[0]).toEqual({
       where: { tenantId: TENANT, departmentId: 'src' },
       data: { departmentId: 'dst' },
@@ -232,12 +200,10 @@ describe('DepartmentsService.mergeDepartments', () => {
       where: { tenantId: TENANT, primaryDepartmentId: 'src' },
       data: { primaryDepartmentId: 'dst' },
     });
-    // Дочерние Department переподвешены (updateMany на модели department).
     expect(calls.childUpdateMany).toContainEqual({
       where: { tenantId: TENANT, parentDepartmentId: 'src' },
       data: { parentDepartmentId: 'dst' },
     });
-    // A2: KPI-метрики, взаимодействия и OrgUnit переподвешены source→target.
     expect(calls.metricUpdateMany[0]).toEqual({
       where: { tenantId: TENANT, attachedToDepartmentId: 'src' },
       data: { attachedToDepartmentId: 'dst' },
@@ -251,7 +217,6 @@ describe('DepartmentsService.mergeDepartments', () => {
       data: { parentDepartmentId: 'dst' },
     });
 
-    // source помечен soft-deleted.
     expect(byId.get('src')?.deletedAt).toBeInstanceOf(Date);
 
     expect(res.ok).toBe(true);
@@ -275,7 +240,6 @@ describe('DepartmentsService.mergeDepartments', () => {
         { id: 'dst', tenantId: TENANT },
       ],
       domainLinks: {
-        // src покрывает d-shared (есть и у target) и d-new (нет у target).
         source: [
           { id: 'ls1', departmentId: 'src', domainId: 'd-shared' },
           { id: 'ls2', departmentId: 'src', domainId: 'd-new' },
@@ -292,9 +256,7 @@ describe('DepartmentsService.mergeDepartments', () => {
       byUserId: 'u1',
     });
 
-    // d-shared → удалить source-ссылку (дубль по уникальной паре).
     expect(calls.domainLinkDelete).toContainEqual({ where: { id: 'ls1' } });
-    // d-new → перенести на target.
     expect(calls.domainLinkUpdate).toContainEqual({
       where: { id: 'ls2' },
       data: { departmentId: 'dst' },
@@ -357,7 +319,6 @@ describe('DepartmentsService.mergeDepartments', () => {
       byUserId: 'u1',
     });
 
-    // Сначала освобождаем unique у source, затем присваиваем target.
     const srcNull = calls.deptUpdate.findIndex(
       (c) => c.where.id === 'src' && c.data.entityId === null,
     );
@@ -366,7 +327,6 @@ describe('DepartmentsService.mergeDepartments', () => {
     );
     expect(srcNull).toBeGreaterThanOrEqual(0);
     expect(dstSet).toBeGreaterThanOrEqual(0);
-    // Порядок: обнуление source строго ДО присвоения target (иначе P2002).
     expect(srcNull).toBeLessThan(dstSet);
     expect(res.moved.entity).toBe(1);
   });
@@ -386,12 +346,10 @@ describe('DepartmentsService.mergeDepartments', () => {
       byUserId: 'u1',
     });
 
-    expect(
-      calls.deptUpdate.some((c) => c.where.id === 'dst' && 'entityId' in c.data),
-    ).toBe(false);
-    expect(
-      calls.deptUpdate.some((c) => c.where.id === 'src' && c.data.entityId === null),
-    ).toBe(false);
+    expect(calls.deptUpdate.some((c) => c.where.id === 'dst' && 'entityId' in c.data)).toBe(false);
+    expect(calls.deptUpdate.some((c) => c.where.id === 'src' && c.data.entityId === null)).toBe(
+      false,
+    );
     expect(res.moved.entity).toBe(0);
   });
 
@@ -410,8 +368,6 @@ describe('DepartmentsService.mergeDepartments', () => {
       byUserId: 'u1',
     });
 
-    // Каждый updateMany перенёс именно source→target (никаких ссылок на 'src'
-    // не остаётся после soft-delete).
     expect(calls.roleUpdateMany).toContainEqual(
       expect.objectContaining({
         where: expect.objectContaining({ departmentId: 'src' }),
@@ -460,7 +416,6 @@ describe('DepartmentsService.mergeDepartments', () => {
         data: expect.objectContaining({ parentDepartmentId: 'dst' }),
       }),
     );
-    // entityId перенесён на target (source освобождён).
     expect(calls.deptUpdate).toContainEqual(
       expect.objectContaining({
         where: { id: 'dst' },
@@ -485,7 +440,6 @@ describe('DepartmentsService.mergeDepartments', () => {
   });
 
   it('запрет цикла: target — потомок source → BadRequest', async () => {
-    // dst.parent = src → слияние src в dst создало бы цикл.
     const { prisma } = makePrisma({
       departments: [
         { id: 'src', tenantId: TENANT },

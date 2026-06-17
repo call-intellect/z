@@ -8,25 +8,6 @@ import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { RouterService } from '../services/router.service';
 import { Specialist37Service } from '../services/specialist-3-7-skill.service';
 
-/**
- * SBA γ-1 — Specialist 3.7 (SkillProfile) handler.
- *
- * Handler очереди `core.specialist-routing` с jobName='3-7-skill'.
- * Вызывается из `SpecialistRoutingDispatcherWorker.dispatch`, когда
- * RouterService.dispatch диспатчит блок (signalType='reasoning' с
- * employee-subject) этому специалисту.
- *
- * Логика:
- *   1. Получить block (фильтр по signalType ∈ reasoning/rationale/decision_basis,
- *      block.status='canonical').
- *   2. Через IdeaBlockEntity.role='subject' найти subject-Person'у этого блока.
- *   3. Проверить, что Person.relationship='employee'.
- *   4. Через Specialist37Service.getOrCreateForPerson создать/получить профиль.
- *   5. enqueueRebuildSkillProfile (debounce 60s) для этого профиля.
- *
- * НЕ делает: LLM-extraction, KNN-merge, persist traits — это в
- * SkillProfileRebuildWorker (через Specialist37Service.rebuildProfile).
- */
 @Injectable()
 export class Specialist37SkillWorker {
   private readonly logger = new Logger(Specialist37SkillWorker.name);
@@ -101,7 +82,6 @@ export class Specialist37SkillWorker {
         return;
       }
 
-      // Найти subject-Person'ов блока.
       const mentions = await this.prisma.ideaBlockEntity.findMany({
         where: {
           blockId: block.id,
@@ -112,10 +92,7 @@ export class Specialist37SkillWorker {
       });
       const entityIds = [...new Set(mentions.map((m) => m.entityId))];
       if (entityIds.length === 0) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-7: subject-Person отсутствует — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-7: subject-Person отсутствует — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist37SkillWorker.SPECIALIST_NAME,
           reason: 'signal_out_of_scope',
@@ -134,10 +111,7 @@ export class Specialist37SkillWorker {
         take: 10,
       });
       if (persons.length === 0) {
-        this.logger.debug(
-          { blockId, entityIds },
-          'specialist-3-7: subject не employee — skip',
-        );
+        this.logger.debug({ blockId, entityIds }, 'specialist-3-7: subject не employee — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist37SkillWorker.SPECIALIST_NAME,
           reason: 'signal_out_of_scope',

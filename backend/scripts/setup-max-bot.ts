@@ -1,32 +1,3 @@
-/**
- * SBA β-1 — Setup script для MAX Bot канала (dev.max.ru).
- *
- * Что делает:
- *   1. GET /me — проверяет access_token и подтягивает имя бота.
- *   2. POST /subscriptions с url = <PUBLIC_HOST_URL>/api/v1/webhooks/max-bot/<tenantId>/<webhookSecret>.
- *      MAX webhook не передаёт header-secret — поэтому secret встроен в URL.
- *   3. Upsert Channel(tenantId, kind='max_bot', config={encrypted accessToken,
- *      encrypted webhookSecret, botName}, status='active',
- *      maxDataClass='internal', direction='bidirectional').
- *
- * Шифрование `accessToken` + `webhookSecret` — совместимое с CryptoService
- * (формат `gcm:v1:...`, ключ из `CRYPTO_MASTER_KEY`).
- *
- * Usage:
- *   bun run setup:max-bot -- \
- *       --token <ACCESS_TOKEN> \
- *       --tenant-id <tenantId> \
- *       --public-host-url https://api.kora.ai \
- *       [--webhook-secret <SECRET>]
- *
- * Idempotent: повторный запуск перезатирает Channel.config + переподписывает
- * webhook на тот же URL.
- *
- * ВАЖНО: формат webhook-update от MAX задокументирован в dev.max.ru/docs-api,
- * но мог измениться. После реального smoke на проде — проверить логи
- * `MaxBotChannelAdapter` (поля `update_type`, `sender.user_id`, `chat_id`).
- */
-
 import { createCipheriv, randomBytes } from 'node:crypto';
 
 import { PrismaClient } from '@prisma/client';
@@ -40,8 +11,7 @@ interface CliArgs {
   webhookSecret: string;
 }
 
-const MAX_API_BASE =
-  process.env['MAX_BOT_API_BASE'] ?? 'https://platform-api.max.ru';
+const MAX_API_BASE = process.env['MAX_BOT_API_BASE'] ?? 'https://platform-api.max.ru';
 
 function parseArgs(): CliArgs {
   const argv = process.argv.slice(2);
@@ -68,8 +38,7 @@ function parseArgs(): CliArgs {
     );
     process.exit(1);
   }
-  const webhookSecret =
-    out['webhook-secret'] ?? randomBytes(16).toString('hex');
+  const webhookSecret = out['webhook-secret'] ?? randomBytes(16).toString('hex');
   return {
     token,
     tenantId,
@@ -85,16 +54,11 @@ function encryptForCryptoService(plaintext: string): string {
   }
   const key = Buffer.from(raw, 'base64');
   if (key.length !== 32) {
-    throw new Error(
-      `CRYPTO_MASTER_KEY должен быть 32 байта (base64), получено ${key.length}`,
-    );
+    throw new Error(`CRYPTO_MASTER_KEY должен быть 32 байта (base64), получено ${key.length}`);
   }
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(plaintext, 'utf8'),
-    cipher.final(),
-  ]);
+  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return `gcm:v1:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('base64')}`;
 }
@@ -140,7 +104,6 @@ async function main(): Promise<void> {
   console.log(`[setup-max-bot] tenantId=${args.tenantId}`);
   console.log(`[setup-max-bot] webhookUrl=${webhookUrl}`);
 
-  // 1. getMe.
   const me = await callMax(args.token, 'GET', '/me', undefined);
   if (!me.ok) {
     console.error(`[setup-max-bot] /me failed: ${me.description ?? 'unknown'}`);
@@ -150,19 +113,15 @@ async function main(): Promise<void> {
   const botName = result?.name ?? result?.username ?? null;
   console.log(`[setup-max-bot] /me ok, botName=${botName ?? '<unknown>'}`);
 
-  // 2. subscribe.
   const sub = await callMax(args.token, 'POST', '/subscriptions', {
     url: webhookUrl,
   });
   if (!sub.ok) {
-    console.error(
-      `[setup-max-bot] POST /subscriptions failed: ${sub.description ?? 'unknown'}`,
-    );
+    console.error(`[setup-max-bot] POST /subscriptions failed: ${sub.description ?? 'unknown'}`);
     process.exit(1);
   }
   console.log('[setup-max-bot] /subscriptions ok');
 
-  // 3. Upsert Channel.
   const prisma = createPrismaClient();
   try {
     const config = {
@@ -193,9 +152,7 @@ async function main(): Promise<void> {
         config,
       },
     });
-    console.log(
-      `[setup-max-bot] Channel upserted id=${channel.id} tenantId=${args.tenantId}`,
-    );
+    console.log(`[setup-max-bot] Channel upserted id=${channel.id} tenantId=${args.tenantId}`);
     console.log('[setup-max-bot] DONE.');
   } finally {
     await prisma.$disconnect();

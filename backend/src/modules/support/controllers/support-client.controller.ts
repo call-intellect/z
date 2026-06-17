@@ -1,44 +1,16 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  Inject,
-  Param,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
-import {
-  ClientMessageSchema,
-  type ClientMessageDto,
-} from '../dto/client-message.dto';
-import {
-  CreateTicketSchema,
-  type CreateTicketDto,
-} from '../dto/create-ticket.dto';
+import { ClientMessageSchema, type ClientMessageDto } from '../dto/client-message.dto';
+import { CreateTicketSchema, type CreateTicketDto } from '../dto/create-ticket.dto';
 import { RateTicketSchema, type RateTicketDto } from '../dto/rate-ticket.dto';
 import { SupportAccessService } from '../services/support-access.service';
 import { SupportIntakeService } from '../services/support-intake.service';
 
-/**
- * REST `/api/v1/support/*` — клиентский intake в вендор-деск.
- *
- * Только `CookieAuthGuard` (НЕ TenantGuard): клиент любой Org пишет
- * cross-tenant в вендор-Org. `@CurrentOrg()` опционален — если у клиента
- * единственная Org, TenantMiddleware/single-org мог его выставить; иначе null.
- *
- * Лента клиента ВСЕГДА фильтрует access='external' (R-INV-3) — на уровне
- * сервиса. ТЗ 2026-06-09 support-desk Ф1.
- */
 @ApiTags('support / client')
 @ApiBearerAuth()
 @Controller('api/v1/support')
@@ -72,9 +44,7 @@ export class SupportClientController {
 
   @Get('my-tickets')
   @ApiOperation({ summary: 'Мои обращения' })
-  async listMine(
-    @CurrentUser() user: CurrentUserPayload,
-  ): Promise<{ items: unknown[] }> {
+  async listMine(@CurrentUser() user: CurrentUserPayload): Promise<{ items: unknown[] }> {
     return this.intake.listMyTickets(user.id);
   }
 

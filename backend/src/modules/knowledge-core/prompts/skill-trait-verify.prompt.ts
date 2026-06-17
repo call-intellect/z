@@ -1,26 +1,4 @@
-/**
- * SBA γ-1 — Specialist 3.7 (SkillProfile) — Ф3(D) grounding-верификатор черты.
- *
- * LLM-промпт `skill-trait-verify` — дешёвый grounding-срез ПЕРЕД попаданием
- * черты в исполняемую персону. Получает ГИПОТЕЗУ о черте поведения сотрудника
- * (statement + category) и дословные цитаты-источники (reasoning-блоки, на
- * которых черта построена). Возвращает `grounded=true` ТОЛЬКО если черта
- * прямо подтверждается ≥2 цитируемыми reasoning-блоками И это рассуждение о
- * СОБСТВЕННОМ рабочем подходе сотрудника.
- *
- * Цель — отсечь фабрикации (на golden-прогоне фикстура из 3 уточняющих
- * тех-вопросов дала выдуманную черту): уточняющие вопросы, общие фразы,
- * приписанное другим — `grounded=false`. Контраст: practice-skills имеют
- * верификационный гейт, skill-traits до Ф3(D) — нет.
- *
- * Cache-friendly: SYSTEM — стабильная константа; переменные (statement,
- * category, цитаты) — В КОНЦЕ USER.
- */
-
-import {
-  withAsrNote,
-  withEdgeCasePolicy,
-} from '../../ai/services/prompts/common';
+import { withAsrNote, withEdgeCasePolicy } from '../../ai/services/prompts/common';
 
 export const SKILL_TRAIT_VERIFY_SYSTEM_PROMPT = withAsrNote(
   withEdgeCasePolicy(
@@ -66,9 +44,7 @@ export const SKILL_TRAIT_VERIFY_USER_TEMPLATE = (args: {
 }): string => {
   const lines = args.quotes.length
     ? args.quotes
-        .map(
-          (q, i) => `  ${i + 1}. «${q.quote.slice(0, 600)}» (block=${q.blockId})`,
-        )
+        .map((q, i) => `  ${i + 1}. «${q.quote.slice(0, 600)}» (block=${q.blockId})`)
         .join('\n')
     : '  (цитат нет)';
   return [
@@ -84,11 +60,6 @@ export const SKILL_TRAIT_VERIFY_USER_TEMPLATE = (args: {
   ].join('\n');
 };
 
-/**
- * JSON Schema strict для `skill-trait-verify`. Поддерживается DeepSeek V4
- * и OpenAI Responses API; Ollama fallback падает с
- * `LlmFormatNotSupportedError` — роутер переходит к secondary.
- */
 export const SKILL_TRAIT_VERIFY_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -102,8 +73,7 @@ export const SKILL_TRAIT_VERIFY_JSON_SCHEMA: Record<string, unknown> = {
     reason: {
       type: 'string',
       maxLength: 500,
-      description:
-        'Короткое обоснование вердикта со ссылкой на номера цитат (или их отсутствие).',
+      description: 'Короткое обоснование вердикта со ссылкой на номера цитат (или их отсутствие).',
     },
   },
 };

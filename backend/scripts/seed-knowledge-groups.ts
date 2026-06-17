@@ -1,31 +1,3 @@
-/**
- * Ф2 knowledge-access-groups (2026-06-06) — сид групп доступа к знаниям.
- *
- * Для каждой НЕ удалённой Org:
- *   1. Синглтон-группы «Руководство» (leadership, isClosed) и «Совет»
- *      (council, isClosed) — refId=null, по @@unique([tenantId,kind,refId]).
- *   2. department-группы из существующих Department (deletedAt=null):
- *      kind=department, refId=departmentId, name=Department.name, isClosed=false.
- *   3. Leadership auto-membership (source='auto'): persons, которые
- *      (а) имеют Membership role∈(owner,admin) c personId, ИЛИ
- *      (б) являются Department.headPersonId.
- *
- * Идемпотентность: findFirst+create с catch P2002 — повторный прогон = no-op.
- * (Не используем upsert: составной @@unique с refId=null в Prisma 7
- *  ненадёжен для where-фильтра.)
- *
- * Безопасный seed (skill `safe-seed-rules`): только INSERT, существующие
- * (в т.ч. admin-edited) записи НЕ трогаются.
- *
- * Запуск (прод — только через docker compose):
- *   docker compose exec backend bun run scripts/seed-knowledge-groups.ts
- *   docker compose exec backend bun run scripts/seed-knowledge-groups.ts --tenant=<orgId>
- *   docker compose exec backend bun run scripts/seed-knowledge-groups.ts --dry-run
- *
- * Локально:
- *   bun run scripts/seed-knowledge-groups.ts [--tenant=<orgId>] [--dry-run]
- */
-
 import type { Prisma, PrismaClient } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -50,7 +22,6 @@ function getArg(name: string): string | undefined {
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-/** P2002 = unique constraint violation (запись уже есть → идемпотентность). */
 function isUniqueViolation(err: unknown): boolean {
   return (
     typeof err === 'object' &&
@@ -60,10 +31,6 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
-/**
- * Найти существующую группу (kind+refId) или создать. Возвращает её id +
- * флаг «создана». Идемпотентно: при гонке P2002 повторно читает существующую.
- */
 async function ensureGroup(args: {
   tenantId: string;
   kind: 'department' | 'leadership' | 'council' | 'personal';
@@ -101,7 +68,6 @@ async function ensureGroup(args: {
   }
 }
 
-/** Создать членство (groupId+personId) если ещё нет. Идемпотентно. */
 async function ensureMember(args: {
   groupId: string;
   personId: string;
@@ -125,7 +91,6 @@ async function ensureMember(args: {
 }
 
 async function seedForTenant(tenantId: string, stats: Stats): Promise<void> {
-  // 1. Синглтон закрытые группы.
   const leadership = await ensureGroup({
     tenantId,
     kind: 'leadership',
@@ -144,7 +109,6 @@ async function seedForTenant(tenantId: string, stats: Stats): Promise<void> {
   });
   council.created ? stats.closedCreated++ : stats.closedSkipped++;
 
-  // 2. department-группы из существующих отделов.
   const departments = await prisma.department.findMany({
     where: { tenantId, deletedAt: null },
     select: { id: true, name: true },
@@ -160,13 +124,10 @@ async function seedForTenant(tenantId: string, stats: Stats): Promise<void> {
     g.created ? stats.deptCreated++ : stats.deptSkipped++;
   }
 
-  // 3. Leadership auto-membership.
   if (!leadership.id) {
-    // dry-run без существующей группы — членство посчитать не можем.
     return;
   }
   const leadershipPersonIds = new Set<string>();
-  // (а) owner/admin Membership с personId.
   const adminMemberships = await prisma.membership.findMany({
     where: {
       orgId: tenantId,
@@ -176,7 +137,6 @@ async function seedForTenant(tenantId: string, stats: Stats): Promise<void> {
     select: { personId: true },
   });
   for (const m of adminMemberships) if (m.personId) leadershipPersonIds.add(m.personId);
-  // (б) Department.headPersonId.
   const headed = await prisma.department.findMany({
     where: { tenantId, deletedAt: null, headPersonId: { not: null } },
     select: { headPersonId: true },
@@ -240,7 +200,9 @@ async function main(): Promise<void> {
   console.log(`  closedCreated  : ${stats.closedCreated} / skipped ${stats.closedSkipped}`);
   console.log(`  deptCreated    : ${stats.deptCreated} / skipped ${stats.deptSkipped}`);
   console.log(`  membersCreated : ${stats.membersCreated} / skipped ${stats.membersSkipped}`);
-  console.log(`=== seed-knowledge-groups DONE${DRY_RUN ? ' (DRY-RUN — ничего не записано)' : ''} ===`);
+  console.log(
+    `=== seed-knowledge-groups DONE${DRY_RUN ? ' (DRY-RUN — ничего не записано)' : ''} ===`,
+  );
   /* eslint-enable no-console */
 }
 

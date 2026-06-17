@@ -17,10 +17,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -45,18 +42,6 @@ import {
 } from './dto/departments.dto';
 import { DepartmentsService } from './services/departments.service';
 
-/**
- * REST API отделов компании (Фаза 0a, группа А).
- *
- *   GET    /api/v1/departments?q=&includeDeleted=&limit=  — список.
- *   GET    /api/v1/departments/:id                        — один отдел.
- *   POST   /api/v1/departments                            — создать.
- *   POST   /api/v1/departments/batch                      — массовое создание.
- *   PATCH  /api/v1/departments/:id                        — обновить.
- *   DELETE /api/v1/departments/:id                        — soft-delete.
- *
- * RBAC ресурс — `department`. owner/admin — read/write/delete. manager — read.
- */
 @ApiTags('departments')
 @Controller('api/v1/departments')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -137,8 +122,7 @@ export class DepartmentsController {
 
   @Patch(':id/head')
   @ApiOperation({
-    summary:
-      'Назначить/снять главу отдела (probe-уведомления → главе → admin fallback)',
+    summary: 'Назначить/снять главу отдела (probe-уведомления → главе → admin fallback)',
   })
   async setHead(
     @Param('id') id: string,
@@ -159,8 +143,7 @@ export class DepartmentsController {
   @Post(':id/merge')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary:
-      'Слить отдел (:id) в другой (intoId): перенос всех ссылок + soft-delete источника',
+    summary: 'Слить отдел (:id) в другой (intoId): перенос всех ссылок + soft-delete источника',
   })
   async merge(
     @Param('id') id: string,
@@ -169,7 +152,6 @@ export class DepartmentsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<MergeDepartmentResultDto> {
     const t = this.requireTenant(tenantId);
-    // Слияние удаляет отдел-источник → требуем право delete (owner/admin).
     await this.requireDelete(user.id, t);
     return this.departments.mergeDepartments({
       tenantId: t,
@@ -190,8 +172,6 @@ export class DepartmentsController {
     await this.requireDelete(user.id, t);
     return this.departments.softDelete({ tenantId: t, userId: user.id, id });
   }
-
-  // ─────────────────────────── helpers ──────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

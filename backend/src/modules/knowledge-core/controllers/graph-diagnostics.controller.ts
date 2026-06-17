@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  NotFoundException,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, NotFoundException, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
@@ -14,23 +8,11 @@ import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { SuperAdminGuard } from '../../auth/guards/super-admin.guard';
 import { GraphMaterializationService } from '../services/graph-materialization.service';
 
-/**
- * Agent-chain overhaul Фаза 0a (2026-06-07, plans/tz/2026-06-07-agent-chain-overhaul.md).
- *
- * Платформенный (только SUPER_ADMIN) read-only эндпоинт наблюдаемости графа:
- * «видно ли, что из встречи материализовались Decision/Idea/Goal».
- *
- * GET /api/v1/platform/graph/materialization?meetingId=<id>[&orgId=<id>]
- *   - orgId передан → используем его как tenantId.
- *   - иначе резолвим tenantId встречи (Meeting.tenantId).
- */
 export const GraphMaterializationQuerySchema = z.object({
   meetingId: z.string().trim().min(1).max(256),
   orgId: z.string().trim().min(1).max(256).optional(),
 });
-export type GraphMaterializationQueryDto = z.infer<
-  typeof GraphMaterializationQuerySchema
->;
+export type GraphMaterializationQueryDto = z.infer<typeof GraphMaterializationQuerySchema>;
 
 @ApiTags('platform-graph')
 @Controller('api/v1/platform/graph')
@@ -57,9 +39,7 @@ export class GraphDiagnosticsController {
         select: { tenantId: true },
       });
       if (!meeting) {
-        throw new NotFoundException(
-          `Встреча ${q.meetingId} не найдена (передайте orgId явно).`,
-        );
+        throw new NotFoundException(`Встреча ${q.meetingId} не найдена (передайте orgId явно).`);
       }
       tenantId = meeting.tenantId;
     }

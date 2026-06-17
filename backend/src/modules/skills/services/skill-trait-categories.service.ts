@@ -20,17 +20,6 @@ import type {
   UpdateSkillTraitCategoryDto,
 } from '../dto/skill-trait-categories.dto';
 
-/**
- * SBA γ-1 доделки — SkillTraitCategoryService.
- *
- * CRUD по `SkillTraitCategory` + операция `merge` (вызывается:
- *   1. напрямую из admin REST (POST /api/v1/skills/categories/merge);
- *   2. CurationService через CurationDecisionType `merge_categories` —
- *      см. handler в `CurationService.decide()`/post-commit-hook.
- *
- * Merge — soft-delete source и перепривязка всех `SkillTrait` на target.
- * Идемпотентно: повторный merge той же пары возвращает текущее состояние.
- */
 @Injectable()
 export class SkillTraitCategoryService {
   private readonly logger = new Logger(SkillTraitCategoryService.name);
@@ -42,8 +31,6 @@ export class SkillTraitCategoryService {
     private readonly metrics: BusinessMetricsService,
   ) {}
 
-  // ─────────────────────────── list / get ──────────────────────────
-
   async list(args: {
     tenantId: string;
     query: ListSkillTraitCategoriesQuery;
@@ -51,9 +38,7 @@ export class SkillTraitCategoryService {
     const where: Prisma.SkillTraitCategoryWhereInput = {
       tenantId: args.tenantId,
       ...(args.query.includeDeleted ? {} : { deletedAt: null }),
-      ...(args.query.parentCategoryId
-        ? { parentCategoryId: args.query.parentCategoryId }
-        : {}),
+      ...(args.query.parentCategoryId ? { parentCategoryId: args.query.parentCategoryId } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.skillTraitCategory.findMany({
@@ -70,10 +55,7 @@ export class SkillTraitCategoryService {
     };
   }
 
-  async getById(args: {
-    tenantId: string;
-    id: string;
-  }): Promise<SkillTraitCategoryDto> {
+  async getById(args: { tenantId: string; id: string }): Promise<SkillTraitCategoryDto> {
     const row = await this.prisma.skillTraitCategory.findUnique({
       where: { id: args.id },
       include: { _count: { select: { traits: true } } },
@@ -89,8 +71,6 @@ export class SkillTraitCategoryService {
     }
     return this.toDto(row, row._count.traits);
   }
-
-  // ─────────────────────────── create / update ─────────────────────
 
   async create(args: {
     tenantId: string;
@@ -119,10 +99,7 @@ export class SkillTraitCategoryService {
       });
       return this.toDto(created, 0);
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -162,10 +139,7 @@ export class SkillTraitCategoryService {
         },
       });
     }
-    if (
-      args.body.parentCategoryId &&
-      args.body.parentCategoryId !== existing.parentCategoryId
-    ) {
+    if (args.body.parentCategoryId && args.body.parentCategoryId !== existing.parentCategoryId) {
       if (args.body.parentCategoryId === existing.id) {
         throw new BadRequestException({
           ok: false,
@@ -208,10 +182,7 @@ export class SkillTraitCategoryService {
       });
       return this.toDto(updated, updated._count.traits);
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
           ok: false,
           error: {
@@ -271,21 +242,12 @@ export class SkillTraitCategoryService {
     return { id: args.id, deletedAt: now.toISOString() };
   }
 
-  // ─────────────────────────── merge ───────────────────────────────
-
-  /**
-   * Слить `source` в `target`. Все `SkillTrait.categoryId = source.id` →
-   * `categoryId = target.id`. `source.deletedAt = now()` (soft delete для аудита).
-   *
-   * Идемпотентно: если source уже удалён и traits = 0 — возвращаем текущее состояние.
-   */
   async merge(args: {
     tenantId: string;
     userId: string;
     sourceId: string;
     targetId: string;
     reasoning?: string | null;
-    /** Источник вызова — для аудита. */
     via?: 'rest' | 'curation_decision';
     curationDecisionId?: string | null;
   }): Promise<MergeSkillTraitCategoriesResultDto> {
@@ -373,7 +335,6 @@ export class SkillTraitCategoryService {
       'skill-trait-categories.merge: завершено',
     );
 
-    // Refresh tenant-level метрики (cardinality-safe).
     void this.refreshTenantMetrics(args.tenantId).catch((err) =>
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -398,25 +359,19 @@ export class SkillTraitCategoryService {
     };
   }
 
-  /**
-   * Пересчитать gauge `skill_categories_total` и `skill_trait_categorized_ratio`
-   * для одного tenant. Cardinality-safe: использует tenantTopLabel.
-   */
   async refreshTenantMetrics(tenantId: string): Promise<void> {
-    const [categoriesActive, traitsTotal, traitsCategorized] =
-      await Promise.all([
-        this.prisma.skillTraitCategory.count({
-          where: { tenantId, deletedAt: null },
-        }),
-        this.prisma.skillTrait.count({
-          where: { profile: { tenantId } },
-        }),
-        this.prisma.skillTrait.count({
-          where: { profile: { tenantId }, categoryId: { not: null } },
-        }),
-      ]);
-    const ratio =
-      traitsTotal === 0 ? 0 : traitsCategorized / traitsTotal;
+    const [categoriesActive, traitsTotal, traitsCategorized] = await Promise.all([
+      this.prisma.skillTraitCategory.count({
+        where: { tenantId, deletedAt: null },
+      }),
+      this.prisma.skillTrait.count({
+        where: { profile: { tenantId } },
+      }),
+      this.prisma.skillTrait.count({
+        where: { profile: { tenantId }, categoryId: { not: null } },
+      }),
+    ]);
+    const ratio = traitsTotal === 0 ? 0 : traitsCategorized / traitsTotal;
     const tenantTop = await tenantTopLabel(this.prisma, tenantId);
     this.metrics.setSkillCategoriesTotal({
       tenantTop,
@@ -424,8 +379,6 @@ export class SkillTraitCategoryService {
     });
     this.metrics.setSkillTraitCategorizedRatio({ tenantTop, value: ratio });
   }
-
-  // ─────────────────────────── helpers ─────────────────────────────
 
   private async ensureExists(tenantId: string, id: string): Promise<void> {
     const found = await this.prisma.skillTraitCategory.findUnique({
@@ -443,11 +396,6 @@ export class SkillTraitCategoryService {
     }
   }
 
-  /**
-   * Простейшая slugify-функция для категорий навыков: латинизация + lowercase
-   * + не-латинские → `-`. Кириллица транслитерируется через словарь.
-   * Длина обрезается до 220 символов (под schema).
-   */
   slugify(name: string): string {
     const map: Record<string, string> = {
       а: 'a',
@@ -494,11 +442,9 @@ export class SkillTraitCategoryService {
       } else if (/[\s\-_/]/.test(ch)) {
         out += '-';
       }
-      // прочие символы (пунктуация) — отбрасываем
     }
     out = out.replace(/-+/g, '-').replace(/^-|-$/g, '');
     if (out.length === 0) {
-      // Полностью отсутствуют латинские/кириллические символы — fallback на hash.
       out = `cat-${Date.now().toString(36)}`;
     }
     return out.slice(0, 220);

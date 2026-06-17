@@ -1,28 +1,3 @@
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — Seed AdminSetting для радара клиентов
- * под риском.
- *
- * Регистрирует ключи динамической конфигурации:
- *   - `customer_risk.window_days` (int, default 14) — окно накопления сигналов.
- *   - `customer_risk.weight.churn_risk` (int, default 5) — вес сигнала «отток».
- *   - `customer_risk.weight.objection` (int, default 3) — вес «возражение».
- *   - `customer_risk.weight.pain` (int, default 2) — вес «боль».
- *   - `customer_risk.weight.feature_request` (int, default 1) — вес «доработка».
- *   - `customer_risk.threshold.critical` (int, default 10) — порог critical.
- *   - `customer_risk.threshold.warning` (int, default 4) — порог warning.
- *   - `operations.customer_risk_radar.enabled` (boolean, default true) —
- *     kill-switch радара. ON (Ship-On).
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-customer-risk.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -142,7 +117,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

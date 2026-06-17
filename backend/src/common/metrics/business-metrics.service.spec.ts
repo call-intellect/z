@@ -3,18 +3,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BusinessMetricsService } from './business-metrics.service';
 
-/**
- * Юнит на видимость «модели без цены»: `incLlmCostUnpriced` должен
- * инкрементировать счётчик `llm_cost_unpriced_total{provider,model}`.
- *
- * Это страховка ТЗ «LLM cost safety» Фаза 1 — costUsd=0 для модели без
- * цены не должен оставаться невидимым: каждый такой вызов виден в метрике.
- */
 describe('BusinessMetricsService — llm_cost_unpriced_total', () => {
   let service: BusinessMetricsService;
 
   beforeEach(() => {
-    // Сервис регистрируется в дефолтный prom-client registry.
     register.clear();
     service = new BusinessMetricsService();
     service.onModuleInit();
@@ -24,10 +16,7 @@ describe('BusinessMetricsService — llm_cost_unpriced_total', () => {
     register.clear();
   });
 
-  async function readUnpriced(
-    provider: string,
-    model: string,
-  ): Promise<number> {
+  async function readUnpriced(provider: string, model: string): Promise<number> {
     const metrics = await register.getMetricsAsJSON();
     const metric = metrics.find((m) => m.name === 'llm_cost_unpriced_total');
     if (!metric) return 0;
@@ -55,9 +44,6 @@ describe('BusinessMetricsService — llm_cost_unpriced_total', () => {
   });
 });
 
-/**
- * Ф6 Часть 3 — getLlmCacheHitRatio: hits/total/ratio по подстроке провайдера.
- */
 describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
   let service: BusinessMetricsService;
 
@@ -72,8 +58,6 @@ describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
   });
 
   it('считает ratio = hits / total по провайдерам с подстрокой deepseek', async () => {
-    // 100 вызовов deepseek-pro + 100 deepseek-flash = 200 total;
-    // 120 cache_hit (по двум deepseek-провайдерам) → ratio 0.6.
     for (let i = 0; i < 100; i++) {
       service.incLlmCall({ provider: 'deepseek-pro' });
       service.incLlmCall({ provider: 'deepseek-flash' });
@@ -92,7 +76,6 @@ describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
         taskType: 't',
       });
     }
-    // посторонний провайдер — не должен попасть в выборку
     for (let i = 0; i < 30; i++) {
       service.incLlmCall({ provider: 'openai' });
     }
@@ -118,11 +101,6 @@ describe('BusinessMetricsService — getLlmCacheHitRatio', () => {
   });
 });
 
-/**
- * Ф3 (ТЗ 2026-06-11 remaining-handoff) — метрики синка/анализа ChatBox.
- * Проверяем, что новые методы не бросают, метрики появляются в registry и
- * лейблы корректны.
- */
 describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
   let service: BusinessMetricsService;
 
@@ -147,12 +125,8 @@ describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
     service.incChatboxSync({ scope: 'full', status: 'failed' });
 
     const vals = await rows('z_chatbox_syncs_total');
-    const ok = vals.find(
-      (v) => v.labels.scope === 'incremental' && v.labels.status === 'success',
-    );
-    const fail = vals.find(
-      (v) => v.labels.scope === 'full' && v.labels.status === 'failed',
-    );
+    const ok = vals.find((v) => v.labels.scope === 'incremental' && v.labels.status === 'success');
+    const fail = vals.find((v) => v.labels.scope === 'full' && v.labels.status === 'failed');
     expect(ok?.value).toBe(2);
     expect(fail?.value).toBe(1);
   });
@@ -171,7 +145,6 @@ describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
     service.setChatboxPendingSessions(42);
     let vals = await rows('z_chatbox_pending_sessions');
     expect(vals[0]?.value).toBe(42);
-    // gauge перезаписывается, не накапливается
     service.setChatboxPendingSessions(7);
     vals = await rows('z_chatbox_pending_sessions');
     expect(vals[0]?.value).toBe(7);
@@ -180,9 +153,7 @@ describe('BusinessMetricsService — метрики ChatBox (Ф3)', () => {
   it('setChatboxLastSyncTs — gauge z_chatbox_last_sync_ts_seconds{scope}', async () => {
     service.setChatboxLastSyncTs({ scope: 'incremental', tsSeconds: 1700000000 });
     const vals = await rows('z_chatbox_last_sync_ts_seconds');
-    expect(
-      vals.find((v) => v.labels.scope === 'incremental')?.value,
-    ).toBe(1700000000);
+    expect(vals.find((v) => v.labels.scope === 'incremental')?.value).toBe(1700000000);
   });
 
   it('методы не бросают на «голом» сервисе без onModuleInit (Optional-safe)', () => {

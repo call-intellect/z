@@ -7,7 +7,7 @@ last_audited: 2026-05-29
 owners_human:
   - продакт операционного директора
 related_plans:
-  - plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md
+  - plans/archive/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md
 related_projects:
   - 01_projects/director-dashboard.md
   - 01_projects/ai-jobs.md

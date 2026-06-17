@@ -1,19 +1,3 @@
-/**
- * SBA α-7 — Specialist 3.1 (Regulations).
- *
- * LLM-арбитр `regulation-dedupe` — решает, что делать с черновиком от
- * `regulation-extract`:
- *   - `new` — новая запись;
- *   - `merge` — обновить существующую;
- *   - `extension` — добавить как дополнение / уточнение (новая версия
- *     поверх supersedesId);
- *   - `contradicts` — противоречит существующей (создать ConflictItem).
- *
- * На вход — черновик + top-K (≤5) cosine-кандидатов того же `kind` в Org.
- *
- * Цель: дешёвый арбитр (≤500 input + ≤200 output tokens).
- */
-
 export const REGULATION_DEDUPE_SYSTEM_PROMPT = [
   'Ты — knowledge-арбитр. Тебе дают черновик карточки (Regulation / Process / Policy) и top-K похожих существующих карточек той же категории.',
   'Реши: эта карточка новая или дубликат / уточнение / противоречие.',
@@ -26,7 +10,6 @@ export const REGULATION_DEDUPE_SYSTEM_PROMPT = [
   '',
   'Будь консервативен: «merge» только при ≥80% уверенности. На сомнении — «new».',
   '',
-  // D1 supersession-правило (мастер-промпт-флот 2026-06-10, Кластер 7-B/A8).
   'При противоречии источников бери более позднюю / актуальную редакцию: если новая карточка обновляет существующую — «extension» (новая версия поверх supersedesId); если прямо противоречит — «contradicts». Устаревшее помечай как заменённое, НЕ смешивай старую и новую редакцию в одну карточку.',
   '',
   'Отвечай строго в формате JSON по схеме regulation_dedupe_v1.',
@@ -78,8 +61,7 @@ export const REGULATION_DEDUPE_JSON_SCHEMA: Record<string, unknown> = {
     },
     targetId: {
       type: ['string', 'null'],
-      description:
-        'id кандидата для merge/extension/contradicts; null для new',
+      description: 'id кандидата для merge/extension/contradicts; null для new',
     },
     reasoning: { type: 'string', maxLength: 2_000 },
   },

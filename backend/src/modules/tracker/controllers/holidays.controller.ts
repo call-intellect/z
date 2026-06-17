@@ -14,10 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -32,16 +29,6 @@ import {
   type ListHolidaysResponse,
 } from '../dto/holidays/holidays.dto';
 
-/**
- * REST `/api/v1/holidays` — производственный календарь.
- *
- *   - GET — список праздников за год: per-tenant override + глобальный РФ-календарь
- *     (если `tenantOnly=false`). Доступно любому авторизованному в Org (читает project).
- *   - POST — per-tenant override (RBAC: write на `project`, т.е. admin/owner Org).
- *
- * Глобальные записи (`tenantId=null`) создаются seed-скриптом
- * `backend/scripts/seed-holiday-calendar-ru-2026.ts` — через POST их добавить нельзя.
- */
 @ApiTags('tracker / holidays')
 @ApiBearerAuth()
 @Controller('api/v1')

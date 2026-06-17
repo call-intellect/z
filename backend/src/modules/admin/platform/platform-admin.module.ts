@@ -11,19 +11,6 @@ import { SecurityAdminService } from './security/security-admin.service';
 import { WorkersAdminController } from './workers/workers-admin.controller';
 import { WorkersAdminService } from './workers/workers-admin.service';
 
-/**
- * Admin-redesign Фаза 8 — `PlatformAdminModule`.
- *
- * Зонтичный модуль раздела «Платформа» в Z-Admin:
- *   - Workers — BullMQ-inspector (pause/resume/retry/delete).
- *   - Limits — глобальные лимиты (обёртка над AdminSettings).
- *   - Feature Flags — CRUD флагов + override + rollout.
- *   - Security — Argon2/JWT TTL/IP-salt (обёртка над AdminSettings, severity=high).
- *   - Maintenance — статус бэкапов + maintenance windows.
- *
- * Зависит только от @Global-модулей (PrismaService, RedisService,
- * AdminSettingsService) — последний экспортируется AdminSettingsModule.
- */
 @Module({
   controllers: [
     WorkersAdminController,

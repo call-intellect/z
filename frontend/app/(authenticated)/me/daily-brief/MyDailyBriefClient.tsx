@@ -1,24 +1,7 @@
-'use client';
+"use client";
 
-/**
- * `/me/daily-brief` — персональный бриф «Твой день» (ТЗ 2026-06-11
- * mobile-cora-exec-manager, Ф0).
- *
- * Читает существующий `GET /api/v1/me/daily-brief` через SWR; при монтировании
- * с `id!==null` ровно ОДИН раз шлёт `POST /me/daily-brief/:id/opened`
- * (engagement). Пустой бриф → cold-start empty-state (Р6) с текстом наполнения,
- * не белый экран и не 404.
- *
- * Позитивная рамка (Р4): «Держишь слово N из M», overdue подаётся как «под
- * угрозой / перенести» (мягкий блок сверху), НЕ как красный список провалов.
- * Считается на фронте в `mapDailyBrief`.
- *
- * На мобиле и десктопе — один и тот же контент (мобильный shell, Ф1, будет
- * монтировать тот же клиент для таба «Моё»).
- */
-
-import { useEffect, useRef } from 'react';
-import useSWR from 'swr';
+import { useEffect, useRef } from "react";
+import useSWR from "swr";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,30 +9,32 @@ import {
   Lightbulb,
   Sparkles,
   UserCheck,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { meDailyBriefApi } from '@/api/me/daily-brief.api';
-import { useAuth } from '@/contexts/auth-context';
+import { meDailyBriefApi } from "@/api/me/daily-brief.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   mapDailyBrief,
   type BriefItemDomain,
   type DailyBriefDomain,
-} from '@/domain/me/daily-brief';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { EnableMorningRemindersButton } from '@/ui/pwa/EnableMorningRemindersButton';
+} from "@/domain/me/daily-brief";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { EnableMorningRemindersButton } from "@/ui/pwa/EnableMorningRemindersButton";
 
 function formatDueDate(d: Date | null): string {
-  if (!d) return 'без срока';
-  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  if (!d) return "без срока";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
 }
 
 function BriefItemRow({ item }: { item: BriefItemDomain }) {
   return (
     <li className="flex items-start justify-between gap-3 py-2">
-      <span className="min-w-0 flex-1 text-sm text-fg-primary">{item.title}</span>
+      <span className="min-w-0 flex-1 text-sm text-fg-primary">
+        {item.title}
+      </span>
       <span className="shrink-0 text-xs text-fg-tertiary">
-        {item.counterpartyName ? `${item.counterpartyName} · ` : ''}
+        {item.counterpartyName ? `${item.counterpartyName} · ` : ""}
         {formatDueDate(item.dueDate)}
       </span>
     </li>
@@ -57,12 +42,18 @@ function BriefItemRow({ item }: { item: BriefItemDomain }) {
 }
 
 function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
-  const { promiseKeeping, onDeckToday, atRiskItems, knowsWho, insightCoOccurrence, hint } =
-    brief;
+  const {
+    promiseKeeping,
+    onDeckToday,
+    atRiskItems,
+    knowsWho,
+    insightCoOccurrence,
+    hint,
+  } = brief;
 
   return (
     <div className="space-y-4">
-      {/* Позитивная рамка обещаний (Р4) — «держишь слово N из M». */}
+      {}
       {promiseKeeping.total > 0 ? (
         <Card>
           <CardHeader className="pb-3">
@@ -74,12 +65,12 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
           <CardContent className="pt-0 text-sm text-fg-secondary">
             {promiseKeeping.atRisk > 0
               ? `${promiseKeeping.atRisk} под угрозой — стоит перенести срок или закрыть.`
-              : 'Все обещания на сегодня в графике.'}
+              : "Все обещания на сегодня в графике."}
           </CardContent>
         </Card>
       ) : null}
 
-      {/* Под угрозой / перенести — мягкий блок сверху, НЕ «провалы». */}
+      {}
       {atRiskItems.length > 0 ? (
         <Card>
           <CardHeader className="pb-3">
@@ -98,7 +89,7 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
         </Card>
       ) : null}
 
-      {/* Под рукой сегодня — задачи + обещания, не просроченные. */}
+      {}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
@@ -115,13 +106,14 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
             </ul>
           ) : (
             <p className="text-sm text-fg-tertiary">
-              На сегодня ничего срочного — хороший день, чтобы продвинуть важное.
+              На сегодня ничего срочного — хороший день, чтобы продвинуть
+              важное.
             </p>
           )}
         </CardContent>
       </Card>
 
-      {/* Ты не один — со-встречаемость инсайта (если бэк отдаёт). */}
+      {}
       {insightCoOccurrence ? (
         <Card>
           <CardHeader className="pb-3">
@@ -134,12 +126,12 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
             {insightCoOccurrence.statement}
             {insightCoOccurrence.colleaguesCount > 0
               ? ` — об этом думают ещё ${insightCoOccurrence.colleaguesCount} коллег.`
-              : ''}
+              : ""}
           </CardContent>
         </Card>
       ) : null}
 
-      {/* Кто поможет — носитель знания по блокеру. */}
+      {}
       {knowsWho ? (
         <Card>
           <CardHeader className="pb-3">
@@ -149,13 +141,16 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 text-sm text-fg-secondary">
-            По задаче «{knowsWho.blockerText}» больше всех знает{' '}
-            <span className="font-medium text-fg-primary">{knowsWho.expertName}</span>.
+            По задаче «{knowsWho.blockerText}» больше всех знает{" "}
+            <span className="font-medium text-fg-primary">
+              {knowsWho.expertName}
+            </span>
+            .
           </CardContent>
         </Card>
       ) : null}
 
-      {/* Подсказка дня. */}
+      {}
       {hint.trim().length > 0 ? (
         <Card>
           <CardHeader className="pb-3">
@@ -164,7 +159,9 @@ function DailyBriefView({ brief }: { brief: DailyBriefDomain }) {
               Подсказка дня
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 text-sm text-fg-secondary">{hint}</CardContent>
+          <CardContent className="pt-0 text-sm text-fg-secondary">
+            {hint}
+          </CardContent>
         </Card>
       ) : null}
     </div>
@@ -192,14 +189,14 @@ function ColdStartEmptyState() {
 export function MyDailyBriefClient() {
   const { currentOrgId, isLoading: authLoading } = useAuth();
 
-  const swrKey = currentOrgId ? (['me-daily-brief', currentOrgId] as const) : null;
+  const swrKey = currentOrgId
+    ? (["me-daily-brief", currentOrgId] as const)
+    : null;
   const { data, error, isLoading } = useSWR(swrKey, async () => {
     const api = await meDailyBriefApi.get();
     return mapDailyBrief(api);
   });
 
-  // POST opened ровно один раз — гард по ref, чтобы re-render/refetch не
-  // задвоил. Зависим от `data?.id`, а не от объекта `data`.
   const openedSentForId = useRef<string | null>(null);
   useEffect(() => {
     const id = data?.id ?? null;
@@ -207,8 +204,6 @@ export function MyDailyBriefClient() {
     if (openedSentForId.current === id) return;
     openedSentForId.current = id;
     void meDailyBriefApi.markOpened(id).catch(() => {
-      // engagement-метрика не критична для UX — молча игнорируем сбой,
-      // позволяя ретрай при следующем монтировании другой сессии.
       openedSentForId.current = null;
     });
   }, [data?.id]);

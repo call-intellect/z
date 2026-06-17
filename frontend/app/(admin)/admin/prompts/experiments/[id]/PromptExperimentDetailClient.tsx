@@ -1,30 +1,25 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.3 — `/admin/prompts/experiments/[id]` — карточка эксперимента
- * с метриками A vs B и кнопками start/stop.
- *
- * Источник: ТЗ A §8.1.
- */
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
-import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   type ExperimentAnalyticsApi,
   adminPromptExperimentsApi,
-} from '@/api/admin-prompt-experiments.api';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/api/admin-prompt-experiments.api";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { toast } from "@/ui/shadcn/toast";
 
 interface Props {
   experimentId: string;
 }
 
 export function PromptExperimentDetailClient({ experimentId }: Props) {
-  const [analytics, setAnalytics] = useState<ExperimentAnalyticsApi | null>(null);
+  const [analytics, setAnalytics] = useState<ExperimentAnalyticsApi | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -37,7 +32,7 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
       setAnalytics(res);
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось загрузить аналитику';
+        e instanceof ApiError ? e.message : "Не удалось загрузить аналитику";
       setError(msg);
     } finally {
       setLoading(false);
@@ -52,11 +47,11 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
     setActing(true);
     try {
       await adminPromptExperimentsApi.start(experimentId);
-      toast.success('Эксперимент запущен');
+      toast.success("Эксперимент запущен");
       await fetchData();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось запустить';
-      toast.error('Ошибка', { description: msg });
+      const msg = e instanceof ApiError ? e.message : "Не удалось запустить";
+      toast.error("Ошибка", { description: msg });
     } finally {
       setActing(false);
     }
@@ -65,25 +60,30 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
   const handleStop = useCallback(async () => {
     setActing(true);
     try {
-      await adminPromptExperimentsApi.stop(experimentId, 'Остановлен из админки');
-      toast.success('Эксперимент остановлен');
+      await adminPromptExperimentsApi.stop(
+        experimentId,
+        "Остановлен из админки",
+      );
+      toast.success("Эксперимент остановлен");
       await fetchData();
     } catch (e) {
-      const msg = e instanceof ApiError ? e.message : 'Не удалось остановить';
-      toast.error('Ошибка', { description: msg });
+      const msg = e instanceof ApiError ? e.message : "Не удалось остановить";
+      toast.error("Ошибка", { description: msg });
     } finally {
       setActing(false);
     }
   }, [experimentId, fetchData]);
 
   if (loading) {
-    return <div className="text-sm text-fg-secondary">Загрузка эксперимента…</div>;
+    return (
+      <div className="text-sm text-fg-secondary">Загрузка эксперимента…</div>
+    );
   }
 
   if (error || !analytics) {
     return (
       <div className="rounded-md border border-chip-danger-bg bg-chip-danger-bg p-4 text-sm text-chip-danger-fg">
-        {error ?? 'Эксперимент не найден'}
+        {error ?? "Эксперимент не найден"}
         <Link href="/admin/prompts/experiments" className="ml-2 underline">
           К списку
         </Link>
@@ -92,8 +92,8 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
   }
 
   const e = analytics.experiment;
-  const groupA = analytics.groups.find((g) => g.group === 'A');
-  const groupB = analytics.groups.find((g) => g.group === 'B');
+  const groupA = analytics.groups.find((g) => g.group === "A");
+  const groupB = analytics.groups.find((g) => g.group === "B");
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -114,19 +114,21 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
               Доля трафика на группу B: {e.splitPercent}%
             </span>
             {e.orgId ? (
-              <span className="text-sm text-fg-secondary">Org: {e.orgId.slice(0, 8)}</span>
+              <span className="text-sm text-fg-secondary">
+                Org: {e.orgId.slice(0, 8)}
+              </span>
             ) : (
               <span className="text-sm text-fg-secondary">Глобальный</span>
             )}
           </div>
         </div>
         <div className="flex gap-2">
-          {e.status === 'draft' ? (
+          {e.status === "draft" ? (
             <Button onClick={() => void handleStart()} disabled={acting}>
               Запустить
             </Button>
           ) : null}
-          {e.status === 'running' ? (
+          {e.status === "running" ? (
             <Button
               variant="destructive"
               onClick={() => void handleStop()}
@@ -145,7 +147,9 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
 
       {e.notes ? (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-fg-secondary">Комментарии</h2>
+          <h2 className="mb-2 text-sm font-semibold text-fg-secondary">
+            Комментарии
+          </h2>
           <pre className="whitespace-pre-wrap rounded-md bg-bg-subtle p-3 text-xs text-fg-secondary">
             {e.notes}
           </pre>
@@ -157,21 +161,21 @@ export function PromptExperimentDetailClient({ experimentId }: Props) {
 
 function statusLabel(s: string): string {
   switch (s) {
-    case 'draft':
-      return 'Черновик';
-    case 'running':
-      return 'Запущен';
-    case 'stopped':
-      return 'Остановлен';
-    case 'completed':
-      return 'Завершён';
+    case "draft":
+      return "Черновик";
+    case "running":
+      return "Запущен";
+    case "stopped":
+      return "Остановлен";
+    case "completed":
+      return "Завершён";
     default:
       return s;
   }
 }
 
 interface GroupAnalytics {
-  group: 'A' | 'B';
+  group: "A" | "B";
   versionId: string;
   meetingsCount: number;
   positiveFeedback: number;
@@ -193,7 +197,8 @@ function GroupCard({
       </div>
     );
   }
-  const total = groupAnalytics.positiveFeedback + groupAnalytics.negativeFeedback;
+  const total =
+    groupAnalytics.positiveFeedback + groupAnalytics.negativeFeedback;
   const positiveRatio =
     total > 0 ? (groupAnalytics.positiveFeedback / total) * 100 : null;
   return (
@@ -208,7 +213,7 @@ function GroupCard({
         <Row label="👎 отрицательных" value={groupAnalytics.negativeFeedback} />
         <Row
           label="Доля положительных"
-          value={positiveRatio !== null ? `${positiveRatio.toFixed(1)}%` : '—'}
+          value={positiveRatio !== null ? `${positiveRatio.toFixed(1)}%` : "—"}
         />
       </dl>
     </div>

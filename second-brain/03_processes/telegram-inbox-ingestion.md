@@ -7,8 +7,8 @@ last_audited: 2026-05-30
 owners_human:
   - продакт conversational-каналов
 related_plans:
-  - plans/tz/2026-05-21-sba-alpha-1-channels-foundation.md
-  - plans/tz/2026-05-21-sba-beta-1-channels-telegram-max.md
+  - plans/archive/2026-05-21-sba-alpha-1-channels-foundation.md
+  - plans/archive/2026-05-21-sba-beta-1-channels-telegram-max.md
 related_projects:
   - 01_projects/conversational-channels.md
   - 01_projects/feedback.md

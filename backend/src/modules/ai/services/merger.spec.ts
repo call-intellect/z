@@ -26,7 +26,6 @@ describe('mergeWordTimestamps', () => {
         words: [
           { word: 'Привет', startMs: 0, endMs: 500 },
           { word: 'команда', startMs: 600, endMs: 1100 },
-          // gap 3 секунды → новый turn
           { word: 'Работаем', startMs: 4500, endMs: 5000 },
         ],
       },
@@ -82,15 +81,10 @@ describe('mergeWordTimestamps', () => {
         speakerName: 'Боб',
         trackStartedAt: base,
         baseStartedAt: base,
-        words: [
-          // вклинивается между «А» и «я»
-          { word: 'Б', startMs: 100, endMs: 250 },
-        ],
+        words: [{ word: 'Б', startMs: 100, endMs: 250 }],
       },
     ];
     const turns = mergeWordTimestamps(tracks);
-    // Должно быть 3 turn'а: Алиса("А"), Боб("Б"), Алиса("я"),
-    // потому что speaker меняется → flush.
     expect(turns).toHaveLength(3);
     expect(turns.map((t) => t.speaker)).toEqual(['Алиса', 'Боб', 'Алиса']);
     expect(turns.map((t) => t.text)).toEqual(['А', 'Б', 'я']);
@@ -98,7 +92,7 @@ describe('mergeWordTimestamps', () => {
 
   it('абсолютное время учитывает offset trackStartedAt', () => {
     const base = new Date('2026-05-08T10:00:00.000Z');
-    const trackLater = new Date('2026-05-08T10:00:10.000Z'); // +10s
+    const trackLater = new Date('2026-05-08T10:00:10.000Z');
     const tracks: PerTrackWords[] = [
       {
         speakerName: 'Алиса',
@@ -116,7 +110,7 @@ describe('mergeWordTimestamps', () => {
     const turns = mergeWordTimestamps(tracks);
     expect(turns).toHaveLength(2);
     expect(turns[0]?.startSec).toBe(0);
-    expect(turns[1]?.startSec).toBe(10); // 10 секунд offset
+    expect(turns[1]?.startSec).toBe(10);
   });
 
   it('identity дорожки (participantId/livekitIdentity) пробрасывается в turn', () => {
@@ -201,7 +195,6 @@ describe('mergeWordTimestamps', () => {
 });
 
 describe('loadRoomChatForMerge', () => {
-  /** Хэлпер: типизированные моки PrismaService.meetingRoomMessage и cfg. */
   function makeDeps(opts: {
     includeRoomChat: boolean;
     rows: Array<{ authorName: string; content: string; sentAt: Date }>;
@@ -267,8 +260,6 @@ describe('loadRoomChatForMerge', () => {
     const { prisma, cfg, findMany } = makeDeps({
       includeRoomChat: false,
       rows: [
-        // эти сообщения не должны быть прочитаны вообще, но кладём чтобы
-        // убедиться, что флаг отключает БД-запрос полностью.
         {
           authorName: 'Алиса',
           content: 'это не должно попасть в AI',

@@ -9,35 +9,13 @@ import { ProbeService } from '../../probe/probe.service';
 
 import { OwnerResolverService } from './owner-resolver.service';
 
-/**
- * SBA α-7 — Specialist31ProbeService.
- *
- * Эмиссия probe-events специалиста 3.1 (Regulations) согласно §6 sub-TZ:
- *   - `regulation.missing_owner` — Regulation/Process/Policy без ownerPersonId
- *     И статус canonical → probe owner/admin.
- *   - `regulation.process_no_steps` — Process без ProcessStep'ов → probe owner/admin.
- *   - `regulation.stale` — lastConfirmedAt > 6 мес AND есть свежие блоки → probe owner.
- *     (NB: stale-cron в curation работает универсально по CardVersion'ам —
- *     этот probe срабатывает сразу после triage, чтобы не ждать cron'а.)
- *   - `regulation.scope_unclear` — Regulation/Policy без scope AND severity критический.
- *
- * Получатели:
- *   - ownerPersonId.userId, если есть.
- *   - admin'ы Org (для missing_owner / process_no_steps / scope_unclear).
- *
- * Контракт: сервис НЕ должен бросать. Один упавший probe не валит остальные —
- * лог и продолжение. Каждый успешный probe увеличивает
- * `core_specialist_probe_events_total{type='regulation'|'process'|'policy', reason='...'}`.
- */
 @Injectable()
 export class Specialist31ProbeService {
   private readonly logger = new Logger(Specialist31ProbeService.name);
 
   static readonly SPECIALIST_NAME = '3-1-regulations';
 
-  /** Окно «свежие блоки появились» (для stale-probe). */
   private static readonly STALE_FRESH_WINDOW_DAYS = 7;
-  /** Порог «давно не подтверждалось» — 6 месяцев. */
   private static readonly STALE_THRESHOLD_DAYS = 183;
 
   constructor(
@@ -46,18 +24,16 @@ export class Specialist31ProbeService {
     private readonly conversational: ConversationalService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    @Optional() @Inject(ProbeService)
+    @Optional()
+    @Inject(ProbeService)
     private readonly probeService?: ProbeService,
-    // W2 autonomy (2026-06-12) — «лестница владельца» + лента «что сделала
-    // Кора». Optional: в тестах/усечённых bootstrap'ах без них работает
-    // прежнее поведение (probe).
-    @Optional() @Inject(OwnerResolverService)
+    @Optional()
+    @Inject(OwnerResolverService)
     private readonly ownerResolver?: OwnerResolverService,
-    @Optional() @Inject(ActivityFeedService)
+    @Optional()
+    @Inject(ActivityFeedService)
     private readonly activityFeed?: ActivityFeedService,
   ) {}
-
-  // ─────────────────────── публичные методы ───────────────────────
 
   async checkAndEmitProbesRegulation(reg: Regulation): Promise<void> {
     try {
@@ -180,8 +156,6 @@ export class Specialist31ProbeService {
     }
   }
 
-  // ─────────────────────── triggers ───────────────────────
-
   private async checkMissingOwner(args: {
     tenantId: string;
     resourceType: 'regulation' | 'process' | 'policy';
@@ -189,22 +163,17 @@ export class Specialist31ProbeService {
     resourceName: string;
     ownerPersonId: string | null;
     status: string;
-    /** Process.ownerRoleId (у Regulation/Policy роли-поля нет). */
     ownerRoleId?: string | null;
-    /** scope вида 'role:<id>' даёт роль-ступень лестницы. */
     scope?: string | null;
   }): Promise<void> {
     if (args.ownerPersonId) return;
-    if (args.status !== 'active') return; // только активные (canonical) карточки
+    if (args.status !== 'active') return;
 
     const admins = await this.findOrgAdminsUserIds(args.tenantId);
     if (admins.length === 0) return;
 
     const label = this.kindLabel(args.resourceType);
 
-    // W2 autonomy (2026-06-12) — «лестница владельца» ДО probe: если владельца
-    // можно вывести детерминированно (единственный держатель роли-владельца /
-    // роли из scope) — Кора назначает сама и человека не дёргает.
     if (this.ownerResolver) {
       try {
         const roleId = args.ownerRoleId ?? this.roleIdFromScope(args.scope);
@@ -212,7 +181,7 @@ export class Specialist31ProbeService {
           tenantId: args.tenantId,
           parentOwnerUserId: null,
           roleId,
-          authorUserId: null, // у Regulation/Process/Policy нет поля автора
+          authorUserId: null,
         });
         if (resolution.kind === 'resolved') {
           const assigned = await this.autoAssignOwner({
@@ -224,21 +193,15 @@ export class Specialist31ProbeService {
           });
           if (assigned === 'assigned') {
             this.metrics.incOwnerResolution({ outcome: 'auto' });
-            return; // probe НЕ шлём — владелец назначен автоматически
-          }
-          if (assigned === 'already_assigned') {
-            // M-3 — владельца назначили параллельно: probe не нужен.
             return;
           }
-          // 'no_person' — Person по userId не нашёлся — обычный probe ниже.
+          if (assigned === 'already_assigned') {
+            return;
+          }
         } else if (resolution.kind === 'ambiguous') {
           this.metrics.incOwnerResolution({ outcome: 'ambiguous' });
-          const names = await this.personNamesByUserIds(
-            args.tenantId,
-            resolution.candidates,
-          );
+          const names = await this.personNamesByUserIds(args.tenantId, resolution.candidates);
           if (names.length >= 2) {
-            // Р2.2 — вопрос-выбор с именами (текст/голос, без кнопок).
             const message = `У ${label} «${args.resourceName}» нет ответственного. Кого назначить владельцем: ${names.join(' или ')}?`;
             await this.emit({
               tenantId: args.tenantId,
@@ -251,7 +214,6 @@ export class Specialist31ProbeService {
             });
             return;
           }
-          // имена не восстановились — обычный probe ниже.
         } else {
           this.metrics.incOwnerResolution({ outcome: 'none' });
         }
@@ -313,18 +275,12 @@ export class Specialist31ProbeService {
     sourceBlockIds: string[];
   }): Promise<void> {
     if (!args.lastConfirmedAt) return;
-    const ageDays =
-      (Date.now() - args.lastConfirmedAt.getTime()) / (1000 * 60 * 60 * 24);
+    const ageDays = (Date.now() - args.lastConfirmedAt.getTime()) / (1000 * 60 * 60 * 24);
     if (ageDays < Specialist31ProbeService.STALE_THRESHOLD_DAYS) return;
     if (args.sourceBlockIds.length === 0) return;
 
     const freshSince = new Date(
-      Date.now() -
-        Specialist31ProbeService.STALE_FRESH_WINDOW_DAYS *
-          24 *
-          60 *
-          60 *
-          1000,
+      Date.now() - Specialist31ProbeService.STALE_FRESH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
     const freshBlock = await this.prisma.ideaBlock.findFirst({
       where: {
@@ -365,9 +321,6 @@ export class Specialist31ProbeService {
     severityHint: string | null;
   }): Promise<void> {
     if (args.scope) return;
-    // Тревога только для важных регламентов / политик. Для regulation — всегда
-    // проверяем (regulation по дефолту важна). Для policy — только если
-    // mandatory / blocking.
     if (
       args.resourceType === 'policy' &&
       args.severityHint !== 'mandatory' &&
@@ -387,14 +340,9 @@ export class Specialist31ProbeService {
       reason: 'regulation.scope_unclear',
       message,
       recipients: admins,
-      suggestedActions: [
-        'Указать область действия',
-        'Сузить до отдела/роли',
-      ],
+      suggestedActions: ['Указать область действия', 'Сузить до отдела/роли'],
     });
   }
-
-  // ─────────────────────── helpers ───────────────────────
 
   private async emit(args: {
     tenantId: string;
@@ -406,9 +354,6 @@ export class Specialist31ProbeService {
     suggestedActions?: readonly string[];
   }): Promise<void> {
     const actionUrl = `/regulations/${args.resourceId}?kind=${args.resourceType}`;
-    // SBA β-5 — миграция: probe-агент берёт ответственность за дедуп,
-    // rate-limit, выбор канала. Если ProbeService недоступен (тесты,
-    // legacy bootstrap) — fallback на прямой sendNotification.
     if (this.probeService) {
       try {
         await this.probeService.suggest({
@@ -417,9 +362,7 @@ export class Specialist31ProbeService {
           reason: args.reason,
           payload: {
             message: args.message,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             contextCardId: args.resourceId,
             contextCardKind: args.resourceType,
             contextCardTitle: args.message.slice(0, 100),
@@ -446,7 +389,6 @@ export class Specialist31ProbeService {
         );
       }
     }
-    // Fallback (на случай отсутствия ProbeService).
     for (const userId of args.recipients) {
       try {
         await this.conversational.sendNotification({
@@ -458,9 +400,7 @@ export class Specialist31ProbeService {
             reason: args.reason,
             message: args.message,
             cardId: args.resourceId,
-            suggestedActions: args.suggestedActions
-              ? [...args.suggestedActions]
-              : undefined,
+            suggestedActions: args.suggestedActions ? [...args.suggestedActions] : undefined,
             actionUrl,
           },
           dataClass: 'internal',
@@ -508,9 +448,7 @@ export class Specialist31ProbeService {
     return [...recipients];
   }
 
-  private async personUserId(
-    personId: string | null,
-  ): Promise<string | null> {
+  private async personUserId(personId: string | null): Promise<string | null> {
     if (!personId) return null;
     const person = await this.prisma.person.findUnique({
       where: { id: personId },
@@ -519,17 +457,6 @@ export class Specialist31ProbeService {
     return person?.userId ?? null;
   }
 
-  /**
-   * W2 autonomy — АВТО-назначение владельца (прямое поле ownerPersonId есть у
-   * всех трёх моделей). Исходы:
-   *   - 'assigned' — запись обновлена (лента публикуется);
-   *   - 'no_person' — Person по userId не нашёлся (вызывающий падает в
-   *     обычный probe);
-   *   - 'already_assigned' — M-3 (2026-06-12): optimistic-условие
-   *     `ownerPersonId: null` в where дало count=0 — владельца назначили
-   *     параллельно; вызывающий тихо пропускает (ни ленты, ни probe).
-   * Запись в ленту «что сделала Кора» — best-effort.
-   */
   private async autoAssignOwner(args: {
     tenantId: string;
     resourceType: 'regulation' | 'process' | 'policy';
@@ -543,8 +470,6 @@ export class Specialist31ProbeService {
     });
     if (!person) return 'no_person';
 
-    // M-3 — optimistic-условие «поле всё ещё пусто»: защита от гонки с
-    // параллельным назначением владельца.
     const where = {
       id: args.resourceId,
       tenantId: args.tenantId,
@@ -557,8 +482,7 @@ export class Specialist31ProbeService {
     } else if (args.resourceType === 'policy') {
       updated = (await this.prisma.policy.updateMany({ where, data })).count;
     } else {
-      updated = (await this.prisma.regulation.updateMany({ where, data }))
-        .count;
+      updated = (await this.prisma.regulation.updateMany({ where, data })).count;
     }
     if (updated === 0) {
       this.logger.log(
@@ -599,7 +523,6 @@ export class Specialist31ProbeService {
     return 'assigned';
   }
 
-  /** scope вида 'role:<id>' → roleId; иначе null. */
   private roleIdFromScope(scope: string | null | undefined): string | null {
     if (!scope) return null;
     if (!scope.startsWith('role:')) return null;
@@ -607,7 +530,6 @@ export class Specialist31ProbeService {
     return roleId.length > 0 ? roleId : null;
   }
 
-  /** Имена Person'ов по userId (для текста вопроса-выбора). */
   private async personNamesByUserIds(
     tenantId: string,
     userIds: readonly string[],

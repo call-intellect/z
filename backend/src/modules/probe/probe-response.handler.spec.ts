@@ -1,17 +1,3 @@
-/**
- * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify.
- *
- * Unit-тест классификатора в `ProbeResponseHandler.handle`:
- *   1. High confidence (≥0.85) → bucket=high, parsedAnswer/parsedConfidence
- *      попали в ingest payload.
- *   2. Low confidence (<min) → bucket=low + incProbeResponseUnclear,
- *      ingest payload помечен `notification_response_unclear:true`,
- *      closing-loop НЕ заблокирован.
- *   3. LLM throw → handler не падает, ingest вызван БЕЗ parsedAnswer,
- *      classify-метрики НЕ дёрнуты.
- *
- * Все Prisma/LLM/Metrics/Adapter мокированы (без БД и без сети).
- */
 import type { Notification, ProbeEvent } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -198,7 +184,6 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     const payload = mocks.ingestArgs[0]!.payload as Record<string, unknown>;
     expect(payload.notification_response_unclear).toBe(true);
     expect(payload.parsedConfidence).toBe(0.3);
-    // closing-loop всё равно прошёл — probe_closed_total дёрнут
     expect(mocks.metrics.incProbeClosed).toHaveBeenCalled();
   });
 
@@ -215,7 +200,6 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     expect(payload.parsedAnswer).toBeUndefined();
     expect(payload.parsedConfidence).toBeUndefined();
     expect(payload.notification_response_unclear).toBeUndefined();
-    // closing-loop всё равно завершён
     expect(mocks.metrics.incProbeClosed).toHaveBeenCalled();
   });
 
@@ -230,10 +214,7 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     expect(payload.parsedAnswer).toBeUndefined();
   });
 
-  // ─── Agents v2 Фаза 0.2 ─────────────────────────────────────────────
   it('payload.formulatedQuestion — приоритет над reason/message при сборке question для LLM', async () => {
-    // Подменяем probe: добавляем formulatedQuestion + плохой reason +
-    // misleading message; проверяем что LLM получает именно formulatedQuestion.
     const probeWithFormulated = {
       ...buildProbe(),
       payload: {
@@ -262,27 +243,18 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     const llmArgs = mocks.llmCall.mock.calls[0]![0] as {
       userMessage: string;
     };
-    expect(llmArgs.userMessage).toContain(
-      'Вы согласовали с финдиректором?',
-    );
-    // Не должен утечь reason или message в userMessage как «question».
-    expect(llmArgs.userMessage).not.toContain(
-      'decision.confirm_status_machine_code',
-    );
+    expect(llmArgs.userMessage).toContain('Вы согласовали с финдиректором?');
+    expect(llmArgs.userMessage).not.toContain('decision.confirm_status_machine_code');
     expect(llmArgs.userMessage).not.toContain('устаревший legacy ключ');
-    expect(llmArgs.userMessage).not.toContain(
-      'контекст от specialist, не сам вопрос',
-    );
+    expect(llmArgs.userMessage).not.toContain('контекст от specialist, не сам вопрос');
   });
 
-  // ─── TZ clone-method Э3.1 — high-priority reasoning для CDM-ответов ───
   it('reason=skill.cdm_interview → ingest получает signalTypeHint=reasoning и questionText (каскад formulatedQuestion)', async () => {
     const probeCdm = {
       ...buildProbe(),
       reason: 'skill.cdm_interview',
       payload: {
-        formulatedQuestion:
-          'Какие альтернативы вы рассматривали и почему отвергли?',
+        formulatedQuestion: 'Какие альтернативы вы рассматривали и почему отвергли?',
         suggestedQuestion: 'fallback-вопрос специалиста',
         message: 'контекст кейса',
       },
@@ -304,10 +276,7 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     expect(mocks.ingestArgs).toHaveLength(1);
     const ingested = mocks.ingestArgs[0]!;
     expect(ingested.signalTypeHint).toBe('reasoning');
-    // Каскад: formulatedQuestion в приоритете.
-    expect(ingested.questionText).toBe(
-      'Какие альтернативы вы рассматривали и почему отвергли?',
-    );
+    expect(ingested.questionText).toBe('Какие альтернативы вы рассматривали и почему отвергли?');
   });
 
   it('обычный reason → signalTypeHint НЕ передаётся (undefined), questionText из каскада есть', async () => {
@@ -325,9 +294,6 @@ describe('ProbeResponseHandler — Agents v2 Фаза 0.1 classifier', () => {
     expect(mocks.ingestArgs).toHaveLength(1);
     const ingested = mocks.ingestArgs[0]!;
     expect(ingested.signalTypeHint).toBeUndefined();
-    // buildProbe payload: { question, message } → каскад берёт question.
-    expect(ingested.questionText).toBe(
-      'Решение по миграции на DeepSeek принято?',
-    );
+    expect(ingested.questionText).toBe('Решение по миграции на DeepSeek принято?');
   });
 });

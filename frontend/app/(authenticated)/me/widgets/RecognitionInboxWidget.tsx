@@ -1,28 +1,22 @@
-'use client';
+"use client";
 
-import { Award } from 'lucide-react';
-import useSWR from 'swr';
+import { Award } from "lucide-react";
+import useSWR from "swr";
 
-import { meDailyValueApi } from '@/api/me-daily-value.api';
-import { mapMyRecognition } from '@/domain/me-daily-value';
+import { meDailyValueApi } from "@/api/me-daily-value.api";
+import { mapMyRecognition } from "@/domain/me-daily-value";
 import {
   CardTitle,
   CHART,
   GlassCard,
   GRAD,
-} from '@/ui/components/dashboard/modern';
+} from "@/ui/components/dashboard/modern";
 
-/**
- * ТЗ-2 Ф5 — виджет «Признания» (self-scope: полученные мной). Self-fetch через
- * SWR на `meDailyValueApi.recognitions()`. Строка — RU-лейбл типа + текст +
- * «от {имя ?? коллеги}» + дата. Современный визуальный язык.
- *
- * Эндпоинт гейтится kill-switch на бэке: OFF → пустой ответ → empty-state.
- */
 export function RecognitionInboxWidget() {
   const swr = useSWR(
-    ['me-recognitions'],
-    async () => (await meDailyValueApi.recognitions()).items.map(mapMyRecognition),
+    ["me-recognitions"],
+    async () =>
+      (await meDailyValueApi.recognitions()).items.map(mapMyRecognition),
     { revalidateOnFocus: false, shouldRetryOnError: false },
   );
 
@@ -41,7 +35,7 @@ export function RecognitionInboxWidget() {
               <li
                 key={i}
                 className="h-12 animate-pulse rounded-xl"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               />
             ))}
           </ul>
@@ -55,13 +49,13 @@ export function RecognitionInboxWidget() {
               <li
                 key={r.id}
                 className="rounded-xl px-3 py-2.5"
-                style={{ background: 'var(--surface-inset)' }}
+                style={{ background: "var(--surface-inset)" }}
               >
                 <div className="flex items-center gap-2">
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px] font-medium"
                     style={{
-                      background: 'oklch(0.78 0.2 350 / 0.14)',
+                      background: "oklch(0.78 0.2 350 / 0.14)",
                       color: CHART.pink,
                     }}
                   >
@@ -77,7 +71,7 @@ export function RecognitionInboxWidget() {
                   className="mt-1 flex flex-wrap items-center gap-2 text-[11px]"
                   style={{ color: CHART.faint }}
                 >
-                  <span>от {r.fromPersonName ?? 'коллеги'}</span>
+                  <span>от {r.fromPersonName ?? "коллеги"}</span>
                   <span aria-hidden>·</span>
                   <span>{formatRuDate(r.createdAt)}</span>
                 </div>
@@ -92,11 +86,11 @@ export function RecognitionInboxWidget() {
 
 function formatRuDate(date: Date): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: 'numeric',
-      month: 'short',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "numeric",
+      month: "short",
     }).format(date);
   } catch {
-    return '';
+    return "";
   }
 }

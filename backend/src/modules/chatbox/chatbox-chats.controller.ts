@@ -16,10 +16,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
@@ -38,18 +35,6 @@ import {
   type ChatMessageDto,
 } from './dto/chatbox-chats.dto';
 
-/**
- * REST API просмотра чатов ChatBox + исходящей отправки ответа менеджера
- * (ТЗ 2026-06-05, Фаза 6). Backend для фронта Фаз 7/8.
- *
- *   - GET  /api/v1/chatbox/chats               — список (read).
- *   - GET  /api/v1/chatbox/chats/:id           — детали чата (read).
- *   - GET  /api/v1/chatbox/chats/:id/messages  — сообщения (read).
- *   - POST /api/v1/chatbox/chats/:id/messages  — отправить ответ (write).
- *
- * RBAC ресурс — `chatbox`. Privacy R12: чтение переписки доступно только
- * участникам организации (`Membership`), не «чистому» super_admin.
- */
 @ApiTags('chatbox')
 @Controller('api/v1/chatbox/chats')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -136,8 +121,6 @@ export class ChatboxChatsController {
     return { ok: true, enqueued };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
       throw new BadRequestException({
@@ -181,14 +164,7 @@ export class ChatboxChatsController {
     }
   }
 
-  /**
-   * Privacy-гейт R12: чтение/отправка переписки доступны только участникам
-   * организации. Исключает «чистого» super_admin без Membership в этой org.
-   */
-  private async requireConversationAccess(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
+  private async requireConversationAccess(userId: string, tenantId: string): Promise<void> {
     const m = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, userId },
     });

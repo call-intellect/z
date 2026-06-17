@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import useSWR from 'swr';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import useSWR from "swr";
 import {
   AlertTriangle,
   Calendar,
@@ -10,23 +10,23 @@ import {
   Loader2,
   Quote,
   X,
-} from 'lucide-react';
-import { toast } from 'sonner';
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   entitiesGraphApi,
   type EntityGraphResultApi,
-} from '@/api/entities-graph.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/entities-graph.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   edgeColorByConfidence,
   mapEntityGraph,
   type EntityGraph,
   type EntityGraphEdge,
   type EntityGraphNode,
-} from '@/domain/entity-graph';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/entity-graph";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -34,35 +34,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Label } from '@/ui/shadcn/label';
-import { Textarea } from '@/ui/shadcn/textarea';
-import { entityTypeLabel } from '@/domain/entity';
-import { ReadablePayload } from '@/ui/readable-payload';
+} from "@/ui/shadcn/dialog";
+import { Label } from "@/ui/shadcn/label";
+import { Textarea } from "@/ui/shadcn/textarea";
+import { entityTypeLabel } from "@/domain/entity";
+import { ReadablePayload } from "@/ui/readable-payload";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
-import { ForceGraphCanvas } from './ForceGraphCanvas';
+} from "@app/(admin)/admin/AdminStateViews";
+import { ForceGraphCanvas } from "./ForceGraphCanvas";
 
-/**
- * G.3 — UI «что система знает про X» (entity-centric Карта знаний).
- *
- * Источник: plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md
- * раздел «G.3».
- *
- * Слои:
- *   - Container: SWR-запрос `entitiesGraphApi.getGraph(entityId, depth=2)`.
- *   - Visualization: `ForceGraphCanvas` (react-force-graph-2d через dynamic
- *     import, ssr:false). Hover на ребро → tooltip с top-1 evidence.
- *   - Side panel: «Как мы это узнали» — top-3 source blocks (block name +
- *     цитата + timestamp).
- *   - Mark-wrong modal: textarea «reason» → POST `/mark-wrong`.
- *
- * Стиль — dark-first, mint #5EEAD4 accent (как `/decisions`, `/insights`).
- */
 export function EntityGraphClient({ entityId }: { entityId: string }) {
   const { currentOrgId, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -83,9 +67,9 @@ interface DepthOption {
 }
 
 const DEPTH_OPTIONS: ReadonlyArray<DepthOption> = [
-  { value: 1, label: 'Прямые соседи (1)' },
-  { value: 2, label: 'Соседи соседей (2)' },
-  { value: 3, label: 'Глубоко (3)' },
+  { value: 1, label: "Прямые соседи (1)" },
+  { value: 2, label: "Соседи соседей (2)" },
+  { value: 3, label: "Глубоко (3)" },
 ];
 
 function EntityGraphContent({
@@ -98,7 +82,7 @@ function EntityGraphContent({
   const [depth, setDepth] = useState<1 | 2 | 3>(2);
   const swrKey = useMemo(
     () =>
-      ['entity-graph', orgId, entityId, depth] as readonly [
+      ["entity-graph", orgId, entityId, depth] as readonly [
         string,
         string,
         string,
@@ -118,52 +102,55 @@ function EntityGraphContent({
     [data],
   );
 
-  // Выбор для side-panel «Как мы это узнали».
-  const [selectedEdge, setSelectedEdge] = useState<EntityGraphEdge | null>(null);
-  const [selectedNode, setSelectedNode] = useState<EntityGraphNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<EntityGraphEdge | null>(
+    null,
+  );
+  const [selectedNode, setSelectedNode] = useState<EntityGraphNode | null>(
+    null,
+  );
 
-  // Mark-wrong modal state.
   const [markTarget, setMarkTarget] = useState<
-    | { kind: 'edge'; edge: EntityGraphEdge }
-    | { kind: 'node'; node: EntityGraphNode }
+    | { kind: "edge"; edge: EntityGraphEdge }
+    | { kind: "node"; node: EntityGraphNode }
     | null
   >(null);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Сбрасываем selection при смене сущности.
   useEffect(() => {
     setSelectedEdge(null);
     setSelectedNode(null);
     setMarkTarget(null);
-    setReason('');
+    setReason("");
   }, [entityId, depth]);
 
   const handleMarkWrong = useCallback(async () => {
     if (!markTarget) return;
     setSubmitting(true);
     try {
-      if (markTarget.kind === 'edge') {
+      if (markTarget.kind === "edge") {
         await entitiesGraphApi.markWrong(orgId, entityId, {
           edgeId: markTarget.edge.edgeId,
           reason: reason.trim() || undefined,
         });
-        toast.success('Ребро помечено как неверное. Спасибо за обратную связь!');
+        toast.success(
+          "Ребро помечено как неверное. Спасибо за обратную связь!",
+        );
       } else {
         await entitiesGraphApi.markWrong(orgId, entityId, {
           nodeId: markTarget.node.id,
           reason: reason.trim() || undefined,
         });
-        toast.success('Узел помечен как неверный.');
+        toast.success("Узел помечен как неверный.");
       }
       setMarkTarget(null);
-      setReason('');
+      setReason("");
       await mutate();
     } catch (err) {
       const msg =
         err instanceof ApiError
           ? err.message
-          : 'Не удалось отправить отметку. Попробуйте позже.';
+          : "Не удалось отправить отметку. Попробуйте позже.";
       toast.error(msg);
     } finally {
       setSubmitting(false);
@@ -171,7 +158,7 @@ function EntityGraphContent({
   }, [markTarget, orgId, entityId, reason, mutate]);
 
   if (isLoading) return <AdminLoading rows={6} />;
-  if (error instanceof ApiError && error.code === 'forbidden') {
+  if (error instanceof ApiError && error.code === "forbidden") {
     return (
       <AdminForbidden
         title="Нет доступа"
@@ -185,7 +172,7 @@ function EntityGraphContent({
         message={
           error instanceof Error
             ? `Ошибка загрузки: ${error.message}`
-            : 'Неизвестная ошибка при загрузке карты знаний'
+            : "Неизвестная ошибка при загрузке карты знаний"
         }
         onRetry={() => mutate()}
       />
@@ -198,7 +185,7 @@ function EntityGraphContent({
       <header className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">
-            Что система знает про:{' '}
+            Что система знает про:{" "}
             <span className="text-[#5EEAD4]">{graph.center.label}</span>
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -234,7 +221,7 @@ function EntityGraphContent({
       </header>
 
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-        {/* Канва графа */}
+        {}
         <div className="relative min-h-[480px] overflow-hidden rounded-xl border border-border-subtle bg-bg-overlay backdrop-blur">
           <ForceGraphCanvas
             graph={graph}
@@ -255,7 +242,7 @@ function EntityGraphContent({
           )}
         </div>
 
-        {/* Side panel */}
+        {}
         <aside className="flex max-h-[78vh] flex-col gap-4 overflow-y-auto rounded-xl border border-border-subtle bg-bg-overlay p-4 backdrop-blur">
           {selectedEdge ? (
             <EdgeDetailsPanel
@@ -264,7 +251,7 @@ function EntityGraphContent({
               nodes={graph.nodes}
               onClose={() => setSelectedEdge(null)}
               onMarkWrong={() =>
-                setMarkTarget({ kind: 'edge', edge: selectedEdge })
+                setMarkTarget({ kind: "edge", edge: selectedEdge })
               }
             />
           ) : selectedNode ? (
@@ -272,7 +259,7 @@ function EntityGraphContent({
               node={selectedNode}
               onClose={() => setSelectedNode(null)}
               onMarkWrong={() =>
-                setMarkTarget({ kind: 'node', node: selectedNode })
+                setMarkTarget({ kind: "node", node: selectedNode })
               }
             />
           ) : (
@@ -281,13 +268,13 @@ function EntityGraphContent({
         </aside>
       </div>
 
-      {/* Mark-wrong modal */}
+      {}
       <Dialog
         open={markTarget !== null}
         onOpenChange={(open) => {
           if (!open) {
             setMarkTarget(null);
-            setReason('');
+            setReason("");
           }
         }}
       >
@@ -319,7 +306,7 @@ function EntityGraphContent({
               variant="outline"
               onClick={() => {
                 setMarkTarget(null);
-                setReason('');
+                setReason("");
               }}
               disabled={submitting}
             >
@@ -331,7 +318,7 @@ function EntityGraphContent({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Отправляем…
                 </>
               ) : (
-                'Подтвердить «Это неверно»'
+                "Подтвердить «Это неверно»"
               )}
             </Button>
           </DialogFooter>
@@ -340,8 +327,6 @@ function EntityGraphContent({
     </div>
   );
 }
-
-// ──────────────────────── Side panels ─────────────────────────────────
 
 function EmptyPanel() {
   return (
@@ -383,8 +368,8 @@ function EdgeDetailsPanel({
             Связь
           </p>
           <p className="mt-0.5 text-base font-semibold text-foreground">
-            {fromLabel}{' '}
-            <span className="text-[#5EEAD4]">{edge.relationLabel}</span>{' '}
+            {fromLabel}{" "}
+            <span className="text-[#5EEAD4]">{edge.relationLabel}</span>{" "}
             {toLabel}
           </p>
         </div>
@@ -412,7 +397,9 @@ function EdgeDetailsPanel({
           </p>
           <p
             className={`mt-0.5 font-medium ${
-              edge.isExpired ? 'text-muted-foreground line-through' : 'text-foreground'
+              edge.isExpired
+                ? "text-muted-foreground line-through"
+                : "text-foreground"
             }`}
           >
             {edge.periodLabel}
@@ -449,12 +436,12 @@ function EdgeDetailsPanel({
                 </p>
                 {ev.sourceTimestamp && (
                   <p className="mt-1 text-muted-foreground">
-                    {ev.sourceTimestamp.toLocaleString('ru-RU', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
+                    {ev.sourceTimestamp.toLocaleString("ru-RU", {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
                     })}
                   </p>
                 )}
@@ -533,5 +520,4 @@ function nodeLabelById(
   return nodes.find((n) => n.id === id)?.label ?? id;
 }
 
-// Re-export для удобства tests / других страниц.
 export { edgeColorByConfidence };

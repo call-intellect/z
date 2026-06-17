@@ -354,7 +354,7 @@ DELETE /api/v1/meetings/:id/reports/:reportId
 
 ### 8.5. Локализация
 
-Добавить в `delivery/ui/copy-strings.ru.md`:
+Добавить в `second-brain/13_glossary/copy-strings.ru.md`:
 - «Отчёты» / «Добавить отчёт»
 - «Основной» (badge для primary)
 - «Выберите шаблон для нового отчёта»

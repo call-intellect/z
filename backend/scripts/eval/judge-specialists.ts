@@ -1,11 +1,3 @@
-/**
- * Судья эксперимента по специалистам — DeepSeek-V4-Pro.
- *
- * Сравнивает 3 варианта (A: 5 раздельных, Б: 1 объединённый, В: 2 группы)
- * на одной фикстуре. Метки A/Б/В маскируются как X/Y/Z случайно.
- *
- * Запуск: cd backend && bun run scripts/eval/judge-specialists.ts
- */
 import { promises as fs } from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
@@ -16,7 +8,10 @@ const PRICE_OUT = 0.87 / 1_000_000;
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname).replace(/^\/([A-Za-z]):/, '$1:');
 const REPORTS_DIR = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/reports');
-const FIXTURE_PATH = path.resolve(SCRIPT_DIR, '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json');
+const FIXTURE_PATH = path.resolve(
+  SCRIPT_DIR,
+  '../../test/eval/specialists-experiment/fixtures/meeting-blocks.json',
+);
 const A_PATH = path.join(REPORTS_DIR, 'variant-a.json');
 const B_PATH = path.join(REPORTS_DIR, 'variant-b.json');
 const C_PATH = path.join(REPORTS_DIR, 'variant-c.json');
@@ -31,7 +26,6 @@ const client = new OpenAI({
   baseURL: process.env.DEEPSEEK_BASE_URL ?? 'https://api.deepseek.com/v1',
 });
 
-// ── нормализация выходов A/Б/В к общему виду ────────────────────────────────
 interface NormalizedEntities {
   decisions: unknown[];
   ideas: unknown[];
@@ -40,7 +34,10 @@ interface NormalizedEntities {
   regulations: unknown[];
 }
 
-function normalize(report: { steps: Array<{ step: string; output?: unknown }>; variant: string }): NormalizedEntities {
+function normalize(report: {
+  steps: Array<{ step: string; output?: unknown }>;
+  variant: string;
+}): NormalizedEntities {
   const out: NormalizedEntities = {
     decisions: [],
     ideas: [],
@@ -59,7 +56,6 @@ function normalize(report: { steps: Array<{ step: string; output?: unknown }>; v
   return out;
 }
 
-// ── промпт судьи ─────────────────────────────────────────────────────────────
 const JUDGE_SYSTEM = `Ты — независимый эксперт по системам извлечения структурированного знания. Тебе дают:
 1. Фикстуру: 55 IdeaBlock-ов одной командной планёрки разработки.
 2. Три варианта извлечения типизированных сущностей (decisions, ideas, insights, experiments, regulations) — X, Y, Z.
@@ -121,7 +117,6 @@ async function main(): Promise<void> {
   const bNorm = normalize(bReport);
   const cNorm = normalize(cReport);
 
-  // Случайная маскировка
   const labels: Array<'A' | 'B' | 'C'> = ['A', 'B', 'C'];
   for (let i = labels.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

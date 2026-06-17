@@ -36,12 +36,6 @@ import {
 } from './dto/feature-flags.dto';
 import { FeatureFlagsService } from './feature-flags.service';
 
-/**
- * Admin-redesign Фаза 8 — `FeatureFlagsController`.
- *
- * UI `/admin/platform/feature-flags` — CRUD флагов, точечные orgOverride
- * и debug-resolve для тенанта.
- */
 @ApiTags('admin-platform-feature-flags')
 @Controller('api/v1/admin/platform/feature-flags')
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
@@ -102,12 +96,8 @@ export class FeatureFlagsController {
       patch: {
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.defaultValue !== undefined ? { defaultValue: dto.defaultValue } : {}),
-        ...(dto.rolloutPercent !== undefined
-          ? { rolloutPercent: dto.rolloutPercent }
-          : {}),
-        ...(dto.orgOverrides !== undefined
-          ? { orgOverrides: dto.orgOverrides }
-          : {}),
+        ...(dto.rolloutPercent !== undefined ? { rolloutPercent: dto.rolloutPercent } : {}),
+        ...(dto.orgOverrides !== undefined ? { orgOverrides: dto.orgOverrides } : {}),
         ...(dto.category !== undefined ? { category: dto.category } : {}),
       },
       userId: user.id,

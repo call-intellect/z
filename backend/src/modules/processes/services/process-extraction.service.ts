@@ -4,10 +4,7 @@ import type { Prisma, IdeaBlock } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
 import { applyInputGuards } from '../../ai/services/prompts/common';
 import {
   PROCESS_TEMPLATE_EXTRACT_JSON_SCHEMA,
@@ -21,27 +18,10 @@ import { CrossFunctionalDetectorService } from './cross-functional-detector.serv
 import { ProcessTemplateCompletenessService } from './process-template-completeness.service';
 import { resolveProcessTenantTop } from './tenant-top';
 
-/**
- * SBA α-7 wave 2 — ProcessExtractionService.
- *
- * Берёт батч `IdeaBlock` с `signalType ∈ {process_step, methodology_step}`,
- * вызывает LLM `process-template-extract`, для каждого вернувшегося кандидата:
- *   - ищет существующий `ProcessTemplate` с тем же `name` в Org;
- *   - если есть — создаёт новую `ProcessTemplateVersion` (immutable snapshot, §3.2)
- *     и сохраняет `currentVersionId` (auto-activate для agent-источника);
- *   - если нет — создаёт новый ProcessTemplate (status='draft') + первая версия.
- *
- * Дедуп по `name` через case-insensitive match (плюс embedding/cosine в
- * будущем — на α-7 wave 2 достаточно name-match).
- *
- * Все методы НЕ должны бросать наружу (best-effort). Один упавший template
- * не валит остальные.
- */
 @Injectable()
 export class ProcessExtractionService {
   private readonly logger = new Logger(ProcessExtractionService.name);
   static readonly TASK_TYPE = 'process-template-extract' as const;
-  /** Метричный type для core_specialist_* (если используется). */
   private static readonly METRIC_TYPE = 'process_template';
 
   constructor(
@@ -54,15 +34,8 @@ export class ProcessExtractionService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(CrossFunctionalDetectorService)
     private readonly crossFunctional: CrossFunctionalDetectorService,
-  ) {
-    // cfg используется в extractBatch для kill-switch
-    // aiFeatures.promptInjectionGuardEnabled (A2 input-guard).
-  }
+  ) {}
 
-  /**
-   * Главный метод: обработать батч blockId'ов (все принадлежат одному tenant'у).
-   * Возвращает счётчик результатов new/updated/skipped.
-   */
   async extractBatch(args: {
     tenantId: string;
     blockIds: readonly string[];
@@ -87,10 +60,6 @@ export class ProcessExtractionService {
 
     let llmResult: LlmCallResult;
     const start = Date.now();
-    // A2: оборачиваем сырой пользовательский ввод (цитаты из встреч/документов,
-    // critical-question/trusted-answer) в анти-инъекционные маркеры. asr:false —
-    // ASR-нота уже в PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT (withAsrNote), второй
-    // раз не дописываем. Kill-switch — общий aiFeatures.promptInjectionGuardEnabled.
     const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
     const guarded = applyInputGuards(
       PROCESS_TEMPLATE_EXTRACT_SYSTEM_PROMPT,
@@ -137,9 +106,7 @@ export class ProcessExtractionService {
       result.skipped = args.blockIds.length;
       return result;
     } finally {
-      this.metrics.observeProcessTemplateExtractDuration(
-        (Date.now() - start) / 1000,
-      );
+      this.metrics.observeProcessTemplateExtractDuration((Date.now() - start) / 1000);
     }
 
     let parsed: { templates: ExtractedTemplate[] } | null;
@@ -209,8 +176,6 @@ export class ProcessExtractionService {
     return result;
   }
 
-  // ─────────────────────────── internals ──────────────────────────────
-
   private async applyExtractedTemplate(args: {
     tenantId: string;
     template: ExtractedTemplate;
@@ -230,14 +195,11 @@ export class ProcessExtractionService {
         name: String(s.name).trim().slice(0, 200),
         order: Number(s.order) || 1,
         description: s.description ?? undefined,
-        // ownerRoleId на этом шаге не резолвится — пока только hint в metadata.
         ownerRoleId: undefined,
         inputArtifact: s.inputArtifact ?? undefined,
         outputArtifact: s.outputArtifact ?? undefined,
         slaMinutes:
-          typeof s.slaMinutes === 'number' && s.slaMinutes >= 0
-            ? s.slaMinutes
-            : undefined,
+          typeof s.slaMinutes === 'number' && s.slaMinutes >= 0 ? s.slaMinutes : undefined,
       })),
       handoffsInline: [],
       decisionPointsInline: [],
@@ -253,7 +215,6 @@ export class ProcessExtractionService {
     });
 
     if (existing) {
-      // Создаём новую immutable version + auto-activate (agent-источник).
       const lastVersion = await this.prisma.processTemplateVersion.findFirst({
         where: { templateId: existing.id, tenantId: args.tenantId },
         orderBy: { version: 'desc' },
@@ -266,8 +227,7 @@ export class ProcessExtractionService {
             tenantId: args.tenantId,
             templateId: existing.id,
             version: nextVersion,
-            definitionJson:
-              definition as unknown as Prisma.InputJsonValue,
+            definitionJson: definition as unknown as Prisma.InputJsonValue,
             source: 'agent',
             changeNote: args.template.summary?.slice(0, 1_000) ?? null,
             publishedById: null,
@@ -290,7 +250,6 @@ export class ProcessExtractionService {
         tenantId: args.tenantId,
         templateId: existing.id,
       });
-      // SBA γ-3 — cross-functional пересчёт после новой agent-version.
       await this.crossFunctional.recalculateAndPersist({
         tenantId: args.tenantId,
         templateId: existing.id,
@@ -298,7 +257,6 @@ export class ProcessExtractionService {
       return 'updated';
     }
 
-    // Новый template + первая версия (auto-activate).
     const created = await this.prisma.$transaction(async (tx) => {
       const tpl = await tx.processTemplate.create({
         data: {
@@ -334,7 +292,6 @@ export class ProcessExtractionService {
       tenantId: args.tenantId,
       templateId: created.id,
     });
-    // SBA γ-3 — cross-functional пересчёт для нового template.
     await this.crossFunctional.recalculateAndPersist({
       tenantId: args.tenantId,
       templateId: created.id,
@@ -342,10 +299,7 @@ export class ProcessExtractionService {
     return 'new';
   }
 
-  private async loadBlocks(args: {
-    tenantId: string;
-    blockIds: readonly string[];
-  }): Promise<
+  private async loadBlocks(args: { tenantId: string; blockIds: readonly string[] }): Promise<
     Array<{
       id: string;
       signalType: string;
@@ -380,7 +334,7 @@ export class ProcessExtractionService {
     blocks: ReadonlyArray<{ dataClass: IdeaBlock['dataClass'] }>,
   ): IdeaBlock['dataClass'] {
     const order = ['public', 'internal', 'sensitive', 'private'] as const;
-    let maxIdx = 1; // 'internal' дефолт
+    let maxIdx = 1;
     for (const b of blocks) {
       const idx = order.indexOf(b.dataClass);
       if (idx > maxIdx) maxIdx = idx;

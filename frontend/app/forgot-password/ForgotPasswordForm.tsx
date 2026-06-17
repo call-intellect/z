@@ -1,22 +1,18 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
-import { toast } from 'sonner';
+import Link from "next/link";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import { accountsApi } from '@/api/accounts.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { AuthShell } from '@/ui/components/auth-shell/AuthShell';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+import { accountsApi } from "@/api/accounts.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { AuthShell } from "@/ui/components/auth-shell/AuthShell";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
-/**
- * Запрос восстановления пароля. Backend всегда отвечает `{ ok: true }` —
- * не палим, существует ли email. Поэтому success-state одинаков.
- */
 export function ForgotPasswordForm() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -31,7 +27,7 @@ export function ForgotPasswordForm() {
       if (err instanceof ApiError) {
         toast.error(humanizeApiError(err));
       } else {
-        toast.error('Не удалось отправить запрос. Попробуйте ещё раз.');
+        toast.error("Не удалось отправить запрос. Попробуйте ещё раз.");
       }
     } finally {
       setSubmitting(false);
@@ -53,8 +49,8 @@ export function ForgotPasswordForm() {
         }
       >
         <div className="rounded-md border border-border-subtle bg-bg-overlay p-4 text-sm text-fg-secondary">
-          Не нашли письмо? Проверьте папку «Спам» или повторите запрос
-          через несколько минут.
+          Не нашли письмо? Проверьте папку «Спам» или повторите запрос через
+          несколько минут.
         </div>
       </AuthShell>
     );
@@ -93,7 +89,7 @@ export function ForgotPasswordForm() {
           size="lg"
           disabled={submitting}
         >
-          {submitting ? 'Отправляем…' : 'Отправить инструкции'}
+          {submitting ? "Отправляем…" : "Отправить инструкции"}
         </Button>
       </form>
     </AuthShell>

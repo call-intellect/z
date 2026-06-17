@@ -1,14 +1,3 @@
-/**
- * SBA α-5 dialog-layer — system prompt для ConversationSummarizerCron.
- *
- * Задача: сжать «старую» часть диалога (всё, что НЕ входит в окно
- * последних N сообщений) в короткое markdown-summary 200-400 chars +
- * JSON-секция «упомянутые сущности».
- *
- * Качество summary критично — потеря деталей повредит будущим
- * standalone-вопросам.
- */
-
 export const DIALOG_SUMMARIZE_SYSTEM_PROMPT = `Ты — помощник по сжатию
 истории диалога с AI-чатом компании.
 
@@ -27,11 +16,6 @@ export const DIALOG_SUMMARIZE_SYSTEM_PROMPT = `Ты — помощник по с
 
 Не выдумывай факты, которых нет в истории. Сохраняй язык оригинала.`;
 
-/**
- * T7-F6: JSON Schema strict для DeepSeek/OpenAI/Anthropic. Fallback —
- * текст в system. maxItems=20 на entities — соответствует логике парсера
- * (`.slice(0, 20)` в cron'е).
- */
 export const DIALOG_SUMMARIZE_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -59,8 +43,7 @@ export function buildSummarizeUserPrompt(args: {
   parts.push('Сообщения для сжатия:');
   for (const m of args.messages) {
     const role = m.role === 'user' ? 'Пользователь' : 'Ассистент';
-    const trimmed =
-      m.content.length > 800 ? `${m.content.slice(0, 800)}…` : m.content;
+    const trimmed = m.content.length > 800 ? `${m.content.slice(0, 800)}…` : m.content;
     parts.push(`- ${role}: ${trimmed}`);
   }
   parts.push('', 'Summary в JSON:');

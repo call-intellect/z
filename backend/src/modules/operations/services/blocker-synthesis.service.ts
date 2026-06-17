@@ -26,27 +26,11 @@ import {
   type BlockerStatus,
 } from './blocker-synthesis.scoring';
 
-/**
- * TZ-1 Фаза 3.A (daily-value-engine) — BlockerSynthesisService.
- *
- * Дневной агент копит блокеры за окно (`blocker_synthesis.lookback_days`,
- * default 7), нормализует `DailyCheckIn.blockersJson` + `IdeaBlock(signalType=
- * blocker)` дня, кластеризует дешёвым ratio-детектом (нормализованный текст),
- * сопоставляет с прошлыми днями (по `clusterKey`), присваивает статус
- * (new|recurring|resolved), `daysOpen`, `businessImpactScore`. LLM — ТОЛЬКО на
- * финальный абзац-сводку. При `recurring` + `daysOpen >= recurring_days` мостит
- * кластер в Insight (через Specialist35Service.bridgeRecurringBlocker).
- *
- * Веса/окна/пороги — AdminSetting через `getDynamic`, не код. Идемпотентность —
- * upsert по `(tenantId, clusterKey)`.
- */
 @Injectable()
 export class BlockerSynthesisService {
   private readonly logger = new Logger(BlockerSynthesisService.name);
 
-  /** Лимит блокеров на проход в одной Org (защита от взрывного fan-out'а). */
   private static readonly MAX_BLOCKS = 5_000;
-  /** Сколько источников-блоков хранить на кластер. */
   private static readonly MAX_RELATED = 50;
 
   constructor(
@@ -59,16 +43,7 @@ export class BlockerSynthesisService {
     private readonly insights: Specialist35Service,
   ) {}
 
-  // ──────────────────────────── compute (cron) ────────────────────────
-
-  /**
-   * Построить/обновить синтез блокеров Org за `dateLocal`. Идемпотентно — upsert
-   * по `(tenantId, clusterKey)`. Возвращает счётчики статусов + топ для сводки.
-   */
-  async computeForTenant(args: {
-    tenantId: string;
-    dateLocal: string;
-  }): Promise<{
+  async computeForTenant(args: { tenantId: string; dateLocal: string }): Promise<{
     newCount: number;
     recurringCount: number;
     resolvedCount: number;
@@ -79,13 +54,11 @@ export class BlockerSynthesisService {
     const recurringDays = await this.resolveRecurringDays();
     const weights = await this.resolveImpactWeights();
 
-    // 1. Собрать сырьё дня: блокеры из чек-инов + IdeaBlock(blocker).
     const todaysBlockers = await this.collectTodayBlockers({
       tenantId: args.tenantId,
       dateLocal: args.dateLocal,
     });
 
-    // 2. Кластеризация дешёвым ratio-детектом (нормализованный текст).
     interface DayCluster {
       clusterKey: string;
       representativeText: string;
@@ -123,7 +96,6 @@ export class BlockerSynthesisService {
       }
     }
 
-    // 3. Существующие кластеры в окне (для статусов / resolved).
     const lookbackStart = this.shiftDate(args.dateLocal, -(lookbackDays - 1));
     const existing = await this.prisma.blockerSynthesis.findMany({
       where: {
@@ -147,7 +119,6 @@ export class BlockerSynthesisService {
     let bridgedInsights = 0;
     const summaryItems: BlockerSynthesisSummaryItem[] = [];
 
-    // 4. Кластеры, замеченные СЕГОДНЯ — upsert со статусом new/recurring.
     for (const c of dayClusters.values()) {
       const prior = existingByKey.get(c.clusterKey);
       const firstSeen = prior?.firstSeenDateLocal ?? args.dateLocal;
@@ -173,10 +144,8 @@ export class BlockerSynthesisService {
         BlockerSynthesisService.MAX_RELATED,
       );
 
-      // Мост в Insight при хронике (recurring + daysOpen >= recurring_days).
       let linkedInsightId = prior?.linkedInsightId ?? null;
-      const highImpact =
-        c.touchesCustomer || c.touchesDeadline || c.touchesCommitment;
+      const highImpact = c.touchesCustomer || c.touchesDeadline || c.touchesCommitment;
       if (status === 'recurring' && daysOpen >= recurringDays) {
         const insId = await this.insights.bridgeRecurringBlocker({
           tenantId: args.tenantId,
@@ -235,7 +204,6 @@ export class BlockerSynthesisService {
       });
     }
 
-    // 5. Кластеры в окне, НЕ замеченные сегодня и ещё не resolved → resolved.
     for (const e of existing) {
       if (dayClusters.has(e.clusterKey)) continue;
       if (e.status === 'resolved') continue;
@@ -247,13 +215,9 @@ export class BlockerSynthesisService {
       resolvedCount++;
     }
 
-    // 6. Финальная сводка (LLM, fallback детерминированный).
     summaryItems.sort((a, b) => {
-      // recurring + highImpact выше.
       const score = (i: BlockerSynthesisSummaryItem): number =>
-        (i.status === 'recurring' ? 100 : 0) +
-        (i.highImpact ? 50 : 0) +
-        i.daysOpen;
+        (i.status === 'recurring' ? 100 : 0) + (i.highImpact ? 50 : 0) + i.daysOpen;
       return score(b) - score(a);
     });
     const summary = await this.buildSummary({
@@ -280,18 +244,11 @@ export class BlockerSynthesisService {
     return { newCount, recurringCount, resolvedCount, bridgedInsights, summary };
   }
 
-  /**
-   * Открытые (не resolved) кластеры блокеров автора — для обратной петли
-   * рядовому («твой вчерашний блокер X всё ещё открыт») в брифе/чек-ине.
-   * Light — не over-build: просто список.
-   */
   async listOpenForPerson(args: {
     tenantId: string;
     personId: string;
     limit?: number;
-  }): Promise<
-    Array<{ representativeText: string; status: string; daysOpen: number }>
-  > {
+  }): Promise<Array<{ representativeText: string; status: string; daysOpen: number }>> {
     const rows = await this.prisma.blockerSynthesis.findMany({
       where: {
         tenantId: args.tenantId,
@@ -305,7 +262,6 @@ export class BlockerSynthesisService {
     return rows;
   }
 
-  /** Хронические/открытые блокеры Org — для endpoint'а `/blockers/chronic`. */
   async listChronicForTenant(args: {
     tenantId: string;
     status?: BlockerStatus;
@@ -349,9 +305,6 @@ export class BlockerSynthesisService {
     }));
   }
 
-  // ──────────────────────────── helpers ───────────────────────────────
-
-  /** Финальная сводка: LLM (`blocker-synthesis-summary`) → fallback. */
   private async buildSummary(args: {
     tenantId: string;
     items: BlockerSynthesisSummaryItem[];
@@ -392,10 +345,6 @@ export class BlockerSynthesisService {
     }
   }
 
-  /**
-   * Сырьё дня: блокеры из `DailyCheckIn.blockersJson` + `IdeaBlock(blocker)`
-   * за `dateLocal`. Каждый элемент — { text, blockId?, personId? }.
-   */
   private async collectTodayBlockers(args: {
     tenantId: string;
     dateLocal: string;
@@ -406,7 +355,6 @@ export class BlockerSynthesisService {
       personId: string | null;
     }> = [];
 
-    // 1. Из чек-инов дня (blockersJson — массив { text, severity?, ownerHint? }).
     const checkIns = await this.prisma.dailyCheckIn.findMany({
       where: {
         tenantId: args.tenantId,
@@ -423,7 +371,6 @@ export class BlockerSynthesisService {
       }
     }
 
-    // 2. Из IdeaBlock(signalType=blocker) за день (createdAt в UTC-окне).
     const dayStart = new Date(`${args.dateLocal}T00:00:00.000Z`);
     const dayEnd = new Date(dayStart.getTime() + 24 * 3_600_000);
     const blocks = await this.prisma.ideaBlock.findMany({
@@ -454,10 +401,11 @@ export class BlockerSynthesisService {
     return out;
   }
 
-  /** Стабильный clusterKey по нормализованному тексту (без рандома). */
   private clusterKeyFromNorm(norm: string): string {
-    // Берём первые 8 значимых слов — устойчивее к хвостовым уточнениям.
-    const words = norm.split(' ').filter((w) => w.length >= 3).slice(0, 8);
+    const words = norm
+      .split(' ')
+      .filter((w) => w.length >= 3)
+      .slice(0, 8);
     const base = words.length > 0 ? words.join(' ') : norm;
     return base.slice(0, 120);
   }
@@ -479,39 +427,36 @@ export class BlockerSynthesisService {
   }
 
   private async resolveImpactWeights(): Promise<BlockerImpactWeights> {
-    const [base, customer, deadline, commitment, perDayOpen] = await Promise.all(
-      [
-        this.cfg.getDynamic<number>(
-          'blocker_synthesis.impact.base',
-          'BLOCKER_SYNTHESIS_IMPACT_BASE',
-          DEFAULT_BLOCKER_IMPACT_WEIGHTS.base,
-        ),
-        this.cfg.getDynamic<number>(
-          'blocker_synthesis.impact.customer',
-          'BLOCKER_SYNTHESIS_IMPACT_CUSTOMER',
-          DEFAULT_BLOCKER_IMPACT_WEIGHTS.customer,
-        ),
-        this.cfg.getDynamic<number>(
-          'blocker_synthesis.impact.deadline',
-          'BLOCKER_SYNTHESIS_IMPACT_DEADLINE',
-          DEFAULT_BLOCKER_IMPACT_WEIGHTS.deadline,
-        ),
-        this.cfg.getDynamic<number>(
-          'blocker_synthesis.impact.commitment',
-          'BLOCKER_SYNTHESIS_IMPACT_COMMITMENT',
-          DEFAULT_BLOCKER_IMPACT_WEIGHTS.commitment,
-        ),
-        this.cfg.getDynamic<number>(
-          'blocker_synthesis.impact.per_day_open',
-          'BLOCKER_SYNTHESIS_IMPACT_PER_DAY_OPEN',
-          DEFAULT_BLOCKER_IMPACT_WEIGHTS.perDayOpen,
-        ),
-      ],
-    );
+    const [base, customer, deadline, commitment, perDayOpen] = await Promise.all([
+      this.cfg.getDynamic<number>(
+        'blocker_synthesis.impact.base',
+        'BLOCKER_SYNTHESIS_IMPACT_BASE',
+        DEFAULT_BLOCKER_IMPACT_WEIGHTS.base,
+      ),
+      this.cfg.getDynamic<number>(
+        'blocker_synthesis.impact.customer',
+        'BLOCKER_SYNTHESIS_IMPACT_CUSTOMER',
+        DEFAULT_BLOCKER_IMPACT_WEIGHTS.customer,
+      ),
+      this.cfg.getDynamic<number>(
+        'blocker_synthesis.impact.deadline',
+        'BLOCKER_SYNTHESIS_IMPACT_DEADLINE',
+        DEFAULT_BLOCKER_IMPACT_WEIGHTS.deadline,
+      ),
+      this.cfg.getDynamic<number>(
+        'blocker_synthesis.impact.commitment',
+        'BLOCKER_SYNTHESIS_IMPACT_COMMITMENT',
+        DEFAULT_BLOCKER_IMPACT_WEIGHTS.commitment,
+      ),
+      this.cfg.getDynamic<number>(
+        'blocker_synthesis.impact.per_day_open',
+        'BLOCKER_SYNTHESIS_IMPACT_PER_DAY_OPEN',
+        DEFAULT_BLOCKER_IMPACT_WEIGHTS.perDayOpen,
+      ),
+    ]);
     return { base, customer, deadline, commitment, perDayOpen };
   }
 
-  /** Сдвиг YYYY-MM-DD на N дней (через UTC-арифметику). */
   private shiftDate(dateLocal: string, days: number): string {
     const d = new Date(`${dateLocal}T00:00:00.000Z`);
     d.setUTCDate(d.getUTCDate() + days);
@@ -522,7 +467,6 @@ export class BlockerSynthesisService {
   }
 }
 
-/** Парсинг blockersJson (массив { text } | строк) в массив текстов. */
 export function parseBlockersJson(raw: Prisma.JsonValue): string[] {
   if (!Array.isArray(raw)) return [];
   const out: string[] = [];
@@ -537,23 +481,15 @@ export function parseBlockersJson(raw: Prisma.JsonValue): string[] {
   return out;
 }
 
-/**
- * Дешёвый детект бизнес-удара по ключевым словам в тексте блокера. Чистая
- * эвристика (без LLM): задевает ли клиента / дедлайн / обещание.
- */
 export function detectImpactSignals(text: string): {
   customer: boolean;
   deadline: boolean;
   commitment: boolean;
 } {
   const t = (text ?? '').toLowerCase();
-  const customer =
-    /клиент|заказчик|покупател|сделк|контракт|выручк|оплат|счёт|счет/.test(t);
+  const customer = /клиент|заказчик|покупател|сделк|контракт|выручк|оплат|счёт|счет/.test(t);
   const deadline =
-    /дедлайн|срок|просроч|опазд|задержк|к пятниц|к понедельник|сегодня|завтра|релиз/.test(
-      t,
-    );
-  const commitment =
-    /обещ|договор|обязал|пообещ|должен был|взял на себя/.test(t);
+    /дедлайн|срок|просроч|опазд|задержк|к пятниц|к понедельник|сегодня|завтра|релиз/.test(t);
+  const commitment = /обещ|договор|обязал|пообещ|должен был|взял на себя/.test(t);
   return { customer, deadline, commitment };
 }

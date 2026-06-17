@@ -8,18 +8,8 @@ import {
 import { Queue } from 'bullmq';
 
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  TABLE_ENRICH_JOB_OPTIONS,
-  TABLES_QUEUE_NAMES,
-  type TableEnrichJobData,
-} from '../queues';
+import { TABLE_ENRICH_JOB_OPTIONS, TABLES_QUEUE_NAMES, type TableEnrichJobData } from '../queues';
 
-/**
- * Диспетчер очереди `tables.enrich` (Smart-tables Фаза 3 — Event-to-Cells).
- *
- * Воркер (`TableEnrichWorker`) живёт in-process в `WorkersModule`; здесь —
- * только enqueue. Регистрируется в `TablesModule` (доступен listener'у).
- */
 @Injectable()
 export class TableEnrichQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TableEnrichQueueService.name);
@@ -32,9 +22,7 @@ export class TableEnrichQueueService implements OnModuleInit, OnModuleDestroy {
       connection: this.redis.client,
       defaultJobOptions: TABLE_ENRICH_JOB_OPTIONS,
     });
-    this.logger.log(
-      `TableEnrichQueueService инициализирован (${TABLES_QUEUE_NAMES.ENRICH})`,
-    );
+    this.logger.log(`TableEnrichQueueService инициализирован (${TABLES_QUEUE_NAMES.ENRICH})`);
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -52,11 +40,6 @@ export class TableEnrichQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /**
-   * Поставить enrich по встрече. jobId `table:enrich:<meetingId>` —
-   * идемпотентно: повторный enqueue той же встречи в течение жизни job'а в
-   * Redis игнорируется.
-   */
   async enqueueMeetingEnrich(data: TableEnrichJobData): Promise<void> {
     const q = this.queue;
     if (!q) {

@@ -1,56 +1,45 @@
-'use client';
+"use client";
 
-/**
- * `/admin/platform/crons` — таблица расписаний @Cron. Фаза 8 редизайна.
- *
- * Колонки: name / expression (с human-readable превью) / enabled toggle /
- * lastRunAt / lastRunDurationMs / lastRunError / actions (Edit / Run now).
- *
- * Фильтры сверху: все / только выключенные / только с ошибкой.
- * Edit Dialog — через `CronEditDialog`.
- * Run now — POST /admin/crons/:name/run, спиннер в строке во время выполнения.
- */
+import { useMemo, useState } from "react";
+import { Loader2, Pencil, Play, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
 
-import { useMemo, useState } from 'react';
-import { Loader2, Pencil, Play, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminCronsApi } from '@/api/admin-crons.api';
-import { ApiError } from '@/api/api-error';
+import { adminCronsApi } from "@/api/admin-crons.api";
+import { ApiError } from "@/api/api-error";
 import {
   cronScheduleFromApi,
   type CronScheduleDomain,
-} from '@/domain/admin-cron';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/domain/admin-cron";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { CronEditDialog } from './CronEditDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { CronEditDialog } from "./CronEditDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
-type StatusFilter = 'all' | 'disabled' | 'error';
+type StatusFilter = "all" | "disabled" | "error";
 
 export function CronsClient() {
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [editing, setEditing] = useState<CronScheduleDomain | null>(null);
   const [runningName, setRunningName] = useState<string | null>(null);
 
-  const q = useAdminQuery('admin-platform-crons', async () => {
+  const q = useAdminQuery("admin-platform-crons", async () => {
     const res = await adminCronsApi.list();
     return res.map(cronScheduleFromApi);
   });
@@ -58,9 +47,9 @@ export function CronsClient() {
   const filtered = useMemo(() => {
     if (!q.data) return [];
     return q.data.filter((c) => {
-      if (filter === 'disabled') return !c.enabled;
-      if (filter === 'error') {
-        return Boolean(c.lastRunError) || c.lastRun?.status === 'failed';
+      if (filter === "disabled") return !c.enabled;
+      if (filter === "error") {
+        return Boolean(c.lastRunError) || c.lastRun?.status === "failed";
       }
       return true;
     });
@@ -68,9 +57,6 @@ export function CronsClient() {
 
   const handleToggleEnabled = async (cron: CronScheduleDomain) => {
     try {
-      // Toggle enabled — severity='medium' на бэке, reason не обязателен.
-      // Но если бэк всё же потребует — пользователю прилетит ошибка
-      // с подсказкой, и он откроет Edit Dialog.
       await adminCronsApi.update(cron.name, { enabled: !cron.enabled });
       toast.success(
         !cron.enabled
@@ -84,7 +70,7 @@ export function CronsClient() {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось обновить статус';
+            : "Не удалось обновить статус";
       toast.error(msg);
     }
   };
@@ -102,7 +88,7 @@ export function CronsClient() {
           ? e.message
           : e instanceof Error
             ? e.message
-            : 'Не удалось запустить крон';
+            : "Не удалось запустить крон";
       toast.error(msg);
     } finally {
       setRunningName(null);
@@ -113,8 +99,8 @@ export function CronsClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Платформа' },
-        { label: 'Кроны' },
+        { label: "Платформа" },
+        { label: "Кроны" },
       ]}
       title="Расписания @Cron"
       description="Все @Cron-задачи из кода. Поведение во всех процессах синхронизируется через Redis pub/sub. Изменение расписания требует причину (журнал super_admin)."
@@ -177,8 +163,6 @@ export function CronsClient() {
     </AdminSection>
   );
 }
-
-// ─────────────────────────── Таблица ───────────────────────────
 
 function CronsTable({
   rows,
@@ -246,8 +230,7 @@ function CronRow({
   onRun: () => void;
 }) {
   const lastStatus = cron.lastRun?.status ?? null;
-  const hasError =
-    Boolean(cron.lastRunError) || lastStatus === 'failed';
+  const hasError = Boolean(cron.lastRunError) || lastStatus === "failed";
   const expressionChanged =
     cron.expression !== cron.defaultExpression && cron.defaultExpression;
 
@@ -284,34 +267,30 @@ function CronRow({
         <Switch checked={cron.enabled} onCheckedChange={onToggle} />
       </td>
       <td className="px-3 py-3 text-xs text-fg-secondary">
-        {cron.lastRunAt
-          ? cron.lastRunAt.toLocaleString('ru-RU')
-          : '—'}
+        {cron.lastRunAt ? cron.lastRunAt.toLocaleString("ru-RU") : "—"}
         {lastStatus ? (
           <Badge
             variant={
-              lastStatus === 'failed'
-                ? 'danger'
-                : lastStatus === 'running'
-                  ? 'secondary'
-                  : 'default'
+              lastStatus === "failed"
+                ? "danger"
+                : lastStatus === "running"
+                  ? "secondary"
+                  : "default"
             }
             className="ml-2 text-[10px]"
           >
-            {lastStatus === 'success'
-              ? 'успех'
-              : lastStatus === 'failed'
-                ? 'ошибка'
-                : lastStatus === 'running'
-                  ? 'выполняется'
+            {lastStatus === "success"
+              ? "успех"
+              : lastStatus === "failed"
+                ? "ошибка"
+                : lastStatus === "running"
+                  ? "выполняется"
                   : lastStatus}
           </Badge>
         ) : null}
       </td>
       <td className="px-3 py-3 text-right tabular-nums text-xs text-fg-secondary">
-        {cron.lastRunDurationMs !== null
-          ? `${cron.lastRunDurationMs} мс`
-          : '—'}
+        {cron.lastRunDurationMs !== null ? `${cron.lastRunDurationMs} мс` : "—"}
       </td>
       <td className="px-3 py-3 text-xs">
         {hasError ? (
@@ -321,11 +300,11 @@ function CronRow({
           >
             <AlertCircle size={12} aria-hidden />
             <span className="max-w-[200px] truncate">
-              {cron.lastRunError ?? cron.lastRun?.error ?? '—'}
+              {cron.lastRunError ?? cron.lastRun?.error ?? "—"}
             </span>
           </span>
         ) : (
-          '—'
+          "—"
         )}
       </td>
       <td className="px-3 py-3 text-right">

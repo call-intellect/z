@@ -2,24 +2,6 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 
 import type { LlmTool } from '../../ai/services/llm.types';
 
-/**
- * SBA γ-2 — ServiceMapGeneratorService.
- *
- * На startup собирает массив `ToolSchema` — whitelist REST tools, которые
- * Concierge Agent может вызывать через tool-use. На MVP — статический
- * список наиболее частых операций (meetings, cards, tasks, search, chat).
- * vNext — auto-scan через DiscoveryService NestJS + @ConciergeTool
- * декоратор + Swagger metadata.
- *
- * Каждый tool описывает:
- *   - name      — уникальное имя для LLM (snake_case);
- *   - description — что делает (для LLM-промпта);
- *   - method/path  — куда дёргать (если используем internal call);
- *   - parameters   — JSON Schema аргументов (для tool-use protocol);
- *   - undoableVia  — имя rollback-tool (если есть);
- *   - mutating     — нужен ли confirm; читается из HTTP-метода.
- */
-
 export interface ToolParameterSchema {
   type: 'object';
   properties: Record<string, { type: string; description?: string }>;
@@ -32,16 +14,9 @@ export interface ToolSchema {
   method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   path: string;
   parameters: ToolParameterSchema;
-  /** Имя другого tool'а, который откатывает это действие. */
   undoableVia?: string;
-  /**
-   * Семантически не мутирует состояние (чистый расчёт / «задать вопрос»),
-   * даже если HTTP-метод POST — confirm не нужен, undo-log не пишется.
-   */
   readOnly?: boolean;
-  /** RBAC ResourceType, который нужен для tool'а (см. RbacService). */
   rbacResource?: string;
-  /** Действие RBAC (`read`/`write`/`delete`). */
   rbacAction?: 'read' | 'write' | 'delete' | 'manage';
 }
 
@@ -57,28 +32,14 @@ export class ServiceMapGeneratorService implements OnModuleInit {
     );
   }
 
-  /** Список tools, доступных Concierge Agent. */
   getTools(): ToolSchema[] {
     return [...this.toolsCache];
   }
 
-  /** Найти tool по имени (для ToolRouterService). */
   findTool(name: string): ToolSchema | null {
     return this.toolsCache.find((t) => t.name === name) ?? null;
   }
 
-  /**
-   * Сериализованный JSON-фрагмент для system promptа LLM. Структура:
-   *
-   *   [
-   *     { name, description, parameters: {...JSON Schema...} },
-   *     ...
-   *   ]
-   *
-   * Ф6 assistant-channels (2026-06-11): опц. `names` — канальный whitelist;
-   * если задан, во фрагмент попадают только перечисленные инструменты.
-   * Без аргумента поведение прежнее (все tools) — web-чат не меняется.
-   */
   buildToolUsePromptFragment(names?: string[]): string {
     return JSON.stringify(
       this.filterTools(names).map((t) => ({
@@ -91,20 +52,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
     );
   }
 
-  /**
-   * Ф3 assistant-channels (2026-06-11) — native function-calling.
-   *
-   * Маппинг whitelist `ToolSchema` → `LlmTool` для `LlmCallParams.tools`:
-   * провайдер получает tools нативно (tool_choice='auto' ставится адаптером),
-   * а SYSTEM — стабильный `CONCIERGE_RESPOND_SYSTEM_PROMPT` без списка
-   * инструментов (см. `concierge-respond.prompt.ts`). `parameters` уже в
-   * формате JSON Schema `{type:'object', properties, required?}` — переносим
-   * как есть в `input_schema`.
-   *
-   * Ф6 assistant-channels (2026-06-11): опц. `names` — канальный whitelist;
-   * если задан, провайдер видит только перечисленные инструменты. Без
-   * аргумента — все tools (web-чат, обратная совместимость).
-   */
   toLlmTools(names?: string[]): LlmTool[] {
     return this.filterTools(names).map((t) => ({
       name: t.name,
@@ -117,23 +64,12 @@ export class ServiceMapGeneratorService implements OnModuleInit {
     }));
   }
 
-  // ──────────────────────────── private ────────────────────────────────
-
-  /**
-   * Ф6 — сужение реестра по канальному whitelist'у. `undefined` → все tools
-   * (прежнее поведение); массив → только перечисленные имена (порядок
-   * реестра сохраняется, неизвестные имена молча игнорируются).
-   */
   private filterTools(names?: string[]): ToolSchema[] {
     if (!names) return this.toolsCache;
     const allow = new Set(names);
     return this.toolsCache.filter((t) => allow.has(t.name));
   }
 
-  /**
-   * MVP-список tools. Каждый соответствует существующему REST-эндпоинту.
-   * Дополняется через @ConciergeTool в vNext.
-   */
   private buildStaticToolMap(): ToolSchema[] {
     return [
       {
@@ -203,14 +139,8 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         },
         rbacResource: 'chat_v2_conversation',
         rbacAction: 'write',
-        // POST создаёт сообщение в разговоре chat-v2, но для пользователя
-        // это «задать вопрос» — отмена бессмысленна, confirm не нужен.
         readOnly: true,
       },
-      // ТЗ 2026-06-14 (assistant-router) — постановка задачи СЕБЕ в трекер
-      // (self-эндпоинт `POST /me/tasks`, проект «Входящие»). Мутирующий, без
-      // undoableVia → требует подтверждения (Ф6/web). RBAC issue/write —
-      // рядовой может ставить задачи себе.
       {
         name: 'create_task',
         description:
@@ -238,9 +168,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'issue',
         rbacAction: 'write',
       },
-      // ТЗ 2026-06-14 — поиск/показ МОИХ задач в трекере. Возвращает задачи с
-      // идентификаторами (можно потом закрыть/переназначить). Отличать от
-      // list_tasks (legacy — действия-задачи из встреч).
       {
         name: 'search_tasks',
         description:
@@ -258,10 +185,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacAction: 'read',
         readOnly: true,
       },
-      // ТЗ 2026-06-14 — «запомнить»: занести мысль/идею/наблюдение/факт в память
-      // компании (RawEvent → граф). Не вопрос и не команда. self-scoped, без
-      // rbacResource; readOnly:true чтобы НЕ требовать подтверждения (как
-      // ask_chat_v2 — для пользователя это не мутация, а «сохрани мою мысль»).
       {
         name: 'ingest_note',
         description:
@@ -273,8 +196,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
           properties: {
             text: {
               type: 'string',
-              description:
-                'Текст заметки/идеи/наблюдения дословно — то, чем поделился сотрудник.',
+              description: 'Текст заметки/идеи/наблюдения дословно — то, чем поделился сотрудник.',
             },
           },
           required: ['text'],
@@ -308,8 +230,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             title: { type: 'string', description: 'Название события' },
             startAt: {
               type: 'string',
-              description:
-                'ISO-8601 datetime начала (например, 2026-06-03T15:00:00+03:00)',
+              description: 'ISO-8601 datetime начала (например, 2026-06-03T15:00:00+03:00)',
             },
             endAt: {
               type: 'string',
@@ -362,8 +283,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             },
             to: {
               type: 'string',
-              description:
-                'ISO-8601 datetime верхней границы. Default — завтра 00:00.',
+              description: 'ISO-8601 datetime верхней границы. Default — завтра 00:00.',
             },
           },
         },
@@ -416,20 +336,17 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             },
             withinDays: {
               type: 'number',
-              description:
-                'В каком горизонте искать (1..30 дней). Default 7.',
+              description: 'В каком горизонте искать (1..30 дней). Default 7.',
             },
             workingHoursOnly: {
               type: 'boolean',
-              description:
-                'Только в рабочее время Пн-Пт 9-18. Default true.',
+              description: 'Только в рабочее время Пн-Пт 9-18. Default true.',
             },
           },
           required: ['participantUserIds', 'durationMin'],
         },
         rbacResource: 'event_card',
         rbacAction: 'read',
-        // POST, но чистый расчёт свободного слота — ничего не создаёт.
         readOnly: true,
       },
       {
@@ -448,10 +365,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'event_card',
         rbacAction: 'delete',
       },
-      // ───────── Clones=Roles Фаза 6 — ролевые клоны ─────────
-      // Whitelist'им только ролевой клон и список ролевых клонов. Person-scope
-      // `ask_my_clone` намеренно ОТСУТСТВУЕТ (ребренд 2026-05-25): клоны
-      // привязаны к должностям, а не к людям.
       {
         name: 'ask_role_clone',
         description:
@@ -486,8 +399,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
           properties: {
             status: {
               type: 'string',
-              description:
-                'Фильтр по статусу клона: active|superseded. Default active.',
+              description: 'Фильтр по статусу клона: active|superseded. Default active.',
             },
             q: {
               type: 'string',
@@ -498,12 +410,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'role',
         rbacAction: 'read',
       },
-      // ──────────────────────────── Pulse Wave 5 §5.5 ────────────────────────────
-      // Новые read-tools «директора компании»: карточка человека, обещания,
-      // спринт, здоровье команд, игнорируемые probe-вопросы. Все — GET,
-      // RBAC проверяется ToolRouterService от userId (concierge НЕ bypass).
-      // Concierge никогда не пишет первым — только отвечает на запрос
-      // пользователя (feedback_concierge_text_only_output.md).
       {
         name: 'get_person_pulse',
         description:
@@ -523,11 +429,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'person',
         rbacAction: 'read',
       },
-      // Ф6 assistant-channels (2026-06-11) — фикс бага: раньше tool указывал
-      // на несуществующий роут дашборда (404). Реальный роут —
-      // GET /api/v1/dashboard/operations/open-commitments
-      // (operations-dashboard.controller.ts), query строго по
-      // OpenCommitmentsQuerySchema (.strict(): только days/limit, оба опц.).
       {
         name: 'list_overdue_promises',
         description:
@@ -587,12 +488,6 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacResource: 'dashboard_operations',
         rbacAction: 'read',
       },
-      // ──────────────────────────── Smart-tables Text-to-Schema ───────────
-      // Smart-tables auto-creation (2026-06-02, Фаза 1). Read-only превью:
-      // ассистент предлагает схему новой таблицы по описанию, НИЧЕГО не создаёт
-      // (создание — отдельным подтверждённым действием на UI). Не undoable.
-      // Эндпоинт сам гейтит фичу по feature.tables_text_to_schema (вернёт 403
-      // если выключена), поэтому tool в whitelist всегда, но безопасен.
       {
         name: 'infer_table_schema',
         description:

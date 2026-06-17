@@ -1,10 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  type Meeting,
-  type MeetingStatus,
-  type MeetingType,
-  type Prisma,
-} from '@prisma/client';
+import { type Meeting, type MeetingStatus, type MeetingType, type Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -14,14 +9,6 @@ import type {
   MeetingWithParticipants,
 } from './domain/meeting.domain';
 
-/**
- * Тонкая обёртка над Prisma для модели `Meeting` и связанных запросов
- * (включая создание `Participant`-host'а в одной транзакции).
- *
- * Все «толстые» методы принимают `tx?: Prisma.TransactionClient` —
- * чтобы вызывающий мог обернуть несколько мутаций в одну транзакцию
- * (см. `MeetingsService.createFromCrossmark`).
- */
 @Injectable()
 export class MeetingsRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
@@ -49,9 +36,7 @@ export class MeetingsRepository {
     });
   }
 
-  findByIdWithOwnerAndParticipants(
-    id: string,
-  ): Promise<MeetingWithOwnerAndParticipants | null> {
+  findByIdWithOwnerAndParticipants(id: string): Promise<MeetingWithOwnerAndParticipants | null> {
     return this.prisma.meeting.findUnique({
       where: { id },
       include: {
@@ -73,7 +58,6 @@ export class MeetingsRepository {
       customPrompt: string | null;
       cardId?: string | null;
       recordByDefault?: boolean;
-      /** ТЗ 2026-06-06 knowledge-access (Ф7A) — закрытость встречи. */
       closedGroupKind?: 'leadership' | 'council' | 'personal' | null;
     },
     tx?: Prisma.TransactionClient,
@@ -89,12 +73,8 @@ export class MeetingsRepository {
         tenantId: data.tenantId,
         customPrompt: data.customPrompt,
         recordByDefault: data.recordByDefault ?? true,
-        ...(data.cardId !== undefined && data.cardId !== null
-          ? { cardId: data.cardId }
-          : {}),
-        ...(data.closedGroupKind != null
-          ? { closedGroupKind: data.closedGroupKind }
-          : {}),
+        ...(data.cardId !== undefined && data.cardId !== null ? { cardId: data.cardId } : {}),
+        ...(data.closedGroupKind != null ? { closedGroupKind: data.closedGroupKind } : {}),
         status: 'scheduled',
       },
     });
@@ -122,15 +102,6 @@ export class MeetingsRepository {
     });
   }
 
-  /**
-   * Список встреч пользователя (он — хост; в MVP не считаем встречи, в которых он гость).
-   *
-   * Фильтры (Phase 2 standalone-product):
-   *   - `query` — ILIKE по `title`;
-   *   - `dateFrom` / `dateTo` — на `createdAt`;
-   *   - `status[]` / `type[]` — `IN`;
-   *   - всегда `deletedAt: null` (soft-delete).
-   */
   async listVisible(
     visibilityWhere: Prisma.MeetingWhereInput,
     filters: {
@@ -157,9 +128,7 @@ export class MeetingsRepository {
       deletedAt: null,
       ...(filters.status && filters.status.length > 0 ? { status: { in: filters.status } } : {}),
       ...(filters.type && filters.type.length > 0 ? { type: { in: filters.type } } : {}),
-      ...(filters.query
-        ? { title: { contains: filters.query, mode: 'insensitive' } }
-        : {}),
+      ...(filters.query ? { title: { contains: filters.query, mode: 'insensitive' } } : {}),
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(filters.cardId ? { cardId: filters.cardId } : {}),
     };

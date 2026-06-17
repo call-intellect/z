@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   Activity,
@@ -14,20 +14,20 @@ import {
   Send,
   ServerCog,
   Webhook,
-} from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-import { adminSystemTelegramBotApi } from '@/api/admin-system-telegram-bot.api';
-import { ApiError } from '@/api/api-error';
+import { adminSystemTelegramBotApi } from "@/api/admin-system-telegram-bot.api";
+import { ApiError } from "@/api/api-error";
 import {
   telegramBotBindingsPageFromApi,
   telegramBotFromApi,
   type TelegramBotBindingsPageDomain,
   type TelegramBotDomain,
-} from '@/domain/admin-telegram-bot';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
+} from "@/domain/admin-telegram-bot";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Dialog,
   DialogContent,
@@ -35,49 +35,49 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Switch } from '@/ui/shadcn/switch';
-import { Textarea } from '@/ui/shadcn/textarea';
+} from "@/ui/shadcn/select";
+import { Switch } from "@/ui/shadcn/switch";
+import { Textarea } from "@/ui/shadcn/textarea";
 
 import {
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
 type BindingStatusFilter =
-  | 'all'
-  | 'linked'
-  | 'pending'
-  | 'no_membership'
-  | 'bot_blocked'
-  | 'inactive';
+  | "all"
+  | "linked"
+  | "pending"
+  | "no_membership"
+  | "bot_blocked"
+  | "inactive";
 
 const BINDING_STATUS_OPTIONS: Array<{
   value: BindingStatusFilter;
   label: string;
 }> = [
-  { value: 'all', label: 'Все статусы' },
-  { value: 'linked', label: 'Привязаны' },
-  { value: 'pending', label: 'Ожидают подтверждения' },
-  { value: 'no_membership', label: 'Без компании' },
-  { value: 'bot_blocked', label: 'Бот заблокирован' },
-  { value: 'inactive', label: 'Неактивны' },
+  { value: "all", label: "Все статусы" },
+  { value: "linked", label: "Привязаны" },
+  { value: "pending", label: "Ожидают подтверждения" },
+  { value: "no_membership", label: "Без компании" },
+  { value: "bot_blocked", label: "Бот заблокирован" },
+  { value: "inactive", label: "Неактивны" },
 ];
 
 export function TelegramBotClient() {
   const settingsQuery = useAdminQuery(
-    'admin-telegram-bot-settings',
+    "admin-telegram-bot-settings",
     async () => {
       const res = await adminSystemTelegramBotApi.fetchSettings();
       return telegramBotFromApi(res);
@@ -119,8 +119,8 @@ function Header() {
         <h1 className="text-2xl font-semibold">Глобальный Telegram-бот</h1>
         <p className="text-sm text-fg-tertiary">
           Единый бот Коры для всех компаний-клиентов. Настройки видны только
-          главному администратору Z. Содержимое переписки сотрудников
-          недоступно — это продуктовое обещание клиентам.
+          главному администратору Z. Содержимое переписки сотрудников недоступно
+          — это продуктовое обещание клиентам.
         </p>
       </div>
     </div>
@@ -142,7 +142,7 @@ function StatusBadge({ data }: { data: TelegramBotDomain }) {
       </Badge>
     );
   }
-  if (data.status === 'broken') {
+  if (data.status === "broken") {
     return (
       <Badge variant="danger">
         <AlertTriangle size={12} /> Проблема с webhook
@@ -172,22 +172,22 @@ function SettingsBlocks({
 }) {
   return (
     <div className="space-y-6">
-      {/* Шапка со статусом */}
+      {}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <CardTitle className="text-base">Состояние бота</CardTitle>
             <p className="mt-1 text-xs text-fg-tertiary">
-              Имя бота:{' '}
+              Имя бота:{" "}
               {data.botUsername ? (
                 <span className="font-mono text-fg-secondary">
                   @{data.botUsername}
                 </span>
               ) : (
-                'не определено'
+                "не определено"
               )}
-              {' · '}
-              обновлено: {data.updatedAt.toLocaleString('ru-RU')}
+              {" · "}
+              обновлено: {data.updatedAt.toLocaleString("ru-RU")}
             </p>
           </div>
           <StatusBadge data={data} />
@@ -203,8 +203,6 @@ function SettingsBlocks({
   );
 }
 
-// ─────────────────────────── Прокси telegram.crossmark.ru ───────
-
 function ProxySection({
   data,
   onChanged: _onChanged,
@@ -214,7 +212,7 @@ function ProxySection({
 }) {
   const [pinging, setPinging] = useState(false);
   const [pingResult, setPingResult] = useState<string | null>(null);
-  const [pingKind, setPingKind] = useState<'ok' | 'error'>('ok');
+  const [pingKind, setPingKind] = useState<"ok" | "error">("ok");
 
   async function onPing() {
     setPinging(true);
@@ -222,23 +220,21 @@ function ProxySection({
     try {
       const r = await adminSystemTelegramBotApi.pingProxy();
       if (r.ok) {
-        setPingResult(
-          `Прокси доступен. HTTP ${r.status}, ${r.durationMs} мс.`,
-        );
-        setPingKind('ok');
+        setPingResult(`Прокси доступен. HTTP ${r.status}, ${r.durationMs} мс.`);
+        setPingKind("ok");
       } else {
         setPingResult(
           `Прокси не отвечает: ${r.error ?? `HTTP ${r.status}`} (${r.durationMs} мс).`,
         );
-        setPingKind('error');
+        setPingKind("error");
       }
     } catch (e) {
       setPingResult(
         e instanceof ApiError
           ? e.message
-          : 'Не удалось проверить прокси (ошибка сети).',
+          : "Не удалось проверить прокси (ошибка сети).",
       );
-      setPingKind('error');
+      setPingKind("error");
     } finally {
       setPinging(false);
     }
@@ -246,20 +242,20 @@ function ProxySection({
 
   const proxy = data.proxy;
   const trafficLightClass: Record<typeof proxy.trafficLight, string> = {
-    green: 'bg-success/15 text-success',
-    yellow: 'bg-warning/15 text-warning',
-    red: 'bg-danger/15 text-danger',
-    gray: 'bg-bg-overlay text-fg-tertiary',
+    green: "bg-success/15 text-success",
+    yellow: "bg-warning/15 text-warning",
+    red: "bg-danger/15 text-danger",
+    gray: "bg-bg-overlay text-fg-tertiary",
   };
   const trafficLightLabel: Record<typeof proxy.trafficLight, string> = {
-    green: 'Прокси работает, бот зарегистрирован',
-    yellow: 'Прокси работает, но бот ещё не зарегистрирован',
+    green: "Прокси работает, бот зарегистрирован",
+    yellow: "Прокси работает, но бот ещё не зарегистрирован",
     red: proxy.lastSyncError
       ? `Ошибка регистрации: ${proxy.lastSyncError}`
-      : 'Прокси не отвечает',
+      : "Прокси не отвечает",
     gray: proxy.enabled
-      ? 'Нет данных (health-check ещё не запускался)'
-      : 'Прокси выключен в настройках сервера',
+      ? "Нет данных (health-check ещё не запускался)"
+      : "Прокси выключен в настройках сервера",
   };
 
   return (
@@ -294,7 +290,7 @@ function ProxySection({
           )}
           {proxy.registeredAt && (
             <p className="text-fg-tertiary">
-              Зарегистрирован: {proxy.registeredAt.toLocaleString('ru-RU')}
+              Зарегистрирован: {proxy.registeredAt.toLocaleString("ru-RU")}
             </p>
           )}
         </div>
@@ -318,7 +314,7 @@ function ProxySection({
         {pingResult && (
           <p
             className={`text-xs ${
-              pingKind === 'ok' ? 'text-success' : 'text-danger'
+              pingKind === "ok" ? "text-success" : "text-danger"
             }`}
           >
             {pingResult}
@@ -326,17 +322,15 @@ function ProxySection({
         )}
         {!proxy.enabled && (
           <p className="text-xs text-fg-tertiary">
-            Прокси выключен переменной окружения{' '}
-            <code>TELEGRAM_PROXY_ENABLED=false</code>. В этом режиме
-            бэкенд работает напрямую с api.telegram.org (legacy/dev).
+            Прокси выключен переменной окружения{" "}
+            <code>TELEGRAM_PROXY_ENABLED=false</code>. В этом режиме бэкенд
+            работает напрямую с api.telegram.org (legacy/dev).
           </p>
         )}
       </CardContent>
     </Card>
   );
 }
-
-// ─────────────────────────── Токен ──────────────────────────
 
 function TokenSection({
   data,
@@ -346,7 +340,7 @@ function TokenSection({
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -354,7 +348,7 @@ function TokenSection({
 
   async function onSave() {
     if (token.trim().length < 10) {
-      setError('Токен слишком короткий');
+      setError("Токен слишком короткий");
       return;
     }
     setSaving(true);
@@ -364,21 +358,19 @@ function TokenSection({
       const updated = await adminSystemTelegramBotApi.updateToken({
         token: token.trim(),
       });
-      // 2026-05-26: backend авто-регистрирует бот в прокси сразу после
-      // updateToken. Если регистрация упала — backend всё равно сохраняет
-      // токен и пишет ошибку в proxy.lastSyncError. Показываем юзеру
-      // дружественное предупреждение прямо в диалоге.
       if (updated.proxy.enabled && updated.proxy.lastSyncError) {
         setProxyWarning(
           `Токен сохранён, но автоматическая регистрация в прокси не удалась: ${updated.proxy.lastSyncError}. Попробуйте позже нажать «Перенастроить webhook».`,
         );
       } else {
         setOpen(false);
-        setToken('');
+        setToken("");
       }
       onChanged();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось сохранить токен');
+      setError(
+        e instanceof ApiError ? e.message : "Не удалось сохранить токен",
+      );
     } finally {
       setSaving(false);
     }
@@ -396,7 +388,7 @@ function TokenSection({
           <div className="text-sm">
             {data.tokenIsSet ? (
               <>
-                Установлен. Последние 4 символа:{' '}
+                Установлен. Последние 4 символа:{" "}
                 <span className="rounded bg-bg-overlay px-2 py-0.5 font-mono text-xs">
                   {data.tokenLastChars}
                 </span>
@@ -409,7 +401,7 @@ function TokenSection({
             )}
           </div>
           <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-            {data.tokenIsSet ? 'Сменить токен' : 'Установить токен'}
+            {data.tokenIsSet ? "Сменить токен" : "Установить токен"}
           </Button>
         </div>
 
@@ -420,9 +412,10 @@ function TokenSection({
               <DialogDescription>
                 Токен будет зашифрован (алгоритм AES-256-GCM) и виден только
                 серверу. После сохранения автоматически проверяется через
-                Telegram (метод getMe){data.proxy.enabled
-                  ? ' и сразу регистрируется в прокси telegram.crossmark.ru — webhook начинает работать без дополнительных действий.'
-                  : '.'}
+                Telegram (метод getMe)
+                {data.proxy.enabled
+                  ? " и сразу регистрируется в прокси telegram.crossmark.ru — webhook начинает работать без дополнительных действий."
+                  : "."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
@@ -432,7 +425,7 @@ function TokenSection({
               <div className="relative">
                 <Input
                   id="bot-token"
-                  type={showToken ? 'text' : 'password'}
+                  type={showToken ? "text" : "password"}
                   placeholder="123456789:ABCdef..."
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
@@ -443,7 +436,7 @@ function TokenSection({
                   type="button"
                   onClick={() => setShowToken((v) => !v)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-tertiary hover:text-fg-primary"
-                  aria-label={showToken ? 'Скрыть токен' : 'Показать токен'}
+                  aria-label={showToken ? "Скрыть токен" : "Показать токен"}
                 >
                   {showToken ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
@@ -464,7 +457,7 @@ function TokenSection({
                 }}
                 disabled={saving}
               >
-                {proxyWarning ? 'Закрыть' : 'Отмена'}
+                {proxyWarning ? "Закрыть" : "Отмена"}
               </Button>
               {!proxyWarning && (
                 <Button onClick={onSave} disabled={saving}>
@@ -480,8 +473,6 @@ function TokenSection({
   );
 }
 
-// ─────────────────────────── Webhook ─────────────────────────
-
 function WebhookSection({
   data,
   onChanged,
@@ -491,26 +482,26 @@ function WebhookSection({
 }) {
   const [resetting, setResetting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [feedbackKind, setFeedbackKind] = useState<'ok' | 'error'>('ok');
+  const [feedbackKind, setFeedbackKind] = useState<"ok" | "error">("ok");
 
   async function onReset() {
-    if (!confirm('Перенастроить webhook? Старый секрет перестанет работать.')) {
+    if (!confirm("Перенастроить webhook? Старый секрет перестанет работать.")) {
       return;
     }
     setResetting(true);
     setFeedback(null);
     try {
       await adminSystemTelegramBotApi.resetWebhook();
-      setFeedback('Webhook успешно перенастроен.');
-      setFeedbackKind('ok');
+      setFeedback("Webhook успешно перенастроен.");
+      setFeedbackKind("ok");
       onChanged();
     } catch (e) {
       setFeedback(
         e instanceof ApiError
           ? e.message
-          : 'Не удалось перенастроить webhook (проверьте, что токен установлен).',
+          : "Не удалось перенастроить webhook (проверьте, что токен установлен).",
       );
-      setFeedbackKind('error');
+      setFeedbackKind("error");
     } finally {
       setResetting(false);
     }
@@ -534,10 +525,10 @@ function WebhookSection({
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm">
-            Секрет {data.webhookSecretIsSet ? 'установлен' : 'не задан'} ·{' '}
+            Секрет {data.webhookSecretIsSet ? "установлен" : "не задан"} ·{" "}
             {data.webhookSecretIsSet
-              ? 'Telegram подтверждает каждый запрос через заголовок «X-Telegram-Bot-Api-Secret-Token».'
-              : 'Без секрета мы не сможем отличить настоящие запросы Telegram от подделок.'}
+              ? "Telegram подтверждает каждый запрос через заголовок «X-Telegram-Bot-Api-Secret-Token»."
+              : "Без секрета мы не сможем отличить настоящие запросы Telegram от подделок."}
           </div>
           <Button
             variant="outline"
@@ -562,7 +553,7 @@ function WebhookSection({
         {feedback && (
           <p
             className={`text-xs ${
-              feedbackKind === 'ok' ? 'text-success' : 'text-danger'
+              feedbackKind === "ok" ? "text-success" : "text-danger"
             }`}
           >
             {feedback}
@@ -573,8 +564,6 @@ function WebhookSection({
   );
 }
 
-// ─────────────────────────── Глобальный выключатель ──────────
-
 function GlobalSwitchSection({
   data,
   onChanged,
@@ -584,23 +573,23 @@ function GlobalSwitchSection({
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const enabled = data.status === 'active';
+  const enabled = data.status === "active";
 
   async function onToggle(next: boolean) {
     if (!data.channelExists) {
-      setError('Сначала установите токен — глобального канала ещё нет.');
+      setError("Сначала установите токен — глобального канала ещё нет.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
       await adminSystemTelegramBotApi.setStatus({
-        status: next ? 'active' : 'global_disabled',
+        status: next ? "active" : "global_disabled",
       });
       onChanged();
     } catch (e) {
       setError(
-        e instanceof ApiError ? e.message : 'Не удалось изменить статус бота',
+        e instanceof ApiError ? e.message : "Не удалось изменить статус бота",
       );
     } finally {
       setSaving(false);
@@ -622,8 +611,8 @@ function GlobalSwitchSection({
             </p>
             <p className="text-fg-tertiary">
               Если выключить — бот перестанет отвечать всем сотрудникам.
-              Используйте только в крайнем случае (например, после утечки
-              токена или при техническом инциденте).
+              Используйте только в крайнем случае (например, после утечки токена
+              или при техническом инциденте).
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -641,8 +630,6 @@ function GlobalSwitchSection({
   );
 }
 
-// ─────────────────────────── Шаблоны сообщений ──────────────
-
 function TemplatesSection({
   data,
   onChanged,
@@ -659,7 +646,6 @@ function TemplatesSection({
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Подтянуть значения при обновлении data (refetch).
   useEffect(() => {
     setWelcome(data.templates.welcome);
     setNotLinked(data.templates.notLinked);
@@ -686,11 +672,11 @@ function TemplatesSection({
         employeeOffboarded,
         orgFrozen,
       });
-      setFeedback('Шаблоны сохранены.');
+      setFeedback("Шаблоны сохранены.");
       onChanged();
     } catch (e) {
       setFeedback(
-        e instanceof ApiError ? e.message : 'Не удалось сохранить шаблоны',
+        e instanceof ApiError ? e.message : "Не удалось сохранить шаблоны",
       );
     } finally {
       setSaving(false);
@@ -769,13 +755,10 @@ function TemplateField({
   );
 }
 
-// ─────────────────────────── Привязки сотрудников ──────────
-
 function BindingsSection() {
-  const [statusFilter, setStatusFilter] =
-    useState<BindingStatusFilter>('all');
-  const [orgIdFilter, setOrgIdFilter] = useState('');
-  const [appliedOrgId, setAppliedOrgId] = useState('');
+  const [statusFilter, setStatusFilter] = useState<BindingStatusFilter>("all");
+  const [orgIdFilter, setOrgIdFilter] = useState("");
+  const [appliedOrgId, setAppliedOrgId] = useState("");
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
@@ -783,7 +766,7 @@ function BindingsSection() {
     `admin-telegram-bot-bindings:${statusFilter}:${appliedOrgId}:${page}`,
     async () => {
       const res = await adminSystemTelegramBotApi.fetchBindings({
-        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        ...(statusFilter !== "all" ? { status: statusFilter } : {}),
         ...(appliedOrgId.trim() ? { orgId: appliedOrgId.trim() } : {}),
         page,
         pageSize,
@@ -806,7 +789,7 @@ function BindingsSection() {
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Фильтры */}
+        {}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_220px_auto]">
           <div className="space-y-1">
             <Label className="text-xs">Идентификатор компании</Label>
@@ -815,7 +798,7 @@ function BindingsSection() {
               value={orgIdFilter}
               onChange={(e) => setOrgIdFilter(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === "Enter") {
                   setPage(1);
                   setAppliedOrgId(orgIdFilter);
                 }
@@ -875,12 +858,8 @@ function BindingsSection() {
                     <th className="px-2 py-1 text-left">Компания</th>
                     <th className="px-2 py-1 text-left">Сотрудник</th>
                     <th className="px-2 py-1 text-left">Статус</th>
-                    <th className="px-2 py-1 text-left">
-                      Последнее входящее
-                    </th>
-                    <th className="px-2 py-1 text-right">
-                      Сообщений вх/исх
-                    </th>
+                    <th className="px-2 py-1 text-left">Последнее входящее</th>
+                    <th className="px-2 py-1 text-right">Сообщений вх/исх</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -917,7 +896,7 @@ function BindingsSection() {
                       </td>
                       <td className="px-2 py-1.5">
                         <div className="font-medium text-fg-primary">
-                          {b.userName ?? '— без имени —'}
+                          {b.userName ?? "— без имени —"}
                         </div>
                         {b.userEmail && (
                           <div className="text-xs text-fg-tertiary">
@@ -933,17 +912,17 @@ function BindingsSection() {
                       </td>
                       <td className="px-2 py-1.5 text-xs text-fg-secondary">
                         {b.lastInboundAt
-                          ? b.lastInboundAt.toLocaleString('ru-RU')
-                          : '—'}
+                          ? b.lastInboundAt.toLocaleString("ru-RU")
+                          : "—"}
                         {b.linkedAt && (
                           <div className="text-[11px] text-fg-tertiary">
-                            привязан: {b.linkedAt.toLocaleDateString('ru-RU')}
+                            привязан: {b.linkedAt.toLocaleDateString("ru-RU")}
                           </div>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">
-                        {b.inboundCount.toLocaleString('ru-RU')} /{' '}
-                        {b.outboundCount.toLocaleString('ru-RU')}
+                        {b.inboundCount.toLocaleString("ru-RU")} /{" "}
+                        {b.outboundCount.toLocaleString("ru-RU")}
                       </td>
                     </tr>
                   ))}
@@ -953,7 +932,7 @@ function BindingsSection() {
 
             <div className="flex items-center justify-between text-xs text-fg-tertiary">
               <div>
-                Всего: {bindingsQuery.data.total.toLocaleString('ru-RU')} ·
+                Всего: {bindingsQuery.data.total.toLocaleString("ru-RU")} ·
                 страница {bindingsQuery.data.page}
               </div>
               <div className="flex items-center gap-2">
@@ -988,16 +967,16 @@ function BindingStatusBadge({
   status,
   label,
 }: {
-  status: TelegramBotBindingsPageDomain['items'][number]['status'];
+  status: TelegramBotBindingsPageDomain["items"][number]["status"];
   label: string;
 }) {
-  const variant: 'success' | 'warning' | 'danger' | 'secondary' =
-    status === 'linked'
-      ? 'success'
-      : status === 'bot_blocked'
-        ? 'danger'
-        : status === 'no_membership' || status === 'inactive'
-          ? 'warning'
-          : 'secondary';
+  const variant: "success" | "warning" | "danger" | "secondary" =
+    status === "linked"
+      ? "success"
+      : status === "bot_blocked"
+        ? "danger"
+        : status === "no_membership" || status === "inactive"
+          ? "warning"
+          : "secondary";
   return <Badge variant={variant}>{label}</Badge>;
 }

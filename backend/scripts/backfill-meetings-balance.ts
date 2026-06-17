@@ -1,29 +1,7 @@
-/**
- * Backfill (ТЗ 2026-05-27 billing) Фаза 3 — стартовый грант MeetingsBalance.
- *
- * Для каждой Org, у которой ещё нет записи MeetingsBalance, создаёт
- * запись с balance=150 (= calculateMeetingsGrant(seatsExtra=0), базовый
- * тариф tier_standard). Эта операция нужна на ОДИН раз при выкатке Фазы 3,
- * потому что старая квота `meetings_per_month` ушла, а MeetingsBalance ещё
- * пуст у всех existing Org.
- *
- * Идемпотентность: where: { meetingsBalance: null } — повторный запуск
- * не меняет уже наполненные балансы.
- *
- * Запуск:
- *   bun run scripts/backfill-meetings-balance.ts          — реальный backfill
- *   bun run scripts/backfill-meetings-balance.ts --dry-run — только подсчёт
- *
- * Через docker compose (prod):
- *   docker compose exec backend bun run scripts/backfill-meetings-balance.ts
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-/** Соответствует MeetingsBalanceService.BASE_MEETINGS_GRANT. Не импортирую
- *  оттуда, чтобы скрипт не зависел от NestJS-DI. */
 const STARTING_BALANCE = 150;
 
 const BATCH_SIZE = 500;
@@ -61,7 +39,6 @@ async function main(): Promise<void> {
           // eslint-disable-next-line no-console
           console.log(`  org=${row.id}  → balance=${STARTING_BALANCE}  [dry-run]`);
         }
-        // В dry-run эту партию не «съели» — выходим, чтобы не зациклиться.
         break;
       }
 

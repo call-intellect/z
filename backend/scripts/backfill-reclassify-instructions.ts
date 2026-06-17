@@ -1,25 +1,3 @@
-/**
- * A12 (Волна 6) — Backfill: реклассификация single-role процессов в Инструкции.
- *
- * До появления сущности «Инструкция» специалист 3.1 сохранял пошаговое «как
- * сделать X» для ОДНОЙ роли как `Process` со `scope` вида 'role:<id>' (признак
- * single-role). Теперь такие записи логически — инструкции. Скрипт находит
- * Process со `scope LIKE 'role:%'` и создаёт соответствующий `Instruction`
- * (зеркаля поля), не удаляя исходный Process (мягкая реклассификация — UI
- * раздела «Инструкции» начнёт показывать их из таблицы instructions).
- *
- * Идемпотентность: Instruction создаётся только если в этом tenant'е ещё нет
- * Instruction с таким же `name` (unique (tenantId, name)). Повторный прогон —
- * no-op.
- *
- * Запуск:
- *   bun run scripts/backfill-reclassify-instructions.ts            # dry-run (по умолчанию)
- *   bun run scripts/backfill-reclassify-instructions.ts --apply    # запись
- *
- * Регистрация в агрегаторе: backend/scripts/apply-prod-deploy.ts (phase 'backfill',
- * skipBootstrap: true) — на чистом старте процессов role:* нет → no-op.
- */
-
 import { createPrismaClient } from './_lib/prisma';
 
 interface RunArgs {
@@ -33,7 +11,6 @@ interface Stats {
   errors: number;
 }
 
-/** Извлекает id роли из scope вида 'role:<id>' → forRole (≤120 символов). */
 function forRoleFromScope(scope: string | null): string | null {
   if (!scope) return null;
   const trimmed = scope.trim();
@@ -53,9 +30,7 @@ async function main(args: RunArgs): Promise<void> {
 
   try {
     // eslint-disable-next-line no-console
-    console.log(
-      `=== backfill-reclassify-instructions START (apply=${args.apply}) ===`,
-    );
+    console.log(`=== backfill-reclassify-instructions START (apply=${args.apply}) ===`);
 
     let cursor: string | undefined;
     const pageSize = 500;
@@ -84,7 +59,6 @@ async function main(args: RunArgs): Promise<void> {
       for (const p of processes) {
         stats.scanned++;
         try {
-          // Идемпотентность: уже есть Instruction с таким name в этом tenant'е?
           const existing = await prisma.instruction.findUnique({
             where: { tenantId_name: { tenantId: p.tenantId, name: p.name } },
             select: { id: true },

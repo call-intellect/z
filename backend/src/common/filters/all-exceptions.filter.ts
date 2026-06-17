@@ -30,38 +30,16 @@ interface ErrorPayload {
 interface MappedError {
   status: number;
   payload: ErrorPayload;
-  /** stack — только в логи, не в HTTP-ответ. */
   logStack?: string;
-  /** дополнительный контекст для логов (не уходит клиенту). */
   logDetails?: Record<string, unknown>;
 }
 
-/**
- * Единый фильтр ошибок.
- *
- * Маппинг:
- *   - `DomainError`                 → `httpStatus` + `code`/`message` доменной ошибки.
- *   - `Prisma.PrismaClientKnownRequestError`:
- *       P2002 (unique violation)    → 409 `db_unique_violation`
- *       P2025 (record not found)    → 404 `db_not_found`
- *       прочие                      → 500 `db_error` («Ошибка базы данных»)
- *   - `ZodError`                    → 400 `validation_failed` + `details: error.flatten()`
- *   - `HttpException` (Nest, ZodPipe BadRequest и т.п.)
- *                                   → пробрасывает status; формат ответа — наш.
- *   - всё остальное                 → 500 `internal_error`.
- *
- * Каждая ошибка логируется встроенным Nest `Logger`, stack уходит
- * только в лог. Клиенту отдаётся `{ ok:false, error:{ code, message, requestId } }`.
- */
 @Injectable()
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
-  constructor(
-    // @Optional: фильтр не зависит жёстко от LoggingModule (тесты, ранний bootstrap).
-    @Optional() @Inject(LogService) private readonly logService?: LogService,
-  ) {}
+  constructor(@Optional() @Inject(LogService) private readonly logService?: LogService) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -71,11 +49,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const mapped = this.toMapped(exception, requestId);
 
-    // Запись в SystemLog (best-effort, не ломает обработку ошибки).
-    // 4xx/5xx логирует ИМЕННО фильтр — интерсептор успешных запросов их не трогает.
     this.writeSystemLog(exception, request, mapped.status);
 
-    // Логируем всё одним объектом.
     const logBindings: Record<string, unknown> = {
       method: request.method,
       url: request.url,
@@ -94,16 +69,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (mapped.status >= 500) {
       this.logger.error(logMessage);
     } else if (mapped.status === 404) {
-      // 404 (Cannot GET /, favicon, чужие пути) — клиентский шум, не в консоль.
-      // В БД остаётся через debug-форвард (LOG_DB_MIN_LEVEL). 2026-06-16.
       this.logger.debug(logMessage);
     } else {
       this.logger.warn(logMessage);
     }
 
-    // Если ответ уже отправлен (например, `HmacGuard` короткозамкнул
-    // идемпотентный ответ ДО `return false`, и Nest бросил `ForbiddenException`),
-    // повторно слать заголовки нельзя — они уже улетели в сокет.
     if (response.headersSent) {
       return;
     }
@@ -111,13 +81,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(mapped.status).json(mapped.payload);
   }
 
-  // ────────────────────────── SystemLog ────────────────────────────────
-
-  private writeSystemLog(
-    exception: unknown,
-    request: Request,
-    status: number,
-  ): void {
+  private writeSystemLog(exception: unknown, request: Request, status: number): void {
     if (!this.logService) return;
     const r = request as Request & {
       user?: { id?: string; role?: string } | null;
@@ -127,7 +91,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ua = request.headers['user-agent'];
 
     const input: WriteLogInput = {
-      level: status >= 500 ? 'ERROR' : status === 401 || status === 403 || status === 429 ? 'WARN' : 'DEBUG',
+      level:
+        status >= 500
+          ? 'ERROR'
+          : status === 401 || status === 403 || status === 429
+            ? 'WARN'
+            : 'DEBUG',
       category:
         status >= 500
           ? SystemLogCategory.REQUEST
@@ -147,13 +116,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ...(r.user?.id ? { userId: r.user.id } : {}),
       ...(r.user?.role ? { userRole: r.user.role } : {}),
       ...(r.tenantId ? { orgId: r.tenantId } : {}),
-      // Саму exception (со stack) передаём только для 5xx.
       ...(status >= 500 ? { error: exception } : {}),
     };
     this.logService.write(input);
   }
-
-  // ────────────────────────── маппинг ──────────────────────────────────
 
   private toMapped(exception: unknown, requestId: string | undefined): MappedError {
     if (exception instanceof DomainError) {
@@ -264,16 +230,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
   }
 
-  private fromHttpException(
-    err: HttpException,
-    requestId: string | undefined,
-  ): MappedError {
+  private fromHttpException(err: HttpException, requestId: string | undefined): MappedError {
     const status = err.getStatus();
     const res = err.getResponse();
 
-    // Если внутрь уже завернули наш формат `{ ok:false, error:{...} }`
-    // (например, ZodValidationPipe бросает BadRequestException с таким payload) —
-    // отдадим как есть, добавив requestId.
     if (this.isErrorPayload(res)) {
       return {
         status,
@@ -289,8 +249,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     } else if (typeof res === 'object' && res !== null) {
       const obj = res as { message?: string | string[]; error?: string };
       const raw = obj.message ?? obj.error;
-      message = Array.isArray(raw) ? raw.join('; ') : raw ?? err.message;
-      // Полезный массив сообщений class-validator-а отдадим как details.
+      message = Array.isArray(raw) ? raw.join('; ') : (raw ?? err.message);
       if (Array.isArray(obj.message)) {
         details = obj.message;
       }
@@ -312,8 +271,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     return { status, payload };
   }
-
-  // ────────────────────────── helpers ──────────────────────────────────
 
   private isErrorPayload(value: unknown): value is ErrorPayload {
     if (typeof value !== 'object' || value === null) return false;
@@ -347,8 +304,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 
   private extractRequestId(request: Request): string | undefined {
-    // RequestIdMiddleware всегда выставляет `req.id` ДО фильтра,
-    // но на всякий случай поддержим и заголовок.
     if (typeof request.id === 'string' && request.id.length > 0) {
       return request.id;
     }

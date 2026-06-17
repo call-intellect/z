@@ -1,22 +1,14 @@
-import { apiClient } from './api-client';
-import type {
-  CardApi,
-  CardListApi,
-  CardMeetingsListApi,
-} from '@/domain/card';
-import type { CardThemeMiniApi } from '@/domain/theme';
-
-/**
- * API-клиент модуля cards. Контракт: `backend/src/modules/cards/`.
- */
+import { apiClient } from "./api-client";
+import type { CardApi, CardListApi, CardMeetingsListApi } from "@/domain/card";
+import type { CardThemeMiniApi } from "@/domain/theme";
 
 export type CardKindFilter =
-  | 'client'
-  | 'deal'
-  | 'project'
-  | 'topic'
-  | 'custom'
-  | 'vendor';
+  | "client"
+  | "deal"
+  | "project"
+  | "topic"
+  | "custom"
+  | "vendor";
 
 export type ListCardsRequest = {
   page?: number;
@@ -25,7 +17,7 @@ export type ListCardsRequest = {
   pinned?: boolean;
   archived?: boolean;
   q?: string;
-  sort?: 'lastMeetingAt' | 'createdAt' | 'name';
+  sort?: "lastMeetingAt" | "createdAt" | "name";
 };
 
 export type CreateCardRequest = {
@@ -53,17 +45,18 @@ export type UpdateCardRequest = {
 };
 
 function buildQuery(filters?: ListCardsRequest): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const p = new URLSearchParams();
-  if (filters.page) p.set('page', String(filters.page));
-  if (filters.limit) p.set('limit', String(filters.limit));
-  if (filters.kind) p.set('kind', filters.kind);
-  if (filters.pinned !== undefined) p.set('pinned', String(filters.pinned));
-  if (filters.archived !== undefined) p.set('archived', String(filters.archived));
-  if (filters.q) p.set('q', filters.q);
-  if (filters.sort) p.set('sort', filters.sort);
+  if (filters.page) p.set("page", String(filters.page));
+  if (filters.limit) p.set("limit", String(filters.limit));
+  if (filters.kind) p.set("kind", filters.kind);
+  if (filters.pinned !== undefined) p.set("pinned", String(filters.pinned));
+  if (filters.archived !== undefined)
+    p.set("archived", String(filters.archived));
+  if (filters.q) p.set("q", filters.q);
+  if (filters.sort) p.set("sort", filters.sort);
   const qs = p.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
 export const cardsApi = {
@@ -100,7 +93,6 @@ export const cardsApi = {
       `/api/v1/cards/${encodeURIComponent(cardId)}/meetings/${encodeURIComponent(meetingId)}`,
     ),
 
-  /** AI-чат по карточке (RAG среди встреч карточки). */
   ask: (cardId: string, message: string) =>
     apiClient.post<{
       message: string;
@@ -118,14 +110,13 @@ export const cardsApi = {
     apiClient.get<{
       items: Array<{
         id: string;
-        role: 'user' | 'assistant';
+        role: "user" | "assistant";
         content: string;
         createdAt: string;
         citations?: unknown;
       }>;
     }>(`/api/v1/cards/${encodeURIComponent(cardId)}/chat/history`),
 
-  /** AI-темы, в которых блоки карточки участвуют (top-3, knowledge-core Фаза 4). */
   listThemes: (cardId: string) =>
     apiClient.get<{ items: CardThemeMiniApi[] }>(
       `/api/v1/cards/${encodeURIComponent(cardId)}/themes`,

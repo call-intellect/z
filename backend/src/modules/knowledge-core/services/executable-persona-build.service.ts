@@ -1,22 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import {
-  type ExecutablePersona,
-  Prisma,
-  type SkillTrait,
-} from '@prisma/client';
+import { type ExecutablePersona, Prisma, type SkillTrait } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RedisService } from '../../../common/redis/redis.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { tenantTopLabel } from '../../company-foundation/utils/tenant-top';
 import {
   EXECUTABLE_PERSONA_COMPILE_V2_SYSTEM_PROMPT,
@@ -28,33 +18,8 @@ import {
 
 import { DataClassPolicyService } from './dataclass-policy.service';
 
-/**
- * SBA γ-1 доделки — почему был собран snapshot.
- *   - 'scheduled' — еженедельный cron;
- *   - 'threshold' — ≥N новых traits с прошлого snapshot;
- *   - 'critical' — mark_as_misleading (severity=critical);
- *   - 'manual' — вручную через admin API;
- *   - 'on_demand' — on-the-fly из ClonesService (clones.askPerson/askRole).
- */
-export type PersonaTriggerReason =
-  | 'scheduled'
-  | 'threshold'
-  | 'critical'
-  | 'manual'
-  | 'on_demand';
+export type PersonaTriggerReason = 'scheduled' | 'threshold' | 'critical' | 'manual' | 'on_demand';
 
-/**
- * SBA γ-1 — ExecutablePersonaBuildService.
- *
- * Собирает snapshots ExecutablePersona двух типов:
- *   - scope='person': один snapshot на каждый active SkillProfile с
- *     >= PERSONA_MIN_TRAITS active traits.
- *   - scope='role': один snapshot на каждую Role с >=
- *     PERSONA_ROLE_AGG_MIN_PERSONS employee'ями (у каждого активный SkillProfile).
- *
- * Вызывается из cron (раз в неделю) И на лету из ClonesService, если active
- * persona для профиля отсутствует.
- */
 @Injectable()
 export class ExecutablePersonaBuildService {
   private readonly logger = new Logger(ExecutablePersonaBuildService.name);
@@ -65,20 +30,14 @@ export class ExecutablePersonaBuildService {
     @Inject(LlmRouterService) private readonly llm: LlmRouterService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
-    // W4.1 — DataClassPolicyService для shadow-compare (см. ТЗ §W4.1).
     @Optional()
     @Inject(DataClassPolicyService)
     private readonly dataClassPolicy?: DataClassPolicyService,
-    // Раздел 7 (Б13) — Redis-лок на role-путь buildForRole. @Optional: в тестах
-    // без Redis лок пропускается (fail-open), корректность держит partial-unique индекс.
     @Optional()
     @Inject(RedisService)
     private readonly redis?: RedisService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -87,15 +46,9 @@ export class ExecutablePersonaBuildService {
     }
   }
 
-  /**
-   * Сборка persona для одного SkillProfile. Возвращает новый snapshot
-   * (или null если traits недостаточно). Старый active помечается superseded.
-   */
   async buildForProfile(args: {
     profileId: string;
-    /** SBA γ-1 доделки — почему этот snapshot сейчас собирается (по умолчанию on_demand). */
     triggerReason?: PersonaTriggerReason;
-    /** SBA γ-1 доделки — момент триггерного события (для метрики lag). */
     triggerEventAt?: Date | null;
   }): Promise<ExecutablePersona | null> {
     const start = Date.now();
@@ -109,8 +62,6 @@ export class ExecutablePersonaBuildService {
             select: { id: true, tenantId: true, name: true, relationship: true },
           },
           traits: {
-            // ИНТ.1 (R9) — в «черты подхода» идёт только слой skill; ценности /
-            // мотивация / маркеры процесса выбираются отдельными запросами ниже.
             where: { status: 'active', layer: 'skill' },
             orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
             take: 20,
@@ -120,43 +71,34 @@ export class ExecutablePersonaBuildService {
       if (!profile) return null;
       if (profile.person.relationship !== 'employee') return null;
       if (profile.status !== 'active') return null;
-      // Гейт минимума — по skill-чертам (как до ИНТ.1, деградация совместима).
       if (profile.traits.length < this.cfg.persona.minTraits) return null;
 
-      // ИНТ.1 (R9) — новые слои метода: values/motivations/processMarkers
-      // (топ-5 на слой), принципы активной роли person'а, процедуры
-      // PracticeSkill(scope='person'). Все слои best-effort: пусто → секция
-      // в промпте опускается, выход эквивалентен v1-поведению.
       const personId = profile.person.id;
-      const [values, motivations, processMarkers, roleId, practiceSkillRows] =
-        await Promise.all([
-          this.findTopTraitsByLayer({ profileId: profile.id, layer: 'value' }),
-          this.findTopTraitsByLayer({
-            profileId: profile.id,
-            layer: 'motivation',
-          }),
-          this.findTopTraitsByLayer({
-            profileId: profile.id,
-            layer: 'process_marker',
-          }),
-          this.findActiveRoleIdForPerson({
+      const [values, motivations, processMarkers, roleId, practiceSkillRows] = await Promise.all([
+        this.findTopTraitsByLayer({ profileId: profile.id, layer: 'value' }),
+        this.findTopTraitsByLayer({
+          profileId: profile.id,
+          layer: 'motivation',
+        }),
+        this.findTopTraitsByLayer({
+          profileId: profile.id,
+          layer: 'process_marker',
+        }),
+        this.findActiveRoleIdForPerson({
+          tenantId: profile.tenantId,
+          personId,
+        }),
+        this.prisma.practiceSkill.findMany({
+          where: {
             tenantId: profile.tenantId,
-            personId,
-          }),
-          this.prisma.practiceSkill.findMany({
-            where: {
-              tenantId: profile.tenantId,
-              scope: 'person',
-              scopeRefId: personId,
-              status: 'active',
-            },
-            orderBy: [
-              { pinned: 'desc' },
-              { successRate: { sort: 'desc', nulls: 'last' } },
-            ],
-            take: 5,
-          }),
-        ]);
+            scope: 'person',
+            scopeRefId: personId,
+            status: 'active',
+          },
+          orderBy: [{ pinned: 'desc' }, { successRate: { sort: 'desc', nulls: 'last' } }],
+          take: 5,
+        }),
+      ]);
       const principles = roleId
         ? await this.prisma.rolePrinciple.findMany({
             where: {
@@ -168,11 +110,8 @@ export class ExecutablePersonaBuildService {
             take: 5,
           })
         : [];
-      const practiceSkills = this.parsePracticeSkillsForPrompt(
-        practiceSkillRows,
-      );
+      const practiceSkills = this.parsePracticeSkillsForPrompt(practiceSkillRows);
 
-      // LLM compile (v2 — секционная сборка из всех слоёв метода).
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: profile.tenantId,
         personName: profile.person.name,
@@ -191,10 +130,6 @@ export class ExecutablePersonaBuildService {
       });
       if (!personaPrompt) return null;
 
-      // ИНТ.1 — аудит «какие черты вошли»: skill-черты + values/motivations/
-      // processMarkers (все — SkillTrait.id). Принципы (RolePrinciple) и
-      // процедуры (PracticeSkill) в includedTraitIds НЕ кладём — это не
-      // SkillTrait-id, поле по контракту хранит только их.
       const includedTraitIds = [
         ...profile.traits.map((t) => t.id),
         ...values.map((t) => t.id),
@@ -202,18 +137,12 @@ export class ExecutablePersonaBuildService {
         ...processMarkers.map((t) => t.id),
       ];
 
-      // Insert new + supersede previous.
       const nextVersion = await this.nextVersion({
         profileId: profile.id,
         scope: 'person',
         scopeRefId: null,
       });
 
-      // W4.1/W4.2 — derive DataClass для ExecutablePersona.
-      // Floor: 'internal' (Клон Роли, §4 ТЗ — решение №6 clones-role-based-rebrand).
-      // На enforce — сохраняем audit в `ExecutablePersona.dataClassAudit`;
-      // на shadow/off — JsonNull. dataClass-колонки у модели нет — это
-      // ожидаемо, артефакт всегда 'internal' по floor'у.
       const enforcementEp = this.cfg?.dataClassPolicy.enforcement ?? 'off';
       const derivedEp = this.dataClassPolicy?.derive({
         sources: profile.traits.map((t) => ({
@@ -263,15 +192,12 @@ export class ExecutablePersonaBuildService {
         });
       });
 
-      this.metrics.observePersonaBuildDuration(
-        (Date.now() - start) / 1000,
-      );
+      this.metrics.observePersonaBuildDuration((Date.now() - start) / 1000);
       this.metrics.incCoreSpecialistCards({
         type: 'persona',
         status: 'canonical',
       });
 
-      // SBA γ-1 доделки — counter и lag-gauge для snapshot.
       try {
         const tenantTop = await tenantTopLabel(this.prisma, profile.tenantId);
         this.metrics.incExecutablePersonaSnapshot({
@@ -281,10 +207,7 @@ export class ExecutablePersonaBuildService {
         if (triggerEventAt) {
           this.metrics.setExecutablePersonaSnapshotLag({
             tenantTop,
-            seconds: Math.max(
-              0,
-              Math.floor((Date.now() - triggerEventAt.getTime()) / 1000),
-            ),
+            seconds: Math.max(0, Math.floor((Date.now() - triggerEventAt.getTime()) / 1000)),
           });
         }
       } catch (metricsErr) {
@@ -307,23 +230,9 @@ export class ExecutablePersonaBuildService {
     }
   }
 
-  /**
-   * Раздел 7 (2026-06-16) «один человек = один клон должности» — клон роли это
-   * снимок ЕДИНСТВЕННОГО текущего носителя должности (без агрегации нескольких
-   * людей). Возвращает новую active-версию или null (нет носителя / мало traits /
-   * build упал). Прошлую active замораживает (frozen, read-only) ТОЛЬКО после
-   * подтверждённой новой active — атомарно в транзакции (закрывает Б12/Б16/Б17
-   * по построению). Версионные поля (roleVersion/currentBearerPersonId/publicName/
-   * succeedsPersonaId) проставляются всегда.
-   */
   async buildForRole(args: {
     tenantId: string;
     roleId: string;
-    /**
-     * Раздел 7 — явный носитель (передаётся из RoleClonePersonaVersioningHandler
-     * при смене носителя). Если не задан — резолвим текущего носителя по
-     * PersonRole/Appointment (cron / on-demand путь).
-     */
     bearerPersonId?: string | null;
     triggerReason?: PersonaTriggerReason;
     triggerEventAt?: Date | null;
@@ -332,10 +241,6 @@ export class ExecutablePersonaBuildService {
     const triggerReason: PersonaTriggerReason = args.triggerReason ?? 'on_demand';
     const triggerEventAt = args.triggerEventAt ?? null;
 
-    // Б13 — лок на role-путь: одновременно одна сборка клона роли (weekly cron +
-    // on-demand askRole + bearer-changed могут совпасть). Финальный гард —
-    // partial-unique индекс executable_personas_one_active_per_role; лок лишь
-    // экономит холостой LLM-вызов. fail-open (нет Redis → строим).
     const roleLockKey = `persona:rebuild:role:${args.roleId}`;
     const roleLockAcquired = await this.acquireRoleLock(roleLockKey);
     if (!roleLockAcquired) {
@@ -346,7 +251,6 @@ export class ExecutablePersonaBuildService {
       return null;
     }
     try {
-      // Р1 — единственный текущий носитель должности.
       const bearerPersonId =
         args.bearerPersonId ??
         (await this.resolveCurrentBearer({
@@ -354,11 +258,9 @@ export class ExecutablePersonaBuildService {
           roleId: args.roleId,
         }));
       if (!bearerPersonId) {
-        // Нет текущего носителя — активный клон не строим (бывшие остаются frozen).
         return null;
       }
 
-      // Профиль ЕДИНСТВЕННОГО носителя (employee, active) + его skill-черты.
       const profile = await this.prisma.skillProfile.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -368,7 +270,6 @@ export class ExecutablePersonaBuildService {
         include: {
           person: { select: { name: true, relationship: true } },
           traits: {
-            // ИНТ.1 (R9) — «черты подхода» только слой skill.
             where: { status: 'active', layer: 'skill' },
             orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
             take: 10,
@@ -377,8 +278,6 @@ export class ExecutablePersonaBuildService {
       });
       if (!profile || profile.person.relationship !== 'employee') return null;
 
-      // Р2 — порога roleAggMinPersons больше нет; гейт — minTraits профиля носителя.
-      // dedupeTraitsByConcept на одном человеке идемпотентен (схлопывает дубль-концепты).
       const dedupedTraits = this.dedupeTraitsByConcept(profile.traits);
       if (dedupedTraits.length < this.cfg.persona.minTraits) return null;
 
@@ -387,11 +286,6 @@ export class ExecutablePersonaBuildService {
         select: { name: true },
       });
 
-      // Раздел 7 (Р1) — слои метода для клона роли берём из профиля ТОГО ЖЕ
-      // единственного носителя (снимок одного человека, без агрегации по людям):
-      // values/motivations/processMarkers — топ-5 черт носителя; принципы —
-      // RolePrinciple роли напрямую (метод должности, переживает смену людей);
-      // процедуры — union PracticeSkill(scope='role') + scope='person' носителя.
       const [values, motivations, processMarkers, principles, practiceSkillRows] =
         await Promise.all([
           this.findTopTraitsByLayer({ profileId: profile.id, layer: 'value' }),
@@ -421,16 +315,11 @@ export class ExecutablePersonaBuildService {
                 { scope: 'person', scopeRefId: bearerPersonId },
               ],
             },
-            orderBy: [
-              { pinned: 'desc' },
-              { successRate: { sort: 'desc', nulls: 'last' } },
-            ],
+            orderBy: [{ pinned: 'desc' }, { successRate: { sort: 'desc', nulls: 'last' } }],
             take: 5,
           }),
         ]);
-      const practiceSkills = this.parsePracticeSkillsForPrompt(
-        practiceSkillRows,
-      );
+      const practiceSkills = this.parsePracticeSkillsForPrompt(practiceSkillRows);
 
       const personaPrompt = await this.compilePersonaPrompt({
         tenantId: args.tenantId,
@@ -450,8 +339,6 @@ export class ExecutablePersonaBuildService {
       });
       if (!personaPrompt) return null;
 
-      // ИНТ.1 — см. комментарий в buildForProfile: только SkillTrait-id;
-      // RolePrinciple/PracticeSkill в includedTraitIds не кладём.
       const includedTraitIds = [
         ...dedupedTraits.map((t) => t.id),
         ...values.map((t) => t.id),
@@ -459,10 +346,6 @@ export class ExecutablePersonaBuildService {
         ...processMarkers.map((t) => t.id),
       ];
 
-      // Clones=Roles Ф5 (2026-05-25) — клон роли это shared-знание Org,
-      // dataClass всегда `internal` (floor поднимает любой источник).
-      // Используем `DataClassPolicyService.derive(kind='executable_persona')`.
-      // Audit-trail сохраняем в `dataClassAudit` (W4.2-поле).
       let dataClassAudit: Prisma.InputJsonValue | undefined;
       if (this.dataClassPolicy) {
         const derived = this.dataClassPolicy.derive({
@@ -473,7 +356,6 @@ export class ExecutablePersonaBuildService {
           })),
           context: { kind: 'executable_persona' },
         });
-        // Shadow-compare с legacy='internal' (де-факто).
         this.dataClassPolicy.compareWithLegacy({
           legacyResult: 'internal',
           proposedResult: derived.dataClass,
@@ -483,11 +365,6 @@ export class ExecutablePersonaBuildService {
         dataClassAudit = derived.audit as unknown as Prisma.InputJsonValue;
       }
 
-      // Раздел 7 (Р1/Р3, Б12/Б16/Б17) — атомарно: внутри транзакции читаем текущую
-      // active, вычисляем версии, замораживаем прошлую active (frozen, остаётся
-      // доступной навсегда) и создаём новую active со всеми версионными полями.
-      // Прошлая active гасится ТОЛЬКО вместе с подтверждённой новой — нет «зазора
-      // без клона». Partial-unique индекс гарантирует ровно одну active на роль.
       const newPersona = await this.prisma.$transaction(async (tx) => {
         const prevActive = await tx.executablePersona.findFirst({
           where: {
@@ -511,14 +388,12 @@ export class ExecutablePersonaBuildService {
         const nextVersion = (lastForVersion?.version ?? 0) + 1;
         const nextRoleVersion = (prevActive?.roleVersion ?? 0) + 1;
 
-        // Прошлая active → frozen (read-only снимок бывшего носителя; не удаляется).
         if (prevActive) {
           await tx.executablePersona.updateMany({
             where: { id: prevActive.id, status: 'active' },
             data: { status: 'frozen' },
           });
         }
-        // Промежуточные pending_rebuild этой роли (legacy handler) → superseded.
         await tx.executablePersona.updateMany({
           where: {
             tenantId: args.tenantId,
@@ -550,15 +425,12 @@ export class ExecutablePersonaBuildService {
         });
       });
 
-      this.metrics.observePersonaBuildDuration(
-        (Date.now() - start) / 1000,
-      );
+      this.metrics.observePersonaBuildDuration((Date.now() - start) / 1000);
       this.metrics.incCoreSpecialistCards({
         type: 'persona',
         status: 'canonical',
       });
 
-      // SBA γ-1 доделки — snapshot-метрики.
       try {
         const tenantTop = await tenantTopLabel(this.prisma, args.tenantId);
         this.metrics.incExecutablePersonaSnapshot({
@@ -568,10 +440,7 @@ export class ExecutablePersonaBuildService {
         if (triggerEventAt) {
           this.metrics.setExecutablePersonaSnapshotLag({
             tenantTop,
-            seconds: Math.max(
-              0,
-              Math.floor((Date.now() - triggerEventAt.getTime()) / 1000),
-            ),
+            seconds: Math.max(0, Math.floor((Date.now() - triggerEventAt.getTime()) / 1000)),
           });
         }
       } catch (metricsErr) {
@@ -596,11 +465,6 @@ export class ExecutablePersonaBuildService {
     }
   }
 
-  /**
-   * Раздел 7 (Р1) — текущий носитель должности: union активного
-   * PersonRole(validTo=null) и Appointment(validTo=null, status active/acting),
-   * самый свежий по validFrom. null — у роли нет текущего носителя.
-   */
   private async resolveCurrentBearer(args: {
     tenantId: string;
     roleId: string;
@@ -630,11 +494,6 @@ export class ExecutablePersonaBuildService {
     return all[0]?.personId ?? null;
   }
 
-  /**
-   * Б13 — SETNX-лок на role-путь buildForRole (TTL 120с, на время LLM-вызова).
-   * fail-open: нет Redis / ошибка → разрешаем сборку (корректность держит
-   * partial-unique индекс executable_personas_one_active_per_role).
-   */
   private async acquireRoleLock(key: string): Promise<boolean> {
     if (!this.redis) return true;
     try {
@@ -653,14 +512,9 @@ export class ExecutablePersonaBuildService {
     if (!this.redis) return;
     try {
       await this.redis.client.del(key);
-    } catch {
-      // best-effort: лок и сам истечёт по TTL.
-    }
+    } catch {}
   }
 
-  /** Ф7 (H) — схлопывает черты по conceptId (один представитель на концепт):
-   *  max observationCount, при равенстве — выше confidence. conceptId=null —
-   *  оставляем как есть (не схлопываем). Порядок остальных сохраняется. */
   private dedupeTraitsByConcept(traits: SkillTrait[]): SkillTrait[] {
     const rank: Record<string, number> = { high: 3, medium: 2, low: 1 };
     const byConcept = new Map<string, SkillTrait>();
@@ -681,7 +535,6 @@ export class ExecutablePersonaBuildService {
         (t.observationCount === cur.observationCount &&
           (rank[t.confidence] ?? 0) > (rank[cur.confidence] ?? 0));
       if (better) {
-        // заменить представителя в out на текущий
         const idx = out.indexOf(cur);
         if (idx >= 0) out[idx] = t;
         byConcept.set(t.conceptId, t);
@@ -690,10 +543,6 @@ export class ExecutablePersonaBuildService {
     return out;
   }
 
-  /**
-   * ИНТ.1 (R9) — топ-5 активных черт профиля заданного слоя
-   * (value / motivation / process_marker). Сортировка — как у skill-черт.
-   */
   private findTopTraitsByLayer(args: {
     profileId: string;
     layer: 'value' | 'motivation' | 'process_marker';
@@ -705,10 +554,6 @@ export class ExecutablePersonaBuildService {
     });
   }
 
-  /**
-   * ИНТ.1 (R9) — агрегация черт слоя по нескольким профилям (для role-persona):
-   * топ-3 на человека → общий пул → dedupe по концепту → cap 5.
-   */
   private async aggregateLayerTraitsForProfiles(args: {
     profileIds: string[];
     layer: 'value' | 'motivation' | 'process_marker';
@@ -721,11 +566,8 @@ export class ExecutablePersonaBuildService {
         layer: args.layer,
       },
       orderBy: [{ confidence: 'desc' }, { observationCount: 'desc' }],
-      // Safety-cap: до 50 профилей × топ-3 — 300 строк с запасом.
       take: 300,
     });
-    // rows отсортированы глобально → относительный порядок внутри профиля
-    // сохраняется; берём первые 3 на профиль.
     const perProfileCount = new Map<string, number>();
     const picked: SkillTrait[] = [];
     for (const row of rows) {
@@ -737,11 +579,6 @@ export class ExecutablePersonaBuildService {
     return this.dedupeTraitsByConcept(picked).slice(0, 5);
   }
 
-  /**
-   * ИНТ.1 (R9) — активная роль person'а: union PersonRole(validTo=null) +
-   * Appointment(active/acting, validTo=null) — обратный вариант паттерна из
-   * `role-principle-synthesis.service.ts`. Берём первый roleId; нет роли → null.
-   */
   private async findActiveRoleIdForPerson(args: {
     tenantId: string;
     personId: string;
@@ -767,17 +604,9 @@ export class ExecutablePersonaBuildService {
         take: 5,
       }),
     ]);
-    return (
-      [...personRoleRows, ...appointmentRows].map((r) => r.roleId)[0] ?? null
-    );
+    return [...personRoleRows, ...appointmentRows].map((r) => r.roleId)[0] ?? null;
   }
 
-  /**
-   * ИНТ.1 (R9) — нормализует PracticeSkill из БД-формата (Json-поля как
-   * unknown) в формат user-шаблона v2. Безопасно к мусорному Json: скилл с
-   * битыми/пустыми steps или без триггера пропускается, сборка не падает
-   * (паттерн `toPromptSkills` из clones.service.ts).
-   */
   private parsePracticeSkillsForPrompt(
     rows: ReadonlyArray<{ trigger: unknown; steps: unknown; redFlags: unknown }>,
   ): PersonaCompilePracticeSkillInput[] {
@@ -787,9 +616,7 @@ export class ExecutablePersonaBuildService {
       if (trigger.length === 0) continue;
       const stepsArr = Array.isArray(s.steps) ? s.steps : [];
       const steps = stepsArr
-        .filter(
-          (st): st is Record<string, unknown> => !!st && typeof st === 'object',
-        )
+        .filter((st): st is Record<string, unknown> => !!st && typeof st === 'object')
         .map((st, idx) => ({
           order: typeof st.order === 'number' ? st.order : idx + 1,
           action: typeof st.action === 'string' ? st.action.trim() : '',
@@ -797,21 +624,13 @@ export class ExecutablePersonaBuildService {
         .filter((st) => st.action.length > 0);
       if (steps.length === 0) continue;
       const redFlags = Array.isArray(s.redFlags)
-        ? (s.redFlags as unknown[]).filter(
-            (v): v is string => typeof v === 'string',
-          )
+        ? (s.redFlags as unknown[]).filter((v): v is string => typeof v === 'string')
         : [];
       out.push({ trigger, steps, redFlags });
     }
     return out;
   }
 
-  /**
-   * ИНТ.1 (R9) — компиляция persona-prompt по v2-шаблонам (секционная сборка
-   * из всех слоёв метода). Новые слои опциональны (default []) — при пустых
-   * выход эквивалентен прежнему v1-поведению (только черты).
-   * taskType НЕ меняется ('executable-persona-compile').
-   */
   private async compilePersonaPrompt(args: {
     tenantId: string;
     personName: string;
@@ -828,7 +647,6 @@ export class ExecutablePersonaBuildService {
     practiceSkills?: ReadonlyArray<PersonaCompilePracticeSkillInput>;
     processMarkers?: ReadonlyArray<PersonaCompileTraitInput>;
   }): Promise<string | null> {
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (traits, исходно из транскриптов).
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = EXECUTABLE_PERSONA_COMPILE_V2_USER_TEMPLATE({
       personName: args.personName,
@@ -855,8 +673,6 @@ export class ExecutablePersonaBuildService {
         userMessage: guardOn ? wrapUserData(rawUser) : rawUser,
         tenantId: args.tenantId,
         dataClass: 'internal',
-        // ТЗ 2026-05-25 LLM-architecture §10.4 Find 1 — текст persona 300-800
-        // слов + thinking-токены DeepSeek-Pro. На дефолтных 4096 проваливается.
         maxTokens: 8_000,
       });
     } catch (err) {

@@ -1,36 +1,27 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { Eye, RefreshCw } from 'lucide-react';
+import { useMemo, useState } from "react";
+import { Eye, RefreshCw } from "lucide-react";
 
 import {
   extractTemplateVariables,
   renderEmailPreview,
   type EmailTemplateItemDomain,
-} from '@/domain/admin-email-template';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
+} from "@/domain/admin-email-template";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
 
 type Props = {
   template: EmailTemplateItemDomain;
 };
 
-/**
- * Превью шаблона: подставляет mock-значения в `{{var}}` и `{{{var}}}` и
- * отображает результат в `<pre>`-блоке. Поддержки `{{#if}}` / `{{#each}}`
- * нет — для них нужен полный Handlebars-runtime, который тащить в браузер
- * слишком дорого (около 70 KB). Если в шаблоне есть helper-блоки —
- * показываем их сырыми, чтобы оператор это увидел.
- */
 export function EmailPreviewPanel({ template }: Props) {
   const usedVars = useMemo(
     () => extractTemplateVariables(`${template.subject}\n${template.body}`),
     [template.subject, template.body],
   );
 
-  // Начальные mock-значения: подсказка из template.variables, fallback —
-  // `<имя_переменной>`.
   const initialMockValues = useMemo<Record<string, string>>(() => {
     const out: Record<string, string> = {};
     for (const k of usedVars) {
@@ -43,9 +34,6 @@ export function EmailPreviewPanel({ template }: Props) {
   const [mockValues, setMockValues] =
     useState<Record<string, string>>(initialMockValues);
 
-  // Если шаблон сменился — пересоздаём mock-значения.
-  // (initialMockValues — useMemo, поэтому ref-equality меняется при смене шаблона.)
-  // Сброс через кнопку «Сбросить mock».
   const renderedSubject = renderEmailPreview(template.subject, mockValues);
   const renderedBody = renderEmailPreview(template.body, mockValues);
 
@@ -73,7 +61,7 @@ export function EmailPreviewPanel({ template }: Props) {
                 </Label>
                 <Input
                   id={`mock-${k}`}
-                  value={mockValues[k] ?? ''}
+                  value={mockValues[k] ?? ""}
                   onChange={(e) =>
                     setMockValues((prev) => ({ ...prev, [k]: e.target.value }))
                   }
@@ -94,13 +82,13 @@ export function EmailPreviewPanel({ template }: Props) {
           <div>
             <Label className="text-xs text-fg-tertiary">Тема</Label>
             <p className="mt-1 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm">
-              {renderedSubject || '—'}
+              {renderedSubject || "—"}
             </p>
           </div>
           <div>
             <Label className="text-xs text-fg-tertiary">Тело</Label>
             <pre className="mt-1 whitespace-pre-wrap rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 font-sans text-sm">
-              {renderedBody || '—'}
+              {renderedBody || "—"}
             </pre>
           </div>
         </div>

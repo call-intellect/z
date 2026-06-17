@@ -1,32 +1,17 @@
-/**
- * TZ-1 Фаза 4.A (daily-value-engine) — чистая логика ленты идей: ре-ранк +
- * морфинг статуса при закрытии связанной задачи.
- *
- * Без зависимостей от Prisma/NestJS — unit-тестируется без БД/времени.
- * Сделано ПО ОБРАЗЦУ insights.service.getTop (re-rank виджета), но для Idea:
- * вес идеи + свежесть обсуждения + связь с целью.
- */
-
 import type { IdeaStatus } from '@prisma/client';
 
-/** Параметры ре-ранка топа идей (источник — AdminSetting). */
 export interface IdeasRerankWeights {
-  /** Вклад нормированного `weight` идеи. */
   weight: number;
-  /** Вклад свежести (`lastDiscussedAt`, чем свежее — тем выше). */
   freshness: number;
-  /** Бонус за привязку к цели (`goalId != null`). */
   goalLink: number;
 }
 
-/** Дефолтные веса ре-ранка. */
 export const DEFAULT_IDEAS_RERANK_WEIGHTS: IdeasRerankWeights = {
   weight: 1,
   freshness: 0.5,
   goalLink: 0.75,
 };
 
-/** Окно свежести (дней): идея, обсуждавшаяся `>= freshnessDays` назад, даёт 0. */
 export const DEFAULT_IDEAS_FRESHNESS_DAYS = 30;
 
 export interface IdeaRerankInput {
@@ -41,13 +26,6 @@ export interface IdeaRerankScored<T extends IdeaRerankInput> {
   score: number;
 }
 
-/**
- * Скор одной идеи. Чистая функция.
- *   - `weight` нормируется лог-сжатием (1 + ln(1 + weight)) — крупные веса не
- *     должны полностью подавлять свежесть/цель.
- *   - свежесть: линейный спад от 1 (сегодня) до 0 (>= freshnessDays назад).
- *   - бонус за goalLink — фиксированный, если есть `goalId`.
- */
 export function scoreIdea(
   item: IdeaRerankInput,
   now: Date,
@@ -57,8 +35,7 @@ export function scoreIdea(
   const w = safeNonNeg(item.weight);
   const weightTerm = Math.log1p(w) * safeNumber(weights.weight);
 
-  const ageDays =
-    (now.getTime() - item.lastDiscussedAt.getTime()) / 86_400_000;
+  const ageDays = (now.getTime() - item.lastDiscussedAt.getTime()) / 86_400_000;
   const fd = safeNonNeg(freshnessDays) || DEFAULT_IDEAS_FRESHNESS_DAYS;
   const freshnessRatio = clamp01(1 - safeNonNeg(ageDays) / fd);
   const freshnessTerm = freshnessRatio * safeNumber(weights.freshness);
@@ -69,10 +46,6 @@ export function scoreIdea(
   return Math.round(score * 10_000) / 10_000;
 }
 
-/**
- * Ре-ранк списка идей по `weight` + свежесть + связь с целью. Чистая функция.
- * Стабильная сортировка по score desc, тай-брейкер — `weight` desc, затем `id`.
- */
 export function rerankIdeas<T extends IdeaRerankInput>(
   items: T[],
   now: Date,
@@ -93,12 +66,6 @@ export function rerankIdeas<T extends IdeaRerankInput>(
   return scored;
 }
 
-// ───────────────────────── авто-морфинг статуса ─────────────────────────
-
-/**
- * Линейный жизненный цикл идеи (без rejected/archived, которые ставит человек):
- *   captured → in_discussion → accepted → in_progress → shipped.
- */
 export const IDEA_STATUS_LADDER: IdeaStatus[] = [
   'captured',
   'in_discussion',
@@ -107,21 +74,7 @@ export const IDEA_STATUS_LADDER: IdeaStatus[] = [
   'shipped',
 ];
 
-/**
- * Следующий статус идеи при закрытии связанной задачи. Чистая функция.
- *
- * Правила:
- *   - если идея уже `shipped` / `rejected` / `archived` — терминал, `null`
- *     (ничего не двигаем).
- *   - закрытие задачи — сильный сигнал «гипотеза доведена». Если идея уже была
- *     `in_progress` — двигаем сразу в `shipped` (релиз). Иначе — на одну
- *     ступень вверх по лестнице.
- *
- * Возвращает `null`, если продвигать не нужно (терминал / неизвестный статус).
- */
-export function nextIdeaStatusOnTaskClose(
-  current: IdeaStatus,
-): IdeaStatus | null {
+export function nextIdeaStatusOnTaskClose(current: IdeaStatus): IdeaStatus | null {
   if (current === 'shipped' || current === 'rejected' || current === 'archived') {
     return null;
   }

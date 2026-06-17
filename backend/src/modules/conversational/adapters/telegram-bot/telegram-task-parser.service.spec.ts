@@ -6,18 +6,6 @@ import type { LlmRouterService } from '../../../ai/services/llm-router.service';
 
 import { TelegramTaskParserService } from './telegram-task-parser.service';
 
-/**
- * Unit-тесты `TelegramTaskParserService`:
- *   - parseCreateTask: LLM возвращает JSON → IntakeIssue создан, маппинг
- *     hint→userId/projectId работает, autoTriageEnqueued взведён по порогу.
- *   - parseCreateTask: пустой текст → 'empty_text', LLM пустой/невалидный
- *     → 'llm_failed'.
- *   - parseForwardToTask: source='telegram_forward'.
- *   - classifyReply: status_command + statusAction → правильный action;
- *     невалидный JSON → fallback на эвристику.
- *   - formulateDigest: пустой payload → null; LLM ошибка → fallback markdown.
- */
-
 interface PrismaMock {
   intakeIssue: { create: ReturnType<typeof vi.fn> };
   person: { findMany: ReturnType<typeof vi.fn> };
@@ -30,9 +18,11 @@ interface PrismaMock {
 function makePrisma(): PrismaMock {
   return {
     intakeIssue: {
-      create: vi.fn().mockImplementation((args: { data: { id?: string } }) =>
-        Promise.resolve({ id: 'intake-1', ...args.data }),
-      ),
+      create: vi
+        .fn()
+        .mockImplementation((args: { data: { id?: string } }) =>
+          Promise.resolve({ id: 'intake-1', ...args.data }),
+        ),
     },
     person: { findMany: vi.fn().mockResolvedValue([]) },
     project: {
@@ -47,10 +37,7 @@ function makeLlm(): LlmRouterService {
 }
 
 function makeParser(prisma: PrismaMock, llm: LlmRouterService): TelegramTaskParserService {
-  return new TelegramTaskParserService(
-    prisma as unknown as PrismaService,
-    llm,
-  );
+  return new TelegramTaskParserService(prisma as unknown as PrismaService, llm);
 }
 
 describe('TelegramTaskParserService', () => {
@@ -82,14 +69,9 @@ describe('TelegramTaskParserService', () => {
         cachedTokens: 0,
         durationMs: 500,
       });
-      // person match: loadOrgContext (first call) → [], resolveAssigneeId
-      // (second call) → один кандидат с userId.
       prisma.person.findMany
-        .mockResolvedValueOnce([]) // loadOrgContext
-        .mockResolvedValueOnce([
-          { userId: 'u-ivanov', name: 'Иванов Сергей' },
-        ]); // resolveAssigneeId
-      // project match — точный по identifier.
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ userId: 'u-ivanov', name: 'Иванов Сергей' }]);
       prisma.project.findFirst.mockResolvedValueOnce({ id: 'proj-1' });
 
       const result = await parser.parseCreateTask({
@@ -111,7 +93,6 @@ describe('TelegramTaskParserService', () => {
         suggestedPriority: 'high',
       });
 
-      // Создание IntakeIssue с source='telegram'.
       expect(prisma.intakeIssue.create).toHaveBeenCalledOnce();
       const createCalls = prisma.intakeIssue.create.mock.calls;
       const firstCall = createCalls[0];
@@ -187,8 +168,6 @@ describe('TelegramTaskParserService', () => {
       expect(result.reason).toBe('llm_failed');
     });
 
-    // Ф7 (интент): SYSTEM-промпт извлекателя содержит негативный класс
-    // «не задача» (вопрос/команда/статус ≠ обещание).
     it('SYSTEM содержит негативный класс «не задача» (Ф7)', async () => {
       vi.mocked(llm.call).mockResolvedValueOnce({
         text: JSON.stringify({ title: 'X', confidence: 0.3 }),
@@ -212,8 +191,6 @@ describe('TelegramTaskParserService', () => {
       expect(callArg!.systemPrompt).toContain('запрос ответа, не поручение');
     });
 
-    // Ф7: когда LLM (следуя инструкции) распознаёт вопрос как «не задачу» и
-    // возвращает пустой title — парсер не создаёт IntakeIssue (reason=llm_failed).
     it('на вопрос «/actions» с пустым title → IntakeIssue НЕ создан', async () => {
       vi.mocked(llm.call).mockResolvedValueOnce({
         text: JSON.stringify({ title: '', confidence: 0 }),
@@ -361,7 +338,6 @@ describe('TelegramTaskParserService', () => {
         replyText: 'обычный текст без команды',
         relatedIssueId: 'issue-1',
       });
-      // Эвристика — попадёт в comment как fallback.
       expect(r.kind).toBe('comment');
     });
 

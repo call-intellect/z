@@ -1,27 +1,3 @@
-/**
- * Agent-chain overhaul Фаза 4.1 (2026-06-08) — Seed маршрута LLM для
- * `goal-task-link` (Specialist 3-14 / GoalTaskLinkerService).
- *
- *   - goal-task-link — батч-арбитр авто-привязки задач встречи к AI-цели:
- *     один вызов на цель (цель + список ungoaled-задач встречи) → по каждой
- *     задаче { develops, confidence }. Дешёвый арбитр, JSON Schema strict.
- *     За флагом goals.goalTaskLinkEnabled (DEFAULT OFF) — но маршрут должен
- *     существовать, иначе при включении флага вызов поедет по аварийному
- *     DEFAULT_FALLBACK_CHAIN.
- *
- * Цепочка (НЕ anthropic — memory `project_z_infra_and_ai`):
- *   goal-task-link: deepseek/deepseek-v4-flash → openai-via-proxy/gpt-5.4-mini → ollama/qwen3.5:9b
- *
- * Запуск:
- *   bun run scripts/seed-llm-task-routes-goal-task-link.ts
- *   bun run scripts/seed-llm-task-routes-goal-task-link.ts --update-existing
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Записи с `editedByAdmin=true` НЕ перезаписываются.
- *   - Без флага — пропускаем существующие записи (insert only).
- *   - С `--update-existing` — обновляем model/priority/isActive (НЕ editedByAdmin).
- */
-
 import { type LlmRouteTier } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -95,17 +71,13 @@ async function applySeed(
       });
       stats.inserted++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-      );
+      console.log(`[insert] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
       continue;
     }
     if (existing.editedByAdmin) {
       stats.protectedByAudit++;
       // eslint-disable-next-line no-console
-      console.log(
-        `[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`,
-      );
+      console.log(`[skip:edited-by-admin] ${seed.taskType}/${entry.tier}/${entry.providerName}`);
       continue;
     }
     if (!updateExisting) {
@@ -130,9 +102,7 @@ async function applySeed(
     });
     stats.updated++;
     // eslint-disable-next-line no-console
-    console.log(
-      `[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`,
-    );
+    console.log(`[update] ${seed.taskType}/${entry.tier}/${entry.providerName}:${entry.model}`);
   }
 }
 

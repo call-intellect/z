@@ -1,17 +1,13 @@
-import type { Metadata } from 'next';
+import type { Metadata } from "next";
 
-import { ProjectViewShell } from '../../../ProjectViewShell';
+import { ProjectViewShell } from "../../../ProjectViewShell";
 
-import { BoardClient } from './BoardClient';
+import { BoardClient } from "./BoardClient";
 
 export const metadata: Metadata = {
-  title: 'Доска',
+  title: "Доска",
 };
 
-/**
- * Tracker Boards (2026-05-27) — канбан выбранной доски.
- * Маршрут: `/projects/[slug]/boards/[boardId]/board`.
- */
 export default async function ProjectBoardPage({
   params,
 }: {

@@ -1,6 +1,6 @@
 # Knowledge Clone (Specialist 3.2) — что человек знает
 
-> Sub-TZ: [`plans/tz/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md`](../../plans/tz/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md). Зонтичный: [`plans/tz/2026-05-21-second-brain-agents-umbrella.md`](../../plans/tz/2026-05-21-second-brain-agents-umbrella.md) §3.4.
+> Sub-TZ: [`plans/archive/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md`](../../plans/archive/2026-05-21-sba-beta-2-specialist-3-2-knowledge-clone.md). Зонтичный: [`plans/archive/2026-05-21-second-brain-agents-umbrella.md`](../../plans/archive/2026-05-21-second-brain-agents-umbrella.md) §3.4.
 
 ## Зачем
 

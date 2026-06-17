@@ -4,35 +4,6 @@ import type { PromptFeedback } from '@prisma/client';
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 
-/**
- * Agents v2 Фаза C2 (2026-05-30) — GepaRunnerService.
- *
- * Вызывает GEPA optimization в ОТДЕЛЬНОМ контейнере `z-gepa` по HTTP. См.
- * `backend/python/gepa/server.py` (FastAPI), `backend/python/Dockerfile` и
- * `plans/tz/2026-05-29-agents-v2-umbrella.md` §C2.
- *
- * До 2026-06 Python запускался через `child_process.spawn` ВНУТРИ контейнера
- * backend — раздувало образ pip-зависимостями и плодило дочерние процессы в API.
- * Теперь GEPA крутится отдельным сервисом, backend ходит сюда по
- * `POST {GEPA_SERVICE_URL}/optimize`.
- *
- * Workflow:
- *   1. `runOptimization(promptKey, feedback, seedPrompt)` строит reflective
- *      dataset из feedback и POST'ит JSON-payload на gepa-сервис.
- *   2. Ждёт JSON-ответ (с hard-timeout cfg.gepa.timeoutMs через AbortController).
- *   3. Парсит ответ → `{ candidates: [{ text, metrics, traces }], costUsd? }`.
- *   4. Если сервис недоступен (connection refused / DNS) или timeout — лог warn
- *      + возвращает пустой массив (cron не падает).
- *
- * GepaRunner НЕ записывает candidates в БД — это делает caller (cron).
- * GepaRunner НЕ грузит prompt из БД — caller передаёт `seedPrompt` явно.
- *
- * Метрики:
- *   - `incGepaOptimization({promptKey, status: 'success'|'failed'|'timeout'|'skipped_no_python'})`
- *     ('skipped_no_python' = gepa-сервис недоступен; имя сохранено для
- *     совместимости с существующими дашбордами/метриками).
- *   - `incGepaCost({tenantTop, costUsd})` (если runner вернул cost_usd)
- */
 @Injectable()
 export class GepaRunnerService {
   private readonly logger = new Logger(GepaRunnerService.name);
@@ -44,17 +15,6 @@ export class GepaRunnerService {
     private readonly metrics?: BusinessMetricsService,
   ) {}
 
-  /**
-   * Главный entry-point. Caller (gepa-optimize cron) передаёт:
-   *   - `promptKey` — для логирования + метрики.
-   *   - `feedback` — массив PromptFeedback (последние 30 дней).
-   *   - `seedPrompt` — текущий system prompt из LlmTaskRoute.promptOverride
-   *     либо code-fallback prompt.
-   *   - `tenantTop` (опц.) — bucket для cost-метрики.
-   *
-   * Если Python недоступен / subprocess упал — `candidates: []` + лог warn.
-   * Cron не должен падать из-за отсутствия Python в окружении.
-   */
   async runOptimization(args: {
     promptKey: string;
     feedback: PromptFeedback[];
@@ -71,8 +31,7 @@ export class GepaRunnerService {
     const reflectiveDataset = feedback
       .filter((f) => f.editedOutput != null && f.editedOutput.length > 0)
       .map((f) => ({
-        input: f.inputDigest, // первичный ключ группировки; полный input
-        // не пробрасываем (PII, размер) — GEPA эволюционирует prompt по diff.
+        input: f.inputDigest,
         original: f.originalOutput,
         edited: f.editedOutput ?? '',
         edit_distance: f.editDistance ?? null,
@@ -117,29 +76,21 @@ export class GepaRunnerService {
         this.metrics?.incGepaOptimization({ promptKey, status: 'timeout' });
         return { candidates: [], costUsd: null };
       }
-      this.logger.warn(
-        `GEPA: service call failed для promptKey=${promptKey}: ${msg}`,
-      );
+      this.logger.warn(`GEPA: service call failed для promptKey=${promptKey}: ${msg}`);
       this.metrics?.incGepaOptimization({ promptKey, status: 'failed' });
       return { candidates: [], costUsd: null };
     }
 
     if (result.error) {
-      this.logger.warn(
-        `GEPA runner returned error для promptKey=${promptKey}: ${result.error}`,
-      );
+      this.logger.warn(`GEPA runner returned error для promptKey=${promptKey}: ${result.error}`);
       this.metrics?.incGepaOptimization({ promptKey, status: 'failed' });
       return { candidates: [], costUsd: null };
     }
 
-    const candidates: PromptCandidateResult[] = (
-      result.pareto_frontier ?? []
-    ).map((c) => ({
+    const candidates: PromptCandidateResult[] = (result.pareto_frontier ?? []).map((c) => ({
       text: typeof c.text === 'string' ? c.text : '',
       metrics:
-        c.metrics && typeof c.metrics === 'object'
-          ? (c.metrics as Record<string, number>)
-          : {},
+        c.metrics && typeof c.metrics === 'object' ? (c.metrics as Record<string, number>) : {},
       traces: Array.isArray(c.traces) ? c.traces : [],
     }));
 
@@ -160,26 +111,10 @@ export class GepaRunnerService {
     return { candidates, costUsd };
   }
 
-  /**
-   * HTTP-вызов gepa-сервиса (`POST {serviceUrl}/optimize`). Тело — тот же
-   * JSON-payload, что раньше уходил в stdin subprocess'а; ответ — тот же JSON,
-   * что раньше приходил из stdout.
-   *
-   * timeout: cfg.gepa.timeoutMs (default 1ч) через AbortController.
-   * Различаем три класса ошибок по тексту message (caller матчит по подстроке):
-   *   - 'timeout'      — превышен hard-timeout (AbortError).
-   *   - 'unavailable'  — сервис не отвечает (connection refused / DNS / 5xx).
-   *   - прочее         — невалидный ответ → caller пометит status='failed'.
-   */
-  private async callGepaService(
-    payload: Record<string, unknown>,
-  ): Promise<GepaRunnerOutput> {
+  private async callGepaService(payload: Record<string, unknown>): Promise<GepaRunnerOutput> {
     const url = `${this.cfg.gepa.serviceUrl.replace(/\/+$/, '')}/optimize`;
     const controller = new AbortController();
-    const timer = setTimeout(
-      () => controller.abort(),
-      this.cfg.gepa.timeoutMs,
-    );
+    const timer = setTimeout(() => controller.abort(), this.cfg.gepa.timeoutMs);
 
     let res: Response;
     try {
@@ -193,7 +128,6 @@ export class GepaRunnerService {
       if (err instanceof Error && err.name === 'AbortError') {
         throw new Error(`GEPA service timeout`, { cause: err });
       }
-      // fetch failed / ECONNREFUSED / ENOTFOUND — сервис недоступен.
       const msg = err instanceof Error ? err.message : String(err);
       throw new Error(`GEPA service unavailable: ${msg}`, { cause: err });
     } finally {
@@ -217,8 +151,6 @@ export class GepaRunnerService {
     }
   }
 }
-
-// ─────────────────────────── Types ──────────────────────────────────────────
 
 export interface PromptCandidateResult {
   text: string;

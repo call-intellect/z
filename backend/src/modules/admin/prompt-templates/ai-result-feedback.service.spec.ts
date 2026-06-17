@@ -1,12 +1,3 @@
-/**
- * Фаза A.3 — unit-тесты на AiResultFeedbackService.
- *
- * Покрытие (≥3 сценария по DoD):
- *   1) upsert — создаёт реакцию.
- *   2) upsert — обновляет реакцию (повторный POST с другим reaction).
- *   3) upsert — несуществующая встреча → NotFound.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -74,7 +65,6 @@ describe('AiResultFeedbackService.upsert', () => {
       userId: 'u-1',
       dto: { reaction: 'negative' },
     });
-    // Второй вызов передал update.reaction='negative'.
     const call2 = upsertMock.mock.calls[1]?.[0] as { update: { reaction: string } };
     expect(call2.update.reaction).toBe('negative');
   });

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { motion } from 'motion/react';
+import { motion } from "motion/react";
 import {
   Briefcase,
   Users,
@@ -9,19 +9,11 @@ import {
   FileText,
   ArrowRight,
   type LucideIcon,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { fadeIn, slideUp } from '@/ui/motion';
-import { PreviewSwitcher } from '../leak-shared';
+import { fadeIn, slideUp } from "@/ui/motion";
+import { PreviewSwitcher } from "../leak-shared";
 
-/**
- * Дизайн-preview — секция «дырки в выручке», вариант 2: **Дырки и заплатки**.
- *
- * Заголовок + 5 строк-пар: иконка-проблема → решение Корой. Каждая пара —
- * компактный row с hairline-картой. Конкретные боли привязаны к 12 нашим
- * инструментам. Хорошо для убеждения: показывает не «что мы умеем»,
- * а «какую дырку затыкаем».
- */
 type Leak = {
   icon: LucideIcon;
   leak: string;
@@ -31,28 +23,28 @@ type Leak = {
 const LEAKS: Leak[] = [
   {
     icon: Briefcase,
-    leak: 'Обещания клиентам теряются на встречах',
-    fix: 'Кора слышит и помнит каждое — задача появляется сама',
+    leak: "Обещания клиентам теряются на встречах",
+    fix: "Кора слышит и помнит каждое — задача появляется сама",
   },
   {
     icon: Users,
-    leak: 'Знания уходят вместе с сотрудниками',
-    fix: 'Цифровой двойник остаётся, отвечает за человека',
+    leak: "Знания уходят вместе с сотрудниками",
+    fix: "Цифровой двойник остаётся, отвечает за человека",
   },
   {
     icon: ListChecks,
-    leak: 'Задачи проваливаются между совещаний',
-    fix: 'Трекер собирает их из встреч и переписок сам',
+    leak: "Задачи проваливаются между совещаний",
+    fix: "Трекер собирает их из встреч и переписок сам",
   },
   {
     icon: Brain,
-    leak: 'Принимаете решения — забываете причины',
-    fix: 'Все решения в общей памяти со ссылкой на источник',
+    leak: "Принимаете решения — забываете причины",
+    fix: "Все решения в общей памяти со ссылкой на источник",
   },
   {
     icon: FileText,
-    leak: 'Совещания заканчиваются без итогов',
-    fix: 'AI-отчёт под тип встречи через минуту',
+    leak: "Совещания заканчиваются без итогов",
+    fix: "AI-отчёт под тип встречи через минуту",
   },
 ];
 
@@ -64,22 +56,21 @@ export default function LeakV2Page() {
         className="pointer-events-none fixed inset-0 -z-0"
         style={{
           background:
-            'radial-gradient(circle at 18% 8%, rgba(94,234,212,0.12), transparent 55%), radial-gradient(circle at 85% 78%, rgba(94,234,212,0.07), transparent 60%)',
+            "radial-gradient(circle at 18% 8%, rgba(94,234,212,0.12), transparent 55%), radial-gradient(circle at 85% 78%, rgba(94,234,212,0.07), transparent 60%)",
         }}
       />
 
       <PreviewSwitcher current="v2" />
 
       <section className="relative z-10 mx-auto max-w-6xl px-6 py-24 md:px-10 md:py-32">
-        {/* Заголовок секции */}
+        {}
         <motion.div
           variants={fadeIn}
           initial="initial"
           animate="animate"
           className="mb-4 inline-flex items-center gap-3 text-xs font-medium uppercase tracking-[0.22em] text-accent"
         >
-          <span className="h-px w-10 bg-accent" />
-          5 дыр · 1 инструмент
+          <span className="h-px w-10 bg-accent" />5 дыр · 1 инструмент
         </motion.div>
         <motion.h2
           variants={slideUp}
@@ -87,10 +78,10 @@ export default function LeakV2Page() {
           animate="animate"
           className="max-w-4xl text-3xl font-semibold tracking-tight md:text-5xl"
         >
-          Найди дырки, через которые{' '}
+          Найди дырки, через которые{" "}
           <span className="font-medium italic text-accent">
             утекает выручка
-          </span>{' '}
+          </span>{" "}
           твоей компании. А Кора их затыкает.
         </motion.h2>
         <motion.p
@@ -104,7 +95,7 @@ export default function LeakV2Page() {
           инструмент, который её закрывает.
         </motion.p>
 
-        {/* Строки-пары */}
+        {}
         <div className="mt-12 grid gap-3">
           {LEAKS.map((leak, i) => (
             <LeakRow key={leak.leak} {...leak} delay={i * 0.05} />
@@ -126,22 +117,17 @@ export default function LeakV2Page() {
   );
 }
 
-function LeakRow({
-  icon: Icon,
-  leak,
-  fix,
-  delay,
-}: Leak & { delay: number }) {
+function LeakRow({ icon: Icon, leak, fix, delay }: Leak & { delay: number }) {
   return (
     <motion.div
       variants={slideUp}
       initial="initial"
       whileInView="animate"
-      viewport={{ once: true, margin: '-50px' }}
+      viewport={{ once: true, margin: "-50px" }}
       transition={{ delay }}
       className="grid items-center gap-4 rounded-xl border border-border-subtle bg-bg-card/40 px-5 py-5 backdrop-blur-glass transition-colors hover:border-accent-border md:grid-cols-[auto_1fr_auto_1fr] md:gap-6 md:px-7"
     >
-      {/* Иконка-«дыра»: круг с разрывом, danger-тон */}
+      {}
       <div className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center">
         <span
           aria-hidden
@@ -150,22 +136,20 @@ function LeakRow({
         <Icon size={18} strokeWidth={1.75} className="text-danger/80" />
       </div>
 
-      {/* Проблема */}
+      {}
       <div className="text-base font-medium text-fg-primary md:text-lg">
         {leak}
       </div>
 
-      {/* Стрелка-разделитель */}
+      {}
       <ArrowRight
         size={18}
         strokeWidth={1.75}
         className="hidden text-accent md:block"
       />
 
-      {/* Решение */}
-      <div className="text-base leading-snug text-accent md:text-lg">
-        {fix}
-      </div>
+      {}
+      <div className="text-base leading-snug text-accent md:text-lg">{fix}</div>
     </motion.div>
   );
 }

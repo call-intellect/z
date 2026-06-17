@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
-import { ApiError } from '@/api/api-error';
-import { adminClonesApi } from '@/api/admin-clones.api';
-import type { AccessGrant } from '@/domain/admin-clone-access-grant';
-import { Button } from '@/ui/shadcn/button';
+import { ApiError } from "@/api/api-error";
+import { adminClonesApi } from "@/api/admin-clones.api";
+import type { AccessGrant } from "@/domain/admin-clone-access-grant";
+import { Button } from "@/ui/shadcn/button";
 import {
   Dialog,
   DialogContent,
@@ -15,14 +15,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
+} from "@/ui/shadcn/dialog";
 
-/**
- * Подтверждение отзыва гранта.
- *
- * Backend выполняет soft-revoke: запись остаётся в БД с `revokedAt`/`revokedBy`
- * для audit. Сотрудник теряет доступ сразу после ответа сервера.
- */
 export function RevokeGrantDialog({
   orgId,
   grant,
@@ -42,11 +36,11 @@ export function RevokeGrantDialog({
     setSubmitting(true);
     try {
       await adminClonesApi.revokeAccessGrant(orgId, grant.id);
-      toast.success('Доступ отозван');
+      toast.success("Доступ отозван");
       onRevoked();
     } catch (e) {
       const msg =
-        e instanceof ApiError ? e.message : 'Не удалось отозвать грант';
+        e instanceof ApiError ? e.message : "Не удалось отозвать грант";
       setError(msg);
     } finally {
       setSubmitting(false);
@@ -62,11 +56,11 @@ export function RevokeGrantDialog({
         <DialogHeader>
           <DialogTitle>Отозвать доступ?</DialogTitle>
           <DialogDescription>
-            Сотрудник{' '}
+            Сотрудник{" "}
             <strong className="text-fg-primary">
               {grant.grantedTo.userName}
-            </strong>{' '}
-            сразу потеряет возможность задавать вопросы клону{' '}
+            </strong>{" "}
+            сразу потеряет возможность задавать вопросы клону{" "}
             <strong className="text-fg-primary">{grant.cloneLabel}</strong>.
             Запись о выдаче и отзыве сохранится в журнале действий.
           </DialogDescription>
@@ -98,7 +92,7 @@ export function RevokeGrantDialog({
                 <Loader2 size={14} className="mr-1 animate-spin" /> Отзываем…
               </>
             ) : (
-              'Отозвать доступ'
+              "Отозвать доступ"
             )}
           </Button>
         </DialogFooter>

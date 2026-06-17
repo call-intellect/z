@@ -7,7 +7,7 @@ date: 2026-05-10
 
 # Журнал решений оркестратора
 
-Здесь фиксируется каждое спорное / архитектурное решение, принятое оркестратором (Claude) без явного подтверждения пользователя — согласно режиму работы из [plans/tz/2026-05-10-knowledge-core-tz.md](plans/tz/2026-05-10-knowledge-core-tz.md) и команды от 2026-05-10 «решения принимай сам, в конце собери файл».
+Здесь фиксируется каждое спорное / архитектурное решение, принятое оркестратором (Claude) без явного подтверждения пользователя — согласно режиму работы из [plans/archive/2026-05-10-knowledge-core-tz.md](plans/archive/2026-05-10-knowledge-core-tz.md) и команды от 2026-05-10 «решения принимай сам, в конце собери файл».
 
 Формат записи: дата → вопрос → принятое решение → обоснование → как откатить.
 
@@ -18,9 +18,9 @@ date: 2026-05-10
 **Вопрос.** Фазы 7 (Z-Admin + Org-Admin), 8 (Дашборд директора) и 9 (Цели + strategic alignment) описаны в родительском `knowledge-core-tz.md` высокоуровнево (Фаза 7 — ~150 строк, Фазы 8/9 — по 30 строк). Передавать их агенту-исполнителю напрямую — мало (Фазы 8/9 без шагов и файлов) либо избыточно перемешано с другими фазами (Фаза 7).
 
 **Решение.** Создаю **отдельные дочерние ТЗ** в `plans/tz/`:
-- `plans/tz/2026-05-10-phase-7-admin.md` — Z-Admin + Org-Admin (9 шагов, schema/guards/services/controllers/UI).
-- `plans/tz/2026-05-10-phase-8-director-dashboard.md` — Дашборд директора (6 шагов, role-based split).
-- `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md` — Goal/strategic-alignment (9 шагов, новая модель + воркер + cron + UI + расширение Фазы 8).
+- `plans/archive/2026-05-10-phase-7-admin.md` — Z-Admin + Org-Admin (9 шагов, schema/guards/services/controllers/UI).
+- `plans/archive/2026-05-10-phase-8-director-dashboard.md` — Дашборд директора (6 шагов, role-based split).
+- `plans/archive/2026-05-10-phase-9-goals-strategic-alignment.md` — Goal/strategic-alignment (9 шагов, новая модель + воркер + cron + UI + расширение Фазы 8).
 
 В родительском `knowledge-core-tz.md` оставляем высокоуровневое описание + ссылку на дочернее ТЗ.
 
@@ -36,7 +36,7 @@ date: 2026-05-10
 
 ## 2026-05-10 — Архитектурные развилки в Фазе 7 (Z-Admin)
 
-**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-7-admin.md` §«Архитектурные решения»):
+**Зафиксированные ключевые решения** (полный список — в `plans/archive/2026-05-10-phase-7-admin.md` §«Архитектурные решения»):
 
 1. **Два guard'а** (`SuperAdminGuard` для `/api/v1/admin/*`, `OrgAdminGuard` для `/api/v1/org-admin/*`) — не один общий с `?scope=` параметром. Унификация на уровне сервисов через `{scope: 'global'|'org', tenantId?}`.
 2. **`SuperAdminAccessLog`** — новая таблица для compliance: каждое drill-down действие super_admin'а пишется через `SuperAdminAuditInterceptor`. Email-отчёт — vNext.
@@ -52,7 +52,7 @@ date: 2026-05-10
 
 ## 2026-05-10 — Архитектурные развилки в Фазе 8 (Дашборд директора)
 
-**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-8-director-dashboard.md`):
+**Зафиксированные ключевые решения** (полный список — в `plans/archive/2026-05-10-phase-8-director-dashboard.md`):
 
 1. **Один эндпоинт `GET /api/v1/dashboard/director?period=`** — все 6 виджетов одним ответом (не отдельные `/widgets/themes`, `/widgets/signals`). Cache key один на всю страницу.
 2. **Период `week|month`** — `custom from/to` отнесён в vNext.
@@ -66,7 +66,7 @@ date: 2026-05-10
 
 ## 2026-05-10 — Архитектурные развилки в Фазе 9 (Цели + strategic alignment)
 
-**Зафиксированные ключевые решения** (полный список — в `plans/tz/2026-05-10-phase-9-goals-strategic-alignment.md`):
+**Зафиксированные ключевые решения** (полный список — в `plans/archive/2026-05-10-phase-9-goals-strategic-alignment.md`):
 
 1. **3 новые модели** `Goal`, `GoalTheme`, `GoalAlignmentSnapshot` + 2 enum'а (`GoalStatus`, `GoalThemeSource`). Snapshot **иммутабельный**, перерасчёт = новый snapshot.
 2. **Кэш `cachedAlignment*` в `Goal`** для быстрого чтения списка без JOIN'а на последний snapshot. Атомарно обновляется в транзакции воркера.

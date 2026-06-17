@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { History, Loader2 } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { History, Loader2 } from "lucide-react";
 
 import {
   Sheet,
@@ -9,9 +9,9 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from '@/ui/shadcn/sheet';
-import { apiClient } from '@/api/api-client';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/ui/shadcn/sheet";
+import { apiClient } from "@/api/api-client";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 export type AdminSettingHistoryEntry = {
   id?: string;
@@ -23,30 +23,12 @@ export type AdminSettingHistoryEntry = {
 };
 
 type Props = {
-  /** Ключ настройки, история которой загружается. */
   settingKey: string | null;
-  /** Управление открытием снаружи. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /**
-   * Альтернативный источник истории — если уже есть в памяти (из
-   * `useAdminSettingEditor`). Если задан — fetch не выполняется.
-   */
   history?: AdminSettingHistoryEntry[];
 };
 
-/**
- * AdminSettingHistoryDrawer — боковая панель со списком предыдущих
- * значений для одного ключа AdminSetting.
- *
- * При открытии без `history` — тянет `GET /admin/settings/:key/history`
- * (бэкенд этого эндпоинта появится в этой же фазе). При 404 / отсутствии
- * данных показывает «История пуста».
- *
- * Подсветка изменённых полей не реализуется на уровне json-diff — для MVP
- * рендерим «было» / «стало» как два json-блока рядом. Visual diff —
- * следующий шаг (Фаза 2+).
- */
 export function AdminSettingHistoryDrawer({
   settingKey,
   open,
@@ -81,7 +63,9 @@ export function AdminSettingHistoryDrawer({
       .catch((err: unknown) => {
         if (cancelled) return;
         setHistory([]);
-        setError(err instanceof Error ? err.message : 'Не удалось загрузить историю');
+        setError(
+          err instanceof Error ? err.message : "Не удалось загрузить историю",
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -94,7 +78,10 @@ export function AdminSettingHistoryDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col gap-4 sm:max-w-md">
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-4 sm:max-w-md"
+      >
         <SheetHeader>
           <SheetTitle className="flex items-center gap-2">
             <History size={16} className="text-fg-tertiary" aria-hidden />
@@ -102,7 +89,7 @@ export function AdminSettingHistoryDrawer({
           </SheetTitle>
           {settingKey ? (
             <SheetDescription>
-              Ключ:{' '}
+              Ключ:{" "}
               <span className="font-mono text-fg-secondary">{settingKey}</span>
             </SheetDescription>
           ) : null}
@@ -175,8 +162,10 @@ function ValueBlock({
   return (
     <div
       className={cn(
-        'rounded border border-border-subtle p-2 font-mono',
-        mute ? 'bg-bg-overlay/40 text-fg-tertiary' : 'bg-bg-overlay text-fg-secondary',
+        "rounded border border-border-subtle p-2 font-mono",
+        mute
+          ? "bg-bg-overlay/40 text-fg-tertiary"
+          : "bg-bg-overlay text-fg-secondary",
       )}
     >
       <div className="mb-1 text-[10px] uppercase tracking-wider text-fg-tertiary">
@@ -190,9 +179,9 @@ function ValueBlock({
 }
 
 function stringify(v: unknown): string {
-  if (v === undefined) return '—';
-  if (v === null) return 'null';
-  if (typeof v === 'string') return v;
+  if (v === undefined) return "—";
+  if (v === null) return "null";
+  if (typeof v === "string") return v;
   try {
     return JSON.stringify(v, null, 2);
   } catch {
@@ -202,12 +191,12 @@ function stringify(v: unknown): string {
 
 function formatDateTime(iso: string): string {
   try {
-    return new Intl.DateTimeFormat('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Intl.DateTimeFormat("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     }).format(new Date(iso));
   } catch {
     return iso;

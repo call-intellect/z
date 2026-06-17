@@ -14,19 +14,6 @@ import type {
   StructuralRetrievalFilters,
 } from './query-plan-extractor.service';
 
-/**
- * dialog-layer — spec DialogService.process (ТЗ 2026-06-14, слитый модуль
- * понимания запроса).
- *
- * Покрывает новый порядок:
- *   - НЕТ contextualizer/confidence в DI;
- *   - classify по СЫРОЙ реплике;
- *   - summary+history переданы в multiQuery.expand;
- *   - queryPlanExtractor.extract вызван ПОСЛЕ expand с questions = экспансии
- *     (mq.queries.slice(1));
- *   - при !enabled — noop.
- */
-
 function emptyPlan(applied: boolean): QueryPlanResult {
   return {
     filters: {
@@ -62,9 +49,7 @@ function makeService(opts: {
   dialogLayerEnabled?: boolean;
   expandQueries?: string[];
 }): { service: DialogService; mocks: Mocks } {
-  const orgFindUnique = vi
-    .fn()
-    .mockResolvedValue({ timezone: 'Europe/Moscow' });
+  const orgFindUnique = vi.fn().mockResolvedValue({ timezone: 'Europe/Moscow' });
   const chatConvFindUnique = vi.fn().mockResolvedValue(null);
   const chatMessageFindMany = vi.fn().mockResolvedValue([]);
 
@@ -180,10 +165,7 @@ describe('DialogService — слитый модуль понимания зап�
       queryPlanExtractionEnabled: false,
     });
     mocks.chatConvFindUnique.mockResolvedValue({ summary: 'Про продукт Маяк.' });
-    // loadConversationContext читает {role, text} из prisma и мапит text→content.
-    mocks.chatMessageFindMany.mockResolvedValue([
-      { role: 'user', text: 'Что по Маяк?' },
-    ]);
+    mocks.chatMessageFindMany.mockResolvedValue([{ role: 'user', text: 'Что по Маяк?' }]);
 
     await service.process(processInput());
 
@@ -212,7 +194,6 @@ describe('DialogService — слитый модуль понимания зап�
         ],
       }),
     );
-    // порядок: expand должен быть вызван раньше extract
     const expandOrder = mocks.expand.mock.invocationCallOrder[0] ?? 0;
     const extractOrder = mocks.extract.mock.invocationCallOrder[0] ?? 0;
     expect(expandOrder).toBeLessThan(extractOrder);

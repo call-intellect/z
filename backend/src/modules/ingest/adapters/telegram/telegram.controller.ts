@@ -21,25 +21,11 @@ import { IngestService } from '../../ingest.service';
 
 import { TelegramAdapterService } from './telegram.service';
 
-/**
- * Webhook-контроллер Telegram (Фаза 10 knowledge-core).
- *
- * `POST /api/v1/ingest/telegram/:sourceId` — endpoint для Telegram Bot API
- * Update'ов. Авторизация:
- *   - НЕ через `IngestTokenGuard` (Telegram не передаёт `Authorization`).
- *   - Через `X-Telegram-Bot-Api-Secret-Token` header (timing-safe сравнение
- *     с `Source.config.webhookSecret`).
- *
- * Telegram не любит non-2xx — на любом «не подходит» возвращаем 200 без ingest'а.
- *
- * FIXME knowledge-core Фаза 12: добавить @RequireEntitlement('feature.adapter_telegram').
- */
 @ApiExcludeController()
 @Controller('api/v1/ingest/telegram')
 export class TelegramWebhookController {
   private readonly logger = new Logger(TelegramWebhookController.name);
 
-  /** Лимит размера payload — 4 MiB. */
   private static readonly PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 
   constructor(
@@ -57,7 +43,6 @@ export class TelegramWebhookController {
   ): Promise<{ ok: true; idempotent?: boolean }> {
     const { source, config } = await this.telegram.loadActiveBotSource(sourceId);
 
-    // 1. Проверка secret-токена.
     if (!secretHeader || !constantTimeStringEqual(secretHeader, config.webhookSecret)) {
       throw new ForbiddenException({
         ok: false,
@@ -65,26 +50,25 @@ export class TelegramWebhookController {
       });
     }
 
-    // 2. Лимит размера. `req.headers['content-length']` — самое быстрое.
     const contentLengthHeader = req.headers['content-length'];
     if (contentLengthHeader) {
       const cl = Number(contentLengthHeader);
       if (Number.isFinite(cl) && cl > TelegramWebhookController.PAYLOAD_LIMIT_BYTES) {
         throw new BadRequestException({
           ok: false,
-          error: { code: 'payload_too_large', message: `Payload >${TelegramWebhookController.PAYLOAD_LIMIT_BYTES} bytes` },
+          error: {
+            code: 'payload_too_large',
+            message: `Payload >${TelegramWebhookController.PAYLOAD_LIMIT_BYTES} bytes`,
+          },
         });
       }
     }
 
-    // 3. Извлекаем сообщение (поддержим message и channel_post).
     const msg = update.message ?? update.channel_post;
     if (!msg) {
-      // Update без message (edit/callback и т.п.) — игнорируем тихо.
       return { ok: true };
     }
 
-    // 4. Фильтр allowedChatIds.
     if (config.allowedChatIds.length > 0 && !config.allowedChatIds.includes(msg.chat.id)) {
       this.logger.debug(
         { sourceId, chatId: msg.chat.id },
@@ -93,16 +77,12 @@ export class TelegramWebhookController {
       return { ok: true };
     }
 
-    // 5. Фильтр forwarded.
-    const isForwarded = Boolean(
-      msg.forward_from || msg.forward_from_chat || msg.forward_origin,
-    );
+    const isForwarded = Boolean(msg.forward_from || msg.forward_from_chat || msg.forward_origin);
     if (!config.includeForwarded && isForwarded) {
       this.logger.debug({ sourceId, chatId: msg.chat.id }, 'telegram: forward пропущен');
       return { ok: true };
     }
 
-    // 6. Формируем payload и ingest.
     const photoFileIds: string[] = Array.isArray(msg.photo)
       ? msg.photo.map((p) => p.file_id).filter(Boolean)
       : [];

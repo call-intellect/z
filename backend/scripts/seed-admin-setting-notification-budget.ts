@@ -1,29 +1,3 @@
-/**
- * TZ-1 Фаза 0 (daily-value-engine) — Seed AdminSetting для дневного бюджета
- * уведомлений и кампании привязки канала.
- *
- * Регистрирует ключи динамической конфигурации:
- *   - `notifications.daily_budget.per_person` (int, default 5) — сколько push
- *     уведомлений на одного Person'а в его локальном дне. Сверх лимита —
- *     откладывается (in_app всё равно виден).
- *   - `notifications.quiet_hours.start` (int 0..23, default 22) — час начала
- *     тихих часов (локальная TZ Person'а).
- *   - `notifications.quiet_hours.end` (int 0..23, default 8) — час конца.
- *   - `notifications.daily_budget.enabled` (boolean, default true) — kill-switch
- *     дневного бюджета. ON (Ship-On).
- *   - `notifications.binding_campaign.enabled` (boolean, default true) —
- *     kill-switch кампании привязки Telegram-канала. ON (Ship-On).
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-notification-budget.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -118,7 +92,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

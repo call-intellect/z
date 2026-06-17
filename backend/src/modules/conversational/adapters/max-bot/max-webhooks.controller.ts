@@ -20,19 +20,6 @@ import { ConversationalService } from '../../conversational.service';
 import { MaxBotChannelAdapter } from './max-bot.adapter';
 import type { MaxUpdate } from './max.types';
 
-/**
- * Webhook-приёмник MAX Bot Updates для SBA β-1.
- *
- * URL: `POST /api/v1/webhooks/max-bot/:tenantId/:secret`.
- *
- * MAX Bot API (dev.max.ru/docs-api, context7 verified 2026-05-22) НЕ
- * передаёт header-secret. Secret-валидация — через path-параметр (URL
- * сам по себе является shared-secret). `setup-max-bot.ts` использует
- * этот же формат при `POST /subscriptions`.
- *
- * На любой неуспех — лучше вернуть 200, чем 5xx (MAX дублирует
- * notification'ы при ошибках). Кроме явных Forbidden/NotFound.
- */
 @ApiExcludeController()
 @Controller('api/v1/webhooks/max-bot')
 export class MaxWebhooksController {
@@ -79,10 +66,7 @@ export class MaxWebhooksController {
         error: { code: 'webhook_secret_unreadable' },
       });
     }
-    if (
-      !expectedSecret ||
-      !constantTimeStringEqual(secretFromUrl, expectedSecret)
-    ) {
+    if (!expectedSecret || !constantTimeStringEqual(secretFromUrl, expectedSecret)) {
       this.logger.warn({ tenantId }, 'max webhook: invalid secret in URL');
       throw new ForbiddenException({
         ok: false,

@@ -3,7 +3,7 @@ title: SBA α-5 — Chat-v2 Omnichannel
 status: in-progress
 phase: alpha
 covers: AI-чат компании поверх knowledge-core, omnichannel inbound/outbound
-parent_tz: plans/tz/2026-05-21-sba-alpha-5-layer5-chat-v2.md
+parent_tz: plans/archive/2026-05-21-sba-alpha-5-layer5-chat-v2.md
 ---
 
 # Chat-v2 — AI-чат компании (Layer 5)

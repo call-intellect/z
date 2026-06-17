@@ -5,14 +5,6 @@ import { SYSTEM_TABLES_CATALOG } from '../templates/system-tables.catalog';
 
 import { TablesAutoProvisionService } from './tables-auto-provision.service';
 
-/**
- * Unit-тесты `TablesAutoProvisionService` (Smart-tables Фаза 0).
- *
- * Покрытие:
- *  (a) provisionDefaults на чистом Org → 10 таблиц isSystem:true с правильными systemKey.
- *  (b) идемпотентность: все systemKey уже есть → table.create не вызывается.
- *  (c) корректность каталога: 10 шаблонов, у каждого ровно один isPrimary, валидные типы.
- */
 const VALID_PROP_TYPES = new Set([
   'text',
   'longtext',
@@ -72,9 +64,7 @@ describe('TablesAutoProvisionService', () => {
   it('(a) на чистом Org создаёт 10 системных таблиц с правильными systemKey', async () => {
     tableFindFirst.mockResolvedValue(null);
     let seq = 0;
-    tableCreate.mockImplementation(() =>
-      Promise.resolve({ id: `t-${++seq}` }),
-    );
+    tableCreate.mockImplementation(() => Promise.resolve({ id: `t-${++seq}` }));
     propertyCreate.mockResolvedValue({ id: 'p' });
 
     const out = await svc.provisionDefaults(TENANT, OWNER);
@@ -88,7 +78,6 @@ describe('TablesAutoProvisionService', () => {
     const expectedKeys = SYSTEM_TABLES_CATALOG.map((t) => t.systemKey);
     expect(new Set(createdKeys)).toEqual(new Set(expectedKeys));
 
-    // Все созданные — системные, с tenantId/createdBy.
     for (const call of tableCreate.mock.calls) {
       const data = (call[0] as { data: Record<string, unknown> }).data;
       expect(data.isSystem).toBe(true);
@@ -110,7 +99,6 @@ describe('TablesAutoProvisionService', () => {
   it('(c) каталог: ровно 10 шаблонов, у каждого один isPrimary, валидные типы', () => {
     expect(SYSTEM_TABLES_CATALOG).toHaveLength(10);
 
-    // systemKey уникальны.
     const keys = SYSTEM_TABLES_CATALOG.map((t) => t.systemKey);
     expect(new Set(keys).size).toBe(10);
 

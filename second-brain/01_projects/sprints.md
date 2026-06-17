@@ -104,7 +104,7 @@ related:
 
 Сайдбар: пункт «Спринты» в группе «Каждый день», иконка `Rocket` (lucide).
 `data-tour-target="welcome.sprints"` — для будущего
-[onboarding-tour'а](../../plans/tz/2026-05-27-tracker-onboarding-tour.md).
+[onboarding-tour'а](../../plans/archive/2026-05-27-tracker-onboarding-tour.md).
 
 ## Метрики Prometheus
 
@@ -129,8 +129,8 @@ related:
 
 Зонтик `tracker-parity-with-competitors` уже замержен:
 [tracker-boards](../../plans/tz/2026-05-27-tracker-boards.md),
-[tracker-subtasks-ui](../../plans/tz/2026-05-27-tracker-subtasks-ui.md),
-[tracker-checklists](../../plans/tz/2026-05-27-tracker-checklists.md),
+[tracker-subtasks-ui](../../plans/archive/2026-05-27-tracker-subtasks-ui.md),
+[tracker-checklists](../../plans/archive/2026-05-27-tracker-checklists.md),
 [tracker-project-documents](../../plans/tz/2026-05-27-tracker-project-documents.md),
 [tracker-project-overview](../../plans/tz/2026-05-27-tracker-project-overview.md).
 
@@ -153,6 +153,6 @@ related:
 
 ## Источники
 
-- [plans/tz/2026-05-27-sprints.md](../../plans/tz/2026-05-27-sprints.md) — базовое ТЗ.
-- [plans/tz/2026-05-28-sprints-master-detail-and-wizard.md](../../plans/tz/2026-05-28-sprints-master-detail-and-wizard.md) — ТЗ master-detail + расширенного мастера.
+- [plans/archive/2026-05-27-sprints.md](../../plans/archive/2026-05-27-sprints.md) — базовое ТЗ.
+- [plans/archive/2026-05-28-sprints-master-detail-and-wizard.md](../../plans/archive/2026-05-28-sprints-master-detail-and-wizard.md) — ТЗ master-detail + расширенного мастера.
 - [plans/analysis/2026-05-27-sprints.md](../../plans/analysis/2026-05-27-sprints.md) — анализ.

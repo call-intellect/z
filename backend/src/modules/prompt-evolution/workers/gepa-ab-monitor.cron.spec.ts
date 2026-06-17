@@ -1,13 +1,3 @@
-/**
- * Agents v2 Фаза C2 (2026-05-30) — Unit-тесты `GepaAbMonitorCron`.
- *
- * Сценарии (с fixture данными):
- *   1. B заметно хуже A → status='rejected' с reason='ab_deg_detected'.
- *   2. B заметно лучше A + достаточно invocations → promote (LlmTaskRoute.promptOverride).
- *   3. B лучше A, но invocations < min → continue (no decision).
- *   4. cfg.gepa.enabled=false → no-op.
- *   5. Нет A control data → skip без падения.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config/typed-config.service';
@@ -107,9 +97,7 @@ describe('GepaAbMonitorCron', () => {
         },
       ],
       groupRows: [
-        // A: 200 invocations, avg edit_distance=0.2 → composite=0.8.
         { grp: 'A', cnt: 200n, avg_dist: 0.2 },
-        // B: 50 invocations, avg edit_distance=0.5 → composite=0.5 (Δ=-0.3, > 0.1 порог).
         { grp: 'B', cnt: 50n, avg_dist: 0.5 },
       ],
     });
@@ -118,7 +106,6 @@ describe('GepaAbMonitorCron', () => {
 
     await cron.tick();
 
-    // Найдём update'ы кандидата (один может быть на eval-snapshot, второй — на rejected).
     const calls = updateCandidate.mock.calls.map((c) => c[0] as { data: Record<string, unknown> });
     const rejectCall = calls.find((c) => c.data.status === 'rejected');
     expect(rejectCall).toBeDefined();
@@ -143,14 +130,10 @@ describe('GepaAbMonitorCron', () => {
         },
       ],
       groupRows: [
-        // A: 200 inv, avg=0.5 → composite=0.5.
         { grp: 'A', cnt: 200n, avg_dist: 0.5 },
-        // B: 120 inv, avg=0.3 → composite=0.7 (Δ=+0.2, > 0.05 порог).
         { grp: 'B', cnt: 120n, avg_dist: 0.3 },
       ],
-      routes: [
-        { id: 'r1', promptOverride: 'old-text' },
-      ],
+      routes: [{ id: 'r1', promptOverride: 'old-text' }],
     });
     const metrics = makeMetrics();
     const cron = new GepaAbMonitorCron(prisma, makeCfg() as TypedConfigService, metrics);
@@ -188,7 +171,7 @@ describe('GepaAbMonitorCron', () => {
       ],
       groupRows: [
         { grp: 'A', cnt: 200n, avg_dist: 0.5 },
-        { grp: 'B', cnt: 50n, avg_dist: 0.3 }, // 50 < 100 min
+        { grp: 'B', cnt: 50n, avg_dist: 0.3 },
       ],
     });
     const metrics = makeMetrics();
@@ -196,7 +179,6 @@ describe('GepaAbMonitorCron', () => {
 
     await cron.tick();
 
-    // Только snapshot-update (evaluations + compositeScore), без promote/reject.
     const calls = updateCandidate.mock.calls.map((c) => c[0] as { data: Record<string, unknown> });
     expect(calls.some((c) => c.data.status === 'promoted')).toBe(false);
     expect(calls.some((c) => c.data.status === 'rejected')).toBe(false);
@@ -229,10 +211,7 @@ describe('GepaAbMonitorCron', () => {
           evaluations: 0,
         },
       ],
-      groupRows: [
-        // только B, A=0
-        { grp: 'B', cnt: 30n, avg_dist: 0.4 },
-      ],
+      groupRows: [{ grp: 'B', cnt: 30n, avg_dist: 0.4 }],
     });
     const metrics = makeMetrics();
     const cron = new GepaAbMonitorCron(prisma, makeCfg() as TypedConfigService, metrics);
@@ -240,7 +219,6 @@ describe('GepaAbMonitorCron', () => {
     await cron.tick();
 
     const calls = updateCandidate.mock.calls.map((c) => c[0] as { data: Record<string, unknown> });
-    // Только snapshot update, без promote/reject.
     expect(calls.some((c) => c.data.status === 'promoted')).toBe(false);
     expect(calls.some((c) => c.data.status === 'rejected')).toBe(false);
     expect(metrics.incGepaPromoted).not.toHaveBeenCalled();

@@ -1,28 +1,10 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { type TableProperty, Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import type {
-  CreatePropertyBody,
-  UpdatePropertyBody,
-} from '../dto/tables.dto';
+import type { CreatePropertyBody, UpdatePropertyBody } from '../dto/tables.dto';
 
-/**
- * Smart Tables — CRUD колонок (`TableProperty`). Фаза 0.
- *
- * Лимит колонок на таблицу: `TABLE_MAX_PROPS_PER_TABLE`. Порядок — фракционная
- * сортировка (Decimal(20,10)); если `order` не задан — ставим `maxOrder + 1`.
- *
- * Multi-tenant scope: все операции проходят через проверку, что родительская
- * `Table` принадлежит `tenantId` вызывающего пользователя.
- */
 @Injectable()
 export class TablePropertiesService {
   private readonly logger = new Logger(TablePropertiesService.name);
@@ -32,8 +14,6 @@ export class TablePropertiesService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  // ─────────────────────────── list ───────────────────────────────────────
-
   async list(args: { tenantId: string; tableId: string }): Promise<TableProperty[]> {
     await this.requireTable(args.tenantId, args.tableId);
     return this.prisma.tableProperty.findMany({
@@ -41,8 +21,6 @@ export class TablePropertiesService {
       orderBy: { order: 'asc' },
     });
   }
-
-  // ─────────────────────────── create ─────────────────────────────────────
 
   async create(args: {
     tenantId: string;
@@ -66,9 +44,7 @@ export class TablePropertiesService {
     }
 
     const order =
-      args.input.order !== undefined
-        ? args.input.order
-        : await this.nextOrder(args.tableId);
+      args.input.order !== undefined ? args.input.order : await this.nextOrder(args.tableId);
 
     return this.prisma.tableProperty.create({
       data: {
@@ -82,19 +58,6 @@ export class TablePropertiesService {
     });
   }
 
-  // ─────────────────────────── createMany ─────────────────────────────────
-
-  /**
-   * Smart-tables auto-creation (Фаза 1) — bulk-создание колонок при создании
-   * таблицы из сгенерированной схемы (`POST /tables/from-schema`).
-   *
-   * `order` — фракционная сортировка по возрастанию: (i+1)*1000 (Decimal).
-   * Шаг 1000 оставляет место под последующую вставку колонок между ними.
-   * Возвращает число созданных записей.
-   *
-   * NB: предполагается вызов на ТОЛЬКО ЧТО созданной (пустой) таблице, поэтому
-   * existing-колонки не учитываем — порядок считаем с нуля.
-   */
   async createMany(args: {
     tenantId: string;
     tableId: string;
@@ -125,8 +88,6 @@ export class TablePropertiesService {
     return res.count;
   }
 
-  // ─────────────────────────── update ─────────────────────────────────────
-
   async update(args: {
     tenantId: string;
     propertyId: string;
@@ -147,8 +108,6 @@ export class TablePropertiesService {
     });
   }
 
-  // ─────────────────────────── reorder ────────────────────────────────────
-
   async reorder(args: {
     tenantId: string;
     propertyId: string;
@@ -161,14 +120,6 @@ export class TablePropertiesService {
     });
   }
 
-  // ─────────────────────────── delete ─────────────────────────────────────
-
-  /**
-   * Hard-delete колонки. Значения в `TableRow.cells` (JSON) при этом остаются
-   * как «orphan» по ключу-id колонки — безопасно (UI просто их не отрисует).
-   * Чистить cells массово не нужно: это дорого и может удалить данные, нужные
-   * для отката.
-   */
   async delete(args: { tenantId: string; propertyId: string }): Promise<{ id: string }> {
     const existing = await this.requireProperty(args.tenantId, args.propertyId);
     await this.prisma.tableProperty.delete({ where: { id: existing.id } });
@@ -178,8 +129,6 @@ export class TablePropertiesService {
     );
     return { id: existing.id };
   }
-
-  // ─────────────────────────── helpers ────────────────────────────────────
 
   private async requireTable(tenantId: string, tableId: string): Promise<void> {
     const table = await this.prisma.table.findUnique({
@@ -194,19 +143,12 @@ export class TablePropertiesService {
     }
   }
 
-  private async requireProperty(
-    tenantId: string,
-    propertyId: string,
-  ): Promise<TableProperty> {
+  private async requireProperty(tenantId: string, propertyId: string): Promise<TableProperty> {
     const property = await this.prisma.tableProperty.findUnique({
       where: { id: propertyId },
       include: { table: { select: { tenantId: true, deletedAt: true } } },
     });
-    if (
-      !property ||
-      property.table.deletedAt ||
-      property.table.tenantId !== tenantId
-    ) {
+    if (!property || property.table.deletedAt || property.table.tenantId !== tenantId) {
       throw new NotFoundException({
         ok: false,
         error: { code: 'property_not_found', message: 'Колонка не найдена' },

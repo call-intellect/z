@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
   TrackToggle,
   useLocalParticipant,
   useRoomContext,
-} from '@livekit/components-react';
-import { Track } from 'livekit-client';
+} from "@livekit/components-react";
+import { Track } from "livekit-client";
 import {
   Copy,
   MessageSquare,
@@ -24,24 +24,23 @@ import {
   Circle,
   LogOut,
   UserPlus,
-} from 'lucide-react';
-import clsx from 'clsx';
+} from "lucide-react";
+import clsx from "clsx";
 
-import { useHostControls } from '@/hooks/use-host-controls';
-import { toast } from 'sonner';
-import { Modal } from '@/ui/components/shared/Modal';
-import { Button } from '@/ui/components/shared/Button';
-import { t } from '@/lib/i18n';
-import { copyToClipboard } from '@/lib/copy-to-clipboard';
-import { InviteDialog } from '@/ui/shared/InviteDialog';
+import { useHostControls } from "@/hooks/use-host-controls";
+import { toast } from "sonner";
+import { Modal } from "@/ui/components/shared/Modal";
+import { Button } from "@/ui/components/shared/Button";
+import { t } from "@/lib/i18n";
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { InviteDialog } from "@/ui/shared/InviteDialog";
 
-import { RaiseHandButton } from './RaiseHandButton';
+import { RaiseHandButton } from "./RaiseHandButton";
 
 type Props = {
   meetingId: string;
   isHost: boolean;
   isRecording: boolean;
-  /** Если true — запись автоматическая, кнопку записи не показываем */
   recordByDefault: boolean;
   isFullscreen: boolean;
   onLeave: () => void;
@@ -73,9 +72,8 @@ export function ControlsBar({
     const url = `${window.location.origin}/m/${meetingId}`;
     const ok = await copyToClipboard(url);
     if (ok) {
-      toast.success('Ссылка скопирована');
+      toast.success("Ссылка скопирована");
     } else {
-      // clipboard и execCommand недоступны → показываем ссылку для ручного копирования
       setLinkFallback(url);
     }
   };
@@ -84,10 +82,12 @@ export function ControlsBar({
     setConfirmFinish(false);
     const result = await host.finish();
     if (result.ok) {
-      if (result.data.failureReason === 'ended_before_start') {
-        toast('Встреча завершена (запись не велась)');
+      if (result.data.failureReason === "ended_before_start") {
+        toast("Встреча завершена (запись не велась)");
       }
-      try { await room.disconnect(); } catch { /* ignore */ }
+      try {
+        await room.disconnect();
+      } catch {}
       onLeave();
     }
   };
@@ -95,57 +95,82 @@ export function ControlsBar({
   return (
     <>
       <div className="flex shrink-0 items-center justify-center gap-1 bg-bg-elevated px-4 py-3">
-
-        {/* Media controls */}
+        {}
         <TrackToggle
           source={Track.Source.Microphone}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
-            isMicrophoneEnabled ? 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80' : 'bg-danger text-danger-fg hover:opacity-90',
+            "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors",
+            isMicrophoneEnabled
+              ? "bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80"
+              : "bg-danger text-danger-fg hover:opacity-90",
           )}
         >
-          {isMicrophoneEnabled
-            ? <Mic size={20} strokeWidth={1.75} />
-            : <MicOff size={20} strokeWidth={1.75} />}
-          <span>{isMicrophoneEnabled ? 'Микрофон' : 'Выкл.'}</span>
+          {isMicrophoneEnabled ? (
+            <Mic size={20} strokeWidth={1.75} />
+          ) : (
+            <MicOff size={20} strokeWidth={1.75} />
+          )}
+          <span>{isMicrophoneEnabled ? "Микрофон" : "Выкл."}</span>
         </TrackToggle>
 
         <TrackToggle
           source={Track.Source.Camera}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
-            isCameraEnabled ? 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80' : 'bg-danger text-danger-fg hover:opacity-90',
+            "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors",
+            isCameraEnabled
+              ? "bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80"
+              : "bg-danger text-danger-fg hover:opacity-90",
           )}
         >
-          {isCameraEnabled
-            ? <Video size={20} strokeWidth={1.75} />
-            : <VideoOff size={20} strokeWidth={1.75} />}
-          <span>{isCameraEnabled ? 'Камера' : 'Выкл.'}</span>
+          {isCameraEnabled ? (
+            <Video size={20} strokeWidth={1.75} />
+          ) : (
+            <VideoOff size={20} strokeWidth={1.75} />
+          )}
+          <span>{isCameraEnabled ? "Камера" : "Выкл."}</span>
         </TrackToggle>
 
         <TrackToggle
           source={Track.Source.ScreenShare}
           className={clsx(
-            'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
-            isScreenShareEnabled ? 'bg-info text-info-fg hover:opacity-90' : 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80',
+            "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors",
+            isScreenShareEnabled
+              ? "bg-info text-info-fg hover:opacity-90"
+              : "bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80",
           )}
         >
-          {isScreenShareEnabled
-            ? <MonitorOff size={20} strokeWidth={1.75} />
-            : <Monitor size={20} strokeWidth={1.75} />}
-          <span>{isScreenShareEnabled ? 'Стоп' : 'Экран'}</span>
+          {isScreenShareEnabled ? (
+            <MonitorOff size={20} strokeWidth={1.75} />
+          ) : (
+            <Monitor size={20} strokeWidth={1.75} />
+          )}
+          <span>{isScreenShareEnabled ? "Стоп" : "Экран"}</span>
         </TrackToggle>
 
         <div className="mx-2 h-10 w-px bg-border" />
 
-        {/* Interaction controls */}
+        {}
         <RaiseHandButton />
 
-        <IconBtn icon={<Users size={20} strokeWidth={1.75} />} label="Участники" onClick={onToggleParticipants} />
-        <IconBtn icon={<MessageSquare size={20} strokeWidth={1.75} />} label="Чат" onClick={onToggleChat} />
         <IconBtn
-          icon={isFullscreen ? <Minimize size={20} strokeWidth={1.75} /> : <Maximize size={20} strokeWidth={1.75} />}
-          label={isFullscreen ? 'Окно' : 'На весь экран'}
+          icon={<Users size={20} strokeWidth={1.75} />}
+          label="Участники"
+          onClick={onToggleParticipants}
+        />
+        <IconBtn
+          icon={<MessageSquare size={20} strokeWidth={1.75} />}
+          label="Чат"
+          onClick={onToggleChat}
+        />
+        <IconBtn
+          icon={
+            isFullscreen ? (
+              <Minimize size={20} strokeWidth={1.75} />
+            ) : (
+              <Maximize size={20} strokeWidth={1.75} />
+            )
+          }
+          label={isFullscreen ? "Окно" : "На весь экран"}
           onClick={onToggleFullscreen}
         />
 
@@ -157,7 +182,9 @@ export function ControlsBar({
               icon={<Copy size={20} strokeWidth={1.75} />}
               label="Ссылка"
               title="Скопировать ссылку"
-              onClick={() => { void copyLink(); }}
+              onClick={() => {
+                void copyLink();
+              }}
             />
 
             <IconBtn
@@ -167,27 +194,39 @@ export function ControlsBar({
               onClick={() => setInviteOpen(true)}
             />
 
-            {/* Кнопка записи — только если ручной режим */}
+            {}
             {!recordByDefault && (
               <IconBtn
-                icon={isRecording
-                  ? <CircleStop size={20} strokeWidth={1.75} />
-                  : <Circle size={20} strokeWidth={1.75} />
+                icon={
+                  isRecording ? (
+                    <CircleStop size={20} strokeWidth={1.75} />
+                  ) : (
+                    <Circle size={20} strokeWidth={1.75} />
+                  )
                 }
-                label={isRecording ? 'Стоп' : 'Запись'}
+                label={isRecording ? "Стоп" : "Запись"}
                 active={isRecording}
                 activeClass="bg-danger hover:opacity-90"
-                disabled={host.pending === 'record-start' || host.pending === 'record-stop'}
+                disabled={
+                  host.pending === "record-start" ||
+                  host.pending === "record-stop"
+                }
                 onClick={() => {
-                  if (isRecording) { void host.stopRecording(); }
-                  else { void host.startRecording(); }
+                  if (isRecording) {
+                    void host.stopRecording();
+                  } else {
+                    void host.startRecording();
+                  }
                 }}
               />
             )}
 
             <button
               type="button"
-              onClick={() => { void room.disconnect(); onLeave(); }}
+              onClick={() => {
+                void room.disconnect();
+                onLeave();
+              }}
               className="flex flex-col items-center gap-1 rounded-xl bg-bg-overlay px-4 py-2 text-[10px] font-medium text-fg-primary transition-colors hover:bg-bg-overlay/80"
             >
               <LogOut size={20} strokeWidth={1.75} />
@@ -210,7 +249,10 @@ export function ControlsBar({
             <div className="mx-2 h-10 w-px bg-border" />
             <button
               type="button"
-              onClick={() => { void room.disconnect(); onLeave(); }}
+              onClick={() => {
+                void room.disconnect();
+                onLeave();
+              }}
               className="flex flex-col items-center gap-1 rounded-xl bg-bg-overlay px-4 py-2 text-[10px] font-medium text-fg-primary transition-colors hover:bg-bg-overlay/80"
             >
               <PhoneOff size={20} strokeWidth={1.75} />
@@ -223,15 +265,17 @@ export function ControlsBar({
       <Modal
         open={confirmFinish}
         onClose={() => setConfirmFinish(false)}
-        title={t('room.finish_confirm_title')}
+        title={t("room.finish_confirm_title")}
       >
-        <p className="mb-6 text-sm text-fg-secondary">{t('room.finish_confirm_description')}</p>
+        <p className="mb-6 text-sm text-fg-secondary">
+          {t("room.finish_confirm_description")}
+        </p>
         <div className="flex justify-end gap-3">
           <Button variant="secondary" onClick={() => setConfirmFinish(false)}>
-            {t('common.cancel')}
+            {t("common.cancel")}
           </Button>
           <Button variant="danger" onClick={() => void onFinishConfirm()}>
-            {t('room.controls.finish')}
+            {t("room.controls.finish")}
           </Button>
         </div>
       </Modal>
@@ -248,11 +292,12 @@ export function ControlsBar({
         title="Скопируйте ссылку вручную"
       >
         <p className="mb-3 text-sm text-fg-secondary">
-          Автоматическое копирование недоступно. Выделите ссылку и скопируйте её.
+          Автоматическое копирование недоступно. Выделите ссылку и скопируйте
+          её.
         </p>
         <input
           readOnly
-          value={linkFallback ?? ''}
+          value={linkFallback ?? ""}
           onFocus={(e) => e.currentTarget.select()}
           className="w-full rounded-md border border-border-subtle bg-bg-overlay px-3 py-2 text-sm text-fg-primary"
         />
@@ -290,10 +335,10 @@ function IconBtn({
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors disabled:opacity-50',
+        "flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors disabled:opacity-50",
         active
-          ? (activeClass ?? 'bg-warning text-warning-fg hover:opacity-90')
-          : 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80',
+          ? (activeClass ?? "bg-warning text-warning-fg hover:opacity-90")
+          : "bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80",
       )}
     >
       {icon}

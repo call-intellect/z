@@ -20,8 +20,6 @@ function makeContext(
   metaOverride: boolean | undefined,
   ctxType = 'http',
 ): { ctx: ExecutionContext; reflector: Reflector } {
-  // По умолчанию мутирующий POST с нейтральным путём — большинство тестов
-  // именно про paywall-блокировку мутации.
   const req = { method: 'POST', path: '/api/v1/projects', ...reqStub };
   const ctx = {
     getType: () => ctxType,
@@ -37,13 +35,9 @@ function makeContext(
   return { ctx, reflector };
 }
 
-function makeSubService(
-  status: string | null,
-): SubscriptionService {
+function makeSubService(status: string | null): SubscriptionService {
   return {
-    getByTenant: vi.fn(async () =>
-      status ? ({ status, tenantId: 'org-1' } as any) : null,
-    ),
+    getByTenant: vi.fn(async () => (status ? ({ status, tenantId: 'org-1' } as any) : null)),
   } as unknown as SubscriptionService;
 }
 
@@ -59,11 +53,7 @@ describe('SubscriptionGuard', () => {
   describe('без @RequireSubscription', () => {
     it('пропускает запрос (transparent)', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, undefined);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
       expect(reflector.getAllAndOverride).toHaveBeenCalledWith(
         REQUIRE_SUBSCRIPTION_KEY,
@@ -73,11 +63,7 @@ describe('SubscriptionGuard', () => {
 
     it('пропускает, если декоратор = false', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, false);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });
@@ -85,104 +71,56 @@ describe('SubscriptionGuard', () => {
   describe('с @RequireSubscription', () => {
     it('пропускает при status === ACTIVE', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('ACTIVE'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('ACTIVE'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('блокирует при status === DEMO', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('блокирует при status === SUSPENDED', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('SUSPENDED'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('SUSPENDED'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('блокирует при status === CANCELED', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('CANCELED'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('CANCELED'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('блокирует при status === EXPIRED', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('EXPIRED'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('EXPIRED'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('блокирует при status === PAST_DUE', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('PAST_DUE'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('PAST_DUE'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('блокирует, если подписки нет (null → DEMO)', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService(null),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService(null), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    // audit В2 — разные error code'ы для DEMO vs EXPIRED-семейства.
     it('audit В2: DEMO → error.code=subscription_demo', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
 
       try {
         await guard.canActivate(ctx);
         expect.fail('должен был бросить ForbiddenException');
       } catch (err) {
         expect(err).toBeInstanceOf(ForbiddenException);
-        const body = (err as ForbiddenException).getResponse() as Record<
-          string,
-          unknown
-        >;
+        const body = (err as ForbiddenException).getResponse() as Record<string, unknown>;
         expect(body.ok).toBe(false);
         const error = body.error as Record<string, unknown>;
         expect(error.code).toBe('subscription_demo');
@@ -195,20 +133,13 @@ describe('SubscriptionGuard', () => {
 
     it('audit В2: EXPIRED → error.code=subscription_expired', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('EXPIRED'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('EXPIRED'), makePrismaStub());
 
       try {
         await guard.canActivate(ctx);
         expect.fail('должен был бросить ForbiddenException');
       } catch (err) {
-        const body = (err as ForbiddenException).getResponse() as Record<
-          string,
-          unknown
-        >;
+        const body = (err as ForbiddenException).getResponse() as Record<string, unknown>;
         const error = body.error as Record<string, unknown>;
         expect(error.code).toBe('subscription_expired');
         expect(error.currentStatus).toBe('EXPIRED');
@@ -217,20 +148,13 @@ describe('SubscriptionGuard', () => {
 
     it('audit В2: SUSPENDED → error.code=subscription_expired', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('SUSPENDED'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('SUSPENDED'), makePrismaStub());
 
       try {
         await guard.canActivate(ctx);
         expect.fail('должен был бросить ForbiddenException');
       } catch (err) {
-        const body = (err as ForbiddenException).getResponse() as Record<
-          string,
-          unknown
-        >;
+        const body = (err as ForbiddenException).getResponse() as Record<string, unknown>;
         const error = body.error as Record<string, unknown>;
         expect(error.code).toBe('subscription_expired');
         expect(error.currentStatus).toBe('SUSPENDED');
@@ -239,20 +163,13 @@ describe('SubscriptionGuard', () => {
 
     it('возвращает currentStatus=DEMO при отсутствии подписки', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService(null),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService(null), makePrismaStub());
 
       try {
         await guard.canActivate(ctx);
         expect.fail('должен был бросить ForbiddenException');
       } catch (err) {
-        const body = (err as ForbiddenException).getResponse() as Record<
-          string,
-          unknown
-        >;
+        const body = (err as ForbiddenException).getResponse() as Record<string, unknown>;
         const error = body.error as Record<string, unknown>;
         expect(error.currentStatus).toBe('DEMO');
         expect(error.code).toBe('subscription_demo');
@@ -270,13 +187,8 @@ describe('SubscriptionGuard', () => {
         true,
       );
       const prisma = makePrismaStub(false);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        prisma,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), prisma);
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
-      // Cached флаг — никакого lookup в БД.
       expect((prisma.user as any).findUnique).not.toHaveBeenCalled();
     });
 
@@ -286,110 +198,60 @@ describe('SubscriptionGuard', () => {
         true,
       );
       const prisma = makePrismaStub(true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        prisma,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), prisma);
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
       expect((prisma.user as any).findUnique).toHaveBeenCalledTimes(1);
     });
 
     it('lookup в БД, обычный user → блокировка по DEMO', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', user: { id: 'regular' } },
-        true,
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', user: { id: 'regular' } }, true);
       const prisma = makePrismaStub(false);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        prisma,
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), prisma);
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 
   describe('edge cases', () => {
     it('блокирует без tenantId (TenantGuard не отработал)', async () => {
       const { ctx, reflector } = makeContext({ tenantId: undefined }, true);
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('ACTIVE'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('ACTIVE'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it('пропускает non-http контекст (WebSocket)', async () => {
       const { ctx, reflector } = makeContext({ tenantId: 'org-1' }, true, 'ws');
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });
 
-  // ТЗ §3.2 — GET/HEAD/OPTIONS никогда не блокируются (read-only).
   describe('HTTP метод bypass', () => {
     it('пропускает GET-запрос даже при DEMO', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', method: 'GET' },
-        true,
-      );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', method: 'GET' }, true);
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает HEAD-запрос даже при DEMO', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', method: 'HEAD' },
-        true,
-      );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', method: 'HEAD' }, true);
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
     it('пропускает OPTIONS-запрос (CORS preflight) даже при DEMO', async () => {
-      const { ctx, reflector } = makeContext(
-        { tenantId: 'org-1', method: 'OPTIONS' },
-        true,
-      );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const { ctx, reflector } = makeContext({ tenantId: 'org-1', method: 'OPTIONS' }, true);
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
   });
 
-  // ТЗ §3.2 — /billing/*, /subscription/*, /auth/* никогда не блокируются.
   describe('path bypass', () => {
     it('пропускает POST /api/v1/billing/pay даже при DEMO', async () => {
       const { ctx, reflector } = makeContext(
         { tenantId: 'org-1', method: 'POST', path: '/api/v1/billing/pay' },
         true,
       );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -398,11 +260,7 @@ describe('SubscriptionGuard', () => {
         { tenantId: 'org-1', method: 'POST', path: '/api/v1/subscription/cancel' },
         true,
       );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -411,11 +269,7 @@ describe('SubscriptionGuard', () => {
         { tenantId: 'org-1', method: 'POST', path: '/api/v1/auth/login' },
         true,
       );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
@@ -424,14 +278,8 @@ describe('SubscriptionGuard', () => {
         { tenantId: 'org-1', method: 'POST', path: '/api/v1/projects' },
         true,
       );
-      const guard = new SubscriptionGuard(
-        reflector,
-        makeSubService('DEMO'),
-        makePrismaStub(),
-      );
-      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
+      const guard = new SubscriptionGuard(reflector, makeSubService('DEMO'), makePrismaStub());
+      await expect(guard.canActivate(ctx)).rejects.toBeInstanceOf(ForbiddenException);
     });
   });
 });

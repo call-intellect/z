@@ -1,12 +1,3 @@
-/**
- * Демо-данные «ТехноСтрим» — 3 шаблона процессов.
- *
- * Минимально нужны для FK `CrossFunctionalFrictionReport.processTemplateId`
- * (NOT NULL). Без них виджет Bottleneck на главной не работает.
- *
- * `ProcessTemplate` НЕ имеет колонки `externalSource` → cleanup делаем
- * вручную в `resetDemoWorkspace` по списку ID или по tenantId.
- */
 import type { SeedFn } from './types';
 
 const TEMPLATE_DEFS = [
@@ -59,7 +50,5 @@ export const seedProcessTemplates: SeedFn = async (ctx, ids) => {
     ids.processTemplates[t.key] = tpl.id;
   }
 
-  console.log(
-    `[demo/process-templates] Создано ${TEMPLATE_DEFS.length} ProcessTemplate.`,
-  );
+  console.log(`[demo/process-templates] Создано ${TEMPLATE_DEFS.length} ProcessTemplate.`);
 };

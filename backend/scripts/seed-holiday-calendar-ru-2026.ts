@@ -1,13 +1,3 @@
-/**
- * Wave 3 / Tracker Phase 4 — Seed производственного календаря РФ на 2026 год.
- *
- * Запуск:
- *   cd backend && bun run scripts/seed-holiday-calendar-ru-2026.ts
- *
- * Идемпотентно по `@@unique([tenantId, date])` (tenantId=null = глобальный).
- * См. `src/modules/tracker/seed/holiday-calendar-ru-2026-data.ts` — данные.
- */
-
 import { PrismaClient } from '@prisma/client';
 import { createPrismaClient } from './_lib/prisma';
 

@@ -1,26 +1,4 @@
-/**
- * BehaviorMetricsService (Фаза B §8).
- *
- * Источник: plans/tz/2026-05-21-phase-B-meeting-behavior-metrics.md §8.
- *
- * Два публичных метода:
- *   - `getForMeeting(meetingId, userId)` — возвращает behavior-метрики
- *     встречи. Доступ: хост встречи (`Meeting.ownerId=userId`) — видит
- *     все per-participant метрики. Гости — 403 (не имеют userId).
- *   - `getOrgAggregate(tenantId, userId, query)` — агрегат по Org за период.
- *     Доступ: только member Org с ролью owner/admin (проверяется
- *     через `OrgMember.role`).
- *
- * Сервис не вызывается из воркера — только из контроллера. Запись метрик
- * делается воркером `ai.behavior-metrics`.
- */
-
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { MeetingType } from '@prisma/client';
 
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -57,12 +35,9 @@ export class BehaviorMetricsService {
       throw new NotFoundException('meeting_not_found');
     }
 
-    // Доступ: хост встречи ИЛИ Org-admin/owner.
     const allowed =
       meeting.ownerId === userId ||
-      (meeting.tenantId
-        ? await this.isOrgAdminOrOwner(meeting.tenantId, userId)
-        : false);
+      (meeting.tenantId ? await this.isOrgAdminOrOwner(meeting.tenantId, userId) : false);
     if (!allowed) {
       throw new ForbiddenException('not_authorised_for_meeting_behavior_metrics');
     }
@@ -109,10 +84,6 @@ export class BehaviorMetricsService {
     };
   }
 
-  /**
-   * Агрегат по Org за период (ТЗ §8.3). На MVP — agg на лету через
-   * Prisma; при росте Org до >10k встреч заменим на materialized view.
-   */
   async getOrgAggregate(
     tenantId: string,
     userId: string,
@@ -125,11 +96,8 @@ export class BehaviorMetricsService {
 
     const from = query.from ? new Date(query.from) : new Date(Date.now() - 30 * 24 * 3600 * 1000);
     const to = query.to ? new Date(query.to) : new Date();
-    const meetingTypeFilter = query.meetingType
-      ? { type: query.meetingType as MeetingType }
-      : {};
+    const meetingTypeFilter = query.meetingType ? { type: query.meetingType as MeetingType } : {};
 
-    // 1. Список метрик для встреч Org в диапазоне.
     const rows = await this.prisma.meetingBehaviorMetrics.findMany({
       where: {
         tenantId,
@@ -156,9 +124,6 @@ export class BehaviorMetricsService {
     const avgDominanceIndex = avg(rows.map((r) => r.dominanceIndex));
     const avgSilencePercent = avg(rows.map((r) => r.silencePercent));
 
-    // 2. Агрегат по участникам (по participantId — для зарегистрированных
-    //    пользователей). Гости (participantId=null) идут отдельной группой
-    //    «гости» (без сводки по userId).
     const byKey = new Map<
       string,
       {
@@ -209,12 +174,6 @@ export class BehaviorMetricsService {
     };
   }
 
-  /**
-   * Проверяет, является ли пользователь owner или admin указанной Org.
-   * Используем модель `OrgMember`, как и в остальных модулях.
-   *
-   * Возвращает false, если членства нет / роль ниже admin.
-   */
   private async isOrgAdminOrOwner(tenantId: string, userId: string): Promise<boolean> {
     const member = await this.prisma.membership.findFirst({
       where: { orgId: tenantId, userId },

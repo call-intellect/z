@@ -1,60 +1,42 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowDownRight, ArrowUpRight, Minus, Users } from 'lucide-react';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowDownRight, ArrowUpRight, Minus, Users } from "lucide-react";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { dashboardApi } from '@/api/dashboard.api';
-import { useAuth } from '@/contexts/auth-context';
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { dashboardApi } from "@/api/dashboard.api";
+import { useAuth } from "@/contexts/auth-context";
 import type {
   HealthToneDomain,
   TeamHealthAttrDomain,
   TeamHealthDomain,
   TeamHealthRowDomain,
-} from '@/domain/team-health';
-import { teamHealthFromApi } from '@/domain/team-health';
-import { MiniDonut } from '@/ui/components/dashboard/charts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/team-health";
+import { teamHealthFromApi } from "@/domain/team-health";
+import { MiniDonut } from "@/ui/components/dashboard/charts";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * TeamHealthGrid — таблица здоровья команд (Pulse Wave 1 §1.6).
- *
- * Источник: `GET /api/v1/dashboard/team-health`.
- *
- * 4 метрики на отдел:
- *   - Настроение (sentiment, -100..+100)
- *   - Обещания (promises, 0..100 %)
- *   - Конфликты (conflicts, число пар)
- *   - Решения (decisions, плейсхолдер v1 — neutral)
- *
- * Отделы <3 чел. показываются с заглушкой «нужно ≥3».
- * При отсутствии отделов — empty-state со ссылкой в /departments.
- */
 type Props = {
   className?: string;
 };
 
 const TONE_CHIP: Record<HealthToneDomain, string> = {
-  success: 'bg-chip-success-bg text-chip-success-fg',
-  warning: 'bg-chip-warning-bg text-chip-warning-fg',
-  danger: 'bg-chip-danger-bg text-chip-danger-fg',
-  neutral: 'bg-bg-overlay text-fg-tertiary',
+  success: "bg-chip-success-bg text-chip-success-fg",
+  warning: "bg-chip-warning-bg text-chip-warning-fg",
+  danger: "bg-chip-danger-bg text-chip-danger-fg",
+  neutral: "bg-bg-overlay text-fg-tertiary",
 };
 
 const TONE_ROW_HOVER: Record<HealthToneDomain, string> = {
-  success: 'hover:bg-chip-success-bg/10',
-  warning: 'hover:bg-chip-warning-bg/10',
-  danger: 'hover:bg-chip-danger-bg/10',
-  neutral: 'hover:bg-bg-overlay/40',
+  success: "hover:bg-chip-success-bg/10",
+  warning: "hover:bg-chip-warning-bg/10",
+  danger: "hover:bg-chip-danger-bg/10",
+  neutral: "hover:bg-bg-overlay/40",
 };
 
-/**
- * Нормализует значение promises (0..100 %) в долю 0..1 для MiniDonut.
- * При NaN/некорректных значениях возвращает 0.
- */
 function normalizePromisesScore(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value / 100));
@@ -75,9 +57,7 @@ export function TeamHealthGrid({ className }: Props) {
         if (alive) setData(teamHealthFromApi(res));
       } catch (e) {
         if (alive) {
-          setError(
-            humanizeApiError(e, 'Не удалось загрузить здоровье команд'),
-          );
+          setError(humanizeApiError(e, "Не удалось загрузить здоровье команд"));
         }
       } finally {
         if (alive) setLoading(false);
@@ -89,7 +69,7 @@ export function TeamHealthGrid({ className }: Props) {
   }, [currentOrgId]);
 
   return (
-    <Card className={cn('lg:col-span-2', className)}>
+    <Card className={cn("lg:col-span-2", className)}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <Users size={16} className="text-accent" />
@@ -101,7 +81,9 @@ export function TeamHealthGrid({ className }: Props) {
         {!loading && error && (
           <p className="text-sm text-chip-danger-fg">{error}</p>
         )}
-        {!loading && !error && data && data.teams.length === 0 && <EmptyState />}
+        {!loading && !error && data && data.teams.length === 0 && (
+          <EmptyState />
+        )}
         {!loading && !error && data && data.teams.length > 0 && (
           <Grid data={data} />
         )}
@@ -152,7 +134,7 @@ function Row({ row }: { row: TeamHealthRowDomain }) {
   return (
     <tr
       className={cn(
-        'border-t border-border-subtle/60 transition-colors',
+        "border-t border-border-subtle/60 transition-colors",
         rowHoverClass,
       )}
       title="Подробности появятся в следующих обновлениях"
@@ -192,17 +174,17 @@ function AttrChip({
   formatter: (v: number) => string;
 }) {
   const TrendIcon =
-    attr.trend === 'up'
+    attr.trend === "up"
       ? ArrowUpRight
-      : attr.trend === 'down'
+      : attr.trend === "down"
         ? ArrowDownRight
-        : attr.trend === 'flat'
+        : attr.trend === "flat"
           ? Minus
           : null;
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium',
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium",
         TONE_CHIP[attr.tone],
       )}
     >

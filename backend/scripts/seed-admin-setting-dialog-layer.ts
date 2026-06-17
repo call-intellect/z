@@ -1,23 +1,3 @@
-/**
- * ТЗ 2026-06-14 (dialog-layer — слитый модуль понимания запроса) — Seed
- * AdminSetting для глубины истории диалога.
- *
- * Регистрирует ключ динамической конфигурации:
- *   - `dialog_layer.query_history_pairs` (int, default 4) — сколько пар
- *     сообщений (1 пара = реплика пользователя + ответ ассистента) видит
- *     модуль понимания запроса при контекстуализации follow-up'ов. 4 пары =
- *     8 сообщений. Читается через `TypedConfigService.getDynamic`.
- *
- * Запуск:
- *   bun run scripts/seed-admin-setting-dialog-layer.ts
- *
- * Идемпотентность (skill `safe-seed-rules`):
- *   - Если AdminSetting уже редактировался super_admin'ом (`updatedBy != null`
- *     и `updatedBy != 'system'`) — НЕ перезаписываем `value`, обновляем только
- *     метаданные (category/section/severity/description).
- *   - Системная запись — обновим value на текущий fallback.
- */
-
 import { type Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -76,7 +56,6 @@ async function upsertSetting(seed: SettingSeed, counters: Counters): Promise<voi
     return;
   }
 
-  // Admin-edited — не трогаем value, обновляем только метаданные.
   if (existing.updatedBy && existing.updatedBy !== 'system') {
     await prisma.adminSetting.update({
       where: { key: seed.key },

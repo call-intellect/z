@@ -1,28 +1,19 @@
-'use client';
+"use client";
 
-import { orgEconomicsApi } from '@/api/admin-economics.api';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+import { orgEconomicsApi } from "@/api/admin-economics.api";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
 
-/**
- * SBA α-10 wave 3 — /admin/org/economics.
- * Для admin'ов СВОЕЙ Org (org_admin/owner, не super_admin).
- */
 export function OrgEconomicsCurrentClient() {
   const q = useAdminQuery(
-    'org-economics:current',
+    "org-economics:current",
     () => orgEconomicsApi.current({ days: 30 }),
     [],
   );
@@ -52,22 +43,22 @@ export function OrgEconomicsCurrentClient() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Stat
               title="За 30 дней, ₽"
-              value={q.data.costRubLast30d.toLocaleString('ru-RU')}
+              value={q.data.costRubLast30d.toLocaleString("ru-RU")}
             />
             <Stat
               title="Этот месяц, ₽"
               value={Math.round(q.data.costRubMonthToDate).toLocaleString(
-                'ru-RU',
+                "ru-RU",
               )}
             />
             <Stat
               title="Вызовов 30d"
-              value={q.data.callsCountLast30d.toLocaleString('ru-RU')}
+              value={q.data.callsCountLast30d.toLocaleString("ru-RU")}
             />
             <Stat
               title="Средний ₽/user"
               value={Math.round(q.data.avgCostPerUserRub).toLocaleString(
-                'ru-RU',
+                "ru-RU",
               )}
             />
           </div>
@@ -86,10 +77,10 @@ export function OrgEconomicsCurrentClient() {
                     <div
                       className={
                         q.data.budget.utilizationPercent >= 100
-                          ? 'h-full rounded bg-danger'
+                          ? "h-full rounded bg-danger"
                           : q.data.budget.utilizationPercent >= 80
-                            ? 'h-full rounded bg-warning'
-                            : 'h-full rounded bg-accent'
+                            ? "h-full rounded bg-warning"
+                            : "h-full rounded bg-accent"
                       }
                       style={{
                         width: `${Math.min(100, q.data.budget.utilizationPercent)}%`,
@@ -97,8 +88,9 @@ export function OrgEconomicsCurrentClient() {
                     />
                   </div>
                   <div className="text-xs text-fg-tertiary">
-                    Лимит: {q.data.budget.monthlyCapRub?.toLocaleString('ru-RU')}{' '}
-                    ₽ ({q.data.budget.capKind})
+                    Лимит:{" "}
+                    {q.data.budget.monthlyCapRub?.toLocaleString("ru-RU")} ₽ (
+                    {q.data.budget.capKind})
                   </div>
                 </div>
               </CardContent>

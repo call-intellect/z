@@ -1,13 +1,3 @@
-/**
- * E2E на AdminBillingController: супер-админ активирует подписку Org.
- *
- * Регрессия на баг 2026-06-03: `POST /admin/orgs/:tenantId/billing/activate`
- * отдавал 400 при валидном теле, потому что `@UsePipes(ZodValidationPipe)`
- * на методе валидировал ещё и `@Param('tenantId')` (строку) объектной схемой.
- *
- * Поднимаем реальный контроллер с мок-сервисами и override гардов
- * (CookieAuthGuard кладёт req.user, SuperAdminGuard пропускает).
- */
 import type { CanActivate, ExecutionContext, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
@@ -94,7 +84,6 @@ describe('AdminBillingController (e2e) — activate', () => {
       invoiceId: 'inv_1',
       grantedMeetings: 10,
     });
-    // tenantId из пути дошёл до сервиса, byUserId — из req.user
     expect(manualActivate).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: TENANT, byUserId: AUTH_USER.id, paymentMode: 'bonus' }),
     );

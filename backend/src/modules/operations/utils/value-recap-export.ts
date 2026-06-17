@@ -1,26 +1,12 @@
-/**
- * TZ-1 Фаза 5 (daily-value-engine) — минимальный структурный экспорт витрины
- * value-recap в «слайды» (заголовок + буллеты). Полноценный генератор
- * презентаций (PPTX/слайды-картинки) НЕ делаем — это отдельная инфраструктура
- * (см. реестр не-сделанного). Здесь — печатаемый/слайд-ready payload.
- *
- * Честность (Р6): только твёрдые данные из payload; soft-цифры со словом
- * «оценка» + знаменателем; count решений в паре с «% доведённых». Никаких ₽.
- */
-
 import type { ValueRecapSlideDto } from '../dto/value-recap.dto';
 import type { ValueRecapPayload } from '../services/value-recap.scoring';
 
-/** Построить набор слайдов из payload витрины. Пустой при отсутствии payload. */
-export function buildValueRecapSlides(
-  payload: ValueRecapPayload | null,
-): ValueRecapSlideDto[] {
+export function buildValueRecapSlides(payload: ValueRecapPayload | null): ValueRecapSlideDto[] {
   if (!payload) return [];
   const r = payload.routine;
   const t = payload.team;
   const slides: ValueRecapSlideDto[] = [];
 
-  // Слайд 1 — снятая рутина (ведущая ось).
   slides.push({
     title: `Итоги месяца ${payload.periodYm}`,
     subtitle: 'Снятая рутина — собрано и оформлено автоматически',
@@ -35,7 +21,6 @@ export function buildValueRecapSlides(
     ],
   });
 
-  // Слайд 2 — команда (soft, «оценка» + знаменатель).
   slides.push({
     title: 'Команда работает лучше',
     subtitle: 'Оценочные показатели — всегда со знаменателем',
@@ -55,20 +40,17 @@ export function buildValueRecapSlides(
     ],
   });
 
-  // Слайд 3 — решения месяца (Ф3 редизайн): список + % доведения по статусу.
   const decisions = payload.decisions ?? [];
   if (decisions.length > 0) {
     slides.push({
       title: 'Решения месяца',
       subtitle: `Всего ${t.decisionsTotal}, доведено до результата ${t.decisionsThroughputPercent}%`,
       bullets: decisions.map(
-        (d) =>
-          `${d.statement} — ${decisionStatusLabel(d.status)} (${d.throughputPercent}%)`,
+        (d) => `${d.statement} — ${decisionStatusLabel(d.status)} (${d.throughputPercent}%)`,
       ),
     });
   }
 
-  // Слайд 4 — сводка (narrative).
   if (payload.narrative && payload.narrative.trim().length > 0) {
     slides.push({
       title: 'Коротко',
@@ -79,7 +61,6 @@ export function buildValueRecapSlides(
   return slides;
 }
 
-/** Человекочитаемая метка статуса доведения решения (RU). */
 function decisionStatusLabel(status: string): string {
   switch (status) {
     case 'done':

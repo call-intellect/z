@@ -10,14 +10,8 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import { CurationService } from '../../curation/services/curation.service';
 import {
   EXPERIMENT_EXTRACT_JSON_SCHEMA,
@@ -29,36 +23,12 @@ import {
 import { Specialist39ExperimentProbeService } from './specialist-3-9-experiment-probe.service';
 import { resolveAxisTenantTop } from './tenant-top';
 
-
-/**
- * SBA β-6 — Specialist39ExperimentsService.
- *
- * Логика специалиста 3.9 (Experiment Tracker):
- *   1. Принимаем IdeaBlock signalType ∈ { hypothesis, result, lesson }.
- *   2. LLM-extract: вернуть `{ name, hypothesisText, currentResult?, lessons?, status, confidence }`.
- *   3. Резолв существующего Experiment: ищем по совпадающим sourceBlockIds или
- *      KNN-эвристике (имя/hypothesis) внутри Org.
- *   4. Auto-status transition ТОЛЬКО при confidence ≥ 0.7 (§3 решение #3).
- *      Иначе оставляем status='hypothesis' и эмитим probe куратору.
- *   5. Создаём/обновляем Experiment + ExperimentVersion snapshot.
- *   6. Triage через CurationService (см. §5 контракт зонтичного).
- *   7. Probe-triggers: `result_without_lesson` сразу после persist'а.
- *
- * Контракт §5 sub-TZ:
- *   1. consumer `core.specialist-routing` jobName='3-9-experiments'.
- *   2. Prisma-модели Experiment + ExperimentVersion (β-6).
- *   3. triage перед канонизацией (resourceType='experiment').
- *   4. probe-events — Specialist39ExperimentProbeService (3 trigger'а).
- *   5. metrics — `core_specialist_*{type='experiment'}` + experiments_*.
- */
 @Injectable()
 export class Specialist39ExperimentsService {
   private readonly logger = new Logger(Specialist39ExperimentsService.name);
 
   static readonly SPECIALIST_NAME = '3-9-experiments';
-  /** Порог auto-status transition. Ниже — оставляем 'hypothesis' + probe. */
   private static readonly AUTO_TRANSITION_MIN_CONFIDENCE = 0.7;
-  /** Минимальная уверенность extraction, ниже которой пропускаем triage. */
   private static readonly MIN_EXTRACT_CONFIDENCE = 0.4;
 
   constructor(
@@ -74,9 +44,6 @@ export class Specialist39ExperimentsService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -85,17 +52,7 @@ export class Specialist39ExperimentsService {
     }
   }
 
-  /**
-   * Главная точка входа — вызывается из `experiment-detector.worker`.
-   *
-   * Идемпотентность: если блок уже включён в `sourceBlockIds` существующего
-   * Experiment'а — апдейт идёт по тому же id. Если LLM возвращает мало
-   * confidence — пропускаем (метрика skipped).
-   */
-  async processBlock(args: {
-    tenantId: string;
-    blockId: string;
-  }): Promise<void> {
+  async processBlock(args: { tenantId: string; blockId: string }): Promise<void> {
     const tenantTop = resolveAxisTenantTop(args.tenantId);
     const start = Date.now();
 
@@ -108,13 +65,9 @@ export class Specialist39ExperimentsService {
       if (!block) return;
       if (block.tenantId !== args.tenantId) return;
 
-      // Sanity-фильтр: worker уже отфильтровал по jobName, но проверим.
       const allowed = new Set(['hypothesis', 'result', 'lesson']);
       if (!allowed.has(block.signalType)) return;
 
-      // Быстрый exit: если этот блок уже привязан к Experiment'у — skip,
-      // worker не должен запускаться повторно из-за идемпотентности jobId,
-      // но защитимся от ручного re-enqueue.
       const existing = await this.findExistingByBlock({
         tenantId: args.tenantId,
         blockId: block.id,
@@ -126,19 +79,13 @@ export class Specialist39ExperimentsService {
         return;
       }
 
-      // Auto-transition gate: ТОЛЬКО при confidence ≥ 0.7 принимаем status
-      // от LLM. Иначе оставляем 'hypothesis' и эмитим probe куратору
-      // (через Specialist39ExperimentProbeService.checkNoOwnerForOrg cron
-      // или сразу через result_without_lesson — ниже).
       const acceptedStatus =
         draft.confidence >= Specialist39ExperimentsService.AUTO_TRANSITION_MIN_CONFIDENCE
           ? draft.status
-          : existing?.status ?? 'hypothesis';
+          : (existing?.status ?? 'hypothesis');
 
-      // Person'ы, упомянутые в блоке как subject.
       const personSubjectIds = await this.resolvePersonSubjects(block.id);
 
-      // Уроки: если блок lesson — добавляем туда sourceBlockId.
       const newLessons = (draft.lessons ?? []).map((l) => ({
         text: l.text,
         type: l.type,
@@ -167,13 +114,11 @@ export class Specialist39ExperimentsService {
         result = 'created';
       }
 
-      // ExperimentVersion snapshot — immutable history.
       await this.writeVersionSnapshot({
         experiment,
         changeReason: existing ? 'updated_from_block' : 'created_from_block',
       });
 
-      // Метрика: сколько уроков добавилось всего по эксперименту.
       const totalLessons = Array.isArray(experiment.lessonsJson)
         ? (experiment.lessonsJson as unknown[]).length
         : 0;
@@ -184,8 +129,6 @@ export class Specialist39ExperimentsService {
         });
       }
 
-      // Triage перед канонизацией. dataClass наследуем от блока (но не выше
-      // 'internal' по дефолту — experiment всё-таки операционная история).
       await this.triageProposed({
         tenantId: block.tenantId,
         resourceId: experiment.id,
@@ -203,7 +146,6 @@ export class Specialist39ExperimentsService {
         dataClass: this.elevateDataClass(block.dataClass, 'internal'),
       });
 
-      // Probe — синхронный «result_without_lesson».
       await this.probes.emitResultWithoutLesson(experiment);
 
       this.logger.log(
@@ -239,8 +181,6 @@ export class Specialist39ExperimentsService {
     }
   }
 
-  // ─────────────────────────── extract ───────────────────────────────
-
   private async extractDraft(
     block: IdeaBlock & { evidence: IdeaBlockEvidence[] },
   ): Promise<ExperimentDraft | null> {
@@ -249,7 +189,6 @@ export class Specialist39ExperimentsService {
       .map((e) => e.quote)
       .filter((q): q is string => Boolean(q) && q.length > 0);
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (контент блока) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const rawUser = EXPERIMENT_EXTRACT_USER_TEMPLATE({
       signalType: block.signalType,
@@ -333,10 +272,7 @@ export class Specialist39ExperimentsService {
       });
       return null;
     }
-    if (
-      (parsed.confidence ?? 0) <
-      Specialist39ExperimentsService.MIN_EXTRACT_CONFIDENCE
-    ) {
+    if ((parsed.confidence ?? 0) < Specialist39ExperimentsService.MIN_EXTRACT_CONFIDENCE) {
       this.logger.debug(
         { blockId: block.id, confidence: parsed.confidence },
         'specialist-3-9.extractDraft: confidence слишком низкий — skip',
@@ -346,14 +282,6 @@ export class Specialist39ExperimentsService {
     return parsed;
   }
 
-  // ───────────────────────── persist helpers ─────────────────────────
-
-  /**
-   * Поиск существующего Experiment'а:
-   *   1) Прямой — если блок уже в `sourceBlockIds[]`.
-   *   2) Альтернативный — по совпадающим Person-subject'ам (best-effort,
-   *      без cosine — embedding для Experiment добавим в γ+).
-   */
   private async findExistingByBlock(args: {
     tenantId: string;
     blockId: string;
@@ -385,9 +313,7 @@ export class Specialist39ExperimentsService {
         ? now
         : null;
     const completedAt =
-      args.acceptedStatus === 'completed' || args.acceptedStatus === 'dropped'
-        ? now
-        : null;
+      args.acceptedStatus === 'completed' || args.acceptedStatus === 'dropped' ? now : null;
 
     return this.prisma.experiment.create({
       data: {
@@ -404,9 +330,7 @@ export class Specialist39ExperimentsService {
         completedAt,
         sourceBlockIds: [args.block.id],
         personSubjectIds: args.personSubjectIds,
-        confidence: new Prisma.Decimal(
-          Math.max(0, Math.min(1, args.draft.confidence)),
-        ),
+        confidence: new Prisma.Decimal(Math.max(0, Math.min(1, args.draft.confidence))),
         lastConfirmedAt: now,
       },
     });
@@ -425,9 +349,7 @@ export class Specialist39ExperimentsService {
     }>;
   }): Promise<Experiment> {
     const now = new Date();
-    const mergedBlocks = Array.from(
-      new Set([...args.existing.sourceBlockIds, args.block.id]),
-    );
+    const mergedBlocks = Array.from(new Set([...args.existing.sourceBlockIds, args.block.id]));
     const mergedSubjects = Array.from(
       new Set([...args.existing.personSubjectIds, ...args.personSubjectIds]),
     );
@@ -445,15 +367,11 @@ export class Specialist39ExperimentsService {
         : null);
     const completedAt =
       args.existing.completedAt ??
-      (args.acceptedStatus === 'completed' || args.acceptedStatus === 'dropped'
-        ? now
-        : null);
+      (args.acceptedStatus === 'completed' || args.acceptedStatus === 'dropped' ? now : null);
 
     return this.prisma.experiment.update({
       where: { id: args.existing.id },
       data: {
-        // name/hypothesisText не перетираем — только если у существующего
-        // короче / пусто (best-effort, чтобы не «откатывать» уточнения куратора).
         name:
           args.existing.name.length < args.draft.name.length
             ? args.draft.name.slice(0, 120)
@@ -463,8 +381,7 @@ export class Specialist39ExperimentsService {
             ? args.draft.hypothesisText
             : args.existing.hypothesisText,
         status: args.acceptedStatus,
-        currentResult:
-          args.draft.currentResult ?? args.existing.currentResult,
+        currentResult: args.draft.currentResult ?? args.existing.currentResult,
         lessonsJson:
           mergedLessons.length > 0
             ? (mergedLessons as unknown as Prisma.InputJsonValue)
@@ -473,9 +390,7 @@ export class Specialist39ExperimentsService {
         personSubjectIds: { set: mergedSubjects },
         startedAt,
         completedAt,
-        confidence: new Prisma.Decimal(
-          Math.max(0, Math.min(1, args.draft.confidence)),
-        ),
+        confidence: new Prisma.Decimal(Math.max(0, Math.min(1, args.draft.confidence))),
         lastConfirmedAt: now,
       },
     });
@@ -532,8 +447,6 @@ export class Specialist39ExperimentsService {
     } as Prisma.InputJsonValue;
   }
 
-  // ─────────────────────────── resolvers ─────────────────────────────
-
   private async resolvePersonSubjects(blockId: string): Promise<string[]> {
     const mentions = await this.prisma.ideaBlockEntity.findMany({
       where: {
@@ -553,17 +466,12 @@ export class Specialist39ExperimentsService {
     return [...new Set(persons.map((p) => p.id))];
   }
 
-  private elevateDataClass(
-    blockClass: DataClass,
-    defaultClass: DataClass,
-  ): DataClass {
+  private elevateDataClass(blockClass: DataClass, defaultClass: DataClass): DataClass {
     const order: DataClass[] = ['public', 'internal', 'sensitive', 'private'];
     const blockRank = order.indexOf(blockClass);
     const defaultRank = order.indexOf(defaultClass);
     return blockRank > defaultRank ? blockClass : defaultClass;
   }
-
-  // ─────────────────────────── triage ────────────────────────────────
 
   private async triageProposed(args: {
     tenantId: string;
@@ -595,8 +503,6 @@ export class Specialist39ExperimentsService {
     }
   }
 }
-
-// ─────────────────────────── shared types ─────────────────────────
 
 interface ExperimentDraft {
   name: string;

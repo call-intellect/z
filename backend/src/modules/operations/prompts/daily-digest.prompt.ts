@@ -1,27 +1,11 @@
-/**
- * SBA β-8.3 — промпт `operations-daily-digest`.
- *
- * Источник: plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md §1.7.
- *
- * Задача: на вход — структурированный агрегат за вчерашний день
- * (доли green/yellow/red, новые блокеры, просроченные обещания, цели,
- * новые high-severity инсайты, решения). На выход — связный markdown
- * из 4-6 коротких разделов + `shortSummary` для Telegram и блока на главной.
- *
- * Code-fallback (без PromptRegistry) — как `operations-weekly-digest` и
- * `dashboard-summary`. Версия промпта — `prompt-v1`.
- */
-
 import type { DailyDigestAggregates } from '../dto/daily-digest.dto';
 
 export const DAILY_DIGEST_PROMPT_VERSION = 'prompt-v1';
 
 export const DAILY_DIGEST_TASK_TYPE = 'operations-daily-digest';
 
-/** Маркер для отделения основного текста от shortSummary в ответе LLM. */
 const SHORT_SUMMARY_DELIMITER = '---SHORT_SUMMARY---';
 
-/** RU-названия типов сигналов (InsightKind). Неизвестный — как есть. */
 const INSIGHT_KIND_RU: Record<string, string> = {
   problem: 'проблема',
   risk: 'риск',
@@ -32,7 +16,6 @@ function insightKindRu(k: string): string {
   return INSIGHT_KIND_RU[k] ?? k;
 }
 
-/** RU-названия статусов решений (DecisionStatus). Неизвестный — как есть. */
 const DECISION_STATUS_RU: Record<string, string> = {
   active: 'действует',
   rolled_back: 'откатано',
@@ -72,9 +55,6 @@ export const DAILY_DIGEST_SYSTEM_PROMPT = [
   '  - Длина основного текста — 200-450 слов, shortSummary — 3-4 предложения.',
 ].join('\n');
 
-/**
- * Сборка user-сообщения: компактная сериализация агрегатов.
- */
 export function buildDailyDigestUserMessage(agg: DailyDigestAggregates): string {
   const lines: string[] = [];
   lines.push(`Дата отчёта: ${agg.dateLocal} (вчерашние сутки в МСК).`);
@@ -137,18 +117,13 @@ export function buildDailyDigestUserMessage(agg: DailyDigestAggregates): string 
   return lines.join('\n');
 }
 
-/**
- * Парсит ответ LLM на основной текст и shortSummary по разделителю
- * `---SHORT_SUMMARY---`. Если разделителя нет — bodyMarkdown = весь ответ,
- * shortSummary = первый абзац.
- */
-export function parseDailyDigestLlmResponse(
-  raw: string,
-): { bodyMarkdown: string; shortSummary: string | null } {
+export function parseDailyDigestLlmResponse(raw: string): {
+  bodyMarkdown: string;
+  shortSummary: string | null;
+} {
   const trimmed = (raw ?? '').trim();
   const idx = trimmed.indexOf(SHORT_SUMMARY_DELIMITER);
   if (idx === -1) {
-    // Fallback: берём первый абзац как shortSummary.
     const firstPara = trimmed.split(/\n{2,}/)[0]?.trim() ?? null;
     return {
       bodyMarkdown: trimmed,
@@ -163,13 +138,10 @@ export function parseDailyDigestLlmResponse(
   };
 }
 
-/**
- * «Сухой» вариант комментария при провале LLM. Структура остаётся,
- * связного текста нет — это маркер для UI (badge «не доставлено LLM»).
- */
-export function buildFallbackDigestMarkdown(
-  agg: DailyDigestAggregates,
-): { bodyMarkdown: string; shortSummary: string | null } {
+export function buildFallbackDigestMarkdown(agg: DailyDigestAggregates): {
+  bodyMarkdown: string;
+  shortSummary: string | null;
+} {
   const lines: string[] = [];
   lines.push(`# Ежедневный отчёт за ${agg.dateLocal}`);
   lines.push('');

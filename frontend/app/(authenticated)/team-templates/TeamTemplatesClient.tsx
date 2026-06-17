@@ -1,16 +1,11 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Users } from 'lucide-react';
-import { useAuth } from '@/contexts/auth-context';
-import { teamTemplateCategoryLabel } from '@/domain/tracker/team-template';
-import { useTeamTemplates } from '@/hooks/tracker/useTeamTemplates';
+import Link from "next/link";
+import { Users } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { teamTemplateCategoryLabel } from "@/domain/tracker/team-template";
+import { useTeamTemplates } from "@/hooks/tracker/useTeamTemplates";
 
-/**
- * `/team-templates` — каталог шаблонов команд (sales / dev / marketing / …).
- * Phase 1 backend — read-only. POST /projects/from-template вернёт 501
- * до Sprint 9.
- */
 export function TeamTemplatesClient() {
   const { currentOrgId } = useAuth();
   const { templates, isLoading, error } = useTeamTemplates(currentOrgId);

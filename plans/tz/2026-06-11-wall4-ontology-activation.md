@@ -6,7 +6,7 @@ date: 2026-06-11
 owner: Сергей (владелец продукта Кора)
 relates_to:
   - plans/analysis/2026-06-11-kora-moat-and-competitive-defensibility.md
-  - plans/tz/2026-05-25-knowledge-core-temporal-and-graph-quality.md
+  - plans/archive/2026-05-25-knowledge-core-temporal-and-graph-quality.md
   - plans/tz/2026-05-29-agents-v2-umbrella.md
   - second-brain/06_marketing/positioning.md
   - docs/operations/feature-flags.md

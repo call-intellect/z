@@ -1,22 +1,3 @@
-/**
- * Pulse Wave 4 §4.6 — Forecaster агент.
- *
- * Промпт для еженедельного LLM-вызова `forecast-weekly`. Анализирует тренды
- * 4 метрик за 4 недели и возвращает прогноз на следующую неделю в строгом
- * JSON-формате.
- *
- * Cache-friendly (см. feedback_llm_prompts_cache_friendly.md): SYSTEM —
- * полностью статичен; переменные данные (`trendsJson`) — в КОНЦЕ
- * user-сообщения. Это даёт ~99% prompt cache hit на DeepSeek / OpenAI-proxy.
- *
- * EU AI Act: НЕ анализируем голос/видео и не извлекаем эмоции. На вход —
- * только структурированные метрики, без текстов сотрудников.
- *
- * A9 (2026-06-10): `confidence` в `expectedShifts[]` течёт в вес прогноза на
- * дашборде — поэтому SYSTEM завершается прогнозной шкалой уверенности
- * (`withForecastConfidenceCalibration`, дописывается в КОНЕЦ → cache-friendly).
- */
-
 import { withForecastConfidenceCalibration } from '../../ai/services/prompts/common';
 
 export const FORECASTER_SYSTEM_PROMPT = withForecastConfidenceCalibration(`Ты — прогнозист компании.
@@ -39,12 +20,6 @@ EU AI Act: не анализируй голос/видео — только ст
 
 Без дополнительных полей. Без markdown-fences.`);
 
-/**
- * JSON-schema для `responseFormat: json_schema` (strict). Используется
- * провайдерами, которые поддерживают structured output (OpenAI / DeepSeek).
- * Для провайдеров без поддержки LlmRouter сам falls back в plain text +
- * парсер ниже разбирает JSON.
- */
 export const FORECASTER_JSON_SCHEMA: Record<string, unknown> = {
   type: 'object',
   additionalProperties: false,
@@ -83,10 +58,6 @@ export const FORECASTER_JSON_SCHEMA: Record<string, unknown> = {
   required: ['trend', 'risks', 'opportunities', 'expectedShifts'],
 };
 
-/**
- * Одна точка тренда — недельный аггрегат метрики.
- * `weekStart` — YYYY-MM-DD (понедельник, локальная TZ Org).
- */
 export interface ForecasterTrendPoint {
   weekStart: string;
   sentiment_index: number | null;
@@ -95,12 +66,6 @@ export interface ForecasterTrendPoint {
   engagement_score: number | null;
 }
 
-/**
- * Сборка user-сообщения для `forecast-weekly`.
- *
- * Cache-friendly правило: имя компании и фиксированный заголовок — сверху,
- * переменные данные `trends` — внизу JSON-блоком.
- */
 export function buildForecasterUserMessage(args: {
   tenantName: string;
   trends: ForecasterTrendPoint[];
@@ -118,30 +83,18 @@ export function buildForecasterUserMessage(args: {
   ].join('\n');
 }
 
-/**
- * Тип распарсенного ответа Forecaster'а.
- */
 export interface ForecasterParsedResponse {
   trend: 'improving' | 'stable' | 'declining';
   risks: string[];
   opportunities: string[];
   expectedShifts: Array<{
-    metric:
-      | 'sentiment_index'
-      | 'commitment_kept_ratio'
-      | 'hanging_decisions'
-      | 'engagement_score';
+    metric: 'sentiment_index' | 'commitment_kept_ratio' | 'hanging_decisions' | 'engagement_score';
     direction: 'up' | 'flat' | 'down';
     confidence: number;
   }>;
 }
 
-/**
- * Безопасный парсер: возвращает null при невалидном JSON или нарушении схемы.
- */
-export function parseForecasterResponse(
-  text: string,
-): ForecasterParsedResponse | null {
+export function parseForecasterResponse(text: string): ForecasterParsedResponse | null {
   try {
     const raw = JSON.parse(text) as unknown;
     if (typeof raw !== 'object' || raw === null) return null;

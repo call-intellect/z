@@ -1,15 +1,3 @@
-/**
- * Agents v2 Фаза 0.1 (2026-05-30) — Probe-Response-Classify.
- *
- * Property test для `PROBE_RESPONSE_CLASSIFY_JSON_SCHEMA`. Проверяет:
- *   - required = [answer, confidence, requiresFollowup];
- *   - additionalProperties=false (strict JSON);
- *   - confidence — number 0..1;
- *   - answer — string ≤1000;
- *   - schema name = probe_response_classify_v1;
- *   - cache-friendly: SYSTEM не содержит переменных подстановок,
- *     USER упоминает schema name в конце.
- */
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -21,9 +9,7 @@ import {
 
 describe('probe-response-classify prompt — JSON Schema strict', () => {
   it('SCHEMA_NAME = probe_response_classify_v1', () => {
-    expect(PROBE_RESPONSE_CLASSIFY_SCHEMA_NAME).toBe(
-      'probe_response_classify_v1',
-    );
+    expect(PROBE_RESPONSE_CLASSIFY_SCHEMA_NAME).toBe('probe_response_classify_v1');
   });
 
   it('required = [answer, confidence, requiresFollowup]', () => {
@@ -32,9 +18,7 @@ describe('probe-response-classify prompt — JSON Schema strict', () => {
   });
 
   it('additionalProperties=false (strict)', () => {
-    expect(PROBE_RESPONSE_CLASSIFY_JSON_SCHEMA.additionalProperties).toBe(
-      false,
-    );
+    expect(PROBE_RESPONSE_CLASSIFY_JSON_SCHEMA.additionalProperties).toBe(false);
   });
 
   it('answer — string ≤ 1000', () => {
@@ -68,8 +52,6 @@ describe('probe-response-classify prompt — JSON Schema strict', () => {
   });
 
   it('SYSTEM стабилен (без runtime-переменных) — кэш-дружественный', () => {
-    // Регрессия: SYSTEM не должен содержать `${...}`. Тогда у DeepSeek/
-    // OpenAI-proxy/MiniMax cache hit ≈99% между вызовами.
     expect(PROBE_RESPONSE_CLASSIFY_SYSTEM_PROMPT).not.toMatch(/\$\{/);
   });
 
@@ -81,8 +63,6 @@ describe('probe-response-classify prompt — JSON Schema strict', () => {
     expect(user).toContain('Когда дедлайн?');
     expect(user).toContain('Завтра к 18:00.');
     expect(user).toContain('probe_response_classify_v1');
-    // Переменные данные — в первых строках; финальная строка — про схему.
-    // Это нужно, чтобы префикс SYSTEM + начало USER оставались стабильными.
     const lines = user.split('\n');
     expect(lines[lines.length - 1]).toContain('probe_response_classify_v1');
   });

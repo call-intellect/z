@@ -1,34 +1,10 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { type TableView, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { RbacService } from '../../rbac/rbac.service';
-import type {
-  CreateTableViewBody,
-  UpdateTableViewBody,
-} from '../dto/tables.dto';
+import type { CreateTableViewBody, UpdateTableViewBody } from '../dto/tables.dto';
 
-/**
- * Smart Tables — Saved Views (Фаза 3, см. plans/tz/2026-05-31-smart-tables.md).
- *
- * Visibility-модель:
- *   - personal — видит только владелец (`ownerId === userId`).
- *   - shared   — видят все участники Org.
- *   - public   — public-shared (в Фазе 3 — то же что shared; в Фазе 14
- *                добавится анонимная public-ссылка).
- *
- * Edit / delete — только владелец или admin (RBAC `table` write/delete). Тот
- * же ресурс, что и сама таблица; отдельного RBAC-ресурса не плодим.
- *
- * Multi-tenant scope: все операции проходят через проверку, что родительская
- * `Table` принадлежит `tenantId` вызывающего пользователя.
- */
 @Injectable()
 export class TableViewsService {
   private readonly logger = new Logger(TableViewsService.name);
@@ -38,18 +14,7 @@ export class TableViewsService {
     @Inject(RbacService) private readonly rbac: RbacService,
   ) {}
 
-  // ─────────────────────────── list ───────────────────────────────────────
-
-  /**
-   * Возвращает все views, доступные `userId`:
-   *   - все `shared` / `public`,
-   *   - + свои `personal`.
-   */
-  async list(args: {
-    tenantId: string;
-    tableId: string;
-    userId: string;
-  }): Promise<TableView[]> {
+  async list(args: { tenantId: string; tableId: string; userId: string }): Promise<TableView[]> {
     await this.requireTable(args.tenantId, args.tableId);
     return this.prisma.tableView.findMany({
       where: {
@@ -62,8 +27,6 @@ export class TableViewsService {
       orderBy: [{ createdAt: 'asc' }],
     });
   }
-
-  // ─────────────────────────── findById ───────────────────────────────────
 
   async findById(args: {
     tenantId: string;
@@ -81,7 +44,6 @@ export class TableViewsService {
         error: { code: 'view_not_found', message: 'Вид не найден' },
       });
     }
-    // personal видит только владелец.
     if (view.visibility === 'personal' && view.ownerId !== args.userId) {
       throw new NotFoundException({
         ok: false,
@@ -90,8 +52,6 @@ export class TableViewsService {
     }
     return view;
   }
-
-  // ─────────────────────────── create ─────────────────────────────────────
 
   async create(args: {
     tenantId: string;
@@ -112,13 +72,6 @@ export class TableViewsService {
     });
   }
 
-  // ─────────────────────────── update ─────────────────────────────────────
-
-  /**
-   * Редактировать может либо владелец view'а, либо тот, у кого есть
-   * `write` на ресурс `table` (admin / super_admin), причём ownerless-flag
-   * не передаём — view не приравнивается к личной собственности для admin'ов.
-   */
   async update(args: {
     tenantId: string;
     tableId: string;
@@ -150,8 +103,6 @@ export class TableViewsService {
     });
   }
 
-  // ─────────────────────────── delete ─────────────────────────────────────
-
   async delete(args: {
     tenantId: string;
     tableId: string;
@@ -173,8 +124,6 @@ export class TableViewsService {
     return { id: existing.id };
   }
 
-  // ─────────────────────────── helpers ────────────────────────────────────
-
   private async requireTable(tenantId: string, tableId: string): Promise<void> {
     const table = await this.prisma.table.findUnique({
       where: { id: tableId },
@@ -194,8 +143,6 @@ export class TableViewsService {
     ownerId: string,
   ): Promise<void> {
     if (ownerId === userId) return;
-    // Admin / super_admin / owner ролей попадает через canWrite на ресурс table,
-    // т.к. policy.csv даёт им write на любые table-объекты.
     const ok = await this.rbac.canWrite(userId, tenantId, 'table', null);
     if (!ok) {
       throw new ForbiddenException({

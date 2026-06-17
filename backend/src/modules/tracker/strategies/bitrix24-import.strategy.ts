@@ -5,77 +5,20 @@ import { nanoid } from 'nanoid';
 import { tenantTopOf } from '../../dialog-layer/utils/tenant-top';
 import type { ImportErrorEntry } from '../dto/imports/import-log-response.dto';
 
-import type {
-  ImportResult,
-  ImportStrategy,
-  ImportStrategyArgs,
-} from './import-strategy.interface';
+import type { ImportResult, ImportStrategy, ImportStrategyArgs } from './import-strategy.interface';
 
-/**
- * Wave 3 / Tracker Phase 5 part 3 (2026-05-24) — импорт из Битрикс24
- * (Bitrix24) через REST API по входящему вебхуку:
- *
- *   `https://{portal}.bitrix24.ru/rest/{userId}/{token}/{method}.json`
- *
- * Авторизация: единственным источником прав является сам URL — токен лежит
- * в path. Никаких заголовков Authorization не нужно. Гранулярность прав
- * ограничена тем, что вебхук создавали администратору портала: если у
- * webhook'а нет права task/disk — пользователю API вернёт 401/403, мы
- * считаем это фатальной ошибкой импорта и поднимаем исключение (worker
- * сделает finalizeFailed).
- *
- * Что мапим (см. plans/tz/2026-05-23-tracker-phase-5-import.md §Битрикс24 → Кора):
- *   sonet_group (рабочая группа)  → Project (name=group.NAME, identifier=
- *                                   эвристически из имени, slug из имени)
- *   task.STATUS                    → IssueState (mapStatusCategory)
- *     1=Новая, 2=Ждёт выполнения, 3=Выполняется, 4=Ожидает контроля,
- *     5=Завершена, 6=Отложена, 7=Отказ
- *   tasks.task.list item           → Issue (title=TITLE, description=
- *                                   DESCRIPTION, externalSource='bitrix24',
- *                                   externalId=task.ID)
- *   RESPONSIBLE_ID (+ user.get →
- *     email)                       → IssueAssignee (через userMappings)
- *   CREATED_BY                     → Issue.createdById (через userMappings,
- *                                   fallback = инициатор импорта)
- *   DEADLINE                       → Issue.dueDate
- *   PRIORITY                       → Issue.priority (0=low, 1=medium, 2=urgent)
- *   PARENT_ID                      → Issue.parentId (вторым проходом)
- *   DEPENDS_ON                     → IssueRelation (blocked_by)
- *   task.commentitem.getlist       → IssueComment
- *   disk attachments               → IssueAttachment (best-effort через
- *                                   `disk.file.get` + DOWNLOAD_URL → S3)
- *
- * Идемпотентность: перед созданием Issue — `findFirst({ tenantId,
- * externalSource: 'bitrix24', externalId: task.ID })`. Если есть — skip.
- *
- * Cancellation: каждые 50 items перечитываем `ImportLog.status`; если
- * 'cancelled' — выходим с частичными счётчиками.
- *
- * Rate limiting: при 429/5xx — exp backoff (1s, 2s, 4s, max 16s, до 4
- * попыток). На 4xx (кроме 429) — бросаем сразу. 401 при первом запросе
- * (валидация вебхука) — пробрасываем дальше, чтобы воркер отметил failed.
- *
- * NB: Битрикс24 REST имеет soft rate limit ~2 RPS на портал. Мы ничего
- * не throttle'ем заранее — полагаемся на 429+backoff, обычно дешевле
- * упереться один раз и подождать секунду, чем sleep между всеми запросами.
- */
 @Injectable()
 export class Bitrix24ImportStrategy implements ImportStrategy {
   private readonly logger = new Logger(Bitrix24ImportStrategy.name);
 
-  /** Каждые сколько items проверяем cancellation + эмитим progress. */
   private static readonly PROGRESS_BATCH_SIZE = 50;
 
-  /** Max attachments fetch размер (соответствует attachments.service / Trello). */
   private static readonly MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-  /** Таймаут одного HTTP-запроса. */
   private static readonly REQUEST_TIMEOUT_MS = 30_000;
 
-  /** Max попыток при 429/5xx. */
   private static readonly MAX_RETRY_ATTEMPTS = 4;
 
-  /** Per-page для list-эндпоинтов (Битрикс24 max ~50). */
   private static readonly PAGE_SIZE = 50;
 
   async run(args: ImportStrategyArgs): Promise<ImportResult> {
@@ -91,18 +34,13 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     const selectedGroupIds = selectedGroupIdsRaw
       .map((g) => String(g).trim())
       .filter((g) => g.length > 0);
-    const userMappings = (params.userMappings ?? {}) as Record<
-      string,
-      string | null
-    >;
+    const userMappings = (params.userMappings ?? {}) as Record<string, string | null>;
 
     if (!webhookUrl) {
       throw new Error('Bitrix24 import: webhookUrl не задан');
     }
     if (selectedGroupIds.length === 0) {
-      throw new Error(
-        'Bitrix24 import: selectedGroupIds пуст — нечего импортировать',
-      );
+      throw new Error('Bitrix24 import: selectedGroupIds пуст — нечего импортировать');
     }
 
     const errors: ImportErrorEntry[] = [];
@@ -118,15 +56,12 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     const client = new Bitrix24Client({
       webhookUrl,
       logger: this.logger,
-      fetchImpl: (input, init) =>
-        fetch(input as unknown as string, init as unknown as RequestInit),
+      fetchImpl: (input, init) => fetch(input as unknown as string, init as unknown as RequestInit),
     });
 
     const unmatchedEmails = new Set<string>();
     let processedItems = 0;
 
-    // ── 1) Загружаем группы + задачи постранично, чтобы знать total и
-    //      иметь возможность разрулить parent/depends внутри одного импорта.
     type LoadedGroup = {
       group: BitrixGroup;
       tasks: BitrixTask[];
@@ -138,7 +73,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
         const tasks = await client.listTasksByGroup(groupId);
         loaded.push({ group, tasks });
       } catch (err) {
-        // 401 на первом же вебхук-вызове — считаем фатальным.
         if (err instanceof BitrixApiError && err.status === 401) {
           throw new Error(
             `Bitrix24 import: webhook не авторизован (HTTP 401). Проверьте, что URL вебхука актуален и у него есть права на task и sonet_group.`,
@@ -156,18 +90,12 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
 
     const totalTasks = loaded.reduce((sum, g) => sum + g.tasks.length, 0);
 
-    // Карта `bitrix task.ID` → `our Issue.id` (для parent + relations).
     const issueIdByBitrixId = new Map<string, string>();
 
-    // Кэш user.get по userId → email (для assignee resolve).
     const emailByBitrixUserId = new Map<string, string | null>();
 
-    // ── 2) Импортируем по группам.
     for (const { group, tasks } of loaded) {
       let project: { id: string; identifier: string };
-      // Status (числовой) → our IssueState.id. Битрикс24 имеет фиксированные
-      // 1..7 (не workflow per group), но мы создаём свой набор state per project,
-      // потому что у каждого Project в Коре есть свои IssueState'ы.
       let stateByBitrixStatus: Map<string, string>;
       try {
         project = await this.upsertProject({
@@ -194,7 +122,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       }
 
       for (const task of tasks) {
-        // Cancellation + progress каждые 50 items.
         if (
           processedItems > 0 &&
           processedItems % Bitrix24ImportStrategy.PROGRESS_BATCH_SIZE === 0
@@ -266,8 +193,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       }
     }
 
-    // ── 3) Вторым проходом — связи (parent + depends), потому что они
-    //      требуют, чтобы все импортируемые Issue уже существовали.
     for (const { tasks } of loaded) {
       for (const task of tasks) {
         const ourId = issueIdByBitrixId.get(String(task.ID));
@@ -310,7 +235,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       }
     }
 
-    // Финализация.
     result.unmatchedEmails = Array.from(unmatchedEmails);
     this.trimErrors(errors);
     await services.prisma.importLog
@@ -318,8 +242,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
         where: { id: importLog.id },
         data: {
           processedItems,
-          unmatchedJson:
-            result.unmatchedEmails as unknown as Prisma.InputJsonValue,
+          unmatchedJson: result.unmatchedEmails as unknown as Prisma.InputJsonValue,
         },
       })
       .catch(() => undefined);
@@ -331,13 +254,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     return result;
   }
 
-  // ─────────────────────────── per-task ───────────────────────────────────
-
-  /**
-   * Создаёт Issue + комментарии + вложения. Возвращает `created=false`,
-   * если Issue с (tenantId, externalSource='bitrix24', externalId) уже
-   * существует — тогда мы skip'аем целиком.
-   */
   private async importTask(args: {
     tenantId: string;
     project: { id: string; identifier: string };
@@ -372,7 +288,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
 
     const taskId = String(task.ID);
 
-    // Идемпотентность.
     const existing = await services.prisma.issue.findFirst({
       where: {
         tenantId,
@@ -390,9 +305,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       };
     }
 
-    // Resolve assignee (RESPONSIBLE_ID → email через user.get → mapping).
-    const responsibleId =
-      task.RESPONSIBLE_ID != null ? String(task.RESPONSIBLE_ID) : null;
+    const responsibleId = task.RESPONSIBLE_ID != null ? String(task.RESPONSIBLE_ID) : null;
     let assigneeUserId: string | null = null;
     if (responsibleId) {
       const email = await this.resolveEmail({
@@ -409,7 +322,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       }
     }
 
-    // Resolve creator (CREATED_BY → email → mapping). Fallback = инициатор импорта.
     const createdBy = task.CREATED_BY != null ? String(task.CREATED_BY) : null;
     let creatorUserId = userId;
     if (createdBy) {
@@ -434,7 +346,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     const dueDate = task.DEADLINE ? safeParseDate(task.DEADLINE) : null;
     const description = sanitizeDescription(task.DESCRIPTION);
 
-    // Создание Issue в транзакции с пересчётом sequenceId.
     const created = await services.prisma.$transaction(async (tx) => {
       const maxRow = await tx.issue.aggregate({
         where: { projectId: project.id },
@@ -479,14 +390,12 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       return row;
     });
 
-    // Comments.
     let commentsCount = 0;
     try {
       const comments = await client.getTaskComments(taskId);
       for (const c of comments) {
         try {
-          const authorBitrixId =
-            c.AUTHOR_ID != null ? String(c.AUTHOR_ID) : null;
+          const authorBitrixId = c.AUTHOR_ID != null ? String(c.AUTHOR_ID) : null;
           let authorId = userId;
           if (authorBitrixId) {
             const email = await this.resolveEmail({
@@ -502,10 +411,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
               }
             }
           }
-          const text = (sanitizeDescription(c.POST_MESSAGE) ?? '').slice(
-            0,
-            50_000,
-          );
+          const text = (sanitizeDescription(c.POST_MESSAGE) ?? '').slice(0, 50_000);
           if (!text.trim()) continue;
           await services.prisma.issueComment.create({
             data: {
@@ -515,9 +421,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
               contentHtml: null,
               contentStripped: text,
               access: 'internal',
-              createdAt: c.POST_DATE
-                ? (safeParseDate(c.POST_DATE) ?? new Date())
-                : new Date(),
+              createdAt: c.POST_DATE ? (safeParseDate(c.POST_DATE) ?? new Date()) : new Date(),
             },
           });
           commentsCount += 1;
@@ -543,7 +447,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       );
     }
 
-    // Attachments (best-effort через UF_TASK_WEBDAV_FILES → disk.file.get).
     let attachmentsCount = 0;
     const fileIds = collectAttachmentFileIds(task);
     for (const fileId of fileIds) {
@@ -576,8 +479,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     };
   }
 
-  // ─────────────────────────── helpers ───────────────────────────────────
-
   private async isCancelled(args: {
     importLogId: string;
     services: ImportStrategyArgs['services'];
@@ -589,11 +490,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     return row?.status === 'cancelled';
   }
 
-  /**
-   * user.get запрос с кешем. Возвращает первый непустой email пользователя
-   * (lowercase, trimmed). null — если такой user отсутствует / без email /
-   * запрос упал. Не бросает исключений (лог + null).
-   */
   private async resolveEmail(args: {
     bitrixUserId: string;
     client: Bitrix24Client;
@@ -620,10 +516,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     }
   }
 
-  /**
-   * Создаёт Project из Битрикс24 sonet_group. Identifier эвристически по
-   * имени; при коллизии — добавляем nanoid-суффикс.
-   */
   private async upsertProject(args: {
     tenantId: string;
     group: BitrixGroup;
@@ -672,10 +564,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     return created;
   }
 
-  /**
-   * Создаёт фиксированный набор IssueState под Битрикс24 STATUS 1..7.
-   * Возвращает map "1|2|3|...|7" → IssueState.id.
-   */
   private async createStatesForGroup(args: {
     tenantId: string;
     projectId: string;
@@ -683,7 +571,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
   }): Promise<Map<string, string>> {
     const { tenantId, projectId, services } = args;
     const stateByKey = new Map<string, string>();
-    // Канонические Битрикс24-статусы.
     const defs: Array<{
       key: string;
       name: string;
@@ -728,10 +615,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     return stateByKey;
   }
 
-  /**
-   * Скачивает attachment из Битрикс24 Диск через disk.file.get → DOWNLOAD_URL
-   * и кладёт в S3. На любой fail (network / non-2xx / size limit) — false.
-   */
   private async downloadAttachment(args: {
     fileId: string;
     issueId: string;
@@ -785,8 +668,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       return false;
     }
 
-    const rawName =
-      (file.NAME ?? file.name ?? `attachment-${nanoid(6)}`).toString();
+    const rawName = (file.NAME ?? file.name ?? `attachment-${nanoid(6)}`).toString();
     const fileName = rawName.slice(0, 250);
     const safeName = fileName.replace(/[^A-Za-z0-9._-]/g, '_');
     const objectKey = `issues/${issueId}/attachments/${nanoid()}-${safeName}`;
@@ -821,10 +703,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
     return true;
   }
 
-  /**
-   * Если у task есть PARENT_ID и parent тоже импортирован в этой сессии —
-   * выставляем Issue.parentId. Иначе skip.
-   */
   private async linkParent(args: {
     task: BitrixTask;
     ourIssueId: string;
@@ -833,9 +711,7 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
   }): Promise<void> {
     const { task, ourIssueId, issueIdByBitrixId, services } = args;
     const parentBitrixId =
-      task.PARENT_ID != null && String(task.PARENT_ID) !== '0'
-        ? String(task.PARENT_ID)
-        : null;
+      task.PARENT_ID != null && String(task.PARENT_ID) !== '0' ? String(task.PARENT_ID) : null;
     if (!parentBitrixId) return;
     const parentOurId = issueIdByBitrixId.get(parentBitrixId);
     if (!parentOurId) return;
@@ -847,11 +723,6 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
       .catch(() => undefined);
   }
 
-  /**
-   * DEPENDS_ON — массив task ID, от которых зависит текущая задача (т.е.
-   * текущая «blocked_by» теми). Создаёт IssueRelation, только если обе
-   * стороны импортированы в этой сессии.
-   */
   private async linkDepends(args: {
     task: BitrixTask;
     ourIssueId: string;
@@ -876,34 +747,17 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
           },
         });
       } catch (err) {
-        // P2002 — уже есть relation, идемпотентно ОК.
-        if (
-          !(
-            err instanceof Prisma.PrismaClientKnownRequestError &&
-            err.code === 'P2002'
-          )
-        ) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) {
           throw err;
         }
       }
     }
   }
 
-  /**
-   * Identity-обёртка для cap'а. Реальный лимит 100 enforce'им в `trimErrors`,
-   * вызываемом в конце `run`.
-   */
-  private cap(
-    _errors: ImportErrorEntry[],
-    entry: ImportErrorEntry,
-  ): ImportErrorEntry {
+  private cap(_errors: ImportErrorEntry[], entry: ImportErrorEntry): ImportErrorEntry {
     return entry;
   }
 
-  /**
-   * Trim errors до 100 (последняя превращается в truncated-маркер если
-   * было >100).
-   */
   private trimErrors(errors: ImportErrorEntry[]): void {
     if (errors.length <= 100) return;
     const dropped = errors.length - 99;
@@ -916,38 +770,23 @@ export class Bitrix24ImportStrategy implements ImportStrategy {
   }
 }
 
-// ───────────────────────── Bitrix24 HTTP client ───────────────────────────
-
 interface Bitrix24ClientOptions {
   webhookUrl: string;
   logger: Logger;
   fetchImpl: (input: string | URL, init?: RequestInit) => Promise<Response>;
 }
 
-/**
- * Внутренний клиент для входящего вебхука Битрикс24.
- *
- * Каждый метод REST вызывается как `POST ${base}{method}.json` с JSON-body.
- * Битрикс24 принимает и form-data, и JSON; мы используем JSON для простоты
- * сериализации nested params (FILTER, ORDER, SELECT).
- *
- * Все list-эндпоинты возвращают `{ result, next?, total }`. Постранично
- * листаем через `start: N`.
- */
 class Bitrix24Client {
   private readonly base: string;
 
   constructor(private readonly opts: Bitrix24ClientOptions) {
-    // Нормализуем base: гарантируем trailing slash.
     this.base = opts.webhookUrl.replace(/\/+$/, '') + '/';
   }
 
   async getGroup(groupId: string): Promise<BitrixGroup> {
-    // sonet_group.get принимает FILTER. Запрашиваем по ID.
-    const resp = await this.call<{ result: BitrixGroup[] | BitrixGroup }>(
-      'sonet_group.get',
-      { FILTER: { ID: groupId } },
-    );
+    const resp = await this.call<{ result: BitrixGroup[] | BitrixGroup }>('sonet_group.get', {
+      FILTER: { ID: groupId },
+    });
     if (Array.isArray(resp.result)) {
       const first = resp.result[0];
       if (!first) {
@@ -958,10 +797,6 @@ class Bitrix24Client {
     return resp.result;
   }
 
-  /**
-   * Постранично возвращает задачи группы. tasks.task.list даёт пагинацию
-   * через `start: N`; вернёт `next` (если есть ещё), `total`.
-   */
   async listTasksByGroup(groupId: string): Promise<BitrixTask[]> {
     const all: BitrixTask[] = [];
     let start = 0;
@@ -994,16 +829,14 @@ class Bitrix24Client {
 
   async getTaskComments(taskId: string): Promise<BitrixComment[]> {
     try {
-      const resp = await this.call<{ result: BitrixComment[] }>(
-        'task.commentitem.getlist',
-        { taskId, ORDER: { POST_DATE: 'asc' }, FILTER: {} },
-      );
+      const resp = await this.call<{ result: BitrixComment[] }>('task.commentitem.getlist', {
+        taskId,
+        ORDER: { POST_DATE: 'asc' },
+        FILTER: {},
+      });
       return Array.isArray(resp.result) ? resp.result : [];
     } catch (err) {
-      if (
-        err instanceof BitrixApiError &&
-        (err.status === 404 || err.status === 403)
-      ) {
+      if (err instanceof BitrixApiError && (err.status === 404 || err.status === 403)) {
         return [];
       }
       throw err;
@@ -1018,10 +851,7 @@ class Bitrix24Client {
       const list = Array.isArray(resp.result) ? resp.result : [];
       return list[0] ?? null;
     } catch (err) {
-      if (
-        err instanceof BitrixApiError &&
-        (err.status === 404 || err.status === 403)
-      ) {
+      if (err instanceof BitrixApiError && (err.status === 404 || err.status === 403)) {
         return null;
       }
       throw err;
@@ -1035,26 +865,17 @@ class Bitrix24Client {
       });
       return resp.result ?? null;
     } catch (err) {
-      if (
-        err instanceof BitrixApiError &&
-        (err.status === 404 || err.status === 403)
-      ) {
+      if (err instanceof BitrixApiError && (err.status === 404 || err.status === 403)) {
         return null;
       }
       throw err;
     }
   }
 
-  /**
-   * Скачивает attachment по абсолютному URL (DOWNLOAD_URL из disk.file.get).
-   * Возвращает null при non-2xx.
-   */
   async downloadByUrl(
     url: string,
   ): Promise<{ buffer: Buffer; size: number; contentType?: string } | null> {
-    const absoluteUrl = url.startsWith('http')
-      ? url
-      : new URL(url, this.base).toString();
+    const absoluteUrl = url.startsWith('http') ? url : new URL(url, this.base).toString();
     const res = await this.requestRaw(absoluteUrl, { method: 'GET' }, { absolute: true });
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
@@ -1066,18 +887,6 @@ class Bitrix24Client {
     };
   }
 
-  // ── internals ──────────────────────────────────────────────────────────
-
-  /**
-   * REST-вызов метода Битрикс24. Бросает BitrixApiError на ошибки HTTP.
-   *
-   * Битрикс24 возвращает 200 даже на ошибки приложения, с `error` в body.
-   * Мы превращаем такое в BitrixApiError со status маппингом:
-   *   - 'INVALID_TOKEN' / 'NO_AUTH_FOUND' / 'WRONG_CLIENT' → 401.
-   *   - 'INSUFFICIENT_SCOPE' / 'ACCESS_DENIED' → 403.
-   *   - 'QUERY_LIMIT_EXCEEDED' → 429.
-   *   - всё иное → 500 (фатально для текущего вызова, но не для импорта в целом).
-   */
   private async call<T>(method: string, body: unknown): Promise<T> {
     const url = `${this.base}${method}.json`;
     const res = await this.requestRaw(url, {
@@ -1094,9 +903,10 @@ class Bitrix24Client {
       );
     }
 
-    const data = (await res.json().catch(() => null)) as
-      | { error?: string; error_description?: string }
-      | null;
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+      error_description?: string;
+    } | null;
     if (data && typeof data === 'object' && 'error' in data && data.error) {
       const mappedStatus = mapBitrixErrorToStatus(data.error);
       throw new BitrixApiError(
@@ -1107,10 +917,6 @@ class Bitrix24Client {
     return data as T;
   }
 
-  /**
-   * HTTP-запрос с retry на 429/5xx (exponential backoff 1s/2s/4s/...).
-   * `opts.absolute=true` — `url` уже полный.
-   */
   private async requestRaw(
     url: string,
     init?: RequestInit,
@@ -1177,8 +983,6 @@ class BitrixApiError extends Error {
   }
 }
 
-// ───────────────────────── pure helpers ───────────────────────────────────
-
 function slugify(s: string): string {
   return s
     .toLowerCase()
@@ -1194,10 +998,17 @@ function makeIdentifier(name: string): string {
     .replace(/[̀-ͯ]/g, '')
     .toUpperCase()
     .replace(/[^A-Z0-9 ]/g, '');
-  const words = ascii.split(/\s+/).map((w) => w.trim()).filter(Boolean);
+  const words = ascii
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
   if (words.length === 0) return `B${Math.floor(Math.random() * 9000 + 1000)}`;
   if (words.length >= 2) {
-    return words.slice(0, 5).map((w) => w[0]!).join('').slice(0, 5);
+    return words
+      .slice(0, 5)
+      .map((w) => w[0]!)
+      .join('')
+      .slice(0, 5);
   }
   const single = words[0]!;
   return single.slice(0, 5).padEnd(3, 'X');
@@ -1209,10 +1020,6 @@ function safeParseDate(s: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/**
- * Битрикс24 PRIORITY: 0=Низкий, 1=Средний, 2=Высокий → наш Issue.priority.
- * Битрикс24 не имеет separate "blocker" — высокий это максимум.
- */
 function mapPriority(value: unknown): string {
   const n = Number(value);
   if (!Number.isFinite(n)) return 'none';
@@ -1244,18 +1051,9 @@ function sanitizeDescription(s: unknown): string | null {
   return str.slice(0, 100_000);
 }
 
-/**
- * Битрикс24 в tasks.task.list возвращает поле `UF_TASK_WEBDAV_FILES` —
- * массив file id'ов на Битрикс24 Диске. Иногда это `ufTaskWebdavFiles` (camel)
- * или `attachedFiles` (legacy). Собираем всё в один список строк.
- */
 function collectAttachmentFileIds(task: BitrixTask): string[] {
   const candidates: Array<string | number | undefined> = [];
-  const sources = [
-    task.UF_TASK_WEBDAV_FILES,
-    task.ufTaskWebdavFiles,
-    task.attachedFiles,
-  ];
+  const sources = [task.UF_TASK_WEBDAV_FILES, task.ufTaskWebdavFiles, task.attachedFiles];
   for (const src of sources) {
     if (Array.isArray(src)) {
       for (const item of src) {
@@ -1263,15 +1061,9 @@ function collectAttachmentFileIds(task: BitrixTask): string[] {
       }
     }
   }
-  return candidates
-    .map((c) => String(c).trim())
-    .filter((c) => c.length > 0 && c !== '0');
+  return candidates.map((c) => String(c).trim()).filter((c) => c.length > 0 && c !== '0');
 }
 
-/**
- * Маппинг Битрикс24 application-error code → HTTP-like статус для нашей
- * retry/finalize-failed логики.
- */
 function mapBitrixErrorToStatus(errorCode: string): number {
   const code = errorCode.toUpperCase();
   if (
@@ -1282,11 +1074,7 @@ function mapBitrixErrorToStatus(errorCode: string): number {
   ) {
     return 401;
   }
-  if (
-    code === 'INSUFFICIENT_SCOPE' ||
-    code === 'ACCESS_DENIED' ||
-    code === 'NO_AUTH'
-  ) {
+  if (code === 'INSUFFICIENT_SCOPE' || code === 'ACCESS_DENIED' || code === 'NO_AUTH') {
     return 403;
   }
   if (code === 'QUERY_LIMIT_EXCEEDED' || code === 'OPERATION_TIME_LIMIT') {
@@ -1300,12 +1088,9 @@ function sleep(ms: number): Promise<void> {
 }
 
 function backoffMs(attempt: number): number {
-  // 1s, 2s, 4s, max 16s.
   const base = 1_000 * Math.pow(2, attempt - 1);
   return Math.min(base, 16_000);
 }
-
-// ───────────────────────── Bitrix24 types (минимум) ───────────────────────
 
 interface BitrixGroup {
   ID?: string;
@@ -1313,13 +1098,6 @@ interface BitrixGroup {
   DESCRIPTION?: string | null;
 }
 
-/**
- * tasks.task.list возвращает task в UPPER_SNAKE_CASE. Поля выбраны под
- * наш маппинг; всё остальное (PROJECT_ID, START_DATE_PLAN и т.п.) игнорим.
- *
- * Иногда Битрикс24 (особенно ufTaskWebdavFiles) присылает camelCase — учитываем
- * оба варианта.
- */
 interface BitrixTask {
   ID?: string | number;
   TITLE?: string;
@@ -1355,7 +1133,6 @@ interface BitrixDiskFile {
   ID?: string;
   NAME?: string;
   DOWNLOAD_URL?: string;
-  // некоторые ответы (rest) приходят в camelCase
   id?: string;
   name?: string;
   downloadUrl?: string;

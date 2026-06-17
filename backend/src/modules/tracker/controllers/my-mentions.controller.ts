@@ -11,10 +11,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -30,15 +27,6 @@ const ListMentionsQuerySchema = z
   .strict();
 type ListMentionsQuery = z.infer<typeof ListMentionsQuerySchema>;
 
-/**
- * REST `/api/v1/me/mentions` — мои @-упоминания в задачах трекера.
- *
- * T8 (2026-05-24). Источник истины — модель IssueMention; статус прочитанности
- * — производный из Notification(eventType='issue.mention') (см.
- * MyMentionsService). MarkRead делается через существующий
- * `POST /api/v1/me/notifications/:id/mark-read` (ConversationalController),
- * чтобы был один источник истины для всех каналов и нотификаций.
- */
 @ApiTags('tracker / me')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -70,10 +58,7 @@ export class MyMentionsController {
 
   @Get('me/mentions/count')
   @ApiOperation({ summary: 'Счётчик непрочитанных упоминаний' })
-  async count(
-    @CurrentUser() user: CurrentUserPayload,
-    @CurrentOrg() tenantId: string | undefined,
-  ) {
+  async count(@CurrentUser() user: CurrentUserPayload, @CurrentOrg() tenantId: string | undefined) {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
     return this.svc.unreadCount({ userId: user.id, tenantId: t });

@@ -31,17 +31,6 @@ import {
 } from '../dto/commitments.dto';
 import { CommitmentsService } from '../services/commitments.service';
 
-/**
- * SBA β-8.2 — `/api/v1/me/promises`.
- *
- *   GET  /?status=open|asked|all&limit=50 — список моих обещаний.
- *   POST /:blockId/mark body={status, note?} — ручное закрытие.
- *
- * Auth: CookieAuthGuard + TenantGuard. Self-only — фильтр идёт по
- * `Person.userId === currentUserId` через JOIN IdeaBlockEntity → Entity →
- * Person (см. `CommitmentsService.listMine`). Сотрудник НЕ видит обещания
- * других сотрудников.
- */
 @ApiTags('me-promises')
 @Controller('api/v1/me/promises')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -53,8 +42,7 @@ export class MyPromisesController {
 
   @Get()
   @ApiOperation({
-    summary:
-      'Список моих обещаний (полные обещания + «открытые вопросы», фильтр по статусу)',
+    summary: 'Список моих обещаний (полные обещания + «открытые вопросы», фильтр по статусу)',
   })
   async list(
     @CurrentOrg() tenantId: string | undefined,
@@ -64,9 +52,6 @@ export class MyPromisesController {
   ): Promise<MyPromisesListDto> {
     const uid = this.requireUser(req);
     this.requireTenant(tenantId);
-    // Ф9 (no_person): отсутствие Person ≠ запрет на просмотр кабинета —
-    // отдаём пустые списки (200) вместо hard-403. `mark()` оставляем строгим
-    // (для записи нужен реальный subject).
     let person: { id: string };
     try {
       person = await this.svc.resolveSelfPerson({
@@ -74,10 +59,7 @@ export class MyPromisesController {
         userId: uid,
       });
     } catch (err) {
-      if (
-        err instanceof ForbiddenException &&
-        this.isNoPersonError(err)
-      ) {
+      if (err instanceof ForbiddenException && this.isNoPersonError(err)) {
         return { items: [], openQuestions: [] };
       }
       throw err;
@@ -89,7 +71,6 @@ export class MyPromisesController {
     });
   }
 
-  /** Различает ForbiddenException c кодом `no_person` (Ф9 graceful). */
   private isNoPersonError(err: ForbiddenException): boolean {
     const response = err.getResponse();
     return (

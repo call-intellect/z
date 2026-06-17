@@ -36,63 +36,24 @@ import { TranscriptCleanLlmRefineService } from './services/transcript-clean-llm
 import { TranscriptCleaningService } from './services/transcript-cleaning.service';
 import { VoxService } from './services/vox.service';
 
-/**
- * Глобальный AI-модуль для HTTP-процесса.
- *
- *   - `AiQueueService` — диспетчер очередей (webhook handler, `RetryService`,
- *      `RegenerateService`).
- *   - `AiUsageLogService` — пишет AiUsageLog.
- *   - `RetryService` — endpoint `POST /api/v1/meetings/:id/retry-ai`.
- *   - `LlmRouterService` — маршрутизатор LLM-задач (используется
- *      `RegenerateService`, и эндпоинтами M3 — chat / regenerate-section).
- *   - `RegenerateService` — endpoint `POST /api/v1/meetings/:id/regenerate*`.
- *   - `TaskExtractionService` — на случай синхронного вызова из admin / debug
- *      (используется также ChatboxAnalyzeWorker'ом).
- *
- * Воркеры (transcribe/merge/analyze/notify/transcript-index/clip-render) живут
- * в отдельном `WorkersModule`, запускаются процессом `bun run worker:dev`
- * (`workers/main.ts`). Главы / задачи / качество встречи делает ЕДИНЫЙ воркер
- * `meeting-report-fast` (core-очередь).
- *
- * EmbeddingsModule импортируется здесь, чтобы EmbeddingFallback /
- * TranscriptIndexer были доступны в HTTP-side (например, для on-demand
- * переиндексации из админки).
- */
 @Global()
 @Module({
   imports: [EmbeddingsModule],
   providers: [
     AiQueueService,
     AiUsageLogService,
-    // ТЗ LLM cost-safety Ф3 — two-tier ретеншен AiUsageLog (Tier-1 гасит
-    // 8КБ-превью рано, Tier-2 удаляет строки поздно, сохраняя историю
-    // стоимости). Self-scheduling (setInterval), как LogCleanupService.
     AiUsageLogCleanupService,
     RetryService,
-    // Провайдеры — нужны для LlmRouter в HTTP-side.
     AnthropicService,
     MinimaxService,
     OpenAiProxyService,
     DeepSeekService,
     OllamaService,
-    // KIE (api.kie.ai — Claude/GPT/Gemini) и GRSAI (Gemini через прокси) —
-    // подключены к LlmRouter; модели становятся доступны в /admin/ai-models.
-    // ТЗ: plans/tz/2026-05-24-kie-grsai-llm-router-integration.md.
     KieService,
     GrsaiService,
-    // Маршрутизация и регенерация.
     LlmRouterService,
-    // ТЗ LLM cost-safety Ф2 — pre-dispatch budget gate для LlmRouter.
-    // В одном DI-скоупе с LlmRouterService (export не нужен).
     BudgetGuardService,
-    // Agents v2 Фаза A2 (2026-05-30) — Multi-Agent Debate.
-    // Используется Specialist33Service.supersedeDetect под флагом
-    // MULTI_AGENT_DEBATE_ENABLED. Optional-injection — на воркер-side и в
-    // тестах сервис может отсутствовать без падения DI.
     MultiAgentDebateService,
-    // SBA α-10 wave 3 — LlmProtocolAdapterRegistry (feature-flag через
-    // USE_PROTOCOL_ADAPTER_REGISTRY). Все 5 адаптеров регистрируем сразу —
-    // включение/выключение управляется feature-flag в LlmRouterService.dispatch().
     OpenAiChatProtocolAdapter,
     OpenAiResponsesProtocolAdapter,
     AnthropicMessagesProtocolAdapter,
@@ -101,32 +62,16 @@ import { VoxService } from './services/vox.service';
     LlmProtocolAdapterRegistry,
     ProviderInfoResolver,
     TaskExtractionService,
-    // ТЗ 2026-05-25 hard-participant-identification — загрузка списка
-    // участников встречи (с userId/fullName) для AI-промптов задач.
     ParticipantContextService,
-    // ТЗ-4 Ф3 — компактный org-контекст (проекты/цели/сотрудники) для инъекции
-    // в SYSTEM summary + report-by-type. Реюз загрузчика, который раньше жил
-    // приватным в MeetingExtractActionsService. @Global-экспорт ниже делает его
-    // доступным и analyze.worker (ai), и meeting-extract-actions (tracker).
     OrgContextService,
     RegenerateService,
-    // Card-rollup — синхронный вызов из endpoint'а на странице карточки
-    // (опционально), и из воркера (см. WorkersModule).
     CardRollupService,
-    // Фаза A.1 — резолв промптов AI-отчёта (БД → code fallback).
     PromptResolverService,
-    // Фаза B — поведенческие метрики (calculator pure-функция + опц. LLM-refine).
     BehaviorMetricsCalculator,
     BehaviorLlmRefineService,
-    // Фаза D — очистка транскрипта (LLM-refine + HTTP-side service для endpoints).
     TranscriptCleanLlmRefineService,
     TranscriptCleaningService,
-    // SBA β-1 zero-button (2026-05-23): VoxService поднят в @Global AiModule,
-    // чтобы HTTP-side адаптеры Telegram/MAX могли инжектить ASR для voice
-    // inbound. Раньше VoxService жил только в WorkersModule (см.
-    // ai/workers.module.ts).
     VoxService,
-    // S3 — нужен RegenerateService (для regenerate-section читает merged).
     S3Service,
   ],
   exports: [
@@ -147,8 +92,6 @@ import { VoxService } from './services/vox.service';
     TranscriptCleaningService,
     VoxService,
     EmbeddingsModule,
-    // SBA α-10 wave 3 — нужны admin/economics-модулю для smoke-теста и
-    // direct dispatch без LlmRouter.
     LlmProtocolAdapterRegistry,
     ProviderInfoResolver,
   ],

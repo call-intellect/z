@@ -1,15 +1,3 @@
-/**
- * Фаза A.4 — AdminAiModelsController.
- *
- * Эндпоинты `/api/v1/admin/ai-models` и `/api/v1/admin/llm-model-experiments`
- * (см. ТЗ A §7.4). RBAC: super_admin / owner / admin — здесь как минимум
- * super_admin через `SuperAdminGuard` (org-scope маршруты добавим в Фазе E,
- * сейчас только глобальные).
- *
- * Все мутации пишут в `LlmTaskRouteChange` (audit) + метрику
- * `z_admin_ai_models_route_change_total{taskType, changeType}`.
- */
-
 import {
   BadRequestException,
   Body,
@@ -50,16 +38,10 @@ import {
 @UseGuards(CookieAuthGuard, SuperAdminGuard)
 @UseInterceptors(SuperAdminAuditInterceptor)
 export class AdminAiModelsController {
-  constructor(
-    @Inject(AdminAiModelsService) private readonly svc: AdminAiModelsService,
-  ) {}
-
-  // ─── ai-models — chain CRUD ─────────────────────────────────────────
+  constructor(@Inject(AdminAiModelsService) private readonly svc: AdminAiModelsService) {}
 
   @Get('ai-models')
-  async list(
-    @Query(new ZodValidationPipe(ListAiModelsQuerySchema)) query: ListAiModelsQueryDto,
-  ) {
+  async list(@Query(new ZodValidationPipe(ListAiModelsQuerySchema)) query: ListAiModelsQueryDto) {
     const items = await this.svc.list({
       ...(query.group ? { group: query.group } : {}),
       ...(query.search ? { search: query.search } : {}),
@@ -116,8 +98,6 @@ export class AdminAiModelsController {
     return this.svc.metrics_(taskType, query);
   }
 
-  // ─── A/B-эксперименты на моделях ─────────────────────────────────────
-
   @Post('llm-model-experiments')
   async createExperiment(
     @Body(new ZodValidationPipe(CreateExperimentSchema)) dto: CreateExperimentDto,
@@ -128,10 +108,7 @@ export class AdminAiModelsController {
   }
 
   @Get('llm-model-experiments')
-  async listExperiments(
-    @Query('status') status?: string,
-    @Query('taskType') taskType?: string,
-  ) {
+  async listExperiments(@Query('status') status?: string, @Query('taskType') taskType?: string) {
     const items = await this.svc.listExperiments({
       ...(status ? { status } : {}),
       ...(taskType ? { taskType } : {}),
@@ -161,8 +138,6 @@ export class AdminAiModelsController {
   async experimentAnalytics(@Param('id') id: string) {
     return this.svc.experimentAnalytics(id);
   }
-
-  // ─── private ─────────────────────────────────────────────────────────
 
   private assertUser(
     user: CurrentUserPayload | null | undefined,

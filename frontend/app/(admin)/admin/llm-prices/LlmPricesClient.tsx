@@ -1,23 +1,18 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useState } from "react";
+import { Plus } from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { adminPricesApi } from '@/api/admin-prices.api';
+import { ApiError } from "@/api/api-error";
+import { adminPricesApi } from "@/api/admin-prices.api";
 import {
   adminPriceListFromApi,
   type AdminPriceDomain,
-} from '@/domain/admin-price';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/ui/shadcn/card';
+} from "@/domain/admin-price";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
 import {
   Dialog,
   DialogContent,
@@ -25,18 +20,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Input } from '@/ui/shadcn/input';
-import { Label } from '@/ui/shadcn/label';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/ui/shadcn/dialog";
+import { Input } from "@/ui/shadcn/input";
+import { Label } from "@/ui/shadcn/label";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../AdminStateViews';
-import { useAdminQuery } from '../useAdminQuery';
+} from "../AdminStateViews";
+import { useAdminQuery } from "../useAdminQuery";
 
 export function LlmPricesClient() {
   const [activeOnly, setActiveOnly] = useState(true);
@@ -106,7 +101,7 @@ export function LlmPricesClient() {
 function PricesTable({ items }: { items: AdminPriceDomain[] }) {
   return (
     <>
-      {/* Десктоп — табличный вид. На mobile скрыт. */}
+      {}
       <div className="hidden overflow-x-auto rounded-lg border border-border-subtle md:block">
         <table className="w-full text-sm">
           <thead className="bg-bg-overlay text-xs uppercase tracking-wide text-fg-tertiary">
@@ -140,10 +135,10 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
                 </td>
                 <td className="px-3 py-2 text-xs">{p.currency}</td>
                 <td className="px-3 py-2 text-xs text-fg-tertiary">
-                  {p.effectiveFrom.toLocaleDateString('ru-RU')}
+                  {p.effectiveFrom.toLocaleDateString("ru-RU")}
                   {p.effectiveTo
-                    ? ` — ${p.effectiveTo.toLocaleDateString('ru-RU')}`
-                    : ' — сейчас'}
+                    ? ` — ${p.effectiveTo.toLocaleDateString("ru-RU")}`
+                    : " — сейчас"}
                 </td>
                 <td className="px-3 py-2">
                   {p.isActive ? (
@@ -158,7 +153,7 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
         </table>
       </div>
 
-      {/* Mobile — карточный вид. Показывает важнейшие поля. */}
+      {}
       <ul className="space-y-2 md:hidden">
         {items.map((p) => (
           <li
@@ -171,10 +166,10 @@ function PricesTable({ items }: { items: AdminPriceDomain[] }) {
                   {p.provider} / {p.model}
                 </div>
                 <div className="mt-1 text-[11px] text-fg-tertiary">
-                  {p.effectiveFrom.toLocaleDateString('ru-RU')}
+                  {p.effectiveFrom.toLocaleDateString("ru-RU")}
                   {p.effectiveTo
-                    ? ` — ${p.effectiveTo.toLocaleDateString('ru-RU')}`
-                    : ' — сейчас'}
+                    ? ` — ${p.effectiveTo.toLocaleDateString("ru-RU")}`
+                    : " — сейчас"}
                 </div>
               </div>
               {p.isActive ? (
@@ -220,24 +215,31 @@ function AddPriceDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [provider, setProvider] = useState('anthropic');
-  const [model, setModel] = useState('');
-  const [inputCost, setInputCost] = useState('');
-  const [outputCost, setOutputCost] = useState('');
-  const [cachedCost, setCachedCost] = useState('0');
-  const [currency, setCurrency] = useState('USD');
+  const [provider, setProvider] = useState("anthropic");
+  const [model, setModel] = useState("");
+  const [inputCost, setInputCost] = useState("");
+  const [outputCost, setOutputCost] = useState("");
+  const [cachedCost, setCachedCost] = useState("0");
+  const [currency, setCurrency] = useState("USD");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async () => {
     if (!provider || !model) {
-      toast.error('provider/model обязательны');
+      toast.error("provider/model обязательны");
       return;
     }
     const i = Number(inputCost);
     const o = Number(outputCost);
-    const c = Number(cachedCost || '0');
-    if (!isFinite(i) || !isFinite(o) || !isFinite(c) || i < 0 || o < 0 || c < 0) {
-      toast.error('некорректные цены');
+    const c = Number(cachedCost || "0");
+    if (
+      !isFinite(i) ||
+      !isFinite(o) ||
+      !isFinite(c) ||
+      i < 0 ||
+      o < 0 ||
+      c < 0
+    ) {
+      toast.error("некорректные цены");
       return;
     }
     setSubmitting(true);
@@ -250,10 +252,10 @@ function AddPriceDialog({
         cachedCostPerMillionTokens: c,
         currency,
       });
-      toast.success('Цена сохранена');
+      toast.success("Цена сохранена");
       onSaved();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось сохранить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось сохранить");
     } finally {
       setSubmitting(false);
     }
@@ -271,7 +273,10 @@ function AddPriceDialog({
         </DialogHeader>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Provider">
-            <Input value={provider} onChange={(e) => setProvider(e.target.value)} />
+            <Input
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            />
           </Field>
           <Field label="Model">
             <Input value={model} onChange={(e) => setModel(e.target.value)} />
@@ -301,15 +306,27 @@ function AddPriceDialog({
             />
           </Field>
           <Field label="Currency">
-            <Input value={currency} onChange={(e) => setCurrency(e.target.value)} />
+            <Input
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+            />
           </Field>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={submitting}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={submitting}
+          >
             Отмена
           </Button>
-          <Button size="sm" onClick={() => void handleSubmit()} disabled={submitting}>
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
+          <Button
+            size="sm"
+            onClick={() => void handleSubmit()}
+            disabled={submitting}
+          >
+            {submitting ? "Сохраняем…" : "Сохранить"}
           </Button>
         </DialogFooter>
       </DialogContent>

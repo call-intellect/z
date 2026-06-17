@@ -9,16 +9,6 @@ import type { TablesAutoProvisionService } from '../tables/services/tables-auto-
 
 import { OrgsService } from './orgs.service';
 
-/**
- * ТЗ «Команда + доступы» Фаза 2 — спецификация OrgsService.listTeamRoster.
- *
- * Покрытие:
- *   - merge: Person с userId (привязан к Membership manager) ⊕ Membership(owner)
- *     без Person → 2 строки, владелец не дублируется;
- *   - telegramLinked: помечается по ChannelBinding(telegram_bot);
- *   - negative: rbac.loadContext → null → ForbiddenException.
- */
-
 describe('OrgsService.listTeamRoster', () => {
   let prisma: {
     person: { findMany: ReturnType<typeof vi.fn> };
@@ -86,7 +76,6 @@ describe('OrgsService.listTeamRoster', () => {
       personId: 'p-1',
       userId: 'u-manager',
       fullName: 'Иван Менеджеров',
-      // appointment имеет приоритет над personRole.
       roleId: 'r-app',
       roleName: 'Менеджер',
       departmentId: 'dep-1',
@@ -109,7 +98,6 @@ describe('OrgsService.listTeamRoster', () => {
       telegramLinked: false,
     });
 
-    // u-manager не задвоился отдельной membership-строкой.
     expect(roster.filter((r) => r.userId === 'u-manager')).toHaveLength(1);
   });
 
@@ -127,7 +115,6 @@ describe('OrgsService.listTeamRoster', () => {
         user: { id: 'u-other', email: 'other@x.test', name: 'Другой' },
       },
     ]);
-    // Только у владельца есть привязка Telegram.
     prisma.channelBinding.findMany.mockResolvedValue([{ userId: 'u-owner' }]);
 
     const svc = make();
@@ -158,9 +145,7 @@ describe('OrgsService.listTeamRoster', () => {
         primaryDepartmentId: 'dep-9',
         primaryDepartment: { id: 'dep-9', name: 'Внедрение' },
         personRoles: [],
-        appointments: [
-          { role: { id: 'r-impl', name: 'руководитель отдела внедрения' } },
-        ],
+        appointments: [{ role: { id: 'r-impl', name: 'руководитель отдела внедрения' } }],
         invitations: [],
       },
     ]);
@@ -227,10 +212,6 @@ describe('OrgsService.listTeamRoster', () => {
   });
 });
 
-/**
- * Ф9 (no_person) — createForOwner создаёт Person владельца и проставляет
- * Membership.personId в той же транзакции.
- */
 describe('OrgsService.createForOwner — Person владельца (Ф9)', () => {
   it('создаёт Person через ensurePersonForUser и проставляет membership.personId', async () => {
     const client = {
@@ -259,18 +240,13 @@ describe('OrgsService.createForOwner — Person владельца (Ф9)', () =>
       persons as unknown as PersonsService,
     );
 
-    const org = await svc.createForOwner(
-      { name: 'Кора', ownerId: 'u-owner' },
-      client as never,
-    );
+    const org = await svc.createForOwner({ name: 'Кора', ownerId: 'u-owner' }, client as never);
 
     expect(org.id).toBe('org-new');
-    // Person владельца создаётся через ensurePersonForUser с тем же tx-клиентом.
     expect(persons.ensurePersonForUser).toHaveBeenCalledWith(
       { tenantId: 'org-new', userId: 'u-owner' },
       client,
     );
-    // membership.personId проставлен в том же клиенте.
     expect(client.membership.update).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { orgId_userId: { orgId: 'org-new', userId: 'u-owner' } },

@@ -1,36 +1,18 @@
-/**
- * API-клиент модуля ideas (SBA β-5).
- * Контракт: `backend/src/modules/ideas/`.
- *
- * Эндпоинты:
- *   - GET  /api/v1/ideas
- *   - GET  /api/v1/ideas/:id
- *   - GET  /api/v1/me/ideas?role=author|supporter
- *   - POST /api/v1/ideas/:id/status
- *   - POST /api/v1/ideas/:id/support
- *   - POST /api/v1/ideas/:id/goal      (Goals OKR v2 — «двигает цель…»)
- *   - POST /api/v1/me/ideas/:id/withdraw
- *   - GET  /api/v1/idea-clusters
- *   - GET  /api/v1/idea-clusters/:id
- *
- * Защита: CookieAuthGuard + TenantGuard, RBAC `idea:read|write`.
- */
+import { apiClient } from "./api-client";
+import { orgHeaders } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { orgHeaders } from './admin-helpers';
-
-export type IdeaKindApi = 'internal' | 'client_request';
+export type IdeaKindApi = "internal" | "client_request";
 export type IdeaStatusApi =
-  | 'captured'
-  | 'in_discussion'
-  | 'accepted'
-  | 'in_progress'
-  | 'shipped'
-  | 'rejected'
-  | 'archived';
+  | "captured"
+  | "in_discussion"
+  | "accepted"
+  | "in_progress"
+  | "shipped"
+  | "rejected"
+  | "archived";
 
 export interface IdeaSupporterApi {
-  kind: 'person' | 'customer';
+  kind: "person" | "customer";
   entityId: string;
   firstSupportedAt: string;
   blockId?: string;
@@ -48,7 +30,6 @@ export interface IdeaListItemApi {
   firstProposedAt: string;
   lastDiscussedAt: string;
   createdByUserId: string | null;
-  /** Goals OKR v2 — цель, которую двигает эта гипотеза (null = не привязана). */
   goalId: string | null;
 }
 
@@ -70,10 +51,6 @@ export interface IdeasListResponseApi {
   limit: number;
 }
 
-/**
- * TZ-1 Ф4.A — ответ `GET /api/v1/ideas/top?limit=N`.
- * Топ идей по ре-ранку (weight + свежесть + связь с целью). Без пагинации.
- */
 export interface TopIdeasResponseApi {
   items: IdeaListItemApi[];
 }
@@ -106,7 +83,7 @@ export interface ListIdeasRequest {
 }
 
 export interface MyIdeasRequest {
-  role?: 'author' | 'supporter';
+  role?: "author" | "supporter";
   page?: number;
   limit?: number;
 }
@@ -118,7 +95,7 @@ function qs(params: Record<string, string | number | undefined>): string {
     sp.set(k, String(v));
   }
   const s = sp.toString();
-  return s ? `?${s}` : '';
+  return s ? `?${s}` : "";
 }
 
 export const ideasApi = {
@@ -128,7 +105,9 @@ export const ideasApi = {
   },
 
   async getById(id: string): Promise<IdeaDetailApi> {
-    return apiClient.get<IdeaDetailApi>(`/api/v1/ideas/${encodeURIComponent(id)}`);
+    return apiClient.get<IdeaDetailApi>(
+      `/api/v1/ideas/${encodeURIComponent(id)}`,
+    );
   },
 
   async myIdeas(req: MyIdeasRequest = {}): Promise<IdeasListResponseApi> {
@@ -136,14 +115,6 @@ export const ideasApi = {
     return apiClient.get<IdeasListResponseApi>(url);
   },
 
-  /**
-   * TZ-1 Ф4.A — топ идей (виджет дашборда «Идеи»). Ре-ранк weight+свежесть+цель.
-   * Доступ: owner / admin / coo (canViewOperationsDashboard).
-   *
-   * Эндпоинт без `:orgId` в пути → tenant резолвится из заголовка `X-Org-Id`.
-   * `apiClient` ставит дефолтный `X-Org-Id` сам, но передаём явно через
-   * `orgHeaders(orgId)` для надёжности (как в `linkGoal`).
-   */
   async top(orgId: string, limit = 5): Promise<TopIdeasResponseApi> {
     return apiClient.get<TopIdeasResponseApi>(
       `/api/v1/ideas/top${qs({ limit })}`,
@@ -169,10 +140,6 @@ export const ideasApi = {
     );
   },
 
-  /**
-   * Goals OKR v2 — привязать идею к цели («двигает цель…»).
-   * `goalId === null` отвязывает. RBAC: owner / admin / manager (write).
-   */
   async linkGoal(
     orgId: string,
     ideaId: string,

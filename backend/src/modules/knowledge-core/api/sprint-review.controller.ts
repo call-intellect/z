@@ -10,10 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { RequireSubscription } from '../../billing/guards/require-subscription.decorator';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
@@ -21,14 +18,6 @@ import { TenantGuard } from '../../rbac/guards/tenant.guard';
 import { RbacService } from '../../rbac/rbac.service';
 import { SprintReviewService } from '../services/sprint-review.service';
 
-/**
- * Sprints (2026-05-27, plans/tz/2026-05-27-sprints.md §2.7) — REST для
- * финального отчёта спринта.
- *
- * Живёт в knowledge-core/api, потому что `SprintReviewService` инжектит
- * `CurationService` + `LlmRouterService` из knowledge-graph. RBAC проверяем
- * по `cycle` (read для GET, write для regenerate).
- */
 @ApiTags('tracker / cycles')
 @ApiBearerAuth()
 @Controller('api/v1/cycles')
@@ -42,8 +31,7 @@ export class SprintReviewController {
 
   @Get(':id/review')
   @ApiOperation({
-    summary:
-      'Получить финальный отчёт спринта (status: ready / pending / failed)',
+    summary: 'Получить финальный отчёт спринта (status: ready / pending / failed)',
   })
   async get(
     @Param('id') id: string,
@@ -58,8 +46,7 @@ export class SprintReviewController {
   @Post(':id/review/regenerate')
   @RequireSubscription()
   @ApiOperation({
-    summary:
-      'Сгенерировать финальный отчёт спринта заново (например, если AI был недоступен)',
+    summary: 'Сгенерировать финальный отчёт спринта заново (например, если AI был недоступен)',
   })
   async regenerate(
     @Param('id') id: string,

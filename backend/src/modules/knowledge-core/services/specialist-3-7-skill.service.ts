@@ -12,14 +12,8 @@ import {
 import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
-import {
-  type LlmCallResult,
-  LlmRouterService,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { type LlmCallResult, LlmRouterService } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   PROCESS_MARKER_DETECT_JSON_SCHEMA,
   PROCESS_MARKER_DETECT_SCHEMA_NAME,
@@ -55,50 +49,17 @@ import { KnowledgeEmbeddingService } from './embedding.service';
 import { SkillTraitConceptService } from './skill-trait-concept.service';
 import { Specialist37ProbeService } from './specialist-3-7-skill-probe.service';
 
-/**
- * SBA γ-1 — Specialist37Service (SkillProfile).
- *
- * Логика γ-1.3:
- *   1. Загружает subject-reasoning блоки сотрудника за SKILL_LOOKBACK_MONTHS.
- *   2. Группирует блоки по embedding similarity (KNN-greedy union-find 0.78).
- *   3. Для каждой группы >= SKILL_MIN_OBSERVATIONS — LLM skill-trait-detect.
- *   4. KNN-merge нового trait с активными (KNN cosine ≥ SKILL_TRAIT_SIMILARITY_THRESHOLD).
- *   5. Decay по lastConfirmedAt (>SKILL_DECAY_MONTHS → confidence↓;
- *      >SKILL_ARCHIVE_MONTHS → status='archived').
- *   6. Метрики core_specialist_*{type='skill_trait'}.
- *   7. Probe-events (через Specialist37ProbeService).
- *
- * Skill — НЕ pre-approval через CurationService (§3.6 F9): auto-canonical
- * при confidence>=medium. Manager может mark_as_misleading постфактум.
- */
 @Injectable()
 export class Specialist37Service {
   private readonly logger = new Logger(Specialist37Service.name);
 
-  /** Имя специалиста (jobName-фильтр). */
   static readonly SPECIALIST_NAME = '3-7-skill';
-  /** Тип ресурса для метрик. */
   static readonly METRIC_TYPE = 'skill_trait';
-  /** KNN-cosine порог для группировки reasoning-блоков в кандидаты trait. */
   private static readonly GROUP_SIMILARITY_THRESHOLD = 0.78;
-  /** Top-K кандидатов для skill-trait-merge KNN-арбитра. */
   private static readonly MERGE_KNN_TOP_K = 5;
-  /** Ф5(F) — нижний порог попадания в арбитраж merge. Кандидаты в [0.78,0.85)
-   *  («band») всё равно судятся арбитром (не форс-new), но мерджатся только при
-   *  совпадении смысловой категории. ≥0.85 — «hard». */
   private static readonly ARBITRATION_FLOOR = 0.78;
-  /** Максимум блоков, загружаемых из БД за один rebuild (защита от взрыва токенов). */
   private static readonly MAX_BLOCKS_PER_REBUILD = 200;
-  /** Максимум групп, обрабатываемых LLM за один rebuild. */
   private static readonly MAX_GROUPS_PER_REBUILD = 12;
-  /**
-   * TZ clone-method Э2.1 — код-гард детектора маркеров процесса (как гард
-   * Э1.2 в RolePrincipleSynthesisService): statement с любым из стоп-маркеров
-   * оценочных осей («избегает решений», «не решает сам», …) отбрасывается
-   * независимо от того, что решила модель. Сверка по нижнему регистру,
-   * намеренно консервативная (substring) — лучше потерять маркер, чем
-   * пропустить кадрово-токсичный приговор.
-   */
   private static readonly PROCESS_MARKER_STOP_MARKERS: readonly string[] = [
     'избегает',
     'не решает сам',
@@ -123,9 +84,6 @@ export class Specialist37Service {
     private readonly concepts: SkillTraitConceptService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -134,12 +92,6 @@ export class Specialist37Service {
     }
   }
 
-  // ───────────────────── публичные методы ─────────────────────
-
-  /**
-   * Получить или создать SkillProfile для Person'а. Только для employee'ев.
-   * Возвращает null, если Person — не сотрудник.
-   */
   async getOrCreateForPerson(args: {
     tenantId: string;
     personId: string;
@@ -171,7 +123,6 @@ export class Specialist37Service {
         },
       });
     } catch (err) {
-      // Race: возможно уже создали в параллельном job'е → читаем.
       this.logger.debug(
         { personId: args.personId, err: err instanceof Error ? err.message : String(err) },
         'specialist-3-7.getOrCreateForPerson: race / упало — re-read',
@@ -182,19 +133,6 @@ export class Specialist37Service {
     }
   }
 
-  /**
-   * Ф3(D) — grounding-проверка pending_verification черт перед попаданием в
-   * персону. grounded=true → active; иначе остаётся pending до тех пор, пока
-   * не устареет (Б1: runDecay/recalibrate переводят pending старше archiveCutoff
-   * → archived — раньше «decay уберёт» было ложью, перехода не было нигде).
-   * Fail-open (Р2): ошибка/таймаут LLM → промоут в active (как было до D).
-   *
-   * Б2 (2026-06-16): выборка идёт FIFO (orderBy createdAt asc) и исключает
-   * безнадёжные черты старше archiveCutoff — иначе при >limit застрявших pending
-   * окно крутило их же, а новые черты не доходили до verify и были невидимы клону.
-   *
-   * Вызывается из SkillTraitVerifyCron батчем (default limit 100).
-   */
   async verifyPendingTraits(
     limit = 100,
   ): Promise<{ checked: number; promoted: number; held: number }> {
@@ -202,8 +140,6 @@ export class Specialist37Service {
     let promoted = 0;
     let held = 0;
     try {
-      // Б2 — безнадёжные (старше archiveCutoff) исключаем: их заберёт
-      // runDecay/recalibrate в archived, нет смысла снова жечь на них LLM.
       const archiveCutoff = new Date(
         Date.now() - this.cfg.skill.archiveMonths * 30 * 24 * 60 * 60 * 1000,
       );
@@ -221,8 +157,6 @@ export class Specialist37Service {
           profileId: true,
           profile: { select: { tenantId: true } },
         },
-        // Б2 — FIFO: старейшие непроверенные первыми, чтобы окно не застревало
-        // на одних и тех же и новые черты доходили до verify.
         orderBy: { createdAt: 'asc' },
         take: limit,
       });
@@ -231,7 +165,6 @@ export class Specialist37Service {
         checked++;
         const tenantId = trait.profile?.tenantId ?? null;
         try {
-          // Цитаты-источники: дословные reasoning-блоки (critical/trusted).
           const blockIds = trait.sourceBlockIds.slice(0, 10);
           const blocks = blockIds.length
             ? await this.prisma.ideaBlock.findMany({
@@ -248,11 +181,6 @@ export class Specialist37Service {
             quote: `${b.criticalQuestion} ${b.trustedAnswer}`.slice(0, 600),
           }));
 
-          // Г3 (2026-06-16) — предфильтр в коде: grounded=true требует ≥2 цитат
-          // (это проверяемый кодом порог, не доверяем дешёвой модели). При <2
-          // цитатах черта заведомо не грунтуется — держим pending (held) БЕЗ
-          // вызова LLM. Раньше LLM звался даже при 0–1 цитате, а при сбое
-          // fail-open промоутил такую черту в active.
           if (quotes.length < 2) {
             held++;
             continue;
@@ -285,22 +213,13 @@ export class Specialist37Service {
               data: { status: 'active' },
             });
             promoted++;
-            // Б6 — promote меняет COUNT(active) концепта: пересчитываем
-            // traitCount (единый источник = COUNT(active)). Best-effort.
             if (trait.conceptId) {
-              await this.concepts
-                .recomputeTraitCount(trait.conceptId)
-                .catch(() => undefined);
+              await this.concepts.recomputeTraitCount(trait.conceptId).catch(() => undefined);
             }
           } else {
-            // Не грунтовано — оставляем pending. Безнадёжные (старше
-            // archiveCutoff) заберёт runDecay/recalibrate в archived (Б1);
-            // выборка их уже не подхватывает (Б2), LLM повторно не жжётся.
             held++;
           }
         } catch (err) {
-          // FAIL-OPEN (Р2): ошибка LLM/parse → промоут в active, не блокируем
-          // формирование клона из-за недоступности верификатора.
           this.logger.warn(
             {
               traitId: trait.id,
@@ -315,16 +234,13 @@ export class Specialist37Service {
             });
             promoted++;
             if (trait.conceptId) {
-              await this.concepts
-                .recomputeTraitCount(trait.conceptId)
-                .catch(() => undefined);
+              await this.concepts.recomputeTraitCount(trait.conceptId).catch(() => undefined);
             }
           } catch (updErr) {
             this.logger.warn(
               {
                 traitId: trait.id,
-                err:
-                  updErr instanceof Error ? updErr.message : String(updErr),
+                err: updErr instanceof Error ? updErr.message : String(updErr),
               },
               'specialist-3-7.verifyPendingTraits: fail-open update тоже упал — skip',
             );
@@ -341,12 +257,6 @@ export class Specialist37Service {
     return { checked, promoted, held };
   }
 
-  /**
-   * Пересборка профиля. Вызывается из SkillProfileRebuildWorker.
-   *
-   * Best-effort: ошибки на каждом шаге не пробрасываются, только метрика +
-   * лог. BullMQ-retry политика — на стороне воркера.
-   */
   async rebuildProfile(args: { profileId: string }): Promise<void> {
     const start = Date.now();
     try {
@@ -366,7 +276,10 @@ export class Specialist37Service {
         },
       });
       if (!profile) {
-        this.logger.debug({ profileId: args.profileId }, 'specialist-3-7: profile не найден — skip');
+        this.logger.debug(
+          { profileId: args.profileId },
+          'specialist-3-7: profile не найден — skip',
+        );
         return;
       }
       if (profile.person.deletedAt) {
@@ -374,7 +287,6 @@ export class Specialist37Service {
         return;
       }
 
-      // 1. Lifecycle по relationship.
       const newStatus = this.statusForRelationship(profile.person.relationship);
       if (newStatus !== profile.status) {
         await this.prisma.skillProfile.update({
@@ -390,17 +302,14 @@ export class Specialist37Service {
         }
       }
       if (profile.person.relationship !== 'employee') {
-        return; // не employee — rebuild не делаем.
+        return;
       }
 
-      // 2. Загрузить subject-reasoning блоки за окно.
       const blocks = await this.loadSubjectReasoningBlocks({
         tenantId: profile.tenantId,
         entityId: profile.person.entityId,
         lookbackMonths: this.cfg.skill.lookbackMonths,
       });
-      // Ф4(E) — split-floor: профиль-порог (сколько всего блоков нужно) и
-      // кластер-порог (сколько в группе) — разные AdminSetting-крутилки.
       const profileMinObservations = await this.cfg.getDynamic<number>(
         'knowledge.skillProfileMinObservations',
         undefined,
@@ -411,7 +320,6 @@ export class Specialist37Service {
           { profileId: profile.id, blocksCount: blocks.length, profileMinObservations },
           'specialist-3-7: блоков меньше порога — skip',
         );
-        // Probe: пустой профиль (стартует сам по cron'у, не здесь).
         return;
       }
       const clusterMinObservations = await this.cfg.getDynamic<number>(
@@ -420,7 +328,6 @@ export class Specialist37Service {
         3,
       );
 
-      // 3. Группировать блоки по embedding similarity → кандидаты на traits.
       const groups = await this.groupBlocksBySimilarity(blocks);
       const eligibleGroups = groups
         .filter((g) => g.length >= clusterMinObservations)
@@ -435,7 +342,6 @@ export class Specialist37Service {
         'specialist-3-7: группировка завершена',
       );
 
-      // 4. Для каждой группы → LLM detect → KNN-merge.
       let createdNew = 0;
       let mergedCount = 0;
       let supersededCount = 0;
@@ -453,9 +359,6 @@ export class Specialist37Service {
         else if (result === 'superseded') supersededCount++;
       }
 
-      // TZ clone-method Э1.3 — детектор ценностей/мотивации (revealed preferences).
-      // Второй проход по тем же группам; пишет SkillTrait layer=value|motivation.
-      // Kill-switch: cfg.skill.valueMotivationDetectEnabled.
       if (this.cfg.skill.valueMotivationDetectEnabled) {
         for (const group of eligibleGroups) {
           const draft = await this.detectValueMotivation({
@@ -476,9 +379,6 @@ export class Specialist37Service {
         }
       }
 
-      // TZ clone-method Э2.1 — детектор конструктивных маркеров процесса.
-      // Третий проход по тем же группам; пишет SkillTrait layer=process_marker.
-      // Kill-switch: cfg.skill.processMarkerDetectEnabled.
       if (this.cfg.skill.processMarkerDetectEnabled) {
         for (const group of eligibleGroups) {
           const draft = await this.detectProcessMarker({
@@ -499,10 +399,8 @@ export class Specialist37Service {
         }
       }
 
-      // 5. Decay активных traits.
       await this.runDecay(profile.id);
 
-      // 6. Обновить версию.
       await this.prisma.skillProfile.update({
         where: { id: profile.id },
         data: {
@@ -527,7 +425,6 @@ export class Specialist37Service {
         'specialist-3-7: rebuild завершён',
       );
 
-      // 7. Probe-events (Э3.1 — entityId нужен CDM-интервью для выборки кейсов).
       await this.probes.checkAndEmitProbes({
         tenantId: profile.tenantId,
         profileId: profile.id,
@@ -555,17 +452,6 @@ export class Specialist37Service {
     }
   }
 
-  /**
-   * EventEmitter-обработчик 'person.relationship_changed'.
-   * Любой код в проекте, меняющий Person.relationship, может эмиттить
-   * это событие — Specialist37Service обновит SkillProfile.status.
-   *
-   * Payload: { personId, newRelationship, oldRelationship? }.
-   *
-   * NB: если событие не эмиттится — это безопасно, так как rebuildProfile
-   * самостоятельно проверяет relationship в начале и сам перекладывает
-   * статус (см. statusForRelationship).
-   */
   @OnEvent('person.relationship_changed')
   async onRelationshipChanged(args: {
     personId: string;
@@ -578,9 +464,6 @@ export class Specialist37Service {
     });
   }
 
-  /**
-   * Хук на смену Person.relationship — обновляет SkillProfile.status.
-   */
   async handleRelationshipChange(args: {
     personId: string;
     newRelationship: Person['relationship'];
@@ -611,24 +494,12 @@ export class Specialist37Service {
     }
   }
 
-  // ─────────────────────── приватные методы ───────────────────────
-
-  /**
-   * Маппинг relationship → желаемый SkillProfile.status.
-   */
-  private statusForRelationship(
-    rel: Person['relationship'],
-  ): SkillProfile['status'] {
+  private statusForRelationship(rel: Person['relationship']): SkillProfile['status'] {
     if (rel === 'employee') return 'active';
     if (rel === 'former') return 'archived';
-    return 'paused_relationship'; // candidate | external
+    return 'paused_relationship';
   }
 
-  /**
-   * Загружает блоки за окно, где Person упомянут как subject AND
-   * signalType ∈ {reasoning, rationale, decision_basis}. Возвращает блоки
-   * со свежими первыми (для удобства группировки).
-   */
   private async loadSubjectReasoningBlocks(args: {
     tenantId: string;
     entityId: string | null;
@@ -682,7 +553,6 @@ export class Specialist37Service {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Embedding read через raw query (pgvector).
     const embeddings = await this.loadEmbeddings(blocks.map((b) => b.id));
 
     return blocks.map((b) => ({
@@ -696,10 +566,6 @@ export class Specialist37Service {
     }));
   }
 
-  /**
-   * Читает IdeaBlock.embedding через pgvector raw query. Возвращает мапу
-   * blockId → number[]. Блоки без embedding не попадут в карту.
-   */
   private async loadEmbeddings(blockIds: string[]): Promise<Map<string, number[]>> {
     if (blockIds.length === 0) return new Map();
     try {
@@ -709,7 +575,6 @@ export class Specialist37Service {
       const map = new Map<string, number[]>();
       for (const r of rows) {
         if (!r.emb) continue;
-        // pgvector text формат: '[0.1,0.2,...]'
         const inner = r.emb.replace(/^\[|\]$/g, '');
         if (!inner) continue;
         const vec = inner.split(',').map((s) => Number(s));
@@ -727,11 +592,6 @@ export class Specialist37Service {
     }
   }
 
-  /**
-   * Группировка блоков методом greedy union-find по cosine similarity.
-   * Блоки без embedding идут в свои одноблочные группы (не теряем материал,
-   * но не сольём с другими).
-   */
   private async groupBlocksBySimilarity(
     blocks: Array<{
       blockId: string;
@@ -748,7 +608,6 @@ export class Specialist37Service {
       }
       let placed = false;
       for (const g of groups) {
-        // Сравниваем с первым представителем группы (greedy).
         const head = g[0];
         if (!head || !head.embedding) continue;
         const sim = cosineSimilarity(block.embedding, head.embedding);
@@ -760,13 +619,9 @@ export class Specialist37Service {
       }
       if (!placed) groups.push([block]);
     }
-    // Отсортировать группы по размеру (большие — приоритет).
     return groups.sort((a, b) => b.length - a.length);
   }
 
-  /**
-   * LLM-extraction черновика trait'а из группы блоков. Best-effort.
-   */
   private async detectTrait(args: {
     profile: SkillProfile;
     personName: string;
@@ -776,15 +631,12 @@ export class Specialist37Service {
       createdAt?: Date;
     }>;
   }): Promise<TraitDraft | null> {
-    const quotesForLlm = args.group
-      .slice(0, 12)
-      .map((b) => ({
-        blockId: b.blockId,
-        quote: b.quote,
-        observedAt: (b.createdAt ?? new Date()).toISOString(),
-      }));
+    const quotesForLlm = args.group.slice(0, 12).map((b) => ({
+      blockId: b.blockId,
+      quote: b.quote,
+      observedAt: (b.createdAt ?? new Date()).toISOString(),
+    }));
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
     const guardOnDetect = this.isPromptInjectionGuardEnabled();
     const rawUserDetect = SKILL_TRAIT_DETECT_USER_TEMPLATE({
       personName: args.personName,
@@ -840,22 +692,10 @@ export class Specialist37Service {
       });
     });
     if (!draft) return null;
-    // Г4 (2026-06-16) — пустой sourceBlockIds = «нет ПОЧЕМУ / недостаточно
-    // сигнала» (контракт промпта skill-trait-detect) — это НОРМА, не черта.
-    // Раньше skill-путь (в отличие от value-пути и process-пути) НЕ отбрасывал
-    // пустой sourceBlockIds → «недостаточно сигнала» создавалось как черта.
     if (draft.sourceBlockIds.length === 0) return null;
     return draft;
   }
 
-  /**
-   * TZ clone-method Э1.3 — LLM-extraction ценности/мотивации из «решающего
-   * момента» (trade-off) в той же группе reasoning-блоков. Близнец
-   * detectTrait: тот же injection-guard, но taskType
-   * `value-motivation-detect` и схема со слоем layer ∈ {value, motivation}.
-   * Нет явного trade-off (sourceBlockIds=[]) → null — это НОРМА, не ошибка.
-   * Best-effort.
-   */
   private async detectValueMotivation(args: {
     profile: SkillProfile;
     personName: string;
@@ -865,15 +705,12 @@ export class Specialist37Service {
       createdAt?: Date;
     }>;
   }): Promise<(TraitDraft & { layer: 'value' | 'motivation' }) | null> {
-    const quotesForLlm = args.group
-      .slice(0, 12)
-      .map((b) => ({
-        blockId: b.blockId,
-        quote: b.quote,
-        observedAt: (b.createdAt ?? new Date()).toISOString(),
-      }));
+    const quotesForLlm = args.group.slice(0, 12).map((b) => ({
+      blockId: b.blockId,
+      quote: b.quote,
+      observedAt: (b.createdAt ?? new Date()).toISOString(),
+    }));
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
     const guardOnDetect = this.isPromptInjectionGuardEnabled();
     const rawUserDetect = VALUE_MOTIVATION_DETECT_USER_TEMPLATE({
       personName: args.personName,
@@ -929,21 +766,10 @@ export class Specialist37Service {
       });
     });
     if (!draft) return null;
-    // Пустой sourceBlockIds = «решающего момента нет» — норма, не failure.
     if (draft.sourceBlockIds.length === 0) return null;
     return draft;
   }
 
-  /**
-   * TZ clone-method Э2.1 — LLM-extraction конструктивного МАРКЕРА ПРОЦЕССА
-   * (повторяемого приёма проработки решений) из той же группы
-   * reasoning-блоков. Близнец detectValueMotivation: тот же injection-guard,
-   * но taskType `process-marker-detect`; layer из LLM НЕ приходит — слой
-   * фиксирован детектором ('process_marker'). Поверх парса — код-гард
-   * стоп-маркеров оценочных осей (как гард Э1.2): «избегает», «не решает
-   * сам» и т.п. в statement → null + warn. Нет повторяемого приёма
-   * (sourceBlockIds=[]) → null — это НОРМА, не ошибка. Best-effort.
-   */
   private async detectProcessMarker(args: {
     profile: SkillProfile;
     personName: string;
@@ -953,15 +779,12 @@ export class Specialist37Service {
       createdAt?: Date;
     }>;
   }): Promise<(TraitDraft & { layer: 'process_marker' }) | null> {
-    const quotesForLlm = args.group
-      .slice(0, 12)
-      .map((b) => ({
-        blockId: b.blockId,
-        quote: b.quote,
-        observedAt: (b.createdAt ?? new Date()).toISOString(),
-      }));
+    const quotesForLlm = args.group.slice(0, 12).map((b) => ({
+      blockId: b.blockId,
+      quote: b.quote,
+      observedAt: (b.createdAt ?? new Date()).toISOString(),
+    }));
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (цитаты, исходно из транскриптов).
     const guardOnDetect = this.isPromptInjectionGuardEnabled();
     const rawUserDetect = PROCESS_MARKER_DETECT_USER_TEMPLATE({
       personName: args.personName,
@@ -1010,7 +833,6 @@ export class Specialist37Service {
       });
     }
 
-    // layer из LLM не приходит (схема без layer) — переиспользуем parseTraitDraft.
     const draft = parseTraitDraft(result.text, (reason) => {
       this.metrics.incCoreSpecialistExtractionFailure({
         type: 'process_marker',
@@ -1018,13 +840,11 @@ export class Specialist37Service {
       });
     });
     if (!draft) return null;
-    // Пустой sourceBlockIds = «повторяемого приёма нет» — норма, не failure.
     if (draft.sourceBlockIds.length === 0) return null;
 
-    // Код-гард (как Э1.2): оценочно-диагностическая лексика → отбросить.
     const lower = draft.statement.toLowerCase();
-    const stopMarker = Specialist37Service.PROCESS_MARKER_STOP_MARKERS.find(
-      (m) => lower.includes(m),
+    const stopMarker = Specialist37Service.PROCESS_MARKER_STOP_MARKERS.find((m) =>
+      lower.includes(m),
     );
     if (stopMarker) {
       this.logger.warn(
@@ -1038,25 +858,17 @@ export class Specialist37Service {
       return null;
     }
 
-    // Слой фиксирован детектором — LLM его не присылает.
     return { ...draft, layer: 'process_marker' };
   }
 
-  /**
-   * KNN-merge нового trait'а с существующими активными traits того же
-   * profileId. Применяет verdict: 'merge' / 'supersedes' / 'new'.
-   */
   private async mergeOrCreate(args: {
     profile: SkillProfile;
     draft: TraitDraft;
-    /** TZ clone-method Э1.3 — слой черты; KNN-кандидаты и insert идут строго
-     *  в своём слое (value-черта не мёрджится со skill-чертой). Default 'skill'. */
     layer?: SkillTraitLayer;
   }): Promise<'created' | 'merged' | 'superseded' | 'skipped'> {
     const layer: SkillTraitLayer = args.layer ?? 'skill';
     const threshold = this.cfg.skill.traitSimilarityThreshold;
 
-    // KNN-кандидаты через pgvector.
     let candidates: Array<{
       id: string;
       category: string;
@@ -1092,10 +904,6 @@ export class Specialist37Service {
             distance: number;
           }>
         >(
-          // Б4 (2026-06-16) — KNN-кандидаты merge включают и pending_verification,
-          // не только active: новая черта рождается pending, несколько rebuild за
-          // день (debounce 60s) до ночного verify иначе плодят дубли pending одного
-          // навыка. Повторный rebuild теперь мёрджит в существующий pending.
           `SELECT "id", "category", "statement", "confidence", "lastConfirmedAt",
                   "observationCount", "sourceBlockIds",
                   ("embedding" <=> $2::vector) AS "distance"
@@ -1110,10 +918,6 @@ export class Specialist37Service {
           vec,
           layer,
         );
-        // cosine_distance = 1 - cosine_sim. Ф5(F): фильтруем по ARBITRATION_FLOOR
-        // (0.78) — кандидаты в [0.78,threshold) («band») всё равно судятся арбитром
-        // (не форс-new), но помечаются как слабое совпадение. rows уже отсортированы
-        // по distance asc = similarity desc; cap top-3.
         candidates = rows
           .filter((r) => 1 - r.distance >= Specialist37Service.ARBITRATION_FLOOR)
           .slice(0, 3)
@@ -1125,9 +929,7 @@ export class Specialist37Service {
             lastConfirmedAt: r.lastConfirmedAt,
             observationCount: r.observationCount,
             sourceBlockIds: r.sourceBlockIds ?? [],
-            bucket: (1 - r.distance >= threshold ? 'hard' : 'band') as
-              | 'hard'
-              | 'band',
+            bucket: (1 - r.distance >= threshold ? 'hard' : 'band') as 'hard' | 'band',
           }));
       } catch (err) {
         this.logger.debug(
@@ -1149,7 +951,6 @@ export class Specialist37Service {
       });
     }
 
-    // LLM-арбитр.
     const verdict = await this.callMergeArbiter({
       tenantId: args.profile.tenantId,
       profileId: args.profile.id,
@@ -1157,11 +958,6 @@ export class Specialist37Service {
       candidates,
     });
 
-    // Г2 (2026-06-16) — код-гард над вердиктом LLM: если есть hard-кандидат
-    // (cosine ≥ traitSimilarityThreshold = проверяемый кодом порог), а модель
-    // вернула "new" — НЕ доверяем слепо, форсим merge к топ-hard кандидату
-    // (candidates отсортированы по similarity desc → первый hard и есть топ).
-    // Возврат "new" при наличии hard-совпадения — баг кумулятивности профиля.
     if (verdict.verdict === 'new') {
       const topHard = candidates.find((c) => c.bucket === 'hard');
       if (topHard) {
@@ -1206,8 +1002,6 @@ export class Specialist37Service {
           sourceBlockIds: target.sourceBlockIds,
           observationCount: target.observationCount,
           confidence: target.confidence,
-          // Б3 — пробрасываем текущую дату подтверждения цели, чтобы мердж
-          // старой группы не откатил lastConfirmedAt назад (MAX в mergeIntoExisting).
           lastConfirmedAt: target.lastConfirmedAt,
         },
         draft: args.draft,
@@ -1261,7 +1055,6 @@ export class Specialist37Service {
       bucket: 'hard' | 'band';
     }>;
   }): Promise<MergeVerdict> {
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (draft + кандидаты, исходно из транскриптов).
     const guardOnMerge = this.isPromptInjectionGuardEnabled();
     const rawUserMerge = SKILL_TRAIT_MERGE_USER_TEMPLATE({
       draft: {
@@ -1328,11 +1121,7 @@ export class Specialist37Service {
         return { verdict: 'new', targetId: null, reasoning: 'invalid_verdict' };
       }
       const candidateIds = new Set(args.candidates.map((c) => c.id));
-      if (
-        parsed.verdict !== 'new' &&
-        parsed.targetId &&
-        !candidateIds.has(parsed.targetId)
-      ) {
+      if (parsed.verdict !== 'new' && parsed.targetId && !candidateIds.has(parsed.targetId)) {
         return {
           verdict: 'new',
           targetId: null,
@@ -1353,7 +1142,6 @@ export class Specialist37Service {
     profile: SkillProfile;
     draft: TraitDraft;
     embedding: number[] | null;
-    /** TZ clone-method Э1.3 — слой черты (default 'skill'). */
     layer?: SkillTraitLayer;
   }): Promise<'created' | 'skipped'> {
     const id = await this.createNewTraitRaw(args);
@@ -1364,28 +1152,20 @@ export class Specialist37Service {
     profile: SkillProfile;
     draft: TraitDraft;
     embedding: number[] | null;
-    /** TZ clone-method Э1.3 — слой черты (default 'skill'). */
     layer?: SkillTraitLayer;
   }): Promise<string | null> {
     try {
       const trait = await this.prisma.skillTrait.create({
         data: {
           profileId: args.profile.id,
-          // TZ clone-method Э1.3 — слой черты (skill | value | motivation | …).
           layer: args.layer ?? 'skill',
           category: args.draft.category.slice(0, 200),
           statement: args.draft.statement.slice(0, 2_000),
           confidence: args.draft.confidence as SkillConfidence,
-          observationCount: Math.max(
-            1,
-            Math.min(1_000, args.draft.sourceBlockIds.length),
-          ),
+          observationCount: Math.max(1, Math.min(1_000, args.draft.sourceBlockIds.length)),
           sourceBlockIds: args.draft.sourceBlockIds.slice(0, 50),
           firstObservedAt: this.safeDate(args.draft.firstObservedAt),
           lastConfirmedAt: this.safeDate(args.draft.lastConfirmedAt),
-          // Ф3(D) — новая черта создаётся в pending_verification: в персону
-          // НЕ попадает, пока skill-trait-verify cron не подтвердит grounding
-          // (grounded=true → active; ошибка LLM → fail-open active).
           status: 'pending_verification',
         },
       });
@@ -1397,13 +1177,8 @@ export class Specialist37Service {
             vec,
             trait.id,
           );
-        } catch {
-          // best-effort
-        }
+        } catch {}
       }
-      // ТЗ 2026-05-25 clone-reliability-hardening, Фаза 2 — привязать trait к
-      // смысловому блоку навыка (SkillTraitConcept). Best-effort: ошибка не
-      // должна валить insert уже созданного trait'а.
       try {
         const concept = await this.concepts.findOrCreateConcept({
           tenantId: args.profile.tenantId,
@@ -1449,36 +1224,24 @@ export class Specialist37Service {
       sourceBlockIds: string[];
       observationCount: number;
       confidence: SkillConfidence;
-      /** Б3 (2026-06-16) — текущая дата подтверждения цели; нужна, чтобы при
-       *  мердже группы из СТАРЫХ блоков не откатить lastConfirmedAt назад. */
       lastConfirmedAt?: Date;
     };
     draft: TraitDraft;
     embedding: number[] | null;
   }): Promise<void> {
-    const merged = new Set([
-      ...args.existing.sourceBlockIds,
-      ...args.draft.sourceBlockIds,
-    ]);
+    const merged = new Set([...args.existing.sourceBlockIds, ...args.draft.sourceBlockIds]);
 
-    // Ф2-B (Р6) — confidence пересчитывается из разброса РАЗНЫХ ДАТ наблюдений
-    // (число различных дней по createdAt блоков), НЕ из числа блоков: одна
-    // болтливая встреча не должна дать ложный `high`. Уже достигнутый уровень
-    // не понижаем (MAX(текущий, evidence-floor)).
     let newConfidence: SkillConfidence = args.existing.confidence;
     try {
       const blocks = await this.prisma.ideaBlock.findMany({
         where: { id: { in: [...merged] } },
         select: { createdAt: true },
       });
-      const distinctDays = new Set(
-        blocks.map((b) => b.createdAt.toISOString().slice(0, 10)),
-      ).size;
+      const distinctDays = new Set(blocks.map((b) => b.createdAt.toISOString().slice(0, 10))).size;
       const evidenceLevel: SkillConfidence =
         distinctDays >= 4 ? 'high' : distinctDays >= 2 ? 'medium' : 'low';
       newConfidence = this.maxConfidence(args.existing.confidence, evidenceLevel);
     } catch (err) {
-      // Fail-open: не смогли пересчитать — оставляем существующий уровень.
       this.logger.debug(
         {
           traitId: args.existing.id,
@@ -1488,18 +1251,8 @@ export class Specialist37Service {
       );
     }
 
-    // Ф2-C (Р7) — якорь statement+embedding обновляем ТОЛЬКО ВМЕСТЕ: есть
-    // непустой draft.statement И передан embedding. Иначе ни то, ни другое
-    // (откат к старому). Обе записи в ОДНОЙ транзакции — при ошибке
-    // откатываются вместе.
-    const updateAnchor =
-      args.embedding != null && args.draft.statement.trim().length > 0;
+    const updateAnchor = args.embedding != null && args.draft.statement.trim().length > 0;
 
-    // Б3 (2026-06-16) — lastConfirmedAt НЕ откатываем назад: берём MAX из
-    // существующей даты подтверждения и даты черновика. Раньше безусловно
-    // ставился draft.lastConfirmedAt (мог быть СТАРШЕ при мердже группы из
-    // старых блоков) → дата отъезжала назад → decay/recalibrate ошибочно
-    // понижали confidence / архивировали живую черту.
     const draftConfirmedAt = this.safeDate(args.draft.lastConfirmedAt);
     const nextConfirmedAt =
       args.existing.lastConfirmedAt &&
@@ -1515,9 +1268,7 @@ export class Specialist37Service {
             observationCount: Math.min(1_000, merged.size),
             confidence: newConfidence,
             lastConfirmedAt: nextConfirmedAt,
-            ...(updateAnchor
-              ? { statement: args.draft.statement.slice(0, 2_000) }
-              : {}),
+            ...(updateAnchor ? { statement: args.draft.statement.slice(0, 2_000) } : {}),
           },
         });
         if (updateAnchor && args.embedding) {
@@ -1540,18 +1291,11 @@ export class Specialist37Service {
     }
   }
 
-  /**
-   * Ф2-B — MAX по лестнице уверенности (low<medium<high): не понижаем уже
-   * достигнутый уровень черты при пересчёте из разброса дат.
-   */
   private maxConfidence(a: SkillConfidence, b: SkillConfidence): SkillConfidence {
     const RANK: Record<SkillConfidence, number> = { low: 0, medium: 1, high: 2 };
     return RANK[a] >= RANK[b] ? a : b;
   }
 
-  /**
-   * Decay: traits без подтверждения N мес → confidence↓; >2N мес → archive.
-   */
   private async runDecay(profileId: string): Promise<void> {
     const decayCutoff = new Date(
       Date.now() - this.cfg.skill.decayMonths * 30 * 24 * 60 * 60 * 1000,
@@ -1561,7 +1305,6 @@ export class Specialist37Service {
     );
 
     try {
-      // Archive: status='active' AND lastConfirmedAt < archiveCutoff.
       await this.prisma.skillTrait.updateMany({
         where: {
           profileId,
@@ -1571,13 +1314,6 @@ export class Specialist37Service {
         data: { status: 'archived' },
       });
 
-      // Б1 (2026-06-16) — застрявшие pending_verification (verify-вердикт
-      // grounded=false держит черту в pending НАВСЕГДА: ни decay, ни
-      // recalibrate её раньше не матчили, перехода pending→archived не было —
-      // каждую ночь verify снова жёг LLM на безнадёжной черте). Age-based
-      // выход: pending_verification старше archiveCutoff → archived. Колонку
-      // счётчика попыток (verifyAttempts) НЕ вводим (schema.prisma вне scope) —
-      // ограничиваем по возрасту createdAt.
       await this.prisma.skillTrait.updateMany({
         where: {
           profileId,
@@ -1587,9 +1323,6 @@ export class Specialist37Service {
         data: { status: 'archived' },
       });
 
-      // Decay confidence на ОДНУ ступень за проход.
-      // порядок: medium→low ДО high→medium — иначе high упадёт в low за один
-      // проход (свежеставший из high `medium` иначе попал бы во второй шаг).
       await this.prisma.skillTrait.updateMany({
         where: {
           profileId,
@@ -1619,9 +1352,6 @@ export class Specialist37Service {
     }
   }
 
-  /**
-   * Получить SkillProfile сотрудника (для Clone API).
-   */
   async getEmployeeProfile(args: {
     tenantId: string;
     personId: string;
@@ -1645,8 +1375,6 @@ export class Specialist37Service {
   }
 }
 
-// ─────────────────────── shared types ───────────────────────
-
 export interface TraitDraft {
   category: string;
   statement: string;
@@ -1654,9 +1382,6 @@ export interface TraitDraft {
   sourceBlockIds: string[];
   firstObservedAt: string;
   lastConfirmedAt: string;
-  /** TZ clone-method Э1.3 — слой черты. Отсутствует у основного
-   *  skill-trait-detect (трактуется как 'skill'); у value-motivation-detect
-   *  обязателен и ∈ {value, motivation}. */
   layer?: 'skill' | 'value' | 'motivation' | 'process_marker';
 }
 
@@ -1666,12 +1391,7 @@ interface MergeVerdict {
   reasoning: string;
 }
 
-// ─────────────────────── helpers ───────────────────────
-
-function parseTraitDraft(
-  text: string,
-  onFailure: (reason: string) => void,
-): TraitDraft | null {
+function parseTraitDraft(text: string, onFailure: (reason: string) => void): TraitDraft | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -1709,8 +1429,6 @@ function parseTraitDraft(
     typeof obj.lastConfirmedAt === 'string' && obj.lastConfirmedAt.length > 0
       ? obj.lastConfirmedAt
       : new Date().toISOString();
-  // TZ clone-method Э1.3 — опциональный слой черты; невалидное значение
-  // просто отбрасывается (основной skill-путь слой не присылает).
   const layerRaw = obj.layer;
   const layer =
     layerRaw === 'skill' ||
@@ -1730,10 +1448,6 @@ function parseTraitDraft(
   };
 }
 
-/**
- * TZ clone-method Э1.3 — парсер ответа `value-motivation-detect`: тот же
- * TraitDraft, но layer ОБЯЗАТЕЛЕН и строго ∈ {value, motivation}.
- */
 function parseValueMotivationDraft(
   text: string,
   onFailure: (reason: string) => void,

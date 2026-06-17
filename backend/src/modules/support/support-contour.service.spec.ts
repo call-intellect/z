@@ -2,14 +2,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 import { SupportContourService } from './services/support-contour.service';
 
-/**
- * support-desk Ф2 — unit-тесты SupportContourService:
- *   - addAgent создаёт KnowledgeGroupMember(source='manual') + invalidateAll;
- *   - seedContour идемпотентен: пара с существующим хэшем → skipped; новая →
- *     created (+ ideaBlockAccess.create вызван).
- *
- * Все зависимости замоканы (prisma / access / accessResolver / embeddings).
- */
 describe('SupportContourService', () => {
   const VENDOR = 'vendor-org-1';
   const GROUP = 'grp-support';
@@ -122,7 +114,6 @@ describe('SupportContourService', () => {
 
       expect(res).toEqual({ created: 1, skipped: 0 });
       expect(prismaStub.ideaBlock.create).toHaveBeenCalledTimes(1);
-      // блок canonical + expertise + привязка к support-группе.
       const createArg = prismaStub.ideaBlock.create.mock.calls[0]?.[0] as {
         data: Record<string, unknown>;
       };

@@ -1,33 +1,27 @@
-/**
- * Фаза A.4 — unit-тест на seed-llm-task-routes-default.ts.
- *
- * Источник массива ROUTES — `backend/scripts/seed-llm-task-routes-default.ts`.
- * Чтобы не тащить prisma-client при импорте, тест читает файл как текст,
- * извлекает все taskType + tier'ы через regex и валидирует структуру:
- *   1) ≥28 taskType'ов.
- *   2) У каждого ровно по 3 tier'а (primary/secondary/tertiary).
- *   3) Tertiary всегда gemini-3.1-pro через kie (2026-06-05; ollama убран).
- *   4) Дубликатов taskType нет.
- *
- * Это дешевле, чем вытаскивать `ROUTES` в отдельный файл. При желании в Фазе
- * E можно зарефакторить в shared-config.
- */
-
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const SEED_PATH = join(__dirname, '..', '..', '..', '..', 'scripts', 'seed-llm-task-routes-default.ts');
+const SEED_PATH = join(
+  __dirname,
+  '..',
+  '..',
+  '..',
+  '..',
+  'scripts',
+  'seed-llm-task-routes-default.ts',
+);
 
 function parseSeedFile(): Array<{
   taskType: string;
   tiers: Array<{ tier: string; providerName: string; model: string }>;
 }> {
   const text = readFileSync(SEED_PATH, 'utf8');
-  // Грубый, но устойчивый парс: ищем `taskType: '...',` и за ним блок `chain: [ ... ]`.
-  const taskTypeRe = /taskType:\s*'([^']+)',\s*group:[^,]+,\s*playbookSection:[^,]+,\s*chain:\s*\[([\s\S]*?)\],\s*\}/g;
-  const tierRe = /\{\s*tier:\s*'(primary|secondary|tertiary)',\s*providerName:\s*'([^']+)',\s*model:\s*'([^']+)'\s*\}/g;
+  const taskTypeRe =
+    /taskType:\s*'([^']+)',\s*group:[^,]+,\s*playbookSection:[^,]+,\s*chain:\s*\[([\s\S]*?)\],\s*\}/g;
+  const tierRe =
+    /\{\s*tier:\s*'(primary|secondary|tertiary)',\s*providerName:\s*'([^']+)',\s*model:\s*'([^']+)'\s*\}/g;
   const result: Array<{
     taskType: string;
     tiers: Array<{ tier: string; providerName: string; model: string }>;

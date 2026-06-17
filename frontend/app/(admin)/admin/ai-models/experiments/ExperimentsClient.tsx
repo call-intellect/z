@@ -1,25 +1,19 @@
-'use client';
+"use client";
 
-/**
- * Фаза A.4 — `/admin/ai-models/experiments` — список A/B-экспериментов
- * на уровне моделей. Отдельно от prompt-экспериментов (там же на той же странице).
- */
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Loader2, Play, Square } from "lucide-react";
 
-import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Loader2, Play, Square } from 'lucide-react';
-
-import { ApiError } from '@/api/api-error';
+import { ApiError } from "@/api/api-error";
 import {
   adminAiModelsApi,
   type ModelExperimentApi,
-} from '@/api/admin-ai-models.api';
-import { toast } from 'sonner';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
+} from "@/api/admin-ai-models.api";
+import { toast } from "sonner";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
 
 export function ExperimentsClient() {
-
   const [items, setItems] = useState<ModelExperimentApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +25,7 @@ export function ExperimentsClient() {
       const res = await adminAiModelsApi.experimentsList();
       setItems(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Не удалось загрузить');
+      setError(e instanceof ApiError ? e.message : "Не удалось загрузить");
     } finally {
       setLoading(false);
     }
@@ -44,20 +38,20 @@ export function ExperimentsClient() {
   const handleStop = async (id: string) => {
     try {
       await adminAiModelsApi.experimentStop(id);
-      toast.success('Эксперимент остановлен');
+      toast.success("Эксперимент остановлен");
       await refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось остановить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось остановить");
     }
   };
 
   const handleStart = async (id: string) => {
     try {
       await adminAiModelsApi.experimentStart(id);
-      toast.success('Эксперимент запущен');
+      toast.success("Эксперимент запущен");
       await refresh();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : 'Не удалось запустить');
+      toast.error(e instanceof ApiError ? e.message : "Не удалось запустить");
     }
   };
 
@@ -75,7 +69,8 @@ export function ExperimentsClient() {
         </h1>
         <p className="text-sm text-fg-secondary">
           Сравнение control vs variant на части трафика. Запуск — со страницы
-          конкретного агента, через «Переключить основную модель» с долей &lt; 100%.
+          конкретного агента, через «Переключить основную модель» с долей &lt;
+          100%.
         </p>
       </header>
 
@@ -98,24 +93,34 @@ export function ExperimentsClient() {
             className="rounded-lg border border-border-subtle bg-bg-card p-4"
           >
             <div className="mb-2 flex items-center gap-3">
-              <code className="font-mono text-xs text-fg-secondary">{exp.taskType}</code>
+              <code className="font-mono text-xs text-fg-secondary">
+                {exp.taskType}
+              </code>
               <Badge variant="outline" className="text-[10px]">
-                {exp.status === 'draft'
-                  ? 'черновик'
-                  : exp.status === 'running'
-                    ? 'идёт'
-                    : exp.status === 'stopped'
-                      ? 'остановлен'
-                      : 'завершён'}
+                {exp.status === "draft"
+                  ? "черновик"
+                  : exp.status === "running"
+                    ? "идёт"
+                    : exp.status === "stopped"
+                      ? "остановлен"
+                      : "завершён"}
               </Badge>
               <div className="ml-auto flex gap-1">
-                {exp.status === 'draft' && (
-                  <Button size="sm" variant="secondary" onClick={() => void handleStart(exp.id)}>
+                {exp.status === "draft" && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void handleStart(exp.id)}
+                  >
                     <Play size={11} /> Старт
                   </Button>
                 )}
-                {exp.status === 'running' && (
-                  <Button size="sm" variant="ghost" onClick={() => void handleStop(exp.id)}>
+                {exp.status === "running" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void handleStop(exp.id)}
+                  >
                     <Square size={11} /> Стоп
                   </Button>
                 )}
@@ -129,13 +134,17 @@ export function ExperimentsClient() {
                 </div>
               </div>
               <div>
-                <div className="text-fg-secondary">Вариант ({exp.splitPercent}% трафика)</div>
+                <div className="text-fg-secondary">
+                  Вариант ({exp.splitPercent}% трафика)
+                </div>
                 <div className="font-medium text-fg-primary">
                   {exp.variantProvider} / {exp.variantModel}
                 </div>
               </div>
             </div>
-            {exp.notes && <div className="mt-2 text-xs text-fg-secondary">{exp.notes}</div>}
+            {exp.notes && (
+              <div className="mt-2 text-xs text-fg-secondary">{exp.notes}</div>
+            )}
           </div>
         ))}
       </div>

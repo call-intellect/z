@@ -118,7 +118,7 @@ related:
 ### 5.4. Frontend (Next.js App Router)
 - Слоистая модель `ApiDto → DomainModel → UiModel` (skill `frontend-rules`).
 - Единый `apiClient`, никаких прямых `fetch`.
-- Все UI-строки на русском (memory `feedback_admin_ui_russian_only` + `delivery/13-glossary.md`). Никаких английских слов в UI пользователя, кроме явных терминов из глоссария.
+- Все UI-строки на русском (memory `feedback_admin_ui_russian_only` + `second-brain/13_glossary/ui-glossary.md`). Никаких английских слов в UI пользователя, кроме явных терминов из глоссария.
 - SWR для data-fetching. ErrorBoundary + loading skeleton — каждый новый компонент.
 
 ### 5.5. RBAC
@@ -315,7 +315,7 @@ related:
 3. [second-brain/01_projects/ai-analysis-by-type.md](../../second-brain/01_projects/ai-analysis-by-type.md) — отметить, что 9 типов теперь живут в БД, а не в коде.
 4. [second-brain/02_architecture/module-map.md](../../second-brain/02_architecture/module-map.md) — добавить `ai-prompts/`, `behavior-metrics/`, `meeting-quality/`, `transcript-clean/`, `meeting-reports/`.
 5. [CLAUDE.md](../../CLAUDE.md) — обновить раздел «AI-router и промпты» (новая БД-таблица).
-6. Глоссарий [`delivery/13-glossary.md`](../../delivery/13-glossary.md) — добавить русские термины: «Шаблон отчёта», «Метрики поведения», «Оценка качества встречи», «Очищенный транскрипт», «Дополнительный отчёт».
+6. Глоссарий [`second-brain/13_glossary/ui-glossary.md`](../../second-brain/13_glossary/ui-glossary.md) — добавить русские термины: «Шаблон отчёта», «Метрики поведения», «Оценка качества встречи», «Очищенный транскрипт», «Дополнительный отчёт».
 
 ---
 

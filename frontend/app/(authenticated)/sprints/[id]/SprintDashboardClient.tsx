@@ -1,16 +1,9 @@
-'use client';
+"use client";
 
-/**
- * `/sprints/[id]` — дашборд спринта (Wave 4).
- *
- * Источник: `GET /api/v1/cycles/:id/dashboard` (SprintAnalystService).
- * Live-refresh: SWR с `refreshInterval: 30_000`.
- */
-
-import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import useSWR from 'swr';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import useSWR from "swr";
 import {
   CalendarRange,
   CheckCircle2,
@@ -22,43 +15,43 @@ import {
   Sparkles,
   Target,
   Video,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { goalsApi } from '@/api/goals.api';
-import { meetingStatusLabel } from '@/domain/meeting';
-import { meetingTypeLabel } from '@/domain/admin-prompt-template';
-import type { MeetingTypeApi } from '@/api/admin-prompt-templates.api';
-import { Button } from '@/ui/shadcn/button';
-import { Progress } from '@/ui/shadcn/progress';
-import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
-import { useAuth } from '@/contexts/auth-context';
-import { useCycle } from '@/hooks/tracker/useCycle';
-import { cyclesApi } from '@/api/tracker/cycles.api';
-import { sprintsApi } from '@/api/tracker/sprints.api';
-import { sprintHintsApi } from '@/api/tracker/sprint-hints.api';
+} from "lucide-react";
+import { toast } from "sonner";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { goalsApi } from "@/api/goals.api";
+import { meetingStatusLabel } from "@/domain/meeting";
+import { meetingTypeLabel } from "@/domain/admin-prompt-template";
+import type { MeetingTypeApi } from "@/api/admin-prompt-templates.api";
+import { Button } from "@/ui/shadcn/button";
+import { Progress } from "@/ui/shadcn/progress";
+import { GoalPickerDialog } from "@/ui/components/shared/GoalPickerDialog";
+import { useAuth } from "@/contexts/auth-context";
+import { useCycle } from "@/hooks/tracker/useCycle";
+import { cyclesApi } from "@/api/tracker/cycles.api";
+import { sprintsApi } from "@/api/tracker/sprints.api";
+import { sprintHintsApi } from "@/api/tracker/sprint-hints.api";
 import {
   formatSprintDateRange,
   mapSprintDashboardApi,
   type SprintDashboardTaskRefApi,
   type SprintHintApi,
-} from '@/domain/sprint';
+} from "@/domain/sprint";
 import {
   ISSUE_STATE_CATEGORY_LABELS,
   type IssueStateCategory,
-} from '@/domain/tracker';
-import { AssigneeAvatarGroup } from '@/ui/tracker/AssigneeAvatar';
-import { SprintHintCard } from '@/ui/tracker/SprintHintCard';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/tracker";
+import { AssigneeAvatarGroup } from "@/ui/tracker/AssigneeAvatar";
+import { SprintHintCard } from "@/ui/tracker/SprintHintCard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import { SprintDailyPanel } from './SprintDailyPanel';
-import { SprintWeeklyPanel } from './SprintWeeklyPanel';
+import { SprintDailyPanel } from "./SprintDailyPanel";
+import { SprintWeeklyPanel } from "./SprintWeeklyPanel";
 
 export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
   const { currentOrgId, currentOrgRole } = useAuth();
   const router = useRouter();
-  const canEdit = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canEdit = currentOrgRole === "owner" || currentOrgRole === "admin";
 
   const {
     cycle,
@@ -68,33 +61,32 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
 
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
 
-  // Имя цели спринта — ленивый одиночный запрос только при наличии primaryGoalId.
   const primaryGoalId = cycle?.primaryGoalId ?? null;
   const { data: primaryGoal } = useSWR(
     primaryGoalId && currentOrgId
-      ? (['sprint-primary-goal', currentOrgId, primaryGoalId] as const)
+      ? (["sprint-primary-goal", currentOrgId, primaryGoalId] as const)
       : null,
     async ([, oid, gid]) => goalsApi.get(oid, gid),
   );
 
   const handleLinkGoal = async (goalId: string | null) => {
     if (!currentOrgId) {
-      toast.error('Сначала выберите организацию');
+      toast.error("Сначала выберите организацию");
       return;
     }
     try {
       await cyclesApi.update(currentOrgId, cycleId, { primaryGoalId: goalId });
-      toast.success(goalId ? 'Спринт привязан к цели' : 'Спринт отвязан от цели');
+      toast.success(
+        goalId ? "Спринт привязан к цели" : "Спринт отвязан от цели",
+      );
       await mutateCycle();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'forbidden') {
-        toast.error('Привязывать цель могут только owner / admin');
-      } else if (e instanceof ApiError && e.code === 'goal_not_found') {
-        toast.error('Выбранная цель не найдена');
+      if (e instanceof ApiError && e.code === "forbidden") {
+        toast.error("Привязывать цель могут только owner / admin");
+      } else if (e instanceof ApiError && e.code === "goal_not_found") {
+        toast.error("Выбранная цель не найдена");
       } else {
-        toast.error(
-          humanizeApiError(e, 'Не удалось привязать цель'),
-        );
+        toast.error(humanizeApiError(e, "Не удалось привязать цель"));
       }
       throw e;
     }
@@ -102,12 +94,12 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
 
   const dashboardKey =
     currentOrgId && cycleId
-      ? ['tracker.sprint.dashboard', currentOrgId, cycleId]
+      ? ["tracker.sprint.dashboard", currentOrgId, cycleId]
       : null;
   const dashboardSwr = useSWR(
     dashboardKey,
     async () => {
-      if (!currentOrgId) throw new Error('orgId required');
+      if (!currentOrgId) throw new Error("orgId required");
       return sprintsApi.dashboard(currentOrgId, cycleId);
     },
     { refreshInterval: 30_000, revalidateOnFocus: false },
@@ -119,12 +111,12 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
 
   const hintsKey =
     currentOrgId && cycleId
-      ? ['tracker.sprint.hints', currentOrgId, cycleId]
+      ? ["tracker.sprint.hints", currentOrgId, cycleId]
       : null;
   const hintsSwr = useSWR(
     hintsKey,
     async () => {
-      if (!currentOrgId) throw new Error('orgId required');
+      if (!currentOrgId) throw new Error("orgId required");
       return sprintHintsApi.listByCycle(currentOrgId, cycleId);
     },
     { refreshInterval: 60_000, revalidateOnFocus: false },
@@ -134,8 +126,8 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
   const [meetingError, setMeetingError] = useState<string | null>(null);
   const [completePending, setCompletePending] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'main' | 'daily' | 'weekly'>(
-    'main',
+  const [activeTab, setActiveTab] = useState<"main" | "daily" | "weekly">(
+    "main",
   );
 
   const handleStartMeeting = async () => {
@@ -144,15 +136,14 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
     setMeetingError(null);
     try {
       const res = await sprintsApi.startMeeting(currentOrgId, cycleId, {
-        type: 'sprint_review',
+        type: "sprint_review",
       });
       const url =
-        res.meetingUrl ||
-        `/meetings/${encodeURIComponent(res.meetingId)}`;
+        res.meetingUrl || `/meetings/${encodeURIComponent(res.meetingId)}`;
       router.push(url);
     } catch (e) {
       setMeetingError(
-        e instanceof Error ? e.message : 'Не удалось запустить встречу',
+        e instanceof Error ? e.message : "Не удалось запустить встречу",
       );
       setMeetingPending(false);
     }
@@ -160,9 +151,9 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
 
   const handleComplete = async () => {
     if (!currentOrgId) return;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const ok = window.confirm(
-        'Завершить спринт и подготовить итоговый отчёт? Незакрытые задачи будут перенесены.',
+        "Завершить спринт и подготовить итоговый отчёт? Незакрытые задачи будут перенесены.",
       );
       if (!ok) return;
     }
@@ -173,7 +164,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
       router.push(`/sprints/${encodeURIComponent(cycleId)}/review`);
     } catch (e) {
       setCompleteError(
-        e instanceof Error ? e.message : 'Не удалось завершить спринт',
+        e instanceof Error ? e.message : "Не удалось завершить спринт",
       );
       setCompletePending(false);
     }
@@ -216,7 +207,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 md:p-6">
-      {/* Header */}
+      {}
       <header className="flex flex-col gap-3 rounded-md border border-border-subtle bg-bg-elevated p-4 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -245,7 +236,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
                 href={`/goals/${encodeURIComponent(cycle.primaryGoalId)}`}
                 className="font-medium text-accent hover:underline"
               >
-                {primaryGoal?.name ?? 'Открыть цель'}
+                {primaryGoal?.name ?? "Открыть цель"}
               </Link>
             ) : (
               <span className="text-fg-tertiary">— не задана —</span>
@@ -256,7 +247,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
                 onClick={() => setGoalDialogOpen(true)}
                 className="text-fg-secondary underline-offset-2 hover:text-fg-primary hover:underline"
               >
-                {cycle.primaryGoalId ? 'Изменить' : 'Привязать цель…'}
+                {cycle.primaryGoalId ? "Изменить" : "Привязать цель…"}
               </button>
             ) : null}
           </div>
@@ -289,7 +280,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
               ) : (
                 <CheckCircle2 size={14} />
               )}
-              {cycle.isCompleted ? 'Спринт завершён' : 'Завершить спринт'}
+              {cycle.isCompleted ? "Спринт завершён" : "Завершить спринт"}
             </Button>
           </div>
           {meetingError && (
@@ -301,10 +292,10 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
         </div>
       </header>
 
-      {/* Tabs — main / daily / weekly */}
+      {}
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as 'main' | 'daily' | 'weekly')}
+        onValueChange={(v) => setActiveTab(v as "main" | "daily" | "weekly")}
       >
         <TabsList className="w-full justify-start overflow-x-auto scrollbar-none">
           <TabsTrigger value="main">Обзор</TabsTrigger>
@@ -313,10 +304,10 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
         </TabsList>
 
         <TabsContent value="main" className="mt-4 flex flex-col gap-4">
-          {/* Прогресс */}
+          {}
           <ProgressBlock dashboard={dashboard} />
 
-          {/* Задачи спринта */}
+          {}
           <section className="flex flex-col gap-3">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
               Задачи спринта
@@ -338,7 +329,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
             />
           </section>
 
-          {/* Помощник предлагает */}
+          {}
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -372,7 +363,7 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
             )}
           </section>
 
-          {/* Связанные встречи */}
+          {}
           {dashboard.linkedMeetings.length > 0 && (
             <section className="flex flex-col gap-2">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-fg-tertiary">
@@ -387,14 +378,17 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
                     >
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-fg-primary">
-                          {m.title || 'Встреча'}
+                          {m.title || "Встреча"}
                         </div>
                         <div className="text-[11px] text-fg-tertiary">
-                          {meetingTypeLabel(m.type as MeetingTypeApi) ?? m.type} ·{' '}
-                          {meetingStatusLabel(m.status)}
+                          {meetingTypeLabel(m.type as MeetingTypeApi) ?? m.type}{" "}
+                          · {meetingStatusLabel(m.status)}
                         </div>
                       </div>
-                      <ChevronRight size={14} className="shrink-0 text-fg-tertiary" />
+                      <ChevronRight
+                        size={14}
+                        className="shrink-0 text-fg-tertiary"
+                      />
                     </Link>
                   </li>
                 ))}
@@ -450,7 +444,7 @@ function ProgressBlock({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium text-fg-primary">Прогресс</span>
         <span className="text-xs text-fg-tertiary">
-          День {Math.min(progress.elapsedDays, progress.durationDays)} из{' '}
+          День {Math.min(progress.elapsedDays, progress.durationDays)} из{" "}
           {progress.durationDays}
         </span>
       </div>
@@ -486,7 +480,7 @@ function TaskSection({
   if (tasks.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-3 text-xs text-fg-tertiary">
-        <span className="font-medium text-fg-secondary">{title}.</span>{' '}
+        <span className="font-medium text-fg-secondary">{title}.</span>{" "}
         {emptyHint}
       </div>
     );
@@ -537,9 +531,10 @@ function TaskSection({
               </div>
               {t.dueDate && (
                 <span className="shrink-0 text-[11px] text-fg-tertiary">
-                  до {new Date(t.dueDate).toLocaleDateString('ru-RU', {
-                    day: 'numeric',
-                    month: 'short',
+                  до{" "}
+                  {new Date(t.dueDate).toLocaleDateString("ru-RU", {
+                    day: "numeric",
+                    month: "short",
                   })}
                 </span>
               )}
@@ -556,24 +551,20 @@ const STATE_BADGE_STYLE: Record<
   IssueStateCategory,
   { bg: string; fg: string }
 > = {
-  backlog: { bg: 'bg-bg-overlay', fg: 'text-fg-secondary' },
-  unstarted: { bg: 'bg-slate-200', fg: 'text-slate-900' },
-  started: { bg: 'bg-amber-500', fg: 'text-white' },
-  completed: { bg: 'bg-mint-500', fg: 'text-white' },
-  cancelled: { bg: 'bg-rose-500', fg: 'text-white' },
+  backlog: { bg: "bg-bg-overlay", fg: "text-fg-secondary" },
+  unstarted: { bg: "bg-slate-200", fg: "text-slate-900" },
+  started: { bg: "bg-amber-500", fg: "text-white" },
+  completed: { bg: "bg-mint-500", fg: "text-white" },
+  cancelled: { bg: "bg-rose-500", fg: "text-white" },
 };
 
-function StateBadge({
-  category,
-}: {
-  category: IssueStateCategory | null;
-}) {
-  const c: IssueStateCategory = category ?? 'backlog';
+function StateBadge({ category }: { category: IssueStateCategory | null }) {
+  const c: IssueStateCategory = category ?? "backlog";
   const style = STATE_BADGE_STYLE[c];
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider',
+        "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider",
         style.bg,
         style.fg,
       )}
@@ -597,7 +588,7 @@ function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium',
+        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
         bg,
         fg,
       )}

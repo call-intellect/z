@@ -1,16 +1,3 @@
-/**
- * Фаза A.4 — unit-тесты на tier-fallback. Проверяем, что LlmRouterService
- * корректно собирает цепочку из нормализованных записей (tier+priority) и
- * пробует primary → secondary → tertiary в правильном порядке.
- *
- * Сценарии (≥3):
- *   1) Все tier'ы есть, primary успешен — secondary/tertiary не дёргаются.
- *   2) Primary падает, secondary успешен — в AiUsageLog.tier='secondary'
- *      и fallbackReason заполнен.
- *   3) Primary+secondary падают, tertiary успешен — в AiUsageLog.tier='tertiary'.
- *   4) Все 3 tier'а упали → incCoreLlmNoProvider + LlmRouterAllProvidersFailedError.
- */
-
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
@@ -41,10 +28,6 @@ function makeOutput(provider: LlmCompleteOutput['provider'], model = 'm-test'): 
   };
 }
 
-/**
- * Тестовая запись `LlmTaskRoute` с tier — имитирует то, что вернёт
- * `prisma.llmTaskRoute.findMany()`. Поля минимально-достаточные для роутера.
- */
 function tierRow(opts: {
   taskType: string;
   tier: 'primary' | 'secondary' | 'tertiary';
@@ -154,9 +137,24 @@ describe('LlmRouterService — tier-based fallback (Фаза A.4)', () => {
   it('tier-цепочка: primary успешен → secondary/tertiary НЕ дёргаются, AiUsageLog.tier=primary', async () => {
     const ctx = build({
       rows: [
-        tierRow({ taskType: 'summary', tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' }),
-        tierRow({ taskType: 'summary', tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' }),
-        tierRow({ taskType: 'summary', tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'primary',
+          providerName: 'deepseek',
+          model: 'deepseek-v4-pro',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'secondary',
+          providerName: 'openai-via-proxy',
+          model: 'gpt-5.5',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'tertiary',
+          providerName: 'ollama',
+          model: 'qwen3.5:9b',
+        }),
       ],
     });
     await ctx.router.refreshCache();
@@ -175,9 +173,24 @@ describe('LlmRouterService — tier-based fallback (Фаза A.4)', () => {
     });
     const ctx = build({
       rows: [
-        tierRow({ taskType: 'summary', tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' }),
-        tierRow({ taskType: 'summary', tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' }),
-        tierRow({ taskType: 'summary', tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'primary',
+          providerName: 'deepseek',
+          model: 'deepseek-v4-pro',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'secondary',
+          providerName: 'openai-via-proxy',
+          model: 'gpt-5.5',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'tertiary',
+          providerName: 'ollama',
+          model: 'qwen3.5:9b',
+        }),
       ],
       deepseek: failDeepseek,
     });
@@ -187,7 +200,6 @@ describe('LlmRouterService — tier-based fallback (Фаза A.4)', () => {
     expect(ctx.openai.complete).toHaveBeenCalledOnce();
     expect(ctx.ollama.complete).not.toHaveBeenCalled();
     expect(out.modelUsed).toBe('openai-via-proxy:gpt-5-mini');
-    // Успешная запись должна иметь tier='secondary' + fallbackReason='primary_server_5xx'.
     const successCalls = ctx.usageRecord.mock.calls.filter(
       (c) => (c[0] as { success: boolean }).success === true,
     );
@@ -203,9 +215,24 @@ describe('LlmRouterService — tier-based fallback (Фаза A.4)', () => {
     });
     const ctx = build({
       rows: [
-        tierRow({ taskType: 'chat-v2', tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' }),
-        tierRow({ taskType: 'chat-v2', tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.4' }),
-        tierRow({ taskType: 'chat-v2', tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' }),
+        tierRow({
+          taskType: 'chat-v2',
+          tier: 'primary',
+          providerName: 'deepseek',
+          model: 'deepseek-v4-flash',
+        }),
+        tierRow({
+          taskType: 'chat-v2',
+          tier: 'secondary',
+          providerName: 'openai-via-proxy',
+          model: 'gpt-5.4',
+        }),
+        tierRow({
+          taskType: 'chat-v2',
+          tier: 'tertiary',
+          providerName: 'ollama',
+          model: 'qwen3.5:9b',
+        }),
       ],
       deepseek: fail,
       openai: fail,
@@ -226,9 +253,24 @@ describe('LlmRouterService — tier-based fallback (Фаза A.4)', () => {
     });
     const ctx = build({
       rows: [
-        tierRow({ taskType: 'summary', tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-pro' }),
-        tierRow({ taskType: 'summary', tier: 'secondary', providerName: 'openai-via-proxy', model: 'gpt-5.5' }),
-        tierRow({ taskType: 'summary', tier: 'tertiary', providerName: 'ollama', model: 'qwen3.5:9b' }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'primary',
+          providerName: 'deepseek',
+          model: 'deepseek-v4-pro',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'secondary',
+          providerName: 'openai-via-proxy',
+          model: 'gpt-5.5',
+        }),
+        tierRow({
+          taskType: 'summary',
+          tier: 'tertiary',
+          providerName: 'ollama',
+          model: 'qwen3.5:9b',
+        }),
       ],
       deepseek: fail,
       openai: fail,

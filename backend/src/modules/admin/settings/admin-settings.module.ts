@@ -6,18 +6,6 @@ import { AdminSettingsBootstrapService } from './admin-settings-bootstrap.servic
 import { AdminSettingsController } from './admin-settings.controller';
 import { AdminSettingsService } from './admin-settings.service';
 
-/**
- * Admin-redesign Фаза 0 — `AdminSettingsModule`.
- *
- * Глобальный, чтобы `TypedConfigService.getDynamic(...)` мог инжектить
- * `AdminSettingsService` без явного импорта `AdminSettingsModule` в каждом
- * модуле-потребителе.
- *
- * Дополнительно регистрируем тот же инстанс под строковым токеном
- * `'AdminSettingsService'` — `TypedConfigService` достаёт его через
- * `ModuleRef` по этому токену (lazy resolve, чтобы не плодить циклическую
- * зависимость common ↔ modules/admin/).
- */
 @Global()
 @Module({
   controllers: [AdminSettingsController],

@@ -1,19 +1,10 @@
-/**
- * Доменная модель webhook'а трекера (исходящие уведомления).
- *
- * Контракт: `backend/src/modules/tracker/services/webhooks.service.ts`.
- */
-
-import type { WebhookEvent } from './enums';
-
-// ─── ApiDto ─────────────────────────────────────────────────────────────────
+import type { WebhookEvent } from "./enums";
 
 export interface WebhookApi {
   id: string;
   tenantId: string;
   name: string;
   url: string;
-  /** Полностью отдаётся только при create; PATCH/list — маска. */
   secretKey: string;
   events: string[];
   isActive: boolean;
@@ -51,8 +42,6 @@ export interface WebhookTestEnqueueResultApi {
   message: string;
 }
 
-// ─── Domain ─────────────────────────────────────────────────────────────────
-
 export interface Webhook {
   id: string;
   tenantId: string;
@@ -81,8 +70,6 @@ export interface WebhookLog {
   createdAt: Date;
 }
 
-// ─── Mappers ────────────────────────────────────────────────────────────────
-
 export function webhookFromApi(api: WebhookApi): Webhook {
   return {
     id: api.id,
@@ -95,22 +82,6 @@ export function webhookFromApi(api: WebhookApi): Webhook {
     isInternal: api.isInternal,
     version: api.version,
     createdByUserId: api.createdByUserId,
-    createdAt: new Date(api.createdAt),
-  };
-}
-
-export function webhookLogFromApi(api: WebhookLogApi): WebhookLog {
-  return {
-    id: api.id,
-    webhookId: api.webhookId,
-    eventType: api.eventType,
-    requestMethod: api.requestMethod,
-    requestUrl: api.requestUrl,
-    responseStatus: api.responseStatus,
-    responseTime: api.responseTime,
-    retryCount: api.retryCount,
-    success: api.success,
-    errorMessage: api.errorMessage,
     createdAt: new Date(api.createdAt),
   };
 }

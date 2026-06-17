@@ -1,9 +1,3 @@
-/**
- * Один раз настраивает CORS на MinIO bucket для dev-среды.
- * Нужен чтобы браузер мог грузить audio/video из presigned URL напрямую с MinIO.
- *
- * Запуск: cd backend && bun run scripts/setup-minio-cors.ts
- */
 import { PutBucketCorsCommand, S3Client } from '@aws-sdk/client-s3';
 
 const ENDPOINT = process.env.S3_ENDPOINT_URL ?? 'http://localhost:59000';
@@ -19,11 +13,7 @@ const client = new S3Client({
   credentials: { accessKeyId: ACCESS_KEY, secretAccessKey: SECRET_KEY },
 });
 
-const origins = [
-  'http://localhost:3001',
-  'http://localhost:3000',
-  'http://localhost:8080',
-];
+const origins = ['http://localhost:3001', 'http://localhost:3000', 'http://localhost:8080'];
 
 await client.send(
   new PutBucketCorsCommand({

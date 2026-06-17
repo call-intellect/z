@@ -4,55 +4,24 @@ import { type Entity, type TableProperty, Prisma } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import type { TableSyncEntityJobData, TableSyncEventType } from '../queues';
 
-import {
-  parseEntitySync,
-  resolveEntityTypes,
-} from './entity-sync.util';
+import { parseEntitySync, resolveEntityTypes } from './entity-sync.util';
 import { TableSyncQueueService } from './table-sync-queue.service';
 
-/**
- * TableSyncService (Smart-tables Фаза 2 — graph-driven rows).
- *
- * Поддерживает строки системных entitySync-таблиц в актуальном состоянии:
- *   - Entity created → в каждой подходящей таблице создаётся строка с
- *     entityId и заполненными entity-атрибутами (read-only ячейки);
- *   - Entity updated → у существующих строк обновляются ТОЛЬКО read-only
- *     entity-ячейки; ручные ячейки не трогаются;
- *   - Entity archived (merged) → строка помечается archivedAt.
- *
- * Идемпотентность: строка ищется по (tableId, entityId); повторное событие не
- * создаёт дубль. Конфликт-резолвер: ручная строка с совпадающим primary/email
- * сливается с Entity (проставляется entityId), а не дублируется.
- *
- * `entityAttribute` извлекается из `TableProperty.config` (source==='entity').
- * Эти же колонки — read-only (см. TableRowsService guard).
- */
 @Injectable()
 export class TableSyncService {
   private readonly logger = new Logger(TableSyncService.name);
 
-  /** Лимит строк для синхронного backfill; выше — фоновые батчи. */
   private static readonly SYNC_BACKFILL_LIMIT = 1000;
   private static readonly BACKFILL_BATCH_SIZE = 200;
 
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
-    // @Optional: в unit-тестах backfill через очередь можно не передавать
-    // (синхронный путь ≤1000 строк работает без очереди).
     @Optional()
     @Inject(TableSyncQueueService)
     private readonly queue?: TableSyncQueueService,
   ) {}
 
-  // ─────────────────────────── event apply ────────────────────────────────
-
-  /**
-   * Реакция на событие графа. Находит все автосинк-таблицы tenant'а, чей набор
-   * классов Entity включает `entityType`, и применяет операцию.
-   */
-  async applyEntityEvent(
-    data: Omit<TableSyncEntityJobData, 'kind'>,
-  ): Promise<void> {
+  async applyEntityEvent(data: Omit<TableSyncEntityJobData, 'kind'>): Promise<void> {
     const { tenantId, entityId, entityType, eventType } = data;
 
     const tables = await this.findAutoSyncTables(tenantId, entityType);
@@ -65,11 +34,9 @@ export class TableSyncService {
       return;
     }
 
-    // created / updated требуют сам Entity (для значений ячеек).
     const entity = await this.prisma.entity.findUnique({
       where: { id: entityId },
     });
-    // Если сущность исчезла или уже merged — нечего синкать (created/updated).
     if (!entity || entity.tenantId !== tenantId || entity.mergedIntoId !== null) {
       return;
     }
@@ -85,15 +52,6 @@ export class TableSyncService {
     }
   }
 
-  // ─────────────────────────── initial backfill ───────────────────────────
-
-  /**
-   * Наполнить таблицу строками по всем «живым» Entity её классов. Вызывается
-   * при включении autoCreate (TablesService.update) и backfill-скриптом.
-   *
-   * Идемпотентно: пропускает Entity, у которых уже есть строка. ≤ лимита —
-   * синхронно (createMany + конфликт-резолвер); выше — фоновые батчи в очередь.
-   */
   async runInitialBackfill(args: {
     tenantId: string;
     tableId: string;
@@ -124,14 +82,9 @@ export class TableSyncService {
     }
 
     if (entities.length > TableSyncService.SYNC_BACKFILL_LIMIT) {
-      // Большая Org → фоновые батчи (если очередь доступна).
       let queuedBatches = 0;
       if (this.queue) {
-        for (
-          let i = 0;
-          i < entities.length;
-          i += TableSyncService.BACKFILL_BATCH_SIZE
-        ) {
+        for (let i = 0; i < entities.length; i += TableSyncService.BACKFILL_BATCH_SIZE) {
           const batch = entities
             .slice(i, i + TableSyncService.BACKFILL_BATCH_SIZE)
             .map((e) => e.id);
@@ -151,7 +104,6 @@ export class TableSyncService {
       return { created: 0, merged: 0, queuedBatches };
     }
 
-    // Синхронный путь.
     const res = await this.backfillEntities({
       tenantId: args.tenantId,
       tableId: args.tableId,
@@ -161,9 +113,6 @@ export class TableSyncService {
     return { ...res, queuedBatches: 0 };
   }
 
-  /**
-   * Обработать один батч initial-backfill (вызывается воркером для больших Org).
-   */
   async runBackfillBatch(args: {
     tenantId: string;
     tableId: string;
@@ -191,17 +140,7 @@ export class TableSyncService {
     });
   }
 
-  // ─────────────────────────── cells builder ──────────────────────────────
-
-  /**
-   * Собрать cells `{ [propertyId]: value }` ТОЛЬКО для колонок, связанных с
-   * Entity (config.source==='entity'), извлекая значение по entityAttribute.
-   * Пустые/отсутствующие атрибуты пропускаются.
-   */
-  buildEntityCells(
-    properties: TableProperty[],
-    entity: Entity,
-  ): Record<string, unknown> {
+  buildEntityCells(properties: TableProperty[], entity: Entity): Record<string, unknown> {
     const cells: Record<string, unknown> = {};
     for (const p of properties) {
       const attr = this.entityAttributeOf(p);
@@ -214,15 +153,6 @@ export class TableSyncService {
     return cells;
   }
 
-  // ─────────────────────────── private helpers ────────────────────────────
-
-  /**
-   * Найти все НЕ-archived автосинк-таблицы tenant'а, чей набор классов Entity
-   * включает `entityType`. Подтягиваем только таблицы с непустым entitySync
-   * (Prisma `entitySync: { not: JsonNull }`), затем фильтруем в коде по JSON
-   * (autoCreate + resolveEntityTypes) — это надёжнее, чем JSON-path фильтр
-   * (entityTypes может отсутствовать, тогда работает дефолт по type).
-   */
   private async findAutoSyncTables(
     tenantId: string,
     entityType: string,
@@ -247,10 +177,6 @@ export class TableSyncService {
     return out;
   }
 
-  /**
-   * created/updated: найти строку по (tableId, entityId) → если нет, создать
-   * (с учётом конфликт-резолвера); если есть — обновить ТОЛЬКО entity-ячейки.
-   */
   private async upsertRowForEntity(args: {
     tableId: string;
     tenantId: string;
@@ -270,7 +196,6 @@ export class TableSyncService {
     const entityCells = this.buildEntityCells(args.properties, args.entity);
 
     if (existing) {
-      // Обновляем только entity-ячейки, ручные не трогаем.
       const merged = {
         ...((existing.cells as Record<string, unknown>) ?? {}),
         ...entityCells,
@@ -282,8 +207,6 @@ export class TableSyncService {
       return;
     }
 
-    // Строки с этим entityId нет. Конфликт-резолвер: вдруг есть ручная строка
-    // (entityId=null) с совпадающим primary/email — сливаем её, а не дублируем.
     const conflict = await this.findManualConflictRow(args);
     if (conflict) {
       const merged = {
@@ -300,8 +223,6 @@ export class TableSyncService {
       return;
     }
 
-    // На 'updated' без существующей строки тоже создаём (граф мог пропустить
-    // created — синк должен быть самовосстанавливающимся).
     await this.prisma.tableRow.create({
       data: {
         tableId: args.tableId,
@@ -330,10 +251,6 @@ export class TableSyncService {
     });
   }
 
-  /**
-   * Backfill набора Entity в таблицу. Идемпотентно: пропускает Entity, у
-   * которых уже есть строка; ручные конфликты сливает; остальное — createMany.
-   */
   private async backfillEntities(args: {
     tenantId: string;
     tableId: string;
@@ -342,7 +259,6 @@ export class TableSyncService {
   }): Promise<{ created: number; merged: number }> {
     if (args.entities.length === 0) return { created: 0, merged: 0 };
 
-    // 1. Уже привязанные строки — пропускаем.
     const existingRows = await this.prisma.tableRow.findMany({
       where: {
         tableId: args.tableId,
@@ -351,9 +267,7 @@ export class TableSyncService {
       },
       select: { entityId: true },
     });
-    const linked = new Set(
-      existingRows.map((r) => r.entityId).filter((id): id is string => !!id),
-    );
+    const linked = new Set(existingRows.map((r) => r.entityId).filter((id): id is string => !!id));
 
     let merged = 0;
     const toCreate: Array<{ entity: Entity; cells: Record<string, unknown> }> = [];
@@ -362,7 +276,6 @@ export class TableSyncService {
       if (linked.has(entity.id)) continue;
       const cells = this.buildEntityCells(args.properties, entity);
 
-      // Конфликт-резолвер на ручную строку.
       const conflict = await this.findManualConflictRow({
         tableId: args.tableId,
         tenantId: args.tenantId,
@@ -406,26 +319,14 @@ export class TableSyncService {
     return { created, merged };
   }
 
-  /**
-   * Найти ручную строку (entityId=null) этой таблицы, совпадающую по primary
-   * (canonicalName) ИЛИ по email с Entity. Используется конфликт-резолвером,
-   * чтобы не плодить дубли при backfill/create.
-   *
-   * Совпадение проверяем в коде по cells (JSON), потому что значения лежат под
-   * id колонки, а сравнение — case-insensitive trim.
-   */
   private async findManualConflictRow(args: {
     tableId: string;
     tenantId: string;
     properties: TableProperty[];
     entity: Entity;
   }): Promise<{ id: string; cells: Prisma.JsonValue } | null> {
-    const primaryProp = args.properties.find(
-      (p) => this.entityAttributeOf(p) === 'canonicalName',
-    );
-    const emailProp = args.properties.find(
-      (p) => this.entityAttributeOf(p) === 'email',
-    );
+    const primaryProp = args.properties.find((p) => this.entityAttributeOf(p) === 'canonicalName');
+    const emailProp = args.properties.find((p) => this.entityAttributeOf(p) === 'email');
     if (!primaryProp && !emailProp) return null;
 
     const nameKey = this.norm(args.entity.canonicalName);
@@ -461,7 +362,6 @@ export class TableSyncService {
     return null;
   }
 
-  /** Имя entity-атрибута колонки (config.source==='entity'), либо null. */
   private entityAttributeOf(p: TableProperty): string | null {
     const cfg = (p.config as Record<string, unknown> | null) ?? {};
     if (cfg['source'] !== 'entity') return null;
@@ -469,7 +369,6 @@ export class TableSyncService {
     return typeof attr === 'string' && attr.length > 0 ? attr : null;
   }
 
-  /** Значение entity-атрибута (поддерживаем плоские поля Entity). */
   private entityValue(entity: Entity, attribute: string): unknown {
     switch (attribute) {
       case 'canonicalName':
@@ -485,7 +384,6 @@ export class TableSyncService {
       case 'ogrn':
         return entity.ogrn;
       default: {
-        // metadata.<attr> как fallback.
         const meta = (entity.metadata as Record<string, unknown> | null) ?? null;
         return meta && attribute in meta ? meta[attribute] : null;
       }

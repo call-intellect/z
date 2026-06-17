@@ -1,44 +1,10 @@
-/**
- * Admin-redesign Фаза 3 — реестр Zod-схем для AdminSetting-ключей.
- *
- * Назначение:
- *   - Серверный источник правды для валидации `value` при POST /admin/settings/:key
- *     (на будущих фазах подключим через ZodValidationPipe).
- *   - Источник JSON-Schema для фронта: AdminSettingField автогенерирует контрол
- *     (number/integer/boolean/string/enum) по описанию из
- *     `GET /admin/settings/schema/:key`.
- *
- * Конвертация в JSON-Schema — самописная (без зависимости `zod-to-json-schema`).
- * Поддерживаем именно те конструкции, которые реально используются для
- * knowledge.* и embeddings.*: `z.number().min().max()`, `z.number().int().positive()`,
- * `z.boolean()`, `z.string()`, `z.enum([...])`. Для остального — `z.unknown()`
- * → `{ type: 'unknown' }`.
- *
- * Ключи берутся из `backend/scripts/seed-admin-settings.ts` (Фаза 0). Если в
- * сиде появится новый knowledge.X/embeddings.X — он автоматически попадёт
- * в раздел AI админки, но без типизированной схемы (фронт упадёт на
- * JSON-инпут). Чтобы избежать этого — держим эти два модуля
- * синхронизированными.
- */
-
 import { z, type ZodTypeAny } from 'zod';
-
-// ────────────────────────────── helpers ──────────────────────────────────
 
 const POSITIVE_INT = z.number().int().positive();
 const NON_NEGATIVE_INT = z.number().int().nonnegative();
 const UNIT_INTERVAL = z.number().min(0).max(1);
 
-// ────────────────────────────── registry ─────────────────────────────────
-
-/**
- * Реестр Zod-схем по ключу AdminSetting.
- *
- * ВАЖНО: ключи здесь — те же, что в `seed-admin-settings.ts`
- * (camelCase, prefix `knowledge.` / `embeddings.`).
- */
 const registry = new Map<string, ZodTypeAny>([
-  // ── knowledge-core: пороги [0..1] ─────────────────────────────────────
   ['knowledge.distillMergeThreshold', UNIT_INTERVAL],
   ['knowledge.entityMergeThreshold', UNIT_INTERVAL],
   ['knowledge.themeCosineThreshold', UNIT_INTERVAL],
@@ -51,9 +17,7 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationAutoThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationDeepReviewThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationStaleDynamicScoreThreshold', UNIT_INTERVAL],
-  // Report-to-graph Ф4 ГАРД A — cap уверенности блоков из отчёта встречи [0..1].
   ['knowledge.reportBlockConfidenceCap', UNIT_INTERVAL],
-  // Action Center «лестница доверия» A1/A2 — пороги [0..1].
   ['knowledge.curationProvisionalThresholdDefault', UNIT_INTERVAL],
   ['knowledge.curationAuditSampleRate', UNIT_INTERVAL],
   ['knowledge.curationThresholdMin', UNIT_INTERVAL],
@@ -62,7 +26,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationMaxProvisionalOverride', UNIT_INTERVAL],
   ['knowledge.insightSpikeRatio', z.number().min(0).max(100)],
 
-  // ── knowledge-core: целые положительные ───────────────────────────────
   ['knowledge.distillDebounceMs', POSITIVE_INT],
   ['knowledge.distillKnnTopK', POSITIVE_INT],
   ['knowledge.blockIngestWindowSegments', POSITIVE_INT],
@@ -91,51 +54,26 @@ const registry = new Map<string, ZodTypeAny>([
   ['knowledge.curationMinDecisionsForAutotune', POSITIVE_INT],
   ['knowledge.executablePersonaThresholdTraitsCount', POSITIVE_INT],
 
-  // ── knowledge-core: master-flag ──────────────────────────────────────
   ['knowledge.v2AgentsEnabled', z.boolean()],
   ['knowledge.chatV2Enabled', z.boolean()],
-  // Action Center «лестница доверия» A1/A2 — булевы флаги.
   ['knowledge.curationAiVerifierEnabled', z.boolean()],
   ['knowledge.curationAutotuneEnabled', z.boolean()],
-  // Kill-switch детерминированной атрибуции авторства IdeaBlock (subject).
   ['knowledge.subjectAttributionEnabled', z.boolean()],
-  // Ф1 (knowledge-access) — привязка автора (subject) на ВСЕ типы знания,
-  // не только reasoning-семейство (false = только reasoning).
   ['knowledge.subjectAttributionAllTypes', z.boolean()],
-  // Поэтапная раскатка (ТЗ 2026-06-04 meeting-identity-and-clones Ф5.2):
-  // true = из встречи рождается ТОЛЬКО tracker Issue (видимый артефакт),
-  // пользовательский Task для action-items НЕ создаётся, а потребители
-  // читают задачи встречи из Issue. Дефолт FALSE — текущее поведение (Task).
   ['knowledge.meetingTasksToTrackerOnly', z.boolean()],
-  // Ф1 idea direct-path (2026-06-08) — kill-switch материализации Idea
-  // напрямую из блока встречи (signalType='idea') в block-ingest.
   ['knowledge.ideaDirectPathEnabled', z.boolean()],
 
-  // ── семантический дедуп задач встречи (Ф5 Р2, 2026-06-08) ─────────────
-  // taskDedupeEnabled — флаг (дефолт FALSE, data-affecting); taskDedupeThreshold
-  // — KNN cosine-порог уверенного слияния fast-черновика в canonical.
   ['meetings.taskDedupeEnabled', z.boolean()],
   ['meetings.taskDedupeThreshold', UNIT_INTERVAL],
 
-  // ── граф Apache AGE: kill-switch (МТЗ «разблокировка конвейера» Ф5) ────
   ['graph.ageEnabled', z.boolean()],
 
-  // ── AI feature-flags (aiFeatures.*) ──────────────────────────────────
-  // ТЗ 2026-06-07 agent-chain-overhaul Ф5 / Р6 — флаг legacy summary-агента
-  // (analyze.worker runSummary, MiniMax). Дефолт TRUE — обратимо; false = −1
-  // LLM-вызов, каноническая сводка из summaryFast (meeting-report-fast).
   ['aiFeatures.summaryAgentEnabled', z.boolean()],
-  // Волна 4 B0 (2026-06-10) — kill-switch агента client-meeting-split
-  // (нейтральный протокол встречи наружу для клиента). Дефолт TRUE — фича ON.
   ['aiFeatures.clientProtocolEnabled', z.boolean()],
 
-  // ── LLM cache-smoke (llm.*) — Ф6 Часть 3, наблюдаемость ───────────────
-  // cacheSmokeEnabled — включает smoke-проверку доли cache-хитов в cron'е.
-  // cacheHitRatioWarnThreshold — порог [0..1]: ниже → WARN в логи.
   ['llm.cacheSmokeEnabled', z.boolean()],
   ['llm.cacheHitRatioWarnThreshold', UNIT_INTERVAL],
 
-  // ── embeddings ───────────────────────────────────────────────────────
   ['embeddings.provider', z.string().trim().min(1)],
   ['embeddings.model', z.string().trim().min(1)],
   ['embeddings.dimensions', POSITIVE_INT],
@@ -144,56 +82,35 @@ const registry = new Map<string, ZodTypeAny>([
   ['embeddings.chunkTargetTokens', POSITIVE_INT],
   ['embeddings.chunkOverlapTokens', NON_NEGATIVE_INT],
 
-  // ── feature-flags (feature.*) ────────────────────────────────────────
-  // Smart-tables auto-creation (2026-06-02, Фаза 1) — Text-to-Schema.
   ['feature.tables_text_to_schema', z.boolean()],
 
-  // ── Smart-tables агент (table.agent.*) — Фаза 3 Event-to-Cells ────────
-  // Порог confidence: ≥ порога и ячейка пуста → авто-патч; иначе очередь.
   ['table.agent.confirmation_threshold', UNIT_INTERVAL],
-  // Throttle: max одновременных enrich-job на Org (Redis-счётчик).
   ['table.agent.max_concurrent_enrich_jobs_per_org', POSITIVE_INT],
-  // Дневной бюджет токенов агента таблиц на Org.
   ['table.agent.max_daily_tokens', POSITIVE_INT],
 
-  // ── Smart-tables импорт из файла (table.import.*) — Фаза 4 Document-to-Table
-  // Порог cosine-схожести схем: ≥ порога → предлагаем «слить» с таблицей.
   ['table.import.dedup_threshold', UNIT_INTERVAL],
 
-  // ── Trekker: авто-триаж задач из встреч (tracker.*) ──────────────────
-  // Ф3 agent-chain-overhaul (2026-06-07): порог авто-создания Issue из триажа.
-  // Дефолт 0.75 (живая речь). Жёсткие гейты source=meeting+assignee+project.
   ['tracker.autoAcceptConfidenceThreshold', UNIT_INTERVAL],
 
-  // ── Goals OKR v2 Фаза 4 — еженедельный пульс целей (goals.pulse.*) ────
   ['goals.pulse.enabled', z.boolean()],
   ['goals.pulse.deliver_to_telegram', z.boolean()],
 
-  // ── Agent-chain overhaul Фаза 4.2 — авто-привязка тем к целям (goals.*) ──
   ['goals.themeAutolinkMinWeight', UNIT_INTERVAL],
   ['goals.themeAutolinkLlmEnabled', z.boolean()],
 
-  // ── Agent-chain overhaul Фаза 4.1 — авто-привязка задач к целям (goals.*) ──
   ['goals.goalTaskLinkEnabled', z.boolean()],
 
-  // ── TZ-1 Ф3.D (daily-value-engine) — фиксы достоверности агентов ──────
-  // goal-vector: мин. покрытие commitmentAuthorPersonId для атрибуции автору.
   ['goals.author_coverage_min', UNIT_INTERVAL],
-  // надёжность обещаний: мин. знаменатель, ниже которого «мало данных».
   ['reliability.min_denominator', POSITIVE_INT],
-  // probe-триггеры burnout-детектора (пороги детекции).
   ['probe.reply_latency_rise.factor', z.number().positive()],
   ['probe.workload_overload.load_percent', POSITIVE_INT],
   ['probe.meeting_noshows.count', POSITIVE_INT],
-  // Probe Фаза 3 — батч-дайджест probe (касание-кап · час отправки UTC · рубильник).
   ['probe.digestTouchCap', POSITIVE_INT],
   ['probe.digestHourUtc', z.number().int().min(0).max(23)],
   ['probe.digestEnabled', z.boolean()],
-  // Probe Фаза 5 — adaptive fatigue (cooldown темы · рубильник снижения частоты).
   ['probe.topicCooldownHours', POSITIVE_INT],
   ['probe.adaptiveFatigueEnabled', z.boolean()],
 
-  // ── TZ-1 Ф3.A (daily-value-engine) — накопительный синтез блокеров ────
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],
   ['blocker_synthesis.impact.base', NON_NEGATIVE_INT],
@@ -203,60 +120,43 @@ const registry = new Map<string, ZodTypeAny>([
   ['blocker_synthesis.impact.per_day_open', z.number().nonnegative()],
   ['operations.blocker_synthesis.enabled', z.boolean()],
 
-  // ── TZ-1 Ф3.B (daily-value-engine) — контролёр внедрения решений ──────
   ['decision.stale_days', POSITIVE_INT],
   ['operations.decision_controller.enabled', z.boolean()],
 
-  // ── TZ-1 Ф3.C (daily-value-engine) — каскад обещаний ──────────────────
   ['operations.promise_cascade.enabled', z.boolean()],
 
-  // ── TZ-1 Ф4 (daily-value-engine) — улучшения и знания ─────────────────
-  // Ф4.A — лента идей (ре-ранк + морфинг статуса).
   ['ideas.feed.rerank.weight', z.number().nonnegative()],
   ['ideas.feed.rerank.freshness', z.number().nonnegative()],
   ['ideas.feed.rerank.goal_link', z.number().nonnegative()],
   ['ideas.feed.freshness_days', POSITIVE_INT],
   ['ideas.feed.enabled', z.boolean()],
-  // Ф4.B — re-check митигированных инсайтов.
   ['insight.recheck_days', POSITIVE_INT],
   ['insights.recheck.enabled', z.boolean()],
-  // Ф4.C — знание-под-риском × уход человека.
   ['operations.knowledge_at_risk.enabled', z.boolean()],
-  // Ф4.D — capacity-агрегат по командам.
   ['team_capacity.overload_percent', POSITIVE_INT],
   ['team_capacity.underload_percent', NON_NEGATIVE_INT],
   ['operations.team_capacity.enabled', z.boolean()],
-  // Ф4.E — онбординг-рамп новичка.
   ['onboarding.silent_days', POSITIVE_INT],
   ['operations.onboarding_ramp.enabled', z.boolean()],
 
-  // ── ТЗ-2 Ф4 (daily-value-dashboards) — self-view недельного план-факта ──
-  // kill-switch self-эндпоинта /me/weekly-per-person (моя строка + среднее команды).
   ['operations.per_person_self_view.enabled', z.boolean()],
 
-  // ── ТЗ-2 Ф5 (daily-value-dashboards) — виджеты ежедневной ценности в /me ──
-  // kill-switch self-эндпоинтов /me/ideas + /me/recognitions (4 виджета /me).
   ['me.daily_value_widgets.enabled', z.boolean()],
 
-  // ── billing: tier_standard ───────────────────────────────────────────
   ['billing.baseMonthlyKopecks', NON_NEGATIVE_INT],
   ['billing.perExtraSeatKopecks', NON_NEGATIVE_INT],
   ['billing.yearlyDiscountRate', UNIT_INTERVAL],
   ['billing.baseSeatsIncluded', POSITIVE_INT],
   ['billing.baseMeetingsGrant', NON_NEGATIVE_INT],
   ['billing.perExtraSeatMeetingsGrant', NON_NEGATIVE_INT],
-  // ТЗ-5 Ф6 (meeting-upload-diarization) — месячный лимит ручных загрузок
-  // встреч на Org (owner-decision крутилка; отдельно от MeetingsBalance).
   ['billing.meetingUploadsPerMonth', POSITIVE_INT],
 
-  // ── TZ-1 Фаза 0 (daily-value-engine) — дневной бюджет уведомлений ──────
   ['notifications.daily_budget.per_person', POSITIVE_INT],
   ['notifications.quiet_hours.start', z.number().int().min(0).max(23)],
   ['notifications.quiet_hours.end', z.number().int().min(0).max(23)],
   ['notifications.daily_budget.enabled', z.boolean()],
   ['notifications.binding_campaign.enabled', z.boolean()],
 
-  // ── TZ-1 Фаза 1 (daily-value-engine) — радар клиентов под риском ──────
   ['customer_risk.window_days', POSITIVE_INT],
   ['customer_risk.weight.churn_risk', NON_NEGATIVE_INT],
   ['customer_risk.weight.objection', NON_NEGATIVE_INT],
@@ -266,7 +166,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['customer_risk.threshold.warning', NON_NEGATIVE_INT],
   ['operations.customer_risk_radar.enabled', z.boolean()],
 
-  // ── ТЗ-2 Ф6.A (daily-value-dashboards) — здоровье портфеля целей ──────
   ['portfolio.health.threshold_healthy', NON_NEGATIVE_INT],
   ['portfolio.health.threshold_warning', NON_NEGATIVE_INT],
   ['portfolio.health.weight_achieved', NON_NEGATIVE_INT],
@@ -276,16 +175,11 @@ const registry = new Map<string, ZodTypeAny>([
   ['portfolio.health.weight_dropped', NON_NEGATIVE_INT],
   ['operations.portfolio_health.enabled', z.boolean()],
 
-  // ── ТЗ-4 Ф6 (manual-document-upload) — лимиты ручной загрузки документов ──
-  // owner-decision крутилки (размер/кол-во/форматы) — редактируются super_admin.
   ['documents.maxSizeMb', POSITIVE_INT],
   ['documents.maxFilesPerUpload', POSITIVE_INT],
   ['documents.acceptedFormats', z.array(z.string())],
-  // ТЗ-4 Ф7 — потолок размера ZIP-архива массового импорта (МБ).
   ['documents.maxZipSizeMb', POSITIVE_INT],
 
-  // ── pending-actions «требует действия» (Action Center C2) ─────────────
-  // Окно/шаг слот-часов Telegram-напоминаний + пороги срочности.
   ['pendingActions.reminderWindowStartHour', z.number().int().min(0).max(23)],
   ['pendingActions.reminderWindowEndHour', z.number().int().min(0).max(23)],
   ['pendingActions.reminderStepHours', POSITIVE_INT],
@@ -293,11 +187,6 @@ const registry = new Map<string, ZodTypeAny>([
   ['pendingActions.reminderLeadDays', POSITIVE_INT],
 ]);
 
-/**
- * Возвращает Zod-схему для ключа, либо `z.unknown()` если ключ не описан.
- * Используем для serverside-валидации (на будущих фазах) и для генерации
- * JSON-Schema под фронт.
- */
 export function getSchemaForKey(key: string): ZodTypeAny {
   return registry.get(key) ?? z.unknown();
 }
@@ -306,19 +195,6 @@ export function hasSchemaForKey(key: string): boolean {
   return registry.has(key);
 }
 
-// ─────────────────────── Zod → simplified JSON-Schema ───────────────────
-
-/**
- * Облегчённый JSON-Schema-эквивалент, рассчитан под форму
- * `AdminSettingField` на фронте:
- *   - `type`: 'number' | 'integer' | 'boolean' | 'string' | 'enum' | 'unknown'
- *   - `min` / `max` (опционально) для number/integer
- *   - `enumValues` для enum
- *
- * Стандартное `zod-to-json-schema` в проекте не подключено (см. комментарий
- * в шапке файла). Инспектим `_def` рекурсивно, разворачивая обёртки
- * Default/Optional/Effects.
- */
 export interface SimpleJsonSchema {
   type: 'number' | 'integer' | 'boolean' | 'string' | 'enum' | 'unknown';
   min?: number;
@@ -326,19 +202,6 @@ export interface SimpleJsonSchema {
   enumValues?: ReadonlyArray<string>;
 }
 
-/**
- * Внутренняя структура `_def` в Zod v4 (упрощённая под наши нужды):
- *   { type: 'number'|'boolean'|'string'|'enum'|'optional'|'default'|'nullable'|'pipe',
- *     checks?: Array<{ _zod?: { def?: { check: string, value?: unknown,
- *                                       inclusive?: boolean, format?: string } } }>,
- *     entries?: Record<string, string>,     // для enum
- *     innerType?: ZodTypeAny,               // для optional/default/nullable
- *     in?/out?: ZodTypeAny,                 // для pipe
- *   }
- *
- * Используем именно эту схему, потому что `zod-to-json-schema` в проект
- * не добавляем (см. комментарий в шапке файла).
- */
 interface CheckDef {
   check?: string;
   value?: unknown;
@@ -361,20 +224,11 @@ function getDef(schema: ZodTypeAny): ZodDef {
   return (schema as unknown as { _def: ZodDef })._def ?? {};
 }
 
-/**
- * Снимает обёртки optional/default/nullable/pipe, чтобы добраться до
- * базового типа (number/boolean/string/enum). Поддерживаем рекурсию до
- * 10 уровней — этого хватает для всех практических цепочек.
- */
 function unwrap(schema: ZodTypeAny): ZodTypeAny {
   let current: ZodTypeAny = schema;
   for (let i = 0; i < 10; i++) {
     const def = getDef(current);
-    if (
-      def.type === 'optional' ||
-      def.type === 'default' ||
-      def.type === 'nullable'
-    ) {
+    if (def.type === 'optional' || def.type === 'default' || def.type === 'nullable') {
       const inner = def.innerType;
       if (!inner) break;
       current = inner;
@@ -404,18 +258,11 @@ export function zodToSimpleSchema(schema: ZodTypeAny): SimpleJsonSchema {
       const cdef = check._zod?.def;
       if (!cdef) continue;
       if (cdef.check === 'number_format') {
-        // safeint/int32/int64 = целое число
-        if (
-          cdef.format === 'safeint' ||
-          cdef.format === 'int32' ||
-          cdef.format === 'int64'
-        ) {
+        if (cdef.format === 'safeint' || cdef.format === 'int32' || cdef.format === 'int64') {
           isInt = true;
         }
       }
       if (cdef.check === 'greater_than' && typeof cdef.value === 'number') {
-        // Для строгого '>' (positive) увеличиваем нижний bound на eps в
-        // случае целого — но для нашей UI-формы достаточно вернуть 0.
         const candidate = cdef.inclusive ? cdef.value : cdef.value;
         min = min === undefined ? candidate : Math.max(min, candidate);
       }

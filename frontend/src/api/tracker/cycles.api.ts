@@ -1,17 +1,11 @@
-/**
- * API-клиент модуля tracker.cycles.
- *
- * Контракт: `backend/src/modules/tracker/controllers/cycles.controller.ts`.
- */
-
-import { apiClient } from '../api-client';
-import { orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { orgHeaders } from "../admin-helpers";
 import type {
   CompleteCycleResultApi,
   CycleApi,
   ListCyclesResponseApi,
   ListIssuesResponseApi,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface CreateCycleRequest {
   name: string;
@@ -29,7 +23,6 @@ export interface UpdateCycleRequest {
   ownedById?: string | null;
   description?: string | null;
   timezone?: string;
-  /** Goals OKR v2 — цель, которую продвигает спринт (null = отвязать). */
   primaryGoalId?: string | null;
 }
 

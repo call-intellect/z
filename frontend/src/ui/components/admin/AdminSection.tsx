@@ -1,12 +1,9 @@
-'use client';
+"use client";
 
-import { type ReactNode } from 'react';
+import { type ReactNode } from "react";
 
-import { cn } from '@/ui/shadcn/lib/utils';
-import {
-  AdminBreadcrumbs,
-  type AdminBreadcrumbItem,
-} from './AdminBreadcrumbs';
+import { cn } from "@/ui/shadcn/lib/utils";
+import { AdminBreadcrumbs, type AdminBreadcrumbItem } from "./AdminBreadcrumbs";
 
 type Props = {
   breadcrumbs?: AdminBreadcrumbItem[];
@@ -17,16 +14,6 @@ type Props = {
   className?: string;
 };
 
-/**
- * AdminSection — стандартная обёртка для раздела админки.
- *
- * Структура:
- *   - Хлебные крошки (опционально).
- *   - Шапка: h1 заголовок + описание + слот `actions` (кнопки справа).
- *   - Слот контента — обычно сюда уходит `AdminTabs` либо самостоятельный список.
- *
- * Не задаёт ширину и padding снаружи — оборачивается в общий шелл (`AdminShell`).
- */
 export function AdminSection({
   breadcrumbs,
   title,
@@ -36,7 +23,7 @@ export function AdminSection({
   className,
 }: Props) {
   return (
-    <section className={cn('flex flex-col gap-5', className)}>
+    <section className={cn("flex flex-col gap-5", className)}>
       <header className="flex flex-col gap-3">
         {breadcrumbs && breadcrumbs.length > 0 ? (
           <AdminBreadcrumbs items={breadcrumbs} />

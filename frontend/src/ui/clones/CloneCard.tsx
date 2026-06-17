@@ -1,36 +1,20 @@
-'use client';
+"use client";
 
-/**
- * CloneCard — карточка клона в маркетплейсе (ТЗ §3.2).
- *
- * Два состояния:
- *   - `hasGrant=true`:  CTA «Спросить» → /clones/[roleId]
- *   - `hasGrant=false`: CTA «Запросить доступ» (вызывает onRequestAccess),
- *                       карточка приглушена (opacity-60).
- *
- * Никаких ссылок «История» / «Обновить» — это перенесли в /clones/[roleId].
- */
+import { Lock, MessageCircle, Sparkles, Users } from "lucide-react";
+import Link from "next/link";
+import type { ReactElement } from "react";
 
-import { Lock, MessageCircle, Sparkles, Users } from 'lucide-react';
-import Link from 'next/link';
-import type { ReactElement } from 'react';
+import { cloneVersionStatusBadge, type CloneListUiItem } from "@/domain/clone";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-import {
-  cloneVersionStatusBadge,
-  type CloneListUiItem,
-} from '@/domain/clone';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { cn } from '@/ui/shadcn/lib/utils';
-
-import { CloneAvatar } from './CloneAvatar';
+import { CloneAvatar } from "./CloneAvatar";
 
 export interface CloneCardProps {
   item: CloneListUiItem;
   hasGrant: boolean;
-  /** Вызывается кликом «Запросить доступ» при hasGrant=false. */
   onRequestAccess?: (roleId: string) => void;
-  /** true — запрос на доступ уже отправляется (disable кнопки). */
   requestAccessPending?: boolean;
 }
 
@@ -42,19 +26,19 @@ export function CloneCard({
 }: CloneCardProps): ReactElement {
   const subtitle = item.bearerName
     ? `Сейчас: ${item.bearerName}`
-    : 'Носитель не назначен';
+    : "Носитель не назначен";
 
   const ariaLabel = `${item.publicName}. ${
-    hasGrant ? 'Спросить клона' : 'Запросить доступ'
+    hasGrant ? "Спросить клона" : "Запросить доступ"
   }`;
 
   const inner = (
     <div
       className={cn(
-        'group flex h-full flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-4 transition-colors',
+        "group flex h-full flex-col gap-3 rounded-lg border border-border-subtle bg-bg-card p-4 transition-colors",
         hasGrant
-          ? 'hover:border-accent hover:shadow-sm'
-          : 'opacity-60 hover:opacity-80',
+          ? "hover:border-accent hover:shadow-sm"
+          : "opacity-60 hover:opacity-80",
       )}
     >
       <div className="flex items-start gap-3">
@@ -69,7 +53,7 @@ export function CloneCard({
             {item.publicName}
           </h3>
           <p className="mt-0.5 line-clamp-1 text-xs text-fg-tertiary">
-            {item.departmentName ?? 'Без отдела'}
+            {item.departmentName ?? "Без отдела"}
           </p>
           <p className="mt-1 line-clamp-1 text-xs text-fg-secondary">
             <Users size={11} className="-mt-0.5 mr-1 inline" />
@@ -81,7 +65,7 @@ export function CloneCard({
         ) : null}
       </div>
 
-      {item.status !== 'active' ? (
+      {item.status !== "active" ? (
         <Badge
           variant={cloneVersionStatusBadge(item.status).variant}
           className="self-start text-[10px]"
@@ -95,9 +79,7 @@ export function CloneCard({
           <Sparkles size={11} />
           {item.traitsCount} {pluralTraits(item.traitsCount)}
         </span>
-        <span>
-          Обновлён {item.lastBuildAt.toLocaleDateString('ru-RU')}
-        </span>
+        <span>Обновлён {item.lastBuildAt.toLocaleDateString("ru-RU")}</span>
       </div>
 
       <div className="pt-1">
@@ -125,7 +107,7 @@ export function CloneCard({
             aria-label={ariaLabel}
           >
             <Lock size={14} className="mr-1.5" />
-            {requestAccessPending ? 'Отправляем…' : 'Запросить доступ'}
+            {requestAccessPending ? "Отправляем…" : "Запросить доступ"}
           </Button>
         )}
       </div>
@@ -145,11 +127,7 @@ export function CloneCard({
   }
 
   return (
-    <article
-      role="group"
-      aria-label={ariaLabel}
-      className="block rounded-lg"
-    >
+    <article role="group" aria-label={ariaLabel} className="block rounded-lg">
       {inner}
     </article>
   );
@@ -158,12 +136,11 @@ export function CloneCard({
 function pluralTraits(n: number): string {
   const m10 = n % 10;
   const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return 'черта';
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'черты';
-  return 'черт';
+  if (m10 === 1 && m100 !== 11) return "черта";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "черты";
+  return "черт";
 }
 
-/** Заглушка карточки на время загрузки. */
 export function CloneCardSkeleton(): ReactElement {
   return (
     <div className="h-44 animate-pulse rounded-lg border border-border-subtle bg-bg-card" />

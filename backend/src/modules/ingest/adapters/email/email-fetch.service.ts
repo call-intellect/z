@@ -1,12 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { DataClass, Source } from '@prisma/client';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
@@ -18,31 +12,12 @@ import { S3Service } from '../../../recordings/s3.service';
 import type { SourceTestResultDto } from '../../../sources/dto/source.dto';
 import { IngestService } from '../../ingest.service';
 
-import {
-  parseImapConfig,
-  type ImapMailboxConfig,
-} from './imap-config.schema';
+import { parseImapConfig, type ImapMailboxConfig } from './imap-config.schema';
 
-/**
- * Сервис IMAP email-адаптера (Фаза 10 knowledge-core, Шаг 6).
- *
- * Подключается к IMAP-серверу (настройки из `Source.config`), читает UNSEEN
- * сообщения с `since={lastFetchAt|sinceDate}`, парсит через `mailparser`,
- * вкладывает приложения >1 MB в S3 и вызывает `IngestService.ingest(...)`.
- *
- * Идемпотентность: `sourceExternalId = Message-ID` (если нет — sha256 от
- * from+date+subject+bodyLen).
- *
- * `dataClass` повышается до `'sensitive'`, если папка письма входит в
- * `config.sensitiveFolders`.
- *
- * После успешного ingest помечает письмо `\Seen` (чтобы не подтягивать снова).
- */
 @Injectable()
 export class EmailFetchService {
   private readonly logger = new Logger(EmailFetchService.name);
 
-  /** Лимит размера вложения для inline-хранения (>= → S3). */
   private static readonly ATTACHMENT_INLINE_LIMIT = 1 * 1024 * 1024;
 
   constructor(
@@ -53,10 +28,6 @@ export class EmailFetchService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
-  /**
-   * Один проход по mailbox'у одного Source. Возвращает количество
-   * проингерженных писем.
-   */
   async fetchOne(sourceId: string): Promise<{ ingested: number; skipped: number }> {
     const source = await this.prisma.source.findUnique({ where: { id: sourceId } });
     if (!source) throw new NotFoundException({ ok: false, error: { code: 'source_not_found' } });
@@ -86,7 +57,6 @@ export class EmailFetchService {
       try {
         const since = await this.computeSince(source.id, config);
         const searchResult = await client.search({ seen: false, since });
-        // imapflow returns `false` if no UIDs found (or BAD response).
         const uids: number[] = Array.isArray(searchResult) ? searchResult.slice(0, limit) : [];
         if (uids.length === 0) {
           return { ingested: 0, skipped: 0 };
@@ -94,7 +64,11 @@ export class EmailFetchService {
 
         for (const uid of uids) {
           try {
-            const msg = await client.fetchOne(String(uid), { source: true, envelope: true, internalDate: true }, { uid: true });
+            const msg = await client.fetchOne(
+              String(uid),
+              { source: true, envelope: true, internalDate: true },
+              { uid: true },
+            );
             if (!msg || !msg.source) {
               skipped++;
               continue;
@@ -110,7 +84,6 @@ export class EmailFetchService {
                 bodyLen: parsed.text?.length ?? 0,
               });
 
-            // Прикреплённые файлы.
             const attachmentsMeta: Array<{
               filename: string;
               contentType: string;
@@ -119,19 +92,28 @@ export class EmailFetchService {
             }> = [];
             for (const att of parsed.attachments ?? []) {
               const size = att.size ?? att.content?.byteLength ?? 0;
-              const meta: { filename: string; contentType: string; size: number; s3Key?: string } = {
-                filename: att.filename ?? 'unnamed',
-                contentType: att.contentType ?? 'application/octet-stream',
-                size,
-              };
+              const meta: { filename: string; contentType: string; size: number; s3Key?: string } =
+                {
+                  filename: att.filename ?? 'unnamed',
+                  contentType: att.contentType ?? 'application/octet-stream',
+                  size,
+                };
               if (size >= EmailFetchService.ATTACHMENT_INLINE_LIMIT && att.content) {
-                const safeName = (att.filename ?? `attachment-${attachmentsMeta.length}`).replace(/[^A-Za-z0-9._-]/g, '_');
+                const safeName = (att.filename ?? `attachment-${attachmentsMeta.length}`).replace(
+                  /[^A-Za-z0-9._-]/g,
+                  '_',
+                );
                 const key = `email-attachments/${source.tenantId}/${externalId}/${safeName}`;
                 await this.s3
                   .putObject({ key, body: att.content as Buffer, contentType: meta.contentType })
                   .catch((err) => {
                     this.logger.warn(
-                      { sourceId: source.id, externalId, key, err: err instanceof Error ? err.message : String(err) },
+                      {
+                        sourceId: source.id,
+                        externalId,
+                        key,
+                        err: err instanceof Error ? err.message : String(err),
+                      },
                       'email: не удалось загрузить вложение в S3',
                     );
                   });
@@ -166,8 +148,9 @@ export class EmailFetchService {
               payload,
               dataClass,
             });
-            // Помечаем \Seen.
-            await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true }).catch(() => undefined);
+            await client
+              .messageFlagsAdd(String(uid), ['\\Seen'], { uid: true })
+              .catch(() => undefined);
             ingested++;
           } catch (err) {
             this.logger.warn(
@@ -183,20 +166,12 @@ export class EmailFetchService {
     } finally {
       try {
         await client.logout();
-      } catch {
-        // ignore — соединение могло уже отвалиться.
-      }
+      } catch {}
     }
-    this.logger.log(
-      { sourceId: source.id, ingested, skipped },
-      'email: проход завершён',
-    );
+    this.logger.log({ sourceId: source.id, ingested, skipped }, 'email: проход завершён');
     return { ingested, skipped };
   }
 
-  /**
-   * Smoke-test: connect+login.
-   */
   async test(source: Source): Promise<SourceTestResultDto> {
     if (source.type !== 'email') {
       return { ok: false, errorMessage: 'Source не email' };
@@ -239,9 +214,7 @@ export class EmailFetchService {
     } finally {
       try {
         await client.logout();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   }
 
@@ -252,15 +225,7 @@ export class EmailFetchService {
     return value;
   }
 
-  /**
-   * Дата, с которой подтягивать письма. Если в Org уже есть RawEvent от этого
-   * Source — берём `max(receivedAt) - 1 minute` (overlap для надёжности).
-   * Если нет — берём `config.sinceDate` или 7 дней назад.
-   */
-  private async computeSince(
-    sourceId: string,
-    config: ImapMailboxConfig,
-  ): Promise<Date> {
+  private async computeSince(sourceId: string, config: ImapMailboxConfig): Promise<Date> {
     const last = await this.prisma.rawEvent.findFirst({
       where: { sourceId },
       orderBy: { receivedAt: 'desc' },
@@ -304,7 +269,10 @@ function addressToString(a: unknown): string {
   const obj = a as { text?: string; value?: Array<{ address?: string }> };
   if (obj.text) return obj.text;
   if (Array.isArray(obj.value) && obj.value.length > 0) {
-    return obj.value.map((v) => v.address ?? '').filter(Boolean).join(',');
+    return obj.value
+      .map((v) => v.address ?? '')
+      .filter(Boolean)
+      .join(',');
   }
   return '';
 }
@@ -318,9 +286,7 @@ function addressToObject(a: unknown): { name: string; address: string } | null {
   return null;
 }
 
-function addressListToObject(
-  a: unknown,
-): Array<{ name: string; address: string }> {
+function addressListToObject(a: unknown): Array<{ name: string; address: string }> {
   if (!a) return [];
   const items: Array<{ name?: string; address?: string }> = [];
   if (Array.isArray(a)) {

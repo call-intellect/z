@@ -1,23 +1,3 @@
-/**
- * Agent-chain overhaul Фаза 4.1 (2026-06-08) — Specialist 3-14 (Goals) /
- * GoalTaskLinkerService.
- *
- * LLM-промпт `goal-task-link` — арбитр авто-привязки задач встречи к цели.
- * Для одной AI-цели и списка задач-кандидатов (action items той же встречи,
- * у которых ещё нет цели) принимает решение по каждой задаче: `develops`
- * (выполнение задачи продвигает цель) — да/нет + confidence.
- *
- * Цель НЕ создаётся и НЕ меняется — арбитр только проставляет `Issue.goalId`
- * там, где он null (non-destructive). При сомнении develops=false: лучше не
- * привязать, чем привязать к чужой цели (мис-атрибуция дороже пропуска).
- *
- * Образец — `goal-hierarchy-link.prompt.ts` (verdict + confidence) и
- * `block-linker.prompt.ts` (батч-арбитр develops).
- *
- * Cache-friendly: SYSTEM стабилен (few-shot вшит), переменные данные (цель +
- * список задач) — в КОНЦЕ USER.
- */
-
 import { z } from 'zod';
 
 import { withAsrNote } from '../../ai/services/prompts/common';

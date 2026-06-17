@@ -1,14 +1,5 @@
-import {
-  HeadBucketCommand,
-  S3Client,
-  type S3ClientConfig,
-} from '@aws-sdk/client-s3';
-import {
-  Inject,
-  Injectable,
-  Logger,
-  type OnModuleDestroy,
-} from '@nestjs/common';
+import { HeadBucketCommand, S3Client, type S3ClientConfig } from '@aws-sdk/client-s3';
+import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { RoomServiceClient } from 'livekit-server-sdk';
 
@@ -63,9 +54,7 @@ export interface HealthDbResult {
 }
 
 export interface HealthEmbeddingsResult {
-  /** Кол-во IdeaBlock с непустым embedding. */
   total: number;
-  /** Прирост за 24ч (новые IdeaBlock с embedding != null). */
   last24hGrowth: number;
   generatedAt: string;
 }
@@ -106,21 +95,6 @@ export interface HealthLivekitResult {
   generatedAt: string;
 }
 
-/**
- * `AdminHealthService` (Admin-redesign Фаза 1, расширение).
- *
- * Источник состояния всех подсистем для UI Z-Admin «Пульс / Здоровье»:
- *   - `getHealth()`         — overall сводка (legacy, оставлен для обратной совместимости).
- *   - `getQueues()`         — counts по всем BullMQ-очередям.
- *   - `getDb()`             — pg_database_size + pg_stat_activity (connections).
- *   - `getEmbeddings()`     — кол-во IdeaBlock с embedding + 24h прирост.
- *   - `getWorkers()`        — состояние Cron'ов (из CronSchedule) + последние CronRunHistory.
- *   - `getS3()`             — `HeadBucket` (try-catch).
- *   - `getLivekit()`        — `RoomServiceClient.listRooms` (try-catch).
- *
- * Все методы — best-effort: при ошибке возвращают `{ ok: false, error }`,
- * а не бросают. Это нужно для дашборда, где «красная плашка» лучше 500.
- */
 @Injectable()
 export class AdminHealthService implements OnModuleDestroy {
   private readonly logger = new Logger(AdminHealthService.name);
@@ -144,8 +118,6 @@ export class AdminHealthService implements OnModuleDestroy {
     }
     this.queueCache.clear();
   }
-
-  // ────────────────────────── overall (legacy) ──────────────────────────
 
   async getHealth(): Promise<AdminHealthResult> {
     const queueResults = await this.collectQueueCounts();
@@ -184,23 +156,20 @@ export class AdminHealthService implements OnModuleDestroy {
     };
   }
 
-  // ─────────────────────────── per-subsystem api ────────────────────────
-
   async getQueues(): Promise<HealthQueuesResult> {
     const queues = await this.collectQueueCounts();
     return { queues, generatedAt: new Date().toISOString() };
   }
 
   async getDb(): Promise<HealthDbResult> {
-    const [dbSize, connections, blocks, entities, rawEvents, aiUsage] =
-      await Promise.all([
-        this.fetchDbSize(),
-        this.fetchConnections(),
-        this.prisma.ideaBlock.count(),
-        this.prisma.entity.count(),
-        this.prisma.rawEvent.count(),
-        this.prisma.aiUsageLog.count(),
-      ]);
+    const [dbSize, connections, blocks, entities, rawEvents, aiUsage] = await Promise.all([
+      this.fetchDbSize(),
+      this.fetchConnections(),
+      this.prisma.ideaBlock.count(),
+      this.prisma.entity.count(),
+      this.prisma.rawEvent.count(),
+      this.prisma.aiUsageLog.count(),
+    ]);
     return {
       sizeBytes: dbSize,
       connections,
@@ -228,8 +197,6 @@ export class AdminHealthService implements OnModuleDestroy {
       );
     }
     try {
-      // Прирост = IdeaBlock с embedding, созданные за 24h. Если у IdeaBlock
-      // есть createdAt — используем; иначе суррогат через updatedAt.
       const rows = await this.prisma.$queryRaw<Array<{ count: bigint }>>`
         SELECT COUNT(*)::bigint AS count
         FROM "IdeaBlock"
@@ -316,7 +283,6 @@ export class AdminHealthService implements OnModuleDestroy {
     const lk = this.cfg.livekit;
     try {
       const client = new RoomServiceClient(lk.apiUrl, lk.apiKey, lk.apiSecret);
-      // listRooms() — лёгкий запрос для проверки доступности SFU.
       await client.listRooms();
       return {
         ok: true,
@@ -332,8 +298,6 @@ export class AdminHealthService implements OnModuleDestroy {
       };
     }
   }
-
-  // ─────────────────────────── private ──────────────────────────────────
 
   private async collectQueueCounts(): Promise<QueueCountsRow[]> {
     const queueNames = [
@@ -367,9 +331,7 @@ export class AdminHealthService implements OnModuleDestroy {
 
   private getOrCreateQueue(
     name: string,
-    connection:
-      | ReturnType<RedisService['client']['duplicate']>
-      | RedisService['client'],
+    connection: ReturnType<RedisService['client']['duplicate']> | RedisService['client'],
   ): Queue {
     const cached = this.queueCache.get(name);
     if (cached) return cached;
@@ -400,9 +362,7 @@ export class AdminHealthService implements OnModuleDestroy {
     idle: number | null;
   }> {
     try {
-      const rows = await this.prisma.$queryRaw<
-        Array<{ state: string | null; count: bigint }>
-      >`
+      const rows = await this.prisma.$queryRaw<Array<{ state: string | null; count: bigint }>>`
         SELECT state, COUNT(*)::bigint AS count
         FROM pg_stat_activity
         WHERE datname = current_database()

@@ -5,15 +5,6 @@ import type { TypedConfigService } from '../../common/config/index';
 
 import { LivekitService } from './livekit.service';
 
-/**
- * Юнит-тесты `LivekitService`.
- *
- * Проверяем токены: декодируем JWT, проверяем grants (видеограрант LiveKit
- * лежит в claim'е `video`), идентичность, имя, TTL.
- *
- * Реальные вызовы `RoomServiceClient` мы не тестируем — это интеграционно.
- */
-
 const API_KEY = 'devkey';
 const API_SECRET = 'devsecret-must-be-32-chars-min-xxxxxx';
 const API_URL = 'http://localhost:7880';
@@ -45,11 +36,6 @@ interface DecodedClaims {
   };
 }
 
-/**
- * `livekit-server-sdk` v2 (через `jose`) НЕ кладёт в payload `iat`,
- * а пишет `nbf` (== время выпуска) и `exp`. Используем `nbf` либо текущий
- * `Date.now()` как точку отсчёта при подсчёте TTL.
- */
 function ttlSec(claims: DecodedClaims): number {
   const start = claims.nbf ?? claims.iat ?? Math.floor(Date.now() / 1000);
   return claims.exp - start;
@@ -66,11 +52,7 @@ function decode(token: string): DecodedClaims {
 describe('LivekitService — токены', () => {
   it('generateHostToken: roomJoin, roomAdmin=true, identity, room, canPublish/Subscribe', async () => {
     const svc = new LivekitService(makeCfg());
-    const token = await svc.generateHostToken(
-      { id: 'meeting-1' },
-      'host:user-1',
-      'Иван',
-    );
+    const token = await svc.generateHostToken({ id: 'meeting-1' }, 'host:user-1', 'Иван');
 
     const claims = decode(token);
     expect(claims.iss).toBe(API_KEY);
@@ -86,11 +68,7 @@ describe('LivekitService — токены', () => {
 
   it('generateGuestToken: roomAdmin=false, остальные grants выставлены', async () => {
     const svc = new LivekitService(makeCfg());
-    const token = await svc.generateGuestToken(
-      { id: 'meeting-2' },
-      'guest:abc',
-      'Гость',
-    );
+    const token = await svc.generateGuestToken({ id: 'meeting-2' }, 'guest:abc', 'Гость');
 
     const claims = decode(token);
     expect(claims.sub).toBe('guest:abc');
@@ -100,40 +78,28 @@ describe('LivekitService — токены', () => {
     expect(claims.video?.canPublish).toBe(true);
     expect(claims.video?.canSubscribe).toBe(true);
     expect(claims.video?.canPublishData).toBe(true);
-    // roomAdmin может быть либо false, либо отсутствовать (LiveKit опускает false-значения).
     expect(Boolean(claims.video?.roomAdmin)).toBe(false);
   });
 
   it('TTL по умолчанию = 4 часа (если endedAt отсутствует)', async () => {
     const svc = new LivekitService(makeCfg());
     const before = Math.floor(Date.now() / 1000);
-    const token = await svc.generateGuestToken(
-      { id: 'meeting-3' },
-      'guest:x',
-      'Г',
-    );
+    const token = await svc.generateGuestToken({ id: 'meeting-3' }, 'guest:x', 'Г');
     const claims = decode(token);
 
     const ttl = ttlSec(claims);
     expect(ttl).toBeGreaterThanOrEqual(4 * 60 * 60 - 5);
     expect(ttl).toBeLessThanOrEqual(4 * 60 * 60 + 5);
-    // sanity: токен валиден сейчас.
     expect(claims.exp).toBeGreaterThan(before);
   });
 
   it('TTL ограничен endedAt + 5 минут', async () => {
     const svc = new LivekitService(makeCfg());
-    // endedAt через 10 минут → expected TTL ≈ 15 минут.
     const endedAt = new Date(Date.now() + 10 * 60 * 1000);
-    const token = await svc.generateHostToken(
-      { id: 'meeting-4', endedAt },
-      'host:u',
-      'H',
-    );
+    const token = await svc.generateHostToken({ id: 'meeting-4', endedAt }, 'host:u', 'H');
     const claims = decode(token);
     const ttl = ttlSec(claims);
 
-    // 10 мин + 5 мин грации = 15 мин. Допустим окно ±5 секунд.
     expect(ttl).toBeGreaterThanOrEqual(15 * 60 - 5);
     expect(ttl).toBeLessThanOrEqual(15 * 60 + 5);
   });
@@ -141,27 +107,18 @@ describe('LivekitService — токены', () => {
   it('TTL ограничен потолком 8 часов даже если endedAt далеко в будущем', async () => {
     const svc = new LivekitService(makeCfg());
     const endedAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const token = await svc.generateHostToken(
-      { id: 'meeting-5', endedAt },
-      'host:u',
-      'H',
-    );
+    const token = await svc.generateHostToken({ id: 'meeting-5', endedAt }, 'host:u', 'H');
     const claims = decode(token);
     const ttl = ttlSec(claims);
 
     expect(ttl).toBeLessThanOrEqual(8 * 60 * 60 + 5);
-    // И не сильно меньше 8h.
     expect(ttl).toBeGreaterThanOrEqual(8 * 60 * 60 - 5);
   });
 
   it('endedAt в прошлом → минимальный TTL 60 секунд', async () => {
     const svc = new LivekitService(makeCfg());
     const endedAt = new Date(Date.now() - 60 * 60 * 1000);
-    const token = await svc.generateHostToken(
-      { id: 'meeting-6', endedAt },
-      'host:u',
-      'H',
-    );
+    const token = await svc.generateHostToken({ id: 'meeting-6', endedAt }, 'host:u', 'H');
     const claims = decode(token);
     const ttl = ttlSec(claims);
 

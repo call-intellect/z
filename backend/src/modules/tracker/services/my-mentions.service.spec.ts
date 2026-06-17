@@ -4,16 +4,6 @@ import type { PrismaService } from '../../../common/prisma/prisma.service';
 
 import { MyMentionsService } from './my-mentions.service';
 
-/**
- * T8 (2026-05-24) — unit-тесты MyMentionsService.
- *
- * Покрытие:
- *  1. list (unread) — фильтрует по tenantId + только те, у которых
- *     соответствующая Notification(eventType='issue.mention') не в read/responded.
- *  2. list (all) — возвращает все, помечая прочитанные.
- *  3. unreadCount — корректно считает Notification.
- */
-
 interface MentionRow {
   id: string;
   issueId: string;
@@ -32,57 +22,58 @@ interface NotificationRow {
   eventType: string;
 }
 
-function makePrismaMock(
-  mentions: MentionRow[],
-  notifications: NotificationRow[],
-): PrismaService {
+function makePrismaMock(mentions: MentionRow[], notifications: NotificationRow[]): PrismaService {
   return {
     issueMention: {
-      findMany: vi.fn(async (args: {
-        where: { mentionedUserId: string; issue: { tenantId: string } };
-        take: number;
-      }) => {
-        const filtered = mentions
-          .filter(
-            (m) =>
-              m.mentionedUserId === args.where.mentionedUserId &&
-              m.issue.tenantId === args.where.issue.tenantId,
-          )
-          .slice()
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-        return filtered.slice(0, args.take);
-      }),
+      findMany: vi.fn(
+        async (args: {
+          where: { mentionedUserId: string; issue: { tenantId: string } };
+          take: number;
+        }) => {
+          const filtered = mentions
+            .filter(
+              (m) =>
+                m.mentionedUserId === args.where.mentionedUserId &&
+                m.issue.tenantId === args.where.issue.tenantId,
+            )
+            .slice()
+            .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+          return filtered.slice(0, args.take);
+        },
+      ),
     },
     notification: {
-      findMany: vi.fn(async (args: {
-        where: {
-          tenantId: string;
-          recipientUserId: string;
-          eventType: string;
-        };
-      }) =>
-        notifications.filter(
-          (n) =>
-            n.tenantId === args.where.tenantId &&
-            n.recipientUserId === args.where.recipientUserId &&
-            n.eventType === args.where.eventType,
-        ),
+      findMany: vi.fn(
+        async (args: {
+          where: {
+            tenantId: string;
+            recipientUserId: string;
+            eventType: string;
+          };
+        }) =>
+          notifications.filter(
+            (n) =>
+              n.tenantId === args.where.tenantId &&
+              n.recipientUserId === args.where.recipientUserId &&
+              n.eventType === args.where.eventType,
+          ),
       ),
-      count: vi.fn(async (args: {
-        where: {
-          tenantId: string;
-          recipientUserId: string;
-          eventType: string;
-          status: { in: string[] };
-        };
-      }) =>
-        notifications.filter(
-          (n) =>
-            n.tenantId === args.where.tenantId &&
-            n.recipientUserId === args.where.recipientUserId &&
-            n.eventType === args.where.eventType &&
-            args.where.status.in.includes(n.status),
-        ).length,
+      count: vi.fn(
+        async (args: {
+          where: {
+            tenantId: string;
+            recipientUserId: string;
+            eventType: string;
+            status: { in: string[] };
+          };
+        }) =>
+          notifications.filter(
+            (n) =>
+              n.tenantId === args.where.tenantId &&
+              n.recipientUserId === args.where.recipientUserId &&
+              n.eventType === args.where.eventType &&
+              args.where.status.in.includes(n.status),
+          ).length,
       ),
     },
   } as unknown as PrismaService;
@@ -130,7 +121,6 @@ describe('MyMentionsService', () => {
       },
     ];
     notifications = [
-      // c2 уже прочитан
       {
         payload: { commentId: 'c2' },
         status: 'read',
@@ -138,7 +128,6 @@ describe('MyMentionsService', () => {
         tenantId: TENANT,
         eventType: 'issue.mention',
       },
-      // c1 ещё в очереди — не прочитан
       {
         payload: { commentId: 'c1' },
         status: 'delivered',
@@ -150,7 +139,7 @@ describe('MyMentionsService', () => {
     svc = new MyMentionsService(makePrismaMock(mentions, notifications));
   });
 
-  it('list(unread) возвращает только непрочитанные в tenant\'е', async () => {
+  it("list(unread) возвращает только непрочитанные в tenant'е", async () => {
     const res = await svc.list({
       userId: USER,
       tenantId: TENANT,
@@ -158,7 +147,6 @@ describe('MyMentionsService', () => {
       limit: 50,
       cursor: null,
     });
-    // m3 в другом tenant'е (фильтр в where), m2 — прочитан, остаётся m1.
     expect(res.items).toHaveLength(1);
     expect(res.items[0]!.id).toBe('m1');
     expect(res.items[0]!.issueIdentifier).toBe('PRJ-1');

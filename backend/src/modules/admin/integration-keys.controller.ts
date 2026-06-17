@@ -79,7 +79,6 @@ export class IntegrationKeysAdminController {
       },
       select: { id: true },
     });
-    // Сырой ключ возвращается ОДИН раз. Хранится только хеш.
     return { id: created.id, key: plainKey };
   }
 

@@ -1,17 +1,3 @@
-/**
- * commercial-reliability pack (2026-05-30, Фаза 3) — unit-тесты для
- * `MeetingsService.renameParticipant`. Zoom-модель: хост может переименовать
- * гостя после встречи; зарегистрированных не трогаем.
- *
- * Покрытие:
- *   - хост + isRegisteredUser=false → имя обновлено, метрика инкрементирована;
- *   - не хост (getForUser бросает NotAuthorizedError) → пробрасывается;
- *   - participantId не найден в этой встрече → ParticipantNotFoundError;
- *   - participantId из другой встречи → ParticipantNotFoundError
- *     (защита от path-traversal);
- *   - isRegisteredUser=true → ParticipantRenameForbiddenError.
- */
-
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -41,12 +27,14 @@ function makeService(args: {
   participantRow?: ParticipantRow | null;
 }) {
   const participantFindFirst = vi.fn(async () => args.participantRow ?? null);
-  const participantUpdate = vi.fn(async ({ where, data }: { where: { id: string }; data: { name: string } }) => ({
-    id: where.id,
-    meetingId: args.participantRow?.meetingId ?? 'm-1',
-    name: data.name,
-    isRegisteredUser: args.participantRow?.isRegisteredUser ?? false,
-  }));
+  const participantUpdate = vi.fn(
+    async ({ where, data }: { where: { id: string }; data: { name: string } }) => ({
+      id: where.id,
+      meetingId: args.participantRow?.meetingId ?? 'm-1',
+      name: data.name,
+      isRegisteredUser: args.participantRow?.isRegisteredUser ?? false,
+    }),
+  );
 
   const prisma = {
     participant: {
@@ -79,8 +67,6 @@ function makeService(args: {
     {} as unknown as TypedConfigService,
     metrics,
     {} as unknown as MeetingsBalanceService,
-    // Фаза 3 (2026-06-04) — MailService + ConversationalService (не вызываются
-    // в renameParticipant, но обязательны в конструкторе).
     {} as never,
     {} as never,
     { assertCanView: vi.fn(async () => ({})) } as never,
@@ -163,7 +149,7 @@ describe('MeetingsService.renameParticipant', () => {
   it('participantId из чужой встречи → findFirst по {id, meetingId} возвращает null → ParticipantNotFoundError', async () => {
     const { svc, participantFindFirst, participantUpdate } = makeService({
       meetingHostUserId: 'u-host',
-      participantRow: null, // findFirst({id:'p-other', meetingId:'m-1'}) не найдёт.
+      participantRow: null,
     });
 
     await expect(
@@ -175,7 +161,6 @@ describe('MeetingsService.renameParticipant', () => {
       }),
     ).rejects.toBeInstanceOf(ParticipantNotFoundError);
 
-    // Защита от path-traversal: findFirst.where включает meetingId.
     expect(participantFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'p-from-other-meeting', meetingId: 'm-1' },
@@ -207,4 +192,3 @@ describe('MeetingsService.renameParticipant', () => {
     expect(metrics.incParticipantRenamed).not.toHaveBeenCalled();
   });
 });
-

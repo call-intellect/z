@@ -10,17 +10,6 @@ import type {
 
 import { StrategicAlignmentCron } from './strategic-alignment.cron';
 
-/**
- * Sprint 3 B1-3.2 — unit-тесты cron'а strategic-alignment (issue-based).
- *
- * Покрываем:
- *   1. Per-Org обход: compute → setCached → AuditLog write для каждой Goal.
- *   2. Probe-trigger: если есть misaligned users — ProbeService.suggest
- *      зовётся с правильным reason + recipient + сообщением.
- *   3. Probe не зовётся, если misaligned-кандидатов нет.
- *   4. Ошибки compute не валят весь проход.
- */
-
 function makeSnapshot(
   overrides: Partial<GoalIssueProgressSnapshot> = {},
 ): GoalIssueProgressSnapshot {
@@ -52,13 +41,20 @@ interface Setup {
   auditMock: ReturnType<typeof vi.fn>;
 }
 
-function makeCron(overrides: {
-  orgs?: string[];
-  goalsByOrg?: Record<string, Array<{ id: string; createdById: string }>>;
-  misalignedByOrg?: Record<string, MisalignedUserCandidate[]>;
-  computeImpl?: (args: { tenantId: string; goalId: string }) => Promise<GoalIssueProgressSnapshot>;
-  suggestResult?: { ok: true; probeEventId: string } | { dropped: 'dedup' | 'rate_limit' | 'cold_start' };
-} = {}): Setup {
+function makeCron(
+  overrides: {
+    orgs?: string[];
+    goalsByOrg?: Record<string, Array<{ id: string; createdById: string }>>;
+    misalignedByOrg?: Record<string, MisalignedUserCandidate[]>;
+    computeImpl?: (args: {
+      tenantId: string;
+      goalId: string;
+    }) => Promise<GoalIssueProgressSnapshot>;
+    suggestResult?:
+      | { ok: true; probeEventId: string }
+      | { dropped: 'dedup' | 'rate_limit' | 'cold_start' };
+  } = {},
+): Setup {
   const orgs = overrides.orgs ?? ['t1'];
   const goalsByOrg = overrides.goalsByOrg ?? {
     t1: [{ id: 'g1', createdById: 'u1' }],
@@ -70,13 +66,11 @@ function makeCron(overrides: {
   };
 
   const computeMock = vi.fn(
-    overrides.computeImpl ??
-      (async ({ tenantId, goalId }) => makeSnapshot({ tenantId, goalId })),
+    overrides.computeImpl ?? (async ({ tenantId, goalId }) => makeSnapshot({ tenantId, goalId })),
   );
   const setCachedMock = vi.fn(async () => undefined);
   const findMisalignedMock = vi.fn(
-    async ({ tenantId }: { tenantId: string }) =>
-      misalignedByOrg[tenantId] ?? [],
+    async ({ tenantId }: { tenantId: string }) => misalignedByOrg[tenantId] ?? [],
   );
   const listOrgsMock = vi.fn(async () => orgs);
   const listGoalsMock = vi.fn(async (tenantId: string) => goalsByOrg[tenantId] ?? []);
@@ -136,7 +130,6 @@ describe('StrategicAlignmentCron.runForAllOrgs', () => {
     expect(summary.failures).toBe(0);
     expect(computeMock).toHaveBeenCalledTimes(3);
     expect(setCachedMock).toHaveBeenCalledTimes(3);
-    // AuditLog: 3 записи `goal.alignment.issue_progress` (по одной на цель).
     const auditActions = auditMock.mock.calls
       .map((c) => (c[0] as { action: string }).action)
       .filter((a) => a === 'goal.alignment.issue_progress');
@@ -175,9 +168,7 @@ describe('StrategicAlignmentCron.runForAllOrgs', () => {
     expect(call.recipientCandidates).toEqual(['u-bad']);
     expect(call.payload.ratio).toBeCloseTo(0.9);
     expect(call.payload.message).toContain('90%');
-    expect(call.payload.suggestedQuestion).toContain(
-      '80% задач не привязаны к целям компании',
-    );
+    expect(call.payload.suggestedQuestion).toContain('80% задач не привязаны к целям компании');
   });
 
   it('не зовёт probe, если misaligned-кандидатов нет', async () => {
@@ -213,7 +204,6 @@ describe('StrategicAlignmentCron.runForAllOrgs', () => {
     expect(summary.goalsProcessed).toBe(3);
     expect(summary.snapshotsWritten).toBe(2);
     expect(summary.failures).toBe(1);
-    // setCached должен звался только для успешных compute (2 из 3).
     expect(setCachedMock).toHaveBeenCalledTimes(2);
   });
 

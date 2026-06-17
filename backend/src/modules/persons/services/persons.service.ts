@@ -21,38 +21,10 @@ import type {
   UpdatePersonDto,
 } from '../dto/persons.dto';
 
-/**
- * Сервис сотрудников компании клиента (Person).
- *
- * Бизнес-правила:
- *   - Person.userId = null до accept'а приглашения; заполняется в
- *     `OrgInvitationsService.acceptInvitation`.
- *   - При создании: если roleId передан — создать PersonRole(validFrom=now,
- *     validTo=null) и EntityLink `executes_role` (person→role).
- *     Если primaryDepartmentId — EntityLink `member_of` (person→department).
- *   - При PATCH roleId — закрыть старую PersonRole (validTo=now) и старую
- *     EntityLink executes_role; создать новые.
- *   - При DELETE — soft + закрыть все EntityLink исходящие/входящие.
- *
- * EntityLink пишется напрямую через Prisma (fromType/toType явно).
- * Рефакторинг на GraphService позже — тривиален.
- *
- * SBA α-8 wave 3 (2026-05-23): feature-flag `USE_APPOINTMENT_FOR_PERSON_ROLES`.
- * При флаге=true list/get/create/update пишут и читают `Appointment`
- * параллельно с `PersonRole`; при флаге=false (default) логика идентична
- * прежней. Patch-script `patch-migrate-person-role-to-appointment.ts`
- * заполняет Appointment по существующим PersonRole. Через 1 месяц после
- * прода — отдельный sub-ТЗ на удаление PersonRole.
- *
- * NB: флаг читается через `TypedConfigService` (ключ
- * `USE_APPOINTMENT_FOR_PERSON_ROLES` в `EnvSchema`,
- * `config.persons.useAppointment`).
- */
 @Injectable()
 export class PersonsService {
   private readonly logger = new Logger(PersonsService.name);
 
-  /** Feature-flag SBA α-8 wave 3 — читать из Appointment вместо PersonRole. */
   private readonly useAppointment: boolean;
 
   constructor(
@@ -63,41 +35,18 @@ export class PersonsService {
     this.useAppointment = this.cfg.persons.useAppointment;
   }
 
-  // ─────────────────────── ensurePersonForUser ──────────────────────
-
-  /**
-   * Гарантирует, что у пары (tenantId, userId) есть Person-карточка, и
-   * возвращает её id. Идемпотентен (повторный вызов не плодит дублей).
-   *
-   * Логика (Ф9 «владелец без Person», `plans/tz/2026-06-04-razblokirovka-konveyera.md`):
-   *   1. Если Person по (tenantId, userId, deletedAt=null) уже есть — вернуть её.
-   *   2. Иначе если у Membership(orgId=tenantId, userId) есть `personId`,
-   *      и та Person ещё не привязана (`userId===null`) и не удалена —
-   *      привязать ей userId (линковка осиротевшей карточки; образец —
-   *      `OrgInvitationsService.acceptInsideTransaction`).
-   *   3. Иначе создать минимальную Person с `relationship='employee'`,
-   *      подтянув name/email из User. На уникальность `(tenantId,email,
-   *      deletedAt)` ловим P2002 и линкуем существующую безличную карточку.
-   *
-   * Вызывается из `OrgsService.createForOwner` (создание Org), `DumpService`
-   * (provenance дампа) и backfill-скрипта `backfill-owner-person.ts`.
-   *
-   * @param tx — опциональный транзакционный клиент; по умолчанию `this.prisma`.
-   */
   async ensurePersonForUser(
     args: { tenantId: string; userId: string },
     tx?: Prisma.TransactionClient,
   ): Promise<{ id: string }> {
     const db = tx ?? this.prisma;
 
-    // 1. Уже есть привязанная Person.
     const existing = await db.person.findFirst({
       where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
       select: { id: true },
     });
     if (existing) return { id: existing.id };
 
-    // 2. Осиротевшая Person из Membership.personId — привязать userId.
     const membership = await db.membership.findUnique({
       where: { orgId_userId: { orgId: args.tenantId, userId: args.userId } },
       select: { personId: true },
@@ -121,7 +70,6 @@ export class PersonsService {
       }
     }
 
-    // 3. Создать минимальную Person, подтянув name/email из User.
     const user = await db.user.findUnique({
       where: { id: args.userId },
       select: { email: true, name: true },
@@ -133,7 +81,6 @@ export class PersonsService {
           tenantId: args.tenantId,
           userId: args.userId,
           name: user?.name ?? '',
-          // Колонка non-null; при отсутствии email сохраняем '' (как quickCreate).
           email,
           relationship: 'employee',
         },
@@ -141,19 +88,12 @@ export class PersonsService {
       });
       return { id: created.id };
     } catch (err) {
-      // Уникальность (tenantId, email, deletedAt) — гонка или ранее
-      // созданный безличный контакт с тем же email. Линкуем существующую.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        // Повторный поиск по userId (гонка двух ensurePersonForUser).
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const raced = await db.person.findFirst({
           where: { tenantId: args.tenantId, userId: args.userId, deletedAt: null },
           select: { id: true },
         });
         if (raced) return { id: raced.id };
-        // Контакт с тем же email без userId — привяжем его к этому user'у.
         if (email) {
           const byEmail = await db.person.findFirst({
             where: { tenantId: args.tenantId, email, deletedAt: null },
@@ -171,8 +111,6 @@ export class PersonsService {
       throw err;
     }
   }
-
-  // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -195,8 +133,6 @@ export class PersonsService {
             ],
           }
         : {}),
-      // SBA α-8 wave 3 — фильтр по roleId: читаем из Appointment если флаг,
-      // иначе из PersonRole (как раньше).
       ...(args.roleId
         ? this.useAppointment
           ? {
@@ -229,7 +165,6 @@ export class PersonsService {
             orderBy: { validFrom: 'desc' },
             take: 1,
           },
-          // SBA α-8 wave 3 — Appointment как параллельный источник «текущей должности».
           appointments: {
             where: { validTo: null, status: { not: 'former' } },
             include: { role: { select: { id: true, name: true } } },
@@ -267,7 +202,6 @@ export class PersonsService {
           orderBy: { validFrom: 'desc' },
           take: 1,
         },
-        // SBA α-8 wave 3 — Appointment как параллельный источник «текущей должности».
         appointments: {
           where: { validTo: null, status: { not: 'former' } },
           include: { role: { select: { id: true, name: true } } },
@@ -290,8 +224,6 @@ export class PersonsService {
     return this.toListItem(p);
   }
 
-  // ─────────────────────────── create / update / delete ─────────────
-
   async create(args: {
     tenantId: string;
     userId: string;
@@ -303,7 +235,6 @@ export class PersonsService {
     if (args.body.roleId) {
       await this.assertRoleExists(args.tenantId, args.body.roleId);
     }
-    // ТЗ «Команда + доступы» Фаза 2 — привязка к существующему участнику.
     if (args.body.linkUserId) {
       const membership = await this.prisma.membership.findUnique({
         where: {
@@ -324,19 +255,16 @@ export class PersonsService {
       if (existing) {
         throw new ConflictException({
           ok: false,
-          error: { code: 'person_already_linked', message: 'У этого участника уже есть карточка сотрудника' },
+          error: {
+            code: 'person_already_linked',
+            message: 'У этого участника уже есть карточка сотрудника',
+          },
         });
       }
     }
-    // ТЗ 2026-06-10 meeting-stuck-and-team-roster Ф4 — дружелюбный дедуп по email
-    // ДО вставки (поверх partial unique persons_tenant_email_active_uniq из Ф2).
-    // Сравнение по lower(email) (как в индексе) через $queryRaw — wildcard-safe
-    // (Prisma mode:insensitive дал бы ILIKE, где '_' в email трактуется как wildcard).
     const dedupEmail = args.body.email?.trim();
     if (dedupEmail) {
-      const byEmailRows = await this.prisma.$queryRaw<
-        Array<{ id: string; userId: string | null }>
-      >`
+      const byEmailRows = await this.prisma.$queryRaw<Array<{ id: string; userId: string | null }>>`
         SELECT "id", "userId" FROM "persons"
         WHERE "tenantId" = ${args.tenantId}
           AND "deletedAt" IS NULL
@@ -345,7 +273,6 @@ export class PersonsService {
       `;
       const byEmail = byEmailRows[0] ?? null;
       if (byEmail) {
-        // Линковка: задан linkUserId и найдена безличная карточка (userId=null).
         if (args.body.linkUserId && byEmail.userId === null) {
           await this.prisma.person.update({
             where: { id: byEmail.id },
@@ -363,7 +290,6 @@ export class PersonsService {
           });
           return this.get({ tenantId: args.tenantId, id: byEmail.id });
         }
-        // Иначе карточка с этим email уже есть → понятный 409 (Р3).
         throw new ConflictException({
           ok: false,
           error: {
@@ -381,7 +307,6 @@ export class PersonsService {
             tenantId: args.tenantId,
             userId: args.body.linkUserId ?? null,
             name: args.body.name,
-            // Колонка non-null; при отсутствии email сохраняем '' (как quickCreate).
             email: args.body.email ?? '',
             primaryDepartmentId: args.body.primaryDepartmentId ?? null,
           },
@@ -397,9 +322,6 @@ export class PersonsService {
               validTo: null,
             },
           });
-          // SBA α-8 wave 3 — параллельно создаём Appointment (replacement
-          // для PersonRole). Пишем всегда (без feature-flag), чтобы у Appointment
-          // была полная история; reads контролируются useAppointment.
           await tx.appointment.create({
             data: {
               tenantId: args.tenantId,
@@ -467,9 +389,7 @@ export class PersonsService {
     let skipped = 0;
     for (const it of args.body.items) {
       try {
-        items.push(
-          await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }),
-        );
+        items.push(await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }));
       } catch (err) {
         if (err instanceof ConflictException) {
           skipped += 1;
@@ -504,10 +424,7 @@ export class PersonsService {
       });
     }
 
-    if (
-      args.body.primaryDepartmentId !== undefined &&
-      args.body.primaryDepartmentId !== null
-    ) {
+    if (args.body.primaryDepartmentId !== undefined && args.body.primaryDepartmentId !== null) {
       await this.assertDepartmentExists(args.tenantId, args.body.primaryDepartmentId);
     }
     if (args.body.roleId !== undefined && args.body.roleId !== null) {
@@ -536,7 +453,6 @@ export class PersonsService {
           data,
         });
 
-        // primaryDepartmentId изменился — синхронизируем EntityLink member_of.
         if (
           args.body.primaryDepartmentId !== undefined &&
           args.body.primaryDepartmentId !== existing.primaryDepartmentId
@@ -569,11 +485,7 @@ export class PersonsService {
           }
         }
 
-        // roleId изменился — закрываем старую PersonRole + EntityLink, создаём новые.
-        if (
-          args.body.roleId !== undefined &&
-          args.body.roleId !== currentRoleId
-        ) {
+        if (args.body.roleId !== undefined && args.body.roleId !== currentRoleId) {
           if (currentRoleId) {
             await tx.personRole.updateMany({
               where: {
@@ -584,7 +496,6 @@ export class PersonsService {
               },
               data: { validTo: now },
             });
-            // SBA α-8 wave 3 — параллельно архивируем активный Appointment.
             await tx.appointment.updateMany({
               where: {
                 tenantId: args.tenantId,
@@ -621,16 +532,12 @@ export class PersonsService {
                 validTo: null,
               },
             });
-            // SBA α-8 wave 3 — параллельно создаём новый Appointment.
             await tx.appointment.create({
               data: {
                 tenantId: args.tenantId,
                 personId: args.id,
                 roleId: args.body.roleId,
-                departmentId:
-                  args.body.primaryDepartmentId ??
-                  existing.primaryDepartmentId ??
-                  null,
+                departmentId: args.body.primaryDepartmentId ?? existing.primaryDepartmentId ?? null,
                 loadPercent: 100,
                 status: 'active',
                 validFrom: now,
@@ -692,7 +599,6 @@ export class PersonsService {
         where: { id: args.id },
         data: { deletedAt: now },
       });
-      // Закрываем все активные PersonRole.
       await tx.personRole.updateMany({
         where: {
           tenantId: args.tenantId,
@@ -701,7 +607,6 @@ export class PersonsService {
         },
         data: { validTo: now },
       });
-      // SBA α-8 wave 3 — параллельно архивируем все активные Appointment.
       await tx.appointment.updateMany({
         where: {
           tenantId: args.tenantId,
@@ -710,7 +615,6 @@ export class PersonsService {
         },
         data: { validTo: now, status: 'former' },
       });
-      // Закрываем все EntityLink с этим Person.
       await tx.entityLink.updateMany({
         where: {
           tenantId: args.tenantId,
@@ -737,21 +641,6 @@ export class PersonsService {
     return { id: args.id, deletedAt: now.toISOString() };
   }
 
-  /**
-   * Calendar MVP (2026-05-25) Фаза P4 — быстрое создание внешнего контакта
-   * прямо из EventForm.ParticipantPicker. Минимально необходимый набор полей,
-   * без roleId/departmentId. По умолчанию `relationship='external'`.
-   *
-   * Дубль-защита:
-   *   - если задан email — ищем активный (deletedAt=NULL) Person в той же Org
-   *     с этим email и возвращаем его;
-   *   - если email пуст — ищем по точному совпадению name (case-insensitive)
-   *     среди контактов с пустым email; иначе создаём нового.
-   *
-   * `email` в БД — non-null (см. schema.prisma Person.email). Если запросчик
-   * не задал email, сохраняем пустую строку — это согласовано с поведением
-   * legacy-Person'ов до Фазы 0a.
-   */
   async quickCreate(args: {
     tenantId: string;
     userId: string;
@@ -760,7 +649,6 @@ export class PersonsService {
     const trimmedName = args.body.name.trim();
     const normalizedEmail = args.body.email?.trim().toLowerCase() ?? null;
 
-    // Dedup: предпочитаем существующий Person, если он уже есть в Org.
     if (normalizedEmail) {
       const existing = await this.prisma.person.findFirst({
         where: {
@@ -778,7 +666,6 @@ export class PersonsService {
         };
       }
     } else {
-      // Поиск по точному совпадению name среди контактов без email.
       const existingByName = await this.prisma.person.findFirst({
         where: {
           tenantId: args.tenantId,
@@ -826,7 +713,6 @@ export class PersonsService {
         email: created.email ? created.email : null,
       };
     } catch (err) {
-      // Параллельный конкурентный insert по тому же email — повторим dedup.
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002' &&
@@ -852,19 +738,6 @@ export class PersonsService {
     }
   }
 
-  /**
-   * Find-or-create внешнего контакта по (tenantId, name, company) — для
-   * подтверждения разметки спикеров загруженной встречи (ТЗ-5 Ф4).
-   *
-   * Дубль-защита: сначала ищем активного (deletedAt=NULL) Person в той же Org
-   * с совпадающим `name` (case-insensitive) И `company` (case-insensitive;
-   * NULL/'' трактуем эквивалентно). Если найден — возвращаем его id (при
-   * необходимости дозаполняем пустые company/jobTitle, не перетирая
-   * заполненные). Иначе создаём `Person(relationship='external')` с
-   * company/jobTitle.
-   *
-   * @param tx — опциональный транзакционный клиент.
-   */
   async findOrCreateExternal(
     args: {
       tenantId: string;
@@ -879,7 +752,6 @@ export class PersonsService {
     const company = args.company?.trim() || null;
     const jobTitle = args.jobTitle?.trim() || null;
 
-    // Поиск по (tenant, name, company). company NULL/'' трактуем эквивалентно.
     const candidates = await db.person.findMany({
       where: {
         tenantId: args.tenantId,
@@ -891,7 +763,6 @@ export class PersonsService {
     const norm = (v: string | null): string => (v ?? '').trim().toLowerCase();
     const match = candidates.find((c) => norm(c.company) === norm(company));
     if (match) {
-      // Дозаполняем пустые поля, не перетирая заполненные.
       const data: Prisma.PersonUpdateInput = {};
       if (company && !match.company) data.company = company;
       if (jobTitle && !match.jobTitle) data.jobTitle = jobTitle;
@@ -916,12 +787,7 @@ export class PersonsService {
     return { id: created.id };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },
@@ -937,10 +803,7 @@ export class PersonsService {
     }
   }
 
-  private async assertRoleExists(
-    tenantId: string,
-    roleId: string,
-  ): Promise<void> {
+  private async assertRoleExists(tenantId: string, roleId: string): Promise<void> {
     const role = await this.prisma.role.findUnique({
       where: { id: roleId },
       select: { tenantId: true, deletedAt: true },
@@ -956,11 +819,6 @@ export class PersonsService {
     }
   }
 
-  /**
-   * Создаёт активную EntityLink или реактивирует ранее soft-deleted строку
-   * с тем же composite-ключом — иначе сработала бы уникальность @@unique
-   * (fromEntityId, fromType, toEntityId, toType, relationType).
-   */
   private async upsertActiveLink(
     tx: Prisma.TransactionClient,
     args: {
@@ -1019,10 +877,7 @@ export class PersonsService {
   }
 
   private handleUniqueViolation(err: unknown, email: string | undefined): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {
@@ -1041,7 +896,6 @@ export class PersonsService {
     primaryDepartmentId: string | null;
     primaryDepartment: { id: string; name: string } | null;
     personRoles: { roleId: string; role: { id: string; name: string } }[];
-    /** SBA α-8 wave 3 — параллельный источник; используется при useAppointment. */
     appointments?: { roleId: string; role: { id: string; name: string } }[];
     invitations: { status: 'pending' | 'accepted' | 'revoked' | 'expired' }[];
     createdAt: Date;

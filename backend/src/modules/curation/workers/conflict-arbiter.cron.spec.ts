@@ -12,12 +12,6 @@ import type { ConflictService } from '../services/conflict.service';
 
 import { ConflictArbiterCron } from './conflict-arbiter.cron';
 
-/**
- * Autonomy W1 «LLM-арбитр конфликтов» (2026-06-12) — юнит-тесты
- * ConflictArbiterCron: авто-резолв при уверенном консенсусе дебата,
- * все «стоп-условия» (split / fallback / evolving / низкая confidence /
- * kill-switch) и устойчивость sweep'а к ошибке одного конфликта.
- */
 describe('ConflictArbiterCron (Autonomy W1)', () => {
   let prisma: PrismaService;
   let conflicts: ConflictService;
@@ -68,7 +62,6 @@ describe('ConflictArbiterCron (Autonomy W1)', () => {
     };
   }
 
-  /** Уверенный majority accept_new (2×0.8 за, 1 против) — авто-резолвится. */
   function verdict(over: Partial<DebateVerdict> = {}): DebateVerdict {
     return {
       decision: 'accept_new',
@@ -120,9 +113,7 @@ describe('ConflictArbiterCron (Autonomy W1)', () => {
   beforeEach(() => {
     conflictFindManyMock = vi.fn().mockResolvedValue([conflictItem()]);
     orgFindUniqueMock = vi.fn().mockResolvedValue({ ownerId: 'owner-1' });
-    cardVersionFindFirstMock = vi
-      .fn()
-      .mockResolvedValue({ payload: { title: 'версия' } });
+    cardVersionFindFirstMock = vi.fn().mockResolvedValue({ payload: { title: 'версия' } });
     resolveMock = vi.fn().mockResolvedValue({ id: 'c-1', status: 'resolved' });
     sendNotificationMock = vi.fn().mockResolvedValue({ id: 'n-1' });
     incConflictArbiterMock = vi.fn();
@@ -184,9 +175,7 @@ describe('ConflictArbiterCron (Autonomy W1)', () => {
   });
 
   it('split → resolve НЕ вызван, конфликт остаётся open', async () => {
-    judgeMock.mockResolvedValue(
-      verdict({ decision: 'split_uncertain', consensusType: 'split' }),
-    );
+    judgeMock.mockResolvedValue(verdict({ decision: 'split_uncertain', consensusType: 'split' }));
 
     const res = await cron.runForOrg('t-1');
 
@@ -314,18 +303,14 @@ describe('ConflictArbiterCron (Autonomy W1)', () => {
       conflictItem({ id: 'c-1' }),
       conflictItem({ id: 'c-2' }),
     ]);
-    judgeMock
-      .mockRejectedValueOnce(new Error('llm boom'))
-      .mockResolvedValueOnce(verdict());
+    judgeMock.mockRejectedValueOnce(new Error('llm boom')).mockResolvedValueOnce(verdict());
 
     const res = await cron.runForOrg('t-1');
 
     expect(res.errors).toBe(1);
     expect(res.autoResolved).toBe(1);
     expect(resolveMock).toHaveBeenCalledTimes(1);
-    expect(resolveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ conflictId: 'c-2' }),
-    );
+    expect(resolveMock).toHaveBeenCalledWith(expect.objectContaining({ conflictId: 'c-2' }));
     expect(incConflictArbiterMock).toHaveBeenCalledWith({
       verdict: 'unknown',
       outcome: 'error',
@@ -345,17 +330,13 @@ describe('ConflictArbiterCron (Autonomy W1)', () => {
   });
 
   it('runForAllOrgs: ошибка одного Org не валит проход', async () => {
-    // 1-й вызов findMany — distinct по тенантам; затем батч только для t-2
-    // (t-1 падает на org.findUnique до батч-запроса).
     conflictFindManyMock
       .mockResolvedValueOnce([{ tenantId: 't-1' }, { tenantId: 't-2' }])
       .mockResolvedValueOnce([conflictItem({ id: 'c-2', tenantId: 't-2' })]);
-    orgFindUniqueMock.mockImplementation(
-      async (args: { where: { id: string } }) => {
-        if (args.where.id === 't-1') throw new Error('db boom');
-        return { ownerId: 'owner-2' };
-      },
-    );
+    orgFindUniqueMock.mockImplementation(async (args: { where: { id: string } }) => {
+      if (args.where.id === 't-1') throw new Error('db boom');
+      return { ownerId: 'owner-2' };
+    });
 
     const res = await cron.runForAllOrgs();
 

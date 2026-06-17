@@ -2,15 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { BlockAccessDeriverService } from './block-access-deriver.service';
 
-/**
- * Ф3 (knowledge-access-groups-and-provenance, 2026-06-06) — юнит-тесты
- * детерминированного вывода групп доступа блока (`IdeaBlockAccess`).
- *
- * Prisma полностью замокан. Проверяем итоговый аргумент
- * `prisma.ideaBlockAccess.createMany` (via='department'|'closed', skipDuplicates)
- * либо его отсутствие (блок без скоупа → открыт).
- */
-
 interface PrismaStub {
   ideaBlockAxisLabel: { findMany: ReturnType<typeof vi.fn> };
   functionalDomain: { findMany: ReturnType<typeof vi.fn> };
@@ -53,9 +44,7 @@ function buildService(prisma: PrismaStub): BlockAccessDeriverService {
 describe('BlockAccessDeriverService.deriveForBlock', () => {
   it('meeting отдела «Логистика»: участник → department-группа, via=department', async () => {
     const prisma = buildPrisma();
-    // Участник u1 → Person с primaryDepartmentId=dept-log.
     prisma.person.findMany.mockResolvedValueOnce([{ primaryDepartmentId: 'dept-log' }]);
-    // ensureGroup(department, dept-log) — нет существующей → create вернёт id.
     prisma.knowledgeGroup.create.mockResolvedValueOnce({ id: 'g-log' });
 
     const service = buildService(prisma);
@@ -104,14 +93,12 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
 
   it('meeting type=interview, defaultClosedGroupKind=personal → personal-группа субъекта, via=closed', async () => {
     const prisma = buildPrisma();
-    // closedGroupKind null в payload → дефолт по типу: interview→personal.
     prisma.meetingTypeConfig.findUnique.mockResolvedValueOnce({
       defaultClosedGroupKind: 'personal',
     });
-    // subject-entity → Person.id для personal-группы.
     prisma.ideaBlockEntity.findFirst.mockResolvedValue({ entityId: 'ent-1' });
-    prisma.person.findFirst.mockResolvedValueOnce(null); // resolveSubjectDepartment (нет отдела)
-    prisma.person.findFirst.mockResolvedValueOnce({ id: 'person-1' }); // resolveSubjectPersonId
+    prisma.person.findFirst.mockResolvedValueOnce(null);
+    prisma.person.findFirst.mockResolvedValueOnce({ id: 'person-1' });
     prisma.knowledgeGroup.create.mockResolvedValueOnce({ id: 'g-personal' });
 
     const service = buildService(prisma);
@@ -123,7 +110,6 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
       payload: { type: 'interview' },
     });
 
-    // Персональная группа создана с personId и членами.
     expect(prisma.knowledgeGroup.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ kind: 'personal', refId: 'person-1', isClosed: true }),
@@ -166,7 +152,6 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
     prisma.meetingTypeConfig.findUnique.mockResolvedValueOnce({
       defaultClosedGroupKind: 'personal',
     });
-    // subject не резолвится: resolveSubjectDepartment → null, resolveSubjectPersonId → null.
     prisma.ideaBlockEntity.findFirst.mockResolvedValue(null);
     prisma.knowledgeGroup.create.mockResolvedValueOnce({ id: 'g-leadership' });
 
@@ -179,7 +164,6 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
       payload: { type: 'interview' },
     });
 
-    // Fallback: создаётся leadership-группа (НЕ открыто).
     expect(prisma.knowledgeGroup.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ kind: 'leadership', isClosed: true }),
@@ -209,7 +193,6 @@ describe('BlockAccessDeriverService.deriveForBlock', () => {
       payload: { participants: [{ userId: 'ux' }], closedGroupKind: 'council' },
     });
 
-    // closedGroupKind в payload игнорируется для non-meeting источников.
     expect(prisma.ideaBlockAccess.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.ideaBlockAccess.createMany).toHaveBeenCalledWith(
       expect.objectContaining({

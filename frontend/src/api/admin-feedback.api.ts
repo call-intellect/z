@@ -1,45 +1,23 @@
-/**
- * Admin Feedback API — клиент админ-стороны канала обратной связи.
- *
- * Контракт — `backend/src/modules/feedback/controllers/feedback-admin.controller.ts`.
- * Защита backend: CookieAuthGuard + SuperAdminGuard.
- *
- * Эндпоинты:
- *   - GET    /api/v1/admin/feedback/topics                              — список блоков
- *   - GET    /api/v1/admin/feedback/topics/:id                          — детали блока
- *   - GET    /api/v1/admin/feedback/topics/:id/items                    — items блока
- *   - GET    /api/v1/admin/feedback/topics/:id/items/:itemId/message    — исходный текст
- *   - PATCH  /api/v1/admin/feedback/topics/:id                          — rename (Phase 8)
- *   - POST   /api/v1/admin/feedback/topics/:sourceId/merge              — Phase 8
- *   - POST   /api/v1/admin/feedback/topics/:id/archive                  — Phase 8
- *   - POST   /api/v1/admin/feedback/topics/:id/unarchive                — Phase 8
- *   - POST   /api/v1/admin/feedback/digest/run                          — STUB (Phase 5)
- *   - GET    /api/v1/admin/feedback/messages/failed                     — failedRuns >= 3
- *
- * Фаза 7 ТЗ user-feedback-with-ai-clustering: чистый API-слой,
- * мапперы — в `src/domain/admin-feedback.ts`.
- */
+import { z } from "zod";
 
-import { z } from 'zod';
+import { apiClient } from "./api-client";
+import { buildQuery } from "./admin-helpers";
 
-import { apiClient } from './api-client';
-import { buildQuery } from './admin-helpers';
-
-/* ─────────────────────────── enums ─────────────────────────── */
-
-export const FEEDBACK_TOPIC_STATUSES = ['ACTIVE', 'ARCHIVED', 'MERGED'] as const;
+export const FEEDBACK_TOPIC_STATUSES = [
+  "ACTIVE",
+  "ARCHIVED",
+  "MERGED",
+] as const;
 export const FeedbackTopicStatusSchema = z.enum(FEEDBACK_TOPIC_STATUSES);
 export type FeedbackTopicStatusApi = z.infer<typeof FeedbackTopicStatusSchema>;
 
-export const FEEDBACK_WINDOWS = ['30', '90', 'all'] as const;
+export const FEEDBACK_WINDOWS = ["30", "90", "all"] as const;
 export const FeedbackTopicWindowSchema = z.enum(FEEDBACK_WINDOWS);
 export type FeedbackTopicWindowApi = z.infer<typeof FeedbackTopicWindowSchema>;
 
-export const FEEDBACK_SORTS = ['percent', 'users', 'recent'] as const;
+export const FEEDBACK_SORTS = ["percent", "users", "recent"] as const;
 export const FeedbackTopicSortSchema = z.enum(FEEDBACK_SORTS);
 export type FeedbackTopicSortApi = z.infer<typeof FeedbackTopicSortSchema>;
-
-/* ─────────────────────────── topics ─────────────────────────── */
 
 const FeedbackTopicSummarySchema = z.object({
   id: z.string(),
@@ -52,7 +30,9 @@ const FeedbackTopicSummarySchema = z.object({
   lastItemAt: z.string().nullable(),
   createdAt: z.string(),
 });
-export type FeedbackTopicSummaryApi = z.infer<typeof FeedbackTopicSummarySchema>;
+export type FeedbackTopicSummaryApi = z.infer<
+  typeof FeedbackTopicSummarySchema
+>;
 
 export const FeedbackTopicsListResponseSchema = z.object({
   items: z.array(FeedbackTopicSummarySchema),
@@ -62,7 +42,9 @@ export const FeedbackTopicsListResponseSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
-export type FeedbackTopicsListApi = z.infer<typeof FeedbackTopicsListResponseSchema>;
+export type FeedbackTopicsListApi = z.infer<
+  typeof FeedbackTopicsListResponseSchema
+>;
 
 export const FeedbackTopicDetailSchema = FeedbackTopicSummarySchema.extend({
   archivedAt: z.string().nullable(),
@@ -70,8 +52,6 @@ export const FeedbackTopicDetailSchema = FeedbackTopicSummarySchema.extend({
   mergedIntoId: z.string().nullable(),
 });
 export type FeedbackTopicDetailApi = z.infer<typeof FeedbackTopicDetailSchema>;
-
-/* ─────────────────────────── items ─────────────────────────── */
 
 const FeedbackItemAuthorSchema = z.object({
   id: z.string(),
@@ -104,7 +84,9 @@ export const FeedbackItemsListResponseSchema = z.object({
   page: z.number().int().positive(),
   pageSize: z.number().int().positive(),
 });
-export type FeedbackItemsListApi = z.infer<typeof FeedbackItemsListResponseSchema>;
+export type FeedbackItemsListApi = z.infer<
+  typeof FeedbackItemsListResponseSchema
+>;
 
 export const FeedbackItemMessageResponseSchema = z.object({
   id: z.string(),
@@ -119,8 +101,6 @@ export type FeedbackItemMessageApi = z.infer<
   typeof FeedbackItemMessageResponseSchema
 >;
 
-/* ─────────────────────────── failed messages ─────────────────────────── */
-
 const FeedbackFailedMessageSchema = z.object({
   id: z.string(),
   userId: z.string(),
@@ -129,7 +109,9 @@ const FeedbackFailedMessageSchema = z.object({
   createdAt: z.string(),
   failedRuns: z.number().int().nonnegative(),
 });
-export type FeedbackFailedMessageApi = z.infer<typeof FeedbackFailedMessageSchema>;
+export type FeedbackFailedMessageApi = z.infer<
+  typeof FeedbackFailedMessageSchema
+>;
 
 export const FeedbackFailedMessagesListResponseSchema = z.object({
   items: z.array(FeedbackFailedMessageSchema),
@@ -141,15 +123,11 @@ export type FeedbackFailedMessagesListApi = z.infer<
   typeof FeedbackFailedMessagesListResponseSchema
 >;
 
-/* ─────────────────────────── digest ─────────────────────────── */
-
 export const DigestRunResponseSchema = z.object({
   enqueued: z.boolean().optional(),
   jobId: z.string(),
 });
 export type DigestRunResponseApi = z.infer<typeof DigestRunResponseSchema>;
-
-/* ─────────────────────────── mutations ─────────────────────────── */
 
 export interface RenameTopicBody {
   title: string;
@@ -164,8 +142,6 @@ export interface MergeTopicsResultApi {
   movedItems: number;
   mergedIntoId: string;
 }
-
-/* ─────────────────────────── filter params ─────────────────────────── */
 
 export interface ListTopicsParams {
   window?: FeedbackTopicWindowApi;
@@ -186,10 +162,10 @@ export interface ListItemsParams {
   groupByUser?: boolean;
 }
 
-/* ─────────────────────────── клиент ─────────────────────────── */
-
 export const adminFeedbackApi = {
-  async listTopics(params: ListTopicsParams = {}): Promise<FeedbackTopicsListApi> {
+  async listTopics(
+    params: ListTopicsParams = {},
+  ): Promise<FeedbackTopicsListApi> {
     const qs = buildQuery({
       window: params.window,
       q: params.q,
@@ -197,13 +173,15 @@ export const adminFeedbackApi = {
         params.includeArchived === undefined
           ? undefined
           : params.includeArchived
-            ? 'true'
-            : 'false',
+            ? "true"
+            : "false",
       sort: params.sort,
       page: params.page,
       pageSize: params.pageSize,
     });
-    const raw = await apiClient.get<unknown>(`/api/v1/admin/feedback/topics${qs}`);
+    const raw = await apiClient.get<unknown>(
+      `/api/v1/admin/feedback/topics${qs}`,
+    );
     return FeedbackTopicsListResponseSchema.parse(raw);
   },
 
@@ -229,8 +207,8 @@ export const adminFeedbackApi = {
         params.groupByUser === undefined
           ? undefined
           : params.groupByUser
-            ? 'true'
-            : 'false',
+            ? "true"
+            : "false",
     });
     const raw = await apiClient.get<unknown>(
       `/api/v1/admin/feedback/topics/${encodeURIComponent(topicId)}/items${qs}`,
@@ -251,7 +229,9 @@ export const adminFeedbackApi = {
   },
 
   async runDigest(): Promise<DigestRunResponseApi> {
-    const raw = await apiClient.post<unknown>('/api/v1/admin/feedback/digest/run');
+    const raw = await apiClient.post<unknown>(
+      "/api/v1/admin/feedback/digest/run",
+    );
     return DigestRunResponseSchema.parse(raw);
   },
 
@@ -267,8 +247,6 @@ export const adminFeedbackApi = {
     );
     return FeedbackFailedMessagesListResponseSchema.parse(raw);
   },
-
-  // Phase 8 mutations — оставлены готовыми клиентами, UI пока их не вызывает.
 
   async renameTopic(
     id: string,

@@ -1,21 +1,16 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
+import type { ReactNode } from "react";
 import {
   PolarAngleAxis,
   RadialBar,
   RadialBarChart,
   ResponsiveContainer,
-} from 'recharts';
+} from "recharts";
 
-import { CardTitle } from './CardTitle';
-import { CHART, glass } from './tokens';
+import { CardTitle } from "./CardTitle";
+import { CHART, glass } from "./tokens";
 
-/**
- * Карточка-«спидометр»: полукруглый RadialBar с градиентом, крупное значение в
- * центре и опциональный 3-колоночный футер с метриками.
- * Data-driven версия витринного `GaugeCard`.
- */
 export function GaugeCard({
   title,
   icon,
@@ -31,7 +26,6 @@ export function GaugeCard({
   max?: number;
   footer?: { t: string; v: string; c: string }[];
 }) {
-  // RadialBar домен фиксируем 0..100, поэтому нормируем значение к процентам.
   const pct = max === 0 ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
   return (
     <div style={glass()} className="flex flex-col p-6">
@@ -44,7 +38,7 @@ export function GaugeCard({
             <RadialBarChart
               innerRadius="68%"
               outerRadius="100%"
-              data={[{ name: 'h', value: pct }]}
+              data={[{ name: "h", value: pct }]}
               startAngle={210}
               endAngle={-30}
             >
@@ -57,7 +51,7 @@ export function GaugeCard({
               </defs>
               <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
               <RadialBar
-                background={{ fill: 'var(--surface-inset)' }}
+                background={{ fill: "var(--surface-inset)" }}
                 dataKey="value"
                 cornerRadius={20}
                 fill="url(#gauge)"
@@ -66,7 +60,9 @@ export function GaugeCard({
           </ResponsiveContainer>
         </div>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[40px] font-semibold leading-none tracking-tight">{value}</span>
+          <span className="text-[40px] font-semibold leading-none tracking-tight">
+            {value}
+          </span>
           <span className="mt-1 text-xs" style={{ color: CHART.faint }}>
             из {max}
           </span>
@@ -75,7 +71,11 @@ export function GaugeCard({
       {footer && footer.length > 0 && (
         <div className="grid grid-cols-3 gap-2 text-center">
           {footer.map((s) => (
-            <div key={s.t} className="rounded-xl py-2" style={{ background: 'var(--surface-inset)' }}>
+            <div
+              key={s.t}
+              className="rounded-xl py-2"
+              style={{ background: "var(--surface-inset)" }}
+            >
               <div className="text-sm font-semibold" style={{ color: s.c }}>
                 {s.v}
               </div>

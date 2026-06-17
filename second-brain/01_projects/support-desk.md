@@ -4,14 +4,14 @@ status: living
 covers: вендорская служба поддержки на трекере, закрытый контур памяти (R-INV-1), петля обучения черновик→правка, клон техподдержки, ночной куратор контура
 date: 2026-06-09
 relates_to:
-  - plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md
+  - plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md
   - plans/analysis/2026-06-09-support-desk-clone-and-closed-contour.md
   - second-brain/02_architecture/knowledge-core.md
 ---
 
 # Служба поддержки с AI-клоном и закрытым контуром памяти
 
-> **Источник правды по контракту:** [`plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/tz/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф6; реализованы Ф1–Ф4) + анализ [`plans/analysis/2026-06-09-support-desk-clone-and-closed-contour.md`](../../plans/analysis/2026-06-09-support-desk-clone-and-closed-contour.md). Здесь — что работает по факту и почему так.
+> **Источник правды по контракту:** [`plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md`](../../plans/archive/2026-06-09-support-desk-clone-and-closed-contour-tz.md) (Ф1–Ф6; реализованы Ф1–Ф4) + анализ [`plans/analysis/2026-06-09-support-desk-clone-and-closed-contour.md`](../../plans/analysis/2026-06-09-support-desk-clone-and-closed-contour.md). Здесь — что работает по факту и почему так.
 > Затронутые архитектурные заметки: [[../02_architecture/module-map]] §«support», [[../02_architecture/data-model]] §«Служба поддержки», [[ai-jobs]], [[workers-queues]], [[api-layer]], [[frontend-pages]].
 
 ## Что это

@@ -1,23 +1,9 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { ProactiveNotification } from '@prisma/client';
 
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * SBA δ-2 — REST-сервис под `/api/v1/me/proactive-notifications`.
- *
- *   - listMine — возвращает ProactiveNotification, адресованные текущему user'у.
- *     По дефолту скрывает dismissed; query `includeDismissed=true` показывает все.
- *   - dismiss  — пользователь помечает уведомление как «не показывать».
- *     Идемпотентно (повторный dismiss — no-op).
- */
 @Injectable()
 export class ProactiveNotificationsService {
   private readonly logger = new Logger(ProactiveNotificationsService.name);
@@ -36,11 +22,6 @@ export class ProactiveNotificationsService {
   }): Promise<ProactiveNotification[]> {
     const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
 
-    // ТЗ 2026-06-01-demo-shared-org-model §4.13 (defence-in-depth): в эталонной
-    // shared demo-Org реальный watcher отключён (`ProactiveWatcherService` пропускает
-    // эталон), но если ProactiveNotification попадёт сюда другим путём —
-    // не показываем её demo_observer-наблюдателям. Эти уведомления
-    // адресованы реальным владельцам и не должны утекать к гостям-наблюдателям.
     const membership = await this.prisma.membership.findFirst({
       where: { userId: args.userId, orgId: args.tenantId },
       select: { role: true },
@@ -53,9 +34,7 @@ export class ProactiveNotificationsService {
       where: {
         tenantId: args.tenantId,
         userId: args.userId,
-        ...(args.includeDismissed === true
-          ? {}
-          : { dismissedAt: null }),
+        ...(args.includeDismissed === true ? {} : { dismissedAt: null }),
       },
       orderBy: { emittedAt: 'desc' },
       take: limit,

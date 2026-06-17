@@ -1,17 +1,3 @@
-/**
- * Unit-тесты `HangingDecisionsService` (Pulse Wave 1 §1.2).
- *
- * Покрывают:
- *   - пустой tenant → count=0 + sparkline12w из 12 нулей;
- *   - hanging decisions попадают в count;
- *   - status='implemented' / 'cancelled' / 'rejected' → не считаются;
- *   - raisedCount=1 при default minRaisedCount=2 → не считается;
- *   - createdAt 3 дня назад (свежее min=7) → не считается;
- *   - кастомные параметры minAgeDays/minRaisedCount передаются в where;
- *   - sparkline bucket-логика (1 событие в неделю-1 → buckets[10]=1);
- *   - кэш-hit: Prisma не дёргается повторно;
- *   - ошибка Redis.get → fallback на Prisma.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../../common/prisma/prisma.service';
@@ -26,13 +12,15 @@ interface MockEvent {
   lastRaisedAt: Date | null;
 }
 
-function buildService(opts: {
-  count?: number;
-  events?: MockEvent[];
-  cacheValue?: string | null;
-  cacheGetError?: Error;
-  cacheSetError?: Error;
-} = {}): {
+function buildService(
+  opts: {
+    count?: number;
+    events?: MockEvent[];
+    cacheValue?: string | null;
+    cacheGetError?: Error;
+    cacheSetError?: Error;
+  } = {},
+): {
   service: HangingDecisionsService;
   prisma: {
     decision: {
@@ -61,10 +49,7 @@ function buildService(opts: {
     client: { get: redisGet, set: redisSet },
   } as unknown as RedisService;
 
-  const service = new HangingDecisionsService(
-    prisma as unknown as PrismaService,
-    redis,
-  );
+  const service = new HangingDecisionsService(prisma as unknown as PrismaService, redis);
 
   return { service, prisma, redisGet, redisSet };
 }
@@ -134,8 +119,6 @@ describe('HangingDecisionsService', () => {
       expect(whereCount.status).toEqual({
         in: ['proposed', 'approved', 'active'],
       });
-      // implemented / cancelled / rejected / rolled_back / superseded
-      // НЕ должны быть в списке.
       expect(whereCount.status.in).not.toContain('implemented');
       expect(whereCount.status.in).not.toContain('cancelled');
       expect(whereCount.status.in).not.toContain('rejected');
@@ -151,7 +134,6 @@ describe('HangingDecisionsService', () => {
       });
 
       const whereCount = prisma.decision.count.mock.calls[0]![0].where;
-      // raisedCount=1 (default при createNewDecision) НЕ удовлетворяет gte:2.
       expect(whereCount.raisedCount).toEqual({ gte: 2 });
     });
 
@@ -209,9 +191,7 @@ describe('HangingDecisionsService', () => {
 
   describe('sparkline12w bucket-логика', () => {
     it('1 событие при -5d → buckets[11]=1 (последняя завершившаяся неделя)', async () => {
-      const events: MockEvent[] = [
-        { lastRaisedAt: new Date(NOW.getTime() - 5 * DAY_MS) },
-      ];
+      const events: MockEvent[] = [{ lastRaisedAt: new Date(NOW.getTime() - 5 * DAY_MS) }];
       const { service } = buildService({ count: 1, events });
       const dto = await service.compute({
         tenantId: 't-1',
@@ -221,17 +201,13 @@ describe('HangingDecisionsService', () => {
       });
 
       expect(dto.sparkline12w).toHaveLength(12);
-      // sparklineStart = now - 84d. Событие при now - 5d → offset = 79d.
-      // idx = floor(79 / 7) = 11.
       expect(dto.sparkline12w[11]).toBe(1);
       const rest = dto.sparkline12w.filter((_, i) => i !== 11);
       expect(rest.every((v) => v === 0)).toBe(true);
     });
 
     it('1 событие при -3w (-21d) → buckets[8]=1', async () => {
-      const events: MockEvent[] = [
-        { lastRaisedAt: new Date(NOW.getTime() - 21 * DAY_MS) },
-      ];
+      const events: MockEvent[] = [{ lastRaisedAt: new Date(NOW.getTime() - 21 * DAY_MS) }];
       const { service } = buildService({ count: 1, events });
       const dto = await service.compute({
         tenantId: 't-1',
@@ -240,10 +216,6 @@ describe('HangingDecisionsService', () => {
         now: NOW,
       });
 
-      // sparklineStart = now - 84d. Событие при now - 21d → offset = 63d.
-      // idx = floor(63 / 7) = 9. Проверим точно — это будет buckets[9].
-      // (Замечание ТЗ говорит про buckets[8], но математически offset=63d/7=9.0
-      // → idx=9.)
       expect(dto.sparkline12w[9]).toBe(1);
       const rest = dto.sparkline12w.filter((_, i) => i !== 9);
       expect(rest.every((v) => v === 0)).toBe(true);
@@ -279,15 +251,12 @@ describe('HangingDecisionsService', () => {
         now: NOW,
       });
 
-      // Только одно валидное событие → суммарный счёт по корзинам = 1.
       const total = dto.sparkline12w.reduce((a, b) => a + b, 0);
       expect(total).toBe(1);
     });
 
     it('событие старше 12 недель игнорируется', async () => {
-      const events: MockEvent[] = [
-        { lastRaisedAt: new Date(NOW.getTime() - 100 * DAY_MS) },
-      ];
+      const events: MockEvent[] = [{ lastRaisedAt: new Date(NOW.getTime() - 100 * DAY_MS) }];
       const { service } = buildService({ count: 1, events });
       const dto = await service.compute({
         tenantId: 't-1',
@@ -316,7 +285,6 @@ describe('HangingDecisionsService', () => {
       expect(prisma.decision.count).toHaveBeenCalledTimes(1);
       expect(prisma.decision.findMany).toHaveBeenCalledTimes(1);
 
-      // Эмулируем кэш-hit: redisGet вернёт сериализованный first.
       redisGet.mockResolvedValueOnce(JSON.stringify(first));
 
       const second = await service.compute({
@@ -326,7 +294,6 @@ describe('HangingDecisionsService', () => {
         now: NOW,
       });
 
-      // Prisma больше не дёргался.
       expect(prisma.decision.count).toHaveBeenCalledTimes(1);
       expect(prisma.decision.findMany).toHaveBeenCalledTimes(1);
       expect(second).toEqual(first);
@@ -375,28 +342,22 @@ describe('HangingDecisionsService', () => {
         now: NOW,
       });
 
-      expect(redisGet).toHaveBeenCalledWith(
-        'hanging_decisions:t-42:14:5',
-      );
+      expect(redisGet).toHaveBeenCalledWith('hanging_decisions:t-42:14:5');
     });
   });
 
   describe('listHangingWithAuthors (ТЗ coo-orphan-agents Ф2)', () => {
     it('пробрасывает результат findMany и фильтрует по where (status/raisedCount/createdAt)', async () => {
       const { service, prisma } = buildService();
-      prisma.decision.findMany.mockResolvedValueOnce([
-        { id: 'd-1', decidedByPersonIds: ['p-1'] },
-      ]);
+      prisma.decision.findMany.mockResolvedValueOnce([{ id: 'd-1', decidedByPersonIds: ['p-1'] }]);
 
       const res = await service.listHangingWithAuthors({
         tenantId: 't-1',
         now: NOW,
       });
 
-      // (а) результат проброшен как есть.
       expect(res).toEqual([{ id: 'd-1', decidedByPersonIds: ['p-1'] }]);
 
-      // (б) where содержит критерий «висящего».
       const expectedThreshold = new Date(NOW.getTime() - 7 * DAY_MS);
       expect(prisma.decision.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

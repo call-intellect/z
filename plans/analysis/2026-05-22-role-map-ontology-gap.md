@@ -4,7 +4,7 @@ status: draft
 feature: Онтология «карты должности» — пробелы и предложение
 date: 2026-05-22
 related:
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ — что покрыто и что нет)
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md (зонтичный ТЗ — что покрыто и что нет)
   - second-brain/02_architecture/knowledge-core.md (текущее состояние графа)
   - second-brain/06_marketing/company-ontology.md (13 классов сущностей)
   - plans/analysis/2026-05-21-ontology-process-regulation.md (соседний анализ Process/Regulation)
@@ -178,7 +178,7 @@ related:
 
 ## 2. Что уже покрыто в зонтичном ТЗ
 
-Сверка с [plans/tz/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md) + [second-brain/02_architecture/knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
+Сверка с [plans/archive/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md) + [second-brain/02_architecture/knowledge-core.md](../../second-brain/02_architecture/knowledge-core.md).
 
 | Сущность из схемы | Куда ложится в текущем ТЗ |
 |---|---|
@@ -284,7 +284,7 @@ Decision (β-3) фиксирует **факт принятого решения*
 
 ### 4.3. Риск пересечения с Phase 0 / 0d
 
-Phase 0 (Role + Onboarding) уже в [plans/tz/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md). Phase 0d упомянут как RoleProfileAgent. Если делать новый sub-TZ — он должен **поглотить или расширить** Phase 0, не дублировать.
+Phase 0 (Role + Onboarding) уже в [plans/archive/2026-05-21-phase-0-roles-and-onboarding.md](../tz/2026-05-21-phase-0-roles-and-onboarding.md). Phase 0d упомянут как RoleProfileAgent. Если делать новый sub-TZ — он должен **поглотить или расширить** Phase 0, не дублировать.
 
 ### 4.4. Риск смешения с γ-1 (Skill)
 
@@ -381,7 +381,7 @@ _Заполняется по итогам диалога с пользовате
 ## 9. Следующий шаг
 
 После согласования с пользователем:
-1. Внести правки в зонтичный ТЗ ([plans/tz/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md)) согласно §6 этого анализа.
+1. Внести правки в зонтичный ТЗ ([plans/archive/2026-05-21-second-brain-agents-umbrella.md](../tz/2026-05-21-second-brain-agents-umbrella.md)) согласно §6 этого анализа.
 2. Создать draft sub-TZ `plans/tz/2026-05-22-sba-alpha-8-role-map-foundation.md` по паттерну α-7 Regulations.
 3. Зафиксировать решения по 7 открытым вопросам §7 в начале sub-TZ α-8.
 

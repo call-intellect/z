@@ -1,26 +1,3 @@
-/**
- * FeedbackAdminController — super-admin сторона канала обратной связи.
- *
- * Маршруты (см. ТЗ § Админские эндпоинты):
- *   GET    /api/v1/admin/feedback/topics                              — список блоков
- *   GET    /api/v1/admin/feedback/topics/:id                          — детали блока
- *   GET    /api/v1/admin/feedback/topics/:id/items                    — items блока
- *   GET    /api/v1/admin/feedback/topics/:id/items/:itemId/message    — исходный текст
- *   PATCH  /api/v1/admin/feedback/topics/:id                          — rename
- *   POST   /api/v1/admin/feedback/topics/:sourceId/merge              — merge
- *   POST   /api/v1/admin/feedback/topics/:id/archive
- *   POST   /api/v1/admin/feedback/topics/:id/unarchive
- *   POST   /api/v1/admin/feedback/digest/run                          — STUB (Phase 5)
- *   GET    /api/v1/admin/feedback/messages/failed                     — failedRuns >= 3
- *
- * Все эндпоинты под CookieAuthGuard + SuperAdminGuard.
- *
- * Read-методы делегируют в FeedbackService (тонкий фасад над agg-логикой).
- * Mutations — в FeedbackTopicManagerService (там вся транзакционная логика).
- *
- * Источник: plans/tz/2026-05-25-user-feedback-with-ai-clustering.md.
- */
-
 import {
   Body,
   Controller,
@@ -34,12 +11,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOkResponse,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
@@ -64,14 +36,8 @@ import {
   type FeedbackTopicDetail,
   type FeedbackTopicsListResponse,
 } from '../dto/feedback-topic.dto';
-import {
-  MergeTopicsSchema,
-  type MergeTopicsBody,
-} from '../dto/merge-topics.dto';
-import {
-  RenameTopicSchema,
-  type RenameTopicBody,
-} from '../dto/rename-topic.dto';
+import { MergeTopicsSchema, type MergeTopicsBody } from '../dto/merge-topics.dto';
+import { RenameTopicSchema, type RenameTopicBody } from '../dto/rename-topic.dto';
 import {
   TopicDetailsQuerySchema,
   TopicListFiltersSchema,
@@ -95,12 +61,9 @@ export class FeedbackAdminController {
     private readonly digest: FeedbackDigestService,
   ) {}
 
-  // ──────────────────────── read: topics ────────────────────────
-
   @Get('topics')
   @ApiOperation({
-    summary:
-      'Список смысловых блоков обратной связи с метриками за выбранное окно (30/90/all).',
+    summary: 'Список смысловых блоков обратной связи с метриками за выбранное окно (30/90/all).',
   })
   @ApiOkResponse({ type: FeedbackTopicsListResponseDto })
   async listTopics(
@@ -121,8 +84,6 @@ export class FeedbackAdminController {
     return this.feedback.getTopicDetails(id, query.window);
   }
 
-  // ──────────────────────── read: items ─────────────────────────
-
   @Get('topics/:id/items')
   @ApiOperation({
     summary: 'Items блока (тезисы с автором, Org, датой). Сортировка по дате убыв.',
@@ -138,8 +99,7 @@ export class FeedbackAdminController {
 
   @Get('topics/:id/items/:itemId/message')
   @ApiOperation({
-    summary:
-      'Полный текст исходного сообщения, из которого выделен тезис (для разворота строки).',
+    summary: 'Полный текст исходного сообщения, из которого выделен тезис (для разворота строки).',
   })
   @ApiOkResponse({ type: FeedbackItemMessageResponseDto })
   async getItemMessage(
@@ -148,8 +108,6 @@ export class FeedbackAdminController {
   ): Promise<FeedbackItemMessageResponse> {
     return this.feedback.getMessageById(topicId, itemId);
   }
-
-  // ──────────────────────── mutations: topics ────────────────────
 
   @Patch('topics/:id')
   @ApiOperation({ summary: 'Переименовать блок (title + description).' })
@@ -164,8 +122,7 @@ export class FeedbackAdminController {
   @Post('topics/:sourceId/merge')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary:
-      'Объединить блок с другим: items source переносятся в target, source → MERGED.',
+    summary: 'Объединить блок с другим: items source переносятся в target, source → MERGED.',
   })
   async merge(
     @Param('sourceId') sourceId: string,
@@ -190,8 +147,6 @@ export class FeedbackAdminController {
     return this.topics.unarchive(id);
   }
 
-  // ──────────────────────── digest ──────────────────────────────
-
   @Post('digest/run')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
@@ -204,12 +159,9 @@ export class FeedbackAdminController {
     return { enqueued: true, jobId };
   }
 
-  // ──────────────────────── failed messages ────────────────────
-
   @Get('messages/failed')
   @ApiOperation({
-    summary:
-      'Сообщения, упавшие в обработке (failedRuns >= 3) — для ручного разбора.',
+    summary: 'Сообщения, упавшие в обработке (failedRuns >= 3) — для ручного разбора.',
   })
   @ApiOkResponse({ type: FeedbackFailedMessagesListResponseDto })
   async listFailedMessages(

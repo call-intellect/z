@@ -1,12 +1,6 @@
-import { apiClient } from './api-client';
+import { apiClient } from "./api-client";
 
-/**
- * API DTO для модуля tasks. Контракт — `backend/src/modules/tasks/`.
- *
- * Все даты — ISO-строки UTC (Z).
- */
-
-export type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled';
+export type TaskStatus = "open" | "in_progress" | "done" | "cancelled";
 
 export type TaskApi = {
   id: string;
@@ -23,12 +17,6 @@ export type TaskApi = {
   createdManually: boolean;
   createdAt: string;
   updatedAt: string;
-  /**
-   * ТЗ 2026-05-25 meeting-report-split, Фаза 6 — метка генератора задачи.
-   * `'fast'` = новый `MeetingReportFastWorker` (приоритет в пользовательском UI),
-   * `'v2'` = knowledge-core v2 (fallback),
-   * `null` = legacy `tasks-extract.worker` либо ручная.
-   */
   extractorVersion: string | null;
 };
 
@@ -59,7 +47,7 @@ export type UpdateTaskRequest = {
 export type TaskFiltersRequest = {
   status?: TaskStatus[];
   meetingId?: string;
-  dueBefore?: string; // ISO
+  dueBefore?: string;
   q?: string;
   page?: number;
   limit?: number;
@@ -69,22 +57,22 @@ export type SendTaskRequest = { destinationId: string };
 
 export type BulkTasksRequest = {
   ids: string[];
-  action: 'mark_done' | 'delete';
+  action: "mark_done" | "delete";
 };
 
 function buildTasksQuery(filters?: TaskFiltersRequest): string {
-  if (!filters) return '';
+  if (!filters) return "";
   const params = new URLSearchParams();
-  if (filters.page) params.set('page', String(filters.page));
-  if (filters.limit) params.set('limit', String(filters.limit));
-  if (filters.meetingId) params.set('meetingId', filters.meetingId);
-  if (filters.dueBefore) params.set('dueBefore', filters.dueBefore);
-  if (filters.q) params.set('q', filters.q);
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.limit) params.set("limit", String(filters.limit));
+  if (filters.meetingId) params.set("meetingId", filters.meetingId);
+  if (filters.dueBefore) params.set("dueBefore", filters.dueBefore);
+  if (filters.q) params.set("q", filters.q);
   if (filters.status) {
-    for (const s of filters.status) params.append('status', s);
+    for (const s of filters.status) params.append("status", s);
   }
   const qs = params.toString();
-  return qs ? `?${qs}` : '';
+  return qs ? `?${qs}` : "";
 }
 
 export const tasksApi = {
@@ -94,7 +82,9 @@ export const tasksApi = {
     ),
 
   list: (filters?: TaskFiltersRequest) =>
-    apiClient.get<TasksListApiResponse>(`/api/v1/tasks${buildTasksQuery(filters)}`),
+    apiClient.get<TasksListApiResponse>(
+      `/api/v1/tasks${buildTasksQuery(filters)}`,
+    ),
 
   create: (meetingId: string, body: CreateTaskRequest) =>
     apiClient.post<TaskApi>(
@@ -118,7 +108,7 @@ export const tasksApi = {
     ),
 
   bulk: (body: BulkTasksRequest) =>
-    apiClient.post<{ affected: number; action: BulkTasksRequest['action'] }>(
+    apiClient.post<{ affected: number; action: BulkTasksRequest["action"] }>(
       `/api/v1/tasks/bulk`,
       body,
     ),

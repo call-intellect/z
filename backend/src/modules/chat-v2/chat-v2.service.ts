@@ -19,18 +19,6 @@ import type { ChatV2Stage } from '../knowledge-core/services/chat-v2.service';
 import { ChatV2ConversationsService } from './services/conversations.service';
 import { SynthesisService } from './services/synthesis.service';
 
-/**
- * SBA α-5 — ChatV2OrchestrationService (главный сервис нового модуля).
- *
- * Принимает question + опц. conversationId + mode + scope + scopeRefId,
- * управляет conversation (create если нужно), вызывает SynthesisService,
- * сохраняет user/assistant сообщения, генерирует title после первого
- * ответного раунда.
- *
- * Это новый модуль `chat-v2/`. Legacy `chat/` (модуль) использует ChatV2Service
- * напрямую через flag `CHAT_V2_ENABLED` — не трогается, помечен @deprecated.
- */
-
 export interface AskInput {
   tenantId: string;
   userId: string;
@@ -39,21 +27,8 @@ export interface AskInput {
   mode?: ChatV2Mode;
   scope?: ChatV2Scope;
   scopeRefId?: string | null;
-  /** ISO date — temporal queries. На α-5 → 501 если задан. */
   asOf?: string;
-  /**
-   * Канал, через который пришёл вопрос (для record-keeping в новом
-   * conversation и для outbound reply через ConversationalService).
-   */
   channelKindOrigin?: string | null;
-  /**
-   * §4 Ф1 (2026-06-11) — опциональный колбэк прогресса для SSE-стриминга.
-   * Дефолт undefined = текущее поведение (синхронный `/messages` его не
-   * передаёт). Эмитит 'understanding' в начале ask (до dialog-классификации),
-   * затем пробрасывается через SynthesisService в knowledge-core ChatV2Service,
-   * который эмитит 'searching' и 'writing'. При AnswerCache-HIT (быстрый путь)
-   * стадии searching/writing не сработают — это нормально.
-   */
   onStage?: (stage: ChatV2Stage) => void;
 }
 
@@ -64,17 +39,7 @@ export interface ChatAnswer {
   citations: unknown[];
   uncertaintyNote: string | null;
   mode: ChatV2Mode;
-  /**
-   * SBA α-5 dialog-layer — true, если ответ найден в AnswerCache (без
-   * вызова retrieval+LLM). UI может показать subtle badge «кэш».
-   */
   cacheHit: boolean;
-  /**
-   * M-1 (2026-06-12) — derived класс данных ответа (от SynthesisService /
-   * knowledge-core). Каналы-мосты не льют sensitive/private текстом во
-   * внешний канал. Для cache-hit без сохранённого класса (старые записи) —
-   * консервативно 'sensitive'.
-   */
   dataClass: DataClass;
 }
 
@@ -96,22 +61,16 @@ export class ChatV2OrchestrationService {
   ) {}
 
   async ask(input: AskInput): Promise<ChatAnswer> {
-    // §4 Ф1 (2026-06-11) — стадия «Понимаю вопрос»: эмитим в самом начале,
-    // ДО dialog-классификации. Колбэк опционален и не должен бросать.
     try {
       input.onStage?.('understanding');
-    } catch {
-      /* колбэк прогресса не критичен — не ломаем ask */
-    }
+    } catch {}
 
     const mode: ChatV2Mode = input.mode ?? this.cfg.chatV2.defaultMode;
     const scope: ChatV2Scope = input.scope ?? 'org';
     const scopeRefId = input.scopeRefId ?? null;
 
-    // SBA α-5 dialog-layer — парсим temporal queries.
     const validAtDate = input.asOf ? new Date(input.asOf) : null;
-    const validAt =
-      validAtDate && !Number.isNaN(validAtDate.getTime()) ? validAtDate : null;
+    const validAt = validAtDate && !Number.isNaN(validAtDate.getTime()) ? validAtDate : null;
     if (input.asOf && !validAt) {
       this.logger.warn(
         { asOf: input.asOf },
@@ -120,7 +79,6 @@ export class ChatV2OrchestrationService {
     }
     const validAtIso = validAt ? validAt.toISOString() : null;
 
-    // 1. Получить или создать conversation.
     let conversation: ChatV2Conversation;
     let isFirstUserMessage = false;
     if (input.conversationId) {
@@ -140,9 +98,6 @@ export class ChatV2OrchestrationService {
       isFirstUserMessage = true;
     }
 
-    // SBA α-5 dialog-layer — препроцессор (Contextualizer / Confidence /
-    // Classifier / MultiQuery + AnswerCache lookup). На feature-flag OFF
-    // вернёт no-op результат (см. DialogService.process).
     const dialogResult = await this.dialog.process({
       tenantId: input.tenantId,
       userId: input.userId,
@@ -153,8 +108,6 @@ export class ChatV2OrchestrationService {
       validAt: validAtIso,
     });
 
-    // 2. Append user message (после dialog-layer'а, чтобы текущий вопрос
-    // не попал в history контекстуализатора как «уже был»).
     await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'user',
@@ -163,8 +116,6 @@ export class ChatV2OrchestrationService {
 
     const startedAt = Date.now();
 
-    // 3. AnswerCache HIT — пропускаем retrieval + LLM, сразу пишем ответ
-    // в БД и возвращаем.
     if (dialogResult.cachedAnswer) {
       const cached = dialogResult.cachedAnswer;
       const assistantMessage = await this.conversations.appendMessage({
@@ -189,8 +140,7 @@ export class ChatV2OrchestrationService {
       });
       this.metrics.incChatV2Query({
         mode,
-        channelOrigin:
-          conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
+        channelOrigin: conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
       });
       this.metrics.observeChatV2RetrievalBlocks({
         mode,
@@ -218,21 +168,13 @@ export class ChatV2OrchestrationService {
         uncertaintyNote: cached.uncertaintyNote,
         mode,
         cacheHit: true,
-        // M-1 — класс из кэша; старые записи без него → 'sensitive'.
         dataClass: coerceDataClass(cached.dataClass),
       };
     }
 
-    // 4. Загрузить history + summary для systemPrompt.
-    const history = await this.loadHistory(
-      conversation.id,
-      this.cfg.chatV2.historyMessages,
-    );
+    const history = await this.loadHistory(conversation.id, this.cfg.chatV2.historyMessages);
     const convSummary = await this.loadConversationSummary(conversation.id);
 
-    // 5. Synthesize — передаём standalone/queries/validAt/intent/summary
-    // из dialog-layer'а. SynthesisService применит mode-prompt и
-    // RetrievalCache.
     const result = await this.synthesis.synthesize({
       tenantId: input.tenantId,
       userId: input.userId,
@@ -245,22 +187,11 @@ export class ChatV2OrchestrationService {
       queries: dialogResult.queries,
       validAt,
       structuralFilters: dialogResult.structuralFilters ?? null,
-      // ЧАСТЬ B (ТЗ 2026-06-15 §7) — обогащённое понимание для параллельной
-      // ветки умных таблиц: entityHints/aggregation из queryPlan, entityIds из
-      // резолвнутых structuralFilters. Если queryPlan не применился — пусто
-      // (ветка таблиц не запустится, граф отвечает как раньше).
       tableEntityHints: dialogResult.queryPlan?.filters.entityHints ?? [],
       tableEntityIds: dialogResult.structuralFilters?.entityIds ?? [],
       tableAggregation: dialogResult.queryPlan?.filters.aggregation ?? false,
       conversationSummary: convSummary,
-      // ТЗ 2026-05-29 Phase 1 — сужение DialogIntent (7 категорий) до
-      // ChatDialogIntent (4 категории) для chat-v2 synthesis. Новые
-      // intent'ы (daily_plan_morning/evening/note) перехватываются в
-      // bot-adapter раньше и сюда не доходят; для безопасности маппим
-      // их в 'factual'.
       intent: narrowToChatIntent(dialogResult.intent),
-      // §4 Ф1 (2026-06-11) — проброс колбэка стадий прогресса (SSE) до
-      // knowledge-core ChatV2Service (стадии 'searching'/'writing').
       onStage: input.onStage,
     });
 
@@ -271,11 +202,9 @@ export class ChatV2OrchestrationService {
     });
     this.metrics.incChatV2Query({
       mode,
-      channelOrigin:
-        conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
+      channelOrigin: conversation.channelKindOrigin ?? input.channelKindOrigin ?? 'web',
     });
-    const usedBlockIds =
-      (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
+    const usedBlockIds = (result.retrievalMeta?.usedBlockIds as string[] | undefined) ?? [];
     this.metrics.observeChatV2RetrievalBlocks({
       mode,
       count: usedBlockIds.length,
@@ -287,7 +216,6 @@ export class ChatV2OrchestrationService {
       this.metrics.incChatV2UncertaintyMarked({ mode });
     }
 
-    // 6. Append assistant message.
     const assistantMessage = await this.conversations.appendMessage({
       conversationId: conversation.id,
       role: 'assistant',
@@ -301,8 +229,6 @@ export class ChatV2OrchestrationService {
       llmMeta: result.llmMeta as Prisma.InputJsonValue,
     });
 
-    // 7. Сохраняем ответ в AnswerCache (если dialog-layer enabled
-    // и ответ не пустой).
     if (dialogResult.enabled && result.text.length > 0) {
       void this.answerCache
         .set(
@@ -321,7 +247,6 @@ export class ChatV2OrchestrationService {
             mode,
             usedBlockIds,
             cachedAt: new Date().toISOString(),
-            // M-1 — сохраняем derived класс, чтобы cache-hit не терял его.
             dataClass: result.dataClass,
           },
         )
@@ -333,7 +258,6 @@ export class ChatV2OrchestrationService {
         });
     }
 
-    // 8. Сгенерировать title после первого ответного раунда.
     if (isFirstUserMessage) {
       void this.conversations
         .generateTitle({
@@ -357,14 +281,11 @@ export class ChatV2OrchestrationService {
       uncertaintyNote: result.uncertaintyNote,
       mode,
       cacheHit: false,
-      // M-1 — derived класс от SynthesisService (knowledge-core).
       dataClass: result.dataClass,
     };
   }
 
-  private async loadConversationSummary(
-    conversationId: string,
-  ): Promise<string | null> {
+  private async loadConversationSummary(conversationId: string): Promise<string | null> {
     const c = await this.prisma.chatV2Conversation.findUnique({
       where: { id: conversationId },
       select: { summary: true },
@@ -372,14 +293,6 @@ export class ChatV2OrchestrationService {
     return c?.summary ?? null;
   }
 
-  /**
-   * Загрузить N последних сообщений диалога в формате, пригодном для
-   * подмешивания в systemPrompt (см. ChatV2Service.history).
-   * Возвращает сообщения по возрастанию createdAt (старое → новое).
-   * Текущий user-message уже добавлен в БД до этого вызова, поэтому
-   * он войдёт в history как «последний» — это ОК (knowledge-core
-   * ChatV2Service сам обрежет последние 6 и подмешает их в prompt).
-   */
   private async loadHistory(
     conversationId: string,
     limit: number,
@@ -391,17 +304,10 @@ export class ChatV2OrchestrationService {
       take: limit,
       select: { role: true, text: true },
     });
-    return items
-      .reverse()
-      .map((m) => ({ role: m.role, content: m.text }));
+    return items.reverse().map((m) => ({ role: m.role, content: m.text }));
   }
 }
 
-/**
- * M-1 (2026-06-12) — безопасное сужение значения из AnswerCache (Redis JSON,
- * без схемы) до DataClass. Старые записи кэша не содержат dataClass —
- * консервативно считаем 'sensitive' (текст не уйдёт во внешний канал).
- */
 function coerceDataClass(v: unknown): DataClass {
   if (v === 'public' || v === 'internal' || v === 'sensitive' || v === 'private') {
     return v;

@@ -10,14 +10,6 @@ import { ListDecisionsQuerySchema } from '../dto/decisions.dto';
 
 import { DecisionsService } from './decisions.service';
 
-/**
- * Поведенческие юнит-тесты DecisionsService — Фаза C1 (trustTier в read-DTO).
- *
- * Проверяем, что trustTier актуальной версии (CardVersion.trustTier через
- * relation currentVersion) выезжает в list/detail DTO, а при отсутствии версии
- * (currentVersion: null) применяется fallback 'human'.
- */
-
 const FIXED_DATE = new Date('2026-01-01');
 
 function makeDecision(over: Record<string, unknown> = {}) {
@@ -75,9 +67,7 @@ describe('DecisionsService — trustTier в read-DTO', () => {
   });
 
   it('getById: currentVersion.trustTier=provisional → DTO.trustTier=provisional', async () => {
-    findFirstMock.mockResolvedValue(
-      makeDecision({ currentVersion: { trustTier: 'provisional' } }),
-    );
+    findFirstMock.mockResolvedValue(makeDecision({ currentVersion: { trustTier: 'provisional' } }));
 
     const dto = await svc.getById({ tenantId: 't-1', id: 'd-1' });
 
@@ -110,7 +100,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
     expect(byId.get('d-prov')).toBe('provisional');
     expect(byId.get('d-none')).toBe('human');
 
-    // include должен запрашивать currentVersion.trustTier.
     expect(findManyMock).toHaveBeenCalledWith(
       expect.objectContaining({
         include: { currentVersion: { select: { trustTier: true } } },
@@ -119,7 +108,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
   });
 
   it('getSupersedeChain: provisional-предок → ancestors[].trustTier=provisional', async () => {
-    // root (findFirst #1) ссылается вверх на провизорного предка.
     findFirstMock
       .mockResolvedValueOnce(
         makeDecision({
@@ -128,7 +116,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
           currentVersion: { trustTier: 'human' },
         }),
       )
-      // parent (findFirst #2) — провизорный, без дальнейшего предка.
       .mockResolvedValueOnce(
         makeDecision({
           id: 'd-parent',
@@ -136,7 +123,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
           currentVersion: { trustTier: 'provisional' },
         }),
       );
-    // BFS вниз: потомков нет.
     findManyMock.mockResolvedValue([]);
 
     const res = await svc.getSupersedeChain({ tenantId: 't-1', id: 'd-root' });
@@ -145,7 +131,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
     expect(res.ancestors[0]?.id).toBe('d-parent');
     expect(res.ancestors[0]?.trustTier).toBe('provisional');
 
-    // Оба запроса вверх должны тянуть currentVersion.trustTier.
     expect(findFirstMock).toHaveBeenCalledWith(
       expect.objectContaining({
         include: { currentVersion: { select: { trustTier: true } } },
@@ -154,10 +139,6 @@ describe('DecisionsService — trustTier в read-DTO', () => {
   });
 });
 
-/**
- * Action Center E1 «поправить карточку знаний» (2026-06-04) —
- * dispute / correct по решению.
- */
 describe('DecisionsService — E1 dispute / correct', () => {
   let findFirstMock: ReturnType<typeof vi.fn>;
   let updateMock: ReturnType<typeof vi.fn>;
@@ -171,15 +152,11 @@ describe('DecisionsService — E1 dispute / correct', () => {
     findFirstMock = vi.fn();
     updateMock = vi.fn();
     cvFindFirstMock = vi.fn().mockResolvedValue(null);
-    cvCreateMock = vi
-      .fn()
-      .mockResolvedValue({ id: 'cv-1', version: 1, trustTier: 'human' });
+    cvCreateMock = vi.fn().mockResolvedValue({ id: 'cv-1', version: 1, trustTier: 'human' });
     recordDecisionMock = vi
       .fn()
       .mockResolvedValue({ curationItemId: 'ci-1', curationDecisionId: 'cd-1' });
-    submitProposalMock = vi
-      .fn()
-      .mockResolvedValue({ curationItemId: 'ci-2' });
+    submitProposalMock = vi.fn().mockResolvedValue({ curationItemId: 'ci-2' });
 
     const prisma = {
       decision: {
@@ -250,7 +227,6 @@ describe('DecisionsService — E1 dispute / correct', () => {
     });
 
     expect(res).toEqual({ ok: true, applied: true });
-    // 1) контент обновлён (statement + legacy text).
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'd-1' },
@@ -260,7 +236,6 @@ describe('DecisionsService — E1 dispute / correct', () => {
         }),
       }),
     );
-    // 2) создана новая CardVersion.
     expect(cvCreateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
@@ -271,14 +246,12 @@ describe('DecisionsService — E1 dispute / correct', () => {
         }),
       }),
     );
-    // 3) currentVersionId обновлён (второй update.decision вызов).
     expect(updateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { id: 'd-1' },
         data: { currentVersionId: 'cv-1' },
       }),
     );
-    // 4) обучающий сэмпл approve_with_edits с before/after.
     expect(recordDecisionMock).toHaveBeenCalledWith(
       expect.objectContaining({
         decisionType: 'approve_with_edits',
@@ -335,11 +308,6 @@ describe('DecisionsService — E1 dispute / correct', () => {
   });
 });
 
-/**
- * Ф6 knowledge-access (R12) — гейт проекций (Decision) по доступу спрашивающего
- * на листинге. off→выдача все; enforce→недоступная убрана + incAccessDenied;
- * shadow→выдача та же + incAccessShadowDiff; bypass→все.
- */
 describe('DecisionsService — Ф6 гейт проекций на list', () => {
   const ACCESSIBLE = makeDecision({ id: 'd-open', sourceBlockIds: ['b-open'] });
   const DENIED = makeDecision({ id: 'd-council', sourceBlockIds: ['b-council'] });

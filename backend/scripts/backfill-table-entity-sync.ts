@@ -1,23 +1,3 @@
-/**
- * Backfill graph-driven строк системных Smart-таблиц (Smart-tables Фаза 2).
- *
- * Для каждой существующей Org проходит по системным таблицам с
- * `entitySync.autoCreate=true` и наполняет их строками по «живым» Entity
- * соответствующих классов (resolveEntityTypes). Новые Org получают синк
- * автоматически по событиям графа; этот скрипт — для уже-существующих Org и
- * уже-накопленного графа.
- *
- * Запуск:
- *   docker compose exec backend bun run scripts/backfill-table-entity-sync.ts
- *
- * Идемпотентен:
- *   - пропускает Entity, у которых в таблице уже есть строка;
- *   - конфликт-резолвер: ручную строку (entityId=null) с совпадающим
- *     primary/email сливает с Entity, а не дублирует.
- *
- * См. safe-seed-rules: не делаем mass updateMany; создаём только недостающее.
- */
-
 import { Prisma } from '@prisma/client';
 
 import { createPrismaClient } from './_lib/prisma';
@@ -139,7 +119,6 @@ async function main(): Promise<void> {
       });
       if (entities.length === 0) continue;
 
-      // Уже привязанные строки → пропускаем.
       const existingRows = await prisma.tableRow.findMany({
         where: {
           tableId: table.id,
@@ -152,7 +131,6 @@ async function main(): Promise<void> {
         existingRows.map((r) => r.entityId).filter((id): id is string => !!id),
       );
 
-      // Ручные строки (для конфликт-резолвера).
       const manualRows = await prisma.tableRow.findMany({
         where: {
           tableId: table.id,
@@ -163,12 +141,8 @@ async function main(): Promise<void> {
         },
         select: { id: true, cells: true },
       });
-      const primaryProp = table.properties.find(
-        (p) => entityAttributeOf(p) === 'canonicalName',
-      );
-      const emailProp = table.properties.find(
-        (p) => entityAttributeOf(p) === 'email',
-      );
+      const primaryProp = table.properties.find((p) => entityAttributeOf(p) === 'canonicalName');
+      const emailProp = table.properties.find((p) => entityAttributeOf(p) === 'email');
 
       const lastRow = await prisma.tableRow.findFirst({
         where: { tableId: table.id, deletedAt: null },
@@ -183,23 +157,14 @@ async function main(): Promise<void> {
         if (linked.has(entity.id)) continue;
         const cells = buildEntityCells(table.properties, entity);
 
-        // Конфликт-резолвер: ручная строка с совпадающим primary/email.
         const nameKey = norm(entity.canonicalName);
         const emailKey = norm(entity.email ?? '');
         const conflict = manualRows.find((r) => {
           const c = (r.cells as Record<string, unknown>) ?? {};
-          if (
-            primaryProp &&
-            nameKey.length > 0 &&
-            norm(cellText(c[primaryProp.id])) === nameKey
-          ) {
+          if (primaryProp && nameKey.length > 0 && norm(cellText(c[primaryProp.id])) === nameKey) {
             return true;
           }
-          if (
-            emailProp &&
-            emailKey.length > 0 &&
-            norm(cellText(c[emailProp.id])) === emailKey
-          ) {
+          if (emailProp && emailKey.length > 0 && norm(cellText(c[emailProp.id])) === emailKey) {
             return true;
           }
           return false;
@@ -217,7 +182,6 @@ async function main(): Promise<void> {
               cells: mergedCells as Prisma.InputJsonValue,
             },
           });
-          // Не дать той же ручной строке слиться повторно.
           conflict.entityId = entity.id as never;
           manualRows.splice(manualRows.indexOf(conflict), 1);
           linked.add(entity.id);

@@ -16,13 +16,6 @@ import {
   type BitrixSyncScope,
 } from './bitrix-sync.queue';
 
-/**
- * Producer очереди `bitrix.sync` (ТЗ 2026-06-17, Ф3). По образцу
- * `ChatboxSyncQueueService`. `enqueue(tenantId, scope)` ставит job; дедуп по
- * jobId `bitrix-sync-${tenantId}-${scope}` (BullMQ не добавит второй с тем же id,
- * пока первый не завершён). Разделитель `-`, НЕ `:` (BullMQ 5.x запрещает `:`).
- * Worker (`bitrix-sync.worker.ts`) подхватывает и зовёт BitrixSyncService.
- */
 @Injectable()
 export class BitrixSyncQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BitrixSyncQueueService.name);
@@ -45,10 +38,7 @@ export class BitrixSyncQueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async enqueue(
-    tenantId: string,
-    scope: BitrixSyncScope,
-  ): Promise<{ jobId: string }> {
+  async enqueue(tenantId: string, scope: BitrixSyncScope): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
     const jobId = `bitrix-sync-${tenantId}-${scope}`;
     await queue.add('sync', { tenantId, scope }, { jobId });

@@ -254,7 +254,7 @@ EMAIL_FROM_DEFAULT="noreply@kora.ai"
 - [x] **α-1.12** UI `/me/notifications` — master-detail, фильтры, inline respond/dismiss + free-note форма.
 - [x] **α-1.13** Метрики `conversational_*` в `BusinessMetricsService`.
 - [x] **α-1.14** RBAC: `channel`, `notification` в `policy.csv`.
-- [x] **α-1.15** Глоссарий UI (`delivery/13-glossary.md` раздел SBA α-1, `delivery/ui/copy-strings.ru.md` секция Conversational Channels).
+- [x] **α-1.15** Глоссарий UI (`second-brain/13_glossary/ui-glossary.md` раздел SBA α-1, `second-brain/13_glossary/copy-strings.ru.md` секция Conversational Channels).
 - [x] **α-1.16** Документация: `second-brain/01_projects/conversational-channels.md`, апдейт `02_architecture/module-map.md`, ссылка в `second-brain/index.md`.
 
 ---
@@ -286,7 +286,7 @@ EMAIL_FROM_DEFAULT="noreply@kora.ai"
 **Что сделано:**
 - Backend: новый `@Global` модуль `backend/src/modules/conversational/` с 4 Prisma-моделями, `ConversationalService` (routing + sendNotification + linking), `ChannelRegistry`, адаптеры `in_app` и `email_smtp`, `ConversationalIngestAdapter`, BullMQ outbound worker с exp backoff и retry. REST `/me/channels` и `/me/notifications` (с respond/dismiss/read/free-note) + Swagger. RBAC channel/notification в policy.csv. Метрики conversational_* в BusinessMetricsService. Backend typecheck + build чистые.
 - Frontend: ApiDto `frontend/src/api/conversational.api.ts`, DomainModel `frontend/src/domain/conversational.ts`, страницы `/me/channels` и `/me/notifications` (master-detail, фильтры, free-note форма). Frontend typecheck чистый.
-- Документация: `second-brain/01_projects/conversational-channels.md`, апдейт `02_architecture/module-map.md`, ссылка из `second-brain/index.md`, разделы в `delivery/13-glossary.md` и `delivery/ui/copy-strings.ru.md`.
+- Документация: `second-brain/01_projects/conversational-channels.md`, апдейт `02_architecture/module-map.md`, ссылка из `second-brain/index.md`, разделы в `second-brain/13_glossary/ui-glossary.md` и `second-brain/13_glossary/copy-strings.ru.md`.
 
 **Что осталось / на проде:**
 - `bun run prisma:push` на проде (применить миграцию схемы — Docker dev на этой машине не поднят, но Prisma client сгенерирован, схема валидна).

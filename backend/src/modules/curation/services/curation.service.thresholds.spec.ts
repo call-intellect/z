@@ -8,15 +8,6 @@ import type { ConversationalService } from '../../conversational/conversational.
 import { CurationService } from './curation.service';
 import type { CuratorRoutingService } from './curator-routing.service';
 
-/**
- * A0 «лестница доверия» (2026-06-02) — юнит-тесты пер-типовых порогов triage'а.
- *
- * Проверяют:
- *   1. Пониженный autoThresholdByType[type] → авто-канонизация при confidence,
- *      который при ГЛОБАЛЬНОМ пороге ушёл бы в review.
- *   2. Отсутствие пер-типа → fallback на глобальный порог (поведение как раньше).
- *   3. triageReason содержит фактически применённые пороги + глобальные.
- */
 describe('CurationService — пер-типовые пороги triage (A0)', () => {
   let prisma: PrismaService;
   let cfg: TypedConfigService;
@@ -32,7 +23,6 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
   let resolveCuratorsMock: ReturnType<typeof vi.fn>;
   let sendNotificationMock: ReturnType<typeof vi.fn>;
 
-  /** Готовит мок Org.curationSettings (то, что лежит в БД). */
   function setOrgSettings(settings: Record<string, unknown> | null) {
     orgFindUniqueMock.mockResolvedValue({ curationSettings: settings });
   }
@@ -40,9 +30,7 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
   beforeEach(() => {
     orgFindUniqueMock = vi.fn();
     cardVersionFindFirstMock = vi.fn().mockResolvedValue(null);
-    cardVersionCreateMock = vi
-      .fn()
-      .mockImplementation(async () => ({ id: 'cv-1' }));
+    cardVersionCreateMock = vi.fn().mockImplementation(async () => ({ id: 'cv-1' }));
     curationItemCreateMock = vi
       .fn()
       .mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
@@ -70,13 +58,10 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
         deepReviewThresholdDefault: 0.6,
         criticalTypesDefault: ['regulation', 'process', 'decision'],
         itemExpiryDays: 30,
-        // A1/A2 «лестница доверия» — платформенные дефолты из AdminSetting/cfg.
         provisionalThresholdDefault: 0.8,
         aiVerifierEnabled: false,
         auditSampleRate: 0.05,
         autotuneEnabled: false,
-        // Намеренно НЕ-хардкодные значения: тест ниже проверяет, что
-        // partial-JSON откатывается именно на cfg, а не на старые константы.
         thresholdMin: 0.55,
         thresholdMax: 0.95,
         autotuneStep: 0.03,
@@ -98,21 +83,10 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
       resolveCurators: resolveCuratorsMock,
     } as unknown as CuratorRoutingService;
 
-    svc = new CurationService(
-      prisma,
-      cfg,
-      metrics,
-      conversational,
-      routing,
-      null,
-      null,
-    );
+    svc = new CurationService(prisma, cfg, metrics, conversational, routing, null, null);
   });
 
   it('пониженный autoThresholdByType → авто-канонизация там, где глобальный порог ушёл бы в review', async () => {
-    // Глобальный auto=0.85; для типа 'note' понижаем до 0.7.
-    // auditSampleRate=0 — отключаем post-факто аудит-выборку (rate 0.05 даёт
-    // вероятностный CurationItem через Math.random(), иначе тест флапает).
     setOrgSettings({
       autoThreshold: 0.85,
       deepReviewThreshold: 0.6,
@@ -124,7 +98,7 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
       tenantId: 't-1',
       resourceType: 'note',
       resourceId: 'r-1',
-      confidence: 0.75, // < 0.85 (глобальный) но >= 0.7 (пер-тип)
+      confidence: 0.75,
       proposedPayload: { text: 'hi' },
       conflictSignal: 'none',
     });
@@ -138,14 +112,13 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
     setOrgSettings({
       autoThreshold: 0.85,
       deepReviewThreshold: 0.6,
-      // Нет autoThresholdByType — поведение как раньше.
     });
 
     const res = await svc.triage({
       tenantId: 't-1',
       resourceType: 'note',
       resourceId: 'r-2',
-      confidence: 0.75, // < 0.85 глобальный, и >= 0.6 deep → light
+      confidence: 0.75,
       proposedPayload: { text: 'hi' },
       conflictSignal: 'none',
     });
@@ -164,7 +137,7 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
 
     const res = await svc.triage({
       tenantId: 't-1',
-      resourceType: 'fact', // нет override → глобальный 0.85
+      resourceType: 'fact',
       resourceId: 'r-3',
       confidence: 0.75,
       proposedPayload: {},
@@ -186,7 +159,7 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
       tenantId: 't-1',
       resourceType: 'note',
       resourceId: 'r-4',
-      confidence: 0.55, // >= 0.5 (deep пер-тип) и < 0.7 (auto пер-тип) → light
+      confidence: 0.55,
       proposedPayload: {},
       conflictSignal: 'none',
     });
@@ -206,12 +179,12 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
     setOrgSettings({
       autoThreshold: 0.85,
       deepReviewThreshold: 0.6,
-      autoThresholdByType: { regulation: 0.1 }, // даже сильно пониженный
+      autoThresholdByType: { regulation: 0.1 },
     });
 
     const res = await svc.triage({
       tenantId: 't-1',
-      resourceType: 'regulation', // critical
+      resourceType: 'regulation',
       resourceId: 'r-5',
       confidence: 0.99,
       proposedPayload: {},
@@ -222,10 +195,6 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
   });
 
   it('A2: partial-JSON откатывает guardrail-поля на cfg.curation (admin-дефолт), а не на хардкод-константы', async () => {
-    // Org задала только autoThreshold — остальные поля отсутствуют в JSON.
-    // Раньше thresholdMin/Max/autotuneStep/minDecisions/maxProvisionalOverride
-    // откатывались на хардкод (0.6/0.97/0.02/20/0.2), обходя AdminSetting.
-    // Теперь должны взять значения из cfg.curation.* (мок выше).
     setOrgSettings({ autoThreshold: 0.9 });
 
     const settings = await svc.getSettings('t-1');
@@ -235,7 +204,6 @@ describe('CurationService — пер-типовые пороги triage (A0)', (
     expect(settings.autotuneStep).toBe(0.03);
     expect(settings.minDecisionsForAutotune).toBe(25);
     expect(settings.maxProvisionalOverride).toBe(0.15);
-    // sanity: явно заданное поле сохранилось.
     expect(settings.autoThreshold).toBe(0.9);
   });
 });

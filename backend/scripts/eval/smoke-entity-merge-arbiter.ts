@@ -1,10 +1,3 @@
-/**
- * Smoke-тест агента `entity-merge-arbiter` на DeepSeek-V4-Pro.
- * Промпт встроен в backend/src/modules/knowledge-core/services/entity-merge.service.ts
- * (константа ARBITER_SYSTEM_PROMPT).
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-entity-merge-arbiter.ts
- */
 import {
   client,
   computeCost,
@@ -19,7 +12,6 @@ import {
 
 const TASK_TYPE = 'entity-merge-arbiter';
 
-// Дубль системного промпта из entity-merge.service.ts.
 const ARBITER_SYSTEM_PROMPT = `Ты — арбитр дубликатов сущностей в knowledge-core.
 Получаешь одну "новую" сущность и до 5 кандидатов того же типа (того же tenant'а), ближайших по эмбеддингу.
 Решаешь: новая сущность — это другое написание / алиас одного из кандидатов (verdict="merge"), или это другая сущность (verdict="distinct").

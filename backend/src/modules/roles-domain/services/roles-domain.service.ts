@@ -18,18 +18,6 @@ import type {
   UpdateRoleDto,
 } from '../dto/roles-domain.dto';
 
-/**
- * Сервис бизнес-должностей (Role).
- *
- * Бизнес-правила:
- *   - tenantId обязателен.
- *   - При создании Role автоматически создаётся RoleProfile(status='forming').
- *   - Связь Role→Department пишется в EntityLink (relationType='belongs_to')
- *     напрямую через Prisma. Когда GraphService будет готов — рефакторинг
- *     тривиален. fromType='role', toType='department'.
- *   - DELETE — soft. Закрываем EntityLink belongs_to (status='archived',
- *     deletedAt=now).
- */
 @Injectable()
 export class RolesDomainService {
   private readonly logger = new Logger(RolesDomainService.name);
@@ -38,8 +26,6 @@ export class RolesDomainService {
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(AuditLogService) private readonly audit: AuditLogService,
   ) {}
-
-  // ─────────────────────────── list / get ───────────────────────────
 
   async list(args: {
     tenantId: string;
@@ -52,9 +38,7 @@ export class RolesDomainService {
       tenantId: args.tenantId,
       ...(args.includeDeleted ? {} : { deletedAt: null }),
       ...(args.departmentId ? { departmentId: args.departmentId } : {}),
-      ...(args.q
-        ? { name: { contains: args.q, mode: 'insensitive' as const } }
-        : {}),
+      ...(args.q ? { name: { contains: args.q, mode: 'insensitive' as const } } : {}),
     };
     const [rows, total] = await Promise.all([
       this.prisma.role.findMany({
@@ -108,17 +92,10 @@ export class RolesDomainService {
     );
   }
 
-  /**
-   * Считаем активные PersonRole и активные JobDescription для пачки ролей
-   * одним запросом каждый — взамен filtered `_count`.
-   */
   private async countAttachments(
     roleIds: string[],
   ): Promise<Map<string, { persons: number; jobDescriptions: number }>> {
-    const result = new Map<
-      string,
-      { persons: number; jobDescriptions: number }
-    >();
+    const result = new Map<string, { persons: number; jobDescriptions: number }>();
     if (roleIds.length === 0) return result;
     for (const id of roleIds) {
       result.set(id, { persons: 0, jobDescriptions: 0 });
@@ -148,13 +125,7 @@ export class RolesDomainService {
     return result;
   }
 
-  // ─────────────────────────── create / update / delete ─────────────
-
-  async create(args: {
-    tenantId: string;
-    userId: string;
-    body: CreateRoleDto;
-  }): Promise<RoleDto> {
+  async create(args: { tenantId: string; userId: string; body: CreateRoleDto }): Promise<RoleDto> {
     if (args.body.departmentId) {
       await this.assertDepartmentExists(args.tenantId, args.body.departmentId);
     }
@@ -172,7 +143,6 @@ export class RolesDomainService {
           },
         });
 
-        // RoleProfile создаём всегда (иначе UI '/roles' будет пустой).
         await tx.roleProfile.create({
           data: {
             tenantId: args.tenantId,
@@ -183,7 +153,6 @@ export class RolesDomainService {
           },
         });
 
-        // EntityLink Role → Department (belongs_to) если есть department.
         if (role.departmentId) {
           await this.upsertActiveLink(tx, {
             tenantId: args.tenantId,
@@ -210,28 +179,20 @@ export class RolesDomainService {
         },
       });
 
-      // Side-effect онбординг v2: первая должность → выставляем rolesCompletedAt
       void this.prisma.org.updateMany({
         where: { id: args.tenantId, rolesCompletedAt: null },
         data: { rolesCompletedAt: new Date() },
       });
 
-      // audit С25 (2026-05-29): hook Role.created — автоматически выдать grant
-      // на роль-клона всем owner/admin тенанта. Без него после миграции
-      // (patch-migrate-clone-access.ts) каждая новая роль не получает grant'ы
-      // на admin'ов, и они теряют доступ к role-clone'у нового сотрудника.
-      // Делается fire-and-forget — основной flow не блокируется.
-      void this.grantRoleCloneToTenantAdmins(
-        args.tenantId,
-        created.id,
-        args.userId,
-      ).catch((err: unknown) => {
-        this.logger.warn(
-          `Role.created hook: не удалось выдать grant'ы для role=${created.id}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      });
+      void this.grantRoleCloneToTenantAdmins(args.tenantId, created.id, args.userId).catch(
+        (err: unknown) => {
+          this.logger.warn(
+            `Role.created hook: не удалось выдать grant'ы для role=${created.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        },
+      );
 
       return this.toListItem(created, created.department?.name ?? null, 0, 0, 'forming');
     } catch (err) {
@@ -240,15 +201,6 @@ export class RolesDomainService {
     }
   }
 
-  /**
-   * audit С25 (2026-05-29): hook для автоматической выдачи CloneAccessGrant
-   * всем owner/admin тенанта при создании Role. Идемпотентно через unique
-   * (tenantId, grantedToUserId, cloneType, cloneRefId) + skipDuplicates.
-   *
-   * Параллельная задача — patch-migrate-clone-access.ts — делает то же самое
-   * для существующих ролей при первичной миграции; этот hook покрывает все
-   * новые роли после миграции.
-   */
   private async grantRoleCloneToTenantAdmins(
     tenantId: string,
     roleId: string,
@@ -280,9 +232,7 @@ export class RolesDomainService {
     let skipped = 0;
     for (const it of args.body.items) {
       try {
-        items.push(
-          await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }),
-        );
+        items.push(await this.create({ tenantId: args.tenantId, userId: args.userId, body: it }));
       } catch (err) {
         if (err instanceof ConflictException) {
           skipped += 1;
@@ -309,10 +259,7 @@ export class RolesDomainService {
         error: { code: 'role_not_found', message: 'Должность не найдена' },
       });
     }
-    if (
-      args.body.departmentId !== undefined &&
-      args.body.departmentId !== null
-    ) {
+    if (args.body.departmentId !== undefined && args.body.departmentId !== null) {
       await this.assertDepartmentExists(args.tenantId, args.body.departmentId);
     }
 
@@ -338,12 +285,10 @@ export class RolesDomainService {
           },
         });
 
-        // EntityLink belongs_to синхронизируем если departmentId изменился.
         if (
           args.body.departmentId !== undefined &&
           args.body.departmentId !== existing.departmentId
         ) {
-          // Закрываем старую belongs_to (если была).
           await tx.entityLink.updateMany({
             where: {
               tenantId: args.tenantId,
@@ -428,8 +373,7 @@ export class RolesDomainService {
         ok: false,
         error: {
           code: 'role_has_active_persons',
-          message:
-            'На должности есть активные сотрудники — снимите назначения сначала',
+          message: 'На должности есть активные сотрудники — снимите назначения сначала',
         },
       });
     }
@@ -439,7 +383,6 @@ export class RolesDomainService {
         where: { id: args.id },
         data: { deletedAt: now },
       });
-      // Закрываем все исходящие/входящие EntityLink этой Role.
       await tx.entityLink.updateMany({
         where: {
           tenantId: args.tenantId,
@@ -466,12 +409,7 @@ export class RolesDomainService {
     return { id: args.id, deletedAt: now.toISOString() };
   }
 
-  // ─────────────────────────── helpers ──────────────────────────────
-
-  private async assertDepartmentExists(
-    tenantId: string,
-    departmentId: string,
-  ): Promise<void> {
+  private async assertDepartmentExists(tenantId: string, departmentId: string): Promise<void> {
     const dep = await this.prisma.department.findUnique({
       where: { id: departmentId },
       select: { tenantId: true, deletedAt: true },
@@ -487,11 +425,6 @@ export class RolesDomainService {
     }
   }
 
-  /**
-   * Создаёт активную EntityLink или реактивирует ранее soft-deleted строку
-   * с тем же composite-ключом (fromEntityId, fromType, toEntityId, toType,
-   * relationType) — иначе сработала бы уникальность @@unique без deletedAt.
-   */
   private async upsertActiveLink(
     tx: Prisma.TransactionClient,
     args: {
@@ -550,10 +483,7 @@ export class RolesDomainService {
   }
 
   private handleUniqueViolation(err: unknown, name: string | undefined): void {
-    if (
-      err instanceof Prisma.PrismaClientKnownRequestError &&
-      err.code === 'P2002'
-    ) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ConflictException({
         ok: false,
         error: {

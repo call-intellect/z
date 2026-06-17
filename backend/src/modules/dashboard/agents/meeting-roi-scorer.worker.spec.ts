@@ -1,11 +1,3 @@
-/**
- * Pulse Wave 6 §6.3 — MeetingRoiScorerWorker (unit).
- *
- * Проверяем чистую формулу + защиту от деления на 0. LLM не используется
- * (worker детерминистический), BullMQ не поднимаем — вызываем `process(job)`
- * напрямую.
- */
-
 import type { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -38,14 +30,11 @@ function buildHarness(opts: HarnessOpts): WorkerHarness {
 
   const decisionsCount = opts.counters?.decisions ?? 0;
   const tasksCount = opts.counters?.tasks ?? 0;
-  // Эмулируем цепочку countCommitments: rawEvent → evidence → ideaBlock.count.
-  // Если commitments==0 — возвращаем 0 rawEvents (короткий путь).
   const commitmentBlocks = opts.counters?.commitments ?? 0;
-  const rawEventIds =
-    commitmentBlocks > 0 ? opts.counters?.rawEventIds ?? ['re-1'] : [];
+  const rawEventIds = commitmentBlocks > 0 ? (opts.counters?.rawEventIds ?? ['re-1']) : [];
   const evidenceBlockIds =
     commitmentBlocks > 0
-      ? opts.counters?.evidenceBlockIds ?? ['b-1', 'b-2', 'b-3', 'b-4', 'b-5']
+      ? (opts.counters?.evidenceBlockIds ?? ['b-1', 'b-2', 'b-3', 'b-4', 'b-5'])
       : [];
 
   const prisma = {
@@ -63,9 +52,7 @@ function buildHarness(opts: HarnessOpts): WorkerHarness {
       findMany: vi.fn(async () => rawEventIds.map((id) => ({ id }))),
     },
     ideaBlockEvidence: {
-      findMany: vi.fn(async () =>
-        evidenceBlockIds.map((blockId) => ({ blockId })),
-      ),
+      findMany: vi.fn(async () => evidenceBlockIds.map((blockId) => ({ blockId }))),
     },
     ideaBlock: {
       count: vi.fn(async () => commitmentBlocks),
@@ -82,7 +69,7 @@ function buildMeeting(overrides: Record<string, unknown> = {}): Record<string, u
   return {
     id: 'm-1',
     tenantId: 'org-1',
-    durationMs: 60 * 60 * 1000, // 60 минут
+    durationMs: 60 * 60 * 1000,
     startedAt: new Date('2026-05-31T10:00:00Z'),
     endedAt: new Date('2026-05-31T11:00:00Z'),
     _count: { participants: 3 },
@@ -106,9 +93,6 @@ describe('MeetingRoiScorerWorker.process', () => {
 
     await h.worker.process(JOB);
 
-    // numerator = 2*10 + 5*5 + 3*3 = 54
-    // denominator = 3 participants * 1 hour = 3
-    // roiScore = 54 / 3 = 18.000
     expect(h.meetingUpdate).toHaveBeenCalledTimes(1);
     const arg = h.meetingUpdate.mock.calls[0]?.[0] as {
       where: { id: string };
@@ -167,7 +151,6 @@ describe('MeetingRoiScorerWorker.process', () => {
 
     await h.worker.process(JOB);
 
-    // numerator = 1*10 = 10; denominator = 1 * 1h = 1; roiScore = 10.
     const arg = h.meetingUpdate.mock.calls[0]?.[0] as {
       data: { roiScore: Prisma.Decimal };
     };

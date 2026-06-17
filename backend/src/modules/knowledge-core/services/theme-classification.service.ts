@@ -2,14 +2,8 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Entity, IdeaBlock, ThemeBranch } from '@prisma/client';
 
 import { TypedConfigService } from '../../../common/config/index';
-import {
-  LlmRouterService,
-  maxDataClass,
-} from '../../ai/services/llm-router.service';
-import {
-  withInjectionGuard,
-  wrapUserData,
-} from '../../ai/services/prompts/common';
+import { LlmRouterService, maxDataClass } from '../../ai/services/llm-router.service';
+import { withInjectionGuard, wrapUserData } from '../../ai/services/prompts/common';
 import {
   THEME_BRANCH_VALUES as THEME_BRANCH_VALUES_FROM_PROMPT,
   THEME_CLASSIFY_JSON_SCHEMA,
@@ -17,26 +11,15 @@ import {
   ThemeClassifyResponseSchema,
 } from '../prompts/theme-classify.prompt';
 
-/**
- * Реэкспорт под историческим именем — наружу пользуется api/dto/theme.dto.ts.
- * Источник правды — `prompts/theme-classify.prompt.ts`.
- */
 export const THEME_BRANCH_VALUES = THEME_BRANCH_VALUES_FROM_PROMPT;
 
-// Алиас под историческим именем — чтобы тело сервиса не менялось.
 const SYSTEM_PROMPT = THEME_CLASSIFY_SYSTEM_PROMPT;
 
 export interface ThemeClassificationInput {
   tenantId: string;
   blocks: Pick<
     IdeaBlock,
-    | 'id'
-    | 'name'
-    | 'criticalQuestion'
-    | 'trustedAnswer'
-    | 'signalType'
-    | 'tags'
-    | 'dataClass'
+    'id' | 'name' | 'criticalQuestion' | 'trustedAnswer' | 'signalType' | 'tags' | 'dataClass'
   >[];
   entities: Pick<Entity, 'id' | 'canonicalName' | 'type'>[];
 }
@@ -50,12 +33,6 @@ export interface ThemeClassificationResult {
   confidence: number;
 }
 
-/**
- * ThemeClassificationService — LLM-классификатор тематического кластера
- * (taskType `theme-classify`). Возвращает имя/описание/ветку/теги.
- *
- * Используется `theme-clusterer.cron`'ом по каждому устойчивому кластеру.
- */
 @Injectable()
 export class ThemeClassificationService {
   private readonly logger = new Logger(ThemeClassificationService.name);
@@ -67,9 +44,6 @@ export class ThemeClassificationService {
     private readonly cfg?: TypedConfigService,
   ) {}
 
-  /**
-   * ТЗ 2026-05-24 §4 (F1.2) — мастер-флаг защиты от prompt-injection.
-   */
   private isPromptInjectionGuardEnabled(): boolean {
     try {
       return this.cfg?.aiFeatures.promptInjectionGuardEnabled !== false;
@@ -78,9 +52,7 @@ export class ThemeClassificationService {
     }
   }
 
-  async classifyTheme(
-    input: ThemeClassificationInput,
-  ): Promise<ThemeClassificationResult | null> {
+  async classifyTheme(input: ThemeClassificationInput): Promise<ThemeClassificationResult | null> {
     const { tenantId, blocks, entities } = input;
     if (blocks.length === 0) return null;
 
@@ -101,7 +73,6 @@ export class ThemeClassificationService {
     };
     const userMessage = `Кластер из ${blocks.length} блоков:\n\n${JSON.stringify(userPayload, null, 2)}`;
 
-    // ТЗ 2026-05-24 §4 (F1.2) — обернуть user (блоки + сущности) в маркеры.
     const guardOn = this.isPromptInjectionGuardEnabled();
     const out = await this.llm.call({
       taskType: 'theme-classify',
@@ -115,7 +86,6 @@ export class ThemeClassificationService {
         schema: THEME_CLASSIFY_JSON_SCHEMA,
       },
       sourceRef: { type: 'theme-classify', id: tenantId },
-      // Фаза 11: max dataClass по блокам кластера.
       dataClass: maxDataClass(blocks.map((b) => b.dataClass)),
     });
 

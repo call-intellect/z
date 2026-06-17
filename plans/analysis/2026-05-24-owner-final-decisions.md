@@ -5,7 +5,7 @@ feature: Финальные решения владельца перед ста�
 date: 2026-05-24
 approved-by: владелец продукта (sergrv80@gmail.com)
 related:
-  - plans/tz/2026-05-23-coo-and-tracker-umbrella.md
+  - plans/archive/2026-05-23-coo-and-tracker-umbrella.md
   - plans/analysis/2026-05-23-product-overview-simple.md
   - plans/analysis/2026-05-23-ai-coo-readiness-analysis.md
   - plans/analysis/2026-05-23-tracker-as-entry-wedge.md

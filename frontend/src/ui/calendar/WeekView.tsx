@@ -1,21 +1,14 @@
-'use client';
+"use client";
 
-/**
- * WeekView — 7 столбцов (Пн..Вс), 17 строк часов (06..22).
- * События — абсолютные блоки в столбце дня. Issue — ленточка под заголовком.
- *
- * Drag-and-drop: тащим Event на ячейку (день + час) → onMoveEvent(eventId, new Date).
- */
+import { useMemo, type JSX } from "react";
 
-import { useMemo, type JSX } from 'react';
-
-import { EVENT_KIND_STYLES } from '@/domain/calendar';
+import { EVENT_KIND_STYLES } from "@/domain/calendar";
 import type {
   CalendarEventDomain,
   CalendarIssueDomain,
   CalendarTimelineItem,
-} from '@/domain/calendar';
-import { cn } from '@/ui/shadcn/lib/utils';
+} from "@/domain/calendar";
+import { cn } from "@/ui/shadcn/lib/utils";
 
 import {
   FIRST_HOUR,
@@ -29,7 +22,7 @@ import {
   isSameDay,
   startOfDay,
   startOfWeek,
-} from './dateHelpers';
+} from "./dateHelpers";
 
 interface WeekViewProps {
   cursorDate: Date;
@@ -55,10 +48,7 @@ export function WeekView({
   );
 
   const today = new Date();
-  const hours = Array.from(
-    { length: VISIBLE_HOURS },
-    (_, i) => FIRST_HOUR + i,
-  );
+  const hours = Array.from({ length: VISIBLE_HOURS }, (_, i) => FIRST_HOUR + i);
 
   const dayEvents = useMemo(() => {
     return days.map((d) => {
@@ -67,7 +57,7 @@ export function WeekView({
       const events: CalendarEventDomain[] = [];
       const issues: CalendarIssueDomain[] = [];
       for (const it of items) {
-        if (it.type === 'event') {
+        if (it.type === "event") {
           const eStart = it.startAt;
           const eEnd = it.endAt ?? new Date(eStart.getTime() + 30 * 60 * 1000);
           if (eEnd >= dStart && eStart < dEnd) events.push(it);
@@ -82,7 +72,7 @@ export function WeekView({
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-card">
-      {/* Заголовки дней */}
+      {}
       <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-border-subtle bg-bg-elevated">
         <div />
         {days.map((d, i) => {
@@ -93,15 +83,15 @@ export function WeekView({
               type="button"
               onClick={() => onSelectDay(d)}
               className={cn(
-                'flex flex-col items-center gap-0.5 border-l border-border-subtle py-2 text-xs transition-colors hover:bg-bg-overlay',
-                isToday ? 'text-accent' : 'text-fg-tertiary',
+                "flex flex-col items-center gap-0.5 border-l border-border-subtle py-2 text-xs transition-colors hover:bg-bg-overlay",
+                isToday ? "text-accent" : "text-fg-tertiary",
               )}
             >
               <span className="font-medium">{WEEKDAY_SHORT[i]}</span>
               <span
                 className={cn(
-                  'inline-flex h-6 w-6 items-center justify-center rounded-full',
-                  isToday && 'bg-accent text-accent-fg font-semibold',
+                  "inline-flex h-6 w-6 items-center justify-center rounded-full",
+                  isToday && "bg-accent text-accent-fg font-semibold",
                 )}
               >
                 {d.getDate()}
@@ -111,7 +101,7 @@ export function WeekView({
         })}
       </div>
 
-      {/* Ленточка задач (issues) под заголовком */}
+      {}
       {dayEvents.some((d) => d.issues.length > 0) && (
         <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] border-b border-border-subtle bg-bg-overlay/30">
           <div className="px-2 py-1 text-[10px] text-fg-tertiary">Задачи</div>
@@ -139,7 +129,7 @@ export function WeekView({
         </div>
       )}
 
-      {/* Сетка часов */}
+      {}
       <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))]">
         <div>
           {hours.map((h) => (
@@ -148,7 +138,7 @@ export function WeekView({
               className="flex items-start justify-end pr-2 pt-0.5 text-[11px] text-fg-tertiary"
               style={{ height: HOUR_HEIGHT_PX }}
             >
-              {String(h).padStart(2, '0')}:00
+              {String(h).padStart(2, "0")}:00
             </div>
           ))}
         </div>
@@ -198,11 +188,11 @@ function DayColumn({
             className="h-1/2 cursor-pointer hover:bg-bg-overlay/50"
             onDragOver={(e) => {
               e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
+              e.dataTransfer.dropEffect = "move";
             }}
             onDrop={(e) => {
               e.preventDefault();
-              const id = e.dataTransfer.getData('text/calendar-event-id');
+              const id = e.dataTransfer.getData("text/calendar-event-id");
               if (!id) return;
               const ns = new Date(day);
               ns.setHours(h, 0, 0, 0);
@@ -218,11 +208,11 @@ function DayColumn({
             className="h-1/2 cursor-pointer border-t border-dashed border-border-subtle/50 hover:bg-bg-overlay/50"
             onDragOver={(e) => {
               e.preventDefault();
-              e.dataTransfer.dropEffect = 'move';
+              e.dataTransfer.dropEffect = "move";
             }}
             onDrop={(e) => {
               e.preventDefault();
-              const id = e.dataTransfer.getData('text/calendar-event-id');
+              const id = e.dataTransfer.getData("text/calendar-event-id");
               if (!id) return;
               const ns = new Date(day);
               ns.setHours(h, 30, 0, 0);
@@ -260,7 +250,11 @@ function WeekEventBlock({
 }): JSX.Element {
   const endAt =
     event.endAt ?? new Date(event.startAt.getTime() + 30 * 60 * 1000);
-  const { topPx, heightPx } = eventDayPositionPx(event.startAt, endAt, dayStart);
+  const { topPx, heightPx } = eventDayPositionPx(
+    event.startAt,
+    endAt,
+    dayStart,
+  );
   const style = EVENT_KIND_STYLES[event.kind];
   const startMin = (event.startAt.getTime() - dayStart.getTime()) / 60000;
   if (startMin >= (LAST_HOUR + 1) * 60) return <></>;
@@ -269,15 +263,15 @@ function WeekEventBlock({
       type="button"
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData('text/calendar-event-id', event.id);
-        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData("text/calendar-event-id", event.id);
+        e.dataTransfer.effectAllowed = "move";
       }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
       className={cn(
-        'absolute left-0.5 right-0.5 cursor-grab overflow-hidden rounded border px-1 py-0.5 text-left text-[11px] active:cursor-grabbing',
+        "absolute left-0.5 right-0.5 cursor-grab overflow-hidden rounded border px-1 py-0.5 text-left text-[11px] active:cursor-grabbing",
         style.bg,
         style.border,
         style.text,

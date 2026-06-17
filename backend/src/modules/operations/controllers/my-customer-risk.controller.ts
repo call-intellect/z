@@ -23,15 +23,6 @@ import {
 import { CommitmentsService } from '../services/commitments.service';
 import { CustomerRiskRadarService } from '../services/customer-risk-radar.service';
 
-/**
- * TZ-1 Фаза 1 (daily-value-engine) — `/api/v1/me/customer-risk`.
- *
- * Self-scope для менеджера: клиенты, где `responsiblePersonId = my Person.id`.
- * НЕ светит чужих клиентов (фильтр идёт по resolved selfPersonId, не по query).
- *
- * Auth: CookieAuthGuard + TenantGuard. Если у пользователя нет Person-записи —
- * отдаём пустой список (200), как в `/me/promises` (Ф9 graceful).
- */
 @ApiTags('me-customer-risk')
 @Controller('api/v1/me/customer-risk')
 @UseGuards(CookieAuthGuard, TenantGuard)

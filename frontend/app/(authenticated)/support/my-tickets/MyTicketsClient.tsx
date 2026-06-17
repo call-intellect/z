@@ -1,17 +1,13 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
+import Link from "next/link";
 
-import { ApiError } from '@/api/api-error';
-import { useMyTickets } from '@/hooks/useMyTickets';
-import type { SupportTicketListItem } from '@/domain/support';
-import { Badge } from '@/ui/shadcn/badge';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+import { ApiError } from "@/api/api-error";
+import { useMyTickets } from "@/hooks/useMyTickets";
+import type { SupportTicketListItem } from "@/domain/support";
+import { Badge } from "@/ui/shadcn/badge";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-/**
- * MyTicketsClient — список моих обращений. Все 4 UX-состояния:
- * loading / error / empty / data.
- */
 export function MyTicketsClient() {
   const { data, error, isLoading } = useMyTickets();
 
@@ -68,7 +64,7 @@ function ErrorView({ error }: { error: unknown }) {
   const message =
     error instanceof ApiError
       ? error.message
-      : 'Не удалось загрузить обращения.';
+      : "Не удалось загрузить обращения.";
   return (
     <div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
       {message}
@@ -87,7 +83,7 @@ function ListSkeleton() {
 }
 
 function formatDate(d: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
+  const pad = (n: number) => n.toString().padStart(2, "0");
   return (
     `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ` +
     `${pad(d.getHours())}:${pad(d.getMinutes())}`

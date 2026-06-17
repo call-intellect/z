@@ -1,36 +1,30 @@
-'use client';
+"use client";
 
-/**
- * Диалог приватного шеринга встречи. Создаёт share-ссылку
- * с гранулярными правами и сроком, копирует URL в clipboard.
- * Список существующих shares — с кнопкой revoke.
- */
+import { useState } from "react";
+import { Copy, Loader2, Trash2 } from "lucide-react";
 
-import { useState } from 'react';
-import { Copy, Loader2, Trash2 } from 'lucide-react';
-
-import { sharesApi } from '@/api/shares.api';
-import { ApiError, humanizeApiError } from '@/api/api-error';
-import { useMeetingShares } from '@/hooks/use-meeting-shares';
+import { sharesApi } from "@/api/shares.api";
+import { ApiError, humanizeApiError } from "@/api/api-error";
+import { useMeetingShares } from "@/hooks/use-meeting-shares";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/ui/shadcn/dialog';
-import { Button } from '@/ui/shadcn/button';
-import { Switch } from '@/ui/shadcn/switch';
-import { Label } from '@/ui/shadcn/label';
+} from "@/ui/shadcn/dialog";
+import { Button } from "@/ui/shadcn/button";
+import { Switch } from "@/ui/shadcn/switch";
+import { Label } from "@/ui/shadcn/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/ui/shadcn/select';
-import { Separator } from '@/ui/shadcn/separator';
-import { toast } from '@/ui/shadcn/toast';
+} from "@/ui/shadcn/select";
+import { Separator } from "@/ui/shadcn/separator";
+import { toast } from "@/ui/shadcn/toast";
 
 export type ShareDialogProps = {
   meetingId: string;
@@ -38,14 +32,20 @@ export type ShareDialogProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps) {
-  const { shares, mutate, isLoading } = useMeetingShares(open ? meetingId : null);
+export function ShareDialog({
+  meetingId,
+  open,
+  onOpenChange,
+}: ShareDialogProps) {
+  const { shares, mutate, isLoading } = useMeetingShares(
+    open ? meetingId : null,
+  );
   const [allowVideo, setAllowVideo] = useState(true);
   const [allowTranscript, setAllowTranscript] = useState(true);
   const [allowTasks, setAllowTasks] = useState(true);
   const [allowChapters, setAllowChapters] = useState(true);
   const [allowChat, setAllowChat] = useState(false);
-  const [days, setDays] = useState<'1' | '7' | '14'>('7');
+  const [days, setDays] = useState<"1" | "7" | "14">("7");
   const [creating, setCreating] = useState(false);
 
   const onCreate = async () => {
@@ -61,14 +61,13 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
       });
       try {
         await navigator.clipboard.writeText(share.url);
-        toast.success('Ссылка скопирована в буфер обмена');
+        toast.success("Ссылка скопирована в буфер обмена");
       } catch {
-        toast.success('Ссылка создана');
+        toast.success("Ссылка создана");
       }
       void mutate();
     } catch (e) {
-      const message =
-        humanizeApiError(e, 'Не удалось создать ссылку.');
+      const message = humanizeApiError(e, "Не удалось создать ссылку.");
       toast.error(message);
     } finally {
       setCreating(false);
@@ -78,11 +77,10 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
   const onRevoke = async (id: string) => {
     try {
       await sharesApi.revoke(id);
-      toast.success('Ссылка отозвана');
+      toast.success("Ссылка отозвана");
       void mutate();
     } catch (e) {
-      const message =
-        humanizeApiError(e, 'Не удалось отозвать ссылку.');
+      const message = humanizeApiError(e, "Не удалось отозвать ссылку.");
       toast.error(message);
     }
   };
@@ -90,9 +88,9 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
   const copyUrl = async (url: string) => {
     try {
       await navigator.clipboard.writeText(url);
-      toast.success('Скопировано');
+      toast.success("Скопировано");
     } catch {
-      toast.error('Не удалось скопировать');
+      toast.error("Не удалось скопировать");
     }
   };
 
@@ -102,7 +100,8 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
         <DialogHeader>
           <DialogTitle>Поделиться встречей</DialogTitle>
           <DialogDescription>
-            Создайте публичную ссылку. Получатель увидит только то, что вы разрешите.
+            Создайте публичную ссылку. Получатель увидит только то, что вы
+            разрешите.
           </DialogDescription>
         </DialogHeader>
 
@@ -148,7 +147,10 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="share-expiration">Срок действия</Label>
-            <Select value={days} onValueChange={(v) => setDays(v as '1' | '7' | '14')}>
+            <Select
+              value={days}
+              onValueChange={(v) => setDays(v as "1" | "7" | "14")}
+            >
               <SelectTrigger id="share-expiration">
                 <SelectValue />
               </SelectTrigger>
@@ -198,8 +200,8 @@ export function ShareDialog({ meetingId, open, onOpenChange }: ShareDialogProps)
                   </span>
                   <span className="shrink-0 text-xs text-fg-tertiary">
                     {s.expiresAt
-                      ? `до ${s.expiresAt.toLocaleDateString('ru-RU')}`
-                      : 'без срока'}
+                      ? `до ${s.expiresAt.toLocaleDateString("ru-RU")}`
+                      : "без срока"}
                   </span>
                   <button
                     type="button"

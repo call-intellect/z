@@ -6,39 +6,13 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { type SpecialistRoutingJobData } from '../../core-queue/queues';
 import { Specialist38HelpfulnessService } from '../services/specialist-3-8-helpfulness.service';
 
-/**
- * SBA Wave 2 — Specialist 3.8 (Helpfulness Agent) handler.
- *
- * Handler `core.specialist-routing` jobName='3-8-helpfulness'. Вызывается из
- * `SpecialistRoutingDispatcherWorker.dispatch`; делегирует в
- * `Specialist38HelpfulnessService.processBlock`.
- *
- * Триггер: RouterService должен начать диспатчить блоки с signalType
- * ∈ {help_provided, proactive_hint, mentoring, emotional_support,
- *    constructive_feedback, question_unanswered, question_acknowledged_no_action,
- *    helped_by, helped_to, thanks_explicit, task_comment, task_mention}
- * на этот специалист (см. router.service.ts — расширение mapping'а в Wave 2).
- *
- * Дополнительно специалист может срабатывать на signalType=question (когда уже
- * детектированы 48ч без ответа — это question_unanswered), но это решает
- * RouterService.
- *
- * Идемпотентность через jobId `3-8-helpfulness_<blockId>` (формируется в
- * RouterService.dispatch).
- */
 @Injectable()
 export class Specialist38HelpfulnessWorker {
   private readonly logger = new Logger(Specialist38HelpfulnessWorker.name);
 
-  /** Имя специалиста (ключ маршрутизации диспетчера). */
   static readonly SPECIALIST_NAME = '3-8-helpfulness';
 
-  /**
-   * SignalType, которые специалист реально обрабатывает. Дублирует фильтр
-   * RouterService — на стороне consumer'а cheap-фильтр без обращения к БД.
-   */
   static readonly ALLOWED_SIGNAL_TYPES: ReadonlySet<string> = new Set([
-    // 7 helpfulness-типов (см. SignalType enum, добавлены в Sprint 1)
     'help_provided',
     'proactive_hint',
     'mentoring',
@@ -46,11 +20,9 @@ export class Specialist38HelpfulnessWorker {
     'constructive_feedback',
     'question_unanswered',
     'question_acknowledged_no_action',
-    // 3 gamification-типа — тоже про помощь / благодарность
     'helped_by',
     'helped_to',
     'thanks_explicit',
-    // блоки из tracker (комментарии в задачах) — главный источник helpfulness
     'task_comment',
     'task_mention',
   ]);
@@ -67,11 +39,7 @@ export class Specialist38HelpfulnessWorker {
     const start = Date.now();
     const { blockId, tenantId, signalType } = job.data;
 
-    // Cheap-фильтр по signalType до запроса в БД.
-    if (
-      signalType &&
-      !Specialist38HelpfulnessWorker.ALLOWED_SIGNAL_TYPES.has(signalType)
-    ) {
+    if (signalType && !Specialist38HelpfulnessWorker.ALLOWED_SIGNAL_TYPES.has(signalType)) {
       this.logger.debug(
         { blockId, signalType },
         'specialist-3-8: signalType вне области специалиста — skip',
@@ -94,10 +62,7 @@ export class Specialist38HelpfulnessWorker {
         },
       });
       if (!block) {
-        this.logger.debug(
-          { blockId },
-          'specialist-3-8: блок не найден — skip',
-        );
+        this.logger.debug({ blockId }, 'specialist-3-8: блок не найден — skip');
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
           reason: 'block_not_found',
@@ -126,12 +91,7 @@ export class Specialist38HelpfulnessWorker {
         });
         return;
       }
-      if (
-        !Specialist38HelpfulnessWorker.ALLOWED_SIGNAL_TYPES.has(
-          block.signalType,
-        )
-      ) {
-        // DB-уточнение, если в payload signalType отсутствовал.
+      if (!Specialist38HelpfulnessWorker.ALLOWED_SIGNAL_TYPES.has(block.signalType)) {
         this.metrics.incCoreSpecialistSkipped({
           specialist: Specialist38HelpfulnessWorker.SPECIALIST_NAME,
           reason: 'signal_out_of_scope',

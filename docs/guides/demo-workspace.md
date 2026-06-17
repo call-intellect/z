@@ -33,7 +33,7 @@
 
 ### Способ Б — через админку (Z-Admin)
 
-> Планируется (см. `plans/tz/2026-05-29-admin-demo-workspace-creation.md`). После реализации: super-admin на странице `/admin/demo` выбирает Org из списка и жмёт «Создать демо» / «Сбросить демо» — без CLI и без логина под owner'ом.
+> Планируется (см. `plans/archive/2026-05-29-admin-demo-workspace-creation.md`). После реализации: super-admin на странице `/admin/demo` выбирает Org из списка и жмёт «Создать демо» / «Сбросить демо» — без CLI и без логина под owner'ом.
 
 ### Способ В — CLI (для теста / массового прогона)
 
@@ -94,4 +94,4 @@ curl -X POST https://api.prod.host/api/v1/orgs/<orgId>/reset-demo \
 ## Связанное
 
 - Prod-операции — [docs/operations/prod-deploy-log.md](../operations/prod-deploy-log.md) (Шаг 7.8).
-- Планы фич — `plans/tz/2026-05-29-admin-demo-workspace-creation.md` (демо из админки).
+- Планы фич — `plans/archive/2026-05-29-admin-demo-workspace-creation.md` (демо из админки).

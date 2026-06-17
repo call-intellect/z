@@ -1,12 +1,3 @@
-/**
- * Б-1 устойчивость: падение одного виджета не валит весь дашборд директора.
- *
- * До фикса getDirectorView гонял 14 запросов одним Promise.all без обработки
- * ошибок — reject любой ветки → метод бросал → контроллер отдавал 500. Теперь
- * каждая ветка обёрнута в safe(): ошибка деградирует виджет до нейтрального
- * fallback'а, дашборд отдаётся (degraded=true), а §5.4-guard не даёт подменить
- * частичные данные синтетическим «образцом».
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../../common/config';
@@ -23,7 +14,6 @@ import type { NarrativeCitationsParserService } from './narrative-citations-pars
 import type { SentimentIndexService } from './sentiment-index.service';
 
 function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboardService {
-  // Все запросы к БД пустые → tenant считается empty (если ничего не бросает).
   const prisma = {
     theme: { findMany: vi.fn(async () => []) },
     ideaBlock: {
@@ -72,9 +62,7 @@ function buildService(opts: { sentimentThrows?: boolean } = {}): DirectorDashboa
   } as unknown as PendingActionsService;
 
   const config = {
-    getDynamic: vi.fn(
-      async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def,
-    ),
+    getDynamic: vi.fn(async <T>(_key: string, _env: string | undefined, def: T): Promise<T> => def),
   } as unknown as TypedConfigService;
   const metrics = {
     incDashboardValueStripServed: vi.fn(),
@@ -103,14 +91,11 @@ describe('DirectorDashboardService — устойчивость (Б-1)', () => {
   it('падение виджета НЕ валит дашборд → degraded=true, виджет деградирует до fallback', async () => {
     const service = buildService({ sentimentThrows: true });
 
-    // Главное: метод НЕ бросает (раньше Promise.all reject → 500).
     const dto = await service.getDirectorView({ tenantId: 't-1', period: 'week' });
 
     expect(dto.degraded).toBe(true);
-    // Упавший виджет заменён нейтральным fallback'ом.
     expect(dto.kpiSentimentIndex.value).toBe(0);
     expect(dto.kpiSentimentIndex.sparkline).toEqual([]);
-    // §5.4 guard: при сбое НЕ подменяем данные синтетическим «образцом».
     expect(dto.isEmpty).toBe(false);
   });
 

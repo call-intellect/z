@@ -10,13 +10,6 @@ import type { ProjectsService } from './projects.service';
 import type { TrackerEventsService } from './tracker-events.service';
 import type { WebhookDispatcher } from './webhook-dispatcher.service';
 
-/**
- * Goals OKR v2 (Фаза 5) — unit-тесты `CyclesService.update` для primaryGoalId:
- *   - валидная цель того же tenant → ставится в data;
- *   - чужой/несуществующий goal → BadRequest, update не вызывается;
- *   - primaryGoalId=null → отвязка без проверки goal.
- */
-
 type Fn = ReturnType<typeof vi.fn>;
 
 function cycleRow(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -72,12 +65,7 @@ describe('CyclesService.update — primaryGoalId (Goals OKR v2, Фаза 5)', ()
 
   it('валидная цель того же tenant → primaryGoalId в data + в ответе', async () => {
     const svc = makeService(prisma);
-    const res = await svc.update(
-      'c-1',
-      { primaryGoalId: 'goal-1' },
-      't-1',
-      'u-1',
-    );
+    const res = await svc.update('c-1', { primaryGoalId: 'goal-1' }, 't-1', 'u-1');
     expect(prisma.goal.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 'goal-1', tenantId: 't-1' } }),
     );
@@ -101,12 +89,7 @@ describe('CyclesService.update — primaryGoalId (Goals OKR v2, Фаза 5)', ()
   it('primaryGoalId=null → отвязка без проверки goal', async () => {
     prisma.cycle.update = vi.fn(async () => cycleRow({ primaryGoalId: null }));
     const svc = makeService(prisma);
-    const res = await svc.update(
-      'c-1',
-      { primaryGoalId: null },
-      't-1',
-      'u-1',
-    );
+    const res = await svc.update('c-1', { primaryGoalId: null }, 't-1', 'u-1');
     expect(prisma.goal.findFirst).not.toHaveBeenCalled();
     expect(prisma.cycle.update).toHaveBeenCalledWith(
       expect.objectContaining({

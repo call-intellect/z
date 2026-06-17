@@ -1,12 +1,3 @@
-/**
- * W2 autonomy (2026-06-12) — Specialist31ProbeService × «лестница владельца»
- * для `regulation.missing_owner`:
- *   - resolved (единственный держатель роли) → АВТО-назначение ownerPersonId,
- *     запись в ленту, probe НЕ шлётся;
- *   - ambiguous (несколько держателей) → probe-вопрос-выбор с именами.
- *
- * Все зависимости мокированы.
- */
 import type { Regulation } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -26,18 +17,17 @@ function makeRegulation(): Regulation {
     name: 'Регламент возвратов',
     status: 'active',
     ownerPersonId: null,
-    // scope задан → checkScopeUnclear не срабатывает; роль-ступень лестницы.
     scope: 'role:role-1',
-    // lastConfirmedAt null → checkStale не срабатывает.
     lastConfirmedAt: null,
     sourceBlockIds: [],
   } as unknown as Regulation;
 }
 
-function makeEnv(resolution:
-  | { kind: 'resolved'; userId: string }
-  | { kind: 'ambiguous'; candidates: string[] }
-  | { kind: 'none' },
+function makeEnv(
+  resolution:
+    | { kind: 'resolved'; userId: string }
+    | { kind: 'ambiguous'; candidates: string[] }
+    | { kind: 'none' },
 ): {
   service: Specialist31ProbeService;
   suggest: ReturnType<typeof vi.fn>;
@@ -52,14 +42,8 @@ function makeEnv(resolution:
       findMany: vi.fn().mockResolvedValue([{ userId: 'admin-1' }]),
     },
     person: {
-      // АВТО-ветка: Person держателя роли.
-      findFirst: vi
-        .fn()
-        .mockResolvedValue({ id: 'person-1', name: 'Иван Иванов' }),
-      // ambiguous-ветка: имена кандидатов.
-      findMany: vi
-        .fn()
-        .mockResolvedValue([{ name: 'Иван Иванов' }, { name: 'Пётр Петров' }]),
+      findFirst: vi.fn().mockResolvedValue({ id: 'person-1', name: 'Иван Иванов' }),
+      findMany: vi.fn().mockResolvedValue([{ name: 'Иван Иванов' }, { name: 'Пётр Петров' }]),
     },
   } as unknown as PrismaService;
 
@@ -113,7 +97,6 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
       where: { id: string; tenantId: string; ownerPersonId: null };
       data: { ownerPersonId: string };
     };
-    // M-3 — optimistic-условие «поле всё ещё пусто» (защита от гонки).
     expect(upd.where).toEqual({
       id: 'reg-1',
       tenantId: 'org-1',
@@ -164,9 +147,7 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
     const call = env.suggest.mock.calls[0]![0] as {
       payload: { message: string };
     };
-    expect(call.payload.message).toContain(
-      'нет ответственного — назначить владельца?',
-    );
+    expect(call.payload.message).toContain('нет ответственного — назначить владельца?');
     expect(env.incOwnerResolution).toHaveBeenCalledWith({ outcome: 'none' });
   });
 
@@ -179,7 +160,6 @@ describe('Specialist31ProbeService × OwnerResolver (regulation.missing_owner)',
     expect(env.regulationUpdateMany).toHaveBeenCalledTimes(1);
     expect(env.feedPublish).not.toHaveBeenCalled();
     expect(env.suggest).not.toHaveBeenCalled();
-    // Метрика auto НЕ инкрементится — назначения не было.
     expect(env.incOwnerResolution).not.toHaveBeenCalledWith({
       outcome: 'auto',
     });

@@ -1,32 +1,29 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState, type JSX } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useState, type JSX } from "react";
+import Link from "next/link";
 
-import { ApiError, humanizeApiError } from '@/api/api-error';
+import { ApiError, humanizeApiError } from "@/api/api-error";
 import {
   functionalDomainsApi,
   type IndustrySlugApi,
-} from '@/api/functional-domains.api';
-import { useAuth } from '@/contexts/auth-context';
+} from "@/api/functional-domains.api";
+import { useAuth } from "@/contexts/auth-context";
 import {
   INDUSTRY_LABEL,
   toFunctionalDomain,
   type FunctionalDomainDomain,
-} from '@/domain/functional-domain';
-import { Button } from '@/ui/shadcn/button';
-import { Card } from '@/ui/shadcn/card';
+} from "@/domain/functional-domain";
+import { Button } from "@/ui/shadcn/button";
+import { Card } from "@/ui/shadcn/card";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '@app/(admin)/admin/AdminStateViews';
+} from "@app/(admin)/admin/AdminStateViews";
 
-/**
- * `/domains` UI — дерево + seed-template wizard.
- */
 export function DomainsClient(): JSX.Element {
   const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
   if (authLoading) return <AdminLoading rows={4} />;
@@ -38,7 +35,7 @@ export function DomainsClient(): JSX.Element {
       />
     );
   }
-  const canManage = currentOrgRole === 'owner' || currentOrgRole === 'admin';
+  const canManage = currentOrgRole === "owner" || currentOrgRole === "admin";
   return <DomainsContent orgId={currentOrgId} canManage={canManage} />;
 }
 
@@ -59,10 +56,12 @@ function DomainsContent({
     setLoading(true);
     setError(null);
     try {
-      const r = await functionalDomainsApi.list(orgId, { includeChildren: true });
+      const r = await functionalDomainsApi.list(orgId, {
+        includeChildren: true,
+      });
       setItems(r.items.map(toFunctionalDomain));
     } catch (err) {
-      setError(humanizeApiError(err, 'Не удалось загрузить домены'));
+      setError(humanizeApiError(err, "Не удалось загрузить домены"));
     } finally {
       setLoading(false);
     }
@@ -85,7 +84,7 @@ function DomainsContent({
         );
         await load();
       } catch (err) {
-        setError(humanizeApiError(err, 'Не удалось применить шаблон'));
+        setError(humanizeApiError(err, "Не удалось применить шаблон"));
       } finally {
         setBusy(false);
       }
@@ -104,11 +103,11 @@ function DomainsContent({
         <p className="mt-1 text-sm text-fg-tertiary">
           Дерево функциональных областей компании (Маркетинг, Продажи, …).
           Используется для оси FUNCTIONAL в графе знаний и для оценки зрелости.
-          Связано с{' '}
+          Связано с{" "}
           <Link href="/structure" className="underline">
             Структурой
-          </Link>{' '}
-          и{' '}
+          </Link>{" "}
+          и{" "}
           <Link href="/maturity" className="underline">
             Зрелостью
           </Link>
@@ -153,8 +152,8 @@ function DomainsContent({
           title="Домены ещё не созданы"
           description={
             canManage
-              ? 'Выберите индустрию выше, чтобы создать стартовый набор.'
-              : 'Попросите администратора применить шаблон индустрии.'
+              ? "Выберите индустрию выше, чтобы создать стартовый набор."
+              : "Попросите администратора применить шаблон индустрии."
           }
         />
       ) : (
@@ -193,14 +192,15 @@ function DomainNode({
             )}
           </div>
           {domain.description && (
-            <p className="mt-1 text-xs text-fg-tertiary">{domain.description}</p>
+            <p className="mt-1 text-xs text-fg-tertiary">
+              {domain.description}
+            </p>
           )}
           <div className="mt-1 text-[11px] text-fg-tertiary">
-            slug: {domain.slug} · отделов:{' '}
-            {domain.linkedDepartmentsCount}
+            slug: {domain.slug} · отделов: {domain.linkedDepartmentsCount}
             {domain.completenessPercent !== null
               ? ` · заполнено ${domain.completenessPercent}%`
-              : ''}
+              : ""}
           </div>
         </div>
       </Card>

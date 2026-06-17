@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import {
@@ -17,20 +11,6 @@ import {
 import { ActivityRecorderService } from './activity-recorder.service';
 import { IssuesService } from './issues.service';
 
-/**
- * RelationsService — CRUD над `IssueRelation` (связи между задачами).
- *
- * Бизнес-инварианты:
- *   1. Self-relation запрещён (`sourceIssueId !== targetIssueId`).
- *   2. Связи симметричные: если создаём `A blocks B`, в той же транзакции
- *      создаём обратную `B blocked_by A`. Для `relates_to` обратная — такая же.
- *   3. Идемпотентность: если уже есть запись с тем же
- *      `(sourceIssueId, targetIssueId, relationType)` — возвращаем существующую,
- *      не валим конфликтом. На обратной стороне делаем upsert (тоже идемпотентно).
- *   4. Каждая мутация записывает `IssueActivity` для обоих issues (related /
- *      unrelated), чтобы во втором мозге было видно «история того, что связывалось».
- *   5. Tenant-ownership: source и target должны принадлежать одному tenant'у.
- */
 @Injectable()
 export class RelationsService {
   private readonly logger = new Logger(RelationsService.name);
@@ -42,14 +22,7 @@ export class RelationsService {
     private readonly activity: ActivityRecorderService,
   ) {}
 
-  /**
-   * Все связи задачи (как outgoing — source=issueId, так и incoming — target=issueId).
-   * Отсортированы по createdAt DESC. Лимит 500 (на UI больше не нужно).
-   */
-  async getRelations(
-    issueId: string,
-    tenantId: string,
-  ): Promise<IssueRelationDto[]> {
+  async getRelations(issueId: string, tenantId: string): Promise<IssueRelationDto[]> {
     await this.issues.requireIssue(issueId, tenantId);
     const rows = await this.prisma.issueRelation.findMany({
       where: {
@@ -69,14 +42,6 @@ export class RelationsService {
     }));
   }
 
-  /**
-   * Создать связь + парную обратную. Транзакция.
-   *
-   * Возвращает свежесозданную (или существующую — при идемпотентном повторе)
-   * запись в формате `IssueRelationDto` с `direction='out'` (направление —
-   * относительно source). Парная обратная запись возвращается через
-   * `getRelations()` — отдельный вызов фронта.
-   */
   async createRelation(
     sourceIssueId: string,
     dto: CreateIssueRelationDto,
@@ -93,14 +58,12 @@ export class RelationsService {
       });
     }
 
-    // Обе задачи должны существовать и быть в одном tenant'е.
     await this.issues.requireIssue(sourceIssueId, tenantId);
     await this.issues.requireIssue(dto.targetIssueId, tenantId);
 
     const opposite = oppositeRelationType(dto.relationType);
 
     const created = await this.prisma.$transaction(async (tx) => {
-      // Прямая связь — upsert по unique (source,target,relationType).
       const direct = await tx.issueRelation.upsert({
         where: {
           sourceIssueId_targetIssueId_relationType: {
@@ -109,7 +72,7 @@ export class RelationsService {
             relationType: dto.relationType,
           },
         },
-        update: {}, // Идемпотентно: если уже есть — оставляем как было.
+        update: {},
         create: {
           sourceIssueId,
           targetIssueId: dto.targetIssueId,
@@ -118,7 +81,6 @@ export class RelationsService {
         },
       });
 
-      // Обратная связь (если применимо). Тоже upsert.
       if (opposite) {
         await tx.issueRelation.upsert({
           where: {
@@ -138,7 +100,6 @@ export class RelationsService {
         });
       }
 
-      // IssueActivity на обоих issues.
       await this.activity.record({
         tenantId,
         issueId: sourceIssueId,
@@ -180,10 +141,6 @@ export class RelationsService {
     };
   }
 
-  /**
-   * Удалить связь по id. Парная обратная (если есть в БД) тоже удаляется.
-   * IssueActivity verb='unrelated' на обоих issues.
-   */
   async deleteRelation(
     relationId: string,
     tenantId: string,
@@ -198,19 +155,14 @@ export class RelationsService {
         error: { code: 'relation_not_found', message: 'Связь не найдена' },
       });
     }
-    // Tenant-check через issue ownership (исходную проверяем — обоих в одном
-    // tenant'е инвариант установлен на этапе create).
     await this.issues.requireIssue(relation.sourceIssueId, tenantId);
 
-    const opposite = oppositeRelationType(
-      relation.relationType as IssueRelationType,
-    );
+    const opposite = oppositeRelationType(relation.relationType as IssueRelationType);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.issueRelation.delete({ where: { id: relationId } });
 
       if (opposite) {
-        // Удаляем парную (если она ещё существует — могла быть удалена ранее).
         await tx.issueRelation.deleteMany({
           where: {
             sourceIssueId: relation.targetIssueId,

@@ -4,37 +4,15 @@ import type { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
 
-/**
- * Pulse Wave 6 §6.5 — Promise-Network-Analyzer cron.
- *
- * Источник: plans/tz/2026-05-30-pulse-full.md §6.5.
- *
- * Weekly (`@Cron('0 5 * * 1')`). Для каждой Org:
- *   1. Загружает `IdeaBlock` с `signalType='commitment'` за 30 дней.
- *   2. Автор обещания = Person через `IdeaBlockEntity.role='subject'`,
- *      получатель = `commitmentRecipientPersonId`.
- *   3. Строит directed-граф edge: author → recipient (count повторений).
- *   4. Считает per-node: `inDegree` (сколько обещано этому), `outDegree`
- *      (сколько обещал сам), `balance = inDegree - outDegree`.
- *   5. Помечает `role`:
- *        - 'accumulator' (inDegree ≥ 3 × outDegree, обещают много)
- *        - 'donor'       (outDegree ≥ 3 × inDegree, раздаёт обещания)
- *        - 'isolated'    (inDegree + outDegree ≤ 1)
- *        - 'balanced'    (иначе)
- *
- * Без LLM — чистая агрегация. Best-effort.
- */
 @Injectable()
 export class PromiseNetworkAnalyzerCron {
   private readonly logger = new Logger(PromiseNetworkAnalyzerCron.name);
   private static readonly WINDOW_DAYS = 30;
-  private static readonly WINDOW_MS =
-    PromiseNetworkAnalyzerCron.WINDOW_DAYS * 24 * 3600 * 1000;
+  private static readonly WINDOW_MS = PromiseNetworkAnalyzerCron.WINDOW_DAYS * 24 * 3600 * 1000;
   private static readonly MAX_ORGS_PER_RUN = 5_000;
 
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
-  /** Weekly Mon 05:00 UTC. */
   @Cron('0 5 * * 1')
   async run(): Promise<void> {
     try {
@@ -53,9 +31,7 @@ export class PromiseNetworkAnalyzerCron {
     errors: number;
   }> {
     const now = new Date();
-    const periodStart = new Date(
-      now.getTime() - PromiseNetworkAnalyzerCron.WINDOW_MS,
-    );
+    const periodStart = new Date(now.getTime() - PromiseNetworkAnalyzerCron.WINDOW_MS);
 
     const orgs = await this.prisma.org.findMany({
       where: { deletedAt: null },
@@ -104,7 +80,6 @@ export class PromiseNetworkAnalyzerCron {
         id: true,
         commitmentRecipientPersonId: true,
         commitmentRecipient: { select: { id: true, name: true } },
-        // Автор через IdeaBlockEntity с role='subject' → Entity.persons.
         entities: {
           where: { entity: { type: 'person' } },
           select: {
@@ -124,16 +99,8 @@ export class PromiseNetworkAnalyzerCron {
     });
     if (commitments.length === 0) return false;
 
-    // Узлы графа: personId → { name, inDegree, outDegree }.
-    const nodes = new Map<
-      string,
-      { name: string; inDegree: number; outDegree: number }
-    >();
-    // Edges: "fromId|toId" → count.
-    const edgesMap = new Map<
-      string,
-      { fromPersonId: string; toPersonId: string; count: number }
-    >();
+    const nodes = new Map<string, { name: string; inDegree: number; outDegree: number }>();
+    const edgesMap = new Map<string, { fromPersonId: string; toPersonId: string; count: number }>();
 
     let validCommitments = 0;
     for (const block of commitments) {
@@ -141,7 +108,6 @@ export class PromiseNetworkAnalyzerCron {
       if (!recipient) continue;
       const author = pickAuthor(block.entities);
       if (!author) continue;
-      // Self-promise — игнорируем.
       if (author.personId === recipient.id) continue;
 
       validCommitments++;
@@ -199,11 +165,6 @@ export class PromiseNetworkAnalyzerCron {
   }
 }
 
-/**
- * Из связанных IdeaBlockEntity достаём первого «лучшего» автора.
- * Предпочитаем role='subject'; иначе берём первого Person'а.
- * Аналог `CommitmentsService.extractAuthor`.
- */
 function pickAuthor(
   entities: Array<{
     role: string | null;
@@ -230,20 +191,12 @@ function upsertNode(
   }
 }
 
-/**
- * Pulse §6.5 классификатор узла:
- *   - accumulator: inDegree ≥ 3 × outDegree (получает много).
- *   - donor:       outDegree ≥ 3 × inDegree (раздаёт).
- *   - isolated:    in + out ≤ 1.
- *   - balanced:    иначе.
- */
 export function classifyRole(
   inDegree: number,
   outDegree: number,
 ): 'accumulator' | 'donor' | 'isolated' | 'balanced' {
   if (inDegree + outDegree <= 1) return 'isolated';
-  if (inDegree >= 3 * Math.max(1, outDegree) && inDegree >= 3)
-    return 'accumulator';
+  if (inDegree >= 3 * Math.max(1, outDegree) && inDegree >= 3) return 'accumulator';
   if (outDegree >= 3 * Math.max(1, inDegree) && outDegree >= 3) return 'donor';
   return 'balanced';
 }

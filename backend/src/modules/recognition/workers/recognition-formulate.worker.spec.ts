@@ -26,13 +26,11 @@ function mkWorker(): {
   const prisma: MockPrisma = {
     recognition: {
       findFirst: vi.fn().mockResolvedValue(null),
-      create: vi
-        .fn()
-        .mockImplementation(async ({ data }) => ({
-          id: 'rec-1',
-          ...data,
-          createdAt: new Date(),
-        })),
+      create: vi.fn().mockImplementation(async ({ data }) => ({
+        id: 'rec-1',
+        ...data,
+        createdAt: new Date(),
+      })),
     },
     user: {
       findUnique: vi.fn().mockResolvedValue({ name: 'Иван' }),
@@ -57,9 +55,7 @@ function mkWorker(): {
   return { worker, prisma, llm };
 }
 
-function jobOf(
-  data: RecognitionFormulateJobData,
-): Job<RecognitionFormulateJobData> {
+function jobOf(data: RecognitionFormulateJobData): Job<RecognitionFormulateJobData> {
   return { id: 'job-1', data, attemptsMade: 0 } as unknown as Job<RecognitionFormulateJobData>;
 }
 
@@ -181,8 +177,6 @@ describe('RecognitionFormulateWorker', () => {
 
   it('этическая защита: fromUserId сохраняется, но message от AI (не от человека)', async () => {
     const { worker, prisma, llm } = mkWorker();
-    // payload симулирует «коллега U поблагодарил». worker должен сохранить
-    // U в fromUserId, но НЕ слать промпт LLM в стиле «напиши сообщение от имени U».
     await worker.process(
       jobOf({
         tenantId: 'org-1',
@@ -193,12 +187,10 @@ describe('RecognitionFormulateWorker', () => {
         contextEntityType: 'issue_comment',
       }),
     );
-    // 1. fromUserId сохраняется в БД (для UI и audit).
     const create = prisma.recognition.create.mock.calls[0]?.[0] as {
       data: { fromUserId: string };
     };
     expect(create.data.fromUserId).toBe('user-thanker');
-    // 2. systemPrompt LLM-вызова содержит «от имени AI», а не от человека.
     const llmCall = llm.call.mock.calls[0]?.[0] as { systemPrompt: string };
     expect(llmCall.systemPrompt).toContain('от имени AI');
     expect(llmCall.systemPrompt).toContain('НЕ от имени');

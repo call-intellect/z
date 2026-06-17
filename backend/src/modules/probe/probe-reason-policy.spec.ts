@@ -1,15 +1,8 @@
-/**
- * Probe-система Фаза 2 (2026-06-11) — окно по типу пробела + recheck.
- * Детерминизм: probeWindow — чистая функция; recheck — с мок-Prisma.
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
-import {
-  PROBE_REASON_RECHECK,
-  probeWindow,
-} from './probe-reason-policy';
+import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 
 describe('probeWindow', () => {
   it('immediate для критичных reason', () => {
@@ -48,9 +41,7 @@ describe('PROBE_REASON_RECHECK', () => {
   it('decision.missing_decider: решающего нет → пробел открыт (true)', async () => {
     const prisma = {
       decision: {
-        findFirst: vi
-          .fn()
-          .mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
+        findFirst: vi.fn().mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
       },
     } as unknown as PrismaService;
     const rel = await PROBE_REASON_RECHECK['decision.missing_decider']!({

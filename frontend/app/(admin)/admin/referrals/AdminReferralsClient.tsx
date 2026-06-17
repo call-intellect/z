@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
   Ban,
@@ -9,12 +9,12 @@ import {
   ShieldCheck,
   Users,
   XCircle,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { ApiError } from '@/api/api-error';
-import { referralsApi } from '@/api/referrals.api';
-import type { ReferralPayoutApi, ReferralViewApi } from '@/api/types/referrals';
-import { formatRubles } from '@/domain/billing';
+import { ApiError } from "@/api/api-error";
+import { referralsApi } from "@/api/referrals.api";
+import type { ReferralPayoutApi, ReferralViewApi } from "@/api/types/referrals";
+import { formatRubles } from "@/domain/billing";
 import {
   isFullyVerified,
   legalFormLabel,
@@ -23,30 +23,20 @@ import {
   referralFromApi,
   referralPayoutFromApi,
   type ReferralPayoutDomain,
-} from '@/domain/referral';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Input } from '@/ui/shadcn/input';
-import { Skeleton } from '@/ui/shadcn/skeleton';
+} from "@/domain/referral";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Input } from "@/ui/shadcn/input";
+import { Skeleton } from "@/ui/shadcn/skeleton";
 
-type Tab = 'referrals' | 'payouts';
+type Tab = "referrals" | "payouts";
 
 interface ReferralWithOwner extends ReferralViewApi {
   owner: { id: string; email: string; name: string };
 }
 
-/**
- * `/admin/referrals` — super_admin управление реферальной программой.
- *
- * Два таба:
- *   - «Рефералы» — список профилей с email/inn/verified-статусом
- *   - «Начисления» — фильтры status/period + actions mark-paid/void + кнопка
- *     «Закрыть период» (ручной trigger cron 10-го числа)
- *
- * См. plans/tz/2026-05-27-billing-tochka-referral-dadata-z.md §11.4.
- */
 export function AdminReferralsClient() {
-  const [tab, setTab] = useState<Tab>('referrals');
+  const [tab, setTab] = useState<Tab>("referrals");
 
   return (
     <div className="p-6 max-w-6xl space-y-6">
@@ -62,15 +52,18 @@ export function AdminReferralsClient() {
       </div>
 
       <div className="border-b flex gap-1">
-        <TabBtn active={tab === 'referrals'} onClick={() => setTab('referrals')}>
+        <TabBtn
+          active={tab === "referrals"}
+          onClick={() => setTab("referrals")}
+        >
           Рефералы
         </TabBtn>
-        <TabBtn active={tab === 'payouts'} onClick={() => setTab('payouts')}>
+        <TabBtn active={tab === "payouts"} onClick={() => setTab("payouts")}>
           Начисления
         </TabBtn>
       </div>
 
-      {tab === 'referrals' ? <ReferralsTab /> : <PayoutsTab />}
+      {tab === "referrals" ? <ReferralsTab /> : <PayoutsTab />}
     </div>
   );
 }
@@ -89,18 +82,16 @@ function TabBtn({
       type="button"
       onClick={onClick}
       className={
-        'px-4 py-2 text-sm font-medium border-b-2 transition-colors ' +
+        "px-4 py-2 text-sm font-medium border-b-2 transition-colors " +
         (active
-          ? 'border-primary text-primary'
-          : 'border-transparent text-muted-foreground hover:text-foreground')
+          ? "border-primary text-primary"
+          : "border-transparent text-muted-foreground hover:text-foreground")
       }
     >
       {children}
     </button>
   );
 }
-
-// ────────────────────────── Tab: рефералы ──────────────────────────
 
 function ReferralsTab() {
   const [items, setItems] = useState<ReferralWithOwner[]>([]);
@@ -114,7 +105,7 @@ function ReferralsTab() {
       const res = await referralsApi.adminListReferrals({ limit: 200 });
       setItems(res.items);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка загрузки');
+      setError(e instanceof ApiError ? e.message : "Ошибка загрузки");
     } finally {
       setLoading(false);
     }
@@ -155,7 +146,9 @@ function ReferralsTab() {
               <tr key={r.id} className="border-t">
                 <td className="px-6 py-3">
                   <div className="font-medium">{api.owner.name}</div>
-                  <div className="text-xs text-muted-foreground">{api.owner.email}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {api.owner.email}
+                  </div>
                 </td>
                 <td className="px-6 py-3 font-mono text-xs">{r.slug}</td>
                 <td className="px-6 py-3 font-mono">{r.inn}</td>
@@ -164,8 +157,8 @@ function ReferralsTab() {
                   <Badge
                     className={
                       verified
-                        ? 'bg-green-100 text-green-900'
-                        : 'bg-amber-100 text-amber-900'
+                        ? "bg-green-100 text-green-900"
+                        : "bg-amber-100 text-amber-900"
                     }
                   >
                     {verified ? (
@@ -173,16 +166,16 @@ function ReferralsTab() {
                         <ShieldCheck className="w-3 h-3" /> Готов
                       </span>
                     ) : !r.innVerifiedAt && !r.contractAcceptedAt ? (
-                      'Без верификации'
+                      "Без верификации"
                     ) : !r.innVerifiedAt ? (
-                      'ИНН не подтверждён'
+                      "ИНН не подтверждён"
                     ) : (
-                      'Оферта не принята'
+                      "Оферта не принята"
                     )}
                   </Badge>
                 </td>
                 <td className="px-6 py-3 text-muted-foreground">
-                  {r.createdAt.toLocaleDateString('ru-RU')}
+                  {r.createdAt.toLocaleDateString("ru-RU")}
                 </td>
               </tr>
             );
@@ -193,17 +186,15 @@ function ReferralsTab() {
   );
 }
 
-// ────────────────────────── Tab: payouts ──────────────────────────
-
 function PayoutsTab() {
   const [items, setItems] = useState<ReferralPayoutApi[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<
-    'all' | 'pending' | 'paid' | 'void'
-  >('pending');
-  const [periodMonth, setPeriodMonth] = useState('');
+    "all" | "pending" | "paid" | "void"
+  >("pending");
+  const [periodMonth, setPeriodMonth] = useState("");
   const [action, setAction] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -211,14 +202,14 @@ function PayoutsTab() {
     setError(null);
     try {
       const res = await referralsApi.adminListPayouts({
-        status: statusFilter === 'all' ? undefined : statusFilter,
+        status: statusFilter === "all" ? undefined : statusFilter,
         periodMonth: periodMonth.trim() || undefined,
         limit: 200,
       });
       setItems(res.items);
       setTotal(res.total);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка');
+      setError(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setLoading(false);
     }
@@ -230,8 +221,8 @@ function PayoutsTab() {
 
   const handleMarkPaid = async (id: string) => {
     const docUrl = window.prompt(
-      'URL акта / чека НПД / счёта ИП в S3 (опционально):',
-      '',
+      "URL акта / чека НПД / счёта ИП в S3 (опционально):",
+      "",
     );
     setAction(`paid:${id}`);
     try {
@@ -240,16 +231,16 @@ function PayoutsTab() {
       });
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка');
+      setError(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setAction(null);
     }
   };
 
   const handleVoid = async (id: string) => {
-    const reason = window.prompt('Причина отмены (обязательно):', '');
+    const reason = window.prompt("Причина отмены (обязательно):", "");
     if (!reason || reason.trim().length < 3) {
-      setError('Причина обязательна (≥3 символа)');
+      setError("Причина обязательна (≥3 символа)");
       return;
     }
     setAction(`void:${id}`);
@@ -257,7 +248,7 @@ function PayoutsTab() {
       await referralsApi.adminVoidPayout(id, { voidReason: reason.trim() });
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка');
+      setError(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setAction(null);
     }
@@ -265,7 +256,7 @@ function PayoutsTab() {
 
   const handleClosePeriod = async () => {
     if (!periodMonth.match(/^\d{4}-\d{2}$/)) {
-      setError('periodMonth должен быть в формате YYYY-MM');
+      setError("periodMonth должен быть в формате YYYY-MM");
       return;
     }
     if (
@@ -276,7 +267,7 @@ function PayoutsTab() {
     ) {
       return;
     }
-    setAction('close');
+    setAction("close");
     try {
       const result = await referralsApi.adminClosePeriod(periodMonth);
       alert(
@@ -287,16 +278,16 @@ function PayoutsTab() {
       );
       await load();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Ошибка');
+      setError(e instanceof ApiError ? e.message : "Ошибка");
     } finally {
       setAction(null);
     }
   };
 
   const colorClass: Record<string, string> = {
-    green: 'bg-green-100 text-green-900',
-    amber: 'bg-amber-100 text-amber-900',
-    red: 'bg-red-100 text-red-900',
+    green: "bg-green-100 text-green-900",
+    amber: "bg-amber-100 text-amber-900",
+    red: "bg-red-100 text-red-900",
   };
 
   return (
@@ -310,7 +301,7 @@ function PayoutsTab() {
             value={statusFilter}
             onChange={(e) =>
               setStatusFilter(
-                e.target.value as 'all' | 'pending' | 'paid' | 'void',
+                e.target.value as "all" | "pending" | "paid" | "void",
               )
             }
             className="rounded-md border bg-background px-3 py-2 text-sm"
@@ -342,7 +333,7 @@ function PayoutsTab() {
           onClick={handleClosePeriod}
           disabled={action !== null || !periodMonth.match(/^\d{4}-\d{2}$/)}
         >
-          {action === 'close' && <Loader2 className="w-4 h-4 animate-spin" />}
+          {action === "close" && <Loader2 className="w-4 h-4 animate-spin" />}
           Закрыть период
         </Button>
       </div>
@@ -382,7 +373,9 @@ function PayoutsTab() {
                       {formatRubles(p.amountKopecks)}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={colorClass[payoutStatusColor(p.status)]}>
+                      <Badge
+                        className={colorClass[payoutStatusColor(p.status)]}
+                      >
                         {payoutStatusLabel(p.status)}
                       </Badge>
                       {p.voidReason && (
@@ -392,13 +385,13 @@ function PayoutsTab() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {p.createdAt.toLocaleDateString('ru-RU')}
+                      {p.createdAt.toLocaleDateString("ru-RU")}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {p.paidAt?.toLocaleDateString('ru-RU') ?? '—'}
+                      {p.paidAt?.toLocaleDateString("ru-RU") ?? "—"}
                     </td>
                     <td className="px-4 py-3 text-right space-x-2">
-                      {p.status === 'pending' && (
+                      {p.status === "pending" && (
                         <>
                           <Button
                             size="sm"

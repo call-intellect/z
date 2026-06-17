@@ -4,17 +4,6 @@ import type { Idea } from '@prisma/client';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { ProbeService } from '../../probe/probe.service';
 
-/**
- * SBA β-5 — Specialist36ProbeService.
- *
- * 2 probe-trigger'а:
- *   1. `idea.support_request` — у только что созданной Idea ровно один
- *      supporter; предлагаем members поддержать.
- *   2. `idea.status_unclear` — Idea со status='in_discussion' и
- *      firstProposedAt > 14 дней назад без statusChange → admin/owner.
- *
- * Все probe идут через `ProbeService.suggest(...)`. Контракт: НЕ бросает.
- */
 @Injectable()
 export class Specialist36ProbeService {
   private readonly logger = new Logger(Specialist36ProbeService.name);
@@ -28,10 +17,6 @@ export class Specialist36ProbeService {
     @Inject(ProbeService) private readonly probe: ProbeService,
   ) {}
 
-  /**
-   * `idea.support_request`. Вызывается при создании новой Idea с
-   * supporterCount=1 — приглашаем других членов Org поддержать.
-   */
   async emitSupportRequest(idea: Idea): Promise<void> {
     try {
       if (idea.supporterCount > 1) return;
@@ -72,15 +57,9 @@ export class Specialist36ProbeService {
     }
   }
 
-  /**
-   * `idea.status_unclear` (cron). Idea со status='in_discussion' давно без
-   * statusChange. По одной Org за вызов.
-   */
   async checkStatusUnclearForOrg(tenantId: string): Promise<number> {
     const cutoff = new Date();
-    cutoff.setUTCDate(
-      cutoff.getUTCDate() - Specialist36ProbeService.STATUS_UNCLEAR_DAYS,
-    );
+    cutoff.setUTCDate(cutoff.getUTCDate() - Specialist36ProbeService.STATUS_UNCLEAR_DAYS);
     const ideas = await this.prisma.idea.findMany({
       where: {
         tenantId,

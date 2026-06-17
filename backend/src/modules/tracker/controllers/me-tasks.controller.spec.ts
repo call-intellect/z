@@ -4,22 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
 import type { CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import type { RbacService } from '../../rbac/rbac.service';
-import {
-  PostMeTaskBodySchema,
-  type PostMeTaskBodyDto,
-} from '../dto/issues/post-me-task.dto';
+import { PostMeTaskBodySchema, type PostMeTaskBodyDto } from '../dto/issues/post-me-task.dto';
 import type { MeTasksService } from '../services/me-tasks.service';
 
 import { MeTasksController } from './me-tasks.controller';
-
-/**
- * ТЗ#3 (2026-06-15) — unit-тесты контроллера POST /api/v1/me/tasks.
- *
- * Покрытие:
- *  (а) member с issue:write создаёт задачу себе → делегирует в сервис, есть id;
- *  (б) пустой title → 400 (Zod, через ZodValidationPipe);
- *  (в) RBAC: canWrite('issue')=false → 403 forbidden.
- */
 
 const TENANT = 'org_1';
 const USER: CurrentUserPayload = {
@@ -67,24 +55,22 @@ describe('MeTasksController POST /me/tasks', () => {
 
   it('(б2) отсутствующий title → 400 (Zod)', () => {
     const pipe = new ZodValidationPipe(PostMeTaskBodySchema);
-    expect(() =>
-      pipe.transform({ description: 'без заголовка' }),
-    ).toThrow(BadRequestException);
+    expect(() => pipe.transform({ description: 'без заголовка' })).toThrow(BadRequestException);
   });
 
   it('(в) RBAC запрет write(issue) → 403 forbidden, сервис не вызывается', async () => {
     canWrite.mockResolvedValueOnce(false);
 
-    await expect(
-      controller.createSelfTask({ title: 'X' }, USER, TENANT),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(controller.createSelfTask({ title: 'X' }, USER, TENANT)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
     expect(createSelfTask).not.toHaveBeenCalled();
   });
 
   it('(г) tenant не определён → 400 tenant_required', async () => {
-    await expect(
-      controller.createSelfTask({ title: 'X' }, USER, undefined),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.createSelfTask({ title: 'X' }, USER, undefined)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
     expect(canWrite).not.toHaveBeenCalled();
   });
 });

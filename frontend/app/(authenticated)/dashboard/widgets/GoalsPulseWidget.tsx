@@ -1,24 +1,13 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import { Activity, ArrowRight } from 'lucide-react';
+import Link from "next/link";
+import { Activity, ArrowRight } from "lucide-react";
 
-import type { GoalsPulseDomain } from '@/domain/director-dashboard';
-import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
-import { Skeleton } from '@/ui/shadcn/skeleton';
-import { cn } from '@/ui/shadcn/lib/utils';
+import type { GoalsPulseDomain } from "@/domain/director-dashboard";
+import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
+import { Skeleton } from "@/ui/shadcn/skeleton";
+import { cn } from "@/ui/shadcn/lib/utils";
 
-/**
- * Виджет «Пульс целей» (Goals OKR v2, Фаза 4 — frontend, дашборд директора).
- *
- * Показывает 5 счётчиков целей по оси движения: достигнуто / в движении /
- * под риском / застряло / выпало. Цвета — только парные токены chip-* (bg + fg),
- * никаких hex/text-white (см. правило «парные цветовые токены»).
- *
- * Источник: `DirectorDashboardDto.goalsPulse` (опц. поле — заполняется только
- * когда у Org есть active-цели, Фаза 4A backend). Если поля нет или total===0 —
- * виджет показывает empty-state со ссылкой на `/goals`.
- */
 type PulseCell = {
   key: keyof GoalsPulseDomain;
   emoji: string;
@@ -29,39 +18,39 @@ type PulseCell = {
 
 const PULSE_CELLS: readonly PulseCell[] = [
   {
-    key: 'achievedCount',
-    emoji: '✅',
-    label: 'Достигнуто',
-    bg: 'bg-chip-info-bg',
-    fg: 'text-chip-info-fg',
+    key: "achievedCount",
+    emoji: "✅",
+    label: "Достигнуто",
+    bg: "bg-chip-info-bg",
+    fg: "text-chip-info-fg",
   },
   {
-    key: 'onTrackCount',
-    emoji: '🟢',
-    label: 'В движении',
-    bg: 'bg-chip-success-bg',
-    fg: 'text-chip-success-fg',
+    key: "onTrackCount",
+    emoji: "🟢",
+    label: "В движении",
+    bg: "bg-chip-success-bg",
+    fg: "text-chip-success-fg",
   },
   {
-    key: 'atRiskCount',
-    emoji: '🟡',
-    label: 'Под риском',
-    bg: 'bg-chip-warning-bg',
-    fg: 'text-chip-warning-fg',
+    key: "atRiskCount",
+    emoji: "🟡",
+    label: "Под риском",
+    bg: "bg-chip-warning-bg",
+    fg: "text-chip-warning-fg",
   },
   {
-    key: 'stalledCount',
-    emoji: '🔴',
-    label: 'Застряло',
-    bg: 'bg-chip-danger-bg',
-    fg: 'text-chip-danger-fg',
+    key: "stalledCount",
+    emoji: "🔴",
+    label: "Застряло",
+    bg: "bg-chip-danger-bg",
+    fg: "text-chip-danger-fg",
   },
   {
-    key: 'droppedCount',
-    emoji: '⚪',
-    label: 'Выпало',
-    bg: 'bg-chip-sand-bg',
-    fg: 'text-chip-sand-fg',
+    key: "droppedCount",
+    emoji: "⚪",
+    label: "Выпало",
+    bg: "bg-chip-sand-bg",
+    fg: "text-chip-sand-fg",
   },
 ];
 
@@ -95,7 +84,7 @@ export function GoalsPulseWidget({
               <div
                 key={cell.key}
                 className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-3',
+                  "flex flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-3",
                   cell.bg,
                   cell.fg,
                 )}

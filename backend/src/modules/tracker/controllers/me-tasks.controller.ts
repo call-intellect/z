@@ -10,10 +10,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../../auth/guards/cookie-auth.guard';
 import { CurrentOrg } from '../../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../../rbac/guards/tenant.guard';
@@ -25,23 +22,6 @@ import {
 } from '../dto/issues/post-me-task.dto';
 import { MeTasksService } from '../services/me-tasks.service';
 
-/**
- * REST `POST /api/v1/me/tasks` — постановка задачи СЕБЕ.
- *
- * ТЗ#3 (2026-06-15): предусловие инструмента помощника `create_task`. Рядовой
- * сотрудник (member/manager) ставит задачу себе из помощника, БЕЗ права
- * `intake_issue/write` (только у owner/admin/coo) и без правки policy.csv —
- * используется существующее право `issue:write` (рядовой им обладает:
- * `p, manager, *, *, issue, write`).
- *
- * Семантика жёстко сужена, чтобы не расширять доступ: проект всегда дефолтный
- * «Входящие» (find-or-create), исполнитель всегда сам запрашивающий. Чужого
- * исполнителя/проект через этот эндпоинт задать нельзя.
- *
- * Отдельный контроллер (не часть IssuesController), как и `MeInboxController`:
- * путь не привязан к `:projectId`, семантика — «мой помощник», не «таблица
- * задач проекта».
- */
 @ApiTags('tracker / me')
 @ApiBearerAuth()
 @Controller('api/v1')
@@ -76,8 +56,6 @@ export class MeTasksController {
     await this.requireWrite(user.id, t);
     return this.svc.createSelfTask(body, t, user.id);
   }
-
-  // ── helpers ──
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {

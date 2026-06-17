@@ -31,6 +31,7 @@
 | [[telegram-inbox-ingestion]] ⭐ | webhook | `POST /webhooks/telegram-bot` | ✅ implemented | 2026-05-30 |
 | [[inapp-free-note-ingestion]] | действие | `POST /me/notifications/free-note` | ✅ implemented | 2026-05-29 |
 | [[email-to-task]] | cron/IMAP | `MailInboundCron */2 * * * *` | ✅ implemented | 2026-05-29 |
+| bitrix24-source-sync (карточка ещё не заведена) | cron | `BitrixSyncCron`/`BitrixAnalyzeCron` 00:00 (`bitrix.sync`/`bitrix.analyze`) | ✅ implemented | 2026-06-17 |
 
 ## Группа В. Conversational-каналы (исходящие)
 
@@ -83,11 +84,11 @@
 
 | Статус | Кол-во |
 |---|---|
-| ✅ implemented | 21 |
+| ✅ implemented | 22 |
 | ⚠️ partial | 7 |
 | ❌ designed_only | 0 |
 | 🗑 deprecated | 0 |
-| **Всего процессов в реестре** | **28** |
+| **Всего процессов в реестре** | **29** |
 
 > +1 процесс к 2026-06-02: [[goals-auto-lifecycle]] (Goals OKR v2) — ⚠️ partial (cron'ы проверены юнит-тестами, прод-прогон по расписанию).
 
@@ -98,7 +99,7 @@
 | Триггер | Процессы |
 |---|---|
 | webhook | meeting-end-and-recording, meeting-in-progress, meeting-post-processing, telegram-inbox-ingestion |
-| cron | coo-daily-digest, email-to-task, recording-retention, reframing-cycle, theme-clustering |
+| cron | bitrix24-source-sync, coo-daily-digest, email-to-task, recording-retention, reframing-cycle, theme-clustering |
 | event | card-rollup-v2, notification-dispatch, probe-question-flow, raw-event-to-graph, referral-program, specialist-3-1..3-6, specialist-gamma-1-skill-clone, goals-auto-lifecycle, tracker-to-knowledge |
 | user_action | billing-cycle-tochka, inapp-free-note-ingestion, issue-lifecycle, meeting-create-and-invite, signup-and-onboarding-wizard |
 

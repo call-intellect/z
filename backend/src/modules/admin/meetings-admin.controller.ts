@@ -11,11 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
-import {
-  Prisma,
-  type MeetingStatus,
-  type MeetingType,
-} from '@prisma/client';
+import { Prisma, type MeetingStatus, type MeetingType } from '@prisma/client';
 import { z } from 'zod';
 
 import { MeetingNotFoundError } from '../../common/errors/domain-errors';
@@ -67,14 +63,6 @@ type ListMeetingsQuery = z.infer<typeof ListMeetingsQuerySchema>;
 
 const FORCE_FINISH_TIMEOUT_MS = 5_000;
 
-/**
- * Admin-эндпоинты для встреч (Phase 8.2).
- *
- *   GET  /admin/api/v1/meetings?status=&type=&owner_id=&from=&to=&page=&limit=
- *   GET  /admin/api/v1/meetings/:id
- *   POST /admin/api/v1/meetings/:id/force-finish
- *   POST /admin/api/v1/meetings/:id/retry-ai
- */
 @ApiExcludeController()
 @Controller('admin/api/v1/meetings')
 @UseGuards(CookieAuthGuard, AdminGuard)
@@ -156,9 +144,7 @@ export class MeetingsAdminController {
   }
 
   @Get(':id')
-  async details(
-    @Param('id') id: string,
-  ): Promise<{
+  async details(@Param('id') id: string): Promise<{
     meeting: {
       id: string;
       title: string;
@@ -170,10 +156,6 @@ export class MeetingsAdminController {
       endedAt: string | null;
       createdAt: string;
       owner: { id: string; externalId: string | null; email: string; name: string };
-      /// quality_score, целиком из meeting-report-fast. Структура задаётся
-      /// промптом `meeting-report-fast.prompt.ts` (overallScore, categories,
-      /// recommendations, strengths). NULL = ещё не сгенерирован. В БД
-      /// хранится в `Meeting.reportFastQualityScore` (Json).
       qualityScore: Record<string, unknown> | null;
     };
     reportStatuses: {
@@ -279,15 +261,10 @@ export class MeetingsAdminController {
         orderBy: { receivedAt: 'desc' },
         take: 50,
       }),
-      // Главы — фильтрация по tenantId для соблюдения tenant-isolation.
       this.prisma.meetingChapter.findMany({
         where: { meetingId: id, tenantId: meeting.tenantId },
         orderBy: { startMs: 'asc' },
       }),
-      // Задачи — через единый helper (ТЗ Ф5.2). По дефолту (флаг OFF) читает
-      // Task с фильтром по tenantId — поведение и форма идентичны прежним.
-      // При включённом флаге читает связанные Issue. tenant-широкий вызов
-      // (без userId) — admin видит все задачи встречи.
       this.actionItems.listForMeeting({
         meetingId: id,
         tenantId: meeting.tenantId ?? '',
@@ -306,13 +283,7 @@ export class MeetingsAdminController {
         endedAt: meeting.endedAt?.toISOString() ?? null,
         createdAt: meeting.createdAt.toISOString(),
         owner: meeting.owner,
-        // quality_score в БД лежит в `reportFastQualityScore` (Json); в API
-        // выдаём под коротким именем `qualityScore`. Полагаемся на zod-схему
-        // `MeetingReportFastQualityScoreSchema` — типизируем как
-        // `Record<string, unknown>` для контракта.
-        qualityScore:
-          (meeting.reportFastQualityScore as Record<string, unknown> | null) ??
-          null,
+        qualityScore: (meeting.reportFastQualityScore as Record<string, unknown> | null) ?? null,
       },
       reportStatuses: {
         reportFast: {
@@ -376,8 +347,7 @@ export class MeetingsAdminController {
             createdAt: meeting.aiResult.createdAt.toISOString(),
             summaryFast: meeting.aiResult.summaryFast ?? null,
             summaryFastModel: meeting.aiResult.summaryFastModel ?? null,
-            summaryFastGeneratedAt:
-              meeting.aiResult.summaryFastGeneratedAt?.toISOString() ?? null,
+            summaryFastGeneratedAt: meeting.aiResult.summaryFastGeneratedAt?.toISOString() ?? null,
           }
         : null,
       chapters: chapters.map((c) => ({
@@ -411,22 +381,12 @@ export class MeetingsAdminController {
     };
   }
 
-  /**
-   * Force-finish:
-   *   1. LivekitService.deleteRoom — комната удаляется в LiveKit.
-   *   2. Webhook 'room_finished' прилетит обычно за < 5 секунд и переведёт
-   *      встречу в `completed` через FSM.
-   *   3. Если за 5 секунд статус не сменился (и встреча НЕ в completed/failed/
-   *      ai_*), форсированно ставим `completed` через прямой prisma.update,
-   *      минуя FSM (admin override).
-   */
   @Post(':id/force-finish')
   @HttpCode(HttpStatus.OK)
   async forceFinish(@Param('id') id: string): Promise<{ ok: true; status: MeetingStatus }> {
     const meeting = await this.prisma.meeting.findUnique({ where: { id } });
     if (!meeting) throw new MeetingNotFoundError(id);
 
-    // Сохраняем исходный статус для решения, нужен ли force-update.
     const startStatus = meeting.status;
 
     await this.livekit.deleteRoom({ id });
@@ -438,7 +398,6 @@ export class MeetingsAdminController {
       },
     });
 
-    // Polling до 5 секунд.
     const deadline = Date.now() + FORCE_FINISH_TIMEOUT_MS;
     let current = startStatus;
     while (Date.now() < deadline) {
@@ -452,7 +411,6 @@ export class MeetingsAdminController {
       if (current !== startStatus) break;
     }
 
-    // Терминальные/после-completed статусы — оставляем как есть.
     const terminalOrAfter: MeetingStatus[] = [
       'completed',
       'recording_processing',
@@ -467,7 +425,6 @@ export class MeetingsAdminController {
       return { ok: true, status: current };
     }
 
-    // Force update — admin override, минуя FSM.
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
       const m = await tx.meeting.update({

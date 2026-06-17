@@ -25,22 +25,6 @@ import {
 } from '../dto/daily-digest.dto';
 import { DailyDigestService } from '../services/daily-digest.service';
 
-/**
- * SBA β-8.3 — `/api/v1/dashboard/operations/daily-digest`.
- *
- * Источник: plans/tz/2026-05-25-sba-beta-8-3-coo-daily-and-doelka.md §1.5.
- *
- *   GET /?date=YYYY-MM-DD       — отдать сохранённый дайджест или 404.
- *     Доступ: coo / owner / admin / super_admin
- *     (через `RbacService.canViewOperationsDashboard`).
- *
- *   GET /latest                 — последний сохранённый дайджест (по dateLocal DESC).
- *     Удобно для блока «Вчерашний отчёт» на главной /dashboard/operations.
- *     Доступ: те же роли.
- *
- *   POST /generate?date=YYYY-MM-DD — принудительная (пере)генерация.
- *     Доступ: owner / admin / super_admin (через role-check в `loadContext`).
- */
 @ApiTags('dashboard-operations-daily')
 @Controller('api/v1/dashboard/operations/daily-digest')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -102,8 +86,7 @@ export class DailyDigestController {
 
   @Post('generate')
   @ApiOperation({
-    summary:
-      'Принудительно пересобрать ежедневный дайджест (owner/admin/super_admin)',
+    summary: 'Принудительно пересобрать ежедневный дайджест (owner/admin/super_admin)',
   })
   async generate(
     @CurrentOrg() tenantId: string | undefined,
@@ -153,14 +136,7 @@ export class DailyDigestController {
     }
   }
 
-  private async requireWriteAccess(
-    userId: string,
-    tenantId: string,
-  ): Promise<void> {
-    // Принудительная регенерация — owner / admin / super_admin.
-    // ТЗ-C Ф4 (2026-06-05, R8): выравнивание прав с фронтом
-    // (DailyDigestClient.tsx:79 — isSuperAdmin || admin || owner). Владелец
-    // компании должен иметь возможность пересобрать «вчерашний отчёт» сам.
+  private async requireWriteAccess(userId: string, tenantId: string): Promise<void> {
     const ctx = await this.rbac.loadContext(userId, tenantId);
     if (!ctx) {
       throw new ForbiddenException({
@@ -175,8 +151,7 @@ export class DailyDigestController {
       ok: false,
       error: {
         code: 'forbidden_role',
-        message:
-          'Только владелец / администратор может пересобрать ежедневный отчёт',
+        message: 'Только владелец / администратор может пересобрать ежедневный отчёт',
       },
     });
   }

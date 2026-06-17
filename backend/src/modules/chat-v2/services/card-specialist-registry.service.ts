@@ -1,53 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-/**
- * SBA α-5 — Card Specialist Registry.
- *
- * Pluggable-реестр специалистов Слоя 3, которые умеют возвращать
- * релевантные карточки (`Card`, `Regulation`, `Decision`, ...) для query
- * chat-v2. Регистрация — push: каждый специалист в `onModuleInit` вызывает
- * `registry.register(name, handler)`.
- *
- * Это «вторая колонка» retrieval'а chat-v2:
- *   - первичный retrieval идёт по IdeaBlock через ChatV2RetrievalService
- *     (knowledge-core);
- *   - registry даёт второй слой — карточки, которые специалисты считают
- *     уместными (фильтр по overlap с candidateBlockIds или собственный
- *     embedding).
- *
- * На α-5 — пустой registry, готов принимать регистрации. Первая
- * регистрация — в α-6 (Card-специалист сам зовёт `register`).
- *
- * На α-5 chat-v2 НЕ использует выдачу registry в финальном prompt'е,
- * потому что ChatV2Service из knowledge-core ещё не принимает «extra
- * cards» — он работает поверх IdeaBlock-evidence. После α-6 специалисты
- * подключатся, а ChatV2Service эволюционирует, чтобы принимать карточки.
- * Сейчас registry — каркас, чтобы зависимости были стабильными.
- */
-
 export interface CardSpecialistResult {
-  /** Стабильный id карточки в БД специалиста. */
   id: string;
-  /** 'regulation' | 'decision' | 'insight' | 'card' | … */
   type: string;
   title: string;
-  /** Текстовое содержимое карточки (для prompt-сборки или UI-preview). */
   text: string;
-  /** ID блоков, на которых построена карточка (для citations). */
   sourceBlockIds: string[];
-  /** 0..1; chat-v2 объединит/отсортирует по убыванию. */
   confidence: number;
 }
 
 export interface CardSpecialistHandler {
-  /**
-   * Возвращает релевантные карточки специалиста для query.
-   * Специалист может фильтровать по `candidateBlockIds` (overlap с
-   * retrieval'ом chat-v2) или собственным embedding'ом.
-   *
-   * Контракт: метод НЕ должен бросать. Если специалист недоступен —
-   * вернёт `[]` и залогирует.
-   */
   getCardsForQuery(args: {
     tenantId: string;
     query: string;
@@ -57,11 +19,8 @@ export interface CardSpecialistHandler {
 }
 
 export interface CardAggregateResult {
-  /** Все карточки от всех специалистов, отсортированные по confidence DESC. */
   items: CardSpecialistResult[];
-  /** Сколько специалистов фактически отработало. */
   specialistsRun: number;
-  /** Имена упавших (вернувших исключение) специалистов — для логов. */
   specialistsFailed: string[];
 }
 
@@ -90,10 +49,6 @@ export class CardSpecialistRegistry {
     return [...this.handlers.keys()];
   }
 
-  /**
-   * Все специалисты дают свой top-K по релевантности; merge'им и
-   * сортируем по confidence DESC. Лимит `totalLimit` обрезает результат.
-   */
   async getCardsForQuery(args: {
     tenantId: string;
     query: string;

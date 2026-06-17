@@ -8,9 +8,9 @@ owners_human:
   - инженер knowledge-core
   - продакт «памяти компании»
 related_plans:
-  - plans/tz/2026-05-10-knowledge-core-tz.md
-  - plans/tz/2026-05-21-sba-alpha-3-layer2-ontology-extension.md
-  - plans/tz/2026-05-21-second-brain-agents-umbrella.md
+  - plans/archive/2026-05-10-knowledge-core-tz.md
+  - plans/archive/2026-05-21-sba-alpha-3-layer2-ontology-extension.md
+  - plans/archive/2026-05-21-second-brain-agents-umbrella.md
 related_projects:
   - 01_projects/ingest-and-sources.md
   - 02_architecture/knowledge-core.md
@@ -191,5 +191,5 @@ SpecialistRoutingJob { blockId, tenantId, signalType, specialistName }
 | 2026-05-25 | KC-Temporal W1.4 propertySpans + W3.5 emit `idea_block.updated` | [[02_architecture/knowledge-core]] |
 | 2026-05-25 | SBA α-3 router + axis-classifier | [[02_architecture/knowledge-core]] §SBA α-3 |
 | 2026-05-22 | SBA α-2 расширение SignalType до 19 значений | [[02_architecture/knowledge-core]] §SBA α-2 |
-| 2026-05-21 | Группа Б (Process/Regulation/Policy/Tool/Metric/Decision) через GraphService | plans/tz/2026-05-10-knowledge-core-tz.md |
-| 2026-05-10 | Pipeline `RawEvent → IdeaBlock → Entity` запущен (Фаза 1-2) | plans/tz/2026-05-10-knowledge-core-tz.md |
+| 2026-05-21 | Группа Б (Process/Regulation/Policy/Tool/Metric/Decision) через GraphService | plans/archive/2026-05-10-knowledge-core-tz.md |
+| 2026-05-10 | Pipeline `RawEvent → IdeaBlock → Entity` запущен (Фаза 1-2) | plans/archive/2026-05-10-knowledge-core-tz.md |

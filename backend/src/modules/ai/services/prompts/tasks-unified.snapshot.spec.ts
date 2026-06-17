@@ -1,18 +1,3 @@
-/**
- * Snapshot-тест сборки промта `tasks-unified.ts` — единого builder'а
- * tasks-промта (F5, ТЗ 2026-05-24 §8).
- *
- * ⚠ НЕ про качество LLM-вывода. Snapshot ловит регрессии в порядке
- * применения опций (enriched / withConfidence / withSourceQuote /
- * useAssigneeRaw / responseAsBareArray) — добавление, удаление или
- * перестановка блоков должно явно ломать snapshot.
- *
- * Две фикстуры:
- *   1. enriched + withConfidence + withSourceQuote (Wave 3 / meeting-extract).
- *   2. simple legacy (только 3 поля title/assignee/dueDate).
- *
- * Обновлять только при осознанном изменении: `bunx vitest --update`.
- */
 import { describe, expect, it } from 'vitest';
 
 import type { PromptInput } from './common';

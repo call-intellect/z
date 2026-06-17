@@ -1,12 +1,3 @@
-/**
- * Регрессия на баг «приглашение сотрудника → 403 tenant_required» (2026-06-03).
- *
- * TenantMiddleware через forRoutes('api/v1/*') монтируется на под-роутер
- * Express, поэтому `req.url` на стадии middleware обрезан до '/' (baseUrl =
- * полный путь). Парсинг orgId должен идти из `req.originalUrl`, иначе tenant
- * не резолвится из пути /api/v1/orgs/:id/... и все @RequireSubscription
- * org-маршруты падают с tenant_required, если фронт не прислал X-Org-Id.
- */
 import {
   Controller,
   Get,
@@ -58,9 +49,7 @@ describe('TenantMiddleware — резолвинг tenant из пути /orgs/:id
   it('orgId в пути → req.tenantId выставлен (через originalUrl)', async () => {
     await boot();
     const orgId = 'cmpp5tpo3000001pqb4hseduf';
-    const res = await request(app.getHttpServer()).get(
-      `/api/v1/orgs/${orgId}/invitations`,
-    );
+    const res = await request(app.getHttpServer()).get(`/api/v1/orgs/${orgId}/invitations`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ id: orgId, tenantId: orgId });
   });

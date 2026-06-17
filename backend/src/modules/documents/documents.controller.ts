@@ -19,18 +19,8 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
-import {
-  ApiBody,
-  ApiConsumes,
-  ApiOperation,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 
-/**
- * Минимальный тип файла, который multer кладёт в req. Объявлен локально,
- * чтобы не зависеть от `@types/multer` (он опциональный peer-dep). При
- * необходимости — `npm i -D @types/multer` и заменить на `Express.Multer.File`.
- */
 interface MulterFile {
   fieldname: string;
   originalname: string;
@@ -41,10 +31,7 @@ interface MulterFile {
 
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import {
-  CurrentUser,
-  type CurrentUserPayload,
-} from '../auth/decorators/current-user.decorator';
+import { CurrentUser, type CurrentUserPayload } from '../auth/decorators/current-user.decorator';
 import { CookieAuthGuard } from '../auth/guards/cookie-auth.guard';
 import { CoreQueueService } from '../core-queue/core-queue.service';
 import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
@@ -86,26 +73,8 @@ import {
   type UploadDocumentQuery,
 } from './dto/documents.dto';
 
-/** Максимум файлов, который multer примет в одном multipart-запросе. Жёсткий
- *  потолок «на трубе»; реальный per-Org лимит ниже — `documents.maxFilesPerUpload`
- *  (AdminSetting, ТЗ-4 Ф6), проверяется в сервисе. */
 const UPLOAD_FILES_MAX_COUNT = 50;
 
-/**
- * `DocumentsController` (Фаза 0b knowledge-core).
- *
- * Защищён `CookieAuthGuard + TenantGuard`. RBAC ресурс — `document`
- * (см. `policy.csv` — owner/admin: read/write/delete; manager: read).
- *
- * Эндпоинты:
- *   - `POST   /api/v1/documents`        — multipart upload (PDF/DOCX/MD/TXT).
- *   - `POST   /api/v1/documents/text`   — короткий текстовый дамп (≤50k chars).
- *   - `GET    /api/v1/documents`        — список Org (фильтр attachedRoleId).
- *   - `GET    /api/v1/documents/:id`    — деталка + parsedText.
- *   - `DELETE /api/v1/documents/:id`    — soft-delete.
- *
- * Provenance (extractedEntities) — расширение API в фазе 0b.2.
- */
 @ApiTags('documents')
 @Controller('api/v1/documents')
 @UseGuards(CookieAuthGuard, TenantGuard)
@@ -145,21 +114,12 @@ export class DocumentsController {
         attachedProjectId: { type: 'string', description: 'Привязка к проекту' },
         docType: {
           type: 'string',
-          enum: [
-            'regulation',
-            'policy',
-            'instruction',
-            'process',
-            'job_description',
-            'other',
-          ],
+          enum: ['regulation', 'policy', 'instruction', 'process', 'job_description', 'other'],
           description: 'Смысловой тип документа',
         },
       },
     },
   })
-  // FileFieldsInterceptor принимает оба поля — `files[]` (новое) и `file` (legacy).
-  // Сливаем их в один список в обработчике; одиночный `file` остаётся рабочим.
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'files', maxCount: UPLOAD_FILES_MAX_COUNT },
@@ -188,7 +148,6 @@ export class DocumentsController {
     }
     const person = await this.requirePerson(t, user.id);
 
-    // Атрибуция: body имеет приоритет над query (query.attachedRoleId — legacy).
     return this.documents.uploadMany({
       tenantId: t,
       uploaderPersonId: person.id,
@@ -247,14 +206,7 @@ export class DocumentsController {
         attachedProjectId: { type: 'string', description: 'Привязка к проекту (для всех файлов)' },
         docType: {
           type: 'string',
-          enum: [
-            'regulation',
-            'policy',
-            'instruction',
-            'process',
-            'job_description',
-            'other',
-          ],
+          enum: ['regulation', 'policy', 'instruction', 'process', 'job_description', 'other'],
           description: 'Смысловой тип документа (для всех файлов)',
         },
       },
@@ -317,8 +269,6 @@ export class DocumentsController {
       docType: body.docType,
     });
 
-    // Токен шифруем перед попаданием в job-payload (Redis) — открытым он там
-    // не оседает; воркер расшифрует его прямо перед вызовом Confluence.
     const encryptedToken = this.imports.encryptConfluenceToken(body.apiToken);
     await this.coreQueue.enqueueDocumentImport({
       tenantId: t,
@@ -363,7 +313,6 @@ export class DocumentsController {
     @CurrentOrg() tenantId: string | undefined,
   ): Promise<DocumentImportDto> {
     const t = this.requireTenant(tenantId);
-    // Импорт инициирует и наблюдает тот, кто может писать документы (owner/admin).
     await this.requireWrite(user.id, t);
     const row = await this.documents.getImportStatus({
       tenantId: t,
@@ -409,10 +358,6 @@ export class DocumentsController {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
 
-    // RBAC: extractedEntities (provenance) — только для owner/admin.
-    // Manager видит сам документ + блоки идей, но без типизированных
-    // сущностей группы Б (зонтичный §10 ТЗ 0b: «чтобы не утекали все
-    // Process/Decision Org»). Manager-read проверка: canRead('process').
     const canSeeExtracted = await this.rbac.canRead(user.id, t, 'process');
 
     const detail = await this.documents.getDetail({
@@ -451,8 +396,6 @@ export class DocumentsController {
     await this.requireDelete(user.id, t);
     return this.documents.softDelete({ tenantId: t, documentId: id });
   }
-
-  // ─────────────────────────── helpers ───────────────────────────────────
 
   private requireTenant(tenantId: string | undefined): string {
     if (!tenantId) {
@@ -508,16 +451,7 @@ export class DocumentsController {
     }
   }
 
-  /**
-   * Находит Person текущего user'а в Org. Document.uploaderId — Person.id
-   * (не User.id), поэтому нужен mapping. Если Person ещё не создан —
-   * ошибка: пользователь не до конца «прописан» в Org структуре (Фаза 0a
-   * onboarding должен заполнить Person'ов автоматически).
-   */
-  private async requirePerson(
-    tenantId: string,
-    userId: string,
-  ): Promise<{ id: string }> {
+  private async requirePerson(tenantId: string, userId: string): Promise<{ id: string }> {
     const person = await this.prisma.person.findFirst({
       where: { tenantId, userId, deletedAt: null },
       select: { id: true },

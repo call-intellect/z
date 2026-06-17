@@ -1,12 +1,3 @@
-/**
- * Probe-система Фаза 3 (2026-06-11) — ProbeDigestCron.
- *
- * Сценарий R7: несколько `queued_digest` probe одного получателя → ОДНО
- * уведомление `probe.digest` с N пунктами; вошедшие probe → `dispatched`;
- * повторный прогон по уже отправленным = no-op (идемпотентность).
- *
- * Детерминизм: Prisma/Conversational/Cfg/Metrics мокированы, без сети/БД.
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TypedConfigService } from '../../common/config/typed-config.service';
@@ -38,10 +29,7 @@ function makeRow(over: Partial<Row> & { id: string }): Row {
   };
 }
 
-function makeCron(args: {
-  rowsByCall: Row[][];
-  sendOk?: boolean;
-}): {
+function makeCron(args: { rowsByCall: Row[][]; sendOk?: boolean }): {
   cron: ProbeDigestCron;
   sendNotification: ReturnType<typeof vi.fn>;
   updateMany: ReturnType<typeof vi.fn>;
@@ -92,7 +80,7 @@ describe('ProbeDigestCron.collectAndSend', () => {
           makeRow({ id: 'p2', priority: 50 }),
           makeRow({ id: 'p3', priority: 30 }),
         ],
-        [], // второй прогон — пусто (всё уже dispatched)
+        [],
       ],
     });
   });
@@ -114,8 +102,6 @@ describe('ProbeDigestCron.collectAndSend', () => {
     expect(arg.payload.total).toBe(3);
     expect(typeof arg.payload.summary).toBe('string');
 
-    // Вошедшие probe помечаются dispatched атомарно с фильтром по обоим
-    // digest-статусам (W2: queued_digest + routed_to_digest).
     expect(env.updateMany).toHaveBeenCalledTimes(1);
     const upd = env.updateMany.mock.calls[0]![0] as {
       where: { id: { in: string[] }; status: { in: string[] } };
@@ -139,7 +125,6 @@ describe('ProbeDigestCron.collectAndSend', () => {
     });
     await e.cron.collectAndSend();
 
-    // findMany вызван с status IN (queued_digest, routed_to_digest).
     const findManyMock = (
       e.cron as unknown as {
         prisma: { probeEvent: { findMany: ReturnType<typeof vi.fn> } };
@@ -154,26 +139,21 @@ describe('ProbeDigestCron.collectAndSend', () => {
     expect(findArg.where.status).toEqual({
       in: ['queued_digest', 'routed_to_digest'],
     });
-    // L-2 — протухшие (expiresAt < now) в дайджест не попадают.
     expect(findArg.where.OR).toEqual([
       { expiresAt: null },
       { expiresAt: { gte: expect.any(Date) } },
     ]);
 
-    // Оба пункта (включая NUDGE-routed) вошли в один дайджест получателя.
     const arg = e.sendNotification.mock.calls[0]![0] as {
       payload: { items: Array<{ probeEventId: string }> };
     };
-    expect(arg.payload.items.map((it) => it.probeEventId).sort()).toEqual([
-      'n1',
-      'q1',
-    ]);
+    expect(arg.payload.items.map((it) => it.probeEventId).sort()).toEqual(['n1', 'q1']);
   });
 
   it('повторный прогон по уже отправленным = no-op (нет уведомлений)', async () => {
-    await env.cron.collectAndSend(); // первый — отправил
+    await env.cron.collectAndSend();
     env.sendNotification.mockClear();
-    await env.cron.collectAndSend(); // второй — findMany вернёт []
+    await env.cron.collectAndSend();
     expect(env.sendNotification).not.toHaveBeenCalled();
   });
 
@@ -193,20 +173,18 @@ describe('ProbeDigestCron.collectAndSend', () => {
   it('касание-кап ограничивает число пунктов в одном дайджесте', async () => {
     const e = makeCron({
       rowsByCall: [
-        Array.from({ length: 8 }, (_v, i) =>
-          makeRow({ id: `c${i}`, priority: 100 - i }),
-        ),
+        Array.from({ length: 8 }, (_v, i) => makeRow({ id: `c${i}`, priority: 100 - i })),
       ],
     });
-    // touchCap из getDynamic-мока = default (5).
     await e.cron.collectAndSend();
     const arg = e.sendNotification.mock.calls[0]![0] as {
       payload: { items: unknown[]; total: number };
     };
     expect(arg.payload.items).toHaveLength(5);
-    expect(arg.payload.total).toBe(8); // total — все queued, не урезанные
-    // dispatched помечаются только вошедшие (5).
-    expect((e.updateMany.mock.calls[0]![0] as { where: { id: { in: string[] } } }).where.id.in).toHaveLength(5);
+    expect(arg.payload.total).toBe(8);
+    expect(
+      (e.updateMany.mock.calls[0]![0] as { where: { id: { in: string[] } } }).where.id.in,
+    ).toHaveLength(5);
   });
 
   it('sendNotification упал → probe остаются queued_digest (updateMany не вызван)', async () => {

@@ -1,45 +1,36 @@
-'use client';
+"use client";
 
-/**
- * `/admin/platform/workers` — BullMQ inspector. Фаза 8 редизайна Z-Admin.
- *
- * Колонки: name / waiting / active / failed / delayed / completed / pause toggle / Actions.
- * Details — `WorkerQueueDetailDialog` с failed/completed jobs и кнопками
- * Remove для каждого failed.
- * Retry failed — POST /queues/:name/retry-failed с подтверждением.
- */
+import { useState } from "react";
+import { Eye, Loader2, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 
-import { useState } from 'react';
-import { Eye, Loader2, RefreshCw } from 'lucide-react';
-import { toast } from 'sonner';
-
-import { adminWorkersApi } from '@/api/admin-workers.api';
-import { ApiError } from '@/api/api-error';
+import { adminWorkersApi } from "@/api/admin-workers.api";
+import { ApiError } from "@/api/api-error";
 import {
   workerQueueFromApi,
   type WorkerQueueDomain,
-} from '@/domain/admin-worker';
-import { AdminSection } from '@/ui/components/admin/AdminSection';
-import { DangerAction } from '@/ui/components/admin/AdminDangerZone';
-import { Badge } from '@/ui/shadcn/badge';
-import { Button } from '@/ui/shadcn/button';
-import { Switch } from '@/ui/shadcn/switch';
+} from "@/domain/admin-worker";
+import { AdminSection } from "@/ui/components/admin/AdminSection";
+import { DangerAction } from "@/ui/components/admin/AdminDangerZone";
+import { Badge } from "@/ui/shadcn/badge";
+import { Button } from "@/ui/shadcn/button";
+import { Switch } from "@/ui/shadcn/switch";
 
 import {
   AdminEmpty,
   AdminError,
   AdminForbidden,
   AdminLoading,
-} from '../../AdminStateViews';
-import { useAdminQuery } from '../../useAdminQuery';
-import { WorkerQueueDetailDialog } from './WorkerQueueDetailDialog';
-import { adminRootCrumb } from '@/ui/components/admin/brand';
+} from "../../AdminStateViews";
+import { useAdminQuery } from "../../useAdminQuery";
+import { WorkerQueueDetailDialog } from "./WorkerQueueDetailDialog";
+import { adminRootCrumb } from "@/ui/components/admin/brand";
 
 export function WorkersClient() {
   const [detailName, setDetailName] = useState<string | null>(null);
   const [busyName, setBusyName] = useState<string | null>(null);
 
-  const q = useAdminQuery('admin-platform-workers', async () => {
+  const q = useAdminQuery("admin-platform-workers", async () => {
     const res = await adminWorkersApi.listQueues();
     return res.map(workerQueueFromApi);
   });
@@ -57,7 +48,7 @@ export function WorkersClient() {
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось переключить состояние',
+        e instanceof ApiError ? e.message : "Не удалось переключить состояние",
       );
     } finally {
       setBusyName(null);
@@ -67,13 +58,11 @@ export function WorkersClient() {
   const handleRetryFailed = async (qu: WorkerQueueDomain) => {
     try {
       const res = await adminWorkersApi.retryFailed(qu.name);
-      toast.success(
-        `Перезапуск задач «${qu.name}»: ${res.retried ?? 0} шт.`,
-      );
+      toast.success(`Перезапуск задач «${qu.name}»: ${res.retried ?? 0} шт.`);
       q.refetch();
     } catch (e) {
       toast.error(
-        e instanceof ApiError ? e.message : 'Не удалось перезапустить задачи',
+        e instanceof ApiError ? e.message : "Не удалось перезапустить задачи",
       );
       throw e;
     }
@@ -83,8 +72,8 @@ export function WorkersClient() {
     <AdminSection
       breadcrumbs={[
         adminRootCrumb(),
-        { label: 'Платформа' },
-        { label: 'Воркеры BullMQ' },
+        { label: "Платформа" },
+        { label: "Воркеры BullMQ" },
       ]}
       title="BullMQ воркеры"
       description="Состояние всех BullMQ-очередей и фоновых задач. Пауза/возобновление, перезапуск failed-задач, удаление зависших job-ов."
@@ -178,33 +167,41 @@ function QueuesTable({
                   <code className="rounded bg-bg-overlay px-1.5 py-0.5 text-[11px] font-medium text-fg-primary">
                     {qu.name}
                   </code>
-                  {qu.status === 'error' ? (
+                  {qu.status === "error" ? (
                     <Badge variant="danger" className="text-[10px]">
                       ошибки
                     </Badge>
-                  ) : qu.status === 'paused' ? (
+                  ) : qu.status === "paused" ? (
                     <Badge variant="warning" className="text-[10px]">
                       пауза
                     </Badge>
                   ) : null}
                 </div>
               </td>
-              <td className="px-3 py-3 text-right tabular-nums">{qu.waiting}</td>
+              <td className="px-3 py-3 text-right tabular-nums">
+                {qu.waiting}
+              </td>
               <td className="px-3 py-3 text-right tabular-nums">{qu.active}</td>
               <td
-                className={`px-3 py-3 text-right tabular-nums ${qu.failed > 0 ? 'text-danger' : ''}`}
+                className={`px-3 py-3 text-right tabular-nums ${qu.failed > 0 ? "text-danger" : ""}`}
               >
                 {qu.failed}
               </td>
-              <td className="px-3 py-3 text-right tabular-nums">{qu.delayed}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{qu.completed}</td>
+              <td className="px-3 py-3 text-right tabular-nums">
+                {qu.delayed}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums">
+                {qu.completed}
+              </td>
               <td className="px-3 py-3 text-center">
                 <div className="flex items-center justify-center gap-2">
                   <Switch
                     checked={qu.paused}
                     onCheckedChange={() => onTogglePause(qu)}
                     disabled={busyName === qu.name}
-                    aria-label={qu.paused ? 'Возобновить' : 'Поставить на паузу'}
+                    aria-label={
+                      qu.paused ? "Возобновить" : "Поставить на паузу"
+                    }
                   />
                   {busyName === qu.name ? (
                     <Loader2

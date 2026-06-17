@@ -1,10 +1,3 @@
-/**
- * Smoke-тест агента `block-linker` на DeepSeek-V4-Pro.
- * Промпт встроен в backend/src/modules/knowledge-core/services/block-link.service.ts
- * (константа LINK_SYSTEM_PROMPT). Здесь дублируем текст 1:1.
- *
- * Запуск: cd backend && bun run scripts/eval/smoke-block-linker.ts
- */
 import {
   client,
   computeCost,
@@ -81,8 +74,7 @@ async function main(): Promise<void> {
   const f = await readFixture<Fixture>(TASK_TYPE);
 
   const userPayload = { blockA: f.blockA, blockB: f.blockB };
-  const userMessage =
-    `Блок A и блок B ниже. Определи тип связи (или "none").\n\n${JSON.stringify(userPayload, null, 2)}\n\nВерни решение через инструмент submit_block_link_verdict.`;
+  const userMessage = `Блок A и блок B ниже. Определи тип связи (или "none").\n\n${JSON.stringify(userPayload, null, 2)}\n\nВерни решение через инструмент submit_block_link_verdict.`;
 
   const start = Date.now();
   let usage: Usage = {};

@@ -1,11 +1,5 @@
-/**
- * API-клиент модуля tracker.intake.
- *
- * Контракт: `backend/src/modules/tracker/controllers/intake.controller.ts`.
- */
-
-import { apiClient } from '../api-client';
-import { buildQuery, orgHeaders } from '../admin-helpers';
+import { apiClient } from "../api-client";
+import { buildQuery, orgHeaders } from "../admin-helpers";
 import type {
   IntakeApi,
   IssueApi,
@@ -14,7 +8,7 @@ import type {
   IntakeStatus,
   IssuePriority,
   TriageDecision,
-} from '@/domain/tracker';
+} from "@/domain/tracker";
 
 export interface ListIntakeRequest {
   status?: IntakeStatus;
@@ -73,14 +67,8 @@ export interface TriageIntakeResultApi {
   createdIssue: IssueApi | null;
 }
 
-/**
- * Редизайн кабинета Ф5а (2026-06-13) — «следующий шаг отчёта → кандидат в задачу».
- * Body для `POST /api/v1/meetings/:meetingId/next-steps/to-intake`.
- */
 export interface NextStepToIntakeRequest {
-  /** Текст следующего шага (из next_steps отчёта), 1..2000. */
   text: string;
-  /** Опц. развёрнутое описание. */
   description?: string | null;
 }
 
@@ -92,7 +80,7 @@ export const intakeApi = {
     ),
 
   create: (orgId: string, body: CreateIntakeRequest) =>
-    apiClient.post<IntakeApi>('/api/v1/intake', body, {
+    apiClient.post<IntakeApi>("/api/v1/intake", body, {
       headers: orgHeaders(orgId),
     }),
 
@@ -110,10 +98,6 @@ export const intakeApi = {
       { headers: orgHeaders(orgId) },
     ),
 
-  /**
-   * Создать кандидата в задачу из следующего шага отчёта встречи.
-   * Идемпотентно по (meetingId + text) — повтор не плодит кандидатов.
-   */
   nextStepToIntake: (
     orgId: string,
     meetingId: string,

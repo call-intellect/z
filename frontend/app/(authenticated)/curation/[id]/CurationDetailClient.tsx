@@ -18,6 +18,7 @@ import {
   curationLevelLabel,
   curationStatusLabel,
   mapCurationItemDetail,
+  triageReasonSummary,
   type CurationDecisionType,
   type CurationLevel,
 } from '@/domain/curation';
@@ -341,7 +342,9 @@ function CurationDetailView({
       {/* Почему сюда попала */}
       <section className="mb-6">
         <h2 className="mb-1 text-sm font-medium">Почему сюда попала</h2>
-        <ReadablePayload value={item.triageReason} />
+        <p className="rounded-md border border-border-subtle bg-bg-card p-3 text-sm text-fg-secondary">
+          {triageReasonSummary(item.triageReason)}
+        </p>
       </section>
 
       {/* Предлагаемые данные */}

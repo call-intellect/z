@@ -27,6 +27,7 @@ import {
 } from '@/api/structure.api';
 import { useAuth } from '@/contexts/auth-context';
 import { toast } from 'sonner';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import {
@@ -83,6 +84,11 @@ function Content({
   );
   const profileSwr = useSWR(['role-profile', orgId, roleId], () =>
     roleProfilesApi.byRole(orgId, roleId),
+  );
+
+  // Хлебные крошки: имя должности из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(
+    roleSwr.data?.role ? { label: roleSwr.data.role.name } : null,
   );
 
   if (roleSwr.isLoading) {

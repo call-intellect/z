@@ -28,6 +28,7 @@ import {
 } from '@/ui/shadcn/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/ui/shadcn/tabs';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { PersonEditDialog } from '@/ui/components/team/PersonDialogs';
 import {
   AdminEmpty,
@@ -92,6 +93,9 @@ export function PersonCardClient({ personId }: { personId: string }) {
   const currentUserIsOwner = (rosterSwr.data?.roster ?? []).some(
     (r) => r.userId === user?.id && r.systemRole === 'owner',
   );
+
+  // Хлебные крошки: имя сотрудника из уже загруженной строки реестра.
+  useRegisterBreadcrumb(row ? { label: row.fullName } : null);
 
   if (!currentOrgId) {
     return (

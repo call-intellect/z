@@ -39,6 +39,7 @@ import {
   useMyCloneAccess,
 } from '@/hooks/useClones';
 import { CloneAvatar } from '@/ui/clones/CloneAvatar';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Badge } from '@/ui/shadcn/badge';
 import { Button } from '@/ui/shadcn/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
@@ -77,6 +78,18 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   const conversations = useCloneConversations(orgId, hasGrant ? roleId : null);
 
   const [creating, setCreating] = useState(false);
+
+  // Хлебные крошки: имя клона из уже загруженных данных (без доп. запроса).
+  const profileData = profileSwr.data;
+  useRegisterBreadcrumb(
+    item || profileData
+      ? {
+          label:
+            item?.publicName ??
+            (profileData ? `Клон ${profileData.roleName}` : ''),
+        }
+      : null,
+  );
 
   async function handleCreateConversation() {
     if (creating) return;

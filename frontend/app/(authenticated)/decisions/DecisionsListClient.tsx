@@ -20,6 +20,7 @@ import {
 } from '@/domain/decision';
 import { TrustBadge } from '@/ui/components/shared/TrustBadge';
 import { CardCorrectionActions } from '@/ui/components/knowledge/CardCorrectionActions';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Input } from '@/ui/shadcn/input';
 
 import {
@@ -184,6 +185,11 @@ function DecisionsListContent({
   );
 
   const groupedItems = useMemo(() => data?.items ?? [], [data]);
+
+  // Хлебные крошки: на `/decisions/[id]` показываем суть выбранного решения из
+  // уже загруженной детали (поле `statement`). На `/decisions` без выбора —
+  // null (no-op, остаётся метка раздела «Решения»).
+  useRegisterBreadcrumb(detail ? { label: detail.statement } : null);
 
   if (isLoading && !data) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;

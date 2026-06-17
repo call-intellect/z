@@ -34,6 +34,7 @@ import { Label } from '@/ui/shadcn/label';
 import { Textarea } from '@/ui/shadcn/textarea';
 
 import { PersonSubpagesNav } from '@/ui/components/persons/PersonSubpagesNav';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 
 import {
   AdminError,
@@ -131,6 +132,11 @@ function PersonDetailContent({
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Хлебные крошки: имя персоны из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(
+    data?.entity ? { label: data.entity.canonicalName } : null,
+  );
 
   if (isLoading) return <AdminLoading rows={6} />;
   if (forbidden) {

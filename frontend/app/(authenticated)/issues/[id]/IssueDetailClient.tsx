@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/contexts/auth-context';
 import { useIssue } from '@/hooks/tracker/useIssue';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import {
   IssueActivityFeed,
   IssueAttachments,
@@ -20,6 +21,11 @@ import {
 export function IssueDetailClient({ issueId }: { issueId: string }) {
   const { currentOrgId, user } = useAuth();
   const { issue, isLoading, error, mutate } = useIssue(currentOrgId, issueId);
+
+  // Хлебные крошки: заголовок задачи из уже загруженного объекта. Slug проекта
+  // на `issue` нет (только projectId-UUID) — parentHref не задаём, чтобы не
+  // делать доп. запрос; сегмент `issues` помечен non-navigable в конфиге крошек.
+  useRegisterBreadcrumb(issue ? { label: issue.title } : null);
 
   if (isLoading) {
     return (

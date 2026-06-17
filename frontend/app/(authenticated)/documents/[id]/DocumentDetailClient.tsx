@@ -15,6 +15,7 @@ import {
   type DocumentStatusApi,
 } from '@/api/documents.api';
 import { useAuth } from '@/contexts/auth-context';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Badge } from '@/ui/shadcn/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/ui/shadcn/card';
 import { TrustBadge } from '@/ui/components/shared/TrustBadge';
@@ -104,6 +105,11 @@ function Content({
         return s === 'uploaded' || s === 'parsing' ? 2000 : 0;
       },
     },
+  );
+
+  // Хлебные крошки: имя документа из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(
+    swr.data?.document ? { label: swr.data.document.name } : null,
   );
 
   if (swr.isLoading) {

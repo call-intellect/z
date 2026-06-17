@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConfirmDialog } from '@/ui/components/shared/useConfirmDialog';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
@@ -105,6 +106,9 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       return goalDetailFromApi(api);
     },
   );
+
+  // Хлебные крошки: имя цели из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(data ? { label: data.name } : null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);

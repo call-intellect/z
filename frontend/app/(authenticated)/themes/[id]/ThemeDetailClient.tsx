@@ -25,6 +25,7 @@ import {
   themeDetailFromApi,
 } from '@/domain/theme';
 import { entityTypeLabel, signalTypeLabel } from '@/domain/entity';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Button } from '@/ui/shadcn/button';
 import { Badge } from '@/ui/shadcn/badge';
 import {
@@ -43,6 +44,11 @@ export function ThemeDetailClient({ themeId }: { themeId: string }) {
     const api = await themesApi.get(themeId);
     return themeDetailFromApi(api);
   });
+
+  // Хлебные крошки: имя темы из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(
+    themeSwr.data?.theme ? { label: themeSwr.data.theme.name } : null,
+  );
 
   if (themeSwr.error) {
     return (

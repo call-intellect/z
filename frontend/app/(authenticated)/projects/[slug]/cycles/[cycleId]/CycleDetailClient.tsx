@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/contexts/auth-context';
 import { useCycle, useCycleIssues } from '@/hooks/tracker/useCycle';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { CycleProgress, IssueList } from '@/ui/tracker';
 
 export function CycleDetailClient({ cycleId }: { cycleId: string }) {
@@ -11,6 +12,9 @@ export function CycleDetailClient({ cycleId }: { cycleId: string }) {
     currentOrgId,
     cycleId,
   );
+
+  // Хлебные крошки: имя спринта из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(cycle ? { label: cycle.name } : null);
 
   if (isLoading) {
     return (

@@ -34,6 +34,7 @@ import { Progress } from '@/ui/shadcn/progress';
 import { GoalPickerDialog } from '@/ui/components/shared/GoalPickerDialog';
 import { useAuth } from '@/contexts/auth-context';
 import { useCycle } from '@/hooks/tracker/useCycle';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { cyclesApi } from '@/api/tracker/cycles.api';
 import { sprintsApi } from '@/api/tracker/sprints.api';
 import { sprintHintsApi } from '@/api/tracker/sprint-hints.api';
@@ -76,6 +77,9 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
       : null,
     async ([, oid, gid]) => goalsApi.get(oid, gid),
   );
+
+  // Хлебные крошки: имя спринта из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(cycle ? { label: cycle.name } : null);
 
   const handleLinkGoal = async (goalId: string | null) => {
     if (!currentOrgId) {

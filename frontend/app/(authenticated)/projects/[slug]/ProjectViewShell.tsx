@@ -20,6 +20,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { projectShortLabel, type Project } from '@/domain/tracker';
 import { useTour } from '@/ui/tour';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 
 interface Tab {
   href: string;
@@ -56,6 +57,9 @@ export function ProjectViewShell({
   const pathname = usePathname() ?? '';
   const { currentOrgId } = useAuth();
   const { project, isLoading, error } = useProjectBySlug(currentOrgId, slug);
+
+  // Хлебные крошки: имя проекта из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(project ? { label: projectShortLabel(project) } : null);
 
   // ТЗ 2026-05-27 onboarding-tour — авто-запуск тура «project» при первом
   // открытии любой страницы проекта. Если уже завершён/пропущен — no-op.

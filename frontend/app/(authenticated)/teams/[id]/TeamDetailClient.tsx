@@ -24,6 +24,7 @@ import {
   type TeamMemberSentimentApi,
 } from '@/domain/team-detail';
 import { ActivityFeedWidget } from '@/ui/components/dashboard/ActivityFeedWidget';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { KpiHero } from '@/ui/components/shared/KpiHero';
 import { Button } from '@/ui/shadcn/button';
 import { Skeleton } from '@/ui/shadcn/skeleton';
@@ -93,6 +94,9 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Хлебные крошки: имя команды из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(data ? { label: data.departmentName } : null);
 
   if (loading) {
     return (

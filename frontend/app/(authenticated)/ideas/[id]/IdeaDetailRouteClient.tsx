@@ -6,6 +6,7 @@ import useSWR from 'swr';
 
 import { ideasApi } from '@/api/ideas.api';
 import { mapIdeaDetail } from '@/domain/idea';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Button } from '@/ui/shadcn/button';
 
 import { IdeaDetailPane } from '../IdeasListClient';
@@ -20,6 +21,10 @@ export function IdeaDetailRouteClient({ ideaId }: { ideaId: string }) {
     const api = await ideasApi.getById(ideaId);
     return mapIdeaDetail(api);
   });
+
+  // Хлебные крошки: текст идеи из уже загруженного объекта (поле `statement` —
+  // у IdeaDetail нет `title`).
+  useRegisterBreadcrumb(swr.data ? { label: swr.data.statement } : null);
 
   if (swr.error) {
     return (

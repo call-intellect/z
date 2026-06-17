@@ -16,6 +16,7 @@ import {
   tableFromApi,
   type TablePropType,
 } from '@/domain/table';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { Skeleton } from '@/ui/shadcn/skeleton';
 
 import {
@@ -121,6 +122,10 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
     },
     [reset],
   );
+
+  // Хлебные крошки: имя таблицы из уже загруженного объекта (TableApi.name —
+  // поля `title` у таблицы нет).
+  useRegisterBreadcrumb(tableSwr.data ? { label: tableSwr.data.name } : null);
 
   if (isLoading) {
     return (

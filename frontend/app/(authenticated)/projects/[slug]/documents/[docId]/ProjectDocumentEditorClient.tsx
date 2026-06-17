@@ -50,6 +50,7 @@ import {
 import { useAuth } from '@/contexts/auth-context';
 import { useProjectBySlug } from '@/hooks/tracker/useProjectBySlug';
 import { useProjectDocument } from '@/hooks/tracker/useProjectDocument';
+import { useRegisterBreadcrumb } from '@/ui/components/breadcrumbs/BreadcrumbContext';
 import { projectDocumentsApi } from '@/api/tracker/project-documents.api';
 import { ApiError } from '@/api/api-error';
 import { Button } from '@/ui/shadcn/button';
@@ -103,6 +104,9 @@ export function ProjectDocumentEditorClient({
     currentOrgId,
     docId,
   );
+
+  // Хлебные крошки: имя документа из уже загруженного объекта (без доп. запроса).
+  useRegisterBreadcrumb(document ? { label: document.title } : null);
 
   const [title, setTitle] = useState('');
   const [markdown, setMarkdown] = useState('');

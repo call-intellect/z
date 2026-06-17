@@ -189,10 +189,34 @@ ProbeDispatcherWorker.process
 - **`ConversationalIngestAdapter.ingestNotificationResponse`** — детерминированный `sourceExternalId='resp:{notificationId}'`, гарантирует идемпотентность повторной обработки одного ответа.
 - **`ProbePriorityCron` защищает от гонки** — если Notification.respondedAt уже есть, expired не выставляется.
 
+## 8.1. Фаза 2 — новые гейты/шаги конвейера (2026-06-18)
+
+**Источник:** ТЗ [`plans/tz/2026-06-17-probe-system-phase2.md`](../../plans/tz/2026-06-17-probe-system-phase2.md) (Ф1–Ф6), ветка `feature/knowledge-base-redesign-formatter`. Профильная заметка — [[../01_projects/probe-agent]] §«Фаза 2». Закрывает часть gap'ов §8 (round-robin `candidates[0]`, хардкод `kind`, хрупкий Telegram reply-парсинг для свободного ответа).
+
+**Изменения по конвейеру (поверх шагов 1–12 выше):**
+
+1. **`probe_reply` на входе (Ф1).** Свободный текст без reply теперь распознаётся как ответ на **открытый** probe: интент `probe_reply` в `dialog-classify`, поиск открытого probe через `openProbeQuestion`, оба бот-адаптера (Telegram/MAX) ведут свободный ответ в `respondToProbe`. Гейт — крутилка `probe.replyClassifyMinConfidence` (0.6): ниже порога ответ не засчитывается. Это **снимает** грабли «„да“ в общий чат → free_note/chat_query» из §6.
+2. **LLM-судья качества после `formulate` (Ф2).** Между шагами 7 и 8 — новый taskType `probe-quality-judge` проверяет сформулированный вопрос и при браке заменяет **одним** регенератом. Kill-switch `probe.qualityJudgeEnabled` (ON). LLM-вызов — см. §5.2 (дополнение ниже).
+3. **Выбор получателя по отзывчивости (Ф3).** Шаг 7 «select recipient» больше **не** `candidates[0]`: из кандидатов выбирается самый отзывчивый по engagement-снимку (`ProbePriorityCron`). Kill-switch `probe.engagementRoutingEnabled` (ON); OFF → первый кандидат. Закрывает gap §8 «Round-robin recipient — `candidates[0]`».
+4. **Семантический дедуп в `suggest` (Ф4).** Поверх content-hash дедупа (шаг 2) добавлен KNN по эмбеддингу `ProbeEvent.questionEmbedding vector(1536)` (HNSW `idx_probeevent_qembed_hnsw`): cosine ≥ `probe.semanticDedupThreshold` (0.92) в окне `probe.semanticDedupWindowHours` (72) → дроп. Kill-switch `probe.semanticDedupEnabled` (ON). Закрывает «Embedding-based дедуп (β-5 — content hash)» из «Что отложено».
+5. **Re-ask в cron (Ф5).** При истечении неотвеченного probe (шаг 12) вместо немедленного `ignored` вопрос **переформулируется и задаётся ещё раз** один раз (`payload.reaskCount` / `payload.originalProbeEventId`). Kill-switch `probe.reaskEnabled` (ON); OFF → старое поведение (сразу закрытие).
+6. **Новый ingest-повод `attribution.unresolved_at_ingest` (Ф6).** `BlockIngestWorker` эмитит `suggest(...)` с этим **deferrable**-поводом для новых `customer`/`vendor`-`Entity` без привязки → вопрос «кто это / с чем связано». Гасится дайджестом/дедупом/recheck (deferrable-окно), не штурмует на каждой новой сущности.
+
+**Новые метрики (Ф2/Ф3):**
+- `probe_quality_judged_total{verdict}` — Counter, вердикт LLM-судьи качества.
+- `probe_dispatched_total{kind}` — теперь с **реальным** ChannelKind после dispatch (раньше хардкод `'in_app'`, см. §8 gap — закрыт).
+
+**Дополнение к §5.2 (LLM-вызовы):**
+
+| Шаг | taskType | Primary | Fallback | Где промпт |
+|---|---|---|---|---|
+| 7.5 (после formulate) | `probe-quality-judge` | `deepseek-v4-flash` | `gpt-5.4-mini` → `ollama` | `backend/src/modules/probe/prompts/probe-quality-judge.prompt.ts` |
+
 ## 9. История изменений процесса
 
 | Дата | Что изменилось | Коммит/рефлексия |
 |---|---|---|
+| 2026-06-18 | Фаза 2 (Ф1–Ф6): `probe_reply` (свободный ответ), LLM-судья качества `probe-quality-judge`, выбор получателя по отзывчивости (+реальный `kind`), семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`. Закрыты gap'ы round-robin/хардкод kind/embedding-дедуп | `9430383f`..`ea27594e`, ТЗ probe-system-phase2 |
 | 2026-05-29 | Карточка создана. Зафиксированы gap'ы по cold-start и хардкод label'у. | этот документ |
 | 2026-05-23 | β-5 sub-TZ closing-loop: `RawEvent(kind='notification_response')`, `probe_closed_total`, защита cron'а от гонки expired | plans/tz/2026-05-23-sba-beta-5-probe-closing-loop.md |
 | ~2026-05-21 | SBA β-5 — `ProbeService`, `ProbeDispatcherWorker`, `ProbePriorityCron`, `core.probe-events`, LLM `probe-formulate` | plans/tz/.../probe-agent.md |

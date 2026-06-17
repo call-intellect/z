@@ -190,6 +190,43 @@ PROBE_COLD_START_MODE_HOURS=24
 
 Фаза 2 (LLM-judge ценности вопроса + семантический дедуп через pgvector + полный graph-answer-search) и Фаза 3 (re-ask петля + память предпочтений тона) ждут калибровочных данных `probe_outcome_total` из Ф5. Порядок A→B→C доказан анализом §10 Р3. См. реестр [[../04_не-сделано/README|не-сделано]].
 
+## Фаза 2 — РЕАЛИЗОВАНА (2026-06-18)
+
+**Источник:** ТЗ [`plans/tz/2026-06-17-probe-system-phase2.md`](../../plans/tz/2026-06-17-probe-system-phase2.md) (Ф1–Ф6). Ветка `feature/knowledge-base-redesign-formatter`, коммиты `9430383f`/`cf9c3878`/`b7b32e64`/`855197a4`/`553c93e9`/`ea27594e`. Фаза 2 из «что осталось» выше теперь **закрыта** (LLM-судья качества + семантический дедуп через pgvector + re-ask). Процесс — [[../03_processes/probe-question-flow]], taskType — [[ai-jobs]], схема — [[../02_architecture/data-model]] §ProbeEvent.
+
+### Ф1 — свободный ответ на probe (`probe_reply`)
+
+Свободный текст без reply-кнопки теперь распознаётся как ответ на **открытый** probe. Интент `probe_reply` добавлен в классификатор `dialog-classify`; на стороне канала открытый probe ищется по `openProbeQuestion`, оба бот-адаптера (Telegram/MAX) пробрасывают свободный ответ в `respondToProbe`. Порог уверенности классификатора — крутилка `probe.replyClassifyMinConfidence` (0.6): ниже порога текст не засчитывается ответом. Снимает грабли «пользователь пишет „да“ в общий чат без reply → free_note/chat_query» (см. §6 в [[../03_processes/probe-question-flow]]).
+
+### Ф2 — LLM-судья качества формулировки
+
+Новый taskType `probe-quality-judge` (cheap-цепочка `deepseek-v4-flash` → `gpt-5.4-mini` → `ollama`, seed-route `seed-llm-task-routes-ideas-and-probe.ts`, промпт `backend/src/modules/probe/prompts/probe-quality-judge.prompt.ts`). После `formulate()` судья проверяет сформулированный вопрос; при браке заменяет **одним** улучшенным регенератом. Kill-switch `probe.qualityJudgeEnabled` (ON, тип A). Метрика `probe_quality_judged_total{verdict}`. OFF → вопрос уходит как сформулирован.
+
+### Ф3 — выбор получателя по отзывчивости + реальный `kind`
+
+Из кандидатов вопрос идёт **самому отзывчивому** (engagement-снимок из `ProbePriorityCron`), а не первому по списку — закрывает прежний gap «round-robin = `candidates[0]`». Kill-switch `probe.engagementRoutingEnabled` (ON, тип A); OFF → первый кандидат. Заодно метрика `probe_dispatched_total{kind}` получила **реальный** ChannelKind после dispatch (раньше был хардкод `'in_app'`).
+
+### Ф4 — семантический дедуп через pgvector
+
+Новая колонка `ProbeEvent.questionEmbedding vector(1536)` (миграция `add_probe_event_question_embedding`) + HNSW-индекс `idx_probeevent_qembed_hnsw` в `postgres-init.sql`. На `suggest` вопрос дедупится по эмбеддингу (KNN cosine ≥ порога в окне) — поверх прежнего content-hash дедупа (β-5 был только hash). Kill-switch `probe.semanticDedupEnabled` (ON, тип A) + крутилки `probe.semanticDedupThreshold` (0.92) / `probe.semanticDedupWindowHours` (72).
+
+### Ф5 — re-ask (один переспрос)
+
+При истечении неотвеченного probe вопрос **переформулируется и задаётся ещё раз** перед закрытием как `ignored`. Учёт через `payload.reaskCount` / `payload.originalProbeEventId`. Kill-switch `probe.reaskEnabled` (ON, тип A); OFF → истёкший probe сразу закрывается без переспроса.
+
+### Ф6 — ingest-повод `attribution.unresolved_at_ingest`
+
+Новый **deferrable** повод probe: `BlockIngestWorker` эмитит его для новых `customer`/`vendor`-`Entity` без привязки (атрибуция не разрешилась при усвоении) → точечный вопрос «кто это / с кем связано». `deferrable` (окно через `PROBE_REASON_WINDOW`) — гасится дайджестом/дедупом/recheck, не штурмует на каждой новой сущности.
+
+### Новые крутилки (AdminSetting, секция `probe`)
+
+Зарегистрированы в `seed-admin-settings.ts` (`phase:'seed-base'`, идёт штатно агрегатором, уважает admin-override): `probe.replyClassifyMinConfidence` (0.6), `probe.qualityJudgeEnabled` (ON), `probe.engagementRoutingEnabled` (ON), `probe.semanticDedupEnabled` (ON), `probe.semanticDedupThreshold` (0.92), `probe.semanticDedupWindowHours` (72), `probe.reaskEnabled` (ON). Все четыре `*Enabled` — kill-switch (тип A, ВКЛ, действий владельца не требуют). Реестр флагов — [[../../docs/operations/feature-flags|feature-flags]].
+
+### Новые метрики
+
+- `probe_quality_judged_total{verdict}` — counter (вердикт LLM-судьи качества).
+- `probe_dispatched_total{kind}` — теперь с **реальным** ChannelKind (Ф3), а не хардкод `'in_app'`.
+
 ## Что отложено
 
 - Полный flow «ответ на probe → новый RawEvent → ingest pipeline» — γ+ (нужен conversational Source `type='conversational'` для каждой Org).

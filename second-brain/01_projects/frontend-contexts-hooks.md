@@ -61,6 +61,43 @@ covers: React-контексты и кросс-компонентные патт
   `ParticipantPicker` с `showChannels` → `meetingsApi.addInvitees`. Один компонент
   для «Пригласить» в комнате и в журнале встреч (B3/B5).
 
+## Сквозные хлебные крошки + мобильная «назад» (2026-06-18)
+
+Сквозная навигация-крошки кабинета. **Источник:** ТЗ
+[`plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md`](../../plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md),
+ветка `feature/knowledge-base-redesign-formatter`, коммиты `8ef49108`+`eb0f7dee`.
+Все файлы — в `frontend/src/ui/components/breadcrumbs/`.
+
+- **`BreadcrumbContext.tsx`** — контекст `BreadcrumbProvider` + хук
+  `useRegisterBreadcrumb(segment, name)`: детальная страница регистрирует
+  человеко-читаемое имя для своего динамического сегмента (`[id]`/`[slug]`),
+  чтобы в крошке отображалось «Иван Петров», а не сырой cuid. Имена
+  зарегистрированы на ~16 страницах-деталях.
+- **`useBreadcrumbTrail.ts`** — хук `useBreadcrumbTrail` поверх чистой функции
+  `buildBreadcrumbTrail(pathname, config, registeredNames)`: собирает цепочку
+  крошек из текущего `pathname` по конфигу + зарегистрированных имён. Чистая
+  функция вынесена для тестируемости.
+- **`Breadcrumbs.tsx`** — компонент рендера цепочки (desktop) + кнопка «назад»
+  (mobile).
+- **`breadcrumb-config.ts`** — карта сегментов → label/parentHref/navigable.
+  Сегмент `issues` помечен non-navigable (домен Issue не несёт slug проекта —
+  крошка `/issues/[id]` без parentHref на доску, см. реестр «не-сделано»).
+- Встроены в `AppShell` / `Header` / `AuthenticatedShell`.
+
+⚠️ Ф5 (визуальная qa-приёмка крошек) — НЕ выполнена (ручной шаг, см. реестр
+[[../04_не-сделано/README|не-сделано]]).
+
+## Виджет «Лента Коры» вместо страницы `/feed` (2026-06-18)
+
+«Лента Коры» вынесена в переиспользуемый виджет
+`frontend/src/ui/components/feed/CoraFeedWidget.tsx` (`variant: 'full' | 'compact'`)
+и встроена на `/dashboard` и `/me`. Отдельная страница `/feed` (page.tsx +
+FeedClient.tsx) **удалена** (сиблинги `/feed/insights`, `/feed/probe-questions`,
+`/feed/spotlights` остались). **Источник:** ТЗ
+[`plans/tz/2026-06-17-cora-feed-into-dashboards.md`](../../plans/tz/2026-06-17-cora-feed-into-dashboards.md),
+коммиты `9aa3945e`+`10dbbe35`. См. также [[frontend-pages]]. Ф5 (визуальная qa) —
+НЕ выполнена.
+
 ---
 
 [[../index|← index]] · [[frontend-pages]]

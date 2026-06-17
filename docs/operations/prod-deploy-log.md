@@ -71,6 +71,36 @@ docker compose run --rm --no-deps backend \
 
 ---
 
+### 🧩 2026-06-18 — Батч из 5 ТЗ: probe-система Ф2 + хлебные крошки + Лента в дашборды + задачи встречи в трекере + баннер онбординга
+
+> Контракт: ветка `feature/knowledge-base-redesign-formatter`, 16 коммитов (A `2d7fd244` баннер; B `73836b7c` задачи встречи→трекер; D `8ef49108`+`eb0f7dee` хлебные крошки; C `9aa3945e`+`10dbbe35` Лента Коры в дашборды; E `9430383f`/`cf9c3878`/`b7b32e64`/`855197a4`/`553c93e9`/`ea27594e` probe Ф1–Ф6). ТЗ: `plans/tz/2026-06-17-fix-incomplete-setup-banner-progress.md`, `plans/tz/2026-06-16-intake-issue-linked-meeting-ids-fix.md`, `plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md`, `plans/tz/2026-06-17-cora-feed-into-dashboards.md`, `plans/tz/2026-06-17-probe-system-phase2.md`. second-brain: `01_projects/probe-agent.md`, `03_processes/probe-question-flow.md`, `01_projects/ai-jobs.md`, `02_architecture/data-model.md`, `01_projects/frontend-contexts-hooks.md`, `01_projects/frontend-pages.md`. Реестр флагов — `docs/operations/feature-flags.md` (новые probe.*-рубильники).
+>
+> **Зачем для прода:** (A) баннер «N из 6» брал прогресс из устаревшего источника → теперь из `onboardingApi.getSetupProgress` (только фронт). (B) задачи встречи не были видны в карточке встречи — IntakeIssue.meetingId протянут в Issue.linkedMeetingIds. (D) сквозные хлебные крошки + мобильная «назад» (только фронт). (C) «Лента Коры» вынесена в виджет на /dashboard и /me, отдельная страница `/feed` удалена. (E) доведение probe-системы (Layer 6): свободный ответ на probe, LLM-судья качества вопроса, выбор получателя по отзывчивости, семантический дедуп через pgvector, один переспрос, ingest-повод unresolved-at-ingest.
+>
+> **2 миграции (авто, аддитивные).** **1 HNSW-индекс в postgres-init.** **Новые probe.*-рубильники — все kill-switch ON (действий владельца НЕ требуют).** **Seed/backfill — все уже в STEPS.** **Docker rebuild backend+frontend обязателен.**
+
+- **Шаг 1 — AdminSetting (новые probe.*-крутилки/рубильники, code-default есть — действий владельца НЕ требуют):** `probe.replyClassifyMinConfidence` (0.6), `probe.qualityJudgeEnabled` (true, kill-switch), `probe.engagementRoutingEnabled` (true, kill-switch), `probe.semanticDedupEnabled` (true, kill-switch), `probe.semanticDedupThreshold` (0.92), `probe.semanticDedupWindowHours` (72), `probe.reaskEnabled` (true, kill-switch). Доезжают перепрогоном агрегатора (Шаг 7 — `seed-admin-settings.ts` уже в STEPS, уважает admin-override). Реестр — `docs/operations/feature-flags.md`.
+- **Шаг 4 — Prisma — обязательно, авто** (`prisma migrate deploy` в migrate-контейнере на `docker compose up`; обе аддитивны, без потери данных, backfill для колонок не нужен):
+  - `add_intake_issue_meeting_id` — `IntakeIssue.meetingId String?` (привязка кандидата в задачу к встрече-источнику).
+  - `add_probe_event_question_embedding` — `ProbeEvent.questionEmbedding vector(1536)` (семантический дедуп вопросов probe).
+  - **В STEPS агрегатора регистрировать НЕ нужно** (миграции схемы, не seed/patch/backfill).
+- **Шаг 5 — Postgres-init (новый HNSW, идемпотентно `IF NOT EXISTS`, выполняется в migrate-сервисе):** `idx_probeevent_qembed_hnsw` на `probe_events("questionEmbedding" vector_cosine_ops) WHERE "questionEmbedding" IS NOT NULL` (partial HNSW для KNN-дедупа probe). Если нужно вручную — `docker compose run --rm backend bun run apply-postgres-init`.
+- **Шаг 7 — Seed (идемпотентно upsert, отдельных команд НЕ надо — оба уже в STEPS, идут штатно `apply-prod-deploy.ts --mode update`):**
+  - `seed-admin-settings.ts` (новые `probe.*` крутилки/рубильники, `phase:'seed-base'`).
+  - `seed-llm-task-routes-ideas-and-probe.ts` (route нового taskType `probe-quality-judge`: deepseek-v4-flash → gpt-5.4-mini → ollama; `phase:'seed-llm-routes'`).
+- **Шаг 8 — Backfill (после деплоя, идемпотентно, уже в STEPS `phase:'backfill'`, `skipBootstrap`):** `backfill-meeting-linked-ids.ts` — восстанавливает `Issue.linkedMeetingIds` из meeting-intake (только `meeting:`-формат `externalId`); существующие задачи встреч начинают отображаться в карточке встречи. Прогон агрегатором: `docker compose exec backend bun run scripts/apply-prod-deploy.ts --mode update` (или точечно `docker compose exec backend bun run scripts/backfill-meeting-linked-ids.ts`).
+- **Шаг 11 — Docker rebuild** — обязателен (probe-воркеры/судья/дедуп/re-ask, ingest-эмиссия `attribution.unresolved_at_ingest`, новый taskType, протяжка linkedMeetingIds; фронт — хлебные крошки + `CoraFeedWidget` на /dashboard и /me, удаление страницы `/feed`, баннер «N из 6»): `docker compose up -d --build backend frontend`.
+- **Шаг 12 — Smoke** (после выката):
+  - (а) **probe-quality-judge маршрутизируется (не DEFAULT-цепочка):** `docker compose exec backend bun run scripts/diag-routes.ts` (или греп прод-маршрутов) показывает `probe-quality-judge` → primary `deepseek-v4-flash`, а не аварийный `DEFAULT_FALLBACK_CHAIN`;
+  - (б) задача, извлечённая из встречи, видна в карточке встречи (раздел задач), а не только в `/issues`;
+  - (в) хлебные крошки рендерятся на детальных страницах кабинета; на мобильном — кнопка «назад»;
+  - (г) «Лента Коры» (виджет) видна на `/dashboard` и `/me`; прямой переход на `/feed` больше не открывает отдельную страницу (сиблинги `/feed/insights`, `/feed/probe-questions`, `/feed/spotlights` живы);
+  - (д) баннер онбординга показывает корректное «N из 6».
+
+Этот блок при следующем prod-cut перенести в «Архив применённых».
+
+---
+
 ### 🧠 2026-06-17 — База знаний: форматтер на создании карточки + редизайн раздела (Ф1–Ф6)
 
 > Контракт: ветка `feature/knowledge-base-redesign-formatter`, коммиты `6e98d3a8..28b6217e` (8 коммитов: Ф1 форматтер-на-создании, Ф2 backfill, Ф3 граница промпта, Ф6 docType→hint, Ф4 нейминг, Ф5a backend-kill-switch, Ф5b редизайн). ТЗ: `plans/tz/2026-06-16-knowledge-base-redesign-and-formatter-tz.md`. second-brain: `01_projects/regulations.md`, `02_architecture/knowledge-core.md`, `03_processes/specialist-3-1-regulations.md`. Реестр флагов — `docs/operations/feature-flags.md` (новая строка `knowledge_base.redesign.enabled`).

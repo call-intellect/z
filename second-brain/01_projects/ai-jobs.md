@@ -39,7 +39,7 @@ covers: реестр LLM-провайдеров, taskType, prompt hardening, pro
 | specialist 3.6 (Ideas) | `idea-extract`, `idea-cluster-merge`, `idea-status-summarize` | DeepSeek-flash → OpenAI-mini → Ollama |
 | specialist 3.7 (Skill) | `skill-trait-detect`, `skill-trait-merge`, `executable-persona-compile`, `clone-respond` | **GPT-5.4 capable primary** (КРИТИЧНО) → OpenAI-mini → Ollama |
 | specialist 3.8 (Helpfulness) | `helpfulness-detect`, `helpfulness-trait-merge`, `helpfulness-spotlight-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
-| probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
+| probe + dialog | `probe-formulate` (переписан Probe Ф1 2026-06-11 — персона+few-shot, schema `probe_formulate_v3`, USER без машинных кодов), `probe-quality-judge` (Probe Ф2 2026-06-18 — LLM-судья качества формулировки вопроса, см. §«Probe-система Фаза 2» ниже), `concierge-parse` | DeepSeek-flash → OpenAI-mini → Ollama |
 | recognition | `recognition-formulate` | DeepSeek-flash → OpenAI-mini → Ollama |
 | tracker AI (Phase 3) | `meeting-extract-actions`, `intake-auto-triage`, `issue-infer-fields`, `issue-goal-suggest` | DeepSeek-flash → OpenAI-mini → Ollama |
 | meeting analyze | `analyze-default`, `type-sales`, `type-interview`, `type-1on1`, ..., `review`, `retrospective`, `task_discussion` | по типу — см. `seed-llm-task-routes*.ts` |
@@ -518,5 +518,16 @@ LLM-judge текстового подтверждения мутаций в ка
 
 - Все 5 в union `LlmTaskType` + `ALL_LLM_TASK_TYPES`. Сид — `backend/scripts/seed-llm-task-routes-clone-method.ts` (зарегистрирован в `apply-prod-deploy.ts` STEPS, alias `'clone-method'`, phase `seed-llm-routes`, идемпотентен, защищает `editedByAdmin`).
 - Также в этом пакете (НЕ новые taskType): `clone-respond` получил пост-LLM **grounding-гейт** (factual без валидных цитат `[BLOCK:]`/`[DECISION:]` → программный отказ `'ungrounded'`, флаг `CLONE_RESPOND_GROUNDING_ENABLED`) + журнал `CloneQueryLog`; `executable-persona-compile` переписан на **v2** (секционная сборка 5 слоёв, пустые секции опускаются — деградация к v1; v1-промпт deprecated для rollback).
+
+## Probe-система Фаза 2 — `probe-quality-judge` (2026-06-18)
+
+**Источник:** ТЗ [`plans/tz/2026-06-17-probe-system-phase2.md`](../../plans/tz/2026-06-17-probe-system-phase2.md) (Ф2). Ветка `feature/knowledge-base-redesign-formatter`. Полная карта фичи — [[probe-agent]] §«Фаза 2»; процесс — [[../03_processes/probe-question-flow]] §8.1.
+
+| taskType | Цепочка | Что делает |
+|---|---|---|
+| `probe-quality-judge` (cheap judge) | `deepseek-v4-flash` → `openai-via-proxy/gpt-5.4-mini` → `ollama/qwen3.5:9b` | LLM-судья качества формулировки уточняющего вопроса (probe): после `formulate()` проверяет вопрос и при браке заменяет одним улучшенным регенератом. Промпт `backend/src/modules/probe/prompts/probe-quality-judge.prompt.ts` (cache-friendly: стабильный SYSTEM). Kill-switch `probe.qualityJudgeEnabled` (ON). Метрика `probe_quality_judged_total{verdict}`. |
+
+- Сид — `backend/scripts/seed-llm-task-routes-ideas-and-probe.ts` (уже в `apply-prod-deploy.ts` STEPS, phase `seed-llm-routes`, идемпотентен). Без маршрута вызов упал бы на аварийный `DEFAULT_FALLBACK_CHAIN` — маршрут заведён вместе с фичей.
+- Остальные Ф2-доводки (свободный ответ `probe_reply`, выбор получателя по отзывчивости, семантический дедуп через pgvector, re-ask, повод `attribution.unresolved_at_ingest`) — НЕ новые LLM-taskType (детерминированная логика / эмбеддинги). См. [[probe-agent]] §«Фаза 2».
 
 [[../index|← index]]

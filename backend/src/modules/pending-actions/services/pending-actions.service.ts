@@ -15,6 +15,7 @@ import type {
 } from '../providers/pending-actions-provider.types';
 import { ProbePendingProvider } from '../providers/probe.provider';
 import { TaskClosurePendingProvider } from '../providers/task-closure.provider';
+import { TaskReviewPendingProvider } from '../providers/task-review.provider';
 
 export type PendingActionSource = PendingActionItem['source'];
 
@@ -89,6 +90,9 @@ export class PendingActionsService {
     // TZ task-dedup (2026-06-16, Ф2) — задачи-кандидаты на закрытие из разговора.
     @Inject(TaskClosurePendingProvider)
     private readonly taskClosure: TaskClosurePendingProvider,
+    // TZ task-dedup (2026-06-16, Ф4) — задачи «под вопросом» после отмены решения.
+    @Inject(TaskReviewPendingProvider)
+    private readonly taskReview: TaskReviewPendingProvider,
     // Action Center B4 — делегат быстрого подтверждения light-curation.
     @Inject(CurationService)
     private readonly curationService: CurationService,
@@ -111,6 +115,7 @@ export class PendingActionsService {
       this.intake,
       this.probe,
       this.taskClosure,
+      this.taskReview,
     ];
   }
 
@@ -129,6 +134,7 @@ export class PendingActionsService {
       intake: 0,
       probe: 0,
       task_closure: 0,
+      task_review: 0,
     } as Record<PendingActionSource, number>;
 
     await Promise.all(
@@ -147,7 +153,8 @@ export class PendingActionsService {
       bySource.conflict +
       bySource.intake +
       bySource.probe +
-      bySource.task_closure;
+      bySource.task_closure +
+      bySource.task_review;
     return { total, bySource };
   }
 
@@ -265,6 +272,9 @@ export class PendingActionsService {
         return { ok: true };
       case 'task_closure':
         await this.confirmTaskClosure(input);
+        return { ok: true };
+      case 'task_review':
+        await this.confirmTaskReview(input);
         return { ok: true };
       default: {
         // exhaustive — на случай расширения source без обновления switch.
@@ -531,6 +541,51 @@ export class PendingActionsService {
     );
   }
 
+  /**
+   * task_review (TZ task-dedup, 2026-06-16, Ф4): задача «под вопросом» после
+   * отмены/замены связанного решения (supersede). confirm = «разобрался» —
+   * снимаем пометку (`closureReviewState=null`). Задача НЕ закрывается и НЕ
+   * отменяется (R11/R13): необратимого действия здесь нет — гаснет лишь
+   * подсветка. Идемпотентность: уже снятая пометка → понятная ошибка, не 500.
+   */
+  private async confirmTaskReview(input: ConfirmInput): Promise<void> {
+    const issue = await this.prisma.issue.findFirst({
+      where: { id: input.resourceId, tenantId: input.tenantId },
+      select: { id: true, closureReviewState: true },
+    });
+    if (!issue) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_review_issue_not_found',
+          message: 'Задача «под вопросом» не найдена',
+        },
+      });
+    }
+    if (issue.closureReviewState == null) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'task_review_not_flagged',
+          message: 'Задача уже не помечена «под вопросом»',
+        },
+      });
+    }
+    // R11/R13: снимаем ТОЛЬКО review-пометку. Статус/closedAt задачи не трогаем.
+    await this.prisma.issue.update({
+      where: { id: issue.id },
+      data: {
+        closureReviewState: null,
+        closureReviewReason: null,
+        closureReviewAt: null,
+      },
+    });
+    this.logger.log(
+      { tenantId: input.tenantId, userId: input.userId, resourceId: issue.id },
+      'pending-actions.confirm: задача «под вопросом» разобрана — пометка снята (задача не закрыта)',
+    );
+  }
+
   // ──────────────────────────── helpers ───────────────────────────
 
   /** Роль пользователя в tenant (Membership) или null, если не член Org. */
@@ -567,6 +622,7 @@ export class PendingActionsService {
       intake: new Set(),
       probe: new Set(),
       task_closure: new Set(),
+      task_review: new Set(),
     };
     for (const r of rows) {
       const bucket = out[r.source as PendingActionSource];

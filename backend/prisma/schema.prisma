@@ -9139,6 +9139,13 @@ model Issue {
   // Граф знаний
   entityId String?
 
+  /// Р4 (TZ 2026-06-16, Ф4) — задача помечена «под вопросом» после отмены/замены
+  /// связанного решения (supersede). null — обычная задача. НЕ авто-снос:
+  /// показывается человеку в pending-actions, снимается при ручном решении.
+  closureReviewState  String?   @db.VarChar(24) // null | superseded_decision
+  closureReviewReason String?   @db.Text
+  closureReviewAt     DateTime?
+
   // RBAC и owner
   createdById String
 
@@ -9204,6 +9211,8 @@ model Issue {
   /// Support desk (TZ 2026-06-09) — тикеты конкретного клиента + SLA-сканер.
   @@index([tenantId, supportCustomerUserId])
   @@index([tenantId, firstResponseDueAt])
+  /// Р4 (TZ 2026-06-16, Ф4) — выборка задач «под вопросом» для pending-actions.
+  @@index([tenantId, closureReviewState])
 }
 
 /// Э2 (TZ 2026-06-16) — обратимое предложение закрыть задачу по сигналу из

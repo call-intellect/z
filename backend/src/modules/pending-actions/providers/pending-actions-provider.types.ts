@@ -7,7 +7,13 @@
  */
 
 export interface PendingActionItem {
-  source: 'curation' | 'conflict' | 'intake' | 'probe' | 'task_closure';
+  source:
+    | 'curation'
+    | 'conflict'
+    | 'intake'
+    | 'probe'
+    | 'task_closure'
+    | 'task_review';
   resourceType: string;
   resourceId: string;
   /// Готовый к показу заголовок (RU) — РЕАЛЬНАЯ суть item'а, а не шаблон.
@@ -30,7 +36,8 @@ export type PendingActionDetail =
   | ConflictPendingDetail
   | IntakePendingDetail
   | CurationPendingDetail
-  | TaskClosurePendingDetail;
+  | TaskClosurePendingDetail
+  | TaskReviewPendingDetail;
 
 /// probe: сам вопрос + контекст для ответа.
 export interface ProbePendingDetail {
@@ -82,6 +89,17 @@ export interface TaskClosurePendingDetail {
   evidenceQuote?: string;
   /// Откалиброванная уверенность верификатора (0..1), если посчитана.
   confidence?: number;
+}
+
+/// task_review (TZ task-dedup, 2026-06-16, Ф4): задача «под вопросом» после
+/// отмены/замены связанного решения (supersede). Человек проверяет актуальность
+/// и снимает пометку — задача НЕ закрывается/не отменяется автоматически (R11/R13).
+export interface TaskReviewPendingDetail {
+  kind: 'task_review';
+  /// Заголовок задачи «под вопросом».
+  taskTitle: string;
+  /// Человеческое объяснение «почему под вопросом».
+  reason?: string;
 }
 
 /// curation: что за карточка требует проверки.

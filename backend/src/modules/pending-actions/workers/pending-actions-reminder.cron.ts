@@ -321,6 +321,7 @@ const SOURCE_LABEL: Record<PendingActionSource, string> = {
   intake: 'Задачи',
   probe: 'Вопросы',
   task_closure: 'Задачи к закрытию',
+  task_review: 'Задачи под вопросом',
 };
 
 /**
@@ -341,6 +342,7 @@ function buildReminderBody(args: {
       'intake',
       'probe',
       'task_closure',
+      'task_review',
     ] as PendingActionSource[]
   )
     .map((s) => `${SOURCE_LABEL[s]} — ${args.bySource[s]}`)

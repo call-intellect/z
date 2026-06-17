@@ -369,6 +369,15 @@ export class Specialist33Service {
             decision.id,
           );
           this.metrics.observeDecisionSupersedeChainLength(chainLength);
+
+          // 5. Р4 (TZ 2026-06-16, Ф4) — задачи под СТАРЫМ (superseded) решением
+          // подсвечиваем «под вопросом», НЕ закрываем и НЕ отменяем (R11/R13).
+          // CASCADE-снос запрещён: временная/ошибочная отмена не должна уносить
+          // задачи. Best-effort — сбой пометки не валит supersede-путь.
+          await this.markTasksForReviewOnSupersede({
+            tenantId: block.tenantId,
+            supersededDecisionId: existing.id,
+          });
         }
       } else {
         decision = await this.createNewDecision({
@@ -1266,6 +1275,75 @@ export class Specialist33Service {
       cur = next.supersedesId;
     }
     return length;
+  }
+
+  /**
+   * Р4 (TZ 2026-06-16, Ф4) — пометить задачи, заведённые под СТАРЫМ (теперь
+   * superseded) решением, «под вопросом» (`closureReviewState='superseded_decision'`).
+   *
+   * Инвариант R11/R13: задачи НЕ закрываются и НЕ отменяются автоматически —
+   * только подсвечиваются человеку в pending-actions (source='task_review').
+   * Снять пометку (`closureReviewState=null`) может ТОЛЬКО человек.
+   *
+   * Связи читаем напрямую `decisionTaskLink.findMany` по supersededDecisionId
+   * (decision-task-link.util.ts умеет только СОЗДАВАТЬ derived-связи, чтения
+   * «задачи под решением» там нет). `updateMany` по issueId идемпотентен:
+   * повторный supersede того же решения выставит те же значения.
+   *
+   * Best-effort: любой сбой логируется и не прерывает supersede-путь.
+   */
+  private async markTasksForReviewOnSupersede(args: {
+    tenantId: string;
+    supersededDecisionId: string;
+  }): Promise<void> {
+    try {
+      const links = await this.prisma.decisionTaskLink.findMany({
+        where: { decisionId: args.supersededDecisionId },
+        select: { issueId: true },
+        take: 2_000,
+      });
+      const issueIds = [...new Set(links.map((l) => l.issueId))];
+      if (issueIds.length === 0) return;
+
+      const res = await this.prisma.issue.updateMany({
+        where: {
+          id: { in: issueIds },
+          tenantId: args.tenantId,
+          // не трогаем уже удалённые задачи
+          deletedAt: null,
+        },
+        data: {
+          closureReviewState: 'superseded_decision',
+          closureReviewReason:
+            'Решение, по которому заведена задача, заменено новым — проверьте, актуальна ли задача.',
+          closureReviewAt: new Date(),
+        },
+      });
+
+      this.logs.write({
+        level: 'INFO',
+        pipeline: SystemLogPipeline.KNOWLEDGE_GRAPH,
+        module: 'specialist-3-3-decisions',
+        action: 'tasks_marked_review',
+        message: `Задачи под заменённым решением подсвечены «под вопросом» (${res.count})`,
+        orgId: args.tenantId,
+        details: {
+          type: 'decision',
+          supersededDecisionId: args.supersededDecisionId,
+          markedCount: res.count,
+          reason: 'superseded_decision',
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          supersededDecisionId: args.supersededDecisionId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'specialist-3-3.markTasksForReviewOnSupersede: пометка задач упала — пропуск (best-effort)',
+      );
+    }
   }
 
   // ─────────────────────────── triage ───────────────────────────

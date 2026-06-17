@@ -88,10 +88,10 @@ const KIND_FILTERS: ReadonlyArray<{
   label: string;
 }> = [
   { value: 'all', label: 'Все виды' },
-  { value: 'regulation', label: 'Правила и стандарты' },
+  { value: 'regulation', label: 'Регламенты' },
   { value: 'process', label: 'Процессы' },
-  { value: 'instruction', label: 'Инструкция' },
-  { value: 'policy', label: 'Политики и положения' },
+  { value: 'instruction', label: 'Инструкции' },
+  { value: 'policy', label: 'Политики' },
 ];
 
 /** Допустимые значения `?kind=` в URL (редирект `/policies` и т.п.). */
@@ -337,14 +337,10 @@ function RegulationsListContent() {
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
       <header className="mb-4">
-        <h1 className="text-2xl font-semibold">
-          Правила, процессы и политики
-        </h1>
+        <h1 className="text-2xl font-semibold">База знаний компании</h1>
         <p className="mt-1 text-sm text-fg-secondary">
-          Документы, которые Кора извлекла из ваших встреч и обсуждений.
-          {topTab === 'regulations'
-            ? ` Всего: ${data.total}. Показано: ${data.items.length}.`
-            : ''}
+          Кора оцифровала из ваших встреч и обсуждений.
+          {topTab === 'regulations' ? ` Найдено: ${data.total}.` : ''}
         </p>
       </header>
 
@@ -379,17 +375,18 @@ function RegulationsListContent() {
         <>
           {summary ? (
             <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-fg-secondary">
+              <span className="text-fg-tertiary">В базе:</span>
               <Chip variant="info" size="sm">
-                {summary.regulations} регламентов
+                Регламенты: {summary.regulations}
               </Chip>
               <Chip variant="lavender" size="sm">
-                {summary.processes} процессов
+                Процессы: {summary.processes}
               </Chip>
               <Chip variant="sand" size="sm">
-                {summary.instructions} инструкций
+                Инструкции: {summary.instructions}
               </Chip>
               <Chip variant="warning" size="sm">
-                {summary.policies} политик
+                Политики: {summary.policies}
               </Chip>
               {summary.weekDelta > 0 ? (
                 <Chip variant="success" size="sm">

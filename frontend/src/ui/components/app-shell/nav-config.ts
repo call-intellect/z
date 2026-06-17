@@ -245,11 +245,11 @@ const WORK_SECTION: NavConfigSection = {
       matchPrefix: '/memory',
       overviewTarget: 'overview.memory',
     },
-    // «Оцифровано» — регламенты, процессы, инструкции и политики, извлечённые из
-    // встреч (страница /regulations сама гейтит доступ по RBAC).
+    // «База знаний» — регламенты, процессы, инструкции и политики, оцифрованные
+    // из встреч (страница /regulations сама гейтит доступ по RBAC).
     {
       href: '/regulations',
-      label: 'Оцифровано',
+      label: 'База знаний',
       icon: BookText,
       matchPrefix: '/regulations',
     },

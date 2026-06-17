@@ -39,6 +39,7 @@ import { PortfolioHealthService } from './services/portfolio-health.service';
 import { PromiseCascadeService } from './services/promise-cascade.service';
 import { Specialist39PromiseKeeperService } from './services/specialist-3-9-promise-keeper.service';
 import { TaskCompletionHandler } from './services/task-completion.handler';
+import { TaskReconcileService } from './services/task-reconcile.service';
 import { TeamCapacityService } from './services/team-capacity.service';
 import { ValueRecapService } from './services/value-recap.service';
 import { WeeklyDigestService } from './services/weekly-digest.service';
@@ -62,6 +63,7 @@ import { CheckInConflictDetectorCron } from './workers/personal-relation-builder
 import { PortfolioHealthSnapshotCron } from './workers/portfolio-health-snapshot.cron';
 import { PromiseCascadeCron } from './workers/promise-cascade.cron';
 import { ReflectionQualityScorerCron } from './workers/reflection-quality-scorer.cron';
+import { TaskReconcileCron } from './workers/task-reconcile.cron';
 import { ValueRecapCron } from './workers/value-recap.cron';
 
 /**
@@ -167,6 +169,13 @@ import { ValueRecapCron } from './workers/value-recap.cron';
     // семантический матч открытой Issue + LLM-верификатор → обратимый
     // TaskClosureCandidate (авто-закрытие запрещено, R13).
     TaskCompletionHandler,
+    // TZ task-dedup (2026-06-16, Ф3) — суточный reconcile петли закрытия:
+    // протухание pending-кандидатов + пересчёт reopen-rate (метрика
+    // task_closure_reopen_rate + WARN-алёрт) + подбор пропущенных событием
+    // матчей (переэмит). Образец — DecisionImplementationCron (per-Org @Cron +
+    // condition-UPDATE, БЕЗ LLM). Kill-switch taskReconcile.enabled (ON).
+    TaskReconcileService,
+    TaskReconcileCron,
     // SBA β-8.3 — ежедневный отчёт COO.
     DailyDigestService,
     OperationsDailyDigestCron,

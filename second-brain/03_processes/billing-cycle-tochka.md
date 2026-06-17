@@ -115,8 +115,7 @@ BillingCycleCron 0 3 * * * Europe/Moscow → FSM transitions PAST_DUE/SUSPENDED/
 - `billing_subscription_cancelled_total{tenant_top,reason}` — Subscription отменена (метрика зарегистрирована, inc-вызов добавляется по мере появления отмен в коде).
 - `billing_webhook_received_total{provider,status}` — webhook от провайдера (метрика зарегистрирована; status: ok|sig_fail|replay|invalid_payload).
 - `billing_provider_request_duration_seconds{provider,method,status}` — гистограмма исходящих HTTP-запросов в Точку (зарегистрирована).
-- Алёрты: `infra/prometheus/alerts/billing-referrals.rules.yml` — `BillingNoPaymentsLong`, `BillingWebhookSignatureFailures`.
-- Grafana: `infra/grafana/dashboards/billing-referrals.json` — 4 панели (биллинг сегодня, webhook здоровье Точки, реф-воронка, latency банка).
+- Алёрты/Grafana-дашборд биллинга (`BillingNoPaymentsLong`, `BillingWebhookSignatureFailures`, 4 панели) — in-repo конфиг `infra/prometheus/`+`infra/grafana/` удалён 2026-06-17 (метрики в `/metrics` остались; восстановим из git при поднятии мониторинга).
 - Общие cron-метрики `nestjs_schedule_*` (если включены) — частично.
 
 **BullMQ очереди:** биллинг не использует очереди — всё inline в cron + webhook.

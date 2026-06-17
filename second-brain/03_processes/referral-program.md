@@ -138,8 +138,7 @@ BillingService.finalizePaidInvoice → emit billing.invoice.paid
 - `referral_attribution_first_touch_locked_total` — отброшенный повторный клик (`updateMany.count===0`).
 - `referral_self_referral_denied_total` (с audit Б6) — self-referral блокирован.
 - `referral_inn_mismatch_total` (с audit Б6) — блок по ИНН.
-- Алёрт `ReferralPayoutCronDidNotRun` (10-го числа после 4ч простоя) в `infra/prometheus/alerts/billing-referrals.rules.yml`.
-- Grafana: панель «реферальная воронка» в `infra/grafana/dashboards/billing-referrals.json`.
+- Алёрт `ReferralPayoutCronDidNotRun` (10-го числа после 4ч простоя) + Grafana-панель «реферальная воронка» — in-repo конфиг `infra/prometheus/`+`infra/grafana/` удалён 2026-06-17 (метрики в `/metrics` остались; восстановим из git при поднятии мониторинга).
 
 **BullMQ очереди:** реферальная программа не использует очереди — `@OnEvent` и `@Cron` напрямую.
 

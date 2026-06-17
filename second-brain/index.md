@@ -84,7 +84,6 @@
 - [[02_architecture/knowledge-core]] — единое информационное ядро Z (Фаза 4): IdeaBlock + Entity + IdeaBlockLink + EntityLink + Theme, pipeline ingest→distill→link→reframing→theme-clusterer→card-rollup-v2, гибридный поиск + граф + темы
 - [[02_architecture/ai-agents-map]] — реестр всех AI-агентов по способу запуска (событие / cron / диалог); комплемент к agent-modules (срез по способностям)
 - [[02_architecture/security-and-152fz]] — per-Org retention, право на удаление ПДн (152-ФЗ), dataClass-routing в LlmRouter, метрики core_*/kc_access_*
-- [[02_architecture/document-conversion-service]] — статус Python-микросервиса конвертации документов (Docling/RapidOCR, `infra/document-conversion/`, Ф0 research)
 
 ## Процессы
 

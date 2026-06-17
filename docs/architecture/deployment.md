@@ -50,10 +50,8 @@ Cron бэкапов — см. `infra/scripts/README.md` и
 
 ## Мониторинг
 
-- Prometheus scrape конфиг: `infra/prometheus/prometheus.yml`.
-- Grafana дашборды: `infra/grafana/dashboards/*.json`.
-- Алерты: `infra/grafana/alerts/*.yml`.
-- Alertmanager → Slack `#z-alerts` (TBD).
+- Backend экспортит метрики Prometheus на `/metrics` (`@willsoto/nestjs-prometheus`, в коде).
+- In-repo конфиг внешней мониторинг-VM (`infra/prometheus/`, `infra/grafana/`) удалён 2026-06-17 (не деплоился; scrape-конфиг, дашборды и alert-rules восстановимы из git-истории при поднятии мониторинга).
 
 ## Smoke-тест после деплоя
 

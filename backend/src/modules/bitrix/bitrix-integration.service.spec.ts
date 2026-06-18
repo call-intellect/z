@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import type { BitrixIntegration } from '@prisma/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,6 +58,7 @@ describe('BitrixIntegrationService', () => {
       deleteMany: ReturnType<typeof vi.fn>;
     };
     source: { upsert: ReturnType<typeof vi.fn>; updateMany: ReturnType<typeof vi.fn> };
+    membership: { findMany: ReturnType<typeof vi.fn> };
   };
   let cryptoMock: {
     encrypt: ReturnType<typeof vi.fn>;
@@ -83,6 +89,7 @@ describe('BitrixIntegrationService', () => {
         upsert: vi.fn().mockResolvedValue({ id: 'src-bitrix' }),
         updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
+      membership: { findMany: vi.fn() },
     };
     cryptoMock = {
       encrypt: vi.fn((v: string) => `gcm:v1:${v}`),
@@ -238,5 +245,87 @@ describe('BitrixIntegrationService', () => {
     );
     prismaMock.bitrixIntegration.findFirst.mockResolvedValueOnce({ id: 'other' });
     await expect(service.claim('t1', 'M1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('bindInstall: один owner/admin-org → авто-привязка (bound)', async () => {
+    prismaMock.membership.findMany.mockResolvedValue([
+      { orgId: 't1', org: { id: 't1', name: 'Acme' } },
+    ]);
+    prismaMock.bitrixIntegration.findUnique.mockResolvedValue(
+      makeRow({ tenantId: null, status: 'pending' }),
+    );
+    prismaMock.bitrixIntegration.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRow());
+    prismaMock.bitrixIntegration.update.mockResolvedValue(makeRow());
+
+    const res = await service.bindInstall({ memberId: 'M1', userId: 'u1' });
+
+    expect(res).toEqual({ status: 'bound', portalDomain: 'acme.bitrix24.ru' });
+    expect(prismaMock.bitrixIntegration.update).toHaveBeenCalledWith({
+      where: { memberId: 'M1' },
+      data: { tenantId: 't1', status: 'connected', lastError: null },
+    });
+  });
+
+  it('bindInstall: несколько org без orgId → select_org, claim не вызывается', async () => {
+    prismaMock.membership.findMany.mockResolvedValue([
+      { orgId: 't1', org: { id: 't1', name: 'Acme' } },
+      { orgId: 't2', org: { id: 't2', name: 'Globex' } },
+    ]);
+
+    const res = await service.bindInstall({ memberId: 'M1', userId: 'u1' });
+
+    expect(res).toEqual({
+      status: 'select_org',
+      orgs: [
+        { id: 't1', name: 'Acme' },
+        { id: 't2', name: 'Globex' },
+      ],
+    });
+    expect(prismaMock.bitrixIntegration.update).not.toHaveBeenCalled();
+  });
+
+  it('bindInstall: нет owner/admin-org → Forbidden', async () => {
+    prismaMock.membership.findMany.mockResolvedValue([]);
+    await expect(service.bindInstall({ memberId: 'M1', userId: 'u1' })).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+  });
+
+  it('bindInstall: orgId не из owner/admin-memberships → Forbidden', async () => {
+    prismaMock.membership.findMany.mockResolvedValue([
+      { orgId: 't1', org: { id: 't1', name: 'Acme' } },
+    ]);
+    await expect(
+      service.bindInstall({ memberId: 'M1', userId: 'u1', orgId: 'foreign' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prismaMock.bitrixIntegration.update).not.toHaveBeenCalled();
+  });
+
+  it('claimByDomain: pending по домену найден → claim connected', async () => {
+    prismaMock.bitrixIntegration.findFirst
+      .mockResolvedValueOnce(makeRow({ tenantId: null, status: 'pending' }))
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(makeRow());
+    prismaMock.bitrixIntegration.findUnique.mockResolvedValue(
+      makeRow({ tenantId: null, status: 'pending' }),
+    );
+    prismaMock.bitrixIntegration.update.mockResolvedValue(makeRow());
+
+    const res = await service.claimByDomain('t1', 'acme.bitrix24.ru');
+
+    expect(res.portalDomain).toBe('acme.bitrix24.ru');
+    expect(prismaMock.bitrixIntegration.update).toHaveBeenCalledWith({
+      where: { memberId: 'M1' },
+      data: { tenantId: 't1', status: 'connected', lastError: null },
+    });
+  });
+
+  it('claimByDomain: pending не найден → NotFound', async () => {
+    prismaMock.bitrixIntegration.findFirst.mockResolvedValueOnce(null);
+    await expect(service.claimByDomain('t1', 'nope.bitrix24.ru')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

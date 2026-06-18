@@ -24,6 +24,8 @@ export type BitrixSyncScope = "all" | "users" | "dialogs" | "crm";
 export interface BitrixStatusApi {
   integration: BitrixIntegrationApi;
   analysisEnabled: boolean;
+  runningScopes: BitrixSyncScope[];
+  activeSyncScope: BitrixSyncScope | null;
   lastFullSyncAt: string | null;
   lastIncrementalSyncAt: string | null;
   counts: {
@@ -116,6 +118,12 @@ export const bitrixApi = {
     apiClient.post<BitrixIntegrationApi>("/api/v1/bitrix/integration/claim", {
       memberId,
     }),
+
+  claimByDomain: (domain: string) =>
+    apiClient.post<BitrixIntegrationApi>(
+      "/api/v1/bitrix/integration/claim-by-domain",
+      { domain },
+    ),
 
   deleteIntegration: () =>
     apiClient.del<{ ok: true }>("/api/v1/bitrix/integration"),

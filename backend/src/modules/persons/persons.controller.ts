@@ -70,6 +70,7 @@ export class PersonsController {
       q: q.q,
       departmentId: q.departmentId,
       roleId: q.roleId,
+      relationship: q.relationship,
       invitationStatus: q.invitationStatus,
       includeDeleted: q.includeDeleted,
       limit: q.limit,

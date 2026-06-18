@@ -370,6 +370,45 @@ export class AccountsService {
     return { url, ttlMinutes: ttlMin };
   }
 
+  async issueLoginUrl(userId: string): Promise<{ url: string }> {
+    const user = await this.repo.findById(userId);
+    if (!user) {
+      throw new Error(`issueLoginUrl: user ${userId} не найден`);
+    }
+    const rawToken = randomBytes(MAGIC_LINK_TOKEN_BYTES).toString('base64url');
+    const tokenHash = AccountsService.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + this.cfg.invites.magicLinkTtlMinutes * 60_000);
+    await this.repo.createVerificationToken({
+      userId: user.id,
+      tokenHash,
+      purpose: 'magic_link',
+      expiresAt,
+    });
+    return {
+      url:
+        `${this.cfg.auth.publicFrontendUrl.replace(/\/+$/, '')}` +
+        `/accounts/magic-link/consume?token=${rawToken}`,
+    };
+  }
+
+  async issueSession(
+    userId: string,
+    meta: { userAgent?: string | null; ip?: string | null } = {},
+  ): Promise<string> {
+    const user = await this.repo.findById(userId);
+    if (!user) {
+      throw new Error(`issueSession: user ${userId} не найден`);
+    }
+    const { token } = await this.sessions.issue({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      userAgent: meta.userAgent ?? null,
+      ip: meta.ip ?? null,
+    });
+    return token;
+  }
+
   async consumeMagicLink(
     input: { token: string },
     meta: { userAgent?: string | null; ip?: string | null } = {},

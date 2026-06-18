@@ -151,9 +151,10 @@ export class ChatboxIntegrationController {
       },
     });
     if (!integration) {
-      return { configured: false };
+      return { configured: false, running: false, runningScopes: [] };
     }
 
+    const runningScopes = await this.syncQueue.getRunningScopes(t);
     const where = { tenantId: t };
     const [chats, messages, customers, channelClients, members, sessions] = await Promise.all([
       this.prisma.chatboxChat.count({ where }),
@@ -166,6 +167,9 @@ export class ChatboxIntegrationController {
 
     return {
       configured: true,
+      running: runningScopes.length > 0,
+      runningScopes,
+      activeSyncScope: runningScopes[0] ?? null,
       status: integration.status,
       lastError: integration.lastError,
       lastFullSyncAt: integration.lastFullSyncAt?.toISOString() ?? null,

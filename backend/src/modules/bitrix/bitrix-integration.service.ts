@@ -3,12 +3,14 @@ import { timingSafeEqual } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleInit,
 } from '@nestjs/common';
-import type { BitrixIntegration } from '@prisma/client';
+import type { BitrixIntegration, BitrixIntegrationStatus } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { CryptoService } from '../../common/crypto/crypto.service';
@@ -16,10 +18,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '../auth/services/jwt.service';
 
 import { BitrixApiClient, BitrixApiError, type BitrixTokenResponse } from './bitrix-api.client';
+import type { BitrixBindResult } from './dto/bitrix-install.dto';
 import type { BitrixIntegrationResponseDto } from './dto/bitrix-integration.dto';
 
 @Injectable()
-export class BitrixIntegrationService {
+export class BitrixIntegrationService implements OnModuleInit {
   private readonly logger = new Logger(BitrixIntegrationService.name);
 
   private static readonly EXPIRY_BUFFER_MS = 60_000;
@@ -31,6 +34,14 @@ export class BitrixIntegrationService {
     @Inject(JwtService) private readonly jwt: JwtService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
+
+  onModuleInit(): void {
+    const base = this.cfg.publicHostUrl;
+    this.logger.log(
+      `Bitrix24 install URLs (партнёрский кабинет): handler=${base}/api/v1/bitrix/install/handler · ` +
+        `event=${base}/api/v1/bitrix/install/event · oauthCallback=${base}/api/v1/bitrix/oauth/callback`,
+    );
+  }
 
   buildAuthorizeUrl(tenantId: string, domain: string): string {
     const clientId = this.cfg.bitrix.clientId;
@@ -177,6 +188,136 @@ export class BitrixIntegrationService {
     await this.ensureBitrixSource(tenantId);
     const result = await this.getIntegration(tenantId);
     return result as BitrixIntegrationResponseDto;
+  }
+
+  async bindInstall(args: {
+    memberId: string;
+    userId: string;
+    orgId?: string;
+  }): Promise<BitrixBindResult> {
+    const memberships = await this.prisma.membership.findMany({
+      where: { userId: args.userId, role: { in: ['owner', 'admin'] } },
+      select: { orgId: true, org: { select: { id: true, name: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    const [first] = memberships;
+    if (!first) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'bitrix_no_admin_org',
+          message: 'У вас нет компании с правами владельца или администратора',
+        },
+      });
+    }
+
+    let orgId = args.orgId;
+    if (!orgId) {
+      if (memberships.length > 1) {
+        return {
+          status: 'select_org',
+          orgs: memberships.map((m) => ({ id: m.org.id, name: m.org.name })),
+        };
+      }
+      orgId = first.orgId;
+    } else if (!memberships.some((m) => m.orgId === orgId)) {
+      throw new ForbiddenException({
+        ok: false,
+        error: {
+          code: 'bitrix_no_admin_org',
+          message: 'Нет прав владельца или администратора в выбранной компании',
+        },
+      });
+    }
+
+    const result = await this.claim(orgId, args.memberId);
+    return { status: 'bound', portalDomain: result.portalDomain };
+  }
+
+  async claimByDomain(tenantId: string, domain: string): Promise<BitrixIntegrationResponseDto> {
+    const row = await this.prisma.bitrixIntegration.findFirst({
+      where: { portalDomain: domain, status: 'pending', tenantId: null },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!row) {
+      throw new NotFoundException({
+        ok: false,
+        error: {
+          code: 'bitrix_pending_not_found',
+          message:
+            'Не найдена ожидающая установка Bitrix24 для этого домена. Подключите портал через авторизацию.',
+        },
+      });
+    }
+    return this.claim(tenantId, row.memberId);
+  }
+
+  async getInstallView(memberId: string): Promise<{
+    status: BitrixIntegrationStatus;
+    tenantId: string | null;
+    portalDomain: string;
+    orgName: string | null;
+  } | null> {
+    const row = await this.prisma.bitrixIntegration.findUnique({
+      where: { memberId },
+      select: {
+        status: true,
+        tenantId: true,
+        portalDomain: true,
+        org: { select: { name: true } },
+      },
+    });
+    if (!row) return null;
+    return {
+      status: row.status,
+      tenantId: row.tenantId,
+      portalDomain: row.portalDomain,
+      orgName: row.org?.name ?? null,
+    };
+  }
+
+  async resolveActingUser(
+    memberId: string,
+    authId: string,
+  ): Promise<{ koraUserId: string; orgId: string; name: string } | null> {
+    if (!authId) return null;
+    const row = await this.prisma.bitrixIntegration.findUnique({ where: { memberId } });
+    if (!row?.tenantId || row.status !== 'connected' || !row.clientEndpoint) return null;
+
+    let current: { ID?: string | number; NAME?: string; LAST_NAME?: string };
+    try {
+      current = await this.client.callMethod<{
+        ID?: string | number;
+        NAME?: string;
+        LAST_NAME?: string;
+      }>(row.clientEndpoint, authId, 'user.current');
+    } catch (err) {
+      this.logger.warn(
+        `resolveActingUser: user.current не удался для member=${memberId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return null;
+    }
+
+    const externalId = current?.ID != null ? String(current.ID) : '';
+    if (!externalId) return null;
+
+    const bu = await this.prisma.bitrixUser.findUnique({
+      where: { tenantId_externalId: { tenantId: row.tenantId, externalId } },
+      select: { linkedPersonId: true, name: true },
+    });
+    if (!bu?.linkedPersonId) return null;
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { orgId: row.tenantId, personId: bu.linkedPersonId },
+      select: { userId: true },
+    });
+    if (!membership) return null;
+
+    const name =
+      bu.name ?? [current?.NAME, current?.LAST_NAME].filter(Boolean).join(' ').trim() ?? '';
+    return { koraUserId: membership.userId, orgId: row.tenantId, name };
   }
 
   async getIntegration(tenantId: string): Promise<BitrixIntegrationResponseDto | null> {

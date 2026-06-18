@@ -307,6 +307,7 @@ export class ChatboxSyncService {
           where: { id: c.id },
           data: { linkedPersonId: personId, linkMode: 'auto' },
         });
+        await this.upgradePersonToEmployee(tenantId, personId);
         continue;
       }
       if (c.linkedPersonId === null) {
@@ -444,9 +445,17 @@ export class ChatboxSyncService {
     return owner?.userId ?? null;
   }
 
+  private async upgradePersonToEmployee(tenantId: string, personId: string): Promise<void> {
+    await this.prisma.person.updateMany({
+      where: { id: personId, tenantId, relationship: 'external', deletedAt: null },
+      data: { relationship: 'employee' },
+    });
+  }
+
   private async autoCreateForUnlinked(args: {
     tenantId: string;
     ownerUserId: string;
+    relationship: 'employee' | 'external';
     rows: { id: string; email: string | null; name: string | null }[];
     update: (id: string, personId: string) => Promise<unknown>;
   }): Promise<void> {
@@ -467,9 +476,16 @@ export class ChatboxSyncService {
           const created = await this.persons.create({
             tenantId: args.tenantId,
             userId: args.ownerUserId,
-            body: { name: name ?? email ?? 'Без имени', ...(email ? { email } : {}) },
+            body: {
+              name: name ?? email ?? 'Без имени',
+              ...(email ? { email } : {}),
+              relationship: args.relationship,
+            },
           });
           personId = created.id;
+        }
+        if (args.relationship === 'employee') {
+          await this.upgradePersonToEmployee(args.tenantId, personId);
         }
         await args.update(r.id, personId);
       } catch (err) {
@@ -491,6 +507,7 @@ export class ChatboxSyncService {
     await this.autoCreateForUnlinked({
       tenantId,
       ownerUserId,
+      relationship: 'employee',
       rows,
       update: (id, personId) =>
         this.prisma.chatboxMember.update({
@@ -510,6 +527,7 @@ export class ChatboxSyncService {
     await this.autoCreateForUnlinked({
       tenantId,
       ownerUserId,
+      relationship: 'external',
       rows: customers,
       update: (id, personId) =>
         this.prisma.chatboxCustomer.update({
@@ -529,6 +547,7 @@ export class ChatboxSyncService {
     await this.autoCreateForUnlinked({
       tenantId,
       ownerUserId,
+      relationship: 'external',
       rows: channelClients,
       update: (id, personId) =>
         this.prisma.chatboxChannelClient.update({

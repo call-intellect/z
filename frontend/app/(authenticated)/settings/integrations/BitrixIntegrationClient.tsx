@@ -54,6 +54,10 @@ const SYNC_SCOPES: ReadonlyArray<{
   { scope: "all", label: "Всё", icon: RefreshCw },
 ];
 
+function syncScopeLabel(scope: BitrixSyncScope): string {
+  return SYNC_SCOPES.find((s) => s.scope === scope)?.label ?? "Данные";
+}
+
 export function BitrixIntegrationClient() {
   return (
     <TierGate feature="feature.bitrix">
@@ -119,13 +123,13 @@ function BitrixIntegrationContent() {
       ) : data ? (
         <ConnectedView integration={data} onChanged={() => void mutate()} />
       ) : (
-        <ConnectForm />
+        <ConnectForm onConnected={() => void mutate()} />
       )}
     </div>
   );
 }
 
-function ConnectForm() {
+function ConnectForm({ onConnected }: { onConnected: () => void }) {
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -137,10 +141,23 @@ function ConnectForm() {
     }
     setBusy(true);
     try {
-      const { url } = await bitrixApi.getAuthorizeUrl(normalized);
-      window.location.href = url;
+      await bitrixApi.claimByDomain(normalized);
+      toast.success("Портал Bitrix24 привязан к вашей компании");
+      onConnected();
+      return;
     } catch (e) {
-      toast.error(errMessage(e, "Не удалось начать подключение"));
+      if (e instanceof ApiError && e.code === "bitrix_pending_not_found") {
+        try {
+          const { url } = await bitrixApi.getAuthorizeUrl(normalized);
+          window.location.href = url;
+          return;
+        } catch (e2) {
+          toast.error(errMessage(e2, "Не удалось начать подключение"));
+          setBusy(false);
+          return;
+        }
+      }
+      toast.error(errMessage(e, "Не удалось подключить Bitrix24"));
       setBusy(false);
     }
   };
@@ -151,9 +168,10 @@ function ConnectForm() {
         Подключить портал
       </CardTitle>
       <p className="max-w-[68ch] text-sm text-fg-secondary">
-        Введите домен портала Bitrix24 — откроется окно авторизации. После
-        подтверждения вернётесь сюда: свяжете сотрудников и запустите первую
-        синхронизацию.
+        Введите домен портала Bitrix24. Если приложение уже установлено из
+        Маркета — портал привяжется сразу. Иначе откроется окно авторизации;
+        после подтверждения вернётесь сюда: свяжете сотрудников и запустите
+        первую синхронизацию.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor="bitrix-domain">Домен портала</Label>
@@ -191,6 +209,8 @@ function ConnectedView({
     null,
   );
   const [syncing, setSyncing] = useState(false);
+  const [activeSyncScope, setActiveSyncScope] =
+    useState<BitrixSyncScope | null>(null);
   const [deleting, setDeleting] = useState(false);
   const syncBaselineRef = useRef<string | null>(null);
   const syncStartMsRef = useRef<number>(0);
@@ -199,8 +219,14 @@ function ConnectedView({
   const { data: status, mutate: mutateStatus } = useSWR(
     ["bitrix-status"],
     () => bitrixApi.getStatus().then(mapBitrixStatus),
-    { refreshInterval: syncing ? 2500 : 0, revalidateOnFocus: false },
+    {
+      refreshInterval: (latest) =>
+        syncing || (latest?.runningScopes?.length ?? 0) > 0 ? 2500 : 0,
+      revalidateOnFocus: false,
+    },
   );
+
+  const serverSyncing = (status?.runningScopes?.length ?? 0) > 0;
 
   const analysisSyncedRef = useRef(false);
   useEffect(() => {
@@ -216,12 +242,13 @@ function ConnectedView({
     const done =
       (cur && cur !== syncBaselineRef.current) ||
       Date.now() - syncStartMsRef.current > 240_000;
-    if (done) {
+    if (done && !serverSyncing) {
       setSyncing(false);
+      setActiveSyncScope(null);
       toast.success("Синхронизация завершена");
       onChanged();
     }
-  }, [syncing, status, onChanged]);
+  }, [syncing, status, onChanged, serverSyncing]);
 
   const statusTone =
     integration.status === "connected"
@@ -252,9 +279,10 @@ function ConnectedView({
       syncBaselineRef.current =
         status?.lastIncrementalSyncAt?.toISOString() ?? null;
       syncStartMsRef.current = Date.now();
+      setActiveSyncScope(scope);
       setSyncing(true);
       void mutateStatus();
-      toast.success("Синхронизация запущена");
+      toast.success(`Запущена синхронизация: ${syncScopeLabel(scope)}`);
     } catch (e) {
       toast.error(errMessage(e, "Не удалось запустить синхронизацию"));
     } finally {
@@ -328,7 +356,7 @@ function ConnectedView({
                 variant="outline"
                 size="sm"
                 onClick={() => void handleSync(scope)}
-                disabled={syncingScope !== null || syncing}
+                disabled={syncingScope !== null || syncing || serverSyncing}
               >
                 {syncingScope === scope ? (
                   <Loader2 size={14} className="animate-spin" />
@@ -340,14 +368,19 @@ function ConnectedView({
             ))}
           </div>
 
-          {syncing && (
+          {(syncing || serverSyncing) && (
             <div
               className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
               style={{ background: STATUS_TONE.ok.bg }}
             >
               <Loader2 size={14} className="animate-spin text-accent" />
               <span className="font-medium text-fg-primary">
-                Идёт синхронизация…
+                {(() => {
+                  const scope = activeSyncScope ?? status?.activeSyncScope ?? null;
+                  return scope
+                    ? `Синхронизируем: ${syncScopeLabel(scope)}…`
+                    : "Идёт синхронизация…";
+                })()}
               </span>
               {c && (
                 <span className="text-fg-secondary">

@@ -17,6 +17,7 @@ export const ListPersonsQuerySchema = z.object({
   q: z.string().trim().min(1).max(200).optional(),
   departmentId: z.string().min(1).optional(),
   roleId: z.string().min(1).optional(),
+  relationship: z.enum(['employee', 'external', 'candidate', 'former']).optional(),
   invitationStatus: z.enum(['pending', 'accepted', 'revoked', 'expired', 'none']).optional(),
   includeDeleted: z.coerce.boolean().optional().default(false),
   limit: z.coerce.number().int().min(1).max(500).default(200),
@@ -29,6 +30,7 @@ export const CreatePersonSchema = z.object({
   primaryDepartmentId: z.string().min(1).nullable().optional(),
   roleId: z.string().min(1).nullable().optional(),
   linkUserId: z.string().min(1).nullable().optional(),
+  relationship: z.enum(['employee', 'external', 'candidate', 'former']).optional(),
 });
 export type CreatePersonDto = z.infer<typeof CreatePersonSchema>;
 

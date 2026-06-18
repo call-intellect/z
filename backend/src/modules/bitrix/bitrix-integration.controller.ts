@@ -27,6 +27,10 @@ import { RbacService } from '../rbac/rbac.service';
 import { BitrixIntegrationService } from './bitrix-integration.service';
 import { BitrixSyncService } from './bitrix-sync.service';
 import {
+  BitrixClaimByDomainSchema,
+  type BitrixClaimByDomainDto,
+} from './dto/bitrix-install.dto';
+import {
   BitrixAnalysisToggleSchema,
   BitrixAuthorizeUrlQuerySchema,
   BitrixClaimSchema,
@@ -96,7 +100,10 @@ export class BitrixIntegrationController {
   ): Promise<BitrixStatusResponseDto | null> {
     const t = this.requireTenant(tenantId);
     await this.requireRead(user.id, t);
-    return this.service.getStatus(t);
+    const res = await this.service.getStatus(t);
+    if (!res) return null;
+    const runningScopes = await this.syncQueue.getRunningScopes(t);
+    return { ...res, runningScopes, activeSyncScope: runningScopes[0] ?? null };
   }
 
   @Patch('analysis')
@@ -168,6 +175,22 @@ export class BitrixIntegrationController {
     await this.requireManage(user.id, t);
     await this.requireFeature(t);
     return this.service.claim(t, body.memberId);
+  }
+
+  @Post('claim-by-domain')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Привязать ожидающую установку Bitrix24 (из Маркета) к этой org по домену',
+  })
+  async claimByDomain(
+    @Body(new ZodValidationPipe(BitrixClaimByDomainSchema)) body: BitrixClaimByDomainDto,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<BitrixIntegrationResponseDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireManage(user.id, t);
+    await this.requireFeature(t);
+    return this.service.claimByDomain(t, body.domain);
   }
 
   @Post('sync')

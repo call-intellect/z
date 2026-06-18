@@ -1,6 +1,8 @@
 import type { BitrixIntegrationStatus } from '@prisma/client';
 import { z } from 'zod';
 
+import { type BitrixSyncScope } from '../queue/bitrix-sync.queue';
+
 
 export const BitrixDomainSchema = z
   .string()
@@ -83,6 +85,8 @@ export interface BitrixIntegrationResponseDto {
 export interface BitrixStatusResponseDto {
   integration: BitrixIntegrationResponseDto;
   analysisEnabled: boolean;
+  runningScopes: BitrixSyncScope[];
+  activeSyncScope: BitrixSyncScope | null;
   lastFullSyncAt: string | null;
   lastIncrementalSyncAt: string | null;
   counts: {

@@ -42,6 +42,9 @@ export type ChatboxSyncStatusApi =
       status: ChatboxStatus;
       lastError: string | null;
       counts: ChatboxSyncCountsApi;
+      running?: boolean;
+      runningScopes?: string[];
+      activeSyncScope?: string | null;
     };
 
 export type ChatboxSyncScope = "all" | "customers" | "managers" | "chats";

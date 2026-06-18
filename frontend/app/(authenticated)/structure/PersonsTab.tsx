@@ -121,6 +121,8 @@ export function PersonsTab({
   const [deptFilter, setDeptFilter] = useState<string>(ALL_VALUE);
   const [roleFilter, setRoleFilter] = useState<string>(ALL_VALUE);
   const [statusFilter, setStatusFilter] = useState<string>(ALL_VALUE);
+  const [relationshipFilter, setRelationshipFilter] =
+    useState<string>(ALL_VALUE);
   const [dialog, setDialog] = useState<DialogState>({ kind: "none" });
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [createdInvite, setCreatedInvite] =
@@ -152,8 +154,10 @@ export function PersonsTab({
       list = list.filter((p) => p.roleId === roleFilter);
     if (statusFilter !== ALL_VALUE)
       list = list.filter((p) => p.invitationStatus === statusFilter);
+    if (relationshipFilter !== ALL_VALUE)
+      list = list.filter((p) => p.relationship === relationshipFilter);
     return list;
-  }, [rosterSwr.data, deptFilter, roleFilter, statusFilter]);
+  }, [rosterSwr.data, deptFilter, roleFilter, statusFilter, relationshipFilter]);
 
   const currentUserIsOwner = useMemo(
     () =>
@@ -333,6 +337,19 @@ export function PersonsTab({
               <SelectItem value="expired">Истекло</SelectItem>
             </SelectContent>
           </Select>
+          <Select
+            value={relationshipFilter}
+            onValueChange={setRelationshipFilter}
+          >
+            <SelectTrigger className="h-8 w-44">
+              <SelectValue placeholder="Все" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>Сотрудники и клиенты</SelectItem>
+              <SelectItem value="employee">Только сотрудники</SelectItem>
+              <SelectItem value="external">Только клиенты</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
@@ -395,6 +412,11 @@ export function PersonsTab({
                     {!p.hasPersonCard && (
                       <span className="ml-2 text-xs font-normal text-fg-tertiary">
                         нет карточки сотрудника
+                      </span>
+                    )}
+                    {p.relationship === "external" && (
+                      <span className="ml-2 rounded-full bg-bg-overlay px-2 py-0.5 text-[10px] font-medium text-fg-tertiary">
+                        Клиент
                       </span>
                     )}
                   </td>

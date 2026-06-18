@@ -21,6 +21,15 @@ export class BitrixSyncQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BitrixSyncQueueService.name);
   private queue: Queue<BitrixSyncJobData> | null = null;
 
+  private static readonly SCOPES: readonly BitrixSyncScope[] = ['all', 'users', 'dialogs', 'crm'];
+  private static readonly RUNNING_STATES = new Set<string>([
+    'active',
+    'waiting',
+    'delayed',
+    'prioritized',
+    'waiting-children',
+  ]);
+
   constructor(@Inject(RedisService) private readonly redis: RedisService) {}
 
   onModuleInit(): void {
@@ -41,9 +50,25 @@ export class BitrixSyncQueueService implements OnModuleInit, OnModuleDestroy {
   async enqueue(tenantId: string, scope: BitrixSyncScope): Promise<{ jobId: string }> {
     const queue = this.requireQueue();
     const jobId = `bitrix-sync-${tenantId}-${scope}`;
+    await queue.remove(jobId).catch(() => undefined);
     await queue.add('sync', { tenantId, scope }, { jobId });
-    this.logger.debug(`enqueue: tenant=${tenantId} scope=${scope} jobId=${jobId}`);
+    this.logger.log(`enqueue: tenant=${tenantId} scope=${scope} jobId=${jobId}`);
     return { jobId };
+  }
+
+  async getRunningScopes(tenantId: string): Promise<BitrixSyncScope[]> {
+    const queue = this.requireQueue();
+    const states = await Promise.all(
+      BitrixSyncQueueService.SCOPES.map(async (scope) => ({
+        scope,
+        state: await queue
+          .getJobState(`bitrix-sync-${tenantId}-${scope}`)
+          .catch(() => 'unknown'),
+      })),
+    );
+    return states
+      .filter((s) => BitrixSyncQueueService.RUNNING_STATES.has(s.state))
+      .map((s) => s.scope);
   }
 
   private requireQueue(): Queue<BitrixSyncJobData> {

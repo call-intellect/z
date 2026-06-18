@@ -15,6 +15,37 @@ interface Step {
   args?: string[];
   skipBootstrap?: boolean;
   skipUpdate?: boolean;
+  timeoutMs?: number;
+  everyDeploy?: boolean;
+}
+
+const DEFAULT_STEP_TIMEOUT_MS = Number(
+  process.env['DEPLOY_STEP_TIMEOUT_MS'] ?? 600_000,
+);
+
+const LEDGER_TABLE = 'public._deploy_applied_step';
+
+function isOnceStep(step: Step): boolean {
+  if (step.everyDeploy) return false;
+  return (
+    step.phase === 'patch' ||
+    step.phase === 'backfill' ||
+    step.phase === 'migrate' ||
+    step.phase === 'seed-llm-routes'
+  );
+}
+
+async function stepHash(step: Step): Promise<string | null> {
+  try {
+    const content = await Bun.file(step.script).text();
+    const hasher = new Bun.CryptoHasher('sha256');
+    hasher.update(content);
+    hasher.update('\0args\0');
+    hasher.update((step.args ?? []).join(' '));
+    return hasher.digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 const STEPS: Step[] = [
@@ -290,12 +321,18 @@ const STEPS: Step[] = [
     script: 'scripts/patch-prompt-role-profile-build-fase0d.ts',
     skipBootstrap: true,
   },
-  { phase: 'patch', script: 'scripts/patch-chat-v2-to-pro.ts', skipBootstrap: true },
+  {
+    phase: 'patch',
+    script: 'scripts/patch-chat-v2-to-pro.ts',
+    skipBootstrap: true,
+    everyDeploy: true,
+  },
   {
     phase: 'patch',
     script: 'scripts/patch-mass-migrate-to-deepseek-pro.ts',
     args: ['--update-existing'],
     skipBootstrap: true,
+    everyDeploy: true,
   },
   {
     phase: 'patch',
@@ -303,6 +340,7 @@ const STEPS: Step[] = [
     args: ['--apply'],
     hint: 'ChatBox analysisEnabled=true для подключённых (§5)',
     skipBootstrap: true,
+    everyDeploy: true,
   },
   {
     phase: 'patch',
@@ -310,41 +348,40 @@ const STEPS: Step[] = [
     args: ['--apply'],
     hint: 'deepseek-chat → deepseek-v4-flash во всех LlmTaskRoute',
     skipBootstrap: true,
+    everyDeploy: true,
   },
   {
     phase: 'patch',
     script: 'scripts/patch-ensure-meeting-report-fast-fallback.ts',
     hint: 'fallback openai+ollama для meeting-report-fast',
     skipBootstrap: true,
+    everyDeploy: true,
   },
   {
     phase: 'patch',
     script: 'scripts/patch-llm-routes-report-chain-deepseek.ts',
     hint: 'summary/report-by-type/tasks → DeepSeek (кэш)',
     skipBootstrap: true,
+    everyDeploy: true,
   },
   {
     phase: 'patch',
     script: 'scripts/patch-enable-shipped-flags.ts',
     skipBootstrap: true,
+    everyDeploy: true,
     hint: 'Ship-On: включить готовые фичи (meetingTasksToTrackerOnly, tables_text_to_schema, curationAutotuneEnabled)',
   },
   {
     phase: 'patch',
     script: 'scripts/patch-enable-telegram-digests.ts',
     skipBootstrap: true,
+    everyDeploy: true,
     hint: 'включить доставку дайджестов COO + пульса целей в Telegram (TZ-1 Ф0)',
   },
   {
     phase: 'patch',
     script: 'scripts/patch-migrate-clone-access.ts',
     hint: 'миграция грантов перед CLONE_V2_ENABLED=true',
-  },
-  {
-    phase: 'patch',
-    script: 'scripts/patch-telegram-register-in-proxy.ts',
-    hint: 'регистрация бота в telegram.crossmark.ru',
-    skipBootstrap: true,
   },
   {
     phase: 'patch',
@@ -604,6 +641,7 @@ interface ParsedArgs {
   withSchema: boolean;
   failOnSteps: boolean;
   verbose: boolean;
+  rerunAll: boolean;
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
@@ -613,6 +651,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   let withSchema = false;
   let failOnSteps = true;
   let verbose = process.env['APPLY_PROD_DEPLOY_VERBOSE'] === '1';
+  let rerunAll = process.env['DEPLOY_RERUN_ALL'] === '1';
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--mode') {
@@ -624,6 +663,7 @@ function parseArgs(argv: string[]): ParsedArgs {
     else if (a === '--with-schema') withSchema = true;
     else if (a === '--no-fail-on-steps') failOnSteps = false;
     else if (a === '--verbose') verbose = true;
+    else if (a === '--rerun-all') rerunAll = true;
     else if (a === '--help' || a === '-h') {
        
       console.log(
@@ -633,12 +673,16 @@ function parseArgs(argv: string[]): ParsedArgs {
           `  --no-fail-on-steps  не падать из-за упавших seed/backfill (schema-сбой всё равно = exit 1).\n` +
           `                      Для migrate-контейнера: схема блокирует backend, осечка сида — нет.\n` +
           `  --verbose           полный вывод каждого шага (по умолчанию — тихо, 1 строка/шаг,\n` +
-          `                      полный лог только у упавших). Также env APPLY_PROD_DEPLOY_VERBOSE=1.`,
+          `                      полный лог только у упавших). Также env APPLY_PROD_DEPLOY_VERBOSE=1.\n` +
+          `  --rerun-all         игнорировать журнал ${LEDGER_TABLE} и заново прогнать все\n` +
+          `                      одноразовые patch/backfill/migrate/seed-llm-routes. По умолчанию\n` +
+          `                      они скипаются, если содержимое скрипта не менялось (хэш в журнале).\n` +
+          `                      Также env DEPLOY_RERUN_ALL=1.`,
       );
       process.exit(0);
     }
   }
-  return { mode, dryRun, continueOnFail, withSchema, failOnSteps, verbose };
+  return { mode, dryRun, continueOnFail, withSchema, failOnSteps, verbose, rerunAll };
 }
 
 async function autoBackup(): Promise<boolean> {
@@ -696,6 +740,52 @@ async function psqlExec(url: string, sql: string): Promise<boolean> {
     stderr: 'inherit',
   });
   return (await proc.exited) === 0;
+}
+
+async function psqlExecQuiet(url: string, sql: string): Promise<boolean> {
+  const proc = Bun.spawn(['psql', url, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  return (await proc.exited) === 0;
+}
+
+async function ensureLedger(url: string): Promise<boolean> {
+  const created = await psqlExecQuiet(
+    url,
+    `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (script text PRIMARY KEY, hash text, applied_at timestamptz NOT NULL DEFAULT now())`,
+  );
+  if (!created) return false;
+  return psqlExecQuiet(url, `ALTER TABLE ${LEDGER_TABLE} ADD COLUMN IF NOT EXISTS hash text`);
+}
+
+async function loadAppliedSteps(url: string): Promise<Map<string, string>> {
+  const out = await psqlScalar(
+    url,
+    `SELECT COALESCE(string_agg(script || E'\\t' || COALESCE(hash, ''), E'\\n'), '') FROM ${LEDGER_TABLE}`,
+  );
+  const map = new Map<string, string>();
+  if (out === null) return map;
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue;
+    const tab = line.indexOf('\t');
+    if (tab < 0) {
+      map.set(line.trim(), '');
+      continue;
+    }
+    map.set(line.slice(0, tab), line.slice(tab + 1));
+  }
+  return map;
+}
+
+async function markApplied(url: string, script: string, hash: string): Promise<void> {
+  const s = script.replace(/'/g, "''");
+  const h = hash.replace(/'/g, "''");
+  await psqlExecQuiet(
+    url,
+    `INSERT INTO ${LEDGER_TABLE}(script, hash) VALUES('${s}', '${h}') ` +
+      `ON CONFLICT (script) DO UPDATE SET hash = EXCLUDED.hash, applied_at = now()`,
+  );
 }
 
 function withPublicSearchPath(url: string): string {
@@ -868,20 +958,56 @@ async function runOne(
     return { ok: true, code: 0 };
   }
 
+  const timeoutMs = step.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+
   if (verbose) {
-     
+
     console.log(`\n>>> ${label}`);
     const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit' });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill(9);
+    }, timeoutMs);
     const code = await proc.exited;
+    clearTimeout(timer);
+    if (timedOut) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `✗ ${label}  (ТАЙМАУТ ${Math.round(timeoutMs / 1000)}s — процесс убит, шаг пропущен)`,
+      );
+      return { ok: false, code: 124 };
+    }
     return { ok: code === 0, code };
   }
 
   const proc = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill(9);
+  }, timeoutMs);
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
   const code = await proc.exited;
+  clearTimeout(timer);
+  if (timedOut) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `\n✗ ${label}  (ТАЙМАУТ ${Math.round(timeoutMs / 1000)}s — процесс убит, шаг пропущен)`,
+    );
+    if (out.trim()) {
+      // eslint-disable-next-line no-console
+      console.error(out.trimEnd());
+    }
+    if (err.trim()) {
+      // eslint-disable-next-line no-console
+      console.error(err.trimEnd());
+    }
+    return { ok: false, code: 124 };
+  }
   if (code === 0) {
     const summary = pickSummaryLine(out);
      
@@ -919,10 +1045,39 @@ async function main(): Promise<void> {
     }
   }
 
+  const dbUrl = process.env['DATABASE_URL'];
+  const ledgerOn = !args.dryRun && !!dbUrl;
+  let applied = new Map<string, string>();
+  if (ledgerOn) {
+    await ensureLedger(dbUrl!);
+    applied = await loadAppliedSteps(dbUrl!);
+    if (args.rerunAll) {
+      // eslint-disable-next-line no-console
+      console.log(`\n[ledger] --rerun-all: журнал игнорируется, одноразовые шаги прогоняются заново.`);
+    } else {
+      // eslint-disable-next-line no-console
+      console.log(
+        `\n[ledger] записей в журнале: ${applied.size} ` +
+          `(одноразовые шаги с неизменённым содержимым будут пропущены).`,
+      );
+    }
+  }
+
   const results: { step: Step; ok: boolean; code: number }[] = [];
+  let skipped = 0;
   for (const step of steps) {
+    const once = ledgerOn && isOnceStep(step);
+    const curHash = once ? await stepHash(step) : null;
+    if (once && !args.rerunAll && curHash !== null && applied.get(step.script) === curHash) {
+      skipped++;
+      results.push({ step, ok: true, code: 0 });
+      continue;
+    }
     const r = await runOne(step, args.dryRun, args.verbose);
     results.push({ step, ...r });
+    if (r.ok && once) {
+      await markApplied(dbUrl!, step.script, curHash ?? '');
+    }
     if (!r.ok && !args.continueOnFail) {
       // eslint-disable-next-line no-console
       console.error(
@@ -933,11 +1088,11 @@ async function main(): Promise<void> {
   }
 
   const failed = results.filter((r) => !r.ok);
-   
+
   console.log(`\n=== SUMMARY ===`);
   // eslint-disable-next-line no-console
   console.log(
-    `Всего: ${results.length}, OK: ${results.length - failed.length}, FAIL: ${failed.length}`,
+    `Всего: ${results.length}, OK: ${results.length - failed.length}, FAIL: ${failed.length}, пропущено по журналу: ${skipped}`,
   );
   if (failed.length) {
      

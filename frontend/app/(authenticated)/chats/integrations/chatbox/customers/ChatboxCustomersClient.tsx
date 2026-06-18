@@ -75,7 +75,7 @@ function ChatboxCustomersContent() {
           <Contact size={20} className="text-accent" />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-              Клиенты и сотрудники
+              Клиенты
             </h1>
             <p className="text-sm text-fg-secondary">
               Свяжите клиентов Чат бокса с карточками людей компании, чтобы Кора
@@ -157,16 +157,16 @@ function CustomerRow({
     setCreating(true);
     try {
       await chatboxApi.createCustomerPerson(customer.id);
-      toast.success("Сотрудник создан и связан");
+      toast.success("Клиент создан и связан");
       onLinked();
     } catch (e) {
       if (
         e instanceof ApiError &&
         e.code === "chatbox_customer_already_linked"
       ) {
-        toast.error("Клиент уже связан с сотрудником");
+        toast.error("Этот клиент уже связан");
       } else {
-        toast.error(errMessage(e, "Не удалось создать сотрудника"));
+        toast.error(errMessage(e, "Не удалось создать клиента"));
       }
     } finally {
       setCreating(false);
@@ -188,7 +188,7 @@ function CustomerRow({
       if (e instanceof ApiError && e.code === "chatbox_customer_not_found") {
         toast.error("Клиент не найден");
       } else if (e instanceof ApiError && e.code === "person_not_found") {
-        toast.error("Сотрудник не найден");
+        toast.error("Карточка человека не найдена");
       } else {
         toast.error(errMessage(e, "Не удалось обновить связь"));
       }
@@ -213,7 +213,7 @@ function CustomerRow({
         </div>
         {customer.linkedPersonName && (
           <div className="mt-0.5 truncate text-xs text-fg-secondary">
-            Сотрудник: {customer.linkedPersonName}
+            Клиент: {customer.linkedPersonName}
           </div>
         )}
       </div>
@@ -236,7 +236,7 @@ function CustomerRow({
               </SelectItem>
             ))}
             <SelectItem value={CREATE_VALUE}>
-              ＋ Создать нового сотрудника
+              ＋ Создать нового клиента
             </SelectItem>
           </SelectContent>
         </Select>

@@ -83,6 +83,7 @@ function isUiType(t: string): t is SourceUiType {
 
 const INTEGRATION_ROUTE_BY_TYPE: Record<string, string> = {
   chatbox: "/company-admin/sources/chatbox",
+  bitrix: "/company-admin/sources/bitrix",
   meeting: "/company-admin/meetings",
 };
 

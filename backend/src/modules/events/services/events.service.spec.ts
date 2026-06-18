@@ -65,6 +65,8 @@ describe('EventsService', () => {
       location: null,
       participantsPersonIds: [],
       relatedMeetingId: null,
+      online: false,
+      counterparty: null,
       outcomeSummary: null,
       metadata: null,
       allDay: false,
@@ -198,6 +200,7 @@ describe('EventsService', () => {
           visibility: 'company',
           allDay: false,
           timezone: 'Europe/Moscow',
+          online: false,
         },
       });
 
@@ -241,6 +244,7 @@ describe('EventsService', () => {
           visibility: 'personal',
           allDay: false,
           timezone: 'Europe/Moscow',
+          online: false,
         },
       });
 
@@ -384,15 +388,16 @@ describe('EventsService', () => {
   });
 
   describe('Calendar MVP Polish — P1 LiveKit integration', () => {
-    it('create with kind=meeting → MeetingsService.createForCalendarEvent вызван; relatedMeetingId и joinUrl возвращаются', async () => {
+    it('create online:true (kind=meeting) → MeetingsService.createForCalendarEvent вызван; relatedMeetingId и joinUrl возвращаются', async () => {
       txEventCreate.mockResolvedValue({ id: 'e-1' });
       txEventFindUnique.mockResolvedValue(
-        makeEvent({ id: 'e-1', kind: 'meeting' }),
+        makeEvent({ id: 'e-1', kind: 'meeting', online: true }),
       );
       eventUpdate.mockResolvedValue(
         makeEvent({
           id: 'e-1',
           kind: 'meeting',
+          online: true,
           relatedMeetingId: 'm-42',
           metadata: { joinUrl: 'https://app/m/m-42' },
         }),
@@ -413,6 +418,7 @@ describe('EventsService', () => {
           visibility: 'company',
           allDay: false,
           timezone: 'Europe/Moscow',
+          online: true,
         },
       });
 
@@ -428,7 +434,7 @@ describe('EventsService', () => {
       expect(dto.joinUrl).toBe('https://app/m/m-42');
     });
 
-    it('create with kind=call → MeetingsService НЕ вызывается (телефонный звонок)', async () => {
+    it('create with kind=call (online:false) → MeetingsService НЕ вызывается (телефонный звонок)', async () => {
       txEventCreate.mockResolvedValue({ id: 'e-call' });
       txEventFindUnique.mockResolvedValue(
         makeEvent({ id: 'e-call', kind: 'call' }),
@@ -445,6 +451,7 @@ describe('EventsService', () => {
           visibility: 'company',
           allDay: false,
           timezone: 'Europe/Moscow',
+          online: false,
         },
       });
 
@@ -492,6 +499,152 @@ describe('EventsService', () => {
       });
 
       expect(meetingsCancelScheduled).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Ф6/Ф5 — формат online (видеокомната) и контрагент (counterparty)', () => {
+    it('create с online:true → createForCalendarEvent вызван 1 раз', async () => {
+      txEventCreate.mockResolvedValue({ id: 'e-on' });
+      txEventFindUnique.mockResolvedValue(
+        makeEvent({ id: 'e-on', kind: 'meeting', online: true }),
+      );
+      eventUpdate.mockResolvedValue(
+        makeEvent({
+          id: 'e-on',
+          kind: 'meeting',
+          online: true,
+          relatedMeetingId: 'm-1',
+          metadata: { joinUrl: 'https://app/m/m-1' },
+        }),
+      );
+
+      await svc.create({
+        tenantId: 't-1',
+        ownerId: 'u-owner',
+        data: {
+          title: 'Онлайн-созвон',
+          startAt: new Date('2026-06-01T10:00:00Z'),
+          endAt: new Date('2026-06-01T11:00:00Z'),
+          kind: 'meeting',
+          visibility: 'company',
+          allDay: false,
+          timezone: 'Europe/Moscow',
+          online: true,
+        },
+      });
+
+      expect(meetingsCreateForCalendarEvent).toHaveBeenCalledTimes(1);
+      expect(meetingsCreateForCalendarEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: 't-1',
+          ownerUserId: 'u-owner',
+          title: 'Онлайн-созвон',
+          eventId: 'e-on',
+        }),
+      );
+    });
+
+    it('create с online:false, kind:meeting → createForCalendarEvent НЕ вызван (ключевой фикс)', async () => {
+      txEventCreate.mockResolvedValue({ id: 'e-off' });
+      txEventFindUnique.mockResolvedValue(
+        makeEvent({ id: 'e-off', kind: 'meeting', online: false }),
+      );
+
+      const dto = await svc.create({
+        tenantId: 't-1',
+        ownerId: 'u-owner',
+        data: {
+          title: 'Очное совещание',
+          startAt: new Date('2026-06-01T10:00:00Z'),
+          endAt: new Date('2026-06-01T11:00:00Z'),
+          kind: 'meeting',
+          visibility: 'company',
+          allDay: false,
+          timezone: 'Europe/Moscow',
+          online: false,
+        },
+      });
+
+      expect(meetingsCreateForCalendarEvent).not.toHaveBeenCalled();
+      expect(dto.online).toBe(false);
+      expect(dto.relatedMeetingId).toBeNull();
+    });
+
+    it('create с counterparty и без location → в event.create data counterparty строка, location null', async () => {
+      txEventCreate.mockResolvedValue({ id: 'e-cp' });
+      txEventFindUnique.mockResolvedValue(
+        makeEvent({ id: 'e-cp', counterparty: 'Александр, молочный завод' }),
+      );
+
+      await svc.create({
+        tenantId: 't-1',
+        ownerId: 'u-owner',
+        data: {
+          title: 'Встреча по поставке',
+          startAt: new Date('2026-06-01T10:00:00Z'),
+          endAt: new Date('2026-06-01T11:00:00Z'),
+          kind: 'meeting',
+          visibility: 'company',
+          allDay: false,
+          timezone: 'Europe/Moscow',
+          online: false,
+          counterparty: 'Александр, молочный завод',
+          location: undefined,
+        },
+      });
+
+      const createArgs = txEventCreate.mock.calls[0]![0] as {
+        data: { counterparty: string | null; location: string | null };
+      };
+      expect(createArgs.data.counterparty).toBe('Александр, молочный завод');
+      expect(createArgs.data.location).toBeNull();
+    });
+
+    it('makeEventOnline на офлайн-событии → online ставится, createForCalendarEvent вызван; повторно на online+room → НЕ вызван (идемпотентность)', async () => {
+      // Офлайн-событие: online:false, relatedMeetingId:null.
+      eventFindUnique
+        .mockResolvedValueOnce(
+          makeEvent({ id: 'e-1', online: false, relatedMeetingId: null }),
+        )
+        // Финальный re-fetch после attachLivekitRoom.
+        .mockResolvedValueOnce(
+          makeEvent({ id: 'e-1', online: true, relatedMeetingId: 'm-1' }),
+        );
+      eventUpdate
+        // update online:true.
+        .mockResolvedValueOnce(
+          makeEvent({ id: 'e-1', online: true, relatedMeetingId: null }),
+        )
+        // attachLivekitRoom → event.update (relatedMeetingId + metadata).
+        .mockResolvedValueOnce(
+          makeEvent({
+            id: 'e-1',
+            online: true,
+            relatedMeetingId: 'm-1',
+            metadata: { joinUrl: 'https://app/m/m-1' },
+          }),
+        );
+
+      const dto = await svc.makeEventOnline({
+        tenantId: 't-1',
+        eventId: 'e-1',
+        actorUserId: 'u-owner',
+      });
+      expect(meetingsCreateForCalendarEvent).toHaveBeenCalledTimes(1);
+      expect(dto.online).toBe(true);
+      expect(dto.relatedMeetingId).toBe('m-1');
+
+      // Идемпотентность: уже online + есть комната → ничего не делаем.
+      meetingsCreateForCalendarEvent.mockClear();
+      eventFindUnique.mockResolvedValueOnce(
+        makeEvent({ id: 'e-1', online: true, relatedMeetingId: 'x' }),
+      );
+      await svc.makeEventOnline({
+        tenantId: 't-1',
+        eventId: 'e-1',
+        actorUserId: 'u-owner',
+      });
+      expect(meetingsCreateForCalendarEvent).not.toHaveBeenCalled();
     });
   });
 

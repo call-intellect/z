@@ -39,6 +39,12 @@ import type {
   UpdateEventDto,
 } from '../dto/events.dto';
 
+/** Event с догруженными связями (participants + reminders) — то, что отдаём в DTO. */
+type EventWithRelations = Event & {
+  participants: EventParticipant[];
+  reminders: EventReminder[];
+};
+
 /**
  * EventsService — управление событиями графа знаний + календарём пользователя
  * (Calendar MVP 2026-05-25).
@@ -153,7 +159,8 @@ export class EventsService {
     });
 
     // 2. Транзакция: Event + participants + reminders.
-    const created = await this.prisma.$transaction(async (tx) => {
+    // `let` — ниже переприсваивается результатом attachLivekitRoom при online=true.
+    let created = await this.prisma.$transaction(async (tx) => {
       const event = await tx.event.create({
         data: {
           tenantId,
@@ -177,6 +184,10 @@ export class EventsService {
           rrule: data.rrule ?? null,
           visibility: data.visibility,
           projectId: data.projectId ?? null,
+          // Ф6 — формат встречи (онлайн → видеокомната), развязан с kind (тип).
+          online: data.online,
+          // Ф5 — контрагент/клиент («о ком» встреча), отдельно от location (место).
+          counterparty: data.counterparty?.trim() ?? null,
         },
       });
 
@@ -251,53 +262,19 @@ export class EventsService {
       return full!;
     });
 
-    // 3. kind=meeting → создать LiveKit Meeting + записать meeting.id в
+    // 3. online=true → создать LiveKit Meeting + записать meeting.id в
     //    Event.relatedMeetingId. joinUrl кладём в Event.metadata, чтобы UI
-    //    мог показать кнопку «Войти во встречу». Для kind=call комнату НЕ
-    //    создаём — это телефонный звонок, не онлайн-видео.
-    if (data.kind === 'meeting') {
-      if (!this.meetings) {
-        this.logger.warn(
-          { eventId: created.id },
-          'MeetingsService не инжектирован — LiveKit-комната не создана',
-        );
-      } else {
-        try {
-          const meet = await this.meetings.createForCalendarEvent({
-            tenantId,
-            ownerUserId: ownerId,
-            title: data.title.trim().slice(0, 300),
-            scheduledFor: data.startAt,
-            eventId: created.id,
-          });
-          // Обновляем Event: relatedMeetingId + metadata.joinUrl. Делаем
-          // отдельным апдейтом (не в основной транзакции), чтобы при сбое
-          // LiveKit само событие осталось — пользователь увидит его без
-          // joinUrl и сможет докрутить вручную.
-          const meta = this.mergeMetadata(created.metadata, {
-            joinUrl: meet.joinUrl,
-          });
-          const updated = await this.prisma.event.update({
-            where: { id: created.id },
-            data: {
-              relatedMeetingId: meet.meetingId,
-              metadata: meta as Prisma.InputJsonValue,
-            },
-            include: { participants: true, reminders: true },
-          });
-          // Подменяем для финального DTO.
-          (created as Event).relatedMeetingId = updated.relatedMeetingId;
-          (created as Event).metadata = updated.metadata;
-        } catch (err) {
-          this.logger.error(
-            {
-              eventId: created.id,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            'createForCalendarEvent: создание LiveKit Meeting упало — событие создано без joinUrl',
-          );
-        }
-      }
+    //    мог показать кнопку «Войти во встречу». Видеокомната зависит от
+    //    формата (online), а не от типа (kind): очное «совещание» (kind=meeting,
+    //    online=false) комнату НЕ плодит. DRY: общая логика в attachLivekitRoom.
+    if (data.online) {
+      created = await this.attachLivekitRoom({
+        tenantId,
+        ownerUserId: ownerId,
+        title: data.title.trim().slice(0, 300),
+        scheduledFor: data.startAt,
+        event: created,
+      });
     }
 
     // 4. Доменное событие (для будущей RawEvent-интеграции в knowledge-core).
@@ -318,6 +295,58 @@ export class EventsService {
     });
 
     return this.toDetail(created);
+  }
+
+  /**
+   * Ф6 — сделать офлайн-событие онлайн: online=true + создать видеокомнату
+   * (если ещё нет). Идемпотентно: повторный вызов на уже online+relatedMeetingId
+   * комнату НЕ пересоздаёт. RBAC (event_card.write) проверяет контроллер.
+   */
+  async makeEventOnline(args: {
+    tenantId: string;
+    eventId: string;
+    actorUserId: string;
+  }): Promise<EventDto> {
+    const { tenantId, eventId } = args;
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: { participants: true, reminders: true },
+    });
+    if (!event || event.tenantId !== tenantId || event.deletedAt) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'event_not_found', message: 'Событие не найдено' },
+      });
+    }
+    // Идемпотентность: уже онлайн и комната есть — ничего не делаем.
+    if (event.online && event.relatedMeetingId) {
+      return this.toDetail(event);
+    }
+    // Ставим online=true (если ещё нет) и создаём комнату (если ещё нет).
+    let current: EventWithRelations = event;
+    if (!event.online) {
+      current = await this.prisma.event.update({
+        where: { id: eventId },
+        data: { online: true },
+        include: { participants: true, reminders: true },
+      });
+    }
+    if (!current.relatedMeetingId) {
+      current = await this.attachLivekitRoom({
+        tenantId,
+        ownerUserId: event.ownerId ?? args.actorUserId,
+        title: event.title,
+        scheduledFor: event.startAt,
+        event: current,
+      });
+    }
+    // Перечитываем со связями для корректного DTO (attachLivekitRoom мог вернуть
+    // версию со включёнными participants/reminders, но подстрахуемся).
+    const full = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: { participants: true, reminders: true },
+    });
+    return this.toDetail(full ?? current);
   }
 
   /**
@@ -357,6 +386,11 @@ export class EventsService {
     if (data.rrule !== undefined) patch.rrule = data.rrule;
     if (data.status !== undefined) patch.status = data.status;
     if (data.projectId !== undefined) patch.projectId = data.projectId;
+    // Ф6 — формат (online) и Ф5 — контрагент. Видеокомнату по смене online здесь
+    // НЕ создаём (для этого отдельный makeEventOnline + эндпоинт make-online).
+    if (data.online !== undefined) patch.online = data.online;
+    if (data.counterparty !== undefined)
+      patch.counterparty = data.counterparty?.trim() ?? null;
 
     const newStart =
       data.startAt !== undefined ? data.startAt : event.startAt;
@@ -794,6 +828,9 @@ export class EventsService {
       location: e.location,
       relatedMeetingId: e.relatedMeetingId,
       joinUrl: this.extractJoinUrl(e.metadata),
+      // Ф6 — формат встречи (онлайн) и Ф5 — контрагент/клиент («о ком»).
+      online: e.online,
+      counterparty: e.counterparty,
       createdAt: e.createdAt.toISOString(),
       updatedAt: e.updatedAt.toISOString(),
       deletedAt: e.deletedAt ? e.deletedAt.toISOString() : null,
@@ -825,6 +862,57 @@ export class EventsService {
         ? (current as Record<string, unknown>)
         : {};
     return { ...base, ...patch };
+  }
+
+  /**
+   * Ф6 — создать LiveKit Meeting для онлайн-события и прицепить к нему:
+   * relatedMeetingId + metadata.joinUrl. Возвращает обновлённый Event (или
+   * исходный — при отсутствии MeetingsService / сбое LiveKit, чтобы событие
+   * не потерялось). DRY: зовётся из create (online=true) и makeEventOnline.
+   */
+  private async attachLivekitRoom(args: {
+    tenantId: string;
+    ownerUserId: string;
+    title: string;
+    scheduledFor: Date;
+    event: EventWithRelations;
+  }): Promise<EventWithRelations> {
+    const { tenantId, ownerUserId, title, scheduledFor, event } = args;
+    if (!this.meetings) {
+      this.logger.warn(
+        { eventId: event.id },
+        'MeetingsService не инжектирован — LiveKit-комната не создана',
+      );
+      return event;
+    }
+    try {
+      const meet = await this.meetings.createForCalendarEvent({
+        tenantId,
+        ownerUserId,
+        title,
+        scheduledFor,
+        eventId: event.id,
+      });
+      const meta = this.mergeMetadata(event.metadata, { joinUrl: meet.joinUrl });
+      const updated = await this.prisma.event.update({
+        where: { id: event.id },
+        data: {
+          relatedMeetingId: meet.meetingId,
+          metadata: meta as Prisma.InputJsonValue,
+        },
+        include: { participants: true, reminders: true },
+      });
+      return updated;
+    } catch (err) {
+      this.logger.error(
+        {
+          eventId: event.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'attachLivekitRoom: создание LiveKit Meeting упало — событие осталось без joinUrl',
+      );
+      return event;
+    }
   }
 
   private toDetail(

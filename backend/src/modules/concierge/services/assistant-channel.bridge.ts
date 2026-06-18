@@ -84,6 +84,7 @@ export const CHANNEL_TOOL_WHITELIST_SELF: readonly string[] = [
   'list_my_events',
   'list_meetings',
   'create_event',
+  'make_event_online',
   'create_meeting',
   'find_free_slot',
   'create_task',

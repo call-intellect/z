@@ -299,7 +299,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       {
         name: 'create_event',
         description:
-          'Создать событие календаря (встреча, созвон, личная встреча или блок времени). Используй для запросов «запиши встречу с N на 3-е», «забронируй мне время в среду с 14 до 16», «созвон с клиентом завтра в 15:00». Параметр kind ∈ meeting|call|offline_meeting|personal_block|deadline. Если kind=meeting (онлайн-видео) — автоматически создастся LiveKit-комната.',
+          'Создать событие календаря (встреча, созвон, личная встреча или блок времени). Используй для запросов «запиши встречу с N на 3-е», «забронируй мне время в среду с 14 до 16», «созвон с клиентом завтра в 15:00». Параметр kind ∈ meeting|call|offline_meeting|personal_block|deadline. Видеокомната создаётся ТОЛЬКО при online=true (по умолчанию false — запись в календарь без видео). location — ТОЛЬКО реальное место проведения (адрес, "в офисе", ссылка); если сказано КЕМ является человек или чем занимается его компания/клиент ("Александр с молочного завода") — это НЕ место, клади в counterparty.',
         method: 'POST',
         path: '/api/v1/events',
         parameters: {
@@ -328,7 +328,18 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             },
             location: {
               type: 'string',
-              description: 'Место (физ. адрес или ссылка). Опц.',
+              description:
+                'Физическое место проведения (адрес/«офис»/ссылка). НЕ для контекста о человеке/компании — для этого counterparty. Опц.',
+            },
+            online: {
+              type: 'boolean',
+              description:
+                'true ТОЛЬКО если явно сказано созвон/онлайн/видео/zoom. По умолчанию false (офлайн / без видеокомнаты).',
+            },
+            counterparty: {
+              type: 'string',
+              description:
+                'С кем встреча и/или компания-клиент («Александр, молочный завод»). Бизнес-контекст «о ком», НЕ место. Опц.',
             },
             description: {
               type: 'string',
@@ -341,6 +352,23 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             },
           },
           required: ['title', 'startAt'],
+        },
+        undoableVia: 'delete_event',
+        rbacResource: 'event_card',
+        rbacAction: 'write',
+      },
+      {
+        name: 'make_event_online',
+        description:
+          'Сделать ранее созданную офлайн-встречу онлайн: создаёт видеокомнату Коры и ссылку. Используй на «добавь к встрече созвон/онлайн/ссылку». Нужен id события из list_my_events.',
+        method: 'POST',
+        path: '/api/v1/events/:id/make-online',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'ID события' },
+          },
+          required: ['id'],
         },
         undoableVia: 'delete_event',
         rbacResource: 'event_card',

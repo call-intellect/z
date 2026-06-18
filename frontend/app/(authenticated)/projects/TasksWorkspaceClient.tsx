@@ -245,6 +245,16 @@ export function TasksWorkspaceClient() {
           />
         )}
 
+        {isLeadership && (
+          <Link
+            href="/settings/organization"
+            className="text-xs text-fg-tertiary underline-offset-2 hover:text-fg-secondary hover:underline"
+            title="Видят ли рядовые сотрудники все задачи компании или только свои — настраивается в режиме видимости организации"
+          >
+            Кто видит задачи
+          </Link>
+        )}
+
         {(view === "board" || view === "list") && (
           <SprintFilter
             orgId={currentOrgId}

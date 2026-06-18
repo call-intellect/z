@@ -27,7 +27,25 @@ const LEDGER_TABLE = 'public._deploy_applied_step';
 
 function isOnceStep(step: Step): boolean {
   if (step.everyDeploy) return false;
-  return step.phase === 'patch' || step.phase === 'backfill' || step.phase === 'migrate';
+  return (
+    step.phase === 'patch' ||
+    step.phase === 'backfill' ||
+    step.phase === 'migrate' ||
+    step.phase === 'seed-llm-routes'
+  );
+}
+
+async function stepHash(step: Step): Promise<string | null> {
+  try {
+    const content = await Bun.file(step.script).text();
+    const hasher = new Bun.CryptoHasher('sha256');
+    hasher.update(content);
+    hasher.update('\0args\0');
+    hasher.update((step.args ?? []).join(' '));
+    return hasher.digest('hex');
+  } catch {
+    return null;
+  }
 }
 
 const STEPS: Step[] = [
@@ -657,8 +675,9 @@ function parseArgs(argv: string[]): ParsedArgs {
           `  --verbose           полный вывод каждого шага (по умолчанию — тихо, 1 строка/шаг,\n` +
           `                      полный лог только у упавших). Также env APPLY_PROD_DEPLOY_VERBOSE=1.\n` +
           `  --rerun-all         игнорировать журнал ${LEDGER_TABLE} и заново прогнать все\n` +
-          `                      одноразовые patch/backfill/migrate (по умолчанию применённые\n` +
-          `                      скипаются). Также env DEPLOY_RERUN_ALL=1.`,
+          `                      одноразовые patch/backfill/migrate/seed-llm-routes. По умолчанию\n` +
+          `                      они скипаются, если содержимое скрипта не менялось (хэш в журнале).\n` +
+          `                      Также env DEPLOY_RERUN_ALL=1.`,
       );
       process.exit(0);
     }
@@ -732,26 +751,41 @@ async function psqlExecQuiet(url: string, sql: string): Promise<boolean> {
 }
 
 async function ensureLedger(url: string): Promise<boolean> {
-  return psqlExecQuiet(
+  const created = await psqlExecQuiet(
     url,
-    `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (script text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`,
+    `CREATE TABLE IF NOT EXISTS ${LEDGER_TABLE} (script text PRIMARY KEY, hash text, applied_at timestamptz NOT NULL DEFAULT now())`,
   );
+  if (!created) return false;
+  return psqlExecQuiet(url, `ALTER TABLE ${LEDGER_TABLE} ADD COLUMN IF NOT EXISTS hash text`);
 }
 
-async function loadAppliedSteps(url: string): Promise<Set<string>> {
-  const out = await psqlScalar(url, `SELECT COALESCE(string_agg(script, E'\\n'), '') FROM ${LEDGER_TABLE}`);
-  if (out === null) return new Set();
-  return new Set(
-    out
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean),
+async function loadAppliedSteps(url: string): Promise<Map<string, string>> {
+  const out = await psqlScalar(
+    url,
+    `SELECT COALESCE(string_agg(script || E'\\t' || COALESCE(hash, ''), E'\\n'), '') FROM ${LEDGER_TABLE}`,
   );
+  const map = new Map<string, string>();
+  if (out === null) return map;
+  for (const line of out.split('\n')) {
+    if (!line.trim()) continue;
+    const tab = line.indexOf('\t');
+    if (tab < 0) {
+      map.set(line.trim(), '');
+      continue;
+    }
+    map.set(line.slice(0, tab), line.slice(tab + 1));
+  }
+  return map;
 }
 
-async function markApplied(url: string, script: string): Promise<void> {
-  const safe = script.replace(/'/g, "''");
-  await psqlExecQuiet(url, `INSERT INTO ${LEDGER_TABLE}(script) VALUES('${safe}') ON CONFLICT DO NOTHING`);
+async function markApplied(url: string, script: string, hash: string): Promise<void> {
+  const s = script.replace(/'/g, "''");
+  const h = hash.replace(/'/g, "''");
+  await psqlExecQuiet(
+    url,
+    `INSERT INTO ${LEDGER_TABLE}(script, hash) VALUES('${s}', '${h}') ` +
+      `ON CONFLICT (script) DO UPDATE SET hash = EXCLUDED.hash, applied_at = now()`,
+  );
 }
 
 function withPublicSearchPath(url: string): string {
@@ -1013,7 +1047,7 @@ async function main(): Promise<void> {
 
   const dbUrl = process.env['DATABASE_URL'];
   const ledgerOn = !args.dryRun && !!dbUrl;
-  let applied = new Set<string>();
+  let applied = new Map<string, string>();
   if (ledgerOn) {
     await ensureLedger(dbUrl!);
     applied = await loadAppliedSteps(dbUrl!);
@@ -1022,22 +1056,27 @@ async function main(): Promise<void> {
       console.log(`\n[ledger] --rerun-all: журнал игнорируется, одноразовые шаги прогоняются заново.`);
     } else {
       // eslint-disable-next-line no-console
-      console.log(`\n[ledger] применённых одноразовых шагов в журнале: ${applied.size} (будут пропущены).`);
+      console.log(
+        `\n[ledger] записей в журнале: ${applied.size} ` +
+          `(одноразовые шаги с неизменённым содержимым будут пропущены).`,
+      );
     }
   }
 
   const results: { step: Step; ok: boolean; code: number }[] = [];
   let skipped = 0;
   for (const step of steps) {
-    if (ledgerOn && !args.rerunAll && isOnceStep(step) && applied.has(step.script)) {
+    const once = ledgerOn && isOnceStep(step);
+    const curHash = once ? await stepHash(step) : null;
+    if (once && !args.rerunAll && curHash !== null && applied.get(step.script) === curHash) {
       skipped++;
       results.push({ step, ok: true, code: 0 });
       continue;
     }
     const r = await runOne(step, args.dryRun, args.verbose);
     results.push({ step, ...r });
-    if (r.ok && ledgerOn && isOnceStep(step)) {
-      await markApplied(dbUrl!, step.script);
+    if (r.ok && once) {
+      await markApplied(dbUrl!, step.script, curHash ?? '');
     }
     if (!r.ok && !args.continueOnFail) {
       // eslint-disable-next-line no-console

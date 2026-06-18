@@ -6,7 +6,7 @@ import {
   useLocalParticipant,
   useRoomContext,
 } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, ScreenSharePresets } from 'livekit-client';
 import {
   Copy,
   MessageSquare,
@@ -125,6 +125,8 @@ export function ControlsBar({
 
         <TrackToggle
           source={Track.Source.ScreenShare}
+          captureOptions={{ contentHint: 'detail' }}
+          publishOptions={{ screenShareEncoding: ScreenSharePresets.h1080fps30.encoding }}
           className={clsx(
             'flex flex-col items-center gap-1 rounded-xl px-3 py-2 text-[10px] font-medium transition-colors',
             isScreenShareEnabled ? 'bg-info text-info-fg hover:opacity-90' : 'bg-bg-overlay text-fg-primary hover:bg-bg-overlay/80',

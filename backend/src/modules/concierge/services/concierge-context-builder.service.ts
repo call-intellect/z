@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { buildNowContextLine } from '../../operations/utils/local-date';
 import type { PageContextDto } from '../dto/concierge.dto';
 
 /**
@@ -27,17 +28,20 @@ export class ConciergeContextBuilderService {
     pageContext?: PageContextDto | null;
   }): Promise<string> {
     const parts: string[] = [];
+    const now = new Date();
 
-    // Identity.
+    // Identity + «Сейчас…» (дата/время/TZ — точка отсчёта для «сегодня/завтра»).
+    let userTimezone: string | null = null;
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: args.userId },
-        select: { name: true, email: true },
+        select: { name: true, email: true, timezone: true },
       });
       const org = await this.prisma.org.findUnique({
         where: { id: args.tenantId },
         select: { name: true, slug: true },
       });
+      userTimezone = user?.timezone ?? null;
       if (user) {
         parts.push(`Пользователь: ${user.name} (${user.email})`);
       }
@@ -49,6 +53,8 @@ export class ConciergeContextBuilderService {
         `build: identity lookup failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+    // «Сейчас…» — первой строкой контекста (даже если identity упал → дефолтная TZ).
+    parts.unshift(buildNowContextLine(now, userTimezone));
 
     // PageContext.
     if (args.pageContext) {

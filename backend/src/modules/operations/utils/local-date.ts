@@ -115,6 +115,43 @@ export function isWithinQuietHours(
 }
 
 /**
+ * Локальный день недели (полное русское название, напр. «среда») для TZ.
+ * Невалидная TZ → fallback Moscow (как остальные хелперы).
+ */
+export function getLocalWeekday(now: Date, timezone: string | null | undefined): string {
+  const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
+  try {
+    return new Intl.DateTimeFormat('ru-RU', { timeZone: tz, weekday: 'long' }).format(now);
+  } catch {
+    return new Intl.DateTimeFormat('ru-RU', { weekday: 'long' }).format(now);
+  }
+}
+
+/**
+ * Локальное время HH:mm для TZ (через getLocalMinutesOfDay — единый источник).
+ */
+export function getLocalTime(now: Date, timezone: string | null | undefined): string {
+  const total = getLocalMinutesOfDay(now, timezone);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Готовая строка «Сейчас…» для контекста AI-помощника (USER-блок). Даёт
+ * модели точку отсчёта, чтобы разрешать «сегодня/завтра/в среду» в дату и
+ * понимать время в таймзоне пользователя. Чистая (now передаётся аргументом) —
+ * тестируется детерминированно.
+ */
+export function buildNowContextLine(now: Date, timezone: string | null | undefined): string {
+  const tz = timezone && timezone.length > 0 ? timezone : DEFAULT_TIMEZONE;
+  const date = getLocalDate(now, tz);
+  const weekday = getLocalWeekday(now, tz);
+  const time = getLocalTime(now, tz);
+  return `Сейчас: ${date} (${weekday}), ${time} по таймзоне пользователя (${tz}). «сегодня» = эта дата, «завтра» = эта дата +1 день; любое относительное время («в 10:00», «через час») понимай в этой таймзоне.`;
+}
+
+/**
  * Проверить, что строка таймзоны валидна (Intl поддерживает).
  */
 export function isValidTimezone(tz: string): boolean {

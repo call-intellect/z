@@ -161,7 +161,7 @@ MAX-адаптер, опц. новый BullMQ-процессор, `env.schema.ts
 
 ---
 
-## Фаза 7 — Описания list-инструментов (чтобы LLM брал правильный) `[ ]`
+## Фаза 7 — Описания list-инструментов (чтобы LLM брал правильный) `[x]`
 **Причина:** `list_meetings` без фильтра даты, но описан для «что было сегодня»
 ([service-map-generator.service.ts:139-156](../../backend/src/modules/concierge/services/service-map-generator.service.ts#L139-L156)).
 

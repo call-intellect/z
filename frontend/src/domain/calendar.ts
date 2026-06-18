@@ -4,7 +4,7 @@
  * Маппит ApiDto из `@/api/calendar.api` в UI-удобный вид:
  *   - даты Date вместо строк
  *   - kind с человекочитаемой меткой
- *   - флаг `isOnline` для типа `meeting`
+ *   - флаг `isOnline` берётся из `Event.online` (формат встречи), НЕ из `kind`
  *
  * Не путать с `EventApi`/`EventDto` (ApiDto). UI работает только с этими типами.
  */
@@ -144,9 +144,15 @@ export interface CalendarEventDomain {
   startAt: Date;
   endAt: Date | null;
   durationMin: number | null;
+  /**
+   * Формат встречи: онлайн (есть видеокомната) ⇔ `Event.online`. НЕ выводится
+   * из `kind` — очная встреча типа `meeting` может быть офлайн (online=false).
+   */
   isOnline: boolean;
   ownerId: string | null;
   location: string | null;
+  /** «О ком встреча»: клиент/контрагент или компания (отдельно от `location`). */
+  counterparty: string | null;
   description: string | null;
   visibility: EventVisibilityApi;
   status: EventStatusApi;
@@ -158,8 +164,8 @@ export interface CalendarEventDomain {
   allDay: boolean;
   /**
    * Calendar MVP Polish (P1, 2026-05-25). URL для подключения к LiveKit-комнате
-   * связанной встречи. Заполнен только при `kind=meeting` (и если автосоздание
-   * Meeting не упало). UI показывает кнопку «Войти во встречу».
+   * связанной встречи. Заполнен только для онлайн-встреч (`online=true`, если
+   * автосоздание Meeting не упало). UI показывает кнопку «Войти во встречу».
    */
   joinUrl: string | null;
   /** Полный ApiDto — нужен EventForm-у при редактировании. */
@@ -200,9 +206,10 @@ export function toCalendarEvent(api: EventApi): CalendarEventDomain {
     startAt: new Date(api.startAt),
     endAt: api.endAt ? new Date(api.endAt) : null,
     durationMin: api.durationMin,
-    isOnline: api.kind === 'meeting',
+    isOnline: api.online,
     ownerId: api.ownerId,
     location: api.location,
+    counterparty: api.counterparty ?? null,
     description: api.description,
     visibility: api.visibility,
     status: api.status,

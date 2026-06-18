@@ -7,6 +7,7 @@
  *   - POST   /api/v1/events
  *   - PATCH  /api/v1/events/:id
  *   - DELETE /api/v1/events/:id           (soft-cancel)
+ *   - POST   /api/v1/events/:id/make-online (прицепить видеокомнату)
  *   - POST   /api/v1/events/:id/rsvp
  *   - GET    /api/v1/me/calendar?from=&to=
  *   - GET    /api/v1/users/:userId/calendar?from=&to=
@@ -66,6 +67,16 @@ export interface EventApi {
   endAt: string | null;
   durationMin: number | null;
   location: string | null;
+  /**
+   * ТЗ assistant-calendar-master Ф5/Ф8 — «о ком встреча»: клиент/контрагент или
+   * компания. Отдельно от `location` (место проведения).
+   */
+  counterparty: string | null;
+  /**
+   * ТЗ assistant-calendar-master Ф6/Ф8 — формат встречи (онлайн ⇔ есть
+   * видеокомната). Отделён от `kind` (тип). true → создана LiveKit-комната.
+   */
+  online: boolean;
   relatedMeetingId: string | null;
   /**
    * Calendar MVP Polish (P1, 2026-05-25). Публичная ссылка на LiveKit-комнату,
@@ -133,6 +144,8 @@ export interface CreateEventRequestApi {
   kind: EventKindApi;
   visibility?: EventVisibilityApi;
   location?: string;
+  counterparty?: string | null;
+  online?: boolean;
   description?: string;
   allDay?: boolean;
   timezone?: string;
@@ -149,6 +162,8 @@ export interface UpdateEventRequestApi {
   kind?: EventKindApi;
   visibility?: EventVisibilityApi;
   location?: string | null;
+  counterparty?: string | null;
+  online?: boolean;
   description?: string | null;
   allDay?: boolean;
   timezone?: string;
@@ -218,6 +233,16 @@ export const calendarApi = {
 
   cancelEvent: (id: string) =>
     apiClient.del<void>(`/api/v1/events/${encodeURIComponent(id)}`),
+
+  /**
+   * ТЗ assistant-calendar-master Ф6/Ф8 — прицепить видеокомнату к офлайн-встрече
+   * задним числом: бэк создаёт LiveKit-комнату и переключает `online=true`.
+   */
+  makeEventOnline: (id: string) =>
+    apiClient.post<EventApi>(
+      `/api/v1/events/${encodeURIComponent(id)}/make-online`,
+      {},
+    ),
 
   rsvp: (id: string, status: RsvpActionApi) =>
     apiClient.post<EventApi>(

@@ -12,6 +12,7 @@
  */
 
 import { useEffect, useMemo, useState, type JSX } from 'react';
+import { toast } from 'sonner';
 
 import { ApiError, humanizeApiError } from '@/api/api-error';
 import {
@@ -26,6 +27,10 @@ import {
 } from '@/api/calendar.api';
 import { EVENT_KIND_LABELS, EVENT_VISIBILITY_LABELS } from '@/domain/calendar';
 import type { CalendarEventDomain } from '@/domain/calendar';
+import {
+  DEFAULT_TIMEZONE,
+  TIMEZONE_OPTIONS,
+} from '@/ui/calendar/timezone-options';
 import { Button } from '@/ui/shadcn/button';
 import { Checkbox } from '@/ui/shadcn/checkbox';
 import {
@@ -38,6 +43,7 @@ import {
 } from '@/ui/shadcn/dialog';
 import { Input } from '@/ui/shadcn/input';
 import { Label } from '@/ui/shadcn/label';
+import { Switch } from '@/ui/shadcn/switch';
 import { Textarea } from '@/ui/shadcn/textarea';
 import {
   ParticipantPicker,
@@ -135,18 +141,8 @@ interface ReminderDraft {
 }
 
 // ─────────────────────────── Часовые пояса ───────────────────────────
-
-const TIMEZONE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: 'Europe/Kaliningrad', label: 'Калининград (UTC+2)' },
-  { value: 'Europe/Moscow', label: 'Москва (UTC+3)' },
-  { value: 'Asia/Yekaterinburg', label: 'Екатеринбург (UTC+5)' },
-  { value: 'Asia/Novosibirsk', label: 'Новосибирск (UTC+7)' },
-  { value: 'Asia/Krasnoyarsk', label: 'Красноярск (UTC+7)' },
-  { value: 'Asia/Vladivostok', label: 'Владивосток (UTC+10)' },
-  { value: 'Asia/Almaty', label: 'Алматы (UTC+5)' },
-];
-
-const DEFAULT_TIMEZONE = 'Europe/Moscow';
+// Список TIMEZONE_OPTIONS и DEFAULT_TIMEZONE вынесены в общий модуль
+// `@/ui/calendar/timezone-options` (используются и в настройках рабочего профиля).
 
 /** Единый класс для нативных select (повторяет стиль поля «Тип события»). */
 const SELECT_CLASS =
@@ -170,6 +166,16 @@ interface FormState {
   startAt: string; // datetime-local значение
   endAt: string;
   location: string;
+  /**
+   * ТЗ assistant-calendar-master Ф8 — «о ком встреча»: клиент/контрагент или
+   * компания. Отдельно от `location` (место проведения).
+   */
+  counterparty: string;
+  /**
+   * ТЗ assistant-calendar-master Ф8 — формат встречи. true → создаётся
+   * видеокомната (онлайн); false → очная встреча без комнаты.
+   */
+  online: boolean;
   description: string;
   visibility: EventVisibilityApi;
   /** Calendar MVP Фаза P4 — структурированный список участников. */
@@ -236,6 +242,8 @@ function buildDefaultState(
       startAt,
       endAt,
       location: event.location ?? '',
+      counterparty: event.counterparty ?? '',
+      online: event.isOnline,
       description: event.description ?? '',
       visibility: event.visibility,
       // В edit-режиме participants не редактируются (имена не приходят в EventDto).
@@ -262,6 +270,8 @@ function buildDefaultState(
     startAt: toLocalInputValue(rounded),
     endAt: toLocalInputValue(endDefault),
     location: '',
+    counterparty: '',
+    online: false,
     description: '',
     visibility: 'company',
     participants: [],
@@ -287,6 +297,7 @@ export function EventForm({
   );
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [makingOnline, setMakingOnline] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -404,6 +415,10 @@ export function EventForm({
           endAt: endIso ?? null,
           visibility: state.visibility,
           location: state.location.trim() ? state.location.trim() : null,
+          counterparty: state.counterparty.trim()
+            ? state.counterparty.trim()
+            : null,
+          online: state.online,
           description: state.description.trim()
             ? state.description.trim()
             : null,
@@ -421,8 +436,12 @@ export function EventForm({
           visibility: state.visibility,
           allDay: state.allDay,
           timezone: state.timezone,
+          online: state.online,
           ...(endIso ? { endAt: endIso } : {}),
           ...(state.location.trim() ? { location: state.location.trim() } : {}),
+          ...(state.counterparty.trim()
+            ? { counterparty: state.counterparty.trim() }
+            : {}),
           ...(state.description.trim()
             ? { description: state.description.trim() }
             : {}),
@@ -474,6 +493,28 @@ export function EventForm({
     }
   }
 
+  /**
+   * ТЗ assistant-calendar-master Ф8 — «Сделать онлайн»: к уже сохранённой
+   * офлайн-встрече прицепляем видеокомнату (бэк создаёт LiveKit-комнату и
+   * переключает `online=true`). Доступно только при редактировании
+   * существующего события, которое сейчас офлайн.
+   */
+  async function handleMakeOnline(): Promise<void> {
+    if (!event || makingOnline) return;
+    setMakingOnline(true);
+    setError(null);
+    try {
+      await calendarApi.makeEventOnline(event.id);
+      toast.success('Видеокомната создана');
+      onSaved();
+      onClose();
+    } catch (e2) {
+      setError(humanizeApiError(e2, 'Не удалось создать видеокомнату.'));
+    } finally {
+      setMakingOnline(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl">
@@ -522,6 +563,24 @@ export function EventForm({
             />
             <span>Весь день</span>
           </label>
+
+          <div className="flex items-start justify-between gap-3 rounded-md border border-border-subtle bg-bg-overlay px-3 py-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-fg-primary">
+                Онлайн-встреча (создать видеокомнату)
+              </div>
+              <p className="mt-0.5 text-xs text-fg-tertiary">
+                Включите для созвона по видео. Для очной встречи оставьте
+                выключенным — комната не создаётся.
+              </p>
+            </div>
+            <Switch
+              checked={state.online}
+              onCheckedChange={(v) => setField('online', v)}
+              aria-label="Онлайн-встреча (создать видеокомнату)"
+              className="mt-0.5 shrink-0"
+            />
+          </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
@@ -581,6 +640,20 @@ export function EventForm({
               placeholder="Переговорка №2 или https://..."
               maxLength={300}
             />
+          </div>
+
+          <div>
+            <Label htmlFor="event-counterparty">Клиент/контрагент</Label>
+            <Input
+              id="event-counterparty"
+              value={state.counterparty}
+              onChange={(e) => setField('counterparty', e.target.value)}
+              placeholder="Напр. Александр, молочный завод"
+              maxLength={300}
+            />
+            <p className="mt-1 text-xs text-fg-tertiary">
+              С кем встреча / какая компания — НЕ адрес.
+            </p>
           </div>
 
           <div>
@@ -787,13 +860,26 @@ export function EventForm({
             </a>
           )}
 
+          {/* ТЗ assistant-calendar-master Ф8: для офлайн-встречи можно докинуть
+              видеокомнату задним числом (бэк создаёт LiveKit-комнату). */}
+          {isEdit && event && !state.online && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleMakeOnline()}
+              disabled={makingOnline || saving || deleting}
+            >
+              {makingOnline ? 'Создаём комнату…' : 'Сделать онлайн'}
+            </Button>
+          )}
+
           <DialogFooter className="gap-2">
             {isEdit && (
               <Button
                 type="button"
                 variant="destructive"
                 onClick={() => void handleDelete()}
-                disabled={deleting || saving}
+                disabled={deleting || saving || makingOnline}
               >
                 {deleting ? 'Удаление…' : 'Удалить'}
               </Button>
@@ -802,11 +888,11 @@ export function EventForm({
               type="button"
               variant="ghost"
               onClick={onClose}
-              disabled={saving || deleting}
+              disabled={saving || deleting || makingOnline}
             >
               Отмена
             </Button>
-            <Button type="submit" disabled={saving || deleting}>
+            <Button type="submit" disabled={saving || deleting || makingOnline}>
               {saving ? 'Сохранение…' : 'Сохранить'}
             </Button>
           </DialogFooter>

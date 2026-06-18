@@ -58,6 +58,30 @@ function syncScopeLabel(scope: BitrixSyncScope): string {
   return SYNC_SCOPES.find((s) => s.scope === scope)?.label ?? "Данные";
 }
 
+function bitrixSyncProgress(
+  scope: BitrixSyncScope,
+  counts: {
+    users: number;
+    dialogs: number;
+    sessions: number;
+    contacts: number;
+    companies: number;
+    deals: number;
+  },
+): string {
+  const n = (v: number) => v.toLocaleString("ru-RU");
+  switch (scope) {
+    case "users":
+      return `сотрудников в памяти: ${n(counts.users)}`;
+    case "dialogs":
+      return `диалогов: ${n(counts.dialogs)} · сессий: ${n(counts.sessions)}`;
+    case "crm":
+      return `контактов: ${n(counts.contacts)} · компаний: ${n(counts.companies)} · сделок: ${n(counts.deals)}`;
+    default:
+      return `${n(counts.users)} сотрудников · ${n(counts.dialogs)} диалогов`;
+  }
+}
+
 export function BitrixIntegrationClient() {
   return (
     <TierGate feature="feature.bitrix">
@@ -208,25 +232,30 @@ function ConnectedView({
   const [syncingScope, setSyncingScope] = useState<BitrixSyncScope | null>(
     null,
   );
-  const [syncing, setSyncing] = useState(false);
-  const [activeSyncScope, setActiveSyncScope] =
+  const [optimisticScope, setOptimisticScope] =
     useState<BitrixSyncScope | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const syncBaselineRef = useRef<string | null>(null);
-  const syncStartMsRef = useRef<number>(0);
+  const optimisticStartMsRef = useRef<number>(0);
+  const sawRunningRef = useRef(false);
+  const prevRunningRef = useRef(false);
   const { ask, dialog: confirmDialog } = useConfirmDialog();
 
   const { data: status, mutate: mutateStatus } = useSWR(
     ["bitrix-status"],
     () => bitrixApi.getStatus().then(mapBitrixStatus),
     {
+      revalidateOnFocus: true,
       refreshInterval: (latest) =>
-        syncing || (latest?.runningScopes?.length ?? 0) > 0 ? 2500 : 0,
-      revalidateOnFocus: false,
+        optimisticScope !== null || (latest?.runningScopes?.length ?? 0) > 0
+          ? 2500
+          : 0,
     },
   );
 
   const serverSyncing = (status?.runningScopes?.length ?? 0) > 0;
+  const serverScope = status?.activeSyncScope ?? null;
+  const syncing = serverSyncing || optimisticScope !== null;
+  const activeScope = serverScope ?? optimisticScope;
 
   const analysisSyncedRef = useRef(false);
   useEffect(() => {
@@ -237,18 +266,28 @@ function ConnectedView({
   }, [status]);
 
   useEffect(() => {
-    if (!syncing) return;
-    const cur = status?.lastIncrementalSyncAt?.toISOString() ?? null;
-    const done =
-      (cur && cur !== syncBaselineRef.current) ||
-      Date.now() - syncStartMsRef.current > 240_000;
-    if (done && !serverSyncing) {
-      setSyncing(false);
-      setActiveSyncScope(null);
-      toast.success("Синхронизация завершена");
+    if (optimisticScope === null) return;
+    if (serverSyncing) {
+      setOptimisticScope(null);
+      return;
+    }
+    if (Date.now() - optimisticStartMsRef.current > 10_000) {
+      setOptimisticScope(null);
+      void mutateStatus();
       onChanged();
     }
-  }, [syncing, status, onChanged, serverSyncing]);
+  }, [optimisticScope, serverSyncing, status, mutateStatus, onChanged]);
+
+  useEffect(() => {
+    if (serverSyncing) sawRunningRef.current = true;
+    if (prevRunningRef.current && !serverSyncing && sawRunningRef.current) {
+      sawRunningRef.current = false;
+      toast.success("Синхронизация завершена");
+      void mutateStatus();
+      onChanged();
+    }
+    prevRunningRef.current = serverSyncing;
+  }, [serverSyncing, mutateStatus, onChanged]);
 
   const statusTone =
     integration.status === "connected"
@@ -276,11 +315,8 @@ function ConnectedView({
     setSyncingScope(scope);
     try {
       await bitrixApi.sync(scope);
-      syncBaselineRef.current =
-        status?.lastIncrementalSyncAt?.toISOString() ?? null;
-      syncStartMsRef.current = Date.now();
-      setActiveSyncScope(scope);
-      setSyncing(true);
+      optimisticStartMsRef.current = Date.now();
+      setOptimisticScope(scope);
       void mutateStatus();
       toast.success(`Запущена синхронизация: ${syncScopeLabel(scope)}`);
     } catch (e) {
@@ -368,25 +404,20 @@ function ConnectedView({
             ))}
           </div>
 
-          {(syncing || serverSyncing) && (
+          {syncing && (
             <div
               className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl px-3 py-2.5 text-sm"
               style={{ background: STATUS_TONE.ok.bg }}
             >
               <Loader2 size={14} className="animate-spin text-accent" />
               <span className="font-medium text-fg-primary">
-                {(() => {
-                  const scope = activeSyncScope ?? status?.activeSyncScope ?? null;
-                  return scope
-                    ? `Синхронизируем: ${syncScopeLabel(scope)}…`
-                    : "Идёт синхронизация…";
-                })()}
+                {activeScope
+                  ? `Синхронизируем: ${syncScopeLabel(activeScope)}…`
+                  : "Идёт синхронизация…"}
               </span>
-              {c && (
+              {c && activeScope && (
                 <span className="text-fg-secondary">
-                  собрано: {c.users.toLocaleString("ru-RU")} сотрудников ·{" "}
-                  {c.dialogs.toLocaleString("ru-RU")} диалогов ·{" "}
-                  {c.sessions.toLocaleString("ru-RU")} сессий
+                  {bitrixSyncProgress(activeScope, c)}
                 </span>
               )}
             </div>

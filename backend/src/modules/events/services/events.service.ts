@@ -22,6 +22,7 @@ import { BusinessMetricsService } from '../../../common/metrics/business-metrics
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { EntityResolutionService } from '../../knowledge-core/services/entity-resolution.service';
 import { MeetingsService } from '../../meetings/meetings.service';
+import { localDayWindowUtc } from '../../operations/utils/local-date';
 import type {
   CalendarItemDto,
   CalendarResponseDto,
@@ -39,6 +40,11 @@ import type {
   UpdateEventDto,
 } from '../dto/events.dto';
 
+type EventWithRelations = Event & {
+  participants: EventParticipant[];
+  reminders: EventReminder[];
+};
+
 @Injectable()
 export class EventsService {
   private readonly logger = new Logger(EventsService.name);
@@ -55,7 +61,10 @@ export class EventsService {
     @Optional() @Inject(EventEmitter2) private readonly eventEmitter?: EventEmitter2,
   ) {}
 
-  async list(args: { tenantId: string; query: ListEventsQuery }): Promise<ListEventsResponse> {
+  async list(args: {
+    tenantId: string;
+    query: ListEventsQuery;
+  }): Promise<ListEventsResponse> {
     const { tenantId, query } = args;
     const where: Prisma.EventWhereInput = { tenantId };
 
@@ -113,6 +122,9 @@ export class EventsService {
   }): Promise<EventDto> {
     const { tenantId, ownerId, data } = args;
 
+    const timezone =
+      data.timezone ?? (await this.resolvePersonTimezone(ownerId, tenantId));
+
     const { entity } = await this.entityResolver.findOrCreateEntity({
       tenantId,
       type: 'event',
@@ -120,7 +132,7 @@ export class EventsService {
       metadata: { source: 'calendar_user', kind: data.kind },
     });
 
-    const created = await this.prisma.$transaction(async (tx) => {
+    let created = await this.prisma.$transaction(async (tx) => {
       const event = await tx.event.create({
         data: {
           tenantId,
@@ -132,15 +144,20 @@ export class EventsService {
           endAt: data.endAt ?? null,
           durationMin:
             data.endAt !== undefined
-              ? Math.max(0, Math.round((data.endAt.getTime() - data.startAt.getTime()) / 60_000))
+              ? Math.max(
+                  0,
+                  Math.round((data.endAt.getTime() - data.startAt.getTime()) / 60_000),
+                )
               : null,
           description: data.description ?? null,
           location: data.location?.trim() ?? null,
           allDay: data.allDay,
-          timezone: data.timezone,
+          timezone,
           rrule: data.rrule ?? null,
           visibility: data.visibility,
           projectId: data.projectId ?? null,
+          online: data.online,
+          counterparty: data.counterparty?.trim() ?? null,
         },
       });
 
@@ -210,44 +227,14 @@ export class EventsService {
       return full!;
     });
 
-    if (data.kind === 'meeting') {
-      if (!this.meetings) {
-        this.logger.warn(
-          { eventId: created.id },
-          'MeetingsService не инжектирован — LiveKit-комната не создана',
-        );
-      } else {
-        try {
-          const meet = await this.meetings.createForCalendarEvent({
-            tenantId,
-            ownerUserId: ownerId,
-            title: data.title.trim().slice(0, 300),
-            scheduledFor: data.startAt,
-            eventId: created.id,
-          });
-          const meta = this.mergeMetadata(created.metadata, {
-            joinUrl: meet.joinUrl,
-          });
-          const updated = await this.prisma.event.update({
-            where: { id: created.id },
-            data: {
-              relatedMeetingId: meet.meetingId,
-              metadata: meta as Prisma.InputJsonValue,
-            },
-            include: { participants: true, reminders: true },
-          });
-          (created as Event).relatedMeetingId = updated.relatedMeetingId;
-          (created as Event).metadata = updated.metadata;
-        } catch (err) {
-          this.logger.error(
-            {
-              eventId: created.id,
-              err: err instanceof Error ? err.message : String(err),
-            },
-            'createForCalendarEvent: создание LiveKit Meeting упало — событие создано без joinUrl',
-          );
-        }
-      }
+    if (data.online) {
+      created = await this.attachLivekitRoom({
+        tenantId,
+        ownerUserId: ownerId,
+        title: data.title.trim().slice(0, 300),
+        scheduledFor: data.startAt,
+        event: created,
+      });
     }
 
     if (data.visibility !== 'personal') {
@@ -266,6 +253,49 @@ export class EventsService {
     });
 
     return this.toDetail(created);
+  }
+
+  async makeEventOnline(args: {
+    tenantId: string;
+    eventId: string;
+    actorUserId: string;
+  }): Promise<EventDto> {
+    const { tenantId, eventId } = args;
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: { participants: true, reminders: true },
+    });
+    if (!event || event.tenantId !== tenantId || event.deletedAt) {
+      throw new NotFoundException({
+        ok: false,
+        error: { code: 'event_not_found', message: 'Событие не найдено' },
+      });
+    }
+    if (event.online && event.relatedMeetingId) {
+      return this.toDetail(event);
+    }
+    let current: EventWithRelations = event;
+    if (!event.online) {
+      current = await this.prisma.event.update({
+        where: { id: eventId },
+        data: { online: true },
+        include: { participants: true, reminders: true },
+      });
+    }
+    if (!current.relatedMeetingId) {
+      current = await this.attachLivekitRoom({
+        tenantId,
+        ownerUserId: event.ownerId ?? args.actorUserId,
+        title: event.title,
+        scheduledFor: event.startAt,
+        event: current,
+      });
+    }
+    const full = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: { participants: true, reminders: true },
+    });
+    return this.toDetail(full ?? current);
   }
 
   async update(args: {
@@ -294,17 +324,26 @@ export class EventsService {
     if (data.kind !== undefined) patch.kind = data.kind;
     if (data.visibility !== undefined) patch.visibility = data.visibility;
     if (data.description !== undefined) patch.description = data.description;
-    if (data.location !== undefined) patch.location = data.location?.trim() ?? null;
+    if (data.location !== undefined)
+      patch.location = data.location?.trim() ?? null;
     if (data.allDay !== undefined) patch.allDay = data.allDay;
     if (data.timezone !== undefined) patch.timezone = data.timezone;
     if (data.rrule !== undefined) patch.rrule = data.rrule;
     if (data.status !== undefined) patch.status = data.status;
     if (data.projectId !== undefined) patch.projectId = data.projectId;
+    if (data.online !== undefined) patch.online = data.online;
+    if (data.counterparty !== undefined)
+      patch.counterparty = data.counterparty?.trim() ?? null;
 
-    const newStart = data.startAt !== undefined ? data.startAt : event.startAt;
-    const newEnd = data.endAt !== undefined ? data.endAt : event.endAt;
+    const newStart =
+      data.startAt !== undefined ? data.startAt : event.startAt;
+    const newEnd =
+      data.endAt !== undefined ? data.endAt : event.endAt;
     if (newStart && newEnd) {
-      patch.durationMin = Math.max(0, Math.round((newEnd.getTime() - newStart.getTime()) / 60_000));
+      patch.durationMin = Math.max(
+        0,
+        Math.round((newEnd.getTime() - newStart.getTime()) / 60_000),
+      );
     } else if (data.endAt === null) {
       patch.durationMin = null;
     }
@@ -431,7 +470,8 @@ export class EventsService {
     projectId?: string;
   }): Promise<CalendarResponseDto> {
     const { tenantId, userId, projectId } = args;
-    const { from, to } = this.resolveCalendarWindow(args.from, args.to);
+    const tz = await this.resolvePersonTimezone(userId, tenantId);
+    const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
 
     const [events, issues] = await Promise.all([
       this.fetchEventsForUser({
@@ -451,8 +491,10 @@ export class EventsService {
     ];
 
     items.sort((a, b) => {
-      const ta = a.type === 'event' ? a.event.startAt : a.issue.dueDate;
-      const tb = b.type === 'event' ? b.event.startAt : b.issue.dueDate;
+      const ta =
+        a.type === 'event' ? a.event.startAt : a.issue.dueDate;
+      const tb =
+        b.type === 'event' ? b.event.startAt : b.issue.dueDate;
       return ta.localeCompare(tb);
     });
     return { items };
@@ -476,7 +518,8 @@ export class EventsService {
         ...(projectId ? { projectId } : {}),
       });
     }
-    const { from, to } = this.resolveCalendarWindow(args.from, args.to);
+    const tz = await this.resolvePersonTimezone(targetUserId, tenantId);
+    const { from, to } = this.resolveCalendarWindow(args.from, args.to, tz);
     const [events, issues] = await Promise.all([
       this.fetchEventsForUser({
         tenantId,
@@ -496,7 +539,9 @@ export class EventsService {
     ]);
 
     const items: CalendarItemDto[] = [
-      ...events.map((e) => this.toCalendarEventItem(e, e.visibility === 'personal')),
+      ...events.map((e) =>
+        this.toCalendarEventItem(e, e.visibility === 'personal'),
+      ),
       ...issues.map((i) => this.toCalendarIssueItem(i)),
     ];
     items.sort((a, b) => {
@@ -507,7 +552,11 @@ export class EventsService {
     return { items };
   }
 
-  async getEventsForFeed(args: { userId: string; from: Date; to: Date }): Promise<{
+  async getEventsForFeed(args: {
+    userId: string;
+    from: Date;
+    to: Date;
+  }): Promise<{
     events: (Event & {
       participants: EventParticipant[];
       reminders: EventReminder[];
@@ -520,7 +569,10 @@ export class EventsService {
         where: {
           deletedAt: null,
           startAt: { gte: from, lt: to },
-          OR: [{ ownerId: userId }, { participants: { some: { userId } } }],
+          OR: [
+            { ownerId: userId },
+            { participants: { some: { userId } } },
+          ],
         },
         include: { participants: true, reminders: true },
         orderBy: [{ startAt: 'asc' }],
@@ -563,7 +615,8 @@ export class EventsService {
     for (const e of events) {
       const start = e.startAt;
       const end =
-        e.endAt ?? new Date(e.startAt.getTime() + Math.max(0, e.durationMin ?? 30) * 60_000);
+        e.endAt ??
+        new Date(e.startAt.getTime() + Math.max(0, e.durationMin ?? 30) * 60_000);
       out.push({ start, end });
     }
     for (const i of issues) {
@@ -575,19 +628,37 @@ export class EventsService {
     return out;
   }
 
-  private resolveCalendarWindow(from?: Date, to?: Date): { from: Date; to: Date } {
+  private resolveCalendarWindow(
+    from?: Date,
+    to?: Date,
+    timezone?: string,
+  ): { from: Date; to: Date } {
     if (from && to) return { from, to };
-    const now = new Date();
     if (from && !to) {
       return { from, to: new Date(from.getTime() + 24 * 60 * 60_000) };
     }
     if (!from && to) {
       return { from: new Date(to.getTime() - 24 * 60 * 60_000), to };
     }
-    const start = new Date(now);
-    start.setUTCHours(0, 0, 0, 0);
-    const end = new Date(start.getTime() + 24 * 60 * 60_000);
-    return { from: start, to: end };
+    return localDayWindowUtc(new Date(), timezone ?? 'Europe/Moscow');
+  }
+
+  private async resolvePersonTimezone(
+    userId: string,
+    tenantId: string,
+  ): Promise<string> {
+    const person = await this.prisma.person.findFirst({
+      where: { userId, tenantId, timezone: { not: null } },
+      select: { timezone: true },
+    });
+    if (person?.timezone) return person.timezone;
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId },
+      select: { org: { select: { timezone: true } } },
+      orderBy: { joinedAt: 'asc' },
+    });
+    return membership?.org?.timezone ?? 'Europe/Moscow';
   }
 
   private async fetchEventsForUser(args: {
@@ -597,7 +668,9 @@ export class EventsService {
     to: Date;
     includePersonal: boolean;
     projectId?: string;
-  }): Promise<(Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]> {
+  }): Promise<
+    (Event & { participants: EventParticipant[]; reminders: EventReminder[] })[]
+  > {
     const { tenantId, userId, from, to, projectId } = args;
     return this.prisma.event.findMany({
       where: {
@@ -679,6 +752,8 @@ export class EventsService {
       location: e.location,
       relatedMeetingId: e.relatedMeetingId,
       joinUrl: this.extractJoinUrl(e.metadata),
+      online: e.online,
+      counterparty: e.counterparty,
       createdAt: e.createdAt.toISOString(),
       updatedAt: e.updatedAt.toISOString(),
       deletedAt: e.deletedAt ? e.deletedAt.toISOString() : null,
@@ -691,12 +766,60 @@ export class EventsService {
     return typeof v === 'string' && v.length > 0 ? v : null;
   }
 
-  private mergeMetadata(current: unknown, patch: Record<string, unknown>): Record<string, unknown> {
+  private mergeMetadata(
+    current: unknown,
+    patch: Record<string, unknown>,
+  ): Record<string, unknown> {
     const base =
       current && typeof current === 'object' && !Array.isArray(current)
         ? (current as Record<string, unknown>)
         : {};
     return { ...base, ...patch };
+  }
+
+  private async attachLivekitRoom(args: {
+    tenantId: string;
+    ownerUserId: string;
+    title: string;
+    scheduledFor: Date;
+    event: EventWithRelations;
+  }): Promise<EventWithRelations> {
+    const { tenantId, ownerUserId, title, scheduledFor, event } = args;
+    if (!this.meetings) {
+      this.logger.warn(
+        { eventId: event.id },
+        'MeetingsService не инжектирован — LiveKit-комната не создана',
+      );
+      return event;
+    }
+    try {
+      const meet = await this.meetings.createForCalendarEvent({
+        tenantId,
+        ownerUserId,
+        title,
+        scheduledFor,
+        eventId: event.id,
+      });
+      const meta = this.mergeMetadata(event.metadata, { joinUrl: meet.joinUrl });
+      const updated = await this.prisma.event.update({
+        where: { id: event.id },
+        data: {
+          relatedMeetingId: meet.meetingId,
+          metadata: meta as Prisma.InputJsonValue,
+        },
+        include: { participants: true, reminders: true },
+      });
+      return updated;
+    } catch (err) {
+      this.logger.error(
+        {
+          eventId: event.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'attachLivekitRoom: создание LiveKit Meeting упало — событие осталось без joinUrl',
+      );
+      return event;
+    }
   }
 
   private toDetail(
@@ -773,7 +896,9 @@ export class EventsService {
     return { type: 'event', event: this.toDetail(e) };
   }
 
-  private toCalendarIssueItem(i: Issue & { project: Project | null }): CalendarItemDto {
+  private toCalendarIssueItem(
+    i: Issue & { project: Project | null },
+  ): CalendarItemDto {
     return {
       type: 'issue',
       issue: {

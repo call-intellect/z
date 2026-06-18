@@ -38,6 +38,7 @@ import { ApiError } from "@/api/api-error";
 import { Button } from "@/ui/shadcn/button";
 import { Input } from "@/ui/shadcn/input";
 import { cn } from "@/ui/shadcn/lib/utils";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 const AUTO_SAVE_DEBOUNCE_MS = 3000;
 
@@ -83,6 +84,8 @@ export function ProjectDocumentEditorClient({
     currentOrgId,
     docId,
   );
+
+  useRegisterBreadcrumb(document ? { label: document.title } : null);
 
   const [title, setTitle] = useState("");
   const [markdown, setMarkdown] = useState("");

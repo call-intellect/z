@@ -4,6 +4,7 @@ import type { TypedConfigService } from '../../common/config/typed-config.servic
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
+import type { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
 
 import { ProbeService } from './probe.service';
@@ -19,6 +20,9 @@ function makeService(): {
   }));
   const prisma = {
     probeEvent: { create, findFirst: vi.fn().mockResolvedValue(null) },
+    // Ф4 — семантический дедуп: KNN пуст, запись эмбеддинга — no-op.
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    $executeRawUnsafe: vi.fn().mockResolvedValue(1),
   } as unknown as PrismaService;
 
   const redis = {
@@ -54,8 +58,13 @@ function makeService(): {
     incProbeColdStartDropped: vi.fn(),
   } as unknown as BusinessMetricsService;
 
+  // Ф4 — embedding-сервис: фиксированный вектор.
+  const embeddings = {
+    embed: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+  } as unknown as EmbeddingFallbackService;
+
   return {
-    service: new ProbeService(prisma, redis, queue, cfg, metrics),
+    service: new ProbeService(prisma, redis, queue, cfg, metrics, embeddings),
     create,
     enqueue,
   };

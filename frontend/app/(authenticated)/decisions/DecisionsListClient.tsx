@@ -18,6 +18,7 @@ import {
   mapDecisionDetail,
   mapDecisionSupersedeChain,
 } from "@/domain/decision";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { TrustBadge } from "@/ui/components/shared/TrustBadge";
 import { CardCorrectionActions } from "@/ui/components/knowledge/CardCorrectionActions";
 import { Input } from "@/ui/shadcn/input";
@@ -171,6 +172,8 @@ function DecisionsListContent({
   );
 
   const groupedItems = useMemo(() => data?.items ?? [], [data]);
+
+  useRegisterBreadcrumb(detail ? { label: detail.statement } : null);
 
   if (isLoading && !data) return <AdminLoading rows={6} />;
   if (forbidden) return <AdminForbidden />;

@@ -75,7 +75,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       {
         name: 'list_meetings',
         description:
-          'Получить список встреч пользователя (последние 20). Используй для запросов «покажи встречи», «что у меня было сегодня».',
+          'Получить последние видеовстречи Коры (записи онлайн-созвонов, до 20 штук) — БЕЗ фильтра по дате. Используй для «покажи мои встречи Коры», «последние созвоны/записи». НЕ используй для вопросов про календарь и расписание: «что у меня сегодня/завтра/на неделе», «какие встречи запланированы» — для них используй list_my_events.',
         method: 'GET',
         path: '/api/v1/meetings',
         parameters: {
@@ -221,7 +221,7 @@ export class ServiceMapGeneratorService implements OnModuleInit {
       {
         name: 'create_event',
         description:
-          'Создать событие календаря (встреча, созвон, личная встреча или блок времени). Используй для запросов «запиши встречу с N на 3-е», «забронируй мне время в среду с 14 до 16», «созвон с клиентом завтра в 15:00». Параметр kind ∈ meeting|call|offline_meeting|personal_block|deadline. Если kind=meeting (онлайн-видео) — автоматически создастся LiveKit-комната.',
+          'Создать событие календаря (встреча, созвон, личная встреча или блок времени). Используй для запросов «запиши встречу с N на 3-е», «забронируй мне время в среду с 14 до 16», «созвон с клиентом завтра в 15:00». Параметр kind ∈ meeting|call|offline_meeting|personal_block|deadline. Видеокомната создаётся ТОЛЬКО при online=true (по умолчанию false — запись в календарь без видео). location — ТОЛЬКО реальное место проведения (адрес, "в офисе", ссылка); если сказано КЕМ является человек или чем занимается его компания/клиент ("Александр с молочного завода") — это НЕ место, клади в counterparty.',
         method: 'POST',
         path: '/api/v1/events',
         parameters: {
@@ -249,7 +249,18 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             },
             location: {
               type: 'string',
-              description: 'Место (физ. адрес или ссылка). Опц.',
+              description:
+                'Физическое место проведения (адрес/«офис»/ссылка). НЕ для контекста о человеке/компании — для этого counterparty. Опц.',
+            },
+            online: {
+              type: 'boolean',
+              description:
+                'true ТОЛЬКО если явно сказано созвон/онлайн/видео/zoom. По умолчанию false (офлайн / без видеокомнаты).',
+            },
+            counterparty: {
+              type: 'string',
+              description:
+                'С кем встреча и/или компания-клиент («Александр, молочный завод»). Бизнес-контекст «о ком», НЕ место. Опц.',
             },
             description: {
               type: 'string',
@@ -268,9 +279,26 @@ export class ServiceMapGeneratorService implements OnModuleInit {
         rbacAction: 'write',
       },
       {
+        name: 'make_event_online',
+        description:
+          'Сделать ранее созданную офлайн-встречу онлайн: создаёт видеокомнату Коры и ссылку. Используй на «добавь к встрече созвон/онлайн/ссылку». Нужен id события из list_my_events.',
+        method: 'POST',
+        path: '/api/v1/events/:id/make-online',
+        parameters: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', description: 'ID события' },
+          },
+          required: ['id'],
+        },
+        undoableVia: 'delete_event',
+        rbacResource: 'event_card',
+        rbacAction: 'write',
+      },
+      {
         name: 'list_my_events',
         description:
-          'Получить мои события календаря в диапазоне дат. Микшируется с задачами трекера: возвращает массив items, каждый — {type: "event", event} или {type: "issue", issue}. Используй для «какие у меня встречи сегодня», «что у меня запланировано на этой неделе», «покажи мой завтрашний день».',
+          'ПРАВИЛЬНЫЙ инструмент для любых вопросов про мой календарь и расписание: «какие у меня встречи сегодня», «что запланировано на этой неделе», «покажи мой завтрашний день». Получает мои события календаря в диапазоне дат, микшируя с задачами трекера: возвращает массив items, каждый — {type: "event", event} или {type: "issue", issue}. Если from/to НЕ заданы — дефолт = сегодняшние сутки в таймзоне пользователя (00:00–24:00 локально). Для «сегодня» обычно вызывай БЕЗ from/to.',
         method: 'GET',
         path: '/api/v1/me/calendar',
         parameters: {
@@ -279,16 +307,53 @@ export class ServiceMapGeneratorService implements OnModuleInit {
             from: {
               type: 'string',
               description:
-                'ISO-8601 datetime нижней границы. Default — сегодня 00:00 локального времени.',
+                'ISO-8601 datetime нижней границы. Опц. Default — начало сегодняшних суток в таймзоне пользователя.',
             },
             to: {
               type: 'string',
-              description: 'ISO-8601 datetime верхней границы. Default — завтра 00:00.',
+              description:
+                'ISO-8601 datetime верхней границы. Опц. Default — начало следующих суток (через 24ч от from).',
             },
           },
         },
         rbacResource: 'event_card',
         rbacAction: 'read',
+      },
+      // ТЗ 2026-06-18 (assistant-calendar-master) Ф4 — сохранить рабочий профиль
+      // СЕБЕ (self-эндпоинт PATCH /me/work-profile, меняет только свой Person).
+      // Self-scoped → без rbacResource (как ingest_note); readOnly:true чтобы
+      // НЕ требовать текстового подтверждения в канале — сохранение своего
+      // профиля не рискованная мутация.
+      {
+        name: 'set_my_work_profile',
+        description:
+          'Сохранить рабочий профиль пользователя: его часовой пояс (timezone в формате IANA, например Asia/Novosibirsk), и/или рабочие часы (workStartHour/workEndHour 0–23), рабочие дни (workingDays: массив 0=вс..6=сб). Используй, когда человек назвал свой город/часовой пояс или рабочее время — особенно если до этого таймзона была не подтверждена. Город переведи в IANA-таймзону сам (Новосибирск→Asia/Novosibirsk, Москва→Europe/Moscow).',
+        method: 'PATCH',
+        path: '/api/v1/me/work-profile',
+        parameters: {
+          type: 'object',
+          properties: {
+            timezone: {
+              type: 'string',
+              description: 'IANA-таймзона, напр. Asia/Novosibirsk. Опц.',
+            },
+            workStartHour: {
+              type: 'number',
+              description: 'Час начала рабочего дня 0–23. Опц.',
+            },
+            workEndHour: {
+              type: 'number',
+              description: 'Час конца рабочего дня 0–23. Опц.',
+            },
+            workingDays: {
+              type: 'array',
+              description: 'Рабочие дни: 0=вс..6=сб. Опц.',
+            },
+          },
+        },
+        // self-scoped /me/* — без rbacResource (как ingest_note); readOnly чтобы
+        // не требовать подтверждения в канале.
+        readOnly: true,
       },
       {
         name: 'list_user_events',

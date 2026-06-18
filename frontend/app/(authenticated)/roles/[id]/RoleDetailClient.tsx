@@ -33,6 +33,7 @@ import {
   RoleMapGrid,
   isRoleMapEmpty,
 } from "@/ui/components/role-map/RoleMapCards";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import {
   Dialog,
   DialogContent,
@@ -83,6 +84,10 @@ function Content({
   );
   const profileSwr = useSWR(["role-profile", orgId, roleId], () =>
     roleProfilesApi.byRole(orgId, roleId),
+  );
+
+  useRegisterBreadcrumb(
+    roleSwr.data?.role ? { label: roleSwr.data.role.name } : null,
   );
 
   if (roleSwr.isLoading) {

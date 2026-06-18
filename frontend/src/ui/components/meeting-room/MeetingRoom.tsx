@@ -276,7 +276,9 @@ function VideoArea() {
           tracks={tracks}
           style={{ height: "100%" }}
           className={
-            isSolo ? "lk-grid-layout kora-video-solo" : "lk-grid-layout"
+            isSolo
+              ? "lk-grid-layout kora-video-grid kora-video-solo"
+              : "lk-grid-layout kora-video-grid"
           }
         >
           <ParticipantTile />

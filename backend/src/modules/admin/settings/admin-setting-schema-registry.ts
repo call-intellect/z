@@ -112,6 +112,23 @@ const registry = new Map<string, ZodTypeAny>([
   ['probe.digestEnabled', z.boolean()],
   ['probe.topicCooldownHours', POSITIVE_INT],
   ['probe.adaptiveFatigueEnabled', z.boolean()],
+  // Probe Фаза 2 (2026-06-17) — порог уверенности для распознавания свободного
+  // ответа на probe во входном классификаторе (Telegram без reply / MAX).
+  ['probe.replyClassifyMinConfidence', UNIT_INTERVAL],
+  // Probe Фаза 2 (2026-06-17) — kill-switch LLM-судьи качества формулировки
+  // probe-вопроса (один регенерат при браке). ON.
+  ['probe.qualityJudgeEnabled', z.boolean()],
+  // Probe Фаза 3 (2026-06-17) — kill-switch выбора получателя probe по
+  // engagement-снимку (самый отзывчивый из кандидатов). ON.
+  ['probe.engagementRoutingEnabled', z.boolean()],
+  // Probe Фаза 4 (2026-06-17) — семантический дедуп близких по смыслу probe
+  // по эмбеддингу вопроса (рубильник ON · cosine-порог · окно поиска в часах).
+  ['probe.semanticDedupEnabled', z.boolean()],
+  ['probe.semanticDedupThreshold', UNIT_INTERVAL],
+  ['probe.semanticDedupWindowHours', POSITIVE_INT],
+  // Probe Фаза 5 (2026-06-17) — kill-switch одного переспроса (re-ask) при
+  // истечении неотвеченного probe (переформулировать и спросить ещё раз). ON.
+  ['probe.reaskEnabled', z.boolean()],
 
   ['blocker_synthesis.lookback_days', POSITIVE_INT],
   ['blocker_synthesis.recurring_days', POSITIVE_INT],

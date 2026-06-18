@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PrismaService } from '../../common/prisma/prisma.service';
 
-import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
+import {
+  isEntityUnattributed,
+  PROBE_REASON_RECHECK,
+  probeWindow,
+} from './probe-reason-policy';
 
 describe('probeWindow', () => {
   it('immediate для критичных reason', () => {
@@ -41,7 +45,9 @@ describe('PROBE_REASON_RECHECK', () => {
   it('decision.missing_decider: решающего нет → пробел открыт (true)', async () => {
     const prisma = {
       decision: {
-        findFirst: vi.fn().mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
+        findFirst: vi
+          .fn()
+          .mockResolvedValue({ decidedByPersonIds: [], decidedByPersonId: null }),
       },
     } as unknown as PrismaService;
     const rel = await PROBE_REASON_RECHECK['decision.missing_decider']!({
@@ -75,6 +81,131 @@ describe('PROBE_REASON_RECHECK', () => {
       tenantId: 'org-1',
       contextCardId: null,
       contextCardKind: 'idea',
+    });
+    expect(rel).toBe(true);
+  });
+});
+
+describe('isEntityUnattributed (Ф6)', () => {
+  it('customer/vendor без привязки → true', () => {
+    expect(isEntityUnattributed({ type: 'customer', metadata: null })).toBe(true);
+    expect(isEntityUnattributed({ type: 'vendor', metadata: {} })).toBe(true);
+    expect(
+      isEntityUnattributed({ type: 'customer', metadata: { note: 'x' } }),
+    ).toBe(true);
+  });
+
+  it('customer с metadata-ключом привязки → false', () => {
+    expect(
+      isEntityUnattributed({ type: 'customer', metadata: { departmentId: 'd1' } }),
+    ).toBe(false);
+    expect(
+      isEntityUnattributed({ type: 'vendor', metadata: { owner_person_id: 'p1' } }),
+    ).toBe(false);
+  });
+
+  it('служебные типы → false (не спрашиваем)', () => {
+    expect(isEntityUnattributed({ type: 'person', metadata: null })).toBe(false);
+    expect(isEntityUnattributed({ type: 'department', metadata: {} })).toBe(false);
+    expect(isEntityUnattributed({ type: 'role', metadata: null })).toBe(false);
+  });
+
+  it('пустые значения ключей привязки не считаются привязкой', () => {
+    expect(
+      isEntityUnattributed({ type: 'customer', metadata: { clientId: '' } }),
+    ).toBe(true);
+    expect(
+      isEntityUnattributed({ type: 'customer', metadata: { clientId: null } }),
+    ).toBe(true);
+  });
+});
+
+describe('PROBE_REASON_RECHECK — attribution.unresolved_at_ingest (Ф6)', () => {
+  const reason = 'attribution.unresolved_at_ingest';
+
+  it('contextCardKind ≠ entity → не подавляем (true)', async () => {
+    const prisma = { entity: { findFirst: vi.fn() } } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'e1',
+      contextCardKind: 'card',
+    });
+    expect(rel).toBe(true);
+  });
+
+  it('сущность удалена → подавляем (false)', async () => {
+    const prisma = {
+      entity: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'e1',
+      contextCardKind: 'entity',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('появилась привязка в metadata → подавляем (false)', async () => {
+    const prisma = {
+      entity: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'e1',
+          type: 'customer',
+          metadata: { departmentId: 'd1' },
+          mergedIntoId: null,
+        }),
+      },
+      entityLink: { findFirst: vi.fn() },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'e1',
+      contextCardKind: 'entity',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('появилось ребро привязки → подавляем (false)', async () => {
+    const prisma = {
+      entity: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'e1',
+          type: 'customer',
+          metadata: null,
+          mergedIntoId: null,
+        }),
+      },
+      entityLink: { findFirst: vi.fn().mockResolvedValue({ id: 'l1' }) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'e1',
+      contextCardKind: 'entity',
+    });
+    expect(rel).toBe(false);
+  });
+
+  it('всё ещё не привязана → пробел открыт (true)', async () => {
+    const prisma = {
+      entity: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: 'e1',
+          type: 'customer',
+          metadata: null,
+          mergedIntoId: null,
+        }),
+      },
+      entityLink: { findFirst: vi.fn().mockResolvedValue(null) },
+    } as unknown as PrismaService;
+    const rel = await PROBE_REASON_RECHECK[reason]!({
+      prisma,
+      tenantId: 'org-1',
+      contextCardId: 'e1',
+      contextCardKind: 'entity',
     });
     expect(rel).toBe(true);
   });

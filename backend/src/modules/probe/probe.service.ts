@@ -8,6 +8,7 @@ import { BusinessMetricsService } from '../../common/metrics/business-metrics.se
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
 import { CoreQueueService } from '../core-queue/core-queue.service';
+import { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 
 import {
   PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR,
@@ -16,7 +17,11 @@ import {
   probeTopicCooldownRedisKey,
 } from './probe-fatigue.util';
 import { NUDGE_REASONS, probeWindow } from './probe-reason-policy';
-import type { ProbeSuggestInput, ProbeSuggestPayload, ProbeSuggestResult } from './probe.types';
+import type {
+  ProbeSuggestInput,
+  ProbeSuggestPayload,
+  ProbeSuggestResult,
+} from './probe.types';
 
 @Injectable()
 export class ProbeService {
@@ -29,6 +34,8 @@ export class ProbeService {
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(EmbeddingFallbackService)
+    private readonly embeddings: EmbeddingFallbackService,
   ) {}
 
   async suggest(input: ProbeSuggestInput): Promise<ProbeSuggestResult> {
@@ -63,12 +70,20 @@ export class ProbeService {
           });
           return { dropped: 'dedup' };
         }
-      } catch {}
+      } catch {
+        /* eslint-disable-next-line no-empty */
+      }
 
       const dedupKey = `probe:dedup:${input.tenantId}:${contentHash}`;
       const ttlSec = this.cfg.probe.dedupTtlHours * 3600;
       try {
-        const setRes = await this.redis.client.set(dedupKey, '1', 'EX', ttlSec, 'NX');
+        const setRes = await this.redis.client.set(
+          dedupKey,
+          '1',
+          'EX',
+          ttlSec,
+          'NX',
+        );
         if (setRes === null) {
           this.metrics.incProbeDedupDropped({ reason: input.reason });
           this.metrics.incProbeEvent({
@@ -88,10 +103,28 @@ export class ProbeService {
         );
       }
 
-      const availableRecipients = await this.filterByRateLimit(input.recipientCandidates);
+      const questionVectorLiteral = await this.maybeSemanticDedup({
+        tenantId: input.tenantId,
+        payload: input.payload,
+      });
+      if (questionVectorLiteral === 'DEDUP') {
+        this.metrics.incProbeDedupDropped({ reason: input.reason });
+        this.metrics.incProbeEvent({
+          emittedByService: input.emittedByService,
+          reason: input.reason,
+          status: 'dropped_dedup',
+        });
+        return { dropped: 'dedup' };
+      }
+
+      const availableRecipients = await this.filterByRateLimit(
+        input.recipientCandidates,
+      );
       if (availableRecipients.length === 0) {
         if (probeWindow(input.reason) === 'deferrable') {
-          const priority = Math.round(this.clamp01(input.priorityHint ?? 0.4) * 100);
+          const priority = Math.round(
+            this.clamp01(input.priorityHint ?? 0.4) * 100,
+          );
           const queued = await this.prisma.probeEvent.create({
             data: {
               tenantId: input.tenantId,
@@ -232,6 +265,24 @@ export class ProbeService {
         },
       });
 
+      if (questionVectorLiteral) {
+        try {
+          await this.prisma.$executeRawUnsafe(
+            'UPDATE "probe_events" SET "questionEmbedding" = $1::vector WHERE id = $2',
+            questionVectorLiteral,
+            event.id,
+          );
+        } catch (err) {
+          this.logger.warn(
+            {
+              probeEventId: event.id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'ProbeService.suggest: не удалось записать questionEmbedding — probe создан без эмбеддинга',
+          );
+        }
+      }
+
       this.metrics.incProbeEvent({
         emittedByService: input.emittedByService,
         reason: input.reason,
@@ -265,7 +316,109 @@ export class ProbeService {
     }
   }
 
-  async filterByRateLimit(recipientCandidates: readonly string[]): Promise<string[]> {
+  private async maybeSemanticDedup(args: {
+    tenantId: string;
+    payload: ProbeSuggestPayload;
+  }): Promise<'DEDUP' | string | null> {
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.semanticDedupEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return null;
+
+    const rawText = args.payload.suggestedQuestion ?? args.payload.message;
+    if (typeof rawText !== 'string') return null;
+    const text = rawText.trim();
+    if (text.length === 0) return null;
+
+    let vector: number[] | undefined;
+    try {
+      const vecs = await this.embeddings.embed([text]);
+      vector = vecs[0];
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeService.maybeSemanticDedup: embed упал — пропускаю семантику',
+      );
+      return null;
+    }
+    if (!vector || vector.length === 0) return null;
+    const vectorLiteral = `[${vector.join(',')}]`;
+
+    let threshold: number;
+    let windowHours: number;
+    try {
+      threshold = await this.cfg.getDynamic<number>(
+        'probe.semanticDedupThreshold',
+        undefined,
+        0.92,
+      );
+    } catch {
+      threshold = 0.92;
+    }
+    try {
+      windowHours = await this.cfg.getDynamic<number>(
+        'probe.semanticDedupWindowHours',
+        undefined,
+        72,
+      );
+    } catch {
+      windowHours = 72;
+    }
+
+    try {
+      const rows = await this.prisma.$queryRawUnsafe<
+        Array<{ id: string; distance: number }>
+      >(
+        `SELECT id, ("questionEmbedding" <=> $1::vector) AS distance
+         FROM "probe_events"
+         WHERE "tenantId" = $2
+           AND status IN ('pending','dispatched','queued_digest','routed_to_digest')
+           AND "questionEmbedding" IS NOT NULL
+           AND "createdAt" > now() - make_interval(hours => $3::int)
+         ORDER BY "questionEmbedding" <=> $1::vector
+         LIMIT 1`,
+        vectorLiteral,
+        args.tenantId,
+        Math.max(0, Math.round(windowHours)),
+      );
+      const top = rows[0];
+      if (top && Number.isFinite(Number(top.distance))) {
+        const similarity = 1 - Number(top.distance);
+        if (similarity >= threshold) {
+          this.logger.log(
+            `semantic-dedup: probe близок к ${top.id} (sim=${similarity.toFixed(
+              3,
+            )} ≥ ${threshold}) tenant=${args.tenantId} — drop`,
+          );
+          return 'DEDUP';
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        {
+          tenantId: args.tenantId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'ProbeService.maybeSemanticDedup: KNN-запрос упал — пропускаю семантику',
+      );
+    }
+
+    return vectorLiteral;
+  }
+
+  async filterByRateLimit(
+    recipientCandidates: readonly string[],
+  ): Promise<string[]> {
     const limitHour = this.cfg.probe.rateLimitPerHour;
     const limitDay = this.cfg.probe.rateLimitPerDay;
     let adaptiveOn: boolean;
@@ -293,8 +446,14 @@ export class ProbeService {
         if (adaptiveOn && engagementRaw != null) {
           const eng = Number(engagementRaw);
           if (Number.isFinite(eng) && eng < PROBE_LOW_ENGAGEMENT_THRESHOLD) {
-            effHour = Math.max(1, Math.floor(limitHour * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR));
-            effDay = Math.max(1, Math.floor(limitDay * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR));
+            effHour = Math.max(
+              1,
+              Math.floor(limitHour * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
+            );
+            effDay = Math.max(
+              1,
+              Math.floor(limitDay * PROBE_LOW_ENGAGEMENT_BUDGET_FACTOR),
+            );
           }
         }
         if (
@@ -313,14 +472,15 @@ export class ProbeService {
 
   async noteSent(userId: string): Promise<void> {
     try {
-      await this.redis.client
-        .multi()
+      await this.redis.client.multi()
         .incr(this.hourKey(userId))
         .expire(this.hourKey(userId), 3600)
         .incr(this.dayKey(userId))
         .expire(this.dayKey(userId), 86400)
         .exec();
-    } catch {}
+    } catch {
+      /* eslint-disable-next-line no-empty */
+    }
   }
 
   private async isColdStart(tenantId: string): Promise<boolean> {
@@ -336,7 +496,10 @@ export class ProbeService {
     return elapsedMs < windowHours * 3600 * 1000;
   }
 
-  private computeContentHash(args: { reason: string; payload: ProbeSuggestPayload }): string {
+  private computeContentHash(args: {
+    reason: string;
+    payload: ProbeSuggestPayload;
+  }): string {
     const ids: string[] = [];
     if (args.payload.contextBlockId) ids.push(`b:${args.payload.contextBlockId}`);
     if (args.payload.contextCardId) ids.push(`c:${args.payload.contextCardId}`);

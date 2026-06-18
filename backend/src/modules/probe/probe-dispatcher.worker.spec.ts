@@ -53,6 +53,13 @@ function makeMocks(args: {
   llmThrow?: Error;
   probePriority?: number;
   reason?: string;
+  judgeResponse?: { text: string };
+  judgeThrow?: Error;
+  qualityJudgeEnabled?: boolean;
+  candidates?: string[];
+  engagement?: Record<string, string>;
+  engagementRoutingEnabled?: boolean;
+  deliveryKind?: string | null;
 }): Mocks {
   const probe = buildProbe(args.probePayload, args.probePriority, args.reason);
   const updateCalls: Array<{
@@ -60,15 +67,25 @@ function makeMocks(args: {
     data: Record<string, unknown>;
   }> = [];
 
+  const deliveryKind = args.deliveryKind ?? null;
   const prisma = {
     probeEvent: {
       findUnique: vi.fn().mockResolvedValue(probe),
       update: vi
         .fn()
-        .mockImplementation(async (params: { where: unknown; data: Record<string, unknown> }) => {
-          updateCalls.push(params);
-          return { ...probe, ...params.data };
-        }),
+        .mockImplementation(
+          async (params: { where: unknown; data: Record<string, unknown> }) => {
+            updateCalls.push(params);
+            return { ...probe, ...params.data };
+          },
+        ),
+    },
+    notificationDelivery: {
+      findFirst: vi.fn().mockResolvedValue(
+        deliveryKind
+          ? { channelBinding: { channel: { kind: deliveryKind } } }
+          : null,
+      ),
     },
   } as unknown as PrismaService;
 
@@ -78,14 +95,22 @@ function makeMocks(args: {
   } else if (args.llmResponse) {
     llmCall.mockResolvedValueOnce(args.llmResponse);
   }
+  if (args.judgeThrow) {
+    llmCall.mockRejectedValueOnce(args.judgeThrow);
+  } else {
+    llmCall.mockResolvedValueOnce(
+      args.judgeResponse ?? { text: JSON.stringify({ ok: true, issues: [] }) },
+    );
+  }
   const llm = { call: llmCall } as unknown as LlmRouterService;
 
   const conversational = {
     sendNotification: vi.fn().mockResolvedValue({ id: 'notif-disp-1' }),
   } as unknown as ConversationalService;
 
+  const candidates = args.candidates ?? ['user-1'];
   const probeService = {
-    filterByRateLimit: vi.fn().mockResolvedValue(['user-1']),
+    filterByRateLimit: vi.fn().mockResolvedValue(candidates),
     noteSent: vi.fn().mockResolvedValue(undefined),
   } as unknown as ProbeService;
 
@@ -94,6 +119,7 @@ function makeMocks(args: {
     incProbeDispatched: vi.fn(),
     incProbeRateLimitDropped: vi.fn(),
     incProbeExpired: vi.fn(),
+    incProbeQualityJudged: vi.fn(),
   } as unknown as BusinessMetricsService;
 
   const cfg = {
@@ -107,13 +133,37 @@ function makeMocks(args: {
       voiceInputEnabled: true,
       responseClassifyMinConfidence: 0.5,
     },
+    aiFeatures: { promptInjectionGuardEnabled: false },
     getDynamic: vi
       .fn()
-      .mockImplementation(async (_key: string, _env: unknown, fallback: unknown) => fallback),
+      .mockImplementation(
+        async (key: string, _env: unknown, fallback: unknown) => {
+          if (
+            key === 'probe.qualityJudgeEnabled' &&
+            args.qualityJudgeEnabled !== undefined
+          ) {
+            return args.qualityJudgeEnabled;
+          }
+          if (
+            key === 'probe.engagementRoutingEnabled' &&
+            args.engagementRoutingEnabled !== undefined
+          ) {
+            return args.engagementRoutingEnabled;
+          }
+          return fallback;
+        },
+      ),
   } as unknown as TypedConfigService;
 
+  const engagement = args.engagement ?? {};
   const redis = {
-    client: {} as unknown,
+    client: {
+      get: vi.fn().mockImplementation(async (key: string) => {
+        const userId = key.replace('probe:engagement:', '');
+        return engagement[userId] ?? null;
+      }),
+      set: vi.fn().mockResolvedValue('OK'),
+    } as unknown,
   } as unknown as RedisService;
 
   return {
@@ -141,7 +191,10 @@ function makeWorker(m: Mocks): ProbeDispatcherWorker {
   );
 }
 
-async function runProcess(worker: ProbeDispatcherWorker, probeEventId: string): Promise<void> {
+async function runProcess(
+  worker: ProbeDispatcherWorker,
+  probeEventId: string,
+): Promise<void> {
   const job = {
     data: { probeEventId } as ProbeEventJobData,
     attemptsMade: 1,
@@ -171,7 +224,7 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    expect(mocks.llmCall).toHaveBeenCalledTimes(2);
     expect(mocks.updateCalls).toHaveLength(1);
     const updateData = mocks.updateCalls[0]!.data;
     expect(updateData.status).toBe('dispatched');
@@ -181,8 +234,14 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     expect(newPayload.formulatedQuestion).toBe(
       'Вы согласовали миграцию на DeepSeek с финдиректором?',
     );
-    expect(newPayload.message).toBe('Решение по миграции на DeepSeek просрочено на 2 дня.');
-    expect(newPayload.suggestedActions).toEqual(['Подтвердить', 'Отменить', 'Продлить']);
+    expect(newPayload.message).toBe(
+      'Решение по миграции на DeepSeek просрочено на 2 дня.',
+    );
+    expect(newPayload.suggestedActions).toEqual([
+      'Подтвердить',
+      'Отменить',
+      'Продлить',
+    ]);
   });
 
   it('LLM упал — formulatedQuestion = fallback (suggestedQuestion из payload)', async () => {
@@ -199,8 +258,13 @@ describe('ProbeDispatcherWorker — Agents v2 Фаза 0.2', () => {
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.updateCalls).toHaveLength(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
-    expect(newPayload.formulatedQuestion).toBe('Вы согласовали с финдиректором?');
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
+      string,
+      unknown
+    >;
+    expect(newPayload.formulatedQuestion).toBe(
+      'Вы согласовали с финдиректором?',
+    );
   });
 });
 
@@ -228,7 +292,9 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
 
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
-    expect(vi.mocked(mocks.conversational.sendNotification)).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
     expect(mocks.llmCall).not.toHaveBeenCalled();
   });
 
@@ -237,7 +303,9 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
@@ -247,7 +315,9 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
     const worker = makeWorker(mocks);
     await runProcess(worker, 'probe-disp-1');
 
-    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
@@ -266,21 +336,27 @@ describe('ProbeDispatcherWorker — Autonomy W0 Ф0.2: priority-гейт нем�
 
     await runProcess(worker, 'probe-disp-1');
 
-    expect(vi.mocked(mocks.conversational.sendNotification)).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledTimes(1);
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('dispatched');
   });
 
   it('L-1: getDynamic упал, priority=40 < default 70 → queued_digest (гейт работает на дефолте)', async () => {
     const mocks = makeGateMocks(40);
-    vi.mocked(mocks.cfg.getDynamic).mockRejectedValue(new Error('settings db down'));
+    vi.mocked(mocks.cfg.getDynamic).mockRejectedValue(
+      new Error('settings db down'),
+    );
     const worker = makeWorker(mocks);
 
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.updateCalls).toHaveLength(1);
     expect(mocks.updateCalls[0]!.data.status).toBe('queued_digest');
-    expect(vi.mocked(mocks.conversational.sendNotification)).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).not.toHaveBeenCalled();
   });
 });
 
@@ -303,7 +379,10 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
 
     expect(mocks.llmCall).not.toHaveBeenCalled();
     expect(mocks.updateCalls).toHaveLength(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
+      string,
+      unknown
+    >;
     expect(newPayload.formulatedQuestion).toBe(cdmQuestion);
   });
 
@@ -320,7 +399,301 @@ describe('ProbeDispatcherWorker — CDM-интервью (clone-method Э3.1)', 
     await runProcess(worker, 'probe-disp-1');
 
     expect(mocks.llmCall).toHaveBeenCalledTimes(1);
-    const newPayload = mocks.updateCalls[0]!.data.payload as Record<string, unknown>;
-    expect(newPayload.formulatedQuestion).toBe('Расскажете, как принимали это решение?');
+    const newPayload = mocks.updateCalls[0]!.data.payload as Record<
+      string,
+      unknown
+    >;
+    expect(newPayload.formulatedQuestion).toBe(
+      'Расскажете, как принимали это решение?',
+    );
+  });
+});
+
+describe('ProbeDispatcherWorker — Probe Фаза 2: LLM-судья качества', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE_RESPONSE = {
+    text: JSON.stringify({
+      question: 'Уточни по cardId clx9 кто owner?',
+    }),
+  };
+
+  it('судья ok=false + валидный rewrite → отправлен rewrite + метрика rewritten', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE_RESPONSE,
+      judgeResponse: {
+        text: JSON.stringify({
+          ok: false,
+          issues: ['has_code_or_english'],
+          rewrite: 'Кто отвечает за это решение?',
+        }),
+      },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за это решение?',
+        }),
+      }),
+    );
+    expect(mocks.updateCalls[0]!.data.payload).toEqual(
+      expect.objectContaining({
+        formulatedQuestion: 'Кто отвечает за это решение?',
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'rewritten' });
+  });
+
+  it('судья ok=true → отправлен исходный вопрос + метрика ok', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за этот склад?' }),
+      },
+      judgeResponse: { text: JSON.stringify({ ok: true, issues: [] }) },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за этот склад?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'ok' });
+  });
+
+  it('судья кинул ошибку → отправлен исходный + метрика kept_on_fail', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто согласовал бюджет?' }),
+      },
+      judgeThrow: new Error('judge proxy 500'),
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто согласовал бюджет?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'kept_on_fail' });
+  });
+
+  it('судья ok=false, но rewrite с латиницей/кодом → маркер-чек режет, отправлен исходный + kept_on_fail', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто отвечает за решение?' }),
+      },
+      judgeResponse: {
+        text: JSON.stringify({
+          ok: false,
+          issues: ['vague'],
+          rewrite: 'Уточни owner по entity clx9f2a3b4c5d6e7f8?',
+        }),
+      },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто отвечает за решение?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).toHaveBeenCalledWith({ verdict: 'kept_on_fail' });
+  });
+
+  it('флаг probe.qualityJudgeEnabled=false → судья не зван, отправлен исходный', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: {
+        text: JSON.stringify({ question: 'Кто владелец задачи?' }),
+      },
+      qualityJudgeEnabled: false,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(mocks.llmCall).toHaveBeenCalledTimes(1);
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          question: 'Кто владелец задачи?',
+        }),
+      }),
+    );
+    expect(
+      vi.mocked(mocks.metrics.incProbeQualityJudged),
+    ).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProbeDispatcherWorker — Probe Фаза 3: выбор получателя по engagement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE = {
+    text: JSON.stringify({ question: 'Кто отвечает за это решение?' }),
+  };
+
+  it('2 кандидата (engagement 0.2 и 0.8) → выбран более отзывчивый (0.8)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      candidates: ['user-low', 'user-high'],
+      engagement: { 'user-low': '0.2', 'user-high': '0.8' },
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-high' }),
+    );
+    expect(mocks.updateCalls[0]!.data.selectedRecipientId).toBe('user-high');
+  });
+
+  it('равный engagement (оба 0.5/оба отсутствуют) → меньший по строковому userId (детерминизм)', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      candidates: ['user-zzz', 'user-aaa'],
+      engagement: {},
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-aaa' }),
+    );
+  });
+
+  it('флаг probe.engagementRoutingEnabled=false → первый кандидат (candidates[0])', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      candidates: ['user-first', 'user-high'],
+      engagement: { 'user-first': '0.1', 'user-high': '0.9' },
+      engagementRoutingEnabled: false,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.conversational.sendNotification),
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ recipientUserId: 'user-first' }),
+    );
+  });
+
+  it('реальный kind: channel.kind=telegram → incProbeDispatched({kind:telegram})', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      deliveryKind: 'telegram',
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeDispatched),
+    ).toHaveBeenCalledWith(expect.objectContaining({ kind: 'telegram' }));
+  });
+
+  it('реальный kind: findFirst=null → fallback incProbeDispatched({kind:in_app})', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'контекст' },
+      llmResponse: FORMULATE,
+      deliveryKind: null,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    expect(
+      vi.mocked(mocks.metrics.incProbeDispatched),
+    ).toHaveBeenCalledWith(expect.objectContaining({ kind: 'in_app' }));
+  });
+});
+
+describe('ProbeDispatcherWorker — Probe Ф5: пометка переспроса в USER formulate', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const FORMULATE_RESP = {
+    text: JSON.stringify({ question: 'Что сейчас с этим решением?' }),
+  };
+  const REASK_HINT = 'Это повторный вопрос';
+
+  it('payload.reaskCount=1 → USER probe-formulate содержит пометку переспроса', async () => {
+    const mocks = makeMocks({
+      probePayload: {
+        message: 'Решение по подрядчику просрочено.',
+        reaskCount: 1,
+        originalProbeEventId: 'probe-orig-1',
+      },
+      llmResponse: FORMULATE_RESP,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    const formulateCall = mocks.llmCall.mock.calls[0]![0] as {
+      taskType: string;
+      userMessage: string;
+    };
+    expect(formulateCall.taskType).toBe('probe-formulate');
+    expect(formulateCall.userMessage).toContain(REASK_HINT);
+  });
+
+  it('payload без reaskCount → пометки переспроса в USER НЕТ', async () => {
+    const mocks = makeMocks({
+      probePayload: { message: 'Решение по подрядчику просрочено.' },
+      llmResponse: FORMULATE_RESP,
+    });
+    const worker = makeWorker(mocks);
+    await runProcess(worker, 'probe-disp-1');
+
+    const formulateCall = mocks.llmCall.mock.calls[0]![0] as {
+      userMessage: string;
+    };
+    expect(formulateCall.userMessage).not.toContain(REASK_HINT);
   });
 });

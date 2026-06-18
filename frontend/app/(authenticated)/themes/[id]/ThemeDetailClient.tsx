@@ -32,12 +32,17 @@ import {
 import { Input } from "@/ui/shadcn/input";
 import { Label } from "@/ui/shadcn/label";
 import { cn } from "@/ui/shadcn/lib/utils";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 export function ThemeDetailClient({ themeId }: { themeId: string }) {
   const themeSwr = useSWR(["theme", themeId], async () => {
     const api = await themesApi.get(themeId);
     return themeDetailFromApi(api);
   });
+
+  useRegisterBreadcrumb(
+    themeSwr.data?.theme ? { label: themeSwr.data.theme.name } : null,
+  );
 
   if (themeSwr.error) {
     return (

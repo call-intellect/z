@@ -16,6 +16,7 @@ import {
 } from "@/ui/shadcn/card";
 import { Input } from "@/ui/shadcn/input";
 import { Label } from "@/ui/shadcn/label";
+import { WorkProfileSection } from "@/ui/settings/WorkProfileSection";
 import { useTourContextOptional } from "@/ui/tour";
 
 export function ProfileSection() {
@@ -117,6 +118,8 @@ export function ProfileSection() {
           </form>
         </CardContent>
       </Card>
+
+      <WorkProfileSection />
 
       {tour && (
         <Card>

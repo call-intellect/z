@@ -262,6 +262,29 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
 
     this.metrics.incBotInbound({ channel: 'max_bot', kind: 'text' });
 
+    const openProbe = await this.findOpenProbe({
+      tenantId,
+      userId: binding.userId,
+    });
+    if (openProbe && openProbe.question) {
+      const probeIntent = await this.classifyIntent({
+        text,
+        tenantId,
+        userId: binding.userId,
+        openProbeQuestion: openProbe.question,
+      });
+      if (probeIntent === 'probe_reply') {
+        return {
+          type: 'response',
+          userId: binding.userId,
+          tenantId,
+          notificationId: openProbe.id,
+          payload: { text, kind: 'implicit_response' },
+          originChannelBindingId: binding.id,
+        };
+      }
+    }
+
     if (this.isAssistantRoutingEnabled()) {
       return {
         type: 'assistant_turn',
@@ -624,11 +647,67 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
     return binding;
   }
 
+  /**
+   * ТЗ 2026-06-17 probe-phase2 Ф1 — последний неотвеченный probe-вопрос
+   * пользователя (для распознавания свободного ответа; в MAX reply нет вовсе).
+   * Возвращает id уведомления и текст вопроса из payload (`question` для
+   * probe.question; для probe.digest — '').
+   */
+  private async findOpenProbe(args: {
+    tenantId: string;
+    userId: string;
+  }): Promise<{ id: string; question: string } | null> {
+    const openProbe = await this.prisma.notification.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        recipientUserId: args.userId,
+        eventType: { in: ['probe.question', 'probe.digest'] },
+        responseStatus: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true },
+    });
+    if (!openProbe) return null;
+    const payload =
+      (openProbe.payload as Record<string, unknown> | null) ?? {};
+    const question =
+      typeof payload['question'] === 'string'
+        ? (payload['question'] as string)
+        : typeof payload['formulatedQuestion'] === 'string'
+          ? (payload['formulatedQuestion'] as string)
+          : '';
+    return { id: openProbe.id, question };
+  }
+
+  /**
+   * ТЗ 2026-06-17 probe-phase2 Ф1 — минимальная уверенность классификатора,
+   * с которой свободный текст засчитывается ответом на probe. AdminSetting
+   * `probe.replyClassifyMinConfidence` (дефолт 0.6); читается через
+   * TypedConfigService.getDynamic (как прочие probe.*-крутилки).
+   */
+  private async getProbeReplyMinConfidence(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.replyClassifyMinConfidence',
+        undefined,
+        0.6,
+      );
+    } catch {
+      return 0.6;
+    }
+  }
+
   private async classifyIntent(args: {
     text: string;
     tenantId: string;
     userId: string;
-  }): Promise<'chat_query' | 'free_note'> {
+    /**
+     * ТЗ 2026-06-17 probe-phase2 Ф1 — текст последнего неотвеченного probe.
+     * Если задан — классификатор может вернуть `probe_reply` (ответ на вопрос
+     * Коры свободным текстом; в MAX reply нет вовсе — это единственный путь).
+     */
+    openProbeQuestion?: string;
+  }): Promise<'chat_query' | 'free_note' | 'probe_reply'> {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
         const result = await this.classifier.classify({
@@ -636,7 +715,25 @@ export class MaxBotChannelAdapter implements IChannel, OnModuleInit {
           userId: args.userId,
           question: args.text,
           conversationId: null,
+          openProbeQuestion: args.openProbeQuestion,
         });
+
+        // ТЗ 2026-06-17 probe-phase2 Ф1 — ответ на probe свободным текстом.
+        // Гейт по `probe.replyClassifyMinConfidence`; notificationId найденного
+        // probe подставляет вызывающий код (handleMessage).
+        if (result.intent === 'probe_reply') {
+          const conf = result.confidence ?? 0;
+          const minConf = await this.getProbeReplyMinConfidence();
+          if (conf >= minConf) {
+            this.metrics.incBotIntentClassified({
+              channel: 'max_bot',
+              intent: 'free_note',
+              source: result.source === 'heuristic' ? 'heuristic' : 'llm',
+            });
+            return 'probe_reply';
+          }
+          // Ниже порога — не засчитываем, продолжаем обычным маппингом.
+        }
         const intent: 'chat_query' | 'free_note' =
           result.intent === 'factual' ||
           result.intent === 'exploratory' ||

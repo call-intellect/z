@@ -83,11 +83,17 @@ export const CreateEventSchema = z
     description: z.string().max(8000).optional(),
     location: z.string().trim().max(300).optional(),
     allDay: z.boolean().optional().default(false),
-    timezone: z.string().trim().min(1).max(64).optional().default('Europe/Moscow'),
+    // Ф3 — статический дефолт 'Europe/Moscow' убран: теперь дефолт = TZ
+    // организатора (Person→Org→Moscow), проставляется в EventsService.create.
+    timezone: z.string().trim().min(1).max(64).optional(),
     rrule: RruleStringSchema.optional(),
     projectId: z.string().min(1).max(80).optional(),
     participants: z.array(EventParticipantInputSchema).max(200).optional(),
     reminders: z.array(EventReminderInputSchema).max(20).optional(),
+    /** Ф6 — формат: true → онлайн (создаётся LiveKit-комната). Default false. */
+    online: z.boolean().optional().default(false),
+    /** Ф5 — контрагент/клиент встречи (с кем/какая компания). НЕ место. */
+    counterparty: z.string().trim().max(300).optional(),
   })
   .refine((v) => v.kind === 'personal_block' || v.kind === 'deadline' || v.endAt !== undefined, {
     path: ['endAt'],
@@ -113,6 +119,8 @@ export const UpdateEventSchema = z
     rrule: RruleStringSchema.nullable().optional(),
     status: EventStatusSchema.optional(),
     projectId: z.string().min(1).max(80).nullable().optional(),
+    online: z.boolean().optional(),
+    counterparty: z.string().trim().max(300).nullable().optional(),
   })
   .refine((v) => Object.keys(v).length > 0, {
     message: 'Передайте хотя бы одно поле для обновления',
@@ -160,6 +168,10 @@ export interface EventListItemDto {
   location: string | null;
   relatedMeetingId: string | null;
   joinUrl: string | null;
+  /** Ф6 — формат встречи: true → онлайн (есть/будет видеокомната). */
+  online: boolean;
+  /** Ф5 — контрагент/клиент («о ком/о чём» встреча). НЕ место (location). */
+  counterparty: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;

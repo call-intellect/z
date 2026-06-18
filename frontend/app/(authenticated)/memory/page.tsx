@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   MessageCircle,
-  Newspaper,
   ClipboardList,
   Lightbulb,
   AlertTriangle,
@@ -30,12 +29,6 @@ const ENTRIES: Entry[] = [
     label: "Спросить",
     desc: "Задайте вопрос — Кора ответит из памяти компании со ссылками на источники.",
     icon: MessageCircle,
-  },
-  {
-    href: "/feed",
-    label: "Лента Коры",
-    desc: "Новости компании с анализом: идеи, сигналы, блокеры, решения и вопросы.",
-    icon: Newspaper,
   },
 ];
 

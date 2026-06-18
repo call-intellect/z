@@ -31,3 +31,9 @@ body {
 .kora-video-solo .lk-participant-media-video[data-lk-source='camera'] {
   object-fit: contain;
 }
+
+/* LiveKit: в сетке участников показываем кадр камеры целиком (без обрезки головы).
+   Допустимы тёмные поля — приоритет «не резать лицо». */
+.kora-video-grid .lk-participant-media-video[data-lk-source='camera'] {
+  object-fit: contain;
+}

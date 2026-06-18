@@ -24,6 +24,7 @@ import { operationsDailyDigestApi } from "@/api/operations-daily-digest.api";
 import { operationsDashboardApi } from "@/api/operations-dashboard.api";
 import { onboardingApi } from "@/api/onboarding.api";
 import { useAuth } from "@/contexts/auth-context";
+import { CoraFeedWidget } from "@/ui/components/feed/CoraFeedWidget";
 import { useSubscription } from "@/contexts/subscription-context";
 import { useMemberships } from "@/hooks/useMemberships";
 import {
@@ -434,6 +435,20 @@ export function DirectorDashboardClient() {
             error={!!checkinSwr.error}
           />
         </div>
+
+        {currentOrgId && (
+          <div className="mb-6">
+            <CoraFeedWidget
+              variant="compact"
+              orgId={currentOrgId}
+              canControl={
+                currentOrgRole === "owner" ||
+                currentOrgRole === "admin" ||
+                currentOrgRole === "coo"
+              }
+            />
+          </div>
+        )}
       </div>
     </div>
   );

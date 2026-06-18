@@ -15,6 +15,7 @@ import { PaywallModal } from "@/ui/components/PaywallModal";
 import { TrackerBottomNav } from "@/ui/tracker/TrackerBottomNav";
 import { MobileShell } from "@/ui/mobile/MobileShell";
 import { MobileTabBar } from "@/ui/mobile/MobileTabBar";
+import { Breadcrumbs } from "@/ui/components/breadcrumbs/Breadcrumbs";
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -31,7 +32,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         {}
         <main className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
           {}
-          <div className="hidden h-header items-center justify-end gap-2 border-b border-border-subtle bg-bg-surface/60 px-4 backdrop-blur-glass md:flex">
+          <div className="hidden h-header items-center justify-between gap-2 border-b border-border-subtle bg-bg-surface/60 px-4 backdrop-blur-glass md:flex">
+            <Breadcrumbs />
             <PendingActionsBell />
           </div>
           <PaywallBanner />

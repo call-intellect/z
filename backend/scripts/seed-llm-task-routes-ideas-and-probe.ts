@@ -56,6 +56,21 @@ const SEEDS: TaskRouteSeed[] = [
     ],
   },
   {
+    // Probe Фаза 2 (2026-06-17) — LLM-судья качества формулировки probe-вопроса.
+    // Цепочка как у probe-formulate (короткий промпт + JSON Schema).
+    taskType: 'probe-quality-judge',
+    playbookSection: '§2.1 short prompt + JSON Schema + probe Ф2',
+    chain: [
+      { tier: 'primary', providerName: 'deepseek', model: 'deepseek-v4-flash' },
+      {
+        tier: 'secondary',
+        providerName: 'openai-via-proxy',
+        model: 'gpt-5.4-mini',
+      },
+      { tier: 'tertiary', providerName: 'ollama', model: 'qwen3:30b' },
+    ],
+  },
+  {
     taskType: 'idea-status-summarize',
     playbookSection: '§2.1 short summarize + β-5 §11',
     chain: [

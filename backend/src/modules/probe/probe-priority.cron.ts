@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { type Prisma } from '@prisma/client';
 
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RedisService } from '../../common/redis/redis.service';
+import { CoreQueueService } from '../core-queue/core-queue.service';
 
 import {
   PROBE_ENGAGEMENT_TTL_SEC,
@@ -24,13 +26,16 @@ export class ProbePriorityCron {
     private readonly metrics: BusinessMetricsService,
     @Inject(RedisService) private readonly redis: RedisService,
     @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
+    @Inject(CoreQueueService) private readonly queue: CoreQueueService,
   ) {}
 
   @Cron('*/15 * * * *')
   async sweep(): Promise<void> {
     try {
       const now = new Date();
-      const cutoff = new Date(now.getTime() - ProbePriorityCron.LOOKBACK_DAYS * 24 * 3600 * 1000);
+      const cutoff = new Date(
+        now.getTime() - ProbePriorityCron.LOOKBACK_DAYS * 24 * 3600 * 1000,
+      );
 
       const expiredCandidates = await this.prisma.probeEvent.findMany({
         where: {
@@ -43,14 +48,13 @@ export class ProbePriorityCron {
           reason: true,
           tenantId: true,
           contentHash: true,
+          payload: true,
+          recipientCandidates: true,
+          priority: true,
+          emittedByService: true,
         },
       });
-      const expirable: Array<{
-        id: string;
-        reason: string;
-        tenantId: string;
-        contentHash: string;
-      }> = [];
+      const expirable: ExpirableProbe[] = [];
       for (const cand of expiredCandidates) {
         if (cand.dispatchedNotificationId) {
           const n = await this.prisma.notification.findUnique({
@@ -64,8 +68,22 @@ export class ProbePriorityCron {
           reason: cand.reason,
           tenantId: cand.tenantId,
           contentHash: cand.contentHash,
+          payload: cand.payload,
+          recipientCandidates: cand.recipientCandidates,
+          priority: cand.priority,
+          emittedByService: cand.emittedByService,
         });
       }
+
+      const reaskEnabled = await this.readReaskEnabled();
+      const reaskGroup: ExpirableProbe[] = [];
+      const closeGroup: ExpirableProbe[] = [];
+      for (const e of expirable) {
+        const reaskCount = this.readReaskCount(e.payload);
+        if (reaskEnabled && reaskCount < 1) reaskGroup.push(e);
+        else closeGroup.push(e);
+      }
+
       let expiredCount = 0;
       if (expirable.length > 0) {
         const expired = await this.prisma.probeEvent.updateMany({
@@ -77,7 +95,8 @@ export class ProbePriorityCron {
         });
         expiredCount = expired.count;
         for (let i = 0; i < expired.count; i++) this.metrics.incProbeExpired();
-        await this.recordIgnoredOutcomes(expirable);
+        await this.recordIgnoredOutcomes(closeGroup);
+        for (const e of reaskGroup) await this.createReask(e);
       }
 
       const sent = await this.prisma.notification.groupBy({
@@ -113,11 +132,16 @@ export class ProbePriorityCron {
             'EX',
             PROBE_ENGAGEMENT_TTL_SEC,
           );
-        } catch {}
+        } catch {
+          /* eslint-disable-next-line no-empty */
+        }
         usersDone += 1;
       }
 
-      this.logger.debug({ expiredCount, users: usersDone }, 'probe-priority: sweep завершён');
+      this.logger.debug(
+        { expiredCount, users: usersDone },
+        'probe-priority: sweep завершён',
+      );
     } catch (err) {
       this.logger.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -127,8 +151,9 @@ export class ProbePriorityCron {
   }
 
   private async recordIgnoredOutcomes(
-    expired: Array<{ reason: string; tenantId: string; contentHash: string }>,
+    expired: ExpirableProbe[],
   ): Promise<void> {
+    if (expired.length === 0) return;
     for (const e of expired) {
       this.metrics.incProbeOutcome({ outcome: 'ignored', reason: e.reason });
     }
@@ -147,8 +172,94 @@ export class ProbePriorityCron {
             'EX',
             ttlSec,
           );
-        } catch {}
+        } catch {
+          /* eslint-disable-next-line no-empty */
+        }
       }
-    } catch {}
+    } catch {
+      /* eslint-disable-next-line no-empty */
+    }
   }
+
+  private async readReaskEnabled(): Promise<boolean> {
+    try {
+      return await this.cfg.getDynamic<boolean>(
+        'probe.reaskEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      return true;
+    }
+  }
+
+  private readReaskCount(payload: Prisma.JsonValue): number {
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const raw = (payload as Record<string, unknown>).reaskCount;
+      const n = typeof raw === 'number' ? raw : Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+    return 0;
+  }
+
+  private async createReask(src: ExpirableProbe): Promise<void> {
+    try {
+      const basePayload =
+        src.payload &&
+        typeof src.payload === 'object' &&
+        !Array.isArray(src.payload)
+          ? (src.payload as Record<string, unknown>)
+          : {};
+      const reaskPayload: Prisma.InputJsonValue = {
+        ...basePayload,
+        reaskCount: 1,
+        originalProbeEventId: src.id,
+      };
+      const reask = await this.prisma.probeEvent.create({
+        data: {
+          tenantId: src.tenantId,
+          emittedByService: src.emittedByService,
+          reason: src.reason,
+          payload: reaskPayload,
+          recipientCandidates: [...src.recipientCandidates],
+          contentHash: src.contentHash,
+          priority: src.priority,
+          status: 'pending',
+          expiresAt: this.computeExpiresAt(),
+        },
+      });
+      this.metrics.incProbeEvent({
+        emittedByService: src.emittedByService,
+        reason: src.reason,
+        status: 'pending',
+      });
+      await this.queue.enqueueProbeEvent({ probeEventId: reask.id });
+      this.logger.log(
+        `probe re-ask: создан переспрос id=${reask.id} (исходный=${src.id} reason=${src.reason})`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        {
+          originalProbeEventId: src.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-priority: createReask упал — переспрос не создан (исходный уже expired)',
+      );
+    }
+  }
+
+  private computeExpiresAt(): Date {
+    return new Date(Date.now() + this.cfg.probe.expiryDays * 24 * 3600 * 1000);
+  }
+}
+
+interface ExpirableProbe {
+  id: string;
+  reason: string;
+  tenantId: string;
+  contentHash: string;
+  payload: Prisma.JsonValue;
+  recipientCandidates: string[];
+  priority: number;
+  emittedByService: string;
 }

@@ -266,6 +266,8 @@ Bearer-токен `TELEGRAM_PROXY_TOKEN` (создаётся один раз в 
 - `telegram_proxy_request_duration_seconds{api_method}` — histogram.
 - `telegram_proxy_health_check_total{outcome}` — `ok | fail` (раз в 30 секунд).
 
+**Дедуп входящих + ранний ACK (ТЗ 2026-06-18 assistant-calendar, Ф1).** Webhook-контроллеры Telegram/MAX (`*-webhooks.controller.ts`) больше не обрабатывают апдейт синхронно в HTTP-цикле. На входе — **дедуп** по идентификатору апдейта (Telegram `update_id` / MAX `mid`) через Redis `SET NX EX 3600` (повтор от прокси/Telegram-ретраев отбрасывается). Затем — **ранний ACK**: апдейт кладётся в новую BullMQ-очередь `assistant.inbound` (воркер `AssistantInboundWorker`, in-process, `attempts:1`, jobId-дедуп по тому же id), контроллер сразу отвечает `200`. Это снимает таймауты webhook'а при долгой LLM-обработке и двойную обработку при ретраях. Kill-switch `ASSISTANT_INBOUND_ASYNC_ENABLED` (дефолт ON; OFF → прежняя синхронная обработка). Очередь/воркер — `conversational/queue/assistant-inbound*.ts`, см. [[workers-queues]] §«Очереди».
+
 **Аварийный rollback на прямой Telegram.** Переменная
 `TELEGRAM_PROXY_ENABLED=false` + рестарт backend → outbound идёт в
 `api.telegram.org` (legacy), `setWebhook` дёргает наш бэк. Inbound при

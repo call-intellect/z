@@ -87,6 +87,11 @@ const STEPS: Step[] = [
   },
   {
     phase: 'seed-base',
+    script: 'scripts/seed-admin-setting-work-hours.ts',
+    hint: 'work_hours_default_{start,end} + work_days_default + default_timezone — дефолты рабочего профиля (calendar-master Ф4)',
+  },
+  {
+    phase: 'seed-base',
     script: 'scripts/seed-admin-setting-chat-v2-tables.ts',
     hint: 'chat_v2.table_context_max_rows=20 + max_tables=2 — лимиты параллельной ветки умных таблиц chat_v2 (ТЗ 2026-06-15 §7 ЧАСТЬ B)',
   },
@@ -437,6 +442,7 @@ const STEPS: Step[] = [
   { phase: 'backfill', script: 'scripts/backfill-meeting-sources-fase1.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-entity-link-types-fase0.ts', skipBootstrap: true },
   { phase: 'backfill', script: 'scripts/backfill-commitment-due-dates.ts', skipBootstrap: true },
+  { phase: 'backfill', script: 'scripts/backfill-meeting-linked-ids.ts', hint: 'IntakeIssue.meetingId → Issue.linkedMeetingIds backfill (intake-issue-linked-meeting-ids-fix, только meeting:-формат externalId)', skipBootstrap: true },
   {
     phase: 'backfill',
     script: 'scripts/backfill-decision-linked-task-count.ts',

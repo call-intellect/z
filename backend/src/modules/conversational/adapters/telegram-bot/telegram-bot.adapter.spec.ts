@@ -37,35 +37,35 @@ function makeChannel(opts: { global?: boolean } = {}): Channel {
   } as Channel;
 }
 
-function makeAdapter(
-  opts: {
-    voiceEnabled?: boolean;
-    documentEnabled?: boolean;
-    intentClassifierEnabled?: boolean;
-    assistantChannelRoutingEnabled?: boolean;
-    classifyIntent?:
-      | 'factual'
-      | 'exploratory'
-      | 'analytical'
-      | 'clone_roleplay'
-      | 'daily_plan_morning'
-      | 'daily_report_evening'
-      | 'note';
-    classifyConfidence?: number;
-    withTaskHandler?: boolean;
-    classifyThrows?: boolean;
-    rateLimitCount?: number;
-    accountsRequestThrows?: boolean;
-    withAccounts?: boolean;
-  } = {},
-) {
+function makeAdapter(opts: {
+  voiceEnabled?: boolean;
+  documentEnabled?: boolean;
+  intentClassifierEnabled?: boolean;
+  assistantChannelRoutingEnabled?: boolean;
+  classifyIntent?:
+    | 'factual'
+    | 'exploratory'
+    | 'analytical'
+    | 'clone_roleplay'
+    | 'daily_plan_morning'
+    | 'daily_report_evening'
+    | 'note'
+    | 'probe_reply';
+  classifyConfidence?: number;
+  probeReplyMinConfidence?: number;
+  withTaskHandler?: boolean;
+  classifyThrows?: boolean;
+  rateLimitCount?: number;
+  accountsRequestThrows?: boolean;
+  withAccounts?: boolean;
+} = {}) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
     channelBinding: {
       findFirst: vi.fn(),
       upsert: vi.fn(),
     },
-    notification: { findUnique: vi.fn() },
+    notification: { findUnique: vi.fn(), findFirst: vi.fn().mockResolvedValue(null) },
     notificationDelivery: { findFirst: vi.fn() },
     channel: { findMany: vi.fn().mockResolvedValue([]) },
     person: { findFirst: vi.fn() },
@@ -136,6 +136,9 @@ function makeAdapter(
       intentClassifierEnabled: opts.intentClassifierEnabled ?? true,
       assistantChannelRoutingEnabled: opts.assistantChannelRoutingEnabled ?? false,
     },
+    getDynamic: vi
+      .fn()
+      .mockResolvedValue(opts.probeReplyMinConfidence ?? 0.6),
   } as unknown as TypedConfigService;
 
   const accounts = (
@@ -636,6 +639,102 @@ describe('TelegramBotChannelAdapter.ingestUpdate (zero-button)', () => {
     expect(vi.mocked(mocks.metrics.incTelegramBotUnknownSender)).toHaveBeenCalledWith({
       reason: 'no_binding',
     });
+  });
+});
+
+describe('TelegramBotChannelAdapter.ingestUpdate (probe_reply без reply)', () => {
+  const pendingProbe = {
+    id: 'notif-probe-1',
+    payload: { question: 'Кто отвечает за это решение?' },
+  };
+
+  const textUpdate = (text: string, updateId = 400): TelegramUpdate => ({
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: 1700000000,
+      chat: { id: 100 },
+      from: { id: 100 },
+      text,
+    },
+  });
+
+  it('есть pending probe + классиф. probe_reply(0.8) → InboundMessage type=response с верным notificationId', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'probe_reply',
+      classifyConfidence: 0.8,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.notification.findFirst).mockResolvedValue(
+      pendingProbe as never,
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Да, отвечает Иванов'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'response',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      notificationId: 'notif-probe-1',
+      payload: { text: 'Да, отвечает Иванов', kind: 'implicit_response' },
+      originChannelBindingId: 'binding-1',
+    });
+    const classifyArg = vi.mocked(mocks.classifier.classify).mock
+      .calls[0]?.[0] as { openProbeQuestion?: string };
+    expect(classifyArg.openProbeQuestion).toBe('Кто отвечает за это решение?');
+  });
+
+  it('НЕТ pending probe → классификатор без openProbeQuestion, type НЕ response', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'factual',
+      classifyConfidence: 0.9,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.notification.findFirst).mockResolvedValue(null);
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?', 401),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).not.toBeNull();
+    expect((result as { type: string }).type).not.toBe('response');
+    expect((result as { type: string }).type).toBe('chat_query');
+    const classifyArg = vi.mocked(mocks.classifier.classify).mock
+      .calls[0]?.[0] as { openProbeQuestion?: string };
+    expect(classifyArg.openProbeQuestion).toBeUndefined();
+  });
+
+  it('probe_reply ниже порога уверенности → не response (free_note)', async () => {
+    const mocks = makeAdapter({
+      classifyIntent: 'probe_reply',
+      classifyConfidence: 0.4,
+      probeReplyMinConfidence: 0.6,
+    });
+    vi.mocked(mocks.prisma.channelBinding.findFirst).mockResolvedValue(
+      verifiedBinding(),
+    );
+    vi.mocked(mocks.prisma.notification.findFirst).mockResolvedValue(
+      pendingProbe as never,
+    );
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('что-то невнятное', 402),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect((result as { type: string }).type).not.toBe('response');
+    expect((result as { type: string }).type).toBe('free_note');
   });
 });
 

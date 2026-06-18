@@ -1,28 +1,30 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
-import { meetingReportsApi } from "@/api/meeting-reports.api";
+import { meetingReportsApi } from '@/api/meeting-reports.api';
 import {
   reportStatusLabel,
   type ReportListItemDomain,
-} from "@/domain/meeting-report";
+} from '@/domain/meeting-report';
 import {
   useAvailableReportTemplates,
   useMeetingReports,
-} from "@/hooks/use-meeting-reports";
-import { useEntitlement, useQuota } from "@/hooks/useEntitlement";
-import { toast } from "sonner";
-import { ConfirmDialog } from "@/ui/components/shared/ConfirmDialog";
-import { Button } from "@/ui/components/shared/Button";
-import { Modal } from "@/ui/components/shared/Modal";
+} from '@/hooks/use-meeting-reports';
+import { useEntitlement, useQuota } from '@/hooks/useEntitlement';
+import { toast } from 'sonner';
+import { ConfirmDialog } from '@/ui/components/shared/ConfirmDialog';
+import { Button } from '@/ui/components/shared/Button';
+import { Modal } from '@/ui/components/shared/Modal';
+import { cn } from '@/ui/shadcn/lib/utils';
 import {
   structuredFieldLabel,
   isEmptyStructuredValue,
   StructuredFieldValue,
-} from "./structured-report";
-import { ReportActions } from "./ReportActions";
+} from './structured-report';
+import { ReportActions } from './ReportActions';
 
 export type ReportsTabProps = {
   meetingId: string;
@@ -30,18 +32,33 @@ export type ReportsTabProps = {
 
 export function ReportsTab({ meetingId }: ReportsTabProps) {
   const { reports, isLoading, mutate } = useMeetingReports(meetingId);
-  const {
-    enabled: featureEnabled,
-    tier,
-    loading: entLoading,
-  } = useEntitlement("feature.multi_reports_per_meeting");
-  const { max: tierLimit } = useQuota("multi_reports_limit_per_meeting");
+  const { enabled: featureEnabled, tier, loading: entLoading } =
+    useEntitlement('feature.multi_reports_per_meeting');
+  const { max: tierLimit } = useQuota('multi_reports_limit_per_meeting');
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailId, setDetailId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (reports.length === 0) {
+      if (selectedId !== null) setSelectedId(null);
+      return;
+    }
+    const stillThere = selectedId && reports.some((r) => r.id === selectedId);
+    if (!stillThere) {
+      const fromUrl = searchParams.get('report');
+      const urlValid = fromUrl && reports.some((r) => r.id === fromUrl);
+      const primary = reports.find((r) => r.kind === 'primary') ?? reports[0];
+      setSelectedId(urlValid ? fromUrl : primary.id);
+    }
+  }, [reports, selectedId, searchParams]);
 
   const additionalCount = useMemo(
-    () => reports.filter((r) => r.kind === "additional").length,
+    () => reports.filter((r) => r.kind === 'additional').length,
     [reports],
   );
 
@@ -49,10 +66,17 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
   const addDisabled = !featureEnabled || entLoading || limitReached;
 
   const addTooltip = !featureEnabled
-    ? "Доступно на Pro / Business / Enterprise"
+    ? 'Доступно на Pro / Business / Enterprise'
     : limitReached
       ? `На вашем тарифе доступно ${tierLimit} дополнительных отчётов на встречу`
-      : "";
+      : '';
+
+  const selectReport = (id: string) => {
+    setSelectedId(id);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('report', id);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -72,7 +96,7 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
 
       {!featureEnabled && !entLoading && (
         <div className="rounded-md border border-chip-warning-bg bg-chip-warning-bg px-3 py-2 text-sm text-chip-warning-fg">
-          На вашем тарифе ({tier}) доступен только основной отчёт.{" "}
+          На вашем тарифе ({tier}) доступен только основной отчёт.{' '}
           <Link href="/settings/billing" className="font-medium underline">
             Перейти на Pro
           </Link>
@@ -87,16 +111,24 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
           У этой встречи пока нет отчётов.
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {reports.map((r) => (
-            <ReportCard
-              key={r.id}
-              meetingId={meetingId}
-              report={r}
-              onMutate={mutate}
-              onOpen={() => setDetailId(r.id)}
-            />
-          ))}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <div className="flex flex-col gap-3">
+            {reports.map((r) => (
+              <ReportCard
+                key={r.id}
+                meetingId={meetingId}
+                report={r}
+                onMutate={mutate}
+                active={r.id === selectedId}
+                onSelect={() => selectReport(r.id)}
+              />
+            ))}
+          </div>
+          <ReportInlinePanel
+            meetingId={meetingId}
+            reportId={selectedId}
+            reports={reports}
+          />
         </div>
       )}
 
@@ -109,12 +141,6 @@ export function ReportsTab({ meetingId }: ReportsTabProps) {
           mutate();
         }}
       />
-
-      <ReportDetailDialog
-        meetingId={meetingId}
-        reportId={detailId}
-        onClose={() => setDetailId(null)}
-      />
     </div>
   );
 }
@@ -123,18 +149,18 @@ function ReportCard({
   meetingId,
   report,
   onMutate,
-  onOpen,
+  active,
+  onSelect,
 }: {
   meetingId: string;
   report: ReportListItemDomain;
   onMutate: () => void;
-  onOpen: () => void;
+  active: boolean;
+  onSelect: () => void;
 }) {
-  const isPrimary = report.kind === "primary";
-  const isReady = report.status === "ready";
-  const isFailed = report.status === "failed";
-  const isInProgress =
-    report.status === "pending" || report.status === "running";
+  const isPrimary = report.kind === 'primary';
+  const isFailed = report.status === 'failed';
+  const isInProgress = report.status === 'pending' || report.status === 'running';
 
   const [busy, setBusy] = useState(false);
 
@@ -147,8 +173,8 @@ function ReportCard({
       await meetingReportsApi.regenerate(meetingId, report.id);
       onMutate();
     } catch (e) {
-      console.error("regenerate failed", e);
-      toast.error("Не удалось запустить регенерацию. Попробуйте позже.");
+      console.error('regenerate failed', e);
+      toast.error('Не удалось запустить регенерацию. Попробуйте позже.');
     } finally {
       setBusy(false);
     }
@@ -167,8 +193,8 @@ function ReportCard({
       await meetingReportsApi.remove(meetingId, report.id);
       onMutate();
     } catch (e) {
-      console.error("remove failed", e);
-      toast.error("Не удалось удалить отчёт.");
+      console.error('remove failed', e);
+      toast.error('Не удалось удалить отчёт.');
       throw e;
     } finally {
       setBusy(false);
@@ -176,62 +202,68 @@ function ReportCard({
   };
 
   return (
-    <article className="rounded-lg border border-border-subtle bg-bg-card p-4 shadow-sm">
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h4 className="truncate text-sm font-semibold text-fg-primary">
-              {report.templateName}
-            </h4>
-            {isPrimary && (
-              <span
-                title="Сгенерирован автоматически по типу встречи"
-                className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg"
-              >
-                Основной
-              </span>
-            )}
-          </div>
-          <div className="mt-1 text-xs text-fg-secondary">
-            {formatDate(report.createdAt)} ·{" "}
-            <span
-              className={
-                isFailed
-                  ? "text-danger"
-                  : isInProgress
-                    ? "text-warning"
-                    : "text-fg-secondary"
-              }
-            >
-              {reportStatusLabel(report.status)}
-            </span>
-          </div>
-        </div>
-      </header>
-
-      {report.outputPreview && (
-        <p className="mt-3 line-clamp-3 text-sm text-fg-secondary">
-          {report.outputPreview}
-        </p>
+    <article
+      className={cn(
+        'rounded-lg border bg-bg-card p-4 shadow-sm transition-colors',
+        active
+          ? 'border-accent ring-1 ring-accent'
+          : 'border-border-subtle hover:border-border',
       )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="block w-full text-left"
+      >
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h4 className="truncate text-sm font-semibold text-fg-primary">
+                {report.templateName}
+              </h4>
+              {isPrimary && (
+                <span
+                  title="Сгенерирован автоматически по типу встречи"
+                  className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-xs font-medium text-chip-info-fg"
+                >
+                  Основной
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-xs text-fg-secondary">
+              {formatDate(report.createdAt)} ·{' '}
+              <span
+                className={
+                  isFailed
+                    ? 'text-danger'
+                    : isInProgress
+                      ? 'text-warning'
+                      : 'text-fg-secondary'
+                }
+              >
+                {reportStatusLabel(report.status)}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {report.outputPreview && (
+          <p className="mt-3 line-clamp-3 text-sm text-fg-secondary">
+            {report.outputPreview}
+          </p>
+        )}
+      </button>
+
       {isFailed && report.errorMessage && (
         <p className="mt-3 text-sm text-danger">
-          {report.errorMessage === "cost_limit"
-            ? "Отчёт получился слишком дорогим — генерация прервана."
+          {report.errorMessage === 'cost_limit'
+            ? 'Отчёт получился слишком дорогим — генерация прервана.'
             : `Ошибка: ${report.errorMessage}`}
         </p>
       )}
 
-      <footer className="mt-3 flex flex-wrap items-center gap-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={!isReady}
-          onClick={onOpen}
-        >
-          Открыть
-        </Button>
-        {!isPrimary && (
+      {!isPrimary && (
+        <footer className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -241,8 +273,6 @@ function ReportCard({
           >
             Перегенерировать
           </Button>
-        )}
-        {!isPrimary && (
           <Button
             variant="ghost"
             size="sm"
@@ -252,8 +282,8 @@ function ReportCard({
           >
             Удалить
           </Button>
-        )}
-      </footer>
+        </footer>
+      )}
 
       <ConfirmDialog
         open={removeOpen}
@@ -279,9 +309,12 @@ function AddReportDialog({
   meetingId: string;
   onCreated: () => void;
 }) {
-  const { templates, isLoading } = useAvailableReportTemplates(meetingId, open);
+  const { templates, isLoading } = useAvailableReportTemplates(
+    meetingId,
+    open,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"system" | "org">("system");
+  const [tab, setTab] = useState<'system' | 'org'>('system');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -298,7 +331,8 @@ function AddReportDialog({
       await meetingReportsApi.create(meetingId, selectedId);
       onCreated();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Не удалось создать отчёт";
+      const msg =
+        e instanceof Error ? e.message : 'Не удалось создать отчёт';
       setError(msg);
     } finally {
       setBusy(false);
@@ -321,22 +355,22 @@ function AddReportDialog({
       <div className="mb-3 flex gap-2 border-b border-border-subtle">
         <button
           type="button"
-          onClick={() => setTab("system")}
+          onClick={() => setTab('system')}
           className={
-            tab === "system"
-              ? "border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent"
-              : "border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary"
+            tab === 'system'
+              ? 'border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent'
+              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary'
           }
         >
           Системные
         </button>
         <button
           type="button"
-          onClick={() => setTab("org")}
+          onClick={() => setTab('org')}
           className={
-            tab === "org"
-              ? "border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent"
-              : "border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary"
+            tab === 'org'
+              ? 'border-b-2 border-accent px-3 py-1.5 text-sm font-medium text-accent'
+              : 'border-b-2 border-transparent px-3 py-1.5 text-sm text-fg-secondary hover:text-fg-primary'
           }
         >
           Мои шаблоны
@@ -350,9 +384,9 @@ function AddReportDialog({
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-6 text-center text-sm text-fg-secondary">
-            {tab === "org"
-              ? "У вашей организации пока нет своих шаблонов."
-              : "Системные шаблоны не найдены."}
+            {tab === 'org'
+              ? 'У вашей организации пока нет своих шаблонов.'
+              : 'Системные шаблоны не найдены.'}
           </div>
         ) : (
           <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -363,8 +397,8 @@ function AddReportDialog({
                   onClick={() => setSelectedId(t.id)}
                   className={
                     selectedId === t.id
-                      ? "w-full rounded-md border-2 border-accent bg-chip-info-bg p-3 text-left"
-                      : "w-full rounded-md border border-border-subtle bg-bg-card p-3 text-left hover:border-border"
+                      ? 'w-full rounded-md border-2 border-accent bg-chip-info-bg p-3 text-left'
+                      : 'w-full rounded-md border border-border-subtle bg-bg-card p-3 text-left hover:border-border'
                   }
                 >
                   <div className="text-sm font-semibold text-fg-primary">
@@ -378,7 +412,7 @@ function AddReportDialog({
                   <div className="mt-2 text-xs text-fg-tertiary">
                     {t.meetingType
                       ? `для типа ${t.meetingType}`
-                      : "универсальный"}
+                      : 'универсальный'}
                   </div>
                 </button>
               </li>
@@ -394,7 +428,12 @@ function AddReportDialog({
       )}
 
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" size="md" onClick={onClose} disabled={busy}>
+        <Button
+          variant="ghost"
+          size="md"
+          onClick={onClose}
+          disabled={busy}
+        >
           Отмена
         </Button>
         <Button
@@ -411,22 +450,25 @@ function AddReportDialog({
   );
 }
 
-function ReportDetailDialog({
+function ReportInlinePanel({
   meetingId,
   reportId,
-  onClose,
+  reports,
 }: {
   meetingId: string;
   reportId: string | null;
-  onClose: () => void;
+  reports: ReportListItemDomain[];
 }) {
+  const report = reports.find((r) => r.id === reportId) ?? null;
+  const isReady = report?.status === 'ready';
+
   const [data, setData] = useState<Awaited<
     ReturnType<typeof meetingReportsApi.detail>
   > | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!reportId) {
+    if (!reportId || !isReady) {
       setData(null);
       return;
     }
@@ -446,15 +488,36 @@ function ReportDetailDialog({
     return () => {
       cancelled = true;
     };
-  }, [meetingId, reportId]);
+  }, [meetingId, reportId, isReady]);
+
+  if (!report) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-bg-card p-6 text-sm text-fg-secondary">
+        Выберите отчёт слева, чтобы открыть его здесь.
+      </div>
+    );
+  }
+
+  if (!isReady) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-bg-card p-6 text-sm text-fg-secondary">
+        {report.status === 'failed'
+          ? 'Этот отчёт не удалось сформировать.'
+          : 'Отчёт ещё готовится — откроется, как только будет готов.'}
+      </div>
+    );
+  }
 
   return (
-    <Modal
-      open={reportId !== null}
-      onClose={onClose}
-      title={data?.templateName ?? "Отчёт"}
-      className="max-w-3xl"
-    >
+    <div className="rounded-lg border border-border-subtle bg-bg-card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-base font-semibold text-fg-primary">
+          {data?.templateName ?? report.templateName}
+        </h4>
+        {data && (
+          <ReportActions output={data.output} title={data.templateName} />
+        )}
+      </div>
       {loading ? (
         <div className="py-6 text-center text-sm text-fg-secondary">
           Загружаем отчёт…
@@ -464,21 +527,9 @@ function ReportDetailDialog({
           Не удалось загрузить отчёт.
         </div>
       ) : (
-        <div className="max-h-[60vh] overflow-y-auto">
-          <ReportOutputRenderer output={data.output} />
-        </div>
+        <ReportOutputRenderer output={data.output} />
       )}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        {data ? (
-          <ReportActions output={data.output} title={data.templateName} />
-        ) : (
-          <span />
-        )}
-        <Button variant="secondary" onClick={onClose}>
-          Закрыть
-        </Button>
-      </div>
-    </Modal>
+    </div>
   );
 }
 
@@ -486,7 +537,7 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
   if (output === null || output === undefined) {
     return <div className="text-sm text-fg-secondary">Пустой отчёт.</div>;
   }
-  if (typeof output !== "object") {
+  if (typeof output !== 'object') {
     return <p className="text-sm text-fg-secondary">{String(output)}</p>;
   }
   const entries = Object.entries(output as Record<string, unknown>).filter(
@@ -512,10 +563,10 @@ function ReportOutputRenderer({ output }: { output: unknown | null }) {
 }
 
 function formatDate(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
   const yyyy = d.getFullYear();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
   return `${dd}.${mm}.${yyyy} в ${hh}:${mi}`;
 }

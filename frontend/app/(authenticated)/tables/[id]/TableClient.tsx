@@ -17,6 +17,7 @@ import {
   type TablePropType,
 } from "@/domain/table";
 import { Skeleton } from "@/ui/shadcn/skeleton";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 import {
   AdminEmpty,
@@ -82,6 +83,8 @@ function Content({ orgId, tableId }: { orgId: string; tableId: string }) {
   const isLoading =
     tableSwr.isLoading || propsSwr.isLoading || rowsSwr.isLoading;
   const error = tableSwr.error ?? propsSwr.error ?? rowsSwr.error;
+
+  useRegisterBreadcrumb(tableSwr.data ? { label: tableSwr.data.name } : null);
 
   const hydrate = useTableStore((s) => s.hydrate);
   const reset = useTableStore((s) => s.reset);

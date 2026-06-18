@@ -3682,6 +3682,14 @@ model Event {
   allDay           Boolean         @default(false)
   /// IANA timezone организатора (например, "Europe/Moscow").
   timezone         String          @default("Europe/Moscow") @db.VarChar(64)
+  /// calendar-master (2026-06-18) Ф6 — формат встречи. true → онлайн:
+  /// создаётся LiveKit-комната. По умолчанию false (офлайн / нейтральная
+  /// запись в календарь, без видео). Отделено от kind (тип события) — Р1-A.
+  online           Boolean         @default(false)
+  /// calendar-master (2026-06-18) Ф5 — контрагент/клиент встречи
+  /// («Александр, молочный завод»): с кем и какая компания. НЕ путать с
+  /// location (физическое место проведения) — это бизнес-контекст «о ком/о чём».
+  counterparty     String?         @db.VarChar(300)
   /// RFC-5545 RRULE для повторяющихся событий. В MVP — только пресеты
   /// (FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;BYDAY=...]). Полный парсер — Фаза 3.
   rrule            String?
@@ -4876,6 +4884,13 @@ model Person {
   /// `patch-person-timezone-default.ts`. Person может править через
   /// `/me/settings` (когда появится UI).
   timezone                    String?            @default("Europe/Moscow") @db.VarChar(64)
+  /// calendar-master (2026-06-18) Ф4 — рабочий профиль человека (когда он
+  /// работает). NULL/[] = брать дефолт из AdminSetting (work_hours_default_*).
+  /// Источник правды для find_free_slot и расчёта «сегодня/рабочее время».
+  workStartHour               Int?
+  workEndHour                 Int?
+  /// Рабочие дни недели: 0=вс, 1=пн … 6=сб. [] (пусто) = брать дефолт.
+  workingDays                 Int[]              @default([])
   /// Pulse Wave 3 §3.3 — сводный engagement score от Engagement-Scorer cron.
   /// Decimal(4,3): 0..1, нормированный к личному baseline.
   /// NULL до первого прогона cron'а.
@@ -6557,6 +6572,10 @@ model ProbeEvent {
   /// W4.2 (2026-05-25) — audit-trail вычисления dataClass probe-payload'а
   /// (для compliance — мы храним вопрос-предложение, иногда чувствительный).
   dataClassAudit           Json?
+
+  /// Ф4 (2026-06-17) — эмбеддинг сформулированного/исходного вопроса для
+  /// семантического дедупа близких по смыслу probe (а не только точного content-hash).
+  questionEmbedding Unsupported("vector(1536)")?
 
   org Org @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -9673,6 +9692,10 @@ model IntakeIssue {
   externalSource String?
   externalId     String?
 
+  // Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
+  // При авто-приёме (IntakeAutoTriageWorker) прокидывается в Issue.linkedMeetingIds.
+  meetingId      String?
+
   rawContent           String  @db.Text // исходный текст
   extractedTitle       String?
   extractedDescription String? @db.Text
@@ -9724,6 +9747,7 @@ model IntakeIssue {
   @@index([tenantId, status])
   @@index([source, createdAt])
   @@index([tenantId, status, expiresAt])
+  @@index([meetingId])
 }
 
 /// Исходящий webhook для внешних интеграций. `secretKey` хранится с префиксом

@@ -1,23 +1,24 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { X } from "lucide-react";
+import { useState, useEffect } from 'react';
+import useSWR from 'swr';
+import { X } from 'lucide-react';
 
-import { Button } from "@/ui/shadcn/button";
-import { useAuth } from "@/contexts/auth-context";
-import { useOrgSetup } from "@/hooks/useOrgSetup";
-import { useTourContext } from "@/ui/tour";
-import type { OrgApi } from "@/api/orgs.api";
+import { Button } from '@/ui/shadcn/button';
+import { useAuth } from '@/contexts/auth-context';
+import { useOrgSetup } from '@/hooks/useOrgSetup';
+import { useTourContext } from '@/ui/tour';
+import { onboardingApi, type SetupProgressApi } from '@/api/onboarding.api';
 
-const DISMISS_KEY = "onboarding.banner.dismissed";
+const DISMISS_KEY = 'onboarding.banner.dismissed';
 
-const STEP_LABELS: { field: keyof OrgApi; label: string }[] = [
-  { field: "companyInfoCompletedAt", label: "заполнить данные компании" },
-  { field: "departmentsCompletedAt", label: "добавить отделы" },
-  { field: "rolesCompletedAt", label: "завести должности" },
-  { field: "teamInvitedAt", label: "пригласить команду" },
-  { field: "firstSprintCreatedAt", label: "создать первый спринт" },
-  { field: "firstMeetingCreatedAt", label: "провести первую встречу" },
+const SETUP_STEPS: { key: keyof SetupProgressApi['steps']; label: string }[] = [
+  { key: 'welcome', label: 'познакомить Кору с компанией' },
+  { key: 'companyInfo', label: 'заполнить данные компании' },
+  { key: 'departments', label: 'добавить отделы' },
+  { key: 'roles', label: 'завести должности' },
+  { key: 'team', label: 'пригласить команду' },
+  { key: 'firstActivity', label: 'провести первую встречу или создать спринт' },
 ];
 
 export function IncompleteSetupBanner() {
@@ -27,22 +28,31 @@ export function IncompleteSetupBanner() {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setDismissed(localStorage.getItem(DISMISS_KEY) === "1");
+    if (typeof window !== 'undefined') {
+      setDismissed(localStorage.getItem(DISMISS_KEY) === '1');
     }
   }, []);
 
+  const progressSwr = useSWR(
+    currentOrgId ? ['onboarding-setup-progress', currentOrgId] : null,
+    () => onboardingApi.getSetupProgress(currentOrgId!),
+    { revalidateOnFocus: false, shouldRetryOnError: false },
+  );
+
   if (setupCompletedAt || dismissed || !org || isSuperAdmin) return null;
 
-  const completed = STEP_LABELS.filter((s) => org[s.field] != null).length;
-  const pending = STEP_LABELS.filter((s) => org[s.field] == null);
+  const progress = progressSwr.data;
+  if (!progress) return null;
+
+  const completed = progress.completed;
+  const pending = SETUP_STEPS.filter((s) => progress.steps[s.key] === false);
 
   const handleContinue = () => {
-    forceStart("welcome");
+    forceStart('welcome');
   };
 
   const handleDismiss = () => {
-    localStorage.setItem(DISMISS_KEY, "1");
+    localStorage.setItem(DISMISS_KEY, '1');
     setDismissed(true);
   };
 
@@ -55,11 +65,7 @@ export function IncompleteSetupBanner() {
           </p>
           {pending.length > 0 && (
             <p className="mt-1 text-xs text-fg-secondary">
-              Осталось:{" "}
-              {pending
-                .slice(0, 3)
-                .map((s) => s.label)
-                .join(", ")}
+              Осталось: {pending.slice(0, 3).map((s) => s.label).join(', ')}
               {pending.length > 3 && ` и ещё ${pending.length - 3}`}
             </p>
           )}

@@ -1,28 +1,34 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { TypedConfigService } from '../../../../common/config';
 import type { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../../../common/prisma/prisma.service';
 import type { RedisService } from '../../../../common/redis/redis.service';
 import type { ConversationalService } from '../../conversational.service';
+import type { AssistantInboundQueueService } from '../../queue/assistant-inbound-queue.service';
 
 import type { TelegramBotChannelAdapter } from './telegram-bot.adapter';
 import { TelegramWebhooksController } from './telegram-webhooks.controller';
 
 const SECRET = 'webhook-secret-42';
 
-function build(
-  opts: {
-    globalChannel?: { id: string; status: string } | null;
-    perTenantChannel?: { id: string; status: string } | null;
-    readSecret?: string | null;
-    adapterIngestReturns?: 'inbound' | 'null' | 'throw';
-    dispatchThrows?: boolean;
-  } = {},
-) {
-  const globalChannel =
-    opts.globalChannel === undefined ? { id: 'global-1', status: 'active' } : opts.globalChannel;
-  const perTenantChannel = opts.perTenantChannel === undefined ? null : opts.perTenantChannel;
+function build(opts: {
+  globalChannel?: { id: string; status: string } | null;
+  perTenantChannel?: { id: string; status: string } | null;
+  readSecret?: string | null;
+  adapterIngestReturns?: 'inbound' | 'null' | 'throw';
+  dispatchThrows?: boolean;
+  redisSet?: 'OK' | 'null' | 'throw';
+  asyncEnabled?: boolean;
+  enqueueThrows?: boolean;
+} = {}) {
+  const globalChannel = opts.globalChannel === undefined
+    ? { id: 'global-1', status: 'active' }
+    : opts.globalChannel;
+  const perTenantChannel = opts.perTenantChannel === undefined
+    ? null
+    : opts.perTenantChannel;
 
   const prisma = {
     channel: {
@@ -62,12 +68,45 @@ function build(
     on: vi.fn(),
     quit: vi.fn(async () => undefined),
   };
+  const redisSet = vi.fn(async () => {
+    if (opts.redisSet === 'throw') throw new Error('redis down');
+    if (opts.redisSet === 'null') return null;
+    return 'OK';
+  });
   const redis = {
-    client: { duplicate: vi.fn(() => subscriber) },
+    client: { duplicate: vi.fn(() => subscriber), set: redisSet },
   } as unknown as RedisService;
 
-  const ctrl = new TelegramWebhooksController(prisma, adapter, conversational, metrics, redis);
-  return { ctrl, prisma, adapter, conversational, metrics, redis, subscriber };
+  const cfg = {
+    bot: { assistantInboundAsyncEnabled: opts.asyncEnabled ?? false },
+  } as unknown as TypedConfigService;
+
+  const enqueue = vi.fn(async () => {
+    if (opts.enqueueThrows) throw new Error('enqueue fail');
+  });
+  const inboundQueue = { enqueue } as unknown as AssistantInboundQueueService;
+
+  const ctrl = new TelegramWebhooksController(
+    prisma,
+    adapter,
+    conversational,
+    metrics,
+    redis,
+    cfg,
+    inboundQueue,
+  );
+  return {
+    ctrl,
+    prisma,
+    adapter,
+    conversational,
+    metrics,
+    redis,
+    redisSet,
+    subscriber,
+    cfg,
+    inboundQueue,
+  };
 }
 
 const validBody = {
@@ -246,5 +285,88 @@ describe('TelegramWebhooksController — pub/sub invalidation (2026-05-26 Phase 
     await ctrl.onModuleInit();
     await ctrl.onModuleDestroy();
     expect(subscriber.quit).toHaveBeenCalledOnce();
+  });
+});
+
+describe('TelegramWebhooksController — Ф1 дедуп + ранний ACK (calendar-master)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Тело с явным update_id — на нём строится дедуп-ключ.
+  const body42 = {
+    update_id: 42,
+    message: {
+      message_id: 11,
+      chat: { id: 100, type: 'private' },
+      from: { id: 5, is_bot: false },
+      text: 'привет',
+      date: 1700000000,
+    },
+  };
+
+  it('async ON: первый update_id=42 (SET вернул OK) → enqueue 1×, dispatch НЕ вызван, 200', async () => {
+    const { ctrl, redisSet, inboundQueue, conversational } = build({
+      asyncEnabled: true,
+    });
+    const res = await ctrl.receiveGlobal(body42 as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(redisSet).toHaveBeenCalledWith(
+      'tg:update:global-1:42',
+      '1',
+      'EX',
+      3600,
+      'NX',
+    );
+    expect(inboundQueue.enqueue).toHaveBeenCalledOnce();
+    expect(inboundQueue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inbound: expect.objectContaining({ type: 'tg_msg' }),
+        dedupeId: 'global-1:42',
+      }),
+    );
+    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
+  });
+
+  it('дубль: SET вернул null → ни enqueue, ни dispatch, 200', async () => {
+    const { ctrl, inboundQueue, conversational, adapter } = build({
+      asyncEnabled: true,
+      redisSet: 'null',
+    });
+    const res = await ctrl.receiveGlobal(body42 as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    // Дедуп срабатывает ДО ingestUpdate — адаптер тоже не дёргается.
+    expect(adapter.ingestUpdate).not.toHaveBeenCalled();
+    expect(inboundQueue.enqueue).not.toHaveBeenCalled();
+    expect(conversational.dispatchInbound).not.toHaveBeenCalled();
+  });
+
+  it('async OFF: dispatch вызван, enqueue НЕ вызван', async () => {
+    const { ctrl, inboundQueue, conversational } = build({
+      asyncEnabled: false,
+    });
+    const res = await ctrl.receiveGlobal(body42 as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
+    expect(inboundQueue.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('Redis fail-open: SET бросает → обработка продолжается (enqueue вызван), 200', async () => {
+    const { ctrl, inboundQueue } = build({
+      asyncEnabled: true,
+      redisSet: 'throw',
+    });
+    const res = await ctrl.receiveGlobal(body42 as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(inboundQueue.enqueue).toHaveBeenCalledOnce();
+  });
+
+  it('enqueue fallback: enqueue бросает → синхронный dispatch вызван, 200', async () => {
+    const { ctrl, inboundQueue, conversational } = build({
+      asyncEnabled: true,
+      enqueueThrows: true,
+    });
+    const res = await ctrl.receiveGlobal(body42 as never, SECRET);
+    expect(res).toEqual({ ok: true });
+    expect(inboundQueue.enqueue).toHaveBeenCalledOnce();
+    expect(conversational.dispatchInbound).toHaveBeenCalledOnce();
   });
 });

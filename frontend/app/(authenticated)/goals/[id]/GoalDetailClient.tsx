@@ -65,6 +65,7 @@ import {
 } from "@/domain/goal";
 import { themeFromApi } from "@/domain/theme";
 import { pluralRu } from "@/domain/contribution";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 import {
@@ -106,6 +107,8 @@ export function GoalDetailClient({ goalId }: { goalId: string }) {
       return goalDetailFromApi(api);
     },
   );
+
+  useRegisterBreadcrumb(data ? { label: data.name } : null);
 
   const [editOpen, setEditOpen] = useState(false);
   const [recomputing, setRecomputing] = useState(false);

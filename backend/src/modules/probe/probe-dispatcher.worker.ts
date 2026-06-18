@@ -8,6 +8,7 @@ import {
 import { type DataClass, type ProbeEvent } from '@prisma/client';
 import { type Job, Worker } from 'bullmq';
 
+
 import { TypedConfigService } from '../../common/config/index';
 import { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -24,7 +25,10 @@ import {
 } from '../knowledge-core/prompts/probe-formulate.prompt';
 import { PipelineRunner, SystemLogPipeline } from '../logging/log-pipeline';
 
-import { probeTopicCooldownRedisKey } from './probe-fatigue.util';
+import {
+  probeEngagementRedisKey,
+  probeTopicCooldownRedisKey,
+} from './probe-fatigue.util';
 import {
   PROBE_REASON_FALLBACK,
   PROBE_REASON_FALLBACK_DEFAULT,
@@ -33,9 +37,32 @@ import {
 } from './probe-reason-labels';
 import { PROBE_REASON_RECHECK, probeWindow } from './probe-reason-policy';
 import { ProbeService } from './probe.service';
+import {
+  PROBE_QUALITY_JUDGE_JSON_SCHEMA,
+  PROBE_QUALITY_JUDGE_SCHEMA_NAME,
+  PROBE_QUALITY_JUDGE_SYSTEM_PROMPT,
+  PROBE_QUALITY_JUDGE_USER,
+} from './prompts/probe-quality-judge.prompt';
 
 interface FormulatedProbe {
   question: string;
+}
+
+interface ProbeQualityVerdict {
+  ok: boolean;
+  issues?: string[];
+  rewrite?: string;
+}
+
+export function passesMarkerCheck(q: string): boolean {
+  const text = (q ?? '').trim();
+  if (text.length === 0) return false;
+  if (text.length > 400) return false;
+  const questionMarks = (text.match(/\?/g) ?? []).length;
+  if (questionMarks !== 1) return false;
+  if (/[A-Za-z]{4,}/.test(text)) return false;
+  if (/[A-Za-z0-9]{16,}/.test(text)) return false;
+  return true;
 }
 
 export function humanizeProbeFallback(message: string): string {
@@ -89,7 +116,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'probe-dispatcher: job failed (повтор по политике BullMQ)',
       );
     });
-    this.logger.debug(`ProbeDispatcherWorker запущен (${CORE_QUEUE_NAMES.PROBE_EVENTS})`);
+    this.logger.log(
+      `ProbeDispatcherWorker запущен (${CORE_QUEUE_NAMES.PROBE_EVENTS})`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -115,7 +144,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const candidates = await this.probeService.filterByRateLimit(probe.recipientCandidates);
+    const candidates = await this.probeService.filterByRateLimit(
+      probe.recipientCandidates,
+    );
     if (candidates.length === 0) {
       if (probeWindow(probe.reason) === 'deferrable') {
         await this.prisma.probeEvent.update({
@@ -157,13 +188,13 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         reason: probe.reason,
         status: 'queued_digest',
       });
-      this.logger.debug(
+      this.logger.log(
         `probe отложен в дайджест: priority < immediatePushMinPriority (id=${probe.id} priority=${probe.priority} порог=${minPriority})`,
       );
       return;
     }
 
-    const selectedUserId = candidates[0];
+    const selectedUserId = await this.selectRecipient(candidates);
     if (!selectedUserId) return;
 
     const recheck = PROBE_REASON_RECHECK[probe.reason];
@@ -174,7 +205,8 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           prisma: this.prisma,
           tenantId: probe.tenantId,
           contextCardId: this.toStringOrUndef(probePayload.contextCardId) ?? null,
-          contextCardKind: this.toStringOrUndef(probePayload.contextCardKind) ?? null,
+          contextCardKind:
+            this.toStringOrUndef(probePayload.contextCardKind) ?? null,
         });
         if (!stillRelevant) {
           await this.prisma.probeEvent.update({
@@ -186,7 +218,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
             reason: probe.reason,
             status: 'suppressed_stale',
           });
-          this.logger.debug(
+          this.logger.log(
             `probe suppressed_stale: id=${probe.id} reason=${probe.reason} (повод закрылся между suggest и dispatch)`,
           );
           return;
@@ -204,6 +236,11 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
 
     const formulated = await this.formulate(probe);
 
+    const finalQuestion =
+      probe.reason === 'skill.cdm_interview'
+        ? formulated.question
+        : await this.judgeQuality(probe, formulated.question);
+
     const payload = (probe.payload ?? {}) as Record<string, unknown>;
     const dataClass = this.extractDataClass(payload);
     try {
@@ -212,7 +249,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         recipientUserId: selectedUserId,
         eventType: 'probe.question',
         payload: {
-          question: formulated.question,
+          question: finalQuestion,
           askedBy: probe.emittedByService,
           context: typeof payload.message === 'string' ? payload.message : undefined,
         },
@@ -231,7 +268,7 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           dispatchedNotificationId: notif.id,
           payload: {
             ...payload,
-            formulatedQuestion: formulated.question,
+            formulatedQuestion: finalQuestion,
           },
         },
       });
@@ -240,9 +277,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         reason: probe.reason,
         status: 'dispatched',
       });
-      this.metrics.incProbeDispatched({ kind: 'in_app' });
+      const dispatchedKind = await this.lookupDeliveryKind(notif.id);
+      this.metrics.incProbeDispatched({ kind: dispatchedKind ?? 'in_app' });
       await this.setTopicCooldown(probe.tenantId, probe.contentHash);
-      this.logger.debug(
+      this.logger.log(
         `probe dispatched: id=${probe.id} userId=${selectedUserId} reason=${probe.reason}`,
       );
     } catch (err) {
@@ -268,7 +306,9 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     const fallbackQuestion =
-      suggestedQuestion ?? PROBE_REASON_FALLBACK[probe.reason] ?? PROBE_REASON_FALLBACK_DEFAULT;
+      suggestedQuestion ??
+      PROBE_REASON_FALLBACK[probe.reason] ??
+      PROBE_REASON_FALLBACK_DEFAULT;
     const fallback: FormulatedProbe = {
       question: fallbackQuestion,
     };
@@ -276,8 +316,11 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     try {
       const contextKind = this.toStringOrUndef(payload.contextCardKind);
       const contextTitle = this.toStringOrUndef(payload.contextCardTitle);
-      const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
-      const reasonLabel = PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
+      const guardOn =
+        this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const reasonLabel =
+        PROBE_REASON_LABEL[probe.reason] ?? PROBE_REASON_LABEL_DEFAULT;
+      const isReask = this.readReaskCount(payload) >= 1;
       const guarded = applyInputGuards(
         PROBE_FORMULATE_SYSTEM_PROMPT,
         PROBE_FORMULATE_USER_TEMPLATE({
@@ -285,7 +328,10 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
           message,
           suggestedActions,
           contextCard:
-            contextKind && contextTitle ? { kind: contextKind, title: contextTitle } : null,
+            contextKind && contextTitle
+              ? { kind: contextKind, title: contextTitle }
+              : null,
+          isReask,
         }),
         { enabled: guardOn, injection: true },
       );
@@ -304,7 +350,11 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         dataClass: this.extractDataClass(payload),
       });
       const parsed = JSON.parse(result.text) as FormulatedProbe;
-      if (parsed && typeof parsed.question === 'string' && parsed.question.length > 0) {
+      if (
+        parsed &&
+        typeof parsed.question === 'string' &&
+        parsed.question.length > 0
+      ) {
         return {
           question: parsed.question.slice(0, 400),
         };
@@ -322,7 +372,77 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async setTopicCooldown(tenantId: string, contentHash: string): Promise<void> {
+  private async judgeQuality(
+    probe: ProbeEvent,
+    question: string,
+  ): Promise<string> {
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.qualityJudgeEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return question;
+
+    const payload = (probe.payload ?? {}) as Record<string, unknown>;
+    try {
+      const guardOn = this.cfg.aiFeatures?.promptInjectionGuardEnabled !== false;
+      const guarded = applyInputGuards(
+        PROBE_QUALITY_JUDGE_SYSTEM_PROMPT,
+        PROBE_QUALITY_JUDGE_USER({ question }),
+        { enabled: guardOn, injection: true },
+      );
+      const result = await this.llm.call({
+        taskType: 'probe-quality-judge',
+        systemPrompt: guarded.system,
+        userMessage: guarded.user,
+        tenantId: probe.tenantId,
+        responseFormat: {
+          type: 'json_schema',
+          name: PROBE_QUALITY_JUDGE_SCHEMA_NAME,
+          schema: PROBE_QUALITY_JUDGE_JSON_SCHEMA,
+          strict: true,
+        },
+        sourceRef: { type: 'probe', id: probe.id },
+        dataClass: this.extractDataClass(payload),
+      });
+      const verdict = JSON.parse(result.text) as ProbeQualityVerdict;
+      if (verdict && verdict.ok === true) {
+        this.metrics.incProbeQualityJudged({ verdict: 'ok' });
+        return question;
+      }
+      const rewrite =
+        typeof verdict?.rewrite === 'string' ? verdict.rewrite.trim() : '';
+      if (verdict && verdict.ok === false && passesMarkerCheck(rewrite)) {
+        this.metrics.incProbeQualityJudged({ verdict: 'rewritten' });
+        this.logger.log(
+          `probe-quality-judge: вопрос переформулирован (id=${probe.id} issues=${(verdict.issues ?? []).join(',')})`,
+        );
+        return rewrite;
+      }
+      this.metrics.incProbeQualityJudged({ verdict: 'kept_on_fail' });
+      return question;
+    } catch (err) {
+      this.logger.debug(
+        {
+          probeEventId: probe.id,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-dispatcher: probe-quality-judge упал — отправляю исходный вопрос (best-effort)',
+      );
+      this.metrics.incProbeQualityJudged({ verdict: 'kept_on_fail' });
+      return question;
+    }
+  }
+
+  private async setTopicCooldown(
+    tenantId: string,
+    contentHash: string,
+  ): Promise<void> {
     try {
       const cooldownHours = await this.cfg.getDynamic<number>(
         'probe.topicCooldownHours',
@@ -336,12 +456,78 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
         'EX',
         ttlSec,
       );
-    } catch {}
+    } catch {
+      /* eslint-disable-next-line no-empty */
+    }
+  }
+
+  private async selectRecipient(candidates: string[]): Promise<string | undefined> {
+    if (candidates.length === 0) return undefined;
+    if (candidates.length === 1) return candidates[0];
+
+    let enabled: boolean;
+    try {
+      enabled = await this.cfg.getDynamic<boolean>(
+        'probe.engagementRoutingEnabled',
+        undefined,
+        true,
+      );
+    } catch {
+      enabled = true;
+    }
+    if (!enabled) return candidates[0];
+
+    const scored: Array<{ userId: string; rate: number }> = [];
+    for (const userId of candidates) {
+      let rate = 0.5;
+      try {
+        const raw = await this.redis.client.get(
+          probeEngagementRedisKey(userId),
+        );
+        const parsed = raw != null ? Number(raw) : Number.NaN;
+        if (Number.isFinite(parsed)) rate = parsed;
+      } catch {
+        /* eslint-disable-next-line no-empty */
+      }
+      scored.push({ userId, rate });
+    }
+
+    scored.sort((a, b) => {
+      if (b.rate !== a.rate) return b.rate - a.rate;
+      return a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0;
+    });
+    return scored[0]!.userId;
+  }
+
+  private async lookupDeliveryKind(
+    notificationId: string,
+  ): Promise<string | null> {
+    try {
+      const d = await this.prisma.notificationDelivery.findFirst({
+        where: { notificationId },
+        include: { channelBinding: { include: { channel: true } } },
+      });
+      return d?.channelBinding?.channel?.kind ?? null;
+    } catch (err) {
+      this.logger.debug(
+        {
+          notificationId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'probe-dispatcher: lookupDeliveryKind упал — fallback in_app',
+      );
+      return null;
+    }
   }
 
   private extractDataClass(payload: Record<string, unknown>): DataClass {
     const dc = payload.dataClass;
-    if (dc === 'public' || dc === 'internal' || dc === 'sensitive' || dc === 'private') {
+    if (
+      dc === 'public' ||
+      dc === 'internal' ||
+      dc === 'sensitive' ||
+      dc === 'private'
+    ) {
       return dc;
     }
     return 'internal';
@@ -349,6 +535,12 @@ export class ProbeDispatcherWorker implements OnModuleInit, OnModuleDestroy {
 
   private toStringOrUndef(v: unknown): string | undefined {
     return typeof v === 'string' && v.length > 0 ? v : undefined;
+  }
+
+  private readReaskCount(payload: Record<string, unknown>): number {
+    const raw = payload.reaskCount;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(n) ? n : 0;
   }
 
   private toStringArray(v: unknown): string[] {

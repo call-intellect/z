@@ -1,10 +1,16 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { TypedConfigService } from '../../../common/config/index';
 import { BusinessMetricsService } from '../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
+import { localDayBoundsUtc } from '../../operations/utils/local-date';
 import type { FindFreeSlotResponse } from '../dto/events.dto';
 
 import { EventsService } from './events.service';
+
+const DEFAULT_WORK_START_HOUR = 9;
+const DEFAULT_WORK_END_HOUR = 18;
+const DEFAULT_WORKING_DAYS = [1, 2, 3, 4, 5];
 
 @Injectable()
 export class FindFreeSlotService {
@@ -15,6 +21,7 @@ export class FindFreeSlotService {
     @Inject(EventsService) private readonly events: EventsService,
     @Inject(BusinessMetricsService)
     private readonly metrics: BusinessMetricsService,
+    @Inject(TypedConfigService) private readonly cfg: TypedConfigService,
   ) {}
 
   async findFreeSlot(args: {
@@ -51,7 +58,11 @@ export class FindFreeSlotService {
 
     const merged = this.mergeIntervals(allBusy);
 
-    const organizerTz = await this.resolveOrganizerTimezone(args.participantUserIds[0]!);
+    const organizer = await this.resolveOrganizerProfile(
+      args.participantUserIds[0]!,
+      args.tenantId,
+    );
+    const organizerTz = organizer.timezone;
 
     const gaps: Array<{ start: Date; end: Date }> = [];
     let cursor = from;
@@ -71,6 +82,9 @@ export class FindFreeSlotService {
             gap: g,
             durationMs,
             timezone: organizerTz,
+            workStartHour: organizer.workStartHour,
+            workEndHour: organizer.workEndHour,
+            workingDays: organizer.workingDays,
           })
         : g.end.getTime() - g.start.getTime() >= durationMs
           ? { start: g.start, end: new Date(g.start.getTime() + durationMs) }
@@ -99,17 +113,25 @@ export class FindFreeSlotService {
     gap: { start: Date; end: Date };
     durationMs: number;
     timezone: string;
+    workStartHour: number;
+    workEndHour: number;
+    workingDays: number[];
   }): { start: Date; end: Date } | null {
-    const { gap, durationMs, timezone } = args;
+    const { gap, durationMs, timezone, workStartHour, workEndHour, workingDays } =
+      args;
     let cursor = new Date(gap.start);
     const MAX_DAYS = 14;
     for (let day = 0; day < MAX_DAYS; day++) {
       if (cursor >= gap.end) return null;
 
-      const { startOfDayUtc, dayOfWeek } = this.localDayBounds(cursor, timezone);
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        const workStart = new Date(startOfDayUtc.getTime() + 9 * 60 * 60_000);
-        const workEnd = new Date(startOfDayUtc.getTime() + 18 * 60 * 60_000);
+      const { startOfDayUtc, dayOfWeek } = localDayBoundsUtc(cursor, timezone);
+      if (workingDays.includes(dayOfWeek)) {
+        const workStart = new Date(
+          startOfDayUtc.getTime() + workStartHour * 60 * 60_000,
+        );
+        const workEnd = new Date(
+          startOfDayUtc.getTime() + workEndHour * 60 * 60_000,
+        );
         const subStart = cursor > workStart ? cursor : workStart;
         const subEnd = gap.end < workEnd ? gap.end : workEnd;
         if (subEnd.getTime() - subStart.getTime() >= durationMs) {
@@ -124,59 +146,13 @@ export class FindFreeSlotService {
     return null;
   }
 
-  private localDayBounds(
-    moment: Date,
-    timezone: string,
-  ): { startOfDayUtc: Date; dayOfWeek: number } {
-    try {
-      const fmt = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        weekday: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      });
-      const parts = fmt.formatToParts(moment);
-      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-      const y = Number(get('year'));
-      const m = Number(get('month'));
-      const d = Number(get('day'));
-      const hh = Number(get('hour'));
-      const mm = Number(get('minute'));
-      const ss = Number(get('second'));
-      const wd = get('weekday');
-      const wdMap: Record<string, number> = {
-        Sun: 0,
-        Mon: 1,
-        Tue: 2,
-        Wed: 3,
-        Thu: 4,
-        Fri: 5,
-        Sat: 6,
-      };
-      const dayOfWeek = wdMap[wd] ?? 0;
-      const sinceMidnight = ((hh * 60 + mm) * 60 + ss) * 1000;
-      const startOfDayUtc = new Date(moment.getTime() - sinceMidnight);
-      void y;
-      void m;
-      void d;
-      return { startOfDayUtc, dayOfWeek };
-    } catch {
-      const startOfDayUtc = new Date(moment);
-      startOfDayUtc.setUTCHours(0, 0, 0, 0);
-      return { startOfDayUtc, dayOfWeek: moment.getUTCDay() };
-    }
-  }
-
   private mergeIntervals(
     intervals: Array<{ start: Date; end: Date }>,
   ): Array<{ start: Date; end: Date }> {
     if (intervals.length === 0) return [];
-    const sorted = [...intervals].sort((a, b) => a.start.getTime() - b.start.getTime());
+    const sorted = [...intervals].sort(
+      (a, b) => a.start.getTime() - b.start.getTime(),
+    );
     const out: Array<{ start: Date; end: Date }> = [sorted[0]!];
     for (let i = 1; i < sorted.length; i++) {
       const last = out[out.length - 1]!;
@@ -190,9 +166,47 @@ export class FindFreeSlotService {
     return out;
   }
 
-  private async resolveOrganizerTimezone(userId: string): Promise<string> {
+  private async resolveOrganizerProfile(
+    userId: string,
+    tenantId: string,
+  ): Promise<{
+    timezone: string;
+    workStartHour: number;
+    workEndHour: number;
+    workingDays: number[];
+  }> {
     const person = await this.prisma.person.findFirst({
-      where: { userId, timezone: { not: null } },
+      where: { userId, tenantId },
+      select: {
+        timezone: true,
+        workStartHour: true,
+        workEndHour: true,
+        workingDays: true,
+      },
+    });
+
+    const timezone = await this.resolveOrganizerTimezone(userId, tenantId);
+
+    const workStartHour =
+      person?.workStartHour ??
+      (await this.getWorkHourDefault('work_hours_default_start', DEFAULT_WORK_START_HOUR));
+    const workEndHour =
+      person?.workEndHour ??
+      (await this.getWorkHourDefault('work_hours_default_end', DEFAULT_WORK_END_HOUR));
+    const workingDays =
+      person?.workingDays && person.workingDays.length > 0
+        ? person.workingDays
+        : await this.getWorkingDaysDefault();
+
+    return { timezone, workStartHour, workEndHour, workingDays };
+  }
+
+  private async resolveOrganizerTimezone(
+    userId: string,
+    tenantId: string,
+  ): Promise<string> {
+    const person = await this.prisma.person.findFirst({
+      where: { userId, tenantId, timezone: { not: null } },
       select: { timezone: true },
     });
     if (person?.timezone) return person.timezone;
@@ -203,5 +217,30 @@ export class FindFreeSlotService {
       orderBy: { joinedAt: 'asc' },
     });
     return membership?.org?.timezone ?? 'Europe/Moscow';
+  }
+
+  private async getWorkHourDefault(
+    key: 'work_hours_default_start' | 'work_hours_default_end',
+    fallback: number,
+  ): Promise<number> {
+    try {
+      const v = await this.cfg.getDynamic<number>(key, undefined, fallback);
+      return Number.isFinite(v) ? v : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async getWorkingDaysDefault(): Promise<number[]> {
+    try {
+      const v = await this.cfg.getDynamic<number[]>(
+        'work_days_default',
+        undefined,
+        DEFAULT_WORKING_DAYS,
+      );
+      return Array.isArray(v) && v.length > 0 ? v : DEFAULT_WORKING_DAYS;
+    } catch {
+      return DEFAULT_WORKING_DAYS;
+    }
   }
 }

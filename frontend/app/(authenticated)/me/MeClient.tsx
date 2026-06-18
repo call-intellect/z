@@ -37,6 +37,7 @@ import { MemoryHelpedMeWidget } from "./widgets/MemoryHelpedMeWidget";
 import { MyIdeasFateWidget } from "./widgets/MyIdeasFateWidget";
 import { MyWeeklyPlanFactWidget } from "./widgets/MyWeeklyPlanFactWidget";
 import { RecognitionInboxWidget } from "./widgets/RecognitionInboxWidget";
+import { CoraFeedWidget } from "@/ui/components/feed/CoraFeedWidget";
 
 export function MeClient() {
   const { currentOrgId, user, isLoading } = useAuth();
@@ -150,6 +151,10 @@ function Content({
       <MyDocumentsBlock orgId={orgId} />
 
       <MyMeetingsBlock />
+
+      <div className="mb-6">
+        <CoraFeedWidget variant="compact" orgId={orgId} canControl={false} />
+      </div>
     </ModernPageShell>
   );
 }

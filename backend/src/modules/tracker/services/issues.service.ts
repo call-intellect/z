@@ -215,6 +215,9 @@ export class IssuesService {
           ...(dto.sourceBlockIds && dto.sourceBlockIds.length > 0
             ? { sourceBlockIds: dto.sourceBlockIds }
             : {}),
+          ...(dto.linkedMeetingIds && dto.linkedMeetingIds.length > 0
+            ? { linkedMeetingIds: dto.linkedMeetingIds }
+            : {}),
           externalSource: dto.externalSource ?? null,
           externalId: dto.externalId ?? null,
           createdById: userId,

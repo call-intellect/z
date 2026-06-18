@@ -973,7 +973,7 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
   {
     href: "/memory",
     label: "Память",
-    subtitle: "Спросить, Лента Коры и реестры",
+    subtitle: "Спросить и реестры",
     icon: Network,
   },
   {

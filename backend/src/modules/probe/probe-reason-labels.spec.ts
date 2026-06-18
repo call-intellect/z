@@ -29,6 +29,15 @@ describe('probe-reason-labels', () => {
     expect(PROBE_REASON_FALLBACK_DEFAULT).toBe('Можете уточнить, пожалуйста?');
   });
 
+  it('Ф6 — attribution.unresolved_at_ingest зарегистрирован (label + fallback)', () => {
+    expect(PROBE_REASON_LABEL['attribution.unresolved_at_ingest']).toBe(
+      'новая сущность не привязана к отделу/клиенту',
+    );
+    const q = PROBE_REASON_FALLBACK['attribution.unresolved_at_ingest'];
+    expect(q).toBeDefined();
+    expect(q!.length).toBeGreaterThan(0);
+  });
+
   it('ни один ярлык/вопрос не содержит латиницы (англоязычных слов/кодов)', () => {
     const latin = /[A-Za-z]/;
     for (const v of Object.values(PROBE_REASON_LABEL)) {

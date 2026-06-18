@@ -20,7 +20,6 @@ import { cn } from "@/ui/shadcn/lib/utils";
 const MAX_CONTENT = 2000;
 const COUNTER_THRESHOLD = 1800;
 const ATTR_CLIENT_MESSAGE_ID = "clientMessageId";
-const TOPIC_PREFIX = "chat-";
 
 type Props = {
   open: boolean;
@@ -174,7 +173,6 @@ export function ChatPanel({ open, onClose, meetingId }: Props) {
     stickToBottomRef.current = true;
 
     const livekitSend = send(text, {
-      topic: TOPIC_PREFIX + clientMessageId,
       attributes: { [ATTR_CLIENT_MESSAGE_ID]: clientMessageId },
     }).catch(() => {});
 

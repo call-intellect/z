@@ -894,6 +894,7 @@ export class TypedConfigService {
       documentEnabled: this.get('BOT_DOCUMENT_ENABLED'),
       intentClassifierEnabled: this.get('BOT_INTENT_CLASSIFIER_ENABLED'),
       assistantChannelRoutingEnabled: this.get('ASSISTANT_CHANNEL_ROUTING_ENABLED'),
+      assistantInboundAsyncEnabled: this.get('ASSISTANT_INBOUND_ASYNC_ENABLED'),
     } as const;
   }
 

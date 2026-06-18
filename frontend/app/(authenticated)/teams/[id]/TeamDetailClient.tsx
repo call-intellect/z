@@ -28,6 +28,7 @@ import { KpiHero } from "@/ui/components/shared/KpiHero";
 import { Button } from "@/ui/shadcn/button";
 import { Skeleton } from "@/ui/shadcn/skeleton";
 import { cn } from "@/ui/shadcn/lib/utils";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 const SENTIMENT_CHIP_LABEL: Record<
   Exclude<TeamMemberSentimentApi, null>,
@@ -79,6 +80,8 @@ export function TeamDetailClient({ departmentId }: { departmentId: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useRegisterBreadcrumb(data ? { label: data.departmentName } : null);
 
   if (loading) {
     return (

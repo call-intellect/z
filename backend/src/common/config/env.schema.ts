@@ -423,6 +423,7 @@ const MaxBotChannelSchema = z.object({
   BOT_DOCUMENT_ENABLED: zBool(true),
   BOT_INTENT_CLASSIFIER_ENABLED: zBool(true),
   ASSISTANT_CHANNEL_ROUTING_ENABLED: zBool(true),
+  ASSISTANT_INBOUND_ASYNC_ENABLED: zBool(true),
   CHATBOX_API_BASE_URL: z.string().url().default('https://app.agent-lia.ru'),
   BITRIX_CLIENT_ID: z.string().optional(),
   BITRIX_CLIENT_SECRET: z.string().optional(),

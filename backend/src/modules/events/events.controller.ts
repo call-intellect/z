@@ -120,6 +120,24 @@ export class EventsController {
     });
   }
 
+  @Post('events/:id/make-online')
+  @ApiOperation({
+    summary: 'Сделать событие онлайн: создать видеокомнату (только owner/organizer)',
+  })
+  async makeOnline(
+    @Param('id') id: string,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<EventDto> {
+    const t = this.requireTenant(tenantId);
+    await this.requireWrite(user.id, t);
+    return this.events.makeEventOnline({
+      tenantId: t,
+      eventId: id,
+      actorUserId: user.id,
+    });
+  }
+
   @Delete('events/:id')
   @ApiOperation({
     summary: 'Отменить событие (soft delete, только owner/organizer)',

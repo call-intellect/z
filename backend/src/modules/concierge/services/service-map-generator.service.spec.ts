@@ -54,6 +54,48 @@ describe('ServiceMapGeneratorService', () => {
     expect(t?.parameters.required).toEqual(['title', 'startAt']);
   });
 
+  // ───────── Ф6/Ф5 (2026-06-18) — формат online + контрагент ─────────
+
+  it('make_event_online — POST /events/:id/make-online, event_card.write, id required', () => {
+    const t = svc.findTool('make_event_online');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('POST');
+    expect(t?.path).toBe('/api/v1/events/:id/make-online');
+    expect(t?.rbacResource).toBe('event_card');
+    expect(t?.rbacAction).toBe('write');
+    expect(t?.parameters.required).toEqual(['id']);
+    expect(t?.undoableVia).toBe('delete_event');
+  });
+
+  it('create_event имеет параметры online и counterparty', () => {
+    const t = svc.findTool('create_event');
+    const props = t?.parameters.properties ?? {};
+    expect(Object.keys(props)).toContain('online');
+    expect(Object.keys(props)).toContain('counterparty');
+  });
+
+  // ───────── Ф4 (2026-06-18) — рабочий профиль (set_my_work_profile) ─────────
+
+  it('set_my_work_profile — PATCH /me/work-profile, self-scoped (без RBAC), readOnly', () => {
+    const t = svc.findTool('set_my_work_profile');
+    expect(t).not.toBeNull();
+    expect(t?.method).toBe('PATCH');
+    expect(t?.path).toBe('/api/v1/me/work-profile');
+    // self-scoped /me/* — без rbacResource (как ingest_note); readOnly чтобы не
+    // требовать подтверждения в канале.
+    expect(t?.rbacResource).toBeUndefined();
+    expect(t?.readOnly).toBe(true);
+    const props = t?.parameters.properties ?? {};
+    expect(Object.keys(props).sort()).toEqual([
+      'timezone',
+      'workEndHour',
+      'workStartHour',
+      'workingDays',
+    ]);
+    // Все поля опциональны — required не выставлен.
+    expect(t?.parameters.required ?? []).toEqual([]);
+  });
+
   it('list_my_events is a read tool on /me/calendar', () => {
     const t = svc.findTool('list_my_events');
     expect(t?.method).toBe('GET');

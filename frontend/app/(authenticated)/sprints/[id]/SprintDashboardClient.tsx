@@ -44,6 +44,7 @@ import { AssigneeAvatarGroup } from "@/ui/tracker/AssigneeAvatar";
 import { SprintHintCard } from "@/ui/tracker/SprintHintCard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/shadcn/tabs";
 import { cn } from "@/ui/shadcn/lib/utils";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 
 import { SprintDailyPanel } from "./SprintDailyPanel";
 import { SprintWeeklyPanel } from "./SprintWeeklyPanel";
@@ -58,6 +59,8 @@ export function SprintDashboardClient({ cycleId }: { cycleId: string }) {
     isLoading: cycleLoading,
     mutate: mutateCycle,
   } = useCycle(currentOrgId, cycleId);
+
+  useRegisterBreadcrumb(cycle ? { label: cycle.name } : null);
 
   const [goalDialogOpen, setGoalDialogOpen] = useState(false);
 

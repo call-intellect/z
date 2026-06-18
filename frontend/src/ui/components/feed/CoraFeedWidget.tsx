@@ -1,11 +1,11 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import useSWR from "swr";
-import { Newspaper, Check, ListChecks } from "lucide-react";
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
+import useSWR from 'swr';
+import { Newspaper, Check, ListChecks } from 'lucide-react';
 
-import { coraFeedApi, probeControlApi } from "@/api/cora-feed.api";
+import { coraFeedApi, probeControlApi } from '@/api/cora-feed.api';
 import {
   CORA_FILTER_CHIPS,
   coraFeedViewFromApi,
@@ -14,36 +14,36 @@ import {
   type CoraFeedItem,
   type CoraFeedTone,
   type ProbeControlItem,
-} from "@/domain/cora-feed";
-import { useAuth } from "@/contexts/auth-context";
-import { QueryGate } from "@/ui/components/shared/QueryGate";
-import { EmptyState } from "@/ui/components/shared/EmptyState";
+} from '@/domain/cora-feed';
+import { QueryGate } from '@/ui/components/shared/QueryGate';
+import { EmptyState } from '@/ui/components/shared/EmptyState';
 
 const TONE_CHIP: Record<CoraFeedTone, string> = {
-  info: "bg-chip-info-bg text-chip-info-fg",
-  warning: "bg-chip-warning-bg text-chip-warning-fg",
-  danger: "bg-chip-danger-bg text-chip-danger-fg",
+  info: 'bg-chip-info-bg text-chip-info-fg',
+  warning: 'bg-chip-warning-bg text-chip-warning-fg',
+  danger: 'bg-chip-danger-bg text-chip-danger-fg',
 };
 
 const TONE_DOT: Record<CoraFeedTone, string> = {
-  info: "bg-chip-info-fg",
-  warning: "bg-chip-warning-fg",
-  danger: "bg-chip-danger-fg",
+  info: 'bg-chip-info-fg',
+  warning: 'bg-chip-warning-fg',
+  danger: 'bg-chip-danger-fg',
 };
 
 const FEED_WINDOW_DAYS = 30;
 const FEED_LIMIT = 60;
+const COMPACT_DEFAULT_LIMIT = 8;
 
 function formatRelative(date: Date): string {
   const diffMs = Date.now() - date.getTime();
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return "только что";
+  if (min < 1) return 'только что';
   if (min < 60) return `${min} мин назад`;
   const hours = Math.floor(min / 60);
   if (hours < 24) return `${hours} ч назад`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days} дн назад`;
-  return date.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
 function formatScore(score: number): string {
@@ -51,64 +51,40 @@ function formatScore(score: number): string {
   return `${pct}%`;
 }
 
-export function FeedClient() {
-  const { currentOrgId, currentOrgRole, isLoading: authLoading } = useAuth();
-
-  if (authLoading) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-4 py-8">
-        <div className="space-y-3" aria-busy="true">
-          <div className="z-shimmer h-7 w-1/3 rounded-sm" />
-          <div className="z-shimmer h-24 w-full rounded-md" />
-          <div className="z-shimmer h-24 w-full rounded-md" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!currentOrgId) {
-    return (
-      <div className="mx-auto w-full max-w-4xl px-4 py-8">
-        <EmptyState
-          title="Нет организации"
-          description="Вы не состоите ни в одной организации — ленте Коры пока неоткуда брать события."
-        />
-      </div>
-    );
-  }
-
-  const canControl =
-    currentOrgRole === "owner" ||
-    currentOrgRole === "admin" ||
-    currentOrgRole === "coo";
-
-  return <FeedContent orgId={currentOrgId} canControl={canControl} />;
-}
-
-function FeedContent({
+export function CoraFeedWidget({
   orgId,
   canControl,
+  variant = 'full',
+  defaultLimit,
 }: {
   orgId: string;
   canControl: boolean;
+  variant?: 'full' | 'compact';
+  defaultLimit?: number;
 }) {
-  const [filter, setFilter] = useState<CoraFeedFilter>("all");
+  const isCompact = variant === 'compact';
+
+  const [filter, setFilter] = useState<CoraFeedFilter>('all');
+  const [limit, setLimit] = useState<number>(
+    isCompact ? (defaultLimit ?? COMPACT_DEFAULT_LIMIT) : FEED_LIMIT,
+  );
+  const expanded = limit >= FEED_LIMIT;
 
   const feedSwr = useSWR(
-    ["cora-feed", orgId, filter] as const,
-    async ([, , type]) => {
+    ['cora-feed', orgId, filter, limit] as const,
+    async ([, , type, lim]) => {
       const dto = await coraFeedApi.list(orgId, {
         type,
         window: FEED_WINDOW_DAYS,
-        limit: FEED_LIMIT,
+        limit: lim,
       });
       return coraFeedViewFromApi(dto);
     },
   );
 
-  const controlActive = canControl && filter === "probe_question";
+  const controlActive = canControl && filter === 'probe_question';
   const controlSwr = useSWR(
-    controlActive ? (["probe-control", orgId] as const) : null,
+    controlActive ? (['probe-control', orgId] as const) : null,
     async ([, oid]) => {
       const dto = await probeControlApi.list(oid, {
         window: FEED_WINDOW_DAYS,
@@ -148,40 +124,70 @@ function FeedContent({
   const counters = feedSwr.data?.counters ?? {};
   const items = feedSwr.data?.items ?? [];
 
-  return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-8">
-      {}
-      <header className="mb-6 flex flex-wrap items-start gap-3">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-chip-info-bg text-chip-info-fg">
-          <Newspaper size={20} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
-            Лента Коры
-          </h1>
-          <p className="mt-1 text-sm text-fg-secondary">
-            Новости компании с анализом — читайте, что прибавилось в памяти за
-            последние дни.
-          </p>
-          <CountersSummary counters={counters} />
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            void markSeen();
-          }}
-          disabled={seenPending || unreadCount === 0}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong disabled:cursor-default disabled:opacity-50"
-        >
-          <Check size={14} />
-          {unreadCount > 0 ? `Прочитать (${unreadCount})` : "Всё прочитано"}
-        </button>
-      </header>
+  const expandToFull = () => {
+    setLimit(FEED_LIMIT);
+    setFilter('all');
+  };
 
-      {}
+  return (
+    <div
+      className={
+        isCompact ? 'w-full' : 'mx-auto w-full max-w-4xl px-4 py-8'
+      }
+    >
+      {isCompact ? (
+        <header className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-chip-info-bg text-chip-info-fg">
+            <Newspaper size={16} />
+          </div>
+          <h2 className="text-base font-semibold tracking-tight text-fg-primary">
+            Лента Коры
+          </h2>
+          <button
+            type="button"
+            onClick={() => {
+              void markSeen();
+            }}
+            disabled={seenPending || unreadCount === 0}
+            className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle px-2.5 py-1 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong disabled:cursor-default disabled:opacity-50"
+          >
+            <Check size={14} />
+            {unreadCount > 0 ? `Прочитать (${unreadCount})` : 'Всё прочитано'}
+          </button>
+        </header>
+      ) : (
+        <header className="mb-6 flex flex-wrap items-start gap-3">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-chip-info-bg text-chip-info-fg">
+            <Newspaper size={20} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-fg-primary">
+              Лента Коры
+            </h1>
+            <p className="mt-1 text-sm text-fg-secondary">
+              Новости компании с анализом — читайте, что прибавилось в памяти за
+              последние дни.
+            </p>
+            <CountersSummary counters={counters} />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void markSeen();
+            }}
+            disabled={seenPending || unreadCount === 0}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong disabled:cursor-default disabled:opacity-50"
+          >
+            <Check size={14} />
+            {unreadCount > 0 ? `Прочитать (${unreadCount})` : 'Всё прочитано'}
+          </button>
+        </header>
+      )}
+
       <div className="mb-5 flex flex-wrap gap-2">
         {CORA_FILTER_CHIPS.map((chip) => {
-          const count = chip.value === "all" ? undefined : counters[chip.value];
+          const count =
+            chip.value === 'all' ? undefined : counters[chip.value];
           return (
             <button
               key={chip.value}
@@ -189,17 +195,17 @@ function FeedContent({
               onClick={() => setFilter(chip.value)}
               className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
                 filter === chip.value
-                  ? "border-accent bg-accent/10 text-accent"
-                  : "border-border-subtle text-fg-secondary hover:border-border-strong"
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border-subtle text-fg-secondary hover:border-border-strong'
               }`}
             >
               {chip.label}
-              {typeof count === "number" && count > 0 ? (
+              {typeof count === 'number' && count > 0 ? (
                 <span
                   className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1 text-[10px] ${
                     filter === chip.value
-                      ? "bg-accent/20 text-accent"
-                      : "bg-bg-subtle text-fg-tertiary"
+                      ? 'bg-accent/20 text-accent'
+                      : 'bg-bg-subtle text-fg-tertiary'
                   }`}
                 >
                   {count}
@@ -210,7 +216,6 @@ function FeedContent({
         })}
       </div>
 
-      {}
       {controlActive ? (
         <ControlSection
           isLoading={controlSwr.isLoading}
@@ -223,7 +228,6 @@ function FeedContent({
         />
       ) : null}
 
-      {}
       <QueryGate
         isLoading={feedSwr.isLoading}
         error={feedSwr.error}
@@ -244,11 +248,27 @@ function FeedContent({
           ))}
         </div>
       </QueryGate>
+
+      {isCompact && !expanded ? (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={expandToFull}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle px-3 py-1.5 text-xs font-medium text-fg-secondary transition-colors hover:border-border-strong"
+          >
+            Вся лента
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function CountersSummary({ counters }: { counters: Record<string, number> }) {
+function CountersSummary({
+  counters,
+}: {
+  counters: Record<string, number>;
+}) {
   const parts: string[] = [];
   const push = (key: string, one: string, few: string, many: string) => {
     const n = counters[key];
@@ -261,17 +281,15 @@ function CountersSummary({ counters }: { counters: Record<string, number> }) {
       word = few;
     parts.push(`${n} ${word}`);
   };
-  push("insight", "сигнал", "сигнала", "сигналов");
-  push("blocker", "блокер", "блокера", "блокеров");
-  push("idea", "идея", "идеи", "идей");
-  push("decision", "решение", "решения", "решений");
-  push("conflict", "конфликт", "конфликта", "конфликтов");
+  push('insight', 'сигнал', 'сигнала', 'сигналов');
+  push('blocker', 'блокер', 'блокера', 'блокеров');
+  push('idea', 'идея', 'идеи', 'идей');
+  push('decision', 'решение', 'решения', 'решений');
+  push('conflict', 'конфликт', 'конфликта', 'конфликтов');
 
   if (parts.length === 0) return null;
   return (
-    <p className="mt-2 text-xs text-fg-tertiary">
-      За период: {parts.join(" · ")}
-    </p>
+    <p className="mt-2 text-xs text-fg-tertiary">За период: {parts.join(' · ')}</p>
   );
 }
 
@@ -280,16 +298,15 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
     <article
       className={`relative rounded-xl border bg-bg-surface p-4 transition-colors ${
         item.unread
-          ? "border-accent/40 bg-accent/[0.03]"
-          : "border-border-subtle"
+          ? 'border-accent/40 bg-accent/[0.03]'
+          : 'border-border-subtle'
       }`}
     >
       <div className="flex items-start gap-3">
-        {}
         <span
           aria-hidden="true"
           className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-            item.unread ? TONE_DOT[item.tone] : "bg-transparent"
+            item.unread ? TONE_DOT[item.tone] : 'bg-transparent'
           }`}
         />
         <div className="min-w-0 flex-1">
@@ -299,8 +316,7 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             >
               {item.typeLabel}
             </span>
-            {}
-            {item.type === "open_question" && item.askedByManager ? (
+            {item.type === 'open_question' && item.askedByManager ? (
               <span className="inline-flex items-center rounded-full bg-chip-info-bg px-2 py-0.5 text-[10px] font-medium text-chip-info-fg">
                 Спросил руководитель
               </span>
@@ -316,7 +332,6 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
             {item.title}
           </h3>
 
-          {}
           {item.insight ? (
             <p className="mt-1.5 text-xs text-fg-secondary">
               {item.insight.score !== undefined ? (
@@ -326,22 +341,18 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
               ) : null}
               {item.insight.recommendation ? (
                 <>
-                  {item.insight.score !== undefined ? " → " : ""}
+                  {item.insight.score !== undefined ? ' → ' : ''}
                   {item.insight.recommendation}
                 </>
               ) : null}
               {item.insight.due ? (
-                <span className="text-fg-tertiary">
-                  {" "}
-                  · срок: {item.insight.due}
-                </span>
+                <span className="text-fg-tertiary"> · срок: {item.insight.due}</span>
               ) : null}
             </p>
           ) : item.analysis ? (
             <p className="mt-1.5 text-xs text-fg-secondary">{item.analysis}</p>
           ) : null}
 
-          {}
           <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-tertiary">
             <span>{formatRelative(item.createdAtDate)}</span>
             {item.meetingId ? (
@@ -351,7 +362,7 @@ function FeedCard({ item }: { item: CoraFeedItem }) {
                   href={`/meetings/${item.meetingId}`}
                   className="text-chip-info-fg hover:underline"
                 >
-                  {item.cite ? `встреча ${item.cite}` : "встреча"}
+                  {item.cite ? `встреча ${item.cite}` : 'встреча'}
                 </Link>
               </>
             ) : item.cite ? (
@@ -443,10 +454,10 @@ function ControlSection({
                     <span className="line-clamp-2">{q.question}</span>
                   </td>
                   <td className="py-2.5 pr-3 align-top text-fg-secondary">
-                    {q.recipientName ?? "—"}
+                    {q.recipientName ?? '—'}
                   </td>
                   <td className="whitespace-nowrap py-2.5 pr-3 align-top text-fg-secondary">
-                    {q.waitingDays > 0 ? `${q.waitingDays} дн` : "сегодня"}
+                    {q.waitingDays > 0 ? `${q.waitingDays} дн` : 'сегодня'}
                   </td>
                   <td className="whitespace-nowrap py-2.5 align-top">
                     <span

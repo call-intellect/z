@@ -27,6 +27,12 @@ export const CreateIntakeSchema = z
     suggestedDueDate: z.coerce.date().nullable().optional(),
     suggestedLabels: z.array(z.string().min(1).max(64)).max(16).default([]),
     sourceBlockIds: z.array(z.string().min(1).max(64)).max(64).default([]),
+    /**
+     * Фикс linkedMeetingIds 2026-06-17 — ID встречи-источника (source='meeting').
+     * Internal-поле: прокидывается createFromMeetingNextStep; при авто-приёме идёт
+     * в Issue.linkedMeetingIds. Внешний REST обычно не посылает.
+     */
+    meetingId: z.string().max(200).nullable().optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
   })
   .strict();

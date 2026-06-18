@@ -4,6 +4,7 @@ import type { TypedConfigService } from '../../common/config/typed-config.servic
 import type { BusinessMetricsService } from '../../common/metrics/business-metrics.service';
 import type { PrismaService } from '../../common/prisma/prisma.service';
 import type { RedisService } from '../../common/redis/redis.service';
+import type { EmbeddingFallbackService } from '../embeddings/services/embedding-fallback.service';
 import type { CoreQueueService } from '../core-queue/core-queue.service';
 
 import { ProbeService } from './probe.service';
@@ -33,6 +34,9 @@ function makeService(
       create: vi.fn().mockResolvedValue({ id: 'p1' }),
       findFirst: vi.fn().mockResolvedValue(null),
     },
+    // Ф4 — семантический дедуп: KNN пуст (нет соседей), запись эмбеддинга — no-op.
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    $executeRawUnsafe: vi.fn().mockResolvedValue(1),
   } as unknown as PrismaService;
   const queue = {
     enqueueProbeEvent: vi.fn().mockResolvedValue(undefined),
@@ -43,7 +47,11 @@ function makeService(
     incProbeDedupDropped: vi.fn(),
     incProbeColdStartDropped: vi.fn(),
   } as unknown as BusinessMetricsService;
-  return new ProbeService(prisma, redis, queue, cfg, metrics);
+  // Ф4 — embedding-сервис: фиксированный вектор.
+  const embeddings = {
+    embed: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
+  } as unknown as EmbeddingFallbackService;
+  return new ProbeService(prisma, redis, queue, cfg, metrics, embeddings);
 }
 
 describe('ProbeService.filterByRateLimit — adaptive fatigue', () => {

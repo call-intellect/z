@@ -7,7 +7,7 @@ import {
 } from './classify.prompt';
 
 describe('dialog-classify — snapshot сборки промта (ТЗ 2026-05-29)', () => {
-  it('SYSTEM-промпт стабилен (7 категорий + ловушки)', () => {
+  it('SYSTEM-промпт стабилен (8 категорий + ловушки)', () => {
     expect(DIALOG_CLASSIFY_SYSTEM_PROMPT).toMatchSnapshot('system');
   });
 

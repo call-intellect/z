@@ -33,6 +33,7 @@ import { Input } from "@/ui/shadcn/input";
 import { Label } from "@/ui/shadcn/label";
 import { Textarea } from "@/ui/shadcn/textarea";
 
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { PersonSubpagesNav } from "@/ui/components/persons/PersonSubpagesNav";
 
 import {
@@ -119,6 +120,10 @@ function PersonDetailContent({
   useEffect(() => {
     void load();
   }, [load]);
+
+  useRegisterBreadcrumb(
+    data?.entity ? { label: data.entity.canonicalName } : null,
+  );
 
   if (isLoading) return <AdminLoading rows={6} />;
   if (forbidden) {

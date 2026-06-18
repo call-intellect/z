@@ -34,17 +34,20 @@ Concierge участвует в **единой per-user дневной квот�
 
 `ConciergeConversation.summary` пишется cron'ом `concierge-conversation-summarizer.cron`.
 
+**«Сейчас» + таймзона в контексте (ТЗ 2026-06-18 assistant-calendar, Ф2).** `ConciergeContextBuilderService.build` первой строкой системного контекста кладёт «Сейчас: дата (день недели), время по таймзоне (IANA)…», чтобы помощник правильно понимал «сегодня»/«на этой неделе» и считал окно дня для `find_free_slot`. Таймзона человека резолвится по цепочке **`Person.timezone → Org.timezone → Europe/Moscow`** (у `User` поля `timezone` НЕТ). Утилиты локального времени — `operations/utils/local-date.ts`. Когда `Person.timezone` пуст — добавляется контекст-подсказка, и помощник проактивно спрашивает таймзону (инструмент `set_my_work_profile`).
+
 ## Whitelist инструментов
 
 Static в `backend/src/modules/concierge/services/service-map-generator.service.ts`:
 
-- **Встречи**: `list_meetings`, `create_meeting`, `cancel_meeting` (LiveKit-комнаты).
-- **Календарь**: `create_event`, `list_my_events`, `list_user_events`, `find_free_slot`, `delete_event`.
+- **Встречи**: `list_meetings` (журнал встреч **без фильтра даты**), `create_meeting`, `cancel_meeting` (LiveKit-комнаты).
+- **Календарь**: `create_event`, `list_my_events` (события **календаря/сегодня в TZ человека** — отличие от `list_meetings` прописано в описаниях, ТЗ 2026-06-18 Ф7), `list_user_events`, `find_free_slot`, `delete_event`, `make_event_online` (сделать событие онлайн → видеокомната LiveKit, ТЗ 2026-06-18 Ф6).
 - **Знания**: `ask_chat_v2` — единственный терминальный путь к памяти компании (прежний `search_knowledge` удалён). Его ответ (текст + цитаты) отдаётся пользователю как есть.
 - **Задачи трекера**: `create_task` (поставить задачу себе в «Входящие»), `search_tasks` (мои задачи трекера); `ingest_note` (занести мысль/факт в память). `list_tasks` — legacy действия-задачи из встреч.
 - **Клоны**: `ask_role_clone`, `list_clones`.
 - **Pulse/директор**: `get_person_pulse`, `list_overdue_promises`, `get_sprint_status`, `get_team_health`, `list_ignored_probe_questions`.
 - **Smart-tables**: `infer_table_schema` (превью схемы таблицы, без создания).
+- **Профиль**: `set_my_work_profile` — выставить свой рабочий профиль (таймзона/часы/дни на `Person`, ТЗ 2026-06-18 Ф4); помощник проактивно спрашивает таймзону, когда `Person.timezone` пуст.
 
 RBAC проверяется внутри `ToolRouterService` от `userId` — concierge **не** bypassit permissions. Мутирующие tool-call'ы фиксируются в `ConciergeUndoLog`, откат через `POST /undo/:logId`.
 

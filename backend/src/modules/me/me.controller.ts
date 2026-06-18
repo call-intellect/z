@@ -31,7 +31,11 @@ import { CurrentOrg } from '../rbac/decorators/current-org.decorator';
 import { TenantGuard } from '../rbac/guards/tenant.guard';
 import { IpHashingService } from '../security/ip-hashing.service';
 
-import { MeService, type MeProfileDto } from './me.service';
+import {
+  MeService,
+  type MeProfileDto,
+  type MeWorkProfileDto,
+} from './me.service';
 
 interface AccessLogItemDto {
   accessedAt: string;
@@ -49,6 +53,20 @@ const NotificationPreferencesSchema = z
   .strict();
 
 type NotificationPreferencesBody = z.infer<typeof NotificationPreferencesSchema>;
+
+const WorkProfilePatchSchema = z
+  .object({
+    timezone: z.string().trim().min(1).max(64).optional(),
+    workStartHour: z.number().int().min(0).max(23).optional(),
+    workEndHour: z.number().int().min(0).max(23).optional(),
+    workingDays: z.array(z.number().int().min(0).max(6)).max(7).optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, {
+    message: 'Передайте хотя бы одно поле',
+  });
+
+type WorkProfileBody = z.infer<typeof WorkProfilePatchSchema>;
 
 @ApiTags('me')
 @Controller('api/v1/me')
@@ -69,6 +87,38 @@ export class MeController {
   ): Promise<MeProfileDto> {
     const t = this.requireTenant(tenantId);
     return this.svc.getProfile({ tenantId: t, userId: user.id });
+  }
+
+  @Get('work-profile')
+  @ApiOperation({
+    summary:
+      'Мой рабочий профиль: таймзона, рабочие часы и дни (с дефолтами компании)',
+  })
+  async getWorkProfile(
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MeWorkProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.svc.getWorkProfile({ tenantId: t, userId: user.id });
+  }
+
+  @Patch('work-profile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Сохранить мой рабочий профиль: таймзона, рабочие часы и дни',
+  })
+  @ApiOkResponse({ description: 'Обновлённый эффективный рабочий профиль' })
+  async updateWorkProfile(
+    @Body(new ZodValidationPipe(WorkProfilePatchSchema)) body: WorkProfileBody,
+    @CurrentUser() user: CurrentUserPayload,
+    @CurrentOrg() tenantId: string | undefined,
+  ): Promise<MeWorkProfileDto> {
+    const t = this.requireTenant(tenantId);
+    return this.svc.updateWorkProfile({
+      tenantId: t,
+      userId: user.id,
+      patch: body,
+    });
   }
 
   @Get('consents')

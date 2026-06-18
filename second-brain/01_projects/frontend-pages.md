@@ -99,7 +99,7 @@ CTA «Создать встречу» (Plus + ссылка на `/meetings/creat
 | `/persons/[id]/social-contribution` | **T2 — Соц. профиль коллеги** |
 | `/persons/[id]/knowledge-profile` | Профиль знаний коллеги (β-2) |
 | `/feed/spotlights` | Spotlights + **T1/T2 виджеты** |
-| `/feed` | Activity Feed (Wave 2) |
+| ~~`/feed`~~ | **УДАЛЕНА (2026-06-18)** — «Лента Коры» вынесена в виджет `CoraFeedWidget` (variant full/compact) на `/dashboard` и `/me`. Сиблинги `/feed/insights`, `/feed/probe-questions`, `/feed/spotlights` живы. ТЗ [`cora-feed-into-dashboards`](../../plans/tz/2026-06-17-cora-feed-into-dashboards.md), коммиты `9aa3945e`+`10dbbe35`. См. [[frontend-contexts-hooks]] §«Виджет „Лента Коры“». |
 | `/intake` | Triage очередь (AI suggestions) |
 
 ## Sprints (2026-05-27 / 2026-05-28, см. [[sprints]])
@@ -353,6 +353,23 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 
 Источник: [plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md](../../plans/tz/2026-06-05-frontend-detail-pages-and-ui-honesty.md) Ф1 (коммит `521f7553`). ТЗ оценивало 22 страницы, по факту после merge `dev` их оказалось 26 — чинился весь класс с acceptance-грепом.
 
+## Видеовстречи — фиксы живой комнаты + редизайн просмотра/журнала (2026-06-18)
+
+**Источник:** [`plans/tz/2026-06-17-meeting-room-three-bugs-fix.md`](../../plans/tz/2026-06-17-meeting-room-three-bugs-fix.md) (Ф1–Ф3) + [`plans/tz/2026-06-17-meeting-review-and-journal-redesign.md`](../../plans/tz/2026-06-17-meeting-review-and-journal-redesign.md) (Ф1–Ф5). Ветка `feature/meeting-fixes-and-result-redesign`. Полностью frontend-only (бэк / БД / ENV не затронуты — выкат = только rebuild фронта).
+
+**Живая комната (`meeting-room/`, 3 фикса):**
+- **Чат доставляет сообщения live:** убран форс уникального `topic` в `useChat().send()` (`ChatPanel.tsx`) — теперь дефолтный `lk.chat` совпадает с приёмником text-stream; дедуп по `attributes.clientMessageId` сохранён. Раньше каждое сообщение слалось на `chat-<id>`, который никто не слушал → другие участники его не видели.
+- **Камера в сетке не обрезает кадр:** класс `kora-video-grid` + правило `object-fit: contain` в `globals.css` распространены на `GridLayout` (≥2 уч.), не только на solo. Допустимы тёмные поля (приоритет «не резать лицо»).
+- **Демонстрация экрана читаема:** на `<TrackToggle source=ScreenShare>` (`ControlsBar.tsx`) добавлены `captureOptions={{ contentHint: 'detail' }}` + `publishOptions.screenShareEncoding = ScreenSharePresets.h1080fps30` (~5 Мбит/с). Simulcast не отключаем.
+
+**Просмотр встречи (`/meetings/[id]/result`, `meeting-result-v2/`) — единое окно без модалок:**
+- **Плеер** — компактный sticky (`max-w-[80vh]` ⇒ высота ≤45vh, `sticky top-4`) + кнопка «Свернуть/Развернуть видео» (`playerCollapsed`). Скелетон приведён к новому одноколоночному дефолту.
+- **Отчёты** — master-detail inline вместо модалки: список-рейл слева (карточка-кнопка выбора, active-подсветка), выбранный отчёт справа во всю ширину (`ReportInlinePanel`, скролл на уровне страницы). Удалён `ReportDetailDialog` / `max-h-[60vh]`. `Modal` остался только в `AddReportDialog` (форма выбора шаблона).
+- **AI-чат** — правая колонка сворачиваемая, по умолчанию свёрнута: корневой грид условный (`chatOpen` → `lg:grid-cols-1` vs `…_400px`), свёрнутый вид = плавающая кнопка «Открыть AI-чат». Состояние поднято в `MeetingResultPageReal` (один источник правды); `MeetingChatPanel` стал управляемым (`open`/`onOpenChange`), внутренний collapse + localStorage убраны.
+- **Глубокие ссылки:** `?tab=<overview|reports|chapters|transcript|chat|tasks>` и `?report=<id>` синхронизированы с URL (`useSearchParams` + `router.replace(scroll:false)`); `router.replace` только в обработчиках событий — без цикла ре-рендера.
+
+**Журнал (`/meetings`):** статус каждой строки — словом-чипом через централизованный `meetingStatusView` (парные токены `chipClass`); кнопка «⋮» (в т.ч. «Удалить») видна на десктопе без наведения (был `md:opacity-0`).
+
 ## Трекер + Встречи — финальная сессия (2026-06-06)
 
 **Источник:** [`plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md`](../../plans/tz/2026-06-06-FINAL-session-tracker-and-meetings.md) (фазы A1-A7, B1-B5). Ветка `sergdev`. Фронт-only по большинству пунктов; B5 — новый бэк-эндпоинт.
@@ -477,5 +494,9 @@ Pill-фильтры (`MeetingsJournalReal.FilterChips`, `TasksClient` status pil
 - **2026-06-10 (доводка редизайна дашбордов до полного стеклянного языка + дата-виз, Ф0–Ф7):** 5 экранов (`/dashboard/operations`, `/me`, `/dashboard`, `/dashboard/operations/daily`, `/dashboard/operations/weekly`) доведены до современного языка `modern/*` — устранён класс «новый фон + старые плоские `shadcn`-карточки». `KpiHero`→`StatCard`, `shadcn Card`→`GlassCard`/`ModernTable`, hero-графики `AreaTrend`/`BarTrend`/`DonutCard`/`RadarCard` по реальным трендовым рядам (`weeklyInflow`, `digest.trend` — см. [[api-layer]]). Фундамент библиотеки (Ф0): `StatCard` с опциональными `spark/delta/up` + `href`, новый `ModernPageShell`, хелпер `kpiTone`. Удалён мёртвый `DashboardClient.tsx` (Ф7); `KpiHero` сохранён для `/teams`/`/persons/pulse`/`KnowledgeVelocityKpi`. Тема только тёмная, OFF-ветки kill-switch не тронуты, новых флагов нет. Подробнее — раздел «Доводка редизайна дашбордов» выше. Источник: [plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md](../../plans/tz/2026-06-09-dashboards-redesign-completion-full-dataviz.md).
 
 - **2026-06-15 (селектор «помощник / клон должности» на `/chat`):** у окна ввода AI-чата (`ChatV2Client`) добавлен `AssistantTargetSelect` (Radix) — по умолчанию «Кора · помощник» (стрим chat-v2 не меняется); выбор ролевого клона ветвит `onSubmit` на `clonesApi.askRole` (клон — НЕ режим chat-v2), ответ склеивается в нить с именем клона, спиннер, `refused`/`403`-обработка, per-`roleId` `conversationId`. Доступ — `useMyCloneAccess` (пустой список → селектор скрыт). Domain `cloneAnswerToChatV2Message` (citations + refused). Кабинет-онли (mobile `OrgChatPanel` — vNext); Telegram/бэкенд не затронуты (`askRole` уже есть, RBAC/квота на нём). Источник: [plans/archive/2026-06-15-cabinet-assistant-clone-selector.md](../../plans/archive/2026-06-15-cabinet-assistant-clone-selector.md).
+
+- **2026-06-18 (сквозные хлебные крошки + мобильная «назад» + «Лента Коры» в дашборды):** (D) сквозная навигация-крошки — контекст `BreadcrumbProvider`/хук `useRegisterBreadcrumb` + `useBreadcrumbTrail`/`buildBreadcrumbTrail` + `Breadcrumbs`/`breadcrumb-config` (`frontend/src/ui/components/breadcrumbs/`), врезаны в AppShell/Header/AuthenticatedShell, имена зарегистрированы на ~16 страницах-деталях; на мобильном — кнопка «назад». Подробнее — [[frontend-contexts-hooks]] §«Сквозные хлебные крошки». (C) «Лента Коры» вынесена в виджет `CoraFeedWidget` (variant full/compact, `frontend/src/ui/components/feed/`) на `/dashboard` и `/me`; страница `/feed` удалена (сиблинги `/feed/insights`/`/feed/probe-questions`/`/feed/spotlights` живы). Ф5 (визуальная qa-приёмка обеих фич) — НЕ выполнена (см. `04_не-сделано`). Коммиты `8ef49108`+`eb0f7dee` (D), `9aa3945e`+`10dbbe35` (C). Источники: [plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md](../../plans/tz/2026-06-17-cabinet-breadcrumbs-and-mobile-back.md), [plans/tz/2026-06-17-cora-feed-into-dashboards.md](../../plans/tz/2026-06-17-cora-feed-into-dashboards.md).
+
+- **2026-06-18 (помощник × календарь, Ф8 — рабочий профиль + онлайн-встреча):** в «Настройки → Профиль» добавлена секция **«Рабочее время»** (`WorkProfileSection`) — таймзона (IANA), рабочие часы и рабочие дни недели; пишет на свой `Person` через `GET/PATCH /api/v1/me/work-profile` (см. [[api-layer]] §Concierge). Форма события `EventForm` (`frontend/src/ui/calendar/`) получила **тумблер «Онлайн-встреча»** (биндится на `Event.online`, при включении создаётся видеокомната LiveKit), поле **«Клиент/контрагент»** (`Event.counterparty`, отдельно от «места»/`location`) и кнопку **«Сделать онлайн»** (`POST /api/v1/events/:id/make-online`). Маппер `domain/calendar.ts` теперь `isOnline = api.online` (раньше выводился из `kind==='meeting'`). Источник: [plans/tz/2026-06-18-assistant-calendar-master.md](../../plans/tz/2026-06-18-assistant-calendar-master.md). Профильная заметка — [[calendar]].
 
 [[../index|← index]]

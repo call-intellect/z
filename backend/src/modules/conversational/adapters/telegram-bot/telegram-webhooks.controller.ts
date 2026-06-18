@@ -19,10 +19,12 @@ import { ApiExcludeController } from '@nestjs/swagger';
 import type { Channel } from '@prisma/client';
 import type { Redis } from 'ioredis';
 
+import { TypedConfigService } from '../../../../common/config';
 import { BusinessMetricsService } from '../../../../common/metrics/business-metrics.service';
 import { PrismaService } from '../../../../common/prisma/prisma.service';
 import { RedisService } from '../../../../common/redis/redis.service';
 import { ConversationalService } from '../../conversational.service';
+import { AssistantInboundQueueService } from '../../queue/assistant-inbound-queue.service';
 import { TELEGRAM_GLOBAL_CHANNEL_UPDATED_TOPIC } from '../../topics';
 
 import { TelegramBotChannelAdapter } from './telegram-bot.adapter';
@@ -47,6 +49,10 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     private readonly metrics: BusinessMetricsService,
     @Inject(RedisService)
     private readonly redis: RedisService,
+    @Inject(TypedConfigService)
+    private readonly cfg: TypedConfigService,
+    @Inject(AssistantInboundQueueService)
+    private readonly inboundQueue: AssistantInboundQueueService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -202,6 +208,7 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
     providedSecret: string | undefined;
     tenantId: string | undefined;
   }): Promise<{ ok: true }> {
+    const startedAt = Date.now();
     let expectedSecret: string;
     try {
       expectedSecret = this.adapter.readWebhookSecret(args.channel);
@@ -233,6 +240,31 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
       });
     }
 
+    const updateId = args.body?.update_id;
+    if (updateId != null && Number.isFinite(updateId)) {
+      const dedupeKey = `tg:update:${args.channel.id}:${updateId}`;
+      try {
+        const res = await this.redis.client.set(dedupeKey, '1', 'EX', 3600, 'NX');
+        if (res === null) {
+          this.logger.debug(
+            { channelId: args.channel.id, updateId },
+            'telegram webhook: дубль update_id — пропущен (idempotency)',
+          );
+          return { ok: true };
+        }
+      } catch (err) {
+        this.logger.warn(
+          { channelId: args.channel.id, updateId, err: err instanceof Error ? err.message : String(err) },
+          'telegram webhook: дедуп update_id недоступен (Redis) — обрабатываем без дедупа',
+        );
+      }
+    } else {
+      this.logger.warn(
+        { channelId: args.channel.id },
+        'telegram webhook: update_id отсутствует/невалиден — обработка без дедупа',
+      );
+    }
+
     let inbound;
     try {
       inbound = await this.adapter.ingestUpdate({
@@ -256,6 +288,24 @@ export class TelegramWebhooksController implements OnModuleInit, OnModuleDestroy
       return { ok: true };
     }
 
+    const dedupeId = updateId != null && Number.isFinite(updateId)
+      ? `${args.channel.id}:${updateId}`
+      : undefined;
+    if (this.cfg.bot.assistantInboundAsyncEnabled) {
+      try {
+        await this.inboundQueue.enqueue({ inbound, ...(dedupeId ? { dedupeId } : {}) });
+        this.logger.log(
+          { channelId: args.channel.id, updateId, type: inbound.type, ackMs: Date.now() - startedAt },
+          'telegram webhook: enqueued (early-ack)',
+        );
+        return { ok: true };
+      } catch (err) {
+        this.logger.error(
+          { channelId: args.channel.id, err: err instanceof Error ? err.message : String(err) },
+          'telegram webhook: enqueue упал — синхронный fallback',
+        );
+      }
+    }
     try {
       await this.conversational.dispatchInbound(inbound);
     } catch (err) {

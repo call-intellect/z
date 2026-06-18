@@ -26,6 +26,7 @@ import {
   useMyCloneAccess,
 } from "@/hooks/useClones";
 import { CloneAvatar } from "@/ui/clones/CloneAvatar";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { Badge } from "@/ui/shadcn/badge";
 import { Button } from "@/ui/shadcn/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/ui/shadcn/card";
@@ -65,6 +66,16 @@ function Content({ orgId, roleId }: { orgId: string; roleId: string }) {
   const conversations = useCloneConversations(orgId, hasGrant ? roleId : null);
 
   const [creating, setCreating] = useState(false);
+
+  useRegisterBreadcrumb(
+    item || profileSwr.data
+      ? {
+          label:
+            item?.publicName ??
+            (profileSwr.data ? `Клон ${profileSwr.data.roleName}` : ""),
+        }
+      : null,
+  );
 
   async function handleCreateConversation() {
     if (creating) return;

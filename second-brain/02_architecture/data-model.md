@@ -807,6 +807,7 @@ erDiagram
 - AI-предложения: `suggestedProjectId?, suggestedAssigneeId?, suggestedGoalId?, suggestedPriority?, suggestedDueDate?, suggestedLabels String[], confidence Decimal(4,3)?`.
 - Триаж: `triagedByUserId?, triagedAt?, rejectedReason?, snoozedUntil?`.
 - Если accept — создаётся Issue, ссылка в `createdIssueId?`.
+- `meetingId String?` (миграция `add_intake_issue_meeting_id`, 2026-06-18, ТЗ [`intake-issue-linked-meeting-ids-fix`](../../plans/tz/2026-06-16-intake-issue-linked-meeting-ids-fix.md)) — встреча-источник кандидата в задачу. При accept протягивается в `Issue.linkedMeetingIds`, чтобы задача была видна в карточке встречи (раньше связь терялась). Backfill существующих — `scripts/backfill-meeting-linked-ids.ts` (только `meeting:`-формат `externalId`).
 - **task-dedup Ф1 (knowledge-core MASTER, 2026-06-16, миграция `20260616233329_task_dedup_intake_suggested_duplicate`):** `suggestedDuplicateOfIssueId String?` — кандидат-дубль, найденный дедупом (`TaskDedupService`: embedding-KNN-кандидаты + LLM-арбитр `task-dedup-arbiter` в серой зоне) ещё на входе в трекер.
 
 ### TaskClosureCandidate (task-dedup Ф2 — петля разговор→кандидат закрытия)
@@ -1014,6 +1015,8 @@ Backfill — `backend/scripts/backfill-commitment-due-dates.ts` (`--dry-run` п�
 Autonomy W2 (2026-06-12) добавила **ещё два значения** (миграция `20260612090000_probe_status_w2_autonomy`, `ADD VALUE IF NOT EXISTS`, аддитивно):
 - **`dropped_low_value`** — probe **не прошёл гейт ценности**: priority ниже `probe.minValuePriority` (30) — вопрос не задаётся вовсе (человека не беспокоим ради малоценного уточнения).
 - **`routed_to_digest`** — probe с NUDGE-причиной (7 типов `NUDGE_REASONS`) или ниже `probe.immediatePushMinPriority` (70) **маршрутизирован в дайджест вместо немедленного пуша**; у digest-статусов задаётся `expiresAt`. Также сюда уходят дропы cold-start (включён, 24ч).
+
+**Фаза 2 (2026-06-18) — новая колонка `ProbeEvent.questionEmbedding vector(1536)`** (миграция `add_probe_event_question_embedding`, ТЗ [`probe-system-phase2`](../../plans/tz/2026-06-17-probe-system-phase2.md)) — эмбеддинг сформулированного вопроса (text-embedding-3-small) для **семантического дедупа** вопросов поверх content-hash дедупа. HNSW-индекс `idx_probeevent_qembed_hnsw` (`vector_cosine_ops`, partial `WHERE "questionEmbedding" IS NOT NULL`) — в `postgres-init.sql`, не в schema.prisma. Дедуп-гейт: cosine ≥ `probe.semanticDedupThreshold` (0.92) в окне `probe.semanticDedupWindowHours` (72) → дроп. Колонка nullable, backfill не нужен. Полная карта Ф2 — [[../01_projects/probe-agent]] §«Фаза 2».
 
 ## Feedback — канал обратной связи + AI-кластеризация (2026-05-25)
 
@@ -1760,6 +1763,23 @@ enum SkillTraitLayer {
 - Вопрос **не хранится целиком**: `questionPreview VarChar(200)` + `questionHash` (sha256).
 - Исход: `answeredGrounded Boolean` + `refusalReason String?` (`'ungrounded'` — пост-LLM grounding-гейт Э0.1, и др.).
 - Индекс `@@index([tenantId, cloneTargetId, createdAt])`.
+
+## Рабочий профиль Person + онлайн/контрагент Event (2026-06-18)
+
+**Источник:** ТЗ [`plans/tz/2026-06-18-assistant-calendar-master.md`](../../plans/tz/2026-06-18-assistant-calendar-master.md) (помощник × календарь, Фазы 4–6). Ветка `feature/assistant-calendar-fixes`. Миграция **`20260618120000_person_work_profile_event_online_counterparty`** (аддитивная: 5 nullable/default-колонок). Полная карта — [[../01_projects/calendar]]; эндпоинты — [[../01_projects/api-layer]] §me; UI — [[../01_projects/frontend-pages]].
+
+### `Person` += рабочий профиль (когда человек работает)
+
+- **`workStartHour Int?`** / **`workEndHour Int?`** — рабочие часы человека (локальные, 0..23). NULL → дефолт из `AdminSetting` (`work_hours_default_start=9` / `work_hours_default_end=18`).
+- **`workingDays Int[] @default([])`** — рабочие дни недели (0=вс … 6=сб). `[]` → дефолт `AdminSetting work_days_default=[1,2,3,4,5]` (пн–пт).
+- `Person.timezone` (уже было, IANA) теперь — основа цепочки таймзоны человека: **`Person.timezone → Org.timezone → Europe/Moscow`** (у `User` поля `timezone` НЕТ). Используется помощником для «сегодня»/окна дня и `find_free_slot`.
+
+Заполняется через `GET/PATCH /api/v1/me/work-profile` (UI «Настройки → Профиль → Рабочее время») и инструмент помощника `set_my_work_profile`; когда `Person.timezone` пуст — помощник проактивно спрашивает таймзону (контекст-подсказка).
+
+### `Event` += online / counterparty
+
+- **`online Boolean @default(false)`** — формат события: `true` → создаётся видеокомната LiveKit (привязка `relatedMeetingId` через `attachLivekitRoom`). **Развязан с `kind`** — раньше комната создавалась по `kind==='meeting'`, теперь именно по `online===true`. Идемпотентный перевод офлайн→онлайн: `POST /api/v1/events/:id/make-online` (`EventsService.makeEventOnline`) + tool `make_event_online`.
+- **`counterparty String? @db.VarChar(300)`** — контрагент/клиент встречи (с кем / какая компания), **отдельно от `location`** (место). Правило закреплено в описании инструмента `create_event` помощника.
 
 ## `PersonaStatus += frozen` — модель «один человек = один клон должности» (Раздел 7, 2026-06-16)
 

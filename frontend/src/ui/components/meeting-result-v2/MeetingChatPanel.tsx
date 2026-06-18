@@ -1,51 +1,37 @@
-"use client";
+'use client';
 
-import { useEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { ChevronRight, RefreshCw, Send, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ChevronRight, RefreshCw, Send, Sparkles } from 'lucide-react';
 
-import { useMeetingChat } from "@/hooks/use-meeting-chat";
-import { AiCitation } from "@/ui/components/ai/AiCitation";
-import { AiTypingDots } from "@/ui/components/ai/AiTypingDots";
-import { ScrollArea } from "@/ui/shadcn/scroll-area";
-import { cn } from "@/ui/shadcn/lib/utils";
-
-const COLLAPSE_KEY = "z:ai-chat-collapsed";
+import { useMeetingChat } from '@/hooks/use-meeting-chat';
+import { AiCitation } from '@/ui/components/ai/AiCitation';
+import { AiTypingDots } from '@/ui/components/ai/AiTypingDots';
+import { ScrollArea } from '@/ui/shadcn/scroll-area';
+import { cn } from '@/ui/shadcn/lib/utils';
 
 const SUGGESTED_PROMPTS = [
-  "Что мы решили?",
-  "Какие риски обсудили?",
-  "Сделай follow-up",
-  "Кто принимает решение?",
+  'Что мы решили?',
+  'Какие риски обсудили?',
+  'Сделай follow-up',
+  'Кто принимает решение?',
 ];
 
 export type MeetingChatPanelProps = {
   meetingId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   onSeek?: (ms: number) => void;
 };
 
-export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
-  const [input, setInput] = useState("");
+export function MeetingChatPanel({
+  meetingId,
+  open,
+  onOpenChange,
+  onSeek,
+}: MeetingChatPanelProps) {
+  const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(COLLAPSE_KEY);
-      if (stored === "1") setCollapsed(true);
-    } catch {}
-  }, []);
-
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      const next = !c;
-      try {
-        window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
-      } catch {}
-      return next;
-    });
-  };
 
   const { messages, thinking, send, retry, historyLoading } =
     useMeetingChat(meetingId);
@@ -53,23 +39,23 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages.length, thinking]);
 
   const onSubmit = () => {
     const text = input.trim();
     if (!text) return;
-    setInput("");
+    setInput('');
     void send(text);
   };
 
-  if (collapsed) {
+  if (!open) {
     return (
       <button
         type="button"
-        aria-label="Открыть помощника"
-        onClick={toggleCollapsed}
-        className="sticky top-24 grid h-14 w-14 place-items-center self-start rounded-xl border border-accent-border bg-accent-muted text-accent transition-colors hover:bg-accent-muted-strong"
+        aria-label="Открыть AI-чат"
+        onClick={() => onOpenChange(true)}
+        className="fixed bottom-6 right-6 z-30 grid h-14 w-14 place-items-center rounded-full border border-accent-border bg-accent-muted text-accent shadow-glow-mint transition-colors hover:bg-accent-muted-strong"
       >
         <Sparkles size={20} strokeWidth={1.75} />
       </button>
@@ -81,7 +67,6 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
       className="sticky top-24 flex h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-xl border border-border-subtle bg-bg-card"
       aria-label="Чат по встрече"
     >
-      {}
       <div className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3">
         <div className="grid h-7 w-7 place-items-center rounded-md bg-accent-muted text-accent">
           <Sparkles size={14} strokeWidth={1.75} />
@@ -94,15 +79,14 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
         </div>
         <button
           type="button"
-          aria-label="Свернуть"
-          onClick={toggleCollapsed}
+          aria-label="Свернуть AI-чат"
+          onClick={() => onOpenChange(false)}
           className="grid h-8 w-8 place-items-center rounded-md text-fg-secondary hover:bg-bg-overlay hover:text-fg-primary"
         >
           <ChevronRight size={16} />
         </button>
       </div>
 
-      {}
       <ScrollArea className="flex-1">
         <div ref={scrollRef} className="flex flex-col gap-4 px-4 py-5">
           {historyLoading && messages.length === 0 ? (
@@ -116,7 +100,7 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
           )}
 
           {messages.map((m) => {
-            if (m.role === "user") {
+            if (m.role === 'user') {
               return (
                 <UserMessage
                   key={m.id}
@@ -140,7 +124,6 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
         </div>
       </ScrollArea>
 
-      {}
       <div className="border-t border-border-subtle p-3">
         {messages.length === 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
@@ -167,7 +150,7 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 onSubmit();
               }
@@ -181,10 +164,10 @@ export function MeetingChatPanel({ meetingId, onSeek }: MeetingChatPanelProps) {
             aria-label="Отправить"
             disabled={!input.trim() || thinking}
             className={cn(
-              "grid h-8 w-8 place-items-center rounded-full transition-all",
+              'grid h-8 w-8 place-items-center rounded-full transition-all',
               input.trim() && !thinking
-                ? "bg-accent text-accent-fg shadow-glow-mint"
-                : "bg-bg-card text-fg-tertiary",
+                ? 'bg-accent text-accent-fg shadow-glow-mint'
+                : 'bg-bg-card text-fg-tertiary',
             )}
           >
             <Send size={14} strokeWidth={2} />
@@ -202,8 +185,7 @@ function EmptyChat({ onPick }: { onPick: (p: string) => void }) {
   return (
     <div className="flex flex-col gap-3 py-6 text-center">
       <div className="text-sm text-fg-secondary">
-        Спросите помощника про эту встречу. Ответы будут со ссылками на моменты
-        записи.
+        Спросите помощника про эту встречу. Ответы будут со ссылками на моменты записи.
       </div>
       <div className="mx-auto flex flex-wrap justify-center gap-1.5">
         {SUGGESTED_PROMPTS.map((p) => (
@@ -282,7 +264,7 @@ function AssistantMessage({
             <AiCitation
               key={i}
               startMs={c.startMs}
-              speakerName={c.speakerName ?? "Спикер"}
+              speakerName={c.speakerName ?? 'Спикер'}
               text={c.snippet}
               onClick={onSeek ? () => onSeek(c.startMs) : undefined}
             />
@@ -306,3 +288,4 @@ function ChatTypingDots() {
     </motion.div>
   );
 }
+

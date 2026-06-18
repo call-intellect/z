@@ -395,11 +395,28 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
       if (handled) return null;
     }
 
+    const openProbe = await this.findOpenProbe({
+      tenantId,
+      userId: binding.userId,
+    });
+
     const intent = await this.classifyIntent({
       text: rawText,
       tenantId,
       userId: binding.userId,
+      openProbeQuestion: openProbe?.question || undefined,
     });
+
+    if (intent === 'probe_reply' && openProbe) {
+      return {
+        type: 'response',
+        userId: binding.userId,
+        tenantId,
+        notificationId: openProbe.id,
+        payload: { text: rawText, kind: 'implicit_response' },
+        originChannelBindingId: binding.id,
+      };
+    }
 
     if (
       this.isAssistantRoutingEnabled() &&
@@ -872,7 +889,14 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     text: string;
     tenantId: string;
     userId: string;
-  }): Promise<'chat_query' | 'free_note' | 'daily_plan_morning' | 'daily_report_evening'> {
+    openProbeQuestion?: string;
+  }): Promise<
+    | 'chat_query'
+    | 'free_note'
+    | 'daily_plan_morning'
+    | 'daily_report_evening'
+    | 'probe_reply'
+  > {
     if (this.cfg.bot.intentClassifierEnabled) {
       try {
         const result = await this.classifier.classify({
@@ -881,7 +905,21 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
           question: args.text,
           conversationId: null,
           skipHeuristicFirstPass: true,
+          openProbeQuestion: args.openProbeQuestion,
         });
+
+        if (result.intent === 'probe_reply') {
+          const conf = result.confidence ?? 0;
+          const minConf = await this.getProbeReplyMinConfidence();
+          if (conf >= minConf) {
+            this.metrics.incBotIntentClassified({
+              channel: 'telegram_bot',
+              intent: 'free_note',
+              source: result.source === 'heuristic' ? 'heuristic' : 'llm',
+            });
+            return 'probe_reply';
+          }
+        }
 
         const conf = result.confidence ?? 0;
         const isPlan = result.intent === 'daily_plan_morning';
@@ -957,6 +995,44 @@ export class TelegramBotChannelAdapter implements IChannel, OnModuleInit {
     if (!delivery) return null;
     if (delivery.notification.responseStatus === 'answered') return null;
     return { notificationId: delivery.notificationId };
+  }
+
+  private async findOpenProbe(args: {
+    tenantId: string;
+    userId: string;
+  }): Promise<{ id: string; question: string } | null> {
+    const openProbe = await this.prisma.notification.findFirst({
+      where: {
+        tenantId: args.tenantId,
+        recipientUserId: args.userId,
+        eventType: { in: ['probe.question', 'probe.digest'] },
+        responseStatus: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true },
+    });
+    if (!openProbe) return null;
+    const payload =
+      (openProbe.payload as Record<string, unknown> | null) ?? {};
+    const question =
+      typeof payload['question'] === 'string'
+        ? (payload['question'] as string)
+        : typeof payload['formulatedQuestion'] === 'string'
+          ? (payload['formulatedQuestion'] as string)
+          : '';
+    return { id: openProbe.id, question };
+  }
+
+  private async getProbeReplyMinConfidence(): Promise<number> {
+    try {
+      return await this.cfg.getDynamic<number>(
+        'probe.replyClassifyMinConfidence',
+        undefined,
+        0.6,
+      );
+    } catch {
+      return 0.6;
+    }
   }
 
   private renderText(notification: Notification): string {

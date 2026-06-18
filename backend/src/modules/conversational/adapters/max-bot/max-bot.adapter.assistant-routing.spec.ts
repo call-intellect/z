@@ -45,12 +45,12 @@ const verifiedBinding = (): ChannelBinding =>
     preferences: {},
   }) as unknown as ChannelBinding;
 
-function makeAdapter(
-  opts: {
-    assistantChannelRoutingEnabled?: boolean;
-    classifyIntent?: 'factual' | 'note';
-  } = {},
-) {
+function makeAdapter(opts: {
+  assistantChannelRoutingEnabled?: boolean;
+  classifyIntent?: 'factual' | 'note' | 'probe_reply';
+  classifyConfidence?: number;
+  openProbe?: { id: string; payload: Record<string, unknown> } | null;
+} = {}) {
   const registry = { register: vi.fn() } as unknown as ChannelRegistry;
   const prisma = {
     channelBinding: {
@@ -58,6 +58,9 @@ function makeAdapter(
       upsert: vi.fn(),
     },
     person: { findFirst: vi.fn() },
+    notification: {
+      findFirst: vi.fn().mockResolvedValue(opts.openProbe ?? null),
+    },
   } as unknown as PrismaService;
 
   const redis = {
@@ -105,7 +108,7 @@ function makeAdapter(
     classify: vi.fn().mockResolvedValue({
       intent: opts.classifyIntent ?? 'factual',
       source: 'llm',
-      confidence: 0.9,
+      confidence: opts.classifyConfidence ?? 0.9,
       durationSeconds: 0.1,
     }),
   } as unknown as QueryClassifierService;
@@ -117,6 +120,7 @@ function makeAdapter(
       intentClassifierEnabled: true,
       assistantChannelRoutingEnabled: opts.assistantChannelRoutingEnabled ?? false,
     },
+    getDynamic: vi.fn().mockResolvedValue(0.6),
   } as unknown as TypedConfigService;
 
   const adapter = new MaxBotChannelAdapter(
@@ -236,5 +240,53 @@ describe('MaxBotChannelAdapter.ingestUpdate (Ф5 assistant_turn routing)', () =>
       tenantId: 'org-1',
       text: 'Договорились с подрядчиком о сроках',
     });
+  });
+
+  // ─── ТЗ 2026-06-17 probe-phase2 Ф1 — свободный ответ на probe в MAX ───
+  it('есть pending probe + probe_reply(0.8) → type=response (приоритетнее assistant-routing ON)', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      classifyIntent: 'probe_reply',
+      classifyConfidence: 0.8,
+      openProbe: {
+        id: 'notif-probe-max-1',
+        payload: { question: 'Кто отвечает за это решение?' },
+      },
+    });
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Иванов отвечает'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect(result).toEqual({
+      type: 'response',
+      userId: 'user-42',
+      tenantId: 'org-1',
+      notificationId: 'notif-probe-max-1',
+      payload: { text: 'Иванов отвечает', kind: 'implicit_response' },
+      originChannelBindingId: 'binding-max-1',
+    });
+    const classifyArg = vi.mocked(mocks.classifier.classify).mock
+      .calls[0]?.[0] as { openProbeQuestion?: string };
+    expect(classifyArg.openProbeQuestion).toBe('Кто отвечает за это решение?');
+  });
+
+  it('НЕТ pending probe → pre-фильтр не классифицирует, ON → assistant_turn', async () => {
+    const mocks = makeAdapter({
+      assistantChannelRoutingEnabled: true,
+      openProbe: null,
+    });
+
+    const result = await mocks.adapter.ingestUpdate({
+      update: textUpdate('Какой бюджет на Q4?'),
+      tenantId: 'org-1',
+      channel: makeChannel(),
+    });
+
+    expect((result as { type: string }).type).toBe('assistant_turn');
+    // Без открытого probe pre-фильтр не вызывает классификатор (экономия).
+    expect(vi.mocked(mocks.classifier.classify)).not.toHaveBeenCalled();
   });
 });

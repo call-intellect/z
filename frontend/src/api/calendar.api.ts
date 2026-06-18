@@ -1,23 +1,23 @@
-import { apiClient } from "./api-client";
+import { apiClient } from './api-client';
 
 export type EventKindApi =
-  | "meeting"
-  | "incident"
-  | "release"
-  | "transition"
-  | "milestone"
-  | "call"
-  | "offline_meeting"
-  | "personal_block"
-  | "deadline"
-  | "other";
+  | 'meeting'
+  | 'incident'
+  | 'release'
+  | 'transition'
+  | 'milestone'
+  | 'call'
+  | 'offline_meeting'
+  | 'personal_block'
+  | 'deadline'
+  | 'other';
 
-export type EventVisibilityApi = "company" | "team" | "personal";
-export type EventStatusApi = "tentative" | "confirmed" | "cancelled";
-export type RsvpStatusApi = "pending" | "accepted" | "declined" | "tentative";
-export type RsvpActionApi = "accepted" | "declined" | "tentative";
-export type EventParticipantRoleApi = "organizer" | "required" | "optional";
-export type ReminderChannelApi = "push" | "email" | "telegram";
+export type EventVisibilityApi = 'company' | 'team' | 'personal';
+export type EventStatusApi = 'tentative' | 'confirmed' | 'cancelled';
+export type RsvpStatusApi = 'pending' | 'accepted' | 'declined' | 'tentative';
+export type RsvpActionApi = 'accepted' | 'declined' | 'tentative';
+export type EventParticipantRoleApi = 'organizer' | 'required' | 'optional';
+export type ReminderChannelApi = 'push' | 'email' | 'telegram';
 
 export interface EventParticipantApi {
   id: string;
@@ -45,6 +45,8 @@ export interface EventApi {
   endAt: string | null;
   durationMin: number | null;
   location: string | null;
+  counterparty: string | null;
+  online: boolean;
   relatedMeetingId: string | null;
   joinUrl: string | null;
   createdAt: string;
@@ -78,8 +80,8 @@ export interface IssueCalendarItemApi {
 }
 
 export type CalendarItemApi =
-  | { type: "event"; event: EventApi }
-  | { type: "issue"; issue: IssueCalendarItemApi };
+  | { type: 'event'; event: EventApi }
+  | { type: 'issue'; issue: IssueCalendarItemApi };
 
 export interface CalendarResponseApi {
   items: CalendarItemApi[];
@@ -104,6 +106,8 @@ export interface CreateEventRequestApi {
   kind: EventKindApi;
   visibility?: EventVisibilityApi;
   location?: string;
+  counterparty?: string | null;
+  online?: boolean;
   description?: string;
   allDay?: boolean;
   timezone?: string;
@@ -120,6 +124,8 @@ export interface UpdateEventRequestApi {
   kind?: EventKindApi;
   visibility?: EventVisibilityApi;
   location?: string | null;
+  counterparty?: string | null;
+  online?: boolean;
   description?: string | null;
   allDay?: boolean;
   timezone?: string;
@@ -147,11 +153,11 @@ function buildRangeQuery(
   projectId?: string,
 ): string {
   const p = new URLSearchParams();
-  if (from) p.set("from", from);
-  if (to) p.set("to", to);
-  if (projectId) p.set("projectId", projectId);
+  if (from) p.set('from', from);
+  if (to) p.set('to', to);
+  if (projectId) p.set('projectId', projectId);
   const qs = p.toString();
-  return qs ? `?${qs}` : "";
+  return qs ? `?${qs}` : '';
 }
 
 export const calendarApi = {
@@ -171,22 +177,32 @@ export const calendarApi = {
     ),
 
   createEvent: (body: CreateEventRequestApi) =>
-    apiClient.post<EventApi>("/api/v1/events", body),
+    apiClient.post<EventApi>('/api/v1/events', body),
 
   updateEvent: (id: string, body: UpdateEventRequestApi) =>
-    apiClient.patch<EventApi>(`/api/v1/events/${encodeURIComponent(id)}`, body),
+    apiClient.patch<EventApi>(
+      `/api/v1/events/${encodeURIComponent(id)}`,
+      body,
+    ),
 
   cancelEvent: (id: string) =>
     apiClient.del<void>(`/api/v1/events/${encodeURIComponent(id)}`),
 
+  makeEventOnline: (id: string) =>
+    apiClient.post<EventApi>(
+      `/api/v1/events/${encodeURIComponent(id)}/make-online`,
+      {},
+    ),
+
   rsvp: (id: string, status: RsvpActionApi) =>
-    apiClient.post<EventApi>(`/api/v1/events/${encodeURIComponent(id)}/rsvp`, {
-      status,
-    }),
+    apiClient.post<EventApi>(
+      `/api/v1/events/${encodeURIComponent(id)}/rsvp`,
+      { status },
+    ),
 
   findFreeSlot: (body: FindFreeSlotRequestApi) =>
     apiClient.post<FindFreeSlotResponseApi>(
-      "/api/v1/events/find-free-slot",
+      '/api/v1/events/find-free-slot',
       body,
     ),
 };

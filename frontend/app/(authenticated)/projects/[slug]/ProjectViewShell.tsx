@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/contexts/auth-context";
 import { useProjectBySlug } from "@/hooks/tracker/useProjectBySlug";
 import { projectShortLabel, type Project } from "@/domain/tracker";
+import { useRegisterBreadcrumb } from "@/ui/components/breadcrumbs/BreadcrumbContext";
 import { useTour } from "@/ui/tour";
 
 interface Tab {
@@ -84,6 +85,8 @@ export function ProjectViewShell({
   const pathname = usePathname() ?? "";
   const { currentOrgId } = useAuth();
   const { project, isLoading, error } = useProjectBySlug(currentOrgId, slug);
+
+  useRegisterBreadcrumb(project ? { label: projectShortLabel(project) } : null);
 
   useTour("project");
 

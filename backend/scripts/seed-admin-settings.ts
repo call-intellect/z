@@ -1534,6 +1534,48 @@ function buildSettings(): SettingSeed[] {
       'low',
       'Минимальный priority (0-100) ценности probe; ниже — вопрос не задаётся (dropped_low_value)',
     ],
+    [
+      'probe.replyClassifyMinConfidence',
+      envFloat('PROBE_REPLY_CLASSIFY_MIN_CONFIDENCE', 0.6),
+      'low',
+      'Минимальная уверенность (0-1) классификатора, с которой свободный текст без reply засчитывается ответом на открытый probe (Telegram/MAX)',
+    ],
+    [
+      'probe.qualityJudgeEnabled',
+      envBool('PROBE_QUALITY_JUDGE_ENABLED', true),
+      'low',
+      'Рубильник LLM-судьи качества формулировки уточняющего вопроса (probe): проверяет вопрос перед отправкой и при браке заменяет одним улучшенным регенератом (kill-switch, ON). Выкл → вопрос отправляется как сформулирован',
+    ],
+    [
+      'probe.engagementRoutingEnabled',
+      envBool('PROBE_ENGAGEMENT_ROUTING_ENABLED', true),
+      'low',
+      'Рубильник выбора получателя уточняющего вопроса (probe) по отзывчивости: из кандидатов вопрос идёт самому отзывчивому (engagement-снимок), а не первому по списку (kill-switch, ON). Выкл → берётся первый кандидат',
+    ],
+    [
+      'probe.semanticDedupEnabled',
+      envBool('PROBE_SEMANTIC_DEDUP_ENABLED', true),
+      'low',
+      'Семантический дедуп вопросов по эмбеддингу (kill-switch, ON)',
+    ],
+    [
+      'probe.semanticDedupThreshold',
+      envFloat('PROBE_SEMANTIC_DEDUP_THRESHOLD', 0.92),
+      'low',
+      'Cosine-порог семантического дедупа (0..1)',
+    ],
+    [
+      'probe.semanticDedupWindowHours',
+      envInt('PROBE_SEMANTIC_DEDUP_WINDOW_HOURS', 72),
+      'low',
+      'Окно (часы) поиска близких по смыслу вопросов',
+    ],
+    [
+      'probe.reaskEnabled',
+      envBool('PROBE_REASK_ENABLED', true),
+      'low',
+      'Один переспрос при истечении неотвеченного probe: вопрос переформулируется и задаётся ещё раз перед закрытием как ignored (kill-switch, ON). Выкл → истёкший probe сразу закрывается без переспроса',
+    ],
   ];
   for (const [key, value, severity, description] of probe) {
     out.push({ key, value, category: 'platform', section: 'probe', severity, description });

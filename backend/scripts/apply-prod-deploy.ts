@@ -15,7 +15,12 @@ interface Step {
   args?: string[];
   skipBootstrap?: boolean;
   skipUpdate?: boolean;
+  timeoutMs?: number;
 }
+
+const DEFAULT_STEP_TIMEOUT_MS = Number(
+  process.env['DEPLOY_STEP_TIMEOUT_MS'] ?? 600_000,
+);
 
 const STEPS: Step[] = [
   {
@@ -345,6 +350,7 @@ const STEPS: Step[] = [
     script: 'scripts/patch-telegram-register-in-proxy.ts',
     hint: 'регистрация бота в telegram.crossmark.ru',
     skipBootstrap: true,
+    timeoutMs: 120_000,
   },
   {
     phase: 'patch',
@@ -868,20 +874,56 @@ async function runOne(
     return { ok: true, code: 0 };
   }
 
+  const timeoutMs = step.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
+
   if (verbose) {
-     
+
     console.log(`\n>>> ${label}`);
     const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit' });
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      proc.kill(9);
+    }, timeoutMs);
     const code = await proc.exited;
+    clearTimeout(timer);
+    if (timedOut) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `✗ ${label}  (ТАЙМАУТ ${Math.round(timeoutMs / 1000)}s — процесс убит, шаг пропущен)`,
+      );
+      return { ok: false, code: 124 };
+    }
     return { ok: code === 0, code };
   }
 
   const proc = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    proc.kill(9);
+  }, timeoutMs);
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
   const code = await proc.exited;
+  clearTimeout(timer);
+  if (timedOut) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `\n✗ ${label}  (ТАЙМАУТ ${Math.round(timeoutMs / 1000)}s — процесс убит, шаг пропущен)`,
+    );
+    if (out.trim()) {
+      // eslint-disable-next-line no-console
+      console.error(out.trimEnd());
+    }
+    if (err.trim()) {
+      // eslint-disable-next-line no-console
+      console.error(err.trimEnd());
+    }
+    return { ok: false, code: 124 };
+  }
   if (code === 0) {
     const summary = pickSummaryLine(out);
      

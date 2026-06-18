@@ -224,8 +224,10 @@ async function main(args: CliArgs): Promise<void> {
 }
 
 silenceRedisShutdownNoise();
-main(parseArgs(process.argv.slice(2))).catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error('patch-telegram-register-in-proxy FAILED:', err);
-  process.exit(1);
-});
+main(parseArgs(process.argv.slice(2)))
+  .then(() => process.exit(0))
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('patch-telegram-register-in-proxy FAILED:', err);
+    process.exit(1);
+  });

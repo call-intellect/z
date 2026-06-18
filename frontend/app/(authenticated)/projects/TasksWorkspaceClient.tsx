@@ -5,10 +5,10 @@
  * tasks-unified-workspace). Заменяет старый список проектов: проект здесь —
  * это фильтр, а не отдельный экран.
  *
- * Виды этой фазы: Доска / Список / Архив. Селектор проекта («Все проекты» +
- * список), фильтр команды (только руководителю), поиск, создание задачи,
- * «Открыть проект →». Виды «Спринты» и «Входящие» (а также фильтр спринта) —
- * НЕ в этой фазе (Ф6).
+ * Виды: Доска / Список / Спринты / Входящие / Архив. Селектор проекта («Все
+ * проекты» + список), фильтр команды и фильтр спринта, поиск, создание задачи,
+ * «Открыть проект →». Вкладка «Входящие» видна только руководителю (RBAC
+ * intake = owner/admin/coo); фильтр спринта (?cycle) сужает доску/список.
  *
  * Весь стейт живёт в URL (?view / ?project / ?assignee / ?q), чтобы экран
  * можно было расшарить ссылкой и не терять контекст при перезагрузке.
@@ -29,6 +29,8 @@ import { useAuth } from "@/contexts/auth-context";
 import { useProjects } from "@/hooks/tracker/useProjects";
 import { useOrgIssues } from "@/hooks/tracker/useOrgIssues";
 import { useIssues } from "@/hooks/tracker/useIssues";
+import { useSprints } from "@/hooks/useSprints";
+import { getStatusLabel, type DomainSprintListItem } from "@/domain/sprint";
 import { issuesApi, type ListOrgIssuesRequest } from "@/api/tracker/issues.api";
 import {
   orgMembersApi,
@@ -39,20 +41,20 @@ import { LEADERSHIP_ROLES } from "@/ui/components/app-shell/nav-config";
 import { OrgBoard, orgBoardColumnFor } from "@/ui/tracker/OrgBoard";
 import { Board } from "@/ui/tracker/Board";
 import { IssueList } from "@/ui/tracker/IssueList";
+import { IntakeBoard } from "@/ui/tracker/IntakeBoard";
 import { ProjectPickerDialog } from "@/ui/tracker/ProjectPickerDialog";
 import { QuickAdd } from "@/ui/tracker/QuickAdd";
 import { cn } from "@/ui/shadcn/lib/utils";
 
-type WorkspaceView = "board" | "list" | "archive";
-
-const VIEW_TABS: ReadonlyArray<{ value: WorkspaceView; label: string }> = [
-  { value: "board", label: "Доска" },
-  { value: "list", label: "Список" },
-  { value: "archive", label: "Архив" },
-];
+type WorkspaceView = "board" | "list" | "archive" | "sprints" | "inbox";
 
 function parseView(raw: string | null): WorkspaceView {
-  return raw === "list" || raw === "archive" ? raw : "board";
+  return raw === "list" ||
+    raw === "archive" ||
+    raw === "sprints" ||
+    raw === "inbox"
+    ? raw
+    : "board";
 }
 
 export function TasksWorkspaceClient() {
@@ -66,10 +68,29 @@ export function TasksWorkspaceClient() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const view = parseView(searchParams.get("view"));
+  const rawView = parseView(searchParams.get("view"));
+  // Гард: «Входящие» доступны только руководителю. Если рядовой вручную поставил
+  // ?view=inbox — не падаем, показываем доску.
+  const view: WorkspaceView =
+    rawView === "inbox" && !isLeadership ? "board" : rawView;
   const selectedSlug = searchParams.get("project");
   const assigneeUserId = searchParams.get("assignee") ?? undefined;
+  const cycleId = searchParams.get("cycle") ?? undefined;
   const qParam = searchParams.get("q") ?? "";
+
+  // Вкладки: базовые всем, «Входящие» — только руководителю.
+  const tabs = useMemo<ReadonlyArray<{ value: WorkspaceView; label: string }>>(
+    () => [
+      { value: "board", label: "Доска" },
+      { value: "list", label: "Список" },
+      { value: "sprints", label: "Спринты" },
+      ...(isLeadership
+        ? [{ value: "inbox" as const, label: "Входящие" }]
+        : []),
+      { value: "archive", label: "Архив" },
+    ],
+    [isLeadership],
+  );
 
   /** Патч одного query-параметра без потери остальных. */
   const setParam = useCallback(
@@ -112,11 +133,12 @@ export function TasksWorkspaceClient() {
     () => ({
       projectId: selectedProjectId,
       assigneeUserId: isLeadership ? assigneeUserId : undefined,
+      cycleId,
       q: debouncedQ || undefined,
       includeArchived: view === "archive" ? true : undefined,
       limit: 200,
     }),
-    [selectedProjectId, isLeadership, assigneeUserId, debouncedQ, view],
+    [selectedProjectId, isLeadership, assigneeUserId, cycleId, debouncedQ, view],
   );
 
   // Хуки данных зовём всегда (правило хуков). Сквозной список используется в
@@ -190,7 +212,7 @@ export function TasksWorkspaceClient() {
 
       {/* ─── Вкладки видов ────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 border-b border-border-subtle">
-        {VIEW_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.value}
             type="button"
@@ -220,6 +242,15 @@ export function TasksWorkspaceClient() {
           <AssigneeFilter
             assigneeUserId={assigneeUserId ?? null}
             onSelect={(userId) => setParam("assignee", userId)}
+          />
+        )}
+
+        {(view === "board" || view === "list") && (
+          <SprintFilter
+            orgId={currentOrgId}
+            selectedCycleId={cycleId ?? null}
+            projectId={selectedProjectId}
+            onSelect={(id) => setParam("cycle", id)}
           />
         )}
 
@@ -285,6 +316,10 @@ export function TasksWorkspaceClient() {
             emptyText="Задач нет"
           />
         )
+      ) : view === "sprints" ? (
+        <SprintsView orgId={currentOrgId} projectId={selectedProjectId} />
+      ) : view === "inbox" ? (
+        <IntakeBoard orgId={currentOrgId} projectId={selectedProjectId} />
       ) : (
         // archive: includeArchived=true отдаёт активные+архивные → на клиенте
         // оставляем только архивные.
@@ -333,6 +368,126 @@ function ProjectListView({
   }
   return (
     <IssueList issues={issues} group emptyText="В проекте пока нет задач" />
+  );
+}
+
+// ─── Фильтр спринта (хук useSprints внутри, чтобы не фетчить и не нарушать
+//     правило хуков на верхнем уровне родителя) ──────────────────────────────
+function SprintFilter({
+  orgId,
+  selectedCycleId,
+  projectId,
+  onSelect,
+}: {
+  orgId: string;
+  selectedCycleId: string | null;
+  projectId?: string;
+  onSelect: (cycleId: string | null) => void;
+}) {
+  const { sprints } = useSprints(orgId, { status: "active", limit: 50 });
+  const options = useMemo(
+    () =>
+      projectId
+        ? sprints.filter((s) => s.projectId === projectId)
+        : sprints,
+    [sprints, projectId],
+  );
+
+  // Активных спринтов нет — нечего фильтровать, не рендерим селект.
+  if (options.length === 0) return null;
+
+  return (
+    <select
+      value={selectedCycleId ?? "all"}
+      onChange={(e) => {
+        const v = e.target.value;
+        onSelect(v === "all" ? null : v || null);
+      }}
+      className={cn(
+        "h-9 min-w-[12rem] rounded-md border border-border bg-bg-card px-3 text-sm text-fg-primary",
+        "focus:outline-none focus:ring-2 focus:ring-accent",
+      )}
+      aria-label="Спринт"
+    >
+      <option value="all">Все спринты</option>
+      {options.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// ─── Вид «Спринты» (хук useSprints внутри) ──────────────────────────────────
+function SprintsView({
+  orgId,
+  projectId,
+}: {
+  orgId: string;
+  projectId?: string;
+}) {
+  const { sprints, isLoading } = useSprints(orgId, { limit: 100 });
+  const items = useMemo(
+    () =>
+      projectId
+        ? sprints.filter((s) => s.projectId === projectId)
+        : sprints,
+    [sprints, projectId],
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {[...Array(4)].map((_, i) => (
+          <div
+            key={i}
+            className="h-16 animate-pulse rounded-md border border-border-subtle bg-bg-elevated"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-md border border-dashed border-border-subtle bg-bg-elevated px-4 py-10 text-center text-sm text-fg-tertiary">
+        Спринтов нет
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((s) => (
+        <SprintRow key={s.id} sprint={s} />
+      ))}
+    </div>
+  );
+}
+
+function SprintRow({ sprint }: { sprint: DomainSprintListItem }) {
+  const percent = Math.round((sprint.progress.ratio || 0) * 100);
+  return (
+    <Link
+      href={`/sprints/${encodeURIComponent(sprint.id)}`}
+      className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-elevated p-3 transition-colors hover:bg-bg-overlay md:flex-row md:items-center md:justify-between"
+    >
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-fg-primary">
+          {sprint.name}
+        </div>
+        <div className="text-xs text-fg-tertiary">{sprint.projectName}</div>
+      </div>
+      <div className="flex items-center gap-3 text-xs text-fg-tertiary">
+        <span className="rounded-md bg-bg-card px-2 py-0.5 font-medium text-fg-secondary">
+          {getStatusLabel(sprint.status)}
+        </span>
+        <span className="shrink-0 font-medium">
+          {sprint.progress.completed}/{sprint.progress.total} · {percent}%
+        </span>
+      </div>
+    </Link>
   );
 }
 

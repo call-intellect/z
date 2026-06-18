@@ -1140,6 +1140,56 @@ export class IssuesService {
   }
 
   /**
+   * Перевод задачи в статус её проекта по КАТЕГОРИИ (DnD на доске «Все
+   * проекты», Р2). У разных проектов разные наборы статусов, поэтому колонки
+   * доски — 5 универсальных категорий. Резолвим целевой статус так же, как
+   * `moveToProject`: первый по `sequence` статус нужной category в проекте
+   * задачи, иначе `project.defaultStateId`, иначе 400 no_state_for_category.
+   * Дальше делегируем в `transitionState` (переиспуем activity/WS/ingest/webhooks).
+   */
+  async transitionToCategory(
+    id: string,
+    category: 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled',
+    tenantId: string,
+    userId: string,
+    reason?: string | null,
+  ): Promise<IssueResponseDto> {
+    const existing = await this.requireIssue(id, tenantId);
+    const matched = await this.prisma.issueState.findFirst({
+      where: { projectId: existing.projectId, category },
+      orderBy: { sequence: 'asc' },
+      select: { id: true },
+    });
+    let targetStateId: string | null = matched?.id ?? null;
+    if (!targetStateId) {
+      const project = await this.prisma.project.findUnique({
+        where: { id: existing.projectId },
+        select: { defaultStateId: true },
+      });
+      targetStateId = project?.defaultStateId ?? null;
+    }
+    if (!targetStateId) {
+      throw new BadRequestException({
+        ok: false,
+        error: {
+          code: 'no_state_for_category',
+          message: 'В проекте нет статуса для этой категории',
+        },
+      });
+    }
+    // Идемпотентно: уже в нужном статусе — не плодим activity, просто отдаём.
+    if (existing.stateId === targetStateId) {
+      return this.assemble(id, tenantId);
+    }
+    return this.transitionState(
+      id,
+      { stateId: targetStateId, reason: reason ?? null },
+      tenantId,
+      userId,
+    );
+  }
+
+  /**
    * Перенос задачи в другой проект (POST /issues/:id/move). ТЗ
    * `plans/tz/2026-06-15-issue-move-to-project.md`.
    *

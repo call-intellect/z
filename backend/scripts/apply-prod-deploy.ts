@@ -347,13 +347,6 @@ const STEPS: Step[] = [
   },
   {
     phase: 'patch',
-    script: 'scripts/patch-telegram-register-in-proxy.ts',
-    hint: 'регистрация бота в telegram.crossmark.ru',
-    skipBootstrap: true,
-    timeoutMs: 120_000,
-  },
-  {
-    phase: 'patch',
     script: 'scripts/patch-rebrand-z-to-kora.ts',
     hint: 'ребренд Z → Кора в EmailTemplate',
     skipBootstrap: true,

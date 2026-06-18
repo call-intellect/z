@@ -1419,6 +1419,12 @@ export class TypedConfigService {
    *     свободный текст/голос Telegram/MAX → assistant_turn → ConciergeService;
    *     OFF — прежний узкий роутер бит-в-бит (аварийный откат). Чек-ин
    *     (план/отчёт) не зависит от флага. ENV `ASSISTANT_CHANNEL_ROUTING_ENABLED`.
+   *   - assistantInboundAsyncEnabled — Ф1 calendar-master (2026-06-18):
+   *     kill-switch раннего ACK входящих апдейтов. ON (default, Ship-On) —
+   *     webhook Telegram/MAX отвечает 200 сразу, обработку (concierge tool-loop)
+   *     уносит в BullMQ-очередь assistant.inbound; OFF — синхронная обработка
+   *     как раньше (аварийный откат). Дедуп по update_id/mid не зависит от
+   *     флага. ENV `ASSISTANT_INBOUND_ASYNC_ENABLED`.
    */
   get bot() {
     return {
@@ -1428,6 +1434,7 @@ export class TypedConfigService {
       assistantChannelRoutingEnabled: this.get(
         'ASSISTANT_CHANNEL_ROUTING_ENABLED',
       ),
+      assistantInboundAsyncEnabled: this.get('ASSISTANT_INBOUND_ASYNC_ENABLED'),
     } as const;
   }
 

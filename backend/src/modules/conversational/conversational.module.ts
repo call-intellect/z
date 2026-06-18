@@ -30,6 +30,8 @@ import { ConversationalController } from './conversational.controller';
 import { ConversationalService } from './conversational.service';
 import { ConversationalLinkCodeService } from './link-code.service';
 import { NotificationBudgetService } from './notification-budget.service';
+import { AssistantInboundQueueService } from './queue/assistant-inbound-queue.service';
+import { AssistantInboundWorker } from './queue/assistant-inbound.worker';
 import { ConversationalQueueService } from './queue/conversational-queue.service';
 import { ConversationalSendWorker } from './queue/conversational-send.worker';
 import type { InboundMessage } from './types/channel.types';
@@ -186,6 +188,11 @@ export class ConversationalFreeNoteBridge implements OnModuleInit {
     // ConversationalService (без циклической зависимости DI).
     NotificationBudgetService,
     ConversationalSendWorker,
+    // Ф1 calendar-master (2026-06-18) — ранний ACK входящих апдейтов помощника:
+    // webhook ставит inbound в очередь assistant.inbound и сразу отвечает 200,
+    // фоновый воркер прогоняет dispatchInbound. Чинит ретраи доставки → дубли.
+    AssistantInboundQueueService,
+    AssistantInboundWorker,
     ConversationalIngestAdapter,
     InAppChannelAdapter,
     EmailSmtpChannelAdapter,

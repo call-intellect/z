@@ -33,7 +33,7 @@
 
 ---
 
-## Фаза 1 — Дедуп входящих апдейтов + ранний ACK (баг «дубли») `[ ]`
+## Фаза 1 — Дедуп входящих апдейтов + ранний ACK (баг «дубли») `[x]`
 **Причина:** `processUpdate` ждёт `dispatchInbound → handleAssistantTurn → concierge.process` (14–15с) до
 возврата 200; отправитель ретраит доставку; нет дедупа `update_id`
 ([диагностика §1](../analysis/2026-06-18-telegram-assistant-calendar-bugs-diagnosis.md)).

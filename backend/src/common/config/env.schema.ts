@@ -1105,6 +1105,12 @@ const MaxBotChannelSchema = z.object({
   // inbound-тип assistant_turn); чек-ин (план/отчёт) не трогается. OFF —
   // прежний узкий роутер бит-в-бит (аварийный откат).
   ASSISTANT_CHANNEL_ROUTING_ENABLED: zBool(true),
+  // Ф1 calendar-master (2026-06-18) — kill-switch раннего ACK входящих
+  // апдейтов помощника. ON (default, Ship-On): webhook Telegram/MAX отвечает
+  // 200 сразу, тяжёлую обработку (concierge tool-loop) уносит в BullMQ-очередь
+  // assistant.inbound. OFF — синхронная обработка как раньше (аварийный откат,
+  // если очередь деградировала). Дедуп по update_id/mid работает независимо.
+  ASSISTANT_INBOUND_ASYNC_ENABLED: zBool(true),
   // ChatBox integration (ТЗ 2026-06-05) — базовый URL Public API ChatBox
   // (app.agent-lia.ru / «Call Intellect: Чаты»). Per-tenant токен лежит в
   // ChatboxIntegration.tokenEnc (encrypted), не в ENV. Логически независим
